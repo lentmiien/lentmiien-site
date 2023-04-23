@@ -1,0 +1,15 @@
+extends layout
+
+block content
+  .row
+    .col
+      h1 Log in
+      form(action="/login" method="post")
+        div.input-group.mb-3
+          span#addon1.input-group-text Username:
+          input#username.form-control(type="text" name="username", aria-label="username" aria-describedby="addon1")
+        div.input-group.mb-3
+          span#addon2.input-group-text Password:
+          input#password.form-control(type="password" name="password", aria-label="password" aria-describedby="addon2")
+        div
+          input.btn.btn-primary(type="submit", value="Log in")
