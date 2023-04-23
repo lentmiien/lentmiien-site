@@ -8,16 +8,10 @@ const LocalStrategy = require('passport-local').Strategy;
 const expressSession = require('express-session');
 const bcrypt = require('bcryptjs');
 
-const app = express();
+// Require necessary database models
+const { UseraccountModel } = require('./database');
 
-// Dummy user for demonstration purposes
-const users = [
-  {
-    id: 1,
-    username: process.env.SAMPLE_USERNAME,
-    password: process.env.SAMPLE_PASSWORD,
-  },
-];
+const app = express();
 
 // Middleware
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -30,32 +24,34 @@ app.set('view engine', 'pug');
 // Passport configuration
 passport.use(
   new LocalStrategy((username, password, done) => {
-    const user = users.find((u) => u.username === username);
-    if (!user) {
-      return done(null, false, { message: 'Incorrect username.' });
-    }
-
-    // const hpsw = bcrypt.hashSync(password, 10);
-    // console.log(password, hpsw);
-
-    bcrypt.compare(password, user.password, (err, isMatch) => {
-      if (err) throw err;
-      if (isMatch) {
-        return done(null, user);
-      } else {
-        return done(null, false, { message: 'Incorrect password.' });
+    UseraccountModel.findOne({ name: username }).then(async (user) => {
+      if (!user) {
+        return done(null, false, { message: 'Incorrect username.' });
       }
+
+      // console.log(user);
+      // console.log(bcrypt.hashSync(password, 10));
+
+      bcrypt.compare(password, user.hash_password, (err, isMatch) => {
+        if (err) throw err;
+        if (isMatch) {
+          return done(null, user);
+        } else {
+          return done(null, false, { message: 'Incorrect password.' });
+        }
+      });
     });
   })
 );
 
 passport.serializeUser((user, done) => {
-  done(null, user.id);
+  done(null, user._id);
 });
 
 passport.deserializeUser((id, done) => {
-  const user = users.find((u) => u.id === id);
-  done(null, user);
+  UseraccountModel.findOne({ _id: id }).then((user) => {
+    done(null, user);
+  });
 });
 
 // Routes
@@ -63,7 +59,7 @@ app.all('*', (req, res, next) => {
   res.locals.loggedIn = false;
   if (req.isAuthenticated()) {
     res.locals.loggedIn = true;
-    res.locals.name = req.user.username;
+    res.locals.name = req.user.name;
   }
 
   next();
