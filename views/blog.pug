@@ -1,0 +1,25 @@
+extends layout
+
+block content
+  - let count = 0
+  - let lastweek = new Date(Date.now() - (1000*60*60*24*7))
+  each article in articles 
+    if count < 3 || article.updated > lastweek
+      - count++
+      //- Display full article
+      .card.mt-2 
+        .card-header
+          a.btn.btn-link(href=`/blog/${article._id}/view`)= article.title
+        .card-body
+          a.btn.btn-link(href=`/blog/${article.category}/list`)= article.category
+          hr
+          p.card-text!= article.content
+        .card-footer.text-muted 
+          span= `${article.updated.toISOString()}`
+    else 
+      //- Display title only
+      .card.mt-2
+        .card-header
+          a.btn.btn-link(href=`/blog/${article._id}/view`)= article.title
+        .card-body
+          a.btn.btn-link(href=`/blog/${article.category}/list`)= article.category

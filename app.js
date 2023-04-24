@@ -14,6 +14,7 @@ const { UseraccountModel } = require('./database');
 const app = express();
 
 // Middleware
+app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(expressSession({ secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
@@ -67,6 +68,9 @@ app.all('*', (req, res, next) => {
 
 const indexRouter = require('./routes/index');
 app.use('/', indexRouter);
+
+const blogRouter = require('./routes/blog');
+app.use('/blog', blogRouter);
 
 app.post(
   '/login',
