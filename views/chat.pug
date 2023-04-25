@@ -1,0 +1,26 @@
+extends layout
+
+block content
+  .row 
+    .col-2 
+      div= `Usage this month: ${usage} USD`
+      div 
+        a.btn.btn-outline-secondary(href="/chat") New chat
+        a.btn.btn-outline-secondary(href="/chat?id=1") Some chat#1
+        a.btn.btn-outline-secondary(href="/chat?id=2") Some chat#2
+        a.btn.btn-outline-secondary(href="/chat?id=3") Some chat#3
+        a.btn.btn-outline-secondary(href="/chat?id=4") Some chat#4
+    .col-10 
+      form(action="/chat/post", method="post") 
+        input#title.form-control(type="text", name="title", placeholder="Title")
+        input#system.form-control(type="text", name="system", placeholder="Context message, Ex: You are a helpful assistant.")
+        #chatwindow 
+          .user This is a sample message 
+          .agent 
+            .message Hello this is the agent
+              pre console.log("Hello world!")
+            .fotter Tockens: 45
+        div.input-group
+          textarea#message.form-control(name="message")
+          span.input-group-text
+            input.btn.btn-primary(type="submit", value="Send")

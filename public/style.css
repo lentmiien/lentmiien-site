@@ -4,3 +4,33 @@
   padding: 10px;
   margin: 5px;
 }
+
+.user {
+  border: 1px solid darkgreen;
+  background-color: rgb(220, 255, 220);
+  border-radius: 5px;
+  padding: 10px;
+  margin: 5px;
+}
+
+.agent {
+  border: 1px dashed darkblue;
+  background-color: rgb(220, 220, 255);
+  border-radius: 5px;
+  padding: 10px;
+  margin: 5px;
+}
+
+.fotter {
+  border-top: 1px solid darkblue;
+  color: rgb(100, 100, 100);
+  font-size: smaller;
+}
+
+.message > pre {
+  background-color: black;
+  color: white;
+  padding: 5px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}

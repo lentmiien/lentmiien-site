@@ -22,23 +22,24 @@ html(lang='en')
           ul.navbar-nav.me-auto.mb-2.mb-lg-0
             li.nav-item
               a.nav-link(href="/blog") Blog
-            li.nav-item.dropdown
-              a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Function#1
-              ul.dropdown-menu
-                li
-                  a.dropdown-item(href="#") Action 1
-                li
-                  a.dropdown-item(href="#") Action 2
-                li
-                  hr.dropdown-divider
-                li
-                  a.dropdown-item(href="#") Action 3
+            //- li.nav-item.dropdown
+            //-   a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Function#1
+            //-   ul.dropdown-menu
+            //-     li
+            //-       a.dropdown-item(href="#") Action 1
+            //-     li
+            //-       a.dropdown-item(href="#") Action 2
+            //-     li
+            //-       hr.dropdown-divider
+            //-     li
+            //-       a.dropdown-item(href="#") Action 3
             if loggedIn == true 
               li.nav-item.dropdown
                 a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") My account
                 ul.dropdown-menu
                   li
                     a.dropdown-item(href="/mypage") My page
+                    a.dropdown-item(href="/chat") ChatGPT
           if loggedIn == false
             a.btn.btn-outline-secondary(href="/login") Log in
     .container

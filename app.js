@@ -56,6 +56,7 @@ passport.deserializeUser((id, done) => {
 });
 
 // Routes
+// Public - routes
 app.all('*', (req, res, next) => {
   res.locals.loggedIn = false;
   if (req.isAuthenticated()) {
@@ -80,8 +81,12 @@ app.post(
   })
 );
 
+// Private - routes
 const mypageRouter = require('./routes/mypage');
 app.use('/mypage', isAuthenticated, mypageRouter);
+
+const chatRouter = require('./routes/chat');
+app.use('/chat', isAuthenticated, chatRouter);
 
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {

@@ -20,9 +20,12 @@ db.on('error', console.error.bind(console, 'MongoDB connection error:'));
 const UseraccountModel = require('./models/useraccount');
 // Article
 const ArticleModel = require('./models/article');
+// ChatGPT
+const ChatModel = require('./models/chat');
 
 // Export models
 module.exports = {
   UseraccountModel,
   ArticleModel,
+  ChatModel,
 };
