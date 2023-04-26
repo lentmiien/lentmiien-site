@@ -6,20 +6,21 @@ block content
       div= `Usage this month: ${usage} USD`
       div 
         a.btn.btn-outline-secondary(href="/chat") New chat
-        a.btn.btn-outline-secondary(href="/chat?id=1") Some chat#1
-        a.btn.btn-outline-secondary(href="/chat?id=2") Some chat#2
-        a.btn.btn-outline-secondary(href="/chat?id=3") Some chat#3
-        a.btn.btn-outline-secondary(href="/chat?id=4") Some chat#4
+        each entry in chat_list
+          a.btn.btn-outline-secondary(href=`/chat?id=${entry.id}`)= entry.title
     .col-10 
       form(action="/chat/post", method="post") 
-        input#title.form-control(type="text", name="title", placeholder="Title")
-        input#system.form-control(type="text", name="system", placeholder="Context message, Ex: You are a helpful assistant.")
+        input#id(type="hidden", name="id", value=`${chat_id}`)
+        input#title.form-control(type="text", name="title", placeholder="Title", value=`${chat_title}`)
+        input#system.form-control(type="text", name="system", placeholder="Context message, Ex: You are a helpful assistant.", value=`${chat_context}`)
         #chatwindow 
-          .user This is a sample message 
-          .agent 
-            .message Hello this is the agent
-              pre console.log("Hello world!")
-            .fotter Tockens: 45
+          - let i = 1
+          while i < chat_hist.length
+            div(class=`${chat_hist[i].role}`)
+              .message!= chat_hist[i].content
+              if chat_hist[i].role == 'assistant'
+                .fotter= `Tokens: ${chat_hist[i].tokens}`
+            - i += 1
         div.input-group
           textarea#message.form-control(name="message")
           span.input-group-text
