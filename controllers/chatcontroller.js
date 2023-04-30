@@ -98,80 +98,79 @@ req.body.message //
 */
 exports.post = (req, res) => {
   let id = parseInt(req.body.id);
-  ChatModel.find().then((data_count) => {
+  ChatModel.find().then(async (data_count) => {
     if (id == 0) {
       id = data_count.length + 1;
     }
-    // TODO: Change to instead filter previous requested data
-    ChatModel.find({ threadid: id }).then(async (data) => {
-      data.sort((a, b) => {
-        if (a.created < b.created) return -1;
-        if (a.created > b.created) return 1;
-        return 0;
-      });
+    // Change to instead filter previous requested data
+    const data = data_count.filter(d => d.threadid == id);
+    data.sort((a, b) => {
+      if (a.created < b.created) return -1;
+      if (a.created > b.created) return 1;
+      return 0;
+    });
 
-      const messages = [];
-      const entries_to_save = [];
-      const ts_1 = Date.now() - 2000;
-      const ts_2 = ts_1 + 1000;
+    const messages = [];
+    const entries_to_save = [];
+    const ts_1 = Date.now() - 2000;
+    const ts_2 = ts_1 + 1000;
 
-      // If a new chat, start by adding system message
-      if (data.length == 0) {
-        messages.push({
-          role: 'system',
-          content: req.body.system,
-        });
-        entries_to_save.push({
-          title: req.body.title,
-          username: req.user.name,
-          role: 'system',
-          content: req.body.system,
-          created: new Date(ts_1),
-          tokens: 0,
-          threadid: id,
-        });
-      }
-      // Add all existing messages from database
-      for (let i = 0; i < data.length; i++) {
-        messages.push({
-          role: data[i].role,
-          content: data[i].content,
-        });
-      }
-      // Add new message
+    // If a new chat, start by adding system message
+    if (data.length == 0) {
       messages.push({
-        role: 'user',
-        content: req.body.message,
+        role: 'system',
+        content: req.body.system,
       });
       entries_to_save.push({
         title: req.body.title,
         username: req.user.name,
-        role: 'user',
-        content: req.body.message,
-        created: new Date(ts_2),
+        role: 'system',
+        content: req.body.system,
+        created: new Date(ts_1),
         tokens: 0,
         threadid: id,
       });
-      // Connect to ChatGPT and get response, then add to entries_to_save
-      const response = await chatGPT(messages);
-      if (response) {
-        entries_to_save.push({
-          title: req.body.title,
-          username: req.user.name,
-          role: 'assistant',
-          content: response.choices[0].message.content,
-          created: new Date(),
-          tokens: response.usage.total_tokens,
-          threadid: id,
-        });
-        // Save to database
-        ChatModel.collection.insertMany(entries_to_save);
-        setTimeout(() => res.redirect(`/chat?id=${id}`), 100);
-      } else {
-        console.log('Failed to get a response from ChatGPT.');
-        res.redirect(`/chat`);
-      }
+    }
+    // Add all existing messages from database
+    for (let i = 0; i < data.length; i++) {
+      messages.push({
+        role: data[i].role,
+        content: data[i].content,
+      });
+    }
+    // Add new message
+    messages.push({
+      role: 'user',
+      content: req.body.message,
     });
+    entries_to_save.push({
+      title: req.body.title,
+      username: req.user.name,
+      role: 'user',
+      content: req.body.message,
+      created: new Date(ts_2),
+      tokens: 0,
+      threadid: id,
+    });
+    // Connect to ChatGPT and get response, then add to entries_to_save
+    const response = await chatGPT(messages);
+    if (response) {
+      entries_to_save.push({
+        title: req.body.title,
+        username: req.user.name,
+        role: 'assistant',
+        content: response.choices[0].message.content,
+        created: new Date(),
+        tokens: response.usage.total_tokens,
+        threadid: id,
+      });
+      // Save to database
+      ChatModel.collection.insertMany(entries_to_save);
+      setTimeout(() => res.redirect(`/chat?id=${id}`), 100);
+    } else {
+      console.log('Failed to get a response from ChatGPT.');
+      res.redirect(`/chat`);
+    }
   });
   // Load current database for given threadid
   // Receive a new chat message from post request
