@@ -35,6 +35,16 @@
   margin-bottom: 10px;
 }
 
+#chat-history {
+  max-height: 800px;
+  overflow-y: scroll;
+}
+
 #chat-history > a {
   width: 100%;
+}
+
+#chatwindow {
+  max-height: 800px;
+  overflow-y: scroll;
 }

@@ -1,4 +1,5 @@
 const chatGPT = require('../utils/ChatGPT');
+const utils = require('../utils/utils');
 
 // Require necessary database models
 const { ChatModel } = require('../database');
@@ -7,13 +8,23 @@ exports.index = (req, res) => {
   // Load current database
   ChatModel.find().then((data) => {
     // Format data and render index page (chat list and chat window)
-    let usage = 0;
     const chat_list = [];
     const chat_hist = [];
     const chat_id = req.query.id ? parseInt(req.query.id) : 0;
     let chat_title = '';
     let chat_context = '';
-    const this_month = new Date().getMonth();
+    let date = new Date();
+    const usage = {};
+    for (let i = 0; i < 12; i++) {
+      const date_val = date.getFullYear() * 100 + date.getMonth() + 1;
+      usage[`${date.getFullYear()}-${date.getMonth()}`] = {
+        tokens: 0,
+        cost: 0,
+        date_val,
+        date_label: utils.insertCharAt(date_val.toString(), 4, '-')
+      };
+      date = new Date(date.getFullYear(), date.getMonth()-1, 1);
+    }
 
     // Parse data
     const chat_list_lookup = [];
@@ -55,8 +66,9 @@ exports.index = (req, res) => {
         }
 
         // Calculate usage (this month)
-        if (d.created.getMonth() == this_month) {
-          usage += d.tokens;
+        const key = `${d.created.getFullYear()}-${d.created.getMonth()}`;
+        if (key in usage) {
+          usage[key].tokens += d.tokens;
         }
       }
     });
@@ -74,7 +86,10 @@ exports.index = (req, res) => {
     });
 
     // Calculate cost [gpt-3.5-turbo	$0.002 / 1K tokens]
-    usage = Math.round((usage * 0.002) / 10) / 100;
+    const keys = Object.keys(usage);
+    keys.forEach(key => {
+      usage[key].cost = Math.round((usage[key].tokens * 0.002) / 10) / 100;
+    });
 
     // Do some final updates
     if (chat_hist.length > 0) {

@@ -2,8 +2,22 @@ extends layout
 
 block content
   .row 
+    .col 
+      - const keys = Object.keys(usage)
+      table.table.table-striped 
+        thead 
+          tr 
+            each key in keys 
+              th= usage[key].date_label
+        tbody 
+          tr 
+            each key in keys 
+              td= usage[key].tokens
+          tr 
+            each key in keys 
+              td= `$${usage[key].cost}`            
+  .row 
     .col-2 
-      div= `Usage this month: ${usage} USD`
       #chat-history
         a.btn.btn-outline-secondary(href="/chat") New chat
         each entry in chat_list
