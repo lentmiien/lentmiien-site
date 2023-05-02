@@ -53,7 +53,7 @@ exports.index = (req, res) => {
             if (i % 2 == 0) {
               pp_content += parts[i].split('\n').join('<br>');
             } else {
-              pp_content += `<pre>${parts[i]}</pre>`;
+              pp_content += `<pre onclick="CopyCode(this)">${parts[i]}</pre>`;
             }
           }
           chat_hist.push({
