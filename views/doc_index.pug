@@ -1,0 +1,24 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      each doc in data 
+        .document 
+          a.btn.btn-link(href=`/gptdocument/document?id=${document._id}`)= document.title
+    .col 
+      form(action="/gptdocument/create_document", method="post") 
+        .input-group.mb-1
+          span.input-group-text Title
+          input#title.form-control(type="text", name="title", placeholder="Title")
+        .input-group.mb-1
+          span.input-group-text AI type
+          select#aitype(name="aitype")
+            option(value="report") General/Report
+            option(value="project") Project
+            option(value="meeting") Meeting
+            option(value="schedule") Schedule/Plan
+        .input-group.mb-1
+          span.input-group-text Topic
+          input#topic.form-control(type="text", name="topic", placeholder="List the topic(s) in a short sentence... (Like: The topics are xxx and yyy.)")
+        input.btn.btn-primary(type="submit", value="Create")

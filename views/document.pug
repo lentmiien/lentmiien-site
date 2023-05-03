@@ -1,0 +1,12 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      h1= doc.title
+  .row 
+    #text.col
+    //- Generate through JavaScript
+  pre#doc_data= JSON.stringify(doc)
+  pre#text_data= JSON.stringify(text) 
+  script(src="/doc_controller.js")      

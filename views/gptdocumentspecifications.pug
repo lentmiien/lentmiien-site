@@ -1,0 +1,90 @@
+extends layout
+
+block content
+  h1 GPT document specifications
+  h3 document database 
+  table.table.table-striped 
+    thead 
+      tr 
+        th column 
+        th description 
+    tbody 
+      tr 
+        td id
+        td unique id for this entry
+      tr 
+        td title
+        td title of document
+      tr 
+        td username
+        td person that created the document
+      tr 
+        td ai_type
+        td context of the type of AI assistant
+      tr 
+        td document_type
+        td context of the type of document
+      tr 
+        td start_date
+        td start date of the document
+      tr 
+        td end_date
+        td end (completed) date of the document
+  h3 text node database 
+  table.table.table-striped 
+    thead 
+      tr 
+        th column 
+        th description 
+    tbody 
+      tr 
+        td id
+        td unique id for this entry
+      tr 
+        td document_id
+        td belong to this document id
+      tr 
+        td parent_node_id
+        td id of parent node, or empty string for root node
+      tr 
+        td parent_node_index
+        td index of text part in parent node
+      tr 
+        td additional_context
+        td a short piece of text with additional context for the branch (only the most important stuff that applies to this entry and all sub branches, note that additional details and instructions can be provided in the input prompt)
+      tr 
+        td text_title
+        td a title for the text in this node
+      tr 
+        td text
+        td an array of text parts
+      tr 
+        td done_status
+        td a piece of text explaining the current status of the task
+      tr 
+        td remaining_status
+        td a piece of text explaining the current status of the task
+      tr 
+        td updated_date
+        td last updated date
+  h3 generate process 
+  ol 
+    li Create a document entry (title, type of AI assistance, type of document)
+    li Prompt ChatGPT to generate the document
+    li After generating a piece of text, the user should make necessary corrections an split the text in chunks
+      ul 
+        li Update input prompt an re-generate text 
+        li When the text is "close enough" make necessary correction 
+        li Split text in chunks (breakdown a large task into smaller tasks)
+    li For any tasks that needs more details/further breakdown you create a branch 
+      ul 
+        li Select branch for the text chunk, give some additional context if appropriate
+        li Prompt ChatGPT to generate the text, then repeate from No.3
+  h3 use process 
+  ol 
+    li Select a text node 
+    li Prompt ChatGPT what you have dome (text, done/remaining status and input prompt used to generate new done/remaining status)
+    li Go up the branches and repeat (text, done/remaining status for all child nodes used to generate new done/remaining status)
+  h3 report process 
+  ol 
+    li Generate a report based on done/remaining statuses, can use all branch nodes for a more detailed report, but a standard report only uses the nodes directly below the root node

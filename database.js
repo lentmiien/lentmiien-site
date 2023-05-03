@@ -22,10 +22,15 @@ const UseraccountModel = require('./models/useraccount');
 const ArticleModel = require('./models/article');
 // ChatGPT
 const ChatModel = require('./models/chat');
+// GPT Document
+const DocumentModel = require('./models/document');
+const TextnodeModel = require('./models/textnode');
 
 // Export models
 module.exports = {
   UseraccountModel,
   ArticleModel,
   ChatModel,
+  DocumentModel,
+  TextnodeModel,
 };

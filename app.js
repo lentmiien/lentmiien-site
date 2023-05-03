@@ -88,6 +88,9 @@ app.use('/mypage', isAuthenticated, mypageRouter);
 const chatRouter = require('./routes/chat');
 app.use('/chat', isAuthenticated, chatRouter);
 
+const gptdocumentRouter = require('./routes/gptdocument');
+app.use('/gptdocument', isAuthenticated, gptdocumentRouter);
+
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
