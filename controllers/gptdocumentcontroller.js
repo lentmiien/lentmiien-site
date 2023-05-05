@@ -1,12 +1,12 @@
 const chatGPT = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
-const { DocumentModel, TextnodeModel } = require('../database');
+const { ChatModel, DocumentModel, TextnodeModel } = require('../database');
 
 exports.index = (req, res) => {
   // Display a list of documents and a form for starting a new document
   DocumentModel.find().then(data => {
-    res.render("doc_index", data);
+    res.render("doc_index", {data});
   });
 };
 
@@ -22,18 +22,18 @@ exports.create_document = (req, res) => {
   const title = req.body.title;
   const aitype = req.body.aitype;
   const topic = req.body.topic;
-  const entry_to_save = {
+  const entry_to_save = new DocumentModel({
     title: title,
     username: req.user.name,
     ai_type: aitypes[aitype],
     document_type: topic,
     start_date: new Date(),
     end_date: new Date(),
-  };
+  });
 
   // Save to database
-  DocumentModel.collection.insertOne(entry_to_save).then(data => {
-    setTimeout(() => res.redirect(`/gptdocument/document?id=${data._id}`), 100);
+  entry_to_save.save().then((saved_data) => {
+    setTimeout(() => res.redirect(`/gptdocument/document?id=${saved_data._id}`), 100);
   });
 };
 
@@ -47,8 +47,171 @@ exports.document = (req, res) => {
   });
 };
 
+exports.branch = (req, res) => {
+  const document_id = req.query.document_id;
+  const parent_node_id = req.query.parent_node_id;
+  const parent_node_index = parseInt(req.query.parent_node_index);
+  DocumentModel.findById(document_id).then(doc => {
+    TextnodeModel.findById(parent_node_id).then(text => {
+      // Render edit page for user
+      res.render("text_edit", {
+        document_id,
+        parent_node_id,
+        parent_node_index,
+        additional_context: text.additional_context,
+        title: text.title,
+        ai_type: doc.ai_type,
+        document_type: doc.document_type,
+        prompt: JSON.parse(text.text)[parent_node_index],
+        text: "Output has not yet been generated...",
+      });
+    });
+  });
+};
+
 exports.generate_text_node = (req, res) => {
   // Edit and prepare text
+  const document_id = req.body.document_id;
+  const parent_node_id = req.body.parent_node_id;
+  const parent_node_index = req.body.parent_node_index.length > 0 ? parseInt(req.body.parent_node_index) : 0;
+  const additional_context = req.body.additional_context;
+  const title = req.body.title;
+  const ai_type = req.body.ai_type;
+  const document_type = req.body.document_type;
+  const prompt = req.body.prompt;
+  let context = `${ai_type} ${document_type}`;
+  if (additional_context.length > 0) {
+    context += ` ${additional_context}`
+  }
+
+  ChatModel.find().then(async (data_count) => {
+    const id = data_count.length + 1;
+
+    // Prepare and send request to ChatGPT
+    const messages = [];
+    const entries_to_save = [];
+    const ts_1 = Date.now() - 2000;
+    const ts_2 = ts_1 + 1000;
+
+    // If a new chat, start by adding system message
+    messages.push({
+      role: 'system',
+      content: context,
+    });
+    entries_to_save.push({
+      title: `DOC [${title}]`,
+      username: req.user.name,
+      role: 'system',
+      content: context,
+      created: new Date(ts_1),
+      tokens: 0,
+      threadid: id,
+    });
+    
+    // Add new message
+    messages.push({
+      role: 'user',
+      content: prompt,
+    });
+    entries_to_save.push({
+      title: title,
+      username: req.user.name,
+      role: 'user',
+      content: prompt,
+      created: new Date(ts_2),
+      tokens: 0,
+      threadid: id,
+    });
+    // Connect to ChatGPT and get response, then add to entries_to_save
+    const response = await chatGPT(messages);
+    if (response) {
+      entries_to_save.push({
+        title: title,
+        username: req.user.name,
+        role: 'assistant',
+        content: response.choices[0].message.content,
+        created: new Date(),
+        tokens: response.usage.total_tokens,
+        threadid: id,
+      });
+      // Save to database
+      ChatModel.collection.insertMany(entries_to_save);
+
+      // Render edit page for user
+      res.render("text_edit", {
+        document_id,
+        parent_node_id,
+        parent_node_index,
+        additional_context,
+        title,
+        ai_type,
+        document_type,
+        prompt,
+        text: response.choices[0].message.content
+      });
+    } else {
+      console.log('Failed to get a response from ChatGPT.');
+
+      // Render edit page for user
+      res.render("text_edit", {
+        document_id,
+        parent_node_id,
+        parent_node_index,
+        additional_context,
+        title,
+        ai_type,
+        document_type,
+        prompt,
+        text: 'Failed to get a response from ChatGPT.'
+      });
+    }
+  });
+};
+
+exports.save_text_node = (req, res) => {
+  // console.log(req.body);
+
+  // Save text node
+  const document_id = req.body.document_id;
+  const parent_node_id = req.body.parent_node_id;
+  const parent_node_index = req.body.parent_node_index.length > 0 ? parseInt(req.body.parent_node_index) : 0;
+  const additional_context = req.body.additional_context;
+  const title = req.body.title;
+  const chunk_data_array = [];
+  let not_done = true;
+  let last_index = -1;
+  for (let i = 0; i < 999 && not_done; i++) {
+    if (`chunk${i}` in req.body) {
+      const chunk_data = req.body[`chunk${i}`];
+      const chunk_id = req.body[`chunk${i}_id`];
+      if (last_index == chunk_id) {
+        chunk_data_array[chunk_data_array.length-1] += `\n${chunk_data}`;
+      } else {
+        chunk_data_array.push(chunk_data);
+        last_index = chunk_id;
+      }
+    } else {
+      not_done = false;
+    }
+  }
+
+  // Generate the textnode and save to database
+  const entry_to_save = new TextnodeModel({
+    document_id,
+    parent_node_id: parent_node_id.length == 0 ? "text" : parent_node_id,
+    parent_node_index,
+    additional_context,
+    title,
+    text: JSON.stringify(chunk_data_array),
+    status: "",
+    remaining_status: "",
+    updated_date: new Date(),
+  });
+
+  // Save to database
+  entry_to_save.save().then((saved_data) => {
+    setTimeout(() => res.redirect(`/gptdocument/document?id=${document_id}`), 100);
+  });
 };
 
 exports.finalize = (req, res) => {

@@ -2,18 +2,21 @@ extends layout
 
 block content
   .row 
-    .col 
-      each doc in data 
-        .document 
-          a.btn.btn-link(href=`/gptdocument/document?id=${document._id}`)= document.title
-    .col 
+    .col-4 
+      if data
+        each doc in data 
+          .document 
+            a.btn.btn-link(href=`/gptdocument/document?id=${doc._id}`)= doc.title
+      else 
+        i No documents...
+    .col-8 
       form(action="/gptdocument/create_document", method="post") 
         .input-group.mb-1
           span.input-group-text Title
           input#title.form-control(type="text", name="title", placeholder="Title")
         .input-group.mb-1
           span.input-group-text AI type
-          select#aitype(name="aitype")
+          select#aitype.form-control(name="aitype")
             option(value="report") General/Report
             option(value="project") Project
             option(value="meeting") Meeting

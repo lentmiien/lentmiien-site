@@ -5,8 +5,29 @@ block content
     .col 
       h1= doc.title
   .row 
-    #text.col
-    //- Generate through JavaScript
-  pre#doc_data= JSON.stringify(doc)
-  pre#text_data= JSON.stringify(text) 
-  script(src="/doc_controller.js")      
+    .col
+      #text.text_card
+      //- Generate content through JavaScript
+  if text.length == 0
+    h2 Initiate document 
+    form(action="/gptdocument/generate_text_node", method="post") 
+      input#document_id(type="hidden", name="document_id", value=`${doc._id}`)
+      input#parent_node_id(type="hidden", name="parent_node_id", value='')
+      input#parent_node_index(type="hidden", name="parent_node_index", value='0')
+      input#additional_context(type="hidden", name="additional_context", value='')
+      .input-group 
+        span.input-group-text Title
+        input#title.form-control(type="text", name="title", value=`${doc.title}`, readonly)
+      .input-group 
+        span.input-group-text AI type
+        input#ai_type.form-control(type="text", name="ai_type", value=`${doc.ai_type}`, readonly)
+      .input-group 
+        span.input-group-text Context
+        input#document_type.form-control(type="text", name="document_type", value=`${doc.document_type}`, readonly)
+      .input-group 
+        span.input-group-text Prompt
+        textarea#prompt.form-control(name="prompt", cols="30", rows="10", placeholder="Describe the text you need for the AI to generate")
+      input.btn.btn-primary(type="submit", value="Generate")
+  pre#doc_data.hidden= JSON.stringify(doc)
+  pre#text_data.hidden= JSON.stringify(text) 
+  script(src="/doc_controller.js")

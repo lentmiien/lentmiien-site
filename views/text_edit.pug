@@ -1,0 +1,54 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      h1= `Generated text for "${title}"`
+      textarea#response.form-control(name="response", cols="30", rows="10", readonly)= text
+  .row 
+    .col
+      h3 1. If the response was not very helpful, then you can adjust the input and try again (othrewise skip to step 2)
+      //- Try again form (edit additional context and prompt, then re-generate this page)
+      form(action="/gptdocument/generate_text_node", method="post") 
+        input#document_id(type="hidden", name="document_id", value=`${document_id}`)
+        input#parent_node_id(type="hidden", name="parent_node_id", value=`${parent_node_id}`)
+        input#parent_node_index(type="hidden", name="parent_node_index", value=`${parent_node_index}`)
+        .input-group 
+          span.input-group-text Title
+          input#title.form-control(type="text", name="title", value=`${title}`, readonly)
+        .input-group 
+          span.input-group-text AI type
+          input#ai_type.form-control(type="text", name="ai_type", value=`${ai_type}`, readonly)
+        .input-group 
+          span.input-group-text Context
+          input#document_type.form-control(type="text", name="document_type", value=`${document_type}`, readonly)
+        .input-group 
+          span.input-group-text Additional context
+          input#additional_context.form-control(type="text", name="additional_context", value=`${additional_context}`)
+        .input-group 
+          span.input-group-text Prompt
+          textarea#prompt.form-control(name="prompt", cols="30", rows="10", placeholder="Describe the text you need for the AI to generate")= prompt
+        input.btn.btn-primary(type="submit", value="Generate")
+  .row 
+    .col
+      h3 2. Make some final adjustments below, press "Continue" to proceed to step 3
+      //- Manual edit
+      textarea#edit_response.form-control(name="edit_response", cols="30", rows="10")= text
+      button(onclick="GenerateTextChunks()") Continue
+  .row 
+    .col
+      //- Assign index form (save text node)
+      h3 3. Assign text chunks 
+      form(action="/gptdocument/save_text_node", method="post") 
+        input#document_id(type="hidden", name="document_id", value=`${document_id}`)
+        input#parent_node_id(type="hidden", name="parent_node_id", value=`${parent_node_id}`)
+        input#parent_node_index(type="hidden", name="parent_node_index", value=`${parent_node_index}`)
+        input#additional_context(type="hidden", name="additional_context", value=`${additional_context}`)
+        .input-group 
+          span.input-group-text Title
+          input#title.form-control(type="text", name="title", value=`${title}`)
+        .row 
+          .col-5!= text.split("\n").join("<br>")
+          #text_nodes.col-7
+        input#save_tn_btn.btn.btn-primary(type="submit", value="Save textnode", disabled)
+  script(src="/text_controller.js")
