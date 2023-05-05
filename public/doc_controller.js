@@ -19,10 +19,8 @@ function AddTextnodeToElement(textnode, element) {
       branch_button.classList.add("btn", "btn-primary");
       branch_button.innerText = "Create branch";
       branch_button.href = `/gptdocument/branch?document_id=${textnode.document_id}&parent_node_id=${textnode._id}&parent_node_index=${i}`;
-      const hr = document.createElement("hr");
-      hr.classList.add("mb-5");
       child_slot.append(branch_button);
-      text.append(textcontent, child_slot, hr);
+      text.append(textcontent, child_slot);
     }
   });
 

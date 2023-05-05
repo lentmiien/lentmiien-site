@@ -57,4 +57,5 @@
 .text_card {
   padding: 5px;
   margin: 5px;
+  border: 1px dashed rgb(201, 201, 201);
 }
