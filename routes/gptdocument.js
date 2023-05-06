@@ -14,4 +14,6 @@ router.post('/save_text_node', controller.save_text_node);
 
 router.get('/specifications', controller.specifications);
 
+router.get('/deletedocument', controller.deletedocument);
+
 module.exports = router;

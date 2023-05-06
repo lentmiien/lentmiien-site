@@ -229,3 +229,11 @@ exports.report = (req, res) => {
 exports.specifications = (req, res) => {
   res.render("gptdocumentspecifications")
 };
+
+exports.deletedocument = (req, res) => {
+  DocumentModel.findByIdAndRemove(req.query.id).then(() => {
+    TextnodeModel.deleteMany({parent_node_id: req.query.id}).then(() => {
+      setTimeout(() => res.redirect("/gptdocument"), 500);
+    });
+  });
+};
