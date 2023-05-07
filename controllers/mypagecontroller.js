@@ -40,12 +40,7 @@ exports.post_blogpost = (req, res) => {
 
     ArticleModel.findByIdAndUpdate(Id, update, { new: true, useFindAndModify: false })
       .then((updatedArticle) => {
-        if (!updatedArticle) {
-          console.log('No article found with the given ID');
-        } else {
-          console.log('Updated article:', updatedArticle);
-          res.redirect("/blog");
-        }
+        res.redirect("/blog");
       })
       .catch((err) => console.error('Error updating user:', err));
   } else {
@@ -63,4 +58,11 @@ exports.post_blogpost = (req, res) => {
       setTimeout(() => res.redirect(`/blog`), 100);
     });
   }
+};
+
+exports.delete_blogpost = (req, res) => {
+  // Delete blogpost with _id that is req.query.id
+  ArticleModel.findByIdAndRemove(req.query.id).then(() => {
+    setTimeout(() => res.redirect("/blog"), 100);
+  });
 };
