@@ -108,21 +108,35 @@ exports.branch = (req, res) => {
   const parent_node_id = req.query.parent_node_id;
   const parent_node_index = parseInt(req.query.parent_node_index);
   DocumentModel.findById(document_id).then(doc => {
-    TextnodeModel.findById(parent_node_id).then(text => {
+    if (parent_node_id != "text") {
+      TextnodeModel.findById(parent_node_id).then(text => {
+        // Render edit page for user
+        res.render("text_edit", {
+          document_id,
+          parent_node_id,
+          parent_node_index,
+          additional_context: text.additional_context,
+          title: text.title,
+          ai_type: doc.ai_type,
+          document_type: doc.document_type,
+          prompt: JSON.parse(text.text)[parent_node_index],
+          text: "Output has not yet been generated...",
+        });
+      });
+    } else {
       // Render edit page for user
       res.render("text_edit", {
         document_id,
         parent_node_id,
         parent_node_index,
-        additional_context: text ? text.additional_context : "",
-        title: text ? text.title : doc.title,
+        additional_context: "",
+        title: doc.title,
         ai_type: doc.ai_type,
         document_type: doc.document_type,
-        prompt: text ? JSON.parse(text.text)[parent_node_index] : "",
+        prompt: "",
         text: "Output has not yet been generated...",
       });
-      // TODO: verify that "text ? ..." works as intended
-    });
+    }
   });
 };
 
@@ -171,7 +185,7 @@ exports.generate_text_node = (req, res) => {
       content: prompt,
     });
     entries_to_save.push({
-      title: title,
+      title: `DOC [${title}]`,
       username: req.user.name,
       role: 'user',
       content: prompt,
@@ -183,7 +197,7 @@ exports.generate_text_node = (req, res) => {
     const response = await chatGPT(messages);
     if (response) {
       entries_to_save.push({
-        title: title,
+        title: `DOC [${title}]`,
         username: req.user.name,
         role: 'assistant',
         content: response.choices[0].message.content,
