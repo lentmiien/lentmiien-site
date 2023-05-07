@@ -7,7 +7,7 @@ block content
         each doc in data 
           .document 
             a.btn.btn-link(href=`/gptdocument/document?id=${doc._id}`)= doc.title
-            a.btm.btn-link(href=`/gptdocument/deletedocument?id=${doc._id}`) X
+            a.btn.btn-outline-danger(href=`/gptdocument/deletedocument?id=${doc._id}`) X
       else 
         i No documents...
     .col-8 

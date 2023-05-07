@@ -2,8 +2,11 @@ extends layout
 
 block content
   .row 
-    .col 
+    .col-9
       h1= doc.title
+    .col-3
+      a.btn.btn-link(href=`/gptdocument/view?id=${doc._id}`, target="_blank") View
+      a.btn.btn-link(href=`/gptdocument/view?id=${doc._id}&lang=Japanese`, target="_blank") View (Japanese)
   .row 
     .col
       #text.text_card

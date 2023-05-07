@@ -11,6 +11,8 @@ router.get('/document', controller.document);
 router.get('/branch', controller.branch);
 router.post('/generate_text_node', controller.generate_text_node);
 router.post('/save_text_node', controller.save_text_node);
+router.get('/view', controller.view);
+router.post('/translate', controller.translate);
 
 router.get('/specifications', controller.specifications);
 

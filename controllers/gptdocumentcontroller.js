@@ -3,6 +3,62 @@ const utils = require('../utils/utils');
 
 const { ChatModel, DocumentModel, TextnodeModel } = require('../database');
 
+async function QueryChatGPT(messages, title, username) {
+  const data_count = await ChatModel.find();
+  const id = data_count.length + 1;
+
+  // Prepare and send request to ChatGPT
+  const entries_to_save = [];
+  const ts_1 = Date.now() - 2000;
+  const ts_2 = ts_1 + 1000;
+
+  // System
+  entries_to_save.push({
+    title: `DOC [${title}]`,
+    username,
+    role: messages[0].role,
+    content: messages[0].content,
+    created: new Date(ts_1),
+    tokens: 0,
+    threadid: id,
+  });
+  
+  // User
+  entries_to_save.push({
+    title: `DOC [${title}]`,
+    username,
+    role: messages[1].role,
+    content: messages[1].content,
+    created: new Date(ts_2),
+    tokens: 0,
+    threadid: id,
+  });
+
+  // Connect to ChatGPT and get response, then add to entries_to_save
+  const response = await chatGPT(messages);
+  if (response) {
+    entries_to_save.push({
+      title: `DOC [${title}]`,
+      username,
+      role: 'assistant',
+      content: response.choices[0].message.content,
+      created: new Date(),
+      tokens: response.usage.total_tokens,
+      threadid: id,
+    });
+    // Save to database
+    ChatModel.collection.insertMany(entries_to_save);
+
+    // Return response
+    return response.choices[0].message.content;
+  } else {
+    console.log('Failed to get a response from ChatGPT.');
+
+    // Return error
+    return 'Failed to get a response from ChatGPT.';
+  }
+}
+
 exports.index = (req, res) => {
   // Display a list of documents and a form for starting a new document
   DocumentModel.find().then(data => {
@@ -212,6 +268,22 @@ exports.save_text_node = (req, res) => {
   entry_to_save.save().then((saved_data) => {
     setTimeout(() => res.redirect(`/gptdocument/document?id=${document_id}`), 100);
   });
+};
+
+exports.view = (req, res) => {
+  // Display full document without any input controlls (suitable for printing)
+  const id = req.query.id;
+  DocumentModel.findById(id).then(doc => {
+    TextnodeModel.find({document_id: id}).then(async text => {
+      res.render("view", {doc, text, lang: "lang" in req.query ? req.query.lang : "original"});
+    });
+  });
+};
+
+exports.translate = async (req, res) => {
+  // Get a message array in body, just send to QueryChatGPT() and return response as JSON
+  const resp = await QueryChatGPT(req.body.messages, "Translate", req.user.name);
+  res.json({resp});
 };
 
 exports.finalize = (req, res) => {

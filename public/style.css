@@ -59,3 +59,12 @@
   margin: 5px;
   border: 1px dashed rgb(201, 201, 201);
 }
+
+.text_chunk {
+  padding: 5px;
+  margin: 5px;
+}
+
+.document {
+  margin-bottom: 5px;
+}
