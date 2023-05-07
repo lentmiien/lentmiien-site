@@ -114,13 +114,14 @@ exports.branch = (req, res) => {
         document_id,
         parent_node_id,
         parent_node_index,
-        additional_context: text.additional_context,
-        title: text.title,
+        additional_context: text ? text.additional_context : "",
+        title: text ? text.title : doc.title,
         ai_type: doc.ai_type,
         document_type: doc.document_type,
-        prompt: JSON.parse(text.text)[parent_node_index],
+        prompt: text ? JSON.parse(text.text)[parent_node_index] : "",
         text: "Output has not yet been generated...",
       });
+      // TODO: verify that "text ? ..." works as intended
     });
   });
 };
@@ -284,10 +285,6 @@ exports.translate = async (req, res) => {
   // Get a message array in body, just send to QueryChatGPT() and return response as JSON
   const resp = await QueryChatGPT(req.body.messages, "Translate", req.user.name);
   res.json({resp});
-};
-
-exports.finalize = (req, res) => {
-  // Show a final version of the document, can optionally translate
 };
 
 exports.update_progress = (req, res) => {

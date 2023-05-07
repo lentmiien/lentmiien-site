@@ -1,0 +1,16 @@
+extends layout
+
+block content
+  .row
+    .col
+      form(action="/mypage/post_blogpost", method="post") 
+        input#id(type="hidden", name="id", value=`${form_data.id}`)
+        .input-group 
+          span.input-group-text Title 
+          input#title.form-control(type="text", name="title", placeholder="Enter a title for the blogpost", value=`${form_data.title}`)
+        .input-group 
+          span.input-group-text Category 
+          input#category.form-control(type="text", name="category", placeholder="Enter a category for the blogpost", value=`${form_data.category}`)
+        label(for="content") Blogpost 
+        textarea#content.form-control(name="content", cols="30", rows="30")= form_data.content
+        input.btn.btn-success(type="submit", value="Post")

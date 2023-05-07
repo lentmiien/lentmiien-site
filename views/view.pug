@@ -20,5 +20,5 @@ html(lang='en')
           //- Generate content through JavaScript
     pre#doc_data.hidden= JSON.stringify(doc)
     pre#text_data.hidden= JSON.stringify(text) 
-    pre#lang= lang
+    pre#lang.hidden= lang
     script(src="/doc_view_controller.js")

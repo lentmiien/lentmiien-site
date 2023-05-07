@@ -31,6 +31,7 @@ block content
         span.input-group-text Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", placeholder="Describe the text you need for the AI to generate")
       input.btn.btn-primary(type="submit", value="Generate")
+    a.btn.btn-primary(href=`/gptdocument/branch?document_id=${doc._id}&parent_node_id=text&parent_node_index=0`) Generate empty
   pre#doc_data.hidden= JSON.stringify(doc)
   pre#text_data.hidden= JSON.stringify(text) 
   script(src="/doc_controller.js")
