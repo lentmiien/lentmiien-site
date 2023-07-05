@@ -25,6 +25,16 @@ const ChatModel = require('./models/chat');
 // GPT Document
 const DocumentModel = require('./models/document');
 const TextnodeModel = require('./models/textnode');
+// Budget
+// (OLD)
+const AccountModel = require('./models/account');
+const TransactionModel = require('./models/transaction');
+const TypecategoryModel = require('./models/typecategory');
+const TypetagModel = require('./models/typetag');
+// (NEW)
+const AccountDBModel = require('./models/account_db');
+const CategoryDBModel = require('./models/category_db');
+const TransactionDBModel = require('./models/transaction_db');
 
 // Export models
 module.exports = {
@@ -33,4 +43,11 @@ module.exports = {
   ChatModel,
   DocumentModel,
   TextnodeModel,
+  AccountModel,
+  TransactionModel,
+  TypecategoryModel,
+  TypetagModel,
+  AccountDBModel,
+  CategoryDBModel,
+  TransactionDBModel,
 };

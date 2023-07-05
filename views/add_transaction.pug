@@ -1,0 +1,107 @@
+extends layout
+
+block content
+  if entry 
+    .row 
+      .col.card(class=`${entry.type}`) 
+        table.table 
+          thead 
+            tr 
+              th= entry.from_account === "EXT" ? entry.transaction_business : account_lookup[entry.from_account]
+              th= entry.to_account === "EXT" ? entry.transaction_business : account_lookup[entry.to_account]
+          tbody 
+            tr 
+              td= -entry.amount - entry.from_fee
+              td= entry.amount - entry.to_fee
+
+  .row
+    .col.card 
+      form.form(action="/accounting/add_transaction", method="post") 
+        label(for="from_account") Select payer account
+        select#from_account.form-control(name="from_account", onchange="RefreshForm()", required) 
+          option(value="") 
+          each account in new_accounts 
+            option(value=`${account._id}`)= `${account.name} (${account.current} ${account.currency})` 
+          option(value="EXT") - Other business -
+        #from_account_options 
+        label(for="to_account") Select receiver account
+        select#to_account.form-control(name="to_account", onchange="RefreshForm()", required) 
+          option(value="") 
+          option(value="EXT") - Other business -
+          each account in new_accounts 
+            option(value=`${account._id}`)= `${account.name} (${account.current} ${account.currency})` 
+        #to_account_options 
+        label(for="from_fee") Payer transaction fee
+        input#from_fee.form-control(type="number", name="from_fee", value="0", required) 
+        #from_fee_options 
+        label(for="to_fee") Receiver transaction fee
+        input#to_fee.form-control(type="number", name="to_fee", value="0", required) 
+        #to_fee_options 
+        label(for="amount") Transaction ammount *currency assumed to always match the selected accounts
+        input#amount.form-control(type="number", name="amount", required) 
+        #amount_options 
+        label(for="date") Transaction date
+        input#date.form-control(type="date", name="date", required) 
+        #date_options 
+        label(for="transaction_business") Other business
+        input#transaction_business.form-control(type="text", name="transaction_business", list="businesses_list", onchange="RefreshForm()", required) 
+        #transaction_business_options 
+        label(for="type") Select transaction type
+        select#type.form-control(name="type", onchange="RefreshForm()", required) 
+          option(value="") 
+          option(value="income") Income
+          option(value="expense") Expense
+          option(value="saving") Saving/Transfer
+        #type_options 
+        label(for="categories") Categories (format: "category1@25|category2@75", if @values add up to more or less than 100, then app will scale values automatically)
+        input#categories.form-control(type="text", name="categories", onchange="RefreshForm()", required) 
+        select.form-control(onchange="AddInputValue(this,'categories')")
+          option(value="") 
+          optgroup(label="Expense") 
+            each category in sort_categories["expense"] 
+              option(value=`${category._id}`)= category.title 
+          optgroup(label="Income") 
+            each category in sort_categories["income"] 
+              option(value=`${category._id}`)= category.title 
+          optgroup(label="Saving/Transfer") 
+            each category in sort_categories["saving"] 
+              option(value=`${category._id}`)= category.title 
+        #categories_options 
+        label(for="tags") Tags (format: "tag1|tag2")
+        input#tags.form-control(type="text", name="tags", onchange="RefreshForm()", required) 
+        input.form-control(type="text", onchange="AddInputValue(this,'tags')", list="tags_list")
+        #tags_options 
+        input.btn.btn-primary.mt-5(type="submit", value="Save")
+
+  .row
+    hr
+    .col 
+      h4 accounts
+      pre#accounts_data= JSON.stringify(new_accounts, null, 2)
+      br
+      pre#account_lookup= JSON.stringify(account_lookup, null, 2)
+    .col 
+      h4 categories
+      pre#categories_data= JSON.stringify(new_categories, null, 2)
+      br
+      pre#category_lookup= JSON.stringify(category_lookup, null, 2)
+      br
+      pre#category_lookup_rev= JSON.stringify(category_lookup_rev, null, 2)
+    .col 
+      h4 tags / businesses
+      pre#tags_data= JSON.stringify(tags, null, 2)
+      br
+      pre#businesses= JSON.stringify(businesses, null, 2)
+    .col 
+      h4 network
+      pre#input_network= JSON.stringify(input_network, null, 2)
+    hr
+  
+  datalist#tags_list
+    each tag in tags
+      option(value=`${tag}`)
+  datalist#businesses_list
+    each business in businesses
+      option(value=`${business}`) 
+
+  script(src="/add_transaction_controller.js") 

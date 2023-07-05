@@ -1,0 +1,139 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      a.btn.btn-link(href="/accounting/add_transaction") New transaction
+      a.btn.btn-link(href="/accounting/manage/accounts") Manage accounts
+      a.btn.btn-link(href="/accounting/manage/categories") Manage categories
+      a.btn.btn-link(href="/accounting/history") History
+  .row
+    hr
+    each a in dashboard.accounts
+      .col.card(class=`${a.balance >= 0 ? "income" : "expense"}`)
+        h4= `${a.name}`
+        span= `${a.balance} ${a.currency}`
+    hr
+
+  .row
+    .col 
+      - const d = new Date()
+      select#year(name="year") 
+        - let i = 0
+        while i < 5
+          option(value=`${d.getFullYear()-i}`)= d.getFullYear()-i
+          - i++
+      select#month(name="month") 
+        each val, key in {1:"January", 2:"February", 3:"March", 4:"April", 5:"May", 6:"June", 7:"July", 8:"August", 9:"September", 10:"October", 11:"November", 12:"December"}
+          if d.getMonth()+1 == key
+            option(value=`${key}`, selected)= val 
+          else 
+            option(value=`${key}`)= val 
+      button.btn.btn-primary(onclick="Update()") Update
+
+  .row
+    .col 
+      h3 Category tables 
+      - const keys = Object.keys(dashboard.categories)
+      table.table.table-success.table-striped 
+        thead 
+          tr 
+            th Income 
+            th Tracked 
+            th Budget
+            th %Done 
+            th Remaining 
+            th Excess 
+        tbody 
+          each c in keys
+            if dashboard.categories[c].type === "income"
+              tr 
+                td(id=`${c}_title`)= dashboard.categories[c].title
+                td(id=`${c}_tracked`) 5400 
+                td(id=`${c}_budget`) 10800
+                td(id=`${c}_done`) 50%
+                td(id=`${c}_remaining`) 5400
+                td(id=`${c}_excess`) -
+          tr 
+            th(id=`total_income_title`) Total
+            th(id=`total_income_tracked`) 5400 
+            th(id=`total_income_budget`) 10800
+            th(id=`total_income_done`) 50%
+            th(id=`total_income_remaining`) 5400
+            th(id=`total_income_excess`) -
+      table.table.table-danger.table-striped 
+        thead 
+          tr 
+            th Expense 
+            th Tracked 
+            th Budget
+            th %Done 
+            th Remaining 
+            th Excess 
+        tbody 
+          each c in keys
+            if dashboard.categories[c].type === "expense"
+              tr 
+                td(id=`${c}_title`)= dashboard.categories[c].title
+                td(id=`${c}_tracked`) 4000 
+                td(id=`${c}_budget`) 10000
+                td(id=`${c}_done`) 40%
+                td(id=`${c}_remaining`) 6000
+                td(id=`${c}_excess`) -
+          tr 
+            th(id=`total_expense_title`) Total
+            th(id=`total_expense_tracked`) 4000 
+            th(id=`total_expense_budget`) 10000
+            th(id=`total_expense_done`) 40%
+            th(id=`total_expense_remaining`) 6000
+            th(id=`total_expense_excess`) -
+      table.table.table-info.table-striped 
+        thead 
+          tr 
+            th Saving/Transfer 
+            th Tracked 
+            th Budget
+            th %Done 
+            th Remaining 
+            th Excess 
+        tbody 
+          each c in keys
+            if dashboard.categories[c].type === "saving"
+              tr 
+                td(id=`${c}_title`)= dashboard.categories[c].title
+                td(id=`${c}_tracked`) 10000 
+                td(id=`${c}_budget`) 5000
+                td(id=`${c}_done`) 200%
+                td(id=`${c}_remaining`) -
+                td(id=`${c}_excess`) 5000
+          tr 
+            th(id=`total_saving_title`) Total
+            th(id=`total_saving_tracked`) 10000 
+            th(id=`total_saving_budget`) 5000
+            th(id=`total_saving_done`) 200%
+            th(id=`total_saving_remaining`) -
+            th(id=`total_saving_excess`) 5000
+    .col 
+      .card.income
+        h3 Income
+        #income_graph 
+      .card.expense
+        h3 Expense
+        #expense_graph
+    .col
+      .card
+        h3 Year graph
+        #year_graph
+      .card.saving
+        h3 Saving
+        #saving_graph
+
+  .row.hidden
+    hr
+    .col 
+      h4 dashboard data
+      pre#dashboard= JSON.stringify(dashboard, null, 2)
+    hr
+
+  script(src="https://d3js.org/d3.v7.min.js")
+  script(src="/accounting.js")

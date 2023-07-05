@@ -1,0 +1,37 @@
+extends layout
+
+block content
+  .row
+    #accounts.col 
+      each account in accounts 
+        div.card(id=`${account._id}`, class=`${account.balance >= 0 ? "income" : "expense"}`) 
+          h2= account.name 
+          i= `Balance at ${account.balance_date} is `
+            b= `${account.balance} ${account.currency}`
+          hr
+          button.btn.btn-danger(onclick=`DeleteAccount("${account._id}")`) Delete account
+  .row 
+    .col.card 
+      h2 Add account 
+      label(for="name") Account name 
+      input#name.form-control(type="text", name="name", placeholder="Enter a name for account...", required)
+      label(for="balance") Balance in account 
+      input#balance.form-control(type="number", name="balance", placeholder="Enter balance amount...", required)
+      label(for="balance_date") Balance date 
+      input#balance_date.form-control(type="date", name="balance_date", placeholder="Enter date for balance...", required)
+      label(for="currency") Currency of account 
+      select#currency.form-control(name="currency", required) 
+        option(value="JPY") JPY
+        option(value="SEK") SEK
+        option(value="USD") USD
+        option(value="AUD") AUD
+      button.btn.btn-primary.mt-4(onclick="AddAccount()") Add account
+  .row
+    hr
+    .col 
+      h4 accounts
+      pre= JSON.stringify(accounts, null, 2)
+    .col 
+      h4 accounts OLD
+      pre= JSON.stringify(old_accounts, null, 2)
+  script(src="/manage_accounts_controller.js") 

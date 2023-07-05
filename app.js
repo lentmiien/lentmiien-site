@@ -92,6 +92,9 @@ app.use('/chat', isAuthenticated, chatRouter);
 const gptdocumentRouter = require('./routes/gptdocument');
 app.use('/gptdocument', isAuthenticated, gptdocumentRouter);
 
+const budgetRouter = require('./routes/budget');
+app.use('/accounting', isAuthenticated, budgetRouter);
+
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();

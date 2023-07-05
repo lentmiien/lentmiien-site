@@ -1,0 +1,23 @@
+extends layout
+
+block content
+  .row 
+    each key in keys 
+      .col 
+        h3= key
+        table.table.table-striped 
+          thead 
+            tr 
+              th Date 
+              th Amount 
+              th Total 
+              th 
+          tbody 
+            each t in history[key]
+              tr 
+                td= t.date
+                td= t.amount
+                td= t.total
+                td 
+                  if t.new_tr
+                    a.btn.btn-outline-danger(href=`/accounting/delete/${t.id}`) ✘

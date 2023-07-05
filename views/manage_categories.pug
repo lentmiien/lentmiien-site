@@ -1,0 +1,27 @@
+extends layout
+
+block content
+  .row
+    #categories.col 
+      each category in categories 
+        div.card(id=`${category._id}`, class=`${category.type}`) 
+          h2= category.title 
+          hr
+          button.btn.btn-danger(onclick=`DeleteCategory("${category._id}")`) Delete category
+  .row 
+    .col.card 
+      h2 Add category
+      label(for="title") Category title 
+      input#title.form-control(type="text", name="title", placeholder="Enter a category title...", required)
+      label(for="type") Type of category 
+      select#type.form-control(name="type", required) 
+        option(value="income") Income
+        option(value="expense") Expense
+        option(value="saving") Saving/Transfer
+      button.btn.btn-primary(onclick="AddCategory()") Add category
+  .row 
+    .col 
+      pre= JSON.stringify(categories, null, 2)
+    .col 
+      pre= JSON.stringify(old_categories, null, 2)
+  script(src="/manage_categories_controller.js") 
