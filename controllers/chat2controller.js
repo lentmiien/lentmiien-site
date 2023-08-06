@@ -202,7 +202,7 @@ exports.post = (req, res) => {
         threadid: id,
       });
       // Save to database
-      ChatModel.collection.insertMany(entries_to_save);
+      Chat2Model.collection.insertMany(entries_to_save);
       setTimeout(() => res.redirect(`/chat2?id=${id}`), 100);
     } else {
       console.log('Failed to get a response from ChatGPT.');
