@@ -19,9 +19,9 @@ block content
   .row 
     .col-2 
       #chat-history
-        a.btn.btn-outline-secondary(href="/chat") New chat
+        a.btn.btn-outline-secondary(href="/chat2") New chat
         each entry in chat_list
-          a.btn.btn-outline-secondary.mt-1(href=`/chat?id=${entry.id}`)= entry.title
+          a.btn.btn-outline-secondary.mt-1(href=`/chat2?id=${entry.id}`)= entry.title
     .col-10 
       form(action="/chat2/post", method="post") 
         input#id(type="hidden", name="id", value=`${chat_id}`)
