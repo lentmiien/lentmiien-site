@@ -130,7 +130,7 @@ req.body.message //
 */
 exports.post = (req, res) => {
   let id = parseInt(req.body.id);
-  ChatModel.find().then(async (data_count) => {
+  Chat2Model.find().then(async (data_count) => {
     if (id == 0) {
       id = data_count.length + 1;
     }
