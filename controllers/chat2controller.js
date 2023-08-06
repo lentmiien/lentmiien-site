@@ -187,7 +187,7 @@ exports.post = (req, res) => {
       threadid: id,
     });
     // Connect to ChatGPT and get response, then add to entries_to_save
-    const response = await chatGPT(messages);
+    const response = await chatGPT(messages, req.body.model);
     if (response) {
       const user_index = entries_to_save.length - 1;
       entries_to_save[user_index].tokens = response.usage.prompt_tokens;

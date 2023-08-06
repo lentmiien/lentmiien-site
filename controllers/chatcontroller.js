@@ -168,7 +168,7 @@ exports.post = (req, res) => {
       threadid: id,
     });
     // Connect to ChatGPT and get response, then add to entries_to_save
-    const response = await chatGPT(messages);
+    const response = await chatGPT(messages, 'gpt-3.5-turbo');
     if (response) {
       entries_to_save.push({
         title: req.body.title,
