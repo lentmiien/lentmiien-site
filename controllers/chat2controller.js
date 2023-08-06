@@ -116,7 +116,7 @@ exports.index = (req, res) => {
       chat_context = chat_hist[0].content;
     }
 
-    res.render('chat', { usage, chat_list, chat_hist, chat_id, chat_title, chat_context, chat_model });
+    res.render('chat2', { usage, chat_list, chat_hist, chat_id, chat_title, chat_context, chat_model });
   });
 };
 
