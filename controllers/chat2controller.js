@@ -189,6 +189,8 @@ exports.post = (req, res) => {
     // Connect to ChatGPT and get response, then add to entries_to_save
     const response = await chatGPT(messages);
     if (response) {
+      const user_index = entries_to_save.length - 1;
+      entries_to_save[user_index].tokens = response.usage.prompt_tokens;
       entries_to_save.push({
         title: req.body.title,
         username: req.user.name,
@@ -196,7 +198,7 @@ exports.post = (req, res) => {
         model: req.body.model,
         content: response.choices[0].message.content,
         created: new Date(),
-        tokens: response.usage.total_tokens,
+        tokens: response.usage.completion_tokens,
         threadid: id,
       });
       // Save to database
