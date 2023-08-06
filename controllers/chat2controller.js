@@ -130,7 +130,7 @@ req.body.message //
 */
 exports.post = (req, res) => {
   let id = parseInt(req.body.id);
-  ChatModel.find().then(async (data_count) => {
+  Chat2Model.find().then(async (data_count) => {
     if (id == 0) {
       id = data_count.length + 1;
     }
@@ -202,11 +202,11 @@ exports.post = (req, res) => {
         threadid: id,
       });
       // Save to database
-      ChatModel.collection.insertMany(entries_to_save);
-      setTimeout(() => res.redirect(`/chat?id=${id}`), 100);
+      Chat2Model.collection.insertMany(entries_to_save);
+      setTimeout(() => res.redirect(`/chat2?id=${id}`), 100);
     } else {
       console.log('Failed to get a response from ChatGPT.');
-      res.redirect(`/chat`);
+      res.redirect(`/chat2`);
     }
   });
   // Load current database for given threadid
