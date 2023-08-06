@@ -603,9 +603,8 @@ exports.add_transaction_post = async (req, res) => {
     tags: req.body.tags
   };
   const add_entry = new TransactionDBModel(data);
-  add_entry.save((err, entry) => {
-    res.render('add_transaction', {new_accounts, new_categories, sort_categories, tags, businesses, account_lookup, category_lookup, category_lookup_rev, input_network, entry});
-  });
+  await add_entry.save();
+  res.render('add_transaction', {new_accounts, new_categories, sort_categories, tags, businesses, account_lookup, category_lookup, category_lookup_rev, input_network, entry: add_entry});
 };
 
 exports.manage_accounts = async (req, res) => {
