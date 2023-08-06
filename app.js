@@ -89,6 +89,9 @@ app.use('/mypage', isAuthenticated, mypageRouter);
 const chatRouter = require('./routes/chat');
 app.use('/chat', isAuthenticated, chatRouter);
 
+const chat2Router = require('./routes/chat2');
+app.use('/chat2', isAuthenticated, chat2Router);
+
 const gptdocumentRouter = require('./routes/gptdocument');
 app.use('/gptdocument', isAuthenticated, gptdocumentRouter);
 

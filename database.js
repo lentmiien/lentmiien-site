@@ -22,6 +22,7 @@ const UseraccountModel = require('./models/useraccount');
 const ArticleModel = require('./models/article');
 // ChatGPT
 const ChatModel = require('./models/chat');
+const Chat2Model = require('./models/chat2');
 // GPT Document
 const DocumentModel = require('./models/document');
 const TextnodeModel = require('./models/textnode');
@@ -41,6 +42,7 @@ module.exports = {
   UseraccountModel,
   ArticleModel,
   ChatModel,
+  Chat2Model,
   DocumentModel,
   TextnodeModel,
   AccountModel,
