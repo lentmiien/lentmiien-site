@@ -35,7 +35,7 @@ async function QueryChatGPT(messages, title, username) {
   });
 
   // Connect to ChatGPT and get response, then add to entries_to_save
-  const response = await chatGPT(messages);
+  const response = await chatGPT(messages, 'gpt-3.5-turbo');
   if (response) {
     entries_to_save.push({
       title: `DOC [${title}]`,
@@ -194,7 +194,7 @@ exports.generate_text_node = (req, res) => {
       threadid: id,
     });
     // Connect to ChatGPT and get response, then add to entries_to_save
-    const response = await chatGPT(messages);
+    const response = await chatGPT(messages, 'gpt-3.5-turbo');
     if (response) {
       entries_to_save.push({
         title: `DOC [${title}]`,
