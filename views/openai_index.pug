@@ -1,0 +1,23 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      form(action="/openai/upload_json", method="post", enctype="multipart/form-data") 
+        label(for="json") OpenAI conversations JSON file
+        input#json.form-control(type="file", name="json")
+        input.btn.btn-primary(type="submit", value="Upload")
+  .row 
+    .col 
+      input#filter.form-control(type="text", name="filter")
+      if pdata.length == 0
+        h2 No data...
+      else
+        each d in pdata 
+          .openai_conversation 
+            h2= d.title
+            each m in d.messages 
+              div(class=`${m.role}`)
+                b= m.role
+                hr
+                div.openai_content!= m.content

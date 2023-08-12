@@ -1,5 +1,6 @@
 require('dotenv').config();
 
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -7,6 +8,25 @@ const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const expressSession = require('express-session');
 const bcrypt = require('bcryptjs');
+
+// Clear temporary folder
+function clearDirectory(directory) {
+  if (fs.existsSync(directory)) {
+      fs.readdirSync(directory).forEach((file) => {
+          const currentPath = path.join(directory, file);
+          if (fs.lstatSync(currentPath).isDirectory()) {
+              // Recurse if directory
+              clearDirectory(currentPath);
+              fs.rmdirSync(currentPath);
+          } else {
+              // Remove file
+              fs.unlinkSync(currentPath);
+          }
+      });
+  }
+}
+const TEMP_DIR = path.join(__dirname, 'tmp_data');
+clearDirectory(TEMP_DIR);
 
 // Require necessary database models
 const { UseraccountModel } = require('./database');
@@ -91,6 +111,9 @@ app.use('/chat', isAuthenticated, chatRouter);
 
 const chat2Router = require('./routes/chat2');
 app.use('/chat2', isAuthenticated, chat2Router);
+
+const openaiRouter = require('./routes/openai');
+app.use('/openai', isAuthenticated, openaiRouter);
 
 const gptdocumentRouter = require('./routes/gptdocument');
 app.use('/gptdocument', isAuthenticated, gptdocumentRouter);
