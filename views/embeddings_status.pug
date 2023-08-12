@@ -1,0 +1,19 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2 Embeddings status 
+      p= `Last cached ${count} entries at ${time}`
+      hr
+  .row 
+    .col 
+      a.btn.btn-primary(href="/embedding/update") Update embeddings and recache
+      hr
+  .row 
+    .col 
+      h2 Query the embedding database 
+      form(action="/embedding/query", method="post") 
+        label(for="query") Any freetext question
+        input#query.form-control(type="text", name="query")
+        input.btn.btn-primary(type="submit", value="Submit")

@@ -3,5 +3,7 @@ extends layout
 block content
   .row
     .col
-      h2 Processing data 
-      p Please wait for about 2-3 minutes
+      h2 Updating and recaching embeddings 
+      p The process can take several minutes depending on how much new data there is, but you can continue working as normal, just don't start any new updates or recaching for awhile, and please keep in mind that new data will only show up after the update is done.
+      if is_updating 
+        b Please wait a little longer...

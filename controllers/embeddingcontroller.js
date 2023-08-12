@@ -1,15 +1,31 @@
-const { embedding } = require('../utils/ChatGPT');
+const { chatGPT, embedding } = require('../utils/ChatGPT');
 
 // Require necessary database models
 const { ChatModel, Chat2Model, OpenaichatModel, EmbeddingModel } = require('../database');
 
-exports.index = async (req, res) => {
-  res.render('embedding_wait');
+let cached_embeddings = null;
+let cache_ts = new Date(0);
+let is_updating = false;
 
-  const embeddings = await EmbeddingModel.find();
+async function CacheEmbeddings() {
+  cached_embeddings = await EmbeddingModel.find();
+  cache_ts = new Date();
+}
+
+exports.index = (req, res) => {
+  res.render('embeddings_status', {count: cached_embeddings ? cached_embeddings.length : 0, time: cache_ts});
+}
+
+exports.update = async (req, res) => {
+  res.render('embedding_wait', {is_updating});
+  if (is_updating) return;
+
+  is_updating = true;
+
+  await CacheEmbeddings();
   const database_id_lookup = [];
-  for (let i = 0; i < embeddings.length; i++) {
-    database_id_lookup.push(embeddings[i].database_id);
+  for (let i = 0; i < cached_embeddings.length; i++) {
+    database_id_lookup.push(cached_embeddings[i].database_id);
   }
 
   const chat = await ChatModel.find();
@@ -32,8 +48,6 @@ exports.index = async (req, res) => {
           tokens: response.usage.total_tokens,
         });
       }
-
-      await sleep(20);
     }
   }
 
@@ -52,8 +66,6 @@ exports.index = async (req, res) => {
           tokens: response.usage.total_tokens,
         });
       }
-
-      await sleep(20);
     }
   }
 
@@ -72,26 +84,22 @@ exports.index = async (req, res) => {
           tokens: response.usage.total_tokens,
         });
       }
-
-      await sleep(20);
     }
   }
-
-  console.log(`Saving ${embeddings_to_save.length} embeddings!`);
   
-  // Save to database
+  // Save to database and recache embeddings
   if (embeddings_to_save.length > 0) {
-    EmbeddingModel.collection.insertMany(embeddings_to_save);
+    await EmbeddingModel.collection.insertMany(embeddings_to_save);
+    await CacheEmbeddings();
   }
+
+  is_updating = false;
 };
 
-/*
-  database: { type: String, required: true },
-  database_id: { type: String, required: true },
-  embedding: { type: [Number], required: true },
-  tokens: { type: Number, required: true },
-*/
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+exports.query = (req, res) => {
+  // Generate embedding for query
+  // Find 5 most similar embeddings in embedding database
+  // Fetch the chat conversations for the results in previous step
+  // Send the 5 most similar texts together with query to ChatGPT (only use the 5 texts, NOT the chat conversations)
+  // Return the ChatGPT response and the chat conversations to the user
+};
