@@ -26,7 +26,7 @@ const embedding = async (text, model) => {
     });
     return response.data;
   } catch (error) {
-    console.error(`Error while calling ChatGPT API: ${error}`);
+    console.error(`Error while calling Embedding API: ${error}`);
     return null;
   }
 };
