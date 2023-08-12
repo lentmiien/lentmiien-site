@@ -17,4 +17,21 @@ const chatGPT = async (messages, model) => {
   }
 };
 
-module.exports = chatGPT;
+// text-embedding-ada-002
+const embedding = async (text, model) => {
+  try {
+    const response = await openai.createEmbedding({
+      input: text,
+      model,
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error while calling ChatGPT API: ${error}`);
+    return null;
+  }
+};
+
+module.exports = {
+  chatGPT,
+  embedding,
+};

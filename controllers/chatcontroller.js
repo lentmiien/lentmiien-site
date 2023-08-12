@@ -1,4 +1,4 @@
-const chatGPT = require('../utils/ChatGPT');
+const { chatGPT } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
 // Require necessary database models

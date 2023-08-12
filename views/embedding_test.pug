@@ -1,0 +1,9 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2 Input
+      p= text
+      h2 Output
+      pre= JSON.stringify(response, null, 2)

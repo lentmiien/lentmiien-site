@@ -115,6 +115,9 @@ app.use('/chat2', isAuthenticated, chat2Router);
 const openaiRouter = require('./routes/openai');
 app.use('/openai', isAuthenticated, openaiRouter);
 
+const embeddingRouter = require('./routes/embedding');
+app.use('/embedding', isAuthenticated, embeddingRouter);
+
 const gptdocumentRouter = require('./routes/gptdocument');
 app.use('/gptdocument', isAuthenticated, gptdocumentRouter);
 
