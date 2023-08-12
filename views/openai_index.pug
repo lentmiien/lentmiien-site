@@ -21,7 +21,6 @@ block content
             h2= d.title
             each m in d.messages 
               div(class=`${m.role}`)
-                b= m.role
-                hr
-                div.openai_content!= m.content
+                .openai_content!= m.content
+                .fotter= `Role: ${m.role}, Date: ${m.created}`
   script(src="openai_filter.js") 
