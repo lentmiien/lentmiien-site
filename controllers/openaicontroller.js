@@ -12,8 +12,8 @@ exports.index = async (req, res) => {
 
   const data = await OpenaichatModel.find();
 
-  // TODO: preprocess data, to group chats from same conversation
-  //       and sort on created/updated dates
+  // preprocess data, to group chats from same conversation
+  // and sort on created/updated dates
   const pdata = [];
   const id_lookup = [];
 
@@ -26,6 +26,9 @@ exports.index = async (req, res) => {
         content: marked.parse(d.content),
         created: d.created,
       });
+      if (d.created > pdata[index].last_updated) {
+        pdata[index].last_updated = d.created;
+      }
     } else {
       id_lookup.push(d.thread_id);
       pdata.push({
@@ -39,8 +42,25 @@ exports.index = async (req, res) => {
           }
         ],
         id: d.thread_id,
+        last_updated: d.created,
       });
     }
+  });
+
+  // Sort messages in each conversation
+  for (let i = 0; i < pdata.length; i++) {
+    pdata[i].messages.sort((a,b) => {
+      if (a.created < b.created) return -1;
+      if (a.created > b.created) return 1;
+      return 0;
+    });
+  }
+
+  // Sort conversations
+  pdata.sort((a,b) => {
+    if (a.last_updated > b.last_updated) return -1;
+    if (a.last_updated < b.last_updated) return 1;
+    return 0;
   });
 
   res.render('openai_index', { pdata });

@@ -3,13 +3,16 @@ extends layout
 block content
   .row 
     .col 
+      h1 Upload data
       form(action="/openai/upload_json", method="post", enctype="multipart/form-data") 
         label(for="json") OpenAI conversations JSON file
         input#json.form-control(type="file", name="json")
         input.btn.btn-primary(type="submit", value="Upload")
   .row 
     .col 
-      input#filter.form-control(type="text", name="filter")
+      h1 Browse content
+      label(for="filter") Filter on word
+      input#filter.form-control(type="text", name="filter", onkeyup="filter(this)")
       if pdata.length == 0
         h2 No data...
       else
@@ -21,3 +24,4 @@ block content
                 b= m.role
                 hr
                 div.openai_content!= m.content
+  script(src="openai_filter.js") 
