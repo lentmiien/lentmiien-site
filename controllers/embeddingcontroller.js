@@ -3,6 +3,12 @@ const { chatGPT, embedding } = require('../utils/ChatGPT');
 // Require necessary database models
 const { ChatModel, Chat2Model, OpenaichatModel, EmbeddingModel } = require('../database');
 
+const db = {
+  ChatModel,
+  Chat2Model,
+  OpenaichatModel,
+};
+
 let cached_embeddings = null;
 let cache_ts = new Date(0);
 let is_updating = false;
@@ -96,10 +102,123 @@ exports.update = async (req, res) => {
   is_updating = false;
 };
 
-exports.query = (req, res) => {
-  // Generate embedding for query
-  // Find 5 most similar embeddings in embedding database
-  // Fetch the chat conversations for the results in previous step
-  // Send the 5 most similar texts together with query to ChatGPT (only use the 5 texts, NOT the chat conversations)
-  // Return the ChatGPT response and the chat conversations to the user
+exports.query = async (req, res) => {
+  if (cached_embeddings && cached_embeddings.length > 0) {
+    // Generate embedding for query
+    const response = await embedding(req.body.query, "text-embedding-ada-002");
+    
+    // Find 10 most similar embeddings in embedding database
+    const texts = await findSimilarTexts(response.data[0].embedding);
+
+    // Fetch the chat conversations for the results in previous step
+    const chat_texts = [];
+    for (let i = 0; i < texts.length; i++) {
+      const entry = await db[texts[i].database].find({_id: texts[i].database_id});
+      chat_texts.push(entry[0]);
+    }
+    const conversations = [];
+    for (let i = 0; i < texts.length; i++) {
+      if (texts[i].database == "OpenaichatModel") {
+        const entries = await db[texts[i].database].find({thread_id: chat_texts[i].thread_id});
+        conversations.push(entries);
+      } else {
+        const entries = await db[texts[i].database].find({threadid: chat_texts[i].threadid});
+        conversations.push(entries);
+      }
+    }
+
+    // Send the 10 most similar texts together with query to ChatGPT (only use the 10 texts, NOT the chat conversations)
+    const id = (await Chat2Model.count()) + 1;
+    const messages = [];
+    const entries_to_save = [];
+    let token_counter = 0;
+    const ts = Date.now();
+    for (let i = 0; i < chat_texts.length; i++) {
+      messages.push({
+        role: 'system',
+        content: chat_texts[i].content,
+      });
+      entries_to_save.push({
+        title: req.body.title,
+        username: req.user.name,
+        role: 'system',
+        model: i == 0 ? "text-embedding-ada-002" : req.body.model,
+        content: chat_texts[i].content,
+        created: new Date(ts + i),
+        tokens: i == 0 ? response.usage.total_tokens : 0,
+        threadid: id,
+      });
+      token_counter += texts[i].tokens;
+    }
+    // Add query message
+    messages.push({
+      role: 'user',
+      content: req.body.query,
+    });
+    entries_to_save.push({
+      title: req.body.title,
+      username: req.user.name,
+      role: 'user',
+      model: req.body.model,
+      content: req.body.query,
+      created: new Date(ts + 10),
+      tokens: 0,
+      threadid: id,
+    });
+    // Select model based on token count
+    let selected_model = req.body.model;
+    if (selected_model == "gpt-3.5-turbo" && token_counter > 3000) {
+      selected_model = "gpt-3.5-turbo-16k";
+    }
+    if (selected_model == "gpt-3.5-turbo-16k" && token_counter > 15000) {
+      selected_model = "gpt-4-32k";
+    }
+    if (selected_model == "gpt-4" && token_counter > 7000) {
+      selected_model = "gpt-4-32k";
+    }
+    // Connect to ChatGPT and get response, then add to entries_to_save
+    const gpt_response = await chatGPT(messages, selected_model);
+    if (gpt_response) {
+      const user_index = entries_to_save.length - 1;
+      entries_to_save[user_index].tokens = gpt_response.usage.prompt_tokens;
+      entries_to_save.push({
+        title: req.body.title,
+        username: req.user.name,
+        role: 'assistant',
+        model: selected_model,
+        content: gpt_response.choices[0].message.content,
+        created: new Date(ts + 11),
+        tokens: gpt_response.usage.completion_tokens,
+        threadid: id,
+      });
+      // Save to database
+      Chat2Model.collection.insertMany(entries_to_save);
+
+      // Return the ChatGPT response and the chat conversations to the user
+      res.render("embedding_query", {query: req.body.query, answer: gpt_response.choices[0].message.content, refs: chat_texts, conversations});
+    } else {
+      console.log('Failed to get a response from ChatGPT.');
+      res.redirect(`/embedding`);
+    }
+  } else {
+    res.redirect('/embedding');
+  }
 };
+
+function cosineSimilarity(vecA, vecB) {
+  const dotProduct = vecA.reduce((acc, val, i) => acc + val * vecB[i], 0);
+  const magnitudeA = Math.sqrt(vecA.reduce((acc, val) => acc + val * val, 0));
+  const magnitudeB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+
+async function findSimilarTexts(queryEmbedding) {
+  const similarities = cached_embeddings.map(e => ({
+    database: e.database,
+    database_id: e.database_id,
+    similarity: cosineSimilarity(queryEmbedding, e.embedding),
+    tokens: e.tokens,
+  }));
+
+  return similarities.sort((a, b) => b.similarity - a.similarity).slice(0, 10);
+}

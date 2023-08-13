@@ -14,6 +14,12 @@ block content
     .col 
       h2 Query the embedding database 
       form(action="/embedding/query", method="post") 
+        label(for="title") Title
+        input#title.form-control(type="text", name="title", required)
+        label(for="model") Select a model
+        select#model.form-control(name="model") 
+          option(value="gpt-3.5-turbo") GPT 3.5 Turbo
+          option(value="gpt-4") GPT 4
         label(for="query") Any freetext question
-        input#query.form-control(type="text", name="query")
+        input#query.form-control(type="text", name="query", required)
         input.btn.btn-primary(type="submit", value="Submit")

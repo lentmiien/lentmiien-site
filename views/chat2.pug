@@ -48,7 +48,7 @@ block content
             input.btn.btn-primary(type="submit", value="Send")
         #chatwindow 
           - let i = chat_hist.length - 1
-          while i > 0
+          while i >= 0
             div(class=`${chat_hist[i].role}`)
               .message!= chat_hist[i].content
               .fotter= `Role: ${chat_hist[i].role}, Model: ${chat_hist[i].model}, Tokens: ${chat_hist[i].tokens}`

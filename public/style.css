@@ -25,6 +25,14 @@
   margin: 5px;
 }
 
+.system {
+  border: 1px dashed darkgray;
+  background-color: rgb(220, 220, 220);
+  border-radius: 5px;
+  padding: 10px;
+  margin: 5px;
+}
+
 .fotter {
   border-top: 1px solid darkblue;
   color: rgb(100, 100, 100);
