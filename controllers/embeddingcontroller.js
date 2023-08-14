@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+
 const { chatGPT, embedding } = require('../utils/ChatGPT');
 
 // Require necessary database models
@@ -9,13 +12,28 @@ const db = {
   OpenaichatModel,
 };
 
-let cached_embeddings = null;
+let cached_embeddings = require('../cache/embedding.json');
 let cache_ts = new Date(0);
 let is_updating = false;
 
 async function CacheEmbeddings() {
   cached_embeddings = await EmbeddingModel.find();
   cache_ts = new Date();
+
+  // Convert the object to a JSON string
+  const jsonString = JSON.stringify(cached_embeddings);
+
+  // Construct the output path relative to this script's location
+  const outputPath = path.join(__dirname, '../cache/embedding.json');
+
+  // Save the JSON string to a file
+  fs.writeFile(outputPath, jsonString, (err) => {
+    if (err) {
+        console.error('Error writing file:', err);
+    } else {
+        console.log('File saved successfully!');
+    }
+  });
 }
 
 exports.index = (req, res) => {
