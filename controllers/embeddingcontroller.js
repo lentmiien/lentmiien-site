@@ -37,7 +37,7 @@ async function CacheEmbeddings() {
 }
 
 exports.index = (req, res) => {
-  res.render('embeddings_status', {count: cached_embeddings ? cached_embeddings.length : 0, time: cache_ts});
+  res.render('embeddings_status', {count: cached_embeddings.length, time: cache_ts});
 }
 
 exports.update = async (req, res) => {
@@ -46,15 +46,14 @@ exports.update = async (req, res) => {
 
   is_updating = true;
 
-  await CacheEmbeddings();
   const database_id_lookup = [];
   for (let i = 0; i < cached_embeddings.length; i++) {
     database_id_lookup.push(cached_embeddings[i].database_id);
   }
 
-  const chat = await ChatModel.find();
-  const chat2 = await Chat2Model.find();
-  const openaichat = await OpenaichatModel.find();
+  const chat = await ChatModel.find({role: 'assistant'});
+  const chat2 = await Chat2Model.find({role: 'assistant'});
+  const openaichat = await OpenaichatModel.find({role: 'assistant'});
   const embeddings_to_save = [];
 
   // ChatModel
