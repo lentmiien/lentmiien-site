@@ -168,21 +168,6 @@ exports.query = async (req, res) => {
       });
       token_counter += texts[i].tokens;
     }
-    // Add query message
-    messages.push({
-      role: 'user',
-      content: req.body.query,
-    });
-    entries_to_save.push({
-      title: req.body.title,
-      username: req.user.name,
-      role: 'user',
-      model: req.body.model,
-      content: req.body.query,
-      created: new Date(ts + 10),
-      tokens: 0,
-      threadid: id,
-    });
     // Select model based on token count
     let selected_model = req.body.model;
     if (selected_model == "gpt-3.5-turbo" && token_counter > 3000) {
@@ -194,6 +179,21 @@ exports.query = async (req, res) => {
     if (selected_model == "gpt-4" && token_counter > 7000) {
       selected_model = "gpt-4-32k";
     }
+    // Add query message
+    messages.push({
+      role: 'user',
+      content: req.body.query,
+    });
+    entries_to_save.push({
+      title: req.body.title,
+      username: req.user.name,
+      role: 'user',
+      model: selected_model,
+      content: req.body.query,
+      created: new Date(ts + 10),
+      tokens: 0,
+      threadid: id,
+    });
     // Connect to ChatGPT and get response, then add to entries_to_save
     const gpt_response = await chatGPT(messages, selected_model);
     if (gpt_response) {
