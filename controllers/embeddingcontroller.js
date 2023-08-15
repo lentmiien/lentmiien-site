@@ -45,7 +45,7 @@ exports.update = async (req, res) => {
   if (is_updating) return;
 
   is_updating = true;
-  CacheEmbeddings(); // Need to start by caching the current embeddings, in case there are newer data in database, so that no duplicates are saved
+  await CacheEmbeddings(); // Need to start by caching the current embeddings, in case there are newer data in database, so that no duplicates are saved
 
   const database_id_lookup = [];
   for (let i = 0; i < cached_embeddings.length; i++) {
