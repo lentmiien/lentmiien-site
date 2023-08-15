@@ -77,6 +77,7 @@ exports.index = (req, res) => {
           // Calculate cost [gpt-3.5-turbo-16k	$0.003 / 1K tokens  $0.004 / 1K tokens]
           // Calculate cost [gpt-4	            $0.03  / 1K tokens  $0.06  / 1K tokens]
           // Calculate cost [gpt-4-32k	        $0.06  / 1K tokens  $0.12  / 1K tokens]
+          // Calculate cost [Ada v2	            $0.0001/ 1K tokens]
           let multiplier = 1;
           if (d.model == 'gpt-3.5-turbo' && d.role == 'user') multiplier = 0.0015;
           if (d.model == 'gpt-3.5-turbo' && d.role == 'assistant') multiplier = 0.002;
@@ -86,6 +87,7 @@ exports.index = (req, res) => {
           if (d.model == 'gpt-4' && d.role == 'assistant') multiplier = 0.06;
           if (d.model == 'gpt-4-32k' && d.role == 'user') multiplier = 0.06;
           if (d.model == 'gpt-4-32k' && d.role == 'assistant') multiplier = 0.12;
+          if (d.model == 'text-embedding-ada-002' && d.role == 'system') multiplier = 0.0001;
           usage[key].cost += d.tokens * multiplier / 1000;
         }
       }
@@ -112,7 +114,9 @@ exports.index = (req, res) => {
     // Do some final updates
     if (chat_hist.length > 0) {
       chat_title = chat_hist[chat_hist.length - 1].title;
-      chat_model = chat_hist[chat_hist.length - 1].model;
+      if (chat_hist[chat_hist.length - 1].model.indexOf('gpt-4') == 0) {
+        chat_model = 'gpt-4';
+      }
       chat_context = chat_hist[0].content;
     }
 
@@ -147,6 +151,27 @@ exports.post = (req, res) => {
     const ts_1 = Date.now() - 2000;
     const ts_2 = ts_1 + 1000;
 
+    // Approximate number of tokens to last 2 messages, and hold a buffer of 1000 tokens to max
+    let approximate_tokens = 0;
+    if (data.length > 0) {
+      approximate_tokens += data[data.length-1].tokens;
+      approximate_tokens += data[data.length-2].tokens;
+    } else {
+      approximate_tokens += utils.estimateTokens(req.body.system);
+    }
+    approximate_tokens += utils.estimateTokens(req.body.message);
+    // Update model as necessary (eg. gpt-3.5-turbo => gpt-3.5-turbo-16k)
+    let model_to_use = req.body.model;
+    if (approximate_tokens > 3000 && model_to_use == "gpt-3.5-turbo") {
+      model_to_use = 'gpt-3.5-turbo-16k';
+    }
+    if (approximate_tokens > 15000 && model_to_use == "gpt-3.5-turbo-16k") {
+      model_to_use = 'gpt-4-32k';
+    }
+    if (approximate_tokens > 7000 && model_to_use == "gpt-4") {
+      model_to_use = 'gpt-4-32k';
+    }
+
     // If a new chat, start by adding system message
     if (data.length == 0) {
       messages.push({
@@ -157,7 +182,7 @@ exports.post = (req, res) => {
         title: req.body.title,
         username: req.user.name,
         role: 'system',
-        model: req.body.model,
+        model: model_to_use,
         content: req.body.system,
         created: new Date(ts_1),
         tokens: 0,
@@ -180,22 +205,23 @@ exports.post = (req, res) => {
       title: req.body.title,
       username: req.user.name,
       role: 'user',
-      model: req.body.model,
+      model: model_to_use,
       content: req.body.message,
       created: new Date(ts_2),
       tokens: 0,
       threadid: id,
     });
     // Connect to ChatGPT and get response, then add to entries_to_save
-    const response = await chatGPT(messages, req.body.model);
+    const response = await chatGPT(messages, model_to_use);
     if (response) {
       const user_index = entries_to_save.length - 1;
       entries_to_save[user_index].tokens = response.usage.prompt_tokens;
+      console.log(`Approximated tokens: ${approximate_tokens}; Actual tokens: ${response.usage.prompt_tokens}; Error: ${approximate_tokens - response.usage.prompt_tokens}`)
       entries_to_save.push({
         title: req.body.title,
         username: req.user.name,
         role: 'assistant',
-        model: req.body.model,
+        model: model_to_use,
         content: response.choices[0].message.content,
         created: new Date(),
         tokens: response.usage.completion_tokens,
