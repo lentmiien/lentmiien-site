@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { chatGPT, embedding } = require('../utils/ChatGPT');
+const utils = require('../utils/utils');
 
 // Require necessary database models
 const { ChatModel, Chat2Model, OpenaichatModel, EmbeddingModel } = require('../database');
@@ -168,6 +169,7 @@ exports.query = async (req, res) => {
       });
       token_counter += texts[i].tokens;
     }
+    token_counter += utils.estimateTokens(req.body.query);
     // Select model based on token count
     let selected_model = req.body.model;
     if (selected_model == "gpt-3.5-turbo" && token_counter > 3000) {
@@ -198,6 +200,7 @@ exports.query = async (req, res) => {
     const gpt_response = await chatGPT(messages, selected_model);
     if (gpt_response) {
       const user_index = entries_to_save.length - 1;
+      console.log(`Approximated tokens: ${token_counter}; Actual tokens: ${response.usage.prompt_tokens}; Error: ${token_counter - response.usage.prompt_tokens}`)
       entries_to_save[user_index].tokens = gpt_response.usage.prompt_tokens;
       entries_to_save.push({
         title: req.body.title,
