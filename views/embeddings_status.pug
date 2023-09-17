@@ -20,6 +20,11 @@ block content
         select#model.form-control(name="model") 
           option(value="gpt-3.5-turbo") GPT 3.5 Turbo
           option(value="gpt-4") GPT 4
-        label(for="query") Any freetext question
+        label(for="query") Any freetext query
         input#query.form-control(type="text", name="query", required)
         input.btn.btn-primary(type="submit", value="Submit")
+      hr
+      form(action="/embedding/find", method="post") 
+        label(for="find") Any freetext query
+        input#find.form-control(type="text", name="find", required)
+        input.btn.btn-primary(type="submit", value="Find")

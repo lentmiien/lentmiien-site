@@ -226,6 +226,37 @@ exports.query = async (req, res) => {
   }
 };
 
+exports.find = async (req, res) => {
+  if (cached_embeddings && cached_embeddings.length > 0) {
+    // Generate embedding for query
+    const response = await embedding(req.body.find, "text-embedding-ada-002");
+    
+    // Find 10 most similar embeddings in embedding database
+    const texts = await findSimilarTexts(response.data[0].embedding);
+
+    // Fetch the chat conversations for the results in previous step
+    const chat_texts = [];
+    for (let i = 0; i < texts.length; i++) {
+      const entry = await db[texts[i].database].find({_id: texts[i].database_id});
+      chat_texts.push(entry[0]);
+    }
+    const conversations = [];
+    for (let i = 0; i < texts.length; i++) {
+      if (texts[i].database == "OpenaichatModel") {
+        const entries = await db[texts[i].database].find({thread_id: chat_texts[i].thread_id});
+        conversations.push(entries);
+      } else {
+        const entries = await db[texts[i].database].find({threadid: chat_texts[i].threadid});
+        conversations.push(entries);
+      }
+    }
+
+    res.render("embedding_find", {query: req.body.find, refs: chat_texts, conversations});
+  } else {
+    res.redirect('/embedding');
+  }
+};
+
 function cosineSimilarity(vecA, vecB) {
   const dotProduct = vecA.reduce((acc, val, i) => acc + val * vecB[i], 0);
   const magnitudeA = Math.sqrt(vecA.reduce((acc, val) => acc + val * val, 0));

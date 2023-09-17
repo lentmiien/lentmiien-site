@@ -1,0 +1,17 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2 Query 
+      p= query
+      h2 Results 
+      each ref, i in refs 
+        div 
+          hr
+          p= ref.content
+          hr
+          b Chat content
+          br
+          pre= JSON.stringify(conversations[i], null, 2)
+          hr

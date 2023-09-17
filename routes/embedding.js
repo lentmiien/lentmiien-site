@@ -8,5 +8,6 @@ const controller = require('../controllers/embeddingcontroller');
 router.get('/', controller.index);
 router.get('/update', controller.update);
 router.post('/query', controller.query);
+router.post('/find', controller.find);
 
 module.exports = router;
