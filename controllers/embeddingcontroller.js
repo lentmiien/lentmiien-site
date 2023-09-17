@@ -244,14 +244,22 @@ exports.find = async (req, res) => {
     for (let i = 0; i < texts.length; i++) {
       if (texts[i].database == "OpenaichatModel") {
         const entries = await db[texts[i].database].find({thread_id: chat_texts[i].thread_id});
-        conversations.push(entries);
+        conversations.push(entries.sort((a,b) => {
+          if (a.created < b.created) return -1;
+          if (a.created > b.created) return 1;
+          return 0;
+        }));
       } else {
         const entries = await db[texts[i].database].find({threadid: chat_texts[i].threadid});
-        conversations.push(entries);
+        conversations.push(entries.sort((a,b) => {
+          if (a.created < b.created) return -1;
+          if (a.created > b.created) return 1;
+          return 0;
+        }));
       }
     }
 
-    res.render("embedding_find", {query: req.body.find, refs: chat_texts, conversations});
+    res.render("embedding_find", {query: req.body.find, refs: chat_texts, conversations, embedding_result: texts});
   } else {
     res.redirect('/embedding');
   }

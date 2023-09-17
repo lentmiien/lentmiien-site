@@ -9,9 +9,11 @@ block content
       each ref, i in refs 
         div 
           hr
+          p= `Similarity score: ${Math.round(embedding_result[i].similarity * 10000)/100}%`
           p= ref.content
           hr
           b Chat content
           br
-          pre= JSON.stringify(conversations[i], null, 2)
+          each msg in conversations[i]
+            div(class=`${msg.role}`)= msg.content
           hr
