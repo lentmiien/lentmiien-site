@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const marked = require('marked');
 
 const { chatGPT, embedding } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
@@ -215,8 +216,15 @@ exports.query = async (req, res) => {
       // Save to database
       Chat2Model.collection.insertMany(entries_to_save);
 
+      // Run marked on texts to display
+      chat_texts.forEach(d => d.content = marked.parse(d.content));
+      conversations.forEach(d => {
+        d.forEach(e => e.content = marked.parse(e.content));
+      });
+      const answer = marked.parse(gpt_response.choices[0].message.content);
+
       // Return the ChatGPT response and the chat conversations to the user
-      res.render("embedding_query", {query: req.body.query, answer: gpt_response.choices[0].message.content, refs: chat_texts, conversations});
+      res.render("embedding_query", {query: req.body.query, answer, refs: chat_texts, conversations});
     } else {
       console.log('Failed to get a response from ChatGPT.');
       res.redirect(`/embedding`);
@@ -258,6 +266,12 @@ exports.find = async (req, res) => {
         }));
       }
     }
+
+    // Run marked on texts to display
+    chat_texts.forEach(d => d.content = marked.parse(d.content));
+    conversations.forEach(d => {
+      d.forEach(e => e.content = marked.parse(e.content));
+    });
 
     res.render("embedding_find", {query: req.body.find, refs: chat_texts, conversations, embedding_result: texts});
   } else {

@@ -10,10 +10,10 @@ block content
         div 
           hr
           p= `Similarity score: ${Math.round(embedding_result[i].similarity * 10000)/100}%`
-          p= ref.content
+          p!= ref.content
           hr
           b Chat content
           br
           each msg in conversations[i]
-            div(class=`${msg.role}`)= msg.content
+            div(class=`${msg.role}`)!= msg.content
           hr

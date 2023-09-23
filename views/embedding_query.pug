@@ -6,12 +6,10 @@ block content
       h2 Query 
       p= query
       h2 Response 
-      p= answer
+      p!= answer
       h2 References 
       each ref in refs 
         div 
           hr
-          p= ref.content
+          p!= ref.content
           hr
-      h2 Chats 
-      pre= JSON.stringify(conversations, null, 2)

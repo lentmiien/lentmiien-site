@@ -1,3 +1,4 @@
+const marked = require('marked');
 const { chatGPT } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
@@ -48,20 +49,11 @@ exports.index = (req, res) => {
 
         // Generate chat_hist
         if (d.threadid == chat_id) {
-          let pp_content = '';
-          const parts = d.content.split('```');
-          for (let i = 0; i < parts.length; i++) {
-            if (i % 2 == 0) {
-              pp_content += parts[i].split('\n').join('<br>');
-            } else {
-              pp_content += `<pre onclick="CopyCode(this)">${parts[i]}</pre>`;
-            }
-          }
           chat_hist.push({
             title: d.title,
             role: d.role,
             model: d.model,
-            content: pp_content,
+            content: marked.parse(d.content),
             date: d.created,
             tokens: d.tokens,
           });
