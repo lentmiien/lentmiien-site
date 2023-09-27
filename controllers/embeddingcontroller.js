@@ -170,7 +170,7 @@ exports.query = async (req, res) => {
       });
       token_counter += texts[i].tokens;
     }
-    token_counter += utils.estimateTokens(req.body.query);
+    token_counter += response.usage.total_tokens;//utils.estimateTokens(req.body.query);
     // Select model based on token count
     let selected_model = req.body.model;
     if (selected_model == "gpt-3.5-turbo" && token_counter > 3000) {
