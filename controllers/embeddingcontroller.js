@@ -201,7 +201,7 @@ exports.query = async (req, res) => {
     const gpt_response = await chatGPT(messages, selected_model);
     if (gpt_response) {
       const user_index = entries_to_save.length - 1;
-      console.log(`Approximated tokens: ${token_counter}; Actual tokens: ${response.usage.prompt_tokens}; Error: ${token_counter - response.usage.prompt_tokens}`)
+      console.log(`Approximated tokens: ${token_counter}; Actual tokens: ${gpt_response.usage.prompt_tokens}; Error: ${token_counter - gpt_response.usage.prompt_tokens}`)
       entries_to_save[user_index].tokens = gpt_response.usage.prompt_tokens;
       entries_to_save.push({
         title: req.body.title,
