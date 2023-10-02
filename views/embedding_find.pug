@@ -10,11 +10,11 @@ block content
         div 
           hr
           p= `Similarity score: ${Math.round(embedding_result[i].similarity * 10000)/100}%`
-          if embedding_result[i].db === "ChatModel"
+          if embedding_result[i].database === "ChatModel"
             a.btn.btn-link(href=`/chat?id=${ref.threadid}`) Open chat
-          if embedding_result[i].db === "Chat2Model"
+          if embedding_result[i].database === "Chat2Model"
             a.btn.btn-link(href=`/chat2?id=${ref.threadid}`) Open chat
-          if embedding_result[i].db === "OpenaichatModel"
+          if embedding_result[i].database === "OpenaichatModel"
             a.btn.btn-link(href=`/openai`) OpenAI chats
             i (Recommended to copy some piece of the text to paste in filter box)
           p!= ref.content
