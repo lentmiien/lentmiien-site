@@ -1,0 +1,13 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      h2 Budget data tester 
+  .row 
+    .col 
+      #output
+  .row 
+    .col 
+      pre#database= JSON.stringify(data, null, 2)
+  script(src="/datatest_budget.js") 

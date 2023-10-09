@@ -36,6 +36,12 @@ html(lang='en')
                     a.dropdown-item(href="/accounting") Budget
                     hr
                     a.dropdown-item(href="/chat") [OLD] ChatGPT
+              if name === 'Lennart'
+                li.nav-item.dropdown
+                  a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Test
+                  ul.dropdown-menu
+                    li
+                      a.dropdown-item(href="/accounting/datatest") Budget test
           if loggedIn == false
             a.btn.btn-outline-secondary(href="/login") Log in
     .container

@@ -17,6 +17,9 @@ router.post('/api/categories', controller.manage_categories_api);
 router.get('/history', controller.history);
 router.get('/delete/:id', controller.delete);
 
+// TEST
+router.get('/datatest', controller.datatest);
+
 // For deleting test data
 router.get('/delete_all', controller.delete_all);
 

@@ -770,6 +770,18 @@ exports.delete = async (req, res) => {
   res.redirect("/accounting/history");
 };
 
+exports.datatest = async (req, res) => {
+  const old_transactions = await TransactionModel.find({},{},{ sort: { transaction_date: -1 } });
+  const new_transactions = await TransactionDBModel.find({},{},{ sort: { date: -1 } });
+  const old_accounts = await AccountModel.find();
+  const new_accounts = await AccountDBModel.find();
+  const old_categories = await TypecategoryModel.find();
+  const new_categories = await CategoryDBModel.find();
+  const old_tags = await TypetagModel.find();
+
+  res.render('datatest_budget', { data: {old_transactions, new_transactions, old_accounts, new_accounts, old_categories, new_categories, old_tags} });
+};
+
 exports.delete_all = async (req, res) => {
   // await TransactionDBModel.deleteMany();
   // await AccountDBModel.deleteMany();
