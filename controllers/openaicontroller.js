@@ -4,7 +4,6 @@ const marked = require('marked');
 // Import dependencis
 const { OpenaichatModel } = require('../database');
 const { GetModels, AddModel, DeleteModel } = require('../utils/ChatGPT');
-const { deleteModel } = require('mongoose');
 
 exports.index = async (req, res) => {
   // Show JSON upload form (file exported from OpenAI)
