@@ -1,4 +1,4 @@
-const { chatGPT } = require('../utils/ChatGPT');
+const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
 const { ChatModel, DocumentModel, TextnodeModel } = require('../database');
@@ -37,6 +37,9 @@ async function QueryChatGPT(messages, title, username) {
   // Connect to ChatGPT and get response, then add to entries_to_save
   const response = await chatGPT(messages, 'gpt-3.5-turbo');
   if (response) {
+    // Save to API call log
+    await OpenAIAPICallLog(req.user.name, 'gpt-3.5-turbo', response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(messages), response.choices[0].message.content);
+
     entries_to_save.push({
       title: `DOC [${title}]`,
       username,
@@ -196,6 +199,9 @@ exports.generate_text_node = (req, res) => {
     // Connect to ChatGPT and get response, then add to entries_to_save
     const response = await chatGPT(messages, 'gpt-3.5-turbo');
     if (response) {
+      // Save to API call log
+      await OpenAIAPICallLog(req.user.name, 'gpt-3.5-turbo', response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(messages), response.choices[0].message.content);
+      
       entries_to_save.push({
         title: `DOC [${title}]`,
         username: req.user.name,

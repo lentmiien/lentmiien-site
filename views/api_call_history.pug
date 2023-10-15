@@ -1,0 +1,7 @@
+extends layout
+
+block content
+  h2 My API call history 
+  each history in myHistory 
+    div(style="border: 1px solid black; padding: 5px; margin: 5px;")
+      pre= JSON.stringify(history, null, 2)

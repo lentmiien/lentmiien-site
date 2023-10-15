@@ -73,6 +73,10 @@ const OpenAIAPICallLog = async (user_id, api_endpoint, input_token_count, output
   await entry_to_save.save();
 };
 
+const GetOpenAIAPICallHistory = async (user_id) => {
+  return (await OpenaicalllogDBModel.find({ user_id }));
+};
+
 const chatGPT = async (messages, model) => {
   try {
     const response = await openai.createChatCompletion({
@@ -107,4 +111,5 @@ module.exports = {
   GetModels,
   AddModel,
   DeleteModel,
+  GetOpenAIAPICallHistory,
 };

@@ -1,4 +1,4 @@
-const { chatGPT } = require('../utils/ChatGPT');
+const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
 // Require necessary database models
@@ -170,6 +170,9 @@ exports.post = (req, res) => {
     // Connect to ChatGPT and get response, then add to entries_to_save
     const response = await chatGPT(messages, 'gpt-3.5-turbo');
     if (response) {
+      // Save to API call log
+      await OpenAIAPICallLog(req.user.name, 'gpt-3.5-turbo', response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(messages), response.choices[0].message.content);
+
       entries_to_save.push({
         title: req.body.title,
         username: req.user.name,

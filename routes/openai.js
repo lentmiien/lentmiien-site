@@ -16,4 +16,6 @@ router.get('/manage', controller.manage_methods);
 router.post('/manage/add', controller.manage_methods_add);
 router.post('/manage/delete', controller.manage_methods_delete);
 
+router.get('/history', controller.get_call_history);
+
 module.exports = router;

@@ -1,5 +1,5 @@
 const marked = require('marked');
-const { chatGPT } = require('../utils/ChatGPT');
+const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
 // Require necessary database models
@@ -206,6 +206,9 @@ exports.post = (req, res) => {
     // Connect to ChatGPT and get response, then add to entries_to_save
     const response = await chatGPT(messages, model_to_use);
     if (response) {
+      // Save to API call log
+      await OpenAIAPICallLog(req.user.name, model_to_use, response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(messages), response.choices[0].message.content);
+      
       const user_index = entries_to_save.length - 1;
       entries_to_save[user_index].tokens = response.usage.prompt_tokens;
       console.log(`Approximated tokens: ${approximate_tokens}; Actual tokens: ${response.usage.prompt_tokens}; Error: ${approximate_tokens - response.usage.prompt_tokens}`)

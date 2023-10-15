@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const marked = require('marked');
 
-const { chatGPT, embedding } = require('../utils/ChatGPT');
+const { chatGPT, embedding, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
 // Require necessary database models
@@ -67,6 +67,9 @@ exports.update = async (req, res) => {
       const response = await embedding(text, "text-embedding-ada-002");
       
       if (response) {
+        // Save to API call log
+        await OpenAIAPICallLog(req.user.name, "text-embedding-ada-002", response.usage.total_tokens, 0, text, JSON.stringify(response.data[0].embedding));
+
         embeddings_to_save.push({
           database: "ChatModel",
           database_id: id_str,
@@ -85,6 +88,9 @@ exports.update = async (req, res) => {
       const response = await embedding(text, "text-embedding-ada-002");
       
       if (response) {
+        // Save to API call log
+        await OpenAIAPICallLog(req.user.name, "text-embedding-ada-002", response.usage.total_tokens, 0, text, JSON.stringify(response.data[0].embedding));
+
         embeddings_to_save.push({
           database: "Chat2Model",
           database_id: id_str,
@@ -103,6 +109,9 @@ exports.update = async (req, res) => {
       const response = await embedding(text, "text-embedding-ada-002");
       
       if (response) {
+        // Save to API call log
+        await OpenAIAPICallLog(req.user.name, "text-embedding-ada-002", response.usage.total_tokens, 0, text, JSON.stringify(response.data[0].embedding));
+
         embeddings_to_save.push({
           database: "OpenaichatModel",
           database_id: id_str,
@@ -126,6 +135,9 @@ exports.query = async (req, res) => {
   if (cached_embeddings && cached_embeddings.length > 0) {
     // Generate embedding for query
     const response = await embedding(req.body.query, "text-embedding-ada-002");
+
+    // Save to API call log
+    await OpenAIAPICallLog(req.user.name, "text-embedding-ada-002", response.usage.total_tokens, 0, req.body.query, JSON.stringify(response.data[0].embedding));
     
     // Find 10 most similar embeddings in embedding database
     const texts = await findSimilarTexts(response.data[0].embedding);
@@ -200,6 +212,9 @@ exports.query = async (req, res) => {
     // Connect to ChatGPT and get response, then add to entries_to_save
     const gpt_response = await chatGPT(messages, selected_model);
     if (gpt_response) {
+      // Save to API call log
+      await OpenAIAPICallLog(req.user.name, selected_model, gpt_response.usage.prompt_tokens, gpt_response.usage.completion_tokens, JSON.stringify(messages), gpt_response.choices[0].message.content);
+
       const user_index = entries_to_save.length - 1;
       console.log(`Approximated tokens: ${token_counter}; Actual tokens: ${gpt_response.usage.prompt_tokens}; Error: ${token_counter - gpt_response.usage.prompt_tokens}`)
       entries_to_save[user_index].tokens = gpt_response.usage.prompt_tokens;
@@ -238,6 +253,9 @@ exports.find = async (req, res) => {
   if (cached_embeddings && cached_embeddings.length > 0) {
     // Generate embedding for query
     const response = await embedding(req.body.find, "text-embedding-ada-002");
+
+    // Save to API call log
+    await OpenAIAPICallLog(req.user.name, "text-embedding-ada-002", response.usage.total_tokens, 0, req.body.find, JSON.stringify(response.data[0].embedding));
     
     // Find 10 most similar embeddings in embedding database
     const texts = await findSimilarTexts(response.data[0].embedding);

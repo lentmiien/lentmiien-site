@@ -3,7 +3,7 @@ const marked = require('marked');
 
 // Import dependencis
 const { OpenaichatModel } = require('../database');
-const { GetModels, AddModel, DeleteModel } = require('../utils/ChatGPT');
+const { GetModels, AddModel, DeleteModel, GetOpenAIAPICallHistory } = require('../utils/ChatGPT');
 
 exports.index = async (req, res) => {
   // Show JSON upload form (file exported from OpenAI)
@@ -200,3 +200,8 @@ exports.manage_methods_delete = async (req, res) => {
   await DeleteModel(req.body.id_to_delete);
   setTimeout(() => res.redirect('/openai/manage'), 150);
 }
+
+exports.get_call_history = async (req, res) => {
+  const myHistory = GetOpenAIAPICallHistory(req.user.name);
+  res.render('api_call_history', { myHistory });
+};
