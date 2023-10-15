@@ -1,0 +1,39 @@
+extends layout
+
+block content
+  h2 Manage Open AI API models 
+  hr
+  h3 Models 
+  each model in models 
+    div(style="border: 1px solid black; padding: 5px; margin: 5px;")
+      p 
+        b= model.model_name
+      p 
+        i= model.api_endpoint
+      p 
+        b Cost: 
+        span= `up $${model.input_1k_token_cost}/1k tokens, `
+        span= `down $${model.output_1k_token_cost}/1k tokens`
+      p 
+        b Type: 
+        span= `${model.model_type} (max ${model.max_tokens} tokens)`
+      form(action="/openai/manage/delete", method="post") 
+        input#id_to_delete(type="hidden", name="id_to_delete", value=`${model._id}`)
+        input.btn.btn-danger(type="submit", value="Delete model")
+  hr
+  h3 Add/Update model
+  p *Update if api_endpoint exists.
+  form(action="/openai/manage/add", method="post") 
+    label(for="model_name") Model name 
+    input#model_name.form-control(type="text", name="model_name")
+    label(for="api_endpoint") Open AI API model 
+    input#api_endpoint.form-control(type="text", name="api_endpoint")
+    label(for="input_1k_token_cost") Prompt cost for 1k tokens 
+    input#input_1k_token_cost.form-control(type="text", name="input_1k_token_cost")
+    label(for="output_1k_token_cost") Generate cost for 1k tokens 
+    input#output_1k_token_cost.form-control(type="text", name="output_1k_token_cost")
+    label(for="model_type") Model type (chat, instruct, embedding) 
+    input#model_type.form-control(type="text", name="model_type")
+    label(for="max_tokens") Max tokens for model 
+    input#max_tokens.form-control(type="number", name="max_tokens")
+    input.btn.btn-success(type="submit", value="Add/Update")

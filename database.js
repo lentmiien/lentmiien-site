@@ -38,6 +38,9 @@ const TypetagModel = require('./models/typetag');
 const AccountDBModel = require('./models/account_db');
 const CategoryDBModel = require('./models/category_db');
 const TransactionDBModel = require('./models/transaction_db');
+// OpenAI
+const OpenaicalllogDBModel = require('./models/openaicalllog');
+const OpenaimodelDBModel = require('./models/openaimodel');
 
 // Export models
 module.exports = {
@@ -56,4 +59,6 @@ module.exports = {
   AccountDBModel,
   CategoryDBModel,
   TransactionDBModel,
+  OpenaicalllogDBModel,
+  OpenaimodelDBModel,
 };

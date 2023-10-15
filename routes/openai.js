@@ -11,4 +11,9 @@ const controller = require('../controllers/openaicontroller');
 router.get('/', controller.index);
 router.post('/upload_json', upload.single('json'), controller.upload_json);
 
+/* Manage Open AI API models */
+router.get('/manage', controller.manage_methods);
+router.post('/manage/add', controller.manage_methods_add);
+router.post('/manage/delete', controller.manage_methods_delete);
+
 module.exports = router;

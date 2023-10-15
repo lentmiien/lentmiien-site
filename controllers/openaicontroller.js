@@ -1,8 +1,10 @@
 const fs = require('fs');
 const marked = require('marked');
 
-// Require necessary database models
+// Import dependencis
 const { OpenaichatModel } = require('../database');
+const { GetModels, AddModel, DeleteModel } = require('../utils/ChatGPT');
+const { deleteModel } = require('mongoose');
 
 exports.index = async (req, res) => {
   // Show JSON upload form (file exported from OpenAI)
@@ -184,3 +186,18 @@ exports.upload_json = (req, res) => {
 
   setTimeout(() => res.redirect('/openai'), 250);
 };
+
+exports.manage_methods = async (req, res) => {
+  const models = await GetModels();
+  res.render('openaimodels', { models });
+}
+
+exports.manage_methods_add = async (req, res) => {
+  await AddModel(req.body.model_name, req.body.api_endpoint, parseFloat(req.body.input_1k_token_cost), parseFloat(req.body.output_1k_token_cost), req.body.model_type, parseInt(req.body.max_tokens));
+  setTimeout(() => res.redirect('/openai/manage'), 150);
+}
+
+exports.manage_methods_delete = async (req, res) => {
+  await DeleteModel(req.body.id_to_delete);
+  setTimeout(() => res.redirect('/openai/manage'), 150);
+}
