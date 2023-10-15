@@ -202,6 +202,6 @@ exports.manage_methods_delete = async (req, res) => {
 }
 
 exports.get_call_history = async (req, res) => {
-  const myHistory = GetOpenAIAPICallHistory(req.user.name);
+  const myHistory = await GetOpenAIAPICallHistory(req.user.name);
   res.render('api_call_history', { myHistory });
 };
