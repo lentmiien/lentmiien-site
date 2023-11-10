@@ -1,5 +1,5 @@
 const { ArticleModel } = require('../database');
-const { tts } = require('../utils/ChatGPT');
+const { tts, ig } = require('../utils/ChatGPT');
 
 exports.mypage = (req, res) => {
   // Do something fun here, to show om mypage!
@@ -71,4 +71,9 @@ exports.delete_blogpost = (req, res) => {
 exports.speektome = async (req, res) => {
   const tts_file = await tts("Hello, my name is Lennart, and I created this website.");
   res.render("speektome", { tts_file });
+};
+
+exports.showtome = async (req, res) => {
+  const ig_file = await ig("A hotdog car");
+  res.render("showtome", { ig_file, prompt: "A hotdog car" });
 };

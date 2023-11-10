@@ -118,6 +118,24 @@ const tts = async (text) => {
   return `/mp3/${filename}`;
 };
 
+const ig = async (prompt) => {
+  const filename = `image${Date.now()}.png`;
+  const outputfile = path.resolve(`./public/img/${filename}`);
+  const image = await openai.images.generate({
+    model: "dall-e-3",
+    prompt,
+    n: 1,
+    quality: "hd",
+    response_format: "b64_json",
+    size: "1024x1024"
+  });
+  console.log(image);
+  const data = image.data[0].b64_json.replace(/^data:image\/\w+;base64,/, "");
+  const buffer = Buffer.from(data, 'base64');
+  await fs.promises.writeFile(outputfile, buffer);
+  return `/img/${filename}`;
+};
+
 module.exports = {
   OpenAIAPICallLog,
   chatGPT,
@@ -127,4 +145,5 @@ module.exports = {
   DeleteModel,
   GetOpenAIAPICallHistory,
   tts,
+  ig,
 };
