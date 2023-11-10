@@ -80,7 +80,7 @@ const GetOpenAIAPICallHistory = async (user_id) => {
 
 const chatGPT = async (messages, model) => {
   try {
-    const response = await openai.createChatCompletion({
+    const response = await openai.chat.completions.create({
       messages,
       model,
     });
@@ -94,7 +94,7 @@ const chatGPT = async (messages, model) => {
 // text-embedding-ada-002
 const embedding = async (text, model) => {
   try {
-    const response = await openai.createEmbedding({
+    const response = await openai.embeddings.create({
       input: text,
       model,
     });
