@@ -1,4 +1,5 @@
 const { ArticleModel } = require('../database');
+const { tts } = require('../utils/ChatGPT');
 
 exports.mypage = (req, res) => {
   // Do something fun here, to show om mypage!
@@ -65,4 +66,9 @@ exports.delete_blogpost = (req, res) => {
   ArticleModel.findByIdAndRemove(req.query.id).then(() => {
     setTimeout(() => res.redirect("/blog"), 100);
   });
+};
+
+exports.speektome = async (req, res) => {
+  const tts_file = await tts("Hello, my name is Lennart, and I created this website.");
+  res.render("speektome", { tts_file });
 };

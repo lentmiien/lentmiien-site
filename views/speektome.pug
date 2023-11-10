@@ -1,0 +1,5 @@
+extends layout
+
+block content
+  audio(controls)
+    source(src=`${tts_file}`, type="audio/mpeg")

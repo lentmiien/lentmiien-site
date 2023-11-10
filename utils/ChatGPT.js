@@ -1,10 +1,11 @@
 // Import dependencis
+const fs = require("fs");
+const path = require("path");
 const { OpenaicalllogDBModel, OpenaimodelDBModel } = require('../database');
-const { Configuration, OpenAIApi } = require('openai');
+const { OpenAI } = require('openai');
 
 // Set your OpenAI API key
-const configuration = new Configuration({ apiKey: process.env.OPENAI_API_KEY });
-const openai = new OpenAIApi(configuration);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Open AI API models
 const GetModels = async (type) => {
@@ -104,6 +105,19 @@ const embedding = async (text, model) => {
   }
 };
 
+const tts = async (text) => {
+  const filename = `sound${Date.now()}.mp3`;
+  const outputfile = path.resolve(`./public/mp3/${filename}`);
+  const mp3 = await openai.audio.speech.create({
+    model: "tts-1-hd",
+    voice: "nova",
+    input: text,
+  });
+  const buffer = Buffer.from(await mp3.arrayBuffer());
+  await fs.promises.writeFile(outputfile, buffer);
+  return `/mp3/${filename}`;
+};
+
 module.exports = {
   OpenAIAPICallLog,
   chatGPT,
@@ -112,4 +126,5 @@ module.exports = {
   AddModel,
   DeleteModel,
   GetOpenAIAPICallHistory,
+  tts,
 };
