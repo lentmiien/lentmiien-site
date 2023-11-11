@@ -74,6 +74,48 @@ const OpenAIAPICallLog = async (user_id, api_endpoint, input_token_count, output
   await entry_to_save.save();
 };
 
+const OpenAIAPICallLog_ig = async (user_id, api_endpoint, size, quality, prompt, output_image) => {
+  // Get costs;
+  /*
+  Prices
+           | 1024x1024 | 1792x1024 / 1024x1792
+  ---------+-----------+----------------------
+  standard |     $0.04 |     $0.08
+  ---------+-----------+----------------------
+  hd       |     $0.08 |     $0.12
+  ---------+-----------+----------------------
+  */
+  const costs = {
+    standard: {
+      "1024x1024": 0.04,
+      "1024x1792": 0.08,
+      "1792x1024": 0.08,
+    },
+    hd: {
+      "1024x1024": 0.08,
+      "1024x1792": 0.12,
+      "1792x1024": 0.12,
+    },
+  };
+  const cost = costs[quality][size];
+  const s = size.split('x');
+
+  // New entry
+  const entry_to_save = new OpenaicalllogDBModel({
+    timestamp: new Date(),
+    user_id,
+    api_endpoint,
+    input_token_count: parseInt(s[0]),
+    output_token_count: parseInt(s[1]),
+    input_text_or_embedding: prompt,
+    output_text_or_embedding: output_image,
+    total_request_cost: cost,
+  });
+
+  // Save to database
+  await entry_to_save.save();
+};
+
 const GetOpenAIAPICallHistory = async (user_id) => {
   return (await OpenaicalllogDBModel.find({ user_id }));
 };
@@ -123,16 +165,16 @@ const ig = async (prompt) => {
   const outputfile = path.resolve(`./public/img/${filename}`);
   const image = await openai.images.generate({
     model: "dall-e-3",
-    prompt,
+    prompt, // MAX 4000 character
     n: 1,
-    quality: "hd",
+    quality: "standard", // "standard" or "hd"
     response_format: "b64_json",
-    size: "1024x1024"
+    size: "1024x1024", // "1024x1024" or "1792x1024" or "1024x1792"
   });
-  console.log(image);
   const data = image.data[0].b64_json.replace(/^data:image\/\w+;base64,/, "");
   const buffer = Buffer.from(data, 'base64');
   await fs.promises.writeFile(outputfile, buffer);
+  await OpenAIAPICallLog_ig("Lennart", "dall-e-3", "1024x1024", "standard", image.data[0].revised_prompt || prompt, filename);
   return `/img/${filename}`;
 };
 
