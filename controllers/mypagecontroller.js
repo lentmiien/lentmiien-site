@@ -74,6 +74,6 @@ exports.speektome = async (req, res) => {
 };
 
 exports.showtome = async (req, res) => {
-  const ig_file = await ig("A hotdog car", "standard", "1024x1024");
+  const ig_file = await ig("A rainbow colored diamond, in the depths of a deep cave", "standard", "1024x1024");
   res.render("showtome", { ig_file, prompt: "A hotdog car" });
 };

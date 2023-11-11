@@ -2,3 +2,5 @@ node_modules
 tmp_data
 cache
 .env
+public/img
+public/mp3
