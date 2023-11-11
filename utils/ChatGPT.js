@@ -160,21 +160,27 @@ const tts = async (text) => {
   return `/mp3/${filename}`;
 };
 
-const ig = async (prompt) => {
+const ig = async (prompt, quality, size) => {
+  const q_val = ["standard", "hd"];
+  const s_val = ["1024x1024", "1792x1024", "1024x1792"];
+  if (prompt.length > 4000 || q_val.indexOf(quality) == -1 || s_val.indexOf(size) == -1) {
+    return 'invalid input';
+  }
+
   const filename = `image${Date.now()}.png`;
   const outputfile = path.resolve(`./public/img/${filename}`);
   const image = await openai.images.generate({
     model: "dall-e-3",
     prompt, // MAX 4000 character
     n: 1,
-    quality: "standard", // "standard" or "hd"
+    quality, // "standard" or "hd"
     response_format: "b64_json",
-    size: "1024x1024", // "1024x1024" or "1792x1024" or "1024x1792"
+    size, // "1024x1024" or "1792x1024" or "1024x1792"
   });
   const data = image.data[0].b64_json.replace(/^data:image\/\w+;base64,/, "");
   const buffer = Buffer.from(data, 'base64');
   await fs.promises.writeFile(outputfile, buffer);
-  await OpenAIAPICallLog_ig("Lennart", "dall-e-3", "1024x1024", "standard", image.data[0].revised_prompt || prompt, filename);
+  await OpenAIAPICallLog_ig("Lennart", "dall-e-3", size, quality, image.data[0].revised_prompt || prompt, filename);
   return `/img/${filename}`;
 };
 
