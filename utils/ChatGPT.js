@@ -116,6 +116,35 @@ const OpenAIAPICallLog_ig = async (user_id, api_endpoint, size, quality, prompt,
   await entry_to_save.save();
 };
 
+const OpenAIAPICallLog_tts = async (user_id, api_endpoint, prompt, voice, output_mp3) => {
+  // Get costs;
+  /*
+  Prices
+  TTS	    $0.015 / 1K characters
+  TTS HD	$0.030 / 1K characters
+  */
+  const costs = {
+    "tts-1": 0.015,
+    "tts-1-hd": 0.03,
+  };
+  const cost = costs[api_endpoint] * prompt.length / 1000;
+
+  // New entry
+  const entry_to_save = new OpenaicalllogDBModel({
+    timestamp: new Date(),
+    user_id,
+    api_endpoint,
+    input_token_count: prompt.length,
+    output_token_count: 0,
+    input_text_or_embedding: `${voice}: ${prompt}`,
+    output_text_or_embedding: output_mp3,
+    total_request_cost: cost,
+  });
+
+  // Save to database
+  await entry_to_save.save();
+};
+
 const GetOpenAIAPICallHistory = async (user_id) => {
   return (await OpenaicalllogDBModel.find({ user_id }));
 };
@@ -147,16 +176,23 @@ const embedding = async (text, model) => {
   }
 };
 
-const tts = async (text) => {
+const tts = async (api_endpoint, text, voice) => {
+  const api_val = ["tts-1", "tts-1-hd"];
+  const v_val = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
+  if (text.length > 4096 || api_val.indexOf(api_endpoint) == -1 || v_val.indexOf(voice) == -1) {
+    return 'Invalid input'
+  }
+
   const filename = `sound${Date.now()}.mp3`;
   const outputfile = path.resolve(`./public/mp3/${filename}`);
   const mp3 = await openai.audio.speech.create({
-    model: "tts-1-hd",
-    voice: "nova",
+    model: api_endpoint,
+    voice,
     input: text,
   });
   const buffer = Buffer.from(await mp3.arrayBuffer());
   await fs.promises.writeFile(outputfile, buffer);
+  await OpenAIAPICallLog_tts("Lennart", api_endpoint, text, voice, filename)
   return `/mp3/${filename}`;
 };
 
