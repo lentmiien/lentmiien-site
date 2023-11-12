@@ -15,5 +15,6 @@ router.get('/delete_blogpost', controller.delete_blogpost);
 router.get('/speektome', controller.speektome);
 router.post('/speektome', controller.speektome_post);
 router.get('/showtome', controller.showtome);
+router.post('/showtome', controller.showtome_post);
 
 module.exports = router;

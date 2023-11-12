@@ -83,6 +83,12 @@ exports.speektome_post = async (req, res) => {
 };
 
 exports.showtome = async (req, res) => {
-  const ig_file = await ig("A rainbow colored diamond, in the depths of a deep cave", "standard", "1024x1024");
-  res.render("showtome", { ig_file, prompt: "A hotdog car" });
+  const file_list = fs.readdirSync(ImageDataFolder);
+  res.render("showtome", { ig_file: (req.query.file ? `/img/${req.query.file}` : null), file_list });
+};
+
+exports.showtome_post = async (req, res) => {
+  const file_list = fs.readdirSync(ImageDataFolder);
+  const ig_file = await ig(req.body.prompt, req.body.quality, req.body.size);
+  res.render("showtome", { ig_file, file_list });
 };
