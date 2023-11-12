@@ -5,7 +5,7 @@ const { OpenaicalllogDBModel, OpenaimodelDBModel } = require('../database');
 const { OpenAI } = require('openai');
 
 // Set your OpenAI API key
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID });
 
 // Open AI API models
 const GetModels = async (type) => {
@@ -155,7 +155,7 @@ const chatGPT = async (messages, model) => {
       messages,
       model,
     });
-    return response.data;
+    return response;
   } catch (error) {
     console.error(`Error while calling ChatGPT API: ${error}`);
     return null;
@@ -169,7 +169,7 @@ const embedding = async (text, model) => {
       input: text,
       model,
     });
-    return response.data;
+    return response;
   } catch (error) {
     console.error(`Error while calling Embedding API: ${error}`);
     return null;

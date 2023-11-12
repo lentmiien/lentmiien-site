@@ -69,6 +69,7 @@ exports.index = (req, res) => {
           // Calculate cost [gpt-3.5-turbo-16k	$0.003 / 1K tokens  $0.004 / 1K tokens]
           // Calculate cost [gpt-4	            $0.03  / 1K tokens  $0.06  / 1K tokens]
           // Calculate cost [gpt-4-32k	        $0.06  / 1K tokens  $0.12  / 1K tokens]
+          // Calculate cost [gpt-4-1106-preview $0.01  / 1K tokens  $0.03  / 1K tokens]
           // Calculate cost [Ada v2	            $0.0001/ 1K tokens]
           let multiplier = 1;
           if (d.model == 'gpt-3.5-turbo' && d.role == 'user') multiplier = 0.0015;
@@ -79,6 +80,8 @@ exports.index = (req, res) => {
           if (d.model == 'gpt-4' && d.role == 'assistant') multiplier = 0.06;
           if (d.model == 'gpt-4-32k' && d.role == 'user') multiplier = 0.06;
           if (d.model == 'gpt-4-32k' && d.role == 'assistant') multiplier = 0.12;
+          if (d.model == 'gpt-4-1106-preview' && d.role == 'user') multiplier = 0.01;
+          if (d.model == 'gpt-4-1106-preview' && d.role == 'assistant') multiplier = 0.03;
           if (d.model == 'text-embedding-ada-002' && d.role == 'system') multiplier = 0.0001;
           usage[key].cost += d.tokens * multiplier / 1000;
         }
@@ -154,14 +157,15 @@ exports.post = (req, res) => {
     approximate_tokens += utils.estimateTokens(req.body.message);
     // Update model as necessary (eg. gpt-3.5-turbo => gpt-3.5-turbo-16k)
     let model_to_use = req.body.model;
-    if (approximate_tokens > 3000 && model_to_use == "gpt-3.5-turbo") {
-      model_to_use = 'gpt-3.5-turbo-16k';
+    if (model_to_use == "gpt-3.5-turbo") {
+      if (approximate_tokens > 14000) {
+        model_to_use = 'gpt-4-1106-preview';
+      } else {
+        model_to_use = 'gpt-3.5-turbo-1106';
+      }
     }
-    if (approximate_tokens > 15000 && model_to_use == "gpt-3.5-turbo-16k") {
-      model_to_use = 'gpt-4-32k';
-    }
-    if (approximate_tokens > 7000 && model_to_use == "gpt-4") {
-      model_to_use = 'gpt-4-32k';
+    if (model_to_use == "gpt-4") {
+      model_to_use = 'gpt-4-1106-preview';
     }
 
     // If a new chat, start by adding system message
