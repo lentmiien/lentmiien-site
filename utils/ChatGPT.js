@@ -183,7 +183,7 @@ const tts = async (api_endpoint, text, voice) => {
     return 'Invalid input'
   }
 
-  const filename = `sound${Date.now()}.mp3`;
+  const filename = `sound-${Date.now()}-.mp3`;
   const outputfile = path.resolve(`./public/mp3/${filename}`);
   const mp3 = await openai.audio.speech.create({
     model: api_endpoint,
@@ -203,7 +203,7 @@ const ig = async (prompt, quality, size) => {
     return 'invalid input';
   }
 
-  const filename = `image${Date.now()}.png`;
+  const filename = `image-${Date.now()}-.png`;
   const outputfile = path.resolve(`./public/img/${filename}`);
   const image = await openai.images.generate({
     model: "dall-e-3",

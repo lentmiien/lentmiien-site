@@ -1,3 +1,6 @@
+const fs = require('fs');
+const SoundDataFolder = './public/mp3';
+const ImageDataFolder = './public/img';
 const { ArticleModel } = require('../database');
 const { tts, ig } = require('../utils/ChatGPT');
 
@@ -69,12 +72,14 @@ exports.delete_blogpost = (req, res) => {
 };
 
 exports.speektome = async (req, res) => {
-  res.render("speektome", { tts_file: null });
+  const file_list = fs.readdirSync(SoundDataFolder);
+  res.render("speektome", { tts_file: (req.query.file ? `/mp3/${req.query.file}` : null), file_list });
 };
 
 exports.speektome_post = async (req, res) => {
+  const file_list = fs.readdirSync(SoundDataFolder);
   const tts_file = await tts(req.body.model, req.body.text, req.body.voice);
-  res.render("speektome", { tts_file });
+  res.render("speektome", { tts_file, file_list });
 };
 
 exports.showtome = async (req, res) => {
