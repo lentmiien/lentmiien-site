@@ -1,5 +1,24 @@
 extends layout
 
 block content
-  audio(controls)
-    source(src=`${tts_file}`, type="audio/mpeg")
+  if tts_file
+    audio(controls)
+      source(src=`${tts_file}`, type="audio/mpeg")
+  hr
+  h2 Generate audio
+  form(action="/mypage/speektome", method="post") 
+    label(for="model") Model 
+    select#model.form-control(name="model") 
+      option(value="tts-1") Text-To-Speech 1
+      option(value="tts-1-hd") Text-To-Speech 1 HD
+    label(for="voice") Voice 
+    select#voice.form-control(name="voice") 
+      option(value="alloy") Alloy
+      option(value="echo") Echo
+      option(value="fable") Fable
+      option(value="onyx") Onyx
+      option(value="nova") Nova
+      option(value="shimmer") Shimmer
+    label(for="text") Text 
+    textarea#text.form-control(name="text", cols="30", rows="15")
+    input.btn.btn-primary(type="submit", value="Generate")

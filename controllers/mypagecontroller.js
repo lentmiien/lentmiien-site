@@ -69,7 +69,11 @@ exports.delete_blogpost = (req, res) => {
 };
 
 exports.speektome = async (req, res) => {
-  const tts_file = await tts("tts-1", "Once upon a time, in a land filled with lush green forests and deep blue lakes, there lived a young dinosaur named Dino. Dino was not very big, but he had a huge heart and an even bigger curiosity about the world around him.\n\nOne sunny morning, Dino decided to go on an adventure. He wanted to explore the forest and see what secrets it held. So, with a big smile on his face, he set off into the woods.\n\nAs Dino walked, he saw many amazing things. He saw birds with bright feathers flying high in the sky. He heard the rustling of leaves as tiny creatures scurried through the underbrush. And he even saw a family of bunnies hopping along a nearby path.\n\nBut the most exciting moment came when Dino reached a clearing and found a group of other young dinosaurs playing together. They were all different types and colors, and they were having so much fun. Dino was a little shy at first, but the other dinosaurs invited him to join their games.\n\nThey played dinosaur tag, where they chased each other around with roars of laughter. They had a jumping contest to see who could leap the highest. And they even played hide-and-seek among the giant trees.\n\nAs the sun began to set, Dino realized it was time to head back home. He said goodbye to his new friends and promised to come back soon for more adventures.\n\nDino returned home with a heart full of joy. He couldn't wait to tell his family about all the wonderful things he had seen and done. And as he fell asleep that night, he dreamt of all the adventures that were still waiting for him in the big, beautiful world.\n\nAnd so, Dino's big adventure had just begun.", "nova");
+  res.render("speektome", { tts_file: null });
+};
+
+exports.speektome_post = async (req, res) => {
+  const tts_file = await tts(req.body.model, req.body.text, req.body.voice);
   res.render("speektome", { tts_file });
 };
 

@@ -13,6 +13,7 @@ router.post('/post_blogpost', controller.post_blogpost);
 router.get('/delete_blogpost', controller.delete_blogpost);
 
 router.get('/speektome', controller.speektome);
+router.post('/speektome', controller.speektome_post);
 router.get('/showtome', controller.showtome);
 
 module.exports = router;
