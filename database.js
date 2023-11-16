@@ -23,6 +23,7 @@ const ArticleModel = require('./models/article');
 // ChatGPT
 const ChatModel = require('./models/chat');
 const Chat2Model = require('./models/chat2');
+const Chat3Model = require('./models/chat3');
 const OpenaichatModel = require('./models/openai_chat');
 const EmbeddingModel = require('./models/embedding');
 // GPT Document
@@ -48,6 +49,7 @@ module.exports = {
   ArticleModel,
   ChatModel,
   Chat2Model,
+  Chat3Model,
   OpenaichatModel,
   EmbeddingModel,
   DocumentModel,

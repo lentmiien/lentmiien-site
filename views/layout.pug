@@ -29,8 +29,7 @@ html(lang='en')
                   li
                     a.dropdown-item(href="/mypage") My page
                     a.dropdown-item(href="/mypage/blogpost") Write blog
-                    a.dropdown-item(href="/chat2") ChatGPT
-                    a.dropdown-item(href="/gptdocument") GPT document
+                    a.dropdown-item(href="/chat3") ChatGPT
                     a.dropdown-item(href="/openai") OpenAI database
                     a.dropdown-item(href="/openai/manage") Manage Open AI API models
                     a.dropdown-item(href="/openai/history") View my Open AI API usage history
@@ -38,14 +37,16 @@ html(lang='en')
                     a.dropdown-item(href="/accounting") Budget
                     hr
                     a.dropdown-item(href="/chat") [OLD] ChatGPT
-                    a.dropdown-item(href="/mypage/speektome") [TEST] Speek to me
-                    a.dropdown-item(href="/mypage/showtome") [TEST] Show to me
+                    a.dropdown-item(href="/chat2") [OLD] ChatGPT 2
+                    a.dropdown-item(href="/gptdocument") [OLD] GPT document
               if name === 'Lennart'
                 li.nav-item.dropdown
                   a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Test
                   ul.dropdown-menu
                     li
                       a.dropdown-item(href="/accounting/datatest") Budget test
+                      a.dropdown-item(href="/mypage/speektome") Speek to me
+                      a.dropdown-item(href="/mypage/showtome") Show to me
           if loggedIn == false
             a.btn.btn-outline-secondary(href="/login") Log in
     .container
