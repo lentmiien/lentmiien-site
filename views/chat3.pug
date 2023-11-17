@@ -2,6 +2,36 @@ extends layout
 
 block content
   pre= JSON.stringify(chat_data, null, 2)
+  .row(style="height: 70vh;overflow: scroll;")
+    .col 
+      .row 
+        .col-1
+        .col-11
+          p(style="border: 1px solid green;margin: 3px;padding: 2px;") User query
+      .row 
+        .col-11
+          p(style="border: 1px solid blue;margin: 3px;padding: 2px;") Chatbot response 
+        .col-1
+          button.btn.btn-primary ...
+      .row 
+        .col-1 
+          button.btn.btn-primary <
+          span 1/2
+          button.btn.btn-primary >
+        .col-11
+          p(style="border: 1px solid green;margin: 3px;padding: 2px;") User response
+      .row 
+        .col-11
+          p(style="border: 1px solid blue;margin: 3px;padding: 2px;") Chatbot response 2
+        .col-1
+          button.btn.btn-primary ...
+  .row
+    .col-11
+      textarea#input.form-control(name="input", cols="30", rows="10") 
+    .col-1
+      button.btn.btn-primary T
+      br
+      button.btn.btn-primary S
   //- .row 
   //-   .col 
   //-     - const keys = Object.keys(usage)

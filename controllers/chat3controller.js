@@ -7,7 +7,7 @@ const { Chat3Model } = require('../database');
 
 exports.index = async (req, res) => {
   // Load current database
-  const chat_data = await Chat2Model.find();
+  const chat_data = await Chat3Model.find();
   // .then((data) => {
   //   // Format data and render index page (chat list and chat window)
   //   const chat_list = [];
