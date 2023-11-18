@@ -84,6 +84,11 @@ app.all('*', (req, res, next) => {
     res.locals.loggedIn = true;
     res.locals.name = req.user.name;
   }
+  if (process.env.HIDE_GTAG && process.env.HIDE_GTAG === "YES") {
+    res.locals.gtag = false;
+  } else {
+    res.locals.gtag = true;
+  }
 
   next();
 });
