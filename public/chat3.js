@@ -7,6 +7,7 @@ const new_conversation_id = parseInt(document.getElementById("new_conversation_i
   StartMessageID: { type: String, required: true, max: 100 },
   PreviousMessageID: { type: String, required: true, max: 100 },
   ContentText: { type: String, required: true },
+  HTMLText: ContentText converted to HTML
   ContentTokenCount: { type: Number, required: true },
   SystemPromptText: { type: String, required: true },
   UserOrAssistantFlag: { type: Boolean, required: true },

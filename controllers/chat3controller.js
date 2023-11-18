@@ -106,7 +106,13 @@ exports.index = async (req, res) => {
   });
   // DEBUG END
 
+  // Prepare this_conversation
   const this_conversation = chat_data.filter(d => d.ConversationID === this_conversation_id);
+  for (let i = 0; i < this_conversation; i++) {
+    this_conversation[i].HTMLText = marked.parse(this_conversation[i].ContentText);
+  }
+
+  // Detect all conversations
   const chats = [];
   const unique_ids = [];
   chat_data.forEach(d => {
