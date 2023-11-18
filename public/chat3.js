@@ -1,6 +1,6 @@
-const this_conversation = JSON.parse(document.getElementById("this_conversation"));
-const chats = JSON.parse(document.getElementById("chats"));
-const new_conversation_id = parseInt(document.getElementById("new_conversation_id"));
+const this_conversation = JSON.parse(document.getElementById("this_conversation").innerText);
+const chats = JSON.parse(document.getElementById("chats").innerText);
+const new_conversation_id = parseInt(document.getElementById("new_conversation_id").innerText);
 
 /* DATABASE STRUCTURE
   ConversationID: { type: Number, required: true },
@@ -41,24 +41,47 @@ chats.sort((a,b) => {
 });
 
 // Populate chat history and chat heads menus
-function PopulateMenus() {}
+function PopulateMenus() {
+  // Fill in conversation history
+  // Fill in conversation heads
+  // Display initial chat thread
+  Populate(this_conversation.length-1);
+}
 
 // Populate #chatmessages
 function Populate(head_index) {
-  /* USER message
-  .row 
-    .col-1.centered-container
-      button.btn.btn-primary 1/2 <- hide this button if 1/1
-    .col-11
-      p.user My 3 year son brin...
-  */
-  /* ASSISTANT message
-  .row 
-    .col-11
-      p.assistant It's quite common for toddlers atte...
-    .col-1.centered-container
-      button.btn.btn-primary ...
-  */
+  if (head_index < 0) return;// NEW conversation
+
+  // Delete current conversation
+  const chatmessages_element = document.getElementById("chatmessages");
+  chatmessages_element.innerHTML = "";
+
+  const thread = [];
+  for (let c = head_index; c != -1; c = this_conversation[c].PreviousMessageID === "root" ? -1 : id_to_index_map[this_conversation[c].PreviousMessageID]) {
+    thread.push({
+      text: this_conversation[c].ContentText,
+      html: this_conversation[c].HTMLText,
+      user: this_conversation[c].UserOrAssistantFlag,
+      prev_count: this_conversation[c].PreviousMessageID === "root" ? 1 : refer_count[id_to_index_map[this_conversation[c].PreviousMessageID]],
+    });
+  }
+
+  console.log(thread);
+  console.log(this_conversation);
+
+  // Render output
+  for (let i = thread.length - 1; i >= 0; i--) {
+    if (thread[i].user) {
+      // User message
+      chatmessages_element.innerHTML += `<div class="row"><div class="col-1 centered-container">${thread[i].prev_count > 1 ? '<button class="btn btn-primary">1/' + thread[i].prev_count + '</button>' : ''}</div><div class="col-11"><div class="user">${thread[i].html}</div></div></div>`;
+    } else {
+      // Chatbot message
+      chatmessages_element.innerHTML += `<div class="row"><div class="col-11"><div class="assistant">${thread[i].html}</div></div><div class="col-1 centered-container"><button class="btn btn-primary">...</button></div></div>`;
+    }
+  }
+
+  // After displaying, scroll to bottom
+  ScrollToBottomOfConversation();
 }
 
 function ScrollToBottomOfConversation() {
@@ -67,3 +90,5 @@ function ScrollToBottomOfConversation() {
     scroll_elements[i].scrollTo(0, scroll_elements[i].scrollHeight);
   }
 }
+
+PopulateMenus();
