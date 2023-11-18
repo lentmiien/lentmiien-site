@@ -92,3 +92,19 @@
   padding: 5px;
   border-radius: 5px;
 }
+
+/* Chat 3 */
+
+.chat-history {
+  height: 70vh;
+}
+
+.scroll-end {
+  overflow: scroll;
+}
+
+.centered-container {
+  display: flex;
+  justify-content: center; /* Center horizontally */
+  align-items: center; /* Center vertically */
+}

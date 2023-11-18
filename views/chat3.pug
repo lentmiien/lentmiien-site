@@ -1,83 +1,24 @@
 extends layout
 
+//- PUG INPUT:
+//- this_conversation    All messages with given conversation ID
+//- chats                Summary of all conversations, with conversation ID, title, and last message
+//- new_conversation_id  If new conversation is generated, this id should be used as conversation ID
+
 block content
-  pre= JSON.stringify(chat_data, null, 2)
-  .row(style="height: 70vh;overflow: scroll;")
-    .col 
-      .row 
-        .col-1
-        .col-11
-          p(style="border: 1px solid green;margin: 3px;padding: 2px;") User query
-      .row 
-        .col-11
-          p(style="border: 1px solid blue;margin: 3px;padding: 2px;") Chatbot response 
-        .col-1
-          button.btn.btn-primary ...
-      .row 
-        .col-1 
-          button.btn.btn-primary 1/2
-        .col-11
-          p(style="border: 1px solid green;margin: 3px;padding: 2px;") User response
-      .row 
-        .col-11
-          p(style="border: 1px solid blue;margin: 3px;padding: 2px;") Chatbot response 2
-        .col-1
-          button.btn.btn-primary ...
-  .row
+  .row.chat-history.scroll-end
+    #chatmessages.col 
+  .row.chat-input
     .col-11
-      textarea#input.form-control(name="input", cols="30", rows="10") 
+      textarea#input.form-control.chat-textarea(name="input", cols="30", rows="5") 
     .col-1
       button.btn.btn-primary T
       br
       button.btn.btn-primary S
-  //- .row 
-  //-   .col 
-  //-     - const keys = Object.keys(usage)
-  //-     table.table.table-striped 
-  //-       thead 
-  //-         tr 
-  //-           each key in keys 
-  //-             th= usage[key].date_label
-  //-       tbody 
-  //-         tr 
-  //-           each key in keys 
-  //-             td= usage[key].tokens
-  //-         tr 
-  //-           each key in keys 
-  //-             td= `$${usage[key].cost}`            
-  //- .row 
-  //-   .col-2 
-  //-     #chat-history
-  //-       a.btn.btn-outline-secondary(href="/chat2") New chat
-  //-       each entry in chat_list
-  //-         a.btn.btn-outline-secondary.mt-1(href=`/chat2?id=${entry.id}`)= entry.title
-  //-   .col-10 
-  //-     form(action="/chat2/post", method="post") 
-  //-       input#id(type="hidden", name="id", value=`${chat_id}`)
-  //-       .input-group.mb-1
-  //-         span.input-group-text Title
-  //-         input#title.form-control(type="text", name="title", placeholder="Title", value=`${chat_title}`)
-  //-       .input-group.mb-1
-  //-         span.input-group-text Model
-  //-         select#model.form-control(name="model")
-  //-           if chat_model.indexOf('gpt-3.5-turbo') == 0
-  //-             option(value="gpt-3.5-turbo") GPT-3.5-TURBO 
-  //-             option(value="gpt-4") GPT-4 
-  //-           else
-  //-             option(value="gpt-4") GPT-4 
-  //-             option(value="gpt-3.5-turbo") GPT-3.5-TURBO 
-  //-       .input-group.mb-1
-  //-         span.input-group-text Context
-  //-         input#system.form-control(type="text", name="system", placeholder="Context message, Ex: You are a helpful assistant.", value=`${chat_context}`, readonly=chat_id > 0 ? true : false)
-  //-       div.input-group
-  //-         textarea#message.form-control(name="message")
-  //-         span.input-group-text
-  //-           input.btn.btn-primary(type="submit", value="Send")
-  //-       #chatwindow 
-  //-         - let i = chat_hist.length - 1
-  //-         while i >= 0
-  //-           div(class=`${chat_hist[i].role}`)
-  //-             .message!= chat_hist[i].content
-  //-             .fotter= `Role: ${chat_hist[i].role}, Model: ${chat_hist[i].model}, Tokens: ${chat_hist[i].tokens}`
-  //-           - i -= 1
-  //- script(src="/utils.js") 
+  hr
+  pre#this_conversation= JSON.stringify(this_conversation, null, 2)
+  hr
+  pre#chats= JSON.stringify(chats, null, 2)
+  hr
+  pre#new_conversation_id= new_conversation_id
+  script(src="/chat3.js") 
