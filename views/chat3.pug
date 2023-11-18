@@ -10,11 +10,33 @@ block content
     #chatmessages.col 
   .row.chat-input
     .col-11
-      textarea#input.form-control.chat-textarea(name="input", cols="30", rows="5") 
+      textarea#input.form-control.chat-textarea(name="input", cols="30", rows="5")
     .col-1
       button.btn.btn-primary T
       br
       button.btn.btn-primary S
+      br
+      button#openPopupBtn.btn.btn-danger POP
+  #popup.popup 
+    .popup-content 
+      span#closePopupBtn.close &times;
+      h2 Message tool
+      .row.chat-history.tool-scroll-end
+        #tool_chatmessages.col 
+      .row.chat-input
+        .col-3
+          label(for="tool_input_context") Context
+          textarea#tool_input_context.form-control.chat-textarea(name="tool_input_context", cols="30", rows="5")
+        .col-9
+          label(for="tool_input") Prompt
+          textarea#tool_input.form-control.chat-textarea(name="tool_input", cols="30", rows="5")
+      .row
+        .col
+          button.btn.btn-primary Send message
+          button.btn.btn-primary Create summary
+          button.btn.btn-primary Generate image
+          button.btn.btn-primary Text to speech
+          button.btn.btn-primary Generate KDB
   hr
   pre#this_conversation= JSON.stringify(this_conversation, null, 2)
   hr
