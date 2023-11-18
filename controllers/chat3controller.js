@@ -108,7 +108,7 @@ exports.index = async (req, res) => {
 
   // Prepare this_conversation
   const this_conversation = chat_data.filter(d => d.ConversationID === this_conversation_id);
-  for (let i = 0; i < this_conversation; i++) {
+  for (let i = 0; i < this_conversation.length; i++) {
     this_conversation[i].HTMLText = marked.parse(this_conversation[i].ContentText);
   }
 
