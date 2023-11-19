@@ -144,3 +144,8 @@
   text-decoration: none;
   cursor: pointer;
 }
+
+.button-container {
+  display: flex;
+  justify-content: space-between;
+}

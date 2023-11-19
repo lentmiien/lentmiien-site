@@ -2,7 +2,7 @@ const this_conversation = JSON.parse(document.getElementById("this_conversation"
 const chats = JSON.parse(document.getElementById("chats").innerText);
 const new_conversation_id = parseInt(document.getElementById("new_conversation_id").innerText);
 
-let current_head_index = null;
+let current_head_index = -1;
 
 /* DATABASE STRUCTURE
   ConversationID: { type: Number, required: true },
@@ -59,13 +59,26 @@ function PopulateMenus() {
 
 // Populate #chatmessages
 function Populate(head_index) {
-  if (head_index < 0) return;// NEW conversation
-
-  current_head_index = head_index;
-
   // Delete current conversation
   const chatmessages_element = document.getElementById("chatmessages");
   chatmessages_element.innerHTML = "";
+
+  if (head_index < 0) {
+    // NEW conversation, show context input
+    const label = document.createElement("label");
+    label.for = "new_context";
+    label.innerText = "Context";
+    const ta = document.createElement("textarea");
+    ta.id = "new_context";
+    ta.classList.add("form-control");
+    ta.value = "You are a helpful assistant.";
+    
+    chatmessages_element.append(label, ta);
+
+    return;
+  }
+
+  current_head_index = head_index;
 
   const thread = [];
   for (let c = head_index; c != -1; c = this_conversation[c].PreviousMessageID === "root" ? -1 : id_to_index_map[this_conversation[c].PreviousMessageID]) {
@@ -136,21 +149,15 @@ function ShowPopup(mid) {
   popup.style.display = "block";
 }
 
-// document.addEventListener("DOMContentLoaded", function() {
-//   // When the user clicks the button, open the popup
-//   btn.onclick = function() {
-//   }
-//   // When the user clicks on <span> (x), close the popup
-//   span.onclick = function() {
-//     popup.style.display = "none";
-//   }
-//   // When the user clicks anywhere outside of the popup, close it
-//   window.onclick = function(event) {
-//     if (event.target == popup) {
-//       popup.style.display = "none";
-//     }
-//   }
-// });
+function ClosePopup() {
+  popup.style.display = "none";
+}
+
+window.onclick = function(event) {
+  if (event.target == popup) {
+    popup.style.display = "none";
+  }
+}
 
 // Populate #tool_chatmessages
 function PopulateTool(mid) {
@@ -175,15 +182,15 @@ function PopulateTool(mid) {
   for (let i = thread.length - 1; i >= 0; i--) {
     if (thread[i].user) {
       // User message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="user">${thread[i].html}</div></div></div>`;
+      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="user"><input type="checkbox" data-id="${thread[i]._id}" name="msg">${thread[i].html}</div></div></div>`;
     } else {
       // Chatbot message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="assistant">${thread[i].html}</div></div></div>`;
+      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="assistant"><input type="checkbox" data-id="${thread[i]._id}" name="msg">${thread[i].html}</div></div></div>`;
     }
   }
 
   // After displaying, scroll to bottom
-  ScrollToBottomOfConversationTool();
+  setTimeout(ScrollToBottomOfConversationTool, 200);
 }
 
 function ScrollToBottomOfConversationTool() {
@@ -191,6 +198,9 @@ function ScrollToBottomOfConversationTool() {
   for (let i = 0; i < scroll_elements.length; i++) {
     scroll_elements[i].scrollTo(0, scroll_elements[i].scrollHeight);
   }
+
+  const popupContent = document.getElementsByClassName("popup-content")[0];
+  popupContent.scrollTo(0, popupContent.scrollHeight);
 }
 
 // API functions
@@ -198,8 +208,8 @@ function ScrollToBottomOfConversationTool() {
 // Send a new inquery, appending to the latest head in conversation
 async function Send() {
   const index = current_head_index;
-  const id = this_conversation[index]._id;
-  const context = this_conversation[index].SystemPromptText;
+  const id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
+  const context = (index >= 0 ? this_conversation[index].SystemPromptText : document.getElementById("new_context").value);
   const prompt = document.getElementById("input").value;
 
   // Set up message array

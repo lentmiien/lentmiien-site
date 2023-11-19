@@ -17,7 +17,7 @@ block content
       button.btn.btn-primary(onclick="Send()") S
   #popup.popup 
     .popup-content 
-      span#closePopupBtn.close &times;
+      span#closePopupBtn.close(onclick="ClosePopup()") &times;
       h2 Message tool
       b Conversation: 
       span#conversation_id= this_conversation.length > 0 ? this_conversation[0].ConversationID : "NEW"
@@ -33,12 +33,12 @@ block content
           label(for="tool_input") Prompt
           textarea#tool_input.form-control.chat-textarea(name="tool_input", cols="30", rows="5")
       .row
-        .col
+        .col.button-container
           button.btn.btn-primary Send message
-          button.btn.btn-primary Create summary
-          button.btn.btn-primary Generate image
-          button.btn.btn-primary Text to speech
-          button.btn.btn-primary Generate KDB
+          button.btn.btn-secondary Create summary
+          button.btn.btn-success Generate image
+          button.btn.btn-success Text to speech
+          button.btn.btn-warning Generate KDB
   hr
   pre#this_conversation= JSON.stringify(this_conversation, null, 2)
   hr

@@ -6,7 +6,7 @@ const utils = require('../utils/utils');
 const { Chat3Model } = require('../database');
 
 exports.index = async (req, res) => {
-  const this_conversation_id = req.query.id || 0;
+  const this_conversation_id = "id" in req.query ? parseInt(req.query.id) : -1;
   let new_conversation_id = 0;
 
   // Load current database
@@ -138,7 +138,7 @@ exports.index = async (req, res) => {
     }
   })
 
-  res.render("chat3", {this_conversation, chats, new_conversation_id});
+  res.render("chat3", {chatmode: true, this_conversation, chats, new_conversation_id});
 };
 
 exports.post = (req, res) => {
@@ -147,6 +147,10 @@ exports.post = (req, res) => {
   console.log(req.body);
 
   // TODO: make function
+  // Send to OpenAI API
+  // When get response, save prompt and response messages to database
+  // Also generate embedding for response, and save to embedding database
+  // Return _id of response entry in database to user (user side will reload page with the id)
 
   res.json({status: "OK"});
 };
