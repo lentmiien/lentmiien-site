@@ -27,14 +27,15 @@ block content
         #tool_chatmessages.col 
       .row.chat-input
         .col-3
+          input#tooltitle(type="text", name="tooltitle")
           label(for="tool_input_context") Context
-          textarea#tool_input_context.form-control.chat-textarea(name="tool_input_context", cols="30", rows="5")
+          textarea#tool_input_context.form-control.chat-textarea(name="tool_input_context", cols="30", rows="3")
         .col-9
           label(for="tool_input") Prompt
           textarea#tool_input.form-control.chat-textarea(name="tool_input", cols="30", rows="5")
       .row
         .col.button-container
-          button.btn.btn-primary Send message
+          button.btn.btn-primary(onclick="SendTool()") Send message
           button.btn.btn-secondary Create summary
           button.btn.btn-success Generate image
           button.btn.btn-success Text to speech

@@ -64,7 +64,12 @@ function Populate(head_index) {
   chatmessages_element.innerHTML = "";
 
   if (head_index < 0) {
-    // NEW conversation, show context input
+    // NEW conversation, show title and context input
+    const title = document.createElement("input");
+    title.id = "new_title";
+    title.classList.add("form-control");
+    title.placeholder = "Enter a title:"
+    title.title = "Conversation title";
     const label = document.createElement("label");
     label.for = "new_context";
     label.innerText = "Context";
@@ -73,7 +78,7 @@ function Populate(head_index) {
     ta.classList.add("form-control");
     ta.value = "You are a helpful assistant.";
     
-    chatmessages_element.append(label, ta);
+    chatmessages_element.append(title, label, ta);
 
     return;
   }
@@ -134,6 +139,7 @@ const span = document.getElementById("closePopupBtn");
 const conversation_id = document.getElementById("conversation_id");
 const message_id = document.getElementById("message_id");
 const tool_chatmessages = document.getElementById("tool_chatmessages");
+const tooltitle = document.getElementById("tooltitle");
 const tool_input_context = document.getElementById("tool_input_context");
 const tool_input = document.getElementById("tool_input");
 
@@ -142,6 +148,8 @@ function ShowPopup(mid) {
   message_id.innerText = mid;
   // tool_chatmessages
   PopulateTool(mid);
+  // tooltitle
+  tooltitle.value = this_conversation[id_to_index_map[mid]].Title;
   // tool_input_context
   tool_input_context.value = this_conversation[id_to_index_map[mid]].SystemPromptText;
 
@@ -211,6 +219,9 @@ async function Send() {
   const id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
   const context = (index >= 0 ? this_conversation[index].SystemPromptText : document.getElementById("new_context").value);
   const prompt = document.getElementById("input").value;
+  const root = (index >= 0 ? this_conversation[index].StartMessageID : "root");
+  const head_id = (index >= 0 ? this_conversation[index]._id.toString() : "root");
+  const title = (index >= 0 ? this_conversation[index].Title : document.getElementById("new_title").value);
 
   // Set up message array
   const messages = [];
@@ -218,7 +229,7 @@ async function Send() {
     role: "user",
     content: prompt,
   });
-  for (let i = index; i >= 0; i = (this_conversation[i].PreviousMessageID === "root" ? -1 : id_to_index_map[this_conversation[i].PreviousMessageID])) {
+  for (let i = index; i >= 0; i = (this_conversation[i].PreviousMessageID === "root" || this_conversation[i]._id.toString() === root ? -1 : id_to_index_map[this_conversation[i].PreviousMessageID])) {
     messages.push({
       role: this_conversation[i].UserOrAssistantFlag ? "user" : "assistant",
       content: this_conversation[i].ContentText,
@@ -242,7 +253,64 @@ async function Send() {
     },
     redirect: "follow", // manual, *follow, error
     referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-    body: JSON.stringify({id, messages}), // body data type must match "Content-Type" header
+    body: JSON.stringify({id, messages, root, head_id, title}), // body data type must match "Content-Type" header
+  });
+  const status = await response.json();
+  console.log(status);
+}
+
+
+//message_id
+// Send a new inquery, appending to the selected node in the conversation
+async function SendTool() {
+  const index = id_to_index_map[document.getElementById("message_id").innerText];
+  const id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
+  const context = document.getElementById("tool_input_context").value;
+  const prompt = document.getElementById("tool_input").value;
+  let root = (index >= 0 ? this_conversation[index].StartMessageID : "root");
+  const head_id = document.getElementById("message_id").innerText;
+  const title = tooltitle.value;
+
+  // Change root to first checked message
+  const checkboxes = document.getElementsByName("msg");
+  for (let i = 0; i < checkboxes.length; i++) {
+    if (checkboxes[i].checked) {
+      root = checkboxes[i].dataset.id;
+      break;
+    }
+  }
+
+  // Set up message array
+  const messages = [];
+  messages.push({
+    role: "user",
+    content: prompt,
+  });
+  for (let i = index; i >= 0; i = (this_conversation[i].PreviousMessageID === "root" || this_conversation[i]._id.toString() === root ? -1 : id_to_index_map[this_conversation[i].PreviousMessageID])) {
+    messages.push({
+      role: this_conversation[i].UserOrAssistantFlag ? "user" : "assistant",
+      content: this_conversation[i].ContentText,
+    });
+  }
+  messages.push({
+    role: "system",
+    content: context,
+  });
+  messages.reverse();
+
+  // Call API
+  const response = await fetch("/chat3/post", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({id, messages, root, head_id, title}), // body data type must match "Content-Type" header
   });
   const status = await response.json();
   console.log(status);

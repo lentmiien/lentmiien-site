@@ -142,9 +142,30 @@ exports.index = async (req, res) => {
 };
 
 exports.post = (req, res) => {
-  let id = parseInt(req.body.id);
+  const id = parseInt(req.body.id);
 
   console.log(req.body);
+
+  // ConversationID: { type: Number, required: true },
+  const ConversationID = id
+  // StartMessageID: { type: String, required: true, max: 100 },
+  const StartMessageID = req.body.root; // If "root", then needs to be replaced with _id of first entry in new conversation
+  // PreviousMessageID: { type: String, required: true, max: 100 },
+  const PreviousMessageID = req.body.head_id; // Response from OpenAI API need to use _id of user query
+  // ContentText: { type: String, required: true },
+  const ContentText = req.body.messages[req.body.messages.length-1].content;
+  // ContentTokenCount: { type: Number, required: true },
+  // --Get from OpenAI response
+  // SystemPromptText: { type: String, required: true },
+  const SystemPromptText = req.body.messages[0].content;
+  // UserOrAssistantFlag: { type: Boolean, required: true },
+  // --Set to true for input and false for API response
+  // UserID: { type: String, required: true, max: 100 },
+  const UserID = "Lennart";
+  // Title: { type: String, required: true, max: 255 },
+  const Title = req.body.title;
+  // Timestamp: { type: Date, required: true },
+  const Timestamp = new Date(); // Generate new timestamp for response after getting the response
 
   // TODO: make function
   // Send to OpenAI API
