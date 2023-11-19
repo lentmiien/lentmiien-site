@@ -144,7 +144,9 @@ exports.index = async (req, res) => {
 exports.post = (req, res) => {
   let id = parseInt(req.body.id);
 
+  console.log(req.body);
+
   // TODO: make function
 
-  setTimeout(() => res.redirect(`/chat3?id=${id}`), 100);
+  res.json({status: "OK"});
 };

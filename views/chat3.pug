@@ -14,13 +14,15 @@ block content
     .col-1
       button.btn.btn-primary T
       br
-      button.btn.btn-primary S
-      br
-      button#openPopupBtn.btn.btn-danger POP
+      button.btn.btn-primary(onclick="Send()") S
   #popup.popup 
     .popup-content 
       span#closePopupBtn.close &times;
       h2 Message tool
+      b Conversation: 
+      span#conversation_id= this_conversation.length > 0 ? this_conversation[0].ConversationID : "NEW"
+      b  , Message: 
+      span#message_id
       .row.chat-history.tool-scroll-end
         #tool_chatmessages.col 
       .row.chat-input

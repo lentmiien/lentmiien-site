@@ -99,7 +99,7 @@
   height: 70vh;
 }
 
-.scroll-end {
+.scroll-end, .tool-scroll-end {
   overflow: scroll;
 }
 
@@ -118,6 +118,7 @@
   width: 100%; /* Full width */
   height: 100%; /* Full height */
   background-color: rgba(0, 0, 0, 0.5); /* Black w/ opacity */
+  overflow-y: auto; /* Enables scrolling on the .popup itself */
 }
 
 .popup-content {
@@ -126,6 +127,8 @@
   padding: 20px;
   border: 1px solid #888;
   width: 90%; /* Could be more or less, depending on screen size */
+  max-height: 90vh; /* Adjust as needed based on header/footer size */
+  overflow-y: auto; /* Enables scrolling within the .popup-content */
 }
 
 .close {

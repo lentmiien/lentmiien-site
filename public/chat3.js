@@ -2,6 +2,8 @@ const this_conversation = JSON.parse(document.getElementById("this_conversation"
 const chats = JSON.parse(document.getElementById("chats").innerText);
 const new_conversation_id = parseInt(document.getElementById("new_conversation_id").innerText);
 
+let current_head_index = null;
+
 /* DATABASE STRUCTURE
   ConversationID: { type: Number, required: true },
   StartMessageID: { type: String, required: true, max: 100 },
@@ -59,6 +61,8 @@ function PopulateMenus() {
 function Populate(head_index) {
   if (head_index < 0) return;// NEW conversation
 
+  current_head_index = head_index;
+
   // Delete current conversation
   const chatmessages_element = document.getElementById("chatmessages");
   chatmessages_element.innerHTML = "";
@@ -83,7 +87,7 @@ function Populate(head_index) {
       chatmessages_element.innerHTML += `<div class="row"><div class="col-1 centered-container">${thread[i].prev_count > 1 ? '<button class="btn btn-primary" onclick="ChangeBranch(\'' + thread[i].prev_id + '\', ' + ((thread[i].prev_next.indexOf(thread[i]._id) + 1) % thread[i].prev_count) + ')" title="' + this_conversation[id_to_index_map[next_map[id_to_index_map[thread[i].prev_id]][((thread[i].prev_next.indexOf(thread[i]._id) + 1) % thread[i].prev_count)]]].ContentText.split('"').join("'") + '">' + (thread[i].prev_next.indexOf(thread[i]._id) + 1) + '/' + thread[i].prev_count + '</button>' : ''}</div><div class="col-11"><div class="user">${thread[i].html}</div></div></div>`;
     } else {
       // Chatbot message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col-11"><div class="assistant">${thread[i].html}</div></div><div class="col-1 centered-container"><button class="btn btn-primary">...</button></div></div>`;
+      chatmessages_element.innerHTML += `<div class="row"><div class="col-11"><div class="assistant">${thread[i].html}</div></div><div class="col-1 centered-container"><button class="btn btn-primary" onclick="ShowPopup('${thread[i]._id}')">...</button></div></div>`;
     }
   }
 
@@ -111,30 +115,125 @@ function ChangeBranch(_id, branch) {
 }
 
 // Popup
-document.addEventListener("DOMContentLoaded", function() {
-  // Get the button that opens the popup
-  var btn = document.getElementById("openPopupBtn");
+const btn = document.getElementById("openPopupBtn");
+const popup = document.getElementById("popup");
+const span = document.getElementById("closePopupBtn");
+const conversation_id = document.getElementById("conversation_id");
+const message_id = document.getElementById("message_id");
+const tool_chatmessages = document.getElementById("tool_chatmessages");
+const tool_input_context = document.getElementById("tool_input_context");
+const tool_input = document.getElementById("tool_input");
 
-  // Get the popup div
-  var popup = document.getElementById("popup");
+function ShowPopup(mid) {
+  // Fill in data
+  message_id.innerText = mid;
+  // tool_chatmessages
+  PopulateTool(mid);
+  // tool_input_context
+  tool_input_context.value = this_conversation[id_to_index_map[mid]].SystemPromptText;
 
-  // Get the <span> element that closes the popup
-  var span = document.getElementById("closePopupBtn");
+  // Show popup
+  popup.style.display = "block";
+}
 
-  // When the user clicks the button, open the popup
-  btn.onclick = function() {
-    popup.style.display = "block";
+// document.addEventListener("DOMContentLoaded", function() {
+//   // When the user clicks the button, open the popup
+//   btn.onclick = function() {
+//   }
+//   // When the user clicks on <span> (x), close the popup
+//   span.onclick = function() {
+//     popup.style.display = "none";
+//   }
+//   // When the user clicks anywhere outside of the popup, close it
+//   window.onclick = function(event) {
+//     if (event.target == popup) {
+//       popup.style.display = "none";
+//     }
+//   }
+// });
+
+// Populate #tool_chatmessages
+function PopulateTool(mid) {
+  // Delete current conversation
+  const chatmessages_element = document.getElementById("tool_chatmessages");
+  chatmessages_element.innerHTML = "";
+
+  const thread = [];
+  for (let c = id_to_index_map[mid]; c != -1; c = this_conversation[c].PreviousMessageID === "root" ? -1 : id_to_index_map[this_conversation[c].PreviousMessageID]) {
+    thread.push({
+      _id: this_conversation[c]._id.toString(),
+      text: this_conversation[c].ContentText,
+      html: this_conversation[c].HTMLText,
+      user: this_conversation[c].UserOrAssistantFlag,
+      prev_id: this_conversation[c].PreviousMessageID,
+      prev_count: this_conversation[c].PreviousMessageID === "root" ? 1 : refer_count[id_to_index_map[this_conversation[c].PreviousMessageID]],
+      prev_next: this_conversation[c].PreviousMessageID === "root" ? [this_conversation[c]._id.toString()] : next_map[id_to_index_map[this_conversation[c].PreviousMessageID]],
+    });
   }
 
-  // When the user clicks on <span> (x), close the popup
-  span.onclick = function() {
-    popup.style.display = "none";
-  }
-
-  // When the user clicks anywhere outside of the popup, close it
-  window.onclick = function(event) {
-    if (event.target == popup) {
-      popup.style.display = "none";
+  // Render output
+  for (let i = thread.length - 1; i >= 0; i--) {
+    if (thread[i].user) {
+      // User message
+      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="user">${thread[i].html}</div></div></div>`;
+    } else {
+      // Chatbot message
+      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="assistant">${thread[i].html}</div></div></div>`;
     }
   }
-});
+
+  // After displaying, scroll to bottom
+  ScrollToBottomOfConversationTool();
+}
+
+function ScrollToBottomOfConversationTool() {
+  const scroll_elements = document.getElementsByClassName("tool-scroll-end");
+  for (let i = 0; i < scroll_elements.length; i++) {
+    scroll_elements[i].scrollTo(0, scroll_elements[i].scrollHeight);
+  }
+}
+
+// API functions
+
+// Send a new inquery, appending to the latest head in conversation
+async function Send() {
+  const index = current_head_index;
+  const id = this_conversation[index]._id;
+  const context = this_conversation[index].SystemPromptText;
+  const prompt = document.getElementById("input").value;
+
+  // Set up message array
+  const messages = [];
+  messages.push({
+    role: "user",
+    content: prompt,
+  });
+  for (let i = index; i >= 0; i = (this_conversation[i].PreviousMessageID === "root" ? -1 : id_to_index_map[this_conversation[i].PreviousMessageID])) {
+    messages.push({
+      role: this_conversation[i].UserOrAssistantFlag ? "user" : "assistant",
+      content: this_conversation[i].ContentText,
+    });
+  }
+  messages.push({
+    role: "system",
+    content: context,
+  });
+  messages.reverse();
+
+  // Call API
+  const response = await fetch("/chat3/post", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({id, messages}), // body data type must match "Content-Type" header
+  });
+  const status = await response.json();
+  console.log(status);
+}
