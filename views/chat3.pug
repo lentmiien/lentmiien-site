@@ -12,17 +12,17 @@ block content
     .col-11
       textarea#input.form-control.chat-textarea(name="input", cols="30", rows="5")
     .col-1
-      button.btn.btn-primary T
+      button.btn.btn-primary(title="Select template popup") T
       br
-      button.btn.btn-primary(onclick="Send()") S
+      button.btn.btn-primary(onclick="Send()", title="Send message") S
   .row 
     .col 
       select#model.form-control(name="model")
         each model in models 
           if model.api_endpoint == "gpt-4-1106-preview"
-            option(value=`${model.api_endpoint}`, selected)= model.model_name
+            option(value=`${model.api_endpoint}`, selected)= `${model.model_name} (${Math.floor(model.max_tokens/1000)}k tokens) [In: $${model.input_1k_token_cost} / Out: $${model.output_1k_token_cost} per 1k tokens]`
           else 
-            option(value=`${model.api_endpoint}`)= model.model_name
+            option(value=`${model.api_endpoint}`)= `${model.model_name} (${Math.floor(model.max_tokens/1000)}k tokens) [In: $${model.input_1k_token_cost} / Out: $${model.output_1k_token_cost} per 1k tokens]`
   #popup.popup 
     .popup-content 
       span#closePopupBtn.close(onclick="ClosePopup()") &times;
