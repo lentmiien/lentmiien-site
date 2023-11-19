@@ -10,6 +10,8 @@ const Chat3 = new mongoose.Schema({
   UserOrAssistantFlag: { type: Boolean, required: true },
   UserID: { type: String, required: true, max: 100 },
   Title: { type: String, required: true, max: 255 },
+  Images: { type: String, required: false, max: 255 },
+  Sounds: { type: String, required: false, max: 255 },
   Timestamp: { type: Date, required: true },
 });
 

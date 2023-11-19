@@ -15,6 +15,14 @@ block content
       button.btn.btn-primary T
       br
       button.btn.btn-primary(onclick="Send()") S
+  .row 
+    .col 
+      select#model.form-control(name="model")
+        each model in models 
+          if model.api_endpoint == "gpt-4-1106-preview"
+            option(value=`${model.api_endpoint}`, selected)= model.model_name
+          else 
+            option(value=`${model.api_endpoint}`)= model.model_name
   #popup.popup 
     .popup-content 
       span#closePopupBtn.close(onclick="ClosePopup()") &times;

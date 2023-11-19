@@ -1,6 +1,7 @@
 const this_conversation = JSON.parse(document.getElementById("this_conversation").innerText);
 const chats = JSON.parse(document.getElementById("chats").innerText);
 const new_conversation_id = parseInt(document.getElementById("new_conversation_id").innerText);
+const model = document.getElementById("model");
 
 let current_head_index = -1;
 
@@ -15,6 +16,8 @@ let current_head_index = -1;
   UserOrAssistantFlag: { type: Boolean, required: true },
   UserID: { type: String, required: true, max: 100 },
   Title: { type: String, required: true, max: 255 },
+  Images: { type: String, required: false, max: 255 },
+  Sounds: { type: String, required: false, max: 255 },
   Timestamp: { type: Date, required: true },
 */
 
@@ -222,6 +225,7 @@ async function Send() {
   const root = (index >= 0 ? this_conversation[index].StartMessageID : "root");
   const head_id = (index >= 0 ? this_conversation[index]._id.toString() : "root");
   const title = (index >= 0 ? this_conversation[index].Title : document.getElementById("new_title").value);
+  const api_model = model.value;
 
   // Set up message array
   const messages = [];
@@ -253,7 +257,7 @@ async function Send() {
     },
     redirect: "follow", // manual, *follow, error
     referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-    body: JSON.stringify({id, messages, root, head_id, title}), // body data type must match "Content-Type" header
+    body: JSON.stringify({id, messages, root, head_id, title, api_model}), // body data type must match "Content-Type" header
   });
   const status = await response.json();
   console.log(status);
@@ -270,6 +274,7 @@ async function SendTool() {
   let root = (index >= 0 ? this_conversation[index].StartMessageID : "root");
   const head_id = document.getElementById("message_id").innerText;
   const title = tooltitle.value;
+  const api_model = model.value;
 
   // Change root to first checked message
   const checkboxes = document.getElementsByName("msg");
@@ -310,7 +315,7 @@ async function SendTool() {
     },
     redirect: "follow", // manual, *follow, error
     referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-    body: JSON.stringify({id, messages, root, head_id, title}), // body data type must match "Content-Type" header
+    body: JSON.stringify({id, messages, root, head_id, title, api_model}), // body data type must match "Content-Type" header
   });
   const status = await response.json();
   console.log(status);
