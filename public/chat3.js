@@ -112,6 +112,9 @@ function Populate(head_index) {
     }
   }
 
+  console.log(thread);
+  console.log(this_conversation);
+
   // After displaying, scroll to bottom
   ScrollToBottomOfConversation();
 }

@@ -13,9 +13,25 @@ exports.index = async (req, res) => {
   const chat_data = await Chat3Model.find();
 
   // Prepare this_conversation
-  const this_conversation = chat_data.filter(d => d.ConversationID === this_conversation_id);
-  for (let i = 0; i < this_conversation.length; i++) {
-    this_conversation[i].HTMLText = marked.parse(this_conversation[i].ContentText);
+  const this_conversation = [];
+  const tc_db_data = chat_data.filter(d => d.ConversationID === this_conversation_id);
+  for (let i = 0; i < tc_db_data.length; i++) {
+    this_conversation.push({
+      "_id": tc_db_data[i]._id.toString(),
+      "ConversationID": tc_db_data[i].ConversationID,
+      "StartMessageID": tc_db_data[i].StartMessageID,
+      "PreviousMessageID": tc_db_data[i].PreviousMessageID,
+      "ContentText": tc_db_data[i].ContentText,
+      "HTMLText": marked.parse(tc_db_data[i].ContentText),
+      "ContentTokenCount": tc_db_data[i].ContentTokenCount,
+      "SystemPromptText": tc_db_data[i].SystemPromptText,
+      "UserOrAssistantFlag": tc_db_data[i].UserOrAssistantFlag,
+      "UserID": tc_db_data[i].UserID,
+      "Title": tc_db_data[i].Title,
+      "Images": tc_db_data[i].Images,
+      "Sounds": tc_db_data[i].Sounds,
+      "Timestamp": tc_db_data[i].Timestamp,
+    });
   }
 
   // Detect all conversations
@@ -81,11 +97,11 @@ exports.post = async (req, res) => {
 
   // TODO: make function
   // Send to OpenAI API
-  const response = await chatGPT(messages, model)
+  const response = await chatGPT(req.body.messages, model)
   // When get response
   if (response) {
     // Save to API call log
-    await OpenAIAPICallLog(req.user.name, model, response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(messages), response.choices[0].message.content);
+    await OpenAIAPICallLog(req.user.name, model, response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(req.body.messages), response.choices[0].message.content);
     // Save prompt and response messages to database
     //   (also update StartMessageID and PreviousMessageID appropriately)
     try {
