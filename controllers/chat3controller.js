@@ -54,8 +54,6 @@ exports.post = async (req, res) => {
   const id = parseInt(req.body.id);
   const model = req.body.api_model;
 
-  console.log(req.body);
-
   // ConversationID: { type: Number, required: true },
   const ConversationID = id
   // StartMessageID: { type: String, required: true, max: 100 },
@@ -83,13 +81,62 @@ exports.post = async (req, res) => {
 
   // TODO: make function
   // Send to OpenAI API
-  // const response = await chatGPT(messages, model)
+  const response = await chatGPT(messages, model)
   // When get response
-  //   Save to API call log
-  //   Save prompt and response messages to database
-  //     (also update StartMessageID and PreviousMessageID appropriately)
-  //   Generate embedding for response, and save to embedding database
-  //   Return _id of response entry in database to user (user side will reload page with the id)
+  if (response) {
+    // Save to API call log
+    await OpenAIAPICallLog(req.user.name, model, response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(messages), response.choices[0].message.content);
+    // Save prompt and response messages to database
+    //   (also update StartMessageID and PreviousMessageID appropriately)
+    try {
+      const user_entry = {
+        ConversationID,
+        StartMessageID,
+        PreviousMessageID,
+        ContentText,
+        ContentTokenCount: response.usage.prompt_tokens,
+        SystemPromptText,
+        UserOrAssistantFlag: true,
+        UserID,
+        Title,
+        Images,
+        Sounds,
+        Timestamp,
+      };
+      const entry1 = await new Chat3Model(user_entry).save();
+      const assistant_entry = {
+        ConversationID,
+        StartMessageID: StartMessageID === "root" ? entry1._id.toString() : StartMessageID,
+        PreviousMessageID: entry1._id.toString(),
+        ContentText: response.choices[0].message.content,
+        ContentTokenCount: response.usage.completion_tokens,
+        SystemPromptText,
+        UserOrAssistantFlag: false,
+        UserID,
+        Title,
+        Images,
+        Sounds,
+        Timestamp: new Date(),
+      };
+      const entry2 = await new Chat3Model(assistant_entry).save();
 
-  res.json({status: "OK"});
+      if (StartMessageID === "root") {
+        const update1 = await Chat3Model.findByIdAndUpdate(
+          entry1._id,
+          { StartMessageID: entry1._id.toString() },
+          { new: true });
+      }
+
+      res.json({status: "OK", msg: "Saved!"});
+    } catch (err) {
+      console.error("Error saving data to database (Chat3): ", err);
+      res.json({status: "ERROR", msg: "Error saving data to database (Chat3)."});
+    }
+
+    // Generate embedding for response, and save to embedding database
+    // Return _id of response entry in database to user (user side will reload page with the id)
+  } else {
+    console.log('Failed to get a response from ChatGPT.');
+    res.json({status: "ERROR", msg: "Failed to get a response from ChatGPT."});
+  }
 };
