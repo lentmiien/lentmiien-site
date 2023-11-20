@@ -55,6 +55,13 @@ chats.sort((a,b) => {
 // Populate chat history and chat heads menus
 function PopulateMenus() {
   // Fill in conversation history
+  // history_list
+  const history_list = document.getElementById("history_list");
+  // a.dropdown-item(href="/chat3?id=0", title="text of last message") Cold
+  chats.forEach(d => {
+    history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title=${d.last_message}>${d.Title}</a>`;
+  });
+
   // Fill in conversation heads
   // Display initial chat thread
   Populate(this_conversation.length-1);
@@ -264,6 +271,11 @@ async function Send() {
   });
   const status = await response.json();
   console.log(status);
+  if(status.status === "OK") {
+    open(`/chat3?id=${id}`, "_self");
+  } else {
+    alert(status.msg);
+  }
 }
 
 
@@ -322,4 +334,9 @@ async function SendTool() {
   });
   const status = await response.json();
   console.log(status);
+  if(status.status === "OK") {
+    open(`/chat3?id=${id}`, "_self");
+  } else {
+    alert(status.msg);
+  }
 }
