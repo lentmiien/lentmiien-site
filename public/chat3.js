@@ -59,7 +59,7 @@ function PopulateMenus() {
   const history_list = document.getElementById("history_list");
   // a.dropdown-item(href="/chat3?id=0", title="text of last message") Cold
   chats.forEach(d => {
-    history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title="${d.last_message}">${d.Title}</a>`;
+    history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title="${d.last_message.split("\"").join("'")}">${d.Title}</a>`;
   });
 
   // Fill in conversation heads
@@ -68,7 +68,7 @@ function PopulateMenus() {
   // button.dropdown-item(title="head 1 message") Head 1
   refer_count.forEach((cnt, i) => {
     if (cnt === 0) {
-      head_list.innerHTML += `<button class="dropdown-item" onclick="Populate(${i})" title="${this_conversation[i].ContentText}">Node ${i}</button>`;
+      head_list.innerHTML += `<button class="dropdown-item" onclick="Populate(${i})" title="${this_conversation[i].ContentText.split("\"").join("'")}">Node ${i}</button>`;
     }
     //Populate(id_to_index_map[head]);
   });
@@ -238,6 +238,8 @@ function ScrollToBottomOfConversationTool() {
 
 // Send a new inquery, appending to the latest head in conversation
 async function Send() {
+  showLoadingPopup();
+
   const index = current_head_index;
   const id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
   const context = (index >= 0 ? this_conversation[index].SystemPromptText : document.getElementById("new_context").value);
@@ -285,6 +287,7 @@ async function Send() {
     open(`/chat3?id=${id}`, "_self");
   } else {
     alert(status.msg);
+    hideLoadingPopup();
   }
 }
 
@@ -292,6 +295,8 @@ async function Send() {
 //message_id
 // Send a new inquery, appending to the selected node in the conversation
 async function SendTool() {
+  showLoadingPopup();
+
   const index = id_to_index_map[document.getElementById("message_id").innerText];
   const id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
   const context = document.getElementById("tool_input_context").value;
@@ -348,5 +353,18 @@ async function SendTool() {
     open(`/chat3?id=${id}`, "_self");
   } else {
     alert(status.msg);
+    hideLoadingPopup();
   }
+}
+
+// Function to show the loading popup
+function showLoadingPopup() {
+  document.getElementById('loadingPopup').style.display = 'block';
+  document.body.classList.add('no-scroll'); // Prevent scrolling on the body
+}
+
+// Function to hide the loading popup
+function hideLoadingPopup() {
+  document.getElementById('loadingPopup').style.display = 'none';
+  document.body.classList.remove('no-scroll'); // Re-enable scrolling on the body
 }

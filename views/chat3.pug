@@ -48,10 +48,11 @@ block content
           button.btn.btn-success Generate image
           button.btn.btn-success Text to speech
           button.btn.btn-warning Generate KDB
-  hr
-  pre#this_conversation= JSON.stringify(this_conversation, null, 2)
-  hr
-  pre#chats= JSON.stringify(chats, null, 2)
-  hr
-  pre#new_conversation_id= new_conversation_id
+  #loadingPopup.loading-popup
+    .loading-content
+      .loader
+      p Loading...
+  pre#this_conversation.hidden= JSON.stringify(this_conversation, null, 2)
+  pre#chats.hidden= JSON.stringify(chats, null, 2)
+  pre#new_conversation_id.hidden= new_conversation_id
   script(src="/chat3.js") 
