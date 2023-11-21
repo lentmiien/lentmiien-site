@@ -59,10 +59,20 @@ function PopulateMenus() {
   const history_list = document.getElementById("history_list");
   // a.dropdown-item(href="/chat3?id=0", title="text of last message") Cold
   chats.forEach(d => {
-    history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title=${d.last_message}>${d.Title}</a>`;
+    history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title="${d.last_message}">${d.Title}</a>`;
   });
 
   // Fill in conversation heads
+  // #head_list
+  const head_list = document.getElementById("head_list");
+  // button.dropdown-item(title="head 1 message") Head 1
+  refer_count.forEach((cnt, i) => {
+    if (cnt === 0) {
+      head_list.innerHTML += `<button class="dropdown-item" onclick="Populate(${i})" title="${this_conversation[i].ContentText}">Node ${i}</button>`;
+    }
+    //Populate(id_to_index_map[head]);
+  });
+  
   // Display initial chat thread
   Populate(this_conversation.length-1);
 }
