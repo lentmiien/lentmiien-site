@@ -177,7 +177,7 @@ exports.generate_image = async (req, res) => {
     // Take input and generate OpenAI API request
     // Send API request and wait for response
     // Save file to folder './public/img/{filename}'
-    const { filename, prompt } = await ig(req.body.tool_input, req.body.quality, req.body.size);
+    const { filename, prompt } = await ig(req.body.prompt, req.body.quality, req.body.size);
     // Save entry in FileMetaModel database
     const entry = {
       filename: filename,
@@ -203,21 +203,21 @@ exports.generate_image = async (req, res) => {
 }
 
 // POST /chat3/mp3
-// Required input: Chat3 entry id, model, text, voice
+// Required input: Chat3 entry id, prompt, model, voice
 exports.generate_tts = async (req, res) => {
   try {
     const _id = req.body.id;
     // Take input and generate OpenAI API request
     // Send API request and wait for response
     // Save file to folder './public/mp3/{filename}'
-    const { filename } = await tts(req.body.model, req.body.tool_input, req.body.voice);
+    const { filename } = await tts(req.body.model, req.body.prompt, req.body.voice);
     // Save entry in FileMetaModel database
     const entry = {
       filename: filename,
       filetype: "sound",
       path: `/mp3/${filename}`,
       is_url: false,
-      prompt: req.body.tool_input,
+      prompt: req.body.prompt,
       created_date: new Date(),
       other_meta_data: JSON.stringify({ model: req.body.model, voice: req.body.voice, source: "OpenAI: Text-To-Speech" }),
     };

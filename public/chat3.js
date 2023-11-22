@@ -369,6 +369,70 @@ function hideLoadingPopup() {
   document.body.classList.remove('no-scroll'); // Re-enable scrolling on the body
 }
 
-function GenerateImage() {}
+async function GenerateImage() {
+  showLoadingPopup();
 
-function GenerateSound() {}
+  const id = document.getElementById("message_id").innerText;
+  const index = id_to_index_map[id];
+  const conversation_id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
+  const prompt = document.getElementById("tool_input").value;
+  const quality = document.getElementById("quality").value;
+  const size = document.getElementById("size").value;
+
+  // Call API
+  const response = await fetch("/chat3/img", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({id, prompt, quality, size}), // body data type must match "Content-Type" header
+  });
+  const status = await response.json();
+  console.log(status);
+  if(status.status === "OK") {
+    open(`/chat3?id=${conversation_id}`, "_self");
+  } else {
+    alert(status.msg);
+    hideLoadingPopup();
+  }
+}
+
+async function GenerateSound() {
+  showLoadingPopup();
+
+  const id = document.getElementById("message_id").innerText;
+  const index = id_to_index_map[id];
+  const conversation_id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
+  const prompt = document.getElementById("tool_input").value;
+  const model = document.getElementById("model").value;
+  const voice = document.getElementById("voice").value;
+
+  // Call API
+  const response = await fetch("/chat3/mp3", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({id, prompt, model, voice}), // body data type must match "Content-Type" header
+  });
+  const status = await response.json();
+  console.log(status);
+  if(status.status === "OK") {
+    open(`/chat3?id=${conversation_id}`, "_self");
+  } else {
+    alert(status.msg);
+    hideLoadingPopup();
+  }
+}
