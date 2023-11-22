@@ -193,7 +193,7 @@ const tts = async (api_endpoint, text, voice) => {
   const buffer = Buffer.from(await mp3.arrayBuffer());
   await fs.promises.writeFile(outputfile, buffer);
   await OpenAIAPICallLog_tts("Lennart", api_endpoint, text, voice, filename)
-  return `/mp3/${filename}`;
+  return { filename };
 };
 
 const ig = async (prompt, quality, size) => {
@@ -217,7 +217,7 @@ const ig = async (prompt, quality, size) => {
   const buffer = Buffer.from(data, 'base64');
   await fs.promises.writeFile(outputfile, buffer);
   await OpenAIAPICallLog_ig("Lennart", "dall-e-3", size, quality, image.data[0].revised_prompt || prompt, filename);
-  return `/img/${filename}`;
+  return { filename, prompt: image.data[0].revised_prompt || prompt };
 };
 
 module.exports = {

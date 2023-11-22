@@ -1,9 +1,9 @@
 const marked = require('marked');
-const { chatGPT, OpenAIAPICallLog, GetModels } = require('../utils/ChatGPT');
+const { chatGPT, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
 // Require necessary database models
-const { Chat3Model } = require('../database');
+const { Chat3Model, FileMetaModel } = require('../database');
 
 exports.index = async (req, res) => {
   const this_conversation_id = "id" in req.query ? parseInt(req.query.id) : -1;
@@ -156,3 +156,81 @@ exports.post = async (req, res) => {
     res.json({status: "ERROR", msg: "Failed to get a response from ChatGPT."});
   }
 };
+
+/*
+  FileMetaModel
+
+  filename: { type: String, required: true, max: 100 },
+  filetype: { type: String, required: true, max: 16 },
+  path: { type: String, required: true },
+  is_url: { type: Boolean, required: true },
+  prompt: { type: String, required: true },
+  created_date: { type: Date, required: true },
+  other_meta_data: { type: String, required: true },
+*/
+
+// POST /chat3/img
+// Required input: Chat3 entry id, prompt, quality, size
+exports.generate_image = async (req, res) => {
+  try {
+    const _id = req.body.id;
+    // Take input and generate OpenAI API request
+    // Send API request and wait for response
+    // Save file to folder './public/img/{filename}'
+    const { filename, prompt } = await ig(req.body.tool_input, req.body.quality, req.body.size);
+    // Save entry in FileMetaModel database
+    const entry = {
+      filename: filename,
+      filetype: "image",
+      path: `/img/${filename}`,
+      is_url: false,
+      prompt: prompt,
+      created_date: new Date(),
+      other_meta_data: JSON.stringify({ quality: req.body.quality, size: req.body.size, source: "OpenAI: DALL·E 3" }),
+    };
+    await new FileMetaModel(entry).save();
+    // Update Chat3 entry with file data
+    await Chat3Model.findByIdAndUpdate(
+      _id,
+      { Images: `/img/${filename}` },
+      { new: true });
+    // Refresh page
+    res.json({status: "OK", msg: "Saved!"});
+  } catch (err) {
+    console.log('Failed to generate image: ', err);
+    res.json({status: "ERROR", msg: "Failed to generate image."});
+  }
+}
+
+// POST /chat3/mp3
+// Required input: Chat3 entry id, model, text, voice
+exports.generate_tts = async (req, res) => {
+  try {
+    const _id = req.body.id;
+    // Take input and generate OpenAI API request
+    // Send API request and wait for response
+    // Save file to folder './public/mp3/{filename}'
+    const { filename } = await tts(req.body.model, req.body.tool_input, req.body.voice);
+    // Save entry in FileMetaModel database
+    const entry = {
+      filename: filename,
+      filetype: "sound",
+      path: `/mp3/${filename}`,
+      is_url: false,
+      prompt: req.body.tool_input,
+      created_date: new Date(),
+      other_meta_data: JSON.stringify({ model: req.body.model, voice: req.body.voice, source: "OpenAI: Text-To-Speech" }),
+    };
+    await new FileMetaModel(entry).save();
+    // Update Chat3 entry with file data
+    await Chat3Model.findByIdAndUpdate(
+      _id,
+      { Sounds: `/mp3/${filename}` },
+      { new: true });
+    // Refresh page
+    res.json({status: "OK", msg: "Saved!"});
+  } catch (err) {
+    console.log('Failed to generate sound: ', err);
+    res.json({status: "ERROR", msg: "Failed to generate sound."});
+  }
+}

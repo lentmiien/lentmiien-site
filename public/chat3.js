@@ -368,3 +368,7 @@ function hideLoadingPopup() {
   document.getElementById('loadingPopup').style.display = 'none';
   document.body.classList.remove('no-scroll'); // Re-enable scrolling on the body
 }
+
+function GenerateImage() {}
+
+function GenerateSound() {}

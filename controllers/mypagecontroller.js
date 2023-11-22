@@ -78,8 +78,8 @@ exports.speektome = async (req, res) => {
 
 exports.speektome_post = async (req, res) => {
   const file_list = fs.readdirSync(SoundDataFolder);
-  const tts_file = await tts(req.body.model, req.body.text, req.body.voice);
-  res.render("speektome", { tts_file, file_list });
+  const { filename } = await tts(req.body.model, req.body.text, req.body.voice);
+  res.render("speektome", { tts_file: `/mp3/${filename}`, file_list });
 };
 
 exports.showtome = async (req, res) => {
@@ -89,6 +89,6 @@ exports.showtome = async (req, res) => {
 
 exports.showtome_post = async (req, res) => {
   const file_list = fs.readdirSync(ImageDataFolder);
-  const ig_file = await ig(req.body.prompt, req.body.quality, req.body.size);
-  res.render("showtome", { ig_file, file_list });
+  const { filename } = await ig(req.body.prompt, req.body.quality, req.body.size);
+  res.render("showtome", { ig_file: `/img/${filename}`, file_list });
 };
