@@ -111,6 +111,8 @@ function Populate(head_index) {
       _id: this_conversation[c]._id.toString(),
       text: this_conversation[c].ContentText,
       html: this_conversation[c].HTMLText,
+      img: this_conversation[c].Images,
+      mp3: this_conversation[c].Sounds,
       user: this_conversation[c].UserOrAssistantFlag,
       prev_id: this_conversation[c].PreviousMessageID,
       prev_count: this_conversation[c].PreviousMessageID === "root" ? 1 : refer_count[id_to_index_map[this_conversation[c].PreviousMessageID]],
@@ -125,7 +127,20 @@ function Populate(head_index) {
       chatmessages_element.innerHTML += `<div class="row"><div class="col-1 centered-container">${thread[i].prev_count > 1 ? '<button class="btn btn-primary" onclick="ChangeBranch(\'' + thread[i].prev_id + '\', ' + ((thread[i].prev_next.indexOf(thread[i]._id) + 1) % thread[i].prev_count) + ')" title="' + this_conversation[id_to_index_map[next_map[id_to_index_map[thread[i].prev_id]][((thread[i].prev_next.indexOf(thread[i]._id) + 1) % thread[i].prev_count)]]].ContentText.split('"').join("'") + '">' + (thread[i].prev_next.indexOf(thread[i]._id) + 1) + '/' + thread[i].prev_count + '</button>' : ''}</div><div class="col-11"><div class="user">${thread[i].html}</div></div></div>`;
     } else {
       // Chatbot message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col-11"><div class="assistant">${thread[i].html}</div></div><div class="col-1 centered-container"><button class="btn btn-primary" onclick="ShowPopup('${thread[i]._id}')">...</button></div></div>`;
+      let attachments = "";
+      if (thread[i].img.length > 0 || thread[i].mp3.length > 0) {
+        attachments += "<hr>";
+        if (thread[i].img.length > 0) {
+          attachments += `<img src="${thread[i].img}" alt="DALL-E-3 generated image" style="height:100px;">`;
+        }
+        if (thread[i].mp3.length > 0) {
+          attachments += `<audio controls><source src="${thread[i].mp3}" type="audio/mpeg"></audio>`;
+        }
+        //img(src=`${ig_file}`, alt="DALL-E-3 generated image", style="width:100%;")
+        //audio.form-control(controls)
+        //  source(src=`${tts_file}`, type="audio/mpeg")
+      }
+      chatmessages_element.innerHTML += `<div class="row"><div class="col-11"><div class="assistant">${thread[i].html}${attachments}</div></div><div class="col-1 centered-container"><button class="btn btn-primary" onclick="ShowPopup('${thread[i]._id}')">...</button></div></div>`;
     }
   }
 
@@ -202,6 +217,8 @@ function PopulateTool(mid) {
       _id: this_conversation[c]._id.toString(),
       text: this_conversation[c].ContentText,
       html: this_conversation[c].HTMLText,
+      img: this_conversation[c].Images,
+      mp3: this_conversation[c].Sounds,
       user: this_conversation[c].UserOrAssistantFlag,
       prev_id: this_conversation[c].PreviousMessageID,
       prev_count: this_conversation[c].PreviousMessageID === "root" ? 1 : refer_count[id_to_index_map[this_conversation[c].PreviousMessageID]],
@@ -216,7 +233,20 @@ function PopulateTool(mid) {
       chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="user"><input type="checkbox" data-id="${thread[i]._id}" name="msg">${thread[i].html}</div></div></div>`;
     } else {
       // Chatbot message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="assistant"><input type="checkbox" data-id="${thread[i]._id}" name="msg">${thread[i].html}</div></div></div>`;
+      let attachments = "";
+      if (thread[i].img.length > 0 || thread[i].mp3.length > 0) {
+        attachments += "<hr>";
+        if (thread[i].img.length > 0) {
+          attachments += `<img src="${thread[i].img}" alt="DALL-E-3 generated image" style="height:100px;">`;
+        }
+        if (thread[i].mp3.length > 0) {
+          attachments += `<audio controls><source src="${thread[i].mp3}" type="audio/mpeg"></audio>`;
+        }
+        //img(src=`${ig_file}`, alt="DALL-E-3 generated image", style="width:100%;")
+        //audio.form-control(controls)
+        //  source(src=`${tts_file}`, type="audio/mpeg")
+      }
+      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="assistant"><input type="checkbox" data-id="${thread[i]._id}" name="msg">${thread[i].html}${attachments}</div></div></div>`;
     }
   }
 
@@ -410,7 +440,7 @@ async function GenerateSound() {
   const index = id_to_index_map[id];
   const conversation_id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
   const prompt = document.getElementById("tool_input").value;
-  const model = document.getElementById("model").value;
+  const ttsmodel = document.getElementById("ttsmodel").value;
   const voice = document.getElementById("voice").value;
 
   // Call API
@@ -425,7 +455,7 @@ async function GenerateSound() {
     },
     redirect: "follow", // manual, *follow, error
     referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-    body: JSON.stringify({id, prompt, model, voice}), // body data type must match "Content-Type" header
+    body: JSON.stringify({id, prompt, model: ttsmodel, voice}), // body data type must match "Content-Type" header
   });
   const status = await response.json();
   console.log(status);

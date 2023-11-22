@@ -210,14 +210,14 @@ exports.generate_tts = async (req, res) => {
     // Take input and generate OpenAI API request
     // Send API request and wait for response
     // Save file to folder './public/mp3/{filename}'
-    const { filename } = await tts(req.body.model, req.body.prompt, req.body.voice);
+    const { filename, prompt } = await tts(req.body.model, req.body.prompt, req.body.voice);
     // Save entry in FileMetaModel database
     const entry = {
       filename: filename,
       filetype: "sound",
       path: `/mp3/${filename}`,
       is_url: false,
-      prompt: req.body.prompt,
+      prompt: prompt,
       created_date: new Date(),
       other_meta_data: JSON.stringify({ model: req.body.model, voice: req.body.voice, source: "OpenAI: Text-To-Speech" }),
     };

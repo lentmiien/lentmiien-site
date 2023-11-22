@@ -193,7 +193,7 @@ const tts = async (api_endpoint, text, voice) => {
   const buffer = Buffer.from(await mp3.arrayBuffer());
   await fs.promises.writeFile(outputfile, buffer);
   await OpenAIAPICallLog_tts("Lennart", api_endpoint, text, voice, filename)
-  return { filename };
+  return { filename, prompt: text };
 };
 
 const ig = async (prompt, quality, size) => {
