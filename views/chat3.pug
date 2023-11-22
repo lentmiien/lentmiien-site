@@ -74,6 +74,9 @@ block content
             option(value="fable") Fable
             option(value="onyx") Onyx
             option(value="shimmer") Shimmer
+  #imageModal.modal
+    span.close-btn(onclick="closeModalPopup()") &times;
+    img#fullSizeImage.modal-content(src="", alt="Full Size Image")
   #loadingPopup.loading-popup
     .loading-content
       .loader

@@ -131,7 +131,7 @@ function Populate(head_index) {
       if (thread[i].img.length > 0 || thread[i].mp3.length > 0) {
         attachments += "<hr>";
         if (thread[i].img.length > 0) {
-          attachments += `<img src="${thread[i].img}" alt="DALL-E-3 generated image" style="height:100px;">`;
+          attachments += `<img class="thumbnail" src="${thread[i].img}" alt="DALL-E-3 generated image" onclick="showModalPopup(this)" style="height:100px;">`;
         }
         if (thread[i].mp3.length > 0) {
           attachments += `<audio controls><source src="${thread[i].mp3}" type="audio/mpeg"></audio>`;
@@ -143,9 +143,6 @@ function Populate(head_index) {
       chatmessages_element.innerHTML += `<div class="row"><div class="col-11"><div class="assistant">${thread[i].html}${attachments}</div></div><div class="col-1 centered-container"><button class="btn btn-primary" onclick="ShowPopup('${thread[i]._id}')">...</button></div></div>`;
     }
   }
-
-  console.log(thread);
-  console.log(this_conversation);
 
   // After displaying, scroll to bottom
   ScrollToBottomOfConversation();
@@ -180,6 +177,8 @@ const tool_chatmessages = document.getElementById("tool_chatmessages");
 const tooltitle = document.getElementById("tooltitle");
 const tool_input_context = document.getElementById("tool_input_context");
 const tool_input = document.getElementById("tool_input");
+const modal = document.getElementById('imageModal');
+const modalImg = document.getElementById("fullSizeImage");
 
 function ShowPopup(mid) {
   // Fill in data
@@ -203,6 +202,22 @@ window.onclick = function(event) {
   if (event.target == popup) {
     popup.style.display = "none";
   }
+  if (event.target == modal) {
+    modal.style.display = "none";
+  }
+}
+
+function showModalPopup(img) {
+  // Get the image and insert it inside the modal
+  modalImg.src = img.src;
+  
+  // Show the modal
+  modal.style.display = "block";
+}
+
+// Function to close the popup
+function closeModalPopup() {
+  modal.style.display = "none";
 }
 
 // Populate #tool_chatmessages
@@ -237,7 +252,7 @@ function PopulateTool(mid) {
       if (thread[i].img.length > 0 || thread[i].mp3.length > 0) {
         attachments += "<hr>";
         if (thread[i].img.length > 0) {
-          attachments += `<img src="${thread[i].img}" alt="DALL-E-3 generated image" style="height:100px;">`;
+          attachments += `<img class="thumbnail" src="${thread[i].img}" alt="DALL-E-3 generated image" onclick="showModalPopup(this)" style="height:100px;">`;
         }
         if (thread[i].mp3.length > 0) {
           attachments += `<audio controls><source src="${thread[i].mp3}" type="audio/mpeg"></audio>`;
