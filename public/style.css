@@ -209,9 +209,11 @@
 /* Modal Content (image) */
 .modal-content {
   display: block;
-  margin: auto;
-  max-width: 90%;
+  width: auto; /* Auto width to maintain aspect ratio */
+  height: auto; /* Auto height to maintain aspect ratio */
+  max-width: 100%; /* Max width adjusted below for larger screens */
   max-height: 80vh;
+  margin: 20px auto; /* Centers the image */
 }
 
 /* The Close Button */
