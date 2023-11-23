@@ -70,6 +70,9 @@ exports.post = async (req, res) => {
   const id = parseInt(req.body.id);
   const model = req.body.api_model;
 
+  const userPrompt = "savePrompt" in req.body ? req.body.savePrompt : req.body.messages[req.body.messages.length-1].content;
+  const contextPrompt = "saveContext" in req.body ? req.body.saveContext : req.body.messages[0].content;
+
   // ConversationID: { type: Number, required: true },
   const ConversationID = id
   // StartMessageID: { type: String, required: true, max: 100 },
@@ -77,11 +80,11 @@ exports.post = async (req, res) => {
   // PreviousMessageID: { type: String, required: true, max: 100 },
   const PreviousMessageID = req.body.head_id; // Response from OpenAI API need to use _id of user query
   // ContentText: { type: String, required: true },
-  const ContentText = req.body.messages[req.body.messages.length-1].content;
+  const ContentText = userPrompt;
   // ContentTokenCount: { type: Number, required: true },
   // --Get from OpenAI response
   // SystemPromptText: { type: String, required: true },
-  const SystemPromptText = req.body.messages[0].content;
+  const SystemPromptText = contextPrompt;
   // UserOrAssistantFlag: { type: Boolean, required: true },
   // --Set to true for input and false for API response
   // UserID: { type: String, required: true, max: 100 },
@@ -95,7 +98,6 @@ exports.post = async (req, res) => {
   // Timestamp: { type: Date, required: true },
   const Timestamp = new Date(); // Generate new timestamp for response after getting the response
 
-  // TODO: make function
   // Send to OpenAI API
   const response = await chatGPT(req.body.messages, model)
   // When get response

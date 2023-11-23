@@ -336,7 +336,6 @@ async function Send() {
   }
 }
 
-
 //message_id
 // Send a new inquery, appending to the selected node in the conversation
 async function SendTool() {
@@ -391,6 +390,71 @@ async function SendTool() {
     redirect: "follow", // manual, *follow, error
     referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
     body: JSON.stringify({id, messages, root, head_id, title, api_model}), // body data type must match "Content-Type" header
+  });
+  const status = await response.json();
+  console.log(status);
+  if(status.status === "OK") {
+    open(`/chat3?id=${id}`, "_self");
+  } else {
+    alert(status.msg);
+    hideLoadingPopup();
+  }
+}
+
+//message_id
+// Ask for a summary of selected nodes, then append to the open node in the conversation
+async function SummaryTool() {
+  showLoadingPopup();
+
+  const index = id_to_index_map[document.getElementById("message_id").innerText];
+  const id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
+  const context = document.getElementById("tool_input_context").value + " Your task is to summarize the content of the text provided by the user.";
+  const root = (index >= 0 ? this_conversation[index].StartMessageID : "root");
+  const head_id = document.getElementById("message_id").innerText;
+  const title = tooltitle.value;
+  const api_model = model.value;
+
+  // Gather checked messages
+  const ids_to_use = [];
+  const texts_to_use = [];
+  const checkboxes = document.getElementsByName("msg");
+  for (let i = 0; i < checkboxes.length; i++) {
+    if (checkboxes[i].checked) {
+      ids_to_use.push(checkboxes[i].dataset.id);
+      const this_index = id_to_index_map[checkboxes[i].dataset.id];
+      texts_to_use.push(this_conversation[this_index].ContentText);
+    }
+  }
+
+  const prompt = `Please give me a summary of the following pieces of text:\n---\n${texts_to_use.join('\n---\n')}\n---`;
+  const savePrompt = `Please give me a summary of the texts from messages: ${ids_to_use.join(", ")}`;
+  const saveContext = document.getElementById("tool_input_context").value;
+
+  // Set up message array
+  const messages = [];
+  messages.push({
+    role: "user",
+    content: prompt,
+  });
+  messages.push({
+    role: "system",
+    content: context,
+  });
+  messages.reverse();
+
+  // Call API
+  const response = await fetch("/chat3/post", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({id, messages, root, head_id, title, api_model, savePrompt, saveContext}), // body data type must match "Content-Type" header
   });
   const status = await response.json();
   console.log(status);
