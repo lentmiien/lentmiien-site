@@ -211,7 +211,7 @@
   width: auto; /* Auto width to maintain aspect ratio */
   height: auto; /* Auto height to maintain aspect ratio */
   max-width: 100%; /* Max width adjusted below for larger screens */
-  max-height: 80vh;
+  max-height: 90vh;
   margin: 20px auto; /* Centers the image */
 }
 
