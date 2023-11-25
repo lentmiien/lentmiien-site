@@ -226,42 +226,46 @@ function PopulateTool(mid) {
   const chatmessages_element = document.getElementById("tool_chatmessages");
   chatmessages_element.innerHTML = "";
 
+  const start_id = this_conversation[id_to_index_map[mid]].StartMessageID;
+
   const thread = [];
   for (let c = id_to_index_map[mid]; c != -1; c = this_conversation[c].PreviousMessageID === "root" ? -1 : id_to_index_map[this_conversation[c].PreviousMessageID]) {
-    thread.push({
-      _id: this_conversation[c]._id.toString(),
-      text: this_conversation[c].ContentText,
-      html: this_conversation[c].HTMLText,
-      img: this_conversation[c].Images,
-      mp3: this_conversation[c].Sounds,
-      user: this_conversation[c].UserOrAssistantFlag,
-      prev_id: this_conversation[c].PreviousMessageID,
-      prev_count: this_conversation[c].PreviousMessageID === "root" ? 1 : refer_count[id_to_index_map[this_conversation[c].PreviousMessageID]],
-      prev_next: this_conversation[c].PreviousMessageID === "root" ? [this_conversation[c]._id.toString()] : next_map[id_to_index_map[this_conversation[c].PreviousMessageID]],
-    });
+    thread.push(this_conversation[c]._id.toString());
+    // thread.push({
+    //   _id: this_conversation[c]._id.toString(),
+    //   text: this_conversation[c].ContentText,
+    //   html: this_conversation[c].HTMLText,
+    //   img: this_conversation[c].Images,
+    //   mp3: this_conversation[c].Sounds,
+    //   user: this_conversation[c].UserOrAssistantFlag,
+    //   prev_id: this_conversation[c].PreviousMessageID,
+    //   prev_count: this_conversation[c].PreviousMessageID === "root" ? 1 : refer_count[id_to_index_map[this_conversation[c].PreviousMessageID]],
+    //   prev_next: this_conversation[c].PreviousMessageID === "root" ? [this_conversation[c]._id.toString()] : next_map[id_to_index_map[this_conversation[c].PreviousMessageID]],
+    // });
   }
 
   // Render output
-  for (let i = thread.length - 1; i >= 0; i--) {
-    if (thread[i].user) {
+  for (let i = 0; i < this_conversation.length; i++) {
+    let conv_msg = true;
+    if (thread.indexOf(this_conversation[i]._id.toString()) === -1) {
+      conv_msg = false;
+    }
+    if (this_conversation[i].UserOrAssistantFlag) {
       // User message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="user"><input type="checkbox" data-id="${thread[i]._id}" name="msg">${thread[i].html}</div></div></div>`;
+      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="${conv_msg ? "user" : "system-small"}"><input class="${conv_msg ? "" : "hidden"}" type="radio" data-id="${this_conversation[i]._id.toString()}" name="start"${this_conversation[i]._id.toString() === start_id ? " checked" : ""}><input type="checkbox" data-id="${this_conversation[i]._id.toString()}" name="msg">${this_conversation[i].HTMLText}</div></div></div>`;
     } else {
       // Chatbot message
       let attachments = "";
-      if (thread[i].img.length > 0 || thread[i].mp3.length > 0) {
+      if (this_conversation[i].Images.length > 0 || this_conversation[i].Sounds.length > 0) {
         attachments += "<hr>";
-        if (thread[i].img.length > 0) {
-          attachments += `<img class="thumbnail" src="${thread[i].img}" alt="DALL-E-3 generated image" onclick="showModalPopup(this)" style="height:100px;">`;
+        if (this_conversation[i].Images.length > 0) {
+          attachments += `<img class="thumbnail" src="${this_conversation[i].Images}" alt="DALL-E-3 generated image" onclick="showModalPopup(this)" style="height:100px;">`;
         }
-        if (thread[i].mp3.length > 0) {
-          attachments += `<audio controls><source src="${thread[i].mp3}" type="audio/mpeg"></audio>`;
+        if (this_conversation[i].Sounds.length > 0) {
+          attachments += `<audio controls><source src="${this_conversation[i].Sounds}" type="audio/mpeg"></audio>`;
         }
-        //img(src=`${ig_file}`, alt="DALL-E-3 generated image", style="width:100%;")
-        //audio.form-control(controls)
-        //  source(src=`${tts_file}`, type="audio/mpeg")
       }
-      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="assistant"><input type="checkbox" data-id="${thread[i]._id}" name="msg">${thread[i].html}${attachments}</div></div></div>`;
+      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="${conv_msg ? "assistant" : "system-small"}"><input class="${conv_msg ? "" : "hidden"}" type="radio" data-id="${this_conversation[i]._id.toString()}" name="start"${this_conversation[i]._id.toString() === start_id ? " checked" : ""}><input type="checkbox" data-id="${this_conversation[i]._id.toString()}" name="msg">${this_conversation[i].HTMLText}${attachments}</div></div></div>`;
     }
   }
 
@@ -351,7 +355,7 @@ async function SendTool() {
   const api_model = model.value;
 
   // Change root to first checked message
-  const checkboxes = document.getElementsByName("msg");
+  const checkboxes = document.getElementsByName("start");
   for (let i = 0; i < checkboxes.length; i++) {
     if (checkboxes[i].checked) {
       root = checkboxes[i].dataset.id;

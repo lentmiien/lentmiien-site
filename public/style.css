@@ -33,6 +33,15 @@
   margin: 5px;
 }
 
+.system-small {
+  border: 1px dashed darkgray;
+  background-color: rgb(220, 220, 220);
+  border-radius: 5px;
+  padding: 10px;
+  margin: 5px;
+  font-size: x-small;
+}
+
 .fotter {
   border-top: 1px solid darkblue;
   color: rgb(100, 100, 100);
