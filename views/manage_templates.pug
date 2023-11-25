@@ -23,5 +23,5 @@ block content
       form(action="/chat3/manage_templates_delete", method="post") 
         select#id.form-control(name="id") 
           each t in chat_templates
-            option(value=`${t._id.toString()}`)= `[${t.Type}] - [${t.Category}] ${t.Title}`
+            option(value=`${t._id.toString()}`, title=`${t.TemplateText}`)= `[${t.Type}] - [${t.Category}] ${t.Title}`
         input.btn.btn-danger(type="submit", value="Delete")

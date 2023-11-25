@@ -86,7 +86,7 @@ block content
         optgroup(label=`${type}`)
           each template in chat_templates
             if template.Type === type
-              option(value=`${template._id.toString()}`)= `[${template.Category}] ${template.Title}`
+              option(value=`${template._id.toString()}`, title=`${template.TemplateText}`)= `[${template.Category}] ${template.Title}`
   #loadingPopup.loading-popup
     .loading-content
       .loader
