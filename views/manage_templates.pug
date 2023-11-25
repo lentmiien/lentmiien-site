@@ -13,7 +13,7 @@ block content
           option(value="context") Context
           option(value="image") Image
         label(for="category") Category 
-        input#category(type="text", name="category")
+        input#category.form-control(type="text", name="category")
         label(for="text") Prompt text 
         textarea#text.form-control(name="text", cols="30", rows="10")
         input.btn.btn-primary(type="submit", value="Save")

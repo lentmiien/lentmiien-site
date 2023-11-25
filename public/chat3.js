@@ -235,9 +235,13 @@ function closeTModalPopup() {
 function processTModal(element) {
   chat_templates.forEach(d => {
     if (element.value === d._id) {
-      if (d.type === "context") {
+      if (d.Type === "context") {
         //tool_input_context
         document.getElementById("tool_input_context").value = d.TemplateText;
+        const nc = document.getElementById("new_context");
+        if (nc) {
+          nc.value = d.TemplateText;
+        }
       } else {
         //tool_input
         document.getElementById("tool_input").value = d.TemplateText;
