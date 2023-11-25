@@ -12,7 +12,7 @@ block content
     .col-11
       textarea#input.form-control.chat-textarea(name="input", cols="30", rows="5")
     .col-1
-      button.btn.btn-primary(title="Select template popup") T
+      button.btn.btn-primary(onclick="showTModalPopup()", title="Select template popup") T
       br
       button.btn.btn-primary(onclick="Send()", title="Send message") S
   .row 
@@ -44,6 +44,7 @@ block content
       .row
         .col.button-container
           button.btn.btn-primary(onclick="SendTool()") Send message
+          button.btn.btn-primary(onclick="showTModalPopup()", title="Select template popup") T
           button.btn.btn-secondary(onclick="SummaryTool()") Create summary
           button.btn.btn-success(onclick="GenerateImage()") Generate image
           button.btn.btn-success(onclick="GenerateSound()") Text to speech
@@ -77,11 +78,21 @@ block content
   #imageModal.modal
     span.close-btn(onclick="closeModalPopup()") &times;
     img#fullSizeImage.modal-content(src="", alt="Full Size Image")
+  #templateModal.modal
+    span.close-btn(onclick="closeTModalPopup()") &times;
+    select.form-control(onchange="processTModal(this)")
+      option(value="") 
+      each type in ["chat", "context", "image"]
+        optgroup(label=`${type}`)
+          each template in chat_templates
+            if template.Type === type
+              option(value=`${template._id.toString()}`)= `[${template.Category}] ${template.Title}`
   #loadingPopup.loading-popup
     .loading-content
       .loader
       p Loading...
-  pre#this_conversation.hidden= JSON.stringify(this_conversation, null, 2)
-  pre#chats.hidden= JSON.stringify(chats, null, 2)
+  pre#this_conversation.hidden= JSON.stringify(this_conversation)
+  pre#chats.hidden= JSON.stringify(chats)
   pre#new_conversation_id.hidden= new_conversation_id
+  pre#chat_templates.hidden= JSON.stringify(chat_templates)
   script(src="/chat3.js") 

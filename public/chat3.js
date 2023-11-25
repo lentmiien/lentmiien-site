@@ -2,6 +2,7 @@ const this_conversation = JSON.parse(document.getElementById("this_conversation"
 const chats = JSON.parse(document.getElementById("chats").innerText);
 const new_conversation_id = parseInt(document.getElementById("new_conversation_id").innerText);
 const model = document.getElementById("model");
+const chat_templates = JSON.parse(document.getElementById("chat_templates").innerText);
 
 let current_head_index = -1;
 
@@ -178,6 +179,7 @@ const tooltitle = document.getElementById("tooltitle");
 const tool_input_context = document.getElementById("tool_input_context");
 const tool_input = document.getElementById("tool_input");
 const modal = document.getElementById('imageModal');
+const templatemodal = document.getElementById('templateModal');
 const modalImg = document.getElementById("fullSizeImage");
 
 function ShowPopup(mid) {
@@ -205,6 +207,9 @@ window.onclick = function(event) {
   if (event.target == modal) {
     modal.style.display = "none";
   }
+  if (event.target == templatemodal) {
+    templatemodal.style.display = "none";
+  }
 }
 
 function showModalPopup(img) {
@@ -214,10 +219,34 @@ function showModalPopup(img) {
   // Show the modal
   modal.style.display = "block";
 }
+function showTModalPopup() {
+  // Show the modal
+  templatemodal.style.display = "block";
+}
 
 // Function to close the popup
 function closeModalPopup() {
   modal.style.display = "none";
+}
+function closeTModalPopup() {
+  templatemodal.style.display = "none";
+}
+
+function processTModal(element) {
+  chat_templates.forEach(d => {
+    if (element.value === d._id) {
+      if (d.type === "context") {
+        //tool_input_context
+        document.getElementById("tool_input_context").value = d.TemplateText;
+      } else {
+        //tool_input
+        document.getElementById("tool_input").value = d.TemplateText;
+        //input
+        document.getElementById("input").value = d.TemplateText;
+      }
+    }
+  });
+  closeTModalPopup();
 }
 
 // Populate #tool_chatmessages

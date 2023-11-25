@@ -24,6 +24,7 @@ const ArticleModel = require('./models/article');
 const ChatModel = require('./models/chat');
 const Chat2Model = require('./models/chat2');
 const Chat3Model = require('./models/chat3');
+const Chat3TemplateModel = require('./models/chat3_template');
 const OpenaichatModel = require('./models/openai_chat');
 const EmbeddingModel = require('./models/embedding');
 const FileMetaModel = require('./models/file_meta');
@@ -51,6 +52,7 @@ module.exports = {
   ChatModel,
   Chat2Model,
   Chat3Model,
+  Chat3TemplateModel,
   OpenaichatModel,
   EmbeddingModel,
   FileMetaModel,

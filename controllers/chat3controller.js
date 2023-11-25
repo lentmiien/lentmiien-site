@@ -3,7 +3,7 @@ const { chatGPT, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/Chat
 const utils = require('../utils/utils');
 
 // Require necessary database models
-const { Chat3Model, FileMetaModel } = require('../database');
+const { Chat3Model, Chat3TemplateModel, FileMetaModel } = require('../database');
 
 exports.index = async (req, res) => {
   const this_conversation_id = "id" in req.query ? parseInt(req.query.id) : -1;
@@ -11,6 +11,18 @@ exports.index = async (req, res) => {
 
   // Load current database
   const chat_data = await Chat3Model.find();
+  const chat_templates = await Chat3TemplateModel.find();
+
+  // Sort temlpates
+  chat_templates.sort((a,b) => {
+    if (a.Type < b.Type) return -1;
+    if (a.Type > b.Type) return 1;
+    if (a.Category < b.Category) return -1;
+    if (a.Category > b.Category) return 1;
+    if (a.Title < b.Title) return -1;
+    if (a.Title > b.Title) return 1;
+    return 0;
+  });
 
   // Prepare this_conversation
   const this_conversation = [];
@@ -63,7 +75,7 @@ exports.index = async (req, res) => {
   // Load model data
   const models = await GetModels("chat")
 
-  res.render("chat3", {chatmode: true, this_conversation, chats, new_conversation_id, models});
+  res.render("chat3", {chatmode: true, this_conversation, chats, new_conversation_id, models, chat_templates});
 };
 
 exports.post = async (req, res) => {
@@ -236,3 +248,39 @@ exports.generate_tts = async (req, res) => {
     res.json({status: "ERROR", msg: "Failed to generate sound."});
   }
 }
+
+exports.manage_templates = async (req, res) => {
+  const chat_templates = await Chat3TemplateModel.find();
+  chat_templates.sort((a,b) => {
+    if (a.Type < b.Type) return -1;
+    if (a.Type > b.Type) return 1;
+    if (a.Category < b.Category) return -1;
+    if (a.Category > b.Category) return 1;
+    if (a.Title < b.Title) return -1;
+    if (a.Title > b.Title) return 1;
+    return 0;
+  });
+  res.render("manage_templates", { chat_templates });
+};
+
+/*
+  Title: { type: String, required: true, max: 100 },
+  Type: { type: String, required: true, max: 100 },
+  Category: { type: String, required: true, max: 100 },
+  TemplateText: { type: String, required: true },
+*/
+exports.manage_templates_post = async (req, res) => {
+  // Input body
+  // title
+  // type
+  // category
+  // text
+  const entry = {
+    Title: req.body.title,
+    Type: req.body.type,
+    Category: req.body.category,
+    TemplateText: req.body.text,
+  };
+  await new Chat3TemplateModel(entry).save();
+  res.redirect('/chat3/manage_templates');
+};
