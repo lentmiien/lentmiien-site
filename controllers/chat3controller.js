@@ -290,3 +290,38 @@ exports.manage_templates_delete = async (req, res) => {
   await Chat3TemplateModel.deleteOne({_id: id_to_delete});
   res.redirect('/chat3/manage_templates');
 };
+
+// Local VectorDB
+const VDB = require("../cache/chat3vdb.json");
+
+exports.manage_knowledge = (req, res) => {
+  // To display and manage knowledge templates
+  // Also to review and manage existing knowledge entries
+  // Display manage_knowledge.pug
+}
+
+exports.manage_knowledge_add_template = (req, res) => {
+  // POST: input for saving a new knowledge template
+  // Forward to manage_knowledge when done
+}
+
+exports.manage_knowledge_delete_template = (req, res) => {
+  // POST: input id for knowledge template to delete
+  // Forward to manage_knowledge when done
+}
+
+exports.manage_knowledge_add = (req, res) => {
+  // GET: conversation id in query, load conversation and display form for generating new knowledge entry
+  // Display manage_knowledge_add.pug
+}
+
+exports.manage_knowledge_add_post = (req, res) => {
+  // POST: Add new knowledge entry to database
+  // Also add vector embedding to local file with vector embeddings, and append to "VDB"
+  // Forward to manage_knowledge when done
+}
+
+exports.manage_knowledge_fetch = (req, res) => {
+  // POST: input prompt, convert to vector embedding, then check locally stored vector embeddings, and return the 20 most similar texts to the user
+  // Works as API endpoint and return JSON data
+}
