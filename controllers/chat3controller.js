@@ -284,3 +284,9 @@ exports.manage_templates_post = async (req, res) => {
   await new Chat3TemplateModel(entry).save();
   res.redirect('/chat3/manage_templates');
 };
+
+exports.manage_templates_delete = async (req, res) => {
+  const id_to_delete = req.body.id;
+  await Chat3TemplateModel.deleteOne({_id: id_to_delete});
+  res.redirect('/chat3/manage_templates');
+};

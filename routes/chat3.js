@@ -13,5 +13,6 @@ router.post('/mp3', controller.generate_tts);
 
 router.get('/manage_templates', controller.manage_templates);
 router.post('/manage_templates_post', controller.manage_templates_post);
+router.post('/manage_templates_delete', controller.manage_templates_delete);
 
 module.exports = router;
