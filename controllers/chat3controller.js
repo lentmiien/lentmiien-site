@@ -1,5 +1,7 @@
+const fs = require('fs');
+const path = require('path');
 const marked = require('marked');
-const { chatGPT, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 
 // Require necessary database models
@@ -424,15 +426,71 @@ exports.manage_knowledge_add = async (req, res) => {
   res.render('manage_knowledge_add', {msgs, msg_id: req.query.msg_id, current_templates, unique_titles});
 };
 
-exports.manage_knowledge_add_post = (req, res) => {
+/*
+const Chat3_knowledge = new mongoose.Schema({
+  templateId: { type: String, required: true, max: 100 },
+  title: { type: String, required: true, max: 100 },
+  createdDate: { type: Date, required: true },
+  originId: { type: String, required: true, max: 100 },
+  data: { type: String, required: true },
+  category: { type: String, required: true, max: 100 },
+  author: { type: String, required: true, max: 100 },
+});
+*/
+exports.manage_knowledge_add_post = async (req, res) => {
   // POST: Add new knowledge entry to database
   // Also add vector embedding to local file with vector embeddings, and append to "VDB"
   // Forward to manage_knowledge when done
 
-  console.log(req.body);
+  // Grab the template data
+  const knowledge_templates = await Chat3KnowledgeTModel.find({_id: req.body.templateId});
+  const data_format = JSON.parse(knowledge_templates[0].dataFormat);
 
-  // TODO: replace below url with "/chat3/manage_knowledge" when done testing
-  res.redirect("/chat3/manage_knowledge_add?id=17&msg_id=6562f4d0eaf9d0d858c30fd6");
+  // Generate and save entry
+  const entry = {
+    templateId: req.body.templateId,
+    title: req.body.title,
+    createdDate: new Date(),
+    originId: req.body.originId,
+    data: "",
+    category: req.body.category,
+    author: "Lennart",
+  };
+  const entry_data = {};
+  const vector_string = "";
+  data_format.forEach(d => {
+    const label = d.data_label;
+    const value = req.body[label];
+    entry_data[label] = value;
+
+    if (d.for_embedding) {
+      vector_string = (vector_string.length > 0 ? vector_string + '\r\n\r\n' + value : value);
+    }
+  });
+  entry.data = JSON.stringify(entry_data);
+  const db_entry = await new Chat3KnowledgeModel(entry).save();
+
+  // Generate vector embedding
+  const response = await embedding(vector_string, "text-embedding-ada-002");
+  await OpenAIAPICallLog(req.user.name, "text-embedding-ada-002", response.usage.total_tokens, 0, vector_string, JSON.stringify(response.data[0].embedding));
+  VDB.push({
+    db_id: db_entry._id.toString(),
+    vector: response.data[0].embedding,
+  });
+  // Convert the object to a JSON string
+  const jsonString = JSON.stringify(VDB);
+  // Construct the output path relative to this script's location
+  const outputPath = path.join(__dirname, '../cache/chat3vdb.json');
+  // Save the JSON string to a file
+  fs.writeFile(outputPath, jsonString, (err) => {
+    if (err) {
+        console.error('Error writing file:', err);
+    } else {
+        console.log('File saved successfully!');
+    }
+  });
+
+  res.redirect("/chat3/manage_knowledge");
 };
 
 exports.manage_knowledge_fetch = (req, res) => {
