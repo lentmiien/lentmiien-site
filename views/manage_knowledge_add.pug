@@ -2,14 +2,35 @@ extends layout
 
 block content
   .row 
-    .col 
+    .col-6 
       h2 Chat messages 
       each m in msgs 
         div(class=`${m._id.toString() === msg_id ? "assistant" : "system-small"}`)
           pre= m.ContentText
-    .col 
+    .col-6 
       h2 Knowledge form
+      select.form-control(onchange="ChangeForm(this)") 
+        each t, i in current_templates
+          option(value=`${i}`)= t.title
+      each t, i in current_templates
+        div(id=`form${i}`, class=`kform-container${i === 0 ? "" : " hidden"}`)
+          form(action=`/chat3/manage_knowledge_add_post`, method="post") 
+            input(type="hidden", name="templateId", value=`${t._id.toString()}`)
+            label(for=`title_${i}`) Title 
+            input.form-control(id=`title_${i}`, type="text", name="title")
+            input(type="hidden", name="originId", value=`${msg_id}`)
+            label(for=`category_${i}`) Category 
+            input.form-control(id=`category_${i}`, type="text", name="category")
+            each field in JSON.parse(t.dataFormat)
+              label(for=`${field.data_label}_${i}`)= `${field.data_label}${field.required ? "*" : ""} [${field.data_type}]`
+              if field.data_type === "Text"
+                textarea.form-control(id=`${field.data_label}_${i}`, name=`${field.data_label}`, cols="30", rows="5")
+              else
+                input.form-control(id=`${field.data_label}_${i}`, type="text", name=`${field.data_label}`)
+            input(type="submit", value="Save")
+
   pre#msgs.hid_den= JSON.stringify(msgs, null, 2)
   pre#msg_id.hid_den= msg_id
   pre#current_templates.hid_den= JSON.stringify(current_templates, null, 2)
   pre#unique_titles.hid_den= JSON.stringify(unique_titles, null, 2)
+  script(src="/manage_knowledge_add.js") 

@@ -428,6 +428,11 @@ exports.manage_knowledge_add_post = (req, res) => {
   // POST: Add new knowledge entry to database
   // Also add vector embedding to local file with vector embeddings, and append to "VDB"
   // Forward to manage_knowledge when done
+
+  console.log(req.body);
+
+  // TODO: replace below url with "/chat3/manage_knowledge" when done testing
+  res.redirect("/chat3/manage_knowledge_add?id=17&msg_id=6562f4d0eaf9d0d858c30fd6");
 };
 
 exports.manage_knowledge_fetch = (req, res) => {
