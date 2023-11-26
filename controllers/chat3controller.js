@@ -343,9 +343,51 @@ exports.manage_knowledge = async (req, res) => {
   res.render('manage_knowledge', { current_templates, backward_templates, knowledges, unique_titles });
 };
 
-exports.manage_knowledge_add_template = (req, res) => {
+/*
+input#title.form-control(type="text", name="title", onchange="UpdateVersion(this)")
+input#version.form-control(type="text", name="version", readonly)
+textarea#description.form-control(name="description", cols="30", rows="10")
+textarea#dataFormat.form-control(name="dataFormat", cols="30", rows="10", title="data_label:data_type(Number/Text):required(true/false):for_embedding(true/false)")
+*/
+/*
+const Chat3_knowledge_t = new mongoose.Schema({
+  title: { type: String, required: true, max: 100 },
+  version: { type: Number, required: true },
+  createdDate: { type: Date, required: true },
+  description: { type: String, required: true },
+  dataFormat: { type: String, required: true },
+});
+*/
+exports.manage_knowledge_add_template = async (req, res) => {
   // POST: input for saving a new knowledge template
   // Forward to manage_knowledge when done
+  
+  // Parse dataFormat
+  let linedel = (req.body.dataFormat.indexOf('\r\n') > 0) ? '\r\n' : '\n';
+  let lines = req.body.dataFormat.split(linedel);
+  let json_object = [];
+  lines.forEach(l => {
+    const cell = l.split(":");
+    json_object.push({
+      data_label: cell[0],
+      data_type: cell[1],
+      required: cell[2] === 'true',
+      for_embedding: cell[3] === 'true',
+    });
+  });
+
+  // Generate and save entry
+  const entry = {
+    title: req.body.title,
+    version: parseInt(req.body.version),
+    createdDate: new Date(),
+    description: req.body.description,
+    dataFormat: JSON.stringify(json_object),
+  };
+  await new Chat3KnowledgeTModel(entry).save();
+
+  // Redirect
+  res.redirect('/chat3/manage_knowledge');
 };
 
 exports.manage_knowledge_delete_template = (req, res) => {

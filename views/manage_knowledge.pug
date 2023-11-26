@@ -4,19 +4,26 @@ block content
   .row 
     .col 
       h2 Add new template form
-      //- const Chat3_knowledge_t = new mongoose.Schema({
-      //- title: { type: String, required: true, max: 100 },
-      //- version: { type: Number, required: true },
-      //- createdDate: { type: Date, required: true },
-      //- description: { type: String, required: true },
-      //- dataFormat: { type: String, required: true },
-      //- });
+      form(action="/chat3/manage_knowledge_add_template", method="post") 
+        label(for="title") Title 
+        input#title.form-control(type="text", name="title", onchange="UpdateVersion(this)")
+        label(for="version") Version (*updated when title is changed)
+        input#version.form-control(type="text", name="version", readonly)
+        label(for="description") Description 
+        textarea#description.form-control(name="description", cols="30", rows="10")
+        label(for="dataFormat") Data format (JSON)
+        textarea#dataFormat.form-control(name="dataFormat", cols="30", rows="10", title="data_label:data_type(Number/Text):required(true/false):for_embedding(true/false)")= "data_label:data_type(Number/Text):required(true/false):for_embedding(true/false)"
+        input.btn.btn-primary(type="submit", value="Save template")
   .row 
     .col 
       h2 Current templates list
+      each t in current_templates
+        p= `${t.title} v${t.version}`
   .row 
     .col 
       h2 Backward compability templates
+      each t in backward_templates
+        p= `${t.title} v${t.version}`
   pre#current_templates.hid_den= JSON.stringify(current_templates, null, 2)
   pre#backward_templates.hid_den= JSON.stringify(backward_templates, null, 2)
   pre#knowledges.hid_den= JSON.stringify(knowledges, null, 2)
