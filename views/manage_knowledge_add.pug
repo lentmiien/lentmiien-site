@@ -1,0 +1,15 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      h2 Chat messages 
+      each m in msgs 
+        div(class=`${m._id.toString() === msg_id ? "assistant" : "system-small"}`)
+          pre= m.ContentText
+    .col 
+      h2 Knowledge form
+  pre#msgs.hid_den= JSON.stringify(msgs, null, 2)
+  pre#msg_id.hid_den= msg_id
+  pre#current_templates.hid_den= JSON.stringify(current_templates, null, 2)
+  pre#unique_titles.hid_den= JSON.stringify(unique_titles, null, 2)

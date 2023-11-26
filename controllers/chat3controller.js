@@ -399,9 +399,29 @@ exports.manage_knowledge_delete_template = async (req, res) => {
   res.json({status: "OK"});
 };
 
-exports.manage_knowledge_add = (req, res) => {
-  // GET: conversation id in query, load conversation and display form for generating new knowledge entry
+exports.manage_knowledge_add = async (req, res) => {
+  // GET: conversation id and msg_id in query, load conversation and display form for generating new knowledge entry
   // Display manage_knowledge_add.pug
+
+  // Load data from database
+  const knowledge_templates = await Chat3KnowledgeTModel.find();
+  const msgs = await Chat3Model.find({ConversationID: req.query.id});
+
+  // Only get the current templates
+  const current_templates = [];
+  const unique_titles = [];
+  // 1. sort with highest version at top
+  knowledge_templates.sort((a,b) => b.version - a.version);
+  // 2. assign to current or backward (first template with unique title goes to current, otherwise to backward)
+  for (let i = 0; i < knowledge_templates.length; i++) {
+    if (unique_titles.indexOf(knowledge_templates[i].title) === -1) {
+      unique_titles.push(knowledge_templates[i].title);
+      current_templates.push(knowledge_templates[i]);
+    }
+  }
+
+  // Display output
+  res.render('manage_knowledge_add', {msgs, msg_id: req.query.msg_id, current_templates, unique_titles});
 };
 
 exports.manage_knowledge_add_post = (req, res) => {

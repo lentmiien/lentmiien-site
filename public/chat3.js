@@ -582,3 +582,11 @@ async function GenerateSound() {
     hideLoadingPopup();
   }
 }
+
+function OpenKDB() {
+  const id = document.getElementById("message_id").innerText;
+  const index = id_to_index_map[id];
+  const conversation_id = (index >= 0 ? this_conversation[index].ConversationID : new_conversation_id);
+
+  open(`/chat3/manage_knowledge_add?id=${conversation_id}&msg_id=${id}`, "_self");
+}
