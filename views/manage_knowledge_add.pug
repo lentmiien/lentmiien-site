@@ -7,6 +7,9 @@ block content
       each m in msgs 
         div(class=`${m._id.toString() === msg_id ? "assistant" : "system-small"}`)
           pre= m.ContentText
+          if m.Images && m.Images.length > 0
+            img.thumbnail(src=`${m.Images}`, alt="DALL-E-3 generated image")
+            p= m.Images
     .col-6 
       h2 Knowledge form
       select.form-control(onchange="ChangeForm(this)") 
