@@ -3,7 +3,7 @@ const { chatGPT, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/Chat
 const utils = require('../utils/utils');
 
 // Require necessary database models
-const { Chat3Model, Chat3TemplateModel, FileMetaModel } = require('../database');
+const { Chat3Model, Chat3TemplateModel, Chat3KnowledgeTModel, Chat3KnowledgeModel, FileMetaModel } = require('../database');
 
 exports.index = async (req, res) => {
   const this_conversation_id = "id" in req.query ? parseInt(req.query.id) : -1;
@@ -115,7 +115,7 @@ exports.post = async (req, res) => {
   // When get response
   if (response) {
     // Save to API call log
-    await OpenAIAPICallLog(req.user.name, model, response.usage.prompt_tokens, response.usage.completion_tokens, JSON.stringify(req.body.messages), response.choices[0].message.content);
+    await OpenAIAPICallLog(req.user.name, model, response.usage.prompt_tokens, response.usage.completion_tokens, "[INPUT]", "[OUTPUT]");
     // Save prompt and response messages to database
     //   (also update StartMessageID and PreviousMessageID appropriately)
     try {
@@ -293,35 +293,78 @@ exports.manage_templates_delete = async (req, res) => {
 
 // Local VectorDB
 const VDB = require("../cache/chat3vdb.json");
+/*
+const Chat3_knowledge_t = new mongoose.Schema({
+  title: { type: String, required: true, max: 100 },
+  version: { type: Number, required: true },
+  createdDate: { type: Date, required: true },
+  description: { type: String, required: true },
+  dataFormat: { type: String, required: true },
+});
+*/
+/*
+const Chat3_knowledge = new mongoose.Schema({
+  templateId: { type: String, required: true, max: 100 },
+  title: { type: String, required: true, max: 100 },
+  createdDate: { type: Date, required: true },
+  originId: { type: String, required: true, max: 100 },
+  data: { type: String, required: true },
+  category: { type: String, required: true, max: 100 },
+  author: { type: String, required: true, max: 100 },
+});
+*/
 
-exports.manage_knowledge = (req, res) => {
+exports.manage_knowledge = async (req, res) => {
   // To display and manage knowledge templates
   // Also to review and manage existing knowledge entries
   // Display manage_knowledge.pug
-}
+
+  // Load data
+  const knowledge_templates = await Chat3KnowledgeTModel.find();
+  const knowledges = await Chat3KnowledgeModel.find();
+
+  // Split templates as current and backward compability
+  const current_templates = [];
+  const backward_templates = [];
+  const unique_titles = [];
+  // 1. sort with highest version at top
+  knowledge_templates.sort((a,b) => b.version - a.version);
+  // 2. assign to current or backward (first template with unique title goes to current, otherwise to backward)
+  for (let i = 0; i < knowledge_templates.length; i++) {
+    if (unique_titles.indexOf(knowledge_templates[i].title) >= 0) {
+      backward_templates.push(knowledge_templates[i]);
+    } else {
+      unique_titles.push(knowledge_templates[i].title);
+      current_templates.push(knowledge_templates[i]);
+    }
+  }
+
+  // Display output
+  res.render('manage_knowledge', { current_templates, backward_templates, knowledges, unique_titles });
+};
 
 exports.manage_knowledge_add_template = (req, res) => {
   // POST: input for saving a new knowledge template
   // Forward to manage_knowledge when done
-}
+};
 
 exports.manage_knowledge_delete_template = (req, res) => {
   // POST: input id for knowledge template to delete
   // Forward to manage_knowledge when done
-}
+};
 
 exports.manage_knowledge_add = (req, res) => {
   // GET: conversation id in query, load conversation and display form for generating new knowledge entry
   // Display manage_knowledge_add.pug
-}
+};
 
 exports.manage_knowledge_add_post = (req, res) => {
   // POST: Add new knowledge entry to database
   // Also add vector embedding to local file with vector embeddings, and append to "VDB"
   // Forward to manage_knowledge when done
-}
+};
 
 exports.manage_knowledge_fetch = (req, res) => {
   // POST: input prompt, convert to vector embedding, then check locally stored vector embeddings, and return the 20 most similar texts to the user
   // Works as API endpoint and return JSON data
-}
+};

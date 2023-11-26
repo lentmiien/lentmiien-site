@@ -1,0 +1,23 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      h2 Add new template form
+      //- const Chat3_knowledge_t = new mongoose.Schema({
+      //- title: { type: String, required: true, max: 100 },
+      //- version: { type: Number, required: true },
+      //- createdDate: { type: Date, required: true },
+      //- description: { type: String, required: true },
+      //- dataFormat: { type: String, required: true },
+      //- });
+  .row 
+    .col 
+      h2 Current templates list
+  .row 
+    .col 
+      h2 Backward compability templates
+  pre#current_templates.hid_den= JSON.stringify(current_templates, null, 2)
+  pre#backward_templates.hid_den= JSON.stringify(backward_templates, null, 2)
+  pre#knowledges.hid_den= JSON.stringify(knowledges, null, 2)
+  script(src="/manage_knowledge.js") 
