@@ -390,9 +390,13 @@ exports.manage_knowledge_add_template = async (req, res) => {
   res.redirect('/chat3/manage_knowledge');
 };
 
-exports.manage_knowledge_delete_template = (req, res) => {
+exports.manage_knowledge_delete_template = async (req, res) => {
   // POST: input id for knowledge template to delete
-  // Forward to manage_knowledge when done
+  // When done return status OK
+
+  const id_to_delete = req.body.id;
+  await Chat3KnowledgeTModel.deleteOne({_id: id_to_delete});
+  res.json({status: "OK"});
 };
 
 exports.manage_knowledge_add = (req, res) => {
