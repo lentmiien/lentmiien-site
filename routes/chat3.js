@@ -24,5 +24,6 @@ router.post('/manage_knowledge_delete_template', controller.manage_knowledge_del
 router.get('/manage_knowledge_add', controller.manage_knowledge_add);
 router.post('/manage_knowledge_add_post', controller.manage_knowledge_add_post);
 router.post('/manage_knowledge_fetch', controller.manage_knowledge_fetch);
+router.get('/browse_knowledge', controller.browse_knowledge);
 
 module.exports = router;

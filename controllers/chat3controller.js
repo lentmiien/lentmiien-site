@@ -497,3 +497,25 @@ exports.manage_knowledge_fetch = (req, res) => {
   // POST: input prompt, convert to vector embedding, then check locally stored vector embeddings, and return the 20 most similar texts to the user
   // Works as API endpoint and return JSON data
 };
+
+exports.browse_knowledge = async (req, res) => {
+  // GET: query {id}
+
+  // Templates
+  const knowledge_templates = await Chat3KnowledgeTModel.find();
+  let title = null;
+  knowledge_templates.forEach(t => {
+    if (t._id.toString() === req.query.id) {
+      title = t.title;
+    }
+  });
+  const ids = [];
+  const templates = knowledge_templates.filter(t => t.title === title);
+  templates.forEach(t => ids.push(t._id.toString()));
+
+  // Knowledge
+  const knowledges = await Chat3KnowledgeModel.find();
+  const knows = knowledges.filter(k => ids.indexOf(k.templateId) >= 0);
+
+  res.render("browse_knowledge", {ids, templates, knows})
+};

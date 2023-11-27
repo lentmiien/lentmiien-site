@@ -1,0 +1,9 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2 Browse knowledge 
+  pre#ids= JSON.stringify(ids, null, 2)
+  pre#templates= JSON.stringify(templates, null, 2)
+  pre#knows= JSON.stringify(knows, null, 2)

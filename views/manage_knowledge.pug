@@ -19,6 +19,7 @@ block content
       h2 Current templates list
       each t in current_templates
         p= `${t.title} v${t.version} `
+          a.btn.btn-link(href=`/chat3/browse_knowledge?id=${t._id.toString()}`) Browse
           button.btn.btn-danger(onclick=`Delete("${t._id.toString()}")`, title="Delete") X
           button.btn.btn-primary(onclick=`Copy("${t._id.toString()}")`, title="Copy") C
   .row 
