@@ -457,7 +457,7 @@ exports.manage_knowledge_add_post = async (req, res) => {
     author: "Lennart",
   };
   const entry_data = {};
-  const vector_string = "";
+  let vector_string = "";
   data_format.forEach(d => {
     const label = d.data_label;
     const value = req.body[label];
