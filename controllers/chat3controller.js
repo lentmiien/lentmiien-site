@@ -8,12 +8,21 @@ const utils = require('../utils/utils');
 const { Chat3Model, Chat3TemplateModel, Chat3KnowledgeTModel, Chat3KnowledgeModel, FileMetaModel } = require('../database');
 
 exports.index = async (req, res) => {
-  const this_conversation_id = "id" in req.query ? parseInt(req.query.id) : -1;
+  let this_conversation_id = "id" in req.query ? parseInt(req.query.id) : -1;
   let new_conversation_id = 0;
 
   // Load current database
   const chat_data = await Chat3Model.find();
   const chat_templates = await Chat3TemplateModel.find();
+
+  // if chat parameter in query, update this_conversation_id to match id for chat message
+  if ("chat" in req.query) {
+    chat_data.forEach(d => {
+      if (d._id.toString() === req.query.chat) {
+        this_conversation_id = d.ConversationID;
+      }
+    });
+  }
 
   // Sort temlpates
   chat_templates.sort((a,b) => {

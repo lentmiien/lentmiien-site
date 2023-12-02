@@ -69,7 +69,7 @@ function DisplayPage(num) {
   const note = document.createElement("div");
 
   name.innerText = master_data[num].name;
-  chat_link.href = `/chat3?chat=${master_data[num].originId}`;
+  chat_link.href = `/chat3?chat=${master_data[num].m_chat_id}`;
   chat_link.innerText = "View chat"
   image.src = master_data[num].image;
   image.classList.add("image-large");
