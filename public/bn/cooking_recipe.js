@@ -94,6 +94,8 @@ function DisplayIndex() {
     span.innerText = d.m_title;
     button.append(span);
 
+    button.addEventListener("click", () => DisplayPage(i));
+
     index.append(button);
   });
 }
