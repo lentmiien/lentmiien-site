@@ -75,7 +75,7 @@ function DisplayPage(num) {
   image.classList.add("image-large");
   ingredients.innerHTML = marked.parse(master_data[num].ingredients);
   instructions.innerHTML = marked.parse(master_data[num].instructions);
-  note.innerText = master_data[num].note;
+  note.innerText = marked.parse(master_data[num].note);
 
   content.append(name, chat_link, br, image, ingredients, instructions, note);
 }
