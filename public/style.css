@@ -241,3 +241,15 @@
   width: auto; /* Maintain aspect ratio */
   margin-right: 5px;
 }
+
+#content {
+  border: 1px dashed black;
+  padding: 5px;
+  border-radius: 10px;
+}
+
+.image-large {
+  height: 256px; /* Set the maximum height of the thumbnails */
+  width: auto; /* Maintain aspect ratio */
+  margin: 5px;
+}

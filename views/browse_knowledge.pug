@@ -11,4 +11,5 @@ block content
   pre#ids= JSON.stringify(ids, null, 2)
   pre#templates= JSON.stringify(templates, null, 2)
   pre#knows= JSON.stringify(knows, null, 2)
-  script(src=`/bn/${templates[0].title.toLowerCase().split(" ").join("_")}.js`) 
+  script(src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.0.0/marked.min.js")
+  script(src=`/bn/${templates[0].title.toLowerCase().split(" ").join("_")}.js`)
