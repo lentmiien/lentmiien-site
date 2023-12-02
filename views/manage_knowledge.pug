@@ -29,7 +29,7 @@ block content
         p= `${t.title} v${t.version} `
           button.btn.btn-danger(onclick=`Delete("${t._id.toString()}")`, title="Delete") X
           button.btn.btn-primary(onclick=`Copy("${t._id.toString()}")`, title="Copy") C
-  pre#current_templates.hid_den= JSON.stringify(current_templates, null, 2)
-  pre#backward_templates.hid_den= JSON.stringify(backward_templates, null, 2)
-  pre#knowledges.hid_den= JSON.stringify(knowledges, null, 2)
+  pre#current_templates.hidden= JSON.stringify(current_templates, null, 2)
+  pre#backward_templates.hidden= JSON.stringify(backward_templates, null, 2)
+  pre#knowledges.hidden= JSON.stringify(knowledges, null, 2)
   script(src="/manage_knowledge.js") 

@@ -8,8 +8,8 @@ block content
     #content.col 
   .row 
     #index.col 
-  pre#ids= JSON.stringify(ids, null, 2)
-  pre#templates= JSON.stringify(templates, null, 2)
-  pre#knows= JSON.stringify(knows, null, 2)
+  pre#ids.hidden= JSON.stringify(ids, null, 2)
+  pre#templates.hidden= JSON.stringify(templates, null, 2)
+  pre#knows.hidden= JSON.stringify(knows, null, 2)
   script(src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.0.0/marked.min.js")
   script(src=`/bn/${templates[0].title.toLowerCase().split(" ").join("_")}.js`)
