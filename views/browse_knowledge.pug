@@ -4,6 +4,11 @@ block content
   .row
     .col
       h2 Browse knowledge 
+  .row 
+    #content.col 
+  .row 
+    #index.col 
   pre#ids= JSON.stringify(ids, null, 2)
   pre#templates= JSON.stringify(templates, null, 2)
   pre#knows= JSON.stringify(knows, null, 2)
+  script(src=`/bn/${templates[0].title.toLowerCase().split(" ").join("_")}.js`) 
