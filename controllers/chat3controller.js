@@ -201,20 +201,20 @@ exports.import = async (req, res) => {
   let Timestamp;
 
   // Loop through input messages and add one by one
-  for (let i = 0; i < req.body.message.length; i++) {
+  for (let i = 0; i < req.body.messages.length; i++) {
     Timestamp = new Date();
     const entry = {
       ConversationID,
       StartMessageID,
       PreviousMessageID,
-      ContentText: req.body.message[i].ContentText,
-      ContentTokenCount: req.body.message[i].ContentTokenCount,
-      SystemPromptText: req.body.message[i].SystemPromptText,
-      UserOrAssistantFlag: req.body.message[i].UserOrAssistantFlag,
-      UserID: req.body.message[i].UserID,
-      Title: req.body.message[i].Title,
-      Images: req.body.message[i].Images,
-      Sounds: req.body.message[i].Sounds,
+      ContentText: req.body.messages[i].ContentText,
+      ContentTokenCount: req.body.messages[i].ContentTokenCount,
+      SystemPromptText: req.body.messages[i].SystemPromptText,
+      UserOrAssistantFlag: req.body.messages[i].UserOrAssistantFlag,
+      UserID: req.body.messages[i].UserID,
+      Title: req.body.messages[i].Title,
+      Images: req.body.messages[i].Images,
+      Sounds: req.body.messages[i].Sounds,
       Timestamp,
     };
     const db_entry = await new Chat3Model(entry).save();

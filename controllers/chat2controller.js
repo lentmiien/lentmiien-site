@@ -53,6 +53,7 @@ exports.index = (req, res) => {
             title: d.title,
             role: d.role,
             model: d.model,
+            raw_content: d.content,
             content: marked.parse(d.content),
             date: d.created,
             tokens: d.tokens,

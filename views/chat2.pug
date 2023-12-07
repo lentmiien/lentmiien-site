@@ -23,6 +23,10 @@ block content
         each entry in chat_list
           a.btn.btn-outline-secondary.mt-1(href=`/chat2?id=${entry.id}`)= entry.title
     .col-10 
+      .input-group
+        span.input-group-text Export to chat3
+        span.input-group-text
+          button.btn.btn-warning(onclick="ExportToChat3()") Export
       form(action="/chat2/post", method="post") 
         input#id(type="hidden", name="id", value=`${chat_id}`)
         .input-group.mb-1
@@ -40,10 +44,10 @@ block content
         .input-group.mb-1
           span.input-group-text Context
           input#system.form-control(type="text", name="system", placeholder="Context message, Ex: You are a helpful assistant.", value=`${chat_context}`, readonly=chat_id > 0 ? true : false)
-        div.input-group
+        div.input-group.mb-1
           textarea#message.form-control(name="message")
           span.input-group-text
-            input.btn.btn-primary(type="submit", value="Send")
+            input.btn.btn-primary(type="submit", value="Send", disabled)
         #chatwindow 
           - let i = chat_hist.length - 1
           while i >= 0
@@ -51,4 +55,6 @@ block content
               .message!= chat_hist[i].content
               .fotter= `Role: ${chat_hist[i].role}, Model: ${chat_hist[i].model}, Tokens: ${chat_hist[i].tokens}`
             - i -= 1
+  pre#chat_hist.hidden= JSON.stringify(chat_hist)
   script(src="/utils.js") 
+  script(src="/chat2.js") 
