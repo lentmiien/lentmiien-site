@@ -9,6 +9,7 @@ router.get('/', controller.index);
 
 // Generate content
 router.post('/post', controller.post);
+router.post('/import', controller.import);
 router.post('/img', controller.generate_image);
 router.post('/mp3', controller.generate_tts);
 

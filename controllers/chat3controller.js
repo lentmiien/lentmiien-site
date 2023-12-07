@@ -182,6 +182,70 @@ exports.post = async (req, res) => {
   }
 };
 
+exports.import = async (req, res) => {
+  // A chat conversation on req.body, from older chat and ChatGPT archive
+
+  // ConversationID -> Generate at beginning, next available ID
+  let ConversationID = 0;
+  const chat_data = await Chat3Model.find();
+  chat_data.forEach(d => {
+    // Set new_conversation_id
+    if (ConversationID <= d.ConversationID) {
+      ConversationID = d.ConversationID + 1;
+    }
+  });
+
+  // StartMessageID / PreviousMessageID / Timestamp
+  let StartMessageID = "root";
+  let PreviousMessageID = "root";
+  let Timestamp;
+
+  // Loop through input messages and add one by one
+  for (let i = 0; i < req.body.message.length; i++) {
+    Timestamp = new Date();
+    const entry = {
+      ConversationID,
+      StartMessageID,
+      PreviousMessageID,
+      ContentText: req.body.message[i].ContentText,
+      ContentTokenCount: req.body.message[i].ContentTokenCount,
+      SystemPromptText: req.body.message[i].SystemPromptText,
+      UserOrAssistantFlag: req.body.message[i].UserOrAssistantFlag,
+      UserID: req.body.message[i].UserID,
+      Title: req.body.message[i].Title,
+      Images: req.body.message[i].Images,
+      Sounds: req.body.message[i].Sounds,
+      Timestamp,
+    };
+    const db_entry = await new Chat3Model(entry).save();
+    PreviousMessageID = db_entry._id.toString();
+    if (StartMessageID === "root") {
+      StartMessageID = db_entry._id.toString();
+      await Chat3Model.findByIdAndUpdate(
+        db_entry._id,
+        { StartMessageID: db_entry._id.toString() },
+        { new: true });
+    }
+  }
+  
+  /*
+  ConversationID -> Generate at beginning, next available ID
+  StartMessageID -> Generate while adding one by one
+  PreviousMessageID -> Generate while adding one by one
+  ContentText -> Should be in input
+  ContentTokenCount -> Should be in input
+  SystemPromptText -> Should be in input
+  UserOrAssistantFlag -> Should be in input
+  UserID -> Should be in input
+  Title -> Should be in input
+  Images -> Should be in input
+  Sounds -> Should be in input
+  Timestamp -> Generate while adding one by one
+  */
+
+  res.redirect(`/chat3?id=${ConversationID}`);
+};
+
 /*
   FileMetaModel
 
