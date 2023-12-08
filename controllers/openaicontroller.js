@@ -24,6 +24,7 @@ exports.index = async (req, res) => {
       pdata[index].messages.push({
         role: d.role,
         model: d.model,
+        raw_content: d.content,
         content: marked.parse(d.content),
         created: d.created,
       });
@@ -38,6 +39,7 @@ exports.index = async (req, res) => {
           {
             role: d.role,
             model: d.model,
+            raw_content: d.content,
             content: marked.parse(d.content),
             created: d.created,
           }

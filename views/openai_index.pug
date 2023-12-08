@@ -16,11 +16,13 @@ block content
       if pdata.length == 0
         h2 No data...
       else
-        each d in pdata 
+        each d, i in pdata 
           .openai_conversation 
             h2= d.title
+            button.btn.btn-warning(onclick=`ExportToChat3(${i})`) Export to Chat3
             each m in d.messages 
               div(class=`${m.role}`)
                 .openai_content!= m.content
                 .fotter= `Role: ${m.role}, Date: ${m.created}`
+  pre#pdata.hidden= JSON.stringify(pdata)
   script(src="openai_filter.js") 
