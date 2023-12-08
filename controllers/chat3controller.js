@@ -243,7 +243,7 @@ exports.import = async (req, res) => {
   Timestamp -> Generate while adding one by one
   */
 
-  res.redirect(`/chat3?id=${ConversationID}`);
+  res.json({status: "OK", id: `${ConversationID}`, msg: "Done!"});
 };
 
 /*
