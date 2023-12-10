@@ -53,14 +53,19 @@ chats.sort((a,b) => {
   return 0
 });
 
+const historymodal = document.getElementById('historyModal');
+
 // Populate chat history and chat heads menus
 function PopulateMenus() {
   // Fill in conversation history
   // history_list
   const history_list = document.getElementById("history_list");
   // a.dropdown-item(href="/chat3?id=0", title="text of last message") Cold
-  chats.forEach(d => {
-    history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title="${d.last_message.split("\"").join("'")}">${d.Title}</a>`;
+  chats.forEach((d, i) => {
+    if (i < 20) {
+      history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title="${d.last_message.split("\"").join("'")}">${d.Title}</a>`;
+    }
+    historymodal.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="btn btn-secondary history-button" title="${d.last_message.split("\"").join("'")}">${d.Title}</a>`;
   });
 
   // Fill in conversation heads
@@ -223,6 +228,10 @@ function showTModalPopup() {
   // Show the modal
   templatemodal.style.display = "block";
 }
+function showHModalPopup() {
+  // Show the modal
+  historymodal.style.display = "block";
+}
 
 // Function to close the popup
 function closeModalPopup() {
@@ -230,6 +239,9 @@ function closeModalPopup() {
 }
 function closeTModalPopup() {
   templatemodal.style.display = "none";
+}
+function closeHModalPopup() {
+  historymodal.style.display = "none";
 }
 
 function processTModal(element) {

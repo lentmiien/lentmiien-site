@@ -214,6 +214,11 @@
   background-color: rgba(0,0,0,0.7); /* Black w/ opacity */
 }
 
+.history-button {
+  z-index: 10;
+  margin: 3px;
+}
+
 /* Modal Content (image) */
 .modal-content {
   display: block;
