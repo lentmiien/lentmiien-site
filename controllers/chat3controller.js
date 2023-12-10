@@ -14,6 +14,7 @@ exports.index = async (req, res) => {
   // Load current database
   const chat_data = await Chat3Model.find();
   const chat_templates = await Chat3TemplateModel.find();
+  const knowledges = await Chat3KnowledgeModel.find();
 
   // if chat parameter in query, update this_conversation_id to match id for chat message
   if ("chat" in req.query) {
@@ -86,7 +87,7 @@ exports.index = async (req, res) => {
   // Load model data
   const models = await GetModels("chat")
 
-  res.render("chat3", {chatmode: true, this_conversation, chats, new_conversation_id, models, chat_templates});
+  res.render("chat3", {chatmode: true, this_conversation, chats, new_conversation_id, models, chat_templates, knowledges});
 };
 
 exports.post = async (req, res) => {

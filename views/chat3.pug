@@ -79,14 +79,24 @@ block content
     span.close-btn(onclick="closeModalPopup()") &times;
     img#fullSizeImage.modal-content(src="", alt="Full Size Image")
   #templateModal.modal
-    span.close-btn(onclick="closeTModalPopup()") &times;
-    select.form-control(onchange="processTModal(this)")
-      option(value="") 
-      each type in ["chat", "context", "image"]
-        optgroup(label=`${type}`)
-          each template in chat_templates
-            if template.Type === type
-              option(value=`${template._id.toString()}`, title=`${template.TemplateText}`)= `[${template.Category}] ${template.Title}`
+    .div-group
+      h2 Templates
+      span.close-btn(onclick="closeTModalPopup()") &times;
+      select.form-control(onchange="processTModal(this)")
+        option(value="") 
+        each type in ["chat", "context", "image"]
+          optgroup(label=`${type}`)
+            each template in chat_templates
+              if template.Type === type
+                option(value=`${template._id.toString()}`, title=`${template.TemplateText}`)= `[${template.Category}] ${template.Title}`
+    .div-group
+      h2 Knowledge
+      i *Only works if context is included in "send"
+      br
+      each k in knowledges
+        div(title=`${k.data}`, style="display:inline-block;margin-right: 20px;") 
+          input(type="checkbox", name="knowledge", data-name=`${k.title}`, data-id=`${k._id}`, data-templateid=`${k.templateId}`, data-category=`${k.category}`, onclick="ClickKnowledgeCheckbox(this)")
+          span= `${k.title} (${k.category})`
   #historyModal.modal
     span.close-btn(onclick="closeHModalPopup()") &times;
   #loadingPopup.loading-popup

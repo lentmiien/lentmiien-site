@@ -219,6 +219,10 @@
   margin: 3px;
 }
 
+.div-group {
+  background-color: rgba(255, 255, 255, 0.7);
+}
+
 /* Modal Content (image) */
 .modal-content {
   display: block;
@@ -232,9 +236,9 @@
 /* The Close Button */
 .close-btn {
   position: absolute;
-  top: 15px;
+  top: 10px;
   right: 35px;
-  color: white;
+  color: black;
   font-size: 40px;
   font-weight: bold;
   cursor: pointer;

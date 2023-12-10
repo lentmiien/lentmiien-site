@@ -225,12 +225,62 @@ function showModalPopup(img) {
   modal.style.display = "block";
 }
 function showTModalPopup() {
+  // Set checkboxes for knowledge entries
+  const checkboxes = document.getElementsByName("knowledge");
+  const new_context = document.getElementById("new_context");
+  const tool_input_context = document.getElementById("tool_input_context");
+  let context_text = tool_input_context.value;
+  if (new_context) {
+    context_text = new_context.value;
+  }
+  for (let i = 0; i < checkboxes.length; i++) {
+    if (context_text.indexOf(checkboxes[i].dataset.id) >= 0) {
+      checkboxes[i].checked = true;
+    } else {
+      checkboxes[i].checked = false;
+    }
+  }
+
   // Show the modal
   templatemodal.style.display = "block";
 }
 function showHModalPopup() {
   // Show the modal
   historymodal.style.display = "block";
+}
+
+function ClickKnowledgeCheckbox(element) {
+  // Add or remove from context textbox
+  const new_context = document.getElementById("new_context");
+  const tool_input_context = document.getElementById("tool_input_context");
+  let context_text = tool_input_context.value;
+  if (new_context) {
+    context_text = new_context.value;
+  }
+
+  if (element.checked && context_text.indexOf(element.dataset.id) === -1) {
+    // Add -> '|title;id;templateId|'
+    context_text += `|${element.dataset.name};${element.dataset.id};${element.dataset.templateid}|`;
+  }
+  if (!element.checked && context_text.indexOf(element.dataset.id) >= 0) {
+    // Remove -> '|title;id;templateId|'
+    const parts = context_text.split("|");
+    const new_parts = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].indexOf(element.dataset.id) >= 0) {
+        i++;
+      } else {
+        new_parts.push(parts[i]);
+      }
+    }
+    context_text = new_parts.join("|");
+  }
+
+  if (new_context) {
+    new_context.value = context_text;
+  } else {
+    tool_input_context.value = context_text;
+  }
 }
 
 // Function to close the popup
