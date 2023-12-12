@@ -3,6 +3,7 @@ const path = require('path');
 const marked = require('marked');
 const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
+const kparser = require('../utils/knowledgeParser');
 
 // Require necessary database models
 const { Chat3Model, Chat3TemplateModel, Chat3KnowledgeTModel, Chat3KnowledgeModel, FileMetaModel } = require('../database');
@@ -129,9 +130,15 @@ exports.post = async (req, res) => {
     let outputContext = "";
     let knowledge_to_inject = [];
 
+    // Knowledge
     const knowledges = await Chat3KnowledgeModel.find();
     const knids = [];
     knowledges.forEach(k => knids.push(k._id.toString()));
+
+    // Knowledge templates
+    const knowledge_templates = await Chat3KnowledgeTModel.find();
+    const kntids = [];
+    knowledge_templates.forEach(k => kntids.push(k._id.toString()));
 
     const context_parts = rawContext.split("|");
     for (let i = 0; i < context_parts.length; i++) {
@@ -140,11 +147,12 @@ exports.post = async (req, res) => {
         // '|title;id;templateId|'
         const details = context_parts[i].split(";");
         const kindex = knids.indexOf(details[1]);
-        if (kindex >= 0) {
+        const ktindex = kntids.indexOf(details[2]);
+        if (kindex >= 0 && ktindex >= 0) {
           // Is knowledge, index kindex in knowledge array
-          knowledge_to_inject.push(knowledges[kindex]);// TODO: Extract knowledge and add as string to knowledge_to_inject (should be array of strings)
+          knowledge_to_inject.push(kparser[knowledge_templates[ktindex].title](knowledge_templates[ktindex].version, knowledges[kindex].data));
         } else {
-          // Is not knowledge, or unknown knowledge (deleted)
+          // Is not knowledge, or unknown knowledge/knowledge template (deleted)
           outputContext += context_parts[i];
         }
       } else {
