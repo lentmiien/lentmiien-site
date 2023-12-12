@@ -96,6 +96,7 @@ exports.post = async (req, res) => {
 
   const userPrompt = "savePrompt" in req.body ? req.body.savePrompt : req.body.messages[req.body.messages.length-1].content;
   const contextPrompt = "saveContext" in req.body ? req.body.saveContext : req.body.messages[0].content;
+  const rawContext = req.body.messages[0].content;
 
   // ConversationID: { type: Number, required: true },
   const ConversationID = id
@@ -121,6 +122,42 @@ exports.post = async (req, res) => {
   const Sounds = "";
   // Timestamp: { type: Date, required: true },
   const Timestamp = new Date(); // Generate new timestamp for response after getting the response
+
+  // Load knowledge and inject in context [req.body.messages[0].content]
+  if (rawContext.indexOf("|") >= 0) {
+    let outputContext = "";
+    let knowledge_to_inject = [];
+
+    const knowledges = await Chat3KnowledgeModel.find();
+    const knids = [];
+    knowledges.forEach(k => knids.push(k._id.toString()));
+
+    const context_parts = rawContext.split("|");
+    for (let i = 0; i < context_parts.length; i++) {
+      if (context_parts[i].indexOf(";") >= 0) {
+        // Could be a knowledge part
+        // '|title;id;templateId|'
+        const details = context_parts[i].split(";");
+        const kindex = knids.indexOf(details[1]);
+        if (kindex >= 0) {
+          // Is knowledge, index kindex in knowledge array
+          knowledge_to_inject.push(knowledges[kindex]);// TODO: Extract knowledge and add as string to knowledge_to_inject (should be array of strings)
+        } else {
+          // Is not knowledge, or unknown knowledge (deleted)
+          outputContext += context_parts[i];
+        }
+      } else {
+        // Not knowledge
+        outputContext += context_parts[i];
+      }
+    }
+
+    if (knowledge_to_inject.length > 0) {
+      outputContext += ` Please use the following information to guide your response:\n\n---\n\n${knowledge_to_inject.join("\n\n---\n\n")}\n\n---\n\n`;
+    }
+
+    req.body.messages[0].content = outputContext;
+  }
 
   // Send to OpenAI API
   const response = await chatGPT(req.body.messages, model)
