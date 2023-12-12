@@ -75,6 +75,7 @@ exports.index = async (req, res) => {
       if (d.Timestamp > chats[index].last_timestamp) {
         chats[index].last_timestamp = d.Timestamp;
         chats[index].last_message = d.ContentText;
+        chats[index].Title = d.Title;
       }
     }
 
