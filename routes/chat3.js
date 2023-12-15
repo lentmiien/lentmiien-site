@@ -24,6 +24,8 @@ router.post('/manage_knowledge_add_template', controller.manage_knowledge_add_te
 router.post('/manage_knowledge_delete_template', controller.manage_knowledge_delete_template);
 router.get('/manage_knowledge_add', controller.manage_knowledge_add);
 router.post('/manage_knowledge_add_post', controller.manage_knowledge_add_post);
+router.get('/manage_knowledge_edit', controller.manage_knowledge_edit);
+router.post('/manage_knowledge_edit_post', controller.manage_knowledge_edit_post);
 router.post('/manage_knowledge_fetch', controller.manage_knowledge_fetch);
 router.get('/browse_knowledge', controller.browse_knowledge);
 

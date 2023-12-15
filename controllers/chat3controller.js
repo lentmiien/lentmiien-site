@@ -613,6 +613,29 @@ exports.manage_knowledge_add_post = async (req, res) => {
   res.redirect("/chat3/manage_knowledge");
 };
 
+exports.manage_knowledge_edit = async (req, res) => {
+  const know = await Chat3KnowledgeModel.findById(req.query.id);
+  const template = await Chat3KnowledgeTModel.findById(know.templateId);
+  const templates = await Chat3KnowledgeTModel.find({title: template.title});
+  const newest_template = templates.sort((a,b) => {
+    if (a.version > b.version) return -1;
+    if (a.version < b.version) return 1;
+    return 0;
+  })[0];
+  const chatmessage = await Chat3Model.findById(know.originId);
+  const chatmessages = await Chat3Model.find({ConversationID: chatmessage.ConversationID});
+  // input: knowledge entry id
+  // get from database: knowledge entry, knowledge template, chat conversation
+  // display: chat conversation on left side and pre-populated knowledge entry on right side
+  // if newer version of template exists, show input form for latest version, and map current data to newer version (same fields: show pre-populated, new fields: show empty, deleted fields: show as text labels only *don't submit with form)
+  res.render('manage_knowledge_edit', {know, template: newest_template, chatmessages});
+};
+
+exports.manage_knowledge_edit_post = async (req, res) => {
+  // input: form data, including _id field
+  // replace entry in knowledge database
+};
+
 exports.manage_knowledge_fetch = (req, res) => {
   // POST: input prompt, convert to vector embedding, then check locally stored vector embeddings, and return the 20 most similar texts to the user
   // Works as API endpoint and return JSON data

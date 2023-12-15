@@ -20,6 +20,7 @@ for (let i = 0; i < templates.length; i++) {
 for (let i = 0; i < knows.length; i++) {
   knows[i].data = JSON.parse(knows[i].data);
   const new_data = {
+    m_id: knows[i]._id,
     m_title: knows[i].title,
     m_chat_id: knows[i].originId,
     m_author: knows[i].author,
@@ -62,6 +63,7 @@ function DisplayPage(num) {
 
   const name = document.createElement("h2");
   const chat_link = document.createElement("a");
+  const edit_link = document.createElement("a");
   const br = document.createElement("br");
   const image = document.createElement("img");
   const ingredients = document.createElement("div");
@@ -70,14 +72,18 @@ function DisplayPage(num) {
 
   name.innerText = master_data[num].name;
   chat_link.href = `/chat3?chat=${master_data[num].m_chat_id}`;
-  chat_link.innerText = "View chat"
+  chat_link.innerText = "View chat";
+  chat_link.classList.add("btn", "btn-link");
+  edit_link.href = `/chat3/manage_knowledge_edit?id=${master_data[num].m_id}`;
+  edit_link.innerText = "Edit";
+  edit_link.classList.add("btn", "btn-link");
   image.src = master_data[num].image;
   image.classList.add("image-large");
   ingredients.innerHTML = marked.parse(master_data[num].ingredients);
   instructions.innerHTML = marked.parse(master_data[num].instructions);
   note.innerHTML = marked.parse(master_data[num].note);
 
-  content.append(name, chat_link, br, image, ingredients, instructions, note);
+  content.append(name, chat_link, edit_link, br, image, ingredients, instructions, note);
 }
 
 function DisplayIndex() {

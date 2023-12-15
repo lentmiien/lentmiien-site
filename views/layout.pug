@@ -16,7 +16,7 @@ html(lang='en')
   body
     nav.navbar.navbar-expand-lg.bg-body-tertiary
       .container-fluid
-        a.navbar-brand(href="/") lentmiien
+        a.navbar-brand(href=`${loggedIn ? "/mypage" : "/"}`) lentmiien
         button.navbar-toggler(type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation")
           span.navbar-toggler-icon
         #navbar.collapse.navbar-collapse
