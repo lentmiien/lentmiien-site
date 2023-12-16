@@ -624,16 +624,56 @@ exports.manage_knowledge_edit = async (req, res) => {
   })[0];
   const chatmessage = await Chat3Model.findById(know.originId);
   const chatmessages = await Chat3Model.find({ConversationID: chatmessage.ConversationID});
+
+  // Generate update structure
+  const update_data = {};
+  const tdf = JSON.parse(newest_template.dataFormat);
+  tdf.forEach(d => {
+    update_data[d.data_label] = {
+      type: d.data_type,
+      required: d.required,
+      value: "",
+    };
+  });
+  const kd = JSON.parse(know.data);
+  const keys = Object.keys(kd);
+  keys.forEach(key => {
+    if (key in update_data) {
+      update_data[key].value = kd[key];
+    } else {
+      update_data[key] = {
+        type: "label",
+        require: false,
+        value: kd[key],
+      }
+    }
+  });
   // input: knowledge entry id
   // get from database: knowledge entry, knowledge template, chat conversation
   // display: chat conversation on left side and pre-populated knowledge entry on right side
   // if newer version of template exists, show input form for latest version, and map current data to newer version (same fields: show pre-populated, new fields: show empty, deleted fields: show as text labels only *don't submit with form)
-  res.render('manage_knowledge_edit', {know, template: newest_template, chatmessages});
+  res.render('manage_knowledge_edit', {know, template: newest_template, chatmessages, update_data, keys: Object.keys(update_data)});
 };
 
 exports.manage_knowledge_edit_post = async (req, res) => {
+  console.log(req.body);
+  const keys = Object.keys(req.body);
+  const data = {};
+  keys.forEach(key => {
+    if (key != "id" && key != "title" && key != "category") {
+      data[key] = req.body[key];
+    }
+  });
+  const update_data = {
+
+  }
+  // const update1 = await Chat3Model.findByIdAndUpdate(
+  //   entry1._id,
+  //   { StartMessageID: entry1._id.toString() },
+  //   { new: true });
   // input: form data, including _id field
   // replace entry in knowledge database
+  res.send("OK");
 };
 
 exports.manage_knowledge_fetch = (req, res) => {
