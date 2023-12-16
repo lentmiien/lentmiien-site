@@ -13,6 +13,7 @@ block content
     .col-6 
       h3 Edit knowledge form
       form(action="/chat3/manage_knowledge_edit_post", method="post") 
+        input(type="hidden", name="chat_template", value=`${template._id.toString()}`)
         input#id.form-control(type="text", name="id", value=`${know._id.toString()}`, readonly)
         label(for="title") Title 
         input#title.form-control(type="text", name="title", value=`${know.title}`)

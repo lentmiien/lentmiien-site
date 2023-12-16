@@ -656,24 +656,25 @@ exports.manage_knowledge_edit = async (req, res) => {
 };
 
 exports.manage_knowledge_edit_post = async (req, res) => {
-  console.log(req.body);
   const keys = Object.keys(req.body);
   const data = {};
   keys.forEach(key => {
-    if (key != "id" && key != "title" && key != "category") {
+    if (key != "id" && key != "title" && key != "category" && key != "chat_template") {
       data[key] = req.body[key];
     }
   });
   const update_data = {
-
+    title: req.body.title,
+    category: req.body.category,
+    data: JSON.stringify(data),
   }
-  // const update1 = await Chat3Model.findByIdAndUpdate(
-  //   entry1._id,
-  //   { StartMessageID: entry1._id.toString() },
-  //   { new: true });
+  await Chat3KnowledgeModel.findByIdAndUpdate(
+    req.body.id,
+    update_data
+  );
   // input: form data, including _id field
   // replace entry in knowledge database
-  res.send("OK");
+  res.redirect(`/chat3/browse_knowledge?id=${req.body.chat_template}`);
 };
 
 exports.manage_knowledge_fetch = (req, res) => {
