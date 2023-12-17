@@ -89,7 +89,8 @@ function DisplayPage(num) {
 function DisplayIndex() {
   master_data.forEach((d, i) => {
     const button = document.createElement("button");
-    button.classList.add("btn", "btn-link");
+    button.classList.add("btn", "btn-link", "index-button");
+    button.dataset.title = d.m_title;
     if (d.image && d.image.length > 0) {
       const img = document.createElement("img");
       img.src = d.image;
@@ -103,6 +104,32 @@ function DisplayIndex() {
     button.addEventListener("click", () => DisplayPage(i));
 
     index.append(button);
+  });
+
+  SortIndex();
+}
+
+function SortIndex() {
+  const index_buttons = document.getElementsByClassName("index-button");
+  const buttonsArray = Array.from(index_buttons);
+
+  buttonsArray.sort((a, b) => {
+    // Retrieve the title attributes
+    const titleA = a.getAttribute('data-title').toLowerCase();
+    const titleB = b.getAttribute('data-title').toLowerCase();
+
+    // Compare for sorting
+    if (titleA < titleB) return -1;
+    if (titleA > titleB) return 1;
+    return 0;
+  });
+
+  while (index.firstChild) {
+    index.removeChild(index.firstChild);
+  }
+
+  buttonsArray.forEach(button => {
+    index.appendChild(button);
   });
 }
 
