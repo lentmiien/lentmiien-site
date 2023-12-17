@@ -1,9 +1,40 @@
 extends layout
 
 block content
-  h3 know
-  pre= JSON.stringify(know, null, 2)
-  h3 template
-  pre= JSON.stringify(template, null, 2)
-  h3 chatmessages
-  pre= JSON.stringify(chatmessages, null, 2)
+  .row 
+    .col-6 
+      h3 Origin chat
+      each m in chatmessages
+        div(class=`${m._id.toString() === know.originId ? "user" : "system"}`)
+          pre= m.ContentText
+          if m.Images && m.Images.length > 0
+            img.thumbnail(src=`${m.Images}`, alt="DALL-E-3 generated image")
+            p= m.Images
+    .col-6 
+      h3 Edit knowledge form
+      form(action="/chat3/manage_knowledge_edit_post", method="post") 
+        input(type="hidden", name="chat_template", value=`${template._id.toString()}`)
+        input#id.form-control(type="text", name="id", value=`${know._id.toString()}`, readonly)
+        label(for="title") Title 
+        input#title.form-control(type="text", name="title", value=`${know.title}`)
+        label(for="category") Category 
+        input#category.form-control(type="text", name="category", value=`${know.category}`)
+        //- update_data, keys
+        each key in keys 
+          if update_data[key].type === "label"
+            div= update_data[key].value
+          else 
+            label(for=`${key}`)= `${key} [${update_data[key].type}]`
+            if update_data[key].type === "Text" 
+              textarea.form-control(id= `${key}`, name=`${key}`, cols="30", rows="5")= `${update_data[key].value}`
+            else
+              input.form-control(id= `${key}`, type="text", name=`${key}`, value=`${update_data[key].value}`)
+        input.btn.btn-primary(type="submit", value="Update")
+  div.hidden
+    hr
+    h3 know
+    pre= JSON.stringify(know, null, 2)
+    h3 template
+    pre= JSON.stringify(template, null, 2)
+    h3 chatmessages
+    pre= JSON.stringify(chatmessages, null, 2)
