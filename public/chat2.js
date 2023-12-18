@@ -1,6 +1,5 @@
 const chat_hist = JSON.parse(document.getElementById("chat_hist").innerText);
 
-// TODO finish this function
 async function ExportToChat3() {
   let SystemPromptText = "";
   chat_hist.forEach(d => {
