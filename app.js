@@ -34,6 +34,14 @@ const { UseraccountModel } = require('./database');
 const app = express();
 
 // Middleware
+app.get('/img', (req, res, next) => {
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  next();
+});
+app.get('/mp3', (req, res, next) => {
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
