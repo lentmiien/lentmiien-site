@@ -34,6 +34,7 @@ const { UseraccountModel } = require('./database');
 const app = express();
 
 // Middleware
+// Due to potential long loading times cache files in folders "/img" and "/mp3"
 app.get('/img', (req, res, next) => {
   res.set('Cache-Control', 'public, max-age=31536000, immutable');
   next();
