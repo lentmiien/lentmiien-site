@@ -74,45 +74,50 @@ function DisplayPage(num) {
 }
 
 function DisplayIndex() {
-  master_data.forEach((d, i) => {
-    const button = document.createElement("button");
-    button.classList.add("btn", "btn-link", "index-button");
-    button.dataset.title = `${d.m_title} (${d.m_category})`;
-    const span = document.createElement("span");
-    span.innerText = `${d.m_title} (${d.m_category})`;
-    button.append(span);
+  // Create Category sections, and display entries in aphabetic order under each category
 
-    button.addEventListener("click", () => DisplayPage(i));
-
-    index.append(button);
+  // 1. Get and sort categories
+  const category_list = [];
+  master_data.forEach(d => {
+    const index = category_list.indexOf(d.m_category);
+    if (index === -1) category_list.push(d.m_category);
   });
-
-  SortIndex();
-}
-
-function SortIndex() {
-  const index_buttons = document.getElementsByClassName("index-button");
-  const buttonsArray = Array.from(index_buttons);
-
-  buttonsArray.sort((a, b) => {
-    // Retrieve the title attributes
-    const titleA = a.getAttribute('data-title').toLowerCase();
-    const titleB = b.getAttribute('data-title').toLowerCase();
-
-    // Compare for sorting
-    if (titleA < titleB) return -1;
-    if (titleA > titleB) return 1;
+  category_list.sort((a,b) => {
+    if (a.toUpperCase() < b.toUpperCase()) return -1;
+    if (a.toUpperCase() > b.toUpperCase()) return 1;
     return 0;
   });
 
-  while (index.firstChild) {
-    index.removeChild(index.firstChild);
-  }
+  // 2. Sort master_data in alphabetic order
+  master_data.sort((a,b) => {
+    if (a.m_title.toUpperCase() < b.m_title.toUpperCase()) return -1;
+    if (a.m_title.toUpperCase() > b.m_title.toUpperCase()) return 1;
+    return 0;
+  });
 
-  buttonsArray.forEach(button => {
-    index.appendChild(button);
+  // 3. Go through each category and display relevant entries
+  category_list.forEach(category => {
+    const div = document.createElement("div");
+    const b = document.createElement("b");
+    b.innerText = `--- ${category} ---`;
+    div.append(b);
+    index.append(div);
+
+    master_data.forEach((d, i) => {
+      if (d.m_category === category) {
+        const button = document.createElement("button");
+        button.classList.add("btn", "btn-link", "index-button");
+        button.dataset.title = `${d.m_title}`;
+        const span = document.createElement("span");
+        span.innerText = `${d.m_title}`;
+        button.append(span);
+        
+        button.addEventListener("click", () => DisplayPage(i));
+        
+        index.append(button);
+      }
+    });
   });
 }
 
-// DisplayPage(0);
 DisplayIndex();
