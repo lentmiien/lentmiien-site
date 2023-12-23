@@ -502,7 +502,7 @@ async function SendTool() {
 
 //message_id
 // Ask for a summary of selected nodes, then append to the open node in the conversation
-async function SummaryTool() {
+async function SummaryTool(style) {
   showLoadingPopup();
 
   const index = id_to_index_map[document.getElementById("message_id").innerText];
@@ -525,7 +525,22 @@ async function SummaryTool() {
     }
   }
 
-  const prompt = `Please give me a summary of the following pieces of text:\n---\n${texts_to_use.join('\n---\n')}\n---`;
+  let ttu = "---";
+  texts_to_use.forEach((t, i) => {
+    ttu += `\n\n**Begin Text ${i+1}:**\n\n${t}\n\n**End Text ${i+1}**\n\n---`;
+  });
+
+  let prompt;
+
+  if (style === "summary") {
+    prompt = `Hello,\n\nI have collected a series of detailed texts that address related topics, and I am in need of a comprehensive summary. The aim is to have an overarching synopsis that weaves together the main points and themes from all the texts into a single, unified narrative.\n\nAttached/enclosed/inserted below, you will find the full collection of texts:\n\n${ttu}\n\nGiven the complexity and depth of the provided materials, please synthesize the information and create a single, integrated summary. This summary should not treat the texts individually but should combine the critical insights, shared themes, and conclusions that emerge when considering all of the material collectively.\n\nYour help in distilling this information into a concise yet comprehensive summary is much appreciated. Thank you!`;
+  } else if (style === "combine") {
+    prompt = `Hello,\n\nI am looking to combine several distinct pieces of writing into one coherent, extended document. Each text covers a different topic, and the final document should be organized in such a way that it presents all the information in a clear, logical, and flowing narrative.\n\nAttached/enclosed/inserted below, you will find the series of texts that need to be rearranged and consolidated:\n\n${ttu}\n\nYour task is to rewrite and assimilate these texts into a single document. You may rearrange the content and rephrase sentences as necessary for readability and flow, provided the original meaning is preserved.\n\nTo ensure consistency and readability, please keep the following in mind as you construct the document:\n\n1. Identify common themes or connected ideas across the texts to create a smooth and logical transition from one section to another.\n2. Maintain the integrity of the facts, arguments, and essential points from the original texts while rewriting.\n3. Create headings and subheadings as required to organize the content effectively.\n4. Ensure that the tone and style are consistent throughout the document.\n5. Remove any redundant or repetitive information that occurs due to the merging of the texts.\n\nBy accomplishing this, you will create a comprehensive document that encapsulates all the important information from the initial texts in a well-structured and engaging format.\n\nI appreciate your effort and expertise in completing this task. Thank you!`;
+  } else {
+    // Catch all case
+    prompt = `What are these texts about:\n\n${ttu}`;
+  }
+
   const savePrompt = `Please give me a summary of the texts from messages: ${ids_to_use.join(", ")}`;
   const saveContext = document.getElementById("tool_input_context").value;
 

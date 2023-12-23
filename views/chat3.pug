@@ -45,7 +45,8 @@ block content
         .col.button-container
           button.btn.btn-primary(onclick="SendTool()") Send message
           button.btn.btn-primary(onclick="showTModalPopup()", title="Select template popup") T
-          button.btn.btn-secondary(onclick="SummaryTool()") Create summary
+          button.btn.btn-secondary(onclick="SummaryTool(\"summary\")") Create summary
+          button.btn.btn-secondary(onclick="SummaryTool(\"combine\")") Combine texts
           button.btn.btn-success(onclick="GenerateImage()") Generate image
           button.btn.btn-success(onclick="GenerateSound()") Text to speech
           button.btn.btn-warning(onclick="OpenKDB()") Generate KDB
