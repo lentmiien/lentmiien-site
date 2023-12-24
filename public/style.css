@@ -262,3 +262,10 @@
   width: auto; /* Maintain aspect ratio */
   margin: 5px;
 }
+
+.a_disabled {
+  pointer-events: none; /* Prevents clicking */
+  color: grey; /* Make it look disabled */
+  text-decoration: none; /* Remove underline */
+  cursor: default; /* Change cursor to default instead of pointer */
+}

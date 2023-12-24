@@ -64,6 +64,7 @@ function DisplayPage(num) {
   const name = document.createElement("h2");
   const chat_link = document.createElement("a");
   const edit_link = document.createElement("a");
+  const original_link = document.createElement("a");
   const br = document.createElement("br");
   const image = document.createElement("img");
   const ingredients = document.createElement("div");
@@ -77,13 +78,21 @@ function DisplayPage(num) {
   edit_link.href = `/chat3/manage_knowledge_edit?id=${master_data[num].m_id}`;
   edit_link.innerText = "Edit";
   edit_link.classList.add("btn", "btn-link");
+  original_link.href = `${master_data[num].url}`;
+  original_link.target = `_blank`;
+  original_link.innerText = "Original recipe";
+  original_link.classList.add("btn", "btn-link");
+  if (master_data[num].url.length === 0) {
+    // Disable if no url
+    original_link.classList.add("a_disabled");
+  }
   image.src = master_data[num].image;
   image.classList.add("image-large");
   ingredients.innerHTML = marked.parse(master_data[num].ingredients);
   instructions.innerHTML = marked.parse(master_data[num].instructions);
   note.innerHTML = marked.parse(master_data[num].note);
 
-  content.append(name, chat_link, edit_link, br, image, ingredients, instructions, note);
+  content.append(name, chat_link, edit_link, original_link, br, image, ingredients, instructions, note);
 }
 
 function DisplayIndex() {
