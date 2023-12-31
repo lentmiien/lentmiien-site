@@ -46,6 +46,9 @@ const TransactionDBModel = require('./models/transaction_db');
 // OpenAI
 const OpenaicalllogDBModel = require('./models/openaicalllog');
 const OpenaimodelDBModel = require('./models/openaimodel');
+// Cooking calendar
+const CookingCalendarModel = require('./models/CookingCalendar');
+const CookingRequestModel = require('./models/CookingRequest');
 
 // Export models
 module.exports = {
@@ -71,4 +74,6 @@ module.exports = {
   TransactionDBModel,
   OpenaicalllogDBModel,
   OpenaimodelDBModel,
+  CookingCalendarModel,
+  CookingRequestModel,
 };

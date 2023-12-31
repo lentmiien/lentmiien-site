@@ -116,6 +116,9 @@ app.post(
   })
 );
 
+const cooking_publicRouter = require('./routes/cooking_public');
+app.use('/cookingp', cooking_publicRouter);
+
 // Private - routes
 const mypageRouter = require('./routes/mypage');
 app.use('/mypage', isAuthenticated, mypageRouter);
@@ -140,6 +143,9 @@ app.use('/gptdocument', isAuthenticated, gptdocumentRouter);
 
 const budgetRouter = require('./routes/budget');
 app.use('/accounting', isAuthenticated, budgetRouter);
+
+const cookingRouter = require('./routes/cooking');
+app.use('/cooking', isAuthenticated, cookingRouter);
 
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
