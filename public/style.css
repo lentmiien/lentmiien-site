@@ -263,6 +263,12 @@
   margin: 5px;
 }
 
+.image1024 {
+  max-width: 1024px;
+  width: 100%;
+  height: auto;
+}
+
 .a_disabled {
   pointer-events: none; /* Prevents clicking */
   color: grey; /* Make it look disabled */
