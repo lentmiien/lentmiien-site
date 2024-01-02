@@ -16,6 +16,7 @@ exports.index = async (req, res) => {
     user = user_list[req.query.uid];
   }
 
+  // TODO: change to only valid users (guest users can only view cookbook)
   // All user may view cooking calendar, so get content
   // Get 7 dates, starting from today and get the calendar values for the dates
   const dates_array = createDatesArray();
