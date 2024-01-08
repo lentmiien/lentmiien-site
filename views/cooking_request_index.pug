@@ -1,0 +1,87 @@
+extends layout
+
+block content
+  - let first
+  ul#pills-tab.nav.nav-pills.mb-3(role="tablist")
+    - first = true 
+    if cookingCalendar.length > 0
+      li.nav-item(role="presentation")
+        button#pills-calendar-tab.nav-link(class=`${first ? "active": ""}` data-bs-toggle="pill" data-bs-target="#pills-calendar" type="button" role="tab" aria-controls="pills-calendar" aria-selected=`${first ? "true" : "false"}`) Cooking calendar
+        - first = false
+    if cooking_knowledge.length > 0
+      li.nav-item(role="presentation")
+        button#pills-book-tab.nav-link(class=`${first ? "active": ""}` data-bs-toggle="pill" data-bs-target="#pills-book" type="button" role="tab" aria-controls="pills-book" aria-selected=`${first ? "true" : "false"}`) Cookbook
+        - first = false
+    if cooking_requests.length > 0
+      li.nav-item(role="presentation")
+        button#pills-request-tab.nav-link(class=`${first ? "active": ""}` data-bs-toggle="pill" data-bs-target="#pills-request" type="button" role="tab" aria-controls="pills-request" aria-selected=`${first ? "true" : "false"}`) Cooking requests
+        - first = false
+  #pills-tabContent.tab-content
+    - first = true 
+    if cookingCalendar.length > 0
+      #pills-calendar.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-calendar-tab" tabindex="0")
+        - first = false
+        - const day_map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        h2 Cooking calendar
+        each cookday, i in cookingCalendar
+          .row 
+            .col.foodday
+              h4= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
+              div 
+                p 
+                  hr
+                  h5 Lunch
+                  if cookday.lunch.image.length > 0
+                    img.image1024(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+                    br
+                  if cookday.lunch.is_url
+                    a(id=`${cookday.date}lunch`, href=`${cookday.lunch.name}`, traget="_blank")= cookday.lunch.name 
+                  else
+                    b(id=`${cookday.date}lunch`)= cookday.lunch.name
+                  select.form-control(id=`${cookday.date}lunch_select`, name="change_food") 
+                    option(value="") -- Select food --
+                    each o in cooking_knowledge
+                      option(value=`${o._id.toString()}`)= o.title 
+                  input.form-control(id=`${cookday.date}lunch_input`, type="text", placeholder="or URL for recipe")
+                  button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','lunch')`) Update
+                p 
+                  hr
+                  h5 Dinner
+                  if cookday.dinner.image.length > 0
+                    img.image1024(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+                    br
+                  if cookday.dinner.is_url
+                    a(id=`${cookday.date}dinner`, href=`${cookday.dinner.name}`, traget="_blank")= cookday.dinner.name 
+                  else
+                    b(id=`${cookday.date}dinner`)= cookday.dinner.name
+                  select.form-control(id=`${cookday.date}dinner_select`, name="change_food") 
+                    option(value="") -- Select food --
+                    each o in cooking_knowledge
+                      option(value=`${o._id.toString()}`)= o.title 
+                  input.form-control(id=`${cookday.date}dinner_input`, type="text", placeholder="or URL for recipe")
+                  button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dinner')`) Update
+                p 
+                  hr
+                  h5 Dessert
+                  if cookday.dessert.image.length > 0
+                    img.image1024(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+                    br
+                  if cookday.dessert.is_url
+                    a(id=`${cookday.date}dessert`, href=`${cookday.dessert.name}`, traget="_blank")= cookday.dessert.name 
+                  else
+                    b(id=`${cookday.date}dessert`)= cookday.dessert.name
+                  select.form-control(id=`${cookday.date}dessert_select`, name="change_food") 
+                    option(value="") -- Select food --
+                    each o in cooking_knowledge
+                      option(value=`${o._id.toString()}`)= o.title 
+                  input.form-control(id=`${cookday.date}dessert_input`, type="text", placeholder="or URL for recipe")
+                  button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dessert')`) Update
+    if cooking_knowledge.length > 0
+      #pills-book.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-book-tab" tabindex="0")
+        - first = false
+        h2 Cookbook
+    if cooking_requests.length > 0
+      #pills-request.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-request-tab" tabindex="0")
+        - first = false
+        h2 Cooking requests
+  script(src="/cooking_request_index.js")
