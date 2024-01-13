@@ -118,6 +118,25 @@ exports.index = async (req, res) => {
 
   // Prepare cookbook
 
+  /*
+  const knowledge_templates = await Chat3KnowledgeTModel.find();
+  let title = null;
+  knowledge_templates.forEach(t => {
+    if (t._id.toString() === req.query.id) {
+      title = t.title;
+    }
+  });
+  const ids = [];
+  const templates = knowledge_templates.filter(t => t.title === title);
+  templates.forEach(t => ids.push(t._id.toString()));
+
+  // Knowledge
+  const knowledges = await Chat3KnowledgeModel.find();
+  const knows = knowledges.filter(k => ids.indexOf(k.templateId) >= 0);
+
+  res.render("browse_knowledge", {ids, templates, knows})
+  */
+
   res.render('cooking_request_index', {valid_user, user, cookingCalendar, cooking_knowledge, cooking_requests});
 };
 

@@ -80,8 +80,16 @@ block content
       #pills-book.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-book-tab" tabindex="0")
         - first = false
         h2 Cookbook
+        .row 
+          #content.col 
+        .row 
+          #index.col 
+        pre#ids.hidden= JSON.stringify(ids, null, 2)
+        pre#templates.hidden= JSON.stringify(templates, null, 2)
+        pre#knows.hidden= JSON.stringify(knows, null, 2)
     if cooking_requests.length > 0
       #pills-request.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-request-tab" tabindex="0")
         - first = false
         h2 Cooking requests
+  script(src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.0.0/marked.min.js")
   script(src="/cooking_request_index.js")
