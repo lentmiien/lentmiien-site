@@ -1,5 +1,5 @@
 // Require necessary database models
-const { CookingCalendarModel, CookingRequestModel, Chat3KnowledgeModel } = require('../database');
+const { CookingCalendarModel, CookingRequestModel, Chat3KnowledgeModel, Chat3KnowledgeTModel } = require('../database');
 
 // This is temporary solution, so OK for now (plan to prepare database)
 const user_list = {
@@ -115,29 +115,19 @@ exports.index = async (req, res) => {
   if (valid_user) {
     cooking_requests = await CookingRequestModel.find({requesterName: user});
   }
+  // Generate lookup
+  const cooking_request_lookup = {};
+  // cooking_request_lookup[`${cookday.date}lunch`]
 
   // Prepare cookbook
-
-  /*
   const knowledge_templates = await Chat3KnowledgeTModel.find();
-  let title = null;
-  knowledge_templates.forEach(t => {
-    if (t._id.toString() === req.query.id) {
-      title = t.title;
-    }
-  });
+  let title = "Cooking recipe";
   const ids = [];
   const templates = knowledge_templates.filter(t => t.title === title);
   templates.forEach(t => ids.push(t._id.toString()));
+  const knows = knowledge.filter(k => ids.indexOf(k.templateId) >= 0);
 
-  // Knowledge
-  const knowledges = await Chat3KnowledgeModel.find();
-  const knows = knowledges.filter(k => ids.indexOf(k.templateId) >= 0);
-
-  res.render("browse_knowledge", {ids, templates, knows})
-  */
-
-  res.render('cooking_request_index', {valid_user, user, cookingCalendar, cooking_knowledge, cooking_requests});
+  res.render('cooking_request_index', {valid_user, user, cookingCalendar, cooking_knowledge, cooking_requests, cooking_request_lookup, ids, templates, knows});
 };
 
 // API endpoint for submitting a cooking request

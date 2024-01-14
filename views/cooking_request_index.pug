@@ -34,48 +34,63 @@ block content
                   if cookday.lunch.image.length > 0
                     img.image1024(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
                     br
-                  if cookday.lunch.is_url
-                    a(id=`${cookday.date}lunch`, href=`${cookday.lunch.name}`, traget="_blank")= cookday.lunch.name 
-                  else
-                    b(id=`${cookday.date}lunch`)= cookday.lunch.name
+                  div(style="border: 1px solid red;")
+                    b Scheduled cooking: 
+                      if cookday.lunch.is_url
+                        a(href=`${cookday.lunch.name}`, traget="_blank")= cookday.lunch.name 
+                      else
+                        span= cookday.lunch.name
+                    br
+                    b Cooking request: 
+                      span(id=`${cookday.date}lunch`)= `${cookday.date}lunch` in cooking_request_lookup ? cooking_request_lookup[`${cookday.date}lunch`] : "- no request -"
                   select.form-control(id=`${cookday.date}lunch_select`, name="change_food") 
                     option(value="") -- Select food --
                     each o in cooking_knowledge
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}lunch_input`, type="text", placeholder="or URL for recipe")
-                  button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','lunch')`) Update
+                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','lunch')`) Update
                 p 
                   hr
                   h5 Dinner
                   if cookday.dinner.image.length > 0
                     img.image1024(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
                     br
-                  if cookday.dinner.is_url
-                    a(id=`${cookday.date}dinner`, href=`${cookday.dinner.name}`, traget="_blank")= cookday.dinner.name 
-                  else
-                    b(id=`${cookday.date}dinner`)= cookday.dinner.name
+                  div(style="border: 1px solid red;")
+                    b Scheduled cooking: 
+                      if cookday.dinner.is_url
+                        a(href=`${cookday.dinner.name}`, traget="_blank")= cookday.dinner.name 
+                      else
+                        span= cookday.dinner.name
+                    br
+                    b Cooking request: 
+                      span(id=`${cookday.date}dinner`)= `${cookday.date}dinner` in cooking_request_lookup ? cooking_request_lookup[`${cookday.date}dinner`] : "- no request -"
                   select.form-control(id=`${cookday.date}dinner_select`, name="change_food") 
                     option(value="") -- Select food --
                     each o in cooking_knowledge
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}dinner_input`, type="text", placeholder="or URL for recipe")
-                  button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dinner')`) Update
+                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dinner')`) Update
                 p 
                   hr
                   h5 Dessert
                   if cookday.dessert.image.length > 0
                     img.image1024(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
                     br
-                  if cookday.dessert.is_url
-                    a(id=`${cookday.date}dessert`, href=`${cookday.dessert.name}`, traget="_blank")= cookday.dessert.name 
-                  else
-                    b(id=`${cookday.date}dessert`)= cookday.dessert.name
+                  div(style="border: 1px solid red;")
+                    b Scheduled cooking: 
+                      if cookday.dessert.is_url
+                        a(href=`${cookday.dessert.name}`, traget="_blank")= cookday.dessert.name 
+                      else
+                        span= cookday.dessert.name
+                    br
+                    b Cooking request: 
+                      span(id=`${cookday.date}dessert`)= `${cookday.date}dessert` in cooking_request_lookup ? cooking_request_lookup[`${cookday.date}dessert`] : "- no request -"
                   select.form-control(id=`${cookday.date}dessert_select`, name="change_food") 
                     option(value="") -- Select food --
                     each o in cooking_knowledge
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}dessert_input`, type="text", placeholder="or URL for recipe")
-                  button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dessert')`) Update
+                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dessert')`) Update
     if cooking_knowledge.length > 0
       #pills-book.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-book-tab" tabindex="0")
         - first = false
@@ -91,5 +106,6 @@ block content
       #pills-request.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-request-tab" tabindex="0")
         - first = false
         h2 Cooking requests
+        pre= JSON.stringify(cooking_requests, null, 2)
   script(src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.0.0/marked.min.js")
   script(src="/cooking_request_index.js")
