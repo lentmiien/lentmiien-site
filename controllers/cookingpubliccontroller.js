@@ -127,12 +127,69 @@ exports.index = async (req, res) => {
   templates.forEach(t => ids.push(t._id.toString()));
   const knows = knowledge.filter(k => ids.indexOf(k.templateId) >= 0);
 
-  res.render('cooking_request_index', {valid_user, user, cookingCalendar, cooking_knowledge, cooking_requests, cooking_request_lookup, ids, templates, knows});
+  res.render('cooking_request_index', {valid_user, user_id: req.query.uid || null, cookingCalendar, cooking_knowledge, cooking_requests, cooking_request_lookup, ids, templates, knows});
 };
 
 // API endpoint for submitting a cooking request
 exports.api_send_cooking_request = async (req, res) => {
-  // TODO: fill in code for function
+  // User validation
+  let valid_user = false;
+  let user = "Guest";
+  if ("uid" in req.query && req.query.uid in user_list) {
+    valid_user = true;
+    user = user_list[req.query.uid];
+  }
+
+  /*
+  requestDate: {
+    type: String, 
+    required: true,
+    match: [/^\d{4}-\d{2}-\d{2}$/, 'Please fill a valid date format (YYYY-MM-DD)'],
+  },
+  requesterName: { 
+    type: String,
+    required: true,
+  },
+  dinnerToCook: { 
+    type: String,
+    default: null,
+  },
+  lunchToCook: { 
+    type: String,
+    default: null,
+  },
+  dessertToCook: { 
+    type: String,
+    default: null,
+  }
+  */
+
+  const entry_to_update = await CookingRequestModel.find({requestDate: req.body.date, requesterName: user});
+  if (entry_to_update.length === 0) {
+    // new entry
+    const data = {
+      requestDate: req.body.date,
+      requesterName: user,
+      lunchToCook: "lunch" in req.body ? req.body.lunch : "",
+      dinnerToCook: "dinner" in req.body ? req.body.dinner : "",
+      dessertToCook: "dessert" in req.body ? req.body.dessert : "",
+    }
+    const entry = await new CookingRequestModel(data).save();
+    return res.json({status: "OK", msg: `${entry._id.toString()} (${req.body.date}): entry saved!`});
+  } else {
+    // update and save entry
+    if ("lunch" in req.body) {
+      entry_to_update[0].lunchToCook = req.body.lunch;
+    }
+    if ("dinner" in req.body) {
+      entry_to_update[0].dinnerToCook = req.body.dinner;
+    }
+    if ("dessert" in req.body) {
+      entry_to_update[0].dessertToCook = req.body.dessert;
+    }
+    await entry_to_update[0].save();
+    return res.json({status: "OK", msg: `${entry_to_update[0]._id.toString()} (${req.body.date}): entry updated!`});
+  }
 };
 
 /**

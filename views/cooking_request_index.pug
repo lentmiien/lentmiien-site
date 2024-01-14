@@ -48,7 +48,7 @@ block content
                     each o in cooking_knowledge
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}lunch_input`, type="text", placeholder="or URL for recipe")
-                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','lunch')`) Update
+                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','lunch')`) Send request
                 p 
                   hr
                   h5 Dinner
@@ -69,7 +69,7 @@ block content
                     each o in cooking_knowledge
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}dinner_input`, type="text", placeholder="or URL for recipe")
-                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dinner')`) Update
+                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dinner')`) Send request
                 p 
                   hr
                   h5 Dessert
@@ -90,7 +90,7 @@ block content
                     each o in cooking_knowledge
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}dessert_input`, type="text", placeholder="or URL for recipe")
-                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dessert')`) Update
+                  button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dessert')`) Send request
     if cooking_knowledge.length > 0
       #pills-book.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-book-tab" tabindex="0")
         - first = false
@@ -107,5 +107,6 @@ block content
         - first = false
         h2 Cooking requests
         pre= JSON.stringify(cooking_requests, null, 2)
+    pre#user_id= user_id
   script(src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.0.0/marked.min.js")
   script(src="/cooking_request_index.js")

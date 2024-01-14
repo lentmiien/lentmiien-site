@@ -10,9 +10,17 @@ const CookingRequestSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  requestedDishes: {
-    type: Map,
-    of: String,
+  dinnerToCook: { 
+    type: String,
+    default: null,
+  },
+  lunchToCook: { 
+    type: String,
+    default: null,
+  },
+  dessertToCook: { 
+    type: String,
+    default: null,
   }
 });
 

@@ -3,6 +3,7 @@ const templates = JSON.parse(document.getElementById("templates").innerText);
 const knows = JSON.parse(document.getElementById("knows").innerText);
 const content = document.getElementById("content");
 const index = document.getElementById("index");
+const user_id = document.getElementById("user_id");
 
 const master_data = [];
 const all_data_fields = [];
@@ -127,7 +128,7 @@ async function SubmitCookingRequest(date, type) {
     date,
     [type]: input_value.length > 0 ? input_value : select_value,
   };
-  const response = await fetch("/cookingp/api_send_cooking_request", {
+  const response = await fetch(`/cookingp/api_send_cooking_request?uid=${user_id.innerHTML}`, {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
     mode: "cors", // no-cors, *cors, same-origin
     cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
