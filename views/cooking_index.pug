@@ -6,7 +6,7 @@ block content
   each cookday, i in cookingCalendar
     .row 
       .col.foodday
-        h4= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
+        h3.date-title= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
         div 
           p 
             hr

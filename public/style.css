@@ -282,3 +282,9 @@
   padding: 10px;
   border-radius: 10px;
 }
+
+.date-title{
+  background-color: lightgray;
+  font-weight: bolder;
+  border-bottom: 5px double darkblue;
+}

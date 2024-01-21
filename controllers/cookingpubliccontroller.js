@@ -117,7 +117,17 @@ exports.index = async (req, res) => {
   }
   // Generate lookup
   const cooking_request_lookup = {};
-  // cooking_request_lookup[`${cookday.date}lunch`]
+  cooking_requests.forEach(d => {
+    if (d.lunchToCook.length > 0) {
+      cooking_request_lookup[`${d.requestDate}lunch`] = d.lunchToCook;
+    }
+    if (d.dinnerToCook.length > 0) {
+      cooking_request_lookup[`${d.requestDate}dinner`] = d.dinnerToCook;
+    }
+    if (d.dessertToCook.length > 0) {
+      cooking_request_lookup[`${d.requestDate}dessert`] = d.dessertToCook;
+    }
+  });
 
   // Prepare cookbook
   const knowledge_templates = await Chat3KnowledgeTModel.find();
@@ -127,7 +137,11 @@ exports.index = async (req, res) => {
   templates.forEach(t => ids.push(t._id.toString()));
   const knows = knowledge.filter(k => ids.indexOf(k.templateId) >= 0);
 
-  res.render('cooking_request_index', {valid_user, user_id: req.query.uid || null, cookingCalendar, cooking_knowledge, cooking_requests, cooking_request_lookup, ids, templates, knows});
+  // Id to name lookup
+  const id_to_name_lookup = {};
+  knows.forEach(d => id_to_name_lookup[d._id.toString()] = d.title);
+
+  res.render('cooking_request_index', {valid_user, user_id: req.query.uid || null, cookingCalendar, cooking_knowledge, cooking_requests, cooking_request_lookup, ids, templates, knows, id_to_name_lookup});
 };
 
 // API endpoint for submitting a cooking request

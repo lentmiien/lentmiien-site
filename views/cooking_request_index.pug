@@ -26,7 +26,7 @@ block content
         each cookday, i in cookingCalendar
           .row 
             .col.foodday
-              h4= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
+              h3.date-title= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
               div 
                 p 
                   hr
@@ -42,7 +42,7 @@ block content
                         span= cookday.lunch.name
                     br
                     b Cooking request: 
-                      span(id=`${cookday.date}lunch`)= `${cookday.date}lunch` in cooking_request_lookup ? cooking_request_lookup[`${cookday.date}lunch`] : "- no request -"
+                      span(id=`${cookday.date}lunch`)= `${cookday.date}lunch` in cooking_request_lookup ? (cooking_request_lookup[`${cookday.date}lunch`] in id_to_name_lookup ? id_to_name_lookup[cooking_request_lookup[`${cookday.date}lunch`]] : cooking_request_lookup[`${cookday.date}lunch`]) : "- no request -"
                   select.form-control(id=`${cookday.date}lunch_select`, name="change_food") 
                     option(value="") -- Select food --
                     each o in cooking_knowledge
@@ -63,7 +63,7 @@ block content
                         span= cookday.dinner.name
                     br
                     b Cooking request: 
-                      span(id=`${cookday.date}dinner`)= `${cookday.date}dinner` in cooking_request_lookup ? cooking_request_lookup[`${cookday.date}dinner`] : "- no request -"
+                      span(id=`${cookday.date}dinner`)= `${cookday.date}dinner` in cooking_request_lookup ? (cooking_request_lookup[`${cookday.date}dinner`] in id_to_name_lookup ? id_to_name_lookup[cooking_request_lookup[`${cookday.date}dinner`]] : cooking_request_lookup[`${cookday.date}dinner`]) : "- no request -"
                   select.form-control(id=`${cookday.date}dinner_select`, name="change_food") 
                     option(value="") -- Select food --
                     each o in cooking_knowledge
@@ -84,7 +84,7 @@ block content
                         span= cookday.dessert.name
                     br
                     b Cooking request: 
-                      span(id=`${cookday.date}dessert`)= `${cookday.date}dessert` in cooking_request_lookup ? cooking_request_lookup[`${cookday.date}dessert`] : "- no request -"
+                      span(id=`${cookday.date}dessert`)= `${cookday.date}dessert` in cooking_request_lookup ? (cooking_request_lookup[`${cookday.date}dessert`] in id_to_name_lookup ? id_to_name_lookup[cooking_request_lookup[`${cookday.date}dessert`]] : cooking_request_lookup[`${cookday.date}dessert`]) : "- no request -"
                   select.form-control(id=`${cookday.date}dessert_select`, name="change_food") 
                     option(value="") -- Select food --
                     each o in cooking_knowledge
@@ -106,7 +106,40 @@ block content
       #pills-request.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-request-tab" tabindex="0")
         - first = false
         h2 Cooking requests
-        pre= JSON.stringify(cooking_requests, null, 2)
+        - let todays_date = new Date()
+        - let date_string = `${todays_date.getFullYear()}-${todays_date.getMonth() < 9 ? "0"+(todays_date.getMonth()+1) : (todays_date.getMonth()+1)}-${todays_date.getDate() < 10 ? "0"+todays_date.getDate() : todays_date.getDate()}`
+        h3 Current requests 
+        table.table.table-striped
+          thead 
+            tr
+              th Date 
+              th Lunch request 
+              th Dinner request 
+              th Dessert request
+          tbody 
+            each r in cooking_requests
+              if r.requestDate >= date_string
+                tr 
+                  td= r.requestDate
+                  td= r.lunchToCook in id_to_name_lookup ? id_to_name_lookup[r.lunchToCook] : r.lunchToCook
+                  td= r.dinnerToCook in id_to_name_lookup ? id_to_name_lookup[r.dinnerToCook] : r.dinnerToCook
+                  td= r.dessertToCook in id_to_name_lookup ? id_to_name_lookup[r.dessertToCook] : r.dessertToCook
+        h3 Old requests
+        table.table.table-striped
+          thead 
+            tr
+              th Date 
+              th Lunch request 
+              th Dinner request 
+              th Dessert request
+          tbody 
+            each r in cooking_requests
+              if r.requestDate < date_string
+                tr 
+                  td= r.requestDate
+                  td= r.lunchToCook in id_to_name_lookup ? id_to_name_lookup[r.lunchToCook] : r.lunchToCook
+                  td= r.dinnerToCook in id_to_name_lookup ? id_to_name_lookup[r.dinnerToCook] : r.dinnerToCook
+                  td= r.dessertToCook in id_to_name_lookup ? id_to_name_lookup[r.dessertToCook] : r.dessertToCook
     pre#user_id= user_id
   script(src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.0.0/marked.min.js")
   script(src="/cooking_request_index.js")
