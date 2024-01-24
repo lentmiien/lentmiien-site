@@ -7,6 +7,7 @@ exports.index = async (req, res) => {
   const dates_only = dates_array.map(d => d.date);
   const calendar = await CookingCalendarModel.find({date: dates_only});
   const knowledge = await Chat3KnowledgeModel.find();
+  const requests = await CookingRequestModel.find({requestDate: dates_only});
 
   const knowledge_lookup = [];
   knowledge.forEach(k => knowledge_lookup.push(k._id.toString()));
@@ -89,6 +90,33 @@ exports.index = async (req, res) => {
           cookingCalendar[index].dessert.name = c.dessertToCook;
           cookingCalendar[index].dessert.is_url = true;
         }
+      }
+    }
+  });
+
+  // Add requests to calendar
+  requests.forEach(d => {
+    const index = dates_only.indexOf(d.requestDate);
+
+    if (d.lunchToCook.length > 0) {
+      if ("request" in cookingCalendar[index].lunch) {
+        cookingCalendar[index].lunch.request.push(`${d.requesterName} wants ${d.lunchToCook}`)
+      } else {
+        cookingCalendar[index].lunch.request = [`${d.requesterName} wants ${d.lunchToCook}`];
+      }
+    }
+    if (d.dinnerToCook.length > 0) {
+      if ("request" in cookingCalendar[index].dinner) {
+        cookingCalendar[index].dinner.request.push(`${d.requesterName} wants ${d.dinnerToCook}`)
+      } else {
+        cookingCalendar[index].dinner.request = [`${d.requesterName} wants ${d.dinnerToCook}`];
+      }
+    }
+    if (d.dessertToCook.length > 0) {
+      if ("request" in cookingCalendar[index].dessert) {
+        cookingCalendar[index].dessert.request.push(`${d.requesterName} wants ${d.dessertToCook}`)
+      } else {
+        cookingCalendar[index].dessert.request = [`${d.requesterName} wants ${d.dessertToCook}`];
       }
     }
   });
