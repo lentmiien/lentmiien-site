@@ -591,8 +591,8 @@ exports.manage_knowledge_add_post = async (req, res) => {
   const db_entry = await new Chat3KnowledgeModel(entry).save();
 
   // Generate vector embedding
-  const response = await embedding(vector_string, "text-embedding-ada-002");
-  await OpenAIAPICallLog(req.user.name, "text-embedding-ada-002", response.usage.total_tokens, 0, vector_string, JSON.stringify(response.data[0].embedding));
+  const response = await embedding(vector_string, "text-embedding-3-small");
+  await OpenAIAPICallLog(req.user.name, "text-embedding-3-small", response.usage.total_tokens, 0, vector_string, JSON.stringify(response.data[0].embedding));
   VDB.push({
     db_id: db_entry._id.toString(),
     vector: response.data[0].embedding,

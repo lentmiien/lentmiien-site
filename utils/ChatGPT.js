@@ -162,7 +162,6 @@ const chatGPT = async (messages, model) => {
   }
 };
 
-// text-embedding-ada-002
 const embedding = async (text, model) => {
   try {
     const response = await openai.embeddings.create({
