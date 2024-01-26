@@ -8,6 +8,7 @@ block content
     div(style="border: 1px solid black; padding: 5px; margin: 5px;")
       p 
         b= model.model_name
+        button.btn.btn-primary(onclick=`SetDefault("${model.model_type}","${model.api_endpoint}")`) Set as default
       p 
         i= model.api_endpoint
       p 
@@ -37,3 +38,4 @@ block content
     label(for="max_tokens") Max tokens for model 
     input#max_tokens.form-control(type="number", name="max_tokens")
     input.btn.btn-success(type="submit", value="Add/Update")
+  script(src="openaimodels.js") 

@@ -19,7 +19,7 @@ block content
     .col 
       select#model.form-control(name="model")
         each model in models 
-          if model.api_endpoint == "gpt-4-0125-preview"
+          if model.api_endpoint == chat_model
             option(value=`${model.api_endpoint}`, selected)= `${model.model_name} (${Math.floor(model.max_tokens/1000)}k tokens) [In: $${model.input_1k_token_cost} / Out: $${model.output_1k_token_cost} per 1k tokens]`
           else 
             option(value=`${model.api_endpoint}`)= `${model.model_name} (${Math.floor(model.max_tokens/1000)}k tokens) [In: $${model.input_1k_token_cost} / Out: $${model.output_1k_token_cost} per 1k tokens]`

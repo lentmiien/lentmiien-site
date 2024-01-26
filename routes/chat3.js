@@ -29,4 +29,7 @@ router.post('/manage_knowledge_edit_post', controller.manage_knowledge_edit_post
 router.post('/manage_knowledge_fetch', controller.manage_knowledge_fetch);
 router.get('/browse_knowledge', controller.browse_knowledge);
 
+// Set default model
+router.post('/set_default_model', controller.set_default_model);
+
 module.exports = router;

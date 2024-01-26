@@ -5,6 +5,8 @@ const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('..
 const utils = require('../utils/utils');
 const kparser = require('../utils/knowledgeParser');
 
+const default_models = require("../cache/default_models.json");
+
 // Require necessary database models
 const { Chat3Model, Chat3TemplateModel, Chat3KnowledgeTModel, Chat3KnowledgeModel, FileMetaModel } = require('../database');
 
@@ -89,7 +91,7 @@ exports.index = async (req, res) => {
   // Load model data
   const models = await GetModels("chat")
 
-  res.render("chat3", {chatmode: true, this_conversation, chats, new_conversation_id, models, chat_templates, knowledges});
+  res.render("chat3", {chatmode: true, this_conversation, chats, new_conversation_id, models, chat_templates, knowledges, chat_model: default_models.chat});
 };
 
 exports.post = async (req, res) => {
@@ -591,8 +593,8 @@ exports.manage_knowledge_add_post = async (req, res) => {
   const db_entry = await new Chat3KnowledgeModel(entry).save();
 
   // Generate vector embedding
-  const response = await embedding(vector_string, "text-embedding-3-small");
-  await OpenAIAPICallLog(req.user.name, "text-embedding-3-small", response.usage.total_tokens, 0, vector_string, JSON.stringify(response.data[0].embedding));
+  const response = await embedding(vector_string, default_models.embedding);
+  await OpenAIAPICallLog(req.user.name, default_models.embedding, response.usage.total_tokens, 0, vector_string, JSON.stringify(response.data[0].embedding));
   VDB.push({
     db_id: db_entry._id.toString(),
     vector: response.data[0].embedding,
@@ -702,4 +704,23 @@ exports.browse_knowledge = async (req, res) => {
   const knows = knowledges.filter(k => ids.indexOf(k.templateId) >= 0);
 
   res.render("browse_knowledge", {ids, templates, knows})
+};
+
+exports.set_default_model = async (req, res) => {
+  default_models[req.body.type] = req.body.model;
+
+  // Convert the object to a JSON string
+  const jsonString = JSON.stringify(default_models);
+  // Construct the output path relative to this script's location
+  const outputPath = path.join(__dirname, '../cache/default_models.json');
+  // Save the JSON string to a file
+  fs.writeFile(outputPath, jsonString, (err) => {
+    if (err) {
+      console.error('Error writing file:', err);
+    } else {
+      console.log('File saved successfully!');
+    }
+  });
+
+  res.json({status: "DONE"});
 };
