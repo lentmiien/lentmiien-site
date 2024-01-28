@@ -7,8 +7,63 @@ block content
   .row 
     .col 
       #output
+      hr
+  .row 
+    .col-6 
+      h3 ChatGPT assistant 
+      i Ask ChatGPT for assistant to generate code, available data will be provided as context, as well as instructions to generate JavaScript code and availability of D3.js
+      br
+      textarea#playground_chat.form-control(name="playground_chat", cols="30", rows="10")
+      button(onclick="AskChatGPT()") Ask ChatGPT
+    .col-6 
+      h3 Playground input
+      i JavaScript code, D3 exist for plotting graphs
+      br
+      i Use 'database.[database name]' to access necessary data
+      br
+      br
+      textarea#playground_in.form-control(name="playground_in", cols="30", rows="10")
+      button(onclick="ExecuteCode()") Run code
+  .row 
+    .col
+      hr 
+      h3 Playground output 
+      i Use element id 'playground_out' for output
+      br
+      #playground_out
   .row 
     .col 
-      pre#database= JSON.stringify(data, null, 2)
+      hr
+      h3 Database sample data 
+  .row 
+    .col 
+      b database.old_transactions
+      br
+      pre= JSON.stringify(data.old_transactions[0], null, 2)
+    .col 
+      b database.new_transactions
+      br
+      pre= JSON.stringify(data.new_transactions[0], null, 2)
+    .col 
+      b database.old_accounts
+      br
+      pre= JSON.stringify(data.old_accounts[0], null, 2)
+    .col 
+      b database.new_accounts
+      br
+      pre= JSON.stringify(data.new_accounts[0], null, 2)
+    .col 
+      b database.old_categories
+      br
+      pre= JSON.stringify(data.old_categories[0], null, 2)
+    .col 
+      b database.new_categories
+      br
+      pre= JSON.stringify(data.new_categories[0], null, 2)
+    .col 
+      b database.old_tags
+      br
+      pre= JSON.stringify(data.old_tags[0], null, 2)
+  pre#database.hidden= JSON.stringify(data, null, 2)
   script(src="https://d3js.org/d3.v7.min.js")
   script(src="/datatest_budget.js") 

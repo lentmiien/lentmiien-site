@@ -205,3 +205,20 @@ function plotAccountBarChart(accountData, accountName) {
       .attr("height", d => Math.abs(y(d.total) - y(0)))
       .attr("fill", d => d.total > 0 ? "lightgreen" : "lightcoral");
 }
+
+function ExecuteCode() {
+  const userCode = document.getElementById('playground_in').value;
+  try {
+    new Function(userCode)();
+  } catch (e) {
+    console.error('Error executing user code:', e);
+  }
+}
+
+let session_id = null;
+function AskChatGPT() {
+  // TODO implement function
+  // Send relevant context, user inquiry and session_id to chat API
+  // Output response to HTML response container
+  // If session_id is null, then set session_id to be the same as conversation_id
+}
