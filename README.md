@@ -31,8 +31,7 @@ To get a local copy up and running, follow these simple steps:
     npm install
     ```
 3. Configure your environment variables (refer to `env_sample` for required variables).
-4. Create `cache` folder in root of project, that need to contain the following 3 files: `chat3vdb.json` (initial content "[]"), `default_models.json` (initial content "{}"), `embedding.json` (initial content "[]")
-5. Start the server:
+4. Start the server:
     ```sh
     npm start
     ```
