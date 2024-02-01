@@ -32,4 +32,7 @@ router.get('/browse_knowledge', controller.browse_knowledge);
 // Set default model
 router.post('/set_default_model', controller.set_default_model);
 
+// Simple chat
+router.post('/post_simple_chat', controller.post_simple_chat);
+
 module.exports = router;

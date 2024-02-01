@@ -724,3 +724,109 @@ exports.set_default_model = async (req, res) => {
 
   res.json({status: "DONE"});
 };
+
+/**
+ * /chat3/post_simple_chat (POST)
+ * A simple chat API that returns the response from OpenAI, and the conversation ID
+ * @param {*} req 
+ * HTTP request (POST/JSON)
+ * req.body content:
+ *   "id" should be conversation ID, or omited for new conversation
+ *   "context" a context message, to instruct OpenAI API how to respond
+ *   "prompt" a user prompt, that the OpenAI API is to respond to
+ * @param {*} res 
+ * HTTP response (JSON)
+ * res.body content:
+ *   "status" has value "OK" or "ERROR"
+ *   "msg" is a short message explaining the status
+ *   "data" is an object, only included for "OK" responses, containing:
+ *     "response" is response text (HTML)
+ *     "id" is conversation ID
+ */
+exports.post_simple_chat = async (req, res) => {
+  let message_id = "id" in req.body ? req.body.id : null;
+  // Check if conversation id in input -> load that conversation
+  const previous_messages = await Chat3Model.find();
+  if (message_id === null) {
+    message_id = 0;
+    previous_messages.forEach(d => message_id = message_id > d.ConversationID ? message_id : d.ConversationID+1);
+  }
+  const this_messages = previous_messages.filter(d => message_id === d.ConversationID);
+  // Prepare message array for OpenAI API (context from input, previous messages from above, and new message from input)
+  const messages = [];
+  messages.push({
+    role: "system",
+    content: req.body.context
+  });
+  this_messages.forEach(m => messages.push({role: m.UserOrAssistantFlag ? "user" : "assistant",content: r.ContentText}));
+  messages.push({
+    role: "user",
+    content: req.body.prompt
+  });
+  // Setup variables
+  const ConversationID = message_id;
+  const StartMessageID = this_messages.length > 0 ? this_messages[0].StartMessageID : "root";
+  const PreviousMessageID = this_messages.length > 0 ? this_messages[this_messages.length-1]._id.toString() : "root";
+  const UserID = "Lennart";
+  const Title = `Simple chat [${(new Date()).toLocaleString()}]`;
+  const Images = "";
+  const Sounds = "";
+  const Timestamp = new Date();
+  // Send to OpenAI API
+  const response = await chatGPT(messages, default_models.chat);
+  // When get response
+  if (response) {
+    // Save to API call log
+    await OpenAIAPICallLog(req.user.name, default_models.chat, response.usage.prompt_tokens, response.usage.completion_tokens, "[INPUT]", "[OUTPUT]");
+    // Save prompt and response messages to database
+    //   (also update StartMessageID and PreviousMessageID appropriately)
+    try { // TODO <- from here
+      const user_entry = {
+        ConversationID,
+        StartMessageID,
+        PreviousMessageID,
+        ContentText: req.body.prompt,
+        ContentTokenCount: response.usage.prompt_tokens,
+        SystemPromptText: req.body.context,
+        UserOrAssistantFlag: true,
+        UserID,
+        Title,
+        Images,
+        Sounds,
+        Timestamp,
+      };
+      const entry1 = await new Chat3Model(user_entry).save();
+      const assistant_entry = {
+        ConversationID,
+        StartMessageID: StartMessageID === "root" ? entry1._id.toString() : StartMessageID,
+        PreviousMessageID: entry1._id.toString(),
+        ContentText: response.choices[0].message.content,
+        ContentTokenCount: response.usage.completion_tokens,
+        SystemPromptText: req.body.context,
+        UserOrAssistantFlag: false,
+        UserID,
+        Title,
+        Images,
+        Sounds,
+        Timestamp: new Date(),
+      };
+      const entry2 = await new Chat3Model(assistant_entry).save();
+
+      if (StartMessageID === "root") {
+        const update1 = await Chat3Model.findByIdAndUpdate(
+          entry1._id,
+          { StartMessageID: entry1._id.toString() },
+          { new: true });
+      }
+
+      // Return response message and conversation id
+      res.json({status: "OK", msg: "Saved!", data: {response: marked.parse(response.choices[0].message.content), id: ConversationID}});
+    } catch (err) {
+      console.error("Error saving data to database (Chat3): ", err);
+      res.json({status: "ERROR", msg: "Error saving data to database (Chat3)."});
+    }
+  } else {
+    console.log('Failed to get a response from ChatGPT.');
+    res.json({status: "ERROR", msg: "Failed to get a response from ChatGPT."});
+  }
+};
