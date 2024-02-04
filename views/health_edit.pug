@@ -1,6 +1,7 @@
 extends layout
 
 block content
+  - const data = JSON.parse(JSON.stringify(entry))
   .row
     .col
       h2 Health Tracker Edit, date: 
@@ -17,12 +18,12 @@ block content
           th Metric
           th Value
           th Action
-        each val, key in entry.basicData
+        each key in Object.keys(data.basicData)
           tr
             td
               input.form-control(name='metric', type='text', value=key)
             td
-              input.form-control(name='value', type='text', value=val)
+              input.form-control(name='value', type='text', value=data.basicData[key])
             td
               button.btn.btn-danger(onclick="DeleteRow(this)") Delete
 
@@ -37,12 +38,12 @@ block content
           th Metric
           th Value
           th Action
-        each val, key in entry.medicalRecord
+        each key in Object.keys(data.medicalRecord)
           tr
             td
               input.form-control(name='metric', type='text', value=key)
             td
-              input.form-control(name='value', type='text', value=val)
+              input.form-control(name='value', type='text', value=data.medicalRecord[key])
             td
               button.btn.btn-danger(onclick="DeleteRow(this)") Delete
 

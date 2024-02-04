@@ -20,7 +20,7 @@ block content
   .row
     .col
       h4 Health Logs
-      table#health_log.table.table-striped
+      table.table.table-striped
         thead
           tr
             th Date
@@ -28,6 +28,7 @@ block content
             th Medical Record
             th Diary
             th Actions
+        tbody#health_log
             
   //- Date selector and edit button
   .row.mt-3
@@ -37,7 +38,7 @@ block content
       button.btn.btn-secondary(onclick="OpenEditDate()") Edit/Create for Date
   
   //- Hidden popup for displaying health log entries
-  #detailsPopup.modal.fade(tabindex="-1", aria-hidden="true")
+  #detailsPopup.modal.fade.popup(tabindex="-1", aria-hidden="true", style="z-index: 1051;")
     .modal-dialog
       .modal-content
         .modal-header

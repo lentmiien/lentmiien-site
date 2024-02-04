@@ -16,17 +16,6 @@ function UpdateHealthLog(entries_array, start_date, end_date) {
   let healthLogTable = document.querySelector('#health_log');
   healthLogTable.innerHTML = '';
 
-  // Generate table header
-  healthLogTable.innerHTML = `
-    <tr>
-      <th>Date</th>
-      <th>Basic Data</th>
-      <th>Medical Record</th>
-      <th>Diary</th>
-      <th>Actions</th>
-    </tr>
-  `;
-
   for (let date = new Date(start_date); date <= new Date(end_date); date.setDate(date.getDate() + 1)) {
     let formattedDate = date.toISOString().split('T')[0];
     let entry = entries_array.find(e => e.dateOfEntry === formattedDate);
@@ -34,9 +23,9 @@ function UpdateHealthLog(entries_array, start_date, end_date) {
     let row = document.createElement('tr');
     row.innerHTML = `
       <td>${formattedDate}</td>
-      <td>${entry ? entry.basicData : 'N/A'}</td>
-      <td>${entry ? entry.medicalRecord : 'N/A'}</td>
-      <td>${entry ? entry.diary : 'N/A'}</td>
+      <td>${entry ? (Object.keys(entry.basicData)).length : 'N/A'}</td>
+      <td>${entry ? (Object.keys(entry.medicalRecord)).length : 'N/A'}</td>
+      <td>${entry ? entry.diary.length : 'N/A'}</td>
       <td>
         ${entry ? `<button class="btn btn-info" onclick="ViewHealthLogEntry('${formattedDate}')">View</button>` : ''}
         <a href="/health/edit/${formattedDate}" class="btn btn-primary">Edit</a>
@@ -79,7 +68,7 @@ function HidePopup() {
 
 function OpenEditDate() {
   let date = document.querySelector('#edit_date').value;
-  window.location.href = `/health/create/${date}`;
+  window.location.href = `/health/edit/${date}`;
 }
 
 document.addEventListener('DOMContentLoaded', () => {

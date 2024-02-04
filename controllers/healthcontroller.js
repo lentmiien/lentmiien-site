@@ -17,14 +17,19 @@ exports.edit = async (req, res) => {
   try {
     // Attempt to fetch the entry for the given date
     let entry = await HealthEntry.findOne({ dateOfEntry: date });
+    
     if (!entry) {
-      // If no entry exists for the given date, create a template for a new entry
+      // If no entry exists, create a default template
       entry = {
         dateOfEntry: date,
-        basicData: {},
-        medicalRecord: {},
-        diary: []
+        basicData: new Map(),
+        medicalRecord: new Map(),
+        diary: [],
       };
+    } else {
+      // Convert Mongoose Map to an array of {key, value} objects for iteration in Pug
+      entry.basicData = [...entry.basicData.entries()].map(([key, value]) => ({key, value}));
+      entry.medicalRecord = [...entry.medicalRecord.entries()].map(([key, value]) => ({key, value}));
     }
 
     // Render the edit page with the entry data
