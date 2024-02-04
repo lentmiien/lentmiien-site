@@ -1,0 +1,73 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2 Health Tracker Edit, date: 
+        span#date #{entry.dateOfEntry}
+      input#new_entry(type="checkbox", name="new_entry", readonly, checked=!Object.keys(entry.basicData).length && !Object.keys(entry.medicalRecord).length && !entry.diary.length)
+      |  is new entry
+
+  //- 'basicData' input section
+  .row.mt-3
+    .col
+      h4 Basic Data
+      table#basicData.table
+        tr
+          th Metric
+          th Value
+          th Action
+        each val, key in entry.basicData
+          tr
+            td
+              input.form-control(name='metric', type='text', value=key)
+            td
+              input.form-control(name='value', type='text', value=val)
+            td
+              button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+
+      button.btn.btn-primary(onclick="AddRow('basicData')") Add row
+
+  //- 'medicalRecord' input section
+  .row.mt-3
+    .col
+      h4 Medical Record
+      table#medicalRecord.table
+        tr
+          th Metric
+          th Value
+          th Action
+        each val, key in entry.medicalRecord
+          tr
+            td
+              input.form-control(name='metric', type='text', value=key)
+            td
+              input.form-control(name='value', type='text', value=val)
+            td
+              button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+
+      button.btn.btn-primary(onclick="AddRow('medicalRecord')") Add row
+
+  //- 'diary' input section
+  .row.mt-3
+    .col
+      h4 Diary
+      table#diary.table
+        tr
+          th Chat3 entry ID
+          th Action
+        each id in entry.diary
+          tr
+            td
+              input.form-control(name='chat3Id', type='text', value=id)
+            td
+              button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+
+      button.btn.btn-primary(onclick="AddRow('diary')") Add row
+
+  //- "Update" button
+  .row.mt-3
+    .col.text-center
+      button.btn.btn-success(onclick="SaveToDatabase()") Update
+
+  script(src="/health_edit.js")

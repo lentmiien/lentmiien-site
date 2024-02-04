@@ -49,6 +49,8 @@ const OpenaimodelDBModel = require('./models/openaimodel');
 // Cooking calendar
 const CookingCalendarModel = require('./models/CookingCalendar');
 const CookingRequestModel = require('./models/CookingRequest');
+// Health log
+const HealthEntry = require('./models/healthentry');
 
 // Export models
 module.exports = {
@@ -76,4 +78,5 @@ module.exports = {
   OpenaimodelDBModel,
   CookingCalendarModel,
   CookingRequestModel,
+  HealthEntry,
 };

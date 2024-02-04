@@ -1,0 +1,50 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2 Health Tracker Top
+      
+  //- Controls to set date range and button to update content
+  .row.mb-3
+    .col
+      label(for="start_date") Start Date
+      input#start_date(type="date", name="start_date")
+    .col
+      label(for="end_date") End Date
+      input#end_date(type="date", name="end_date")
+    .col
+      button.btn.btn-primary(onclick="UpdateHealthLogDisplay()") Update
+      
+  //- Placeholder for displaying health log
+  .row
+    .col
+      h4 Health Logs
+      table#health_log.table.table-striped
+        thead
+          tr
+            th Date
+            th Basic Data
+            th Medical Record
+            th Diary
+            th Actions
+            
+  //- Date selector and edit button
+  .row.mt-3
+    .col
+      label(for="edit_date") Select Date
+      input#edit_date(type="date", name="edit_date")
+      button.btn.btn-secondary(onclick="OpenEditDate()") Edit/Create for Date
+  
+  //- Hidden popup for displaying health log entries
+  #detailsPopup.modal.fade(tabindex="-1", aria-hidden="true")
+    .modal-dialog
+      .modal-content
+        .modal-header
+          h5.modal-title Details
+          button.close(type="button", onclick="HidePopup()", aria-label="Close")
+            span(aria-hidden="true") &times;
+        .modal-body
+          p#detailsContent
+  
+  script(src="/health_top.js") 

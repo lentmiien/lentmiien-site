@@ -147,6 +147,9 @@ app.use('/accounting', isAuthenticated, budgetRouter);
 const cookingRouter = require('./routes/cooking');
 app.use('/cooking', isAuthenticated, cookingRouter);
 
+const healthRouter = require('./routes/health');
+app.use('/health', isAuthenticated, healthRouter);
+
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
