@@ -235,3 +235,48 @@ exports.deleteHealthEntry = async (req, res) => {
     return res.status(500).json({ message: 'Internal server error.' });
   }
 };
+
+// POST /health-entries/diary: Append id to diary of health entry, or create new if not existing
+exports.append_diary = async (req, res) => {
+  const { date, id } = req.body;
+
+  // Validate date and id
+  if (!date || !isValidDate(date)) {
+      return res.status(400).json({ status: 'ERROR', message: 'Invalid or missing date.' });
+  }
+
+  if (!id) {
+      return res.status(400).json({ status: 'ERROR', message: 'Missing id.' });
+  }
+
+  try {
+      // Check if an entry for the given date exists
+      let entry = await HealthEntry.findOne({ dateOfEntry: date });
+
+      if (entry) {
+          // Check if the provided id is already in the diary
+          if (!entry.diary.includes(id)) {
+              // Append the id and save the entry
+              entry.diary.push(id);
+              await entry.save();
+              res.status(200).json({ status: 'OK', message: 'Id added to existing diary entry.' });
+          } else {
+              // Id already present
+              res.status(200).json({ status: 'OK', message: 'Id already present in the diary for this date.' });
+          }
+      } else {
+          // Create a new entry with the provided id in the diary
+          const newEntry = new HealthEntry({
+              dateOfEntry: date,
+              diary: [id], // Initialize diary with the provided id
+              basicData: {}, // Assuming your entry structure requires these
+              medicalRecord: {},
+          });
+          await newEntry.save();
+          res.status(201).json({ status: 'OK', message: 'New diary entry created with id.' });
+      }
+  } catch (error) {
+      console.error(`Error appending diary ID: ${error.message}`);
+      res.status(500).json({ status: 'ERROR', message: 'Server error while processing request.' });
+  }
+};

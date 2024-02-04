@@ -18,5 +18,7 @@ router.put('/health-entries/:date', controller.updateHealthEntry);
 router.get('/health-entries', controller.getHealthEntries);
 // Delete one entry (API)
 router.delete('/health-entries/:date', controller.deleteHealthEntry);
+// Append id to diary (API)
+router.post('/health-entries/diary', controller.append_diary);
 
 module.exports = router;
