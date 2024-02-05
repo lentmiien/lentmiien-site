@@ -830,3 +830,12 @@ exports.post_simple_chat = async (req, res) => {
     res.json({status: "ERROR", msg: "Failed to get a response from ChatGPT."});
   }
 };
+
+exports.fetch_messages = async (req, res) => {
+  const messages = await Chat3Model.find({_id: req.body.ids});
+  const output = {};
+  messages.forEach(d => {
+    output[d._id.toString()] = marked.parse(d.ContentText);
+  });
+  res.json(output);
+};

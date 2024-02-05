@@ -46,16 +46,32 @@ async function UpdateHealthLogDisplay() {
   UpdateHealthLog(health_log_array, startDate, endDate);
 }
 
-function ViewHealthLogEntry(date) {
+async function ViewHealthLogEntry(date) {
   let entry = health_log_array.find(e => e.dateOfEntry === date);
+
+  // Fetch Chat3 messages
+  let message_lookup = {};
+  if (entry.diary.length > 0) {
+    const response = await fetch('/chat3/fetch_messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ids: entry.diary})
+    });
+    const result = await response.json();
+    message_lookup = result;
+    console.log(result);
+  }
   
   // Populate and display popup
   let detailsContent = document.querySelector('#detailsContent');
   detailsContent.innerHTML = `
     <strong>Basic Data:</strong> ${JSON.stringify(entry.basicData)}<br>
     <strong>Medical Record:</strong> ${JSON.stringify(entry.medicalRecord)}<br>
-    <strong>Diary:</strong> ${entry.diary.join(', ')}
+    <strong>Diary:</strong>
   `;
+  entry.diary.forEach(d => {
+    detailsContent.innerHTML += `<hr>${message_lookup[d]}`;
+  });
 
   let detailsPopup = new bootstrap.Modal(document.getElementById('detailsPopup'));
   detailsPopup.show();

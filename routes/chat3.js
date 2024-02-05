@@ -35,4 +35,7 @@ router.post('/set_default_model', controller.set_default_model);
 // Simple chat
 router.post('/post_simple_chat', controller.post_simple_chat);
 
+// Fetch messages of provided ids
+router.post('/fetch_messages', controller.fetch_messages);
+
 module.exports = router;
