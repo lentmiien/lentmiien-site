@@ -35,6 +35,25 @@ const filesToCheck = [
 
 filesToCheck.forEach(file => ensureFileExists(path.join('cache', file.name), file.content));
 
+// Clear temporary folder
+function clearDirectory(directory) {
+  if (fs.existsSync(directory)) {
+      fs.readdirSync(directory).forEach((file) => {
+          const currentPath = path.join(directory, file);
+          if (fs.lstatSync(currentPath).isDirectory()) {
+              // Recurse if directory
+              clearDirectory(currentPath);
+              fs.rmdirSync(currentPath);
+          } else {
+              // Remove file
+              fs.unlinkSync(currentPath);
+          }
+      });
+  }
+}
+const TEMP_DIR = path.join(__dirname, 'tmp_data');
+clearDirectory(TEMP_DIR);
+
 // Check for the existence of the .env file
 if (!fs.existsSync('.env')) {
   console.warn('Warning: .env file does not exist. Some configurations might be missing.');

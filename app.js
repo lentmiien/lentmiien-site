@@ -9,25 +9,6 @@ const LocalStrategy = require('passport-local').Strategy;
 const expressSession = require('express-session');
 const bcrypt = require('bcryptjs');
 
-// Clear temporary folder
-function clearDirectory(directory) {
-  if (fs.existsSync(directory)) {
-      fs.readdirSync(directory).forEach((file) => {
-          const currentPath = path.join(directory, file);
-          if (fs.lstatSync(currentPath).isDirectory()) {
-              // Recurse if directory
-              clearDirectory(currentPath);
-              fs.rmdirSync(currentPath);
-          } else {
-              // Remove file
-              fs.unlinkSync(currentPath);
-          }
-      });
-  }
-}
-const TEMP_DIR = path.join(__dirname, 'tmp_data');
-clearDirectory(TEMP_DIR);
-
 // Require necessary database models
 const { UseraccountModel } = require('./database');
 
