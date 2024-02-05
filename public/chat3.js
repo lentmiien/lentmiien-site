@@ -690,6 +690,6 @@ async function AppendToHealthEntry() {
   });
   const status = await response.json();
   console.log(status);
-  alert(status.msg);
+  alert(status.message);
   hideLoadingPopup();
 }
