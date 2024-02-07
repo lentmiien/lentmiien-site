@@ -309,7 +309,7 @@
   z-index: 1000; /* Ensure it's above other content */
 }
 
-.h-modal-content {
+.modal-content {
   position: fixed;
   left: 10%;
   top: 0;
