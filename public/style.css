@@ -294,3 +294,17 @@
 .profile-img { width: 100%; height: auto; }
 .section-title { text-align: center; margin-bottom: 20px; }
 .section-content { margin: 0 auto; text-align: justify; }
+
+/* Copy action menu */
+#sticky-action-bar {
+  position: fixed;
+  bottom: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none; /* Hidden initially */
+  background-color: #f8f9fa;
+  border: 1px solid #ddd;
+  padding: 5px 10px;
+  border-radius: 5px;
+  z-index: 1000; /* Ensure it's above other content */
+}

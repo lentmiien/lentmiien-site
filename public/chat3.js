@@ -693,3 +693,59 @@ async function AppendToHealthEntry() {
   alert(status.message);
   hideLoadingPopup();
 }
+
+/* Custom copy functionality */
+document.addEventListener('selectionchange', () => {
+  var selection = document.getSelection();
+  
+  if (selection.toString().trim().length > 0 && document.getElementById('chatmessages').contains(selection.anchorNode)) {
+    // Show the action bar if text is selected within the content container
+    document.getElementById('sticky-action-bar').style.display = 'block';
+  } else {
+    document.getElementById('sticky-action-bar').style.display = 'none';
+  }
+});
+
+// Function to copy selected text
+function copyText() {
+  var text = document.getSelection().toString();
+  navigator.clipboard.writeText(text).then(() => {
+    console.log('Text copied to clipboard');
+    document.getElementById('sticky-action-bar').style.display = 'none';
+  }).catch(err => {
+    console.error('Failed to copy text: ', err);
+  });
+}
+
+// Function to copy the section
+function copySection() {
+  const selection = document.getSelection();
+  let node = selection.anchorNode;
+  
+  // Traverse up to find the target element
+  while (node != null && !(node.nodeName === 'UL' || node.nodeName === 'OL' || node.nodeName === 'CODE' || node.nodeName === 'DIV')) {
+    // If it's a paragraph, check if its parent is a list (OL or UL). If not, break the loop.
+    if (node.nodeName === 'P') {
+      if (node.parentNode && node.parentNode.nodeName === 'LI') {
+        // If the P is a direct child of LI, continue traversing.
+        node = node.parentNode;
+      } else {
+        // If the parent is not a list, then this is the node we are interested in.
+        break;
+      }
+    } else {
+      node = node.parentNode;
+    }
+  }
+
+  // If we find a valid node or fall back to the 'DIV', extract and copy its text content
+  if (node != null) {
+    const textToCopy = node.innerText || node.textContent; // Fallback to textContent for older browsers
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      console.log('Section copied to clipboard');
+      document.getElementById('sticky-action-bar').style.display = 'none';
+    }).catch(err => {
+      console.error('Failed to copy section: ', err);
+    });
+  }
+}

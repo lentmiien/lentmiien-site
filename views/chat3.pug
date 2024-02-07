@@ -103,6 +103,9 @@ block content
           span= `${k.title} (${k.category})`
   #historyModal.modal
     span.close-btn(onclick="closeHModalPopup()") &times;
+  #sticky-action-bar
+    button(onclick="copyText()") Copy Text
+    button(onclick="copySection()") Copy Section
   #loadingPopup.loading-popup
     .loading-content
       .loader
