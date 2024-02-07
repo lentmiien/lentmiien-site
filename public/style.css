@@ -308,3 +308,12 @@
   border-radius: 5px;
   z-index: 1000; /* Ensure it's above other content */
 }
+
+.modal-content {
+  position: fixed;
+  left: 10%;
+  top: 0;
+  width: 80%; /* Full width */
+  height: 100%; /* Full height */
+  overflow: auto;
+}
