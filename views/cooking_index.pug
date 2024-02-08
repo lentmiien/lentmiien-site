@@ -12,7 +12,7 @@ block content
             hr
             h5 Lunch
             if cookday.lunch.image.length > 0
-              img.image1024(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+              img.image-large(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
               br
             if cookday.lunch.is_url
               a(id=`${cookday.date}lunch`, href=`${cookday.lunch.name}`, traget="_blank")= cookday.lunch.name 
@@ -32,7 +32,7 @@ block content
             hr
             h5 Dinner
             if cookday.dinner.image.length > 0
-              img.image1024(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+              img.image-large(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
               br
             if cookday.dinner.is_url
               a(id=`${cookday.date}dinner`, href=`${cookday.dinner.name}`, traget="_blank")= cookday.dinner.name 
@@ -52,7 +52,7 @@ block content
             hr
             h5 Dessert
             if cookday.dessert.image.length > 0
-              img.image1024(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+              img.image-large(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
               br
             if cookday.dessert.is_url
               a(id=`${cookday.date}dessert`, href=`${cookday.dessert.name}`, traget="_blank")= cookday.dessert.name 
