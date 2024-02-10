@@ -1,4 +1,5 @@
 // Import dependencis
+const sharp = require('sharp');
 const fs = require("fs");
 const path = require("path");
 const { OpenaicalllogDBModel, OpenaimodelDBModel } = require('../database');
@@ -202,7 +203,8 @@ const ig = async (prompt, quality, size) => {
     return 'invalid input';
   }
 
-  const filename = `image-${Date.now()}-.png`;
+  const number = Date.now();
+  const filename = `image-${number}-.png`;
   const outputfile = path.resolve(`./public/img/${filename}`);
   const image = await openai.images.generate({
     model: "dall-e-3",
@@ -216,7 +218,26 @@ const ig = async (prompt, quality, size) => {
   const buffer = Buffer.from(data, 'base64');
   await fs.promises.writeFile(outputfile, buffer);
   await OpenAIAPICallLog_ig("Lennart", "dall-e-3", size, quality, image.data[0].revised_prompt || prompt, filename);
-  return { filename, prompt: image.data[0].revised_prompt || prompt };
+
+  // Convert PNG to JPEG using sharp
+  const jpg_filename = `image-${number}-.jpg`;
+  const jpg_outputfile = path.resolve(`./public/img/${jpg_filename}`);
+  try {
+    // Convert PNG buffer to JPG
+    const jpgBuffer = await sharp(buffer)
+      .jpeg({ quality: 70 }) // Adjust the quality as needed
+      .toBuffer();
+    
+    // Save the JPG buffer to a file
+    await fs.promises.writeFile(jpg_outputfile, jpgBuffer);
+    console.log('The JPEG file has been saved successfully!');
+  } catch(err) {
+    // Handle errors
+    console.error('An error occurred:', err);
+  }
+
+  return { filename: jpg_filename, prompt: image.data[0].revised_prompt || prompt };
+  // return { filename, prompt: image.data[0].revised_prompt || prompt };
 };
 
 module.exports = {
