@@ -749,3 +749,43 @@ function copySection() {
     });
   }
 }
+
+function copyTitleAndContent() {
+  const selection = document.getSelection();
+  let node = selection.anchorNode;
+  while (node && node.id !== 'chatmessages') {
+    if (node.nodeName.match(/^H[1-6]$/)) {
+      // We found a heading node, start copying from here
+      break;
+    }
+    node = node.parentNode;
+  }
+
+  if (!node || node.id === 'chatmessages') {
+    // If we didn't find a heading, or reached the container, copy container's content
+    node = document.getElementById('chatmessages');
+  }
+
+  let content = '';
+  const startLevel = parseInt(node.nodeName.match(/\d/)[0], 10); // H1, H2, ... H6 to 1, 2, ... 6
+
+  do {
+    if (node.nodeName.match(/^H[1-6]$/)) {
+      let currentLevel = parseInt(node.nodeName.match(/\d/)[0], 10);
+      if (currentLevel <= startLevel && content !== '') {
+        // We've reached a heading of equal or higher rank; stop copying.
+        break;
+      }
+    }
+    content += node.textContent + "\n\n"; // Adding two new lines for readability.
+    node = node.nextElementSibling;
+  } while (node && node.id !== 'chatmessages');
+
+  // Copy the accumulated content to the clipboard
+  navigator.clipboard.writeText(content).then(() => {
+    console.log('Title and content copied to clipboard');
+    document.getElementById('sticky-action-bar').style.display = 'none';
+  }).catch(err => {
+    console.error('Failed to copy title and content: ', err);
+  });
+}
