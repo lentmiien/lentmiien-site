@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 
 // Function to ensure that a directory exists
 function ensureDirExists(dirPath) {
@@ -58,3 +59,42 @@ clearDirectory(TEMP_DIR);
 if (!fs.existsSync('.env')) {
   console.warn('Warning: .env file does not exist. Some configurations might be missing.');
 }
+
+// Convert DALL-E images to JPG, if only PNG exist
+async function convertPngToJpgInFolder(folderPath) {
+  try {
+    // Read all files in the folder
+    const files = await fs.promises.readdir(folderPath);
+
+    // Loop through each file in the directory
+    for (const file of files) {
+      const ext = path.extname(file);
+      const baseName = path.basename(file, ext);
+
+      if (ext.toLowerCase() === '.png') {
+        // Check if JPG version exists
+        const jpgPath = path.join(folderPath, baseName + '.jpg');
+        try {
+          // Try accessing the JPG file, throw error if it doesn't exist
+          await fs.promises.access(jpgPath);
+          console.log(`JPG version already exists for ${file}, skipping...`);
+        } catch {
+          // JPG does not exist, convert PNG to JPG
+          console.log(`Converting ${file} to JPG...`);
+          const pngPath = path.join(folderPath, file);
+          const pngBuffer = await fs.promises.readFile(pngPath);
+          const jpgBuffer = await sharp(pngBuffer).jpeg({ quality: 70 }).toBuffer();
+          await fs.promises.writeFile(jpgPath, jpgBuffer);
+          console.log(`Successfully converted ${file} to JPG.`);
+        }
+      }
+    }
+    console.log("Conversion process completed.");
+  } catch (err) {
+    console.error('An error occurred:', err);
+  }
+}
+
+// Usage example
+const folderPath = 'public/img';
+convertPngToJpgInFolder(folderPath);
