@@ -2,7 +2,7 @@ extends layout
 
 block content
   .row 
-    .col-6 
+    .col-6.scrollable-column 
       h3 Origin chat
       each m in chatmessages
         div(class=`${m._id.toString() === know.originId ? "user" : "system"}`)
@@ -10,7 +10,7 @@ block content
           if m.Images && m.Images.length > 0
             img.thumbnail(src=`${m.Images}`, alt="DALL-E-3 generated image")
             p= m.Images
-    .col-6 
+    .col-6.scrollable-column 
       h3 Edit knowledge form
       form(action="/chat3/manage_knowledge_edit_post", method="post") 
         input(type="hidden", name="chat_template", value=`${template._id.toString()}`)

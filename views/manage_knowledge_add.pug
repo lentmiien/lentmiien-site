@@ -2,7 +2,7 @@ extends layout
 
 block content
   .row 
-    .col-6 
+    .col-6.scrollable-column 
       h2 Chat messages 
       each m in msgs 
         div(class=`${m._id.toString() === msg_id ? "assistant" : "system-small"}`)
@@ -10,7 +10,7 @@ block content
           if m.Images && m.Images.length > 0
             img.thumbnail(src=`${m.Images}`, alt="DALL-E-3 generated image")
             p= m.Images
-    .col-6 
+    .col-6.scrollable-column 
       h2 Knowledge form
       select.form-control(onchange="ChangeForm(this)") 
         each t, i in current_templates

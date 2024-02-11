@@ -317,3 +317,8 @@
   height: 100%; /* Full height */
   overflow: auto;
 }
+
+.scrollable-column {
+  max-height: 90vh; /* Example height */
+  overflow-y: scroll; /* Enables vertical scrolling */
+}
