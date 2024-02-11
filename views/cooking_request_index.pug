@@ -32,7 +32,7 @@ block content
                   hr
                   h5 Lunch
                   if cookday.lunch.image.length > 0
-                    img.image1024(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+                    img.image-large(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
@@ -53,7 +53,7 @@ block content
                   hr
                   h5 Dinner
                   if cookday.dinner.image.length > 0
-                    img.image1024(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+                    img.image-large(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
@@ -74,7 +74,7 @@ block content
                   hr
                   h5 Dessert
                   if cookday.dessert.image.length > 0
-                    img.image1024(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+                    img.image-large(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
