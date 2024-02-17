@@ -26,15 +26,17 @@ block content
   #popup.popup 
     .popup-content 
       span#closePopupBtn.close(onclick="ClosePopup()") &times;
-      b Conversation: 
-      span#conversation_id= this_conversation.length > 0 ? this_conversation[0].ConversationID : "NEW"
-      b  , Message: 
-      span#message_id
-      .row.chat-history.tool-scroll-end
-        #tool_chatmessages.col 
       .row 
         .col
           input#tooltitle.form-control(type="text", name="tooltitle") 
+      .row 
+        .col 
+          b Conversation: 
+          span#conversation_id= this_conversation.length > 0 ? this_conversation[0].ConversationID : "NEW"
+          b  , Message: 
+          span#message_id
+      .row.chat-history.tool-scroll-end
+        #tool_chatmessages.col 
       .row.chat-input
         .col-3
           label(for="tool_input_context") Context
