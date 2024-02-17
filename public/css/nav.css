@@ -1,0 +1,79 @@
+.navbar-icon, #goTopPageBtn {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: fixed;
+  width: 50px; /* Fixed width */
+  height: 50px; /* Fixed height */
+  right: 20px; /* Adjust based on layout */
+  cursor: pointer;
+  z-index: 5;
+  background-color: #000; /* Example background color */
+  color: #fff; /* Example icon color */
+  border-radius: 50%; /* Optional: for rounded corners */
+  text-decoration: none; /* Removes underline from the link (for #goTopPageBtn) */
+  border: 5px solid white;
+}
+
+.navbar-icon {
+  top: 20px; /* Adjust based on layout */
+}
+
+#goTopPageBtn {
+  top: 80px; /* Adjust based on layout and size of navbar-icon */
+}
+
+.navbar {
+  display: none; /* Hidden by default */
+  grid-template-columns: 1fr; /* Single column layout by default */
+  gap: 20px; /* Spacing between columns */
+  padding: 20px; /* Spacing around the content */
+  align-items: start; /* Aligns grid items to the start of the grid area vertically */
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background-color: rgba(0,0,0,0.9); /* Semi-transparent black */
+  color: white;
+  padding-top: 60px; /* Makes room for content below the top edge */
+  overflow-y: scroll; /* Allows scrolling */
+  z-index: 4; /* Ensures the navbar is below the toggle icon but above other content */
+}
+
+.navbar .type-1-link {
+  padding: 10px 15px;
+  display: block;
+  color: white;
+  text-decoration: none;
+  font-weight: 900;
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+.navbar .type-2-link {
+  padding: 10px 15px;
+  display: block;
+  color: #cccccc;
+  text-decoration: none;
+  font-size: 16px;
+}
+
+.navbar a:hover {
+  background-color: #ddd;
+  color: black;
+}
+
+.no-scroll {
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Responsive Layout for Wider Screens */
+@media (min-width: 768px) { /* Adjust breakpoint as needed */
+  .navbar {
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); /* Creates multiple columns on wider screens */
+      /* Adjust the minmax() values as per your link collection’s needs */
+      align-items: start;
+  }
+}
