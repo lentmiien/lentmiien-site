@@ -20,6 +20,9 @@ html(lang='en')
     #navbar.navbar
       .navbar-column
         a.type-1-link(href="/blog", style="width:100%;") Blog
+        a.type-2-link(href="/blog/Personal/list", style="width:100%;") Personal
+        a.type-2-link(href="/blog/Programming/list", style="width:100%;") Programming
+        a.type-2-link(href="/blog/Food/list", style="width:100%;") Food
         if loggedIn == true
           a.type-2-link(href="/mypage/blogpost", style="width:100%;") Write blog
       if loggedIn == true
