@@ -38,12 +38,12 @@ block content
       .row.chat-input
         .col-3
           label(for="tool_input_context") Context
-          textarea#tool_input_context.form-control.chat-textarea(name="tool_input_context", cols="30", rows="3")
+          textarea#tool_input_context.form-control.chat-textarea(name="tool_input_context", cols="30", rows="5")
         .col-9
           label(for="tool_input") Prompt
           textarea#tool_input.form-control.chat-textarea(name="tool_input", cols="30", rows="5")
       .row
-        .col
+        .col.button-container
           button.btn.btn-primary(onclick="SendTool()") Send message
           button.btn.btn-primary(onclick="showTModalPopup()", title="Select template popup") T
           button.btn.btn-secondary(onclick="SummaryTool(\"summary\")") Create summary

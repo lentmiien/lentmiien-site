@@ -155,8 +155,17 @@
 }
 
 .button-container {
-  display: flex;
-  justify-content: space-between;
+  display: flex; /* Apply Flexbox to the container */
+  flex-wrap: wrap; /* Enable wrapping of child elements (buttons) */
+  gap: 10px; /* This applies both row and column gaps */
+  justify-content: flex-start; /* Align items to the start of the container */
+}
+
+.button-container button {
+  flex: 1 1 auto; /* Flex grow, shrink, and basis */
+  margin: 5px; /* Margin for additional spacing, if needed beyond the gap */
+  width: 150px;
+  /* Add more button styles here */
 }
 
 /* Loading Popup Styles */
