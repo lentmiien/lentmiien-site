@@ -42,7 +42,7 @@ block content
           label(for="tool_input") Prompt
           textarea#tool_input.form-control.chat-textarea(name="tool_input", cols="30", rows="5")
       .row
-        .col.button-container
+        .col
           button.btn.btn-primary(onclick="SendTool()") Send message
           button.btn.btn-primary(onclick="showTModalPopup()", title="Select template popup") T
           button.btn.btn-secondary(onclick="SummaryTool(\"summary\")") Create summary
