@@ -331,3 +331,29 @@
   max-height: 90vh; /* Example height */
   overflow-y: scroll; /* Enables vertical scrolling */
 }
+
+/* Container styling */
+.c3_wrapper {
+  display: flex; /* Enable Flexbox */
+  align-items: stretch; /* Stretch child elements to fit the container's height */
+  width: 600px; /* Example width; adjust as needed */
+}
+
+/* Textarea styling */
+.c3_textarea {
+  flex-grow: 1; /* Allow the textarea to take up the available space */
+  resize: vertical; /* Limit resizing to vertical to maintain layout */
+}
+
+/* Buttons container styling */
+.c3_buttons {
+  display: flex;
+  flex-direction: column; /* Arrange buttons vertically */
+  height: 100%; /* Take up full height of the parent (wrapper) */
+}
+
+/* Button styling */
+.c3_btn {
+  flex: 1; /* Distribute space evenly among buttons */
+  cursor: pointer; /* Optional: Change cursor on hover */
+}

@@ -8,13 +8,12 @@ extends layout
 block content
   .row.chat-history.scroll-end
     #chatmessages.col 
-  .row.chat-input
-    .col-11
-      textarea#input.form-control.chat-textarea(name="input", cols="30", rows="5")
-    .col-1
-      button.btn.btn-primary(onclick="showTModalPopup()", title="Select template popup") T
-      br
-      button.btn.btn-primary(onclick="Send()", title="Send message") S
+  .row
+    .col.c3_wrapper
+      textarea#input.form-control.c3_textarea(name="input", cols="30", rows="5")
+      .c3_buttons
+        button.btn.btn-warning.c3_btn(onclick="showTModalPopup()", title="Select template popup") T
+        button.btn.btn-primary.c3_btn(onclick="Send()", title="Send message") S
   .row 
     .col 
       select#model.form-control(name="model")
