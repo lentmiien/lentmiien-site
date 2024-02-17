@@ -334,26 +334,27 @@
 
 /* Container styling */
 .c3_wrapper {
-  display: flex; /* Enable Flexbox */
-  align-items: stretch; /* Stretch child elements to fit the container's height */
-  width: 600px; /* Example width; adjust as needed */
+  display: flex;
+  flex-direction: column; /* Stack children vertically */
+  align-items: stretch; /* Stretch child elements to fit the container's width */
+  width: 100%; /* Take full width, adjust as necessary or use max-width for constraint */
 }
 
 /* Textarea styling */
 .c3_textarea {
-  flex-grow: 1; /* Allow the textarea to take up the available space */
+  width: 100%; /* Ensure textarea takes full width */
   resize: vertical; /* Limit resizing to vertical to maintain layout */
+  margin-bottom: 2px; /* Optional: Add some space between the textarea and buttons */
 }
 
 /* Buttons container styling */
 .c3_buttons {
-  display: flex;
-  flex-direction: column; /* Arrange buttons vertically */
-  height: 100%; /* Take up full height of the parent (wrapper) */
+  width: 100%; /* Take up full width */
 }
 
 /* Button styling */
 .c3_btn {
-  flex: 1; /* Distribute space evenly among buttons */
+  width: 50%; /* Ensure each button takes full width */
   cursor: pointer; /* Optional: Change cursor on hover */
+  margin-bottom: 5px; /* Optional: Add space between buttons */
 }
