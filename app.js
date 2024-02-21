@@ -131,6 +131,9 @@ app.use('/cooking', isAuthenticated, cookingRouter);
 const healthRouter = require('./routes/health');
 app.use('/health', isAuthenticated, healthRouter);
 
+const boxRouter = require('./routes/box');
+app.use('/box', isAuthenticated, boxRouter);
+
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
