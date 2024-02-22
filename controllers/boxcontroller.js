@@ -29,4 +29,37 @@ exports.index = (req, res) => {
  * }
  */
 exports.pack = (req, res) => {
+  const items = req.body.items;
+  const boxes = req.body.boxes;
+  const margin = req.body.margin;
+  const method = req.body.method;
+  const packedItemsInBoxes = packItems(items, boxes, margin, method);
+
+  if (packedItemsInBoxes) {
+      res.json({ success: true, packedItemsInBoxes });
+  } else {
+      res.json({ success: false, message: "Couldn't fit all items into the boxes." });
+  }
 };
+
+function packItems(items, boxes, margin, method) {
+  // Implement the packing logic here
+  // Placeholder for the packing logic; convert the DFS approach here
+  return [
+    {
+      id: boxes[0].id,
+      items: [
+        {
+          id: items[0].id,
+          x_pos: 0,
+          y_pos: 0,
+          z_pos: 0,
+          x_size: items[0].width,
+          y_size: items[0].height,
+          z_size: items[0].depth,
+          weight: items[0].weight,
+        }
+      ]
+    }
+  ]; // Placeholder return (return first box with first item)
+}
