@@ -3,20 +3,15 @@ extends layout
 block content
   h2 Box packer 
   label(for="items") Items (CSV format: Item code,Quantity,Width,Height,Depth,Weight,Item flags)
-  textarea#items.form-control(name="items", cols="30", rows="10")
+  textarea#items.form-control(name="items", cols="30", rows="10")= sample_data ? sample_data : ''
   label(for="margin") Packing safety margin in mm
-  input#margin.form-control(type="number", name="margin", placeholder="10")
+  input#margin.form-control(type="number", name="margin", placeholder="10", value=`${sample_data ? '15' : ''}`)
   div 
     p Boxes to use 
-    span 
-      input(type="checkbox", name="box", data-id="A", data-width="175", data-height="150", data-depth="75", data-box_weight="100", checked=true)
-      b  A
-    span 
-      input(type="checkbox", name="box", data-id="B4", data-width="320", data-height="250", data-depth="215", data-box_weight="200", checked=true)
-      b  B4
-    span 
-      input(type="checkbox", name="box", data-id="L2", data-width="520", data-height="310", data-depth="250", data-box_weight="300", checked=true)
-      b  L2
+    each box in boxLabels 
+      span 
+        input(type="checkbox", name="box", data-id=box, data-width=boxTemplates[box][0], data-height=boxTemplates[box][1], data-depth=boxTemplates[box][2], data-box_weight=boxTemplates[box][3], checked=true)
+        b= ` ${box}`
   label(for="method") Packing method 
   select#method.form-control(name="method") 
     option(value="fit_fill_rate") Fit on fill rate only (For initial test purpose only)

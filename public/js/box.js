@@ -9,10 +9,10 @@ function submitPackingRequest() {
   // Gathering selected box types
   const boxes = Array.from(document.querySelectorAll('input[name="box"]:checked')).map(box => ({
       id: box.getAttribute('data-id'),
-      width: box.getAttribute('data-width'),
-      height: box.getAttribute('data-height'),
-      depth: box.getAttribute('data-depth'),
-      box_weight: box.getAttribute('data-box_weight')
+      width: parseInt(box.getAttribute('data-width')),
+      height: parseInt(box.getAttribute('data-height')),
+      depth: parseInt(box.getAttribute('data-depth')),
+      box_weight: parseInt(box.getAttribute('data-box_weight'))
   }));
 
   // Getting the margin and approach
