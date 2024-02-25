@@ -64,6 +64,21 @@ exports.pack = (req, res) => {
   const margin = req.body.margin;
   const method = req.body.method;
 
+  // Flatten items (count > 1 -> separate to 1 item per entry)
+  const flat_items = [];
+  items.forEach(d => {
+    for (let i = 0; i < d.count; i++) {
+      flat_items.push({
+        id: d.id,
+        width: d.width,
+        height: d.height,
+        depth: d.depth,
+        weight: d.weight,
+        flags: d.flags
+      });
+    }
+  });
+
   // Calculate margins
   const margin_adjusted_boxes = [];
   boxes.forEach(d => {
@@ -76,7 +91,7 @@ exports.pack = (req, res) => {
     });
   });
 
-  const packedItemsInBoxes = packItems(items, margin_adjusted_boxes, method);
+  const packedItemsInBoxes = packItems(flat_items, margin_adjusted_boxes, method);
 
   if (packedItemsInBoxes) {
       res.json({ success: true, packedItemsInBoxes });
@@ -87,7 +102,7 @@ exports.pack = (req, res) => {
 
 /**
  * Choose the packing algorithm
- * @param {Array} items // { id, count, width, height, depth, weight, flags }
+ * @param {Array} items // { id, width, height, depth, weight, flags }
  * @param {Array} boxes // { id, width, height, depth, box_weight } *Margin adjusted
  * @param {String} method // Name of method to use
  * @returns // Packing list or 'null' if no solution could be found
@@ -106,14 +121,14 @@ function packItems(items, boxes, method) {
  * Search for a box with larger volume than the combined volume of all items,
  * regardless of shape of the items (*disregarding the shape of the items may produce impossible solutions)
  * *This algorithm is only meant for testing purpose*
- * @param {Array} items // { id, count, width, height, depth, weight, flags }
+ * @param {Array} items // { id, width, height, depth, weight, flags }
  * @param {Array} boxes // { id, width, height, depth, box_weight } *Margin adjusted
  * @returns // Packing list or 'null' if no solution could be found
  */
 function fit_fill_rate(items, boxes) {
   // Calculate items
   let total_item_volume = 0;
-  items.forEach(d => total_item_volume += d.width * d.height * d.depth * d.count);
+  items.forEach(d => total_item_volume += d.width * d.height * d.depth);
 
   // Calculate boxes
   let best_box_i = -1;
@@ -137,18 +152,16 @@ function fit_fill_rate(items, boxes) {
     items_in_box: []
   });
   items.forEach(d => {
-    for (let i = 0; i < d.count; i++) {
-      solution[0].items_in_box.push({
-        id: d.id,
-        x_pos: 0,
-        y_pos: 0,
-        z_pos: 0,
-        x_size: d.width,
-        y_size: d.height,
-        z_size: d.depth,
-        weight: d.weight,
-      });
-    }
+    solution[0].items_in_box.push({
+      id: d.id,
+      x_pos: 0,
+      y_pos: 0,
+      z_pos: 0,
+      x_size: d.width,
+      y_size: d.height,
+      z_size: d.depth,
+      weight: d.weight,
+    });
   });
   return solution;
 }
