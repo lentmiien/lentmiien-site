@@ -40,7 +40,22 @@ function submitPackingRequest() {
   .then(response => response.json())
   .then(data => {
       console.log('Success:', data);
-      // Handle successful response here (e.g., update the UI)
+      if (data.success) {
+        let output = '';
+        data.packedItemsInBoxes.forEach(d => {
+            let total_weight = d.box_weight;
+            output += `<u>BOX: <b>${d.id}</b> (${d.box_weight}g)</u><br>`;
+            let tbody = '';
+            d.items_in_box.forEach(item => {
+                total_weight += item.weight;
+                tbody += `<tr><td>${item.id}</td><td>${item.x_pos}, ${item.y_pos}, ${item.z_pos}</td><td>${item.x_size} x ${item.y_size} x ${item.z_size}</td><td>${item.weight}</td></tr>`;
+            });
+            output += `<table class="table table-striped"><thead><tr><th>Item</th><th>Possition</th><th>Size</th><th>Weight</th></tr></thead><tbody>${tbody}</tbody></table><i>Total weight: ${total_weight}g</i>`;
+        });
+        document.getElementById("output").innerHTML = output;
+      } else {
+        document.getElementById("output").innerText = data.message;
+      }
   })
   .catch((error) => {
       console.error('Error:', error);
