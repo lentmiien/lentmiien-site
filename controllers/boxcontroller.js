@@ -169,6 +169,7 @@ function fit_fill_rate(items, boxes) {
 }
 
 let bestSolution;
+const max_dim = {x:0,y:0,z:0};
 /**
  * Search for smallest box than can fit all items,
  * takes into account the shape and position of the items
@@ -189,6 +190,14 @@ function fit_smallest(items, boxes) {
 
   // Set to 'null', indicating that no solution has been found
   bestSolution = null;
+  max_dim.x = 0;
+  max_dim.y = 0;
+  max_dim.z = 0;
+  boxes.forEach(d => {
+    if (d.width > max_dim.x) max_dim.x = d.width;
+    if (d.height > max_dim.y) max_dim.y = d.height;
+    if (d.depth > max_dim.z) max_dim.z = d.depth;
+  });
   const start_ts = Date.now();
 
   // Generate all possible rotations
@@ -296,6 +305,17 @@ function placeItems(itemsToPlace, placedItems, boxes, corners) {
       }
     });
 
+    max_dim.x = 0;
+    max_dim.y = 0;
+    max_dim.z = 0;
+    boxes.forEach(d => {
+      if (d.width * d.height * d.depth <= smallest_box_volume) {
+        if (d.width > max_dim.x) max_dim.x = d.width;
+        if (d.height > max_dim.y) max_dim.y = d.height;
+        if (d.depth > max_dim.z) max_dim.z = d.depth;
+      }
+    });
+
     if (smallest_box_i >= 0) {
       if (bestSolution) {
         // Compare to previous candidate
@@ -355,7 +375,12 @@ function placeItems(itemsToPlace, placedItems, boxes, corners) {
         { id: rotation.id, x_pos: corner.x-rotation.width, y_pos: corner.y-rotation.height, z_pos: corner.z, x_size: rotation.width, y_size: rotation.height, z_size: rotation.depth, weight: rotation.weight },
       ];
       place_items.forEach(place_item => {
-        if (place_item.x_pos >= 0 && place_item.y_pos >= 0 && place_item.z_pos >= 0 && checkOverlap(place_item, placedItems) === false) {
+        if (
+          place_item.x_pos >= 0 && place_item.x_pos+rotation.width <= max_dim.x &&
+          place_item.y_pos >= 0 && place_item.y_pos+rotation.height <= max_dim.y &&
+          place_item.z_pos >= 0 && place_item.z_pos+rotation.depth <= max_dim.z &&
+          checkOverlap(place_item, placedItems) === false
+          ) {
           const new_placedItems = [...placedItems, place_item];
           const new_corners = [
             ...corners,
