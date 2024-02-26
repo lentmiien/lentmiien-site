@@ -189,6 +189,7 @@ function fit_smallest(items, boxes) {
 
   // Set to 'null', indicating that no solution has been found
   bestSolution = null;
+  const start_ts = Date.now();
 
   // Generate all possible rotations
   const items_with_rotations = [];
@@ -200,7 +201,13 @@ function fit_smallest(items, boxes) {
   // Generate solution
   sort_array.forEach(perm => placeItems(perm, [], boxes, [{x:0,y:0,z:0}]))
 
-  console.log(JSON.stringify(bestSolution, null, 2));
+  // End timer
+  const total_time_in_seconds = Math.round((Date.now() - start_ts) / 1000);
+  if(bestSolution) {
+    console.log(`Found solution for ${items.length} items in ${total_time_in_seconds} seconds.`);
+  } else {
+    console.log(`No solution found, processed ${items.length} items in ${total_time_in_seconds} seconds.`);
+  }
 
   return ("solution" in bestSolution ? bestSolution.solution : null);
 }
