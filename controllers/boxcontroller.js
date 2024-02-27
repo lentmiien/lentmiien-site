@@ -106,9 +106,12 @@ exports.pack = (req, res) => {
  * Run various tests for analysing performace of algorithms
  */
 exports.test = (req, res) => {
+  const NUMBER_OF_RUNS = 1000;
+
   const testOutput = {
     test_solutions: [],
     average_time: 0,
+    orderData: {},
   };
 
   // Prepare list of boxes
@@ -118,26 +121,57 @@ exports.test = (req, res) => {
 
   // Timing test
   let start_ts = Date.now();
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < NUMBER_OF_RUNS; i++) {
     const width1 = Math.round(Math.random()*200);
     const width2 = Math.round(Math.random()*200);
     const width3 = Math.round(Math.random()*200);
+    // const width4 = Math.round(Math.random()*200);
     const height1 = Math.round(Math.random()*200);
     const height2 = Math.round(Math.random()*200);
     const height3 = Math.round(Math.random()*200);
+    // const height4 = Math.round(Math.random()*200);
     const depth1 = Math.round(Math.random()*200);
     const depth2 = Math.round(Math.random()*200);
     const depth3 = Math.round(Math.random()*200);
+    // const depth4 = Math.round(Math.random()*200);
     const items = [
       { id: 'ITEM1', width: width1, height: height1, depth: depth1, weight: width1*height1*depth1, flags: 'B' },
       { id: 'ITEM2', width: width2, height: height2, depth: depth2, weight: width2*height2*depth2, flags: 'B' },
-      { id: 'ITEM3', width: width3, height: height3, depth: depth3, weight: width3*height3*depth3, flags: 'B' }
+      { id: 'ITEM3', width: width3, height: height3, depth: depth3, weight: width3*height3*depth3, flags: 'B' },
+      // { id: 'ITEM4', width: width4, height: height4, depth: depth4, weight: width4*height4*depth4, flags: 'B' },
     ];
+    items.sort((a,b) => {
+      if (a.weight > b.weight) return -1;
+      if (a.weight < b.weight) return 1;
+      return 0;
+    });
+    items[0].id = 'ITEM1';
+    items[1].id = 'ITEM2';
+    items[2].id = 'ITEM3';
+    // items[3].id = 'ITEM4';
 
     testOutput.test_solutions.push(packItems(items, boxes, 'fit_smallest'));
   }
   let end_ts = Date.now();
-  testOutput.average_time = Math.round((end_ts - start_ts) / 10000) / 10;
+  testOutput.average_time = Math.round((end_ts - start_ts) / NUMBER_OF_RUNS / 10) / 100;
+
+  // Analyze test results
+  const order = [];
+  const count = [];
+  testOutput.test_solutions.forEach(d => {
+    const order_string = `${d[0].items_in_box[0].id}-${d[0].items_in_box[1].id}-${d[0].items_in_box[2].id}`;//-${d[0].items_in_box[3].id}`;
+    const index = order.indexOf(order_string);
+    if (index >= 0) {
+      count[index]++;
+    } else {
+      order.push(order_string);
+      count.push(1);
+    }
+  });
+  testOutput.orderData = {
+    order,
+    count,
+  };
 
   res.json(testOutput);
 };
