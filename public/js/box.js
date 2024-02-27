@@ -62,3 +62,23 @@ function submitPackingRequest() {
       // Handle error conditions here
   });
 }
+
+function runTest() {
+  // Sending the POST request
+  fetch('/box/test', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  })
+  .then(response => response.json())
+  .then(data => {
+    console.log('Success:', data);
+    document.getElementById("output").innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+  })
+  .catch((error) => {
+    console.error('Error:', error);
+    // Handle error conditions here
+  });
+}

@@ -101,6 +101,39 @@ exports.pack = (req, res) => {
 };
 
 /**
+ * POST
+ * url: /box/test
+ * Run various tests for analysing performace of algorithms
+ */
+exports.test = (req, res) => {
+  const testOutput = {
+    test_solutions: [],
+    average_time: 0,
+  };
+
+  // Prepare list of boxes
+  const keys = Object.keys(boxTemplates);
+  const boxes = [];
+  keys.forEach(key => boxes.push({ id: key, width: boxTemplates[key][0], height: boxTemplates[key][1], depth: boxTemplates[key][2], box_weight: boxTemplates[key][3] }));
+
+  // Timing test
+  let start_ts = Date.now();
+  for (let i = 0; i < 100; i++) {
+    const items = [
+      { id: 'ITEM1', width: Math.round(Math.random()*200), height: Math.round(Math.random()*200), depth: Math.round(Math.random()*200), weight: Math.round(Math.random()*500), flags: 'B' },
+      { id: 'ITEM2', width: Math.round(Math.random()*200), height: Math.round(Math.random()*200), depth: Math.round(Math.random()*200), weight: Math.round(Math.random()*500), flags: 'B' },
+      { id: 'ITEM3', width: Math.round(Math.random()*200), height: Math.round(Math.random()*200), depth: Math.round(Math.random()*200), weight: Math.round(Math.random()*500), flags: 'B' }
+    ];
+
+    testOutput.test_solutions.push(packItems(items, boxes, 'fit_smallest'));
+  }
+  let end_ts = Date.now();
+  testOutput.average_time = Math.round((end_ts - start_ts) / 10000) / 10;
+
+  res.json(testOutput);
+};
+
+/**
  * Choose the packing algorithm
  * @param {Array} items // { id, width, height, depth, weight, flags }
  * @param {Array} boxes // { id, width, height, depth, box_weight } *Margin adjusted
