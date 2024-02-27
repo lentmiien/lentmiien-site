@@ -119,10 +119,19 @@ exports.test = (req, res) => {
   // Timing test
   let start_ts = Date.now();
   for (let i = 0; i < 100; i++) {
+    const width1 = Math.round(Math.random()*200);
+    const width2 = Math.round(Math.random()*200);
+    const width3 = Math.round(Math.random()*200);
+    const height1 = Math.round(Math.random()*200);
+    const height2 = Math.round(Math.random()*200);
+    const height3 = Math.round(Math.random()*200);
+    const depth1 = Math.round(Math.random()*200);
+    const depth2 = Math.round(Math.random()*200);
+    const depth3 = Math.round(Math.random()*200);
     const items = [
-      { id: 'ITEM1', width: Math.round(Math.random()*200), height: Math.round(Math.random()*200), depth: Math.round(Math.random()*200), weight: Math.round(Math.random()*500), flags: 'B' },
-      { id: 'ITEM2', width: Math.round(Math.random()*200), height: Math.round(Math.random()*200), depth: Math.round(Math.random()*200), weight: Math.round(Math.random()*500), flags: 'B' },
-      { id: 'ITEM3', width: Math.round(Math.random()*200), height: Math.round(Math.random()*200), depth: Math.round(Math.random()*200), weight: Math.round(Math.random()*500), flags: 'B' }
+      { id: 'ITEM1', width: width1, height: height1, depth: depth1, weight: width1*height1*depth1, flags: 'B' },
+      { id: 'ITEM2', width: width2, height: height2, depth: depth2, weight: width2*height2*depth2, flags: 'B' },
+      { id: 'ITEM3', width: width3, height: height3, depth: depth3, weight: width3*height3*depth3, flags: 'B' }
     ];
 
     testOutput.test_solutions.push(packItems(items, boxes, 'fit_smallest'));
