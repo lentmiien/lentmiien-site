@@ -75,7 +75,20 @@ function runTest() {
   .then(response => response.json())
   .then(data => {
     console.log('Success:', data);
-    document.getElementById("output").innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    let output = '';
+    data.test_solutions.forEach(d => {
+      output += `<hr><u>BOX: <b>${d.solution[0].id}</b></u><br>`;
+      let tbody = '';
+      d.solution[0].items_in_box.forEach(item => {
+        tbody += `<tr><td>${item.id}</td><td>${item.x_pos}, ${item.y_pos}, ${item.z_pos}</td><td>${item.x_size} x ${item.y_size} x ${item.z_size}</td><td>${item.weight}</td></tr>`;
+      });
+      d.alternative.forEach(item => {
+        tbody += `<tr><td></td><td>${item[0].id}</td><td>${item[1].id}</td><td>${item[2].id}</td></tr>`;
+      });
+      output += `<table class="table table-striped"><thead><tr><th>Item</th><th>Possition</th><th>Size</th><th>Weight</th></tr></thead><tbody>${tbody}</tbody></table>`;
+    });
+    document.getElementById("output").innerHTML = `<b>Avg.time ${data.average_time}s</b><br><pre>${JSON.stringify(data.orderData, null, 2)}</pre>` + output;
+    // document.getElementById("output").innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
   })
   .catch((error) => {
     console.error('Error:', error);

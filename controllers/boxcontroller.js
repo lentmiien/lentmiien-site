@@ -100,13 +100,14 @@ exports.pack = (req, res) => {
   }
 };
 
+let alternative_solutions;
 /**
  * POST
  * url: /box/test
  * Run various tests for analysing performace of algorithms
  */
 exports.test = (req, res) => {
-  const NUMBER_OF_RUNS = 1000;
+  const NUMBER_OF_RUNS = 100;
 
   const testOutput = {
     test_solutions: [],
@@ -122,17 +123,17 @@ exports.test = (req, res) => {
   // Timing test
   let start_ts = Date.now();
   for (let i = 0; i < NUMBER_OF_RUNS; i++) {
-    const width1 = Math.round(Math.random()*200);
-    const width2 = Math.round(Math.random()*200);
-    const width3 = Math.round(Math.random()*200);
+    const width1 = Math.round(Math.random()*200)+1;
+    const width2 = Math.round(Math.random()*200)+1;
+    const width3 = Math.round(Math.random()*200)+1;
     // const width4 = Math.round(Math.random()*200);
-    const height1 = Math.round(Math.random()*200);
-    const height2 = Math.round(Math.random()*200);
-    const height3 = Math.round(Math.random()*200);
+    const height1 = Math.round(Math.random()*200)+1;
+    const height2 = Math.round(Math.random()*200)+1;
+    const height3 = Math.round(Math.random()*200)+1;
     // const height4 = Math.round(Math.random()*200);
-    const depth1 = Math.round(Math.random()*200);
-    const depth2 = Math.round(Math.random()*200);
-    const depth3 = Math.round(Math.random()*200);
+    const depth1 = Math.round(Math.random()*200)+1;
+    const depth2 = Math.round(Math.random()*200)+1;
+    const depth3 = Math.round(Math.random()*200)+1;
     // const depth4 = Math.round(Math.random()*200);
     const items = [
       { id: 'ITEM1', width: width1, height: height1, depth: depth1, weight: width1*height1*depth1, flags: 'B' },
@@ -150,16 +151,18 @@ exports.test = (req, res) => {
     items[2].id = 'ITEM3';
     // items[3].id = 'ITEM4';
 
-    testOutput.test_solutions.push(packItems(items, boxes, 'fit_smallest'));
+    testOutput.test_solutions.push({solution: packItems(items, boxes, 'fit_smallest'), alternative: alternative_solutions});
   }
   let end_ts = Date.now();
   testOutput.average_time = Math.round((end_ts - start_ts) / NUMBER_OF_RUNS / 10) / 100;
 
   // Analyze test results
   const order = [];
+  const all_order = [];
   const count = [];
+  const all_count = [];
   testOutput.test_solutions.forEach(d => {
-    const order_string = `${d[0].items_in_box[0].id}-${d[0].items_in_box[1].id}-${d[0].items_in_box[2].id}`;//-${d[0].items_in_box[3].id}`;
+    const order_string = `${d.solution[0].items_in_box[0].id}-${d.solution[0].items_in_box[1].id}-${d.solution[0].items_in_box[2].id}`;//-${d[0].items_in_box[3].id}`;
     const index = order.indexOf(order_string);
     if (index >= 0) {
       count[index]++;
@@ -167,10 +170,31 @@ exports.test = (req, res) => {
       order.push(order_string);
       count.push(1);
     }
+
+    // all
+    const index2 = all_order.indexOf(order_string);
+    if (index2 >= 0) {
+      all_count[index2]++;
+    } else {
+      all_order.push(order_string);
+      all_count.push(1);
+    }
+    d.alternative.forEach(c => {
+      const order_string2 = `${c[0].id}-${c[1].id}-${c[2].id}`;//-${c[3].id}`;
+      const index3 = all_order.indexOf(order_string2);
+      if (index3 >= 0) {
+        all_count[index3]++;
+      } else {
+        all_order.push(order_string2);
+        all_count.push(1);
+      }
+    });
   });
   testOutput.orderData = {
     order,
     count,
+    all_order,
+    all_count,
   };
 
   res.json(testOutput);
@@ -288,9 +312,7 @@ function fit_smallest(items, boxes) {
 
   // End timer
   const total_time_in_seconds = Math.round((Date.now() - start_ts) / 1000);
-  if(bestSolution) {
-    console.log(`Found solution for ${items.length} items in ${total_time_in_seconds} seconds.`);
-  } else {
+  if(!bestSolution) {
     console.log(`No solution found, processed ${items.length} items in ${total_time_in_seconds} seconds.`);
   }
 
@@ -407,8 +429,11 @@ function placeItems(itemsToPlace, placedItems, boxes, corners) {
             box_weight: boxes[smallest_box_i].box_weight,
             items_in_box: [...placedItems]
           });
+          alternative_solutions = [];// Reset alternatives
 
-          console.log("New best solution: ", bestSolution);
+          // console.log("New best solution: ", bestSolution);
+        } else if (bestSolution.box_volume === smallest_box_volume && bestSolution.item_volume === bb_x * bb_y * bb_z) {
+          alternative_solutions.push([...placedItems]);
         }
       } else {
         // First candidate (just set the solution)
@@ -422,8 +447,9 @@ function placeItems(itemsToPlace, placedItems, boxes, corners) {
           box_weight: boxes[smallest_box_i].box_weight,
           items_in_box: [...placedItems]
         });
+        alternative_solutions = [];// Reset alternatives
 
-        console.log("Current best solution: ", bestSolution);
+        // console.log("Current best solution: ", bestSolution);
       }
     }
 
