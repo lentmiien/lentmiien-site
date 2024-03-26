@@ -1,0 +1,14 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2 CHAT4 (in construction...)
+
+  .row 
+    .col 
+      form(action="/chat4/post", method="post", enctype="multipart/form-data") 
+        label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
+        input#imgs.form-control(type="file", name="imgs", multiple)
+        input.btn.btn-primary(type="submit", value="Upload")
+  script(src="/js/chat4.js") 

@@ -113,6 +113,9 @@ app.use('/chat2', isAuthenticated, chat2Router);
 const chat3Router = require('./routes/chat3');
 app.use('/chat3', isAuthenticated, chat3Router);
 
+const chat4Router = require('./routes/chat4');
+app.use('/chat4', isAuthenticated, chat4Router);
+
 const openaiRouter = require('./routes/openai');
 app.use('/openai', isAuthenticated, openaiRouter);
 
