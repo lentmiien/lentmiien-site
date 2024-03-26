@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 // const marked = require('marked');
-// const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
 // const utils = require('../utils/utils');
 
 // const default_models = require("../cache/default_models.json");
@@ -14,7 +14,30 @@ exports.index = async (req, res) => {
   res.render("chat4");
 };
 
+/*
+messages: [
+  {
+    role: "user",
+    content: [
+      { type: "text", text: "What’s in this image?" },
+      {
+        type: "image_url",
+        image_url: {
+          "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+        },
+      },
+    ],
+  },
+],
+*/
 exports.post = async (req, res) => {
+  const messages = [];
+  messages.push({
+    role: 'user',
+    content: [
+      { type: 'text', text: req.body.prompt }
+    ]
+  });
   try {
     const img_elements = [];
     for (let i = 0; i < req.files.length; i++) {
@@ -38,11 +61,20 @@ exports.post = async (req, res) => {
       const filename = `UP-${Date.now()}.jpg`;
       // Save file to folder "../public/img"
       fs.writeFileSync(`./public/img/${filename}`, img_buffer);
+      const b64_img = Buffer.from(img_buffer).toString('base64');
       
-      img_elements.push(`<img src="data:image/jpeg;base64,${Buffer.from(img_buffer).toString('base64')}" />`);
+      img_elements.push(`<img src="data:image/jpeg;base64,${b64_img}" />`);
+      messages[0].content.push({
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${b64_img}`,
+        }
+      });
     }
+    // Send to OpenAI API
+    const response = await chatGPT(messages, 'gpt-4-vision-preview');
     // Transform image to base 64 format
-    res.send(`<html><body>${img_elements.join("")}</body></html>`);
+    res.send(`<html><body>${img_elements.join("")}<br><b>${req.body.prompt}</b><hr><b>Answer:</b><p>${response.choices[0].message.content}</p></body></html>`);
   } catch {
     res.send(`<html><body><b>Error processing request</b></body></html>`);
   }
