@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-// const marked = require('marked');
+const marked = require('marked');
 const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
 // const utils = require('../utils/utils');
 
@@ -74,7 +74,7 @@ exports.post = async (req, res) => {
     // Send to OpenAI API
     const response = await chatGPT(messages, 'gpt-4-vision-preview');
     // Transform image to base 64 format
-    res.send(`<html><body>${img_elements.join("")}<br><b>${req.body.prompt}</b><hr><b>Answer:</b><p>${response.choices[0].message.content}</p></body></html>`);
+    res.send(`<html><body>${img_elements.join("")}<br><b>${req.body.prompt}</b><hr><b>Answer:</b><p>${marked.parse(response.choices[0].message.content)}</p></body></html>`);
   } catch {
     res.send(`<html><body><b>Error processing request</b></body></html>`);
   }
