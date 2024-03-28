@@ -27,9 +27,8 @@ block content
           .row 
             .col.foodday
               h3.date-title= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
-              div 
-                p 
-                  hr
+              .row 
+                .col 
                   h5 Lunch
                   if cookday.lunch.image.length > 0
                     img.image-large(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
@@ -49,8 +48,7 @@ block content
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}lunch_input`, type="text", placeholder="or URL for recipe")
                   button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','lunch')`) Send request
-                p 
-                  hr
+                .col 
                   h5 Dinner
                   if cookday.dinner.image.length > 0
                     img.image-large(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
@@ -70,8 +68,7 @@ block content
                       option(value=`${o._id.toString()}`)= o.title 
                   input.form-control(id=`${cookday.date}dinner_input`, type="text", placeholder="or URL for recipe")
                   button.btn.btn-primary(onclick=`SubmitCookingRequest('${cookday.date}','dinner')`) Send request
-                p 
-                  hr
+                .col 
                   h5 Dessert
                   if cookday.dessert.image.length > 0
                     img.image-large(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
