@@ -1,0 +1,53 @@
+extends layout
+
+block content
+  .row
+    .col
+      h3= conversation.title
+      button Show chat history
+
+  .row 
+    .col 
+      form(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
+        input#title.form-control(type="hidden", name="title", required)
+        input#category.form-control(type="hidden", name="category", required)
+        input#tags.form-control(type="hidden", name="tags", required)
+        label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
+        input#imgs.form-control(type="file", name="imgs", multiple)
+        textarea#context.form-control(style="display:none;", name="context", cols="30", rows="10", required) You are a helpful assistant.
+        label(for="prompt") Prompt
+        textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
+        div
+          button.btn.btn-primary Context
+          button.btn.btn-primary Templates
+          button.btn.btn-primary Image
+          button.btn.btn-primary Sound
+          input.btn.btn-primary(type="submit", value="Prompt")
+          button.btn.btn-primary Save
+        div 
+          each m in messages
+            div 
+              p 
+                b Response: 
+                | (
+                input(id=`end_${m._id.toString()}`, type="radio", name="end_message", value=`${m._id.toString()}`)
+                span  New conversation
+                | )
+              div!= m.response_html
+              if m.sound.length > 0
+                audio(controls)
+                  source(src=`/mp3/${m.sound}`, type="audio/mpeg")
+              p 
+                b Prompt: 
+                | (
+                input(id=`start_${m._id.toString()}`, type="radio", name="start_message", value=`${m._id.toString()}`)
+                span  Start here
+                | )
+              if m.images.length > 0
+                each img in m.images
+                  div
+                    div.chat4_img_wrapper
+                      img.chat4_img(src=`/img/${img.filename}`, alt="image")
+                    input.chat4_img_slide(id=`${img.filename}` type="range", name=`${img.filename}`, min="0", max="2", step="1", value=`${img.use_flag === 'high quality' ? 2 : (img.use_flag === 'low quality' ? 1 : 0)}`)
+              div!= m.prompt_html
+  script(src="/js/chat4.js") 

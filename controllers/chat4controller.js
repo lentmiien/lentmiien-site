@@ -9,14 +9,30 @@ const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('..
 
 // Require necessary database models
 const { Chat4Model, Conversation4Model } = require('../database');
+const conversation4 = require('../models/conversation4');
 
 exports.index = async (req, res) => {
-  res.render("chat4");
+  const conversations = await conversation4.find({ user_id: req.user.name });
+  res.render("chat4", { conversations });
 };
 
 exports.chat = async (req, res) => {
   // Load chat conversation, req.params.id <- conversation id
+  const conversation = await Conversation4Model.findById(req.params.id);
   // Load chat messages, conversation.messages <- array of chat messages ids
+  const m_id = conversation.messages;
+  const messages = await Chat4Model.find({ _id: m_id });
+  messages.sort((a,b) => {
+    const a_i = m_id.indexOf(a._id.toString());
+    const b_i = m_id.indexOf(b._id.toString());
+    if (a_i > b_i) return -1;
+    if (a_i < b_i) return 1;
+    return 0;
+  });
+  for (let i = 0; i < messages.length; i++) {
+    messages[i].prompt_html = marked.parse(messages[i].prompt);
+    messages[i].response_html = marked.parse(messages[i].response);
+  }
 /* Page design
 
 Image upload    | Context button
@@ -35,36 +51,15 @@ example
 [audio player if sound available]
 
 */
-  res.render("chat_conversation");
+  res.render("chat4_conversation", { conversation, messages });
 };
 
-/*
-messages: [
-  {
-    role: "user",
-    content: [
-      { type: "text", text: "What’s in this image?" },
-      {
-        type: "image_url",
-        image_url: {
-          "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
-        },
-      },
-    ],
-  },
-],
-
-messages.push({
-      role: this_conversation[i].UserOrAssistantFlag ? "user" : "assistant",
-      content: this_conversation[i].ContentText,
-    });
-  }
-  messages.push({
-    role: "system",
-    content: context,
-  });
-*/
 exports.post = async (req, res) => {
+  if (req.params.id != "new") {
+    console.log(req.body);
+    return res.redirect(`/chat4/chat/${req.params.id}`);
+  }
+  
   const messages = [];
   const text_messages = [];
   if (req.body.context.length > 0) {
@@ -164,8 +159,8 @@ exports.post = async (req, res) => {
     };
     const conv_entry = await new Conversation4Model(conversation_entry).save();
 
-    // Transform image to base 64 format
-    res.send(`<html><body>${img_elements.join("")}<br><b>${req.body.prompt}</b><hr><b>Answer:</b><p>${marked.parse(response.choices[0].message.content)}</p><hr><b>Summary:</b><p>${marked.parse(summary.choices[0].message.content)}</p></body></html>`);
+    // Redirect to chat conversation page
+    res.redirect(`/chat4/chat/${conv_entry._id.toString()}`);
   } catch {
     res.send(`<html><body><b>Error processing request</b></body></html>`);
   }

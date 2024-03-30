@@ -22,4 +22,8 @@ block content
         label(for="prompt") Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
         input.btn.btn-primary(type="submit", value="Send")
+  .row 
+    .col 
+      each c in conversations
+        a.btn.btn-link(href=`/chat4/chat/${c._id.toString()}`)= c.title
   script(src="/js/chat4.js") 

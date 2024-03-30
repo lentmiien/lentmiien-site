@@ -358,3 +358,20 @@
   cursor: pointer; /* Optional: Change cursor on hover */
   margin-bottom: 5px; /* Optional: Add space between buttons */
 }
+
+.chat4_img_wrapper {
+  width: 100px;
+  height: 100px;
+  overflow: hidden;
+}
+
+.chat4_img {
+  width: 100%;
+  position: relative;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.chat4_img_slide {
+  width: 100px;
+}
