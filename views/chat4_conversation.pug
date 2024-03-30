@@ -9,12 +9,12 @@ block content
   .row 
     .col 
       form(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
-        input#title.form-control(type="hidden", name="title", required)
-        input#category.form-control(type="hidden", name="category", required)
-        input#tags.form-control(type="hidden", name="tags", required)
+        input#title.form-control(type="hidden", name="title", value=`${conversation.title}`)
+        input#category.form-control(type="hidden", name="category", value=`${conversation.category}`)
+        input#tags.form-control(type="hidden", name="tags", value=`${conversation.tags.join(',')}`)
         label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
         input#imgs.form-control(type="file", name="imgs", multiple)
-        textarea#context.form-control(style="display:none;", name="context", cols="30", rows="10", required) You are a helpful assistant.
+        textarea#context.form-control(style="display:none;", name="context", cols="30", rows="10", required)= conversation.context_prompt
         label(for="prompt") Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
         div
@@ -31,7 +31,7 @@ block content
                 b Response: 
                 | (
                 input(id=`end_${m._id.toString()}`, type="radio", name="end_message", value=`${m._id.toString()}`)
-                span  New conversation
+                span  New conversation end
                 | )
               div!= m.response_html
               if m.sound.length > 0
@@ -41,7 +41,7 @@ block content
                 b Prompt: 
                 | (
                 input(id=`start_${m._id.toString()}`, type="radio", name="start_message", value=`${m._id.toString()}`)
-                span  Start here
+                span  New conversation start
                 | )
               if m.images.length > 0
                 each img in m.images

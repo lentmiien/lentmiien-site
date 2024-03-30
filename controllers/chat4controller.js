@@ -33,35 +33,15 @@ exports.chat = async (req, res) => {
     messages[i].prompt_html = marked.parse(messages[i].prompt);
     messages[i].response_html = marked.parse(messages[i].response);
   }
-/* Page design
-
-Image upload    | Context button
-Prompt textares | Template button
-                | Send buttons (send, generate img, generate mp3 -> if a previous message has been selected, then for send: copy conversation and append new message to end, for generate add generated content to selected message, if no message selection then for send: append new message to end of current conversation, for generate add generated content to last message)
-----------------------------------
-<<   chat history, new at top   >>  (if a message has images, show a 3 option toggle 'high quality' (don't show if image fit 512px x 512px), 'low quality', 'do not use')
-
-example
-[select radio                   ]
-[small images with select toggle]
-[user message                   ]
-[-------------------------------]
-[response message               ]
-[-------------------------------]
-[audio player if sound available]
-
-*/
   res.render("chat4_conversation", { conversation, messages });
 };
 
 exports.post = async (req, res) => {
-  if (req.params.id != "new") {
-    console.log(req.body);
-    return res.redirect(`/chat4/chat/${req.params.id}`);
-  }
-  
+  let images = false;
   const messages = [];
   const text_messages = [];
+
+  // Set context message
   if (req.body.context.length > 0) {
     messages.push({
       role: 'system',
@@ -74,6 +54,86 @@ exports.post = async (req, res) => {
       content: req.body.context,
     });
   }
+
+  // If continuation of previous chat, append old messages
+  if (req.params.id != "new") {
+    // Load chat conversation, req.params.id <- conversation id
+    const conversation = await Conversation4Model.findById(req.params.id);
+    // Load chat messages, conversation.messages <- array of chat messages ids
+    const m_id = conversation.messages;
+    const prev_messages = await Chat4Model.find({ _id: m_id });
+    prev_messages.sort((a,b) => {
+      const a_i = m_id.indexOf(a._id.toString());
+      const b_i = m_id.indexOf(b._id.toString());
+      if (a_i < b_i) return -1;
+      if (a_i > b_i) return 1;
+      return 0;
+    });
+    // Append
+    for (let x = 0; x < prev_messages.length; x++) {
+      const m = prev_messages[x];
+    // }
+    // prev_messages.forEach(m => {
+      // Process images if any
+      const content = [{ type: 'text', text: m.prompt }];
+      let updated = false;
+      if (m.images.length > 0) {
+        for (let i = 0; i < m.images.length; i++) {
+          // Check use_flag
+          if (req.body[m.images[i].filename] != "0") {
+            images = true;
+            // Load if needed
+            const img_buffer = fs.readFileSync(`./public/img/${m.images[i].filename}`);
+            // Convert to base 64
+            const b64_img = Buffer.from(img_buffer).toString('base64');
+            // Append to content array
+            content.push({
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${b64_img}`,
+                detail: `${req.body[m.images[i].filename] === '2' ? 'high' : 'low'}`
+              }
+            });
+          }
+          const use_flag_map = {
+            "0": "do not use",
+            "1": "low quality",
+            "2": "high quality",
+          };
+          if (use_flag_map[req.body[m.images[i].filename]] != m.images[i].use_flag) {
+            m.images[i].use_flag = use_flag_map[req.body[m.images[i].filename]];
+            updated = true;
+          }
+        }
+      }
+      if (updated) {
+        await m.save();
+      }
+      // User prompt
+      messages.push({
+        role: 'user',
+        content
+      });
+      text_messages.push({
+        role: 'user',
+        content: m.prompt,
+      });
+
+      // Assistant response
+      messages.push({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: m.response },
+        ]
+      });
+      text_messages.push({
+        role: 'assistant',
+        content: m.response,
+      });
+    }//);
+  }
+
+  // Add new message
   messages.push({
     role: 'user',
     content: [
@@ -88,6 +148,7 @@ exports.post = async (req, res) => {
     const images = [];
     const img_elements = [];
     for (let i = 0; i < req.files.length; i++) {
+      images = true;
       // Get file from upload form
       const file_data = fs.readFileSync(req.files[i].destination + req.files[i].filename);
       // Load in 'sharp'
@@ -123,7 +184,7 @@ exports.post = async (req, res) => {
       });
     }
     // Send to OpenAI API
-    const response = await chatGPT(messages, 'gpt-4-vision-preview');
+    const response = await chatGPT(images ? messages : text_messages, images ? 'gpt-4-vision-preview' : 'gpt-4-turbo-preview');
 
     // Generate text summary
     text_messages.push({
@@ -148,19 +209,34 @@ exports.post = async (req, res) => {
       sound: '',
     };
     const db_entry = await new Chat4Model(chat_message_entry).save();
-    const conversation_entry = {
-      user_id: req.user.name,
-      title: req.body.title,
-      description: summary.choices[0].message.content,
-      category: req.body.category,
-      tags: tags_array,
-      context_prompt: req.body.context,
-      messages: [ db_entry._id.toString() ],
-    };
-    const conv_entry = await new Conversation4Model(conversation_entry).save();
+    if (req.params.id === "new") {
+      const conversation_entry = {
+        user_id: req.user.name,
+        title: req.body.title,
+        description: summary.choices[0].message.content,
+        category: req.body.category,
+        tags: tags_array,
+        context_prompt: req.body.context,
+        messages: [ db_entry._id.toString() ],
+      };
+      const conv_entry = await new Conversation4Model(conversation_entry).save();
+      
+      // Redirect to chat conversation page
+      res.redirect(`/chat4/chat/${conv_entry._id.toString()}`);
+    } else {
+      // update existing DB entry
+      const conversation = await Conversation4Model.findById(req.params.id);
+      conversation.title = req.body.title;
+      conversation.description = summary.choices[0].message.content;
+      conversation.category = req.body.category;
+      conversation.tags = tags_array;
+      conversation.context_prompt = req.body.context;
+      conversation.messages.push(db_entry._id.toString());
+      await conversation.save();
 
-    // Redirect to chat conversation page
-    res.redirect(`/chat4/chat/${conv_entry._id.toString()}`);
+      // Redirect to chat conversation page
+      res.redirect(`/chat4/chat/${req.params.id}`);
+    }
   } catch {
     res.send(`<html><body><b>Error processing request</b></body></html>`);
   }
