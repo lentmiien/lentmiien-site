@@ -9,8 +9,9 @@ const controller = require('../controllers/chat4controller');
 
 // Chat4 top page
 router.get('/', controller.index);
+router.get('/chat/:id', controller.chat);
 
 // Chat4 post
-router.post('/post', upload.array('imgs'), controller.post);
+router.post('/post/:id', upload.array('imgs'), controller.post);
 
 module.exports = router;

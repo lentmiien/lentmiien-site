@@ -3,14 +3,23 @@ extends layout
 block content
   .row
     .col
-      h2 CHAT4 (in construction...)
+      h2 CHAT4 (New chat)
+      button Show chat history
 
   .row 
     .col 
-      form(action="/chat4/post", method="post", enctype="multipart/form-data") 
+      form(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
+        label(for="title") Title 
+        input#title.form-control(type="text", name="title", required)
+        label(for="category") Category 
+        input#category.form-control(type="text", name="category", required)
+        label(for="tags") Tags (comma separated)
+        input#tags.form-control(type="text", name="tags", required)
         label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
         input#imgs.form-control(type="file", name="imgs", multiple)
+        label(for="context") Context
+        textarea#context.form-control(name="context", cols="30", rows="10", required) You are a helpful assistant.
         label(for="prompt") Prompt
-        textarea#prompt.form-control(name="prompt", cols="30", rows="10")
+        textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
         input.btn.btn-primary(type="submit", value="Send")
   script(src="/js/chat4.js") 

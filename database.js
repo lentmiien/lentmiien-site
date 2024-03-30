@@ -30,6 +30,8 @@ const Chat3KnowledgeModel = require('./models/chat3_knowledge');
 const OpenaichatModel = require('./models/openai_chat');
 const EmbeddingModel = require('./models/embedding');
 const FileMetaModel = require('./models/file_meta');
+const Chat4Model = require('./models/chat4');
+const Conversation4Model = require('./models/conversation4');
 // GPT Document
 const DocumentModel = require('./models/document');
 const TextnodeModel = require('./models/textnode');
@@ -65,6 +67,8 @@ module.exports = {
   OpenaichatModel,
   EmbeddingModel,
   FileMetaModel,
+  Chat4Model,
+  Conversation4Model,
   DocumentModel,
   TextnodeModel,
   AccountModel,
