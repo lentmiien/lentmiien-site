@@ -14,7 +14,14 @@ const { log } = require('console');
 
 exports.index = async (req, res) => {
   const conversations = await conversation4.find({ user_id: req.user.name });
-  res.render("chat4", { conversations });
+  conversations.reverse();
+  const categories = [];
+  conversations.forEach(d => {
+    if (categories.indexOf(d.category) === -1) {
+      categories.push(d.category);
+    }
+  });
+  res.render("chat4", { conversations, categories });
 };
 
 exports.chat = async (req, res) => {

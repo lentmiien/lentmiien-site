@@ -4,7 +4,6 @@ block content
   .row
     .col
       h3= conversation.title
-      button Show chat history
 
   .row 
     .col 
@@ -17,7 +16,7 @@ block content
         textarea#context.form-control(style="display:none;", name="context", cols="30", rows="10", required)= conversation.context_prompt
         label(for="prompt") Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
-        div
+        .button-container
           button.btn.btn-primary Context
           button.btn.btn-primary Templates
           button.btn.btn-primary Image
