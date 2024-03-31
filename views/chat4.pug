@@ -25,5 +25,5 @@ block content
   .row 
     .col 
       each c in conversations
-        a.btn.btn-link(href=`/chat4/chat/${c._id.toString()}`)= c.title
+        a.btn.btn-link(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)= c.title
   script(src="/js/chat4.js") 

@@ -10,6 +10,7 @@ const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('..
 // Require necessary database models
 const { Chat4Model, Conversation4Model } = require('../database');
 const conversation4 = require('../models/conversation4');
+const { log } = require('console');
 
 exports.index = async (req, res) => {
   const conversations = await conversation4.find({ user_id: req.user.name });
@@ -37,7 +38,7 @@ exports.chat = async (req, res) => {
 };
 
 exports.post = async (req, res) => {
-  let images = false;
+  let images_exist = false;
   const messages = [];
   const text_messages = [];
 
@@ -81,7 +82,7 @@ exports.post = async (req, res) => {
         for (let i = 0; i < m.images.length; i++) {
           // Check use_flag
           if (req.body[m.images[i].filename] != "0") {
-            images = true;
+            images_exist = true;
             // Load if needed
             const img_buffer = fs.readFileSync(`./public/img/${m.images[i].filename}`);
             // Convert to base 64
@@ -144,11 +145,12 @@ exports.post = async (req, res) => {
     role: 'user',
     content: req.body.prompt,
   });
+
   try {
     const images = [];
     const img_elements = [];
     for (let i = 0; i < req.files.length; i++) {
-      images = true;
+      images_exist = true;
       // Get file from upload form
       const file_data = fs.readFileSync(req.files[i].destination + req.files[i].filename);
       // Load in 'sharp'
@@ -184,7 +186,7 @@ exports.post = async (req, res) => {
       });
     }
     // Send to OpenAI API
-    const response = await chatGPT(images ? messages : text_messages, images ? 'gpt-4-vision-preview' : 'gpt-4-turbo-preview');
+    const response = await chatGPT(images_exist ? messages : text_messages, images_exist ? 'gpt-4-vision-preview' : 'gpt-4-turbo-preview');
 
     // Generate text summary
     text_messages.push({
@@ -195,7 +197,7 @@ exports.post = async (req, res) => {
       role: 'user',
       content: 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation.',
     });
-    const summary = await chatGPT(text_messages, 'gpt-3.5-turbo');
+    const summary = await chatGPT(text_messages, response.usage.total_tokens < 16000 ? 'gpt-3.5-turbo' : 'gpt-4-turbo-preview');
 
     // Save to database, then redirect to page showing the conversation
     const tags_array = req.body.tags.split(', ').join(',').split(' ').join('_').split(',');
@@ -237,7 +239,7 @@ exports.post = async (req, res) => {
       // Redirect to chat conversation page
       res.redirect(`/chat4/chat/${req.params.id}`);
     }
-  } catch {
-    res.send(`<html><body><b>Error processing request</b></body></html>`);
+  } catch (err) {
+    res.send(`<html><body><b>Error processing request</b><pre>${JSON.stringify(err, null, 2)}</pre></body></html>`);
   }
 };
