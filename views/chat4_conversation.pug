@@ -3,7 +3,7 @@ extends layout
 block content
   .row
     .col
-      h3= conversation.title
+      h3#chattitle= conversation.title
 
   .row 
     .col 
@@ -17,12 +17,12 @@ block content
         label(for="prompt") Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
         .button-container
-          button.btn.btn-primary Context
-          button.btn.btn-primary Templates
-          button.btn.btn-primary Image
-          button.btn.btn-primary Sound
+          button.btn.btn-secondary(type="button", onclick="SettingsPopup()") Settings
+          button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
+          button.btn.btn-success(type="button") Image
+          button.btn.btn-success(type="button") Sound
           input.btn.btn-primary(type="submit", value="Prompt")
-          button.btn.btn-primary Save
+          button.btn.btn-warning(type="button") Save
         div 
           each m in messages
             div 
@@ -49,4 +49,24 @@ block content
                       img.chat4_img(src=`/img/${img.filename}`, alt="image")
                     input.chat4_img_slide(id=`${img.filename}` type="range", name=`${img.filename}`, min="0", max="2", step="1", value=`${img.use_flag === 'high quality' ? 2 : (img.use_flag === 'low quality' ? 1 : 0)}`)
               div!= m.prompt_html
+  #settingspopup.popup.popup-wrapper 
+    .popup-content 
+      span#closePopupBtn.close(onclick="CloseSettingsPopup()") &times;
+      .row 
+        .col
+          label(for="tooltitle") Title
+          input#tooltitle.form-control(type="text", name="tooltitle", value=`${conversation.title}`)
+          label(for="toolcategory") Category
+          input#toolcategory.form-control(type="text", name="toolcategory", value=`${conversation.category}`)
+          label(for="tooltags") Tags (comma separated)
+          input#tooltags.form-control(type="text", name="tooltags", value=`${conversation.tags.join(',')}`)
+          label(for="toolcontext") Context
+          textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10", required)= conversation.context_prompt
+  #templatespopup.popup.popup-wrapper 
+    .popup-content 
+      span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;
+      .row 
+        .col
+          h3 templates
+        
   script(src="/js/chat4.js") 

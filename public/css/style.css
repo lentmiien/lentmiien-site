@@ -118,7 +118,7 @@
   align-items: center; /* Center vertically */
 }
 
-#popup {
+#popup, .popup-wrapper {
   display: none; /* Hidden by default */
   position: fixed; /* Stay in place */
   z-index: 1; /* Sit on top */
