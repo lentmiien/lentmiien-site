@@ -80,8 +80,6 @@ exports.post = async (req, res) => {
     // Append
     for (let x = 0; x < prev_messages.length; x++) {
       const m = prev_messages[x];
-    // }
-    // prev_messages.forEach(m => {
       // Process images if any
       const content = [{ type: 'text', text: m.prompt }];
       let updated = false;
@@ -138,7 +136,7 @@ exports.post = async (req, res) => {
         role: 'assistant',
         content: m.response,
       });
-    }//);
+    }
   }
 
   // Add new message
