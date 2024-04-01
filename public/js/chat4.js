@@ -10,6 +10,7 @@ const tags = document.getElementById("tags");
 const tooltags = document.getElementById("tooltags");
 const context = document.getElementById("context");
 const toolcontext = document.getElementById("toolcontext");
+const prompt = document.getElementById("prompt");
 
 // Show popup for editing conversation details (title, category, tags, context, ...)
 function SettingsPopup() {
@@ -35,4 +36,19 @@ function TemplatesPopup() {
 // Close popup
 function CloseTemplatesPopup() {
   templatespopup.style.display = "none";
+}
+
+// Apply chat template
+function SetChatTemplate(element) {
+  prompt.value = element.value;
+  CloseTemplatesPopup();
+}
+
+// Apply context template
+function SetContextTemplate(element) {
+  context.value = element.value;
+  if (toolcontext) {
+    toolcontext.value = element.value;
+  }
+  CloseTemplatesPopup();
 }

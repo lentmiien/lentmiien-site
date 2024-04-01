@@ -20,7 +20,9 @@ block content
         textarea#context.form-control(name="context", cols="30", rows="10", required) You are a helpful assistant.
         label(for="prompt") Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
-        input.btn.btn-primary(type="submit", value="Send")
+        .button-container
+          button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
+          input.btn.btn-primary(type="submit", value="Send")
   .row 
     .col 
       h2 Chat history 
@@ -29,7 +31,25 @@ block content
         .button-container
           each c in conversations
             if category === c.category
-              a.btn.btn-secondary(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
+              a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
                 div= c.title
                 div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
+  #templatespopup.popup.popup-wrapper 
+    .popup-content 
+      span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;
+      .row 
+        .col
+          h3 Templates
+          label(for="prompt_template") Chat prompt 
+          select#prompt_template.form-control(name="prompt_template", onchange="SetChatTemplate(this)") 
+            option(value="") -Select-
+            each t in templates
+              if t.Type === "chat" || t.Type === "image"
+                option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
+          label(for="context_template") Context prompt 
+          select#context_template.form-control(name="context_template", onchange="SetContextTemplate(this)") 
+            option(value="") -Select-
+            each t in templates
+              if t.Type === "context"
+                option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
   script(src="/js/chat4.js") 

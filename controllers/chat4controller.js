@@ -8,11 +8,12 @@ const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('..
 // const default_models = require("../cache/default_models.json");
 
 // Require necessary database models
-const { Chat4Model, Conversation4Model } = require('../database');
+const { Chat4Model, Conversation4Model, Chat3TemplateModel } = require('../database');
 const conversation4 = require('../models/conversation4');
 const { log } = require('console');
 
 exports.index = async (req, res) => {
+  const templates = await Chat3TemplateModel.find();
   const conversations = await conversation4.find({ user_id: req.user.name });
   conversations.reverse();
   const categories = [];
@@ -21,10 +22,11 @@ exports.index = async (req, res) => {
       categories.push(d.category);
     }
   });
-  res.render("chat4", { conversations, categories });
+  res.render("chat4", { conversations, categories, templates });
 };
 
 exports.chat = async (req, res) => {
+  const templates = await Chat3TemplateModel.find();
   // Load chat conversation, req.params.id <- conversation id
   const conversation = await Conversation4Model.findById(req.params.id);
   // Load chat messages, conversation.messages <- array of chat messages ids
@@ -41,7 +43,7 @@ exports.chat = async (req, res) => {
     messages[i].prompt_html = marked.parse(messages[i].prompt);
     messages[i].response_html = marked.parse(messages[i].response);
   }
-  res.render("chat4_conversation", { conversation, messages });
+  res.render("chat4_conversation", { conversation, messages, templates });
 };
 
 exports.post = async (req, res) => {

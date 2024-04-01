@@ -13,7 +13,7 @@ block content
         input#tags.form-control(type="hidden", name="tags", value=`${conversation.tags.join(',')}`)
         label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
         input#imgs.form-control(type="file", name="imgs", multiple)
-        textarea#context.form-control(style="display:none;", name="context", cols="30", rows="10", required)= conversation.context_prompt
+        textarea#context.form-control(style="display:none;", name="context", cols="30", rows="10", value=`${conversation.context_prompt}`, required)
         label(for="prompt") Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
         .button-container
@@ -21,11 +21,12 @@ block content
           button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
           button.btn.btn-success(type="button") Image
           button.btn.btn-success(type="button") Sound
-          input.btn.btn-primary(type="submit", value="Prompt")
           button.btn.btn-warning(type="button") Save
+          input.btn.btn-primary(type="submit", value="Prompt")
         div 
           each m in messages
             div 
+              hr
               p 
                 b Response: 
                 | (
@@ -36,11 +37,12 @@ block content
               if m.sound.length > 0
                 audio(controls)
                   source(src=`/mp3/${m.sound}`, type="audio/mpeg")
+              hr
               p 
                 b Prompt: 
                 | (
                 input(id=`start_${m._id.toString()}`, type="radio", name="start_message", value=`${m._id.toString()}`)
-                span  New conversation start
+                span  New conversation start/Select for image and sound generation
                 | )
               if m.images.length > 0
                 each img in m.images
@@ -61,12 +63,24 @@ block content
           label(for="tooltags") Tags (comma separated)
           input#tooltags.form-control(type="text", name="tooltags", value=`${conversation.tags.join(',')}`)
           label(for="toolcontext") Context
-          textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10", required)= conversation.context_prompt
+          textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10", value=`${conversation.context_prompt}`, required)
   #templatespopup.popup.popup-wrapper 
     .popup-content 
       span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;
       .row 
         .col
-          h3 templates
+          h3 Templates
+          label(for="prompt_template") Chat prompt 
+          select#prompt_template.form-control(name="prompt_template", onchange="SetChatTemplate(this)") 
+            option(value="") -Select-
+            each t in templates
+              if t.Type === "chat" || t.Type === "image"
+                option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
+          label(for="context_template") Context prompt 
+          select#context_template.form-control(name="context_template", onchange="SetContextTemplate(this)") 
+            option(value="") -Select-
+            each t in templates
+              if t.Type === "context"
+                option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
         
   script(src="/js/chat4.js") 
