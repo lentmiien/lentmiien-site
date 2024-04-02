@@ -250,3 +250,23 @@ exports.post = async (req, res) => {
     res.send(`<html><body><b>Error processing request</b><pre>${JSON.stringify(err, null, 2)}</pre></body></html>`);
   }
 };
+
+exports.generate_image = (req, res) => {
+  const conversation_id = req.params.id;
+  const prompt = req.body.image_prompt;
+  const message_id = req.body.image_message_id;
+
+  console.log(conversation_id, prompt, message_id);
+
+  res.redirect(`/chat4/chat/${req.params.id}`);
+};
+
+exports.generate_sound = (req, res) => {
+  const conversation_id = req.params.id;
+  const prompt = req.body.sound_prompt;
+  const message_id = req.body.sound_message_id;
+
+  console.log(conversation_id, prompt, message_id);
+
+  res.redirect(`/chat4/chat/${req.params.id}`);
+};

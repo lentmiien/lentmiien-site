@@ -52,3 +52,41 @@ function SetContextTemplate(element) {
   }
   CloseTemplatesPopup();
 }
+
+const image_form = document.getElementById("image_form");
+const image_message_id = document.getElementById("image_message_id");
+const image_prompt = document.getElementById("image_prompt");
+
+function RunImageForm() {
+  // Transfer prompt to image_prompt
+  image_prompt.value = prompt.value;
+  // Select selected message, or latest if non selected, and set message id in image_message_id
+  const start_messages = document.getElementsByName("start_message");
+  image_message_id.value = start_messages[0].value;
+  for (let i = 0; i < start_messages.length; i++) {
+    if (start_messages[i].checked) {
+      image_message_id.value = start_messages[i].value;
+    }
+  }
+  // submit image_form
+  image_form.submit()
+}
+
+const sound_form = document.getElementById("sound_form");
+const sound_message_id = document.getElementById("sound_message_id");
+const sound_prompt = document.getElementById("sound_prompt");
+
+function RunSoundForm() {
+  // Transfer prompt to sound_prompt
+  sound_prompt.value = prompt.value;
+  // Select selected message, or latest if non selected, and set message id in sound_message_id
+  const start_messages = document.getElementsByName("start_message");
+  sound_message_id.value = start_messages[0].value;
+  for (let i = 0; i < start_messages.length; i++) {
+    if (start_messages[i].checked) {
+      sound_message_id.value = start_messages[i].value;
+    }
+  }
+  // submit sound_form
+  sound_form.submit()
+}

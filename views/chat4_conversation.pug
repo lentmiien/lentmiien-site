@@ -19,10 +19,16 @@ block content
         .button-container
           button.btn.btn-secondary(type="button", onclick="SettingsPopup()") Settings
           button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
-          button.btn.btn-success(type="button") Image
-          button.btn.btn-success(type="button") Sound
+          button.btn.btn-success(type="button", onclick="RunImageForm()") Image
+          button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
           button.btn.btn-warning(type="button") Save
           input.btn.btn-primary(type="submit", value="Prompt")
+      form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")
+        input#image_message_id(type="hidden", name="image_message_id")
+        textarea#image_prompt(style="display:none;", name="image_prompt", cols="30", rows="10")
+      form#sound_form(action=`/chat4/generate_sound/${conversation._id.toString()}`, method="post")
+        input#sound_message_id(type="hidden", name="sound_message_id")
+        textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
         div 
           each m in messages
             div 
