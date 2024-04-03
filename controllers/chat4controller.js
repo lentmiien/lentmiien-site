@@ -1,48 +1,38 @@
+const MessageService = require('../services/messageService');
+const ConversationService = require('../services/conversationService');
+const TemplateService = require('../services/templateService');
+const { Chat4Model, Conversation4Model, Chat3TemplateModel, FileMetaModel } = require('../database');
+
+// Instantiate the services
+const messageService = new MessageService(Chat4Model);
+const conversationService = new ConversationService(Conversation4Model, messageService);
+const templateService = new TemplateService(Chat3TemplateModel);
+
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const marked = require('marked');
 const { chatGPT, embedding, GetModels, tts, ig } = require('../utils/ChatGPT');
-// const utils = require('../utils/utils');
-
-// const default_models = require("../cache/default_models.json");
-
-// Require necessary database models
-const { Chat4Model, Conversation4Model, Chat3TemplateModel, FileMetaModel } = require('../database');
-const conversation4 = require('../models/conversation4');
-const { log } = require('console');
 
 exports.index = async (req, res) => {
-  const templates = await Chat3TemplateModel.find();
-  const conversations = await conversation4.find({ user_id: req.user.name });
-  conversations.reverse();
+  const templates = await templateService.getTemplates();
+  const conversations = await conversationService.getConversationsForUser(req.user.name);
+
   const categories = [];
   conversations.forEach(d => {
     if (categories.indexOf(d.category) === -1) {
       categories.push(d.category);
     }
   });
+
   res.render("chat4", { conversations, categories, templates });
 };
 
 exports.chat = async (req, res) => {
-  const templates = await Chat3TemplateModel.find();
-  // Load chat conversation, req.params.id <- conversation id
-  const conversation = await Conversation4Model.findById(req.params.id);
-  // Load chat messages, conversation.messages <- array of chat messages ids
-  const m_id = conversation.messages;
-  const messages = await Chat4Model.find({ _id: m_id });
-  messages.sort((a,b) => {
-    const a_i = m_id.indexOf(a._id.toString());
-    const b_i = m_id.indexOf(b._id.toString());
-    if (a_i > b_i) return -1;
-    if (a_i < b_i) return 1;
-    return 0;
-  });
-  for (let i = 0; i < messages.length; i++) {
-    messages[i].prompt_html = marked.parse(messages[i].prompt);
-    messages[i].response_html = marked.parse(messages[i].response);
-  }
+  const templates = await templateService.getTemplates();
+  const conversation = await conversationService.getConversationsById(req.params.id);
+  const messages = await messageService.getMessagesByIdArray(conversation.messages);
+  
   res.render("chat4_conversation", { conversation, messages, templates });
 };
 
