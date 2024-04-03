@@ -8,12 +8,12 @@ block content
   .row 
     .col 
       form(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
-        input#title.form-control(type="hidden", name="title", value=`${conversation.title}`)
-        input#category.form-control(type="hidden", name="category", value=`${conversation.category}`)
-        input#tags.form-control(type="hidden", name="tags", value=`${conversation.tags.join(',')}`)
+        input#title(type="hidden", name="title", value=`${conversation.title}`, novalidate)
+        input#category(type="hidden", name="category", value=`${conversation.category}`, novalidate)
+        input#tags(type="hidden", name="tags", value=`${conversation.tags.join(',')}`, novalidate)
         label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
         input#imgs.form-control(type="file", name="imgs", multiple)
-        textarea#context.form-control(style="display:none;", name="context", cols="30", rows="10", value=`${conversation.context_prompt}`, required)
+        textarea#context(style="display:none;", name="context", cols="30", rows="10", value=`${conversation.context_prompt}`, novalidate)
         label(for="prompt") Prompt
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
         .button-container
@@ -69,7 +69,7 @@ block content
           label(for="tooltags") Tags (comma separated)
           input#tooltags.form-control(type="text", name="tooltags", value=`${conversation.tags.join(',')}`)
           label(for="toolcontext") Context
-          textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10", value=`${conversation.context_prompt}`, required)
+          textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10", value=`${conversation.context_prompt}`)
   #templatespopup.popup.popup-wrapper 
     .popup-content 
       span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;

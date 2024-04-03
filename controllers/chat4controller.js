@@ -2,13 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const marked = require('marked');
-const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, embedding, GetModels, tts, ig } = require('../utils/ChatGPT');
 // const utils = require('../utils/utils');
 
 // const default_models = require("../cache/default_models.json");
 
 // Require necessary database models
-const { Chat4Model, Conversation4Model, Chat3TemplateModel } = require('../database');
+const { Chat4Model, Conversation4Model, Chat3TemplateModel, FileMetaModel } = require('../database');
 const conversation4 = require('../models/conversation4');
 const { log } = require('console');
 
@@ -247,18 +247,46 @@ exports.post = async (req, res) => {
       res.redirect(`/chat4/chat/${req.params.id}`);
     }
   } catch (err) {
-    res.send(`<html><body><b>Error processing request</b><pre>${JSON.stringify(err, null, 2)}</pre></body></html>`);
+    res.send(`<html><body><a href="/">Top</a><br><b>Error processing request</b><pre>${JSON.stringify(err, null, 2)}</pre></body></html>`);
   }
 };
 
-exports.generate_image = (req, res) => {
+exports.generate_image = async (req, res) => {
   const conversation_id = req.params.id;
-  const prompt = req.body.image_prompt;
+  const in_prompt = req.body.image_prompt;
   const message_id = req.body.image_message_id;
+  const quality = "hd";//TODO expose to user [standard / hd]
+  const size = "1024x1024";//TODO expose to user [1024x1024 / 1792x1024 / 1024x1792]
 
-  console.log(conversation_id, prompt, message_id);
-
-  res.redirect(`/chat4/chat/${req.params.id}`);
+  try {
+    // Take input and generate OpenAI API request
+    // Send API request and wait for response
+    // Save file to folder './public/img/{filename}'
+    const { filename, prompt } = await ig(in_prompt, quality, size);
+    // Save entry in FileMetaModel database
+    const entry = {
+      filename: filename,
+      filetype: "image",
+      path: `/img/${filename}`,
+      is_url: false,
+      prompt: prompt,
+      created_date: new Date(),
+      other_meta_data: JSON.stringify({ quality, size, source: "OpenAI: DALL·E 3" }),
+    };
+    await new FileMetaModel(entry).save();
+    // Update Chat4 entry with file data
+    const message = await Chat4Model.findById(message_id);
+    message.images.push({
+      filename,
+      use_flag: 'do not use'
+    });
+    await message.save();
+    // Reload page
+    res.redirect(`/chat4/chat/${conversation_id}`);
+  } catch (err) {
+    console.log('Failed to generate image: ', err);
+    res.send(`<html><body><a href="/">Top</a><br><b>Error processing request</b><pre>${JSON.stringify(err, null, 2)}</pre></body></html>`);
+  }
 };
 
 exports.generate_sound = (req, res) => {
