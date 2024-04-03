@@ -28,6 +28,8 @@ class ConversationService {
     return await this.conversationModel.findById(conversation_id);
   }
 
+  async postToConversation(conversation_id, new_images, parameters) {}
+
   async createConversation(participants) {
     // const conversation = await this.conversationModel.create({
     //   participants,
