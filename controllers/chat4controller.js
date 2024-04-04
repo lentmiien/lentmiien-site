@@ -37,6 +37,14 @@ exports.chat = async (req, res) => {
 };
 
 exports.post = async (req, res) => {
+  const image_paths = [];
+  for (let i = 0; i < req.files.length; i++) {
+    image_paths.push(req.files[i].destination + req.files[i].filename);
+  }
+  const conversation_id = await conversationService.postToConversation(req.params.id, image_paths, req.body);
+  res.redirect(`/chat4/chat/${conversation_id}`);
+
+
   let images_exist = false;
   const messages = [];
   const text_messages = [];

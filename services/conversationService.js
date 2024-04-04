@@ -28,7 +28,36 @@ class ConversationService {
     return await this.conversationModel.findById(conversation_id);
   }
 
-  async postToConversation(conversation_id, new_images, parameters) {}
+  async postToConversation(conversation_id, new_images, parameters) {
+    let use_vision = false;
+    const vision_messages = [];
+    const text_messages = [];
+
+    // Set context
+    if (parameters.context.length > 0) {
+      vision_messages.push({
+        role: 'system',
+        content: [
+          { type: 'text', text: parameters.context }
+        ]
+      });
+      text_messages.push({
+        role: 'system',
+        content: parameters.context
+      });
+    }
+
+    // Set previous messages, if not a new conversation
+    if (conversation_id != 'new') {
+      const conversation = await this.conversationModel.findById(conversation_id);
+      const m_id = conversation.messages;
+      const prev_messages = await this.messageService.getMessagesByIdArray(m_id, false, parameters);
+      // Append messages
+      for (let i = 0; i < prev_messages.length; i++) {
+        //TODO
+      }
+    }
+  }
 
   async createConversation(participants) {
     // const conversation = await this.conversationModel.create({
@@ -55,6 +84,8 @@ class ConversationService {
     // const summarizedText = this.summarize(messages); // Mocking the actual summarization
     // return summarizedText;
   }
+
+  loadImageToBase64() {}
 
   summarize(messages) {
     // // Placeholder for summarizing logic; for now, we return the most recent message
