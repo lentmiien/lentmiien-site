@@ -1,3 +1,5 @@
+const sharp = require('sharp');
+
 // Conversation service operations: managing conversation sessions and summary
 
 /* conversationModel
@@ -28,7 +30,7 @@ class ConversationService {
     return await this.conversationModel.findById(conversation_id);
   }
 
-  async postToConversation(conversation_id, new_images, parameters) {
+  async postToConversation(user_id, conversation_id, new_images, parameters) {
     let use_vision = false;
     const vision_messages = [];
     const text_messages = [];
@@ -54,9 +56,85 @@ class ConversationService {
       const prev_messages = await this.messageService.getMessagesByIdArray(m_id, false, parameters);
       // Append messages
       for (let i = 0; i < prev_messages.length; i++) {
-        //TODO
+        const m = prev_messages[i];
+        const content = [{ type: 'text', text: m.prompt }];
+        for (let x = 0; x < m.images.length; x++) {
+          if (parameters[m.images[x].filename] != '0') {
+            use_vision = true;
+            const b64 = this.loadImageToBase64(m.images[x].filename);
+            content.push({
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${b64}`,
+                detail: `${parameters[m.images[x].filename] === '2' ? 'high' : 'low'}`
+              }
+            });
+          }
+        }
+        // User prompt
+        vision_messages.push({
+          role: 'user',
+          content
+        });
+        text_messages.push({
+          role: 'user',
+          content: m.prompt
+        });
+        // Assistant response
+        vision_messages.push({
+          role: 'assistant',
+          content: [
+            { type: 'text', text: m.response },
+          ]
+        });
+        text_messages.push({
+          role: 'assistant',
+          content: m.response,
+        });
       }
     }
+
+    // Append input prompt
+    vision_messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: parameters.prompt }
+      ]
+    });
+    text_messages.push({
+      role: 'user',
+      content: parameters.prompt,
+    });
+    // Process input images
+    const images = [];
+    for (let i = 0; i < new_images.length; i++) {
+      use_vision = true;
+      const image_data = await this.loadProcessNewImageToBase64(new_images[i]);
+      images.push({
+        filename: image_data.new_filename,
+        use_flag: 'high quality'
+      });
+      vision_messages[vision_messages.length - 1].content.push({
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${image_data.b64_img}`,
+        }
+      });
+    }
+
+    // Create new message
+    const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images);
+
+    // Summarize conversation
+    text_messages.push({
+      role: 'assistant',
+      content: message_data.db_entry.response,
+    });
+    const summary = await this.messageService.createMessagesSummary(text_messages, message_data.tokens);
+
+    // TODO save conversation to database
+
+    // TODO return conversation id
   }
 
   async createConversation(participants) {
@@ -85,7 +163,30 @@ class ConversationService {
     // return summarizedText;
   }
 
-  loadImageToBase64() {}
+  loadImageToBase64(filename) {
+    const img_buffer = fs.readFileSync(`./public/img/${filename}`);
+    const b64_img = Buffer.from(img_buffer).toString('base64');
+    return b64_img;
+  }
+
+  async loadProcessNewImageToBase64(filename) {
+    const file_data = fs.readFileSync(filename);
+    const img_data = await sharp(file_data);
+    const metadata = await img_data.metadata();
+    let short_side = metadata.width < metadata.height ? metadata.width : metadata.height;
+    let long_side = metadata.width > metadata.height ? metadata.width : metadata.height;
+    let scale = 1;
+    if (short_side > 768 || long_side > 2048) {
+      if (768 / short_side < scale) scale = 768 / short_side;
+      if (2048 / long_side < scale) scale = 2048 / long_side;
+    }
+    const scale_img = await img_data.resize({ width: Math.round(metadata.width * scale) });
+    const img_buffer = await scale_img.jpeg().toBuffer();
+    const new_filename = `UP-${Date.now()}.jpg`;
+    fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
+    const b64_img = Buffer.from(img_buffer).toString('base64');
+    return { new_filename, b64_img };
+  }
 
   summarize(messages) {
     // // Placeholder for summarizing logic; for now, we return the most recent message

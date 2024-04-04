@@ -1,4 +1,5 @@
 const marked = require('marked');
+const { chatGPT, tts, ig } = require('../utils/ChatGPT');
 
 // Message service operations: managing individual messages within a conversation
 
@@ -63,14 +64,34 @@ class MessageService {
     return messages;
   }
 
-  async createMessage(conversationId, text, sender) {
-    // const message = await this.messageModel.create({
-    //   conversationId,
-    //   text,
-    //   sender,
-    //   createdAt: new Date(),
-    // });
-    // return message;
+  async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images) {
+    // Send to OpenAI API
+    const response = await chatGPT(use_vision ? vision_messages : text_messages, use_vision ? 'gpt-4-vision-preview' : 'gpt-4-turbo-preview');
+
+    // Save to database
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    const chat_message_entry = {
+      user_id: sender,
+      category: parameters.category,
+      tags: tags_array,
+      prompt: parameters.prompt,
+      response: response.choices[0].message.content,
+      images,
+      sound: '',
+    };
+    const db_entry = await new this.messageModel(chat_message_entry).save();
+
+    // Return entry to user
+    return { db_entry, tokens: response.usage.total_tokens };
+  }
+
+  async createMessagesSummary(messages, tokens) {
+    messages.push({
+      role: 'user',
+      content: 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation.',
+    });
+    const summary = await chatGPT(messages, tokens < 16000 ? 'gpt-3.5-turbo' : 'gpt-4-turbo-preview');
+    return summary.choices[0].message.content;
   }
 
   async updateMessage(messageId, newText) {
