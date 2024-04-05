@@ -5,12 +5,17 @@ const sharp = require('sharp');
 /* conversationModel
 {
   user_id: { type: String, required: true, max: 100 },
+  group_id: { type: String, required: true, max: 100 },
   title: { type: String, required: true, max: 255 },
   description: { type: String },
   category: { type: String, required: true, max: 100 },
   tags: [{ type: String, max: 100 }],
   context_prompt: { type: String },
   messages: [{ type: String, required: true, max: 100 }],
+  updated_date: {
+    type: Date,
+    default: Date.now,
+  },
 }
 */
 
@@ -21,8 +26,7 @@ class ConversationService {
   }
 
   async getConversationsForUser(user_id) {
-    const conversations = await this.conversationModel.find({user_id});
-    conversations.reverse();
+    const conversations = await this.conversationModel.find({user_id}).sort({ updated_date: -1 }).exec();
     return conversations;
   }
 
