@@ -132,9 +132,32 @@ class ConversationService {
     });
     const summary = await this.messageService.createMessagesSummary(text_messages, message_data.tokens);
 
-    // TODO save conversation to database
-
-    // TODO return conversation id
+    // Save conversation to database
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    if (conversation_id === "new") {
+      const conversation_entry = {
+        user_id,
+        title: parameters.title,
+        description: summary,
+        category: parameters.category,
+        tags: tags_array,
+        context_prompt: parameters.context,
+        messages: [ message_data.db_entry._id.toString() ],
+      };
+      const conv_entry = await new this.conversationModel(conversation_entry).save();
+      return conv_entry._id.toString();
+    } else {
+      // update existing DB entry
+      const conversation = await this.conversationModel.findById(conversation_id);
+      conversation.title = parameters.title;
+      conversation.description = summary;
+      conversation.category = parameters.category;
+      conversation.tags = tags_array;
+      conversation.context_prompt = parameters.context;
+      conversation.messages.push(message_data.db_entry._id.toString());
+      await conversation.save();
+      return conversation._id.toString();
+    }
   }
 
   async createConversation(participants) {

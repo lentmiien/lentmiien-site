@@ -43,40 +43,6 @@ exports.post = async (req, res) => {
   }
   const conversation_id = await conversationService.postToConversation(req.user.name, req.params.id, image_paths, req.body);
   res.redirect(`/chat4/chat/${conversation_id}`);
-
-  try {
-    const tags_array = req.body.tags.split(', ').join(',').split(' ').join('_').split(',');
-    if (req.params.id === "new") {
-      const conversation_entry = {
-        user_id: req.user.name,
-        title: req.body.title,
-        description: summary.choices[0].message.content,
-        category: req.body.category,
-        tags: tags_array,
-        context_prompt: req.body.context,
-        messages: [ db_entry._id.toString() ],
-      };
-      const conv_entry = await new Conversation4Model(conversation_entry).save();
-      
-      // Redirect to chat conversation page
-      res.redirect(`/chat4/chat/${conv_entry._id.toString()}`);
-    } else {
-      // update existing DB entry
-      const conversation = await Conversation4Model.findById(req.params.id);
-      conversation.title = req.body.title;
-      conversation.description = summary.choices[0].message.content;
-      conversation.category = req.body.category;
-      conversation.tags = tags_array;
-      conversation.context_prompt = req.body.context;
-      conversation.messages.push(db_entry._id.toString());
-      await conversation.save();
-
-      // Redirect to chat conversation page
-      res.redirect(`/chat4/chat/${req.params.id}`);
-    }
-  } catch (err) {
-    res.send(`<html><body><a href="/">Top</a><br><b>Error processing request</b><pre>${JSON.stringify(err, null, 2)}</pre></body></html>`);
-  }
 };
 
 exports.generate_image = async (req, res) => {
