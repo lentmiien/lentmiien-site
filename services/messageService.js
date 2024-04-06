@@ -25,8 +25,9 @@ const { chatGPT, tts, ig } = require('../utils/ChatGPT');
 */
 
 class MessageService {
-  constructor(messageModel) {
+  constructor(messageModel, fileMetaModel) {
     this.messageModel = messageModel;
+    this.fileMetaModel = fileMetaModel;
   }
 
   async getMessagesByIdArray(ids, get_html = true, val_lookup = null) {
@@ -94,13 +95,51 @@ class MessageService {
     return summary.choices[0].message.content;
   }
 
-  async updateMessage(messageId, newText) {
-    // const message = await this.messageModel.findByIdAndUpdate(
-    //   messageId,
-    //   { text: newText },
-    //   { new: true }
-    // );
-    // return message;
+  async generateImage(messageId, image_prompt, quality = 'hd', size = '1024x1024') {
+    // Load DB entry
+    const message = await this.messageModel.findById(messageId);
+    // Prompt Open AI API to generate image
+    const { filename, prompt } = await ig(image_prompt, quality, size);
+    // Save meta data
+    const metadata = {
+      filename: filename,
+      filetype: "image",
+      path: `/img/${filename}`,
+      is_url: false,
+      prompt: prompt,
+      created_date: new Date(),
+      other_meta_data: JSON.stringify({ quality, size, source: "OpenAI: DALL·E 3" }),
+    };
+    await new this.fileMetaModel(metadata).save();
+    // Append to message and save updates
+    message.images.push({
+      filename,
+      use_flag: 'do not use'
+    });
+    await message.save();
+    return message;
+  }
+
+  async generateTTS(messageId, tts_prompt, model = "tts-1", voice = "nova") {
+    // Load DB entry
+    const message = await this.messageModel.findById(messageId);
+    // Prompt Open AI API to generate tts sound file
+    const { filename, prompt } = await tts(model, tts_prompt, voice);
+    // Save meta data
+    const metadata = {
+      filename: filename,
+      filetype: "sound",
+      path: `/mp3/${filename}`,
+      is_url: false,
+      prompt: prompt,
+      created_date: new Date(),
+      other_meta_data: JSON.stringify({ model, voice, source: "OpenAI: Text-To-Speech" }),
+    };
+    await new this.fileMetaModel(metadata).save();
+    // Update message and save
+    message.sound = filename;
+    await message.save();
+    return message;
   }
 }
 

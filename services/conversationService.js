@@ -141,12 +141,14 @@ class ConversationService {
     if (conversation_id === "new") {
       const conversation_entry = {
         user_id,
+        group_id: Date.now().toString(),
         title: parameters.title,
         description: summary,
         category: parameters.category,
         tags: tags_array,
         context_prompt: parameters.context,
         messages: [ message_data.db_entry._id.toString() ],
+        updated_date: new Date(),
       };
       const conv_entry = await new this.conversationModel(conversation_entry).save();
       return conv_entry._id.toString();
@@ -159,35 +161,10 @@ class ConversationService {
       conversation.tags = tags_array;
       conversation.context_prompt = parameters.context;
       conversation.messages.push(message_data.db_entry._id.toString());
+      conversation.updated_date = new Date();
       await conversation.save();
       return conversation._id.toString();
     }
-  }
-
-  async createConversation(participants) {
-    // const conversation = await this.conversationModel.create({
-    //   participants,
-    //   createdAt: new Date(),
-    // });
-    // return conversation;
-  }
-
-  async updateConversation(conversationId, updateFields) {
-    // const conversation = await this.conversationModel.findByIdAndUpdate(
-    //   conversationId,
-    //   updateFields,
-    //   { new: true }
-    // );
-    // return conversation;
-  }
-
-  async summarizeConversation(conversationId) {
-    // // Use messageService to retrieve all messages
-    // const messages = await this.messageService.getMessages(conversationId);
-
-    // // Summarization logic (which could potentially be complex and involve NLP)
-    // const summarizedText = this.summarize(messages); // Mocking the actual summarization
-    // return summarizedText;
   }
 
   loadImageToBase64(filename) {
@@ -213,12 +190,6 @@ class ConversationService {
     fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
     const b64_img = Buffer.from(img_buffer).toString('base64');
     return { new_filename, b64_img };
-  }
-
-  summarize(messages) {
-    // // Placeholder for summarizing logic; for now, we return the most recent message
-    // if (messages.length === 0) return 'No messages to summarize.';
-    // return messages[messages.length - 1].text;
   }
 }
 

@@ -11,6 +11,14 @@ const tooltags = document.getElementById("tooltags");
 const context = document.getElementById("context");
 const toolcontext = document.getElementById("toolcontext");
 const prompt = document.getElementById("prompt");
+const image_quality = document.getElementById("image_quality");
+const toolquality = document.getElementById("toolquality");
+const image_size = document.getElementById("image_size");
+const toolsize = document.getElementById("toolsize");
+const sound_model = document.getElementById("sound_model");
+const toolttsmodel = document.getElementById("toolttsmodel");
+const sound_voice = document.getElementById("sound_voice");
+const toolvoice = document.getElementById("toolvoice");
 
 // Show popup for editing conversation details (title, category, tags, context, ...)
 function SettingsPopup() {
@@ -19,11 +27,20 @@ function SettingsPopup() {
 
 // Update the values when popup is closed
 function CloseSettingsPopup() {
+  // Chat
   chattitle.innerText = tooltitle.value;
   title.value = tooltitle.value;
   category.value = toolcategory.value;
   tags.value = tooltags.value;
   context.value = toolcontext.value;
+
+  // Image
+  image_quality.value = toolquality.value;
+  image_size.value = toolsize.value;
+
+  // TTS
+  sound_model.value = toolttsmodel.value;
+  sound_voice.value = toolvoice.value;
 
   settingspopup.style.display = "none";
 }

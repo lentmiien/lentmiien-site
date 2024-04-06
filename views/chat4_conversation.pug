@@ -25,9 +25,13 @@ block content
           input.btn.btn-primary(type="submit", value="Prompt")
       form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")
         input#image_message_id(type="hidden", name="image_message_id")
+        input#image_quality(type="hidden", name="image_quality", value="hd")
+        input#image_size(type="hidden", name="image_size", value="1024x1024")
         textarea#image_prompt(style="display:none;", name="image_prompt", cols="30", rows="10")
       form#sound_form(action=`/chat4/generate_sound/${conversation._id.toString()}`, method="post")
         input#sound_message_id(type="hidden", name="sound_message_id")
+        input#sound_model(type="hidden", name="sound_model", value="tts-1")
+        input#sound_voice(type="hidden", name="sound_voice", value="nova")
         textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
         div 
           each m in messages
@@ -62,6 +66,7 @@ block content
       span#closePopupBtn.close(onclick="CloseSettingsPopup()") &times;
       .row 
         .col
+          h3 Chat
           label(for="tooltitle") Title
           input#tooltitle.form-control(type="text", name="tooltitle", value=`${conversation.title}`)
           label(for="toolcategory") Category
@@ -70,6 +75,32 @@ block content
           input#tooltags.form-control(type="text", name="tooltags", value=`${conversation.tags.join(',')}`)
           label(for="toolcontext") Context
           textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10")= `${conversation.context_prompt}`
+      .row 
+        .col 
+          h3 Image
+          label(for="toolquality") Image quality 
+          select#toolquality.form-control(name="toolquality") 
+            option(value="hd") High Quality
+            option(value="standard") Standard
+          label(for="toolsize") Image size 
+          select#toolsize.form-control(name="toolsize") 
+            option(value="1024x1024") 1024x1024
+            option(value="1792x1024") 1792x1024
+            option(value="1024x1792") 1024x1792
+        .col
+          h3 TTS
+          label(for="toolttsmodel") TTS Model 
+          select#toolttsmodel.form-control(name="toolttsmodel") 
+            option(value="tts-1") Text-To-Speech 1
+            option(value="tts-1-hd") Text-To-Speech 1 HD
+          label(for="toolvoice") TTS Voice 
+          select#toolvoice.form-control(name="toolvoice") 
+            option(value="nova") Nova
+            option(value="alloy") Alloy
+            option(value="echo") Echo
+            option(value="fable") Fable
+            option(value="onyx") Onyx
+            option(value="shimmer") Shimmer
   #templatespopup.popup.popup-wrapper 
     .popup-content 
       span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;
