@@ -58,8 +58,6 @@ class MessageService {
           }
         }
         if (updated) {
-          console.log(val_lookup);
-          console.log(messages[i]);
           await messages[i].save();
         }
       }
