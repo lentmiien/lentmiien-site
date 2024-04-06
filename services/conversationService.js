@@ -35,6 +35,38 @@ class ConversationService {
     return await this.conversationModel.findById(conversation_id);
   }
 
+  async copyConversation(conversation_id, start_message_id, end_message_id) {
+    // Fetch original conversation
+    const original_conversation = await this.conversationModel.findById(conversation_id);
+
+    // Create copy
+    const conversation_entry = {
+      user_id: original_conversation.user_id,
+      group_id: original_conversation.group_id,
+      title: original_conversation.title,
+      description: original_conversation.description,
+      category: original_conversation.category,
+      tags: original_conversation.tags,
+      context_prompt: original_conversation.context_prompt,
+      messages: [],
+      updated_date: new Date(),
+    };
+
+    // Copy the required message ids
+    let include_message = false;
+    for (let i = 0; i < original_conversation.messages.length; i++) {
+      if (original_conversation.messages[i] === start_message_id) include_message = true;
+      if (include_message) conversation_entry.messages.push(original_conversation.messages[i]);
+      if (original_conversation.messages[i] === end_message_id) include_message = false;
+    }
+
+    // Save new entry to database
+    const conv_entry = await new this.conversationModel(conversation_entry).save();
+
+    // Return id of new entry
+    return conv_entry._id.toString();
+  }
+
   async postToConversation(user_id, conversation_id, new_images, parameters) {
     let use_vision = false;
     const vision_messages = [];

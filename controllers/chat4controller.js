@@ -37,11 +37,19 @@ exports.chat = async (req, res) => {
 };
 
 exports.post = async (req, res) => {
+  let use_conversation_id = req.params.id;
+
+  // Check if copying is needed
+  if ("start_message" in req.body || "end_message" in req.body) {
+    use_conversation_id = conversationService.copyConversation(use_conversation_id, req.body.start_message, req.body.end_message);
+  }
+  // Post message to conversation
   const image_paths = [];
   for (let i = 0; i < req.files.length; i++) {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
-  const conversation_id = await conversationService.postToConversation(req.user.name, req.params.id, image_paths, req.body);
+  const conversation_id = await conversationService.postToConversation(req.user.name, use_conversation_id, image_paths, req.body);
+
   res.redirect(`/chat4/chat/${conversation_id}`);
 };
 
