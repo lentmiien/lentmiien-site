@@ -32,7 +32,7 @@ block content
                 input(id=`end_${m._id.toString()}`, type="radio", name="end_message", value=`${m._id.toString()}`)
                 span  New conversation end
                 | )
-              div!= m.response_html
+              .assistant!= m.response_html
               if m.sound.length > 0
                 audio(controls)
                   source(src=`/mp3/${m.sound}`, type="audio/mpeg")
@@ -48,7 +48,7 @@ block content
                     div.chat4_img_wrapper
                       img.chat4_img(src=`/img/${img.filename}`, alt="image")
                     input.chat4_img_slide(id=`${img.filename}` type="range", name=`${img.filename}`, min="0", max="2", step="1", value=`${img.use_flag === 'high quality' ? 2 : (img.use_flag === 'low quality' ? 1 : 0)}`)
-              div!= m.prompt_html
+              .user!= m.prompt_html
       form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")
         input#image_message_id(type="hidden", name="image_message_id")
         input#image_quality(type="hidden", name="image_quality", value="hd")

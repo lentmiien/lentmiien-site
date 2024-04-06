@@ -53,7 +53,7 @@ class ConversationService {
     };
 
     // Copy the required message ids
-    let include_message = false;
+    let include_message = start_message_id ? false : true;
     for (let i = 0; i < original_conversation.messages.length; i++) {
       if (original_conversation.messages[i] === start_message_id) include_message = true;
       if (include_message) conversation_entry.messages.push(original_conversation.messages[i]);

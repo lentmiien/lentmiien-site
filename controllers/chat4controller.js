@@ -41,7 +41,7 @@ exports.post = async (req, res) => {
 
   // Check if copying is needed
   if ("start_message" in req.body || "end_message" in req.body) {
-    use_conversation_id = conversationService.copyConversation(use_conversation_id, req.body.start_message, req.body.end_message);
+    use_conversation_id = await conversationService.copyConversation(use_conversation_id, req.body.start_message, req.body.end_message);
   }
   // Post message to conversation
   const image_paths = [];
