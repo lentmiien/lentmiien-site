@@ -1,3 +1,4 @@
+const fs = require('fs');
 const sharp = require('sharp');
 
 // Conversation service operations: managing conversation sessions and summary

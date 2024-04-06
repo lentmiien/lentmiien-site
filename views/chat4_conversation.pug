@@ -23,21 +23,10 @@ block content
           button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
           button.btn.btn-warning(type="button") Save
           input.btn.btn-primary(type="submit", value="Prompt")
-      form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")
-        input#image_message_id(type="hidden", name="image_message_id")
-        input#image_quality(type="hidden", name="image_quality", value="hd")
-        input#image_size(type="hidden", name="image_size", value="1024x1024")
-        textarea#image_prompt(style="display:none;", name="image_prompt", cols="30", rows="10")
-      form#sound_form(action=`/chat4/generate_sound/${conversation._id.toString()}`, method="post")
-        input#sound_message_id(type="hidden", name="sound_message_id")
-        input#sound_model(type="hidden", name="sound_model", value="tts-1")
-        input#sound_voice(type="hidden", name="sound_voice", value="nova")
-        textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
         div 
           each m in messages
             div 
-              hr
-              p 
+              p.header-row 
                 b Response: 
                 | (
                 input(id=`end_${m._id.toString()}`, type="radio", name="end_message", value=`${m._id.toString()}`)
@@ -47,8 +36,7 @@ block content
               if m.sound.length > 0
                 audio(controls)
                   source(src=`/mp3/${m.sound}`, type="audio/mpeg")
-              hr
-              p 
+              p.header-row 
                 b Prompt: 
                 | (
                 input(id=`start_${m._id.toString()}`, type="radio", name="start_message", value=`${m._id.toString()}`)
@@ -61,6 +49,16 @@ block content
                       img.chat4_img(src=`/img/${img.filename}`, alt="image")
                     input.chat4_img_slide(id=`${img.filename}` type="range", name=`${img.filename}`, min="0", max="2", step="1", value=`${img.use_flag === 'high quality' ? 2 : (img.use_flag === 'low quality' ? 1 : 0)}`)
               div!= m.prompt_html
+      form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")
+        input#image_message_id(type="hidden", name="image_message_id")
+        input#image_quality(type="hidden", name="image_quality", value="hd")
+        input#image_size(type="hidden", name="image_size", value="1024x1024")
+        textarea#image_prompt(style="display:none;", name="image_prompt", cols="30", rows="10")
+      form#sound_form(action=`/chat4/generate_sound/${conversation._id.toString()}`, method="post")
+        input#sound_message_id(type="hidden", name="sound_message_id")
+        input#sound_model(type="hidden", name="sound_model", value="tts-1")
+        input#sound_voice(type="hidden", name="sound_voice", value="nova")
+        textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
   #settingspopup.popup.popup-wrapper 
     .popup-content 
       span#closePopupBtn.close(onclick="CloseSettingsPopup()") &times;
