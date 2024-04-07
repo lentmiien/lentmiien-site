@@ -22,7 +22,7 @@ block content
         textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
         .button-container
           button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
-          input.btn.btn-primary(type="submit", value="Send")
+          input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
   .row 
     .col 
       h2 Chat history 
@@ -52,4 +52,8 @@ block content
             each t in templates
               if t.Type === "context"
                 option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
+  #loadingPopup.loading-popup
+    .loading-content
+      .loader
+      p Loading...
   script(src="/js/chat4.js") 

@@ -21,8 +21,8 @@ block content
           button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
           button.btn.btn-success(type="button", onclick="RunImageForm()") Image
           button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
-          button.btn.btn-warning(type="button") Save
-          input.btn.btn-primary(type="submit", value="Prompt")
+          button.btn.btn-warning(type="button", onclick="SavePopup()") Save
+          input.btn.btn-primary(type="submit", value="Prompt", onclick="showLoadingPopup()")
         div 
           each m in messages
             div 
@@ -61,7 +61,7 @@ block content
         textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
   #settingspopup.popup.popup-wrapper 
     .popup-content 
-      span#closePopupBtn.close(onclick="CloseSettingsPopup()") &times;
+      span.close(onclick="CloseSettingsPopup()") &times;
       .row 
         .col
           h3 Chat
@@ -101,7 +101,7 @@ block content
             option(value="shimmer") Shimmer
   #templatespopup.popup.popup-wrapper 
     .popup-content 
-      span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;
+      span.close(onclick="CloseTemplatesPopup()") &times;
       .row 
         .col
           h3 Templates
@@ -117,5 +117,11 @@ block content
             each t in templates
               if t.Type === "context"
                 option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
-        
+  #savepopup.popup.popup-wrapper 
+    .popup-content 
+      span.close(onclick="CloseSavePopup()") &times;
+      .row 
+        .col
+          h3 Save
+      
   script(src="/js/chat4.js") 

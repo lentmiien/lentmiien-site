@@ -1,5 +1,7 @@
 const settingspopup = document.getElementById("settingspopup");
 const templatespopup = document.getElementById("templatespopup");
+const savepopup = document.getElementById("savepopup");
+const loadingPopup = document.getElementById("loadingPopup");
 
 const chattitle = document.getElementById("chattitle");
 const title = document.getElementById("title");
@@ -55,6 +57,16 @@ function CloseTemplatesPopup() {
   templatespopup.style.display = "none";
 }
 
+// Show a popup for saving options
+function SavePopup() {
+  savepopup.style.display = "block";
+}
+
+// Close popup
+function CloseSavePopup() {
+  savepopup.style.display = "none";
+}
+
 // Apply chat template
 function SetChatTemplate(element) {
   prompt.value = element.value;
@@ -68,6 +80,11 @@ function SetContextTemplate(element) {
     toolcontext.value = element.value;
   }
   CloseTemplatesPopup();
+}
+
+function showLoadingPopup() {
+  loadingPopup.style.display = 'block';
+  document.body.classList.add('no-scroll'); // Prevent scrolling on the body
 }
 
 const image_form = document.getElementById("image_form");
@@ -86,7 +103,8 @@ function RunImageForm() {
     }
   }
   // submit image_form
-  image_form.submit()
+  showLoadingPopup();
+  image_form.submit();
 }
 
 const sound_form = document.getElementById("sound_form");
@@ -105,5 +123,6 @@ function RunSoundForm() {
     }
   }
   // submit sound_form
-  sound_form.submit()
+  showLoadingPopup();
+  sound_form.submit();
 }
