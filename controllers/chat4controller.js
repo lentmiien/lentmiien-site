@@ -78,3 +78,7 @@ exports.generate_sound = async (req, res) => {
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };
+
+exports.saveknowledge = async (req, res) => {
+  res.send("OK!");
+};

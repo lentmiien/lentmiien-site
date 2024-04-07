@@ -16,4 +16,7 @@ router.post('/post/:id', upload.array('imgs'), controller.post);
 router.post('/generate_image/:id', controller.generate_image);
 router.post('/generate_sound/:id', controller.generate_sound);
 
+// Knowledge database
+router.post('/saveknowledge', controller.saveknowledge);
+
 module.exports = router;
