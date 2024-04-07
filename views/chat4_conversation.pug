@@ -123,5 +123,23 @@ block content
       .row 
         .col
           h3 Save
-      
+          hr
+          ul#myTab.nav.nav-tabs(role="tablist")
+            li.nav-item(role="presentation")
+              button#save-tab.nav-link.active(data-bs-toggle="tab", data-bs-target="#save", type="button", role="tab", aria-controls="save", aria-selected="true") Save
+            li.nav-item(role="presentation")
+              button#source-tab.nav-link(data-bs-toggle="tab", data-bs-target="#source", type="button", role="tab", aria-controls="source", aria-selected="false") Source
+            li.nav-item(role="presentation")
+              button#blog-tab.nav-link(data-bs-toggle="tab", data-bs-target="#blog", type="button", role="tab", aria-controls="blog", aria-selected="false") Blog
+            li.nav-item(role="presentation")
+              button#other-tab.nav-link(data-bs-toggle="tab", data-bs-target="#other", type="button", role="tab", aria-controls="other", aria-selected="false") Other
+          #myTabContent.tab-content
+            #save.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="save-tab")
+              b Knowledge database save controls
+            #source.tab-pane.fade(role="tabpanel" aria-labelledby="source-tab")
+              b Show raw chat data (markdown)
+            #blog.tab-pane.fade(role="tabpanel" aria-labelledby="blog-tab")
+              b Post blog post controls
+            #other.tab-pane.fade(role="tabpanel" aria-labelledby="other-tab")
+              b Other save controls (health log, changes to conversation without posting)
   script(src="/js/chat4.js") 
