@@ -1,18 +1,20 @@
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
-const { Chat4Model, Conversation4Model, Chat3TemplateModel, FileMetaModel } = require('../database');
+const KnowledgeService = require('../services/knowledgeService');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel } = require('../database');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
-const conversationService = new ConversationService(Conversation4Model, messageService);
+const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
+const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 
-const fs = require('fs');
-const path = require('path');
-const sharp = require('sharp');
-const marked = require('marked');
-const { chatGPT, embedding, GetModels, tts, ig } = require('../utils/ChatGPT');
+// const fs = require('fs');
+// const path = require('path');
+// const sharp = require('sharp');
+// const marked = require('marked');
+// const { chatGPT, embedding, GetModels, tts, ig } = require('../utils/ChatGPT');
 
 exports.index = async (req, res) => {
   const templates = await templateService.getTemplates();
@@ -60,7 +62,7 @@ exports.generate_image = async (req, res) => {
   const quality = req.body.image_quality;
   const size = req.body.image_size;
 
-  const message = await messageService.generateImage(message_id, in_prompt, quality, size);
+  await messageService.generateImage(message_id, in_prompt, quality, size);
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };
@@ -72,7 +74,7 @@ exports.generate_sound = async (req, res) => {
   const model = req.body.sound_model;
   const voice = req.body.sound_voice;
 
-  const message = await messageService.generateTTS(message_id, prompt, model, voice);
+  await messageService.generateTTS(message_id, prompt, model, voice);
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };

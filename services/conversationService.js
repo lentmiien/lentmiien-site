@@ -12,6 +12,12 @@ const sharp = require('sharp');
   category: { type: String, required: true, max: 100 },
   tags: [{ type: String, max: 100 }],
   context_prompt: { type: String },
+  knowledge_injects: [
+    {
+      knowledge_id: { type: String, required: true },
+      use_type: { type: String, required: true, enum: ['context', 'reference', 'example'] },
+    }
+  ],
   messages: [{ type: String, required: true, max: 100 }],
   updated_date: {
     type: Date,
@@ -21,9 +27,10 @@ const sharp = require('sharp');
 */
 
 class ConversationService {
-  constructor(conversationModel, messageService) {
+  constructor(conversationModel, messageService, knowledgeService) {
     this.conversationModel = conversationModel;
     this.messageService = messageService;
+    this.knowledgeService = knowledgeService;
   }
 
   async getConversationsForUser(user_id) {
@@ -53,9 +60,17 @@ class ConversationService {
       category: original_conversation.category,
       tags: original_conversation.tags,
       context_prompt: original_conversation.context_prompt,
+      knowledge_injects: [],
       messages: [],
       updated_date: new Date(),
     };
+
+    for (let i = 0; i < original_conversation.knowledge_injects.length; i++) {
+      conversation_entry.knowledge_injects.push({
+        knowledge_id: original_conversation.knowledge_injects[i].knowledge_id,
+        use_type: original_conversation.knowledge_injects[i].use_type
+      });
+    }
 
     // Copy the required message ids
     let include_message = start_message_id ? false : true;
@@ -76,9 +91,28 @@ class ConversationService {
     let use_vision = false;
     const vision_messages = [];
     const text_messages = [];
+    const inject_prompt_lookup = {
+      context: "This is some additional context:",
+      reference: "Use as reference for guiding your answer:",
+      example: "This is an example of the type of output I want:",
+    };
 
     // Set context
-    if (parameters.context.length > 0) {
+    let context = parameters.context;
+    const inject_keys = Object.keys(parameters).filter(d => d.indexOf("inject") === 0);
+    if (inject_keys.length > 0) {
+      const inject_ids = inject_keys.map(d => d.split("_")[1]);
+      const knowledges = this.knowledgeService.getKnowledgesByIdArray(inject_ids);
+      const knowledge_lookup = knowledges.map(d => d._id.toString());
+      for (let i = 0; i < inject_keys.length; i++) {
+        // Extend context with knowledge
+        const use_type = parameters[`inject_${inject_keys[i]}`];
+        const text_content = knowledges[knowledge_lookup.indexOf(inject_keys[i])].contentMarkdown;
+
+        context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n${text_content}\n\n---`;
+      }
+    }
+    if (context.length > 0) {
       vision_messages.push({
         role: 'system',
         content: [
@@ -185,9 +219,16 @@ class ConversationService {
         category: parameters.category,
         tags: tags_array,
         context_prompt: parameters.context,
+        knowledge_injects: [],
         messages: [ message_data.db_entry._id.toString() ],
         updated_date: new Date(),
       };
+      for (let i = 0; i < inject_keys.length; i++) {
+        conversation_entry.knowledge_injects.push({
+          knowledge_id: inject_keys[i].split("_")[1],
+          use_type: parameters[inject_keys[i]],
+        });
+      }
       const conv_entry = await new this.conversationModel(conversation_entry).save();
       return conv_entry._id.toString();
     } else {
@@ -198,6 +239,13 @@ class ConversationService {
       conversation.category = parameters.category;
       conversation.tags = tags_array;
       conversation.context_prompt = parameters.context;
+      conversation.knowledge_injects = [];
+      for (let i = 0; i < inject_keys.length; i++) {
+        conversation.knowledge_injects.push({
+          knowledge_id: inject_keys[i].split("_")[1],
+          use_type: parameters[inject_keys[i]],
+        });
+      }
       conversation.messages.push(message_data.db_entry._id.toString());
       conversation.updated_date = new Date();
       await conversation.save();

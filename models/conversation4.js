@@ -8,6 +8,12 @@ const Conversation4 = new mongoose.Schema({
   category: { type: String, required: true, max: 100 },
   tags: [{ type: String, max: 100 }],
   context_prompt: { type: String },
+  knowledge_injects: [
+    {
+      knowledge_id: { type: String, required: true },
+      use_type: { type: String, required: true, enum: ['context', 'reference', 'example'] },
+    }
+  ],
   messages: [{ type: String, required: true, max: 100 }],
   updated_date: {
     type: Date,
