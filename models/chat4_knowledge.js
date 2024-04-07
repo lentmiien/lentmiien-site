@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const Chat3_knowledge = new mongoose.Schema({
+const Chat4_knowledge = new mongoose.Schema({
   title: { type: String, required: true, max: 100 },
   createdDate: { type: Date, required: true },
   updatedDate: { type: Date, required: true },
@@ -12,4 +12,4 @@ const Chat3_knowledge = new mongoose.Schema({
   user_id: { type: String, required: true, max: 100 },
 });
 
-module.exports = mongoose.model('chat3_knowledge', Chat3_knowledge);
+module.exports = mongoose.model('chat4_knowledge', Chat4_knowledge);
