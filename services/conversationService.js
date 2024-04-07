@@ -35,6 +35,11 @@ class ConversationService {
     return await this.conversationModel.findById(conversation_id);
   }
 
+  async getConversationsInGroup(group_id) {
+    const conversations = await this.conversationModel.find({group_id}).sort({ updated_date: -1 }).exec();
+    return conversations;
+  }
+
   async copyConversation(conversation_id, start_message_id, end_message_id) {
     // Fetch original conversation
     const original_conversation = await this.conversationModel.findById(conversation_id);
