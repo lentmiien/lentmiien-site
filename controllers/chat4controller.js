@@ -10,12 +10,6 @@ const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 
-// const fs = require('fs');
-// const path = require('path');
-// const sharp = require('sharp');
-// const marked = require('marked');
-// const { chatGPT, embedding, GetModels, tts, ig } = require('../utils/ChatGPT');
-
 exports.index = async (req, res) => {
   const templates = await templateService.getTemplates();
   const conversations = await conversationService.getConversationsForUser(req.user.name);
@@ -80,5 +74,10 @@ exports.generate_sound = async (req, res) => {
 };
 
 exports.saveknowledge = async (req, res) => {
-  res.send("OK!");
+  const user_id = req.user.name;
+  const other_parameters = null;// TODO: replace with actual functionality
+
+  knowledgeService.createKnowledge(user_id, other_parameters);
+
+  res.send("OK!");// TODO: redirect to newly created knowledge page
 };
