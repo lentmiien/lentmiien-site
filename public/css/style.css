@@ -363,6 +363,7 @@
   width: 100px;
   height: 100px;
   overflow: hidden;
+  cursor: pointer;
 }
 
 .chat4_img {
