@@ -46,7 +46,7 @@ block content
                 each img in m.images
                   div
                     div.chat4_img_wrapper
-                      img.chat4_img(src=`/img/${img.filename}`, alt="image")
+                      img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
                     input.chat4_img_slide(id=`${img.filename}` type="range", name=`${img.filename}`, min="0", max="2", step="1", value=`${img.use_flag === 'high quality' ? 2 : (img.use_flag === 'low quality' ? 1 : 0)}`)
               .user!= m.prompt_html
       form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")

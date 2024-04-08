@@ -5,9 +5,10 @@ block content
     .col
       h2= knowledge.title
       i= `Updated: ${knowledge.updatedDate}`
+      div 
+        a.btn.btn-link(href=`/chat4/chat/${knowledge.originConversationId}`) Show chat 
       p!= knowledge.contentHTML
       each img in knowledge.images
         img.image-large(src=`/img/${img}`, alt="image")
-      b= `${knowledge.category}: ${knowledge.tags.join(", ")}`
-      br
+      p= `${knowledge.category}: ${knowledge.tags.join(", ")}`
       i= `Created by: ${knowledge.user_id}`
