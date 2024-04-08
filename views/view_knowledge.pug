@@ -1,0 +1,13 @@
+extends layout
+
+block content
+  .row
+    .col
+      h2= knowledge.title
+      i= `Updated: ${knowledge.updatedDate}`
+      p!= knowledge.contentHTML
+      each img in knowledge.images
+        img.image-large(src=`/img/${img}`, alt="image")
+      b= `${knowledge.category}: ${knowledge.tags.join(", ")}`
+      br
+      i= `Created by: ${knowledge.user_id}`

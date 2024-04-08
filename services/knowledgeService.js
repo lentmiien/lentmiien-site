@@ -1,3 +1,5 @@
+const marked = require('marked');
+
 // Knowledge service operations: managing knowledge (text pieces) entries
 
 /* knowledgeModel
@@ -10,13 +12,19 @@
   category: { type: String, required: true, max: 100 },
   tags: [{ type: String, max: 100 }],
   images: [{ type: String, max: 100 }],
-  author: { type: String, required: true, max: 100 },
+  user_id: { type: String, required: true, max: 100 },
 }
 */
 
 class KnowledgeService {
   constructor(knowledgeModel) {
     this.knowledgeModel = knowledgeModel;
+  }
+
+  async getKnowledgesById(k_id) {
+    const knowledge = await this.knowledgeModel.findById(k_id);
+    knowledge.contentHTML = marked.parse(knowledge.contentMarkdown);
+    return knowledge;
   }
 
   async getKnowledgesByUser(user_id) {
@@ -31,9 +39,34 @@ class KnowledgeService {
     return await this.knowledgeModel.find({ category });
   }
 
-  async createKnowledge(user_id, input_values) {}
+  async createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id) {
+    const date = new Date();
+    const knowledge_entry = {
+      title,
+      createdDate: date,
+      updatedDate: date,
+      originConversationId,
+      contentMarkdown,
+      category,
+      tags,
+      images,
+      user_id,
+    };
+    const entry = await new this.knowledgeModel(knowledge_entry).save();
+    return entry._id.toString();
+  }
 
-  async updateKnowledge(k_id, update_values) {}
+  async updateKnowledge(k_id, update_values) {
+    const entry = await this.knowledgeModel.findById(k_id);
+    const keys = Object.keys(update_values);
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i] in entry) {
+        entry[keys[i]] = update_values[keys[i]];
+      }
+    }
+    await entry.save();
+    return k_id;
+  }
 }
 
 module.exports = KnowledgeService;

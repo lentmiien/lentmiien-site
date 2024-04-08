@@ -3,6 +3,9 @@ const templatespopup = document.getElementById("templatespopup");
 const savepopup = document.getElementById("savepopup");
 const loadingPopup = document.getElementById("loadingPopup");
 
+const modal = document.getElementById('imageModal');
+const modalImg = document.getElementById("fullSizeImage");
+
 const chattitle = document.getElementById("chattitle");
 const title = document.getElementById("title");
 const tooltitle = document.getElementById("tooltitle");
@@ -125,4 +128,15 @@ function RunSoundForm() {
   // submit sound_form
   showLoadingPopup();
   sound_form.submit();
+}
+
+function showModalPopup(img) {
+  // Get the image and insert it inside the modal
+  modalImg.src = img.src;
+  
+  // Show the modal
+  modal.style.display = "block";
+}
+function closeModalPopup() {
+  modal.style.display = "none";
 }

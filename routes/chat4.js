@@ -17,6 +17,8 @@ router.post('/generate_image/:id', controller.generate_image);
 router.post('/generate_sound/:id', controller.generate_sound);
 
 // Knowledge database
+router.get('/knowledgelist', controller.knowledgelist);
+router.get('/viewknowledge/:id', controller.viewknowledge);
 router.post('/saveknowledge', controller.saveknowledge);
 
 module.exports = router;

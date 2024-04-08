@@ -165,11 +165,14 @@ block content
                       each img in m.images
                         div
                           div.chat4_img_wrapper
-                            img.chat4_img(src=`/img/${img.filename}`, alt="image")
+                            img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
                           i= `Image file: ${img.filename}`
                     pre.user= m.prompt
             #blog.tab-pane.fade(role="tabpanel" aria-labelledby="blog-tab")
               b Post blog post controls
             #other.tab-pane.fade(role="tabpanel" aria-labelledby="other-tab")
               b Other save controls (health log, changes to conversation without posting)
+  #imageModal.modal
+    span.close-btn(onclick="closeModalPopup()") &times;
+    img#fullSizeImage.modal-content(src="", alt="Full Size Image")
   script(src="/js/chat4.js") 

@@ -73,11 +73,36 @@ exports.generate_sound = async (req, res) => {
   res.redirect(`/chat4/chat/${conversation_id}`);
 };
 
-exports.saveknowledge = async (req, res) => {
+exports.knowledgelist = async (req, res) => {
   const user_id = req.user.name;
-  const other_parameters = null;// TODO: replace with actual functionality
 
-  knowledgeService.createKnowledge(user_id, other_parameters);
+  const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
 
-  res.send("OK!");// TODO: redirect to newly created knowledge page
+  res.render("knowledge_list", { knowledges });
+};
+
+exports.viewknowledge = async (req, res) => {
+  const knowledge_id = req.params.id;
+
+  const knowledge = await knowledgeService.getKnowledgesById(knowledge_id);
+
+  res.render("view_knowledge", { knowledge });
+};
+
+exports.saveknowledge = async (req, res) => {
+  const title = req.body.k_title;
+  const originConversationId = req.body.k_conversation_id;
+  const contentMarkdown = req.body.k_content;
+  const category = req.body.k_category;
+  const tags = req.body.k_tags.split(', ').join(',').split(' ').join('_').split(',');
+  const input_images = req.body.k_images.split(', ').join(',').split(' ').join('_').split(',');
+  const user_id = req.user.name;
+
+  const images = [];
+  input_images.forEach(d => {
+    if (d.length > 0) images.push(d);
+  })
+  const k_id = await knowledgeService.createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id);
+
+  res.redirect(`/chat4/viewknowledge/${k_id}`);
 };
