@@ -4,5 +4,9 @@ block content
   .row
     .col
       h2 Available knowledges 
-      each knowledge in knowledges
-        a.btn.btn-link(href=`/chat4/viewknowledge/${knowledge._id.toString()}`)= knowledge.title
+      each category in categories
+        hr
+        h3= category
+        each knowledge in knowledges
+          if knowledge.category === category
+            a.btn.btn-link(href=`/chat4/viewknowledge/${knowledge._id.toString()}`)= knowledge.title

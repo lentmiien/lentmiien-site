@@ -6,6 +6,8 @@ const loadingPopup = document.getElementById("loadingPopup");
 const modal = document.getElementById('imageModal');
 const modalImg = document.getElementById("fullSizeImage");
 
+const knowledge_container = document.getElementById("knowledge_container");
+
 const chattitle = document.getElementById("chattitle");
 const title = document.getElementById("title");
 const tooltitle = document.getElementById("tooltitle");
@@ -139,4 +141,46 @@ function showModalPopup(img) {
 }
 function closeModalPopup() {
   modal.style.display = "none";
+}
+
+function knowledgeCheck(element) {
+  if (element.checked) {
+    const col = document.createElement("div");
+    col.id = element.dataset.id;
+    col.classList.add("col");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = true;
+    input.value = element.dataset.id;
+    input.name = "knowledge";
+    input.dataset.id = element.dataset.id;
+    input.dataset.title = element.dataset.title;
+    input.setAttribute("onclick", "knowledgeCheck(this)")
+    const span = document.createElement("span");
+    span.innerText = ` ${element.dataset.title}`;
+    const select = document.createElement("select");
+    select.name = `knowledge_${element.dataset.id}`;
+    const option1 = document.createElement("option");
+    option1.innerText = "Context";
+    option1.value = "context";
+    const option2 = document.createElement("option");
+    option2.innerText = "Reference";
+    option2.value = "reference";
+    const option3 = document.createElement("option");
+    option3.innerText = "Example";
+    option3.value = "example";
+    select.append(option1, option2, option3);
+    col.append(input, span, select);
+
+    knowledge_container.append(col);
+  } else {
+    const existing_element = document.getElementById(element.dataset.id);
+    if (existing_element) {
+      existing_element.remove();
+    }
+    const select_element = document.getElementById(`id_${element.dataset.id}`);
+    if (select_element) {
+      select_element.checked = false;
+    }
+  }
 }

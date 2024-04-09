@@ -11,8 +11,11 @@ const conversationService = new ConversationService(Conversation4Model, messageS
 const templateService = new TemplateService(Chat3TemplateModel);
 
 exports.index = async (req, res) => {
+  const user_id = req.user.name;
+
   const templates = await templateService.getTemplates();
-  const conversations = await conversationService.getConversationsForUser(req.user.name);
+  const conversations = await conversationService.getConversationsForUser(user_id);
+  const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
 
   const categories = [];
   conversations.forEach(d => {
@@ -21,7 +24,7 @@ exports.index = async (req, res) => {
     }
   });
 
-  res.render("chat4", { conversations, categories, templates });
+  res.render("chat4", { conversations, categories, templates, knowledges });
 };
 
 exports.chat = async (req, res) => {
@@ -77,8 +80,14 @@ exports.knowledgelist = async (req, res) => {
   const user_id = req.user.name;
 
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
+  const categories = [];
+  knowledges.forEach(d => {
+    if (categories.indexOf(d.category) === -1) {
+      categories.push(d.category);
+    }
+  });
 
-  res.render("knowledge_list", { knowledges });
+  res.render("knowledge_list", { knowledges, categories });
 };
 
 exports.viewknowledge = async (req, res) => {
