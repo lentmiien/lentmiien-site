@@ -115,3 +115,30 @@ exports.saveknowledge = async (req, res) => {
 
   res.redirect(`/chat4/viewknowledge/${k_id}`);
 };
+
+exports.editknowledge = async (req, res) => {
+  const knowledge_id = req.params.id;
+  const knowledge = await knowledgeService.getKnowledgesById(knowledge_id);
+  const conversation = await conversationService.getConversationsById(knowledge.originConversationId);
+  const conversations = await conversationService.getConversationsInGroup(conversation.group_id);
+  const messageLookup = [];
+  for (let i = 0; i < conversations.length; i++) {
+    for (let j = 0; j < conversations[i].messages.length; j++) {
+      if (messageLookup.indexOf(conversations[i].messages[j]) === -1) {
+        messageLookup.push(conversations[i].messages[j]);
+      }
+    }
+  }
+  const messages = await messageService.getMessagesByIdArray(messageLookup);
+
+  res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations, messageLookup, messages});
+};
+
+exports.updateknowledge = async (req, res) => {
+  const knowledge_id = req.params.id;
+
+  // TODO Do the updating
+  console.log(req.body);
+
+  res.redirect(`/chat4/viewknowledge/${knowledge_id}`);
+};
