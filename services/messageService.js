@@ -67,7 +67,7 @@ class MessageService {
 
   async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images) {
     // Send to OpenAI API
-    const response = await chatGPT(use_vision ? vision_messages : text_messages, use_vision ? 'gpt-4-vision-preview' : 'gpt-4-turbo-preview');
+    const response = await chatGPT(vision_messages, 'gpt-4-turbo-2024-04-09');
 
     // Save to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
@@ -91,7 +91,7 @@ class MessageService {
       role: 'user',
       content: 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation.',
     });
-    const summary = await chatGPT(messages, tokens < 16000 ? 'gpt-3.5-turbo' : 'gpt-4-turbo-preview');
+    const summary = await chatGPT(messages, tokens < 16000 ? 'gpt-3.5-turbo' : 'gpt-4-turbo-2024-04-09');
     return summary.choices[0].message.content;
   }
 
