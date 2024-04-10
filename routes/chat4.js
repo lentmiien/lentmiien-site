@@ -20,5 +20,7 @@ router.post('/generate_sound/:id', controller.generate_sound);
 router.get('/knowledgelist', controller.knowledgelist);
 router.get('/viewknowledge/:id', controller.viewknowledge);
 router.post('/saveknowledge', controller.saveknowledge);
+router.get('/editknowledge/:id', controller.editknowledge);
+router.post('/updateknowledge/:id', controller.updateknowledge);
 
 module.exports = router;

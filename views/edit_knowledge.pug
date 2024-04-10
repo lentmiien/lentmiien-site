@@ -3,12 +3,47 @@ extends layout
 block content
   .row
     .col
-      h2= knowledge.title
-      i= `Updated: ${knowledge.updatedDate}`
-      div 
-        a.btn.btn-link(href=`/chat4/chat/${knowledge.originConversationId}`) Show chat 
-      p!= knowledge.contentHTML
-      each img in knowledge.images
-        img.image-large(src=`/img/${img}`, alt="image")
-      p= `${knowledge.category}: ${knowledge.tags.join(", ")}`
-      i= `Created by: ${knowledge.user_id}`
+      ul#myTab.nav.nav-tabs(role="tablist")
+        li.nav-item(role="presentation")
+          button#knowledge-tab.nav-link.active(data-bs-toggle="tab", data-bs-target="#knowledge", type="button", role="tab", aria-controls="knowledge", aria-selected="true") Knowledge 
+        each conversation, i in conversations 
+          li.nav-item(role="presentation")
+            button.nav-link(id=`chat${i}-tab`, data-bs-toggle="tab", data-bs-target=`#chat${i}`, type="button", role="tab", aria-controls=`chat${i}`, aria-selected="false")= `Chat#${i}`
+      #myTabContent.tab-content
+        #knowledge.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="knowledge-tab")
+          b Update to Knowledge database
+          hr
+          form(action=`/chat4/updateknowledge/${id}`, method="post") 
+            label(for="k_title") Title 
+            input#k_title.form-control(type="text", name="k_title", value=`${knowledge.title}`, required)
+            label(for="k_content") Content (markdown)
+            textarea#k_content.form-control(name="k_content", cols="30", rows="10")= knowledge.contentMarkdown
+            label(for="k_category") Category 
+            input#k_category.form-control(type="text", name="k_category", value=`${knowledge.category}`)
+            label(for="k_tags") Tags (comma separated)
+            input#k_tags.form-control(type="text", name="k_tags", value=`${knowledge.tags.join(',')}`)
+            label(for="k_images") Images (comma separated filenames)
+            input#k_images.form-control(type="text", name="k_images", value=`${knowledge.images.join(',')}`)
+            input.btn.btn-primary(type="submit", value="Update")
+        each conversation, i in conversations 
+          .tab-pane.fade(id=`chat${i}`, role="tabpanel" aria-labelledby=`chat${i}-tab`)
+            b Raw chat data (markdown)
+            hr
+            div
+              each m in conversation.messages
+                - const index = messageLookup.indexOf(m)
+                div 
+                  p.header-row 
+                    b Response:
+                  pre.assistant= messages[index].response
+                  if messages[index].sound.length > 0
+                    i= `Audio file: ${messages[index].sound}`
+                  p.header-row 
+                    b Prompt: 
+                  if messages[index].images.length > 0
+                    each img in messages[index].images
+                      div
+                        img.image-large(src=`/img/${img.filename}`, alt="image")
+                        br
+                        i= `Image file: ${img.filename}`
+                  pre.user= messages[index].prompt

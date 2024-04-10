@@ -56,14 +56,17 @@ class KnowledgeService {
     return entry._id.toString();
   }
 
-  async updateKnowledge(k_id, update_values) {
+  async updateKnowledge(k_id, title, contentMarkdown, category, tags, images) {
+    const date = new Date();
     const entry = await this.knowledgeModel.findById(k_id);
-    const keys = Object.keys(update_values);
-    for (let i = 0; i < keys.length; i++) {
-      if (keys[i] in entry) {
-        entry[keys[i]] = update_values[keys[i]];
-      }
-    }
+
+    entry.title = title;
+    entry.updatedDate = date;
+    entry.contentMarkdown = contentMarkdown;
+    entry.category = category;
+    entry.tags = tags;
+    entry.images = images;
+
     await entry.save();
     return k_id;
   }

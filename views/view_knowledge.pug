@@ -7,6 +7,7 @@ block content
       i= `Updated: ${knowledge.updatedDate}`
       div 
         a.btn.btn-link(href=`/chat4/chat/${knowledge.originConversationId}`) Show chat 
+        a.btn.btn-link(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge 
       p!= knowledge.contentHTML
       each img in knowledge.images
         img.image-large(src=`/img/${img}`, alt="image")

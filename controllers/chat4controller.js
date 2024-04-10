@@ -136,9 +136,17 @@ exports.editknowledge = async (req, res) => {
 
 exports.updateknowledge = async (req, res) => {
   const knowledge_id = req.params.id;
+  const title = req.body.k_title;
+  const contentMarkdown = req.body.k_content;
+  const category = req.body.k_category;
+  const tags = req.body.k_tags.split(', ').join(',').split(' ').join('_').split(',');
+  const input_images = req.body.k_images.split(', ').join(',').split(' ').join('_').split(',');
 
-  // TODO Do the updating
-  console.log(req.body);
+  const images = [];
+  input_images.forEach(d => {
+    if (d.length > 0) images.push(d);
+  });
+  await knowledgeService.updateKnowledge(knowledge_id, title, contentMarkdown, category, tags, images);
 
   res.redirect(`/chat4/viewknowledge/${knowledge_id}`);
 };
