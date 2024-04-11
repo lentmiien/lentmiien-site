@@ -4,37 +4,40 @@ block content
   .row
     .col
       h2 New chat
-
-  .row 
-    .col 
-      form(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
-        label(for="title") Title 
-        input#title.form-control(type="text", name="title", required)
-        label(for="category") Category 
-        input#category.form-control(type="text", name="category", required)
-        label(for="tags") Tags (comma separated)
-        input#tags.form-control(type="text", name="tags", required)
-        label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
-        input#imgs.form-control(type="file", name="imgs", multiple)
-        label(for="context") Context
-        textarea#context.form-control(name="context", cols="30", rows="10", required) You are a helpful assistant.
-        label(for="prompt") Prompt
-        textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
-        #knowledge_container.row
-        .button-container
-          button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
-          input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
-  .row 
-    .col 
-      h2 Chat history 
-      each category in categories
-        h3= category
-        .button-container
-          each c in conversations
-            if category === c.category
-              a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
-                div= c.title
-                div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
+      ul#myTab.nav.nav-tabs(role="tablist")
+        li.nav-item(role="presentation")
+          button#newchat-tab.nav-link(data-bs-toggle="tab", data-bs-target="#newchat", type="button", role="tab", aria-controls="newchat", aria-selected="false") New chat
+        li.nav-item(role="presentation")
+          button#chathistory-tab.nav-link.active(data-bs-toggle="tab", data-bs-target=`#chathistory`, type="button", role="tab", aria-controls=`chathistory`, aria-selected="true") Chat history
+      #myTabContent.tab-content
+        #newchat.tab-pane.fade(role="tabpanel" aria-labelledby="newchat-tab")
+          form(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
+            label(for="title") Title 
+            input#title.form-control(type="text", name="title", required)
+            label(for="category") Category 
+            input#category.form-control(type="text", name="category", required)
+            label(for="tags") Tags (comma separated)
+            input#tags.form-control(type="text", name="tags", required)
+            label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
+            input#imgs.form-control(type="file", name="imgs", multiple)
+            label(for="context") Context
+            textarea#context.form-control(name="context", cols="30", rows="10", required) You are a helpful assistant.
+            label(for="prompt") Prompt
+            textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
+            #knowledge_container.row
+            .button-container
+              button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
+              input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
+      #myTabContent.tab-content
+        #chathistory.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chathistory-tab")
+          each category in categories
+            h3= category
+            .button-container
+              each c in conversations
+                if category === c.category
+                  a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
+                    div= c.title
+                    div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
   #templatespopup.popup.popup-wrapper 
     .popup-content 
       span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;

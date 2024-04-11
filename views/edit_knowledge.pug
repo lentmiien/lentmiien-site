@@ -8,7 +8,7 @@ block content
           button#knowledge-tab.nav-link.active(data-bs-toggle="tab", data-bs-target="#knowledge", type="button", role="tab", aria-controls="knowledge", aria-selected="true") Knowledge 
         each conversation, i in conversations 
           li.nav-item(role="presentation")
-            button.nav-link(id=`chat${i}-tab`, data-bs-toggle="tab", data-bs-target=`#chat${i}`, type="button", role="tab", aria-controls=`chat${i}`, aria-selected="false")= `Chat#${i}`
+            button.nav-link(id=`chat${i}-tab`, data-bs-toggle="tab", data-bs-target=`#chat${i}`, type="button", role="tab", aria-controls=`chat${i}`, aria-selected="false")= `${conversation._id.toString() === knowledge.originConversationId ? "Origin" : "Chat " + i}`
       #myTabContent.tab-content
         #knowledge.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="knowledge-tab")
           b Update to Knowledge database

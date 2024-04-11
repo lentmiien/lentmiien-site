@@ -129,7 +129,8 @@ exports.editknowledge = async (req, res) => {
       }
     }
   }
-  const messages = await messageService.getMessagesByIdArray(messageLookup);
+  const messages = await messageService.getMessagesByIdArray(messageLookup, false);
+  messageLookup.reverse();
 
   res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations, messageLookup, messages});
 };
