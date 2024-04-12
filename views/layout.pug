@@ -18,6 +18,7 @@ html(lang='en')
     .nav-placeholder
     .navbar-icon(onclick="toggleNavbar()") ☰
     a#goTopPageBtn.nav-action-btn(href=`${loggedIn ? "/mypage" : "/"}`) ⌂
+    button#actionBtn.nav-action-btn(disabled) ---
     #navbar.navbar
       .navbar-column
         a.type-1-link(href="/blog", style="width:100%;") Blog

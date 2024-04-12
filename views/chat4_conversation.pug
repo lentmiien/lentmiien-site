@@ -7,7 +7,7 @@ block content
 
   .row 
     .col 
-      form(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
+      form#chatform(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
         input#title(type="hidden", name="title", value=`${conversation.title}`, novalidate)
         input#category(type="hidden", name="category", value=`${conversation.category}`, novalidate)
         input#tags(type="hidden", name="tags", value=`${conversation.tags.join(',')}`, novalidate)
@@ -61,7 +61,6 @@ block content
         textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
   #settingspopup.popup.popup-wrapper 
     .popup-content 
-      span.close(onclick="CloseSettingsPopup()") &times;
       .row 
         .col
           h3 Chat
@@ -101,7 +100,6 @@ block content
             option(value="shimmer") Shimmer
   #templatespopup.popup.popup-wrapper 
     .popup-content 
-      span.close(onclick="CloseTemplatesPopup()") &times;
       .row 
         .col
           h3 Templates
@@ -119,7 +117,6 @@ block content
                 option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
   #savepopup.popup.popup-wrapper 
     .popup-content 
-      span.close(onclick="CloseSavePopup()") &times;
       .row 
         .col
           ul#myTab.nav.nav-tabs(role="tablist")
@@ -173,7 +170,6 @@ block content
             #other.tab-pane.fade(role="tabpanel" aria-labelledby="other-tab")
               b Other save controls (health log, changes to conversation without posting)
   #imageModal.modal
-    span.close-btn(onclick="closeModalPopup()") &times;
     img#fullSizeImage.modal-content(src="", alt="Full Size Image")
   #loadingPopup.loading-popup
     .loading-content

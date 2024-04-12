@@ -27,13 +27,21 @@ const toolttsmodel = document.getElementById("toolttsmodel");
 const sound_voice = document.getElementById("sound_voice");
 const toolvoice = document.getElementById("toolvoice");
 
+const chatform = document.getElementById("chatform");
+
+// Nav action button
+const actionBtn = document.getElementById("actionBtn");
+
 // Show popup for editing conversation details (title, category, tags, context, ...)
 function SettingsPopup() {
   settingspopup.style.display = "block";
+  setActionButton("Close", CloseSettingsPopup);
 }
 
 // Update the values when popup is closed
 function CloseSettingsPopup() {
+  setActionButton("Prompt", sendPrompt)
+
   // Chat
   chattitle.innerText = tooltitle.value;
   title.value = tooltitle.value;
@@ -55,20 +63,24 @@ function CloseSettingsPopup() {
 // Show a popup for selecting prompt templates
 function TemplatesPopup() {
   templatespopup.style.display = "block";
+  setActionButton("Close", CloseTemplatesPopup);
 }
 
 // Close popup
 function CloseTemplatesPopup() {
+  setActionButton("Prompt", sendPrompt);
   templatespopup.style.display = "none";
 }
 
 // Show a popup for saving options
 function SavePopup() {
   savepopup.style.display = "block";
+  setActionButton("Close", CloseSavePopup);
 }
 
 // Close popup
 function CloseSavePopup() {
+  setActionButton("Prompt", sendPrompt);
   savepopup.style.display = "none";
 }
 
@@ -138,9 +150,13 @@ function showModalPopup(img) {
   
   // Show the modal
   modal.style.display = "block";
+
+  setActionButton("Close", closeModalPopup);
 }
 function closeModalPopup() {
   modal.style.display = "none";
+
+  setActionButton("Prompt", sendPrompt);
 }
 
 function knowledgeCheck(element) {
@@ -183,4 +199,23 @@ function knowledgeCheck(element) {
       select_element.checked = false;
     }
   }
+}
+
+// Set action button
+let currentEvent = null;
+function setActionButton(text, func) {
+  actionBtn.innerText = text;
+  actionBtn.style.cursor = "pointer";
+  actionBtn.disabled = false;
+  if (currentEvent) {
+    actionBtn.removeEventListener("click", currentEvent)
+  }
+  actionBtn.addEventListener("click", func);
+  currentEvent = func;
+}
+setActionButton("Prompt", sendPrompt);
+
+function sendPrompt() {
+  showLoadingPopup();
+  chatform.submit();
 }

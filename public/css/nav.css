@@ -2,7 +2,7 @@
   height: 25px;
 }
 
-.navbar-icon, #goTopPageBtn {
+.navbar-icon, #goTopPageBtn, #actionBtn {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -26,6 +26,12 @@
 #goTopPageBtn {
   top: 0px; /* Adjust based on layout and size of navbar-icon */
   right: 0px; /* Adjust based on layout */
+}
+
+#actionBtn {
+  top: 0px; /* Adjust based on layout and size of navbar-icon */
+  left: 35vw; /* Adjust based on layout */
+  cursor: not-allowed;
 }
 
 .navbar {

@@ -11,7 +11,7 @@ block content
           button#chathistory-tab.nav-link.active(data-bs-toggle="tab", data-bs-target=`#chathistory`, type="button", role="tab", aria-controls=`chathistory`, aria-selected="true") Chat history
       #myTabContent.tab-content
         #newchat.tab-pane.fade(role="tabpanel" aria-labelledby="newchat-tab")
-          form(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
+          form#chatform(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
             label(for="title") Title 
             input#title.form-control(type="text", name="title", required)
             label(for="category") Category 
@@ -40,7 +40,6 @@ block content
                     div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
   #templatespopup.popup.popup-wrapper 
     .popup-content 
-      span#closePopupBtn.close(onclick="CloseTemplatesPopup()") &times;
       .row 
         .col
           h3 Templates
