@@ -20,12 +20,12 @@
 
 .navbar-icon {
   top: 0px; /* Adjust based on layout */
-  left: 0px; /* Adjust based on layout */
+  right: 0px; /* Adjust based on layout */
 }
 
 #goTopPageBtn {
   top: 0px; /* Adjust based on layout and size of navbar-icon */
-  right: 0px; /* Adjust based on layout */
+  left: 0px; /* Adjust based on layout */
 }
 
 #actionBtn {
