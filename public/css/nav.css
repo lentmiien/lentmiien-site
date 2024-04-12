@@ -1,26 +1,31 @@
+.nav-placeholder {
+  height: 25px;
+}
+
 .navbar-icon, #goTopPageBtn {
   display: flex;
   justify-content: center;
   align-items: center;
   position: fixed;
-  width: 50px; /* Fixed width */
-  height: 50px; /* Fixed height */
-  right: 20px; /* Adjust based on layout */
+  width: 30vw; /* Fixed width */
+  height: 25px; /* Fixed height */
   cursor: pointer;
   z-index: 5;
   background-color: #000; /* Example background color */
   color: #fff; /* Example icon color */
-  border-radius: 50%; /* Optional: for rounded corners */
+  border-radius: 5px; /* Optional: for rounded corners */
   text-decoration: none; /* Removes underline from the link (for #goTopPageBtn) */
-  border: 5px solid white;
+  border: 1px solid white;
 }
 
 .navbar-icon {
-  top: 20px; /* Adjust based on layout */
+  top: 0px; /* Adjust based on layout */
+  left: 0px; /* Adjust based on layout */
 }
 
 #goTopPageBtn {
-  top: 80px; /* Adjust based on layout and size of navbar-icon */
+  top: 0px; /* Adjust based on layout and size of navbar-icon */
+  right: 0px; /* Adjust based on layout */
 }
 
 .navbar {
