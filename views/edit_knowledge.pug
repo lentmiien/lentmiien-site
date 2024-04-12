@@ -30,7 +30,10 @@ block content
             b Raw chat data (markdown)
             hr
             div
-              each m in conversation.messages
+              - let i = conversation.messages.length
+              while i > 0
+                - i = i - 1
+                - const m = conversation.messages[i]
                 - const index = messageLookup.indexOf(m)
                 div 
                   p.header-row 
