@@ -150,13 +150,9 @@ function showModalPopup(img) {
   
   // Show the modal
   modal.style.display = "block";
-
-  setActionButton("Close", closeModalPopup);
 }
 function closeModalPopup() {
   modal.style.display = "none";
-
-  setActionButton("Prompt", sendPrompt);
 }
 
 function knowledgeCheck(element) {
