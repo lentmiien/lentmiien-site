@@ -8,8 +8,11 @@ block content
       div 
         a.btn.btn-link(href=`/chat4/chat/${knowledge.originConversationId}`) Show chat 
         a.btn.btn-link(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge 
-      p!= knowledge.contentHTML
+        a.btn.btn-link(href=`/chat4/knowledgelist`) Back
+      hr
       each img in knowledge.images
         img.image-large(src=`/img/${img}`, alt="image")
+      hr
+      p!= knowledge.contentHTML
       p= `${knowledge.category}: ${knowledge.tags.join(", ")}`
       i= `Created by: ${knowledge.user_id}`

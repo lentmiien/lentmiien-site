@@ -3,10 +3,35 @@ extends layout
 block content
   .row
     .col
-      h3#chattitle= conversation.title
-
+      ul#myTab.nav.nav-tabs(role="tablist")
+        li.nav-item(role="presentation")
+          button#settings-tab.nav-link(data-bs-toggle="tab", data-bs-target="#settings", type="button", role="tab", aria-controls="settings", aria-selected="false") Settings
+        li.nav-item(role="presentation")
+          button#chat-tab.nav-link.active(data-bs-toggle="tab", data-bs-target=`#chat`, type="button", role="tab", aria-controls=`chat`, aria-selected="true") Chat
+        li.nav-item(role="presentation")
+          button#templates-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#templates`, type="button", role="tab", aria-controls=`templates`, aria-selected="false") Templates
+        li.nav-item(role="presentation")
+          button#knowledge-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#knowledge`, type="button", role="tab", aria-controls=`knowledge`, aria-selected="false") Knowledge
+        li.nav-item(role="presentation")
+          button#rawchat-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#rawchat`, type="button", role="tab", aria-controls=`rawchat`, aria-selected="false") Raw chat
+      .tab-content
+        #settings.tab-pane.fade(role="tabpanel" aria-labelledby="settings-tab")
+          h3 Various settings
+      .tab-content
+        #chat.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chat-tab")
+          h3 Chat-conversation
+      .tab-content
+        #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")
+          h3 Select templates and knowledge
+      .tab-content
+        #knowledge.tab-pane.fade(role="tabpanel" aria-labelledby="knowledge-tab")
+          h3 Save to knowledge
+      .tab-content
+        #rawchat.tab-pane.fade(role="tabpanel" aria-labelledby="rawchat-tab")
+          h3 Raw chat data (markdown)
   .row 
     .col 
+      h3#chattitle= conversation.title
       form#chatform(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
         input#title(type="hidden", name="title", value=`${conversation.title}`, novalidate)
         input#category(type="hidden", name="category", value=`${conversation.category}`, novalidate)
