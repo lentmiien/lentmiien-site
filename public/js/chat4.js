@@ -62,14 +62,12 @@ function CloseSettingsPopup() {
 
 // Show a popup for selecting prompt templates
 function TemplatesPopup() {
-  templatespopup.style.display = "block";
-  setActionButton("Close", CloseTemplatesPopup);
+  document.getElementById("templates-tab").click();
 }
 
 // Close popup
 function CloseTemplatesPopup() {
-  setActionButton("Prompt", sendPrompt);
-  templatespopup.style.display = "none";
+  document.getElementById("newchat-tab").click();
 }
 
 // Show a popup for saving options

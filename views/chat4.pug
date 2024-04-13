@@ -8,8 +8,10 @@ block content
         li.nav-item(role="presentation")
           button#newchat-tab.nav-link(data-bs-toggle="tab", data-bs-target="#newchat", type="button", role="tab", aria-controls="newchat", aria-selected="false") New chat
         li.nav-item(role="presentation")
+          button#templates-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#templates`, type="button", role="tab", aria-controls=`templates`, aria-selected="false") Templates
+        li.nav-item(role="presentation")
           button#chathistory-tab.nav-link.active(data-bs-toggle="tab", data-bs-target=`#chathistory`, type="button", role="tab", aria-controls=`chathistory`, aria-selected="true") Chat history
-      #myTabContent.tab-content
+      .tab-content
         #newchat.tab-pane.fade(role="tabpanel" aria-labelledby="newchat-tab")
           form#chatform(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
             label(for="title") Title 
@@ -28,22 +30,8 @@ block content
             .button-container
               button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
               input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
-      #myTabContent.tab-content
-        #chathistory.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chathistory-tab")
-          each category in categories
-            h3= category
-            .button-container
-              each c in conversations
-                if category === c.category
-                  .input-group
-                    a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
-                      div= c.title
-                      div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
-                    button.btn.btn-info(data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
-  #templatespopup.popup.popup-wrapper 
-    .popup-content 
-      .row 
-        .col
+      .tab-content
+        #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")
           h3 Templates
           label(for="prompt_template") Chat prompt 
           select#prompt_template.form-control(name="prompt_template", onchange="SetChatTemplate(this)") 
@@ -64,6 +52,18 @@ block content
               .col
                 input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-bs-toggle="tooltip", data-bs-placement="bottom", data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)")
                 span=  knowledge.title
+      .tab-content
+        #chathistory.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chathistory-tab")
+          each category in categories
+            h3= category
+            .button-container
+              each c in conversations
+                if category === c.category
+                  .input-group
+                    a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
+                      div= c.title
+                      div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
+                    button.btn.btn-info(data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
   #loadingPopup.loading-popup
     .loading-content
       .loader
