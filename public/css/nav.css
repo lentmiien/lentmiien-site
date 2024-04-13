@@ -31,6 +31,11 @@
 #actionBtn {
   top: 0px; /* Adjust based on layout and size of navbar-icon */
   left: 35vw; /* Adjust based on layout */
+}
+
+#actionBtn:disabled {
+  color: #444;
+  background-color: #444;
   cursor: not-allowed;
 }
 
