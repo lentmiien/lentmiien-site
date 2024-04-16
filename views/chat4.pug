@@ -49,8 +49,8 @@ block content
           .row
             each knowledge in knowledges 
               .col
-                input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-bs-toggle="tooltip", data-bs-placement="bottom", data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)")
-                span=  knowledge.title
+                input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)")
+                span(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${knowledge.contentMarkdown}`)= ` ${knowledge.title}`
       .tab-content
         #chathistory.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chathistory-tab")
           each category in categories
@@ -58,11 +58,11 @@ block content
             .button-container
               each c in conversations
                 if category === c.category
-                  .input-group
+                  .btn-group(role="group")
                     a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
                       div= c.title
                       div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
-                    button.btn.btn-info(data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
+                    button.btn.btn-outline-info(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
   #loadingPopup.loading-popup
     .loading-content
       .loader

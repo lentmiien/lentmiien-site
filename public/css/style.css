@@ -380,3 +380,7 @@
 .header-row {
   background-color: lightgray;
 }
+
+.infobutton {
+  cursor: help;
+}

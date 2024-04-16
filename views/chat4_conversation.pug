@@ -16,145 +16,119 @@ block content
           button#rawchat-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#rawchat`, type="button", role="tab", aria-controls=`rawchat`, aria-selected="false") Raw chat
       .tab-content
         #settings.tab-pane.fade(role="tabpanel" aria-labelledby="settings-tab")
-          h3 Various settings
+          .row 
+            .col
+              h3 Chat
+              label(for="tooltitle") Title
+              input#tooltitle.form-control(type="text", name="tooltitle", value=`${conversation.title}`)
+              label(for="toolcategory") Category
+              input#toolcategory.form-control(type="text", name="toolcategory", value=`${conversation.category}`)
+              label(for="tooltags") Tags (comma separated)
+              input#tooltags.form-control(type="text", name="tooltags", value=`${conversation.tags.join(',')}`)
+              label(for="toolcontext") Context
+              textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10")= `${conversation.context_prompt}`
+          .row 
+            .col 
+              h3 Image
+              label(for="toolquality") Image quality 
+              select#toolquality.form-control(name="toolquality") 
+                option(value="hd") High Quality
+                option(value="standard") Standard
+              label(for="toolsize") Image size 
+              select#toolsize.form-control(name="toolsize") 
+                option(value="1024x1024") 1024x1024
+                option(value="1792x1024") 1792x1024
+                option(value="1024x1792") 1024x1792
+            .col
+              h3 TTS
+              label(for="toolttsmodel") TTS Model 
+              select#toolttsmodel.form-control(name="toolttsmodel") 
+                option(value="tts-1") Text-To-Speech 1
+                option(value="tts-1-hd") Text-To-Speech 1 HD
+              label(for="toolvoice") TTS Voice 
+              select#toolvoice.form-control(name="toolvoice") 
+                option(value="nova") Nova
+                option(value="alloy") Alloy
+                option(value="echo") Echo
+                option(value="fable") Fable
+                option(value="onyx") Onyx
+                option(value="shimmer") Shimmer
+          .row 
+            .col 
+              button.btn.btn-primary(onclick="UpdateSettings()") Update
       .tab-content
         #chat.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chat-tab")
-          h3 Chat-conversation
+          h3#chattitle= conversation.title
+          form#chatform(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
+            input#title(type="hidden", name="title", value=`${conversation.title}`, novalidate)
+            input#category(type="hidden", name="category", value=`${conversation.category}`, novalidate)
+            input#tags(type="hidden", name="tags", value=`${conversation.tags.join(',')}`, novalidate)
+            label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
+            input#imgs.form-control(type="file", name="imgs", multiple)
+            textarea#context(style="display:none;", name="context", cols="30", rows="10", novalidate)= `${conversation.context_prompt}`
+            label(for="prompt") Prompt
+            textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
+            .button-container
+              button.btn.btn-success(type="button", onclick="RunImageForm()") Image
+              button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
+              input.btn.btn-primary(type="submit", value="Prompt", onclick="showLoadingPopup()")
+            div 
+              each m in messages
+                div 
+                  p.header-row 
+                    b Response: 
+                    | (
+                    input(id=`end_${m._id.toString()}`, type="radio", name="end_message", value=`${m._id.toString()}`)
+                    span  New conversation end
+                    | )
+                  .assistant!= m.response_html
+                  if m.sound.length > 0
+                    audio(controls)
+                      source(src=`/mp3/${m.sound}`, type="audio/mpeg")
+                  p.header-row 
+                    b Prompt: 
+                    | (
+                    input(id=`start_${m._id.toString()}`, type="radio", name="start_message", value=`${m._id.toString()}`)
+                    span  New conversation start/Select for image and sound generation
+                    | )
+                  if m.images.length > 0
+                    each img in m.images
+                      div
+                        div.chat4_img_wrapper
+                          img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
+                        input.chat4_img_slide(id=`${img.filename}` type="range", name=`${img.filename}`, min="0", max="2", step="1", value=`${img.use_flag === 'high quality' ? 2 : (img.use_flag === 'low quality' ? 1 : 0)}`)
+                  .user!= m.prompt_html
+          form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")
+            input#image_message_id(type="hidden", name="image_message_id")
+            input#image_quality(type="hidden", name="image_quality", value="hd")
+            input#image_size(type="hidden", name="image_size", value="1024x1024")
+            textarea#image_prompt(style="display:none;", name="image_prompt", cols="30", rows="10")
+          form#sound_form(action=`/chat4/generate_sound/${conversation._id.toString()}`, method="post")
+            input#sound_message_id(type="hidden", name="sound_message_id")
+            input#sound_model(type="hidden", name="sound_model", value="tts-1")
+            input#sound_voice(type="hidden", name="sound_voice", value="nova")
+            textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
       .tab-content
         #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")
-          h3 Select templates and knowledge
+          .row 
+            .col
+              h3 Templates
+              label(for="prompt_template") Chat prompt 
+              select#prompt_template.form-control(name="prompt_template", onchange="SetChatTemplate(this)") 
+                option(value="") -Select-
+                each t in templates
+                  if t.Type === "chat" || t.Type === "image"
+                    option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
+              label(for="context_template") Context prompt 
+              select#context_template.form-control(name="context_template", onchange="SetContextTemplate(this)") 
+                option(value="") -Select-
+                each t in templates
+                  if t.Type === "context"
+                    option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
       .tab-content
         #knowledge.tab-pane.fade(role="tabpanel" aria-labelledby="knowledge-tab")
-          h3 Save to knowledge
-      .tab-content
-        #rawchat.tab-pane.fade(role="tabpanel" aria-labelledby="rawchat-tab")
-          h3 Raw chat data (markdown)
-  .row 
-    .col 
-      h3#chattitle= conversation.title
-      form#chatform(action=`/chat4/post/${conversation._id.toString()}`, method="post", enctype="multipart/form-data") 
-        input#title(type="hidden", name="title", value=`${conversation.title}`, novalidate)
-        input#category(type="hidden", name="category", value=`${conversation.category}`, novalidate)
-        input#tags(type="hidden", name="tags", value=`${conversation.tags.join(',')}`, novalidate)
-        label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
-        input#imgs.form-control(type="file", name="imgs", multiple)
-        textarea#context(style="display:none;", name="context", cols="30", rows="10", novalidate)= `${conversation.context_prompt}`
-        label(for="prompt") Prompt
-        textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
-        .button-container
-          button.btn.btn-secondary(type="button", onclick="SettingsPopup()") Settings
-          button.btn.btn-secondary(type="button", onclick="TemplatesPopup()") Templates
-          button.btn.btn-success(type="button", onclick="RunImageForm()") Image
-          button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
-          button.btn.btn-warning(type="button", onclick="SavePopup()") Save
-          input.btn.btn-primary(type="submit", value="Prompt", onclick="showLoadingPopup()")
-        div 
-          each m in messages
-            div 
-              p.header-row 
-                b Response: 
-                | (
-                input(id=`end_${m._id.toString()}`, type="radio", name="end_message", value=`${m._id.toString()}`)
-                span  New conversation end
-                | )
-              .assistant!= m.response_html
-              if m.sound.length > 0
-                audio(controls)
-                  source(src=`/mp3/${m.sound}`, type="audio/mpeg")
-              p.header-row 
-                b Prompt: 
-                | (
-                input(id=`start_${m._id.toString()}`, type="radio", name="start_message", value=`${m._id.toString()}`)
-                span  New conversation start/Select for image and sound generation
-                | )
-              if m.images.length > 0
-                each img in m.images
-                  div
-                    div.chat4_img_wrapper
-                      img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
-                    input.chat4_img_slide(id=`${img.filename}` type="range", name=`${img.filename}`, min="0", max="2", step="1", value=`${img.use_flag === 'high quality' ? 2 : (img.use_flag === 'low quality' ? 1 : 0)}`)
-              .user!= m.prompt_html
-      form#image_form(action=`/chat4/generate_image/${conversation._id.toString()}`, method="post")
-        input#image_message_id(type="hidden", name="image_message_id")
-        input#image_quality(type="hidden", name="image_quality", value="hd")
-        input#image_size(type="hidden", name="image_size", value="1024x1024")
-        textarea#image_prompt(style="display:none;", name="image_prompt", cols="30", rows="10")
-      form#sound_form(action=`/chat4/generate_sound/${conversation._id.toString()}`, method="post")
-        input#sound_message_id(type="hidden", name="sound_message_id")
-        input#sound_model(type="hidden", name="sound_model", value="tts-1")
-        input#sound_voice(type="hidden", name="sound_voice", value="nova")
-        textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
-  #settingspopup.popup.popup-wrapper 
-    .popup-content 
-      .row 
-        .col
-          h3 Chat
-          label(for="tooltitle") Title
-          input#tooltitle.form-control(type="text", name="tooltitle", value=`${conversation.title}`)
-          label(for="toolcategory") Category
-          input#toolcategory.form-control(type="text", name="toolcategory", value=`${conversation.category}`)
-          label(for="tooltags") Tags (comma separated)
-          input#tooltags.form-control(type="text", name="tooltags", value=`${conversation.tags.join(',')}`)
-          label(for="toolcontext") Context
-          textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10")= `${conversation.context_prompt}`
-      .row 
-        .col 
-          h3 Image
-          label(for="toolquality") Image quality 
-          select#toolquality.form-control(name="toolquality") 
-            option(value="hd") High Quality
-            option(value="standard") Standard
-          label(for="toolsize") Image size 
-          select#toolsize.form-control(name="toolsize") 
-            option(value="1024x1024") 1024x1024
-            option(value="1792x1024") 1792x1024
-            option(value="1024x1792") 1024x1792
-        .col
-          h3 TTS
-          label(for="toolttsmodel") TTS Model 
-          select#toolttsmodel.form-control(name="toolttsmodel") 
-            option(value="tts-1") Text-To-Speech 1
-            option(value="tts-1-hd") Text-To-Speech 1 HD
-          label(for="toolvoice") TTS Voice 
-          select#toolvoice.form-control(name="toolvoice") 
-            option(value="nova") Nova
-            option(value="alloy") Alloy
-            option(value="echo") Echo
-            option(value="fable") Fable
-            option(value="onyx") Onyx
-            option(value="shimmer") Shimmer
-  #templatespopup.popup.popup-wrapper 
-    .popup-content 
-      .row 
-        .col
-          h3 Templates
-          label(for="prompt_template") Chat prompt 
-          select#prompt_template.form-control(name="prompt_template", onchange="SetChatTemplate(this)") 
-            option(value="") -Select-
-            each t in templates
-              if t.Type === "chat" || t.Type === "image"
-                option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
-          label(for="context_template") Context prompt 
-          select#context_template.form-control(name="context_template", onchange="SetContextTemplate(this)") 
-            option(value="") -Select-
-            each t in templates
-              if t.Type === "context"
-                option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
-  #savepopup.popup.popup-wrapper 
-    .popup-content 
-      .row 
-        .col
-          ul#myTab.nav.nav-tabs(role="tablist")
-            li.nav-item(role="presentation")
-              button#save-tab.nav-link.active(data-bs-toggle="tab", data-bs-target="#save", type="button", role="tab", aria-controls="save", aria-selected="true") Save
-            li.nav-item(role="presentation")
-              button#source-tab.nav-link(data-bs-toggle="tab", data-bs-target="#source", type="button", role="tab", aria-controls="source", aria-selected="false") Source
-            li.nav-item(role="presentation")
-              button#blog-tab.nav-link(data-bs-toggle="tab", data-bs-target="#blog", type="button", role="tab", aria-controls="blog", aria-selected="false") Blog
-            li.nav-item(role="presentation")
-              button#other-tab.nav-link(data-bs-toggle="tab", data-bs-target="#other", type="button", role="tab", aria-controls="other", aria-selected="false") Other
-          #myTabContent.tab-content
-            #save.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="save-tab")
+          .row 
+            .col
               b Save to Knowledge database
               hr
               form(action="/chat4/saveknowledge", method="post") 
@@ -170,7 +144,10 @@ block content
                 label(for="k_images") Images (comma separated filenames)
                 input#k_images.form-control(type="text", name="k_images")
                 input.btn.btn-primary(type="submit", value="Save", onclick="showLoadingPopup()")
-            #source.tab-pane.fade(role="tabpanel" aria-labelledby="source-tab")
+      .tab-content
+        #rawchat.tab-pane.fade(role="tabpanel" aria-labelledby="rawchat-tab")
+          .row 
+            .col
               b Raw chat data (markdown)
               hr
               div
@@ -190,10 +167,6 @@ block content
                             img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
                           i= `Image file: ${img.filename}`
                     pre.user= m.prompt
-            #blog.tab-pane.fade(role="tabpanel" aria-labelledby="blog-tab")
-              b Post blog post controls
-            #other.tab-pane.fade(role="tabpanel" aria-labelledby="other-tab")
-              b Other save controls (health log, changes to conversation without posting)
   #imageModal.modal
     span.close-btn(onclick="closeModalPopup()") &times;
     img#fullSizeImage.modal-content(src="", alt="Full Size Image")

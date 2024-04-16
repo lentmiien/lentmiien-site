@@ -1,7 +1,11 @@
-const settingspopup = document.getElementById("settingspopup");
-const templatespopup = document.getElementById("templatespopup");
-const savepopup = document.getElementById("savepopup");
 const loadingPopup = document.getElementById("loadingPopup");
+
+// Tabs
+const settings_tab = document.getElementById("settings-tab");
+const chat_tab = document.getElementById("chat-tab");
+const templates_tab = document.getElementById("templates-tab");
+const knowledge_tab = document.getElementById("knowledge-tab");
+const rawchat_tab = document.getElementById("rawchat-tab");
 
 const modal = document.getElementById('imageModal');
 const modalImg = document.getElementById("fullSizeImage");
@@ -32,16 +36,8 @@ const chatform = document.getElementById("chatform");
 // Nav action button
 const actionBtn = document.getElementById("actionBtn");
 
-// Show popup for editing conversation details (title, category, tags, context, ...)
-function SettingsPopup() {
-  settingspopup.style.display = "block";
-  setActionButton("Close", CloseSettingsPopup);
-}
-
 // Update the values when popup is closed
-function CloseSettingsPopup() {
-  setActionButton("Prompt", sendPrompt)
-
+function UpdateSettings() {
   // Chat
   chattitle.innerText = tooltitle.value;
   title.value = tooltitle.value;
@@ -57,7 +53,7 @@ function CloseSettingsPopup() {
   sound_model.value = toolttsmodel.value;
   sound_voice.value = toolvoice.value;
 
-  settingspopup.style.display = "none";
+  chat_tab.click();
 }
 
 // Show a popup for selecting prompt templates
@@ -67,19 +63,11 @@ function TemplatesPopup() {
 
 // Close popup
 function CloseTemplatesPopup() {
-  document.getElementById("newchat-tab").click();
-}
-
-// Show a popup for saving options
-function SavePopup() {
-  savepopup.style.display = "block";
-  setActionButton("Close", CloseSavePopup);
-}
-
-// Close popup
-function CloseSavePopup() {
-  setActionButton("Prompt", sendPrompt);
-  savepopup.style.display = "none";
+  if (chat_tab) {
+    chat_tab.click();
+  } else {
+    document.getElementById("newchat-tab").click();
+  }
 }
 
 // Apply chat template
