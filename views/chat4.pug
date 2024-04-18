@@ -25,7 +25,7 @@ block content
                     ul.dropdown-menu
                       each val in categories
                         li
-                          a.dropdown-item(href='#', onclick=`setCategory('${val}')`) #{val}
+                          a.dropdown-item(href='#', onclick=`setCategory('category', '${val}')`) #{val}
             .form-group
               label(for='tags') Tags (comma separated)
               .input-group.mb-3
@@ -36,7 +36,7 @@ block content
                     ul.dropdown-menu
                       each val in tags
                         li
-                          a.dropdown-item(href='#', onclick=`setTag('${val}')`) #{val}
+                          a.dropdown-item(href='#', onclick=`setTag('tags', '${val.label}')`) #{val.label} (#{val.count})
             //- label(for="tags") Tags (comma separated)
             //- input#tags.form-control(type="text", name="tags", required)
             label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)

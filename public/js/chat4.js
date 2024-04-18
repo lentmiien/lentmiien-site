@@ -203,14 +203,14 @@ function sendPrompt() {
 }
 
 // Auto-complete helper functions
-function setCategory(value) {
-  const categoryInput = document.getElementById('category');
+function setCategory(id, value) {
+  const categoryInput = document.getElementById(id);
   categoryInput.value = value;
   // Close dropdown manually if needed
 }
 
-function setTag(value) {
-  const tagsInput = document.getElementById('tags');
+function setTag(id, value) {
+  const tagsInput = document.getElementById(id);
   const currentTags = tagsInput.value.split(',').map(tag => tag.trim());
   if (!currentTags.includes(value)) {
     tagsInput.value = currentTags.filter(tag => tag).concat(value).join(',');

@@ -21,10 +21,28 @@ block content
               h3 Chat
               label(for="tooltitle") Title
               input#tooltitle.form-control(type="text", name="tooltitle", value=`${conversation.title}`)
-              label(for="toolcategory") Category
-              input#toolcategory.form-control(type="text", name="toolcategory", value=`${conversation.category}`)
-              label(for="tooltags") Tags (comma separated)
-              input#tooltags.form-control(type="text", name="tooltags", value=`${conversation.tags.join(',')}`)
+              .form-group
+                label(for='toolcategory') Category
+                .input-group.mb-3
+                  input#toolcategory.form-control(type='text', placeholder='Enter category', name='toolcategory', aria-label='Category', value=`${conversation.category}`)
+                  .input-group-append
+                    .dropdown
+                      button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                      ul.dropdown-menu
+                        each val in categories
+                          li
+                            a.dropdown-item(href='#', onclick=`setCategory('toolcategory', '${val}')`) #{val}
+              .form-group
+                label(for='tooltags') Tags (comma separated)
+                .input-group.mb-3
+                  input#tooltags.form-control(type='text', placeholder='Enter tags', name='tooltags', aria-label='Tags', value=`${conversation.tags.join(',')}`)
+                  .input-group-append
+                    .dropdown
+                      button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                      ul.dropdown-menu
+                        each val in tags
+                          li
+                            a.dropdown-item(href='#', onclick=`setTag('tooltags', '${val.label}')`) #{val.label} (#{val.count})
               label(for="toolcontext") Context
               textarea#toolcontext.form-control(name="toolcontext", cols="30", rows="10")= `${conversation.context_prompt}`
           .row 
@@ -137,10 +155,28 @@ block content
                 input(type="hidden", name="k_conversation_id", value=`${conversation._id.toString()}`)
                 label(for="k_content") Content (markdown)
                 textarea#k_content.form-control(name="k_content", cols="30", rows="10")
-                label(for="k_category") Category 
-                input#k_category.form-control(type="text", name="k_category", value=`${conversation.category}`)
-                label(for="k_tags") Tags (comma separated)
-                input#k_tags.form-control(type="text", name="k_tags", value=`${conversation.tags.join(',')}`)
+                .form-group
+                  label(for='k_category') Category
+                  .input-group.mb-3
+                    input#k_category.form-control(type='text', placeholder='Enter category', name='k_category', aria-label='Category', value=`${conversation.category}`)
+                    .input-group-append
+                      .dropdown
+                        button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                        ul.dropdown-menu
+                          each val in categories
+                            li
+                              a.dropdown-item(href='#', onclick=`setCategory('k_category', '${val}')`) #{val}
+                .form-group
+                  label(for='k_tags') Tags (comma separated)
+                  .input-group.mb-3
+                    input#k_tags.form-control(type='text', placeholder='Enter tags', name='k_tags', aria-label='Tags', value=`${conversation.tags.join(',')}`)
+                    .input-group-append
+                      .dropdown
+                        button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                        ul.dropdown-menu
+                          each val in tags
+                            li
+                              a.dropdown-item(href='#', onclick=`setTag('k_tags', '${val.label}')`) #{val.label} (#{val.count})
                 label(for="k_images") Images (comma separated filenames)
                 input#k_images.form-control(type="text", name="k_images")
                 input.btn.btn-primary(type="submit", value="Save", onclick="showLoadingPopup()")

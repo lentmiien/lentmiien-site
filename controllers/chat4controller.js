@@ -10,6 +10,10 @@ const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 
+// Globals
+let categories = [];
+let tags = [];
+
 exports.index = async (req, res) => {
   const user_id = req.user.name;
 
@@ -18,17 +22,30 @@ exports.index = async (req, res) => {
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
 
   // Get all categories and tags
-  const categories = [];
-  const tags = [];
+  categories = [];
+  tags = [];
+  const tags_lookup = [];
   conversations.forEach(d => {
     if (categories.indexOf(d.category) === -1) {
       categories.push(d.category);
     }
     d.tags.forEach(t => {
-      if (tags.indexOf(t) === -1) {
-        tags.push(t);
+      const index = tags_lookup.indexOf(t);
+      if (index === -1) {
+        tags_lookup.push(t);
+        tags.push({
+          label: t,
+          count: 1
+        });
+      } else {
+        tags[index].count++;
       }
     });
+  });
+  tags.sort((a,b) => {
+    if (a.count > b.count) return -1;
+    if (a.count < b.count) return 1;
+    return 0;
   });
 
   res.render("chat4", { conversations, categories, tags, templates, knowledges });
@@ -39,7 +56,7 @@ exports.chat = async (req, res) => {
   const conversation = await conversationService.getConversationsById(req.params.id);
   const messages = await messageService.getMessagesByIdArray(conversation.messages);
   
-  res.render("chat4_conversation", { conversation, messages, templates });
+  res.render("chat4_conversation", { conversation, categories, tags, messages, templates });
 };
 
 exports.post = async (req, res) => {
