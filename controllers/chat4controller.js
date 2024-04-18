@@ -17,14 +17,21 @@ exports.index = async (req, res) => {
   const conversations = await conversationService.getConversationsForUser(user_id);
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
 
+  // Get all categories and tags
   const categories = [];
+  const tags = [];
   conversations.forEach(d => {
     if (categories.indexOf(d.category) === -1) {
       categories.push(d.category);
     }
+    d.tags.forEach(t => {
+      if (tags.indexOf(t) === -1) {
+        tags.push(t);
+      }
+    });
   });
 
-  res.render("chat4", { conversations, categories, templates, knowledges });
+  res.render("chat4", { conversations, categories, tags, templates, knowledges });
 };
 
 exports.chat = async (req, res) => {

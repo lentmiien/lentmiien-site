@@ -15,10 +15,30 @@ block content
           form#chatform(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
             label(for="title") Title 
             input#title.form-control(type="text", name="title", required)
-            label(for="category") Category 
-            input#category.form-control(type="text", name="category", required)
-            label(for="tags") Tags (comma separated)
-            input#tags.form-control(type="text", name="tags", required)
+            .form-group
+              label(for='category') Category
+              .input-group.mb-3
+                input#category.form-control(type='text', placeholder='Enter category', name='category', aria-label='Category')
+                .input-group-append
+                  .dropdown
+                    button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                    ul.dropdown-menu
+                      each val in categories
+                        li
+                          a.dropdown-item(href='#', onclick=`setCategory('${val}')`) #{val}
+            .form-group
+              label(for='tags') Tags (comma separated)
+              .input-group.mb-3
+                input#tags.form-control(type='text', placeholder='Enter tags', name='tags', aria-label='Tags')
+                .input-group-append
+                  .dropdown
+                    button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                    ul.dropdown-menu
+                      each val in tags
+                        li
+                          a.dropdown-item(href='#', onclick=`setTag('${val}')`) #{val}
+            //- label(for="tags") Tags (comma separated)
+            //- input#tags.form-control(type="text", name="tags", required)
             label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
             input#imgs.form-control(type="file", name="imgs", multiple)
             label(for="context") Context
