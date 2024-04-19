@@ -99,29 +99,29 @@ class ConversationService {
 
     // Set context
     let context = parameters.context;
-    const inject_keys = Object.keys(parameters).filter(d => d.indexOf("inject") === 0);
-    if (inject_keys.length > 0) {
-      const inject_ids = inject_keys.map(d => d.split("_")[1]);
-      const knowledges = this.knowledgeService.getKnowledgesByIdArray(inject_ids);
-      const knowledge_lookup = knowledges.map(d => d._id.toString());
-      for (let i = 0; i < inject_keys.length; i++) {
+    if ("knowledge" in parameters && parameters.knowledge.length > 0) {
+      const knowledges = await this.knowledgeService.getKnowledgesByIdArray(parameters.knowledge);
+      const knowledge_lookup = [];
+      knowledges.forEach(d => knowledge_lookup.push(d._id.toString()));
+      for (let i = 0; i < parameters.knowledge.length; i++) {
         // Extend context with knowledge
-        const use_type = parameters[`inject_${inject_keys[i]}`];
-        const text_content = knowledges[knowledge_lookup.indexOf(inject_keys[i])].contentMarkdown;
+        const use_type = parameters[`knowledge_${parameters.knowledge[i]}`];
+        const title = knowledges[knowledge_lookup.indexOf(parameters.knowledge[i])].title;
+        const text_content = knowledges[knowledge_lookup.indexOf(parameters.knowledge[i])].contentMarkdown;
 
-        context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n${text_content}\n\n---`;
+        context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n## ${title}\n\n${text_content}\n\n---`;
       }
     }
     if (context.length > 0) {
       vision_messages.push({
         role: 'system',
         content: [
-          { type: 'text', text: parameters.context }
+          { type: 'text', text: context }
         ]
       });
       text_messages.push({
         role: 'system',
-        content: parameters.context
+        content: context
       });
     }
 
@@ -223,10 +223,10 @@ class ConversationService {
         messages: [ message_data.db_entry._id.toString() ],
         updated_date: new Date(),
       };
-      for (let i = 0; i < inject_keys.length; i++) {
+      for (let i = 0; i < parameters.knowledge.length; i++) {
         conversation_entry.knowledge_injects.push({
-          knowledge_id: inject_keys[i].split("_")[1],
-          use_type: parameters[inject_keys[i]],
+          knowledge_id: parameters.knowledge[i],
+          use_type: parameters[`knowledge_${parameters.knowledge[i]}`],
         });
       }
       const conv_entry = await new this.conversationModel(conversation_entry).save();
