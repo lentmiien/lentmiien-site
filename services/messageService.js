@@ -65,6 +65,15 @@ class MessageService {
     return messages;
   }
 
+  async getMessagesByUserId(user_id) {
+    const messages = await this.messageModel.find({ user_id }).sort({ timestamp: -1 }).exec();
+    for (let i = 0; i < messages.length; i++) {
+      messages[i].prompt_html = marked.parse(messages[i].prompt);
+      messages[i].response_html = marked.parse(messages[i].response);
+    }
+    return messages;
+  }
+
   async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images) {
     // Send to OpenAI API
     const response = await chatGPT(vision_messages, 'gpt-4-turbo-2024-04-09');

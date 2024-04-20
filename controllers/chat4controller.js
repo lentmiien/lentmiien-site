@@ -51,10 +51,24 @@ exports.index = async (req, res) => {
   res.render("chat4", { conversations, categories, tags, templates, knowledges });
 };
 
+// Stitch together a new conversation from existing messages
+exports.stitch = async (req, res) => {
+  const templates = await templateService.getTemplates();
+  const messages = await messageService.getMessagesByUserId(req.user.name);
+  // TODO Knowledge
+
+  res.render("chat4_stitch", {messages, categories, tags, templates});
+};
+
+exports.stitch_post = async (req, res) => {
+  // TODO receive input and generate new conversation
+};
+
 exports.chat = async (req, res) => {
   const templates = await templateService.getTemplates();
   const conversation = await conversationService.getConversationsById(req.params.id);
   const messages = await messageService.getMessagesByIdArray(conversation.messages);
+  // TODO Knowledge
   
   res.render("chat4_conversation", { conversation, categories, tags, messages, templates });
 };
