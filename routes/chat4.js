@@ -9,6 +9,7 @@ const controller = require('../controllers/chat4controller');
 
 // Chat4 top page
 router.get('/', controller.index);
+router.post('/updateconversation/:id', controller.updateconversation);
 router.get('/chat/:id', controller.chat);
 
 // Chat4 post

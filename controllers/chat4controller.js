@@ -51,6 +51,11 @@ exports.index = async (req, res) => {
   res.render("chat4", { conversations, categories, tags, templates, knowledges });
 };
 
+// JSON API endpoint
+exports.updateconversation = async (req, res) => {
+  res.json({updated_conversation_id: await conversationService.updateConversation(req.params.id, req.body)});
+};
+
 // Stitch together a new conversation from existing messages
 exports.stitch = async (req, res) => {
   const user_id = req.user.name;

@@ -87,6 +87,19 @@ class ConversationService {
     return conv_entry._id.toString();
   }
 
+  async updateConversation(conversation_id, parameters) {
+    console.log(conversation_id, parameters);
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    const conversation = await this.conversationModel.findById(conversation_id);
+    conversation.title = parameters.title;
+    conversation.category = parameters.category;
+    conversation.tags = tags_array;
+    conversation.context_prompt = parameters.context;
+    conversation.updated_date = new Date();
+    await conversation.save();
+    return conversation._id.toString();
+  }
+
   async postToConversation(user_id, conversation_id, new_images, parameters) {
     let use_vision = false;
     const vision_messages = [];

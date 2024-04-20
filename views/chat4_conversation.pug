@@ -74,6 +74,7 @@ block content
           .row 
             .col 
               button.btn.btn-primary(onclick="UpdateSettings()") Update
+              button.btn.btn-warning(onclick=`SaveConversationSettings("${conversation._id.toString()}")`) Save changes to database
       .tab-content
         #chat.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chat-tab")
           h3#chattitle= conversation.title
