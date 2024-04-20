@@ -87,10 +87,18 @@ block content
             label(for="prompt") Prompt
             textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
             .button-container
-              button.btn.btn-success(type="button", onclick="RunImageForm()") Image
+              button.btn.btn-success(type="button", onclick="RunImageForm([])") Image
               button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
               input.btn.btn-primary(type="submit", value="Prompt", onclick="showLoadingPopup()")
             #knowledge_container.row
+              each ki in conversation.knowledge_injects
+                .col(id=ki.knowledge_id)
+                  input(type="checkbox", checked, value=ki.knowledge_id, name="knowledge", data-id=ki.knowledge_id, data-title=knowledges[knowledge_id_to_index[ki.knowledge_id]].title, onclick="knowledgeCheck(this)")
+                  span= ` ${knowledges[knowledge_id_to_index[ki.knowledge_id]].title} `
+                  select(id=`knowledge_${ki.knowledge_id}`, name=`knowledge_${ki.knowledge_id}`) 
+                    option(value="context", selected=(ki.use_type === "context")) Context 
+                    option(value="reference", selected=(ki.use_type === "reference")) Reference 
+                    option(value="example", selected=(ki.use_type === "example")) Example 
             div 
               each m in messages
                 div 
@@ -144,6 +152,13 @@ block content
                 each t in templates
                   if t.Type === "context"
                     option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
+              hr
+              h3 Knowledges 
+              .row
+                each knowledge in knowledges 
+                  .col
+                    input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)", checked=(used_knowledge_ids.indexOf(knowledge._id.toString()) >= 0))
+                    span(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${knowledge.contentMarkdown}`)= ` ${knowledge.title}`
       .tab-content
         #knowledge.tab-pane.fade(role="tabpanel" aria-labelledby="knowledge-tab")
           .row 

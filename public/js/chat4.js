@@ -155,7 +155,7 @@ function knowledgeCheck(element) {
     input.dataset.title = element.dataset.title;
     input.setAttribute("onclick", "knowledgeCheck(this)")
     const span = document.createElement("span");
-    span.innerText = ` ${element.dataset.title}`;
+    span.innerText = ` ${element.dataset.title} `;
     const select = document.createElement("select");
     select.name = `knowledge_${element.dataset.id}`;
     const option1 = document.createElement("option");

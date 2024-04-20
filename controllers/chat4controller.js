@@ -53,8 +53,10 @@ exports.index = async (req, res) => {
 
 // Stitch together a new conversation from existing messages
 exports.stitch = async (req, res) => {
+  const user_id = req.user.name;
+
   const templates = await templateService.getTemplates();
-  const messages = await messageService.getMessagesByUserId(req.user.name);
+  const messages = await messageService.getMessagesByUserId(user_id);
   // TODO Knowledge
 
   res.render("chat4_stitch", {messages, categories, tags, templates});
@@ -65,12 +67,20 @@ exports.stitch_post = async (req, res) => {
 };
 
 exports.chat = async (req, res) => {
+  const user_id = req.user.name;
+
   const templates = await templateService.getTemplates();
   const conversation = await conversationService.getConversationsById(req.params.id);
   const messages = await messageService.getMessagesByIdArray(conversation.messages);
-  // TODO Knowledge
+  const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
+
+  // Knovledge id to index
+  const knowledge_id_to_index = {};
+  knowledges.forEach((d, i) => knowledge_id_to_index[d._id.toString()] = i);
+  const used_knowledge_ids = [];
+  conversation.knowledge_injects.forEach(d => used_knowledge_ids.push(d.knowledge_id));
   
-  res.render("chat4_conversation", { conversation, categories, tags, messages, templates });
+  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids });
 };
 
 exports.post = async (req, res) => {
