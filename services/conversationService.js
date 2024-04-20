@@ -88,7 +88,6 @@ class ConversationService {
   }
 
   async updateConversation(conversation_id, parameters) {
-    console.log(conversation_id, parameters);
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     const conversation = await this.conversationModel.findById(conversation_id);
     conversation.title = parameters.title;
