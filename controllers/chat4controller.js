@@ -111,12 +111,21 @@ exports.post = async (req, res) => {
 };
 
 exports.delete_conversation = async (req, res) => {
+  const user_id = req.user.name;
   const id_to_delete = req.params.id;
 
-  // TODO add protection so that if a knowledge entry links to the conversation, then can't delete, show error message instead
+  // Protection so that if a knowledge entry links to the conversation, then can't delete, show error message instead
+  const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
+  const locked_ids = [];
+  knowledges.forEach(d => locked_ids.push(d.originConversationId));
 
-  await conversationService.deleteConversation(id_to_delete);
-  res.redirect('/chat4');
+  const index = locked_ids.indexOf(id_to_delete);
+  if (index === -1) {
+    await conversationService.deleteConversation(id_to_delete);
+    res.redirect('/chat4');
+  } else {
+    res.render("error_page", {error: `Can't delete conversation [${id_to_delete}], as knowledge entry [${knowledges[index].title}] refers to this conversation.`})
+  }
 };
 
 exports.generate_image = async (req, res) => {
@@ -147,14 +156,34 @@ exports.knowledgelist = async (req, res) => {
   const user_id = req.user.name;
 
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
-  const categories = [];
+  const knowledge_categories = [];
+  const knowledge_tags = [];
+  const tags_lookup = [];
+
   knowledges.forEach(d => {
-    if (categories.indexOf(d.category) === -1) {
-      categories.push(d.category);
+    if (knowledge_categories.indexOf(d.category) === -1) {
+      knowledge_categories.push(d.category);
     }
+    d.tags.forEach(t => {
+      const index = tags_lookup.indexOf(t);
+      if (index === -1) {
+        tags_lookup.push(t);
+        knowledge_tags.push({
+          label: t,
+          count: 1
+        });
+      } else {
+        knowledge_tags[index].count++;
+      }
+    });
+  });
+  knowledge_tags.sort((a,b) => {
+    if (a.count > b.count) return -1;
+    if (a.count < b.count) return 1;
+    return 0;
   });
 
-  res.render("knowledge_list", { knowledges, categories });
+  res.render("knowledge_list", { knowledges, knowledge_categories, knowledge_tags });
 };
 
 exports.viewknowledge = async (req, res) => {

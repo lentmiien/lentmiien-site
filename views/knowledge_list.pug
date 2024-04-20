@@ -3,10 +3,29 @@ extends layout
 block content
   .row
     .col
-      h2 Available knowledges 
-      each category in categories
+      h2 Knowledge list
+      hr
+  .row 
+    .col 
+      label(for="category_filter") Choose category to show 
+      select#category_filter.form-control(name="category_filter", onchange="FilterCategory(this)") 
+        option(value="") - Show all -
+        each category in knowledge_categories
+          option(value=category)= category
+    .col
+      label(for="tag_filter") Choose tag to show 
+      select#tag_filter.form-control(name="tag_filter", onchange="FilterTag(this)") 
+        option(value="") - Show all -
+        each tag in knowledge_tags
+          option(value=tag.label)= tag.label
+  each category in knowledge_categories
+    .row.category_container(id=`${category}_container`) 
+      .col 
         hr
-        h3= category
+        p
+          b= category
         each knowledge in knowledges
           if knowledge.category === category
-            a.btn.btn-link(href=`/chat4/viewknowledge/${knowledge._id.toString()}`)= knowledge.title
+            span.tag_container(data-tags=`|${knowledge.tags.join('|')}|`)
+              a.btn.btn-link(href=`/chat4/viewknowledge/${knowledge._id.toString()}`)= knowledge.title
+  script(src="/js/knowledge_list.js") 
