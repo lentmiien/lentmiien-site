@@ -223,11 +223,13 @@ class ConversationService {
         messages: [ message_data.db_entry._id.toString() ],
         updated_date: new Date(),
       };
-      for (let i = 0; i < parameters.knowledge.length; i++) {
-        conversation_entry.knowledge_injects.push({
-          knowledge_id: parameters.knowledge[i],
-          use_type: parameters[`knowledge_${parameters.knowledge[i]}`],
-        });
+      if ("knowledge" in parameters) {
+        for (let i = 0; i < parameters.knowledge.length; i++) {
+          conversation_entry.knowledge_injects.push({
+            knowledge_id: parameters.knowledge[i],
+            use_type: parameters[`knowledge_${parameters.knowledge[i]}`],
+          });
+        }
       }
       const conv_entry = await new this.conversationModel(conversation_entry).save();
       return conv_entry._id.toString();
