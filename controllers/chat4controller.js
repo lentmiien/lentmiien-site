@@ -13,6 +13,7 @@ const templateService = new TemplateService(Chat3TemplateModel);
 // Globals
 let categories = [];
 let tags = [];
+let knowledges_categories = [];
 
 exports.index = async (req, res) => {
   const user_id = req.user.name;
@@ -47,8 +48,12 @@ exports.index = async (req, res) => {
     if (a.count < b.count) return 1;
     return 0;
   });
+  knowledges_categories = [];
+  knowledges.forEach(d => {
+    if (knowledges_categories.indexOf(d.category) === -1) knowledges_categories.push(d.category);
+  });
 
-  res.render("chat4", { conversations, categories, tags, templates, knowledges });
+  res.render("chat4", { conversations, categories, tags, templates, knowledges, knowledges_categories });
 };
 
 // JSON API endpoint
@@ -85,7 +90,7 @@ exports.chat = async (req, res) => {
   const used_knowledge_ids = [];
   conversation.knowledge_injects.forEach(d => used_knowledge_ids.push(d.knowledge_id));
   
-  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids });
+  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories });
 };
 
 exports.post = async (req, res) => {
@@ -103,6 +108,15 @@ exports.post = async (req, res) => {
   const conversation_id = await conversationService.postToConversation(req.user.name, use_conversation_id, image_paths, req.body);
 
   res.redirect(`/chat4/chat/${conversation_id}`);
+};
+
+exports.delete_conversation = async (req, res) => {
+  const id_to_delete = req.params.id;
+
+  // TODO add protection so that if a knowledge entry links to the conversation, then can't delete, show error message instead
+
+  await conversationService.deleteConversation(id_to_delete);
+  res.redirect('/chat4');
 };
 
 exports.generate_image = async (req, res) => {

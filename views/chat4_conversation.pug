@@ -72,9 +72,10 @@ block content
                 option(value="onyx") Onyx
                 option(value="shimmer") Shimmer
           .row 
-            .col 
+            .col.button-container.mt-2 
               button.btn.btn-primary(onclick="UpdateSettings()") Update
               button.btn.btn-warning(onclick=`SaveConversationSettings("${conversation._id.toString()}")`) Save changes to database
+              a.btn.btn-danger(href=`/chat4/delete_conversation/${conversation._id.toString()}`) Delete conversation
       .tab-content
         #chat.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chat-tab")
           h3#chattitle= conversation.title
@@ -155,11 +156,14 @@ block content
                     option(value=`${t.TemplateText}`)= `[${t.Category}] ${t.Title}` 
               hr
               h3 Knowledges 
-              .row
-                each knowledge in knowledges 
-                  .col
-                    input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)", checked=(used_knowledge_ids.indexOf(knowledge._id.toString()) >= 0))
-                    span(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${knowledge.contentMarkdown}`)= ` ${knowledge.title}`
+              each cat in knowledges_categories
+                b= cat
+                .row
+                  each knowledge in knowledges 
+                    if cat === knowledge.category
+                      .col
+                        input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)", checked=(used_knowledge_ids.indexOf(knowledge._id.toString()) >= 0))
+                        span(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${knowledge.contentMarkdown}`)= ` ${knowledge.title}`
       .tab-content
         #knowledge.tab-pane.fade(role="tabpanel" aria-labelledby="knowledge-tab")
           .row 

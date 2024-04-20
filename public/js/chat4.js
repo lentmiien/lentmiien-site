@@ -223,7 +223,7 @@ function setActionButton(text, func) {
   actionBtn.addEventListener("click", func);
   currentEvent = func;
 }
-setActionButton("Prompt", sendPrompt);
+// setActionButton("Prompt", sendPrompt);
 
 function sendPrompt() {
   showLoadingPopup();

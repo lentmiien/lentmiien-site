@@ -269,6 +269,10 @@ class ConversationService {
     }
   }
 
+  async deleteConversation(id) {
+    return await this.conversationModel.deleteOne({_id: id});
+  }
+
   loadImageToBase64(filename) {
     const img_buffer = fs.readFileSync(`./public/img/${filename}`);
     const b64_img = Buffer.from(img_buffer).toString('base64');
