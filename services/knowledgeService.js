@@ -28,7 +28,7 @@ class KnowledgeService {
   }
 
   async getKnowledgesByUser(user_id) {
-    return await this.knowledgeModel.find({ user_id });
+    return await this.knowledgeModel.find({ user_id }).sort({ updatedDate: -1 }).exec();
   }
 
   async getKnowledgesByIdArray(k_ids) {
