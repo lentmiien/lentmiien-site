@@ -242,11 +242,13 @@ class ConversationService {
       conversation.tags = tags_array;
       conversation.context_prompt = parameters.context;
       conversation.knowledge_injects = [];
-      for (let i = 0; i < inject_keys.length; i++) {
-        conversation.knowledge_injects.push({
-          knowledge_id: inject_keys[i].split("_")[1],
-          use_type: parameters[inject_keys[i]],
-        });
+      if ("knowledge" in parameters) {
+        for (let i = 0; i < parameters.knowledge.length; i++) {
+          conversation.knowledge_injects.push({
+            knowledge_id: parameters.knowledge[i],
+            use_type: parameters[`knowledge_${parameters.knowledge[i]}`],
+          });
+        }
       }
       conversation.messages.push(message_data.db_entry._id.toString());
       conversation.updated_date = new Date();
