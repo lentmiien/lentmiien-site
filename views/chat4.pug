@@ -9,6 +9,8 @@ block content
         li.nav-item(role="presentation")
           button#templates-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#templates`, type="button", role="tab", aria-controls=`templates`, aria-selected="false") Templates
         li.nav-item(role="presentation")
+          button#append_message-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#append_message`, type="button", role="tab", aria-controls=`append_message`, aria-selected="false") Append message
+        li.nav-item(role="presentation")
           button#chathistory-tab.nav-link.active(data-bs-toggle="tab", data-bs-target=`#chathistory`, type="button", role="tab", aria-controls=`chathistory`, aria-selected="true") Chat history
       .tab-content
         #newchat.tab-pane.fade(role="tabpanel" aria-labelledby="newchat-tab")
@@ -71,6 +73,26 @@ block content
                   .col
                     input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)")
                     span(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${knowledge.contentMarkdown}`)= ` ${knowledge.title}`
+      .tab-content
+        #append_message.tab-pane.fade(role="tabpanel" aria-labelledby="append_message-tab")
+          h3 Append messages to new conversation
+          .row 
+            .col 
+              label(for="message_category") Select category to show 
+              select#message_category.form-control(name="message_category", onchange="AppendMessageFilter()") 
+                each category in categories
+                  option(value=category)= category
+            .col 
+              label(for="message_tag") Select tag to show 
+              select#message_tag.form-control(name="message_tag", onchange="AppendMessageFilter()") 
+                each tag in tags
+                  option(value=tag.label)= tag.label
+          each message, i in all_messages
+            .append_message_container(style="display:none;", data-category=message.category, data-tags=`|${message.tags.join("|")}|`) 
+              input(id=`append_${i}`, type="checkbox")
+              label(for=`append_${i}`) Append message
+              .assistant!= message.response_html
+              .user!= message.prompt_html
       .tab-content
         #chathistory.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chathistory-tab")
           .row 

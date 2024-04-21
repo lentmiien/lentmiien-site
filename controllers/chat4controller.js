@@ -23,6 +23,7 @@ exports.index = async (req, res) => {
   const templates = await templateService.getTemplates();
   const conversations = await conversationService.getConversationsForUser(user_id);
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
+  const all_messages = await messageService.getMessagesByUserId(user_id);// For appending existing messages to a new conversation
 
   // Get all categories and tags
   categories = [];
@@ -55,27 +56,12 @@ exports.index = async (req, res) => {
     if (knowledges_categories.indexOf(d.category) === -1) knowledges_categories.push(d.category);
   });
 
-  res.render("chat4", { conversations, categories, tags, templates, knowledges, knowledges_categories });
+  res.render("chat4", { conversations, categories, tags, templates, knowledges, knowledges_categories, all_messages });
 };
 
 // JSON API endpoint
 exports.updateconversation = async (req, res) => {
   res.json({updated_conversation_id: await conversationService.updateConversation(req.params.id, req.body)});
-};
-
-// Stitch together a new conversation from existing messages
-exports.stitch = async (req, res) => {
-  const user_id = req.user.name;
-
-  const templates = await templateService.getTemplates();
-  const messages = await messageService.getMessagesByUserId(user_id);
-  // TODO Knowledge
-
-  res.render("chat4_stitch", {messages, categories, tags, templates});
-};
-
-exports.stitch_post = async (req, res) => {
-  // TODO receive input and generate new conversation
 };
 
 exports.chat = async (req, res) => {

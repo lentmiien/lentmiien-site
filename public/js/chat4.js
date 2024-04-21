@@ -263,3 +263,17 @@ function FilterTag(element) {
     tag_containers[i].style.display = element.value === "" || tag_containers[i].dataset.tags.indexOf(`|${element.value}|`) >= 0 ? "block" : "none";
   }
 }
+
+function AppendMessageFilter() {
+  const message_category = document.getElementById("message_category").value;
+  const message_tag = document.getElementById("message_tag").value;
+  const messages = document.getElementsByClassName("append_message_container");
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i].dataset.category === message_category && messages[i].dataset.tags.indexOf(message_tag) >= 0) {
+      messages[i].style.display = "block";
+    } else {
+      messages[i].style.display = "none";
+    }
+  }
+}
+AppendMessageFilter();
