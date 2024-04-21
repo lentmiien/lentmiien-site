@@ -83,6 +83,8 @@ exports.chat = async (req, res) => {
 
   const templates = await templateService.getTemplates();
   const conversation = await conversationService.getConversationsById(req.params.id);
+  const group_conversations = await conversationService.getConversationsInGroup(conversation.group_id);
+  const copy_conversations = group_conversations.filter(d => d._id.toString() != conversation._id.toString());
   const messages = await messageService.getMessagesByIdArray(conversation.messages);
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
 
@@ -92,7 +94,7 @@ exports.chat = async (req, res) => {
   const used_knowledge_ids = [];
   conversation.knowledge_injects.forEach(d => used_knowledge_ids.push(d.knowledge_id));
   
-  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories });
+  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories, copy_conversations });
 };
 
 exports.post = async (req, res) => {

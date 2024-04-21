@@ -14,6 +14,8 @@ block content
           button#knowledge-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#knowledge`, type="button", role="tab", aria-controls=`knowledge`, aria-selected="false") Knowledge
         li.nav-item(role="presentation")
           button#rawchat-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#rawchat`, type="button", role="tab", aria-controls=`rawchat`, aria-selected="false") Raw chat
+        li.nav-item(role="presentation")
+          button#chatgroup-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#chatgroup`, type="button", role="tab", aria-controls=`chatgroup`, aria-selected="false") Chat group
       .tab-content
         #settings.tab-pane.fade(role="tabpanel" aria-labelledby="settings-tab")
           .row 
@@ -224,6 +226,21 @@ block content
                             img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
                           i= `Image file: ${img.filename}`
                     pre.user= m.prompt
+      .tab-content
+        #chatgroup.tab-pane.fade(role="tabpanel" aria-labelledby="chatgroup-tab")
+          .row 
+            .col
+              if copy_conversations.length === 0
+                h2 There are no additional chats in this group
+              else 
+                h2= `${copy_conversations.length} additional chat(s) in this group`
+                .button-container
+                  each c in copy_conversations
+                    .btn-group(role="group")
+                      a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
+                        div= c.title
+                        div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
+                      button.btn.btn-outline-info(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
   #imageModal.modal
     span.close-btn(onclick="closeModalPopup()") &times;
     img#fullSizeImage.modal-content(src="", alt="Full Size Image")
