@@ -1,3 +1,5 @@
+const sharp = require('sharp');// For getting image size
+
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
@@ -186,10 +188,38 @@ exports.knowledgelist = async (req, res) => {
   res.render("knowledge_list", { knowledges, knowledge_categories, knowledge_tags });
 };
 
+async function getImageDimensions(imagePath) {
+  try {
+    const metadata = await sharp(imagePath).metadata();
+    return {width: metadata.width, height: metadata.height};
+  } catch (error) {
+    console.error('Error processing image:', error);
+    return undefined;
+  }
+}
+
 exports.viewknowledge = async (req, res) => {
   const knowledge_id = req.params.id;
 
   const knowledge = await knowledgeService.getKnowledgesById(knowledge_id);
+
+  // Update og/twitter title meta tags
+  res.locals.og_title = `Lennart's Website - ${knowledge.title}`;
+  res.locals.twitter_title = `Lennart's Website - ${knowledge.title}`;
+  // If any images attached to knowledge entry, update og/twitter image meta tags to first image
+  if (knowledge.images.length > 0) {
+    const filename = knowledge.images[0];
+    const size = await getImageDimensions(`./public/img/${filename}`);
+    if (size) {
+      // Get file meta data
+      const metadata = await FileMetaModel.find({filename});
+      res.locals.og_image = `https://home.lentmiien.com/img/${filename}`;
+      res.locals.og_image_width = size.width.toString();
+      res.locals.og_image_height = size.height.toString();
+      res.locals.twitter_image = `https://home.lentmiien.com/img/${filename}`;
+      res.locals.twitter_image_alt = metadata.length > 0 ? metadata[0].prompt : `Image of ${knowledge.title}${filename.indexOf("image-") === 0 ? ", created using OpenAI's' DALL·E image generation" : ""}`;
+    }
+  }
 
   res.render("view_knowledge", { knowledge });
 };
