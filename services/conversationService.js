@@ -87,6 +87,23 @@ class ConversationService {
     return conv_entry._id.toString();
   }
 
+  async generateConversationFromMessages(user_id, message_id_array) {
+    const conversation_entry = {
+      user_id,
+      group_id: Date.now().toString(),
+      title: "placeholder",
+      description: "placeholder",
+      category: "placeholder",
+      tags: "placeholder",
+      context_prompt: "placeholder",
+      knowledge_injects: [],
+      messages: message_id_array,
+      updated_date: new Date(),
+    };
+    const conv_entry = await new this.conversationModel(conversation_entry).save();
+    return conv_entry._id.toString();
+  }
+
   async updateConversation(conversation_id, parameters) {
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     const conversation = await this.conversationModel.findById(conversation_id);
@@ -147,16 +164,30 @@ class ConversationService {
         const m = prev_messages[i];
         const content = [{ type: 'text', text: m.prompt }];
         for (let x = 0; x < m.images.length; x++) {
-          if (parameters[m.images[x].filename] != '0') {
-            use_vision = true;
-            const b64 = this.loadImageToBase64(m.images[x].filename);
-            content.push({
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${b64}`,
-                detail: `${parameters[m.images[x].filename] === '2' ? 'high' : 'low'}`
-              }
-            });
+          if (m.images[x].filename in parameters) {
+            if (parameters[m.images[x].filename] != '0') {
+              use_vision = true;
+              const b64 = this.loadImageToBase64(m.images[x].filename);
+              content.push({
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${b64}`,
+                  detail: `${parameters[m.images[x].filename] === '2' ? 'high' : 'low'}`
+                }
+              });
+            }
+          } else {
+            if (m.images[x].use_flag != 'do not use') {
+              use_vision = true;
+              const b64 = this.loadImageToBase64(m.images[x].filename);
+              content.push({
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${b64}`,
+                  detail: `${m.images[x].use_flag === 'high quality' ? 'high' : 'low'}`
+                }
+              });
+            }
           }
         }
         // User prompt

@@ -46,8 +46,10 @@ block content
             label(for="prompt") Prompt
             textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
             #knowledge_container.row
+            input#append_message_ids(type="hidden", name="append_message_ids")
             .button-container
               input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
+          #append_messages_content
       .tab-content
         #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")
           h3 Templates
@@ -89,7 +91,7 @@ block content
                   option(value=tag.label)= tag.label
           each message, i in all_messages
             .append_message_container(style="display:none;", data-category=message.category, data-tags=`|${message.tags.join("|")}|`) 
-              input(id=`append_${i}`, type="checkbox")
+              input(id=`append_${i}`, type="checkbox", onclick="ToggleMessageAppendRemove(this)", data-id=message._id.toString(), data-response_html=message.response_html, data-prompt_html=message.prompt_html)
               label(for=`append_${i}`) Append message
               .assistant!= message.response_html
               .user!= message.prompt_html

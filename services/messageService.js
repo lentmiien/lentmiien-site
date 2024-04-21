@@ -52,7 +52,7 @@ class MessageService {
       if (val_lookup) {
         let updated = false;
         for (let j = 0; j < messages[i].images.length; j++) {
-          if (messages[i].images[j].use_flag != use_flag_map[val_lookup[messages[i].images[j].filename]]) {
+          if (messages[i].images[j].filename in val_lookup && messages[i].images[j].use_flag != use_flag_map[val_lookup[messages[i].images[j].filename]]) {
             messages[i].images[j].use_flag = use_flag_map[val_lookup[messages[i].images[j].filename]];
             updated = true;
           }

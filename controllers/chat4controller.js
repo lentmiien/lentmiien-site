@@ -90,6 +90,10 @@ exports.post = async (req, res) => {
   if ("start_message" in req.body || "end_message" in req.body) {
     use_conversation_id = await conversationService.copyConversation(use_conversation_id, req.body.start_message, req.body.end_message);
   }
+  // Check if creating conversation from existing messages
+  if ("append_message_ids" in req.body && req.body.append_message_ids.length > 0) {
+    use_conversation_id = await conversationService.generateConversationFromMessages(req.user.name, req.body.append_message_ids.split(","));
+  }
   // Post message to conversation
   const image_paths = [];
   for (let i = 0; i < req.files.length; i++) {

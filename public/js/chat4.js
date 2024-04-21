@@ -277,3 +277,34 @@ function AppendMessageFilter() {
   }
 }
 AppendMessageFilter();
+
+function ToggleMessageAppendRemove(element) {
+  // #append_message_ids
+  const append_message_ids = document.getElementById("append_message_ids");
+  if (element.checked) {
+    const values = append_message_ids.value.length > 0 ? append_message_ids.value.split(",") : [];
+    values.push(element.dataset.id);
+    append_message_ids.value = values.join(",");
+  } else {
+    const values = append_message_ids.value.length > 0 ? append_message_ids.value.split(",") : [];
+    const updated_values = values.filter(d => d != element.dataset.id);
+    append_message_ids.value = updated_values.join(",");
+  }
+  // #append_messages_content
+  const append_messages_content = document.getElementById("append_messages_content");
+  if (element.checked) {
+    const container = document.createElement('div');
+    container.id = element.dataset.id;
+    container.classList.add("append_message_container2");
+    const assistant = document.createElement('div');
+    assistant.classList.add("assistant");
+    assistant.innerHTML = element.dataset.response_html;
+    const user = document.createElement('div');
+    user.classList.add("user");
+    user.innerHTML = element.dataset.prompt_html;
+    container.append(assistant, user);
+    append_messages_content.prepend(container);
+  } else {
+    document.getElementById(element.dataset.id).remove();
+  }
+}
