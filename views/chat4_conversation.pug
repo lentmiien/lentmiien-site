@@ -13,6 +13,10 @@ block content
         li.nav-item(role="presentation")
           button#knowledge-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#knowledge`, type="button", role="tab", aria-controls=`knowledge`, aria-selected="false") Knowledge
         li.nav-item(role="presentation")
+          button#blog-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#blog`, type="button", role="tab", aria-controls=`blog`, aria-selected="false") Blog
+        li.nav-item(role="presentation")
+          button#healthlog-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#healthlog`, type="button", role="tab", aria-controls=`healthlog`, aria-selected="false") Health log
+        li.nav-item(role="presentation")
           button#rawchat-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#rawchat`, type="button", role="tab", aria-controls=`rawchat`, aria-selected="false") Raw chat
         li.nav-item(role="presentation")
           button#chatgroup-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#chatgroup`, type="button", role="tab", aria-controls=`chatgroup`, aria-selected="false") Chat group
@@ -203,6 +207,32 @@ block content
                 label(for="k_images") Images (comma separated filenames)
                 input#k_images.form-control(type="text", name="k_images")
                 input.btn.btn-primary(type="submit", value="Save", onclick="showLoadingPopup()")
+      .tab-content
+        #blog.tab-pane.fade(role="tabpanel" aria-labelledby="blog-tab")
+          .row 
+            .col
+              b Post to blog
+              hr
+              form(action="/chat4/postblog", method="post") 
+                label(for="b_title") Title
+                input#b_title.form-control(type="text", name="b_title", required)
+                label(for="b_category") Category
+                input#b_category.form-control(type="text", name="b_category", required)
+                label(for="b_content") Content (markdown)
+                textarea#b_content.form-control(name="b_content", cols="30", rows="10")
+                input.btn.btn-warning(type="submit", value="Post")
+      .tab-content
+        #healthlog.tab-pane.fade(role="tabpanel" aria-labelledby="healthlog-tab")
+          .row 
+            .col
+              b Save to Health log
+              hr
+              form(action="/chat4/savehealthlog", method="post") 
+                label(for="hl_entrydate") Date of entry 
+                input#hl_entrydate.form-control(type="date", name="hl_entrydate", required)
+                label(for="hl_content") Content (markdown)
+                textarea#hl_content.form-control(name="hl_content", cols="30", rows="10")
+                input.btn.btn-warning(type="submit", value="Save log", disabled)
       .tab-content
         #rawchat.tab-pane.fade(role="tabpanel" aria-labelledby="rawchat-tab")
           .row 

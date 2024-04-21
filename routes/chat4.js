@@ -25,4 +25,9 @@ router.post('/saveknowledge', controller.saveknowledge);
 router.get('/editknowledge/:id', controller.editknowledge);
 router.post('/updateknowledge/:id', controller.updateknowledge);
 
+// Blog
+router.post('/postblog', controller.postblog);
+
+// Health log
+
 module.exports = router;

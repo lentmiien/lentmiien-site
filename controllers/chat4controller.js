@@ -1,10 +1,11 @@
+const marked = require('marked');// For formatting blog post entries
 const sharp = require('sharp');// For getting image size
 
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
 const KnowledgeService = require('../services/knowledgeService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel } = require('../database');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel } = require('../database');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
@@ -268,4 +269,20 @@ exports.updateknowledge = async (req, res) => {
   await knowledgeService.updateKnowledge(knowledge_id, title, contentMarkdown, category, tags, images);
 
   res.redirect(`/chat4/viewknowledge/${knowledge_id}`);
+};
+
+exports.postblog = (req, res) => {
+  // New entry
+  const entry_to_save = new ArticleModel({
+    title: req.body.b_title,
+    category: req.body.b_category,
+    content: marked.parse(req.body.b_content),
+    created: new Date(),
+    updated: new Date(),
+  });
+
+  // Save to database
+  entry_to_save.save().then((saved_data) => {
+    setTimeout(() => res.redirect(`/blog`), 100);
+  });
 };
