@@ -228,10 +228,16 @@ block content
               b Save to Health log
               hr
               form(action="/chat4/savehealthlog", method="post") 
-                label(for="hl_entrydate") Date of entry 
-                input#hl_entrydate.form-control(type="date", name="hl_entrydate", required)
-                label(for="hl_content") Content (markdown)
-                textarea#hl_content.form-control(name="hl_content", cols="30", rows="10")
+                label(for="log_date") Date to append entry 
+                input#log_date.form-control(type="date", name="log_date", required)
+                label(for="log_id") Select entry 
+                select#log_id.form-control(name="log_id", onchange="UpdatePreview(this)", required) 
+                  option(value="", data-content="Content (select an entry to view)") 
+                  each m, i in messages 
+                    option(value=m._id.toString(), data-content=m.response_html, title=m.response_html)= `Message ${i}`
+                div 
+                  h4 Preview 
+                  #log_preview Content (select an entry to view)
                 input.btn.btn-warning(type="submit", value="Save log", disabled)
       .tab-content
         #rawchat.tab-pane.fade(role="tabpanel" aria-labelledby="rawchat-tab")

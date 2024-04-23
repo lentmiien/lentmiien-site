@@ -391,3 +391,8 @@
   border-radius: 5px;
   margin-bottom: 10px;
 }
+
+#log_preview {
+  border: 1px dashed gray;
+  border-radius: 5px;
+}

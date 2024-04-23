@@ -308,3 +308,9 @@ function ToggleMessageAppendRemove(element) {
     document.getElementById(element.dataset.id).remove();
   }
 }
+
+function UpdatePreview(element) {
+  const selectedOption = element.options[element.selectedIndex];
+  const content = selectedOption.getAttribute('data-content');
+  document.getElementById("log_preview").innerHTML = content;
+}
