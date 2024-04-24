@@ -19,6 +19,8 @@ block content
         li.nav-item(role="presentation")
           button#rawchat-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#rawchat`, type="button", role="tab", aria-controls=`rawchat`, aria-selected="false") Raw chat
         li.nav-item(role="presentation")
+          button#htmlchat-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#htmlchat`, type="button", role="tab", aria-controls=`htmlchat`, aria-selected="false") HTML chat
+        li.nav-item(role="presentation")
           button#chatgroup-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#chatgroup`, type="button", role="tab", aria-controls=`chatgroup`, aria-selected="false") Chat group
       .tab-content
         #settings.tab-pane.fade(role="tabpanel" aria-labelledby="settings-tab")
@@ -262,6 +264,21 @@ block content
                             img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
                           i= `Image file: ${img.filename}`
                     pre.user= m.prompt
+      .tab-content
+        #htmlchat.tab-pane.fade(role="tabpanel" aria-labelledby="htmlchat-tab")
+          .row 
+            .col
+              b HTML chat data
+              hr
+              div
+                each m in messages
+                  div 
+                    p.header-row 
+                      b Response:
+                    textarea.assistant.form-control(cols="30", rows="10")= m.response_html
+                    p.header-row 
+                      b Prompt: 
+                    textarea.user.form-control(cols="30", rows="10")= m.prompt_html
       .tab-content
         #chatgroup.tab-pane.fade(role="tabpanel" aria-labelledby="chatgroup-tab")
           .row 
