@@ -230,11 +230,10 @@ function setActionButton(text, func) {
   actionBtn.addEventListener("click", func);
   currentEvent = func;
 }
-// setActionButton("Prompt", sendPrompt);
+setActionButton("History/New chat", Chat4Top);
 
-function sendPrompt() {
-  showLoadingPopup();
-  chatform.submit();
+function Chat4Top() {
+  open("/chat4", "_self");
 }
 
 // Auto-complete helper functions
