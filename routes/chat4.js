@@ -29,5 +29,6 @@ router.post('/updateknowledge/:id', controller.updateknowledge);
 router.post('/postblog', controller.postblog);
 
 // Health log
+router.get('/fetch_messages', controller.fetch_messages);
 
 module.exports = router;

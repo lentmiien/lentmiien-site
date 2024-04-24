@@ -286,3 +286,12 @@ exports.postblog = (req, res) => {
     setTimeout(() => res.redirect(`/blog`), 100);
   });
 };
+
+exports.fetch_messages = async (req, res) => {
+  const messages = await messageService.getMessagesByIdArray(req.body.ids);
+  const output = {};
+  messages.forEach(d => {
+    output[d._id.toString()] = d.response_html;
+  });
+  res.json(output);
+};

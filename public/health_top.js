@@ -61,6 +61,18 @@ async function ViewHealthLogEntry(date) {
     message_lookup = result;
     console.log(result);
   }
+  // Fetch Chat4 messages
+  let message_lookup_4 = {};
+  if (entry.diary.length > 0) {
+    const response = await fetch('/chat4/fetch_messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ids: entry.diary})
+    });
+    const result = await response.json();
+    message_lookup_4 = result;
+    console.log(result);
+  }
   
   // Populate and display popup
   let detailsContent = document.querySelector('#detailsContent');
@@ -70,7 +82,7 @@ async function ViewHealthLogEntry(date) {
     <strong>Diary:</strong>
   `;
   entry.diary.forEach(d => {
-    detailsContent.innerHTML += `<hr>${message_lookup[d]}`;
+    detailsContent.innerHTML += `<hr>${d in message_lookup ? message_lookup[d] : message_lookup_4[d]}`;
   });
 
   let detailsPopup = new bootstrap.Modal(document.getElementById('detailsPopup'));

@@ -113,9 +113,16 @@ function SetContextTemplate(element) {
   CloseTemplatesPopup();
 }
 
+// Function to show the loading popup
 function showLoadingPopup() {
   loadingPopup.style.display = 'block';
   document.body.classList.add('no-scroll'); // Prevent scrolling on the body
+}
+
+// Function to hide the loading popup
+function hideLoadingPopup() {
+  loadingPopup.style.display = 'none';
+  document.body.classList.remove('no-scroll'); // Re-enable scrolling on the body
 }
 
 const image_form = document.getElementById("image_form");
@@ -313,4 +320,30 @@ function UpdatePreview(element) {
   const selectedOption = element.options[element.selectedIndex];
   const content = selectedOption.getAttribute('data-content');
   document.getElementById("log_preview").innerHTML = content;
+}
+
+async function AppendToHealthEntry() {
+  showLoadingPopup();
+
+  const id = document.getElementById("log_id").value;
+  const date = document.getElementById("log_date").value;
+
+  // Call API
+  const response = await fetch("/health/health-entries/diary", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({id, date}), // body data type must match "Content-Type" header
+  });
+  const status = await response.json();
+  console.log(status);
+  alert(status.message);
+  hideLoadingPopup();
 }

@@ -229,7 +229,7 @@ block content
             .col
               b Save to Health log
               hr
-              form(action="/chat4/savehealthlog", method="post") 
+              form(action="#", method="post") 
                 label(for="log_date") Date to append entry 
                 input#log_date.form-control(type="date", name="log_date", required)
                 label(for="log_id") Select entry 
@@ -240,7 +240,7 @@ block content
                 div 
                   h4 Preview 
                   #log_preview Content (select an entry to view)
-                input.btn.btn-warning(type="submit", value="Save log", disabled)
+              button.btn.btn-warning(onclick="AppendToHealthEntry()") Save to health log
       .tab-content
         #rawchat.tab-pane.fade(role="tabpanel" aria-labelledby="rawchat-tab")
           .row 
