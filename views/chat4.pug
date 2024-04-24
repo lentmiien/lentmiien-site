@@ -123,6 +123,7 @@ block content
                           div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
                         button.btn.btn-outline-info(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
   #loadingPopup.loading-popup
+    span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content
       .loader
       p Loading...
