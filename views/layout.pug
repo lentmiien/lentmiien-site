@@ -43,6 +43,7 @@ html(lang='en')
         a.type-2-link(href="/blog/Food/list", style="width:100%;") Food
         if loggedIn == true
           a.type-2-link(href="/mypage/blogpost", style="width:100%;") Write blog
+        a.type-1-link(href="/cookingp", style="width:100%;") Cooking public page
       if loggedIn == true
         if chatmode
           .navbar-column
@@ -60,17 +61,7 @@ html(lang='en')
         .navbar-column
           a.type-1-link(href="/chat4", style="width:100%;") ChatGPT
           a.type-2-link(href="/chat4/knowledgelist", style="width:100%;") Knowledge
-          a.type-2-link(href="/chat3", style="width:100%;") [OLD] ChatGPT v3
           a.type-2-link(href="/chat3/manage_templates", style="width:100%;") ChatGPT tempaltes
-          a.type-2-link(href="/chat3/manage_knowledge", style="width:100%;") [OLD] ChatGPT knowledge
-          a.type-2-link(href="/openai", style="width:100%;") OpenAI database
-          a.type-2-link(href="/openai/manage", style="width:100%;") Manage Open AI API models
-          a.type-2-link(href="/openai/history", style="width:100%;") Open AI API usage history
-          a.type-2-link(href="/embedding", style="width:100%;") Embeddings
-          a.type-2-link(href="/mypage/speektome", style="width:100%;") [TEST] Speek to me
-          a.type-2-link(href="/mypage/showtome", style="width:100%;") [TEST] Show to me
-          a.type-1-link(href="/chat3/browse_knowledge?id=6562e7bb5d76250d064fe480", style="width:100%;") Cookbook
-          a.type-1-link(href="/chat3/browse_knowledge?id=656304600cbce400a732cc81", style="width:100%;") Knowledge
         .navbar-column
           a.type-1-link(href="/accounting", style="width:100%;") Budget
           a.type-2-link(href="/accounting/add_transaction", style="width:100%;") Add transaction
@@ -85,10 +76,18 @@ html(lang='en')
         .navbar-column
           a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
           a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
+          a.type-2-link(href="/chat3", style="width:100%;") [OLD] ChatGPT v3
+          a.type-2-link(href="/chat3/manage_knowledge", style="width:100%;") [OLD] ChatGPT knowledge
           a.type-2-link(href="/gptdocument", style="width:100%;") [OLD] GPT document
+          a.type-2-link(href="/mypage/speektome", style="width:100%;") [TEST] Speek to me
+          a.type-2-link(href="/mypage/showtome", style="width:100%;") [TEST] Show to me
+          a.type-1-link(href="/chat3/browse_knowledge?id=6562e7bb5d76250d064fe480", style="width:100%;") Cookbook
+          a.type-1-link(href="/chat3/browse_knowledge?id=656304600cbce400a732cc81", style="width:100%;") Knowledge
+          a.type-2-link(href="/openai", style="width:100%;") OpenAI database
+          a.type-2-link(href="/openai/manage", style="width:100%;") Manage Open AI API models
+          a.type-2-link(href="/openai/history", style="width:100%;") Open AI API usage history
+          a.type-2-link(href="/embedding", style="width:100%;") Embeddings
       else
-        .navbar-column
-          a.type-1-link(href="/cookingp", style="width:100%;") Cooking public page
         .navbar-column
           a.type-1-link(href="/login", style="width:100%;") Log in
     .container-fluid
