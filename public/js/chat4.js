@@ -230,7 +230,7 @@ function setActionButton(text, func) {
   actionBtn.addEventListener("click", func);
   currentEvent = func;
 }
-setActionButton("History/New chat", Chat4Top);
+setActionButton("History/New", Chat4Top);
 
 function Chat4Top() {
   open("/chat4", "_self");
