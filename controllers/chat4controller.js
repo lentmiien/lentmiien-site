@@ -68,8 +68,10 @@ exports.updateconversation = async (req, res) => {
 exports.chat = async (req, res) => {
   const user_id = req.user.name;
 
-  const templates = await templateService.getTemplates();
   const conversation = await conversationService.getConversationsById(req.params.id);
+  if (!conversation) return res.redirect(`/chat3?chat=${req.params.id}`);// Ensure that app works with transferred data
+
+  const templates = await templateService.getTemplates();
   const group_conversations = await conversationService.getConversationsInGroup(conversation.group_id);
   const copy_conversations = group_conversations.filter(d => d._id.toString() != conversation._id.toString());
   const messages = await messageService.getMessagesByIdArray(conversation.messages);
