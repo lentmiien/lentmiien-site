@@ -879,3 +879,36 @@ exports.transfer_all_knowledges = async (req, res) => {
   // Redirect to knowledge4 page
   res.redirect('/chat4/knowledgelist');
 };
+/*
+const Chat3_knowledge = new mongoose.Schema({
+  templateId: { type: String, required: true, max: 100 },
+  title: { type: String, required: true, max: 100 },
+  createdDate: { type: Date, required: true },
+  originId: { type: String, required: true, max: 100 },
+  data: { type: String, required: true },
+  category: { type: String, required: true, max: 100 },
+  author: { type: String, required: true, max: 100 },
+});
+
+FOOD EXAMPLE (template id 6562e7bb5d76250d064fe480)
+data: {
+  "name":"Saba no Misoni",
+  "ingredients":"### Ingredients:\r\n\r\n- *******************) for added fiber",
+  "instructions":"### Instructions:\r\n\r\n1. ******************fiber content of the meal further.",
+  "portions":"4",
+  "time":"30",
+  "note":"This recipe is high in omega-3**********************a healthy waistline. Enjoy your heart-healthy, traditional Japanese meal!",
+  "url":"",
+  "image":"/img/image-1705836218872-.jpg"
+}
+
+INFO EXAMPLE (template id 656304600cbce400a732cc81)
+data: {
+  "text":"Meet Le****************ng joy in the details of life abroad."
+}
+
+--AmiAmi user categories--
+AmiAmi analysis
+AmiAmi Notice
+AmiAmi Policy
+*/
