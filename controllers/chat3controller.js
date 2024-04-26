@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const marked = require('marked');
-const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig, localGPT } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 const kparser = require('../utils/knowledgeParser');
 
@@ -171,7 +171,12 @@ exports.post = async (req, res) => {
   }
 
   // Send to OpenAI API
-  const response = await chatGPT(req.body.messages, model)
+  let response;
+  if (model === 'local') {
+    response = await localGPT(req.body.messages, model);
+  } else {
+    response = await chatGPT(req.body.messages, model);
+  }
   // When get response
   if (response) {
     // Save to API call log

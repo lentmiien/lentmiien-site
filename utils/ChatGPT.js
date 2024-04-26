@@ -7,6 +7,7 @@ const { OpenAI } = require('openai');
 
 // Set your OpenAI API key
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID });
+const local_llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID, baseURL: 'http://localhost:1234/v1' });
 
 // Open AI API models
 const GetModels = async (type) => {
@@ -68,8 +69,11 @@ const OpenAIAPICallLog = async (user_id, api_endpoint, input_token_count, output
     output_token_count,
     input_text_or_embedding,
     output_text_or_embedding,
-    total_request_cost: ((model_lookup[api_endpoint].input_1k_token_cost * input_token_count) + (model_lookup[api_endpoint].output_1k_token_cost * output_token_count)) / 1000,
+    total_request_cost: 0,
   });
+  if ("api_endpoint" in model_lookup) {
+    entry_to_save.total_request_cost = ((model_lookup[api_endpoint].input_1k_token_cost * input_token_count) + (model_lookup[api_endpoint].output_1k_token_cost * output_token_count)) / 1000;
+  }
 
   // Save to database
   await entry_to_save.save();
@@ -240,6 +244,19 @@ const ig = async (prompt, quality, size) => {
   // return { filename, prompt: image.data[0].revised_prompt || prompt };
 };
 
+const localGPT = async (messages, model) => {
+  try {
+    const response = await local_llm.chat.completions.create({
+      messages,
+      model: 'lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF',//model,
+    });
+    return response;
+  } catch (error) {
+    console.error(`Error while calling LocalGPT API: ${error}`);
+    return null;
+  }
+};
+
 module.exports = {
   OpenAIAPICallLog,
   chatGPT,
@@ -250,4 +267,5 @@ module.exports = {
   GetOpenAIAPICallHistory,
   tts,
   ig,
+  localGPT,
 };
