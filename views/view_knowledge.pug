@@ -5,10 +5,10 @@ block content
     .col
       h2= knowledge.title
       i= `Updated: ${knowledge.updatedDate}`
-      div 
-        a.btn.btn-link(href=`/chat4/chat/${knowledge.originConversationId}`) Show chat 
-        a.btn.btn-link(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge 
-        a.btn.btn-link(href=`/chat4/knowledgelist`) Back
+      .button-container 
+        a.btn.btn-outline-primary(href=`/chat4/chat/${knowledge.originConversationId}`) Show chat 
+        a.btn.btn-outline-primary(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge 
+        a.btn.btn-outline-primary(href=`/chat4/knowledgelist`) Back
       hr
       each img in knowledge.images
         img.image-large(src=`/img/${img}`, alt="image")
@@ -16,3 +16,5 @@ block content
       p!= knowledge.contentHTML
       p= `${knowledge.category}: ${knowledge.tags.join(", ")}`
       i= `Created by: ${knowledge.user_id}`
+      .button-container 
+        a.btn.btn-danger(href=`/chat4/deleteknowledge/${knowledge._id.toString()}`) Delete

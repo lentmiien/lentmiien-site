@@ -273,6 +273,12 @@ exports.updateknowledge = async (req, res) => {
   res.redirect(`/chat4/viewknowledge/${knowledge_id}`);
 };
 
+exports.deleteknowledge = async (req, res) => {
+  const knowledge_id = req.params.id;
+  await knowledgeService.deleteKnovledgeById(knowledge_id);
+  res.redirect('/chat4/knowledgelist');
+};
+
 exports.postblog = (req, res) => {
   // New entry
   const entry_to_save = new ArticleModel({

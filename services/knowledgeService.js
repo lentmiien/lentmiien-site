@@ -70,6 +70,10 @@ class KnowledgeService {
     await entry.save();
     return k_id;
   }
+
+  async deleteKnovledgeById(id) {
+    return await this.knowledgeModel.deleteOne({_id: id});
+  }
 }
 
 module.exports = KnowledgeService;

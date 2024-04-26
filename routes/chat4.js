@@ -24,6 +24,7 @@ router.get('/viewknowledge/:id', controller.viewknowledge);
 router.post('/saveknowledge', controller.saveknowledge);
 router.get('/editknowledge/:id', controller.editknowledge);
 router.post('/updateknowledge/:id', controller.updateknowledge);
+router.get('/deleteknowledge/:id', controller.deleteknowledge);
 
 // Blog
 router.post('/postblog', controller.postblog);
