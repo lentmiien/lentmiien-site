@@ -839,3 +839,38 @@ exports.fetch_messages = async (req, res) => {
   });
   res.json(output);
 };
+
+//-------------------//
+// Transfer to chat4 //
+//-------------------//
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel } = require('../database');
+const MessageService = require('../services/messageService');
+const ConversationService = require('../services/conversationService');
+const KnowledgeService = require('../services/knowledgeService');
+// Instantiate the services
+const messageService = new MessageService(Chat4Model, FileMetaModel);
+const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
+const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
+
+exports.transfer_chat = (req, res) => {
+  const id = req.params.id;
+  // Load chat data
+  // Transform to chat4 data *multiple conversations in a group if a branching chat3 conversation
+  // Save to chat4
+
+  // Redirect to new conversation (open conversation with last message in case of branching)
+  res.redirect(`/chat4/chat/${id}`);
+};
+
+exports.transfer_all_knowledges = async (req, res) => {
+  // Load all knowledge3 data
+  const ks = await Chat3KnowledgeModel.find();
+
+  for (let i = 0; i < ks.length; i++) {
+    // Transform to knowledge4 data
+    // Save to knowledge 
+  }
+
+  // Redirect to knowledge4 page
+  res.redirect('/chat4/knowledgelist');
+};
