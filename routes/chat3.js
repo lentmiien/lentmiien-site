@@ -40,6 +40,5 @@ router.post('/fetch_messages', controller.fetch_messages);
 
 // Transfer to chat4
 router.get('/transfer_chat/:id', controller.transfer_chat);
-router.get('/transfer_all_knowledges', controller.transfer_all_knowledges);
 
 module.exports = router;

@@ -866,29 +866,3 @@ exports.transfer_chat = (req, res) => {
   // Redirect to new conversation (open conversation with last message in case of branching)
   res.redirect(`/chat4/chat/${id}`);
 };
-
-exports.transfer_all_knowledges = async (req, res) => {
-  // Load all knowledge3 data
-  const ks = await Chat3KnowledgeModel.find();
-
-  for (let i = 0; i < ks.length; i++) {
-    // Transform to knowledge4 data
-    let content = "";
-    const images = [];
-    const data = JSON.parse(ks[i].data);
-    if ("image" in data && data.image.length > 0) {
-      images.push(data.image.split("/")[2]);
-    }
-    if ("text" in data) {
-      content = data.text;
-    } else {
-      content = `${data.ingredients}\n\n${data.instructions}${data.note.length > 0 ? "\n\n"+data.note : ""}${data.url.length > 0 ? "\n\n[Source recipe]("+data.url+")" : ""}`;
-    }
-
-    // Save to knowledge 
-    await knowledgeService.createKnowledge(ks[i].title, ks[i].originId, content, ks[i].category, ["transfer"], images, ks[i].category.indexOf("AmiAmi") >= 0 ? "AmiAmi" : "Lennart");
-  }
-
-  // Redirect to knowledge4 page
-  res.redirect('/chat4/knowledgelist');
-};
