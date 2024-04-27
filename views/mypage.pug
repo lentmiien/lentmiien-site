@@ -1,13 +1,10 @@
 extends layout
 
 block content
-  .row
-    .col
-      b= `Welcome to the my page, ${name}!`
   .row 
     .col 
       a.btn.btn-link(href="/mypage/blogpost")
-        img(src="/i/blog.jpg", alt="budget")
+        img(src="/i/blog.jpg", alt="blogpost")
         p Write blog
       a.btn.btn-link(href="/accounting/add_transaction")
         img(src="/i/budget.jpg", alt="budget")
@@ -15,10 +12,10 @@ block content
       a.btn.btn-link(href="/chat4")
         img(src="/i/chat.jpg", alt="chat")
         p Chat
-      a.btn.btn-link(href="/chat3/browse_knowledge?id=6562e7bb5d76250d064fe480")
+      a.btn.btn-link(href="/chat4/knowledgelist?category=Recipe")
         img(src="/i/cookbook.jpg", alt="cookbook")
         p Cookbook
-      a.btn.btn-link(href="/chat3/browse_knowledge?id=656304600cbce400a732cc81")
+      a.btn.btn-link(href="/chat4/knowledgelist")
         img(src="/i/knowledge.jpg", alt="knowledge")
         p Browse knowledge
       a.btn.btn-link(href="/cooking")

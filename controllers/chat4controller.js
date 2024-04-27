@@ -152,7 +152,13 @@ exports.generate_sound = async (req, res) => {
 exports.knowledgelist = async (req, res) => {
   const user_id = req.user.name;
 
-  const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
+  let knowledges = await knowledgeService.getKnowledgesByUser(user_id);
+
+  // Page can be opened with category in query parameters, in which case only that category will be shown
+  if ("category" in req.query) {
+    knowledges = knowledges.filter(d => d.category === req.query.category);
+  }
+
   const knowledge_categories = [];
   const knowledge_tags = [];
   const tags_lookup = [];
