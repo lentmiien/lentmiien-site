@@ -1,23 +1,22 @@
 // Require necessary database models
-const { CookingCalendarModel, CookingRequestModel, Chat3KnowledgeModel } = require('../database');
+const { CookingCalendarModel, CookingRequestModel, Chat4KnowledgeModel } = require('../database');
 
 exports.index = async (req, res) => {
   // Get 7 dates, starting from today and get the calendar values for the dates
   const dates_array = createDatesArray();
   const dates_only = dates_array.map(d => d.date);
   const calendar = await CookingCalendarModel.find({date: dates_only});
-  const knowledge = await Chat3KnowledgeModel.find();
+  const knowledge = await Chat4KnowledgeModel.find({category: "Recipe"});
   const requests = await CookingRequestModel.find({requestDate: dates_only});
 
-  const knowledge_lookup = [];
-  knowledge.forEach(k => knowledge_lookup.push(k._id.toString()));
-
-  const cooking_knowledge = knowledge.filter(d => d.data.indexOf('"name"') >= 0);// TODO: works for now, but change to something better
-  cooking_knowledge.sort((a,b) => {
+  knowledge.sort((a,b) => {
     if (a.title < b.title) return -1;
     if (a.title > b.title) return 1;
     return 0;
   });
+
+  const knowledge_lookup = [];
+  knowledge.forEach(k => knowledge_lookup.push(k._id.toString()));
 
   // Generate structure holding the cooking calendar for the 7 days,
   // fill in empty entries where there were no data from database
@@ -52,10 +51,9 @@ exports.index = async (req, res) => {
       let know_index = knowledge_lookup.indexOf(c.lunchToCook);
       if (know_index >= 0) {
         // Get details from knowledge entry
-        const data = JSON.parse(knowledge[know_index].data);
-        cookingCalendar[index].lunch.name = data.name;
+        cookingCalendar[index].lunch.name = knowledge[know_index].title;
         cookingCalendar[index].lunch.knoledge_id = c.lunchToCook;
-        cookingCalendar[index].lunch.image = data.image;
+        cookingCalendar[index].lunch.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
       } else {
         if (c.lunchToCook.length > 0) {
           // Assume to be URL
@@ -66,10 +64,9 @@ exports.index = async (req, res) => {
       know_index = knowledge_lookup.indexOf(c.dinnerToCook);
       if (know_index >= 0) {
         // Get details from knowledge entry
-        const data = JSON.parse(knowledge[know_index].data);
-        cookingCalendar[index].dinner.name = data.name;
+        cookingCalendar[index].dinner.name = knowledge[know_index].title;
         cookingCalendar[index].dinner.knoledge_id = c.dinnerToCook;
-        cookingCalendar[index].dinner.image = data.image;
+        cookingCalendar[index].dinner.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
       } else {
         if (c.dinnerToCook.length > 0) {
           // Assume to be URL
@@ -80,10 +77,9 @@ exports.index = async (req, res) => {
       know_index = knowledge_lookup.indexOf(c.dessertToCook);
       if (know_index >= 0) {
         // Get details from knowledge entry
-        const data = JSON.parse(knowledge[know_index].data);
-        cookingCalendar[index].dessert.name = data.name;
+        cookingCalendar[index].dessert.name = knowledge[know_index].title;
         cookingCalendar[index].dessert.knoledge_id = c.dessertToCook;
-        cookingCalendar[index].dessert.image = data.image;
+        cookingCalendar[index].dessert.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
       } else {
         if (c.dessertToCook.length > 0) {
           // Assume to be URL
@@ -121,7 +117,7 @@ exports.index = async (req, res) => {
     }
   });
 
-  res.render('cooking_index', {cookingCalendar, cooking_knowledge});
+  res.render('cooking_index', {cookingCalendar, knowledge});
 };
 
 // API endpoint to accept one update for a date, and respond to user when done
