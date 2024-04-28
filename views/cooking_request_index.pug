@@ -31,7 +31,7 @@ block content
                 .col 
                   h5 Lunch
                   if cookday.lunch.image.length > 0
-                    img.image-large(src=`${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+                    img.image-large(src=`/img/${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
@@ -51,7 +51,7 @@ block content
                 .col 
                   h5 Dinner
                   if cookday.dinner.image.length > 0
-                    img.image-large(src=`${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+                    img.image-large(src=`/img/${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
@@ -71,7 +71,7 @@ block content
                 .col 
                   h5 Dessert
                   if cookday.dessert.image.length > 0
-                    img.image-large(src=`${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+                    img.image-large(src=`/img/${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
                     br
                   div(style="border: 1px solid red;")
                     b Scheduled cooking: 
@@ -96,9 +96,7 @@ block content
           #content.col 
         .row 
           #index.col 
-        pre#ids.hidden= JSON.stringify(ids, null, 2)
-        pre#templates.hidden= JSON.stringify(templates, null, 2)
-        pre#knows.hidden= JSON.stringify(knows, null, 2)
+        pre#knows.hidden= JSON.stringify(cooking_knowledge, null, 2)
     if cooking_requests.length > 0
       #pills-request.tab-pane.fade(class=`${first ? "show active": ""}` role="tabpanel" aria-labelledby="pills-request-tab" tabindex="0")
         - first = false

@@ -1,11 +1,13 @@
 // Require necessary database models
-const { CookingCalendarModel, CookingRequestModel, Chat3KnowledgeModel, Chat3KnowledgeTModel } = require('../database');
+const { CookingCalendarModel, CookingRequestModel, Chat4KnowledgeModel } = require('../database');
 
 // This is temporary solution, so OK for now (plan to prepare database)
 const user_list = {
   "nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW": "Maiko",
   "JSqngWDQyGoIVohdrG96dxU6XYSDv98G": "Mizuki",
 };
+
+//await Chat4KnowledgeModel.find({category: "Recipe"});
 
 exports.index = async (req, res) => {
   // User validation
@@ -17,15 +19,14 @@ exports.index = async (req, res) => {
   }
 
   // Cookbook data
-  const knowledge = await Chat3KnowledgeModel.find();
-  const knowledge_lookup = [];
-  knowledge.forEach(k => knowledge_lookup.push(k._id.toString()));
-  const cooking_knowledge = knowledge.filter(d => d.data.indexOf('"name"') >= 0);// TODO: works for now, but change to something better
+  const cooking_knowledge = await Chat4KnowledgeModel.find({category: "Recipe"});
   cooking_knowledge.sort((a,b) => {
     if (a.title < b.title) return -1;
     if (a.title > b.title) return 1;
     return 0;
   });
+  const knowledge_lookup = [];
+  cooking_knowledge.forEach(k => knowledge_lookup.push(k._id.toString()));
 
   // Valid users may view cooking calendar, so get content
   const cookingCalendar = [];
@@ -67,10 +68,9 @@ exports.index = async (req, res) => {
         let know_index = knowledge_lookup.indexOf(c.lunchToCook);
         if (know_index >= 0) {
           // Get details from knowledge entry
-          const data = JSON.parse(knowledge[know_index].data);
-          cookingCalendar[index].lunch.name = data.name;
+          cookingCalendar[index].lunch.name = knowledge[know_index].title;
           cookingCalendar[index].lunch.knoledge_id = c.lunchToCook;
-          cookingCalendar[index].lunch.image = data.image;
+          cookingCalendar[index].lunch.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
         } else {
           if (c.lunchToCook.length > 0) {
             // Assume to be URL
@@ -81,10 +81,9 @@ exports.index = async (req, res) => {
         know_index = knowledge_lookup.indexOf(c.dinnerToCook);
         if (know_index >= 0) {
           // Get details from knowledge entry
-          const data = JSON.parse(knowledge[know_index].data);
-          cookingCalendar[index].dinner.name = data.name;
+          cookingCalendar[index].dinner.name = knowledge[know_index].title;
           cookingCalendar[index].dinner.knoledge_id = c.dinnerToCook;
-          cookingCalendar[index].dinner.image = data.image;
+          cookingCalendar[index].dinner.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
         } else {
           if (c.dinnerToCook.length > 0) {
             // Assume to be URL
@@ -95,10 +94,9 @@ exports.index = async (req, res) => {
         know_index = knowledge_lookup.indexOf(c.dessertToCook);
         if (know_index >= 0) {
           // Get details from knowledge entry
-          const data = JSON.parse(knowledge[know_index].data);
-          cookingCalendar[index].dessert.name = data.name;
+          cookingCalendar[index].dessert.name = knowledge[know_index].title;
           cookingCalendar[index].dessert.knoledge_id = c.dessertToCook;
-          cookingCalendar[index].dessert.image = data.image;
+          cookingCalendar[index].dessert.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
         } else {
           if (c.dessertToCook.length > 0) {
             // Assume to be URL
@@ -129,19 +127,11 @@ exports.index = async (req, res) => {
     }
   });
 
-  // Prepare cookbook
-  const knowledge_templates = await Chat3KnowledgeTModel.find();
-  let title = "Cooking recipe";
-  const ids = [];
-  const templates = knowledge_templates.filter(t => t.title === title);
-  templates.forEach(t => ids.push(t._id.toString()));
-  const knows = knowledge.filter(k => ids.indexOf(k.templateId) >= 0);
-
   // Id to name lookup
   const id_to_name_lookup = {};
-  knows.forEach(d => id_to_name_lookup[d._id.toString()] = d.title);
+  cooking_knowledge.forEach(d => id_to_name_lookup[d._id.toString()] = d.title);
 
-  res.render('cooking_request_index', {valid_user, user_id: req.query.uid || null, cookingCalendar, cooking_knowledge, cooking_requests, cooking_request_lookup, ids, templates, knows, id_to_name_lookup});
+  res.render('cooking_request_index', {valid_user, user_id: req.query.uid || null, cookingCalendar, cooking_knowledge, cooking_requests, cooking_request_lookup, id_to_name_lookup});
 };
 
 // API endpoint for submitting a cooking request

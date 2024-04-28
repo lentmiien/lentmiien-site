@@ -1,84 +1,38 @@
-const ids = JSON.parse(document.getElementById("ids").innerText);
-const templates = JSON.parse(document.getElementById("templates").innerText);
 const knows = JSON.parse(document.getElementById("knows").innerText);
 const content = document.getElementById("content");
 const index = document.getElementById("index");
 const user_id = document.getElementById("user_id");
-
-const master_data = [];
-const all_data_fields = [];
-
-// Prepare data labels
-for (let i = 0; i < templates.length; i++) {
-  templates[i].dataFormat = JSON.parse(templates[i].dataFormat);
-  templates[i].dataFormat.forEach(d => {
-    if (all_data_fields.indexOf(d.data_label) === -1) {
-      all_data_fields.push(d.data_label);
-    }
-  });
-}
-// Prepare master data
-for (let i = 0; i < knows.length; i++) {
-  knows[i].data = JSON.parse(knows[i].data);
-  const new_data = {
-    m_id: knows[i]._id,
-    m_title: knows[i].title,
-    m_chat_id: knows[i].originId,
-    m_author: knows[i].author,
-  };
-  all_data_fields.forEach(label => {
-    if (label in knows[i].data) {
-      new_data[label] = knows[i].data[label];
-    } else {
-      new_data[label] = null;
-    }
-  });
-  master_data.push(new_data);
-}
 
 function DisplayPage(num) {
   // Clear before drawing new content
   content.innerHTML = "";
 
   const name = document.createElement("h2");
-  const original_link = document.createElement("a");
   const br = document.createElement("br");
   const image = document.createElement("img");
-  const ingredients = document.createElement("div");
-  const instructions = document.createElement("div");
-  const note = document.createElement("div");
+  const textcontent = document.createElement("div");
 
-  name.innerText = master_data[num].name;
-  original_link.href = `${master_data[num].url}`;
-  original_link.target = `_blank`;
-  original_link.innerText = "Original recipe";
-  original_link.classList.add("btn", "btn-link");
-  if (master_data[num].url.length === 0) {
-    // Disable if no url
-    original_link.classList.add("a_disabled");
-  }
-  image.src = master_data[num].image;
+  name.innerText = knows[num].title;
+  image.src = knows[num].images.length > 0 ? '/img/' + knows[num].images[0] : null;
   image.classList.add("image-large");
-  ingredients.innerHTML = marked.parse(master_data[num].ingredients);
-  instructions.innerHTML = marked.parse(master_data[num].instructions);
-  note.innerHTML = marked.parse(master_data[num].note);
+  textcontent.innerHTML = marked.parse(knows[num].contentMarkdown);
 
-  content.append(name, original_link, br, image, ingredients, instructions, note);
+  content.append(name, br, image, textcontent);
 }
 
 function DisplayIndex() {
-  master_data.forEach((d, i) => {
+  knows.forEach((d, i) => {
     const button = document.createElement("button");
     button.classList.add("btn", "btn-link", "index-button");
-    button.dataset.title = d.m_title;
-    if (d.image && d.image.length > 0) {
+    button.dataset.title = d.title;
+    if (d.images.length > 0) {
       const img = document.createElement("img");
-      img.src = d.image;
+      img.src = d.images[0];
       img.classList.add("button-thumbnail");
       button.append(img);
     }
     const span = document.createElement("span");
-    span.innerText = d.m_title;
+    span.innerText = d.title;
     button.append(span);
 
     button.addEventListener("click", () => DisplayPage(i));
