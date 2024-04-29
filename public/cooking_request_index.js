@@ -9,15 +9,21 @@ function DisplayPage(num) {
 
   const name = document.createElement("h2");
   const br = document.createElement("br");
-  const image = document.createElement("img");
   const textcontent = document.createElement("div");
 
   name.innerText = knows[num].title;
-  image.src = knows[num].images.length > 0 ? '/img/' + knows[num].images[0] : null;
-  image.classList.add("image-large");
   textcontent.innerHTML = marked.parse(knows[num].contentMarkdown);
 
-  content.append(name, br, image, textcontent);
+  content.append(name, br);
+
+  knows[num].images.forEach(img_src => {
+    const image = document.createElement("img");
+    image.src = '/img/' + img_src;
+    image.classList.add("image-large");
+    content.append(image);
+  });
+
+  content.append(textcontent);
 }
 
 function DisplayIndex() {
