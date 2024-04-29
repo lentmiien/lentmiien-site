@@ -51,8 +51,17 @@ block content
             #amount_options 
         .row 
           .col-6 
-            label(for="transaction_business") Other business
-            input#transaction_business.form-control(type="text", name="transaction_business", list="businesses_list", onchange="RefreshForm()", required) 
+            .form-group
+              label(for="transaction_business") Other business
+              .input-group
+                input#transaction_business.form-control(type="text", name="transaction_business", list="businesses_list", onchange="RefreshForm()", aria-label='businesses_list', required) 
+                .input-group-append
+                  .dropdown
+                    button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false", onclick="FilterDropdown('transaction_business', 'businesses-dropdown-item')")
+                    ul.dropdown-menu
+                      each val in businesses
+                        li
+                          button.dropdown-item.businesses-dropdown-item(type='button', onclick=`SetDropdownValue('transaction_business', '${val}')`) #{val}
             #transaction_business_options 
           .col-6 
             label(for="type") Select transaction type

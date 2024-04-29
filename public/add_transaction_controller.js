@@ -122,3 +122,24 @@ function RefreshForm() {
   });
 }
 RefreshForm();
+
+function FilterDropdown(filter_text_element, filter_element_class) {
+  const text = document.getElementById(filter_text_element).value.toUpperCase();
+  const elements = document.getElementsByClassName(filter_element_class);
+  
+  for (let i = 0; i < elements.length; i++) {
+    if (text.length === 0) elements[i].style.display = "block";
+    else {
+      if (elements[i].innerHTML.toUpperCase().indexOf(text) >= 0) {
+        elements[i].style.display = "block";
+      } else {
+        elements[i].style.display = "none";
+      }
+    }
+  }
+}
+
+function SetDropdownValue(element_id, value) {
+  document.getElementById(element_id).value = value;
+  RefreshForm();
+}
