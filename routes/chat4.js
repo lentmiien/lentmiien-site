@@ -17,6 +17,7 @@ router.post('/post/:id', upload.array('imgs'), controller.post);
 router.get('/delete_conversation/:id', controller.delete_conversation);
 router.post('/generate_image/:id', controller.generate_image);
 router.post('/generate_sound/:id', controller.generate_sound);
+router.post('/generate_custom_message', controller.generate_custom_message);
 
 // Knowledge database
 router.get('/knowledgelist', controller.knowledgelist);

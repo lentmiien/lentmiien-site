@@ -47,6 +47,20 @@ exports.index = async (req, res) => {
       }
     });
   });
+  all_messages.forEach(d => {
+    if (categories.indexOf(d.category) === -1) {
+      categories.push(d.category);
+    }
+    d.tags.forEach(t => {
+      if (tags_lookup.indexOf(t) === -1) {
+        tags_lookup.push(t);
+        tags.push({
+          label: t,
+          count: 1
+        });
+      }
+    });
+  });
   tags.sort((a,b) => {
     if (a.count > b.count) return -1;
     if (a.count < b.count) return 1;
@@ -147,6 +161,17 @@ exports.generate_sound = async (req, res) => {
   await messageService.generateTTS(message_id, prompt, model, voice);
 
   res.redirect(`/chat4/chat/${conversation_id}`);
+};
+
+exports.generate_custom_message = async (req, res) => {
+  const user_id = req.user.name;
+  const prompt = req.body.cm_prompt;
+  const response = req.body.cm_response;
+  const category = req.body.cm_category;
+
+  await messageService.CreateCustomMessage(prompt, response, user_id, category, []);
+
+  res.redirect('/chat4');
 };
 
 exports.knowledgelist = async (req, res) => {

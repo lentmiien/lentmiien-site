@@ -11,6 +11,8 @@ block content
         li.nav-item(role="presentation")
           button#append_message-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#append_message`, type="button", role="tab", aria-controls=`append_message`, aria-selected="false") Append message
         li.nav-item(role="presentation")
+          button#custom_message-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#custom_message`, type="button", role="tab", aria-controls=`custom_message`, aria-selected="false") Custom message
+        li.nav-item(role="presentation")
           button#chathistory-tab.nav-link.active(data-bs-toggle="tab", data-bs-target=`#chathistory`, type="button", role="tab", aria-controls=`chathistory`, aria-selected="true") Chat history
       .tab-content
         #newchat.tab-pane.fade(role="tabpanel" aria-labelledby="newchat-tab")
@@ -95,6 +97,28 @@ block content
               label(for=`append_${i}`) Append message
               .assistant!= message.response_html
               .user!= message.prompt_html
+      .tab-content
+        #custom_message.tab-pane.fade(role="tabpanel" aria-labelledby="custom_message-tab")
+          h3 Generate a custom message to append to future conversations
+          .row 
+            .col 
+              form(action="/chat4/generate_custom_message", method="post") 
+                .form-group
+                  label(for='cm_category') Category
+                  .input-group.mb-3
+                    input#cm_category.form-control(type='text', placeholder='Enter category', name='cm_category', aria-label='Category')
+                    .input-group-append
+                      .dropdown
+                        button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                        ul.dropdown-menu
+                          each val in categories
+                            li
+                              a.dropdown-item(href='#', onclick=`setCategory('cm_category', '${val}')`) #{val}
+                label(for="cm_prompt") Prompt 
+                textarea#cm_prompt.form-control(name="cm_prompt", cols="30", rows="10", required)
+                label(for="cm_response") Response 
+                textarea#cm_response.form-control(name="cm_response", cols="30", rows="10", required)
+                input.btn.btn-warning(type="submit", value="Generate message")
       .tab-content
         #chathistory.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chathistory-tab")
           .row 

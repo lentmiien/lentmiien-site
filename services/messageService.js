@@ -95,6 +95,23 @@ class MessageService {
     return { db_entry, tokens: response.usage.total_tokens };
   }
 
+  async CreateCustomMessage(prompt, response, sender, category, images) {
+    // If you have generated a prompt-response pair somewhere else, or need to guide the conversation in a certain way, you can save a customs prompt-response pair with this method
+    const chat_message_entry = {
+      user_id: sender,
+      category,
+      tags: "custom_message",
+      prompt,
+      response,
+      images,
+      sound: '',
+    };
+    const db_entry = await new this.messageModel(chat_message_entry).save();
+
+    // Return entry to user
+    return { db_entry };
+  }
+
   async createMessagesSummary(messages, tokens) {
     messages.push({
       role: 'user',
