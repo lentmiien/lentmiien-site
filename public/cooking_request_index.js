@@ -27,7 +27,7 @@ function DisplayIndex() {
     button.dataset.title = d.title;
     if (d.images.length > 0) {
       const img = document.createElement("img");
-      img.src = d.images[0];
+      img.src = '/img/' + d.images[0];
       img.classList.add("button-thumbnail");
       button.append(img);
     }
