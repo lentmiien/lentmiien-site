@@ -33,4 +33,7 @@ router.post('/postblog', controller.postblog);
 // Health log
 router.post('/fetch_messages', controller.fetch_messages);
 
+// Chat4 helper
+router.post('/prompt_assist', controller.prompt_assist);
+
 module.exports = router;

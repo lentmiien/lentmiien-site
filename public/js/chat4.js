@@ -21,7 +21,7 @@ const tags = document.getElementById("tags");
 const tooltags = document.getElementById("tooltags");
 const context = document.getElementById("context");
 const toolcontext = document.getElementById("toolcontext");
-const prompt = document.getElementById("prompt");
+const userprompt = document.getElementById("prompt");
 const image_quality = document.getElementById("image_quality");
 const toolquality = document.getElementById("toolquality");
 const image_size = document.getElementById("image_size");
@@ -100,7 +100,7 @@ function CloseTemplatesPopup() {
 
 // Apply chat template
 function SetChatTemplate(element) {
-  prompt.value = element.value;
+  userprompt.value = element.value;
   CloseTemplatesPopup();
 }
 
@@ -131,7 +131,7 @@ const image_prompt = document.getElementById("image_prompt");
 
 function RunImageForm() {
   // Transfer prompt to image_prompt
-  image_prompt.value = prompt.value;
+  image_prompt.value = userprompt.value;
   // Select selected message, or latest if non selected, and set message id in image_message_id
   const start_messages = document.getElementsByName("start_message");
   image_message_id.value = start_messages[0].value;
@@ -151,7 +151,7 @@ const sound_prompt = document.getElementById("sound_prompt");
 
 function RunSoundForm() {
   // Transfer prompt to sound_prompt
-  sound_prompt.value = prompt.value;
+  sound_prompt.value = userprompt.value;
   // Select selected message, or latest if non selected, and set message id in sound_message_id
   const start_messages = document.getElementsByName("start_message");
   sound_message_id.value = start_messages[0].value;
@@ -271,14 +271,16 @@ function FilterTag(element) {
 }
 
 function AppendMessageFilter() {
-  const message_category = document.getElementById("message_category").value;
-  const message_tag = document.getElementById("message_tag").value;
-  const messages = document.getElementsByClassName("append_message_container");
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i].dataset.category === message_category && messages[i].dataset.tags.indexOf(message_tag) >= 0) {
-      messages[i].style.display = "block";
-    } else {
-      messages[i].style.display = "none";
+  if (document.getElementById("message_category")) {
+    const message_category = document.getElementById("message_category").value;
+    const message_tag = document.getElementById("message_tag").value;
+    const messages = document.getElementsByClassName("append_message_container");
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].dataset.category === message_category && messages[i].dataset.tags.indexOf(message_tag) >= 0) {
+        messages[i].style.display = "block";
+      } else {
+        messages[i].style.display = "none";
+      }
     }
   }
 }
@@ -344,5 +346,65 @@ async function AppendToHealthEntry() {
   const status = await response.json();
   console.log(status);
   alert(status.message);
+  hideLoadingPopup();
+}
+
+async function AI_Prompt() {
+  showLoadingPopup();
+
+  // Takes the current conversation and the user prompt
+  // Send data to API, that asks for OpenAI's API to refine the prompt
+  // The returned prompt is replaces the user prompt (User can adjust prompt if needed before sending message as usual)
+  const history = document.getElementsByClassName("raw-chat-content");
+  const prompt_val = userprompt.value;
+  const category_val = category.value;
+  const messages = [];
+  messages.push({
+    role: 'system',
+    content: [
+      { type: 'text', text: "You are a helpful assistant. Looking at our conversation, you are to assist the user to formulate their response to the last massage, with the details provided by the user." },
+    ]
+  });
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (i%2 === 0) {
+      messages.push({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: history[i].innerHTML },
+        ]
+      });
+    } else {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: history[i].innerHTML },
+        ]
+      });
+    }
+  }
+  messages.push({
+    role: 'user',
+    content: [
+      { type: 'text', text: `Please help me formulate a response to the last message. The information that I need to provide are as following:\n\n---\n\n${prompt_val}\n\n---\n` },
+    ]
+  });
+
+  // Call API
+  const response = await fetch("/chat4/prompt_assist", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({messages, category: category_val}), // body data type must match "Content-Type" header
+  });
+  const data = await response.json();
+  console.log(data);
+  userprompt.value = data.response;
   hideLoadingPopup();
 }

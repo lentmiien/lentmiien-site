@@ -100,6 +100,7 @@ block content
               button.btn.btn-success(type="button", onclick="RunImageForm([])") Image
               button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
               input.btn.btn-primary(type="submit", value="Prompt", onclick="showLoadingPopup()")
+              button.btn.btn-warning(type="button", onclick="AI_Prompt()", title="AI will try to refine the prompt for you") AI Prompt
             #knowledge_container.row
               each ki in conversation.knowledge_injects
                 .col(id=ki.knowledge_id)
@@ -252,7 +253,7 @@ block content
                   div 
                     p.header-row 
                       b Response:
-                    pre.assistant= m.response
+                    pre.assistant.raw-chat-content= m.response
                     if m.sound.length > 0
                       i= `Audio file: ${m.sound}`
                     p.header-row 
@@ -263,7 +264,7 @@ block content
                           div.chat4_img_wrapper
                             img.chat4_img(src=`/img/${img.filename}`, alt="image", onclick="showModalPopup(this)")
                           i= `Image file: ${img.filename}`
-                    pre.user= m.prompt
+                    pre.user.raw-chat-content= m.prompt
       .tab-content
         #htmlchat.tab-pane.fade(role="tabpanel" aria-labelledby="htmlchat-tab")
           .row 

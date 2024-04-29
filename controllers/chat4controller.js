@@ -338,3 +338,14 @@ exports.fetch_messages = async (req, res) => {
   });
   res.json(output);
 };
+
+exports.prompt_assist = async (req, res) => {
+  const user_id = req.user.name;
+  const parameters = {
+    tags: "prompt_assist",
+    category: req.body.category,
+    prompt: req.body.messages[req.body.messages.length-1].content[0].text,
+  }
+  const resp = await messageService.createMessage(true, req.body.messages, null, user_id, parameters, []);
+  res.json({response: resp.db_entry.response});
+};
