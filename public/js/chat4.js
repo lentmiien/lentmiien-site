@@ -382,12 +382,75 @@ async function AI_Prompt() {
       });
     }
   }
+  if (prompt_val.length > 0) {
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: `Please help me formulate a response to the last message. The information that I need to provide are as following:\n\n---\n\n${prompt_val}\n\n---\n` },
+      ]
+    });
+  } else {
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: `Please help me formulate a response to the last message, to expand and explore related topics.` },
+      ]
+    });
+  }
+
+  // Call API
+  const response = await fetch("/chat4/prompt_assist", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({messages, category: category_val}), // body data type must match "Content-Type" header
+  });
+  const data = await response.json();
+  console.log(data);
+  userprompt.value = data.response;
+  hideLoadingPopup();
+}
+
+async function AI_Suggest() {
+  showLoadingPopup();
+
+  // Takes the current conversation, but reverse user <-> assistant
+  // Send data to API, that asks for OpenAI's API to respond
+  // The returned prompt is inserted in the user prompt (User can adjust prompt if needed before sending message as usual)
+  const history = document.getElementsByClassName("raw-chat-content");
+  const context_val = context.value;
+  const category_val = category.value;
+  const messages = [];
   messages.push({
-    role: 'user',
+    role: 'system',
     content: [
-      { type: 'text', text: `Please help me formulate a response to the last message. The information that I need to provide are as following:\n\n---\n\n${prompt_val}\n\n---\n` },
+      { type: 'text', text: context_val },
     ]
   });
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (i%2 === 1) {
+      messages.push({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: history[i].innerHTML },
+        ]
+      });
+    } else {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: history[i].innerHTML },
+        ]
+      });
+    }
+  }
 
   // Call API
   const response = await fetch("/chat4/prompt_assist", {

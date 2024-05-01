@@ -129,6 +129,10 @@ class ConversationService {
     // Set context
     let context = parameters.context;
     if ("knowledge" in parameters && parameters.knowledge.length > 0) {
+      if (!Array.isArray(parameters.knowledge)) {
+        // Convert input to an array with the input as its single element
+        parameters.knowledge = [parameters.knowledge];
+      }
       const knowledges = await this.knowledgeService.getKnowledgesByIdArray(parameters.knowledge);
       const knowledge_lookup = [];
       knowledges.forEach(d => knowledge_lookup.push(d._id.toString()));

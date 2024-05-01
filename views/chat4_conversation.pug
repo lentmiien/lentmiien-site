@@ -101,6 +101,7 @@ block content
               button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound
               input.btn.btn-primary(type="submit", value="Prompt", onclick="showLoadingPopup()")
               button.btn.btn-warning(type="button", onclick="AI_Prompt()", title="AI will try to refine the prompt for you") AI Prompt
+              button.btn.btn-warning(type="button", onclick="AI_Suggest()", title="AI will suggest a prompt for you") AI Suggest
             #knowledge_container.row
               each ki in conversation.knowledge_injects
                 .col(id=ki.knowledge_id)
