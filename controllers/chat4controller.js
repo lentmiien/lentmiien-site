@@ -5,13 +5,15 @@ const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
 const KnowledgeService = require('../services/knowledgeService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel } = require('../database');
+const AgentService = require('../services/agentService');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel, AgentModel } = require('../database');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
+const agentService = new AgentService(AgentModel, messageService);
 
 // Globals
 let categories = [];
@@ -90,6 +92,7 @@ exports.chat = async (req, res) => {
   const copy_conversations = group_conversations.filter(d => d._id.toString() != conversation._id.toString());
   const messages = await messageService.getMessagesByIdArray(conversation.messages);
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
+  const agents = await agentService.getAgentAll();
 
   // Knovledge id to index
   const knowledge_id_to_index = {};
@@ -97,7 +100,7 @@ exports.chat = async (req, res) => {
   const used_knowledge_ids = [];
   conversation.knowledge_injects.forEach(d => used_knowledge_ids.push(d.knowledge_id));
   
-  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories, copy_conversations });
+  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories, copy_conversations, agents });
 };
 
 exports.post = async (req, res) => {
@@ -348,4 +351,23 @@ exports.prompt_assist = async (req, res) => {
   }
   const resp = await messageService.createMessage(true, req.body.messages, null, user_id, parameters, []);
   res.json({response: resp.db_entry.response});
+};
+
+exports.create_agent = async (req, res) => {
+  const name = req.body.ca_name;
+  const description = req.body.ca_description;
+  const context = req.body.ca_context;
+  const start_memory = req.body.ca_start_memory;
+  await agentService.createAgent(name, description, context, start_memory);
+  res.redirect('/chat4');
+};
+
+exports.ask_agent = async (req, res) => {
+  // askAgent(agent_id, messages, user_id, category)
+  const agent_id = req.body.ca_agent_id;
+  const messages = req.body.messages;
+  const user_id = req.user.name;
+  const category = req.body.category;
+  const response = await agentService.askAgent(agent_id, messages, user_id, category);
+  res.json({response});
 };

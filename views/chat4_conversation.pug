@@ -102,6 +102,18 @@ block content
               input.btn.btn-primary(type="submit", value="Prompt", onclick="showLoadingPopup()")
               button.btn.btn-warning(type="button", onclick="AI_Prompt()", title="AI will try to refine the prompt for you") AI Prompt
               button.btn.btn-warning(type="button", onclick="AI_Suggest()", title="AI will suggest a prompt for you") AI Suggest
+              .input-group.mb-3
+                select#agent_select.form-control(name='agent_select', aria-label='agent_select')
+                  option(value="") -- Select an agent --
+                  each a in agents 
+                    option(value=a._id.toString())= a.name
+                .input-group-append
+                  .dropdown
+                    button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+                    ul.dropdown-menu
+                      li
+                        a.dropdown-item(href='#', onclick=`askAgent('agent_select')`) Ask
+              button.btn.btn-warning(type="button", onclick="AI_Suggest()", title="AI will suggest a prompt for you") AI Suggest
             #knowledge_container.row
               each ki in conversation.knowledge_injects
                 .col(id=ki.knowledge_id)

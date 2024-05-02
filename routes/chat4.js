@@ -36,4 +36,8 @@ router.post('/fetch_messages', controller.fetch_messages);
 // Chat4 helper
 router.post('/prompt_assist', controller.prompt_assist);
 
+// Agents
+router.post('/create_agent', controller.create_agent);
+router.post('/ask_agent', controller.ask_agent);
+
 module.exports = router;

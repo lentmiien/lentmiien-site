@@ -471,3 +471,55 @@ async function AI_Suggest() {
   userprompt.value = data.response;
   hideLoadingPopup();
 }
+
+async function askAgent(agent_select) {
+  showLoadingPopup();
+
+  const agent_id = document.getElementById(agent_select).value;
+  const history = document.getElementsByClassName("raw-chat-content");
+  const context_val = context.value;
+  const category_val = category.value;
+  const messages = [];
+  messages.push({
+    role: 'system',
+    content: [
+      { type: 'text', text: context_val },
+    ]
+  });
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (i%2 === 1) {
+      messages.push({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: history[i].innerHTML },
+        ]
+      });
+    } else {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: history[i].innerHTML },
+        ]
+      });
+    }
+  }
+
+  // Call API
+  const response = await fetch("/chat4/ask_agent", {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({ca_agent_id: agent_id, messages, category: category_val}), // body data type must match "Content-Type" header
+  });
+  const data = await response.json();
+  console.log(data);
+  userprompt.value = data.response;
+  hideLoadingPopup();
+}
