@@ -57,7 +57,7 @@ class AgentService {
     memory_query.push({
       role: 'user',
       content: [
-        { type: 'text', text: `${agent.memory.length > 0 ? "This is the current reference message, that needs to be updated:\n\n---\n\n" + agent.memory + "\n\n---\n\n" : ""}Please give me a summary of this conversation for future reference.` }
+        { type: 'text', text: `${agent.memory.length > 0 ? "This is the current reference message, that needs to be updated:\n\n---\n\n" + agent.memory + "\n\n---\n\n" : ""}Based on the previously defined tasks which are "${agent.context}", please provide a summary of the conversation. Focus on extracting and summarizing key details directly relevant to these tasks. Include all resolved facts and final decisions, and also provide expanded details for parts of the conversation that critically inform the understanding of the context and implications pertaining to these tasks. Ensure that the summary is concise yet comprehensive enough to capture all necessary insights related to the designated tasks.` }
       ]
     });
     const memory_response = await this.messageService.createMessage(true, memory_query, null, user_id, {category, tags: "agent_memory", prompt: memory_query[memory_query.length-1].content[0].text}, []);
