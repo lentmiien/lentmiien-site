@@ -27,6 +27,7 @@ exports.index = async (req, res) => {
   const conversations = await conversationService.getConversationsForUser(user_id);
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
   const all_messages = await messageService.getMessagesByUserId(user_id);// For appending existing messages to a new conversation
+  const agents = await agentService.getAgentAll();
 
   // Get all categories and tags
   categories = [];
@@ -73,7 +74,7 @@ exports.index = async (req, res) => {
     if (knowledges_categories.indexOf(d.category) === -1) knowledges_categories.push(d.category);
   });
 
-  res.render("chat4", { conversations, categories, tags, templates, knowledges, knowledges_categories, all_messages });
+  res.render("chat4", { conversations, categories, tags, templates, knowledges, knowledges_categories, all_messages, agents });
 };
 
 // JSON API endpoint
@@ -360,6 +361,16 @@ exports.create_agent = async (req, res) => {
   const start_memory = req.body.ca_start_memory;
   await agentService.createAgent(name, description, context, start_memory);
   res.redirect('/chat4');
+};
+
+exports.teach_agent = async (req, res) => {
+  // teachAgent(agent_id, messages, user_id, category)
+  const agent_id = req.body.ca_agent_id;
+  const messages = req.body.messages;
+  const user_id = req.user.name;
+  const category = req.body.category;
+  const response = await agentService.teachAgent(agent_id, messages, user_id, category);
+  res.json({response});
 };
 
 exports.ask_agent = async (req, res) => {

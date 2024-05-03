@@ -472,7 +472,7 @@ async function AI_Suggest() {
   hideLoadingPopup();
 }
 
-async function askAgent(agent_select) {
+async function Agent(agent_select, task) {
   showLoadingPopup();
 
   const agent_id = document.getElementById(agent_select).value;
@@ -504,8 +504,20 @@ async function askAgent(agent_select) {
     }
   }
 
+  if (task === "ask") {
+    if (userprompt.value.length === 0) {
+      return alert("User prompt required");
+    }
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: userprompt.value },
+      ]
+    });
+  }
+
   // Call API
-  const response = await fetch("/chat4/ask_agent", {
+  const response = await fetch(`/chat4/${task}_agent`, {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
     mode: "cors", // no-cors, *cors, same-origin
     cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached

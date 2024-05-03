@@ -160,6 +160,9 @@ block content
             label(for="ca_start_memory") Initial memory 
             textarea#ca_start_memory.form-control(name="ca_start_memory", cols="30", rows="10") 
             input.btn.btn-primary(type="submit", value="Create agent")
+          hr
+          each agent in agents 
+            pre= JSON.stringify(agent, null, 2)
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content
