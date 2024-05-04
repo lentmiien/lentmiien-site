@@ -10,8 +10,9 @@ const Agent = new mongoose.Schema({
 */
 
 class AgentService {
-  constructor(agentModel, messageService) {
+  constructor(agentModel, conversationService, messageService) {
     this.agentModel = agentModel;
+    this.conversationService = conversationService;
     this.messageService = messageService;
   }
 
@@ -68,7 +69,7 @@ class AgentService {
     return memory_response.db_entry.response;
   }
 
-  async askAgent(agent_id, messages, user_id, category) {
+  async askAgent(conversation_id, agent_id, messages, user_id, category) {
     // Load agent
     const agent = await this.agentModel.findById(agent_id);
     // Append agent context and memory to messages
@@ -88,6 +89,8 @@ class AgentService {
     });
     // Query message API
     const response = await this.messageService.createMessage(true, query_messages, null, user_id, {category, tags: "agent", prompt: query_messages[query_messages.length-1].content[0].text}, []);
+    // Append message to conversation
+    await this.conversationService.appendMessageToConversation(conversation_id, response.db_entry._id.toString());
     // Return agent response
     return response.db_entry.response;
   }

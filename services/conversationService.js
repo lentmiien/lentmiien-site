@@ -304,6 +304,41 @@ class ConversationService {
     }
   }
 
+  async appendMessageToConversation(conversation_id, message_id_to_add) {
+    const conversation = await this.conversationModel.findById(conversation_id);
+    conversation.messages.push(message_id_to_add);
+
+    // Generate a new summary
+    const messages = await this.messageService.getMessagesByIdArray(conversation.messages);
+    const api_messages = [];
+    api_messages.push({
+      role: 'system',
+      content: [
+        { type: 'text', text: conversation.context_prompt }
+      ]
+    });
+    messages.forEach(m => {
+      api_messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: m.prompt }
+        ]
+      });
+      api_messages.push({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: m.response }
+        ]
+      });
+    });
+    const summary = await this.messageService.createMessagesSummary(api_messages);
+
+    conversation.description = summary;
+    conversation.updated_date = new Date();
+    await conversation.save();
+    return conversation._id.toString();
+  }
+
   async deleteConversation(id) {
     return await this.conversationModel.deleteOne({_id: id});
   }

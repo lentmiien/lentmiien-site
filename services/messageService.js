@@ -112,7 +112,7 @@ class MessageService {
     return { db_entry };
   }
 
-  async createMessagesSummary(messages, tokens) {
+  async createMessagesSummary(messages, tokens = 16001) {
     messages.push({
       role: 'user',
       content: 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation.',

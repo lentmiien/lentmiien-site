@@ -13,7 +13,7 @@ const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
-const agentService = new AgentService(AgentModel, messageService);
+const agentService = new AgentService(AgentModel, conversationService, messageService);
 
 // Globals
 let categories = [];
@@ -375,10 +375,11 @@ exports.teach_agent = async (req, res) => {
 
 exports.ask_agent = async (req, res) => {
   // askAgent(agent_id, messages, user_id, category)
+  const conversation_id = req.body.conversation_id;
   const agent_id = req.body.ca_agent_id;
   const messages = req.body.messages;
   const user_id = req.user.name;
   const category = req.body.category;
-  const response = await agentService.askAgent(agent_id, messages, user_id, category);
+  const response = await agentService.askAgent(conversation_id, agent_id, messages, user_id, category);
   res.json({response});
 };

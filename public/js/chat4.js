@@ -475,6 +475,7 @@ async function AI_Suggest() {
 async function Agent(agent_select, task) {
   showLoadingPopup();
 
+  const conversation_id = document.getElementById("k_conversation_id").value;
   const agent_id = document.getElementById(agent_select).value;
   const history = document.getElementsByClassName("raw-chat-content");
   const context_val = context.value;
@@ -528,10 +529,15 @@ async function Agent(agent_select, task) {
     },
     redirect: "follow", // manual, *follow, error
     referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-    body: JSON.stringify({ca_agent_id: agent_id, messages, category: category_val}), // body data type must match "Content-Type" header
+    body: JSON.stringify({conversation_id, ca_agent_id: agent_id, messages, category: category_val}), // body data type must match "Content-Type" header
   });
   const data = await response.json();
   console.log(data);
   userprompt.value = data.response;
-  hideLoadingPopup();
+
+  if (task === "ask") {
+    open(`/chat4/chat/${conversation_id}`, "_self");
+  } else {
+    hideLoadingPopup();
+  }
 }
