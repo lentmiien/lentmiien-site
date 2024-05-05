@@ -1,0 +1,38 @@
+extends layout
+
+block content
+  h2 User list 
+  table.table.table-striped 
+    thead 
+      tr 
+        th ID
+        th User name
+        th Email
+        th Type
+        th Password 
+        th 
+    tbody 
+      each user in users 
+        tr 
+          td= user._id.toString()
+          td= user.name
+          td= user.email
+          if user.name === "Lennart"
+            td - Locked -
+            td - Locked -
+            td - Locked -
+          else
+            td
+              select.form-control(id=`${user.name}_type`, name=`${user.name}_type`, data-id=`${user._id.toString()}`, onchange="UpdateType(this)") 
+                option(value="other") - Not set -
+                option(value="admin", selected=user.type_user==="admin") Admin
+                option(value="family", selected=user.type_user==="family") Family
+                option(value="user", selected=user.type_user==="user") User
+            td
+              if user.hash_password.length > 1
+                button.btn.btn-danger(data-id=`${user._id.toString()}`, onclick="ResetPassword(this)") Reset
+              else 
+                b - Not set -
+            td 
+              button.btn.btn-danger Delete
+  script(src="/js/manage_users.js") 

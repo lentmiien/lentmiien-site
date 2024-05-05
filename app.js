@@ -43,6 +43,10 @@ passport.use(
 
       // console.log(user);
       // console.log(bcrypt.hashSync(password, 10));
+      if (user.hash_password.length === 1) {
+        user.hash_password = bcrypt.hashSync(password, 10);
+        await user.save();
+      }
 
       bcrypt.compare(password, user.hash_password, (err, isMatch) => {
         if (err) throw err;
@@ -153,11 +157,21 @@ app.use('/health', isAuthenticated, healthRouter);
 const boxRouter = require('./routes/box');
 app.use('/box', isAuthenticated, boxRouter);
 
+const adminRouter = require('./routes/admin');
+app.use('/admin', isAuthenticated, isAdmin, adminRouter);
+
 function isAuthenticated(req, res, next) {
   if (req.isAuthenticated()) {
     return next();
   }
   res.redirect('/login');
+}
+
+function isAdmin(req, res, next) {
+  if (req.user.type_user === 'admin') {
+    return next();
+  }
+  res.redirect('/');
 }
 
 // Start the server
