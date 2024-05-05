@@ -41,6 +41,22 @@ exports.delete_user = async (req, res) => {
   if (id === locked_user_id) {
     return res.json({status:"Failed", message:"Can't modify user."});
   }
-  await this.UseraccountModel.deleteOne({_id: id});
+  await UseraccountModel.deleteOne({_id: id});
   return res.json({status:"Completed", message:"User deleted."});
+}
+
+exports.create_user = async (req, res) => {
+  const name = req.body.name;
+  const email = req.body.email;
+  const type_user = req.body.type_user;
+
+  const entry_data = {
+    name,
+    email,
+    type_user,
+    hash_password: "0",
+  };
+  await new UseraccountModel(entry_data).save();
+
+  return res.json({status:"Completed", message:"User created."});
 }
