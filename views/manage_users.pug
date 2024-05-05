@@ -34,5 +34,18 @@ block content
               else 
                 b - Not set -
             td 
-              button.btn.btn-danger Delete
+              button.btn.btn-danger(data-id=`${user._id.toString()}`, onclick="DeleteUser(this)") Delete
+      tr
+        td 
+          b New user
+        td 
+          input#new_user_name.form-control(type="text", placeholder="Name of new user")
+        td 
+          input#new_user_email.form-control(type="text", placeholder="Email of new user")
+        td 
+          b User
+        td 
+          b Set at first login
+        td 
+          button.btn.btn-success Create user
   script(src="/js/manage_users.js") 

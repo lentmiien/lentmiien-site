@@ -27,7 +27,6 @@ exports.reset_password = async (req, res) => {
   if (id === locked_user_id) {
     return res.json({status:"Failed", message:"Can't modify user."});
   }
-  const new_type = req.body.type;
   const user = await UseraccountModel.findById(id);
   if (user) {
     user.hash_password = "0";
@@ -35,4 +34,13 @@ exports.reset_password = async (req, res) => {
     return res.json({status:"Completed", message:"User updated."});
   }
   return res.json({status:"Failed", message:"No user to update."});
+}
+
+exports.delete_user = async (req, res) => {
+  const id = req.body.id;
+  if (id === locked_user_id) {
+    return res.json({status:"Failed", message:"Can't modify user."});
+  }
+  await this.UseraccountModel.deleteOne({_id: id});
+  return res.json({status:"Completed", message:"User deleted."});
 }
