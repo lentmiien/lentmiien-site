@@ -43,6 +43,8 @@ html(lang='en')
         a.type-2-link(href="/blog/Food/list", style="width:100%;") Food
         if loggedIn == true
           a.type-2-link(href="/mypage/blogpost", style="width:100%;") Write blog
+        if admin
+          a.type-1-link(href="/admin", style="width:100%;") Admin page
         a.type-1-link(href="/cookingp", style="width:100%;") Cooking public page
       if loggedIn == true
         if chatmode

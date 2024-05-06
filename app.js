@@ -77,6 +77,7 @@ app.all('*', (req, res, next) => {
   if (req.isAuthenticated()) {
     res.locals.loggedIn = true;
     res.locals.name = req.user.name;
+    res.locals.admin = req.user.type_user === "admin";
   }
   if (process.env.HIDE_GTAG && process.env.HIDE_GTAG === "YES") {
     res.locals.gtag = false;
