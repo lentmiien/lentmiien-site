@@ -18,6 +18,7 @@ db.on('error', console.error.bind(console, 'MongoDB connection error:'));
 
 // User
 const UseraccountModel = require('./models/useraccount');
+const RoleModel = require('./models/role');
 // Article
 const ArticleModel = require('./models/article');
 // ChatGPT
@@ -60,6 +61,7 @@ const AgentModel = require('./models/agent');
 // Export models
 module.exports = {
   UseraccountModel,
+  RoleModel,
   ArticleModel,
   ChatModel,
   Chat2Model,

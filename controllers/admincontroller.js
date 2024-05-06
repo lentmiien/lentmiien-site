@@ -1,4 +1,4 @@
-const { UseraccountModel } = require('../database');
+const { UseraccountModel, RoleModel } = require('../database');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -60,3 +60,11 @@ exports.create_user = async (req, res) => {
 
   return res.json({status:"Completed", message:"User created."});
 }
+
+exports.manage_roles = async (req, res) => {
+  const users = await UseraccountModel.find();
+  const roles = await RoleModel.find();
+  res.render('manage_roles', { users, roles });
+}
+
+exports.update_role = async (req, res) => {}

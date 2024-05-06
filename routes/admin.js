@@ -11,4 +11,7 @@ router.post('/reset_password', controller.reset_password);
 router.post('/delete_user', controller.delete_user);
 router.post('/create_user', controller.create_user);
 
+router.get('/manage_roles', controller.manage_roles);
+router.post('/update_role', controller.update_role);
+
 module.exports = router;
