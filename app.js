@@ -10,7 +10,7 @@ const expressSession = require('express-session');
 const bcrypt = require('bcryptjs');
 
 // Require necessary database models
-const { UseraccountModel } = require('./database');
+const { UseraccountModel, RoleModel } = require('./database');
 
 const app = express();
 
@@ -125,7 +125,7 @@ const mypageRouter = require('./routes/mypage');
 app.use('/mypage', isAuthenticated, mypageRouter);
 
 const chatRouter = require('./routes/chat');
-app.use('/chat', isAuthenticated, chatRouter);
+app.use('/chat', isAuthenticated, authorize("chat"), chatRouter);
 
 const chat2Router = require('./routes/chat2');
 app.use('/chat2', isAuthenticated, chat2Router);
@@ -172,6 +172,28 @@ function isAdmin(req, res, next) {
     return next();
   }
   res.redirect('/');
+}
+
+function authorize(routeName) {
+  return async (req, res, next) => {
+      const userrole = req.user.type_user;
+      const username = req.user.name;
+
+      // First look for user-specific roles
+      const userSpecificRole = await RoleModel.findOne({ name: username, type: 'user' });
+      if (userSpecificRole && userSpecificRole.permissions.includes(routeName)) {
+        return next();
+      }
+
+      // If no user-specific role or not authorized, check group role
+      const groupRole = await RoleModel.findOne({ name: userrole, type: 'group' });
+      if (!groupRole || !groupRole.permissions.includes(routeName)) {
+        return res.status(403).send('Access denied');
+      }
+
+      // Everything OK
+      next();
+  };
 }
 
 // Start the server

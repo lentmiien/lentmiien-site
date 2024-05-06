@@ -64,7 +64,28 @@ exports.create_user = async (req, res) => {
 exports.manage_roles = async (req, res) => {
   const users = await UseraccountModel.find();
   const roles = await RoleModel.find();
-  res.render('manage_roles', { users, roles });
+  const selection = {
+    name_list: [],
+    role_list: [],
+    routes: [
+      "chat",
+      "chat2",
+      "chat3",
+      "chat4",
+      "openai",
+      "embedding",
+      "gptdocument",
+      "accounting",
+      "cooking",
+      "health",
+      "box"
+    ]
+  };
+  users.forEach(user => {
+    if (selection.name_list.indexOf(user.name) === -1) selection.name_list.push(user.name);
+    if (selection.role_list.indexOf(user.type_user) === -1) selection.role_list.push(user.type_user);
+  });
+  res.render('manage_roles', { selection, roles });
 }
 
 exports.update_role = async (req, res) => {}

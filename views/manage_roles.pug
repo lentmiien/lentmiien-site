@@ -2,8 +2,6 @@ extends layout
 
 block content
   h2 Role list 
-  each role in roles 
-    pre= JSON.stringify(role, null, 2)
-  h2 User list 
-  each user in users 
-    pre= JSON.stringify(user, null, 2)
+  pre= JSON.stringify(roles, null, 2)
+  h2 Selection list 
+  pre= JSON.stringify(selection, null, 2)
