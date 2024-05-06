@@ -5,7 +5,6 @@ block content
   table.table.table-striped 
     thead 
       tr 
-        th ID
         th User name
         th Email
         th Type
@@ -14,13 +13,12 @@ block content
     tbody 
       each user in users 
         tr 
-          td= user._id.toString()
           td= user.name
-          td= user.email
+          td ***
           if user.name === "Lennart"
-            td - Locked -
-            td - Locked -
-            td - Locked -
+            td ***
+            td ***
+            td ***
           else
             td
               select.form-control(id=`${user.name}_type`, name=`${user.name}_type`, data-id=`${user._id.toString()}`, onchange="UpdateType(this)") 
@@ -36,8 +34,6 @@ block content
             td 
               button.btn.btn-danger(data-id=`${user._id.toString()}`, onclick="DeleteUser(this)") Delete
       tr
-        td 
-          b New user
         td 
           input#new_user_name.form-control(type="text", placeholder="Name of new user")
         td 
