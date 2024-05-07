@@ -2,6 +2,38 @@ extends layout
 
 block content
   h2 Role list 
-  pre= JSON.stringify(roles, null, 2)
-  h2 Selection list 
-  pre= JSON.stringify(selection, null, 2)
+  table.table.table-striped 
+    thead 
+      tr 
+        th Role (type)
+        th Permissions 
+    tbody 
+      each role in roles 
+        tr 
+          td= `${role.name} (${role.type})`
+          td!= role.permissions.join('<br>') 
+  h2 Update permission 
+  label(for="selection") Select role to modify 
+  select.form-control(onchange="UpdateInputForm(this)") 
+    option(value="") 
+    optgroup(label="Groups") 
+      each g in selection.role_list
+        option(value=g)= g
+    optgroup(label="Users") 
+      each n in selection.name_list
+        option(value=n)= n
+  div 
+    form(action="/admin/update_role", method="post") 
+      label(for="role") Role to modify 
+      input#role.form-control(type="text", name="role", readonly)
+      label(for="type") Role type 
+      input#type.form-control(type="text", name="type", readonly)
+      .form-group
+        each p in selection.routes
+          .form-check.form-check-inline
+            input.form-check-input(type="checkbox", id=p, name="route_permissions", value=p)
+            label.form-check-label(for=p)= p
+      input.btn.btn-warning(type="submit", value="Update")
+  pre#roles= JSON.stringify(roles, null, 2)
+  pre#selection= JSON.stringify(selection, null, 2)
+  script(src="/js/manage_roles.js") 

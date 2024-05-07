@@ -129,34 +129,34 @@ const chatRouter = require('./routes/chat');
 app.use('/chat', isAuthenticated, authorize("chat"), chatRouter);
 
 const chat2Router = require('./routes/chat2');
-app.use('/chat2', isAuthenticated, chat2Router);
+app.use('/chat2', isAuthenticated, authorize("chat2"), chat2Router);
 
 const chat3Router = require('./routes/chat3');
-app.use('/chat3', isAuthenticated, chat3Router);
+app.use('/chat3', isAuthenticated, authorize("chat3"), chat3Router);
 
 const chat4Router = require('./routes/chat4');
-app.use('/chat4', isAuthenticated, chat4Router);
+app.use('/chat4', isAuthenticated, authorize("chat4"), chat4Router);
 
 const openaiRouter = require('./routes/openai');
-app.use('/openai', isAuthenticated, openaiRouter);
+app.use('/openai', isAuthenticated, authorize("openai"), openaiRouter);
 
 const embeddingRouter = require('./routes/embedding');
-app.use('/embedding', isAuthenticated, embeddingRouter);
+app.use('/embedding', isAuthenticated, authorize("embedding"), embeddingRouter);
 
 const gptdocumentRouter = require('./routes/gptdocument');
-app.use('/gptdocument', isAuthenticated, gptdocumentRouter);
+app.use('/gptdocument', isAuthenticated, authorize("gptdocument"), gptdocumentRouter);
 
 const budgetRouter = require('./routes/budget');
-app.use('/accounting', isAuthenticated, budgetRouter);
+app.use('/accounting', isAuthenticated, authorize("accounting"), budgetRouter);
 
 const cookingRouter = require('./routes/cooking');
-app.use('/cooking', isAuthenticated, cookingRouter);
+app.use('/cooking', isAuthenticated, authorize("cooking"), cookingRouter);
 
 const healthRouter = require('./routes/health');
-app.use('/health', isAuthenticated, healthRouter);
+app.use('/health', isAuthenticated, authorize("health"), healthRouter);
 
 const boxRouter = require('./routes/box');
-app.use('/box', isAuthenticated, boxRouter);
+app.use('/box', isAuthenticated, authorize("box"), boxRouter);
 
 const adminRouter = require('./routes/admin');
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);

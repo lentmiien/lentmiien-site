@@ -88,4 +88,30 @@ exports.manage_roles = async (req, res) => {
   res.render('manage_roles', { selection, roles });
 }
 
-exports.update_role = async (req, res) => {}
+exports.update_role = async (req, res) => {
+  const name = req.body.role;
+  const type = req.body.type;
+
+  if ("route_permissions" in req.body) {
+    // Update entry if existing, create otherwise
+    const permissions = Array.isArray(req.body.route_permissions) ? req.body.route_permissions : [req.body.route_permissions];
+
+    const roleToUpdate = await RoleModel.findOne({ name, type });
+    if (roleToUpdate) {
+      roleToUpdate.permissions = permissions;
+      await roleToUpdate.save();
+    } else {
+      const entry_data = {
+        name,
+        permissions,
+        type
+      };
+      await new RoleModel(entry_data).save();
+    }
+  } else {
+    // Delete entry if existing, ignore otherwise
+    await RoleModel.deleteOne({ name, type });
+  }
+
+  res.redirect('/admin/manage_roles');
+}
