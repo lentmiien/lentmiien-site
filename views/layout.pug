@@ -60,21 +60,25 @@ html(lang='en')
               a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Select head
               ul.dropdown-menu
                 li#head_list
-        .navbar-column
-          a.type-1-link(href="/chat4", style="width:100%;") ChatGPT
-          a.type-2-link(href="/chat4/knowledgelist", style="width:100%;") Knowledge
-          a.type-2-link(href="/chat3/manage_templates", style="width:100%;") ChatGPT tempaltes
-        .navbar-column
-          a.type-1-link(href="/accounting", style="width:100%;") Budget
-          a.type-2-link(href="/accounting/add_transaction", style="width:100%;") Add transaction
-          a.type-2-link(href="/accounting/datatest", style="width:100%;") [TEST] Budget
-        .navbar-column
-          a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
-          a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
-          a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
-        .navbar-column
-          a.type-1-link(href="/health", style="width:100%;") Health tracker
-          a.type-1-link(href="/box", style="width:100%;") Box packer
+        if permissions && permissions.indexOf("chat4") >= 0
+          .navbar-column
+            a.type-1-link(href="/chat4", style="width:100%;") ChatGPT
+            a.type-2-link(href="/chat4/knowledgelist", style="width:100%;") Knowledge
+            a.type-2-link(href="/chat3/manage_templates", style="width:100%;") ChatGPT tempaltes
+        if permissions && permissions.indexOf("accounting") >= 0
+          .navbar-column
+            a.type-1-link(href="/accounting", style="width:100%;") Budget
+            a.type-2-link(href="/accounting/add_transaction", style="width:100%;") Add transaction
+            a.type-2-link(href="/accounting/datatest", style="width:100%;") [TEST] Budget
+        if permissions && permissions.indexOf("cooking") >= 0
+          .navbar-column
+            a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
+            a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
+            a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
+        if permissions && (permissions.indexOf("health") >= 0 || permissions.indexOf("box") >= 0)
+          .navbar-column
+            a.type-1-link(href="/health", style="width:100%;") Health tracker
+            a.type-1-link(href="/box", style="width:100%;") Box packer
         .navbar-column
           a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
           a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
