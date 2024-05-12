@@ -110,7 +110,7 @@ exports.post = async (req, res) => {
 
   // If ask agent query
   if ("agent_select" in req.body && req.body.agent_select.length > 0) {
-    const new_conversation_id = await agentService.queryAgent(req.body.agent_select, req.body.context, req.body.prompt, user_id, req.body.category);
+    const new_conversation_id = await agentService.queryAgent(req.body.agent_select, req.body.context, req.body.prompt, user_id, req.body.tags, req.body.title, req.body.category);
     return res.redirect(`/chat4/chat/${new_conversation_id}`);
   }
 
