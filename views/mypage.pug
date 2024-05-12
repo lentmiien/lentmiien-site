@@ -6,21 +6,25 @@ block content
       a.btn.btn-link(href="/mypage/blogpost")
         img(src="/i/blog.jpg", alt="blogpost")
         p Write blog
-      a.btn.btn-link(href="/accounting/add_transaction")
-        img(src="/i/budget.jpg", alt="budget")
-        p Add transaction
-      a.btn.btn-link(href="/chat4")
-        img(src="/i/chat.jpg", alt="chat")
-        p Chat
-      a.btn.btn-link(href="/chat4/knowledgelist?category=Recipe")
-        img(src="/i/cookbook.jpg", alt="cookbook")
-        p Cookbook
-      a.btn.btn-link(href="/chat4/knowledgelist")
-        img(src="/i/knowledge.jpg", alt="knowledge")
-        p Browse knowledge
-      a.btn.btn-link(href="/cooking")
-        img(src="/i/calendar.jpg", alt="cooking calendar")
-        p Cooking calendar
-      a.btn.btn-link(href="/health")
-        img(src="/i/health.jpg", alt="health tracker")
-        p Health tracker
+      if permissions && permissions.indexOf("accounting") >= 0
+        a.btn.btn-link(href="/accounting/add_transaction")
+          img(src="/i/budget.jpg", alt="budget")
+          p Add transaction
+      if permissions && permissions.indexOf("chat4") >= 0
+        a.btn.btn-link(href="/chat4")
+          img(src="/i/chat.jpg", alt="chat")
+          p Chat
+        a.btn.btn-link(href="/chat4/knowledgelist?category=Recipe")
+          img(src="/i/cookbook.jpg", alt="cookbook")
+          p Cookbook
+        a.btn.btn-link(href="/chat4/knowledgelist")
+          img(src="/i/knowledge.jpg", alt="knowledge")
+          p Browse knowledge
+      if permissions && permissions.indexOf("cooking") >= 0
+        a.btn.btn-link(href="/cooking")
+          img(src="/i/calendar.jpg", alt="cooking calendar")
+          p Cooking calendar
+      if permissions && permissions.indexOf("health") >= 0
+        a.btn.btn-link(href="/health")
+          img(src="/i/health.jpg", alt="health tracker")
+          p Health tracker

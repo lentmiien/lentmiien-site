@@ -72,7 +72,7 @@ passport.deserializeUser((id, done) => {
 
 // Routes
 // Public - routes
-app.all('*', (req, res, next) => {
+app.all('*', async (req, res, next) => {
   res.locals.loggedIn = false;
   if (req.isAuthenticated()) {
     res.locals.loggedIn = true;
@@ -84,6 +84,18 @@ app.all('*', (req, res, next) => {
   } else {
     res.locals.gtag = true;
   }
+
+  // Load permissions
+  const permissions = [];
+  if (req.isAuthenticated()) {
+    const roles = await RoleModel.find({name:[req.user.name, req.user.type_user]});
+    roles.forEach(d => {
+      for (let i = 0; i < d.permissions.length; i++) {
+        if (permissions.indexOf(d.permissions[i]) === -1) permissions.push(d.permissions[i]);
+      }
+    });
+  }
+  res.locals.permissions = permissions;
 
   // Set social media tags
   res.locals.og_title = 'Lennart\'s Website';
