@@ -105,7 +105,14 @@ exports.chat = async (req, res) => {
 };
 
 exports.post = async (req, res) => {
+  const user_id = req.user.name;
   let use_conversation_id = req.params.id;
+
+  // If ask agent query
+  if ("agent_select" in req.body && req.body.agent_select.length > 0) {
+    const new_conversation_id = await agentService.queryAgent(req.body.agent_select, req.body.context, req.body.prompt, user_id, req.body.category);
+    return res.redirect(`/chat4/chat/${new_conversation_id}`);
+  }
 
   // Check if copying is needed
   if ("start_message" in req.body || "end_message" in req.body) {
@@ -113,14 +120,14 @@ exports.post = async (req, res) => {
   }
   // Check if creating conversation from existing messages
   if ("append_message_ids" in req.body && req.body.append_message_ids.length > 0) {
-    use_conversation_id = await conversationService.generateConversationFromMessages(req.user.name, req.body.append_message_ids.split(","));
+    use_conversation_id = await conversationService.generateConversationFromMessages(user_id, req.body.append_message_ids.split(","));
   }
   // Post message to conversation
   const image_paths = [];
   for (let i = 0; i < req.files.length; i++) {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
-  const conversation_id = await conversationService.postToConversation(req.user.name, use_conversation_id, image_paths, req.body);
+  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body);
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };

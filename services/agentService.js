@@ -94,6 +94,12 @@ class AgentService {
     // Return agent response
     return response.db_entry.response;
   }
+
+  async queryAgent(agent_id, start_context, prompt, user_id, category) {
+    // Generate new conversation
+    // Query conversation
+    // Return ID of new conversation
+  }
 }
 
 module.exports = AgentService;
