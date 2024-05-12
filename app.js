@@ -189,7 +189,11 @@ function authorize(routeName) {
       // If no user-specific role or not authorized, check group role
       const groupRole = await RoleModel.findOne({ name: userrole, type: 'group' });
       if (!groupRole || !groupRole.permissions.includes(routeName)) {
-        return res.status(403).send('Access denied');
+        return res.status(403).render('accessDenied', {
+          title: 'Access Denied',
+          message: 'You do not have permission to access this page. Please contact support if you think this is a mistake.',
+          user: req.user // Pass user info to display personalized navbar or options
+        });
       }
 
       // Everything OK
