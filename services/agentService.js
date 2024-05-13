@@ -95,10 +95,18 @@ class AgentService {
     return response.db_entry.response;
   }
 
-  async queryAgent(agent_id, start_context, prompt, user_id, category) {
-    // Generate new conversation
-    // Query conversation
-    // Return ID of new conversation
+  async queryAgent(agent_id, start_context, prompt, user_id, tags, title, category) {
+    // Load agent
+    const agent = await this.agentModel.findById(agent_id);
+    const parameters = {
+      context: `${start_context.length > 0 ? start_context+"\n\n" : ""}In your response, use the provided 'memory' content as a reference to ensure your answers are aligned with the information previously provided. Answer the user query precisely based on the 'memory'. If the user query asks for suggestions or ideas, you may include those additionally, even if not directly mentioned in the 'memory'. Your response should be well-structured and clear. Avoid introducing facts that are not supported by the 'memory' unless specifically asked for ideas or suggestions.`,
+      prompt: `**Memory:**\n\n${agent.memory}\n\n---\n\n**Query:**\n\n${prompt}`,
+      tags,
+      title,
+      category,
+    };
+    const conversation_id = await this.conversationService.postToConversation(user_id, "new", [], parameters);
+    return conversation_id;
   }
 }
 
