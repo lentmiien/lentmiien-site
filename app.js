@@ -24,7 +24,6 @@ app.get('/mp3', (req, res, next) => {
   res.set('Cache-Control', 'public, max-age=31536000, immutable');
   next();
 });
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
 app.use(expressSession({ secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false }));
@@ -69,6 +68,16 @@ passport.deserializeUser((id, done) => {
     done(null, user);
   });
 });
+
+// Middleware to check authentication and serve VUE app only if authenticated
+app.use((req, res, next) => {
+  if ("VUE_PATH" in process.env && req.isAuthenticated && req.isAuthenticated()) {
+    express.static(process.env.VUE_PATH)(req, res, next);
+  } else {
+    next();
+  }
+});
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
 // Public - routes
