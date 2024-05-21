@@ -125,6 +125,9 @@ app.all('*', async (req, res, next) => {
   next();
 });
 
+const apiRouter = require('./routes/api');
+app.use('/api', isAuthenticated, apiRouter);
+
 const indexRouter = require('./routes/index');
 app.use('/', indexRouter);
 

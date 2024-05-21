@@ -5,7 +5,7 @@ exports.root = async (req, res, next) => {
   // Do some initial checks and setups
 
   // FOR DEBUG PURPOSE: return a simple JSON response and stop
-  return res.json({status:"API alive!"});
+  return res.json({status: "API alive!", user: req.user.name});
 
-  next();
+  // next();
 }
