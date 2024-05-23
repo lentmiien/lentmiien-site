@@ -390,3 +390,27 @@ exports.ask_agent = async (req, res) => {
   const response = await agentService.askAgent(conversation_id, agent_id, messages, user_id, category);
   res.json({response});
 };
+
+// Batch requests
+exports.batch_prompt = (req, res) => {
+  // Save a prompt for batch processing
+  // - Save input images
+  // - Save prompt to batch database
+};
+
+exports.batch_status = (req, res) => {
+  // Check status of prompts in batch processing
+  // Check if any batches are ready in OpenAI's API, in which case download results and save to batch database
+  // Button: Start batch process
+  // Button: Import completed prompts to chat database
+};
+
+exports.batch_start = (req, res) => {
+  // Load all prompts (including conversations and images) awaiting processing
+  // Prepare .jsonl file
+  // Send to OpenAI's batch API
+};
+
+exports.batch_import = (req, res) => {
+  // Take all completed prompts, that has not yet been imported and import responses in chat database
+};
