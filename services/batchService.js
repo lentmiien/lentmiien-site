@@ -1,3 +1,5 @@
+const { upload_file, download_file, delete_file, start_batch, batch_status } = require('../utils/ChatGPT');
+
 /*
 const mongoose = require('mongoose');
 
@@ -57,6 +59,7 @@ class BatchService {
 
   async quePrompt() {
     // Save a prompt to BatchPrompt
+    // If new conversation, also create an empty conversation, to get a conversation id
   }
 
   async startBatch() {

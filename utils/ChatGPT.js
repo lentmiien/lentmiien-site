@@ -257,6 +257,43 @@ const localGPT = async (messages, model) => {
   }
 };
 
+// const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID });
+const upload_file = async (file_data) => {
+  try {
+    // Create a Buffer from the file_data string
+    const buffer = Buffer.from(file_data, 'utf-8');
+
+    // Make the API request to upload the file
+    const response = await openai.files.create({
+      purpose: 'batch',
+      file: buffer,
+    });
+
+    console.log(response);
+
+    return response.id;
+  } catch (error) {
+    console.error(`Error while calling OpenAI API: ${error}`);
+    return null;
+  }
+};
+
+const download_file = async (file_id) => {
+  return "file_data";
+};
+
+const delete_file = async (file_id) => {
+  return "OK";
+};
+
+const start_batch = async (file_id) => {
+  return "batch_response";
+};
+
+const batch_status = async (batch_id) => {
+  return "batch_status";
+};
+
 module.exports = {
   OpenAIAPICallLog,
   chatGPT,
@@ -268,4 +305,9 @@ module.exports = {
   tts,
   ig,
   localGPT,
+  upload_file,
+  download_file,
+  delete_file,
+  start_batch,
+  batch_status,
 };
