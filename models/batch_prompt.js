@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const BatchPrompt = new mongoose.Schema({
   custom_id: { type: String, required: true },
   conversation_id: { type: String, required: true, max: 100 },
+  request_id: { type: String, required: true, max: 100 },
   user_id: { type: String, required: true, max: 100 },
   prompt: { type: String, required: true },
   response: { type: String },
@@ -16,7 +17,6 @@ const BatchPrompt = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  batch_status: { type: String, required: true, enum: ['on hold', 'processing', 'generated', 'completed', 'error'] },
 });
 
 module.exports = mongoose.model('batchprompt', BatchPrompt);

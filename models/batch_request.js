@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const BatchPrompt = new mongoose.Schema({
+const BatchRequest = new mongoose.Schema({
   id: { type: String, required: true },
   input_file_id: { type: String, required: true },
   status: { type: String, required: true },
@@ -13,4 +13,4 @@ const BatchPrompt = new mongoose.Schema({
   request_counts_failed: { type: Number, required: true },
 });
 
-module.exports = mongoose.model('batchprompt', BatchPrompt);
+module.exports = mongoose.model('batchrequest', BatchRequest);
