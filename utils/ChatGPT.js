@@ -260,18 +260,18 @@ const localGPT = async (messages, model) => {
 // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID });
 const upload_file = async (file_data) => {
   try {
-    // Create a Buffer from the file_data string
-    const buffer = Buffer.from(file_data, 'utf-8');
+    const filePath = path.join(__dirname, 'batch_input.jsonl');
+    fs.writeFileSync(filePath, file_data);
 
-    // Make the API request to upload the file
-    const response = await openai.files.create({
+    // Upload batch input file
+    const fileUploader = await openai.files.create({
+      file: fs.createReadStream(filePath),
       purpose: 'batch',
-      file: buffer,
     });
 
-    console.log(response);
+    console.log(fileUploader);
 
-    return response.id;
+    return fileUploader.id;
   } catch (error) {
     console.error(`Error while calling OpenAI API: ${error}`);
     return null;
@@ -279,19 +279,61 @@ const upload_file = async (file_data) => {
 };
 
 const download_file = async (file_id) => {
-  return "file_data";
+  try {
+    // Download file
+    const response = await openai.files.content(file_id);
+    const responseData = response.data.split('\n').map(line => JSON.parse(line));
+    
+    console.log(responseData);
+    
+    return responseData;
+  } catch (error) {
+    console.error(`Error while calling OpenAI API: ${error}`);
+    return null;
+  }
 };
 
 const delete_file = async (file_id) => {
-  return "OK";
+  try {
+    const response = await openai.files.del(file_id);
+    
+    console.log(response);
+    
+    return response;
+  } catch (error) {
+    console.error(`Error while calling OpenAI API: ${error}`);
+    return null;
+  }
 };
 
 const start_batch = async (file_id) => {
-  return "batch_response";
+  try {
+    const batch = await openai.batches.create({
+      input_file_id: file_id,
+      endpoint: "/v1/chat/completions",
+      completion_window: "24h"
+    });
+    
+    console.log(batch);
+    
+    return batch;
+  } catch (error) {
+    console.error(`Error while calling OpenAI API: ${error}`);
+    return null;
+  }
 };
 
 const batch_status = async (batch_id) => {
-  return "batch_status";
+  try {
+    const batch = await openai.batches.retrieve(batch_id);
+    
+    console.log(batch);
+
+    return batch;
+  } catch (error) {
+    console.error(`Error while calling OpenAI API: ${error}`);
+    return null;
+  }
 };
 
 module.exports = {

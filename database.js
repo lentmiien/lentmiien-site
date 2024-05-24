@@ -57,6 +57,9 @@ const CookingRequestModel = require('./models/CookingRequest');
 const HealthEntry = require('./models/healthentry');
 // Agents
 const AgentModel = require('./models/agent');
+// Bacth
+const BatchPromptModel = require('./models/batchprompt');
+const BatchRequestModel = require('./models/batchrequest');
 
 // Export models
 module.exports = {
@@ -90,4 +93,6 @@ module.exports = {
   CookingRequestModel,
   HealthEntry,
   AgentModel,
+  BatchPromptModel,
+  BatchRequestModel,
 };

@@ -57,9 +57,19 @@ class BatchService {
     return { prompts, requests };
   }
 
-  async quePrompt() {
+  async addPromptToBatch(user_id, prompt, conversation_id) {
     // Save a prompt to BatchPrompt
     // If new conversation, also create an empty conversation, to get a conversation id
+    const custom_id = `prompt-${new Date().getTime()}-${Math.random().toString(36).substring(2, 15)}`;
+    const newPrompt = new this.BatchPromptDatabase({
+      custom_id,
+      conversation_id,
+      request_id: "new",
+      user_id,
+      prompt,
+      images: [],
+    });
+    await newPrompt.save();
   }
 
   async startBatch() {

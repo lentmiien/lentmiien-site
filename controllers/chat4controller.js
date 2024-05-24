@@ -6,7 +6,8 @@ const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
 const KnowledgeService = require('../services/knowledgeService');
 const AgentService = require('../services/agentService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel, AgentModel } = require('../database');
+const BatchService = require('../services/batchService');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel, AgentModel, BatchPromptModel, BatchRequestModel } = require('../database');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
@@ -14,6 +15,7 @@ const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 const agentService = new AgentService(AgentModel, conversationService, messageService);
+const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 
 // Globals
 let categories = [];

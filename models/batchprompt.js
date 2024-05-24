@@ -6,7 +6,6 @@ const BatchPrompt = new mongoose.Schema({
   request_id: { type: String, required: true, max: 100 },
   user_id: { type: String, required: true, max: 100 },
   prompt: { type: String, required: true },
-  response: { type: String },
   images: [
     {
       filename: { type: String, required: true },
