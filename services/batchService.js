@@ -72,16 +72,20 @@ class BatchService {
     await newPrompt.save();
   }
 
-  async startBatch() {
+  async triggerBatchRequest() {
     // Take all BatchPrompt entries with request_id === "new"
     // Generate batch data file
     // Upload to OpenAI's API, file id -> BatchPrompt
     // Start a batch work and save to BatchRequest, batch id -> BatchPrompt
   }
 
-  async CheckBatch() {
+  async processBatchResponse(requestId) {
     // Inquiry OpenAI's API for batch status, status -> BatchRequest
     // If done, also download and process data, response -> BatchPrompt, generate chat messages and append to conversations
+  }
+
+  // Checking batch status
+  async checkBatchStatus(batchId) {
   }
 }
 
