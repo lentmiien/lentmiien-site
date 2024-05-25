@@ -2,7 +2,49 @@ extends layout
 
 block content
   h2 Batch Status
-  p Prompts
-  pre= JSON.stringify(prompts, null, 2)
-  p Requests
+  h4 Prompts
+  table.table.table-striped 
+    thead 
+      tr 
+        th ID 
+        th User 
+        th Prompt 
+        th Status 
+    tbody 
+      each d in prompts
+        tr 
+          td= d.custom_id
+          td= d.user_id
+          td(title=d.prompt) - hover to view -
+          td(id=d.custom_id)= d.request_id === "new" ? "Pending" : "Processing"
+  button.btn.btn-success(onclick="StartBatch()") Process pending (start batch work)
+  h4 Requests
+  table.table.table-striped 
+    thead 
+      tr 
+        th ID
+        th Status
+        th In
+        th Out
+        th Error
+        th Start
+        th End
+        th Count
+    tbody 
+      - const end_statuses = ['failed', 'completed', 'expired', 'cancelled']
+      each d in requests
+        tr 
+          td= d.id
+          td= d.status
+            if end_statuses.indexOf(d.status) === -1
+              br
+              button.btn.btn-primary(onclick=`BatchRefresh('${d.id}')`) Refresh
+          td= d.input_file_id
+          td= d.output_file_id
+          td= d.error_file_id
+          td= d.created_at
+          td= d.completed_at
+          td= `${d.request_counts_total}/${d.request_counts_completed}/${d.request_counts_failed}`
+  button.btn.btn-success(onclick="ProcessCompleted()") Process completed
   pre= JSON.stringify(requests, null, 2)
+  script(src="/js/batch_status.js") 
