@@ -541,3 +541,8 @@ async function Agent(agent_select, task) {
     hideLoadingPopup();
   }
 }
+
+function Batch() {
+  chatform.action = chatform.action.split('post').join('batch_prompt');
+  chatform.submit();
+}

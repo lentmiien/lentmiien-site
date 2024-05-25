@@ -1,0 +1,8 @@
+extends layout
+
+block content
+  h2 Batch Status
+  p Prompts
+  pre= JSON.stringify(prompts, null, 2)
+  p Requests
+  pre= JSON.stringify(requests, null, 2)

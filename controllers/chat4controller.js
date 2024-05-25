@@ -394,17 +394,40 @@ exports.ask_agent = async (req, res) => {
 };
 
 // Batch requests
-exports.batch_prompt = (req, res) => {
+exports.batch_prompt = async (req, res) => {
+  /* console.log(req.params);
+  { id: '6650645422d379462a8ca3e3' }
+  */
+  /* console.log(req.body);
+  [Object: null prototype] {
+    title: 'Explore agents framework',
+    category: 'Programming',
+    tags: 'agent,ideas',
+    context: 'You are a helpful assistant.',
+    prompt: 'test',
+    agent_select: ''
+  }
+  */
+  /* console.log(req.files);
+  []
+  */
+  
   // Save a prompt for batch processing
   // - Save input images
   // - Save prompt to batch database
+  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id);
+
+  res.redirect('/chat4/batch_status');
 };
 
-exports.batch_status = (req, res) => {
+exports.batch_status = async (req, res) => {
   // Check status of prompts in batch processing
   // Check if any batches are ready in OpenAI's API, in which case download results and save to batch database
   // Button: Start batch process
   // Button: Import completed prompts to chat database
+  const status = await batchService.getAll();
+
+  res.render('batch_status', status);
 };
 
 exports.batch_start = (req, res) => {
