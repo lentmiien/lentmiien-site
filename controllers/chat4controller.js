@@ -468,6 +468,7 @@ exports.batch_start = async (req, res) => {
     // Update prompt entries with request id
 
     // Return array id ids that were included in the request
+    res.json(processed_ids);
   } catch (error) {
     console.error("Error triggering batch request:", error);
     res.json([]);
