@@ -435,8 +435,10 @@ exports.batch_start = async (req, res) => {
   res.json(processed);
 };
 
-exports.batch_update = (req, res) => {
+exports.batch_update = async (req, res) => {
   // Check for status on batch request
+  const status = await batchService.checkBatchStatus(req.params.id);
+  res.json(status);
 };
 
 exports.batch_import = (req, res) => {

@@ -111,13 +111,27 @@ class BatchService {
           processed_ids.push(newPrompts[i].custom_id);
         }
 
-        console.log(prompt_data);
-        
         // Send to batch API (file + start request)
+        const file_id = await upload_file(prompt_data.join('\n'));
         
         // Save request data to request database
+        const batch_details = await start_batch(file_id);
+        const newRequest = new this.BatchRequestDatabase({
+          id: batch_details.id,
+          input_file_id: file_id,
+          status: batch_details.status,
+          output_file_id: "null",
+          error_file_id: "null",
+          created_at: new Date(batch_details.created_at*1000),
+          completed_at: new Date(batch_details.expires_at*1000),
+          request_counts_total: batch_details.request_counts.total,
+          request_counts_completed: batch_details.request_counts.completed,
+          request_counts_failed: batch_details.request_counts.failed,
+        });
+        await newRequest.save();
         
         // Update prompt entries with request id
+        await this.BatchPromptDatabase.updateMany({ request_id: 'new' }, { request_id: batch_details.id });
       }
   
       // Return array id ids that were included in the request
@@ -128,13 +142,26 @@ class BatchService {
     }
   }
 
-  async processBatchResponse(requestId) {
-    // Inquiry OpenAI's API for batch status, status -> BatchRequest
-    // If done, also download and process data, response -> BatchPrompt, generate chat messages and append to conversations
-  }
-
   // Checking batch status
   async checkBatchStatus(batchId) {
+    const batch = await this.BatchRequestDatabase.findOne({ id: batchId });
+    const batch_current_status = await batch_status(batchId);
+
+    batch.status = batch_current_status.status;
+    batch.output_file_id = batch_current_status.output_file_id ? batch_current_status.output_file_id : "null";
+    batch.error_file_id = batch_current_status.error_file_id ? batch_current_status.error_file_id : "null";
+    batch.completed_at = new Date((batch_current_status.completed_at ? batch_current_status.completed_at : batch_current_status.expires_at)*1000);
+    batch.request_counts_total = batch_current_status.request_counts.total;
+    batch.request_counts_completed = batch_current_status.request_counts.completed;
+    batch.request_counts_failed = batch_current_status.request_counts.failed;
+    await batch.save();
+
+    return {id: batchId, status: batch.status};
+  }
+
+  async processBatchResponse(batchId) {
+    // Inquiry OpenAI's API for batch status, status -> BatchRequest
+    // If done, also download and process data, response -> BatchPrompt, generate chat messages and append to conversations
   }
 }
 

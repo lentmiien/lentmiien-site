@@ -35,7 +35,7 @@ block content
       each d in requests
         tr 
           td= d.id
-          td= d.status
+          td(id=d.id)= d.status
             if end_statuses.indexOf(d.status) === -1
               br
               button.btn.btn-primary(onclick=`BatchRefresh('${d.id}')`) Refresh
@@ -46,5 +46,4 @@ block content
           td= d.completed_at
           td= `${d.request_counts_total}/${d.request_counts_completed}/${d.request_counts_failed}`
   button.btn.btn-success(onclick="ProcessCompleted()") Process completed
-  pre= JSON.stringify(requests, null, 2)
   script(src="/js/batch_status.js") 

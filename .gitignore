@@ -4,3 +4,4 @@ cache
 .env
 public/img
 public/mp3
+utils/batch_input.jsonl

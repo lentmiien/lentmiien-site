@@ -269,8 +269,6 @@ const upload_file = async (file_data) => {
       purpose: 'batch',
     });
 
-    console.log(fileUploader);
-
     return fileUploader.id;
   } catch (error) {
     console.error(`Error while calling OpenAI API: ${error}`);
@@ -313,8 +311,6 @@ const start_batch = async (file_id) => {
       endpoint: "/v1/chat/completions",
       completion_window: "24h"
     });
-    
-    console.log(batch);
     
     return batch;
   } catch (error) {
