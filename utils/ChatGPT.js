@@ -323,8 +323,6 @@ const batch_status = async (batch_id) => {
   try {
     const batch = await openai.batches.retrieve(batch_id);
     
-    console.log(batch);
-
     return batch;
   } catch (error) {
     console.error(`Error while calling OpenAI API: ${error}`);
