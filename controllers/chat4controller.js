@@ -431,48 +431,8 @@ exports.batch_status = async (req, res) => {
 };
 
 exports.batch_start = async (req, res) => {
-  // Load all prompts (including conversations and images) awaiting processing
-  // Prepare .jsonl file
-  // Send to OpenAI's batch API
-  try {
-    const processed_ids = [];
-
-    // Fetch all new prompts
-    const newPrompts = await BatchPrompt.find({ requestId: 'new' });
-    if (!newPrompts.length) return res.json([]);
-
-    // Generate batch data
-    const prompt_data = [];
-    for (let i = 0; i < newPrompts.length; i++) {
-      const data_entry = {
-        custom_id: newPrompts[i].custom_id,
-        method: 'POST',
-        url: '/v1/chat/completions',
-        body: {
-          model: 'gpt-4o',
-          messages: [],
-        },
-      };
-      // Get data from conversation
-      // Append prompt
-      // Append data_entry to prompt_data
-      prompt_data.append(JSON.stringify(data_entry));
-
-      processed_ids.push(newPrompts[i].custom_id);
-    }
-
-    // Send to batch API (file + start request)
-
-    // Save request data to request database
-
-    // Update prompt entries with request id
-
-    // Return array id ids that were included in the request
-    res.json(processed_ids);
-  } catch (error) {
-    console.error("Error triggering batch request:", error);
-    res.json([]);
-  }
+  const processed = await batchService.triggerBatchRequest();
+  res.json(processed);
 };
 
 exports.batch_update = (req, res) => {

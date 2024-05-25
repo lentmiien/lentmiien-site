@@ -116,6 +116,75 @@ class ConversationService {
     return conversation._id.toString();
   }
 
+  async generateMessageArrayForConversation(conversation_id) {
+    const messages = [];
+    const inject_prompt_lookup = {
+      context: "This is some additional context:",
+      reference: "Use as reference for guiding your answer:",
+      example: "This is an example of the type of output I want:",
+    };
+    const conversation = await this.conversationModel.findById(conversation_id);
+
+    // Set context
+    let context = conversation.context_prompt;
+    if (conversation.knowledge_injects && conversation.knowledge_injects.length > 0) {
+      const ids_array = conversation.knowledge_injects.map(d => d.knowledge_id);
+      const knowledges = await this.knowledgeService.getKnowledgesByIdArray(ids_array);
+      const knowledge_lookup = [];
+      knowledges.forEach(d => knowledge_lookup.push(d._id.toString()));
+      for (let i = 0; i < conversation.knowledge_injects.length; i++) {
+        // Extend context with knowledge
+        const use_type = conversation.knowledge_injects[i].use_type;
+        const title = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].title;
+        const text_content = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].contentMarkdown;
+
+        context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n## ${title}\n\n${text_content}\n\n---`;
+      }
+    }
+    if (context.length > 0) {
+      messages.push({
+        role: 'system',
+        content: [
+          { type: 'text', text: context }
+        ]
+      });
+    }
+
+    // Set old messages
+    const prev_messages = await this.messageService.getMessagesByIdArray(conversation.messages, false);
+    // Append messages
+    for (let i = 0; i < prev_messages.length; i++) {
+      const m = prev_messages[i];
+      const content = [{ type: 'text', text: m.prompt }];
+      for (let x = 0; x < m.images.length; x++) {
+        if (m.images[x].use_flag != 'do not use') {
+          const b64 = this.loadImageToBase64(m.images[x].filename);
+          content.push({
+            type: "image_url",
+            image_url: {
+              url: `data:image/jpeg;base64,${b64}`,
+              detail: `${m.images[x].use_flag === 'high quality' ? 'high' : 'low'}`
+            }
+          });
+        }
+      }
+      // User prompt
+      messages.push({
+        role: 'user',
+        content
+      });
+      // Assistant response
+      messages.push({
+        role: 'assistant',
+        content: [
+          { type: 'text', text: m.response },
+        ]
+      });
+    }
+
+    return messages;
+  }
+
   async postToConversation(user_id, conversation_id, new_images, parameters) {
     let use_vision = false;
     const vision_messages = [];

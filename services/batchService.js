@@ -77,6 +77,55 @@ class BatchService {
     // Generate batch data file
     // Upload to OpenAI's API, file id -> BatchPrompt
     // Start a batch work and save to BatchRequest, batch id -> BatchPrompt
+    try {
+      const processed_ids = [];
+  
+      // Fetch all new prompts
+      const newPrompts = await this.BatchPromptDatabase.find({ request_id: 'new' });
+      if (newPrompts.length) {
+        // Generate batch data
+        const prompt_data = [];
+        for (let i = 0; i < newPrompts.length; i++) {
+          const data_entry = {
+            custom_id: newPrompts[i].custom_id,
+            method: 'POST',
+            url: '/v1/chat/completions',
+            body: {
+              model: 'gpt-4o',
+              messages: [],
+            },
+          };
+          // Get data from conversation
+          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id);
+          // Append prompt
+          messages.push({
+            role: 'user',
+            content: [
+              { type: 'text', text: newPrompts[i].prompt },
+            ]
+          });
+          data_entry.body.messages = messages;
+          // Append data_entry to prompt_data
+          prompt_data.push(JSON.stringify(data_entry));
+          
+          processed_ids.push(newPrompts[i].custom_id);
+        }
+
+        console.log(prompt_data);
+        
+        // Send to batch API (file + start request)
+        
+        // Save request data to request database
+        
+        // Update prompt entries with request id
+      }
+  
+      // Return array id ids that were included in the request
+      return processed_ids;
+    } catch (error) {
+      console.error("Error triggering batch request:", error);
+      return [];
+    }
   }
 
   async processBatchResponse(requestId) {
