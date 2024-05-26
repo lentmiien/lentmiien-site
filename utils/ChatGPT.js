@@ -303,7 +303,6 @@ const delete_file = async (file_id) => {
 
 const start_batch = async (file_id) => {
   try {
-    console.log(openai);
     const batch = await openai.batches.create({
       input_file_id: file_id,
       endpoint: "/v1/chat/completions",

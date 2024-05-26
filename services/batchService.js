@@ -63,7 +63,7 @@ class BatchService {
     // TODO If new conversation, also create an empty conversation, to get a conversation id
     if ("append_message_ids" in parameters && parameters.append_message_ids.length > 0) {
       // 0. If creating new conversation from existing messages
-      conversation_id = await conversationService.generateConversationFromMessages(user_id, parameters.append_message_ids.split(","));
+      conversation_id = await this.conversationService.generateConversationFromMessages(user_id, parameters.append_message_ids.split(","));
     } else if (conversation_id === "new") {
       // 1. If new conversation, create an empty new conversation
       conversation_id = await this.conversationService.createEmptyConversation(user_id);
@@ -72,7 +72,7 @@ class BatchService {
       conversation_id = await this.conversationService.copyConversation(conversation_id, parameters.start_message, parameters.end_message);
     }
     // 3. Update conversation parameters
-    await updateConversation(conversation_id, parameters);
+    await this.conversationService.updateConversation(conversation_id, parameters);
 
     // Process input images
     const images = [];
