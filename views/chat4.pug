@@ -57,6 +57,7 @@ block content
                 option(value=a._id.toString())= a.name
             .button-container
               input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
+              button.btn.btn-secondary(type="button", onclick="Batch()") Batch
           #append_messages_content
       .tab-content
         #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")

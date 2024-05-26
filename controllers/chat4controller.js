@@ -422,7 +422,7 @@ exports.batch_prompt = async (req, res) => {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
 
-  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id, image_paths);
+  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id, image_paths, req.body);
 
   res.redirect('/chat4/batch_status');
 };

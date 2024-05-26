@@ -57,9 +57,22 @@ class BatchService {
     return { prompts, requests };
   }
 
-  async addPromptToBatch(user_id, prompt, conversation_id, image_paths) {
+  async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters) {
+    let conversation_id = in_conversation_id;
     // Save a prompt to BatchPrompt
     // TODO If new conversation, also create an empty conversation, to get a conversation id
+    if ("append_message_ids" in parameters && parameters.append_message_ids.length > 0) {
+      // 0. If creating new conversation from existing messages
+      conversation_id = await conversationService.generateConversationFromMessages(user_id, parameters.append_message_ids.split(","));
+    } else if (conversation_id === "new") {
+      // 1. If new conversation, create an empty new conversation
+      conversation_id = await this.conversationService.createEmptyConversation(user_id);
+    } else if ("start_message" in parameters || "end_message" in parameters) {
+      // 2. If start/end copy id, create a copy of the conversation
+      conversation_id = await this.conversationService.copyConversation(conversation_id, parameters.start_message, parameters.end_message);
+    }
+    // 3. Update conversation parameters
+    await updateConversation(conversation_id, parameters);
 
     // Process input images
     const images = [];

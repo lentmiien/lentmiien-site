@@ -54,6 +54,23 @@ class ConversationService {
     return conversation.category;
   }
 
+  async createEmptyConversation(user_id) {
+    const conversation_entry = {
+      user_id,
+      group_id: Date.now().toString(),
+      title: "placeholder",
+      description: "placeholder",
+      category: "placeholder",
+      tags: "placeholder",
+      context_prompt: "placeholder",
+      knowledge_injects: [],
+      messages: [],
+      updated_date: new Date(),
+    };
+    const conv_entry = await new this.conversationModel(conversation_entry).save();
+    return conv_entry._id.toString();
+  }
+
   async copyConversation(conversation_id, start_message_id, end_message_id) {
     // Fetch original conversation
     const original_conversation = await this.conversationModel.findById(conversation_id);
