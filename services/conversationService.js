@@ -47,6 +47,13 @@ class ConversationService {
     return conversations;
   }
 
+  async getCategoryForConversationsById(conversation_id) {
+    console.log(conversation_id);
+    const conversation = await this.conversationModel.findById(conversation_id);
+    console.log(conversation);
+    return conversation.category;
+  }
+
   async copyConversation(conversation_id, start_message_id, end_message_id) {
     // Fetch original conversation
     const original_conversation = await this.conversationModel.findById(conversation_id);

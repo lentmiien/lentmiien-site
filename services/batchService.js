@@ -159,9 +159,32 @@ class BatchService {
     return {id: batchId, status: batch.status};
   }
 
-  async processBatchResponse(batchId) {
-    // Inquiry OpenAI's API for batch status, status -> BatchRequest
-    // If done, also download and process data, response -> BatchPrompt, generate chat messages and append to conversations
+  async processBatchResponses() {
+    // Check all batch requestes for requests with status "completed"
+    // Download output file
+    // Append to conversation database
+    // Delete processed requests from prompt database
+    // Update status of request to "DONE" and delete input/output files from API
+    const completed_requests = [];
+    const completedRequests = await this.BatchRequestDatabase.find({ status: 'completed' });
+    for (let i = 0; i < completedRequests.length; i++) {
+      const output_data = await download_file(completedRequests[i].output_file_id);
+      for (let j = 0; j < output_data.length; j++) {
+        const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
+        // Append to conversation and delete
+        const category = await this.conversationService.getCategoryForConversationsById(prompt_data.conversation_id);
+        const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images)).db_entry._id.toString();
+        await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id);
+        await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
+      }
+      // Update status and delete files
+      completedRequests[i].status = "DONE";
+      await completedRequests[i].save();
+      await delete_file(completedRequests[i].input_file_id);
+      await delete_file(completedRequests[i].output_file_id);
+      completed_requests.push(completedRequests[i].id);
+    }
+    return completed_requests;
   }
 }
 

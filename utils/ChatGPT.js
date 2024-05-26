@@ -271,7 +271,7 @@ const upload_file = async (file_data) => {
 
     return fileUploader.id;
   } catch (error) {
-    console.error(`Error while calling OpenAI API: ${error}`);
+    console.error(`[upload_file] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };
@@ -280,14 +280,13 @@ const download_file = async (file_id) => {
   try {
     // Download file
     const response = await openai.files.content(file_id);
-    const responseData = response.data.split('\n').map(line => JSON.parse(line));
+    const body = await response.text();
+    const outputs = body.split('\n').filter(line => !!line.trim()).map(line => JSON.parse(line));
     
-    console.log(responseData);
-    
-    return responseData;
+    return outputs;
   } catch (error) {
-    console.error(`Error while calling OpenAI API: ${error}`);
-    return null;
+    console.error(`[download_file] Error while calling OpenAI API: ${error}`);
+    return [];
   }
 };
 
@@ -295,17 +294,16 @@ const delete_file = async (file_id) => {
   try {
     const response = await openai.files.del(file_id);
     
-    console.log(response);
-    
     return response;
   } catch (error) {
-    console.error(`Error while calling OpenAI API: ${error}`);
+    console.error(`[delete_file] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };
 
 const start_batch = async (file_id) => {
   try {
+    console.log(openai);
     const batch = await openai.batches.create({
       input_file_id: file_id,
       endpoint: "/v1/chat/completions",
@@ -314,7 +312,7 @@ const start_batch = async (file_id) => {
     
     return batch;
   } catch (error) {
-    console.error(`Error while calling OpenAI API: ${error}`);
+    console.error(`[start_batch] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };
@@ -325,7 +323,7 @@ const batch_status = async (batch_id) => {
     
     return batch;
   } catch (error) {
-    console.error(`Error while calling OpenAI API: ${error}`);
+    console.error(`[batch_status] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };

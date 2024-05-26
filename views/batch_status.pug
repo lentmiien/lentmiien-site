@@ -31,7 +31,7 @@ block content
         th End
         th Count
     tbody 
-      - const end_statuses = ['failed', 'completed', 'expired', 'cancelled']
+      - const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE']
       each d in requests
         tr 
           td= d.id

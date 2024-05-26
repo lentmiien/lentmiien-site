@@ -441,6 +441,8 @@ exports.batch_update = async (req, res) => {
   res.json(status);
 };
 
-exports.batch_import = (req, res) => {
+exports.batch_import = async (req, res) => {
   // Take all completed prompts, that has not yet been imported and import responses in chat database
+  const status = await batchService.processBatchResponses();
+  res.json(status);
 };
