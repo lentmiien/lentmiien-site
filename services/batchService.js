@@ -57,9 +57,21 @@ class BatchService {
     return { prompts, requests };
   }
 
-  async addPromptToBatch(user_id, prompt, conversation_id) {
+  async addPromptToBatch(user_id, prompt, conversation_id, image_paths) {
     // Save a prompt to BatchPrompt
-    // If new conversation, also create an empty conversation, to get a conversation id
+    // TODO If new conversation, also create an empty conversation, to get a conversation id
+
+    // Process input images
+    const images = [];
+    for (let i = 0; i < image_paths.length; i++) {
+      const image_data = await this.conversationService.loadProcessNewImageToBase64(image_paths[i]);
+      images.push({
+        filename: image_data.new_filename,
+        use_flag: 'high quality'
+      });
+    }
+
+    // Save pending prompt to database
     const custom_id = `prompt-${new Date().getTime()}-${Math.random().toString(36).substring(2, 15)}`;
     const newPrompt = new this.BatchPromptDatabase({
       custom_id,
@@ -67,7 +79,7 @@ class BatchService {
       request_id: "new",
       user_id,
       prompt,
-      images: [],
+      images,
     });
     await newPrompt.save();
   }
@@ -104,6 +116,17 @@ class BatchService {
               { type: 'text', text: newPrompts[i].prompt },
             ]
           });
+          // Append input images
+          const index = messages.length-1;
+          for (let j = 0; j < newPrompts[i].images.length; j++) {
+            const b64_img = await this.conversationService.loadImageToBase64(newPrompts[i].images[j]);
+            messages[index].content.push({
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${b64_img}`,
+              }
+            });
+          }
           data_entry.body.messages = messages;
           // Append data_entry to prompt_data
           prompt_data.push(JSON.stringify(data_entry));

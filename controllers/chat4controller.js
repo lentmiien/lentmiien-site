@@ -415,7 +415,14 @@ exports.batch_prompt = async (req, res) => {
   // Save a prompt for batch processing
   // - Save input images
   // - Save prompt to batch database
-  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id);
+  
+  // Get image file paths
+  const image_paths = [];
+  for (let i = 0; i < req.files.length; i++) {
+    image_paths.push(req.files[i].destination + req.files[i].filename);
+  }
+
+  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id, image_paths);
 
   res.redirect('/chat4/batch_status');
 };
