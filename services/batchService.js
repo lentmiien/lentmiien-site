@@ -132,7 +132,7 @@ class BatchService {
           // Append input images
           const index = messages.length-1;
           for (let j = 0; j < newPrompts[i].images.length; j++) {
-            const b64_img = await this.conversationService.loadImageToBase64(newPrompts[i].images[j]);
+            const b64_img = await this.conversationService.loadImageToBase64(newPrompts[i].images[j].filename);
             messages[index].content.push({
               type: "image_url",
               image_url: {
