@@ -15,7 +15,7 @@ block content
         tr 
           td= d.custom_id
           td= d.user_id
-          td(title=d.prompt) - hover to view -
+          td(title=d.prompt)= d.prompt === "@SUMMARY" ? "generate summary" : "- hover to view -"
           td(id=d.custom_id)= d.request_id === "new" ? "Pending" : "Processing"
   button.btn.btn-success(onclick="StartBatch()") Process pending (start batch work)
   h4 Requests

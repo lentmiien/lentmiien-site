@@ -53,7 +53,7 @@ class BatchService {
 
   async getAll() {
     const prompts = await this.BatchPromptDatabase.find();
-    const requests = await this.BatchRequestDatabase.find();
+    const requests = (await this.BatchRequestDatabase.find()).reverse();
     return { prompts, requests };
   }
 
@@ -72,7 +72,9 @@ class BatchService {
       conversation_id = await this.conversationService.copyConversation(conversation_id, parameters.start_message, parameters.end_message);
     }
     // 3. Update conversation parameters
-    await this.conversationService.updateConversation(conversation_id, parameters);
+    if (prompt != "@SUMMARY") {
+      await this.conversationService.updateConversation(conversation_id, parameters);
+    }
 
     // Process input images
     const images = [];
@@ -123,23 +125,33 @@ class BatchService {
           // Get data from conversation
           const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id);
           // Append prompt
-          messages.push({
-            role: 'user',
-            content: [
-              { type: 'text', text: newPrompts[i].prompt },
-            ]
-          });
-          // Append input images
-          const index = messages.length-1;
-          for (let j = 0; j < newPrompts[i].images.length; j++) {
-            const b64_img = await this.conversationService.loadImageToBase64(newPrompts[i].images[j].filename);
-            messages[index].content.push({
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${b64_img}`,
-              }
+          if (newPrompts[i].prompt === "@SUMMARY") {
+            messages.push({
+              role: 'user',
+              content: [
+                { type: 'text', text: "Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation." },
+              ]
             });
+          } else {
+            messages.push({
+              role: 'user',
+              content: [
+                { type: 'text', text: newPrompts[i].prompt },
+              ]
+            });
+            // Append input images
+            const index = messages.length-1;
+            for (let j = 0; j < newPrompts[i].images.length; j++) {
+              const b64_img = await this.conversationService.loadImageToBase64(newPrompts[i].images[j].filename);
+              messages[index].content.push({
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${b64_img}`,
+                }
+              });
+            }
           }
+
           data_entry.body.messages = messages;
           // Append data_entry to prompt_data
           prompt_data.push(JSON.stringify(data_entry));
@@ -207,10 +219,18 @@ class BatchService {
       const output_data = await download_file(completedRequests[i].output_file_id);
       for (let j = 0; j < output_data.length; j++) {
         const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
-        // Append to conversation and delete
-        const category = await this.conversationService.getCategoryForConversationsById(prompt_data.conversation_id);
-        const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images)).db_entry._id.toString();
-        await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id);
+        if (prompt_data.prompt === "@SUMMARY") {
+          // Update summary
+          await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].response.body.choices[0].message.content);
+        } else {
+          // Append to conversation
+          const category = await this.conversationService.getCategoryForConversationsById(prompt_data.conversation_id);
+          const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images)).db_entry._id.toString();
+          await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
+          // Flag for generating summary
+          await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {});
+        }
+        // Delete completed prompt
         await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
       }
       // Update status and delete files

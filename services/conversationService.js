@@ -48,9 +48,7 @@ class ConversationService {
   }
 
   async getCategoryForConversationsById(conversation_id) {
-    console.log(conversation_id);
     const conversation = await this.conversationModel.findById(conversation_id);
-    console.log(conversation);
     return conversation.category;
   }
 
@@ -140,7 +138,14 @@ class ConversationService {
     return conversation._id.toString();
   }
 
-  async generateMessageArrayForConversation(conversation_id) {
+  async updateSummary(conversation_id, summary) {
+    const conversation = await this.conversationModel.findById(conversation_id);
+    conversation.description = summary;
+    await conversation.save();
+    return conversation._id.toString();
+  }
+
+  async generateMessageArrayForConversation(conversation_id, for_summary = false) {
     const messages = [];
     const inject_prompt_lookup = {
       context: "This is some additional context:",
@@ -150,28 +155,37 @@ class ConversationService {
     const conversation = await this.conversationModel.findById(conversation_id);
 
     // Set context
-    let context = conversation.context_prompt;
-    if (conversation.knowledge_injects && conversation.knowledge_injects.length > 0) {
-      const ids_array = conversation.knowledge_injects.map(d => d.knowledge_id);
-      const knowledges = await this.knowledgeService.getKnowledgesByIdArray(ids_array);
-      const knowledge_lookup = [];
-      knowledges.forEach(d => knowledge_lookup.push(d._id.toString()));
-      for (let i = 0; i < conversation.knowledge_injects.length; i++) {
-        // Extend context with knowledge
-        const use_type = conversation.knowledge_injects[i].use_type;
-        const title = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].title;
-        const text_content = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].contentMarkdown;
-
-        context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n## ${title}\n\n${text_content}\n\n---`;
-      }
-    }
-    if (context.length > 0) {
+    if (for_summary) {
       messages.push({
         role: 'system',
         content: [
-          { type: 'text', text: context }
+          { type: 'text', text: "Hello ChatGPT, during this session, we will be discussing various topics. At the end of our conversation, I will ask you for a summary. This summary should provide a clear and concise overview of the key points and main ideas discussed, without necessarily preserving the original order. The aim is to make the summary easy and quick to read so that anyone can grasp the content of our conversation without needing to read everything. Feel free to rearrange the content for better clarity and coherence. When I am ready for the summary, I will use a specific prompt to request it." }
         ]
       });
+    } else {
+      let context = conversation.context_prompt;
+      if (conversation.knowledge_injects && conversation.knowledge_injects.length > 0) {
+        const ids_array = conversation.knowledge_injects.map(d => d.knowledge_id);
+        const knowledges = await this.knowledgeService.getKnowledgesByIdArray(ids_array);
+        const knowledge_lookup = [];
+        knowledges.forEach(d => knowledge_lookup.push(d._id.toString()));
+        for (let i = 0; i < conversation.knowledge_injects.length; i++) {
+          // Extend context with knowledge
+          const use_type = conversation.knowledge_injects[i].use_type;
+          const title = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].title;
+          const text_content = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].contentMarkdown;
+
+          context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n## ${title}\n\n${text_content}\n\n---`;
+        }
+      }
+      if (context.length > 0) {
+        messages.push({
+          role: 'system',
+          content: [
+            { type: 'text', text: context }
+          ]
+        });
+      }
     }
 
     // Set old messages
@@ -180,7 +194,7 @@ class ConversationService {
     for (let i = 0; i < prev_messages.length; i++) {
       const m = prev_messages[i];
       const content = [{ type: 'text', text: m.prompt }];
-      for (let x = 0; x < m.images.length; x++) {
+      for (let x = 0; x < m.images.length && for_summary === false; x++) {
         if (m.images[x].use_flag != 'do not use') {
           const b64 = this.loadImageToBase64(m.images[x].filename);
           content.push({
@@ -397,36 +411,38 @@ class ConversationService {
     }
   }
 
-  async appendMessageToConversation(conversation_id, message_id_to_add) {
+  async appendMessageToConversation(conversation_id, message_id_to_add, summary = true) {
     const conversation = await this.conversationModel.findById(conversation_id);
     conversation.messages.push(message_id_to_add);
 
-    // Generate a new summary
-    const messages = await this.messageService.getMessagesByIdArray(conversation.messages);
-    const api_messages = [];
-    api_messages.push({
-      role: 'system',
-      content: [
-        { type: 'text', text: conversation.context_prompt }
-      ]
-    });
-    messages.forEach(m => {
+    if (summary) {
+      // Generate a new summary
+      const messages = await this.messageService.getMessagesByIdArray(conversation.messages);
+      const api_messages = [];
       api_messages.push({
-        role: 'user',
+        role: 'system',
         content: [
-          { type: 'text', text: m.prompt }
+          { type: 'text', text: conversation.context_prompt }
         ]
       });
-      api_messages.push({
-        role: 'assistant',
-        content: [
-          { type: 'text', text: m.response }
-        ]
+      messages.forEach(m => {
+        api_messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: m.prompt }
+          ]
+        });
+        api_messages.push({
+          role: 'assistant',
+          content: [
+            { type: 'text', text: m.response }
+          ]
+        });
       });
-    });
-    const summary = await this.messageService.createMessagesSummary(api_messages);
+      const summary = await this.messageService.createMessagesSummary(api_messages);
+      conversation.description = summary;
+    }
 
-    conversation.description = summary;
     conversation.updated_date = new Date();
     await conversation.save();
     return conversation._id.toString();
