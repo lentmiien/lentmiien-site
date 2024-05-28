@@ -42,8 +42,8 @@ block content
           td= d.input_file_id
           td= d.output_file_id
           td= d.error_file_id
-          td= d.created_at
-          td= d.completed_at
+          td= d.created_at.toLocaleString()
+          td= d.completed_at.toLocaleString()
           td= `${d.request_counts_total}/${d.request_counts_completed}/${d.request_counts_failed}`
   button.btn.btn-success(onclick="ProcessCompleted()") Process completed
   script(src="/js/batch_status.js") 
