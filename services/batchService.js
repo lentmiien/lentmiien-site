@@ -61,9 +61,7 @@ class BatchService {
     if (prompt === "@SUMMARY") {
       // Prevent duplicate
       const results = await this.BatchPromptDatabase.find({conversation_id: in_conversation_id});
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].prompt.indexOf("@SUMMARY") === 0) return;
-      }
+      if (results.length > 0) return;
     }
 
     let conversation_id = in_conversation_id;
