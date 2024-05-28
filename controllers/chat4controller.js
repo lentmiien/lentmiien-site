@@ -471,7 +471,7 @@ exports.redact_post = async (req, res) => {
       const lines = message.prompt.split('\n');
       lines_array.forEach((index) => {
         const i = parseInt(index);
-        lines[i] = '(redacted)';
+        lines[i] = '(redacted)  ';
       });
       message.prompt = lines.join('\n');
     }
