@@ -58,6 +58,14 @@ class BatchService {
   }
 
   async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters) {
+    if (prompt === "@SUMMARY") {
+      // Prevent duplicate
+      const results = await this.BatchPromptDatabase.find({conversation_id: in_conversation_id});
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].prompt.indexOf("@SUMMARY") === 0) return;
+      }
+    }
+
     let conversation_id = in_conversation_id;
     // Save a prompt to BatchPrompt
     // TODO If new conversation, also create an empty conversation, to get a conversation id

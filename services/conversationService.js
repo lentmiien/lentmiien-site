@@ -356,11 +356,11 @@ class ConversationService {
     const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images);
 
     // Summarize conversation
-    text_messages.push({
-      role: 'assistant',
-      content: message_data.db_entry.response,
-    });
-    const summary = await this.messageService.createMessagesSummary(text_messages, message_data.tokens);
+    // text_messages.push({
+    //   role: 'assistant',
+    //   content: message_data.db_entry.response,
+    // });
+    // const summary = await this.messageService.createMessagesSummary(text_messages, message_data.tokens);
 
     // Save conversation to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
@@ -369,7 +369,7 @@ class ConversationService {
         user_id,
         group_id: Date.now().toString(),
         title: parameters.title,
-        description: summary,
+        description: '[pending]',
         category: parameters.category,
         tags: tags_array,
         context_prompt: parameters.context,
@@ -391,7 +391,7 @@ class ConversationService {
       // update existing DB entry
       const conversation = await this.conversationModel.findById(conversation_id);
       conversation.title = parameters.title;
-      conversation.description = summary;
+      conversation.description = '[pending update] ' + conversation.description;
       conversation.category = parameters.category;
       conversation.tags = tags_array;
       conversation.context_prompt = parameters.context;
