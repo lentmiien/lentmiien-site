@@ -48,4 +48,8 @@ router.post('/batch_start', controller.batch_start);
 router.post('/batch_update/:id', controller.batch_update);
 router.post('/batch_import', controller.batch_import);
 
+// Redact
+router.get('/redact/:id', controller.redact_page);
+router.post('/redact/:id', controller.redact_post);
+
 module.exports = router;

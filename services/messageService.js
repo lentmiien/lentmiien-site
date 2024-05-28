@@ -30,6 +30,11 @@ class MessageService {
     this.fileMetaModel = fileMetaModel;
   }
 
+  async getMessageById(id) {
+    const message = await this.messageModel.findOne({ _id: id });
+    return message;
+  }
+
   async getMessagesByIdArray(ids, get_html = true, val_lookup = null) {
     const use_flag_map = {
       "0": "do not use",

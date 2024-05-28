@@ -1,0 +1,33 @@
+extends layout
+
+block content
+  h1 Redact Message
+  form(action=`/chat4/redact/${message._id}` method="post")
+    - const lines = message.prompt.split('\n')
+    b Prompt
+    each line, index in lines
+      div
+        input(type="checkbox" name="promptLines" value=index)
+        | #{line}
+    - const lines2 = message.response.split('\n')
+    b Response
+    each line, index in lines2
+      div
+        input(type="checkbox" name="responseLines" value=index)
+        | #{line}
+
+    if message.images.length
+      h3 Images
+      each img, index in message.images
+        if img
+          div
+            img(src=`/img/${img.filename}`)
+            input(type="checkbox" name="redactImages" value=index)
+    
+    if message.sound
+      h3 Audio
+      audio(controls src=`/mp3/${message.sound}`)
+      div
+        input(type="checkbox" name="redactAudio" value=true)
+
+    button(type="submit") Confirm Redactions

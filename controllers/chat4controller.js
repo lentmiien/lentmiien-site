@@ -1,5 +1,6 @@
 const marked = require('marked');// For formatting blog post entries
 const sharp = require('sharp');// For getting image size
+const fs = require('fs').promises;
 
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
@@ -453,3 +454,62 @@ exports.batch_import = async (req, res) => {
   const status = await batchService.processBatchResponses();
   res.json(status);
 };
+
+exports.redact_page = async (req, res) => {
+  const message = await messageService.getMessageById(req.params.id);
+  res.render("redact_page", {message});
+}
+
+// Fixes GitHub issue #2: Redaction
+exports.redact_post = async (req, res) => {
+  try {
+    const { promptLines, responseLines, redactImages, redactAudio } = req.body;
+    const message = await messageService.getMessageById(req.params.id);
+    // Prompt
+    if (promptLines && promptLines.length) {
+      const lines_array = Array.isArray(promptLines) ? promptLines : [promptLines];
+      const lines = message.prompt.split('\n');
+      lines_array.forEach((index) => {
+        const i = parseInt(index);
+        lines[i] = '(redacted)';
+      });
+      message.prompt = lines.join('\n');
+    }
+    // Response
+    if (responseLines && responseLines.length) {
+      const lines_array = Array.isArray(responseLines) ? responseLines : [responseLines];
+      const lines = message.response.split('\n');
+      lines_array.forEach((index) => {
+        const i = parseInt(index);
+        lines[i] = '(redacted)  ';
+      });
+      message.response = lines.join('\n');
+    }
+    // Images [image-1716544082239-.jpg
+    if (redactImages && redactImages.length) {
+      const redacted_images = [];
+      const lines_array = Array.isArray(redactImages) ? redactImages : [redactImages];
+      lines_array.forEach((index) => {
+        const i = parseInt(index);
+        redacted_images.push(message.images[i].filename);
+        message.images[i].filename = "image-1716544082239-.jpg";
+        message.images[i].use_flag = "do not use";
+      });
+      // Delete redacted images
+      for (let i = 0; i < redacted_images.length; i++) {
+        await fs.unlink(`./public/img/${redacted_images[i]}`);
+      }
+    }
+    // Audio [sound-1716878864152-.mp3]
+    if ('redactAudio' in req.body) {
+      // Delete redacted sound
+      await fs.unlink(`./public/mp3/${message.sound}`);
+      message.sound = "sound-1716878864152-.mp3";
+    }
+    await message.save();
+    res.redirect(`/chat4`);
+  } catch (error) {
+    console.log(error);
+    res.redirect(`/chat4/redact/${req.params.id}`);
+  }
+}
