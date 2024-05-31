@@ -396,3 +396,40 @@
   border: 1px dashed gray;
   border-radius: 5px;
 }
+
+/******************/
+/*     Redact     */
+/******************/
+
+.redact-section {
+  margin: 20px 0;
+}
+
+.redact-item {
+  border: 1px solid #ccc;
+  padding: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.redact-item.selected {
+  background-color: #f99;
+  border-color: #f00;
+}
+
+.redact-content {
+  flex-grow: 1;
+  text-align: left;
+}
+
+.redact-images img,
+.redact-audio audio {
+  max-width: 100%;
+}
+
+.redact-item input[type="checkbox"] {
+  display: none;
+}
