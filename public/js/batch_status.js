@@ -15,11 +15,16 @@ async function StartBatch() {
   });
   const status = await response.json();
   status.forEach((d) => {
-    document.getElementById(d).innerText = "Processing";
+    document.getElementById(d).classList.remove("pending");
+    document.getElementById(d).classList.add("processing");
   });
 }
 
+const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE'];
+
 async function BatchRefresh(batch_id) {
+  if (document.getElementById(batch_id).classList.contains('completed')) return;
+
   // /chat4/batch_update/:batch_id
   const response = await fetch(`/chat4/batch_update/${batch_id}`, {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
@@ -35,7 +40,10 @@ async function BatchRefresh(batch_id) {
     body: '{}', // body data type must match "Content-Type" header
   });
   const status = await response.json();
-  document.getElementById(status.id).innerHTML = status.status;
+  if (end_statuses.indexOf(status.status) >= 0) {
+    document.getElementById(status.id).classList.remove("pending");
+    document.getElementById(status.id).classList.add("processing");
+  }
 }
 
 async function ProcessCompleted() {
@@ -55,6 +63,7 @@ async function ProcessCompleted() {
   });
   const status = await response.json();
   status.forEach(d => {
-    document.getElementById(d).innerHTML = "DONE";
+    document.getElementById(d).classList.remove("processing");
+    document.getElementById(d).classList.add("completed");
   });
 }

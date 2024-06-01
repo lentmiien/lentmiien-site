@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const BatchPrompt = new mongoose.Schema({
+  title: { type: String, required: true },
   custom_id: { type: String, required: true },
   conversation_id: { type: String, required: true, max: 100 },
   request_id: { type: String, required: true, max: 100 },

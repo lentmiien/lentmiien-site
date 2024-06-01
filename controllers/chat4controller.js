@@ -133,7 +133,7 @@ exports.post = async (req, res) => {
   const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body);
 
   // Add summary request to batch process
-  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {});
+  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title});
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };

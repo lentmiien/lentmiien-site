@@ -433,3 +433,32 @@
 .redact-item input[type="checkbox"] {
   display: none;
 }
+
+/*****************/
+/*     Batch     */
+/*****************/
+
+.prompt-container {
+  width: 100%;
+  padding: 5px;
+}
+
+.prompt-entry {
+  width: 100%;
+  padding: 5px;
+  margin-bottom: 10px;
+  border: 1px solid gray;
+  border-radius: 10px;
+}
+
+.pending {
+  background-color: lightblue;
+}
+
+.processing {
+  background-color: lightyellow;
+}
+
+.completed {
+  background-color: lightgreen;
+}

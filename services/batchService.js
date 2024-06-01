@@ -4,6 +4,7 @@ const { upload_file, download_file, delete_file, start_batch, batch_status } = r
 const mongoose = require('mongoose');
 
 const BatchPrompt = new mongoose.Schema({
+  title: { type: String, required: true },
   custom_id: { type: String, required: true },
   conversation_id: { type: String, required: true, max: 100 },
   request_id: { type: String, required: true, max: 100 },
@@ -95,6 +96,7 @@ class BatchService {
     // Save pending prompt to database
     const custom_id = `prompt-${new Date().getTime()}-${Math.random().toString(36).substring(2, 15)}`;
     const newPrompt = new this.BatchPromptDatabase({
+      title: parameters.title,
       custom_id,
       conversation_id,
       request_id: "new",
@@ -238,7 +240,7 @@ class BatchService {
           // Delete completed prompt
           await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
           // Flag for generating summary
-          await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {});
+          await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title});
         }
       }
       // Update status and delete files
