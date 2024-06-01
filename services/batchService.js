@@ -131,7 +131,7 @@ class BatchService {
             },
           };
           // Get data from conversation
-          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id);
+          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id, newPrompts[i].prompt === "@SUMMARY");
           // Append prompt
           if (newPrompts[i].prompt === "@SUMMARY") {
             messages.push({
