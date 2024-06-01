@@ -47,9 +47,9 @@ class ConversationService {
     return conversations;
   }
 
-  async getCategoryForConversationsById(conversation_id) {
+  async getCategoryTagsForConversationsById(conversation_id) {
     const conversation = await this.conversationModel.findById(conversation_id);
-    return conversation.category;
+    return {category: conversation.category, tags: conversation.tags};
   }
 
   async createEmptyConversation(user_id) {
