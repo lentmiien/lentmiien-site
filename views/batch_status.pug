@@ -30,4 +30,9 @@ block content
               div= `${d.request_counts_total}/${d.request_counts_completed}/${d.request_counts_failed}`
               if end_statuses.indexOf(d.status) === -1
                 button.btn.btn-primary(onclick=`BatchRefresh('${d.id}')`) Refresh  
+  #loadingPopup.loading-popup
+    span.close-btn(onclick="hideLoadingPopup()") &times;
+    .loading-content
+      .loader
+      p Loading...
   script(src="/js/batch_status.js") 

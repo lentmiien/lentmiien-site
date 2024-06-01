@@ -222,25 +222,29 @@ class BatchService {
     // Delete processed requests from prompt database
     // Update status of request to "DONE" and delete input/output files from API
     const completed_requests = [];
+    const completed_prompts = [];
     const completedRequests = await this.BatchRequestDatabase.find({ status: 'completed' });
     for (let i = 0; i < completedRequests.length; i++) {
       const output_data = await download_file(completedRequests[i].output_file_id);
       for (let j = 0; j < output_data.length; j++) {
         const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
-        if (prompt_data.prompt === "@SUMMARY") {
-          // Update summary
-          await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].response.body.choices[0].message.content);
-          // Delete completed prompt
-          await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-        } else {
-          // Append to conversation
-          const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
-          const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
-          await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
-          // Delete completed prompt
-          await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-          // Flag for generating summary
-          await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title});
+        if (prompt_data) {
+          if (prompt_data.prompt === "@SUMMARY") {
+            // Update summary
+            await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].response.body.choices[0].message.content);
+            // Delete completed prompt
+            await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
+          } else {
+            // Append to conversation
+            const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
+            const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
+            await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
+            // Delete completed prompt
+            await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
+            // Flag for generating summary
+            await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"});
+          }
+          completed_prompts.push(output_data[j].custom_id);
         }
       }
       // Update status and delete files
@@ -250,7 +254,7 @@ class BatchService {
       await delete_file(completedRequests[i].output_file_id);
       completed_requests.push(completedRequests[i].id);
     }
-    return completed_requests;
+    return {requests: completed_requests, prompts: completed_prompts};
   }
 }
 

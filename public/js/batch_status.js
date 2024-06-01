@@ -1,4 +1,7 @@
+const loadingPopup = document.getElementById("loadingPopup");
+
 async function StartBatch() {
+  showLoadingPopup();
   // /chat4/batch_start
   const response = await fetch("/chat4/batch_start", {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
@@ -18,11 +21,13 @@ async function StartBatch() {
     document.getElementById(d).classList.remove("pending");
     document.getElementById(d).classList.add("processing");
   });
+  hideLoadingPopup();
 }
 
 const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE'];
 
 async function BatchRefresh(batch_id) {
+  showLoadingPopup();
   if (document.getElementById(batch_id).classList.contains('completed')) return;
 
   // /chat4/batch_update/:batch_id
@@ -44,9 +49,11 @@ async function BatchRefresh(batch_id) {
     document.getElementById(status.id).classList.remove("pending");
     document.getElementById(status.id).classList.add("processing");
   }
+  hideLoadingPopup();
 }
 
 async function ProcessCompleted() {
+  showLoadingPopup();
   // /chat4/batch_import
   const response = await fetch(`/chat4/batch_import`, {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
@@ -62,8 +69,20 @@ async function ProcessCompleted() {
     body: '{}', // body data type must match "Content-Type" header
   });
   const status = await response.json();
-  status.forEach(d => {
+  status.requests.forEach(d => {
     document.getElementById(d).classList.remove("processing");
     document.getElementById(d).classList.add("completed");
   });
+  status.prompts.forEach(d => {
+    document.getElementById(d).classList.remove("processing");
+    document.getElementById(d).classList.add("completed");
+  });
+  hideLoadingPopup();
+}
+
+function showLoadingPopup() {
+  loadingPopup.style.display = 'block';
+}
+function hideLoadingPopup() {
+  loadingPopup.style.display = 'none';
 }
