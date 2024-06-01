@@ -460,7 +460,7 @@ exports.batch_import = async (req, res) => {
 
 exports.redact_page = async (req, res) => {
   const message = await messageService.getMessageById(req.params.id);
-  res.render("redact_page", {message});
+  res.render("redact_page", {message, conversation_id: req.query.conversation});
 }
 
 // Fixes GitHub issue #2: Redaction
@@ -500,17 +500,21 @@ exports.redact_post = async (req, res) => {
       });
       // Delete redacted images
       for (let i = 0; i < redacted_images.length; i++) {
-        await fs.unlink(`./public/img/${redacted_images[i]}`);
+        if (redacted_images[i] != "image-1716544082239-.jpg") {
+          await fs.unlink(`./public/img/${redacted_images[i]}`);
+        }
       }
     }
     // Audio [sound-1716878864152-.mp3]
     if ('redactAudio' in req.body) {
       // Delete redacted sound
-      await fs.unlink(`./public/mp3/${message.sound}`);
-      message.sound = "sound-1716878864152-.mp3";
+      if (message.sound != "sound-1716878864152-.mp3") {
+        await fs.unlink(`./public/mp3/${message.sound}`);
+        message.sound = "sound-1716878864152-.mp3";
+      }
     }
     await message.save();
-    res.redirect(`/chat4`);
+    res.redirect(`/chat4/chat/${req.body.conversation_id}`);
   } catch (error) {
     console.log(error);
     res.redirect(`/chat4/redact/${req.params.id}`);

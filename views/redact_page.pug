@@ -2,32 +2,40 @@ extends layout
 
 block content
   h1 Redact Message
-  form(action=`/chat4/redact/${message._id}` method="post")
+  form(action=`/chat4/redact/${message._id}` method="post" id="redactForm")
+    input(type="hidden", name="conversation_id", value=conversation_id)
     - const lines = message.prompt.split('\n')
-    b Prompt
-    each line, index in lines
-      div
-        input(type="checkbox" name="promptLines" value=index)
-        | #{line}
+    h3 Prompt
+    .redact-section.redact-lines
+      each line, index in lines
+        .redact-item(data-index=index data-type="text")
+          .redact-content #{line}
+          input(type="checkbox" name="promptLines" value=index style="display:none")
     - const lines2 = message.response.split('\n')
-    b Response
-    each line, index in lines2
-      div
-        input(type="checkbox" name="responseLines" value=index)
-        | #{line}
+    h3 Response
+    .redact-section.redact-lines
+      each line, index in lines2
+        .redact-item(data-index=index data-type="text")
+          .redact-content #{line}
+          input(type="checkbox" name="responseLines" value=index style="display:none")
 
     if message.images.length
       h3 Images
-      each img, index in message.images
-        if img
-          div
-            img(src=`/img/${img.filename}`)
-            input(type="checkbox" name="redactImages" value=index)
+      .redact-section.redact-images
+        each img, index in message.images
+          if img
+            .redact-item(data-index=index data-type="image")
+              .redact-content
+                img(src=`/img/${img.filename}`, style="max-width: 100%; height: auto;")
+              input(type="checkbox" name="redactImages" value=index style="display:none")
     
     if message.sound
       h3 Audio
-      audio(controls src=`/mp3/${message.sound}`)
-      div
-        input(type="checkbox" name="redactAudio" value=true)
+      .redact-section.redact-audio
+        .redact-item(data-type="audio")
+          .redact-content
+            audio(controls src=`/mp3/${message.sound}`)
+          input(type="checkbox" name="redactAudio" value=true style="display:none")
 
     button(type="submit") Confirm Redactions
+  script(src="/js/redact_page.js") 
