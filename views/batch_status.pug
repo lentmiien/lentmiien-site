@@ -17,7 +17,7 @@ block content
     .col
       h4 Requests
       button.btn.btn-success(onclick="ProcessCompleted()") Process completed
-      .prompt-container
+      #request_container.prompt-container
         - const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE']
         each d in requests
           .prompt-entry(id=d.id, class=`${d.status === 'DONE' ? "completed" : (end_statuses.indexOf(d.status) >= 0 ? "processing" : "pending")}`) 

@@ -17,10 +17,38 @@ async function StartBatch() {
     body: '{}', // body data type must match "Content-Type" header
   });
   const status = await response.json();
-  status.forEach((d) => {
+  // Update status
+  status.ids.forEach((d) => {
     document.getElementById(d).classList.remove("pending");
     document.getElementById(d).classList.add("processing");
   });
+  // Add new request
+  if ("id" in status.request) {
+    console.log(status.request);
+    const prompt_entry_div = document.createElement("div");
+    const id_b = document.createElement("b");
+    const content_div = document.createElement("div");
+    const start_div = document.createElement("div");
+    const end_div = document.createElement("div");
+    const time_div = document.createElement("div");
+    const count_div = document.createElement("div");
+    const refresh_button = document.createElement("button");
+    prompt_entry_div.append(id_b, content_div);
+    content_div.append(start_div, end_div, time_div, count_div);
+    content_div.append(refresh_button);
+    prompt_entry_div.classList.add("prompt-entry", "pending");
+    prompt_entry_div.id = status.request.id;
+    id_b.innerText = status.request.id;
+    start_div.innerText = `Start: ${(new Date(status.request.created_at)).toLocaleString()}`;
+    end_div.innerText = `End: ${(new Date(status.request.completed_at)).toLocaleString()}`;
+    const t = (new Date(status.request.completed_at)).getTime() - (new Date(status.request.created_at)).getTime();
+    time_div.innerText = `Time: ${Math.floor(t/(1000*60*60))} h, ${Math.floor(t/(1000*60))%60} m, ${Math.floor(t/(1000))%60} s`;
+    count_div.innerText = `${status.ids.length}/0/0`;
+    refresh_button.classList.add("btn", "btn-primary");
+    refresh_button.setAttribute("onclick", `BatchRefresh('${status.request.id}')`);
+    refresh_button.innerText = "Refresh";
+    document.getElementById("request_container").prepend(prompt_entry_div);
+  }
   hideLoadingPopup();
 }
 

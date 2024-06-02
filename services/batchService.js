@@ -180,21 +180,23 @@ class BatchService {
           error_file_id: "null",
           created_at: new Date(batch_details.created_at*1000),
           completed_at: new Date(batch_details.expires_at*1000),
-          request_counts_total: batch_details.request_counts.total,
-          request_counts_completed: batch_details.request_counts.completed,
-          request_counts_failed: batch_details.request_counts.failed,
+          request_counts_total: processed_ids.length,
+          request_counts_completed: 0,
+          request_counts_failed: 0,
         });
         await newRequest.save();
         
         // Update prompt entries with request id
         await this.BatchPromptDatabase.updateMany({ request_id: 'new' }, { request_id: batch_details.id });
+
+        // Return ids and new request data
+        return {ids: processed_ids, request: newRequest};
+      } else {
+        return {ids: [], request: {}};
       }
-  
-      // Return array id ids that were included in the request
-      return processed_ids;
     } catch (error) {
       console.error("Error triggering batch request:", error);
-      return [];
+      return {ids: [], request: {}};
     }
   }
 
