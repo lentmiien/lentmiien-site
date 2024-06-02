@@ -4,19 +4,21 @@ Welcome to the repository for my personal website, a platform where I blend my p
 
 ## Features
 
-- **Chat3:** An enhanced chat feature that supports model selection, branching conversations, and integrates directly with a knowledge database.
+- **Chat4:** An enhanced chat feature that supports model selection, branching conversations, and integrates directly with a knowledge database.
+  - **Redact Functionality:** Provides the ability to redact information within the chat interface to ensure privacy.
+  - **OpenAI Batch API Support:** Integrated support for OpenAI's batch API, offering a 50% discount on requests, though with slower response times.
 - **Cooking Calendar:** Allows for meal planning, managing cooking schedules, and handling family meal requests with links to recipes.
 - **Knowledge Database:** A central repository for storing valuable information, including recipes and chat logs, which can be edited and injected into Chat3 conversations.
 - **About Page:** Provides insight into my journey as a programmer and the goals of this website.
-- **(Planned) Budget Tracker:** A tool for managing personal finances with features for recurring transactions and trend analysis.
-- **(Planned) Health Tracker:** A comprehensive system for tracking wellness metrics, including exercise, diet, and health metrics.
+- **Budget Tracker:** A tool for managing personal finances with features for recurring transactions and trend analysis.
+- **Health Tracker:** A comprehensive system for tracking wellness metrics, including exercise, diet, and health metrics.
 
 ## Technologies Used
 
 - **Back-End:** Node.js, Express
 - **Database:** MongoDB with Mongoose for schema management
 - **Front-End:** Pug templates, CSS, JavaScript
-- **APIs:** OpenAI for Chat3 enhancements
+- **APIs:** OpenAI for Chat4 enhancements
 
 ## Getting Started
 
@@ -37,6 +39,13 @@ To get a local copy up and running, follow these simple steps:
     ```
 
 The application should now be running on `localhost:3000` (or another port specified in your environment variables).
+
+## Future Improvements
+
+- **Switch User Side to a VUE App:** Enhance frontend responsiveness and user experience by transitioning to a VUE application.
+- **Agent Interface Powered by OpenAI's API:** Develop an intelligent agent interface leveraging OpenAI's API for more dynamic user interactions.
+- **Encrypt Database Content:** Implement encryption for stored data to ensure user information is secure.
+- **Custom Machine Learning Model:** Work on a custom ML model tailored to the specific needs of this web app to introduce unique functionalities or enhance performance.
 
 ## Contribution
 
