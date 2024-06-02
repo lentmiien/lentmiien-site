@@ -138,6 +138,15 @@ class ConversationService {
     return conversation._id.toString();
   }
 
+  async doneConversation(conversation_id) {
+    const conversation = await this.conversationModel.findById(conversation_id);
+    if (conversation.title.indexOf("[Done]") === -1) {
+      conversation.title = "[Done] " + conversation.title;
+    }
+    await conversation.save();
+    return conversation._id.toString();
+  }
+
   async updateSummary(conversation_id, summary) {
     const conversation = await this.conversationModel.findById(conversation_id);
     conversation.description = summary;

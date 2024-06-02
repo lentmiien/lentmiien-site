@@ -15,7 +15,7 @@ block content
               div= d.prompt === "@SUMMARY" ? "summary" : "prompt"
               a(href=`/chat4/chat/${d.conversation_id}`, target="_blank") View chat
     .col
-      h4 Requests
+      h4 Requests (1 week)
       button.btn.btn-success(onclick="ProcessCompleted()") Process completed
       #request_container.prompt-container
         - const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE']

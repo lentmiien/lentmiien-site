@@ -31,6 +31,7 @@ exports.index = async (req, res) => {
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
   const all_messages = await messageService.getMessagesByUserId(user_id);// For appending existing messages to a new conversation
   const agents = await agentService.getAgentAll();
+  const inBatch = await batchService.getPromptConversationIds();
 
   // Get all categories and tags
   categories = [];
@@ -52,6 +53,7 @@ exports.index = async (req, res) => {
         tags[index].count++;
       }
     });
+    d.batchCount = (d.batchCount || 0) + (inBatch.indexOf(d._id.toString()) >= 0 ? 1 : 0);
   });
   all_messages.forEach(d => {
     if (categories.indexOf(d.category) === -1) {
@@ -83,6 +85,10 @@ exports.index = async (req, res) => {
 // JSON API endpoint
 exports.updateconversation = async (req, res) => {
   res.json({updated_conversation_id: await conversationService.updateConversation(req.params.id, req.body)});
+};
+
+exports.doneconversation = async (req, res) => {
+  res.json({updated_conversation_id: await conversationService.doneConversation(req.params.id)});
 };
 
 exports.chat = async (req, res) => {

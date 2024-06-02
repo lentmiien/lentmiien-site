@@ -83,6 +83,7 @@ block content
             .col.button-container.mt-2 
               button.btn.btn-primary(onclick="UpdateSettings()") Update
               button.btn.btn-warning(onclick=`SaveConversationSettings("${conversation._id.toString()}")`) Save changes to database
+              button.btn.btn-success(onclick=`DoneConversation("${conversation._id.toString()}")`) Mark as done
               a.btn.btn-danger(href=`/chat4/delete_conversation/${conversation._id.toString()}`) Delete conversation
       .tab-content
         #chat.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="chat-tab")

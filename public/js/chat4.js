@@ -84,6 +84,30 @@ async function SaveConversationSettings(id) {
   UpdateSettings();
 }
 
+async function DoneConversation(id) {
+  // Call API
+  await fetch(`/chat4/doneconversation/${id}`, {
+    method: "POST", // *GET, POST, PUT, DELETE, etc.
+    mode: "cors", // no-cors, *cors, same-origin
+    cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
+    credentials: "same-origin", // include, *same-origin, omit
+    headers: {
+      "Content-Type": "application/json",
+      // 'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    redirect: "follow", // manual, *follow, error
+    referrerPolicy: "no-referrer", // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
+    body: JSON.stringify({}), // body data type must match "Content-Type" header
+  });
+
+  if (tooltitle.value.indexOf("[Done]") === -1) {
+    tooltitle.value = "[Done] " + tooltitle.value;
+  }
+
+  // Update and close when done
+  UpdateSettings();
+}
+
 // Show a popup for selecting prompt templates
 function TemplatesPopup() {
   document.getElementById("templates-tab").click();

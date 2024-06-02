@@ -114,3 +114,22 @@ function showLoadingPopup() {
 function hideLoadingPopup() {
   loadingPopup.style.display = 'none';
 }
+
+// Set action button
+const actionBtn = document.getElementById("actionBtn");
+let currentEvent = null;
+function setActionButton(text, func) {
+  actionBtn.innerText = text;
+  actionBtn.style.cursor = "pointer";
+  actionBtn.disabled = false;
+  if (currentEvent) {
+    actionBtn.removeEventListener("click", currentEvent)
+  }
+  actionBtn.addEventListener("click", func);
+  currentEvent = func;
+}
+setActionButton("Chat", Chat4Top);
+
+function Chat4Top() {
+  open("/chat4", "_self");
+}

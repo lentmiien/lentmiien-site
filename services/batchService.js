@@ -53,9 +53,21 @@ class BatchService {
   }
 
   async getAll() {
+    const d = new Date(Date.now() - (1000*60*60*24*7));
     const prompts = await this.BatchPromptDatabase.find();
-    const requests = (await this.BatchRequestDatabase.find()).reverse();
+    const requests = (await this.BatchRequestDatabase.find({created_at: { $gt: d}})).reverse();
     return { prompts, requests };
+  }
+
+  async getPromptConversationIds() {
+    const conversationIds = [];
+    const prompts = await this.BatchPromptDatabase.find();
+    prompts.forEach(d => {
+      if (conversationIds.indexOf(d.conversation_id) === -1 && d.prompt != "@SUMMARY") {
+        conversationIds.push(d.conversation_id);
+      }
+    });
+    return conversationIds;
   }
 
   async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters) {

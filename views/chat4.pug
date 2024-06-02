@@ -149,9 +149,11 @@ block content
                   if category === c.category
                     .tag_container(data-tags=`|${c.tags.join('|')}|`)
                       .btn-group(role="group")
-                        a.btn.btn-info(href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
+                        a.btn(class=`${c.batchCount > 0 ? "btn-secondary" : (c.title.indexOf("[Done]") >= 0 ? "btn-success" : "btn-info")}`, href=`/chat4/chat/${c._id.toString()}`, title=`${c.description}`)
                           div= c.title
                           div(style="font-size:smaller;")= `(${c.tags.join(', ')})`
+                          if c.batchCount > 0
+                            div ## Batch ##
                         button.btn.btn-outline-info(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
       .tab-content
         #agent.tab-pane.fade(role="tabpanel" aria-labelledby="agent-tab")
