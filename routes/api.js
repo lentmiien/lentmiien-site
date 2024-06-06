@@ -7,4 +7,7 @@ const controller = require('../controllers/apicontroller');
 /* GET home page. */
 router.all('*', controller.root);
 
+/* Health log */
+router.get('/getHealthEntries', controller.getHealthEntries);
+
 module.exports = router;
