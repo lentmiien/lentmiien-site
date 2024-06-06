@@ -8,4 +8,9 @@ const controller = require('../controllers/indexcontroller');
 router.get('/', controller.index);
 router.get('/login', controller.login);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/download_test', controller.download_test);
+
 module.exports = router;
