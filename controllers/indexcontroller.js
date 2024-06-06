@@ -18,7 +18,7 @@ exports.download_test = async (req, res) => {
     });
 
     // Set the response headers
-    res.attachment('files.zip');
+    res.attachment(`files_${Date.now()}.zip`);
 
     // Pipe the archive to the response
     archive.pipe(res);
@@ -27,7 +27,7 @@ exports.download_test = async (req, res) => {
     archive.append((new Date()).toString(), { name: 'current_date_time.txt' });
 
     // Append files to the archive
-    archive.directory("./public/img", false);
+    archive.directory("./public/js", false);
 
     // Finalize the archive
     await archive.finalize();
