@@ -27,3 +27,8 @@ exports.getHealthEntries = async (req, res) => {
 
   res.json(entries);
 };
+
+exports.updateHealthEntry = async (req, res) => {
+  const {date, basic, medical, diary} = req.body;
+  res.json(await healthService.updateEntry(date, basic, medical, diary));
+};

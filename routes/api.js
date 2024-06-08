@@ -9,5 +9,6 @@ router.all('*', controller.root);
 
 /* Health log */
 router.get('/getHealthEntries', controller.getHealthEntries);
+router.post('/updateHealthEntry', controller.updateHealthEntry);
 
 module.exports = router;
