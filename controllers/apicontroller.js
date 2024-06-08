@@ -20,8 +20,8 @@ exports.getHealthEntries = async (req, res) => {
   }
 
   entries.sort((a,b) => {
-    if (a.dateOfEntry < b.dateOfEntry) return -1;
-    if (a.dateOfEntry > b.dateOfEntry) return 1;
+    if (a.dateOfEntry < b.dateOfEntry) return 1;
+    if (a.dateOfEntry > b.dateOfEntry) return -1;
     return 0;
   });
 
