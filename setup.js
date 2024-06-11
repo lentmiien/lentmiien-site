@@ -23,7 +23,7 @@ function ensureFileExists(filePath, defaultContent) {
 }
 
 // The directories to ensure exist
-const dirsToCheck = ['tmp_data', 'cache'];
+const dirsToCheck = ['tmp_data', 'cache', 'public/temp'];
 
 dirsToCheck.forEach(dir => ensureDirExists(dir));
 
@@ -52,7 +52,9 @@ function clearDirectory(directory) {
       });
   }
 }
-const TEMP_DIR = path.join(__dirname, 'tmp_data');
+let TEMP_DIR = path.join(__dirname, 'tmp_data');
+clearDirectory(TEMP_DIR);
+TEMP_DIR = path.join(__dirname, 'public/temp');
 clearDirectory(TEMP_DIR);
 
 // Check for the existence of the .env file

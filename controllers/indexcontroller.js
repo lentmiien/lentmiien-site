@@ -36,3 +36,46 @@ exports.download_test = async (req, res) => {
     res.sendStatus(500);
   }
 };
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+const path = require('path');
+const fs = require('fs');
+const { Poppler } = require('node-poppler');
+exports.poppler_test = async (req, res) => {
+  try {
+    const outputDir = "C:\\Users\\lentm\\Documents\\Programming\\lentmiien-site\\public\\temp";
+    const outputFile = `C:\\Users\\lentm\\Documents\\Programming\\lentmiien-site\\public\\temp\\test_document`;
+
+    const poppler = new Poppler();
+
+    // Convert PDF to JPEG
+    const options = {
+      jpegFile: true,
+      singleFile: false,
+      firstPageToConvert: 1,
+      lastPageToConvert: 9999,
+    };
+
+    await poppler.pdfToCairo("C:/Users/lentm/Downloads/gst-e-tax-guide_taxing-imported-low-value-goods-by-way-of-the-overseas-vendor-registration-regime_(1st-ed).pdf", outputFile, options);
+
+    // List all converted images
+    const images = fs.readdirSync(outputDir);
+
+    // Convert images to URLs
+    const imageUrls = images.map((image) => `/temp/${image}`);
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <body>
+        ${imageUrls.map((url) => `<img src="${url}" /><br>`).join('')}
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Error processing PDF.');
+  }
+};
