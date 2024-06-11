@@ -13,9 +13,4 @@ router.get('/login', controller.login);
 /****************************/
 router.get('/download_test', controller.download_test);
 
-/****************************/
-// TEST TEST TEST TEST TEST //
-/****************************/
-router.get('/poppler_test', controller.poppler_test);
-
 module.exports = router;

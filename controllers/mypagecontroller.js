@@ -1,4 +1,6 @@
 const fs = require('fs');
+const path = require('path');
+const { Poppler } = require('node-poppler');
 const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
 const { ArticleModel } = require('../database');
@@ -91,4 +93,37 @@ exports.showtome_post = async (req, res) => {
   const file_list = fs.readdirSync(ImageDataFolder);
   const { filename } = await ig(req.body.prompt, req.body.quality, req.body.size);
   res.render("showtome", { ig_file: `/img/${filename}`, file_list });
+};
+
+exports.pdf_to_jpg = (req, res) => {
+  // Display a page to upload a PDF file, to be converted to JPG images *1 image per page
+  res.render("pdf_to_jpg");
+};
+
+exports.convert_pdf_to_jpg = async (req, res) => {
+  // Convert uploaded file to JPG images, and display to user
+  const filename = req.file.destination + req.file.filename;
+  const outputDir = path.resolve(__dirname, '../public/temp', req.file.filename);
+  const outputFile = path.join(outputDir, 'page');
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const poppler = new Poppler();
+
+  // Convert PDF to JPEG
+  const options = {
+    jpegFile: true,
+    singleFile: false,
+    firstPageToConvert: 1,
+    lastPageToConvert: 9999,
+  };
+
+  await poppler.pdfToCairo(filename, outputFile, options);
+
+  // List all converted images
+  const images = fs.readdirSync(outputDir);
+
+  // Convert images to URLs
+  const imageUrls = images.map((image) => `/temp/${req.file.filename}/${image}`);
+
+  res.render("pdf_to_jpg_output", { imageUrls });
 };
