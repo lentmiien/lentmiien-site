@@ -51,14 +51,14 @@ class HealthService {
         // Update existing entry
         entry.basicData = basic;
         entry.medicalRecord = medical;
-        entry.diary = diary.split(',').map(item => item.trim());
+        entry.diary = diary.split(',').map(item => item.trim()).filter(item => item.length > 0);
       } else {
         // Create new entry
         entry = new this.HealthEntry({
           dateOfEntry: date,
           basicData: basic,
           medicalRecord: medical,
-          diary: diary.split(',').map(item => item.trim())
+          diary: diary.split(',').map(item => item.trim()).filter(item => item.length > 0)
         });
       }
   
