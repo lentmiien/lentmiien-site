@@ -127,6 +127,29 @@ class HealthService {
   
     return updatedEntries;
   }
+
+  /**
+   * Delete one entry
+   * @param {*} date date of entry to delete
+   * @returns return success message
+   */
+  async deleteEntry(date) {
+    if (!isValidDate(date)) {
+      throw new Error("Invalid date format. Expected format is YYYY-MM-DD.");
+    }
+  
+    try {
+      const result = await this.HealthEntry.deleteOne({ dateOfEntry: date });
+  
+      if (result.deletedCount === 0) {
+        throw new Error(`No entry found for date ${date}.`);
+      }
+  
+      return { success: true, message: `Entry for date ${date} deleted successfully.` };
+    } catch (error) {
+      throw new Error(`Error deleting entry for date ${date}: ${error.message}`);
+    }
+  }
 }
 
 // Utility function to check if the date string matches the format YYYY-MM-DD

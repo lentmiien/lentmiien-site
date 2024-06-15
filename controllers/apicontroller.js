@@ -33,7 +33,12 @@ exports.updateHealthEntry = async (req, res) => {
   res.json(await healthService.updateEntry(date, basic, medical, diary));
 };
 
-exports.upload_health_csv = async (req, res) => {
+exports.uploadHealthCsv = async (req, res) => {
   const {inputDataArray, type} = req.body;
   res.json(await healthService.appendData(inputDataArray, type));
+};
+
+exports.deleteHealthEntry = async (req, res) => {
+  const {date} = req.body;
+  res.json(await healthService.deleteEntry(date));
 };

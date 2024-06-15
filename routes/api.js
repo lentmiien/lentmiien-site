@@ -10,6 +10,7 @@ router.all('*', controller.root);
 /* Health log */
 router.get('/getHealthEntries', controller.getHealthEntries);
 router.post('/updateHealthEntry', controller.updateHealthEntry);
-router.post('/upload_health_csv', controller.upload_health_csv);
+router.post('/uploadHealthCsv', controller.uploadHealthCsv);
+router.post('/deleteHealthEntry', controller.deleteHealthEntry);
 
 module.exports = router;
