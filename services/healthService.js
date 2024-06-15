@@ -70,6 +70,63 @@ class HealthService {
       throw new Error(`Error updating or creating entry: ${error.message}`);
     }
   }
+
+  /**
+   * 
+   * @param {*} inputDataArray array of data to append to the database, each array entry has a 'date' value, for the entry to be appended, and key-value pairs of all data to append, or update (if existing)
+   * @param {*} type should be either 'basic' or 'medical', indicate the type of input data
+   * @returns array of updated entries
+   */
+  async appendData(inputDataArray, type) {
+    if (!['basic', 'medical'].includes(type)) {
+      throw new Error("Invalid type. Expected 'basic' or 'medical'.");
+    }
+  
+    const updatedEntries = [];
+
+    const dbkey = type === 'basic' ? 'basicData' : 'medicalRecord';
+
+    for (const { date, dataToAppend } of inputDataArray) {
+      if (!isValidDate(date)) {
+        throw new Error(`Invalid date format: ${date}. Expected format is YYYY-MM-DD.`);
+      }
+  
+      try {
+        let entry = await this.HealthEntry.findOne({ dateOfEntry: date });
+  
+        if (entry) {
+          // Determine if there are any changes to the entry
+          let isUpdated = false;
+          for (const [key, value] of Object.entries(dataToAppend)) {
+            if (entry[dbkey].get(key) !== value) {
+              entry[dbkey].set(key, value);
+              isUpdated = true;
+            }
+          }
+  
+          if (isUpdated) {
+            await entry.save();
+            updatedEntries.push(entry);
+          }
+        } else {
+          // Create a new entry if none exists
+          const newEntry = new this.HealthEntry({
+            dateOfEntry: date,
+            basicData: type === 'basic' ? dataToAppend : {},
+            medicalRecord: type === 'medical' ? dataToAppend : {},
+            diary: [] // Initialize empty diary array
+          });
+  
+          await newEntry.save();
+          updatedEntries.push(newEntry);
+        }
+      } catch (error) {
+        throw new Error(`Error processing entry for date ${date}: ${error.message}`);
+      }
+    }
+  
+    return updatedEntries;
+  }
 }
 
 // Utility function to check if the date string matches the format YYYY-MM-DD
