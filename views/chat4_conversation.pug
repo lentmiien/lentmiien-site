@@ -97,6 +97,9 @@ block content
             textarea#context(style="display:none;", name="context", cols="30", rows="10", novalidate)= `${conversation.context_prompt}`
             label(for="prompt") Prompt
             textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
+            select#provider.form-control(name="provider") 
+              option(value="OpenAI") OpenAI
+              option(value="Anthropic") Anthropic
             .button-container
               button.btn.btn-success(type="button", onclick="RunImageForm()") Image
               button.btn.btn-success(type="button", onclick="RunSoundForm()") Sound

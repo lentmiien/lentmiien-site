@@ -136,7 +136,7 @@ exports.post = async (req, res) => {
   for (let i = 0; i < req.files.length; i++) {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
-  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body);
+  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider);
 
   // Add summary request to batch process
   await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title});
