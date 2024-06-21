@@ -570,9 +570,3 @@ function Batch() {
   chatform.action = chatform.action.split('post').join('batch_prompt');
   chatform.submit();
 }
-
-// Anthropic test
-function AnthropicTest() {
-  chatform.action = chatform.action.split('post').join('anthropic_send');
-  chatform.submit();
-}

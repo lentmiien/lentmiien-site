@@ -136,7 +136,7 @@ exports.post = async (req, res) => {
   for (let i = 0; i < req.files.length; i++) {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
-  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body);
+  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider);
 
   // Add summary request to batch process
   await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title});
@@ -526,17 +526,3 @@ exports.redact_post = async (req, res) => {
     res.redirect(`/chat4/redact/${req.params.id}`);
   }
 }
-
-// Anthropic test
-exports.anthropic_send = async (req, res) => {
-  const user_id = req.user.name;
-  let use_conversation_id = req.params.id;
-
-  // Post message to conversation
-  const conversation_id = await conversationService.postToConversation_anthropic(user_id, use_conversation_id, req.body);
-
-  // Add summary request to batch process
-  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title});
-
-  res.redirect(`/chat4/chat/${conversation_id}`);
-};

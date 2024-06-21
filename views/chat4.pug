@@ -55,10 +55,12 @@ block content
               option(value="") -- No agent will be queried, select agent to query agent memory --
               each a in agents 
                 option(value=a._id.toString())= a.name
+            select#provider.form-control(name="provider") 
+              option(value="OpenAI") OpenAI
+              option(value="Anthropic") Anthropic
             .button-container
               input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
               button.btn.btn-secondary(type="button", onclick="Batch()") Batch
-              button.btn.btn-danger(type="button", onclick="AnthropicTest()") Anthropic
           #append_messages_content
       .tab-content
         #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")

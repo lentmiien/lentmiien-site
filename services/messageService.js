@@ -80,9 +80,11 @@ class MessageService {
     return messages;
   }
 
-  async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images) {
+  async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images, provider='OpenAI') {
     // Send to OpenAI API
-    const response = await chatGPT(vision_messages, 'gpt-4o-2024-05-13');
+    let response;
+    if (provider === "OpenAI") response = await chatGPT(vision_messages, 'gpt-4o-2024-05-13');
+    if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20240620');
 
     // Save to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
@@ -101,26 +103,24 @@ class MessageService {
     return { db_entry, tokens: response.usage.total_tokens };
   }
 
-  async createMessage_anthropic(messages, model, system, sender, parameters) {
-    // Send to OpenAI API
-    const response = await anthropic(messages, model, system);
-
-    // Save to database
-    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
-    const chat_message_entry = {
-      user_id: sender,
-      category: parameters.category,
-      tags: tags_array,
-      prompt: parameters.prompt,
-      response: response.content[0].text,
-      images: [],
-      sound: '',
-    };
-    const db_entry = await new this.messageModel(chat_message_entry).save();
-
-    // Return entry to user
-    return { db_entry, tokens: response.usage.input_tokens + response.usage.output_tokens };
-  }
+  // async createMessage_anthropic(messages, model, system, sender, parameters) {
+  //   // Send to OpenAI API
+  //   const response = await anthropic(messages, model, system);
+  //   // Save to database
+  //   const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+  //   const chat_message_entry = {
+  //     user_id: sender,
+  //     category: parameters.category,
+  //     tags: tags_array,
+  //     prompt: parameters.prompt,
+  //     response: response.content[0].text,
+  //     images: [],
+  //     sound: '',
+  //   };
+  //   const db_entry = await new this.messageModel(chat_message_entry).save();
+  //   // Return entry to user
+  //   return { db_entry, tokens: response.usage.input_tokens + response.usage.output_tokens };
+  // }
 
   async CreateCustomMessage(prompt, response, sender, category, images, tags = ["custom_message"]) {
     // If you have generated a prompt-response pair somewhere else, or need to guide the conversation in a certain way, you can save a customs prompt-response pair with this method
