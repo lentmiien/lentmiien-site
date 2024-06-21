@@ -526,3 +526,17 @@ exports.redact_post = async (req, res) => {
     res.redirect(`/chat4/redact/${req.params.id}`);
   }
 }
+
+// Anthropic test
+exports.anthropic_send = async (req, res) => {
+  const user_id = req.user.name;
+  let use_conversation_id = req.params.id;
+
+  // Post message to conversation
+  const conversation_id = await conversationService.postToConversation_anthropic(user_id, use_conversation_id, req.body);
+
+  // Add summary request to batch process
+  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title});
+
+  res.redirect(`/chat4/chat/${conversation_id}`);
+};

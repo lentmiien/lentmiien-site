@@ -1,5 +1,6 @@
 const marked = require('marked');
 const { chatGPT, tts, ig } = require('../utils/ChatGPT');
+const { anthropic } = require('../utils/anthropic');
 
 // Message service operations: managing individual messages within a conversation
 
@@ -98,6 +99,27 @@ class MessageService {
 
     // Return entry to user
     return { db_entry, tokens: response.usage.total_tokens };
+  }
+
+  async createMessage_anthropic(messages, model, system, sender, parameters) {
+    // Send to OpenAI API
+    const response = await anthropic(messages, model, system);
+
+    // Save to database
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    const chat_message_entry = {
+      user_id: sender,
+      category: parameters.category,
+      tags: tags_array,
+      prompt: parameters.prompt,
+      response: response.content[0].text,
+      images: [],
+      sound: '',
+    };
+    const db_entry = await new this.messageModel(chat_message_entry).save();
+
+    // Return entry to user
+    return { db_entry, tokens: response.usage.input_tokens + response.usage.output_tokens };
   }
 
   async CreateCustomMessage(prompt, response, sender, category, images, tags = ["custom_message"]) {

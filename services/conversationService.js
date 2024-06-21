@@ -420,6 +420,80 @@ class ConversationService {
     }
   }
 
+  async postToConversation_anthropic(user_id, conversation_id, parameters) {
+    const messages = [];
+    const model = "claude-3-5-sonnet-20240620";
+    const system = parameters.context;
+
+    // Set previous messages, if not a new conversation
+    if (conversation_id != 'new') {
+      const conversation = await this.conversationModel.findById(conversation_id);
+      const m_id = conversation.messages;
+      const prev_messages = await this.messageService.getMessagesByIdArray(m_id, false, parameters);
+      // Append messages
+      for (let i = 0; i < prev_messages.length; i++) {
+        const m = prev_messages[i];
+        // User prompt
+        messages.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: m.prompt }
+          ]
+        });
+        // Assistant response
+        messages.push({
+          role: 'assistant',
+          content: [
+            { type: 'text', text: m.response },
+          ]
+        });
+      }
+    }
+
+    // Append input prompt
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: parameters.prompt }
+      ]
+    });
+
+    // Create new message
+    const message_data = await this.messageService.createMessage_anthropic(messages, model, system, user_id, parameters);
+
+    // Save conversation to database
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    if (conversation_id === "new") {
+      const conversation_entry = {
+        user_id,
+        group_id: Date.now().toString(),
+        title: parameters.title,
+        description: '[pending]',
+        category: parameters.category,
+        tags: tags_array,
+        context_prompt: parameters.context,
+        knowledge_injects: [],
+        messages: [ message_data.db_entry._id.toString() ],
+        updated_date: new Date(),
+      };
+      const conv_entry = await new this.conversationModel(conversation_entry).save();
+      return conv_entry._id.toString();
+    } else {
+      // update existing DB entry
+      const conversation = await this.conversationModel.findById(conversation_id);
+      conversation.title = parameters.title;
+      conversation.description = '[pending update] ' + conversation.description;
+      conversation.category = parameters.category;
+      conversation.tags = tags_array;
+      conversation.context_prompt = parameters.context;
+      conversation.knowledge_injects = [];
+      conversation.messages.push(message_data.db_entry._id.toString());
+      conversation.updated_date = new Date();
+      await conversation.save();
+      return conversation._id.toString();
+    }
+  }
+
   async appendMessageToConversation(conversation_id, message_id_to_add, summary = true) {
     const conversation = await this.conversationModel.findById(conversation_id);
     conversation.messages.push(message_id_to_add);
