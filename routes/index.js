@@ -13,4 +13,9 @@ router.get('/login', controller.login);
 /****************************/
 router.get('/download_test', controller.download_test);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/scroll_test', controller.scroll_test);
+
 module.exports = router;

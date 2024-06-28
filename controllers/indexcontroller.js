@@ -36,3 +36,10 @@ exports.download_test = async (req, res) => {
     res.sendStatus(500);
   }
 };
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.scroll_test = (req, res) => {
+  res.render('scroll_test')
+};
