@@ -7,8 +7,6 @@ function ensureDirExists(dirPath) {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
     console.log(`Directory created: ${dirPath}`);
-  } else {
-    console.log(`Directory already exists: ${dirPath}`);
   }
 }
 
@@ -17,8 +15,6 @@ function ensureFileExists(filePath, defaultContent) {
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, defaultContent);
     console.log(`File created: ${filePath}`);
-  } else {
-    console.log(`File already exists: ${filePath}`);
   }
 }
 
@@ -79,7 +75,6 @@ async function convertPngToJpgInFolder(folderPath) {
         try {
           // Try accessing the JPG file, throw error if it doesn't exist
           await fs.promises.access(jpgPath);
-          console.log(`JPG version already exists for ${file}, skipping...`);
         } catch {
           // JPG does not exist, convert PNG to JPG
           console.log(`Converting ${file} to JPG...`);
