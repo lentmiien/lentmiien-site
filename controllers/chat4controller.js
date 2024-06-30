@@ -526,3 +526,16 @@ exports.redact_post = async (req, res) => {
     res.redirect(`/chat4/redact/${req.params.id}`);
   }
 }
+
+// Fetch messages API
+// Previously the functionality to append previous messages was disabled due to instabillity issues with the amount of data being loaded, with this new API, only the necessary data will be loaded when the user needs it, solving the problem, and re-introducing the functionality to append previous messages to conversations
+exports.fetch_messages = async (req, res) => {
+  const user_id = req.user.name;
+  const category = req.query.category;
+  const tag = req.query.tag;
+  const keyword = req.query.keyword;
+
+  const messages = await messageService.fetchMessages(user_id, category ? category : null, tag ? tag : null, keyword ? keyword : null);
+
+  res.json(messages);
+};

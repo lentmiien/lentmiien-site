@@ -92,21 +92,23 @@ block content
           h3 Append messages to new conversation
           .row 
             .col 
-              label(for="message_category") Select category to show 
-              select#message_category.form-control(name="message_category", onchange="AppendMessageFilter()") 
+              label(for="message_category") Select category to fetch 
+              select#message_category.form-control(name="message_category") 
+                option(value="") - All -
                 each category in categories
                   option(value=category)= category
             .col 
-              label(for="message_tag") Select tag to show 
-              select#message_tag.form-control(name="message_tag", onchange="AppendMessageFilter()") 
+              label(for="message_tag") Select tag to fetch 
+              select#message_tag.form-control(name="message_tag") 
+                option(value="") - All -
                 each tag in tags
                   option(value=tag.label)= tag.label
-          each message, i in all_messages
-            .append_message_container(style="display:none;", data-category=message.category, data-tags=`|${message.tags.join("|")}|`) 
-              input(id=`append_${i}`, type="checkbox", onclick="ToggleMessageAppendRemove(this)", data-id=message._id.toString(), data-response_html=message.response_html, data-prompt_html=message.prompt_html)
-              label(for=`append_${i}`) Append message
-              .assistant!= message.response_html
-              .user!= message.prompt_html
+            .col 
+              label(for="keyword") Enter a keyword to search for
+              input#keyword.form-control(type="text", name="keyword", placeholder="- All -")
+            .col 
+              button.btn.btn-primary(onclick="FetchMessages()") Fetch
+          #fetch_messages_container
       .tab-content
         #custom_message.tab-pane.fade(role="tabpanel" aria-labelledby="custom_message-tab")
           h3 Generate a custom message to append to future conversations

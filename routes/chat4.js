@@ -53,4 +53,7 @@ router.post('/batch_import', controller.batch_import);
 router.get('/redact/:id', controller.redact_page);
 router.post('/redact/:id', controller.redact_post);
 
+// Fetch messages API
+router.get('/api/fetch_messages', controller.fetch_messages);
+
 module.exports = router;

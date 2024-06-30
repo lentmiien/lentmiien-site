@@ -570,3 +570,64 @@ function Batch() {
   chatform.action = chatform.action.split('post').join('batch_prompt');
   chatform.submit();
 }
+
+async function FetchMessages() {
+  const message_category = document.getElementById("message_category").value;
+  const message_tag = document.getElementById("message_tag").value;
+  const keyword = document.getElementById("keyword").value;
+
+  // Prepare URL
+  const urlparts = ['/chat4/api/fetch_messages'];
+  const query = [];
+  if (message_category.length > 0) query.push(`category=${message_category}`);
+  if (message_tag.length > 0) query.push(`tag=${message_tag}`);
+  if (keyword.length > 0) query.push(`keyword=${keyword}`);
+  if (query.length > 0) urlparts.push(query.join('&'));
+  const url = urlparts.join('?');
+
+  // Call API
+  const response = await fetch(url, {
+    method: "GET",
+    mode: "cors",
+    cache: "no-cache",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    redirect: "follow",
+    referrerPolicy: "no-referrer",
+  });
+  const data = await response.json();
+  console.log(data);
+
+  // Display HTML
+  const fetch_messages_container = document.getElementById("fetch_messages_container");
+  fetch_messages_container.innerHTML = "";// First clear previous content
+  for (let i = 0; i < data.length; i++) {
+    // Generate HTLM structure
+    const div_container = document.createElement('div');
+    const checkbox = document.createElement('input');
+    const checkbox_label = document.createElement('label');
+    const assistant_message = document.createElement('div');
+    const user_message = document.createElement('div');
+    div_container.append(checkbox, checkbox_label, assistant_message, user_message);
+
+    // Set values
+    div_container.classList.add("append_message_container");
+    checkbox.id = `append_${i}`;
+    checkbox.type = "checkbox";
+    checkbox.setAttribute("onclick", "ToggleMessageAppendRemove(this)");
+    checkbox.dataset.id = data[i]._id.toString();
+    checkbox.dataset.response_html = data[i].response;
+    checkbox.dataset.prompt_html = data[i].prompt;
+    checkbox_label.for = `append_${i}`;
+    checkbox_label.innerText = " Append message";
+    assistant_message.classList.add("assistant");
+    assistant_message.innerHTML = data[i].response;
+    user_message.classList.add("user");
+    user_message.innerHTML = data[i].prompt;
+
+    // Add to output
+    fetch_messages_container.append(div_container);
+  }
+}
