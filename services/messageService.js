@@ -1,5 +1,5 @@
 const marked = require('marked');
-const { chatGPT, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
 
 // Message service operations: managing individual messages within a conversation
@@ -208,6 +208,63 @@ class MessageService {
     }
 
     return messages;
+  }
+
+  /*****
+   * TOOLS TEST
+   */
+  async createMessageTool(text_messages, sender, parameters) {
+    const tools = [
+      {
+        "type": "function",
+        "function": {
+          "name": "generate_image",
+          "description": "Generate one image with DALL-E 3.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "prompt": {
+                "type": "string",
+                "description": "Prompt to use for generating the image.",
+              }
+            },
+            "required": ["prompt"],
+          },
+        }
+      }
+    ];
+    const tool_choice = {"type": "function", "function": {"name": "generate_image"}}
+    // Send to OpenAI API : TOOL START
+    let tool_response = await chatGPT_Tool(text_messages, 'gpt-4o-2024-05-13', tools, tool_choice);
+    text_messages.push(tool_response.choices[0].message);
+    text_messages.push({
+      "role":"tool", 
+      "tool_call_id":tool_response.choices[0].message.tool_calls[0].id, 
+      "name": tool_response.choices[0].message.tool_calls[0].function.name, 
+      "content":"Image successfully generated, and displayed to the user."
+    })
+    // Send to OpenAI API : TOOL DONE
+    let response = await chatGPT(text_messages, 'gpt-4o-2024-05-13');
+
+    // Save to database
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    const chat_message_entry = {
+      user_id: sender,
+      category: parameters.category,
+      tags: tags_array,
+      prompt: parameters.prompt,
+      response: response.choices[0].message.content,
+      images: [],
+      sound: '',
+    };
+    const db_entry = await new this.messageModel(chat_message_entry).save();
+
+    // Call TOOL (should be called inbetween TOOL START and TOOL DONE)
+    const args = JSON.parse(tool_response.choices[0].message.tool_calls[0].function.arguments);
+    await this.generateImage(db_entry._id.toString(), args["prompt"], 'hd', '1024x1024');
+
+    // Return entry to user
+    return { db_entry, tokens: response.usage.total_tokens };
   }
 }
 

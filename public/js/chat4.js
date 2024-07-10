@@ -631,3 +631,11 @@ async function FetchMessages() {
     fetch_messages_container.append(div_container);
   }
 }
+
+// TOOL test
+function ImageTool() {
+  const f = document.getElementById("chatform");
+  f.action = f.action.split("post").join("generate_image_tool");
+  showLoadingPopup();
+  f.submit();
+}

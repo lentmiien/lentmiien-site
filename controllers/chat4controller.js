@@ -539,3 +539,13 @@ exports.fetch_messages = async (req, res) => {
 
   res.json(messages);
 };
+
+/*****
+ * TOOLS TEST
+ */
+exports.generate_image_tool = async (req, res) => {
+  const user_id = req.user.name;
+  const conversation_id = req.params.id;
+  await conversationService.postToConversationTool(user_id, conversation_id, req.body)
+  res.redirect(`/chat4/chat/${conversation_id}`);
+};

@@ -56,4 +56,7 @@ router.post('/redact/:id', controller.redact_post);
 // Fetch messages API
 router.get('/api/fetch_messages', controller.fetch_messages);
 
+// Tools test
+router.post('/generate_image_tool/:id', upload.array('imgs'), controller.generate_image_tool);
+
 module.exports = router;

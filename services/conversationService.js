@@ -485,6 +485,99 @@ class ConversationService {
     const b64_img = Buffer.from(img_buffer).toString('base64');
     return { new_filename, b64_img };
   }
+
+  /*****
+   * TOOLS TEST
+   */
+  async postToConversationTool(user_id, conversation_id, parameters) {
+    const text_messages = [];
+
+    // Set context
+    let context = parameters.context;
+    if (context.length > 0) {
+      text_messages.push({
+        role: 'system',
+        content: context
+      });
+    }
+
+    // Set previous messages, if not a new conversation
+    if (conversation_id != 'new') {
+      const conversation = await this.conversationModel.findById(conversation_id);
+      const m_id = conversation.messages;
+      const prev_messages = await this.messageService.getMessagesByIdArray(m_id, false, parameters);
+      // Append messages
+      for (let i = 0; i < prev_messages.length; i++) {
+        const m = prev_messages[i];
+        text_messages.push({
+          role: 'user',
+          content: m.prompt
+        });
+        // Assistant response
+        text_messages.push({
+          role: 'assistant',
+          content: m.response,
+        });
+      }
+    }
+
+    // Append input prompt
+    text_messages.push({
+      role: 'user',
+      content: parameters.prompt,
+    });
+
+    // Create new message
+    const message_data = await this.messageService.createMessageTool(text_messages, user_id, parameters);
+
+    // Save conversation to database
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    if (conversation_id === "new") {
+      const conversation_entry = {
+        user_id,
+        group_id: Date.now().toString(),
+        title: parameters.title,
+        description: '[pending]',
+        category: parameters.category,
+        tags: tags_array,
+        context_prompt: parameters.context,
+        knowledge_injects: [],
+        messages: [ message_data.db_entry._id.toString() ],
+        updated_date: new Date(),
+      };
+      if ("knowledge" in parameters) {
+        for (let i = 0; i < parameters.knowledge.length; i++) {
+          conversation_entry.knowledge_injects.push({
+            knowledge_id: parameters.knowledge[i],
+            use_type: parameters[`knowledge_${parameters.knowledge[i]}`],
+          });
+        }
+      }
+      const conv_entry = await new this.conversationModel(conversation_entry).save();
+      return conv_entry._id.toString();
+    } else {
+      // update existing DB entry
+      const conversation = await this.conversationModel.findById(conversation_id);
+      conversation.title = parameters.title;
+      conversation.description = '[pending update] ' + conversation.description;
+      conversation.category = parameters.category;
+      conversation.tags = tags_array;
+      conversation.context_prompt = parameters.context;
+      conversation.knowledge_injects = [];
+      if ("knowledge" in parameters) {
+        for (let i = 0; i < parameters.knowledge.length; i++) {
+          conversation.knowledge_injects.push({
+            knowledge_id: parameters.knowledge[i],
+            use_type: parameters[`knowledge_${parameters.knowledge[i]}`],
+          });
+        }
+      }
+      conversation.messages.push(message_data.db_entry._id.toString());
+      conversation.updated_date = new Date();
+      await conversation.save();
+      return conversation._id.toString();
+    }
+  }
 }
 
 module.exports = ConversationService;

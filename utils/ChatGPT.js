@@ -167,6 +167,21 @@ const chatGPT = async (messages, model) => {
   }
 };
 
+const chatGPT_Tool = async (messages, model, tools, tool_choice) => {
+  try {
+    const response = await openai.chat.completions.create({
+      messages,
+      model,
+      tools,
+      tool_choice,
+    });
+    return response;
+  } catch (error) {
+    console.error(`Error while calling ChatGPT API: ${error}`);
+    return null;
+  }
+};
+
 const embedding = async (text, model) => {
   try {
     const response = await openai.embeddings.create({
@@ -330,6 +345,7 @@ const batch_status = async (batch_id) => {
 module.exports = {
   OpenAIAPICallLog,
   chatGPT,
+  chatGPT_Tool,
   embedding,
   GetModels,
   AddModel,
