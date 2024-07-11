@@ -215,14 +215,14 @@ const tts = async (api_endpoint, text, voice) => {
   return { filename, prompt: text };
 };
 
-const ig = async (prompt, quality, size) => {
+const ig = async (prompt, quality, size, img_id = Date.now()) => {
   const q_val = ["standard", "hd"];
   const s_val = ["1024x1024", "1792x1024", "1024x1792"];
   if (prompt.length > 4000 || q_val.indexOf(quality) == -1 || s_val.indexOf(size) == -1) {
     return 'invalid input';
   }
 
-  const number = Date.now();
+  const number = img_id;
   const filename = `image-${number}-.png`;
   const outputfile = path.resolve(`./public/img/${filename}`);
   const image = await openai.images.generate({

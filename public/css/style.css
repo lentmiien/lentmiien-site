@@ -462,3 +462,10 @@
 .completed {
   background-color: lightgreen;
 }
+
+/*********** TOOL **************/
+.assistant img,
+.user img {
+    max-width: 100%;
+    height: auto;
+}

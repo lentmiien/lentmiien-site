@@ -129,11 +129,11 @@ class MessageService {
     return summary.choices[0].message.content;
   }
 
-  async generateImage(messageId, image_prompt, quality = 'hd', size = '1024x1024') {
+  async generateImage(messageId, image_prompt, quality = 'hd', size = '1024x1024', img_id = null) {
     // Load DB entry
     const message = await this.messageModel.findById(messageId);
     // Prompt Open AI API to generate image
-    const { filename, prompt } = await ig(image_prompt, quality, size);
+    const { filename, prompt } = await ig(image_prompt, quality, size, img_id ? img_id : Date.nom());
     // Save meta data
     const metadata = {
       filename: filename,
@@ -237,12 +237,13 @@ class MessageService {
     // Send to OpenAI API : TOOL START
     let tool_response = await chatGPT_Tool(text_messages, 'gpt-4o-2024-05-13', tools, tool_choice);
     text_messages.push(tool_response.choices[0].message);
+    const img_id = Date.now();
     text_messages.push({
       "role":"tool", 
       "tool_call_id":tool_response.choices[0].message.tool_calls[0].id, 
       "name": tool_response.choices[0].message.tool_calls[0].function.name, 
-      "content":"Image successfully generated, and displayed to the user."
-    })
+      "content":`Image successfully generated.\n\n---\n\n**Instructions for Generating Responses with Images:**\n\n1. **Provide the Image Path:**\n   Include the path to the image that should be displayed in the response. For example, \`/path/to/image.jpg\`.\n\n2. **Describe the Image:**\n   Provide a brief but appropriate description of the image. This will be used to replace the 'Alt text' in the markdown.\n\n3. **Combine the Image Path and Description in Markdown:**\n   Construct the markdown to include both the image path and description. The format is: \`![Alt text](ImagePath)\`. Replace 'Alt text' with the description and \`ImagePath\` with the actual path provided.\n\n4. **Frame the Response:**\n   Create a response that includes an introductory sentence, follows with the constructed markdown, and ends with a closing sentence.\n\n**Example Output Format:**\n\n---\n\nThe image has been generated!\n\nAs can be seen below, [your description of the image].\n\n![Alt text](ImagePath)\n\n---\n\n**Input:** \n- Image Path: \`/img/image-${img_id}-.jpg\``
+    });
     // Send to OpenAI API : TOOL DONE
     let response = await chatGPT(text_messages, 'gpt-4o-2024-05-13');
 
@@ -261,7 +262,7 @@ class MessageService {
 
     // Call TOOL (should be called inbetween TOOL START and TOOL DONE)
     const args = JSON.parse(tool_response.choices[0].message.tool_calls[0].function.arguments);
-    await this.generateImage(db_entry._id.toString(), args["prompt"], 'hd', '1024x1024');
+    await this.generateImage(db_entry._id.toString(), args["prompt"], 'hd', '1024x1024', img_id);
 
     // Return entry to user
     return { db_entry, tokens: response.usage.total_tokens };
