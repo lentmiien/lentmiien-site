@@ -219,13 +219,13 @@ class MessageService {
         "type": "function",
         "function": {
           "name": "generate_image",
-          "description": "Generate one image with DALL-E 3.",
+          "description": "Generates an image using DALL-E 3 based on the given prompt and returns the path to the image. The response should include the markdown `![Alt text](ImagePath)` to display the image to the user.",
           "parameters": {
             "type": "object",
             "properties": {
               "prompt": {
                 "type": "string",
-                "description": "Prompt to use for generating the image.",
+                "description": "A descriptive text prompt for generating the image.",
               }
             },
             "required": ["prompt"],
@@ -242,7 +242,7 @@ class MessageService {
       "role":"tool", 
       "tool_call_id":tool_response.choices[0].message.tool_calls[0].id, 
       "name": tool_response.choices[0].message.tool_calls[0].function.name, 
-      "content":`Image successfully generated.\n\n---\n\n**Instructions for Generating Responses with Images:**\n\n1. **Provide the Image Path:**\n   Include the path to the image that should be displayed in the response. For example, \`/path/to/image.jpg\`.\n\n2. **Describe the Image:**\n   Provide a brief but appropriate description of the image. This will be used to replace the 'Alt text' in the markdown.\n\n3. **Combine the Image Path and Description in Markdown:**\n   Construct the markdown to include both the image path and description. The format is: \`![Alt text](ImagePath)\`. Replace 'Alt text' with the description and \`ImagePath\` with the actual path provided.\n\n4. **Frame the Response:**\n   Create a response that includes an introductory sentence, follows with the constructed markdown, and ends with a closing sentence.\n\n**Example Output Format:**\n\n---\n\nThe image has been generated!\n\nAs can be seen below, [your description of the image].\n\n![Alt text](ImagePath)\n\n---\n\n**Input:** \n- Image Path: \`/img/image-${img_id}-.jpg\``
+      "content":`{path:"/img/image-${img_id}-.jpg"}`
     });
     // Send to OpenAI API : TOOL DONE
     let response = await chatGPT(text_messages, 'gpt-4o-2024-05-13');
@@ -254,7 +254,7 @@ class MessageService {
       category: parameters.category,
       tags: tags_array,
       prompt: parameters.prompt,
-      response: response.choices[0].message.content,
+      response: response.choices[0].message.content.split("sandbox:/img/").join("/img/"),
       images: [],
       sound: '',
     };
