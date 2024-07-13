@@ -1,0 +1,8 @@
+extends layout
+
+block content
+  h1 Electricity usage 
+  #output 
+  pre#logs.hidden= JSON.stringify(log, null, 2)
+  script(src="https://d3js.org/d3.v7.min.js")
+  script(src="/js/electricity_usage.js") 

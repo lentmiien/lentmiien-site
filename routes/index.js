@@ -18,4 +18,9 @@ router.get('/download_test', controller.download_test);
 /****************************/
 router.get('/scroll_test', controller.scroll_test);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/electricity_usage', controller.electricity_usage);
+
 module.exports = router;
