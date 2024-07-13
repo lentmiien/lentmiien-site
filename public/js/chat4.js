@@ -603,32 +603,36 @@ async function FetchMessages() {
   // Display HTML
   const fetch_messages_container = document.getElementById("fetch_messages_container");
   fetch_messages_container.innerHTML = "";// First clear previous content
-  for (let i = 0; i < data.length; i++) {
-    // Generate HTLM structure
-    const div_container = document.createElement('div');
-    const checkbox = document.createElement('input');
-    const checkbox_label = document.createElement('label');
-    const assistant_message = document.createElement('div');
-    const user_message = document.createElement('div');
-    div_container.append(checkbox, checkbox_label, assistant_message, user_message);
+  if (data.length > 0) {
+    for (let i = 0; i < data.length; i++) {
+      // Generate HTLM structure
+      const div_container = document.createElement('div');
+      const checkbox = document.createElement('input');
+      const checkbox_label = document.createElement('label');
+      const assistant_message = document.createElement('div');
+      const user_message = document.createElement('div');
+      div_container.append(checkbox, checkbox_label, assistant_message, user_message);
 
-    // Set values
-    div_container.classList.add("append_message_container");
-    checkbox.id = `append_${i}`;
-    checkbox.type = "checkbox";
-    checkbox.setAttribute("onclick", "ToggleMessageAppendRemove(this)");
-    checkbox.dataset.id = data[i]._id.toString();
-    checkbox.dataset.response_html = data[i].response;
-    checkbox.dataset.prompt_html = data[i].prompt;
-    checkbox_label.for = `append_${i}`;
-    checkbox_label.innerText = " Append message";
-    assistant_message.classList.add("assistant");
-    assistant_message.innerHTML = data[i].response;
-    user_message.classList.add("user");
-    user_message.innerHTML = data[i].prompt;
+      // Set values
+      div_container.classList.add("append_message_container");
+      checkbox.id = `append_${i}`;
+      checkbox.type = "checkbox";
+      checkbox.setAttribute("onclick", "ToggleMessageAppendRemove(this)");
+      checkbox.dataset.id = data[i]._id.toString();
+      checkbox.dataset.response_html = data[i].response;
+      checkbox.dataset.prompt_html = data[i].prompt;
+      checkbox_label.for = `append_${i}`;
+      checkbox_label.innerText = " Append message";
+      assistant_message.classList.add("assistant");
+      assistant_message.innerHTML = data[i].response;
+      user_message.classList.add("user");
+      user_message.innerHTML = data[i].prompt;
 
-    // Add to output
-    fetch_messages_container.append(div_container);
+      // Add to output
+      fetch_messages_container.append(div_container);
+    }
+  } else {
+    fetch_messages_container.innerHTML = "<b>No messages found for given query</b>";
   }
 }
 
