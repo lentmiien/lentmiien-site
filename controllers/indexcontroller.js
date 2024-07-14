@@ -1,4 +1,4 @@
-const { LogModel } = require('../database');
+const { LogModel, SummaryModel } = require('../database');
 
 exports.index = (req, res) => {
   res.render('index');
@@ -51,5 +51,6 @@ exports.scroll_test = (req, res) => {
 /****************************/
 exports.electricity_usage = async (req, res) => {
   const log = await LogModel.find();
-  res.render('electricity_usage', {log});
+  const summary = await SummaryModel.find();
+  res.render('electricity_usage', {log, summary});
 }

@@ -2,7 +2,10 @@ extends layout
 
 block content
   h1 Electricity usage 
-  #output 
+  #output
+  #daily-summary
+  #pie-chart
   pre#logs.hidden= JSON.stringify(log, null, 2)
+  pre#summary.hidden= JSON.stringify(summary, null, 2)
   script(src="https://d3js.org/d3.v7.min.js")
   script(src="/js/electricity_usage.js") 

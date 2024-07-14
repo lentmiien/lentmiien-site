@@ -4,11 +4,22 @@ const logs = JSON.parse(document.getElementById("logs").innerHTML);
 {
   device: "device id",
   timestamp: <Date object>
-  power: <number, power usage in watt>
+  power: <number, power usage in milliwatt>
 }
- */
+*/
 
-function PlotGraph(parent_element = "output") {
+const summary = JSON.parse(document.getElementById("summary").innerHTML);
+/**
+ * 'summary' is an array of objects in the following format:
+{
+  device: "device id",
+  timestamp: <Date object>
+  power: <number, power usage of the day in watt-hours>
+}
+*/
+
+
+function PlotRealTimeGraph(parent_element) {
   // Set the dimensions and margins of the graph
   const margin = {top: 30, right: 130, bottom: 50, left: 60};
   const width = 900 - margin.left - margin.right;
@@ -111,8 +122,161 @@ function PlotGraph(parent_element = "output") {
     .attr("dy", ".35em")
     .style("text-anchor", "start")
     .text(d => d);
+
+  return color;
+}
+
+function PlotDailySummaryGraph(parent_element, color) {
+  const margin = {top: 30, right: 130, bottom: 50, left: 60};
+  const width = 900 - margin.left - margin.right;
+  const height = 400 - margin.top - margin.bottom;
+
+  const parseTime = d3.timeParse("%Y-%m-%dT%H:%M:%S.%LZ");
+
+  const x = d3.scaleTime().range([0, width]);
+  const y = d3.scaleLinear().range([height, 0]);
+
+  const valueline = d3.line()
+    .x(d => x(d.timestamp))
+    .y(d => y(d.power));
+
+  const svg = d3.select("#" + parent_element).append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+    .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  summary.forEach(d => {
+    d.timestamp = parseTime(d.timestamp);
+    d.power = +d.power;
+  });
+
+  const devices = d3.group(summary, d => d.device);
+
+  x.domain(d3.extent(summary, d => d.timestamp));
+  y.domain([0, d3.max(summary, d => d.power)]);
+
+  devices.forEach((values, key) => {
+    svg.append("path")
+      .data([values])
+      .attr("class", "line")
+      .attr("d", valueline)
+      .attr("fill", "none")
+      .attr("stroke", color(key))
+      .attr("stroke-width", 1.5);
+  });
+
+  svg.append("g")
+    .attr("transform", `translate(0,${height})`)
+    .call(d3.axisBottom(x));
+
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+  svg.append("text")
+    .attr("transform", `translate(${width/2},${height + margin.top + 20})`)
+    .style("text-anchor", "middle")
+    .text("Date");
+
+  svg.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("y", 0 - margin.left)
+    .attr("x", 0 - (height / 2))
+    .attr("dy", "1em")
+    .style("text-anchor", "middle")
+    .text("Power (Watt-hours)");
+
+  svg.append("text")
+    .attr("x", (width / 2))
+    .attr("y", 0 - (margin.top / 2))
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Daily Power Usage Summary");
+
+  const legend = svg.selectAll(".legend")
+    .data(color.domain())
+    .enter().append("g")
+    .attr("class", "legend")
+    .attr("transform", (d, i) => `translate(0,${i * 20})`);
+
+  legend.append("rect")
+    .attr("x", width + 10)
+    .attr("width", 18)
+    .attr("height", 18)
+    .style("fill", color);
+
+  legend.append("text")
+    .attr("x", width + 35)
+    .attr("y", 9)
+    .attr("dy", ".35em")
+    .style("text-anchor", "start")
+    .text(d => d);
+}
+
+function PlotPieChart(parent_element, color) {
+  const width = 450;
+  const height = 480;  // Increased height by 30 pixels
+  const radius = Math.min(width, height - 30) / 2;  // Adjusted radius calculation
+
+  const svg = d3.select("#" + parent_element).append("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .append("g")
+    .attr("transform", `translate(${width / 2},${(height / 2) + 15})`);  // Adjusted vertical position
+
+  const pie = d3.pie()
+    .value(d => d.power)
+    .sort(null);
+
+  const arc = d3.arc()
+    .innerRadius(0)
+    .outerRadius(radius);
+
+  // Get the last 14 days of data
+  const last14Days = summary.filter(d => {
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    return new Date(d.timestamp) >= twoWeeksAgo;
+  });
+
+  // Aggregate data by device
+  const deviceTotals = d3.rollup(last14Days, 
+    v => d3.sum(v, d => d.power),
+    d => d.device
+  );
+
+  const data = Array.from(deviceTotals, ([device, power]) => ({device, power}));
+
+  const arcs = svg.selectAll("arc")
+    .data(pie(data))
+    .enter()
+    .append("g")
+    .attr("class", "arc");
+
+  arcs.append("path")
+    .attr("d", arc)
+    .attr("fill", d => color(d.data.device));
+
+  arcs.append("text")
+    .attr("transform", d => `translate(${arc.centroid(d)})`)
+    .attr("text-anchor", "middle")
+    .text(d => `${d.data.device}: ${(d.data.power/1000).toFixed(2)}kWh`);
+
+  // Adjusted title position
+  svg.append("text")
+    .attr("x", 0)
+    .attr("y", -height / 2)  // Adjusted y position
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Power Consumption Distribution (Last 14 Days)");
+}
+
+function PlotGraphs() {
+  const color = PlotRealTimeGraph("output");
+  PlotDailySummaryGraph("daily-summary", color);
+  PlotPieChart("pie-chart", color);
 }
 
 document.addEventListener('DOMContentLoaded', (event) => {
-  PlotGraph();
+  PlotGraphs();
 });

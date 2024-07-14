@@ -62,6 +62,7 @@ const BatchPromptModel = require('./models/batchprompt');
 const BatchRequestModel = require('./models/batchrequest');
 // El
 const LogModel = require('./models/log');
+const SummaryModel = require('./models/summary');
 
 // Export models
 module.exports = {
@@ -98,4 +99,5 @@ module.exports = {
   BatchPromptModel,
   BatchRequestModel,
   LogModel,
+  SummaryModel,
 };
