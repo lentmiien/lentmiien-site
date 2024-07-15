@@ -56,19 +56,45 @@ function PlotRealTimeGraph(parent_element) {
   // Group the data by device
   const devices = d3.group(logs, d => d.device);
 
+  // Calculate 9-point rolling average
+  function calculateRollingAverage(data, windowSize = 9) {
+    return data.map((d, i, arr) => {
+      const start = Math.max(0, i - windowSize + 1);
+      const window = arr.slice(start, i + 1);
+      const sum = window.reduce((acc, curr) => acc + curr.power, 0);
+      return {
+        timestamp: d.timestamp,
+        power: sum / window.length
+      };
+    });
+  }
+
   // Scale the range of the data
   x.domain(d3.extent(logs, d => d.timestamp));
   y.domain([0, d3.max(logs, d => d.power)]);
 
-  // Add the valueline path for each device
+  // Add the original lines (thinner and dashed)
   devices.forEach((values, key) => {
     svg.append("path")
       .data([values])
-      .attr("class", "line")
+      .attr("class", "line original")
       .attr("d", valueline)
       .attr("fill", "none")
       .attr("stroke", color(key))
-      .attr("stroke-width", 1.5);
+      .attr("stroke-width", 0.2)
+      .attr("stroke-dasharray", "4,4");
+  });
+
+  // Add the rolling average lines
+  devices.forEach((values, key) => {
+    const rollingAverageData = calculateRollingAverage(values);
+    svg.append("path")
+      .data([rollingAverageData])
+      .attr("class", "line average")
+      .attr("d", valueline)
+      .attr("fill", "none")
+      .attr("stroke", color(key))
+      .attr("stroke-width", 2);
   });
 
   // Add the X Axis
@@ -122,6 +148,38 @@ function PlotRealTimeGraph(parent_element) {
     .attr("dy", ".35em")
     .style("text-anchor", "start")
     .text(d => d);
+
+  // Add legend for line types
+  const lineTypeLegend = svg.append("g")
+    .attr("class", "line-type-legend")
+    .attr("transform", `translate(${width + 10}, ${color.domain().length * 20 + 20})`);
+
+  lineTypeLegend.append("line")
+    .attr("x1", 0)
+    .attr("y1", 0)
+    .attr("x2", 20)
+    .attr("y2", 0)
+    .attr("stroke", "black")
+    .attr("stroke-width", 1)
+    .attr("stroke-dasharray", "4,4");
+
+  lineTypeLegend.append("text")
+    .attr("x", 25)
+    .attr("y", 4)
+    .text("Raw Data");
+
+  lineTypeLegend.append("line")
+    .attr("x1", 0)
+    .attr("y1", 20)
+    .attr("x2", 20)
+    .attr("y2", 20)
+    .attr("stroke", "black")
+    .attr("stroke-width", 2);
+
+  lineTypeLegend.append("text")
+    .attr("x", 25)
+    .attr("y", 24)
+    .text("9-point Rolling Average");
 
   return color;
 }
