@@ -342,6 +342,15 @@ const batch_status = async (batch_id) => {
   }
 };
 
+const whisper = async (sound_path) => {
+  const transcription = await openai.audio.transcriptions.create({
+    file: fs.createReadStream(sound_path),
+    model: "whisper-1",
+  });
+
+  return transcription.text;
+}
+
 module.exports = {
   OpenAIAPICallLog,
   chatGPT,
@@ -359,4 +368,5 @@ module.exports = {
   delete_file,
   start_batch,
   batch_status,
+  whisper,
 };

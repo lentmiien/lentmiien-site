@@ -1,0 +1,12 @@
+extends layout
+
+block content
+  .row 
+    .col 
+      h1 Voice Recorder
+      button#recordButton.btn.btn-danger Record
+      button#stopButton.btn.btn-secondary(disabled) Stop
+      audio#audioPlayback(controls)
+      h2 Output 
+      #output
+  script(src="/js/voice_recorder.js")

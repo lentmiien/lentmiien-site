@@ -1,4 +1,5 @@
 const { LogModel, SummaryModel } = require('../database');
+const { whisper } = require('../utils/ChatGPT');
 
 exports.index = (req, res) => {
   res.render('index');
@@ -54,3 +55,14 @@ exports.electricity_usage = async (req, res) => {
   const summary = await SummaryModel.find();
   res.render('electricity_usage', {log, summary});
 }
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.voice_recorder = (req, res) => {
+  res.render('voice_recorder');
+};
+exports.voice_recorder_upload = async (req, res) => {
+  const text = whisper(`./${req.file.path}`);
+  res.send(text);
+};
