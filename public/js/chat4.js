@@ -691,3 +691,8 @@ function stopRecording() {
       });
   }
 }
+
+function SetToPrompt() {
+  userprompt.value = document.getElementById('output').value;
+  CloseTemplatesPopup();
+}
