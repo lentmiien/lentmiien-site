@@ -63,6 +63,8 @@ exports.voice_recorder = (req, res) => {
   res.render('voice_recorder');
 };
 exports.voice_recorder_upload = async (req, res) => {
-  const text = whisper(`./${req.file.path}`);
+  // const text = await whisper(`./${req.file.path}`);
+  const text = "TEST";
+  console.log(text);
   res.send(text);
 };

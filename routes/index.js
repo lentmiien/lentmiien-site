@@ -1,8 +1,19 @@
 const express = require('express');
 const router = express.Router();
 
-const multer = require('multer')
-const upload = multer({ dest: './tmp_data/' })
+const path = require('path');
+const multer = require('multer');
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, './tmp_data/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + extension);
+  }
+});
+const upload = multer({ storage: storage });
 
 // Require controller modules.
 const controller = require('../controllers/indexcontroller');
