@@ -87,6 +87,15 @@ block content
                   .col
                     input(id=`id_${knowledge._id.toString()}`, type="checkbox", data-id=`${knowledge._id.toString()}`, data-title=`${knowledge.title}`, title=`${knowledge.contentMarkdown}`, onclick="knowledgeCheck(this)")
                     span(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${knowledge.contentMarkdown}`)= ` ${knowledge.title}`
+          .row 
+            .col 
+              h3 Voice transcription
+              button#recordButton.btn.btn-danger Record
+              button#stopButton.btn.btn-secondary(disabled) Stop
+              br
+              audio#audioPlayback(controls)
+              h3 Output 
+              textarea#output.form-control
       .tab-content
         #append_message.tab-pane.fade(role="tabpanel" aria-labelledby="append_message-tab")
           h3 Append messages to new conversation

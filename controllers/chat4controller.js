@@ -9,6 +9,7 @@ const KnowledgeService = require('../services/knowledgeService');
 const AgentService = require('../services/agentService');
 const BatchService = require('../services/batchService');
 const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel, AgentModel, BatchPromptModel, BatchRequestModel } = require('../database');
+const { whisper } = require('../utils/ChatGPT');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
@@ -548,4 +549,12 @@ exports.generate_image_tool = async (req, res) => {
   const conversation_id = req.params.id;
   await conversationService.postToConversationTool(user_id, conversation_id, req.body)
   res.redirect(`/chat4/chat/${conversation_id}`);
+};
+
+/*****
+ * Whisper TEST
+ */
+exports.voice_recorder_upload = async (req, res) => {
+  const text = await whisper(`./${req.file.path}`);
+  res.send(text);
 };
