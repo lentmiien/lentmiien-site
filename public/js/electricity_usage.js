@@ -56,15 +56,16 @@ function PlotRealTimeGraph(parent_element) {
   // Group the data by device
   const devices = d3.group(logs, d => d.device);
 
-  // Calculate 9-point rolling average
-  function calculateRollingAverage(data, windowSize = 9) {
+  // Calculate 3-point min-max average
+  function calculateMinMaxAverage(data, windowSize = 7) {
     return data.map((d, i, arr) => {
       const start = Math.max(0, i - windowSize + 1);
       const window = arr.slice(start, i + 1);
-      const sum = window.reduce((acc, curr) => acc + curr.power, 0);
+      const minPower = d3.min(window, w => w.power);
+      const maxPower = d3.max(window, w => w.power);
       return {
         timestamp: d.timestamp,
-        power: sum / window.length
+        power: (minPower + maxPower) / 2
       };
     });
   }
@@ -85,11 +86,11 @@ function PlotRealTimeGraph(parent_element) {
       .attr("stroke-dasharray", "4,4");
   });
 
-  // Add the rolling average lines
+  // Add the min-max average lines
   devices.forEach((values, key) => {
-    const rollingAverageData = calculateRollingAverage(values);
+    const minMaxAverageData = calculateMinMaxAverage(values);
     svg.append("path")
-      .data([rollingAverageData])
+      .data([minMaxAverageData])
       .attr("class", "line average")
       .attr("d", valueline)
       .attr("fill", "none")
@@ -179,7 +180,7 @@ function PlotRealTimeGraph(parent_element) {
   lineTypeLegend.append("text")
     .attr("x", 25)
     .attr("y", 24)
-    .text("9-point Rolling Average");
+    .text("7-point Min-Max Average");
 
   return color;
 }
