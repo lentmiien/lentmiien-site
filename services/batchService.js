@@ -138,7 +138,7 @@ class BatchService {
             method: 'POST',
             url: '/v1/chat/completions',
             body: {
-              model: 'gpt-4o',
+              model: newPrompts[i].prompt === "@SUMMARY" ? 'gpt-4o-mini' : 'gpt-4o',
               messages: [],
             },
           };
