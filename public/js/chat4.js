@@ -687,7 +687,8 @@ function stopRecording() {
     }).then(response => response.text())
       .then(transcript => {
         console.log('Transcription:', transcript);
-        document.getElementById("output").value += transcript;
+        if (document.getElementById("output").value.length > 0) document.getElementById("output").value += ' ' + transcript;
+        else document.getElementById("output").value = transcript;
       });
   }
 }
