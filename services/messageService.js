@@ -84,6 +84,7 @@ class MessageService {
     // Send to OpenAI API
     let response;
     if (provider === "OpenAI") response = await chatGPT(vision_messages, 'gpt-4o-2024-05-13');
+    if (provider === "OpenAI_mini") response = await chatGPT(vision_messages, 'gpt-4o-mini');
     if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20240620');
 
     // Save to database
