@@ -73,7 +73,7 @@ class BatchService {
   async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters) {
     if (prompt === "@SUMMARY") {
       // Prevent duplicate
-      const results = await this.BatchPromptDatabase.find({conversation_id: in_conversation_id});
+      const results = await this.BatchPromptDatabase.find({conversation_id: in_conversation_id, request_id: "new"});
       if (results.length > 0) return;
     }
 
@@ -124,6 +124,7 @@ class BatchService {
     // Generate batch data file
     // Upload to OpenAI's API, file id -> BatchPrompt
     // Start a batch work and save to BatchRequest, batch id -> BatchPrompt
+    // Fixed to generate 1 batch request for each model being used
     try {
       const processed_ids = [];
   
@@ -131,14 +132,20 @@ class BatchService {
       const newPrompts = await this.BatchPromptDatabase.find({ request_id: 'new' });
       if (newPrompts.length) {
         // Generate batch data
-        const prompt_data = [];
+        const prompt_data = {
+          "gpt-4o": [],
+          "gpt-4o-mini": [],
+        };
+        const models = ["gpt-4o", "gpt-4o-mini"];
+
         for (let i = 0; i < newPrompts.length; i++) {
+          const model_to_use = newPrompts[i].prompt === "@SUMMARY" ? 'gpt-4o-mini' : 'gpt-4o';
           const data_entry = {
             custom_id: newPrompts[i].custom_id,
             method: 'POST',
             url: '/v1/chat/completions',
             body: {
-              model: newPrompts[i].prompt === "@SUMMARY" ? 'gpt-4o-mini' : 'gpt-4o',
+              model: model_to_use,
               messages: [],
             },
           };
@@ -174,41 +181,47 @@ class BatchService {
 
           data_entry.body.messages = messages;
           // Append data_entry to prompt_data
-          prompt_data.push(JSON.stringify(data_entry));
+          prompt_data[model_to_use].push(JSON.stringify(data_entry));
           
           processed_ids.push(newPrompts[i].custom_id);
         }
 
-        // Send to batch API (file + start request)
-        const file_id = await upload_file(prompt_data.join('\n'));
-        
-        // Save request data to request database
-        const batch_details = await start_batch(file_id);
-        const newRequest = new this.BatchRequestDatabase({
-          id: batch_details.id,
-          input_file_id: file_id,
-          status: batch_details.status,
-          output_file_id: "null",
-          error_file_id: "null",
-          created_at: new Date(batch_details.created_at*1000),
-          completed_at: new Date(batch_details.expires_at*1000),
-          request_counts_total: processed_ids.length,
-          request_counts_completed: 0,
-          request_counts_failed: 0,
-        });
-        await newRequest.save();
-        
-        // Update prompt entries with request id
-        await this.BatchPromptDatabase.updateMany({ request_id: 'new' }, { request_id: batch_details.id });
+        const requests = [];
+        for (let i = 0; i < models.length; i++) {
+          if (prompt_data[models[i]].length > 0) {
+            // Send to batch API (file + start request)
+            const file_id = await upload_file(prompt_data[models[i]].join('\n'));
+            
+            // Save request data to request database
+            const batch_details = await start_batch(file_id);
+            const newRequest = new this.BatchRequestDatabase({
+              id: batch_details.id,
+              input_file_id: file_id,
+              status: batch_details.status,
+              output_file_id: "null",
+              error_file_id: "null",
+              created_at: new Date(batch_details.created_at*1000),
+              completed_at: new Date(batch_details.expires_at*1000),
+              request_counts_total: prompt_data[models[i]].length,
+              request_counts_completed: 0,
+              request_counts_failed: 0,
+            });
+            await newRequest.save();
+            requests.push(newRequest);
+            
+            // Update prompt entries with request id
+            await this.BatchPromptDatabase.updateMany({ request_id: 'new' }, { request_id: batch_details.id });
+          }
+        }
 
         // Return ids and new request data
-        return {ids: processed_ids, request: newRequest};
+        return {ids: processed_ids, requests};
       } else {
-        return {ids: [], request: {}};
+        return {ids: [], requests: [{}]};
       }
     } catch (error) {
       console.error("Error triggering batch request:", error);
-      return {ids: [], request: {}};
+      return {ids: [], requests: [{}]};
     }
   }
 
