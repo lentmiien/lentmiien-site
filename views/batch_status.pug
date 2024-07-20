@@ -21,8 +21,9 @@ block content
       #request_container.prompt-container
         - const end_statuses = ['failed', 'completed', 'expired', 'cancelled', 'DONE']
         each d in requests
-          .prompt-entry(id=d.id, class=`${d.status === 'DONE' ? "completed" : (end_statuses.indexOf(d.status) >= 0 ? "processing" : "pending")}`) 
+          .prompt-entry(id=d.id, class=`batch_status_${d.status}`) 
             b= d.id
+            span= ` (${d.status})`
             div 
               div= `Start: ${d.created_at.toLocaleString()}`
               div= `End: ${d.completed_at.toLocaleString()}`

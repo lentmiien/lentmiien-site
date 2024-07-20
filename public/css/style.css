@@ -463,6 +463,22 @@
   background-color: lightgreen;
 }
 
+.batch_status_pending {
+  background-color: lightblue;
+}
+
+.batch_status_completed {
+  background-color: lightyellow;
+}
+
+.batch_status_failed {
+  background-color: lightcoral;
+}
+
+.batch_status_DONE {
+  background-color: lightgreen;
+}
+
 /*********** TOOL **************/
 .assistant img,
 .user img {
