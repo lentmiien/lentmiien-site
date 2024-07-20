@@ -485,3 +485,10 @@
     max-width: 100%;
     height: auto;
 }
+
+/****** quick-note ******/
+.quick-note {
+  border-top: 5px double black;
+  padding-top: 5px;
+  margin-bottom: 20px;
+}

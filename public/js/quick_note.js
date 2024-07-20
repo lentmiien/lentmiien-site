@@ -5,13 +5,17 @@ async function loadQuickNotes() {
   const response = await fetch('/quicknote/get_all');
   const notes = await response.json();
   quickNotesContainer.innerHTML = notes.map(note => `
-    <div class="quick-note">
-      <p>${note.content}</p>
-      <small>${new Date(note.timestamp).toLocaleString()}</small>
-      ${note.nearestLocation ? `
-        <p>Near: ${note.nearestLocation.name} (${note.nearestLocation.distance.toFixed(2)} meters away)</p>
-      ` : ''}
-      <button onclick="deleteNote('${note._id}')">Delete</button>
+    <div class="row quick-note">
+      <div class="col-9">
+        <p>${note.content}</p>
+        <small>${new Date(note.timestamp).toLocaleString()}</small>
+        ${note.nearestLocation ? `
+          <p>Near: ${note.nearestLocation.name} (${note.nearestLocation.distance.toFixed(2)} meters away)</p>
+        ` : ''}
+      </div>
+      <div class="col-3">
+        <button onclick="deleteNote('${note._id}')">Delete</button>
+      </div>
     </div>
   `).join('');
 }
