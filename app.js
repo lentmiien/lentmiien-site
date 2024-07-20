@@ -182,6 +182,9 @@ app.use('/health', isAuthenticated, authorize("health"), healthRouter);
 const boxRouter = require('./routes/box');
 app.use('/box', isAuthenticated, authorize("box"), boxRouter);
 
+const quicknoteRouter = require('./routes/quicknote');
+app.use('/quicknote', isAuthenticated, authorize("quicknote"), quicknoteRouter);
+
 const adminRouter = require('./routes/admin');
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 

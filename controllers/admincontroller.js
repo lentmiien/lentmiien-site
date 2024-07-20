@@ -78,7 +78,8 @@ exports.manage_roles = async (req, res) => {
       "accounting",
       "cooking",
       "health",
-      "box"
+      "box",
+      "quicknote",
     ]
   };
   users.forEach(user => {

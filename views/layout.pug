@@ -37,6 +37,13 @@ html(lang='en')
     button#actionBtn.nav-action-btn(disabled) ---
     #navbar.navbar
       .navbar-column
+        if loggedIn === true 
+          form#quickNoteForm
+            input#quickNoteInput.form-control(type='text' placeholder='Quick note...')
+            button.btn.btn-primary(type='submit') Save
+          form#locationForm
+            input#locationInput.form-control(type='text' placeholder='Location name...')
+            button.btn.btn-primary(type='submit') Add location
         a.type-1-link(href="/blog", style="width:100%;") Blog
         a.type-2-link(href="/blog/Personal/list", style="width:100%;") Personal
         a.type-2-link(href="/blog/Programming/list", style="width:100%;") Programming
@@ -75,11 +82,12 @@ html(lang='en')
             a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
             a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
             a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
-        if permissions && (permissions.indexOf("health") >= 0 || permissions.indexOf("box") >= 0)
+        if permissions && (permissions.indexOf("health") >= 0 || permissions.indexOf("box") >= 0 || permissions.indexOf("quicknote") >= 0)
           .navbar-column
             a.type-1-link(href="/health", style="width:100%;") Health tracker
             a.type-1-link(href="/box", style="width:100%;") Box packer
             a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
+            a.type-1-link(href="/quicknote", style="width:100%;") Quick note
         .navbar-column
           a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
           a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
@@ -103,3 +111,4 @@ html(lang='en')
     div(style="height:50px;")
     script(src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous")
     script(src="/js/nav.js", defer) 
+    script(src="/js/layout.js", defer) 

@@ -63,6 +63,9 @@ const BatchRequestModel = require('./models/batchrequest');
 // El
 const LogModel = require('./models/log');
 const SummaryModel = require('./models/summary');
+// Quick note
+const LocationModel = require('./models/location');
+const QuicknoteModel = require('./models/quicknote');
 
 // Export models
 module.exports = {
@@ -100,4 +103,6 @@ module.exports = {
   BatchRequestModel,
   LogModel,
   SummaryModel,
+  LocationModel,
+  QuicknoteModel,
 };
