@@ -39,11 +39,15 @@ html(lang='en')
       .navbar-column
         if loggedIn === true 
           form#quickNoteForm
-            input#quickNoteInput.form-control(type='text' placeholder='Quick note...')
-            button.btn.btn-primary(type='submit') Save
+            .input-group.mb-1
+              input#quickNoteInput.form-control(type='text' placeholder='Quick note...')
+              .input-group-append
+                button.btn.btn-primary(type='submit') Save
           form#locationForm
-            input#locationInput.form-control(type='text' placeholder='Location name...')
-            button.btn.btn-primary(type='submit') Add location
+            .input-group.mb-1
+              input#locationInput.form-control(type='text' placeholder='Location name...')
+              .input-group-append
+                button.btn.btn-primary(type='submit') Add location
         a.type-1-link(href="/blog", style="width:100%;") Blog
         a.type-2-link(href="/blog/Personal/list", style="width:100%;") Personal
         a.type-2-link(href="/blog/Programming/list", style="width:100%;") Programming
