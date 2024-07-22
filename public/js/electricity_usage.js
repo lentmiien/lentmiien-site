@@ -25,9 +25,6 @@ function PlotRealTimeGraph(parent_element) {
   const width = 900 - margin.left - margin.right;
   const height = 400 - margin.top - margin.bottom;
 
-  // Parse the date / time
-  const parseTime = d3.timeParse("%Y-%m-%dT%H:%M:%S.%LZ");
-
   // Set the ranges
   const x = d3.scaleTime().range([0, width]);
   const y = d3.scaleLinear().range([height, 0]);
@@ -49,7 +46,7 @@ function PlotRealTimeGraph(parent_element) {
 
   // Format the data
   logs.forEach(d => {
-    d.timestamp = parseTime(d.timestamp);
+    d.timestamp = new Date(d.timestamp);
     d.power = +d.power / 1000;  // Convert mW to W
   });
 
@@ -190,8 +187,6 @@ function PlotDailySummaryGraph(parent_element, color) {
   const width = 900 - margin.left - margin.right;
   const height = 400 - margin.top - margin.bottom;
 
-  const parseTime = d3.timeParse("%Y-%m-%dT%H:%M:%S.%LZ");
-
   const x = d3.scaleTime().range([0, width]);
   const y = d3.scaleLinear().range([height, 0]);
 
@@ -206,7 +201,7 @@ function PlotDailySummaryGraph(parent_element, color) {
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
   summary.forEach(d => {
-    d.timestamp = parseTime(d.timestamp);
+    d.timestamp = new Date((new Date(d.timestamp)).getTime() - (1000*60*60*24));
     d.power = +d.power;
   });
 
