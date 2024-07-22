@@ -8,6 +8,24 @@ const logs = JSON.parse(document.getElementById("logs").innerHTML);
 }
 */
 
+// Temporary fix after changing device ids, can be removed after 5 days 27/7/2024
+const map = {
+  "192.168.0.39": "L-AC",
+  "192.168.0.27": "L-AC",
+  "192.168.0.45": "L-PC",
+  "192.168.0.31": "L-PC",
+  "192.168.0.46": "Ma-AC",
+  "192.168.0.29": "Ma-AC",
+  "192.168.0.47": "L-AC",
+  "192.168.0.28": "Bed-AC",
+}
+const keys = Object.keys(map);
+logs.forEach(d => {
+  if (keys.indexOf(d.device) >= 0) {
+    d.device = map[d.device];
+  }
+})
+
 const summary = JSON.parse(document.getElementById("summary").innerHTML);
 /**
  * 'summary' is an array of objects in the following format:
