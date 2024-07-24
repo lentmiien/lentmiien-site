@@ -5,7 +5,7 @@ const anthropicAPI = new Anthropic();
 const anthropic = async (messages, model) => {
   const max_tokens = 4096;
   const temperature = 1;
-  const system = messages[0].content.text;
+  const system = messages[0].content[0].text;
   messages.shift();
   // Rearrange image input in format expected by Anthropic API
   for (let i = 0; i < messages.length; i++) {
