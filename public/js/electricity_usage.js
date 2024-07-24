@@ -8,6 +8,24 @@ const logs = JSON.parse(document.getElementById("logs").innerHTML);
 }
 */
 
+// Temporary fix after changing device ids, can be removed after 5 days 27/7/2024
+const map = {
+  "192.168.0.39": "L-AC",
+  "192.168.0.27": "L-AC",
+  "192.168.0.45": "L-PC",
+  "192.168.0.31": "L-PC",
+  "192.168.0.46": "Ma-AC",
+  "192.168.0.29": "Ma-AC",
+  "192.168.0.47": "L-AC",
+  "192.168.0.28": "Bed-AC",
+}
+const keys = Object.keys(map);
+logs.forEach(d => {
+  if (keys.indexOf(d.device) >= 0) {
+    d.device = map[d.device];
+  }
+})
+
 const summary = JSON.parse(document.getElementById("summary").innerHTML);
 /**
  * 'summary' is an array of objects in the following format:
@@ -18,15 +36,11 @@ const summary = JSON.parse(document.getElementById("summary").innerHTML);
 }
 */
 
-
 function PlotRealTimeGraph(parent_element) {
   // Set the dimensions and margins of the graph
   const margin = {top: 30, right: 130, bottom: 50, left: 60};
   const width = 900 - margin.left - margin.right;
   const height = 400 - margin.top - margin.bottom;
-
-  // Parse the date / time
-  const parseTime = d3.timeParse("%Y-%m-%dT%H:%M:%S.%LZ");
 
   // Set the ranges
   const x = d3.scaleTime().range([0, width]);
@@ -49,7 +63,7 @@ function PlotRealTimeGraph(parent_element) {
 
   // Format the data
   logs.forEach(d => {
-    d.timestamp = parseTime(d.timestamp);
+    d.timestamp = new Date(d.timestamp);
     d.power = +d.power / 1000;  // Convert mW to W
   });
 
@@ -185,12 +199,89 @@ function PlotRealTimeGraph(parent_element) {
   return color;
 }
 
+function PlotLastHourAvgGauge(parent_element, color) {
+  // Set the dimensions and margins of the graph
+  const margin = {top: 30, right: 30, bottom: 70, left: 60};
+  const width = 600 - margin.left - margin.right;
+  const height = 400 - margin.top - margin.bottom;
+
+  // Create SVG element
+  const svg = d3.select("#" + parent_element)
+    .append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  // Calculate the time one hour ago
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+  // Filter and process the data
+  const lastHourData = logs.filter(d => d.timestamp >= oneHourAgo);
+  const deviceAverages = d3.rollup(lastHourData,
+    v => d3.mean(v, d => d.power),
+    d => d.device
+  );
+
+  const data = Array.from(deviceAverages, ([device, avg]) => ({device, avg}));
+
+  // X axis
+  const x = d3.scaleBand()
+    .range([0, width])
+    .domain(data.map(d => d.device))
+    .padding(0.2);
+  svg.append("g")
+    .attr("transform", `translate(0,${height})`)
+    .call(d3.axisBottom(x))
+    .selectAll("text")
+      .attr("transform", "translate(-10,0)rotate(-45)")
+      .style("text-anchor", "end");
+
+  // Y axis
+  const y = d3.scaleLinear()
+    .domain([0, d3.max(data, d => d.avg)])
+    .range([height, 0]);
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+  // Bars
+  svg.selectAll("mybar")
+    .data(data)
+    .join("rect")
+      .attr("x", d => x(d.device))
+      .attr("y", d => y(d.avg))
+      .attr("width", x.bandwidth())
+      .attr("height", d => height - y(d.avg))
+      .attr("fill", d => color(d.device));
+
+  // X axis label
+  svg.append("text")
+    .attr("text-anchor", "end")
+    .attr("x", width / 2 + margin.left)
+    .attr("y", height + margin.top + 40)
+    .text("Device");
+
+  // Y axis label
+  svg.append("text")
+    .attr("text-anchor", "end")
+    .attr("transform", "rotate(-90)")
+    .attr("y", -margin.left + 20)
+    .attr("x", -height / 2)
+    .text("Average Power (Watts)");
+
+  // Title
+  svg.append("text")
+    .attr("x", width / 2)
+    .attr("y", 0 - (margin.top / 2))
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Average Power Usage in the Last Hour");
+}
+
 function PlotDailySummaryGraph(parent_element, color) {
   const margin = {top: 30, right: 130, bottom: 50, left: 60};
   const width = 900 - margin.left - margin.right;
   const height = 400 - margin.top - margin.bottom;
-
-  const parseTime = d3.timeParse("%Y-%m-%dT%H:%M:%S.%LZ");
 
   const x = d3.scaleTime().range([0, width]);
   const y = d3.scaleLinear().range([height, 0]);
@@ -206,7 +297,7 @@ function PlotDailySummaryGraph(parent_element, color) {
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
   summary.forEach(d => {
-    d.timestamp = parseTime(d.timestamp);
+    d.timestamp = new Date((new Date(d.timestamp)).getTime() - (1000*60*60*24));
     d.power = +d.power;
   });
 
@@ -332,6 +423,7 @@ function PlotPieChart(parent_element, color) {
 
 function PlotGraphs() {
   const color = PlotRealTimeGraph("output");
+  PlotLastHourAvgGauge("hourly-average", color)
   PlotDailySummaryGraph("daily-summary", color);
   PlotPieChart("pie-chart", color);
 }
