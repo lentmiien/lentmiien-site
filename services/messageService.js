@@ -89,9 +89,6 @@ class MessageService {
     if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20240620');
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
 
-    console.log(provider);
-    console.log(response);
-
     // Save to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     const chat_message_entry = {
