@@ -151,6 +151,11 @@ class BatchService {
           };
           // Get data from conversation
           const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id, newPrompts[i].prompt === "@SUMMARY");
+          if (messages === null) {
+            // If messages is `null`, then the conversation has been deleted, so delete prompt and continue
+            await this.BatchPromptDatabase.deleteOne({custom_id: newPrompts[i].custom_id});
+            continue;
+          }
           // Append prompt
           if (newPrompts[i].prompt === "@SUMMARY") {
             messages.push({

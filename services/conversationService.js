@@ -163,6 +163,9 @@ class ConversationService {
     };
     const conversation = await this.conversationModel.findById(conversation_id);
 
+    // Return `null` if conversation has been deleted
+    if (!conversation) return null;
+
     // Set context
     if (for_summary) {
       messages.push({
