@@ -149,9 +149,13 @@ class ConversationService {
 
   async updateSummary(conversation_id, summary) {
     const conversation = await this.conversationModel.findById(conversation_id);
-    conversation.description = summary;
-    await conversation.save();
-    return conversation._id.toString();
+    if (conversation) {
+      conversation.description = summary;
+      await conversation.save();
+      return conversation._id.toString();
+    } else {
+      return null;
+    }
   }
 
   async generateMessageArrayForConversation(conversation_id, for_summary = false) {
