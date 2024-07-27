@@ -140,7 +140,7 @@ exports.post = async (req, res) => {
   const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider);
 
   // Add summary request to batch process
-  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title});
+  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title}, "gpt-4o-mini");
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };
@@ -433,7 +433,7 @@ exports.batch_prompt = async (req, res) => {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
 
-  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id, image_paths, req.body);
+  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id, image_paths, req.body, req.body.provider === "OpenAI_mini" ? "gpt-4o-mini" : "gpt-4o");
 
   res.redirect('/chat4/batch_status');
 };
