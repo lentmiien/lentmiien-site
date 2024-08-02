@@ -1,0 +1,10 @@
+extends layout
+
+block content
+  h1 MPU6050 data 
+  #chunk
+  #detailed
+  pre#aggregated_data.hidden= JSON.stringify(aggregated_data, null, 2)
+  pre#detailed_data.hidden= JSON.stringify(detailed_data, null, 2)
+  script(src="https://d3js.org/d3.v7.min.js")
+  script(src="/js/mpu6050.js") 

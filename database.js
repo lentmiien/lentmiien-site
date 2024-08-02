@@ -66,6 +66,9 @@ const SummaryModel = require('./models/summary');
 // Quick note
 const LocationModel = require('./models/location');
 const QuicknoteModel = require('./models/quicknote');
+// MPU6050
+const AggregatedDataModel = require('./models/aggregated_data');
+const DetailedDataModel = require('./models/detailed_data');
 
 // Export models
 module.exports = {
@@ -105,4 +108,6 @@ module.exports = {
   SummaryModel,
   LocationModel,
   QuicknoteModel,
+  AggregatedDataModel,
+  DetailedDataModel,
 };

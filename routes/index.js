@@ -23,4 +23,9 @@ router.get('/scroll_test', controller.scroll_test);
 /****************************/
 router.get('/electricity_usage', controller.electricity_usage);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/mpu6050', controller.mpu6050);
+
 module.exports = router;

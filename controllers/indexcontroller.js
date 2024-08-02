@@ -1,4 +1,4 @@
-const { LogModel, SummaryModel } = require('../database');
+const { LogModel, SummaryModel, AggregatedDataModel, DetailedDataModel } = require('../database');
 
 exports.index = (req, res) => {
   res.render('index');
@@ -53,4 +53,13 @@ exports.electricity_usage = async (req, res) => {
   const log = await LogModel.find();
   const summary = await SummaryModel.find();
   res.render('electricity_usage', {log, summary});
+}
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.mpu6050 = async (req, res) => {
+  const aggregated_data = await AggregatedDataModel.find();
+  const detailed_data = await DetailedDataModel.find();
+  res.render('mpu6050', {aggregated_data, detailed_data});
 }
