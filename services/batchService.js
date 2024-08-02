@@ -11,6 +11,10 @@ const BatchPrompt = new mongoose.Schema({
   user_id: { type: String, required: true, max: 100 },
   prompt: { type: String, required: true },
   response: { type: String },
+  model: {
+    type: String,
+    default: "gpt-4o"
+  },
   images: [
     {
       filename: { type: String, required: true },
@@ -70,7 +74,7 @@ class BatchService {
     return conversationIds;
   }
 
-  async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters) {
+  async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters, model="gpt-4o") {
     if (prompt === "@SUMMARY") {
       // Prevent duplicate
       const results = await this.BatchPromptDatabase.find({conversation_id: in_conversation_id, request_id: "new"});
@@ -114,6 +118,7 @@ class BatchService {
       request_id: "new",
       user_id,
       prompt,
+      model,
       images,
     });
     await newPrompt.save();
@@ -139,7 +144,7 @@ class BatchService {
         const models = ["gpt-4o", "gpt-4o-mini"];
 
         for (let i = 0; i < newPrompts.length; i++) {
-          const model_to_use = newPrompts[i].prompt === "@SUMMARY" ? 'gpt-4o-mini' : 'gpt-4o';
+          const model_to_use = newPrompts[i].model ? newPrompts[i].model : 'gpt-4o';
           const data_entry = {
             custom_id: newPrompts[i].custom_id,
             method: 'POST',
@@ -267,14 +272,17 @@ class BatchService {
             // Delete completed prompt
             await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
           } else {
-            // Append to conversation
-            const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
-            const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
-            await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
+            // Check that conversation still exist
+            if (await this.conversationService.getConversationsById(prompt_data.conversation_id)) {
+              // Append to conversation
+              const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
+              const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
+              await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
+              // Flag for generating summary
+              await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4o-mini");
+            }
             // Delete completed prompt
             await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-            // Flag for generating summary
-            await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"});
           }
           completed_prompts.push(output_data[j].custom_id);
         }
