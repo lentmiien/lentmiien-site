@@ -37,7 +37,7 @@ html(lang='en')
     button#actionBtn.nav-action-btn(disabled) ---
     #navbar.navbar
       .navbar-column
-        if loggedIn === true 
+        if loggedIn === true && permissions && permissions.indexOf("quicknote") >= 0
           form#quickNoteForm
             .input-group.mb-1
               input#quickNoteInput.form-control(type='text' placeholder='Quick note...')
