@@ -3,5 +3,8 @@ extends layout
 block content
   .row 
     .col 
+      a.btn.btn-link(href="/mypage/pdf_to_jpg") New
+  .row 
+    .col 
       each img in imageUrls
         img(src=img, alt="")
