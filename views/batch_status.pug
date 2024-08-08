@@ -11,10 +11,10 @@ block content
           .prompt-entry(id=d.custom_id, class=`${d.request_id === "new" ? "pending" : "processing"}`, title=`${name === d.user_id ? d.prompt : ""}`) 
             b= d.title
             div
-              div= `User: ${d.user_id}`
+              div= `User: ${d.user_id}, Model: ${d.model}`
               div= d.prompt === "@SUMMARY" ? "summary" : "prompt"
               if name === d.user_id
-                a(href=`/chat4/chat/${d.conversation_id}`, target="_blank") View chat
+                a(href=`/chat4/chat/${d.conversation_id}`) View chat
     .col
       h4 Requests (1 week)
       button.btn.btn-success(onclick="ProcessCompleted()") Process completed
