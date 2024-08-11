@@ -38,6 +38,75 @@ class ConversationService {
     return conversations;
   }
 
+  async getAll(user_id) {
+    const conversations = await this.getConversationsForUser(user_id);
+    // Generate output data
+    const output = [];
+    for (let i = 0; i < conversations.length; i++) {
+      const entry = {
+        _id: conversations[i]._id.toString(),
+        title: conversations[i].title,
+        category: conversations[i].category,
+        tags: conversations[i].tags,
+        messages: [],
+        updated_date: conversations[i].updated_date
+      };
+      const messages = await this.messageService.getMessagesByIdArray(conversations[i].messages);
+      conversations[i].messages = [];
+      for (let j = messages.length-1; j >= 0; j--) {
+        entry.messages.push({
+          role: "user",
+          text: messages[j].prompt,
+          html: messages[j].prompt_html
+        });
+        entry.messages.push({
+          role: "assistant",
+          text: messages[j].response,
+          html: messages[j].response_html
+        });
+      }
+      output.push(entry);
+    }
+    return output;
+  }
+
+  async getInRange(user_id, start, end) {
+    const s_parts = start.split('-').map(d => parseInt(d));
+    const e_parts = end.split('-').map(d => parseInt(d));
+    const s_date = new Date(s_parts[0], s_parts[1]-1, s_parts[2], 0, 0, 0, 0);
+    const e_date = new Date(e_parts[0], e_parts[1]-1, e_parts[2], 23, 59, 59, 999);
+    const allconversations = await this.getConversationsForUser(user_id);
+    const conversations = allconversations.filter(d => d.updated_date >= s_date && d.updated_date <= e_date);
+    // Generate output data
+    const output = [];
+    for (let i = 0; i < conversations.length; i++) {
+      const entry = {
+        _id: conversations[i]._id.toString(),
+        title: conversations[i].title,
+        category: conversations[i].category,
+        tags: conversations[i].tags,
+        messages: [],
+        updated_date: conversations[i].updated_date
+      };
+      const messages = await this.messageService.getMessagesByIdArray(conversations[i].messages);
+      conversations[i].messages = [];
+      for (let j = messages.length-1; j >= 0; j--) {
+        entry.messages.push({
+          role: "user",
+          text: messages[j].prompt,
+          html: messages[j].prompt_html
+        });
+        entry.messages.push({
+          role: "assistant",
+          text: messages[j].response,
+          html: messages[j].response_html
+        });
+      }
+      output.push(entry);
+    }
+    return output;
+  }
+
   async getConversationsById(conversation_id) {
     return await this.conversationModel.findById(conversation_id);
   }
