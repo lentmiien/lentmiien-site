@@ -70,8 +70,6 @@ exports.getChatEntries = async (req, res) => {
 
   if ("start" in req.query && "end" in req.query) {
     entries = await conversationService.getInRange(req.user.name, req.query.start, req.query.end);
-  } else {
-    entries = await conversationService.getAll(req.user.name);
   }
 
   res.json(entries);

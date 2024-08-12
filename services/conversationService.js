@@ -38,38 +38,6 @@ class ConversationService {
     return conversations;
   }
 
-  async getAll(user_id) {
-    const conversations = await this.getConversationsForUser(user_id);
-    // Generate output data
-    const output = [];
-    for (let i = 0; i < conversations.length; i++) {
-      const entry = {
-        _id: conversations[i]._id.toString(),
-        title: conversations[i].title,
-        category: conversations[i].category,
-        tags: conversations[i].tags,
-        messages: [],
-        updated_date: conversations[i].updated_date
-      };
-      const messages = await this.messageService.getMessagesByIdArray(conversations[i].messages);
-      conversations[i].messages = [];
-      for (let j = messages.length-1; j >= 0; j--) {
-        entry.messages.push({
-          role: "user",
-          text: messages[j].prompt,
-          html: messages[j].prompt_html
-        });
-        entry.messages.push({
-          role: "assistant",
-          text: messages[j].response,
-          html: messages[j].response_html
-        });
-      }
-      output.push(entry);
-    }
-    return output;
-  }
-
   async getInRange(user_id, start, end) {
     const s_parts = start.split('-').map(d => parseInt(d));
     const e_parts = end.split('-').map(d => parseInt(d));
@@ -94,12 +62,17 @@ class ConversationService {
         entry.messages.push({
           role: "user",
           text: messages[j].prompt,
-          html: messages[j].prompt_html
+          html: messages[j].prompt_html,
+          images: []
         });
+        if ('images' in messages[j] && messages[j].images && messages[j].images.length > 0) {
+          messages[j].images.forEach(img => entry.messages[entry.messages.length-1].images.push(img.filename));
+        }
         entry.messages.push({
           role: "assistant",
           text: messages[j].response,
-          html: messages[j].response_html
+          html: messages[j].response_html,
+          images: []
         });
       }
       output.push(entry);
