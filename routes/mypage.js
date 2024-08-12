@@ -23,4 +23,9 @@ router.post('/showtome', controller.showtome_post);
 router.get('/pdf_to_jpg', controller.pdf_to_jpg);
 router.post('/convert_pdf_to_jpg', upload.single('pdf'), controller.convert_pdf_to_jpg)
 
+/****
+ * TEST GitHub
+ */
+router.get('/github', controller.github);
+
 module.exports = router;
