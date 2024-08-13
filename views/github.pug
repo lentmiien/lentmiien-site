@@ -1,4 +1,11 @@
 extends layout
 
 block content
+  h2 Repository list (lentmiien)
   pre= JSON.stringify(repos, null, 2)
+  h2 lentmiien-site (public)
+  pre= JSON.stringify(repo_content_public, null, 2)
+  h2 pi-monitor (private)
+  pre= JSON.stringify(repo_content_private, null, 2)
+  h3 test_tapo.py
+  pre= file_content_private
