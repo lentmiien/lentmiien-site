@@ -27,5 +27,7 @@ router.post('/convert_pdf_to_jpg', upload.single('pdf'), controller.convert_pdf_
  * TEST GitHub
  */
 router.get('/github', controller.github);
+router.get('/getfolder', controller.getfolder);
+router.get('/getfile', controller.getfile);
 
 module.exports = router;

@@ -135,8 +135,13 @@ const GitHubService = require('../services/githubService');
 const github = new GitHubService();
 exports.github = async (req, res) => {
   const repos = await github.getRepoList();
-  const repo_content_public = await github.getRepositoryContents("lentmiien-site", "public");
-  const repo_content_private = await github.getRepositoryContents("pi-monitor");
-  const file_content_private = await github.getFileContent("pi-monitor", "test_tapo.py");
-  res.render("github", {repos, repo_content_public, repo_content_private, file_content_private});
+  res.render("github", {repos});
+};
+exports.getfolder = async (req, res) => {
+  const folder_content = await github.getRepositoryContents(req.query.repo, req.query.path);
+  res.json(folder_content);
+};
+exports.getfile = async (req, res) => {
+  const file_content = await github.getFileContent(req.query.repo, req.query.path);
+  res.json({data: file_content});
 };
