@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
@@ -95,3 +97,141 @@ async function convertPngToJpgInFolder(folderPath) {
 // Usage example
 const folderPath = 'public/img';
 convertPngToJpgInFolder(folderPath);
+
+// Gmail check
+const fs2 = require('fs').promises;
+const readline = require('readline');
+const {google} = require('googleapis');
+
+const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
+const TOKEN_PATH = 'token.json';
+
+async function main() {
+  try {
+    const content = await fs2.readFile('credentials.json');
+    const auth = await authorize(JSON.parse(content));
+    await checkEmails(auth);
+  } catch (err) {
+    console.error('Error:', err);
+  }
+}
+
+async function authorize(credentials) {
+  const {client_secret, client_id, redirect_uris} = credentials.installed;
+  const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
+
+  try {
+    const token = await fs2.readFile(TOKEN_PATH);
+    oAuth2Client.setCredentials(JSON.parse(token));
+    return oAuth2Client;
+  } catch (err) {
+    return getNewToken(oAuth2Client);
+  }
+}
+
+function getNewToken(oAuth2Client) {
+  return new Promise((resolve, reject) => {
+    const authUrl = oAuth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+    });
+    console.log('Authorize this app by visiting this url:', authUrl);
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question('Enter the code from that page here: ', (code) => {
+      rl.close();
+      oAuth2Client.getToken(code, async (err, token) => {
+        if (err) return reject('Error retrieving access token');
+        oAuth2Client.setCredentials(token);
+        try {
+          await fs2.writeFile(TOKEN_PATH, JSON.stringify(token));
+          console.log('Token stored to', TOKEN_PATH);
+          resolve(oAuth2Client);
+        } catch (err) {
+          reject('Error storing token');
+        }
+      });
+    });
+  });
+}
+
+async function checkEmails(auth) {
+  const gmail = google.gmail({version: 'v1', auth});
+  
+  try {
+    const res = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'is:unread subject:"【三菱ＵＦＪ‐ＶＩＳＡデビット】ご利用のお知らせ"'
+    });
+
+    const messages = res.data.messages;
+    if (messages && messages.length) {
+      console.log(`Found ${messages.length} messages to process.`);
+      
+      // Fetch all email contents first
+      const emailContents = await Promise.all(messages.map(async (message) => {
+        const res = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'full'  // Request full message data
+        });
+        // Extract body content
+        const body = res.data.payload.parts[0].body.data;
+        // Extract received date
+        const receivedDate = new Date(parseInt(res.data.internalDate));
+
+        return {msg: Buffer.from(body, 'base64').toString('utf-8'), date: receivedDate};
+      }));
+
+      // Process emails in the background
+      processEmailsInBackground(emailContents);
+    } else {
+      console.log('No messages found.');
+    }
+  } catch (err) {
+    console.error('The API returned an error:', err);
+  }
+}
+
+function processEmailsInBackground(emailContents) {
+  console.log('Starting background processing of emails...');
+  
+  (async function processEmails() {
+    for (const content of emailContents) {
+      await verifyEmailContent(content);
+    }
+    console.log('Finished processing all emails.');
+  })();
+}
+
+async function verifyEmailContent(content) {
+  console.log('Verifying email content...');
+  
+  try {
+    // Simulate sending data to AI model and saving to 'to verify' database
+    const extractedData = await sendToAIModel(content);
+    await saveToVerifyDatabase(extractedData);
+    console.log('Email content processed and saved for verification.');
+  } catch (err) {
+    console.error('Error processing email content:', err);
+  }
+}
+
+async function sendToAIModel(content) {
+  // Simulate sending data to AI model
+  console.log('Sending data to AI model...');
+  await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
+  return { extractedData: content };
+}
+
+async function saveToVerifyDatabase(data) {
+  // Simulate saving to 'to verify' database
+  console.log('Saving to verify database...');
+  await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
+  console.log('Data saved:', data);
+}
+
+// Run the main function when the app starts
+// main().catch(console.error);
