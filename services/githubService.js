@@ -28,9 +28,6 @@ class GitHubService {
           }
         });
 
-        fs.writeFileSync("headers.json", JSON.stringify(response.headers, null, 2));
-        fs.writeFileSync("data.json", JSON.stringify(response.data, null, 2));
-    
         const repositories = response.data.map(repo => ({
           name: repo.name,
           description: repo.description,
