@@ -127,3 +127,13 @@ exports.convert_pdf_to_jpg = async (req, res) => {
 
   res.render("pdf_to_jpg_output", { imageUrls });
 };
+
+/***********
+ * TEST GitHub
+ */
+const GitHubService = require('../services/githubService');
+const github = new GitHubService();
+exports.github = async (req, res) => {
+  const repos = await github.getRepoList();
+  res.render("github", {repos});
+};

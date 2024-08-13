@@ -86,12 +86,14 @@ html(lang='en')
             a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
             a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
             a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
-        if permissions && (permissions.indexOf("health") >= 0 || permissions.indexOf("box") >= 0 || permissions.indexOf("quicknote") >= 0)
           .navbar-column
-            a.type-1-link(href="/health", style="width:100%;") Health tracker
-            a.type-1-link(href="/box", style="width:100%;") Box packer
+            if permissions && permissions.indexOf("quicknote") >= 0
+              a.type-1-link(href="/box", style="width:100%;") Box packer
             a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
-            a.type-1-link(href="/quicknote", style="width:100%;") Quick note
+            if permissions && permissions.indexOf("quicknote") >= 0
+              a.type-1-link(href="/quicknote", style="width:100%;") Quick note
+            a.type-1-link(href="/electricity_usage", style="width:100%;") EL
+            a.type-1-link(href="/mpu6050", style="width:100%;") MPU6050
         .navbar-column
           a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
           a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
@@ -106,8 +108,8 @@ html(lang='en')
           a.type-2-link(href="/openai/manage", style="width:100%;") Manage Open AI API models
           a.type-2-link(href="/openai/history", style="width:100%;") Open AI API usage history
           a.type-2-link(href="/embedding", style="width:100%;") Embeddings
-          a.type-1-link(href="/electricity_usage", style="width:100%;") EL
-          a.type-1-link(href="/mpu6050", style="width:100%;") MPU6050
+          a.type-2-link(href="/health", style="width:100%;") Health tracker
+          a.type-1-link(href="/mypage/github", style="width:100%;") GitHub (lentmiien)
       else
         .navbar-column
           a.type-1-link(href="/login", style="width:100%;") Log in
