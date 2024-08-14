@@ -86,30 +86,34 @@ html(lang='en')
             a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
             a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
             a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
+          if permissions && permissions.indexOf("test") >= 0
+            .navbar-column
+              h2 Test stuff
+              if permissions && permissions.indexOf("quicknote") >= 0
+                a.type-1-link(href="/box", style="width:100%;") Box packer
+              a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
+              if permissions && permissions.indexOf("quicknote") >= 0
+                a.type-1-link(href="/quicknote", style="width:100%;") Quick note
+              a.type-1-link(href="/electricity_usage", style="width:100%;") EL
+              a.type-1-link(href="/mpu6050", style="width:100%;") MPU6050
+              a.type-1-link(href="/mypage/github", style="width:100%;") GitHub (lentmiien)
+        if permissions && permissions.indexOf("archive") >= 0
           .navbar-column
-            if permissions && permissions.indexOf("quicknote") >= 0
-              a.type-1-link(href="/box", style="width:100%;") Box packer
-            a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
-            if permissions && permissions.indexOf("quicknote") >= 0
-              a.type-1-link(href="/quicknote", style="width:100%;") Quick note
-            a.type-1-link(href="/electricity_usage", style="width:100%;") EL
-            a.type-1-link(href="/mpu6050", style="width:100%;") MPU6050
-        .navbar-column
-          a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
-          a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
-          a.type-2-link(href="/chat3", style="width:100%;") [OLD] ChatGPT v3
-          a.type-2-link(href="/chat3/manage_knowledge", style="width:100%;") [OLD] ChatGPT knowledge
-          a.type-2-link(href="/gptdocument", style="width:100%;") [OLD] GPT document
-          a.type-2-link(href="/mypage/speektome", style="width:100%;") [TEST] Speek to me
-          a.type-2-link(href="/mypage/showtome", style="width:100%;") [TEST] Show to me
-          a.type-1-link(href="/chat3/browse_knowledge?id=6562e7bb5d76250d064fe480", style="width:100%;") Cookbook
-          a.type-1-link(href="/chat3/browse_knowledge?id=656304600cbce400a732cc81", style="width:100%;") Knowledge
-          a.type-2-link(href="/openai", style="width:100%;") OpenAI database
-          a.type-2-link(href="/openai/manage", style="width:100%;") Manage Open AI API models
-          a.type-2-link(href="/openai/history", style="width:100%;") Open AI API usage history
-          a.type-2-link(href="/embedding", style="width:100%;") Embeddings
-          a.type-2-link(href="/health", style="width:100%;") Health tracker
-          a.type-1-link(href="/mypage/github", style="width:100%;") GitHub (lentmiien)
+            h2 Archive
+            a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
+            a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
+            a.type-2-link(href="/chat3", style="width:100%;") [OLD] ChatGPT v3
+            a.type-2-link(href="/chat3/manage_knowledge", style="width:100%;") [OLD] ChatGPT knowledge
+            a.type-2-link(href="/gptdocument", style="width:100%;") [OLD] GPT document
+            a.type-2-link(href="/mypage/speektome", style="width:100%;") [TEST] Speek to me
+            a.type-2-link(href="/mypage/showtome", style="width:100%;") [TEST] Show to me
+            a.type-1-link(href="/chat3/browse_knowledge?id=6562e7bb5d76250d064fe480", style="width:100%;") Cookbook
+            a.type-1-link(href="/chat3/browse_knowledge?id=656304600cbce400a732cc81", style="width:100%;") Knowledge
+            a.type-2-link(href="/openai", style="width:100%;") OpenAI database
+            a.type-2-link(href="/openai/manage", style="width:100%;") Manage Open AI API models
+            a.type-2-link(href="/openai/history", style="width:100%;") Open AI API usage history
+            a.type-2-link(href="/embedding", style="width:100%;") Embeddings
+            a.type-2-link(href="/health", style="width:100%;") Health tracker
       else
         .navbar-column
           a.type-1-link(href="/login", style="width:100%;") Log in
