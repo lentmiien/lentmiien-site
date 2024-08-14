@@ -80,7 +80,7 @@ class GitHubService {
       });
   
       // Check if it's a text-based file
-      const textBasedExtensions = ['.txt', '.md', '.js', '.py', '.html', '.css', '.json', '.csv', '.xml', '.yml', '.ini', '.cfg'];
+      const textBasedExtensions = ['.txt', '.md', '.js', '.py', '.html', '.css', '.json', '.csv', '.xml', '.yml', '.ini', '.cfg', '.pug', '.gitignore'];
       const fileExtension = '.' + filePath.split('.').pop().toLowerCase();
   
       if (textBasedExtensions.includes(fileExtension)) {

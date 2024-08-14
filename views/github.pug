@@ -1,9 +1,19 @@
 extends layout
 
 block content
-  h2 Select a repository 
-  select#repository.form-control(name="repository", onchange="SelectRepository(this)") 
-    option(value="") - Select -
-    each rep in repos
-      option(value=rep.name, title=rep.description)= `${rep.name} (${rep.stars})`
+  .row 
+    .col
+      h2 Select a repository 
+      select#repository.form-control(name="repository", onchange="SelectRepository(this)") 
+        option(value="") - Select -
+        each rep in repos
+          option(value=rep.name, title=rep.description)= `${rep.name} (${rep.stars})`
+  .row 
+    .col-2
+      h2 Navigate
+      #filestructure
+    .col-10
+      h2 File content: 
+        b#filepath
+      #filecontent
   script(src="/js/github.js") 
