@@ -1,4 +1,4 @@
-const { LogModel, SummaryModel, AggregatedDataModel, DetailedDataModel } = require('../database');
+const { LogModel, SummaryModel, AggregatedDataModel, DetailedDataModel, Dht22AggregatedData, Dht22DetailedData } = require('../database');
 
 exports.index = (req, res) => {
   res.render('index');
@@ -62,4 +62,13 @@ exports.mpu6050 = async (req, res) => {
   const aggregated_data = await AggregatedDataModel.find();
   const detailed_data = await DetailedDataModel.find();
   res.render('mpu6050', {aggregated_data, detailed_data});
+}
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.dht22 = async (req, res) => {
+  const aggregated_data = await Dht22AggregatedData.find();
+  const detailed_data = await Dht22DetailedData.find();
+  res.render('dht22', {aggregated_data, detailed_data});
 }

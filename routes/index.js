@@ -28,4 +28,9 @@ router.get('/electricity_usage', controller.electricity_usage);
 /****************************/
 router.get('/mpu6050', controller.mpu6050);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/dht22', controller.dht22);
+
 module.exports = router;

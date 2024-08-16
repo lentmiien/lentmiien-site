@@ -69,6 +69,9 @@ const QuicknoteModel = require('./models/quicknote');
 // MPU6050
 const AggregatedDataModel = require('./models/aggregated_data');
 const DetailedDataModel = require('./models/detailed_data');
+// DHT22
+const Dht22AggregatedData = require('./models/dht22_aggregated_data');
+const Dht22DetailedData = require('./models/dht22_detailed_data');
 
 // Export models
 module.exports = {
@@ -110,4 +113,6 @@ module.exports = {
   QuicknoteModel,
   AggregatedDataModel,
   DetailedDataModel,
+  Dht22AggregatedData,
+  Dht22DetailedData,
 };
