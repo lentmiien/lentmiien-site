@@ -143,3 +143,31 @@ async function LoadFile(path) {
   filecontent.innerHTML = `<pre>${c_data}</pre>`;
   filepath.innerText = path;
 }
+
+const content_type = {
+  "js": "javascript",
+  "py": "python",
+  "pug": "pug",
+  "json": "json",
+};
+function CopyFile() {
+  const f = filecontent.innerHTML.split("<pre>")[1].split("</pre>")[0];
+  const ext = filepath.innerText.split(".")[1];
+
+  const copy_buffer = `### File: ${filepath.innerText}\n\`\`\`${ext in content_type ? content_type[ext] : ""}\n${f}\n\`\`\``;
+  Copy(copy_buffer);
+}
+
+/****
+ * Copy helper
+ */
+function Copy(text) {
+  // Copy to clipboard
+  function listener(e) {
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+  }
+  document.addEventListener('copy', listener);
+  document.execCommand('copy');
+  document.removeEventListener('copy', listener);
+}

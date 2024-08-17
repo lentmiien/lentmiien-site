@@ -28,7 +28,7 @@ class GitHubService {
           }
         });
 
-        const repositories = response.data.map(repo => ({
+        const repositories = response.data.filter(d => d.full_name.indexOf("lentmiien") === 0).map(repo => ({
           name: repo.name,
           description: repo.description,
           url: repo.html_url,
