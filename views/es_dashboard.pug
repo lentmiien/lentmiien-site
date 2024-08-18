@@ -1,0 +1,44 @@
+extends layout
+
+block content
+  .row 
+    .col
+      h1 Emergency Stock Dashboard
+      ul
+        each category in categories
+          li #{category.name} - Recommended: #{category.recommendedStock} #{category.unit} 
+            b= `(${category_lookup_and_stock[category._id.toString()].stock} ${category.unit}: ${Math.round(100 * category_lookup_and_stock[category._id.toString()].stock / category.recommendedStock)}%)`
+      h2 Items to Rotate
+      ul
+        each item in items
+          li #{category_lookup_and_stock[item.categoryId].label} (#{item.label || '-'}) - Amount: #{item.amount} #{category_lookup_and_stock[item.categoryId].unit} (#{item.rotateDate.toDateString()})
+    .col 
+      h2 Edit/Add category 
+      form(action="/es/edit_category", method="post") 
+        label(for="category_id") Select category to edit existing entry
+        select#category_id.form-control(name="category_id") 
+          option(value="") - new -
+          each category in categories
+            option(value=category._id)= category.name 
+        label(for="name") Category name
+        input#name.form-control(type="text", name="name")
+        label(for="recommendedStock") Recommended stock
+        input#recommendedStock.form-control(type="number", name="recommendedStock")
+        label(for="unit") Unit
+        input#unit.form-control(type="text", name="unit")
+        label(for="rotationPeriodMonths") Rotation period in months
+        input#rotationPeriodMonths.form-control(type="number", name="rotationPeriodMonths")
+        input.btn.btn-success(type="submit", value="Save")
+      h2 Add item 
+      form(action="/es/add_item", method="post") 
+        label(for="add_category_id") Select category of item
+        select#add_category_id.form-control(name="add_category_id") 
+          each category in categories
+            option(value=category._id)= category.name 
+        label(for="amount") Amount
+        input#amount.form-control(type="number", name="amount")
+        label(for="rotateDate") Date *Only year and month is used
+        input#rotateDate.form-control(type="date", name="rotateDate")
+        label(for="label") Label *Optional if Category is insufficient
+        input#label.form-control(type="text", name="label")
+        input.btn.btn-success(type="submit", value="Add")

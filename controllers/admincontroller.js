@@ -80,6 +80,7 @@ exports.manage_roles = async (req, res) => {
       "health",
       "box",
       "quicknote",
+      "emergencystock",
       "test",
       "archive",
     ]

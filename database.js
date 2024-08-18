@@ -72,6 +72,9 @@ const DetailedDataModel = require('./models/detailed_data');
 // DHT22
 const Dht22AggregatedData = require('./models/dht22_aggregated_data');
 const Dht22DetailedData = require('./models/dht22_detailed_data');
+// Emergency Stock
+const ESCategory = require('./models/es_category');
+const ESItem = require('./models/es_item');
 
 // Export models
 module.exports = {
@@ -115,4 +118,6 @@ module.exports = {
   DetailedDataModel,
   Dht22AggregatedData,
   Dht22DetailedData,
+  ESCategory,
+  ESItem,
 };
