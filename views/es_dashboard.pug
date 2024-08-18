@@ -4,10 +4,11 @@ block content
   .row 
     .col
       h1 Emergency Stock Dashboard
+      b= `${average}% done`
       ul
         each category in categories
           li #{category.name} - Recommended: #{category.recommendedStock} #{category.unit} 
-            b= `(${category_lookup_and_stock[category._id.toString()].stock} ${category.unit}: ${Math.round(100 * category_lookup_and_stock[category._id.toString()].stock / category.recommendedStock)}%)`
+            b= `(${category_lookup_and_stock[category._id.toString()].stock} ${category.unit}: ${category_lookup_and_stock[category._id.toString()].percent}%)`
       h2 Items to Rotate
       ul
         each item in items
