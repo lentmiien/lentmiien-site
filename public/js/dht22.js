@@ -172,9 +172,110 @@ function PlotDetailedGraph(parent_element) {
       .attr("fill", "none");
 }
 
+function PlotHistograms(parent_element) {
+  const margin = {top: 20, right: 30, bottom: 30, left: 40};
+  const width = 480 - margin.left - margin.right;
+  const height = 300 - margin.top - margin.bottom;
+
+  // Temperature Histogram
+  const svgTemp = d3.select("#" + parent_element)
+    .append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x_temp = d3.scaleLinear()
+    .domain([d3.min(detailed_data, d => d.temperature), d3.max(detailed_data, d => d.temperature)])
+    .range([0, width]);
+
+  const histogram_temp = d3.histogram()
+    .value(d => d.temperature)
+    .domain(x_temp.domain())
+    .thresholds(x_temp.ticks(20));
+
+  const bins_temp = histogram_temp(detailed_data);
+
+  const y_temp = d3.scaleLinear()
+    .range([height, 0])
+    .domain([0, d3.max(bins_temp, d => d.length)]);
+
+  svgTemp.append("g")
+    .attr("transform", `translate(0,${height})`)
+    .call(d3.axisBottom(x_temp));
+
+  svgTemp.append("g")
+    .call(d3.axisLeft(y_temp));
+
+  svgTemp.selectAll("rect")
+    .data(bins_temp)
+    .enter()
+    .append("rect")
+      .attr("x", 1)
+      .attr("transform", d => `translate(${x_temp(d.x0)}, ${y_temp(d.length)})`)
+      .attr("width", d => x_temp(d.x1) - x_temp(d.x0) - 1)
+      .attr("height", d => height - y_temp(d.length))
+      .style("fill", "red");
+
+  svgTemp.append("text")
+    .attr("x", width / 2)
+    .attr("y", 0)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Temperature Distribution");
+
+  // Humidity Histogram
+  const svgHum = d3.select("#" + parent_element)
+    .append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+    .append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const x_hum = d3.scaleLinear()
+    .domain([d3.min(detailed_data, d => d.humidity), d3.max(detailed_data, d => d.humidity)])
+    .range([0, width]);
+
+  const histogram_hum = d3.histogram()
+    .value(d => d.humidity)
+    .domain(x_hum.domain())
+    .thresholds(x_hum.ticks(20));
+
+  const bins_hum = histogram_hum(detailed_data);
+
+  const y_hum = d3.scaleLinear()
+    .range([height, 0])
+    .domain([0, d3.max(bins_hum, d => d.length)]);
+
+  svgHum.append("g")
+    .attr("transform", `translate(0,${height})`)
+    .call(d3.axisBottom(x_hum));
+
+  svgHum.append("g")
+    .call(d3.axisLeft(y_hum));
+
+  svgHum.selectAll("rect")
+    .data(bins_hum)
+    .enter()
+    .append("rect")
+      .attr("x", 1)
+      .attr("transform", d => `translate(${x_hum(d.x0)}, ${y_hum(d.length)})`)
+      .attr("width", d => x_hum(d.x1) - x_hum(d.x0) - 1)
+      .attr("height", d => height - y_hum(d.length))
+      .style("fill", "blue");
+
+  svgHum.append("text")
+    .attr("x", width / 2)
+    .attr("y", 0)
+    .attr("text-anchor", "middle")
+    .style("font-size", "16px")
+    .text("Humidity Distribution");
+}
+
 function PlotGraphs() {
   PlotAggregatedGraph("average");
   PlotDetailedGraph("detailed");
+  PlotHistograms("histogram");
 }
 
 document.addEventListener('DOMContentLoaded', (event) => {
