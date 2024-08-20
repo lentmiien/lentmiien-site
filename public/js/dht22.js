@@ -238,6 +238,17 @@ function PlotHistograms(parent_element) {
   const width = 480 - margin.left - margin.right;
   const height = 300 - margin.top - margin.bottom;
 
+  // Filter detailed data to only include entries from the last 24 hours
+  const now = new Date();
+  const last24HoursData = detailed_data.filter(d => {
+    const timestamp = new Date(d.timestamp);
+    return (now - timestamp) <= 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+  });
+
+  // Extract temperature and humidity values using the new data format
+  const temperatures = last24HoursData.map(d => d.avg ? d.avg.temperature : d.temperature);
+  const humidities = last24HoursData.map(d => d.avg ? d.avg.humidity : d.humidity);
+
   // Temperature Histogram
   const svgTemp = d3.select("#" + parent_element)
     .append("svg")
@@ -247,15 +258,14 @@ function PlotHistograms(parent_element) {
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
   const x_temp = d3.scaleLinear()
-    .domain([d3.min(detailed_data, d => d.temperature), d3.max(detailed_data, d => d.temperature)])
+    .domain([d3.min(temperatures), d3.max(temperatures)])
     .range([0, width]);
 
   const histogram_temp = d3.histogram()
-    .value(d => d.temperature)
     .domain(x_temp.domain())
     .thresholds(x_temp.ticks(20));
 
-  const bins_temp = histogram_temp(detailed_data);
+  const bins_temp = histogram_temp(temperatures);
 
   const y_temp = d3.scaleLinear()
     .range([height, 0])
@@ -294,15 +304,14 @@ function PlotHistograms(parent_element) {
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
   const x_hum = d3.scaleLinear()
-    .domain([d3.min(detailed_data, d => d.humidity), d3.max(detailed_data, d => d.humidity)])
+    .domain([d3.min(humidities), d3.max(humidities)])
     .range([0, width]);
 
   const histogram_hum = d3.histogram()
-    .value(d => d.humidity)
     .domain(x_hum.domain())
     .thresholds(x_hum.ticks(20));
 
-  const bins_hum = histogram_hum(detailed_data);
+  const bins_hum = histogram_hum(humidities);
 
   const y_hum = d3.scaleLinear()
     .range([height, 0])
@@ -336,7 +345,7 @@ function PlotHistograms(parent_element) {
 function PlotGraphs() {
   PlotAggregatedGraph("average");
   PlotDetailedGraph("detailed");
-  // PlotHistograms("histogram");
+  PlotHistograms("histogram");
 }
 
 document.addEventListener('DOMContentLoaded', (event) => {
