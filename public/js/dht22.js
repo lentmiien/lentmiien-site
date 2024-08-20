@@ -12,9 +12,10 @@ const detailed_data = JSON.parse(document.getElementById("detailed_data").innerH
 /**
  * 'detailed_data' is an array of objects in the following format:
 const Dht22DetailedData = new mongoose.Schema({
+  min: { type: Object },//{temperature:26.2, humidity:55}
+  max: { type: Object },//{temperature:26.4, humidity:55.2}
+  avg: { type: Object },//{temperature:26.268, humidity:55.112}
   timestamp: { type: Date },
-  temperature: { type: Number },
-  humidity: { type: Number },
 });
 */
 
@@ -115,21 +116,43 @@ function PlotDetailedGraph(parent_element) {
   const yAxisLeft = d3.axisLeft(y0).tickFormat(d3.format(".1f"));
   const yAxisRight = d3.axisRight(y1).tickFormat(d3.format(".1f"));
 
-  const line0 = d3.line()
+  const lineAvg = d3.line()
     .x(d => x(d.timestamp))
-    .y(d => y0(d.temperature));
+    .y(d => y0(d.avg ? d.avg.temperature : d.temperature));
 
-  const line1 = d3.line()
+  const lineMin = d3.line()
     .x(d => x(d.timestamp))
-    .y(d => y1(d.humidity));
+    .y(d => y0(d.min ? d.min.temperature : d.temperature));
+
+  const lineMax = d3.line()
+    .x(d => x(d.timestamp))
+    .y(d => y0(d.max ? d.max.temperature : d.temperature));
+
+  const lineHumidityAvg = d3.line()
+    .x(d => x(d.timestamp))
+    .y(d => y1(d.avg ? d.avg.humidity : d.humidity));
+
+  const lineHumidityMin = d3.line()
+    .x(d => x(d.timestamp))
+    .y(d => y1(d.min ? d.min.humidity : d.humidity));
+
+  const lineHumidityMax = d3.line()
+    .x(d => x(d.timestamp))
+    .y(d => y1(d.max ? d.max.humidity : d.humidity));
 
   detailed_data.forEach(d => {
     d.timestamp = new Date(d.timestamp);
   });
 
   x.domain(d3.extent(detailed_data, d => d.timestamp));
-  y0.domain([d3.min(detailed_data, d => d.temperature) - 1, d3.max(detailed_data, d => d.temperature) + 1]);
-  y1.domain([d3.min(detailed_data, d => d.humidity) - 1, d3.max(detailed_data, d => d.humidity) + 1]);
+  y0.domain([
+    d3.min(detailed_data, d => Math.min(d.min ? d.min.temperature : d.temperature, d.avg ? d.avg.temperature : d.temperature)) - 1,
+    d3.max(detailed_data, d => Math.max(d.max ? d.max.temperature : d.temperature, d.avg ? d.avg.temperature : d.temperature)) + 1
+  ]);
+  y1.domain([
+    d3.min(detailed_data, d => Math.min(d.min ? d.min.humidity : d.humidity, d.avg ? d.avg.humidity : d.humidity)) - 1,
+    d3.max(detailed_data, d => Math.max(d.max ? d.max.humidity : d.humidity, d.avg ? d.avg.humidity : d.humidity)) + 1
+  ]);
 
   svg.append("g")
       .attr("class", "x axis")
@@ -157,19 +180,57 @@ function PlotDetailedGraph(parent_element) {
       .style("text-anchor", "end")
       .text("Humidity (%)");
 
+  // Temperature lines
   svg.append("path")
       .datum(detailed_data)
       .attr("class", "line")
-      .attr("d", line0)
+      .attr("d", lineAvg)
       .attr("stroke", "red")
       .attr("fill", "none");
 
+  // svg.append("path")
+  //     .datum(detailed_data)
+  //     .attr("class", "line")
+  //     .attr("d", lineMin)
+  //     .attr("stroke", "red")
+  //     .attr("stroke-dasharray", "3,3")
+  //     .attr("stroke-width", "1")
+  //     .attr("fill", "none");
+
+  // svg.append("path")
+  //     .datum(detailed_data)
+  //     .attr("class", "line")
+  //     .attr("d", lineMax)
+  //     .attr("stroke", "red")
+  //     .attr("stroke-dasharray", "3,3")
+  //     .attr("stroke-width", "1")
+  //     .attr("fill", "none");
+
+  // Humidity lines
   svg.append("path")
       .datum(detailed_data)
       .attr("class", "line")
-      .attr("d", line1)
+      .attr("d", lineHumidityAvg)
       .attr("stroke", "blue")
       .attr("fill", "none");
+
+  // svg.append("path")
+  //     .datum(detailed_data)
+  //     .attr("class", "line")
+  //     .attr("d", lineHumidityMin)
+  //     .attr("stroke", "blue")
+  //     .attr("stroke-dasharray", "3,3")
+  //     .attr("stroke-width", "1")
+  //     .attr("fill", "none");
+
+  // svg.append("path")
+  //     .datum(detailed_data)
+  //     .attr("class", "line")
+  //     .attr("d", lineHumidityMax)
+  //     .attr("stroke", "blue")
+  //     .attr("stroke-dasharray", "3,3")
+  //     .attr("stroke-width", "1")
+  //     .attr("fill", "none");
 }
 
 function PlotHistograms(parent_element) {
@@ -275,7 +336,7 @@ function PlotHistograms(parent_element) {
 function PlotGraphs() {
   PlotAggregatedGraph("average");
   PlotDetailedGraph("detailed");
-  PlotHistograms("histogram");
+  // PlotHistograms("histogram");
 }
 
 document.addEventListener('DOMContentLoaded', (event) => {
