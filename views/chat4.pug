@@ -51,7 +51,7 @@ block content
             textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
             #knowledge_container.row
             input#append_message_ids(type="hidden", name="append_message_ids")
-            select#agent_select.form-control(name='agent_select', aria-label='agent_select')
+            select#agent_select.form-control(name='agent_select', aria-label='agent_select', disabled)
               option(value="") -- No agent will be queried, select agent to query agent memory --
               each a in agents 
                 option(value=a._id.toString())= a.name
