@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "prestart": "node setup",
-    "start": "node app"
+    "start": "node app",
+    "git_test": "node git_test"
   },
   "repository": {
     "type": "git",
