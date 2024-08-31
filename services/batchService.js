@@ -138,13 +138,14 @@ class BatchService {
       if (newPrompts.length) {
         // Generate batch data
         const prompt_data = {
+          "gpt-4o-2024-08-06": [],
           "gpt-4o": [],
           "gpt-4o-mini": [],
         };
-        const models = ["gpt-4o", "gpt-4o-mini"];
+        const models = ["gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini"];
 
         for (let i = 0; i < newPrompts.length; i++) {
-          const model_to_use = newPrompts[i].model ? newPrompts[i].model : 'gpt-4o';
+          const model_to_use = newPrompts[i].model ? newPrompts[i].model : 'gpt-4o-2024-08-06';
           const data_entry = {
             custom_id: newPrompts[i].custom_id,
             method: 'POST',
