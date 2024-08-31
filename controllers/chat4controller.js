@@ -404,38 +404,27 @@ exports.ask_agent = async (req, res) => {
   res.json({response});
 };
 
+const batch_model_list = {
+  "OpenAI_latest": "gpt-4o-2024-08-06",
+  "OpenAI_mini": "gpt-4o-mini",
+  "OpenAI": "gpt-4o",
+};
+
 // Batch requests
 exports.batch_prompt = async (req, res) => {
-  /* console.log(req.params);
-  { id: '6650645422d379462a8ca3e3' }
-  */
-  /* console.log(req.body);
-  [Object: null prototype] {
-    title: 'Explore agents framework',
-    category: 'Programming',
-    tags: 'agent,ideas',
-    context: 'You are a helpful assistant.',
-    prompt: 'test',
-    agent_select: ''
+  if (req.body.provider in batch_model_list) {
+    // Get image file paths
+    const image_paths = [];
+    for (let i = 0; i < req.files.length; i++) {
+      image_paths.push(req.files[i].destination + req.files[i].filename);
+    }
+    
+    await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id, image_paths, req.body, batch_model_list[req.body.provider]);
+    
+    res.redirect('/chat4/batch_status');
+  } else {
+    res.send(`<h1>Selected model (${req.body.provider}) invalid for batch requests</h1><b>Prompt</b><br><pre>${req.body.prompt}</pre>`);
   }
-  */
-  /* console.log(req.files);
-  []
-  */
-  
-  // Save a prompt for batch processing
-  // - Save input images
-  // - Save prompt to batch database
-  
-  // Get image file paths
-  const image_paths = [];
-  for (let i = 0; i < req.files.length; i++) {
-    image_paths.push(req.files[i].destination + req.files[i].filename);
-  }
-
-  await batchService.addPromptToBatch(req.user.name, req.body.prompt, req.params.id, image_paths, req.body, req.body.provider === "OpenAI_mini" ? "gpt-4o-mini" : "gpt-4o");
-
-  res.redirect('/chat4/batch_status');
 };
 
 exports.batch_status = async (req, res) => {
