@@ -6,50 +6,55 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
 class GitHubService {
   constructor() {
+    this.repoList = [];
   }
 
-  async getRepoList() {
-    let page = 1;
-    let allRepos = [];
-    let hasNextPage = true;
-
-    while (hasNextPage) {
-      try {
-        const response = await axios.get('https://api.github.com/user/repos', {
-          params: {
-            visibility: 'all', // 'visibility=all' should be default but ensure it's specified
-            per_page: 100,  // Max allowed per page
-            page: page
-          },
-          headers: {
-            'Authorization': `token ${GITHUB_TOKEN}`,
-            'User-Agent': 'lentmiien',
-            'Accept': 'application/vnd.github.v3+json'
-          }
-        });
-
-        const repositories = response.data.filter(d => d.full_name.indexOf("lentmiien") === 0).map(repo => ({
-          name: repo.name,
-          description: repo.description,
-          url: repo.html_url,
-          private: repo.private,
-          stars: repo.stargazers_count,
-          forks: repo.forks_count
-        }));
-
-        allRepos = allRepos.concat(repositories);
-    
-        // Check if there's a next page
-        const linkHeader = response.headers.link;
-        hasNextPage = linkHeader && linkHeader.includes('rel="next"');
-        page++;
-      } catch (error) {
-        console.error('Error fetching repositories:', error.message);
-        throw error;
+  async getRepoList(forceRefresh = false) {
+    if (this.repoList.length === 0 || forceRefresh) {
+      let page = 1;
+      let allRepos = [];
+      let hasNextPage = true;
+      
+      while (hasNextPage) {
+        try {
+          const response = await axios.get('https://api.github.com/user/repos', {
+            params: {
+              visibility: 'all', // 'visibility=all' should be default but ensure it's specified
+              per_page: 100,  // Max allowed per page
+              page: page
+            },
+            headers: {
+              'Authorization': `token ${GITHUB_TOKEN}`,
+              'User-Agent': 'lentmiien',
+              'Accept': 'application/vnd.github.v3+json'
+            }
+          });
+          
+          const repositories = response.data.filter(d => d.full_name.indexOf("lentmiien") === 0).map(repo => ({
+            name: repo.name,
+            description: repo.description,
+            url: repo.html_url,
+            private: repo.private,
+            stars: repo.stargazers_count,
+            forks: repo.forks_count
+          }));
+          
+          allRepos = allRepos.concat(repositories);
+          
+          // Check if there's a next page
+          const linkHeader = response.headers.link;
+          hasNextPage = linkHeader && linkHeader.includes('rel="next"');
+          page++;
+        } catch (error) {
+          console.error('Error fetching repositories:', error.message);
+          throw error;
+        }
       }
+      
+      this.repoList = allRepos;
     }
 
-    return allRepos;
+    return this.repoList;
   }
 
   async getRepositoryContents(repoName, path = '') {
