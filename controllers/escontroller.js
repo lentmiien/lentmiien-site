@@ -41,6 +41,47 @@ exports.es_dashboard = async (req, res) => {
   }
 }
 
+exports.es_view_stock = async (req, res) => {
+  try {
+    const categories = await ESCategory.find({});
+    const items = await ESItem.find({});
+    const category_lookup_and_stock = {};
+    // Setup data structure
+    categories.forEach(c => {
+      category_lookup_and_stock[c._id.toString()] = {
+        label: c.name,
+        stock: 0,
+        unit: c.unit,
+        percent: 0,
+        items: [],
+      };
+    });
+    const d = new Date();
+    const stock_items = items.filter(i => i.rotateDate >= d);
+    // Add item stock
+    stock_items.forEach(i => {
+      if (i.categoryId in category_lookup_and_stock) {
+        category_lookup_and_stock[i.categoryId].stock += i.amount;
+        category_lookup_and_stock[i.categoryId].items.push(i);
+      } else {
+        console.log('--- Untracked item ---');
+        console.log(i);
+      }
+    });
+    // Calculate percentages
+    let total = 0;
+    categories.forEach(c => {
+      const percent = Math.round(100 * category_lookup_and_stock[c._id.toString()].stock / c.recommendedStock);
+      category_lookup_and_stock[c._id.toString()].percent = percent;
+      total += percent > 100 ? 100 : percent;
+    });
+    const average = Math.round(10 * total / categories.length) / 10;
+    res.render('es_view_stock', { categories, category_lookup_and_stock, average });
+  } catch (err) {
+    res.status(500).send('Server Error');
+  }
+}
+
 exports.edit_category = async (req, res) => {
   try {
     const { category_id, name, recommendedStock, unit, rotationPeriodMonths } = req.body;

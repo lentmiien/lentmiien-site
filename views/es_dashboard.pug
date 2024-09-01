@@ -4,7 +4,9 @@ block content
   .row 
     .col
       h1 Emergency Stock Dashboard
-      a.btn.btn-link(href="https://home.lentmiien.com/chat4/viewknowledge/66c5f84af31b7bdb8563814d") Emergency stock - 6 month plan
+      a.btn.btn-link(href="/chat4/viewknowledge/66c5f84af31b7bdb8563814d") Emergency stock - 6 month plan
+      a.btn.btn-link(href="/es/es_view_stock") View current stock
+      br
       b= `${average}% done`
       ul
         each category in categories
@@ -15,6 +17,20 @@ block content
         each item in items
           li #{category_lookup_and_stock[item.categoryId].label} (#{item.label || '-'}) - Amount: #{item.amount} #{category_lookup_and_stock[item.categoryId].unit} (#{item.rotateDate.toDateString()})
     .col 
+      h2 Add item 
+      form(action="/es/add_item", method="post") 
+        label(for="add_category_id") Select category of item
+        select#add_category_id.form-control(name="add_category_id") 
+          each category in categories
+            option(value=category._id)= `${category.name} (${category.unit})`
+        label(for="amount") Amount
+        input#amount.form-control(type="number", name="amount")
+        label(for="rotateDate") Date *Only year and month is used
+        input#rotateDate.form-control(type="date", name="rotateDate")
+        label(for="label") Label *Optional if Category is insufficient
+        input#label.form-control(type="text", name="label")
+        input.btn.btn-success(type="submit", value="Add")
+      hr
       h2 Edit/Add category 
       form(action="/es/edit_category", method="post") 
         label(for="category_id") Select category to edit existing entry
@@ -31,16 +47,3 @@ block content
         label(for="rotationPeriodMonths") Rotation period in months
         input#rotationPeriodMonths.form-control(type="number", name="rotationPeriodMonths")
         input.btn.btn-success(type="submit", value="Save")
-      h2 Add item 
-      form(action="/es/add_item", method="post") 
-        label(for="add_category_id") Select category of item
-        select#add_category_id.form-control(name="add_category_id") 
-          each category in categories
-            option(value=category._id)= category.name 
-        label(for="amount") Amount
-        input#amount.form-control(type="number", name="amount")
-        label(for="rotateDate") Date *Only year and month is used
-        input#rotateDate.form-control(type="date", name="rotateDate")
-        label(for="label") Label *Optional if Category is insufficient
-        input#label.form-control(type="text", name="label")
-        input.btn.btn-success(type="submit", value="Add")

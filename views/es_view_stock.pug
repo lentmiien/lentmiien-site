@@ -1,0 +1,16 @@
+extends layout
+
+block content
+  .row 
+    .col
+      h1 Emergency Stock Dashboard
+      a.btn.btn-link(href="/es/es_dashboard") Dashboard
+      br
+      b= `${average}% done`
+      ul
+        each category in categories
+          li #{category.name} - Recommended: #{category.recommendedStock} #{category.unit} 
+            b= `(${category_lookup_and_stock[category._id.toString()].stock} ${category.unit}: ${category_lookup_and_stock[category._id.toString()].percent}%)`
+              ol 
+                each item in category_lookup_and_stock[category._id.toString()].items
+                  li= `${item.label ? item.label + ' ' : ''}${item.amount} ${category.unit} (Expire: ${item.rotateDate.toDateString()})`
