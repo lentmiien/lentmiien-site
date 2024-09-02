@@ -138,7 +138,7 @@ exports.github = async (req, res) => {
   res.render("github", {repos});
 };
 exports.getfolder = async (req, res) => {
-  const folder_content = await github.getRepositoryContents(req.query.repo, req.query.path);
+  const folder_content = await github.getRepositoryContents(req.query.repo);
   res.json(folder_content);
 };
 exports.getfile = async (req, res) => {

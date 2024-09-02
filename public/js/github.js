@@ -8,14 +8,10 @@ function CreateFolderDisplay(level, data) {
   let output = "";
   data.forEach(d => {
     if (d.type === "dir") {
-      if (d.loaded) {
-        output += `<div><button class="btn btn-link" style="padding-left:${level*10}px;">(${d.name})</button></div>`;
-        output += CreateFolderDisplay(level+1, d.content);
-      } else {
-        output += `<div><button class="btn btn-link" style="padding-left:${level*10}px;" onclick="LoadFolder('${d.path}')">(+${d.name})</button></div>`;
-      }
+      output += `<div><button class="btn btn-link" style="padding-left:${level*10}px;">(${d.name})</button></div>`;
+      output += CreateFolderDisplay(level+1, d.content);
     } else {
-      output += `<div><button class="btn btn-link" style="padding-left:${level*10}px;" onclick="LoadFile('${d.path}')">${d.name}</button></div>`;
+      output += `<div><button class="btn btn-link" style="padding-left:${level*10}px;" onclick="LoadFile('${d.path.split('\\').join('/')}')">${d.name}</button></div>`;
     }
   });
   return output;
@@ -34,17 +30,16 @@ async function SelectRepository(e) {
   // Create or load cache entry
   if (!(repo in cache)) {
     // Create: Send GET request to '/mypage/getfolder' -> return file structure of top folder
-    const response = await fetch(`/mypage/getfolder?repo=${repo}&path=`);
+    const response = await fetch(`/mypage/getfolder?repo=${repo}`);
     const json = await response.json();
-    const structured_data = json.map(d => {return {name:d.name, path:d.path, size:d.size, type:d.type, loaded:false, content:null}})
-    structured_data.sort((a,b) => {
+    json.sort((a,b) => {
       if (a.type === 'dir' && b.type === 'file') return -1;
       if (a.type === 'file' && b.type === 'dir') return 1;
       if (a.name < b.name) return -1;
       if (a.name > b.name) return 1;
       return 0;
     });
-    cache[repo] = structured_data;
+    cache[repo] = json;
   }
 
   // Display folder structure currently saved in cache
@@ -56,50 +51,16 @@ async function SelectRepository(e) {
 function SaveToCache(input, data, path) {
   data.forEach(d => {
     if (d.path === path) {
-      d.loaded = true;
       d.content = input;
       return;
     } else {
       if (d.type === "dir") {
-        if (d.loaded) {
-          return SaveToCache(input, d.content, path);
-        } else {
-          return;
-        }
+        return SaveToCache(input, d.content, path);
       } else {
         return;
       }
     }
   });
-}
-
-async function LoadFolder(path) {
-  if (repo.length === 0 || !(repo in cache)) {
-    filestructure.innerHTML = '';
-    filecontent.innerHTML = '';
-    filepath.innerText = '';
-    return;
-  }
-
-  // User clicks on a folder in the displayed folder structure
-  // If folder content hasn't been loaded then load and save to cache
-  //  - Load: Send GET request to '/mypage/getfolder' -> return file structure of folder
-  const response = await fetch(`/mypage/getfolder?repo=${repo}&path=${path}`);
-  const json = await response.json();
-  const structured_data = json.map(d => {return {name:d.name, path:d.path, size:d.size, type:d.type, loaded:false, content:null}})
-  structured_data.sort((a,b) => {
-    if (a.type === 'dir' && b.type === 'file') return -1;
-    if (a.type === 'file' && b.type === 'dir') return 1;
-    if (a.name < b.name) return -1;
-    if (a.name > b.name) return 1;
-    return 0;
-  });
-  SaveToCache(structured_data, cache[repo], path);
-
-  // Display updated folder structure currently saved in cache
-  filestructure.innerHTML = CreateFolderDisplay(0, cache[repo]);
-  filecontent.innerHTML = '';
-  filepath.innerText = '';
 }
 
 function LoadCacheFileData(data, path) {
@@ -109,7 +70,7 @@ function LoadCacheFileData(data, path) {
       output = data[i].content;
       break;
     } else {
-      if (data[i].type === "dir" && data[i].loaded) {
+      if (data[i].type === "dir") {
         output = LoadCacheFileData(data[i].content, path);
         if (output) break;
       }

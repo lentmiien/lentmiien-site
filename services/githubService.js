@@ -1,5 +1,11 @@
 const axios = require('axios');
+const simpleGit = require('simple-git');
+const path = require('path');
 const fs = require('fs');
+const os = require('os');
+
+const tempDir = path.join(os.tmpdir(), 'github-repos');
+const git = simpleGit();
 
 // GitHub Personal Access Token
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -57,17 +63,51 @@ class GitHubService {
     return this.repoList;
   }
 
-  async getRepositoryContents(repoName, path = '') {
+  async getRepositoryContents(repoName) {
+    const repoDir = path.join(tempDir, repoName);
     try {
-      const response = await axios.get(`https://api.github.com/repos/lentmiien/${repoName}/contents/${path}`, {
-        headers: {
-          'Authorization': `token ${GITHUB_TOKEN}`,
-          'User-Agent': 'lentmiien',
-          'Accept': 'application/vnd.github.v3+json'
+      if (!fs.existsSync(repoDir)) {
+        await git.clone(`https://github.com/lentmiien/${repoName}.git`, repoDir);
+        console.log(`Repository cloned: ${repoDir}`);
+      } else {
+        console.log(`Repository already exists: ${repoDir}`);
+      }
+
+      // Load folder structure of 'repoDir'
+      const loadFolderStructure = async (currentPath) => {
+        const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+        const result = [];
+
+        for (const entry of entries) {
+          const fullPath = path.join(currentPath, entry.name);
+          const relativePath = path.relative(repoDir, fullPath);
+          
+          if (entry.isDirectory()) {
+            if (entry.name !== ".git") {
+              result.push({
+                name: entry.name,
+                path: relativePath,
+                size: 0,
+                type: 'dir',
+                content: await loadFolderStructure(fullPath)
+              });
+            }
+          } else {
+            const stats = fs.statSync(fullPath);
+            result.push({
+              name: entry.name,
+              path: relativePath,
+              size: stats.size,
+              type: 'file',
+              content: null
+            });
+          }
         }
-      });
-  
-      return response.data;
+
+        return result;
+      };
+
+      return await loadFolderStructure(repoDir);
     } catch (error) {
       console.error('Error fetching repository contents:', error.message);
       throw error;
@@ -75,22 +115,15 @@ class GitHubService {
   }
 
   async getFileContent(repoName, filePath) {
+    const fullPath = path.join(tempDir, repoName, filePath);
     try {
-      const response = await axios.get(`https://api.github.com/repos/lentmiien/${repoName}/contents/${filePath}`, {
-        headers: {
-          'Authorization': `token ${process.env.GITHUB_TOKEN}`,
-          'User-Agent': 'lentmiien',
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      });
-  
       // Check if it's a text-based file
       const textBasedExtensions = ['.txt', '.md', '.js', '.py', '.html', '.css', '.json', '.csv', '.xml', '.yml', '.ini', '.cfg', '.pug', '.gitignore'];
       const fileExtension = '.' + filePath.split('.').pop().toLowerCase();
   
       if (textBasedExtensions.includes(fileExtension)) {
         // It's a text-based file, so we can decode the content
-        const content = Buffer.from(response.data.content, 'base64').toString('utf-8');
+        const content = fs.readFileSync(fullPath, { encoding: 'utf8', flag: 'r' });
         return content;
       } else {
         // It's not a text-based file
