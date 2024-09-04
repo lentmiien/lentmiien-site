@@ -63,6 +63,40 @@ class GitHubService {
     return this.repoList;
   }
 
+  // Load folder structure of 'repoDir'
+  async loadFolderStructure(repoDir, currentPath) {
+    const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+    const result = [];
+
+    for (const entry of entries) {
+      const fullPath = path.join(currentPath, entry.name);
+      const relativePath = path.relative(repoDir, fullPath);
+      
+      if (entry.isDirectory()) {
+        if (entry.name !== ".git") {
+          result.push({
+            name: entry.name,
+            path: relativePath,
+            size: 0,
+            type: 'dir',
+            content: await this.loadFolderStructure(repoDir, fullPath)
+          });
+        }
+      } else {
+        const stats = fs.statSync(fullPath);
+        result.push({
+          name: entry.name,
+          path: relativePath,
+          size: stats.size,
+          type: 'file',
+          content: null
+        });
+      }
+    }
+
+    return result;
+  };
+
   async getRepositoryContents(repoName) {
     const repoDir = path.join(tempDir, repoName);
     try {
@@ -73,43 +107,21 @@ class GitHubService {
         console.log(`Repository already exists: ${repoDir}`);
       }
 
-      // Load folder structure of 'repoDir'
-      const loadFolderStructure = async (currentPath) => {
-        const entries = fs.readdirSync(currentPath, { withFileTypes: true });
-        const result = [];
-
-        for (const entry of entries) {
-          const fullPath = path.join(currentPath, entry.name);
-          const relativePath = path.relative(repoDir, fullPath);
-          
-          if (entry.isDirectory()) {
-            if (entry.name !== ".git") {
-              result.push({
-                name: entry.name,
-                path: relativePath,
-                size: 0,
-                type: 'dir',
-                content: await loadFolderStructure(fullPath)
-              });
-            }
-          } else {
-            const stats = fs.statSync(fullPath);
-            result.push({
-              name: entry.name,
-              path: relativePath,
-              size: stats.size,
-              type: 'file',
-              content: null
-            });
-          }
-        }
-
-        return result;
-      };
-
-      return await loadFolderStructure(repoDir);
+      return await this.loadFolderStructure(repoDir, repoDir);
     } catch (error) {
       console.error('Error fetching repository contents:', error.message);
+      throw error;
+    }
+  }
+
+  async updateRepositoryContents(repoName, branch = 'main') {
+    try {
+      const repoDir = path.join(tempDir, repoName);
+      const git = simpleGit(repoDir);
+      await git.pull('origin', branch);
+      return await this.loadFolderStructure(repoDir, repoDir);
+    } catch (error) {
+      console.error('Error pulling repository contents:', error.message);
       throw error;
     }
   }

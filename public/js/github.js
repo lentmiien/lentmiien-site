@@ -48,6 +48,35 @@ async function SelectRepository(e) {
   filepath.innerText = '';
 }
 
+async function RefreshRepository() {
+  const e = document.getElementById("repository");
+  // User select a repository from a select box
+  repo = e.value;
+  if (repo.length === 0) {
+    filestructure.innerHTML = '';
+    filecontent.innerHTML = '';
+    filepath.innerText = '';
+    return;
+  }
+
+  // Create: Send GET request to '/mypage/updatefolder' -> return file structure of top folder
+  const response = await fetch(`/mypage/updatefolder?repo=${repo}`);
+  const json = await response.json();
+  json.sort((a,b) => {
+    if (a.type === 'dir' && b.type === 'file') return -1;
+    if (a.type === 'file' && b.type === 'dir') return 1;
+    if (a.name < b.name) return -1;
+    if (a.name > b.name) return 1;
+    return 0;
+  });
+  cache[repo] = json;
+
+  // Display folder structure currently saved in cache
+  filestructure.innerHTML = CreateFolderDisplay(0, cache[repo]);
+  filecontent.innerHTML = '';
+  filepath.innerText = '';
+}
+
 function SaveToCache(input, data, path) {
   data.forEach(d => {
     if (d.path === path) {

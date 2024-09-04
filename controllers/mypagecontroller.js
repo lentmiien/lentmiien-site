@@ -141,6 +141,10 @@ exports.getfolder = async (req, res) => {
   const folder_content = await github.getRepositoryContents(req.query.repo);
   res.json(folder_content);
 };
+exports.updatefolder = async (req, res) => {
+  const folder_content = await github.updateRepositoryContents(req.query.repo);
+  res.json(folder_content);
+};
 exports.getfile = async (req, res) => {
   const file_content = await github.getFileContent(req.query.repo, req.query.path);
   res.json({data: file_content});
