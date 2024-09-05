@@ -4,19 +4,6 @@ const filepath = document.getElementById('filepath');
 let repo = '';
 const cache = {};
 
-function CreateFolderDisplay(level, data) {
-  let output = "";
-  data.forEach(d => {
-    if (d.type === "dir") {
-      output += `<div><button class="btn btn-link" style="padding-left:${level*10}px;">(${d.name})</button></div>`;
-      output += CreateFolderDisplay(level+1, d.content);
-    } else {
-      output += `<div><button class="btn btn-link" style="padding-left:${level*10}px;" onclick="LoadFile('${d.path.split('\\').join('/')}')">${d.name}</button></div>`;
-    }
-  });
-  return output;
-}
-
 const lv = [
   "",
   ">",
@@ -69,8 +56,7 @@ async function SelectRepository(e) {
   }
 
   // Display folder structure currently saved in cache
-  filestructure.innerHTML = `<select class="form-control"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
-  filestructure.innerHTML += CreateFolderDisplay(0, cache[repo]);
+  filestructure.innerHTML = `<select class="form-control" onchange="LoadFile(this)"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
   filecontent.innerHTML = '';
   filepath.innerText = '';
 }
@@ -99,8 +85,7 @@ async function RefreshRepository() {
   cache[repo] = json;
 
   // Display folder structure currently saved in cache
-  filestructure.innerHTML = `<select class="form-control"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
-  filestructure.innerHTML += CreateFolderDisplay(0, cache[repo]);
+  filestructure.innerHTML = `<select class="form-control" onchange="LoadFile(this)"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
   filecontent.innerHTML = '';
   filepath.innerText = '';
 }
@@ -136,7 +121,8 @@ function LoadCacheFileData(data, path) {
   return output;
 }
 
-async function LoadFile(path) {
+async function LoadFile(e) {
+  const path = e.value;
   if (repo.length === 0 || !(repo in cache)) {
     filestructure.innerHTML = '';
     filecontent.innerHTML = '';

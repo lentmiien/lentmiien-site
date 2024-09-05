@@ -10,10 +10,10 @@ block content
           option(value=rep.name, title=rep.description)= `${rep.name} (${rep.stars})`
   .row 
     .col-2
-      h2 Navigate
       button.btn.btn-warning(onclick="RefreshRepository()") Refresh
-      #filestructure
-    .col-10
+    #filestructure.col-10
+  .row
+    .col
       h2 File content: 
         b#filepath
         button.btn.btn-primary(onclick="CopyFile()") Copy file
