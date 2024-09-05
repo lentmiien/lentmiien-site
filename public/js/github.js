@@ -17,6 +17,32 @@ function CreateFolderDisplay(level, data) {
   return output;
 }
 
+const lv = [
+  "",
+  ">",
+  ">>",
+  ">>>",
+  ">>>>",
+  ">>>>>",
+  ">>>>>>",
+  ">>>>>>>",
+  ">>>>>>>>",
+  ">>>>>>>>>",
+  ">>>>>>>>>>",
+];
+function CreateFolderSelect(level, data) {
+  let output = "";
+  data.forEach(d => {
+    if (d.type === "dir") {
+      output += `<optgroup label="${lv[level]}${d.name}"></optgroup>`;
+      output += CreateFolderSelect(level+1, d.content);
+    } else {
+      output += `<option value="${d.path.split('\\').join('/')}">${lv[level]}${d.name}</option>`;
+    }
+  });
+  return output;
+}
+
 async function SelectRepository(e) {
   // User select a repository from a select box
   repo = e.value;
@@ -43,7 +69,8 @@ async function SelectRepository(e) {
   }
 
   // Display folder structure currently saved in cache
-  filestructure.innerHTML = CreateFolderDisplay(0, cache[repo]);
+  filestructure.innerHTML = `<select class="form-control"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
+  filestructure.innerHTML += CreateFolderDisplay(0, cache[repo]);
   filecontent.innerHTML = '';
   filepath.innerText = '';
 }
@@ -72,7 +99,8 @@ async function RefreshRepository() {
   cache[repo] = json;
 
   // Display folder structure currently saved in cache
-  filestructure.innerHTML = CreateFolderDisplay(0, cache[repo]);
+  filestructure.innerHTML = `<select class="form-control"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
+  filestructure.innerHTML += CreateFolderDisplay(0, cache[repo]);
   filecontent.innerHTML = '';
   filepath.innerText = '';
 }
