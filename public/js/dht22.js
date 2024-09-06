@@ -205,24 +205,6 @@ function PlotDetailedGraph(parent_element) {
       .attr("stroke", "red")
       .attr("fill", "none");
 
-  // svg.append("path")
-  //     .datum(detailed_data)
-  //     .attr("class", "line")
-  //     .attr("d", lineMin)
-  //     .attr("stroke", "red")
-  //     .attr("stroke-dasharray", "3,3")
-  //     .attr("stroke-width", "1")
-  //     .attr("fill", "none");
-
-  // svg.append("path")
-  //     .datum(detailed_data)
-  //     .attr("class", "line")
-  //     .attr("d", lineMax)
-  //     .attr("stroke", "red")
-  //     .attr("stroke-dasharray", "3,3")
-  //     .attr("stroke-width", "1")
-  //     .attr("fill", "none");
-
   // Humidity lines
   svg.append("path")
       .datum(detailed_data)
@@ -230,24 +212,6 @@ function PlotDetailedGraph(parent_element) {
       .attr("d", lineHumidityAvg)
       .attr("stroke", "blue")
       .attr("fill", "none");
-
-  // svg.append("path")
-  //     .datum(detailed_data)
-  //     .attr("class", "line")
-  //     .attr("d", lineHumidityMin)
-  //     .attr("stroke", "blue")
-  //     .attr("stroke-dasharray", "3,3")
-  //     .attr("stroke-width", "1")
-  //     .attr("fill", "none");
-
-  // svg.append("path")
-  //     .datum(detailed_data)
-  //     .attr("class", "line")
-  //     .attr("d", lineHumidityMax)
-  //     .attr("stroke", "blue")
-  //     .attr("stroke-dasharray", "3,3")
-  //     .attr("stroke-width", "1")
-  //     .attr("fill", "none");
 
   // Add horizontal lines for humidity values
   svg.append("line")
@@ -393,10 +357,81 @@ function PlotHistograms(parent_element) {
     .attr("stroke-dasharray", "5,5");
 }
 
+function generateAnalyticsTable() {
+  const now = new Date();
+  const last24Hours = detailed_data.filter(d => (now - new Date(d.timestamp)) <= 24 * 60 * 60 * 1000);
+  const previous24Hours = detailed_data.filter(d => (now - new Date(d.timestamp)) > 24 * 60 * 60 * 1000 && (now - new Date(d.timestamp)) <= 48 * 60 * 60 * 1000);
+  const twoPeriodsAgo = detailed_data.filter(d => (now - new Date(d.timestamp)) > 48 * 60 * 60 * 1000 && (now - new Date(d.timestamp)) <= 72 * 60 * 60 * 1000);
+
+  function calculateMetrics(data) {
+    const temperatures = data.map(d => d.avg.temperature);
+    const humidities = data.map(d => d.avg.humidity);
+    
+    return {
+      avgTemp: d3.mean(temperatures).toFixed(2),
+      avgHumidity: d3.mean(humidities).toFixed(2),
+      minTemp: d3.min(temperatures).toFixed(2),
+      maxTemp: d3.max(temperatures).toFixed(2),
+      minHumidity: d3.min(humidities).toFixed(2),
+      maxHumidity: d3.max(humidities).toFixed(2),
+      humidityInRange: (humidities.filter(h => h >= 30 && h <= 50).length / humidities.length * 100).toFixed(2),
+      tempVariation: (d3.deviation(temperatures) || 0).toFixed(2),
+      humidityVariation: (d3.deviation(humidities) || 0).toFixed(2)
+    };
+  }
+
+  const last24HoursMetrics = calculateMetrics(last24Hours);
+  const previous24HoursMetrics = calculateMetrics(previous24Hours);
+  const twoPeriodsAgoMetrics = calculateMetrics(twoPeriodsAgo);
+
+  const table = d3.select("#analytics")
+    .append("table")
+    .attr("class", "analytics-table table table-striped");
+
+  const thead = table.append("thead");
+  const tbody = table.append("tbody");
+
+  thead.append("tr")
+    .selectAll("th")
+    .data(["Metric", "Last 24 Hours", "24-48 Hours Ago", "48-72 Hours Ago"])
+    .enter()
+    .append("th")
+    .text(d => d);
+
+  const rows = [
+    {name: "Average Temperature (°C)", current: last24HoursMetrics.avgTemp, previous: previous24HoursMetrics.avgTemp, oldest: twoPeriodsAgoMetrics.avgTemp},
+    {name: "Average Humidity (%)", current: last24HoursMetrics.avgHumidity, previous: previous24HoursMetrics.avgHumidity, oldest: twoPeriodsAgoMetrics.avgHumidity},
+    {name: "Temperature Range (°C)", current: `${last24HoursMetrics.minTemp} - ${last24HoursMetrics.maxTemp}`, previous: `${previous24HoursMetrics.minTemp} - ${previous24HoursMetrics.maxTemp}`, oldest: `${twoPeriodsAgoMetrics.minTemp} - ${twoPeriodsAgoMetrics.maxTemp}`},
+    {name: "Humidity Range (%)", current: `${last24HoursMetrics.minHumidity} - ${last24HoursMetrics.maxHumidity}`, previous: `${previous24HoursMetrics.minHumidity} - ${previous24HoursMetrics.maxHumidity}`, oldest: `${twoPeriodsAgoMetrics.minHumidity} - ${twoPeriodsAgoMetrics.maxHumidity}`},
+    {name: "Humidity in 30-50% Range (%)", current: last24HoursMetrics.humidityInRange, previous: previous24HoursMetrics.humidityInRange, oldest: twoPeriodsAgoMetrics.humidityInRange},
+    {name: "Temperature Variation (°C)", current: last24HoursMetrics.tempVariation, previous: previous24HoursMetrics.tempVariation, oldest: twoPeriodsAgoMetrics.tempVariation},
+    {name: "Humidity Variation (%)", current: last24HoursMetrics.humidityVariation, previous: previous24HoursMetrics.humidityVariation, oldest: twoPeriodsAgoMetrics.humidityVariation}
+  ];
+
+  tbody.selectAll("tr")
+    .data(rows)
+    .enter()
+    .append("tr")
+    .html(d => `
+      <td>${d.name}</td>
+      <td>${formatWithChange(d.current, d.previous)}</td>
+      <td>${formatWithChange(d.previous, d.oldest)}</td>
+      <td>${d.oldest}</td>
+    `);
+
+  function formatWithChange(current, previous) {
+    if (current.includes('-') || previous.includes('-')) return current;
+    const change = (parseFloat(current) - parseFloat(previous)).toFixed(2);
+    const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→';
+    return `${current} (${Math.abs(change)} ${arrow})`;
+  }
+}
+
 function PlotGraphs() {
   PlotAggregatedGraph("average");
   PlotDetailedGraph("detailed");
   PlotHistograms("histogram");
+  generateAnalyticsTable();
 }
 
 document.addEventListener('DOMContentLoaded', (event) => {
