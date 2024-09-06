@@ -121,6 +121,8 @@ function LoadCacheFileData(data, path) {
   return output;
 }
 
+let current_file_data = "";
+
 async function LoadFile(e) {
   const path = e.value;
   if (repo.length === 0 || !(repo in cache)) {
@@ -146,6 +148,7 @@ async function LoadFile(e) {
   // Display file data
   filecontent.innerHTML = `<pre>${c_data}</pre>`;
   filepath.innerText = path;
+  current_file_data = c_data;
 }
 
 const content_type = {
@@ -155,10 +158,8 @@ const content_type = {
   "json": "json",
 };
 function CopyFile() {
-  const f = filecontent.innerHTML.split("<pre>")[1].split("</pre>")[0];
   const ext = filepath.innerText.split(".")[1];
-
-  const copy_buffer = `### File: ${filepath.innerText}\n\`\`\`${ext in content_type ? content_type[ext] : ""}\n${f}\n\`\`\``;
+  const copy_buffer = `### File: ${filepath.innerText}\n\`\`\`${ext in content_type ? content_type[ext] : ""}\n${current_file_data}\n\`\`\``;
   Copy(copy_buffer);
 }
 

@@ -94,6 +94,23 @@ function PlotAggregatedGraph(parent_element) {
       .attr("d", line1)
       .attr("stroke", "blue")
       .attr("fill", "none");
+
+  // Add horizontal lines for humidity values
+  svg.append("line")
+    .attr("x1", 0)
+    .attr("x2", width)
+    .attr("y1", y1(30))
+    .attr("y2", y1(30))
+    .attr("stroke", "green")
+    .attr("stroke-dasharray", "5,5");
+
+  svg.append("line")
+    .attr("x1", 0)
+    .attr("x2", width)
+    .attr("y1", y1(50))
+    .attr("y2", y1(50))
+    .attr("stroke", "green")
+    .attr("stroke-dasharray", "5,5");
 }
 
 function PlotDetailedGraph(parent_element) {
@@ -231,6 +248,23 @@ function PlotDetailedGraph(parent_element) {
   //     .attr("stroke-dasharray", "3,3")
   //     .attr("stroke-width", "1")
   //     .attr("fill", "none");
+
+  // Add horizontal lines for humidity values
+  svg.append("line")
+    .attr("x1", 0)
+    .attr("x2", width)
+    .attr("y1", y1(30))
+    .attr("y2", y1(30))
+    .attr("stroke", "green")
+    .attr("stroke-dasharray", "5,5");
+
+  svg.append("line")
+    .attr("x1", 0)
+    .attr("x2", width)
+    .attr("y1", y1(50))
+    .attr("y2", y1(50))
+    .attr("stroke", "green")
+    .attr("stroke-dasharray", "5,5");
 }
 
 function PlotHistograms(parent_element) {
@@ -340,6 +374,23 @@ function PlotHistograms(parent_element) {
     .attr("text-anchor", "middle")
     .style("font-size", "16px")
     .text("Humidity Distribution");
+
+  // Add vertical lines for humidity values
+  svgHum.append("line")
+    .attr("x1", x_hum(30))
+    .attr("x2", x_hum(30))
+    .attr("y1", height)
+    .attr("y2", 0)
+    .attr("stroke", "green")
+    .attr("stroke-dasharray", "5,5");
+
+  svgHum.append("line")
+    .attr("x1", x_hum(50))
+    .attr("x2", x_hum(50))
+    .attr("y1", height)
+    .attr("y2", 0)
+    .attr("stroke", "green")
+    .attr("stroke-dasharray", "5,5");
 }
 
 function PlotGraphs() {
