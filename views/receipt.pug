@@ -24,3 +24,4 @@ block content
           td= `${d.business_name} - ${d.business_address}`
           td 
             a.btn.btn-link(href=`/receipt/view_receipt/${d._id.toString()}`) View/Edit
+            a.btn.btn-danger(href=`/receipt/delete_receipt/${d._id.toString()}`) Delete

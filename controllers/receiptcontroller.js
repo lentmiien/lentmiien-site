@@ -71,6 +71,11 @@ exports.correct_receipt = async (req, res) => {
   res.redirect('/receipt');
 }
 
+exports.delete_receipt = async (req, res) => {
+  await Receipt.findByIdAndDelete(req.params.id);
+  res.redirect('/receipt');
+}
+
 function ParseData(text) {
   let data = [];
   let rows = text.split('\n');
