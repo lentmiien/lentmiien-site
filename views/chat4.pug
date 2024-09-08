@@ -43,7 +43,7 @@ block content
                       each val in tags
                         li
                           a.dropdown-item(href='#', onclick=`setTag('tags', '${val.label}')`) #{val.label} (#{val.count})
-            label(for="img") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
+            label(for="imgs") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
             input#imgs.form-control(type="file", name="imgs", multiple)
             label(for="context") Context
             textarea#context.form-control(name="context", cols="30", rows="10", required) You are a helpful assistant.

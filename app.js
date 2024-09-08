@@ -188,6 +188,9 @@ app.use('/quicknote', isAuthenticated, authorize("quicknote"), quicknoteRouter);
 const esRouter = require('./routes/es');
 app.use('/es', isAuthenticated, authorize("emergencystock"), esRouter);
 
+const receiptRouter = require('./routes/receipt');
+app.use('/receipt', isAuthenticated, authorize("receipt"), receiptRouter);
+
 const adminRouter = require('./routes/admin');
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 

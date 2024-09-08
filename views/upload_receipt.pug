@@ -1,0 +1,17 @@
+extends layout
+
+block content
+  h2 Review receipt details 
+  img(src=`/img/${receipt.file}`, alt="receipt")
+  form(action=`/receipt/correct_receipt/${receipt._id.toString()}`, method="post") 
+    label(for="date") 
+    input#date.form-control(type="date", name="date", value=receipt.date.toJSON().split('T')[0])
+    label(for="amount") 
+    input#amount.form-control(type="number", name="amount", value=receipt.amount)
+    label(for="method") 
+    input#method.form-control(type="text", name="method", value=receipt.method)
+    label(for="business_name") 
+    input#business_name.form-control(type="text", name="business_name", value=receipt.business_name)
+    label(for="business_address") 
+    input#business_address.form-control(type="text", name="business_address", value=receipt.business_address)
+    input.btn.btn-success(type="submit", value="Update")

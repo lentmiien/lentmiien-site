@@ -75,6 +75,8 @@ const Dht22DetailedData = require('./models/dht22_detailed_data');
 // Emergency Stock
 const ESCategory = require('./models/es_category');
 const ESItem = require('./models/es_item');
+// Receipt
+const Receipt = require('./models/receipt');
 
 // Export models
 module.exports = {
@@ -120,4 +122,5 @@ module.exports = {
   Dht22DetailedData,
   ESCategory,
   ESItem,
+  Receipt,
 };
