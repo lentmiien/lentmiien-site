@@ -77,6 +77,8 @@ const ESCategory = require('./models/es_category');
 const ESItem = require('./models/es_item');
 // Receipt
 const Receipt = require('./models/receipt');
+// Product Details
+const ProductDetails = require('./models/product_details');
 
 // Export models
 module.exports = {
@@ -123,4 +125,5 @@ module.exports = {
   ESCategory,
   ESItem,
   Receipt,
+  ProductDetails,
 };

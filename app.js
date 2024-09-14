@@ -191,6 +191,9 @@ app.use('/es', isAuthenticated, authorize("emergencystock"), esRouter);
 const receiptRouter = require('./routes/receipt');
 app.use('/receipt', isAuthenticated, authorize("receipt"), receiptRouter);
 
+const productRouter = require('./routes/product_details');
+app.use('/product', isAuthenticated, authorize("product"), productRouter);
+
 const adminRouter = require('./routes/admin');
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 

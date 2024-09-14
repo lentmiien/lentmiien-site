@@ -34,6 +34,6 @@ block content
             input.form-check-input(type="checkbox", id=p, name="route_permissions", value=p)
             label.form-check-label(for=p)= p
       input.btn.btn-warning(type="submit", value="Update")
-  pre#roles= JSON.stringify(roles, null, 2)
-  pre#selection= JSON.stringify(selection, null, 2)
+  pre#roles.hidden= JSON.stringify(roles, null, 2)
+  pre#selection.hidden= JSON.stringify(selection, null, 2)
   script(src="/js/manage_roles.js") 
