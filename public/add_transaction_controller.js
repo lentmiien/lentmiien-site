@@ -121,7 +121,7 @@ function RefreshForm() {
     }
   });
 }
-RefreshForm();
+// RefreshForm();
 
 function FilterDropdown(filter_text_element, filter_element_class) {
   const text = document.getElementById(filter_text_element).value.toUpperCase();
@@ -143,3 +143,13 @@ function SetDropdownValue(element_id, value) {
   document.getElementById(element_id).value = value;
   RefreshForm();
 }
+
+function PreSet() {
+  const data = JSON.parse(document.getElementById("pre_set").innerHTML);
+  const keys = Object.keys(data);
+  keys.forEach(key => {
+    document.getElementById(key).value = data[key];
+  });
+  RefreshForm();
+}
+PreSet();

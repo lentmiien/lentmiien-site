@@ -433,7 +433,7 @@ exports.add_transaction = async (req, res) => {
     sort_categories[c.type].push(c);
   });
 
-  res.render('add_transaction', {new_accounts: accounts, new_categories, sort_categories, tags, businesses, account_lookup, category_lookup, category_lookup_rev, input_network});
+  res.render('add_transaction', {new_accounts: accounts, new_categories, sort_categories, tags, businesses, account_lookup, category_lookup, category_lookup_rev, input_network, pre_set: req.query});
 };
 
 exports.add_transaction_post = async (req, res) => {
