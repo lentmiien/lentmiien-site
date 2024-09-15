@@ -22,14 +22,48 @@ exports.upload_product_data = async (req, res) => {
   const dstr = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`
 
   // Context
-  const context = ``;
+  const context = `You are a helpful assistant, please use the following response template when responding:
+
+**Response template:**
+
+---
+
+- **Name:** {full product name}
+- **Material:** {material details}
+- **Size:** {general size details}
+- **Usage:** {typical usage of the item}
+- **Additional Notes:** {additional details about item and additional parts, if available}
+- **Price:** xxx JPY
+
+---
+`;
   
   console.log(req.body);
   const output = [];
   for (let i = 0; i < req.body.data.length; i++) {
     // Generate `ai_description`
     const title = `Product details ${dstr} [${i}]`;
-    const prompt = ``;
+    const prompt = `Please help me summarize the details of the item below.
+The summary is to be used for customs clearance, so material and usage is the most important details.
+
+---
+
+()
+
+**Name:** 
+
+
+
+**Price:**
+
+
+
+**Details:**
+
+
+
+---
+`;
     const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, [], {title, category:"Product details", tags:"dhl,product_details", context, prompt}, "OpenAI_mini");
     await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4o-mini");
     const conversation = await conversationService.getConversationsById(conversation_id);
