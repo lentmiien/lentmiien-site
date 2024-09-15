@@ -31,6 +31,8 @@ block content
       input#id.form-control(type="text", name="id", readonly)
       label(for="content") Content text 
       textarea#content.form-control(name="content")
-      button.btn.btn.primary(onclick="Update()") Update
-  pre#products.hid_den= JSON.stringify(products, null, 2)
-  script(src="/js/products.js") 
+      button.btn.btn-primary(onclick="Update()") Update
+  pre#products.hidden= JSON.stringify(products, null, 2)
+  script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js") 
+  script(src="https://cdn.rawgit.com/Keyang/node-csvtojson/d41f44aa/browser/csvtojson.min.js")
+  script(src="/js/products.js", defer) 

@@ -20,7 +20,7 @@ window.addEventListener('load', function () {
     file.binary = reader.result;
 
     // Convert input data (csv) to JSON data
-    data = csvToJson(file.binary.toString());
+    data = await csvToJson(file.binary.toString());
 
     // Check if any of the entries exist in `products`
     const post_data = [];
@@ -35,9 +35,9 @@ window.addEventListener('load', function () {
       if (found) continue;
       else post_data.push(data[i]);
     }
-    // For non-existing entries, send to `/products/upload_product_data` as POST request
+    // For non-existing entries, send to `/product/upload_product_data` as POST request
     if (post_data.length > 0) {
-      const response = await fetch("/products/upload_product_data", {
+      const response = await fetch("/product/upload_product_data", {
         method: "POST", // *GET, POST, PUT, DELETE, etc.
         mode: "cors", // no-cors, *cors, same-origin
         cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
@@ -63,7 +63,7 @@ window.addEventListener('load', function () {
     for (let i = 0; i < data.length; i++) {
       for (let j = 0; j < products.length; j++) {
         if (data[i][0] === products[j].product_code) {
-          output.innerHTML += `<hr><b>${products[j].product_code}</b><pre>${products[j].ai_description}</pre>`;
+          output.innerHTML += `<hr><b>${products[j].product_code}</b>${marked.parse(products[j].ai_description)}`;
           break;
         }
       }
@@ -84,15 +84,13 @@ window.addEventListener('load', function () {
   });
 });
 
-const csvToJson = (string) => {
-  const output = [];
-  const rows = string.split(`***`);
-  rows.forEach(row => {
-    if (row.length > 0) {
-      output.push(row.split('|'));
-    }
-  });
-  return output;
+const csvToJson = async (string) => {
+  const result = await csv({
+    noheader: true,
+    output: "csv",
+  })
+  .fromString(string);
+  return result;
 }
 
 let index = -1;
@@ -113,7 +111,7 @@ async function Update() {
 
   products[index].ai_description = document.getElementById('content').value;
 
-  await fetch("/products/update_product", {
+  await fetch("/product/update_product", {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
     mode: "cors", // no-cors, *cors, same-origin
     cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached
@@ -141,7 +139,7 @@ async function Delete(product_code) {
   }
 
   if (id) {
-    await fetch("/products/delete_product", {
+    await fetch("/product/delete_product", {
       method: "POST", // *GET, POST, PUT, DELETE, etc.
       mode: "cors", // no-cors, *cors, same-origin
       cache: "no-cache", // *default, no-cache, reload, force-cache, only-if-cached

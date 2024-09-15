@@ -66,7 +66,7 @@ ${req.body.data[i][1]}
 
 **Price:**
 
-${req.body.data[i][5]}
+${req.body.data[i][5]} JPY
 
 **Details:**
 
