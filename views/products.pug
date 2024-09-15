@@ -13,11 +13,24 @@ block content
           tr 
             th Item Code 
             th Action 
-        tbody 
+        tbody#data_list 
           each p in products
             tr(title=p.ai_description) 
               td= p.product_code
               td 
                 button.btn.btn-primary(onclick=`Details("${p.product_code}")`) Details
+                button.btn.btn-danger(onclick=`Delete("${p.product_code}")`) Delete
+  .row 
+    .col
+      h2 Output 
+      #output
+  .row 
+    .col 
+      h2 Edit product 
+      label(for="id") ID of entry to edit
+      input#id.form-control(type="text", name="id", readonly)
+      label(for="content") Content text 
+      textarea#content.form-control(name="content")
+      button.btn.btn.primary(onclick="Update()") Update
   pre#products.hid_den= JSON.stringify(products, null, 2)
   script(src="/js/products.js") 
