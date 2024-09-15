@@ -42,25 +42,35 @@ exports.upload_product_data = async (req, res) => {
   const output = [];
   for (let i = 0; i < req.body.data.length; i++) {
     // Generate `ai_description`
+    const all_details = [];
+    if (req.body.data[i][2].length > 0) {
+      all_details.push(`- ${req.body.data[i][2].split('\n').join('\n- ')}`);
+    }
+    if (req.body.data[i][3].length > 0) {
+      all_details.push(`- ${req.body.data[i][2].split(']\n').join('] ').split('\n').join('\n- ')}`);
+    }
+    if (req.body.data[i][4].length > 0) {
+      all_details.push(req.body.data[i][4]);
+    }
     const title = `Product details ${dstr} [${i}]`;
     const prompt = `Please help me summarize the details of the item below.
 The summary is to be used for customs clearance, so material and usage is the most important details.
 
 ---
 
-()
+(${req.body.data[i][0]})
 
 **Name:** 
 
-
+${req.body.data[i][1]}
 
 **Price:**
 
-
+${req.body.data[i][5]}
 
 **Details:**
 
-
+${all_details.join("\n\n")}
 
 ---
 `;
