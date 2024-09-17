@@ -33,9 +33,21 @@ class ConversationService {
     this.knowledgeService = knowledgeService;
   }
 
-  async getConversationsForUser(user_id) {
+  async getConversationsForUser(user_id, params=null) {
     const conversations = await this.conversationModel.find({user_id}).sort({ updated_date: -1 }).exec();
-    return conversations;
+    if (params) {
+      const _2week_ = new Date(Date.now() - (1000*60*60*24*14));
+      return conversations.filter(d => {
+        if (params.categories.indexOf(d.category) >= 0) {
+          if (d.updated_date > _2week_) return true;
+          else return false;
+        } else {
+          return true;
+        }
+      });
+    } else {
+      return conversations;
+    }
   }
 
   async getInRange(user_id, start, end) {

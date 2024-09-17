@@ -28,7 +28,7 @@ exports.index = async (req, res) => {
   const user_id = req.user.name;
 
   const templates = await templateService.getTemplates();
-  const conversations = await conversationService.getConversationsForUser(user_id);
+  const conversations = await conversationService.getConversationsForUser(user_id, {categories:["OCR"]});
   const knowledges = await knowledgeService.getKnowledgesByUser(user_id);
   const all_messages = [];//await messageService.getMessagesByUserId(user_id);// Removed due to large amount of data slowing down the page
   const agents = await agentService.getAgentAll();
