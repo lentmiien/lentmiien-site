@@ -94,6 +94,19 @@ function PlotAggregatedGraph(parent_element) {
       .attr("d", line1)
       .attr("stroke", "blue")
       .attr("fill", "none");
+  
+  // Add horizontal lines for temperature values (in the background)
+  const temperatureLines = [-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40];
+  temperatureLines.forEach(temp => {
+    svg.append("line")
+      .attr("x1", 0)
+      .attr("x2", width)
+      .attr("y1", y0(temp))
+      .attr("y2", y0(temp))
+      .attr("stroke", "lightgray")
+      .attr("stroke-width", 1)
+      .lower(); // This puts the line in the background
+  });
 
   // Add horizontal lines for humidity values
   svg.append("line")
@@ -111,6 +124,49 @@ function PlotAggregatedGraph(parent_element) {
     .attr("y2", y1(50))
     .attr("stroke", "green")
     .attr("stroke-dasharray", "5,5");
+
+  // Calculate daily averages
+  const dailyAverages = {};
+  aggregated_data.forEach(d => {
+    const date = d.timestamp.toDateString();
+    if (!dailyAverages[date]) {
+      dailyAverages[date] = { temps: [], humidities: [], timestamp: d.timestamp };
+    }
+    dailyAverages[date].temps.push(d.average_temperature);
+    dailyAverages[date].humidities.push(d.average_humidity);
+  });
+
+  const dailyAverageData = Object.values(dailyAverages).map(day => ({
+    timestamp: day.timestamp,
+    avgTemp: d3.mean(day.temps),
+    avgHumidity: d3.mean(day.humidities)
+  }));
+
+  // Add daily average temperature line
+  const dailyAvgTempLine = d3.line()
+    .x(d => x(d.timestamp))
+    .y(d => y0(d.avgTemp));
+
+  svg.append("path")
+      .datum(dailyAverageData)
+      .attr("class", "line")
+      .attr("d", dailyAvgTempLine)
+      .attr("stroke", "darkred")
+      .attr("stroke-width", 3) // Thicker line
+      .attr("fill", "none");
+
+  // Add daily average humidity line
+  const dailyAvgHumidityLine = d3.line()
+    .x(d => x(d.timestamp))
+    .y(d => y1(d.avgHumidity));
+
+  svg.append("path")
+      .datum(dailyAverageData)
+      .attr("class", "line")
+      .attr("d", dailyAvgHumidityLine)
+      .attr("stroke", "darkblue")
+      .attr("stroke-width", 3) // Thicker line
+      .attr("fill", "none");
 }
 
 function PlotDetailedGraph(parent_element) {
@@ -212,6 +268,19 @@ function PlotDetailedGraph(parent_element) {
       .attr("d", lineHumidityAvg)
       .attr("stroke", "blue")
       .attr("fill", "none");
+  
+  // Add horizontal lines for temperature values (in the background)
+  const temperatureLines = [-10, -5, 0, 5, 10, 15, 20, 25, 30, 35, 40];
+  temperatureLines.forEach(temp => {
+    svg.append("line")
+      .attr("x1", 0)
+      .attr("x2", width)
+      .attr("y1", y0(temp))
+      .attr("y2", y0(temp))
+      .attr("stroke", "lightgray")
+      .attr("stroke-width", 1)
+      .lower(); // This puts the line in the background
+  });
 
   // Add horizontal lines for humidity values
   svg.append("line")
