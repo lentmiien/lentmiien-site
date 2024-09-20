@@ -47,7 +47,7 @@ exports.upload_product_data = async (req, res) => {
       all_details.push(`- ${req.body.data[i][2].split('\n').join('\n- ')}`);
     }
     if (req.body.data[i][3].length > 0) {
-      all_details.push(`- ${req.body.data[i][2].split(']\n').join('] ').split('\n').join('\n- ')}`);
+      all_details.push(`Content:\n- ${req.body.data[i][3].split(']\n').join('] ').split('\n').join('\n- ')}`);
     }
     if (req.body.data[i][4].length > 0) {
       all_details.push(req.body.data[i][4]);
