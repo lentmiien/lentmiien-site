@@ -11,7 +11,7 @@ const conversationService = new ConversationService(Conversation4Model, messageS
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 
 exports.receipt = async (req, res) => {
-  const receipts = await Receipt.find();
+  const receipts = await Receipt.find().sort('-date');
   res.render('receipt', {receipts});
 };
 

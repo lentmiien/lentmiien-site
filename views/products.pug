@@ -30,7 +30,7 @@ block content
       label(for="id") ID of entry to edit
       input#id.form-control(type="text", name="id", readonly)
       label(for="content") Content text 
-      textarea#content.form-control(name="content")
+      textarea#content.form-control(name="content", rows=12)
       button.btn.btn-primary(onclick="Update()") Update
   pre#products.hidden= JSON.stringify(products, null, 2)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js") 
