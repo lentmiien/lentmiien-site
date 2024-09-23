@@ -604,7 +604,7 @@ exports.add_transaction_post = async (req, res) => {
   };
   const add_entry = new TransactionDBModel(data);
   await add_entry.save();
-  res.render('add_transaction', {new_accounts, new_categories, sort_categories, tags, businesses, account_lookup, category_lookup, category_lookup_rev, input_network, entry: add_entry});
+  res.render('add_transaction', {new_accounts, new_categories, sort_categories, tags, businesses, account_lookup, category_lookup, category_lookup_rev, input_network, entry: add_entry, pre_set: {}});
 };
 
 exports.manage_accounts = async (req, res) => {
