@@ -6,7 +6,20 @@
     <link rel="stylesheet" href="/games/css/maze_game_style.css">
 </head>
 <body>
+    <!-- Splash Screen -->
+    <div id="splashScreen">
+        <img src="/games/img/maze_splash.webp" alt="Maze Adventure Splash Screen">
+        <button id="enterGameButton">Enter Game</button>
+    </div>
     <canvas id="gameCanvas"></canvas>
+    <!-- Introduction Overlay -->
+    <div id="introOverlay">
+        <div id="introContent">
+            <h1>Welcome to the Maze Adventure!</h1>
+            <p>You are an explorer seeking hidden treasures in mysterious mazes. Navigate through the labyrinths, collect treasures, and reach the exit to progress. Good luck!</p>
+            <button id="startButton">Start Game</button>
+        </div>
+    </div>
     <script src="/games/js/maze_game_script.js"></script>
 </body>
 </html>
