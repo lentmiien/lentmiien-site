@@ -258,7 +258,7 @@ class MessageService {
       category: parameters.category,
       tags: tags_array,
       prompt: parameters.prompt,
-      response: response.choices[0].message.content.split("sandbox:/img/").join("/img/"),
+      response: response.choices[0].message.content.split("sandbox:/img/").join("/img/").split("attachment://img/").join("/img/").split("attachment:/img/").join("/img/"),
       images: [],
       sound: '',
     };
