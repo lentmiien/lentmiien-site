@@ -167,6 +167,21 @@ const chatGPT = async (messages, model) => {
   }
 };
 
+const chatGPT_o1 = async (messages, model) => {
+  // context not supported, so remove context message
+  const use_msg = messages.filter(m => m.role != "system");
+  try {
+    const response = await OpenAI.chat.completions.create({
+      messages: use_msg,
+      model
+    });
+    return response;
+  } catch (error) {
+    console.error(`Error while calling the OpenAI API: ${error}`);
+    return null;
+  }
+};
+
 const chatGPT_Tool = async (messages, model, tools, tool_choice) => {
   try {
     const response = await openai.chat.completions.create({
@@ -354,6 +369,7 @@ const whisper = async (sound_path) => {
 module.exports = {
   OpenAIAPICallLog,
   chatGPT,
+  chatGPT_o1,
   chatGPT_Tool,
   embedding,
   GetModels,
