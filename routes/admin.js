@@ -14,4 +14,7 @@ router.post('/create_user', controller.create_user);
 router.get('/manage_roles', controller.manage_roles);
 router.post('/update_role', controller.update_role);
 
+router.get('/app_logs', controller.app_logs);
+router.get('/log_file/:file', controller.log_file);
+
 module.exports = router;

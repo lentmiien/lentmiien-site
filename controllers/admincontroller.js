@@ -121,3 +121,46 @@ exports.update_role = async (req, res) => {
 
   res.redirect('/admin/manage_roles');
 }
+
+exports.app_logs = (req, res) => {
+  const files = await getPM2LogFiles();
+  res.render("app_logs", {files});
+}
+
+exports.log_file = (req, res) => {
+  const file_data = await getLogFileContent(req.params.file);
+  res.render("log_file", {file_data});
+}
+
+const fs = require('fs');
+const path = require('path');
+
+// Function to get the content of the /home/pi/.pm2/logs/ folder
+function getPM2LogFiles() {
+    const logPath = '/home/pi/.pm2/logs/';
+    
+    return new Promise((resolve, reject) => {
+        fs.readdir(logPath, (err, files) => {
+            if (err) {
+                reject(`Error reading directory: ${err}`);
+            } else {
+                resolve(files);
+            }
+        });
+    });
+}
+
+// Function to get the content of a specific log file
+function getLogFileContent(filename) {
+    const filePath = path.join('/home/pi/.pm2/logs/', filename);
+    
+    return new Promise((resolve, reject) => {
+        fs.readFile(filePath, 'utf8', (err, data) => {
+            if (err) {
+                reject(`Error reading file: ${err}`);
+            } else {
+                resolve(data);
+            }
+        });
+    });
+}

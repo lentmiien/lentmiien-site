@@ -1,0 +1,7 @@
+extends layout
+
+block content
+  h2 PM2 log files
+  each file in files
+    div
+      a.btn.btn-link(href=`/admin/log_file/${file}`)= file
