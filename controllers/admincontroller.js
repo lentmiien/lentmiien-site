@@ -122,45 +122,51 @@ exports.update_role = async (req, res) => {
   res.redirect('/admin/manage_roles');
 }
 
-exports.app_logs = (req, res) => {
-  const files = await getPM2LogFiles();
-  res.render("app_logs", {files});
-}
-
-exports.log_file = (req, res) => {
-  const file_data = await getLogFileContent(req.params.file);
-  res.render("log_file", {file_data});
-}
-
 const fs = require('fs');
 const path = require('path');
 
-// Function to get the content of the /home/pi/.pm2/logs/ folder
+// Updated getPM2LogFiles function to filter out subfolders
 function getPM2LogFiles() {
     const logPath = '/home/pi/.pm2/logs/';
-    
-    return new Promise((resolve, reject) => {
-        fs.readdir(logPath, (err, files) => {
-            if (err) {
-                reject(`Error reading directory: ${err}`);
-            } else {
-                resolve(files);
-            }
+    try {
+        const files = fs.readdirSync(logPath);
+        const fileNames = files.filter(file => {
+            const filePath = path.join(logPath, file);
+            return fs.statSync(filePath).isFile();
         });
-    });
+        return fileNames;
+    } catch (err) {
+        throw new Error(`Error reading directory: ${err.message}`);
+    }
 }
 
-// Function to get the content of a specific log file
+// Existing getLogFileContent function
 function getLogFileContent(filename) {
     const filePath = path.join('/home/pi/.pm2/logs/', filename);
-    
-    return new Promise((resolve, reject) => {
-        fs.readFile(filePath, 'utf8', (err, data) => {
-            if (err) {
-                reject(`Error reading file: ${err}`);
-            } else {
-                resolve(data);
-            }
-        });
-    });
+    try {
+        const data = fs.readFileSync(filePath, 'utf8');
+        return data;
+    } catch (err) {
+        throw new Error(`Error reading file: ${err.message}`);
+    }
 }
+
+// Updated app_logs function with try...catch and error handling
+exports.app_logs = (req, res) => {
+    try {
+        const files = getPM2LogFiles();
+        res.render("app_logs", { files });
+    } catch (error) {
+        res.status(500).send(`Error fetching log files: ${error.message}`);
+    }
+};
+
+// Updated log_file function with try...catch and error handling
+exports.log_file = (req, res) => {
+    try {
+        const file_data = getLogFileContent(req.params.file);
+        res.render("log_file", { file_data });
+    } catch (error) {
+        res.status(500).send(`Error reading log file: ${error.message}`);
+    }
+};
