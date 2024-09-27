@@ -153,20 +153,20 @@ function getLogFileContent(filename) {
 
 // Updated app_logs function with try...catch and error handling
 exports.app_logs = (req, res) => {
-    try {
-        const files = getPM2LogFiles();
-        res.render("app_logs", { files });
-    } catch (error) {
-        res.status(500).send(`Error fetching log files: ${error.message}`);
-    }
+  try {
+    const files = getPM2LogFiles();
+    res.render("app_logs", { files });
+  } catch (error) {
+    res.status(500).render('error_page', {error: `Error fetching log files: ${error.message}`});
+  }
 };
 
 // Updated log_file function with try...catch and error handling
 exports.log_file = (req, res) => {
-    try {
-        const file_data = getLogFileContent(req.params.file);
-        res.render("log_file", { file_data, file: req.params.file });
-    } catch (error) {
-        res.status(500).send(`Error reading log file: ${error.message}`);
-    }
+  try {
+    const file_data = getLogFileContent(req.params.file);
+    res.render("log_file", { file_data, file: req.params.file });
+  } catch (error) {
+    res.status(500).render('error_page', {error: `Error reading log file: ${error.message}`});
+  }
 };
