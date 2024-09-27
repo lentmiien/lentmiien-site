@@ -171,7 +171,7 @@ const chatGPT_o1 = async (messages, model) => {
   // context not supported, so remove context message
   const use_msg = messages.filter(m => m.role != "system");
   try {
-    const response = await OpenAI.chat.completions.create({
+    const response = await openai.chat.completions.create({
       messages: use_msg,
       model
     });
