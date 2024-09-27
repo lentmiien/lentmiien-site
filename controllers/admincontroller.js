@@ -165,7 +165,7 @@ exports.app_logs = (req, res) => {
 exports.log_file = (req, res) => {
     try {
         const file_data = getLogFileContent(req.params.file);
-        res.render("log_file", { file_data });
+        res.render("log_file", { file_data, file: req.params.file });
     } catch (error) {
         res.status(500).send(`Error reading log file: ${error.message}`);
     }
