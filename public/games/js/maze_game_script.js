@@ -68,6 +68,53 @@ document.addEventListener('DOMContentLoaded', () => {
         splashScreen.style.display = 'none';
         showIntroduction();
     });
+
+    // Movement control buttons
+    const upButton = document.getElementById('upButton');
+    const downButton = document.getElementById('downButton');
+    const leftButton = document.getElementById('leftButton');
+    const rightButton = document.getElementById('rightButton');
+
+    // Event listeners for touch and mouse events
+    upButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        movePlayer('up');
+    }, { passive: false });
+
+    downButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        movePlayer('down');
+    }, { passive: false });
+
+    leftButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        movePlayer('left');
+    }, { passive: false });
+
+    rightButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        movePlayer('right');
+    }, { passive: false });
+
+    upButton.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        movePlayer('up');
+    });
+
+    downButton.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        movePlayer('down');
+    });
+
+    leftButton.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        movePlayer('left');
+    });
+
+    rightButton.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        movePlayer('right');
+    });
 });
 
 function showIntroduction() {
@@ -187,28 +234,21 @@ function placeTreasures() {
     }
 }
 
-document.addEventListener('keydown', handleKeyDown);
-document.addEventListener('keyup', handleKeyUp);
-
-function handleKeyDown(e) {
-    if (e.repeat) return; // Ignore auto-repeat keys
-
+// Function to handle player movement
+function movePlayer(direction) {
     let moved = false;
     let cell = maze[player.x][player.y];
 
-    if ((e.key === 'ArrowUp' || e.key === 'w') && !cell.walls[0]) {
+    if (direction === 'up' && !cell.walls[0]) {
         player.y--;
         moved = true;
-    }
-    else if ((e.key === 'ArrowRight' || e.key === 'd') && !cell.walls[1]) {
+    } else if (direction === 'right' && !cell.walls[1]) {
         player.x++;
         moved = true;
-    }
-    else if ((e.key === 'ArrowDown' || e.key === 's') && !cell.walls[2]) {
+    } else if (direction === 'down' && !cell.walls[2]) {
         player.y++;
         moved = true;
-    }
-    else if ((e.key === 'ArrowLeft' || e.key === 'a') && !cell.walls[3]) {
+    } else if (direction === 'left' && !cell.walls[3]) {
         player.x--;
         moved = true;
     }
@@ -223,6 +263,30 @@ function handleKeyDown(e) {
 
         // Check if player reached the goal
         checkGoalReached();
+    }
+}
+
+document.addEventListener('keydown', handleKeyDown);
+document.addEventListener('keyup', handleKeyUp);
+
+// Modify handleKeyDown to use movePlayer
+function handleKeyDown(e) {
+    if (e.repeat) return; // Ignore auto-repeat keys
+
+    let direction = null;
+
+    if (e.key === 'ArrowUp' || e.key === 'w') {
+        direction = 'up';
+    } else if (e.key === 'ArrowRight' || e.key === 'd') {
+        direction = 'right';
+    } else if (e.key === 'ArrowDown' || e.key === 's') {
+        direction = 'down';
+    } else if (e.key === 'ArrowLeft' || e.key === 'a') {
+        direction = 'left';
+    }
+
+    if (direction) {
+        movePlayer(direction);
     }
 }
 

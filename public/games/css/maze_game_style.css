@@ -97,3 +97,35 @@ body {
     font-size: 18px;
     cursor: pointer;
 }
+
+/* Styles for movement controls */
+#controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 15; /* Ensure it's on top */
+}
+
+#controls button {
+    width: 60px;
+    height: 60px;
+    margin: 5px;
+    font-size: 30px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.7);
+    border: none;
+    touch-action: none; /* Prevent default touch actions */
+}
+
+#controls div {
+    display: flex;
+    justify-content: center;
+}
+
+#controls button:active {
+    background-color: rgba(200, 200, 200, 0.7);
+}
