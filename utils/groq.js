@@ -32,6 +32,22 @@ const groq = async (messages, model) => {
   }
 };
 
+const groq_vision = async (messages, model) => {
+  // The model does not support system prompts and images in the same request.
+  const groq_messages = messages.filter(m => m.role != "system");
+  try {
+    const completion = await groq_api.chat.completions.create({
+      messages: groq_messages,
+      model,
+    });
+    return completion;
+  } catch (err) {
+    console.error(`Error while calling Groq API: ${err}`);
+    return null;
+  }
+};
+
 module.exports = {
   groq,
+  groq_vision,
 };
