@@ -1,3 +1,4 @@
+const fs = require('fs');
 const marked = require('marked');
 const { chatGPT, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
@@ -90,6 +91,9 @@ class MessageService {
     if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20240620');
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
     if (provider.indexOf("o1-") === 0) response = await chatGPT_o1(vision_messages, provider);
+
+    // Save a copy in temporary folder, for debugging
+    // fs.writeFileSync(`./tmp_data/${Date.now()}[${provider}].json`, JSON.stringify(response, null, 2));
 
     // Save to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
