@@ -125,30 +125,64 @@ exports.update_role = async (req, res) => {
 const fs = require('fs');
 const path = require('path');
 
+const logPath = '/home/pi/.pm2/logs/';
+
 // Updated getPM2LogFiles function to filter out subfolders
 function getPM2LogFiles() {
-    const logPath = '/home/pi/.pm2/logs/';
-    try {
-        const files = fs.readdirSync(logPath);
-        const fileNames = files.filter(file => {
-            const filePath = path.join(logPath, file);
-            return fs.statSync(filePath).isFile();
-        });
-        return fileNames;
-    } catch (err) {
-        throw new Error(`Error reading directory: ${err.message}`);
-    }
+  try {
+    const files = fs.readdirSync(logPath);
+    const fileNames = files.filter(file => {
+      const filePath = path.join(logPath, file);
+      return fs.statSync(filePath).isFile();
+    });
+    return fileNames;
+  } catch (err) {
+    throw new Error(`Error reading directory: ${err.message}`);
+  }
 }
 
 // Existing getLogFileContent function
 function getLogFileContent(filename) {
-    const filePath = path.join('/home/pi/.pm2/logs/', filename);
-    try {
-        const data = fs.readFileSync(filePath, 'utf8');
-        return data;
-    } catch (err) {
-        throw new Error(`Error reading file: ${err.message}`);
-    }
+  const filePath = path.join(logPath, filename);
+  
+  // Validate that the file exists and is within the log directory
+  if (!fs.existsSync(filePath)) {
+    throw new Error('File does not exist.');
+  }
+
+  // Ensure that the path is a file and not a directory
+  if (!fs.statSync(filePath).isFile()) {
+    throw new Error('Specified path is not a file.');
+  }
+
+  try {
+    const data = fs.readFileSync(filePath, 'utf8');
+    return data;
+  } catch (err) {
+    throw new Error(`Error reading file: ${err.message}`);
+  }
+}
+
+// Function to delete a specific log file
+function deleteLogFile(filename) {
+  const filePath = path.join(logPath, filename);
+
+  // Validate that the file exists and is within the log directory
+  if (!fs.existsSync(filePath)) {
+    throw new Error('File does not exist.');
+  }
+
+  // Ensure that the path is a file and not a directory
+  if (!fs.statSync(filePath).isFile()) {
+    throw new Error('Specified path is not a file.');
+  }
+
+  // Delete the file
+  try {
+    fs.unlinkSync(filePath);
+  } catch (err) {
+    throw new Error(`Error deleting file: ${err.message}`);
+  }
 }
 
 // Updated app_logs function with try...catch and error handling
@@ -164,9 +198,48 @@ exports.app_logs = (req, res) => {
 // Updated log_file function with try...catch and error handling
 exports.log_file = (req, res) => {
   try {
-    const file_data = getLogFileContent(req.params.file);
-    res.render("log_file", { file_data, file: req.params.file });
+    const filename = req.params.file;
+
+    // Security: Validate the filename
+    if (filename.includes('..') || filename.includes('/')) {
+      return res.status(400).render('error_page', {error: 'Invalid file name.'});
+    }
+
+    // Check if the file is in the list of PM2 log files
+    const allowedFiles = getPM2LogFiles();
+    if (!allowedFiles.includes(filename)) {
+      return res.status(404).render('error_page', {error: 'File not found.'});
+    }
+
+    const file_data = getLogFileContent(filename);
+    res.render("log_file", { file_data, file: filename });
   } catch (error) {
     res.status(500).render('error_page', {error: `Error reading log file: ${error.message}`});
+  }
+};
+
+// Endpoint to delete a log file
+exports.delete_log_file = (req, res) => {
+  try {
+    const filename = req.params.file;
+
+    // Security: Validate the filename
+    if (filename.includes('..') || filename.includes('/')) {
+      return res.status(400).render('error_page', {error: 'Invalid file name.'});
+    }
+
+    // Check if the file is in the list of PM2 log files
+    const allowedFiles = getPM2LogFiles();
+    if (!allowedFiles.includes(filename)) {
+      return res.status(404).render('error_page', {error: 'File not found.'});
+    }
+
+    // Delete the log file
+    deleteLogFile(filename);
+
+    // Redirect back to the logs list with a success message
+    res.redirect('/admin/app_logs');
+  } catch (error) {
+    res.status(500).render('error_page', {error: `Error deleting log file: ${error.message}`});
   }
 };
