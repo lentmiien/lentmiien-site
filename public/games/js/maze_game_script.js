@@ -1,3 +1,7 @@
+document.addEventListener('gesturestart', function(e) {
+    e.preventDefault();
+});
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -70,51 +74,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Movement control buttons
-    const upButton = document.getElementById('upButton');
-    const downButton = document.getElementById('downButton');
-    const leftButton = document.getElementById('leftButton');
-    const rightButton = document.getElementById('rightButton');
+    const buttons = document.querySelectorAll('#controls button');
+    
+    buttons.forEach(button => {
+        ['touchstart', 'mousedown'].forEach(eventType => {
+            button.addEventListener(eventType, (e) => {
+                e.preventDefault();
+                const direction = button.id.replace('Button', '');
+                movePlayer(direction);
+            }, { passive: false });
+        });
 
-    // Event listeners for touch and mouse events
-    upButton.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        movePlayer('up');
-    }, { passive: false });
-
-    downButton.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        movePlayer('down');
-    }, { passive: false });
-
-    leftButton.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        movePlayer('left');
-    }, { passive: false });
-
-    rightButton.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        movePlayer('right');
-    }, { passive: false });
-
-    upButton.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        movePlayer('up');
+        // Prevent default behavior for touchend to stop zoom
+        button.addEventListener('touchend', (e) => {
+            e.preventDefault();
+        }, { passive: false });
     });
 
-    downButton.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        movePlayer('down');
-    });
-
-    leftButton.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        movePlayer('left');
-    });
-
-    rightButton.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        movePlayer('right');
-    });
+    // Prevent zoom on double tap
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', (e) => {
+        const now = (new Date()).getTime();
+        if (now - lastTouchEnd <= 300) {
+            e.preventDefault();
+        }
+        lastTouchEnd = now;
+    }, { passive: false });
 });
 
 function showIntroduction() {
