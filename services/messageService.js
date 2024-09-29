@@ -3,6 +3,7 @@ const marked = require('marked');
 const { chatGPT, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
 const { groq, groq_vision } = require('../utils/groq');
+const { googleAI } = require('../utils/google');
 
 // Message service operations: managing individual messages within a conversation
 
@@ -92,6 +93,7 @@ class MessageService {
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
     if (provider.indexOf("GroqV-") === 0) response = await groq_vision(vision_messages, provider.split("GroqV-")[1]);
     if (provider.indexOf("o1-") === 0) response = await chatGPT_o1(vision_messages, provider);
+    if (provider.indexOf("Google-") === 0) response = await googleAI(vision_messages, provider.split("Google-")[1]);
 
     // Save a copy in temporary folder, for debugging
     // fs.writeFileSync(`./tmp_data/${Date.now()}[${provider}].json`, JSON.stringify(response, null, 2));
