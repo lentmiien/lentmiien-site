@@ -125,7 +125,7 @@ exports.update_role = async (req, res) => {
 const fs = require('fs');
 const path = require('path');
 
-const logPath = '/home/pi/.pm2/logs/';
+const logPath = '/home/lentmiien/.pm2/logs/';
 
 // Updated getPM2LogFiles function to filter out subfolders
 function getPM2LogFiles() {
