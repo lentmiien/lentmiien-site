@@ -73,6 +73,12 @@ document.addEventListener('DOMContentLoaded', () => {
         showIntroduction();
     });
 
+    const startButton = document.getElementById('startButton');
+    startButton.addEventListener('click', () => {
+        introOverlay.style.display = 'none';
+        initGame(); // This now shows the difficulty popup
+    });
+
     // Movement control buttons
     const buttons = document.querySelectorAll('#controls button');
     
@@ -146,14 +152,34 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initGame() {
-    // Prompt for difficulty
-    let minDifficulty = Math.max(0, difficulty - 2);
-    let maxDifficulty = difficulty + 2;
-    let diffInput = prompt(`Select difficulty (${minDifficulty} to ${maxDifficulty}):`, difficulty);
-    difficulty = parseInt(diffInput);
-    if (isNaN(difficulty)) difficulty = 0;
-    difficulty = Math.max(0, Math.min(difficulty, maxDifficulty));
+    showDifficultyPopup();
+}
 
+function showDifficultyPopup() {
+    const popup = document.getElementById('difficultyPopup');
+    const buttonsContainer = document.getElementById('difficultyButtons');
+    buttonsContainer.innerHTML = ''; // Clear any existing buttons
+
+    const minDifficulty = Math.max(0, difficulty - 2);
+    const maxDifficulty = difficulty + 2;
+
+    for (let i = minDifficulty; i <= maxDifficulty; i++) {
+        if (i >= 0) {
+            const button = document.createElement('button');
+            button.textContent = i;
+            button.addEventListener('click', () => {
+                difficulty = i;
+                popup.style.display = 'none';
+                startGame();
+            });
+            buttonsContainer.appendChild(button);
+        }
+    }
+
+    popup.style.display = 'block';
+}
+
+function startGame() {
     mazeSize = 5 + difficulty * 2; // Increase maze size with difficulty
     generateMaze();
     placePlayer();
