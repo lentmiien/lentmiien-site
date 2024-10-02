@@ -38,7 +38,6 @@ exports.upload_product_data = async (req, res) => {
 ---
 `;
   
-  console.log(req.body);
   const output = [];
   for (let i = 0; i < req.body.data.length; i++) {
     // Generate `ai_description`
