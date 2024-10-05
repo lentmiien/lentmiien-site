@@ -1,0 +1,282 @@
+[
+  {
+    "name": "apple",
+    "image": "apple.jpg",
+    "facts": [
+      "Apples come in different colors like red, green, and yellow.",
+      "An apple a day keeps the doctor away.",
+      "Apples grow on trees."
+    ],
+    "audioFiles": [
+      "apple-fact1.mp3",
+      "apple-fact2.mp3",
+      "apple-fact3.mp3"
+    ]
+  },
+  {
+    "name": "banana",
+    "image": "banana.jpg",
+    "facts": [
+      "Bananas are high in potassium.",
+      "Monkeys love bananas.",
+      "Bananas are yellow when ripe."
+    ],
+    "audioFiles": [
+      "banana-fact1.mp3",
+      "banana-fact2.mp3",
+      "banana-fact3.mp3"
+    ]
+  },
+  {
+    "name": "cat",
+    "image": "cat.jpg",
+    "facts": [
+      "Cats say meow.",
+      "Cats like to sleep a lot.",
+      "Cats have sharp claws."
+    ],
+    "audioFiles": [
+      "cat-fact1.mp3",
+      "cat-fact2.mp3",
+      "cat-fact3.mp3"
+    ]
+  },
+  {
+    "name": "dog",
+    "image": "dog.jpg",
+    "facts": [
+      "Dogs are loyal animals.",
+      "Dogs say woof.",
+      "Dogs like to play fetch."
+    ],
+    "audioFiles": [
+      "dog-fact1.mp3",
+      "dog-fact2.mp3",
+      "dog-fact3.mp3"
+    ]
+  },
+  {
+    "name": "elephant",
+    "image": "elephant.jpg",
+    "facts": [
+      "Elephants are the largest land animals.",
+      "Elephants have long trunks.",
+      "Baby elephants are called calves."
+    ],
+    "audioFiles": [
+      "elephant-fact1.mp3",
+      "elephant-fact2.mp3",
+      "elephant-fact3.mp3"
+    ]
+  },
+  {
+    "name": "giraffe",
+    "image": "giraffe.jpg",
+    "facts": [
+      "Giraffes have very long necks.",
+      "Giraffes eat leaves from tall trees.",
+      "Giraffes have spots on their fur."
+    ],
+    "audioFiles": [
+      "giraffe-fact1.mp3",
+      "giraffe-fact2.mp3",
+      "giraffe-fact3.mp3"
+    ]
+  },
+  {
+    "name": "lion",
+    "image": "lion.jpg",
+    "facts": [
+      "Lions are known as the king of the jungle.",
+      "Male lions have manes.",
+      "Lions live in groups called prides."
+    ],
+    "audioFiles": [
+      "lion-fact1.mp3",
+      "lion-fact2.mp3",
+      "lion-fact3.mp3"
+    ]
+  },
+  {
+    "name": "monkey",
+    "image": "monkey.jpg",
+    "facts": [
+      "Monkeys love to swing on trees.",
+      "Some monkeys eat bananas.",
+      "Monkeys are very playful."
+    ],
+    "audioFiles": [
+      "monkey-fact1.mp3",
+      "monkey-fact2.mp3",
+      "monkey-fact3.mp3"
+    ]
+  },
+  {
+    "name": "penguin",
+    "image": "penguin.jpg",
+    "facts": [
+      "Penguins cannot fly.",
+      "Penguins waddle when they walk.",
+      "Penguins live in cold places."
+    ],
+    "audioFiles": [
+      "penguin-fact1.mp3",
+      "penguin-fact2.mp3",
+      "penguin-fact3.mp3"
+    ]
+  },
+  {
+    "name": "tiger",
+    "image": "tiger.jpg",
+    "facts": [
+      "Tigers have stripes.",
+      "Tigers are big cats.",
+      "Tigers are excellent swimmers."
+    ],
+    "audioFiles": [
+      "tiger-fact1.mp3",
+      "tiger-fact2.mp3",
+      "tiger-fact3.mp3"
+    ]
+  },
+  {
+    "name": "car",
+    "image": "car.jpg",
+    "facts": [
+      "Cars have four wheels.",
+      "Cars can be many colors.",
+      "Cars help us travel fast."
+    ],
+    "audioFiles": [
+      "car-fact1.mp3",
+      "car-fact2.mp3",
+      "car-fact3.mp3"
+    ]
+  },
+  {
+    "name": "ball",
+    "image": "ball.jpg",
+    "facts": [
+      "Balls are round.",
+      "You can throw, bounce, or kick a ball.",
+      "Balls are used in many sports."
+    ],
+    "audioFiles": [
+      "ball-fact1.mp3",
+      "ball-fact2.mp3",
+      "ball-fact3.mp3"
+    ]
+  },
+  {
+    "name": "house",
+    "image": "house.jpg",
+    "facts": [
+      "A house is where people live.",
+      "Houses have roofs and doors.",
+      "Houses can be big or small."
+    ],
+    "audioFiles": [
+      "house-fact1.mp3",
+      "house-fact2.mp3",
+      "house-fact3.mp3"
+    ]
+  },
+  {
+    "name": "train",
+    "image": "train.jpg",
+    "facts": [
+      "Trains run on tracks.",
+      "Trains can carry people and goods.",
+      "Trains have many cars."
+    ],
+    "audioFiles": [
+      "train-fact1.mp3",
+      "train-fact2.mp3",
+      "train-fact3.mp3"
+    ]
+  },
+  {
+    "name": "sun",
+    "image": "sun.jpg",
+    "facts": [
+      "The sun is a star.",
+      "The sun gives us light and warmth.",
+      "Never look directly at the sun."
+    ],
+    "audioFiles": [
+      "sun-fact1.mp3",
+      "sun-fact2.mp3",
+      "sun-fact3.mp3"
+    ]
+  },
+  {
+    "name": "flower",
+    "image": "flower.jpg",
+    "facts": [
+      "Flowers come in many colors.",
+      "Bees like to visit flowers.",
+      "Flowers grow from seeds."
+    ],
+    "audioFiles": [
+      "flower-fact1.mp3",
+      "flower-fact2.mp3",
+      "flower-fact3.mp3"
+    ]
+  },
+  {
+    "name": "fish",
+    "image": "fish.jpg",
+    "facts": [
+      "Fish live in water.",
+      "Fish breathe through gills.",
+      "Some fish are colorful."
+    ],
+    "audioFiles": [
+      "fish-fact1.mp3",
+      "fish-fact2.mp3",
+      "fish-fact3.mp3"
+    ]
+  },
+  {
+    "name": "butterfly",
+    "image": "butterfly.jpg",
+    "facts": [
+      "Butterflies have beautiful wings.",
+      "Butterflies come from caterpillars.",
+      "Butterflies drink nectar from flowers."
+    ],
+    "audioFiles": [
+      "butterfly-fact1.mp3",
+      "butterfly-fact2.mp3",
+      "butterfly-fact3.mp3"
+    ]
+  },
+  {
+    "name": "bird",
+    "image": "bird.jpg",
+    "facts": [
+      "Birds have feathers.",
+      "Most birds can fly.",
+      "Birds lay eggs."
+    ],
+    "audioFiles": [
+      "bird-fact1.mp3",
+      "bird-fact2.mp3",
+      "bird-fact3.mp3"
+    ]
+  },
+  {
+    "name": "tree",
+    "image": "tree.jpg",
+    "facts": [
+      "Trees have trunks and branches.",
+      "Trees give us oxygen.",
+      "Leaves grow on trees."
+    ],
+    "audioFiles": [
+      "tree-fact1.mp3",
+      "tree-fact2.mp3",
+      "tree-fact3.mp3"
+    ]
+  }
+]

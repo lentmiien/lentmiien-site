@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Memory Match Game</title>
+  <base href="./memory_match/">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Difficulty Selection Screen -->
+    <div id="difficulty-screen">
+      <h1>Select Difficulty</h1>
+      <div id="difficulty-options">
+        <!-- Difficulty buttons will be inserted here -->
+      </div>
+    </div>
+
+    <!-- Game Board -->
+    <div id="game-board" class="hidden">
+      <!-- Cards will be dynamically generated here -->
+    </div>
+
+    <!-- Fact Display -->
+    <div id="fact-display" class="fact-display hidden"></div>
+
+    <!-- Winning Message -->
+    <div id="winning-message" class="hidden">
+      <h2 id="winning-text">Congratulations!</h2>
+      <button id="play-again-button">Play Again</button>
+    </div>
+  </div>
+
+  <script src="js/script.js"></script>
+</body>
+</html>
