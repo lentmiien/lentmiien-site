@@ -1,0 +1,10 @@
+extends layout
+
+block content
+  h1 Chat Room
+  form#message-form
+    input#message(type="text" placeholder="Type your message here..." required)
+    button(type="submit") Send
+  ul#messages
+  script(src="https://cdn.socket.io/4.0.0/socket.io.min.js")
+  script(src="/js/chat5.js")

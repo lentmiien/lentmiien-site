@@ -72,6 +72,7 @@ exports.manage_roles = async (req, res) => {
       "chat2",
       "chat3",
       "chat4",
+      "chat5",
       "openai",
       "embedding",
       "gptdocument",
