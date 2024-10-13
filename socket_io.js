@@ -1,5 +1,8 @@
 const socketIO = require('socket.io');
 const OpenAI = require('openai');
+const { WebSocket } = require('ws');
+
+const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
 
 // Initialize OpenAI API
 const openai = new OpenAI({
@@ -32,6 +35,9 @@ module.exports = (server, sessionMiddleware) => {
 
     // Initialize conversation history for this socket
     socket.conversationHistory = [];
+
+    // Voice mode handle
+    socket.ws = null;
 
     console.log(`User connected: ${userId}`);
 
@@ -74,8 +80,69 @@ module.exports = (server, sessionMiddleware) => {
       }
     });
 
+    // Connect to voice mode
+    socket.on('connectVoiceMode', async () => {
+      socket.ws = new WebSocket(url, {
+        headers: {
+          "Authorization": "Bearer " + process.env.OPENAI_API_KEY,
+          "OpenAI-Beta": "realtime=v1",
+        },
+      });
+
+      socket.ws.on("open", function open() {
+        console.log("Connected to server.");
+        socket.ws.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["text"],
+            instructions: "Please assist the user.",
+          }
+        }));
+      });
+      
+      socket.ws.on("message", function incoming(message) {
+        console.log(JSON.parse(message.toString()));
+        socket.emit('voiceResponse', message.toString());
+      });
+    });
+
+    socket.on('audioData', async (data) => {
+      // const audioBuffer = await decodeAudio(data);
+      // const channelData = audioBuffer.getChannelData(0);
+      // const base64Chunk = base64EncodeAudio(channelData);
+      socket.ws.send(JSON.stringify({
+        type: 'input_audio_buffer.append',
+        audio: data,// base64Chunk
+      }));
+    });
+
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
     });
   });
 };
+
+// Converts Float32Array of audio data to PCM16 ArrayBuffer
+function floatTo16BitPCM(float32Array) {
+  const buffer = new ArrayBuffer(float32Array.length * 2);
+  const view = new DataView(buffer);
+  let offset = 0;
+  for (let i = 0; i < float32Array.length; i++, offset += 2) {
+    let s = Math.max(-1, Math.min(1, float32Array[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buffer;
+}
+
+// Converts a Float32Array to base64-encoded PCM16 data
+function base64EncodeAudio(float32Array) {
+  const arrayBuffer = floatTo16BitPCM(float32Array);
+  let binary = '';
+  let bytes = new Uint8Array(arrayBuffer);
+  const chunkSize = 0x8000; // 32KB chunk size
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    let chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}

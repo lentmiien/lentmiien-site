@@ -77,3 +77,44 @@ function addMessageToChat(sender, messageContent) {
 
   return item;
 }
+
+// Voice Mode
+function StartVoiceMode(e) {
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+      // Success - we have access to the microphone
+      e.disabled = true;
+      socket.emit('connectVoiceMode');
+      startRecording(stream);
+    })
+    .catch(err => {
+      console.error('Error accessing microphone:', err);
+    });
+}
+
+function startRecording(stream) {
+  const mediaRecorder = new MediaRecorder(stream);
+  
+  mediaRecorder.addEventListener('dataavailable', event => {
+    // Send audio data to the server
+    socket.emit('audioData', event.data);
+  });
+
+  mediaRecorder.start(250); // Collect 250ms chunks of audio
+}
+
+const voice_out = document.getElementById("voice_out");
+
+socket.on('voiceResponse', function (content) {
+  voice_out.innerHTML += '\n\n---\n\n' + JSON.stringify(JSON.parse(content), null, 2);
+});
+
+socket.on('audioData', data => {
+  // Create a Blob from the data
+  const audioBlob = new Blob([data], { type: 'audio/webm; codecs=opus' });
+  const audioUrl = URL.createObjectURL(audioBlob);
+  
+  // Create an audio element and play it
+  const audio = new Audio(audioUrl);
+  audio.play();
+});

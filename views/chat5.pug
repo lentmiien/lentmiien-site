@@ -6,6 +6,9 @@ block content
   form#message-form
     input#message(type="text" placeholder="Type your message here..." required autocomplete="off")
     button(type="submit") Send
+  hr
+  button.btn.btn-primary(onclick="StartVoiceMode(this)") Start Voice Mode
+  pre#voice_out
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js")
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js")
   script(src="/js/chat5.js")
