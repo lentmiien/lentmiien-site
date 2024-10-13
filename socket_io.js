@@ -101,18 +101,31 @@ module.exports = (server, sessionMiddleware) => {
       });
       
       socket.ws.on("message", function incoming(message) {
-        console.log(JSON.parse(message.toString()));
-        socket.emit('voiceResponse', message.toString());
+        const resp_data = JSON.parse(message.toString());
+        console.log(resp_data);
+        if (resp_data.type === "response.audio.delta") {
+          socket.emit('audioData', resp_data.delta);
+        } else {
+          socket.emit('voiceResponse', message.toString());
+        }
       });
     });
 
     socket.on('audioData', async (data) => {
-      // const audioBuffer = await decodeAudio(data);
-      // const channelData = audioBuffer.getChannelData(0);
-      // const base64Chunk = base64EncodeAudio(channelData);
       socket.ws.send(JSON.stringify({
-        type: 'input_audio_buffer.append',
-        audio: data,// base64Chunk
+        type: 'conversation.item.create',
+        item: {
+          id: Date.now().toString(),
+          type: "message",
+          status: "completed",
+          role: "user",
+          content: [
+            {
+              type: "input_audio",
+              audio: data,
+            }
+          ]
+        },
       }));
     });
 
@@ -121,28 +134,3 @@ module.exports = (server, sessionMiddleware) => {
     });
   });
 };
-
-// Converts Float32Array of audio data to PCM16 ArrayBuffer
-function floatTo16BitPCM(float32Array) {
-  const buffer = new ArrayBuffer(float32Array.length * 2);
-  const view = new DataView(buffer);
-  let offset = 0;
-  for (let i = 0; i < float32Array.length; i++, offset += 2) {
-    let s = Math.max(-1, Math.min(1, float32Array[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  return buffer;
-}
-
-// Converts a Float32Array to base64-encoded PCM16 data
-function base64EncodeAudio(float32Array) {
-  const arrayBuffer = floatTo16BitPCM(float32Array);
-  let binary = '';
-  let bytes = new Uint8Array(arrayBuffer);
-  const chunkSize = 0x8000; // 32KB chunk size
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    let chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode.apply(null, chunk);
-  }
-  return btoa(binary);
-}
