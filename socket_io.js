@@ -113,19 +113,8 @@ module.exports = (server, sessionMiddleware) => {
 
     socket.on('audioData', async (data) => {
       socket.ws.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          id: Date.now().toString(),
-          type: "message",
-          status: "completed",
-          role: "user",
-          content: [
-            {
-              type: "input_audio",
-              audio: data,
-            }
-          ]
-        },
+        type: 'input_audio_buffer.append',
+        audio: data,
       }));
     });
 

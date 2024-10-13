@@ -82,6 +82,7 @@ function addMessageToChat(sender, messageContent) {
 }
 
 // Voice Mode
+let g_stream = null;
 function StartVoiceMode(e) {
   (async () => {
     // Load the AudioWorkletProcessor module
@@ -92,7 +93,7 @@ function StartVoiceMode(e) {
       .then(stream => {
         e.disabled = true;
         socket.emit('connectVoiceMode');
-        startProcessing(stream);
+        g_stream = stream;
       })
       .catch(err => {
         console.error('Error accessing microphone:', err);
@@ -153,16 +154,76 @@ function arrayBufferToBase64(buffer) {
 
 const voice_out = document.getElementById("voice_out");
 
+let once = true;
 socket.on('voiceResponse', function (content) {
   voice_out.innerHTML += '\n\n---\n\n' + JSON.stringify(JSON.parse(content), null, 2);
+  if (once) {
+    once = false;
+    startProcessing(g_stream);
+  }
 });
 
-socket.on('audioData', data => {
-  // Create a Blob from the data
-  const audioBlob = new Blob([data], { type: 'audio/webm; codecs=opus' });
-  const audioUrl = URL.createObjectURL(audioBlob);
-  
-  // Create an audio element and play it
-  const audio = new Audio(audioUrl);
-  audio.play();
+let nextPlaybackTime = audioContext.currentTime;
+
+socket.on('audioData', base64Data => {
+  // Decode base64 to ArrayBuffer
+  const arrayBuffer = base64ToArrayBuffer(base64Data);
+
+  // Convert ArrayBuffer to Int16Array
+  const int16Data = new Int16Array(arrayBuffer);
+
+  // Convert Int16Array to Float32Array (normalize to range [-1, 1])
+  const float32Data = new Float32Array(int16Data.length);
+  for (let i = 0; i < int16Data.length; i++) {
+    float32Data[i] = int16Data[i] / 0x8000;
+  }
+
+  // Resample from 24kHz to the AudioContext's sample rate
+  const resampledData = resampleAudioData(float32Data, 24000, audioContext.sampleRate);
+
+  // Create an AudioBuffer
+  const audioBuffer = audioContext.createBuffer(1, resampledData.length, audioContext.sampleRate);
+  audioBuffer.getChannelData(0).set(resampledData);
+
+  const source = audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(audioContext.destination);
+
+  // Schedule playback to avoid gaps/overlaps
+  if (nextPlaybackTime < audioContext.currentTime) {
+    nextPlaybackTime = audioContext.currentTime;
+  }
+
+  source.start(nextPlaybackTime);
+  nextPlaybackTime += audioBuffer.duration;
 });
+
+// Convert Base64 to ArrayBuffer
+function base64ToArrayBuffer(base64) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for(let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+// Resample audio data from inputSampleRate to outputSampleRate
+function resampleAudioData(audioData, inputSampleRate, outputSampleRate) {
+  const sampleRateRatio = outputSampleRate / inputSampleRate;
+  const newLength = Math.round(audioData.length * sampleRateRatio);
+  const resampledData = new Float32Array(newLength);
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+
+  while (offsetResult < newLength) {
+    const index = offsetResult / sampleRateRatio;
+    const i0 = Math.floor(index);
+    const i1 = Math.min(Math.ceil(index), audioData.length - 1);
+    const weight = index - i0;
+    resampledData[offsetResult++] = audioData[i0] * (1 - weight) + audioData[i1] * weight;
+  }
+
+  return resampledData;
+}
