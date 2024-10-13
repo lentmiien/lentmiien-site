@@ -11,7 +11,8 @@ const conversationService = new ConversationService(Conversation4Model, messageS
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 
 exports.product = async (req, res) => {
-  const products = await ProductDetails.find();
+  const cutoff = new Date(Date.now() - (1000*60*60*24*7));
+  const products = (await ProductDetails.find()).filter(d => d.created && d.created > cutoff);
   res.render('products', {products});
 };
 
@@ -87,6 +88,7 @@ ${all_details.join("\n\n")}
       description: req.body.data[i][4],
       price: req.body.data[i][5],
       ai_description,
+      created: new Date(),
     });
     await newProduct.save();
     output.push(newProduct);
