@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const BatchRequest = new mongoose.Schema({
   id: { type: String, required: true },
   input_file_id: { type: String, required: true },
+  provider: { type: String, required: true },
   status: { type: String, required: true },
   output_file_id: { type: String, required: true },
   error_file_id: { type: String, required: true },

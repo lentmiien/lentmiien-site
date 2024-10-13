@@ -23,7 +23,7 @@ block content
         each d in requests
           .prompt-entry(id=d.id, class=`batch_status_${d.status}`) 
             b= d.id
-            span= ` (${d.status})`
+            span= ` (${d.status}) [${d.provider}]`
             div 
               div= `Start: ${d.created_at.toLocaleString()}`
               div= `End: ${d.completed_at.toLocaleString()}`

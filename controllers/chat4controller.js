@@ -408,6 +408,7 @@ const batch_model_list = {
   "OpenAI_latest": "gpt-4o-2024-08-06",
   "OpenAI_mini": "gpt-4o-mini",
   "OpenAI": "gpt-4o",
+  "Anthropic": "claude-3-5-sonnet-20240620",
 };
 
 // Batch requests

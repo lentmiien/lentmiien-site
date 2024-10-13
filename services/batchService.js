@@ -1,4 +1,5 @@
 const { upload_file, download_file, delete_file, start_batch, batch_status } = require('../utils/ChatGPT');
+const { anthropic_batch_start, anthropic_batch_status, anthropic_batch_results } = require('../utils/anthropic');
 
 /*
 const mongoose = require('mongoose');
@@ -35,6 +36,7 @@ const mongoose = require('mongoose');
 const BatchRequest = new mongoose.Schema({
   id: { type: String, required: true },
   input_file_id: { type: String, required: true },
+  provider: { type: String, required: true },
   status: { type: String, required: true },
   output_file_id: { type: String, required: true },
   error_file_id: { type: String, required: true },
@@ -47,6 +49,14 @@ const BatchRequest = new mongoose.Schema({
 
 module.exports = mongoose.model('batchrequest', BatchRequest);
 */
+
+const valid_models = ["gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20240620"];
+const model_provider = {
+  "gpt-4o-2024-08-06": "OpenAI",
+  "gpt-4o": "OpenAI",
+  "gpt-4o-mini": "OpenAI",
+  "claude-3-5-sonnet-20240620": "Anthropic",
+};
 
 class BatchService {
   constructor(BatchPromptDatabase, BatchRequestDatabase, messageService, conversationService) {
@@ -141,8 +151,9 @@ class BatchService {
           "gpt-4o-2024-08-06": [],
           "gpt-4o": [],
           "gpt-4o-mini": [],
+          "claude-3-5-sonnet-20240620": [],
         };
-        const models = ["gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini"];
+        const models = valid_models;
 
         for (let i = 0; i < newPrompts.length; i++) {
           const model_to_use = newPrompts[i].model ? newPrompts[i].model : 'gpt-4o-2024-08-06';
@@ -192,7 +203,24 @@ class BatchService {
 
           data_entry.body.messages = messages;
           // Append data_entry to prompt_data
-          prompt_data[model_to_use].push(JSON.stringify(data_entry));
+          if (model_provider[model_to_use] === "OpenAI") {
+            prompt_data[model_to_use].push(JSON.stringify(data_entry));
+          } else {
+            // Prepare data for Anthropic
+            let system = null;
+            const anthropic_data = {
+              custom_id: data_entry.custom_id,
+              model: model_to_use,
+              max_tokens: 8192,
+              messages: [],
+            };
+            data_entry.body.messages.forEach(m => {
+              if (m.role === "system") system = m.content.text;
+              else anthropic_data.messages.push(m);//TODO: fix vision input format
+            });
+            if (system) anthropic_data.system = system;
+            prompt_data[model_to_use].push(anthropic_data);
+          }
           
           processed_ids.push(newPrompts[i].custom_id);
         }
@@ -200,28 +228,53 @@ class BatchService {
         const requests = [];
         for (let i = 0; i < models.length; i++) {
           if (prompt_data[models[i]].length > 0) {
-            // Send to batch API (file + start request)
-            const file_id = await upload_file(prompt_data[models[i]].join('\n'));
-            
-            // Save request data to request database
-            const batch_details = await start_batch(file_id);
-            const newRequest = new this.BatchRequestDatabase({
-              id: batch_details.id,
-              input_file_id: file_id,
-              status: batch_details.status,
-              output_file_id: "null",
-              error_file_id: "null",
-              created_at: new Date(batch_details.created_at*1000),
-              completed_at: new Date(batch_details.expires_at*1000),
-              request_counts_total: prompt_data[models[i]].length,
-              request_counts_completed: 0,
-              request_counts_failed: 0,
-            });
-            await newRequest.save();
-            requests.push(newRequest);
+            let batch_id = "";
+            if (model_provider[models[i]] === "OpenAI") {
+              // Send to batch API (file + start request)
+              const file_id = await upload_file(prompt_data[models[i]].join('\n'));
+              
+              // Save request data to request database
+              const batch_details = await start_batch(file_id);
+              batch_id = batch_details.id;
+              const newRequest = new this.BatchRequestDatabase({
+                id: batch_details.id,
+                input_file_id: file_id,
+                provider: model_provider[models[i]],
+                status: batch_details.status,
+                output_file_id: "null",
+                error_file_id: "null",
+                created_at: new Date(batch_details.created_at*1000),
+                completed_at: new Date(batch_details.expires_at*1000),
+                request_counts_total: prompt_data[models[i]].length,
+                request_counts_completed: 0,
+                request_counts_failed: 0,
+              });
+              await newRequest.save();
+              requests.push(newRequest);
+            } else {
+              // Anthropic batch request
+              // Save request data to request database
+              const batch_details = await anthropic_batch_start(prompt_data[models[i]]);
+              batch_id = batch_details.id;
+              const newRequest = new this.BatchRequestDatabase({
+                id: batch_details.id,
+                input_file_id: "no_file",
+                provider: model_provider[models[i]],
+                status: batch_details.processing_status,
+                output_file_id: "no_file",
+                error_file_id: "no_file",
+                created_at: new Date(batch_details.created_at),
+                completed_at: new Date(batch_details.expires_at),
+                request_counts_total: prompt_data[models[i]].length,
+                request_counts_completed: 0,
+                request_counts_failed: 0,
+              });
+              await newRequest.save();
+              requests.push(newRequest);
+            }
             
             // Update prompt entries with request id
-            await this.BatchPromptDatabase.updateMany({ request_id: 'new' }, { request_id: batch_details.id });
+            await this.BatchPromptDatabase.updateMany({ request_id: 'new' }, { request_id: batch_id });
           }
         }
 
@@ -239,16 +292,27 @@ class BatchService {
   // Checking batch status
   async checkBatchStatus(batchId) {
     const batch = await this.BatchRequestDatabase.findOne({ id: batchId });
-    const batch_current_status = await batch_status(batchId);
 
-    batch.status = batch_current_status.status;
-    batch.output_file_id = batch_current_status.output_file_id ? batch_current_status.output_file_id : "null";
-    batch.error_file_id = batch_current_status.error_file_id ? batch_current_status.error_file_id : "null";
-    batch.completed_at = new Date((batch_current_status.completed_at ? batch_current_status.completed_at : batch_current_status.expires_at)*1000);
-    batch.request_counts_total = batch_current_status.request_counts.total;
-    batch.request_counts_completed = batch_current_status.request_counts.completed;
-    batch.request_counts_failed = batch_current_status.request_counts.failed;
-    await batch.save();
+    if (batch.provider === "OpenAI") {
+      const batch_current_status = await batch_status(batchId);
+      
+      batch.status = batch_current_status.status;
+      batch.output_file_id = batch_current_status.output_file_id ? batch_current_status.output_file_id : "null";
+      batch.error_file_id = batch_current_status.error_file_id ? batch_current_status.error_file_id : "null";
+      batch.completed_at = new Date((batch_current_status.completed_at ? batch_current_status.completed_at : batch_current_status.expires_at)*1000);
+      batch.request_counts_total = batch_current_status.request_counts.total;
+      batch.request_counts_completed = batch_current_status.request_counts.completed;
+      batch.request_counts_failed = batch_current_status.request_counts.failed;
+      await batch.save();
+    } else {
+      // Anthropic batch status
+      const batch_current_status = await anthropic_batch_status(batchId);
+      batch.status = batch_current_status.processing_status === "ended" ? "completed" : batch_current_status.processing_status;
+      batch.completed_at = new Date((batch_current_status.ended_at ? batch_current_status.ended_at : batch_current_status.expires_at));
+      batch.request_counts_completed = batch_current_status.request_counts.succeeded;
+      batch.request_counts_failed = batch_current_status.request_counts.errored + batch_current_status.request_counts.canceled + batch_current_status.request_counts.expired;
+      await batch.save();
+    }
 
     return {id: batchId, status: batch.status};
   }
@@ -263,37 +327,70 @@ class BatchService {
     const completed_prompts = [];
     const completedRequests = await this.BatchRequestDatabase.find({ status: 'completed' });
     for (let i = 0; i < completedRequests.length; i++) {
-      const output_data = await download_file(completedRequests[i].output_file_id);
-      for (let j = 0; j < output_data.length; j++) {
-        const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
-        if (prompt_data) {
-          if (prompt_data.prompt === "@SUMMARY") {
-            // Update summary
-            await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].response.body.choices[0].message.content);
-            // Delete completed prompt
-            await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-          } else {
-            // Check that conversation still exist
-            if (await this.conversationService.getConversationsById(prompt_data.conversation_id)) {
-              // Append to conversation
-              const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
-              const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
-              await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
-              // Flag for generating summary
-              await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4o-mini");
+      if (completedRequests[i].provider === "OpenAI") {
+        const output_data = await download_file(completedRequests[i].output_file_id);
+        for (let j = 0; j < output_data.length; j++) {
+          const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
+          if (prompt_data) {
+            if (prompt_data.prompt === "@SUMMARY") {
+              // Update summary
+              await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].response.body.choices[0].message.content);
+              // Delete completed prompt
+              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
+            } else {
+              // Check that conversation still exist
+              if (await this.conversationService.getConversationsById(prompt_data.conversation_id)) {
+                // Append to conversation
+                const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
+                const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
+                await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
+                // Flag for generating summary
+                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4o-mini");
+              }
+              // Delete completed prompt
+              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
             }
-            // Delete completed prompt
-            await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
+            completed_prompts.push(output_data[j].custom_id);
           }
-          completed_prompts.push(output_data[j].custom_id);
         }
+        // Update status and delete files
+        completedRequests[i].status = "DONE";
+        await completedRequests[i].save();
+        await delete_file(completedRequests[i].input_file_id);
+        await delete_file(completedRequests[i].output_file_id);
+        completed_requests.push(completedRequests[i].id);
+      } else {
+        // Anthropic results
+        const output_data = await anthropic_batch_results(completedRequests[i].id);
+        for (let j = 0; j < output_data.length; j++) {
+          const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
+          if (prompt_data) {
+            if (prompt_data.prompt === "@SUMMARY") {
+              // Update summary
+              await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].content.text);
+              // Delete completed prompt
+              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
+            } else {
+              // Check that conversation still exist
+              if (await this.conversationService.getConversationsById(prompt_data.conversation_id)) {
+                // Append to conversation
+                const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
+                const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].content.text, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
+                await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
+                // Flag for generating summary
+                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4o-mini");
+              }
+              // Delete completed prompt
+              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
+            }
+            completed_prompts.push(output_data[j].custom_id);
+          }
+        }
+        // Update status and delete files
+        completedRequests[i].status = "DONE";
+        await completedRequests[i].save();
+        completed_requests.push(completedRequests[i].id);
       }
-      // Update status and delete files
-      completedRequests[i].status = "DONE";
-      await completedRequests[i].save();
-      await delete_file(completedRequests[i].input_file_id);
-      await delete_file(completedRequests[i].output_file_id);
-      completed_requests.push(completedRequests[i].id);
     }
     return {requests: completed_requests, prompts: completed_prompts};
   }
