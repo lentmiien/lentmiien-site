@@ -152,14 +152,28 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+const transcript = document.getElementById("transcript");
 const voice_out = document.getElementById("voice_out");
 
 let once = true;
 socket.on('voiceResponse', function (content) {
-  voice_out.innerHTML += '\n\n---\n\n' + JSON.stringify(JSON.parse(content), null, 2);
+  const data = JSON.parse(content);
+  voice_out.innerHTML += '\n\n---\n\n' + JSON.stringify(data, null, 2);
   if (once) {
     once = false;
     startProcessing(g_stream);
+  }
+  if (data.type === "response.audio_transcript.done") {
+    const appendMessage = document.createElement("div");
+    appendMessage.classList.add("assistant");
+    appendMessage.innerHTML = `<h4>Assistant:</h4><p>${data.transcript}</p>`;
+    transcript.append(appendMessage);
+  }
+  if (data.type === "conversation.item.input_audio_transcription.completed") {
+    const appendMessage = document.createElement("div");
+    appendMessage.classList.add("user");
+    appendMessage.innerHTML = `<h4>User:</h4><p>${data.transcript}</p>`;
+    transcript.append(appendMessage);
   }
 });
 
