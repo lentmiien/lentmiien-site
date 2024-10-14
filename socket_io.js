@@ -118,7 +118,6 @@ module.exports = (server, sessionMiddleware) => {
       
       socket.ws.on("message", function incoming(message) {
         const resp_data = JSON.parse(message.toString());
-        console.log(resp_data);
         if (resp_data.type === "response.audio.delta") {
           socket.emit('audioData', resp_data.delta);
         } else {
