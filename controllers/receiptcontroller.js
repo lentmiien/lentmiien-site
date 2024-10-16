@@ -77,13 +77,19 @@ exports.delete_receipt = async (req, res) => {
 }
 
 function ParseData(text) {
-  let data = [];
-  let rows = text.split('\n');
-  let inJSON = false;
-  for (let i = 0; i < rows.length; i++) {
-    if (inJSON && rows[i].indexOf("```") >= 0) break;
-    if (inJSON) data.push(rows[i]);
-    if (rows[i].indexOf("```") >= 0) inJSON = true;
+  if (text.indexOf("```") >= 0) {
+    // Sometimes, the relevant content comes in a markdown code block
+    let data = [];
+    let rows = text.split('\n');
+    let inJSON = false;
+    for (let i = 0; i < rows.length; i++) {
+      if (inJSON && rows[i].indexOf("```") >= 0) break;
+      if (inJSON) data.push(rows[i]);
+      if (rows[i].indexOf("```") >= 0) inJSON = true;
+    }
+    return JSON.parse(data.join("\n"));
+  } else {
+    // Other times, only the relevant data comes
+    return JSON.parse(text);
   }
-  return JSON.parse(data.join("\n"));
 }
