@@ -81,6 +81,10 @@ function addMessageToChat(sender, messageContent) {
   return item;
 }
 
+function UpdateModel(e) {
+  socket.emit('userSelectModel', e.value);
+}
+
 // Voice Mode
 let g_stream = null;
 function StartVoiceMode(e) {

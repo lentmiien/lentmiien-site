@@ -4,6 +4,11 @@ const { WebSocket } = require('ws');
 
 const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
 
+const streaming_models = [
+  "gpt-4o-mini",
+  "gpt-4o",
+];
+
 // Initialize OpenAI API
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -33,13 +38,19 @@ module.exports = (server, sessionMiddleware) => {
   io.on('connection', (socket) => {
     const userId = socket.request.session.passport.user;
 
-    // Initialize conversation history for this socket
+    // Initialize conversation history and default model for this socket
     socket.conversationHistory = [];
+    socket.model = 'gpt-4o-mini';
 
     // Voice mode handle
     socket.ws = null;
 
     console.log(`User connected: ${userId}`);
+
+    socket.on('userSelectModel', async (model) => {
+      socket.model = model;
+      console.log(`Switching to model "${model}", Streaming: ${streaming_models.includes(socket.model)}`);
+    });
 
     // Handle incoming messages from the client
     socket.on('userMessage', async (userMessage) => {
@@ -47,25 +58,32 @@ module.exports = (server, sessionMiddleware) => {
       socket.conversationHistory.push({ role: 'user', content: userMessage });
 
       try {
+        const useStreaming = streaming_models.includes(socket.model);
         // Prepare input parameters for the OpenAI API
         const inputParameters = {
-          model: 'gpt-4o-mini', // Replace with your desired model
+          model: socket.model, // Replace with your desired model
           messages: socket.conversationHistory,
-          stream: true,
+          stream: useStreaming,
         };
 
         // Call OpenAI API and stream the response
         const stream = await openai.chat.completions.create(inputParameters);
 
-        // Send chunks to the client as they arrive
         let fullMessage = "";// To store the generated message
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            // Send each chunk to the client
-            socket.emit('aiResponseChunk', content);
-            fullMessage += content;
+        if (useStreaming) {
+          // Send chunks to the client as they arrive
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || '';
+            if (content) {
+              // Send each chunk to the client
+              socket.emit('aiResponseChunk', content);
+              fullMessage += content;
+            }
           }
+        } else {
+          const content = stream.choices[0].message.content;
+          socket.emit('aiResponseChunk', content);
+          fullMessage += content;
         }
 
         // Once the stream is finished, signal the client
