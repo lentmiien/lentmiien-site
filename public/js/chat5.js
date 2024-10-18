@@ -8,6 +8,8 @@ const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const messagesList = document.getElementById('messages');
 const messageForm = document.getElementById('message-form');
 const messageInput = document.getElementById('message');
+const title = document.getElementById('title');
+const savedb = document.getElementById('savedb');
 
 // Variables to keep track of the assistant's response
 let assistantMessageElement = null;
@@ -54,7 +56,21 @@ socket.on('aiResponseEnd', function () {
 
   // Reset assistant message element
   assistantMessageElement = null;
+
+  // Generate a title if empty
+  if (title.innerText.length === 0) {
+    socket.emit('createTitle');
+  }
 });
+
+socket.on('setTitle', title_text => {
+  savedb.disabled = false;
+  title.innerText = title_text;
+});
+
+function SaveToDB() {
+  socket.emit('saveToDatabase');
+}
 
 // Handle errors
 socket.on('error', function (errorMessage) {

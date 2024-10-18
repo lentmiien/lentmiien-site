@@ -2,15 +2,18 @@ extends layout
 
 block content
   h1 Chat Room
+  h3#title
   ul#messages
   form#message-form
     textarea#message.form-control(name="message", rows="7", placeholder="Type your message here...", required)
-    select#model.form-control(name="model", onchange="UpdateModel(this)")
-      option(value="gpt-4o-mini") gpt-4o-mini
-      option(value="gpt-4o") gpt-4o
-      option(value="o1-mini") o1-mini
-      option(value="o1-preview") o1-preview
-    button.btn.btn-primary(type="submit") Send
+    .input-group
+      select#model.form-control(name="model", onchange="UpdateModel(this)")
+        option(value="gpt-4o-mini") gpt-4o-mini
+        option(value="gpt-4o") gpt-4o
+        option(value="o1-mini") o1-mini
+        option(value="o1-preview") o1-preview
+      button.btn.btn-primary(type="submit") Send
+      button#savedb.btn.btn-secondary(type="button", onclick="SaveToDB()", disabled) Save to DB
   hr
   button.btn.btn-primary(onclick="StartVoiceMode(this)") Start Voice Mode
   #transcript

@@ -52,6 +52,32 @@ module.exports = (server, sessionMiddleware) => {
       console.log(`Switching to model "${model}", Streaming: ${streaming_models.includes(socket.model)}`);
     });
 
+    socket.on('createTitle', async () => {
+      const conversationMessages = [];
+      socket.conversationHistory.forEach(d => {
+        conversationMessages.push({
+          role: d.role,
+          content: d.content,
+        });
+      });
+      conversationMessages.push({
+        role: 'user',
+        content: 'Please give me a suitable title for our conversation. Please only respond with the title.',
+      });
+      const inputParameters = {
+        model: 'gpt-4o-mini',
+        messages: conversationMessages,
+      };
+      try {
+        const response = await openai.chat.completions.create(inputParameters);
+        const content = response.choices[0].message.content;
+        socket.conversationTitle = content;
+        socket.emit('setTitle', content);
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
     // Handle incoming messages from the client
     socket.on('userMessage', async (userMessage) => {
       // Add the user's message to the conversation history
@@ -96,6 +122,10 @@ module.exports = (server, sessionMiddleware) => {
         console.error('Error processing data:', error);
         socket.emit('error', 'An error occurred while processing your request.');
       }
+    });
+
+    socket.on('saveToDatabase', async () => {
+      // Save to database, use "Chat5" as category, and "chat5" as tag
     });
 
     // Connect to voice mode
