@@ -205,6 +205,14 @@ class ConversationService {
     return conv_entry._id.toString();
   }
 
+  async appendCustomMessageToConversation(user_id, conversation_id, user_msg, assistant_msg, model) {
+    const conversation = await this.conversationModel.findById(conversation_id);
+    conversation.messages.push((await this.messageService.CreateCustomMessage(user_msg, assistant_msg, user_id, conversation.category, [], conversation.tags)).db_entry._id.toString());
+    conversation.updated_date = new Date();
+    conversation.default_model = model;
+    await conversation.save();
+  }
+
   async updateConversation(conversation_id, parameters) {
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     const conversation = await this.conversationModel.findById(conversation_id);

@@ -54,6 +54,7 @@ module.exports = (server, sessionMiddleware) => {
     // Initialize conversation history and default model for this socket
     socket.conversationHistory = [];
     socket.model = 'gpt-4o-mini';
+    socket.conversation_id = null;
 
     // Voice mode handle
     socket.ws = null;
@@ -90,6 +91,10 @@ module.exports = (server, sessionMiddleware) => {
       } catch (error) {
         console.error(error);
       }
+
+      // Save to database
+      socket.conversation_id = await conversationService.createConversationFromMessagesArray(userName, socket.conversationTitle, socket.conversationHistory, socket.model, "Chat5", "chat5");
+      await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
     });
 
     // Handle incoming messages from the client
@@ -132,19 +137,16 @@ module.exports = (server, sessionMiddleware) => {
         // Add the assistant's response to the conversation history
         const assistantResponse = fullMessage;
         socket.conversationHistory.push({ role: 'assistant', content: assistantResponse });
+
+        // If has conversation id, append message and save
+        if (socket.conversation_id) {
+          await conversationService.appendCustomMessageToConversation(userName, socket.conversation_id, userMessage, fullMessage, socket.model);
+          await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
+        }
       } catch (error) {
         console.error('Error processing data:', error);
         socket.emit('error', 'An error occurred while processing your request.');
       }
-    });
-
-    socket.on('saveToDatabase', async () => {
-      // Save to database, use "Chat5" as category, and "chat5" as tag
-      const conversation_id = await conversationService.createConversationFromMessagesArray(userName, socket.conversationTitle, socket.conversationHistory, socket.model, "Chat5", "chat5");
-      await batchService.addPromptToBatch(userName, "@SUMMARY", conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
-
-      // Finished saving
-      socket.emit('savedToDatabase');
     });
 
     // Connect to voice mode

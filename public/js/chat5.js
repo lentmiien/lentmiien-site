@@ -9,7 +9,6 @@ const messagesList = document.getElementById('messages');
 const messageForm = document.getElementById('message-form');
 const messageInput = document.getElementById('message');
 const title = document.getElementById('title');
-const savedb = document.getElementById('savedb');
 
 // Variables to keep track of the assistant's response
 let assistantMessageElement = null;
@@ -32,9 +31,6 @@ messageForm.addEventListener('submit', function (e) {
   // Disable the input field until the assistant's response is complete
   messageInput.disabled = true;
   messageInput.placeholder = 'Waiting for assistant response...';
-
-  // Disable save to database button, while generating a response
-  savedb.disabled = true;
 
   // Prepare a new message element for the assistant's response
   assistantMessageElement = addMessageToChat('Assistant', '');
@@ -64,24 +60,10 @@ socket.on('aiResponseEnd', function () {
   if (title.innerText.length === 0) {
     socket.emit('createTitle');
   }
-
-  // Enable save to database button
-  savedb.disabled = false;
 });
 
 socket.on('setTitle', title_text => {
   title.innerText = title_text;
-});
-
-function SaveToDB() {
-  // Disable save to database button, when saving to database
-  savedb.disabled = true;
-
-  socket.emit('saveToDatabase');
-}
-
-socket.on('savedToDatabase', () => {
-  alert("Saved!");
 });
 
 // Handle errors
