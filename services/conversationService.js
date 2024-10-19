@@ -181,8 +181,28 @@ class ConversationService {
   }
 
   async createConversationFromMessagesArray(user_id, title, messagesArray, model, category, tags) {
+    const context = messagesArray[0].role === "system" ? messagesArray[0].content : "";
     // Generate messages
+    const message_id_array = [];
+    for (let i = messagesArray[0].role === "system" ? 1 : 0; i < messagesArray.length; i += 2) {
+      message_id_array.push((await this.messageService.CreateCustomMessage(messagesArray[i].content, messagesArray[i+1].content, user_id, category, [], [tags])).db_entry._id.toString());
+    }
     // Generate conversation
+    const conversation_entry = {
+      user_id,
+      group_id: Date.now().toString(),
+      title,
+      description: "placeholder",
+      category,
+      tags: [tags],
+      context_prompt: context,
+      knowledge_injects: [],
+      messages: message_id_array,
+      updated_date: new Date(),
+      default_model: model,
+    };
+    const conv_entry = await new this.conversationModel(conversation_entry).save();
+    return conv_entry._id.toString();
   }
 
   async updateConversation(conversation_id, parameters) {

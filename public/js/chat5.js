@@ -33,6 +33,9 @@ messageForm.addEventListener('submit', function (e) {
   messageInput.disabled = true;
   messageInput.placeholder = 'Waiting for assistant response...';
 
+  // Disable save to database button, while generating a response
+  savedb.disabled = true;
+
   // Prepare a new message element for the assistant's response
   assistantMessageElement = addMessageToChat('Assistant', '');
 });
@@ -61,16 +64,25 @@ socket.on('aiResponseEnd', function () {
   if (title.innerText.length === 0) {
     socket.emit('createTitle');
   }
+
+  // Enable save to database button
+  savedb.disabled = false;
 });
 
 socket.on('setTitle', title_text => {
-  savedb.disabled = false;
   title.innerText = title_text;
 });
 
 function SaveToDB() {
+  // Disable save to database button, when saving to database
+  savedb.disabled = true;
+
   socket.emit('saveToDatabase');
 }
+
+socket.on('savedToDatabase', () => {
+  alert("Saved!");
+});
 
 // Handle errors
 socket.on('error', function (errorMessage) {

@@ -5,7 +5,8 @@ const { WebSocket } = require('ws');
 const MessageService = require('./services/messageService');
 const ConversationService = require('./services/conversationService');
 const KnowledgeService = require('./services/knowledgeService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, BatchPromptModel, BatchRequestModel } = require('./database');
+const BatchService = require('./services/batchService');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, BatchPromptModel, BatchRequestModel, UseraccountModel } = require('./database');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
@@ -46,8 +47,9 @@ module.exports = (server, sessionMiddleware) => {
   });
 
   // Handle connections
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     const userId = socket.request.session.passport.user;
+    const userName = (await UseraccountModel.findOne({ _id: userId })).name;
 
     // Initialize conversation history and default model for this socket
     socket.conversationHistory = [];
@@ -56,7 +58,7 @@ module.exports = (server, sessionMiddleware) => {
     // Voice mode handle
     socket.ws = null;
 
-    console.log(`User connected: ${userId}`);
+    console.log(`${userName} connected: ${userId}`);
 
     socket.on('userSelectModel', async (model) => {
       socket.model = model;
@@ -82,8 +84,9 @@ module.exports = (server, sessionMiddleware) => {
       try {
         const response = await openai.chat.completions.create(inputParameters);
         const content = response.choices[0].message.content;
-        socket.conversationTitle = content;
-        socket.emit('setTitle', content);
+        const title = content.indexOf('"') === 0 ? content.split('"')[1] : content;
+        socket.conversationTitle = title;
+        socket.emit('setTitle', title);
       } catch (error) {
         console.error(error);
       }
@@ -98,7 +101,7 @@ module.exports = (server, sessionMiddleware) => {
         const useStreaming = streaming_models.includes(socket.model);
         // Prepare input parameters for the OpenAI API
         const inputParameters = {
-          model: socket.model, // Replace with your desired model
+          model: socket.model,
           messages: socket.conversationHistory,
           stream: useStreaming,
         };
@@ -137,6 +140,11 @@ module.exports = (server, sessionMiddleware) => {
 
     socket.on('saveToDatabase', async () => {
       // Save to database, use "Chat5" as category, and "chat5" as tag
+      const conversation_id = await conversationService.createConversationFromMessagesArray(userName, socket.conversationTitle, socket.conversationHistory, socket.model, "Chat5", "chat5");
+      await batchService.addPromptToBatch(userName, "@SUMMARY", conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
+
+      // Finished saving
+      socket.emit('savedToDatabase');
     });
 
     // Connect to voice mode
