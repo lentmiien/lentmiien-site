@@ -97,6 +97,8 @@ block content
             textarea#context(style="display:none;", name="context", cols="30", rows="10", novalidate)= `${conversation.context_prompt}`
             label(for="prompt") Prompt
             textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
+            if conversation.default_model 
+              label(for="provider")= `Current: ${conversation.default_model}`
             select#provider.form-control(name="provider") 
               optgroup(label="Current")
                 option(value="OpenAI_latest") OpenAI (2024-08-06)
