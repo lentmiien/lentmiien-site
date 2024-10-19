@@ -180,6 +180,11 @@ class ConversationService {
     return conv_entry._id.toString();
   }
 
+  async createConversationFromMessagesArray(user_id, title, messagesArray, model, category, tags) {
+    // Generate messages
+    // Generate conversation
+  }
+
   async updateConversation(conversation_id, parameters) {
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     const conversation = await this.conversationModel.findById(conversation_id);
