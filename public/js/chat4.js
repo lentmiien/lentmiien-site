@@ -697,3 +697,37 @@ function SetToPrompt() {
   userprompt.value = document.getElementById('output').value;
   CloseTemplatesPopup();
 }
+
+// Function to attach copy listeners to all <code> elements
+function attachCopyListeners() {
+  // Select all <code> elements in the document
+  const codeBlocks = document.querySelectorAll('code');
+
+  codeBlocks.forEach(code => {
+    // Check if the copy listener has already been added
+    if (!code.dataset.copyListener) {
+      // Add click event listener to copy the text content
+      code.addEventListener('click', () => {
+        // Use the Clipboard API to copy text
+        navigator.clipboard.writeText(code.textContent)
+          .then(() => {
+            // Add a CSS class to trigger the flash effect
+            code.classList.add('copied');
+
+            // Remove the class after 500ms to reset the style
+            setTimeout(() => {
+              code.classList.remove('copied');
+            }, 500);
+          })
+          .catch(err => {
+            console.error('Failed to copy text: ', err);
+            // Optionally, provide error feedback to the user here
+          });
+      });
+
+      // Mark the <code> element as having the copy listener
+      code.dataset.copyListener = 'true';
+    }
+  });
+}
+attachCopyListeners();
