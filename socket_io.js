@@ -55,6 +55,9 @@ module.exports = (server, sessionMiddleware) => {
     socket.conversationHistory = [];
     socket.model = 'gpt-4o-mini';
     socket.conversation_id = null;
+    socket.context = '';
+    socket.category = 'Chat5';
+    socket.tags = 'chat5';
 
     // Voice mode handle
     socket.ws = null;
@@ -64,6 +67,21 @@ module.exports = (server, sessionMiddleware) => {
     socket.on('userSelectModel', async (model) => {
       socket.model = model;
       console.log(`Switching to model "${model}", Streaming: ${streaming_models.includes(socket.model)}`);
+    });
+
+    socket.on('userUpdateSettings', async (data) => {
+      if (socket.conversation_id && (
+        socket.context != data.context ||
+        socket.category != data.category ||
+        socket.tags != data.tags
+      )) {
+        // Updating conversation
+        await conversationService.updateConversationSettings(socket.conversation_id, socket.context, socket.category, socket.tags);
+      }
+      socket.context = data.context
+      socket.category = data.category;
+      socket.tags = data.tags;
+      console.log(`New settings: ${JSON.stringify(data, null, 2)}`);
     });
 
     socket.on('createTitle', async () => {
@@ -93,7 +111,7 @@ module.exports = (server, sessionMiddleware) => {
       }
 
       // Save to database
-      socket.conversation_id = await conversationService.createConversationFromMessagesArray(userName, socket.conversationTitle, socket.conversationHistory, socket.model, "Chat5", "chat5");
+      socket.conversation_id = await conversationService.createConversationFromMessagesArray(userName, socket.conversationTitle, socket.conversationHistory, socket.model, socket.category, socket.tags);
       await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
     });
 

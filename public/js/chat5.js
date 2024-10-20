@@ -9,6 +9,11 @@ const messagesList = document.getElementById('messages');
 const messageForm = document.getElementById('message-form');
 const messageInput = document.getElementById('message');
 const title = document.getElementById('title');
+const settings = document.getElementById('settings');
+const settingsForm = document.getElementById('settings-form');
+const contextInput = document.getElementById('context');
+const categoryInput = document.getElementById('category');
+const tagsInput = document.getElementById('tags');
 
 // Variables to keep track of the assistant's response
 let assistantMessageElement = null;
@@ -291,3 +296,21 @@ function attachCopyListeners() {
     }
   });
 }
+
+function OpenSettings() {
+  settings.style.display = "block";
+}
+
+// Handle form submission for sending settings
+settingsForm.addEventListener('submit', function (e) {
+  e.preventDefault(); // Prevent page reload
+
+  // TODO: fetch settings ans emit to server
+  socket.emit('userUpdateSettings', {
+    context: contextInput.value,
+    category: categoryInput.value,
+    tags: tagsInput.value,
+  });
+
+  settings.style.display = "none";
+});

@@ -213,6 +213,15 @@ class ConversationService {
     await conversation.save();
   }
 
+  async updateConversationSettings(conversation_id, context, category, tags) {
+    const tags_array = tags.split(', ').join(',').split(' ').join('_').split(',');
+    const conversation = await this.conversationModel.findById(conversation_id);
+    conversation.context_prompt = context;
+    conversation.category = category;
+    conversation.tags = tags_array;
+    await conversation.save();
+  }
+
   async updateConversation(conversation_id, parameters) {
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     const conversation = await this.conversationModel.findById(conversation_id);

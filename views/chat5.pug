@@ -13,6 +13,17 @@ block content
         option(value="o1-mini") o1-mini
         option(value="o1-preview") o1-preview
       button.btn.btn-primary(type="submit") Send
+      button.btn.btn-secondary(type="button", onclick="OpenSettings()") Settings
+  #settings.popup-wrapper 
+    .popup-content
+      form#settings-form
+        label(for="context") Set a context/system message (*Not supported/ignored for "o1" models)
+        textarea#context.form-control(name="context", rows="7", placeholder="Type your context here...")
+        label(for="category") Conversation category 
+        input#category.form-control(type="text", name="category", value="Chat5")
+        label(for="tags") Conversation tags (*Comma-separated string)
+        input#tags.form-control(type="text", name="tags", value="chat5")
+        button.btn.btn-primary(type="submit") Update/Close
   hr
   button.btn.btn-primary(onclick="StartVoiceMode(this)") Start Voice Mode
   #transcript

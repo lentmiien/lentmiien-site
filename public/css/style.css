@@ -523,3 +523,7 @@ code::after {
 code:hover::after {
   opacity: 1;
 }
+
+#settings {
+  z-index: 9999;
+}
