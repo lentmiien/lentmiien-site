@@ -492,3 +492,34 @@
   padding-top: 5px;
   margin-bottom: 20px;
 }
+
+/* Flash effect for copied <code> elements */
+code.copied {
+  background-color: #d4edda; /* Light green background */
+  color: #155724; /* Dark green text */
+  transition: background-color 0.3s, color 0.3s;
+}
+
+code {
+  cursor: pointer;
+  position: relative;
+}
+
+code::after {
+  content: "Copy";
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #333;
+  color: #fff;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+code:hover::after {
+  opacity: 1;
+}
