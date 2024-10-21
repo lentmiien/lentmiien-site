@@ -21,6 +21,11 @@ const streaming_models = [
   "gpt-4o",
 ];
 
+const context_models = [
+  "gpt-4o-mini",
+  "gpt-4o",
+];
+
 // Initialize OpenAI API
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -77,11 +82,11 @@ module.exports = (server, sessionMiddleware) => {
       )) {
         // Updating conversation
         await conversationService.updateConversationSettings(socket.conversation_id, socket.context, socket.category, socket.tags);
+        console.log(`New settings: ${JSON.stringify(data, null, 2)}`);
       }
       socket.context = data.context
       socket.category = data.category;
       socket.tags = data.tags;
-      console.log(`New settings: ${JSON.stringify(data, null, 2)}`);
     });
 
     socket.on('createTitle', async () => {
@@ -111,7 +116,7 @@ module.exports = (server, sessionMiddleware) => {
       }
 
       // Save to database
-      socket.conversation_id = await conversationService.createConversationFromMessagesArray(userName, socket.conversationTitle, socket.conversationHistory, socket.model, socket.category, socket.tags);
+      socket.conversation_id = await conversationService.createConversationFromMessagesArray(userName, socket.conversationTitle, socket.conversationHistory, socket.context, socket.model, socket.category, socket.tags);
       await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
     });
 
@@ -120,12 +125,26 @@ module.exports = (server, sessionMiddleware) => {
       // Add the user's message to the conversation history
       socket.conversationHistory.push({ role: 'user', content: userMessage });
 
+      const conversationMessages = [];
+      if (socket.context.length > 0 && context_models.includes(socket.model)) {
+        conversationMessages.push({
+          role: 'system',
+          content: socket.context,
+        });
+      }
+      socket.conversationHistory.forEach(d => {
+        conversationMessages.push({
+          role: d.role,
+          content: d.content,
+        });
+      });
+
       try {
         const useStreaming = streaming_models.includes(socket.model);
         // Prepare input parameters for the OpenAI API
         const inputParameters = {
           model: socket.model,
-          messages: socket.conversationHistory,
+          messages: conversationMessages,
           stream: useStreaming,
         };
 

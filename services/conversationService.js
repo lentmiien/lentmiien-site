@@ -180,11 +180,10 @@ class ConversationService {
     return conv_entry._id.toString();
   }
 
-  async createConversationFromMessagesArray(user_id, title, messagesArray, model, category, tags) {
-    const context = messagesArray[0].role === "system" ? messagesArray[0].content : "";
+  async createConversationFromMessagesArray(user_id, title, messagesArray, context, model, category, tags) {
     // Generate messages
     const message_id_array = [];
-    for (let i = messagesArray[0].role === "system" ? 1 : 0; i < messagesArray.length; i += 2) {
+    for (let i = 0; i < messagesArray.length; i += 2) {
       message_id_array.push((await this.messageService.CreateCustomMessage(messagesArray[i].content, messagesArray[i+1].content, user_id, category, [], [tags])).db_entry._id.toString());
     }
     // Generate conversation
