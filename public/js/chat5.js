@@ -14,6 +14,7 @@ const settingsForm = document.getElementById('settings-form');
 const contextInput = document.getElementById('context');
 const categoryInput = document.getElementById('category');
 const tagsInput = document.getElementById('tags');
+const load = document.getElementById('load');
 
 // Variables to keep track of the assistant's response
 let assistantMessageElement = null;
@@ -297,6 +298,12 @@ function attachCopyListeners() {
   });
 }
 
+/***********************************
+ * 
+ * Settings
+ * 
+ */
+
 function OpenSettings() {
   settings.style.display = "block";
 }
@@ -314,3 +321,31 @@ settingsForm.addEventListener('submit', function (e) {
 
   settings.style.display = "none";
 });
+
+/********************************
+ * 
+ *  Load
+ * 
+ */
+
+function OpenLoad() {
+  // Emit a load event (no query parameters, so show last 20 entries)
+  load.style.display = "block";
+}
+
+function UpdateLoad() {
+  // When query parameter has been updated
+  // Emit a load event (use query parameters to show last 20 entries)
+}
+
+function CloseLoad() {
+  load.style.display = "none";
+}
+
+function LoadConversation(id) {
+  // Clear conversation window
+  // Set default model
+  // Populate conversation from database
+
+  CloseLoad();
+}

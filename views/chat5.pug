@@ -1,7 +1,11 @@
 extends layout
 
 block content
-  h1 Chat Room
+  .row
+    .col
+      h1 Chat Room
+    .col 
+      button.btn.btn-secondary(type="button", onclick="OpenLoad()()") Load conversation
   h3#title
   ul#messages
   form#message-form
@@ -24,6 +28,21 @@ block content
         label(for="tags") Conversation tags (*Comma-separated string)
         input#tags.form-control(type="text", name="tags", value="chat5")
         button.btn.btn-primary(type="submit") Update/Close
+  #load.popup-wrapper 
+    .popup-content
+      .row 
+        .col
+          label(for="load_category") Category 
+          input#load_category(type="text", name="load_category", onchange="UpdateLoad()") 
+        .col
+          label(for="load_tags") Tags 
+          input#load_tags(type="text", name="load_tags", onchange="UpdateLoad()") 
+        .col
+          label(for="load_keyword") Keyword 
+          input#load_keyword(type="text", name="load_keyword", onchange="UpdateLoad()") 
+      h4 Select a conversation to load
+      ul#loadlist
+      button.btn.btn-danger(type="button", onclick="CloseLoad()") Cancel
   hr
   button.btn.btn-primary(onclick="StartVoiceMode(this)") Start Voice Mode
   #transcript

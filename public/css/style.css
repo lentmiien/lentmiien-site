@@ -524,6 +524,6 @@ code:hover::after {
   opacity: 1;
 }
 
-#settings {
+#settings, #load {
   z-index: 9999;
 }
