@@ -8,6 +8,7 @@ const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const messagesList = document.getElementById('messages');
 const messageForm = document.getElementById('message-form');
 const messageInput = document.getElementById('message');
+const model = document.getElementById('model');
 const title = document.getElementById('title');
 const settings = document.getElementById('settings');
 const settingsForm = document.getElementById('settings-form');
@@ -328,24 +329,63 @@ settingsForm.addEventListener('submit', function (e) {
  * 
  */
 
+const load_category = document.getElementById('load_category');
+const load_tags = document.getElementById('load_tags');
+const load_keyword = document.getElementById('load_keyword');
+const loadlist = document.getElementById('loadlist');
+
 function OpenLoad() {
+  load_category.value = "";
+  load_tags.value = "";
+  load_keyword.value = "";
+
   // Emit a load event (no query parameters, so show last 20 entries)
+  socket.emit('loadConversations', {category: load_category.value, tags: load_tags.value, keyword: load_keyword.value});
+
   load.style.display = "block";
 }
 
 function UpdateLoad() {
   // When query parameter has been updated
   // Emit a load event (use query parameters to show last 20 entries)
+  socket.emit('loadConversations', {category: load_category.value, tags: load_tags.value, keyword: load_keyword.value});
 }
+
+socket.on('displayConversations', conversation_array => {
+  loadlist.innerHTML = "";
+  conversation_array.forEach(c => {
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+    button.innerText = c.title;
+    button.title = c.description;
+    button.classList.add("btn", "btn-primary");
+    button.addEventListener("click", () => LoadConversation(c._id.toString()));
+    li.append(button);
+    loadlist.append(li);
+  });
+});
+
+function LoadConversation(id) {
+  socket.emit('fetchConversation', id);
+  CloseLoad();
+}
+
+socket.on('displayConversationContent', data => {
+  // Clear conversation window
+  messagesList.innerHTML = '';
+  // Set default model and settings
+  model.value = data.conversation.default_model;
+  contextInput.value = data.conversation.context_prompt;
+  categoryInput.value = data.conversation.category;
+  tagsInput.value = data.conversation.tags.join(",");
+  title.innerText = data.conversation.title;
+  // Populate conversation from database
+  data.messages.forEach(m => {
+    addMessageToChat('User', m.prompt);
+    addMessageToChat('Assistant', m.response);
+  });
+});
 
 function CloseLoad() {
   load.style.display = "none";
-}
-
-function LoadConversation(id) {
-  // Clear conversation window
-  // Set default model
-  // Populate conversation from database
-
-  CloseLoad();
 }

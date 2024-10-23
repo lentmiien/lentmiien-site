@@ -50,6 +50,21 @@ class ConversationService {
     }
   }
 
+  async getConversationsForUserQuery(user_id, query) {
+    const find_query = {
+      user_id
+    };
+    if (query.category.length > 0) find_query.category = query.category;
+
+    const conversations = await this.conversationModel.find(find_query).sort({ updated_date: -1 }).exec();
+
+    if (query.tags.length > 0) {
+      return conversations.filter(d => d.tags.includes(query.tags));
+    } else {
+      return conversations;
+    }
+  }
+
   async getInRange(user_id, start, end) {
     const s_parts = start.split('-').map(d => parseInt(d));
     const e_parts = end.split('-').map(d => parseInt(d));

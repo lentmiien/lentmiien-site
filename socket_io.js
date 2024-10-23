@@ -69,6 +69,39 @@ module.exports = (server, sessionMiddleware) => {
 
     console.log(`${userName} connected: ${userId}`);
 
+    socket.on('loadConversations', async (query) => {
+      const conversations = await conversationService.getConversationsForUserQuery(userName, query);
+      socket.emit('displayConversations', conversations);
+    });
+
+    socket.on('fetchConversation', async (id) => {
+      const conversation = await conversationService.getConversationsById(id);
+      const messages = (await messageService.getMessagesByIdArray(conversation.messages)).reverse();
+
+      // Setup values on server side
+      socket.conversationTitle = conversation.title;
+      //socket.conversationHistory
+      messages.forEach(m => {
+        socket.conversationHistory.push({ role: 'user', content: m.prompt });
+        socket.conversationHistory.push({ role: 'assistant', content: m.response });
+      });
+      //socket.model
+      if (conversation.default_model && conversation.default_model.length > 0) {
+        socket.model = conversation.default_model;
+      }
+      //socket.conversation_id
+      socket.conversation_id = id;
+      //socket.context
+      socket.context = conversation.context_prompt;
+      //socket.category
+      socket.category = conversation.category;
+      //socket.tags
+      socket.tags = conversation.tags.join(",");
+
+      // Return values to user, for user to setup their values
+      socket.emit('displayConversationContent', {conversation, messages});
+    });
+
     socket.on('userSelectModel', async (model) => {
       socket.model = model;
       console.log(`Switching to model "${model}", Streaming: ${streaming_models.includes(socket.model)}`);
