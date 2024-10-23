@@ -50,12 +50,12 @@ const BatchRequest = new mongoose.Schema({
 module.exports = mongoose.model('batchrequest', BatchRequest);
 */
 
-const valid_models = ["gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20240620"];
+const valid_models = ["gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022"];
 const model_provider = {
   "gpt-4o-2024-08-06": "OpenAI",
   "gpt-4o": "OpenAI",
   "gpt-4o-mini": "OpenAI",
-  "claude-3-5-sonnet-20240620": "Anthropic",
+  "claude-3-5-sonnet-20241022": "Anthropic",
 };
 
 class BatchService {
@@ -151,7 +151,7 @@ class BatchService {
           "gpt-4o-2024-08-06": [],
           "gpt-4o": [],
           "gpt-4o-mini": [],
-          "claude-3-5-sonnet-20240620": [],
+          "claude-3-5-sonnet-20241022": [],
         };
         const models = valid_models;
 
