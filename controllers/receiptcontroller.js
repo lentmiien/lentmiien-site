@@ -31,7 +31,8 @@ const conversationService = new ConversationService(Conversation4Model, messageS
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 
 exports.receipt = async (req, res) => {
-  const receipts = await Receipt.find().sort('-date');
+  const start = new Date(Date.now() - (1000*60*60*24*30));
+  const receipts = await Receipt.find({date: { $gte: start }}).sort('-date');
   res.render('receipt', {receipts});
 };
 
