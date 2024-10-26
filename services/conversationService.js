@@ -50,6 +50,21 @@ class ConversationService {
     }
   }
 
+  async getConversationsForUserQuery(user_id, query) {
+    const find_query = {
+      user_id
+    };
+    if (query.category.length > 0) find_query.category = query.category;
+
+    const conversations = await this.conversationModel.find(find_query).sort({ updated_date: -1 }).exec();
+
+    if (query.tags.length > 0) {
+      return conversations.filter(d => d.tags.includes(query.tags));
+    } else {
+      return conversations;
+    }
+  }
+
   async getInRange(user_id, start, end) {
     const s_parts = start.split('-').map(d => parseInt(d));
     const e_parts = end.split('-').map(d => parseInt(d));
@@ -180,11 +195,10 @@ class ConversationService {
     return conv_entry._id.toString();
   }
 
-  async createConversationFromMessagesArray(user_id, title, messagesArray, model, category, tags) {
-    const context = messagesArray[0].role === "system" ? messagesArray[0].content : "";
+  async createConversationFromMessagesArray(user_id, title, messagesArray, context, model, category, tags) {
     // Generate messages
     const message_id_array = [];
-    for (let i = messagesArray[0].role === "system" ? 1 : 0; i < messagesArray.length; i += 2) {
+    for (let i = 0; i < messagesArray.length; i += 2) {
       message_id_array.push((await this.messageService.CreateCustomMessage(messagesArray[i].content, messagesArray[i+1].content, user_id, category, [], [tags])).db_entry._id.toString());
     }
     // Generate conversation
@@ -210,6 +224,15 @@ class ConversationService {
     conversation.messages.push((await this.messageService.CreateCustomMessage(user_msg, assistant_msg, user_id, conversation.category, [], conversation.tags)).db_entry._id.toString());
     conversation.updated_date = new Date();
     conversation.default_model = model;
+    await conversation.save();
+  }
+
+  async updateConversationSettings(conversation_id, context, category, tags) {
+    const tags_array = tags.split(', ').join(',').split(' ').join('_').split(',');
+    const conversation = await this.conversationModel.findById(conversation_id);
+    conversation.context_prompt = context;
+    conversation.category = category;
+    conversation.tags = tags_array;
     await conversation.save();
   }
 
