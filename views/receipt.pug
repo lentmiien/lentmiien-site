@@ -4,8 +4,9 @@ block content
   h2 Upload a receipt 
   form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data") 
     label(for="imgs") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
-    input#imgs.form-control(type="file", name="imgs", multiple)
-    input.btn.btn-primary(type="submit", value="Upload")
+    .input-group
+      input#imgs.form-control(type="file", name="imgs", multiple)
+      input.btn.btn-primary(type="submit", value="Upload")
   h2 History 
   table.table.table-striped 
     thead 

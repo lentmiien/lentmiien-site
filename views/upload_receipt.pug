@@ -1,6 +1,12 @@
 extends layout
 
 block content
+  h2 Upload another receipt 
+  form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data") 
+    label(for="imgs") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
+    .input-group
+      input#imgs.form-control(type="file", name="imgs", multiple)
+      input.btn.btn-primary(type="submit", value="Upload")
   h2 Review receipt details 
   img(src=`/img/${receipt.file}`, alt="receipt")
   form(action=`/receipt/correct_receipt/${receipt._id.toString()}`, method="post") 
