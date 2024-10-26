@@ -1,3 +1,23 @@
+const OpenAI = require('openai');
+const { zodResponseFormat } = require('openai/helpers/zod');
+const { z } = require('zod');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const BusinessInfo = z.object({
+  name: z.string(),
+  address: z.string(),
+});
+const ReciptDetails = z.object({
+  date: z.string(),
+  time: z.string(),
+  total_amount: z.number(),
+  payment_method: z.enum(["credit card", "cash"]),
+  business_info: BusinessInfo,
+});
+
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
@@ -50,7 +70,29 @@ exports.upload_receipt = async (req, res) => {
   await conversationService.updateConversation(conversation_id, {title, category:"OCR", tags:"receipt", context, prompt});
   await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4o-mini");
 
-  res.render("upload_receipt", {receipt: newReceipt});
+  // Test structured output
+  const b64 = conversationService.loadImageToBase64(messages[0].images[0].filename);
+  const response = await openai.beta.chat.completions.parse({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: context },
+      { role: "user", content: [
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:image/jpeg;base64,${b64}`,
+            detail: 'high'
+          }
+        },
+        { type: 'text', text: prompt }
+      ]},
+    ],
+    response_format: zodResponseFormat(ReciptDetails, "recipt_details"),
+  });
+  const recipt_details = response.choices[0].message.parsed;
+  console.log(recipt_details);
+
+  res.render("upload_receipt", {receipt: newReceipt, test_data: recipt_details});
 };
 
 exports.view_receipt = async (req, res) => {

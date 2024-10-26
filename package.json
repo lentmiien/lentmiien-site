@@ -6,7 +6,8 @@
   "scripts": {
     "prestart": "node setup",
     "start": "node app",
-    "git_test": "node git_test"
+    "git_test": "node git_test",
+    "test": "node test"
   },
   "repository": {
     "type": "git",
@@ -43,6 +44,7 @@
     "sharp": "^0.33.2",
     "simple-git": "^3.25.0",
     "socket.io": "^4.8.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
   }
 }
