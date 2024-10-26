@@ -37,63 +37,88 @@ exports.receipt = async (req, res) => {
 };
 
 exports.upload_receipt = async (req, res) => {
-  const user_id = req.user.name;
-  let use_conversation_id = "new";
+  // const user_id = req.user.name;
+  // let use_conversation_id = "new";
 
   // Context and Prompt
   const context = `You are about to use OpenAI's vision model to process receipts, primarily in Japanese. Your task is to accurately extract specific pieces of information from each receipt and present them in a consistent JSON format. The information you need to extract includes:\n\n1. Date of the purchase.\n2. Time of the purchase.\n3. Total purchase amount.\n4. Payment method (e.g., credit card, cash).\n5. Information identifying the business where the purchase was made (e.g., business name, address).\n\nPlease ensure that the output JSON format remains consistent across different receipts.\n\nHere is the JSON template you should use for the output:\n\n{\n  "date": "YYYY-MM-DD",\n  "time": "HH:MM",\n  "total_amount": "X,XXX.XX",\n  "payment_method": "credit card/cash",\n  "business_info": {\n    "name": "Business Name",\n    "address": "Business Address"\n  }\n}`;
   const prompt = `Please extract the following details from the receipt provided:\n1. Date of the purchase.\n2. Time of the purchase.\n3. Total purchase amount.\n4. Payment method (e.g., credit card, cash).\n5. Information identifying the business where the purchase was made (e.g., business name, address).\n\nAssume most receipts will be in Japanese. The output should be structured in the given JSON format.\n\nExample JSON output:\n\n{\n  "date": "YYYY-MM-DD",\n  "time": "HH:MM",\n  "total_amount": "X,XXX.XX",\n  "payment_method": "credit card/cash",\n  "business_info": {\n    "name": "Business Name",\n    "address": "Business Address"\n  }\n}\n\nMake sure to follow this template strictly for consistent results.`;
 
   // Post message to conversation
-  const image_paths = [];
+  // const image_paths = [];
+  // for (let i = 0; i < req.files.length; i++) {
+  //   image_paths.push(req.files[i].destination + req.files[i].filename);
+  // }
+  // const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, {title:"Receipt", category:"OCR", tags:"receipt", context, prompt}, "OpenAI_mini");
+
+  // // Process result and save to Receipt database
+  // const conversation = await conversationService.getConversationsById(conversation_id);
+  // const messages = await messageService.getMessagesByIdArray(conversation.messages);
+  // const data = ParseData(messages[0].response)
+
+  // const newReceipt = new Receipt({
+  //   date: new Date(data.date),
+  //   amount: parseInt(data.total_amount.split(',').join('').split('.')[0]),
+  //   method: data.payment_method,
+  //   business_name: data.business_info.name,
+  //   business_address: data.business_info.address,
+  //   file: messages[0].images[0].filename,
+  // });
+  // await newReceipt.save();
+
+  // // Add summary request to batch process
+  // const title = `Receipt ${data.date}`;
+  // await conversationService.updateConversation(conversation_id, {title, category:"OCR", tags:"receipt", context, prompt});
+  // await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4o-mini");
+
+  const added_array = [];
+  const raw_data = [];
+
   for (let i = 0; i < req.files.length; i++) {
-    image_paths.push(req.files[i].destination + req.files[i].filename);
+    const { new_filename, b64_img } = await conversationService.loadProcessNewImageToBase64(req.files[i].destination + req.files[i].filename);
+    const response = await openai.beta.chat.completions.parse({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: context },
+        { role: "user", content: [
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:image/jpeg;base64,${b64_img}`,
+              detail: 'high'
+            }
+          },
+          { type: 'text', text: prompt }
+        ]},
+      ],
+      response_format: zodResponseFormat(ReciptDetails, "recipt_details"),
+    });
+    const recipt_details = response.choices[0].message.parsed;
+
+    const newReceipt = new Receipt({
+      date: new Date(recipt_details.date),
+      amount: recipt_details.total_amount,
+      method: recipt_details.payment_method,
+      business_name: recipt_details.business_info.name,
+      business_address: recipt_details.business_info.address,
+      file: new_filename,
+    });
+    await newReceipt.save();
+
+    raw_data.push({
+      date: recipt_details.date,
+      time: recipt_details.time,
+      total_amount: recipt_details.total_amount,
+      payment_method: recipt_details.payment_method,
+      business_info: {
+        name: recipt_details.business_info.name,
+        address: recipt_details.business_info.address,
+      }
+    });
+    added_array.push(newReceipt);
   }
-  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, {title:"Receipt", category:"OCR", tags:"receipt", context, prompt}, "OpenAI_mini");
 
-  // Process result and save to Receipt database
-  const conversation = await conversationService.getConversationsById(conversation_id);
-  const messages = await messageService.getMessagesByIdArray(conversation.messages);
-  const data = ParseData(messages[0].response)
-
-  const newReceipt = new Receipt({
-    date: new Date(data.date),
-    amount: parseInt(data.total_amount.split(',').join('').split('.')[0]),
-    method: data.payment_method,
-    business_name: data.business_info.name,
-    business_address: data.business_info.address,
-    file: messages[0].images[0].filename,
-  });
-  await newReceipt.save();
-
-  // Add summary request to batch process
-  const title = `Receipt ${data.date}`;
-  await conversationService.updateConversation(conversation_id, {title, category:"OCR", tags:"receipt", context, prompt});
-  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4o-mini");
-
-  // Test structured output
-  const b64 = conversationService.loadImageToBase64(messages[0].images[0].filename);
-  const response = await openai.beta.chat.completions.parse({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: context },
-      { role: "user", content: [
-        {
-          type: "image_url",
-          image_url: {
-            url: `data:image/jpeg;base64,${b64}`,
-            detail: 'high'
-          }
-        },
-        { type: 'text', text: prompt }
-      ]},
-    ],
-    response_format: zodResponseFormat(ReciptDetails, "recipt_details"),
-  });
-  const recipt_details = response.choices[0].message.parsed;
-  console.log(recipt_details);
-
-  res.render("upload_receipt", {receipt: newReceipt, test_data: recipt_details});
+  res.render('receipt', {receipts: added_array, raw_data });
 };
 
 exports.view_receipt = async (req, res) => {

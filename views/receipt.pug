@@ -27,3 +27,5 @@ block content
             a.btn.btn-link(href=`/receipt/view_receipt/${d._id.toString()}`) View/Edit
             a.btn.btn-secondary(href=`/accounting/add_transaction?from_account=${d.method === 'cash' ? "63aafe30fb2f5072d6609331" : "63aafe6dfb2f5072d6609333"}&to_account=EXT&date=${d.date.toJSON().split('T')[0]}&amount=${d.amount}&transaction_business=${d.business_name}&type=expense`) Add to budget
             a.btn.btn-danger(href=`/receipt/delete_receipt/${d._id.toString()}`) Delete
+  if raw_data
+    pre= JSON.stringify(raw_data, null, 2)
