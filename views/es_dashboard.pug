@@ -3,19 +3,22 @@ extends layout
 block content
   .row 
     .col
+      if items.length > 0
+        h2 Items to Rotate
+        ul
+          each item in items
+            li #{category_lookup_and_stock[item.categoryId].label} (#{item.label || '-'}) - Amount: #{item.amount} #{category_lookup_and_stock[item.categoryId].unit} (#{item.rotateDate.toDateString()})
       h1 Emergency Stock Dashboard
       a.btn.btn-link(href="/chat4/viewknowledge/66c5f84af31b7bdb8563814d") Emergency stock - 6 month plan
       a.btn.btn-link(href="/es/es_view_stock") View current stock
+      a.btn.btn-link(href="/i/es.jpg") 3 person household (original list)
       br
       b= `${average}% done`
       ul
         each category in categories
-          li #{category.name} - Recommended: #{category.recommendedStock} #{category.unit} 
-            b= `(${category_lookup_and_stock[category._id.toString()].stock} ${category.unit}: ${category_lookup_and_stock[category._id.toString()].percent}%)`
-      h2 Items to Rotate
-      ul
-        each item in items
-          li #{category_lookup_and_stock[item.categoryId].label} (#{item.label || '-'}) - Amount: #{item.amount} #{category_lookup_and_stock[item.categoryId].unit} (#{item.rotateDate.toDateString()})
+          if category_lookup_and_stock[category._id.toString()].percent < 100
+            li #{category.name} - Recommended: #{category.recommendedStock} #{category.unit} 
+              b= `(${category_lookup_and_stock[category._id.toString()].stock} ${category.unit}: ${category_lookup_and_stock[category._id.toString()].percent}%)`
     .col 
       h2 Add item 
       form(action="/es/add_item", method="post") 
