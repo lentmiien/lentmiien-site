@@ -94,9 +94,36 @@ async function convertPngToJpgInFolder(folderPath) {
   }
 }
 
-// Usage example
 const folderPath = 'public/img';
 convertPngToJpgInFolder(folderPath);
+
+// Delete log files
+const logPath = '/home/lentmiien/.pm2/logs/';
+function deleteLogFile(filename) {
+  const filePath = path.join(logPath, filename);
+
+  // Validate that the file exists and is within the log directory
+  if (!fs.existsSync(filePath)) {
+    console.log(`File '${filePath}' not found!`)
+    return;
+  }
+
+  // Ensure that the path is a file and not a directory
+  if (!fs.statSync(filePath).isFile()) {
+    console.log(`'${filePath}' is not a file!`)
+    return;
+  }
+
+  // Delete the file
+  try {
+    fs.unlinkSync(filePath);
+  } catch (err) {
+    console.log(`Error deleting '${filePath}'`)
+    return;
+  }
+}
+deleteLogFile("app-error.log");
+deleteLogFile("app-out.log");
 
 // Gmail check
 const fs2 = require('fs').promises;
