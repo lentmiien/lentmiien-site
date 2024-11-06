@@ -83,7 +83,7 @@ ${all_details.join("\n\n")}
     const newProduct = new ProductDetails({
       product_code: req.body.data[i][0],
       name: req.body.data[i][1],
-      details: req.body.data[i][2],
+      details: req.body.data[i][2].length === 0 ? req.body.data[i][1] : req.body.data[i][2],
       content: req.body.data[i][3],
       description: req.body.data[i][4],
       price: req.body.data[i][5],
