@@ -1,6 +1,8 @@
 const socketIO = require('socket.io');
 const OpenAI = require('openai');
 const { WebSocket } = require('ws');
+const { zodResponseFormat } = require('openai/helpers/zod');
+const { z } = require('zod');
 
 const MessageService = require('./services/messageService');
 const ConversationService = require('./services/conversationService');
@@ -29,6 +31,10 @@ const context_models = [
 // Initialize OpenAI API
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+});
+
+const Title = z.object({
+  conversation_title: z.string(),
 });
 
 module.exports = (server, sessionMiddleware) => {
@@ -137,11 +143,15 @@ module.exports = (server, sessionMiddleware) => {
       const inputParameters = {
         model: 'gpt-4o-mini',
         messages: conversationMessages,
+        response_format: zodResponseFormat(Title, "title"),
       };
       try {
-        const response = await openai.chat.completions.create(inputParameters);
-        const content = response.choices[0].message.content;
-        const title = content.indexOf('"') === 0 ? content.split('"')[1] : content;
+        const response = await openai.beta.chat.completions.parse(inputParameters);
+        const details = response.choices[0].message.parsed;
+        const title = details.title;
+        // const response = await openai.chat.completions.create(inputParameters);
+        // const content = response.choices[0].message.content;
+        // const title = content.indexOf('"') === 0 ? content.split('"')[1] : content;
         socket.conversationTitle = title;
         socket.emit('setTitle', title);
       } catch (error) {
