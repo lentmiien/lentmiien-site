@@ -148,7 +148,7 @@ module.exports = (server, sessionMiddleware) => {
       try {
         const response = await openai.beta.chat.completions.parse(inputParameters);
         const details = response.choices[0].message.parsed;
-        const title = details.title;
+        const title = details.conversation_title;
         // const response = await openai.chat.completions.create(inputParameters);
         // const content = response.choices[0].message.content;
         // const title = content.indexOf('"') === 0 ? content.split('"')[1] : content;
