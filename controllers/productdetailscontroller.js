@@ -1,3 +1,18 @@
+const OpenAI = require('openai');
+const { zodResponseFormat } = require('openai/helpers/zod');
+const { z } = require('zod');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const CustomsDetails = z.object({
+  material: z.string(),
+  size: z.string(),
+  usage: z.string(),
+  additional_notes: z.string(),
+});
+
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
@@ -23,38 +38,26 @@ exports.upload_product_data = async (req, res) => {
   const dstr = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`
 
   // Context
-  const context = `You are a helpful assistant, please use the following response template when responding:
-
-**Response template:**
-
----
-
-- **Name:** {full product name}
-- **Material:** {material details}
-- **Size:** {general size details}
-- **Usage:** {typical usage of the item}
-- **Additional Notes:** {additional details about item and additional parts, if available}
-- **Price:** xxx JPY
-
----
-`;
+  const context = 'You are a helpful assistant, on customs clearance topics.\n\nYour task is to provide customs clearance details for the product details provided, this is the JSON template you should use for the output:\n\n**Response template:**\n\n```json\n{\n  material: "Details about the material of the product",\n  size: "Any sizedetails about the product",\n  usage: "Typical usage of the product",\n  additional_notes: "Other notes about the product, useful for customs clearance",\n}\n```';
   
   const output = [];
   for (let i = 0; i < req.body.data.length; i++) {
-    // Generate `ai_description`
-    const all_details = [];
-    if (req.body.data[i][2].length > 0) {
-      all_details.push(`- ${req.body.data[i][2].split('\n').join('\n- ')}`);
-    }
-    if (req.body.data[i][3].length > 0) {
-      all_details.push(`Content:\n- ${req.body.data[i][3].split(']\n').join('] ').split('\n').join('\n- ')}`);
-    }
-    if (req.body.data[i][4].length > 0) {
-      all_details.push(req.body.data[i][4]);
-    }
-    const title = `Product details ${dstr} [${i}]`;
-    const prompt = `Please help me summarize the details of the item below.
-The summary is to be used for customs clearance, so material and usage is the most important details.
+    const existing = await ProductDetails.find({product_code: req.body.data[i][0]});
+    if (existing.length === 0) {
+      // Generate `ai_description`
+      const all_details = [];
+      if (req.body.data[i][2].length > 0) {
+        all_details.push(`- ${req.body.data[i][2].split('\n').join('\n- ')}`);
+      }
+      if (req.body.data[i][3].length > 0) {
+        all_details.push(`Content:\n- ${req.body.data[i][3].split(']\n').join('] ').split('\n').join('\n- ')}`);
+      }
+      if (req.body.data[i][4].length > 0) {
+        all_details.push(req.body.data[i][4]);
+      }
+      // const title = `Product details ${dstr} [${i}]`;
+      const prompt = `Please help me summarize the details of the item below.
+The summary is to be used for customs clearance, so material and usage is particularly important, and all texts must be in English.
 
 ---
 
@@ -74,24 +77,68 @@ ${all_details.join("\n\n")}
 
 ---
 `;
-    const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, [], {title, category:"Product details", tags:"dhl,product_details", context, prompt}, "OpenAI_mini");
-    await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4o-mini");
-    const conversation = await conversationService.getConversationsById(conversation_id);
-    const messages = await messageService.getMessagesByIdArray(conversation.messages);
-    const ai_description = messages[0].response;
-    // Save to database
-    const newProduct = new ProductDetails({
-      product_code: req.body.data[i][0],
-      name: req.body.data[i][1],
-      details: req.body.data[i][2].length === 0 ? req.body.data[i][1] : req.body.data[i][2],
-      content: req.body.data[i][3],
-      description: req.body.data[i][4],
-      price: req.body.data[i][5],
-      ai_description,
-      created: new Date(),
-    });
-    await newProduct.save();
-    output.push(newProduct);
+      // const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, [], {title, category:"Product details", tags:"dhl,product_details", context, prompt}, "OpenAI_mini");
+      // await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4o-mini");
+      // const conversation = await conversationService.getConversationsById(conversation_id);
+      // const messages = await messageService.getMessagesByIdArray(conversation.messages);
+      // const ai_description = messages[0].response;
+      
+      const response = await openai.beta.chat.completions.parse({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: context },
+          { role: "user", content: [
+            { type: 'text', text: prompt }
+          ]},
+        ],
+        response_format: zodResponseFormat(CustomsDetails, "customs_details"),
+      });
+      const customs_details = response.choices[0].message.parsed;
+      
+      // Save to database
+      const newProduct = new ProductDetails({
+        product_code: req.body.data[i][0],
+        name: req.body.data[i][1],
+        details: req.body.data[i][2].length === 0 ? req.body.data[i][1] : req.body.data[i][2],
+        content: req.body.data[i][3],
+        description: req.body.data[i][4],
+        price: req.body.data[i][5],
+        ai_description: JSON.stringify(customs_details),
+        created: new Date(),
+        material: customs_details.material,
+        size: customs_details.size,
+        usage: customs_details.usage,
+        additional_notes: customs_details.additional_notes,
+      });
+      await newProduct.save();
+      output.push({
+        product_code: req.body.data[i][0],
+        ai_description: `---
+
+- **Name:** ${req.body.data[i][1]}
+- **Material:** ${customs_details.material}
+- **Size:** ${customs_details.size}
+- **Usage:** ${customs_details.usage}
+- **Additional Notes:** ${customs_details.additional_notes}
+- **Price:** ${req.body.data[i][5]} JPY
+
+---`,
+      });
+    } else {
+      output.push({
+        product_code: existing[0].product_code,
+        ai_description: `---
+
+- **Name:** ${req.body.data[i][1]}
+- **Material:** ${existing[0].material}
+- **Size:** ${existing[0].size}
+- **Usage:** ${existing[0].usage}
+- **Additional Notes:** ${existing[0].additional_notes}
+- **Price:** ${req.body.data[i][5]} JPY
+
+---`,
+      })
+    }
   }
   res.json(output);
 }

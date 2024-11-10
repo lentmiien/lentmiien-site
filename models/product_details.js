@@ -9,6 +9,10 @@ const ProductDetails = new mongoose.Schema({
   price: { type: Number, required: true },
   ai_description: { type: String, required: true },
   created: { type: Date },
+  material: { type: String },
+  size: { type: String },
+  usage: { type: String },
+  additional_notes: { type: String },
 });
 
 module.exports = mongoose.model('productdetails', ProductDetails);

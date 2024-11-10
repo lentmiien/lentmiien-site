@@ -63,7 +63,23 @@ window.addEventListener('load', function () {
     for (let i = 0; i < data.length; i++) {
       for (let j = 0; j < products.length; j++) {
         if (data[i][0] === products[j].product_code) {
-          output.innerHTML += `<hr><b>${products[j].product_code}</b>${marked.parse(products[j].ai_description)}`;
+          if (products[j].material) {
+            // New format
+            const content_string = `---
+
+- **Name:** ${products[j].name}
+- **Material:** ${products[j].material}
+- **Size:** ${products[j].size}
+- **Usage:** ${products[j].usage}
+- **Additional Notes:** ${products[j].additional_notes}
+- **Price:** ${products[j].price} JPY
+
+---`;
+            output.innerHTML += `<hr><b>${products[j].product_code}</b>${marked.parse(content_string)}`;
+          } else {
+            // Previous format
+            output.innerHTML += `<hr><b>${products[j].product_code}</b>${marked.parse(products[j].ai_description)}`;
+          }
           break;
         }
       }
