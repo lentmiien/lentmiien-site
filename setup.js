@@ -125,6 +125,14 @@ function deleteLogFile(filename) {
 deleteLogFile("app-error.log");
 deleteLogFile("app-out.log");
 
+// Delete "test" data from chat database
+const { Chat4Model, Conversation4Model } = require('./database');
+async function ClearTestDataFromDB() {
+  await Chat4Model.deleteMany({ category: "Test" });//Test
+  await Conversation4Model.deleteMany({ category: "Test" });//Test
+}
+ClearTestDataFromDB();
+
 // Gmail check
 const fs2 = require('fs').promises;
 const readline = require('readline');
