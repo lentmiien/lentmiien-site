@@ -126,10 +126,17 @@ deleteLogFile("app-error.log");
 deleteLogFile("app-out.log");
 
 // Delete "test" data from chat database
-const { Chat4Model, Conversation4Model } = require('./database');
+const mongoose = require("mongoose");
+const Chat4Model = require('./models/chat4');
+const Conversation4Model = require('./models/conversation4');
+const mongoDB_url = process.env.MONGOOSE_URL;
 async function ClearTestDataFromDB() {
+  await mongoose.connect(mongoDB_url);
+
   await Chat4Model.deleteMany({ category: "Test" });//Test
   await Conversation4Model.deleteMany({ category: "Test" });//Test
+
+  await mongoose.disconnect();
 }
 ClearTestDataFromDB();
 
