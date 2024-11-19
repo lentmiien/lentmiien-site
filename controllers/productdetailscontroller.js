@@ -125,19 +125,26 @@ ${all_details.join("\n\n")}
 ---`,
       });
     } else {
-      output.push({
-        product_code: existing[0].product_code,
-        ai_description: `---
-
-- **Name:** ${req.body.data[i][1]}
-- **Material:** ${existing[0].material}
-- **Size:** ${existing[0].size}
-- **Usage:** ${existing[0].usage}
-- **Additional Notes:** ${existing[0].additional_notes}
-- **Price:** ${req.body.data[i][5]} JPY
-
----`,
-      })
+      if (existing[0].material) {
+        output.push({
+          product_code: existing[0].product_code,
+          ai_description: `---
+          
+          - **Name:** ${req.body.data[i][1]}
+          - **Material:** ${existing[0].material}
+          - **Size:** ${existing[0].size}
+          - **Usage:** ${existing[0].usage}
+          - **Additional Notes:** ${existing[0].additional_notes}
+          - **Price:** ${req.body.data[i][5]} JPY
+          
+          ---`,
+        });
+      } else {
+        output.push({
+          product_code: existing[0].product_code,
+          ai_description: existing[0].ai_description,
+        });
+      }
     }
   }
   res.json(output);
