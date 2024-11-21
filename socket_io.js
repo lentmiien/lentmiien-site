@@ -21,11 +21,13 @@ const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024
 const streaming_models = [
   "gpt-4o-mini",
   "gpt-4o",
+  "gpt-4o-2024-11-20",
 ];
 
 const context_models = [
   "gpt-4o-mini",
   "gpt-4o",
+  "gpt-4o-2024-11-20",
 ];
 
 // Initialize OpenAI API
