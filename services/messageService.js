@@ -86,8 +86,8 @@ class MessageService {
   async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images, provider='OpenAI') {
     // Send to OpenAI API
     let response;
-    if (provider === "OpenAI") response = await chatGPT(vision_messages, 'gpt-4o-2024-05-13');
-    if (provider === "OpenAI_latest") response = await chatGPT(vision_messages, 'gpt-4o-2024-08-06');
+    if (provider === "OpenAI") response = await chatGPT(vision_messages, 'gpt-4o');
+    if (provider === "OpenAI_latest") response = await chatGPT(vision_messages, 'gpt-4o-2024-11-20');
     if (provider === "OpenAI_mini") response = await chatGPT(vision_messages, 'gpt-4o-mini');
     if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20241022');
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
@@ -137,7 +137,7 @@ class MessageService {
       role: 'user',
       content: 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation.',
     });
-    const summary = await chatGPT(messages, 'gpt-4o-2024-05-13');
+    const summary = await chatGPT(messages, 'gpt-4o-2024-11-20');
     return summary.choices[0].message.content;
   }
 
@@ -247,7 +247,7 @@ class MessageService {
     ];
     const tool_choice = {"type": "function", "function": {"name": "generate_image"}}
     // Send to OpenAI API : TOOL START
-    let tool_response = await chatGPT_Tool(text_messages, 'gpt-4o-2024-05-13', tools, tool_choice);
+    let tool_response = await chatGPT_Tool(text_messages, 'gpt-4o-2024-11-20', tools, tool_choice);
     text_messages.push(tool_response.choices[0].message);
     const img_id = Date.now();
     text_messages.push({
@@ -257,7 +257,7 @@ class MessageService {
       "content":`{path:"/img/image-${img_id}-.jpg"}`
     });
     // Send to OpenAI API : TOOL DONE
-    let response = await chatGPT(text_messages, 'gpt-4o-2024-05-13');
+    let response = await chatGPT(text_messages, 'gpt-4o-2024-11-20');
 
     // Save to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');

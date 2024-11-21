@@ -405,7 +405,7 @@ exports.ask_agent = async (req, res) => {
 };
 
 const batch_model_list = {
-  "OpenAI_latest": "gpt-4o-2024-08-06",
+  "OpenAI_latest": "gpt-4o-2024-11-20",
   "OpenAI_mini": "gpt-4o-mini",
   "OpenAI": "gpt-4o",
   "Anthropic": "claude-3-5-sonnet-20241022",
