@@ -50,13 +50,15 @@ const BatchRequest = new mongoose.Schema({
 module.exports = mongoose.model('batchrequest', BatchRequest);
 */
 
-const valid_models = ["gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022"];
+const valid_models = ["gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022", "o1-mini-2024-09-12", "o1-preview-2024-09-12"];
 const model_provider = {
   "gpt-4o-2024-11-20": "OpenAI",
   "gpt-4o-2024-08-06": "OpenAI",
   "gpt-4o": "OpenAI",
   "gpt-4o-mini": "OpenAI",
   "claude-3-5-sonnet-20241022": "Anthropic",
+  "o1-mini-2024-09-12": "OpenAI",
+  "o1-preview-2024-09-12": "OpenAI",
 };
 
 class BatchService {
@@ -154,6 +156,8 @@ class BatchService {
           "gpt-4o": [],
           "gpt-4o-mini": [],
           "claude-3-5-sonnet-20241022": [],
+          "o1-mini-2024-09-12": [],
+          "o1-preview-2024-09-12": [],
         };
         const models = valid_models;
 
@@ -169,7 +173,7 @@ class BatchService {
             },
           };
           // Get data from conversation
-          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id, newPrompts[i].prompt === "@SUMMARY");
+          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id, newPrompts[i].prompt === "@SUMMARY", model_to_use.indexOf("o1-") !== 0);
           if (messages === null) {
             // If messages is `null`, then the conversation has been deleted, so delete prompt and continue
             await this.BatchPromptDatabase.deleteOne({custom_id: newPrompts[i].custom_id});

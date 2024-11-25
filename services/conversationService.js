@@ -268,7 +268,7 @@ class ConversationService {
     }
   }
 
-  async generateMessageArrayForConversation(conversation_id, for_summary = false) {
+  async generateMessageArrayForConversation(conversation_id, for_summary = false, use_context = true) {
     const messages = [];
     const inject_prompt_lookup = {
       context: "This is some additional context:",
@@ -281,36 +281,38 @@ class ConversationService {
     if (!conversation) return null;
 
     // Set context
-    if (for_summary) {
-      messages.push({
-        role: 'system',
-        content: [
-          { type: 'text', text: "Hello ChatGPT, during this session, we will be discussing various topics. At the end of our conversation, I will ask you for a summary. This summary should provide a clear and concise overview of the key points and main ideas discussed, without necessarily preserving the original order. The aim is to make the summary easy and quick to read so that anyone can grasp the content of our conversation without needing to read everything. Feel free to rearrange the content for better clarity and coherence. When I am ready for the summary, I will use a specific prompt to request it." }
-        ]
-      });
-    } else {
-      let context = conversation.context_prompt;
-      if (conversation.knowledge_injects && conversation.knowledge_injects.length > 0) {
-        const ids_array = conversation.knowledge_injects.map(d => d.knowledge_id);
-        const knowledges = await this.knowledgeService.getKnowledgesByIdArray(ids_array);
-        const knowledge_lookup = [];
-        knowledges.forEach(d => knowledge_lookup.push(d._id.toString()));
-        for (let i = 0; i < conversation.knowledge_injects.length; i++) {
-          // Extend context with knowledge
-          const use_type = conversation.knowledge_injects[i].use_type;
-          const title = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].title;
-          const text_content = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].contentMarkdown;
-
-          context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n## ${title}\n\n${text_content}\n\n---`;
-        }
-      }
-      if (context.length > 0) {
+    if (use_context) {
+      if (for_summary) {
         messages.push({
           role: 'system',
           content: [
-            { type: 'text', text: context }
+            { type: 'text', text: "Hello ChatGPT, during this session, we will be discussing various topics. At the end of our conversation, I will ask you for a summary. This summary should provide a clear and concise overview of the key points and main ideas discussed, without necessarily preserving the original order. The aim is to make the summary easy and quick to read so that anyone can grasp the content of our conversation without needing to read everything. Feel free to rearrange the content for better clarity and coherence. When I am ready for the summary, I will use a specific prompt to request it." }
           ]
         });
+      } else {
+        let context = conversation.context_prompt;
+        if (conversation.knowledge_injects && conversation.knowledge_injects.length > 0) {
+          const ids_array = conversation.knowledge_injects.map(d => d.knowledge_id);
+          const knowledges = await this.knowledgeService.getKnowledgesByIdArray(ids_array);
+          const knowledge_lookup = [];
+          knowledges.forEach(d => knowledge_lookup.push(d._id.toString()));
+          for (let i = 0; i < conversation.knowledge_injects.length; i++) {
+            // Extend context with knowledge
+            const use_type = conversation.knowledge_injects[i].use_type;
+            const title = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].title;
+            const text_content = knowledges[knowledge_lookup.indexOf(conversation.knowledge_injects[i].knowledge_id)].contentMarkdown;
+
+            context += `\n\n---\n\n**${inject_prompt_lookup[use_type]}**\n\n## ${title}\n\n${text_content}\n\n---`;
+          }
+        }
+        if (context.length > 0) {
+          messages.push({
+            role: 'system',
+            content: [
+              { type: 'text', text: context }
+            ]
+          });
+        }
       }
     }
 
