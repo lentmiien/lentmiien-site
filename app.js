@@ -185,7 +185,7 @@ app.use('/openai', isAuthenticated, authorize("openai"), openaiRouter);
 app.use('/embedding', isAuthenticated, authorize("embedding"), embeddingRouter);
 app.use('/gptdocument', isAuthenticated, authorize("gptdocument"), gptdocumentRouter);
 app.use('/accounting', isAuthenticated, authorize("accounting"), budgetRouter);
-app.use('/budget', /*isAuthenticated, authorize("budget"),*/ budget2Router);
+app.use('/budget', isAuthenticated, authorize("budget"), budget2Router);
 app.use('/cooking', isAuthenticated, authorize("cooking"), cookingRouter);
 app.use('/health', isAuthenticated, authorize("health"), healthRouter);
 app.use('/box', isAuthenticated, authorize("box"), boxRouter);

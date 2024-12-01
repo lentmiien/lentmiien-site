@@ -25,4 +25,20 @@ block content
         td 
         td= `${total} JPY`
         td= `${total_change_last_month} JPY`
+  .row
+    each a in data.accounts 
+      .col 
+        h4= a.name
+        table.table.table-striped 
+          thead 
+            tr 
+              th Date 
+              th Label
+              th Amount 
+          tbody 
+            each t in a.last_30_days_transactions
+              tr 
+                td= t.date
+                td= t.label
+                td= t.amount
   script(src="/js/budget_dashboard.js", defer) 

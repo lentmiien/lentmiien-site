@@ -56,8 +56,11 @@ const budgetService = {
     const one_month_ago = new Date(d.getFullYear(), d.getMonth() - 1, 1);
     const lower = (one_month_ago.getFullYear() * 10000) + ((one_month_ago.getMonth()+1) * 100);
     const higher = (one_month_ago.getFullYear() * 10000) + ((one_month_ago.getMonth()+1) * 100) + 32;
+    const last_30_days = new Date(d.getFullYear(), d.getMonth(), d.getDate()-30);
+    const last_30_limit = (last_30_days.getFullYear() * 10000) + ((last_30_days.getMonth()+1) * 100) + last_30_days.getDate();
     for (let i = 0; i < a.accounts.length; i++) {
       a.accounts[i]["change_last_month"] = 0;
+      a.accounts[i]["last_30_days_transactions"] = [];
     }
     // Load all new transactions
     const transactions = await TransactionDBModel.find();
@@ -74,6 +77,14 @@ const budgetService = {
         if (t.date > lower && t.date < higher) {
           a.accounts[account_index].change_last_month -= t.from_fee + t.amount;
         }
+        if (t.date > last_30_limit) {
+          a.accounts[account_index].last_30_days_transactions.push({
+            id: t._id.toString(),
+            amount: 0 - t.from_fee - t.amount,
+            date: t.date,
+            label: t.transaction_business,
+          });
+        }
       }
       if (a.id_to_account_index.hasOwnProperty(t.to_account)) {
         const account_index = a.id_to_account_index[t.to_account];
@@ -85,9 +96,25 @@ const budgetService = {
           if (t.date > lower && t.date < higher) {
             a.accounts[account_index].change_last_month += t.amount - t.to_fee;
           }
+          if (t.date > last_30_limit) {
+            a.accounts[account_index].last_30_days_transactions.push({
+              id: t._id.toString(),
+              amount: t.amount - t.to_fee,
+              date: t.date,
+              label: t.transaction_business,
+            });
+          }
         }
       }
     });
+    // Sort transactions
+    for (let i = 0; i < a.accounts.length; i++) {
+      a.accounts[i].last_30_days_transactions.sort((a,b) => {
+        if (a.date > b.date) return -1;
+        if (a.date < b.date) return 1;
+        return 0;
+      });
+    }
     dashboardData["accounts"] = a.accounts;
     return dashboardData;
   },
