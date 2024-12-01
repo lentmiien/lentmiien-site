@@ -2,5 +2,27 @@ extends layout
 
 block content
   h2 Budget Dashboard 
-  pre= JSON.stringify(accounts, null, 2)
+  table.table.table-striped 
+    thead 
+      tr 
+        th Account 
+        th Last update 
+        th Balance
+        th Change last month 
+    tbody 
+      - let total = 0
+      - let total_change_last_month = 0
+      each a in data.accounts 
+        - total += a.balance
+        - total_change_last_month += a.change_last_month
+        tr 
+          td= a.name
+          td= a.new_balance_date
+          td= `${a.balance} JPY`
+          td= `${a.change_last_month} JPY`
+      tr 
+        td Total 
+        td 
+        td= `${total} JPY`
+        td= `${total_change_last_month} JPY`
   script(src="/js/budget_dashboard.js", defer) 

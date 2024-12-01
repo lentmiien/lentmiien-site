@@ -14,6 +14,7 @@ const budgetService = {
   async getAccounts() {
     const accounts = [];
     const accountIndex = [];
+    const id_to_account_index = {};
     const accounts1 = await AccountModel.find();
     const accounts2 = await AccountDBModel.find();
     accounts1.forEach(d => {
@@ -22,7 +23,8 @@ const budgetService = {
         accounts.push({
           name: d.account_name,
           balance: 0,
-          balance_date: "2000-01-01"
+          balance_date: 20000101,
+          new_balance_date: 20000101,
         });
         accountIndex.push(d.account_name);
       }
@@ -30,31 +32,70 @@ const budgetService = {
     accounts2.forEach(d => {
       const index = accountIndex.indexOf(d.name);
       if (index === -1) {
+        id_to_account_index[d._id.toString()] = accounts.length;
         accounts.push({
           name: d.name,
           balance: d.balance,
-          balance_date: Date_int_to_str(d.balance_date)
+          balance_date: d.balance_date,
+          new_balance_date: d.balance_date,
         });
         accountIndex.push(d.name);
       } else {
+        id_to_account_index[d._id.toString()] = index;
         accounts[index].balance = d.balance;
-        accounts[index].balance_date = Date_int_to_str(d.balance_date);
+        accounts[index].balance_date = d.balance_date;
+        accounts[index].new_balance_date = d.balance_date;
       }
     });
-    // Load all new transactions after the `balance_date` date
+    return {accounts, id_to_account_index};
+  },
+  async getDashboardData() {
+    const dashboardData = {};
+    const a = await this.getAccounts();
+    const d = new Date()
+    const one_month_ago = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const lower = (one_month_ago.getFullYear() * 10000) + ((one_month_ago.getMonth()+1) * 100);
+    const higher = (one_month_ago.getFullYear() * 10000) + ((one_month_ago.getMonth()+1) * 100) + 32;
+    for (let i = 0; i < a.accounts.length; i++) {
+      a.accounts[i]["change_last_month"] = 0;
+    }
+    // Load all new transactions
+    const transactions = await TransactionDBModel.find();
     // Update `balance` in `accounts`
-    return accounts;
+    transactions.forEach(t => {
+      if (a.id_to_account_index.hasOwnProperty(t.from_account)) {
+        const account_index = a.id_to_account_index[t.from_account];
+        if (t.date > a.accounts[account_index].balance_date) {
+          a.accounts[account_index].balance -= t.from_fee + t.amount;
+          if (t.date > a.accounts[account_index].new_balance_date) {
+            a.accounts[account_index].new_balance_date = t.date;
+          }
+        }
+        if (t.date > lower && t.date < higher) {
+          a.accounts[account_index].change_last_month -= t.from_fee + t.amount;
+        }
+      }
+      if (a.id_to_account_index.hasOwnProperty(t.to_account)) {
+        const account_index = a.id_to_account_index[t.to_account];
+        if (t.date > a.accounts[account_index].balance_date) {
+          a.accounts[account_index].balance += t.amount - t.to_fee;
+          if (t.date > a.accounts[account_index].new_balance_date) {
+            a.accounts[account_index].new_balance_date = t.date;
+          }
+          if (t.date > lower && t.date < higher) {
+            a.accounts[account_index].change_last_month += t.amount - t.to_fee;
+          }
+        }
+      }
+    });
+    dashboardData["accounts"] = a.accounts;
+    return dashboardData;
   },
   async UpdateBalance() {
     // Load new accounts
     // Load all new transactions after the `balance_date` date
     // Update all transactions up to end of last month
-  }
+  },
 };
-
-function Date_int_to_str(date_int) {
-  let date_str = date_int.toString();
-  return date_str.slice(0, 4) + "-" + date_str.slice(4, 6) + "-" + date_str.slice(6);
-}
 
 module.exports = budgetService;
