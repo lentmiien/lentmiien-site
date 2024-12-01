@@ -77,6 +77,7 @@ exports.manage_roles = async (req, res) => {
       "embedding",
       "gptdocument",
       "accounting",
+      "budget",
       "cooking",
       "health",
       "box",

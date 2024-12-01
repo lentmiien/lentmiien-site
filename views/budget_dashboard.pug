@@ -1,0 +1,6 @@
+extends layout
+
+block content
+  h2 Budget Dashboard 
+  pre= JSON.stringify(accounts, null, 2)
+  script(src="/js/budget_dashboard.js", defer) 
