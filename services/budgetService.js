@@ -123,6 +123,9 @@ const budgetService = {
     // Load all new transactions after the `balance_date` date
     // Update all transactions up to end of last month
   },
+  async DeleteTransaction(id) {
+    await TransactionDBModel.deleteOne({_id: id});
+  },
 };
 
 module.exports = budgetService;

@@ -6,5 +6,6 @@ var controller = require('../controllers/budget2controller');
 
 /* GET home page */
 router.get('/', controller.index);
+router.get('/delete/:id', controller.delete);
 
 module.exports = router;

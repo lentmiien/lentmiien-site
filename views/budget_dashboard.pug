@@ -35,10 +35,13 @@ block content
               th Date 
               th Label
               th Amount 
+              th 
           tbody 
             each t in a.last_30_days_transactions
-              tr 
+              tr(id=t.id) 
                 td= t.date
                 td= t.label
                 td= t.amount
+                td
+                  button.btn.btn-outline-danger(onclick=`DeleteTransaction("${t.id}")`) ✘
   script(src="/js/budget_dashboard.js", defer) 
