@@ -142,7 +142,7 @@ async function ClearTestDataFromDB() {
 
   const summary = await fetchUsageSummaryLastDay();
   console.log(summary);
-  // await new OpenAIUsage(summary).save();
+  await new OpenAIUsage(summary).save();
 
   await mongoose.disconnect();
 }
