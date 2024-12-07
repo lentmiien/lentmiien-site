@@ -6,7 +6,7 @@ const axios = require('axios');
  * Base configuration for Axios
  */
 const apiClient = axios.create({
-    baseURL: 'https://api.openai.com/v1/organization/usage',
+    baseURL: 'https://api.openai.com/v1/organization',
     headers: {
         'Authorization': `Bearer ${process.env.OPENAI_ADMIN_KEY}`,
         'Content-Type': 'application/json',
@@ -51,6 +51,25 @@ function constructQueryParams(params) {
 }
 
 /**
+ * Constructs query parameters for the `costs` endpoint.
+ * Only includes the supported parameters.
+ * 
+ * @param {Object} params - The input parameters for the API.
+ * @returns {Object} - The filtered query parameters for the `costs` endpoint.
+ */
+function constructCostsQueryParams(params) {
+    const query = {};
+
+    if (params.start_time) query.start_time = params.start_time;
+    if (params.end_time) query.end_time = params.end_time;
+    if (params.limit) query.limit = params.limit;
+    if (params.page) query.page = params.page;
+    query.bucket_width = '1d';
+
+    return query;
+}
+
+/**
  * Generic function to fetch usage data.
  * @param {string} usageType - The type of usage (e.g., completions, embeddings).
  * @param {Object} options - The query parameters.
@@ -58,7 +77,7 @@ function constructQueryParams(params) {
  */
 async function fetchUsage(usageType, options = {}) {
     try {
-        const response = await apiClient.get(`/${usageType}`, {
+        const response = await apiClient.get(`/usage/${usageType}`, {
             params: constructQueryParams(options),
         });
         return response.data;
@@ -118,10 +137,31 @@ function fetchAudioTranscriptionsUsage(options) {
     return fetchUsage('audio_transcriptions', options);
 }
 
+/**
+ * Fetch costs data.
+ * @param {Object} options - The query parameters for the request.
+ * @returns {Promise<Object>} - The API response for costs data.
+ */
+async function fetchCostsData(options = {}) {
+    try {
+        const params = constructCostsQueryParams(options);
+        const response = await apiClient.get('/costs', { params });
+        return response.data;
+    } catch (error) {
+        if (error.response) {
+            console.log(error.response.data);
+            throw new Error(`API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        } else {
+            throw new Error(`Request Error: ${error.message}`);
+        }
+    }
+}
+
 module.exports = {
     fetchCompletionsUsage,
     fetchEmbeddingsUsage,
     fetchImagesUsage,
     fetchAudioSpeechesUsage,
     fetchAudioTranscriptionsUsage,
+    fetchCostsData,
 };

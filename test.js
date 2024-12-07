@@ -5,14 +5,16 @@ const {
   fetchImagesUsage,
   fetchAudioSpeechesUsage,
   fetchAudioTranscriptionsUsage,
+  fetchCostsData,
 } = require('./usage');
 
 async function main() {
-  const d = new Date();
-  const sd = new Date(d.getFullYear(), d.getMonth(), d.getDate()-1, 0, 0, 0, 0);
-  const ed = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  const now = new Date();
+  // Create a new Date object for the last midnight in UTC
+  const ed = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const sd = new Date(ed.getTime() - (1000*60*60*24));
   const options = {
-    start_time: Math.round(sd.getTime()/1000),
+    start_time: Math.round(ed.getTime()/1000) - (60*60*24),
     end_time: Math.round(ed.getTime()/1000), // Optional
     bucket_width: '1d', // Options: '1m', '1h', '1d'
     // project_ids: ['proj_1', 'proj_2'], // Optional
@@ -21,7 +23,7 @@ async function main() {
     // models: ['model_1', 'model_2'], // Optional
     // batch: true, // Optional: true, false
     group_by: ['model'], // Optional
-    limit: 2, // Depends on bucket_width
+    limit: 1, // Depends on bucket_width
     page: null, // For pagination
   };
 
@@ -32,7 +34,7 @@ async function main() {
 
     // Fetch Completions Usage
     const completionsData = await fetchCompletionsUsage(options);
-    console.log('Completions Usage:', JSON.stringify(completionsData, null, 2));
+    // console.log('Completions Usage:', JSON.stringify(completionsData, null, 2));
     const completions_model_index = [];
     summary['completions'] = [];
     completionsData.data.forEach(d => {
@@ -58,7 +60,7 @@ async function main() {
 
     // Fetch Embeddings Usage
     const embeddingsData = await fetchEmbeddingsUsage(options);
-    console.log('Embeddings Usage:', JSON.stringify(embeddingsData, null, 2));
+    // console.log('Embeddings Usage:', JSON.stringify(embeddingsData, null, 2));
     const embeddings_model_index = [];
     summary['embeddings'] = [];
     embeddingsData.data.forEach(d => {
@@ -80,7 +82,7 @@ async function main() {
 
     // Fetch Images Usage
     const imagesData = await fetchImagesUsage(options);
-    console.log('Images Usage:', JSON.stringify(imagesData, null, 2));
+    // console.log('Images Usage:', JSON.stringify(imagesData, null, 2));
     const images_model_index = [];
     summary['images'] = [];
     imagesData.data.forEach(d => {
@@ -102,7 +104,7 @@ async function main() {
 
     // Fetch Audio Speeches Usage
     const audioSpeechesData = await fetchAudioSpeechesUsage(options);
-    console.log('Audio Speeches Usage:', JSON.stringify(audioSpeechesData, null, 2));
+    // console.log('Audio Speeches Usage:', JSON.stringify(audioSpeechesData, null, 2));
     const speeches_model_index = [];
     summary['speeches'] = [];
     audioSpeechesData.data.forEach(d => {
@@ -124,7 +126,7 @@ async function main() {
 
     // Fetch Audio Transcriptions Usage
     const audioTranscriptionsData = await fetchAudioTranscriptionsUsage(options);
-    console.log('Audio Transcriptions Usage:', JSON.stringify(audioTranscriptionsData, null, 2));
+    // console.log('Audio Transcriptions Usage:', JSON.stringify(audioTranscriptionsData, null, 2));
     const transcriptions_model_index = [];
     summary['transcriptions'] = [];
     audioTranscriptionsData.data.forEach(d => {
@@ -141,6 +143,16 @@ async function main() {
             num_model_requests: r.num_model_requests,
           });
         }
+      });
+    });
+
+    // Fetch Audio Transcriptions Usage
+    const costsData = await fetchCostsData(options);
+    // console.log('Cost:', JSON.stringify(costsData, null, 2));
+    summary['cost'] = 0;
+    costsData.data.forEach(d => {
+      d.results.forEach(r => {
+        summary['cost'] += r.amount.value;
       });
     });
 
