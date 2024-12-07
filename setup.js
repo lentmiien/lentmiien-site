@@ -140,9 +140,16 @@ async function ClearTestDataFromDB() {
   await Chat4Model.deleteMany({ category: "Test" });//Test
   await Conversation4Model.deleteMany({ category: "Test" });//Test
 
+  // Get and save OpenAI usage data
   const summary = await fetchUsageSummaryLastDay();
-  console.log(summary);
-  await new OpenAIUsage(summary).save();
+  const exists = await OpenAIUsage.find({entry_date: summary.entry_date});
+  if (exists.length === 0) {
+    // Only save new entries
+    await new OpenAIUsage(summary).save();
+    console.log("Data saved:", JSON.stringify(summary, null, 2));
+  } else {
+    console.log(`[${summary.entry_date}] usage data already exist!`)
+  }
 
   await mongoose.disconnect();
 }
