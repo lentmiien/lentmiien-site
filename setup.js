@@ -141,14 +141,18 @@ async function ClearTestDataFromDB() {
   await Conversation4Model.deleteMany({ category: "Test" });//Test
 
   // Get and save OpenAI usage data
-  const summary = await fetchUsageSummaryLastDay();
-  const exists = await OpenAIUsage.find({entry_date: summary.entry_date});
+  const now = new Date();
+  const ed = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const sd = new Date(ed.getTime() - (1000*60*60*24));
+  const d_str = `${sd.getFullYear()}-${sd.getMonth() > 8 ? (sd.getMonth()+1) : '0' + (sd.getMonth()+1)}-${sd.getDate() > 9 ? sd.getDate() : '0' + sd.getDate()}`;
+  const exists = await OpenAIUsage.find({entry_date: d_str});
   if (exists.length === 0) {
-    // Only save new entries
+    // Only get and save new entries
+    const summary = await fetchUsageSummaryLastDay();
     await new OpenAIUsage(summary).save();
     console.log("Data saved:", JSON.stringify(summary, null, 2));
   } else {
-    console.log(`[${summary.entry_date}] usage data already exist!`)
+    console.log(`[${d_str}] usage data already exist!`)
   }
 
   await mongoose.disconnect();
