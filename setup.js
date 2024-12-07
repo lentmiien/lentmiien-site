@@ -125,16 +125,24 @@ function deleteLogFile(filename) {
 deleteLogFile("app-error.log");
 deleteLogFile("app-out.log");
 
+// Fetch OpenAI usage
+const {fetchUsageSummaryLastDay} = require('./usage');
+
 // Delete "test" data from chat database
 const mongoose = require("mongoose");
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
+const OpenAIUsage = require('./models/openai_usage');
 const mongoDB_url = process.env.MONGOOSE_URL;
 async function ClearTestDataFromDB() {
   await mongoose.connect(mongoDB_url);
 
   await Chat4Model.deleteMany({ category: "Test" });//Test
   await Conversation4Model.deleteMany({ category: "Test" });//Test
+
+  const summary = await fetchUsageSummaryLastDay();
+  console.log(summary);
+  // await new OpenAIUsage(summary).save();
 
   await mongoose.disconnect();
 }
