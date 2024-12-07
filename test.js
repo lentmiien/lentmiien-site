@@ -8,6 +8,8 @@ const {
   fetchCostsData,
 } = require('./usage');
 
+const {OpenAIUsage} = require('./database');
+
 async function main() {
   const now = new Date();
   // Create a new Date object for the last midnight in UTC
@@ -157,6 +159,8 @@ async function main() {
     });
 
     console.log(summary);
+    // const db_entry = await new OpenAIUsage(summary).save();
+    console.log("Save to database!")
   } catch (error) {
     console.error('Error fetching usage data:', error.message);
   }

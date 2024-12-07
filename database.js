@@ -79,6 +79,8 @@ const ESItem = require('./models/es_item');
 const Receipt = require('./models/receipt');
 // Product Details
 const ProductDetails = require('./models/product_details');
+// OpenAI Usage
+const OpenAIUsage = require('./models/openai_usage');
 
 // Export models
 module.exports = {
@@ -126,4 +128,5 @@ module.exports = {
   ESItem,
   Receipt,
   ProductDetails,
+  OpenAIUsage,
 };
