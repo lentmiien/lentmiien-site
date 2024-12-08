@@ -1,4 +1,4 @@
-const { UseraccountModel, RoleModel } = require('../database');
+const { UseraccountModel, RoleModel, OpenAIUsage } = require('../database');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -244,4 +244,9 @@ exports.delete_log_file = (req, res) => {
   } catch (error) {
     res.status(500).render('error_page', {error: `Error deleting log file: ${error.message}`});
   }
+};
+
+exports.openai_usage = async (req, res) => {
+  const data = (await OpenAIUsage.find()).reverse();
+  res.render("openai_usage", {data});
 };
