@@ -159,6 +159,11 @@ async function ClearTestDataFromDB() {
 }
 ClearTestDataFromDB();
 
+// Backup data, and download missing data
+const { backup, setup } = require('./dropbox');
+backup();
+setup();
+
 // Gmail check
 const fs2 = require('fs').promises;
 const readline = require('readline');
