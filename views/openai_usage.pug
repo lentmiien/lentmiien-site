@@ -1,0 +1,29 @@
+extends layout
+
+block content
+  h1 OpenAI usage 
+  each d in data
+    hr
+    div 
+      h4= d.entry_date
+      if d.completions && d.completions.length > 0
+        h5 Completions 
+        each e in d.completions
+          pre= JSON.stringify(e)
+      if d.embeddings && d.embeddings.length > 0
+        h5 Embeddings 
+        each e in d.embeddings
+          pre= JSON.stringify(e)
+      if d.images && d.images.length > 0
+        h5 Images 
+        each e in d.images
+          pre= JSON.stringify(e)
+      if d.speeches && d.speeches.length > 0
+        h5 Speeches 
+        each e in d.speeches
+          pre= JSON.stringify(e)
+      if d.transcriptions && d.transcriptions.length > 0
+        h5 Transcriptions 
+        each e in d.transcriptions
+          pre= JSON.stringify(e)
+      h2= `Cost: ${Math.round(100 * d.cost) / 100} USD`

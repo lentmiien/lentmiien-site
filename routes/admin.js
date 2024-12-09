@@ -18,4 +18,6 @@ router.get('/app_logs', controller.app_logs);
 router.get('/log_file/:file', controller.log_file);
 router.get('/delete_log_file/:file', controller.delete_log_file);
 
+router.get('/openai_usage', controller.openai_usage);
+
 module.exports = router;
