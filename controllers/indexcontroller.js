@@ -72,3 +72,10 @@ exports.dht22 = async (req, res) => {
   const detailed_data = await Dht22DetailedData.find();
   res.render('dht22', {aggregated_data, detailed_data});
 }
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.test_editor = (req, res) => {
+  res.render("test_editor");
+}

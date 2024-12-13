@@ -33,4 +33,9 @@ router.get('/mpu6050', controller.mpu6050);
 /****************************/
 router.get('/dht22', controller.dht22);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/test_editor', controller.test_editor);
+
 module.exports = router;
