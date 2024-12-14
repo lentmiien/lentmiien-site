@@ -7,7 +7,7 @@ const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 // Elements
 const messagesList = document.getElementById('messages');
 const messageForm = document.getElementById('message-form');
-const messageInput = document.getElementById('message');
+// const messageInput = document.getElementById('message');
 const model = document.getElementById('model');
 const title = document.getElementById('title');
 const settings = document.getElementById('settings');
@@ -17,13 +17,21 @@ const categoryInput = document.getElementById('category');
 const tagsInput = document.getElementById('tags');
 const load = document.getElementById('load');
 
+// Setup markdown editor
+const editor = new toastui.Editor({
+  el: document.querySelector('#message'),
+  height: '500px',
+  initialEditType: 'wysiwyg',
+  previewStyle: 'vertical'
+});
+
 // Variables to keep track of the assistant's response
 let assistantMessageElement = null;
 
 // Handle form submission for sending messages
 messageForm.addEventListener('submit', function (e) {
   e.preventDefault(); // Prevent page reload
-  const msg = messageInput.value.trim();
+  const msg = editor.getMarkdown();
   if (msg === '') return;
   
   // Display user's message in the chat
@@ -33,11 +41,12 @@ messageForm.addEventListener('submit', function (e) {
   socket.emit('userMessage', msg);
 
   // Clear the input field
-  messageInput.value = '';
+  // messageInput.value = '';
+  editor.reset();
 
   // Disable the input field until the assistant's response is complete
-  messageInput.disabled = true;
-  messageInput.placeholder = 'Waiting for assistant response...';
+  // messageInput.disabled = true;
+  // messageInput.placeholder = 'Waiting for assistant response...';
 
   // Prepare a new message element for the assistant's response
   assistantMessageElement = addMessageToChat('Assistant', '');
@@ -57,8 +66,8 @@ socket.on('aiResponseChunk', function (chunk) {
 // Handle end of assistant's response
 socket.on('aiResponseEnd', function () {
   // Re-enable the input field
-  messageInput.disabled = false;
-  messageInput.placeholder = 'Type your message here...';
+  // messageInput.disabled = false;
+  // messageInput.placeholder = 'Type your message here...';
 
   // Reset assistant message element
   assistantMessageElement = null;
@@ -81,8 +90,8 @@ socket.on('error', function (errorMessage) {
   alert(errorMessage);
 
   // Re-enable the input field in case of error
-  messageInput.disabled = false;
-  messageInput.placeholder = 'Type your message here...';
+  // messageInput.disabled = false;
+  // messageInput.placeholder = 'Type your message here...';
 });
 
 // Function to add a message to the chat

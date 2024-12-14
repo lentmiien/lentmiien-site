@@ -9,7 +9,8 @@ block content
   h3#title
   ul#messages
   form#message-form
-    textarea#message.form-control(name="message", rows="7", placeholder="Type your message here...", required)
+    #message
+    //- textarea#message.form-control(name="message", rows="7", placeholder="Type your message here...", required)
     .input-group
       select#model.form-control(name="model", onchange="UpdateModel(this)")
         option(value="gpt-4o-mini") gpt-4o-mini
@@ -48,6 +49,7 @@ block content
   button.btn.btn-primary(onclick="StartVoiceMode(this)") Start Voice Mode
   #transcript
   pre#voice_out.hidden
-  script(src="https://cdn.socket.io/4.0.0/socket.io.min.js")
-  script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js")
-  script(src="/js/chat5.js")
+  script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
+  script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
+  script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
+  script(src="/js/chat5.js", defer)
