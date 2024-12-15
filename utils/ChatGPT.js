@@ -6,8 +6,8 @@ const { OpenaicalllogDBModel, OpenaimodelDBModel } = require('../database');
 const { OpenAI } = require('openai');
 
 // Set your OpenAI API key
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID });
-const local_llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, organization: process.env.OPENAI_ORG_ID, baseURL: 'http://localhost:1234/v1' });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const local_llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, baseURL: 'http://localhost:1234/v1' });
 
 // Open AI API models
 const GetModels = async (type) => {
