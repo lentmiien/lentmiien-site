@@ -40,8 +40,17 @@ async function getValidAccessToken() {
   if (accessToken.expired()) {
     try {
       const refreshedToken = await accessToken.refresh();
-      // Save the new tokens
-      fs.writeFileSync(tokenPath, JSON.stringify(refreshedToken.token, null, 2));
+      // Persist the original refresh_token from the old tokens data
+      const updatedToken = {
+        ...refreshedToken.token, // Spread the new token details (including access_token, expiry, etc.)
+        refresh_token: tokenData.refresh_token, // Ensure we keep the original refresh_token
+        scope: tokenData.scope, // Ensure we keep the original refresh_token
+        uid: tokenData.uid, // Ensure we keep the original refresh_token
+        account_id: tokenData.account_id, // Ensure we keep the original refresh_token
+      };
+
+      // Save the updated tokens back to the `tokens.json` file
+      fs.writeFileSync(tokenPath, JSON.stringify(updatedToken, null, 2), 'utf8');
       console.log('Access token refreshed');
       return refreshedToken.token.access_token;
     } catch (error) {

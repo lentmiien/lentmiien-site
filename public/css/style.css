@@ -527,3 +527,35 @@ code:hover::after {
 #settings, #load {
   z-index: 9999;
 }
+
+/*OpenAI Usage*/
+.openaiusage-completions {
+  background-color: lightblue;
+  border-radius: 15px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+.openaiusage-embeddings {
+  background-color: pink;
+  border-radius: 15px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+.openaiusage-images {
+  background-color: lightgreen;
+  border-radius: 15px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+.openaiusage-speeches {
+  background-color: lightcoral;
+  border-radius: 15px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+.openaiusage-transcriptions {
+  background-color: lightseagreen;
+  border-radius: 15px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
