@@ -169,11 +169,26 @@ const chatGPT = async (messages, model) => {
 
 const chatGPT_o1 = async (messages, model) => {
   // context not supported, so remove context message
-  const use_msg = messages.filter(m => m.role != "system");
+  // "system" -> "developer", starting from "o1-2024-12-17"
+  // Include "Formatting reenabled" in developer message to get markdown output
+  let use_msg;
+  if (model === "o1-2024-12-17") {
+    for (let i = 0; i < messages.length; i++) {
+      if (messages.role === "system") {
+        messages.role === "developer";
+        messages.content[0].text += "\n\nFormatting reenabled";
+      }
+    }
+    use_msg = messages;
+  } else {
+    use_msg = messages.filter(m => m.role != "system");
+  }
   try {
     const response = await openai.chat.completions.create({
       messages: use_msg,
-      model
+      model,
+      // reasoning_effort: "low" / "medium" / "high", medium is default
+      // modalities: ["text", "audio"], "text" is default, "audio" not supported by o1
     });
     return response;
   } catch (error) {
