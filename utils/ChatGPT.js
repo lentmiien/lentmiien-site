@@ -9,6 +9,21 @@ const { OpenAI } = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const local_llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, baseURL: 'http://localhost:1234/v1' });
 
+console.log("----- OpenAI object -----");
+console.log(openai);
+console.log("-------------------------");
+
+async function Models() {
+  const list = await openai.models.list();
+
+  console.log("----- OpenAI models -----");
+  for await (const model of list) {
+    console.log(model);
+  }
+  console.log("-------------------------");
+}
+Models();
+
 // Open AI API models
 const GetModels = async (type) => {
   if (type && type.length > 0) {
