@@ -16,7 +16,7 @@ const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 
-const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
+const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17";// gpt-4o-realtime-preview-2024-12-17
 
 const streaming_models = [
   "gpt-4o-mini",

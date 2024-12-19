@@ -9,7 +9,7 @@ const KnowledgeService = require('../services/knowledgeService');
 const AgentService = require('../services/agentService');
 const BatchService = require('../services/batchService');
 const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel, AgentModel, BatchPromptModel, BatchRequestModel } = require('../database');
-const { whisper } = require('../utils/ChatGPT');
+const { whisper, GetOpenAIModels } = require('../utils/ChatGPT');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
@@ -80,7 +80,8 @@ exports.index = async (req, res) => {
     if (knowledges_categories.indexOf(d.category) === -1) knowledges_categories.push(d.category);
   });
 
-  res.render("chat4", { conversations, categories, tags, templates, knowledges, knowledges_categories, all_messages, agents });
+  const OpenAIModels = GetOpenAIModels();
+  res.render("chat4", { conversations, categories, tags, templates, knowledges, knowledges_categories, all_messages, agents, OpenAIModels });
 };
 
 // JSON API endpoint
@@ -111,7 +112,8 @@ exports.chat = async (req, res) => {
   const used_knowledge_ids = [];
   conversation.knowledge_injects.forEach(d => used_knowledge_ids.push(d.knowledge_id));
   
-  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories, copy_conversations, agents });
+  const OpenAIModels = GetOpenAIModels();
+  res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories, copy_conversations, agents, OpenAIModels });
 };
 
 exports.post = async (req, res) => {

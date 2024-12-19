@@ -78,6 +78,9 @@ block content
                 option(value="Google-gemini-1.5-pro") Gemini 1.5 Pro
               optgroup(label="Legacy")
                 option(value="OpenAI") OpenAI
+              optgroup(label="OpenAI Models")
+                each m in OpenAIModels
+                  option(value=m.model)= m.model
             .button-container
               input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
               button.btn.btn-secondary(type="button", onclick="Batch()") Batch

@@ -13,16 +13,31 @@ console.log("----- OpenAI object -----");
 console.log(openai);
 console.log("-------------------------");
 
+const model_list = [];
 async function Models() {
   const list = await openai.models.list();
 
   console.log("----- OpenAI models -----");
   for await (const model of list) {
+    model_list.push({
+      model: model.id,
+      created: model.created,
+    })
     console.log(model);
   }
   console.log("-------------------------");
+
+  model_list.sort((a,b) => {
+    if (a.created > b.created) return -1;
+    if (a.created < b.created) return 1;
+    return 0;
+  });
 }
 Models();
+
+const GetOpenAIModels = () => {
+  return model_list;
+};
 
 // Open AI API models
 const GetModels = async (type) => {
@@ -397,6 +412,7 @@ const whisper = async (sound_path) => {
 }
 
 module.exports = {
+  GetOpenAIModels,
   OpenAIAPICallLog,
   chatGPT,
   chatGPT_o1,
