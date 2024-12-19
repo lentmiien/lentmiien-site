@@ -9,23 +9,16 @@ const { OpenAI } = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const local_llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, baseURL: 'http://localhost:1234/v1' });
 
-console.log("----- OpenAI object -----");
-console.log(openai);
-console.log("-------------------------");
-
 const model_list = [];
 async function Models() {
   const list = await openai.models.list();
 
-  console.log("----- OpenAI models -----");
   for await (const model of list) {
     model_list.push({
       model: model.id,
       created: model.created,
     })
-    console.log(model);
   }
-  console.log("-------------------------");
 
   model_list.sort((a,b) => {
     if (a.created > b.created) return -1;
