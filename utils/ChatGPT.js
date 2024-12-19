@@ -190,12 +190,13 @@ const chatGPT = async (messages, model) => {
   }
 };
 
-const chatGPT_o1 = async (messages, model) => {
+// reasoning_effort: "low" / "medium" / "high"
+const chatGPT_o1 = async (messages, model, reasoning_effort = null) => {
   // context not supported, so remove context message
   // "system" -> "developer", starting from "o1-2024-12-17"
   // Include "Formatting reenabled" in developer message to get markdown output
   let use_msg;
-  if (model === "o1-2024-12-17") {
+  if (model === "o1-2024-12-17" || model === "o1") {
     for (let i = 0; i < messages.length; i++) {
       if (messages.role === "system") {
         messages.role === "developer";
@@ -207,12 +208,14 @@ const chatGPT_o1 = async (messages, model) => {
     use_msg = messages.filter(m => m.role != "system");
   }
   try {
-    const response = await openai.chat.completions.create({
+    const openai_load = {
       messages: use_msg,
       model,
-      // reasoning_effort: "low" / "medium" / "high", medium is default
-      // modalities: ["text", "audio"], "text" is default, "audio" not supported by o1
-    });
+    };
+    if (reasoning_effort && (model === "o1-2024-12-17" || model === "o1")) {
+      openai_load["reasoning_effort"] = reasoning_effort;
+    }
+    const response = await openai.chat.completions.create(openai_load);
     return response;
   } catch (error) {
     console.error(`Error while calling the OpenAI API: ${error}`);

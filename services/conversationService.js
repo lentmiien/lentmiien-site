@@ -351,7 +351,7 @@ class ConversationService {
     return messages;
   }
 
-  async postToConversation(user_id, conversation_id, new_images, parameters, provider="OpenAI") {
+  async postToConversation(user_id, conversation_id, new_images, parameters, provider="OpenAI", reasoning_effort="medium") {
     let use_vision = false;
     const vision_messages = [];
     const text_messages = [];
@@ -481,7 +481,7 @@ class ConversationService {
     }
 
     // Create new message
-    const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider);
+    const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider, reasoning_effort);
 
     // Summarize conversation
     // text_messages.push({
