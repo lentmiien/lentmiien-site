@@ -4,11 +4,17 @@ const { Poppler } = require('node-poppler');
 const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
 const { ArticleModel } = require('../database');
-const { tts, ig } = require('../utils/ChatGPT');
+const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
 
 exports.mypage = (req, res) => {
   // Do something fun here, to show om mypage!
-  res.render('mypage');
+  const models = GetOpenAIModels();
+  let has_o1 = false;
+  models.forEach(m => {
+    if (m.model === "o1" || m.model === "o1-2024-12-17") has_o1 = true;
+  });
+
+  res.render('mypage', {has_o1});
 };
 
 exports.blogpost = async (req, res) => {
