@@ -145,7 +145,7 @@ class MessageService {
     // Load DB entry
     const message = await this.messageModel.findById(messageId);
     // Prompt Open AI API to generate image
-    const { filename, prompt } = await ig(image_prompt, quality, size, img_id ? img_id : Date.nom());
+    const { filename, prompt } = await ig(image_prompt, quality, size, img_id ? img_id : Date.now());
     // Save meta data
     const metadata = {
       filename: filename,
