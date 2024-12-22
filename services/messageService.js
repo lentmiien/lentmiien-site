@@ -88,7 +88,7 @@ class MessageService {
     return messages;
   }
 
-  async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images, provider='OpenAI') {
+  async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images, provider='OpenAI', reasoning_effort='medium') {
     // Send to OpenAI API
     let response;
     if (provider === "OpenAI") response = await chatGPT(vision_messages, 'gpt-4o');
@@ -97,7 +97,7 @@ class MessageService {
     if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20241022');
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
     if (provider.indexOf("GroqV-") === 0) response = await groq_vision(vision_messages, provider.split("GroqV-")[1]);
-    if (provider.indexOf("o1-") === 0) response = await chatGPT_o1(vision_messages, provider);
+    if (provider.indexOf("o1-") === 0) response = await chatGPT_o1(vision_messages, provider, reasoning_effort);
     if (provider.indexOf("Google-") === 0) response = await googleAI(vision_messages, provider.split("Google-")[1]);
 
     // Save a copy in temporary folder, for debugging

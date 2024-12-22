@@ -6,5 +6,6 @@ block content
       h1 Upload PDF to convert to JPGs
       form(action="/mypage/convert_pdf_to_jpg", method="post", enctype="multipart/form-data") 
         label(for="pdf") PDF file
-        input#pdf.form-control(type="file", name="pdf")
-        input.btn.btn-primary(type="submit", value="Convert")
+        .input-group
+          input#pdf.form-control(type="file", name="pdf")
+          input.btn.btn-primary(type="submit", value="Convert")

@@ -99,29 +99,37 @@ block content
             textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
             if conversation.default_model 
               label(for="provider")= `Current: ${conversation.default_model}`
-            select#provider.form-control(name="provider") 
-              optgroup(label="Current")
-                option(value="OpenAI_latest") OpenAI (2024-11-20)
-                option(value="OpenAI_mini") OpenAI mini
-                option(value="Anthropic") Anthropic
-                option(value="o1-2024-12-17") OpenAI o1
-                option(value="o1-preview-2024-09-12") OpenAI o1 preview
-                option(value="o1-mini-2024-09-12") OpenAI o1 mini
-              optgroup(label="Groq")
-                option(value="GroqV-llama-3.2-90b-vision-preview") llama-3.2-90b [VISION]
-                option(value="Groq-llama-3.3-70b-versatile") llama-3.3-70b [TEXT]
-                option(value="GroqV-llama-3.2-11b-vision-preview") llama-3.2-11b [VISION]
-                option(value="Groq-llama-3.1-8b-instant") llama-3.1-8b [TEXT]
-                option(value="Groq-llama-3.2-3b-preview") llama-3.2-3b [TEXT]
-                option(value="Groq-llama-3.2-1b-preview") llama-3.2-1b [TEXT]
-                option(value="Groq-mixtral-8x7b-32768") mixtral-8x7b [TEXT]
-                option(value="Groq-gemma2-9b-it") gemma2-9b [TEXT]
-              optgroup(label="Google")
-                option(value="Google-gemini-2.0-flash-exp") Gemini 2.0 Flash Experimental
-                option(value="Google-gemini-1.5-flash") Gemini 1.5 Flash
-                option(value="Google-gemini-1.5-pro") Gemini 1.5 Pro
-              optgroup(label="Legacy")
-                option(value="OpenAI") OpenAI
+            .input-group
+              select#provider.form-control(name="provider") 
+                optgroup(label="Current")
+                  option(value="OpenAI_latest") OpenAI (2024-11-20)
+                  option(value="OpenAI_mini") OpenAI mini
+                  option(value="Anthropic") Anthropic
+                  option(value="o1-2024-12-17") OpenAI o1
+                  option(value="o1-preview-2024-09-12") OpenAI o1 preview
+                  option(value="o1-mini-2024-09-12") OpenAI o1 mini
+                optgroup(label="Groq")
+                  option(value="GroqV-llama-3.2-90b-vision-preview") llama-3.2-90b [VISION]
+                  option(value="Groq-llama-3.3-70b-versatile") llama-3.3-70b [TEXT]
+                  option(value="GroqV-llama-3.2-11b-vision-preview") llama-3.2-11b [VISION]
+                  option(value="Groq-llama-3.1-8b-instant") llama-3.1-8b [TEXT]
+                  option(value="Groq-llama-3.2-3b-preview") llama-3.2-3b [TEXT]
+                  option(value="Groq-llama-3.2-1b-preview") llama-3.2-1b [TEXT]
+                  option(value="Groq-mixtral-8x7b-32768") mixtral-8x7b [TEXT]
+                  option(value="Groq-gemma2-9b-it") gemma2-9b [TEXT]
+                optgroup(label="Google")
+                  option(value="Google-gemini-2.0-flash-exp") Gemini 2.0 Flash Experimental
+                  option(value="Google-gemini-1.5-flash") Gemini 1.5 Flash
+                  option(value="Google-gemini-1.5-pro") Gemini 1.5 Pro
+                optgroup(label="Legacy")
+                  option(value="OpenAI") OpenAI
+                optgroup(label="OpenAI Models")
+                  each m in OpenAIModels
+                    option(value=m.model)= m.model
+              select#reasoning_effort.form-control(name="reasoning_effort") 
+                option(value="low") Low (only for o1 models) 
+                option(value="medium", selected) Medium (only for o1 models) 
+                option(value="high") High (only for o1 models) 
             .button-container
               button.btn.btn-success(type="button", onclick="RunImageForm()") Image
               button.btn.btn-danger(type="button", onclick="ImageTool()") Image Tool
