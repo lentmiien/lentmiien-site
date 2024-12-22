@@ -62,6 +62,9 @@ router.post('/batch_start', controller.batch_start);
 router.post('/batch_update/:id', controller.batch_update);
 router.post('/batch_import', controller.batch_import);
 
+// Ask Category
+router.post('/ask_category/:id', upload.array('imgs'), controller.ask_category);
+
 // Redact
 router.get('/redact/:id', controller.redact_page);
 router.post('/redact/:id', controller.redact_post);

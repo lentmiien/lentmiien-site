@@ -539,6 +539,64 @@ class ConversationService {
     }
   }
 
+  async askCategory(user_id, new_images, parameters, provider="OpenAI", max_count=10) {
+    if (new_images.length > 0) {
+      console.warning("Images not supported in `askCategory(...)`, and is ignored.")
+    }
+
+    const messages = [];
+    const context = parameters.context;
+    if (context.length > 0) {
+      messages.push({
+        role: 'system',
+        content: [
+          { type: 'text', text: context }
+        ]
+      });
+    }
+
+    // Fetch messages
+    const category_message = await this.messageService.getMessagesByCategoryUserId(parameters.category, user_id);
+
+    // Generate input prompt
+    let prompt = `Based on this content, please answer the following prompt:\n\n${parameters.prompt}`;
+    for (let i = 0; i < category_message.length && i < max_count; i++) {
+      prompt = `${category_message[i].response}\n\n---\n\n${prompt}`;
+    }
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt }
+      ]
+    });
+    // Process input images
+    const images = [];
+    // NOT SUPPORTED HERE
+
+    // Generate response
+    parameters.category = `Category: ${parameters.category}`;
+    parameters.prompt = prompt;
+    const message_data = await this.messageService.createMessage(false, messages, messages, user_id, parameters, images, provider);
+
+    // Return conversation ID
+    // Save conversation to database
+    const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
+    const conversation_entry = {
+      user_id,
+      group_id: Date.now().toString(),
+      title: parameters.title,
+      description: '[pending]',
+      category: parameters.category,
+      tags: tags_array,
+      context_prompt: parameters.context,
+      knowledge_injects: [],
+      messages: [ message_data.db_entry._id.toString() ],
+      updated_date: new Date(),
+    };
+    const conv_entry = await new this.conversationModel(conversation_entry).save();
+    return conv_entry._id.toString();
+  }
+
   async appendMessageToConversation(conversation_id, message_id_to_add, summary = true) {
     const conversation = await this.conversationModel.findById(conversation_id);
     conversation.messages.push(message_id_to_add);

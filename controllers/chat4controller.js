@@ -145,6 +145,22 @@ exports.post = async (req, res) => {
   res.redirect(`/chat4/chat/${conversation_id}`);
 };
 
+exports.ask_category = async (req, res) => {
+  const user_id = req.user.name;
+
+  // Post message to conversation
+  const image_paths = [];
+  for (let i = 0; i < req.files.length; i++) {
+    image_paths.push(req.files[i].destination + req.files[i].filename);
+  }
+  const conversation_id = await conversationService.askCategory(user_id, image_paths, req.body, req.body.provider, parseInt(req.body.max_count));
+
+  // Add summary request to batch process
+  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title}, "gpt-4o-mini");
+
+  res.redirect(`/chat4/chat/${conversation_id}`);
+};
+
 exports.delete_conversation = async (req, res) => {
   const user_id = req.user.name;
   const id_to_delete = req.params.id;

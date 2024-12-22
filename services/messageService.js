@@ -83,6 +83,11 @@ class MessageService {
     return messages;
   }
 
+  async getMessagesByCategoryUserId(category, user_id) {
+    const messages = await this.messageModel.find({ user_id, category }).sort({ timestamp: -1 }).exec();
+    return messages;
+  }
+
   async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images, provider='OpenAI') {
     // Send to OpenAI API
     let response;

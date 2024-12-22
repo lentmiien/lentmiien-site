@@ -81,6 +81,9 @@ block content
             .button-container
               input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
               button.btn.btn-secondary(type="button", onclick="Batch()") Batch
+              .input-group
+                input#max_count.form-control(type="number", name="max_count", value="10")
+                button.btn.btn-success(type="button", onclick="QueryCategory()") Query Category
           #append_messages_content
       .tab-content
         #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")

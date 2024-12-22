@@ -571,6 +571,11 @@ function Batch() {
   chatform.submit();
 }
 
+function QueryCategory() {
+  chatform.action = chatform.action.split('post').join('ask_category');
+  chatform.submit();
+}
+
 async function FetchMessages() {
   const message_category = document.getElementById("message_category").value;
   const message_tag = document.getElementById("message_tag").value;
