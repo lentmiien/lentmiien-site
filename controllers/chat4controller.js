@@ -120,12 +120,13 @@ exports.post = async (req, res) => {
   const user_id = req.user.name;
   let use_conversation_id = req.params.id;
   const reasoning_effort = req.body.reasoning_effort;
+  const private_msg = req.body.private_msg === "on";
 
-  // If ask agent query
-  if ("agent_select" in req.body && req.body.agent_select.length > 0) {
-    const new_conversation_id = await agentService.queryAgent(req.body.agent_select, req.body.context, req.body.prompt, user_id, req.body.tags, req.body.title, req.body.category);
-    return res.redirect(`/chat4/chat/${new_conversation_id}`);
-  }
+  // // If ask agent query: Discontinued
+  // if ("agent_select" in req.body && req.body.agent_select.length > 0) {
+  //   const new_conversation_id = await agentService.queryAgent(req.body.agent_select, req.body.context, req.body.prompt, user_id, req.body.tags, req.body.title, req.body.category);
+  //   return res.redirect(`/chat4/chat/${new_conversation_id}`);
+  // }
 
   // Check if copying is needed
   if ("start_message" in req.body || "end_message" in req.body) {
@@ -140,7 +141,7 @@ exports.post = async (req, res) => {
   for (let i = 0; i < req.files.length; i++) {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
-  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider, reasoning_effort);
+  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider, reasoning_effort, private_msg);
 
   // Add summary request to batch process
   await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title}, "gpt-4o-mini");
@@ -150,13 +151,14 @@ exports.post = async (req, res) => {
 
 exports.ask_category = async (req, res) => {
   const user_id = req.user.name;
+  const private_msg = req.body.private_msg === "on";
 
   // Post message to conversation
   const image_paths = [];
   for (let i = 0; i < req.files.length; i++) {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
-  const conversation_id = await conversationService.askCategory(user_id, image_paths, req.body, req.body.provider, parseInt(req.body.max_count));
+  const conversation_id = await conversationService.askCategory(user_id, image_paths, req.body, req.body.provider, parseInt(req.body.max_count), private_msg);
 
   // Add summary request to batch process
   await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title}, "gpt-4o-mini");

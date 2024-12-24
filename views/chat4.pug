@@ -86,6 +86,7 @@ block content
                 option(value="low") Low (only for o1 models) 
                 option(value="medium", selected) Medium (only for o1 models) 
                 option(value="high") High (only for o1 models) 
+              input#private_msg(type="checkbox", name="private_msg", title="Check for private content, OpenAI only")
             .button-container
               input.btn.btn-primary(type="submit", value="Send", onclick="showLoadingPopup()")
               button.btn.btn-secondary(type="button", onclick="Batch()") Batch

@@ -351,7 +351,7 @@ class ConversationService {
     return messages;
   }
 
-  async postToConversation(user_id, conversation_id, new_images, parameters, provider="OpenAI", reasoning_effort="medium") {
+  async postToConversation(user_id, conversation_id, new_images, parameters, provider="OpenAI", reasoning_effort="medium", private_msg=false) {
     let use_vision = false;
     const vision_messages = [];
     const text_messages = [];
@@ -481,7 +481,7 @@ class ConversationService {
     }
 
     // Create new message
-    const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider, reasoning_effort);
+    const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider, reasoning_effort, private_msg);
 
     // Summarize conversation
     // text_messages.push({
@@ -539,7 +539,7 @@ class ConversationService {
     }
   }
 
-  async askCategory(user_id, new_images, parameters, provider="OpenAI", max_count=10) {
+  async askCategory(user_id, new_images, parameters, provider="OpenAI", max_count=10, private_msg=false) {
     if (new_images.length > 0) {
       console.warning("Images not supported in `askCategory(...)`, and is ignored.")
     }
@@ -576,7 +576,7 @@ class ConversationService {
     // Generate response
     parameters.category = `Category: ${parameters.category}`;
     parameters.prompt = prompt;
-    const message_data = await this.messageService.createMessage(false, messages, messages, user_id, parameters, images, provider);
+    const message_data = await this.messageService.createMessage(false, messages, messages, user_id, parameters, images, provider, private_msg);
 
     // Return conversation ID
     // Save conversation to database
