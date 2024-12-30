@@ -351,7 +351,7 @@ class ConversationService {
     return messages;
   }
 
-  async postToConversation(user_id, conversation_id, new_images, parameters, provider="OpenAI", reasoning_effort="medium", private_msg=false) {
+  async postToConversation(user_id, conversation_id, new_images, parameters, provider="OpenAI", reasoning_effort="medium", private_msg=false, delete_messages=[]) {
     let use_vision = false;
     const vision_messages = [];
     const text_messages = [];
@@ -396,7 +396,7 @@ class ConversationService {
     // Set previous messages, if not a new conversation
     if (conversation_id != 'new') {
       const conversation = await this.conversationModel.findById(conversation_id);
-      const m_id = conversation.messages;
+      const m_id = conversation.messages.filter(d => delete_messages.indexOf(d) === -1);
       const prev_messages = await this.messageService.getMessagesByIdArray(m_id, false, parameters);
       // Append messages
       for (let i = 0; i < prev_messages.length; i++) {
@@ -483,13 +483,6 @@ class ConversationService {
     // Create new message
     const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider, reasoning_effort, private_msg);
 
-    // Summarize conversation
-    // text_messages.push({
-    //   role: 'assistant',
-    //   content: message_data.db_entry.response,
-    // });
-    // const summary = await this.messageService.createMessagesSummary(text_messages, message_data.tokens);
-
     // Save conversation to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     if (conversation_id === "new") {
@@ -532,7 +525,9 @@ class ConversationService {
           });
         }
       }
-      conversation.messages.push(message_data.db_entry._id.toString());
+      let msg = conversation.messages.filter(d => delete_messages.indexOf(d) === -1);
+      msg.push(message_data.db_entry._id.toString());
+      conversation.messages = msg;
       conversation.updated_date = new Date();
       await conversation.save();
       return conversation._id.toString();

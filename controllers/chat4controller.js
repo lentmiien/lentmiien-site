@@ -116,17 +116,28 @@ exports.chat = async (req, res) => {
   res.render("chat4_conversation", { conversation, categories, tags, messages, templates, knowledges, knowledge_id_to_index, used_knowledge_ids, knowledges_categories, copy_conversations, agents, OpenAIModels });
 };
 
+function normalizeInput(input) {
+  if (Array.isArray(input)) {
+      // If the input is already an array, return it as-is
+      return input;
+  } else if (typeof input === 'string') {
+      // If the input is a single string, wrap it in an array
+      return [input];
+  } else if (input === undefined) {
+      // If the input is undefined, return an empty array
+      return [];
+  } else {
+      // Optional: Handle unexpected input types
+      throw new Error('Invalid input type. Expected an array, a string, or undefined.');
+  }
+}
+
 exports.post = async (req, res) => {
   const user_id = req.user.name;
   let use_conversation_id = req.params.id;
   const reasoning_effort = req.body.reasoning_effort;
   const private_msg = req.body.private_msg === "on";
-
-  // // If ask agent query: Discontinued
-  // if ("agent_select" in req.body && req.body.agent_select.length > 0) {
-  //   const new_conversation_id = await agentService.queryAgent(req.body.agent_select, req.body.context, req.body.prompt, user_id, req.body.tags, req.body.title, req.body.category);
-  //   return res.redirect(`/chat4/chat/${new_conversation_id}`);
-  // }
+  const delete_messages = normalizeInput(req.body.del_message);// Array of message ids to remove from conversation
 
   // Check if copying is needed
   if ("start_message" in req.body || "end_message" in req.body) {
@@ -141,7 +152,7 @@ exports.post = async (req, res) => {
   for (let i = 0; i < req.files.length; i++) {
     image_paths.push(req.files[i].destination + req.files[i].filename);
   }
-  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider, reasoning_effort, private_msg);
+  const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider, reasoning_effort, private_msg, delete_messages);
 
   // Add summary request to batch process
   await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title}, "gpt-4o-mini");

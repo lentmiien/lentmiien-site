@@ -14,8 +14,8 @@ block content
           button#custom_message-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#custom_message`, type="button", role="tab", aria-controls=`custom_message`, aria-selected="false") Custom message
         li.nav-item(role="presentation")
           button#chathistory-tab.nav-link.active(data-bs-toggle="tab", data-bs-target=`#chathistory`, type="button", role="tab", aria-controls=`chathistory`, aria-selected="true") Chat history
-        li.nav-item(role="presentation")
-          button#agent-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#agent`, type="button", role="tab", aria-controls=`agent`, aria-selected="false") Create agent
+        //- li.nav-item(role="presentation")
+        //-   button#agent-tab.nav-link(data-bs-toggle="tab", data-bs-target=`#agent`, type="button", role="tab", aria-controls=`agent`, aria-selected="false") Create agent
       .tab-content
         #newchat.tab-pane.fade(role="tabpanel" aria-labelledby="newchat-tab")
           form#chatform(action="/chat4/post/new", method="post", enctype="multipart/form-data") 
@@ -51,10 +51,10 @@ block content
             textarea#prompt.form-control(name="prompt", cols="30", rows="10", required)
             #knowledge_container.row
             input#append_message_ids(type="hidden", name="append_message_ids")
-            select#agent_select.form-control(name='agent_select', aria-label='agent_select', disabled)
-              option(value="") -- No agent will be queried, select agent to query agent memory --
-              each a in agents 
-                option(value=a._id.toString())= a.name
+            //- select#agent_select.form-control(name='agent_select', aria-label='agent_select', disabled)
+            //-   option(value="") -- No agent will be queried, select agent to query agent memory --
+            //-   each a in agents 
+            //-     option(value=a._id.toString())= a.name
             .input-group
               select#provider.form-control(name="provider") 
                 optgroup(label="Current")
@@ -202,27 +202,27 @@ block content
                           if c.batchCount > 0
                             div ## Batch ##
                         button.btn.btn-outline-info(style="cursor: help;", data-bs-toggle="tooltip", data-bs-placement="bottom", title=`${c.description}`) info
-      .tab-content
-        #agent.tab-pane.fade(role="tabpanel" aria-labelledby="agent-tab")
-          form(action="/chat4/create_agent", method="post") 
-            label(for="ca_name") Agent name 
-            input#ca_name.form-control(type="text", name="ca_name")
-            label(for="ca_description") Description 
-            input#ca_description.form-control(type="text", name="ca_description")
-            label(for="ca_context") Agent context 
-            textarea#ca_context.form-control(name="ca_context", cols="30", rows="10")
-            label(for="ca_start_memory") Initial memory 
-            textarea#ca_start_memory.form-control(name="ca_start_memory", cols="30", rows="10")
-            input.btn.btn-primary(type="submit", value="Create agent")
-          each agent in agents 
-            hr
-            h2= agent.name 
-            i= agent.description
-            br
-            p Context: 
-              b= agent.context
-            div Memory:
-              pre= agent.memory
+      //- .tab-content
+      //-   #agent.tab-pane.fade(role="tabpanel" aria-labelledby="agent-tab")
+      //-     form(action="/chat4/create_agent", method="post") 
+      //-       label(for="ca_name") Agent name 
+      //-       input#ca_name.form-control(type="text", name="ca_name")
+      //-       label(for="ca_description") Description 
+      //-       input#ca_description.form-control(type="text", name="ca_description")
+      //-       label(for="ca_context") Agent context 
+      //-       textarea#ca_context.form-control(name="ca_context", cols="30", rows="10")
+      //-       label(for="ca_start_memory") Initial memory 
+      //-       textarea#ca_start_memory.form-control(name="ca_start_memory", cols="30", rows="10")
+      //-       input.btn.btn-primary(type="submit", value="Create agent")
+      //-     each agent in agents 
+      //-       hr
+      //-       h2= agent.name 
+      //-       i= agent.description
+      //-       br
+      //-       p Context: 
+      //-         b= agent.context
+      //-       div Memory:
+      //-         pre= agent.memory
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content

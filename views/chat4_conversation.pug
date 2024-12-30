@@ -139,18 +139,18 @@ block content
               button.btn.btn-secondary(type="button", onclick="Batch()") Batch
               button.btn.btn-warning(type="button", onclick="AI_Prompt()", title="AI will try to refine the prompt for you") AI Prompt
               button.btn.btn-warning(type="button", onclick="AI_Suggest()", title="AI will suggest a prompt for you") AI Suggest
-              .btn-group
-                select#agent_select.form-control(name='agent_select', aria-label='agent_select')
-                  option(value="") -- Select an agent --
-                  each a in agents 
-                    option(value=a._id.toString())= a.name
-                .input-group-append
-                  .dropdown
-                    button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
-                    ul.dropdown-menu
-                      li
-                        a.dropdown-item(href='#', onclick=`Agent('agent_select','teach')`) Teach
-                        a.dropdown-item(href='#', onclick=`Agent('agent_select','ask')`) Ask
+              //- .btn-group
+              //-   select#agent_select.form-control(name='agent_select', aria-label='agent_select')
+              //-     option(value="") -- Select an agent --
+              //-     each a in agents 
+              //-       option(value=a._id.toString())= a.name
+              //-   .input-group-append
+              //-     .dropdown
+              //-       button.btn.btn-outline-secondary.dropdown-toggle(type='button', data-bs-toggle='dropdown', aria-expanded="false")
+              //-       ul.dropdown-menu
+              //-         li
+              //-           a.dropdown-item(href='#', onclick=`Agent('agent_select','teach')`) Teach
+              //-           a.dropdown-item(href='#', onclick=`Agent('agent_select','ask')`) Ask
             #knowledge_container.row
               each ki in conversation.knowledge_injects
                 .col(id=ki.knowledge_id)
@@ -165,7 +165,9 @@ block content
                 div 
                   p.header-row 
                     input(id=`end_${m._id.toString()}`, type="radio", name="end_message", value=`${m._id.toString()}`)
-                    span  New conversation end
+                    span  New conversation end, 
+                    input(type="checkbox", name="del_message", value=`${m._id.toString()}`)
+                    span  Delete message
                   .assistant!= m.response_html
                     a(href=`/chat4/redact/${m._id.toString()}?conversation=${conversation._id.toString()}`) Redact
                   if m.sound.length > 0
