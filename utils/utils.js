@@ -19,3 +19,19 @@ exports.estimateTokens = (text) => {
 
   return Math.round(estimate);
 }
+
+exports.normalizeInputToArrayOfStrings = (input) => {
+  if (Array.isArray(input)) {
+      // If the input is already an array, return it as-is
+      return input;
+  } else if (typeof input === 'string') {
+      // If the input is a single string, wrap it in an array
+      return [input];
+  } else if (input === undefined) {
+      // If the input is undefined, return an empty array
+      return [];
+  } else {
+      // Optional: Handle unexpected input types
+      throw new Error('Invalid input type. Expected an array, a string, or undefined.');
+  }
+}
