@@ -81,6 +81,8 @@ const Receipt = require('./models/receipt');
 const ProductDetails = require('./models/product_details');
 // OpenAI Usage
 const OpenAIUsage = require('./models/openai_usage');
+// AI model cards
+const AIModelCards = require('./models/ai_model_card');
 
 // Export models
 module.exports = {
@@ -129,4 +131,5 @@ module.exports = {
   Receipt,
   ProductDetails,
   OpenAIUsage,
+  AIModelCards,
 };

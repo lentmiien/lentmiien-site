@@ -4,7 +4,11 @@ const router = express.Router();
 // Require controller modules.
 const controller = require('../controllers/chat5controller');
 
-// Chat4 top page
+// Chat5 top page
 router.get('/', controller.index);
+
+// Manage model cards
+router.get('/ai_model_cards', controller.ai_model_cards);
+router.post('/add_model_card', controller.add_model_card);
 
 module.exports = router;

@@ -1,0 +1,82 @@
+extends layout
+
+block content
+  .row 
+    .col
+      h2 AI model list
+      table.table.table-striped 
+        thead 
+          tr 
+            th Model 
+            th Cost (1m token, in/out)
+            th Use
+            th Modalities (in/out)
+            th Max tokens (total/out)
+            th Added
+            th Batch
+            th Context
+        tbody 
+          each m in models
+            tr 
+              td
+                b= m.model_name 
+                span= ` ${m.provider} `
+                i= `[${m.api_model}]`
+              td= `$${m.input_1m_token_cost}/$${m.output_1m_token_cost}`
+              td= m.model_type
+              td= `${m.in_modalities.join(", ")}/${m.out_modalities.join(", ")}`
+              td= `${m.max_tokens}/${m.max_out_tokens}`
+              td= m.added_date.toDateString()
+              td= m.batch_use ? "✔" : "✘"
+              td= m.context_type
+  .row 
+    .col 
+      h2 Add new model
+      div *Replaces existing entry if 'Provider' and 'API Model' exactly matches an existing entry
+      form(action="/chat5/add_model_card", method="post") 
+        label(for="model_name") Model Name 
+        input#model_name.form-control(type="text", name="model_name")
+        label(for="provider") Provider 
+        select#provider.form-control(name="provider") 
+          option(value="OpenAI") OpenAI
+          option(value="Anthropic") Anthropic
+          option(value="Google") Google
+          option(value="Groq") Groq
+          option(value="Local") Local
+        label(for="api_model") API Model 
+        input#api_model.form-control(type="text", name="api_model")
+        label(for="input_1m_token_cost") Input token cost per 1m tokens in USD
+        input#input_1m_token_cost.form-control(type="text", name="input_1m_token_cost")
+        label(for="output_1m_token_cost") Output token cost per 1m tokens in USD
+        input#output_1m_token_cost.form-control(type="text", name="output_1m_token_cost")
+        label(for="model_type") Model Type 
+        select#model_type.form-control(name="model_type") 
+          option(value="chat") Chat
+          option(value="embedding") Embedding
+          option(value="image") Image
+          option(value="realtime") Realtime
+        label(for="in_modalities") Input modalities 
+        select#in_modalities.form-control(name="in_modalities", multiple) 
+          option(value="text") Text
+          option(value="image") Image
+          option(value="audio") Audio
+          option(value="video") Video
+        label(for="out_modalities") Output modalities 
+        select#out_modalities.form-control(name="out_modalities", multiple) 
+          option(value="text") Text
+          option(value="image") Image
+          option(value="audio") Audio
+          option(value="video") Video
+        label(for="max_tokens") Max Total Tokens
+        input#max_tokens.form-control(type="number", name="max_tokens")
+        label(for="max_out_tokens") Max Output Tokens
+        input#max_out_tokens.form-control(type="number", name="max_out_tokens")
+        .form-check
+          input#batch_use.form-check-input(type="checkbox", name="batch_use")
+          label.form-check-label(for="batch_use") Can be used for batch?
+        label(for="context_type") Type of context message 
+        select#context_type.form-control(name="context_type") 
+          option(value="none") - none -
+          option(value="system") System Message
+          option(value="developer") Developer Message
+        input(type="submit", value="Save")
