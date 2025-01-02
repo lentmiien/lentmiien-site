@@ -3,6 +3,8 @@ const OpenAI = require('openai');
 const { WebSocket } = require('ws');
 const { zodResponseFormat } = require('openai/helpers/zod');
 const { z } = require('zod');
+const path = require('path');
+const fs = require('fs');
 
 const MessageService = require('./services/messageService');
 const ConversationService = require('./services/conversationService');
@@ -17,6 +19,8 @@ const conversationService = new ConversationService(Conversation4Model, messageS
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 
 const url = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview-2024-12-17";// gpt-4o-realtime-preview-2024-12-17
+
+const TEMP_DIR = path.join(__dirname, 'tmp_data');
 
 const streaming_models = [
   "gpt-4o-mini",
@@ -71,6 +75,7 @@ module.exports = (server, sessionMiddleware) => {
     socket.context = '';
     socket.category = 'Chat5';
     socket.tags = 'chat5';
+    socket.images = [];
 
     // Voice mode handle
     socket.ws = null;
@@ -128,6 +133,32 @@ module.exports = (server, sessionMiddleware) => {
       socket.context = data.context
       socket.category = data.category;
       socket.tags = data.tags;
+    });
+
+    socket.on('uploadImage', (data) => {
+      const { name, buffer } = data; // 'buffer' is an ArrayBuffer
+
+      if (!name || !buffer) {
+        socket.emit('uploadError', { message: 'Invalid file data.' });
+        return;
+      }
+
+      const uniqueName = `${Date.now()}_${name}`;
+      const filePath = path.join(TEMP_DIR, uniqueName);
+
+      // Convert ArrayBuffer to Buffer
+      const fileBuffer = Buffer.from(buffer);
+
+      fs.writeFile(filePath, fileBuffer, (err) => {
+        if (err) {
+          console.error(`Error saving file ${name}:`, err);
+          socket.emit('uploadError', { message: `Failed to upload ${name}` });
+        } else {
+          console.log(`File saved: ${filePath}`);
+          socket.images.push(filePath);
+          socket.emit('uploadSuccess', { fileName: uniqueName });
+        }
+      });
     });
 
     socket.on('createTitle', async () => {

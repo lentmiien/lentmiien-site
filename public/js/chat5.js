@@ -16,6 +16,9 @@ const contextInput = document.getElementById('context');
 const categoryInput = document.getElementById('category');
 const tagsInput = document.getElementById('tags');
 const load = document.getElementById('load');
+// File upload
+const fileInput = document.getElementById('fileInput');
+const statusDiv = document.getElementById('status');
 
 // Setup markdown editor
 const editor = new toastui.Editor({
@@ -113,6 +116,43 @@ function addMessageToChat(sender, messageContent) {
 function UpdateModel(e) {
   socket.emit('userSelectModel', e.value);
 }
+
+fileInput.addEventListener('change', () => {
+  const files = fileInput.files;
+  if (files.length === 0) return;
+
+  statusDiv.textContent = 'Uploading...';
+
+  for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+          const arrayBuffer = event.target.result;
+          socket.emit('uploadImage', {
+              name: file.name,
+              buffer: arrayBuffer
+          });
+      };
+
+      reader.onerror = () => {
+          console.error('Error reading file:', file.name);
+          statusDiv.textContent += `\nError reading ${file.name}`;
+      };
+
+      reader.readAsArrayBuffer(file);
+  }
+});
+
+// Handle successful uploads
+socket.on('uploadSuccess', (data) => {
+  statusDiv.textContent += `\nUploaded: ${data.fileName}`;
+});
+
+// Handle upload errors
+socket.on('uploadError', (data) => {
+  statusDiv.textContent += `\nError: ${data.message}`;
+});
 
 // Voice Mode
 let g_stream = null;
