@@ -20,6 +20,8 @@ const load = document.getElementById('load');
 const fileInput = document.getElementById('fileInput');
 const statusDiv = document.getElementById('status');
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 // Setup markdown editor
 const editor = new toastui.Editor({
   el: document.querySelector('#message'),
@@ -125,6 +127,12 @@ fileInput.addEventListener('change', () => {
 
   for (let i = 0; i < files.length; i++) {
       const file = files[i];
+
+      if (file.size > MAX_FILE_SIZE) {
+        statusDiv.textContent += `\nError: ${file.name} exceeds the 10 MB limit.`;
+        continue;
+      }
+
       const reader = new FileReader();
 
       reader.onload = (event) => {

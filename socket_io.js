@@ -44,7 +44,7 @@ const Title = z.object({
 });
 
 module.exports = (server, sessionMiddleware) => {
-  const io = socketIO(server);
+  const io = socketIO(server, {maxHttpBufferSize: 10 * 1024 * 1024});
 
   // Use the session middleware in Socket.io
   io.use((socket, next) => {
