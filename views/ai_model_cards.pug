@@ -54,6 +54,7 @@ block content
           option(value="chat") Chat
           option(value="embedding") Embedding
           option(value="image") Image
+          option(value="audio") Audio
           option(value="realtime") Realtime
         label(for="in_modalities") Input modalities 
         select#in_modalities.form-control(name="in_modalities", multiple) 
@@ -61,12 +62,14 @@ block content
           option(value="image") Image
           option(value="audio") Audio
           option(value="video") Video
+          option(value="vector") Vector
         label(for="out_modalities") Output modalities 
         select#out_modalities.form-control(name="out_modalities", multiple) 
           option(value="text") Text
           option(value="image") Image
           option(value="audio") Audio
           option(value="video") Video
+          option(value="vector") Vector
         label(for="max_tokens") Max Total Tokens
         input#max_tokens.form-control(type="number", name="max_tokens")
         label(for="max_out_tokens") Max Output Tokens
