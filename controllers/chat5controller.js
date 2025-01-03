@@ -12,7 +12,17 @@ exports.index = async (req, res) => {
 };
 
 exports.ai_model_cards = async (req, res) => {
-  const models = await AIModelCards.find();
+  const models = (await AIModelCards.find()).sort((a,b) => {
+    if (a.model_type < b.model_type) return -1;
+    if (a.model_type > b.model_type) return 1;
+    if (a.output_1m_token_cost > b.output_1m_token_cost) return -1;
+    if (a.output_1m_token_cost < b.output_1m_token_cost) return 1;
+    if (a.input_1m_token_cost > b.input_1m_token_cost) return -1;
+    if (a.input_1m_token_cost < b.input_1m_token_cost) return 1;
+    if (a.model_name < b.model_name) return -1;
+    if (a.model_name > b.model_name) return 1;
+    return 0;
+  });
   res.render('ai_model_cards', {models});
 };
 
@@ -41,6 +51,7 @@ exports.add_model_card = async (req, res) => {
     existing[0].model_name = data.model_name;
     existing[0].input_1m_token_cost = data.input_1m_token_cost;
     existing[0].output_1m_token_cost = data.output_1m_token_cost;
+    existing[0].model_type = data.model_type;
     existing[0].in_modalities = data.in_modalities;
     existing[0].out_modalities = data.out_modalities;
     existing[0].max_tokens = data.max_tokens;
