@@ -136,7 +136,7 @@ module.exports = (server, sessionMiddleware) => {
         } else {
           console.log(`File saved: ${filePath}`);
           socket.images.push(filePath);
-          socket.emit('uploadSuccess', { fileName: uniqueName });
+          socket.emit('uploadSuccess', { savedImages: socket.images });
         }
       });
     });

@@ -161,7 +161,7 @@ fileInput.addEventListener('change', () => {
 
 // Handle successful uploads
 socket.on('uploadSuccess', (data) => {
-  statusDiv.textContent += `\nUploaded: ${data.fileName}`;
+  statusDiv.innerHTML = `Uploaded:<br>${data.savedImages.join('<br>')}`;
 });
 
 // Handle upload errors
@@ -188,6 +188,9 @@ messageForm.addEventListener('submit', function (e) {
 socket.on('aiResponse', function (message) {
   addMessageToChat('User', message.prompt, message.images.map(d => d.filename));
   addMessageToChat('Assistant', message.response);
+
+  // Clear file upload
+  statusDiv.textContent = "";
 
   // Generate a title if empty
   if (title.innerText.length === 0) {
