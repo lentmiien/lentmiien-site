@@ -22,8 +22,9 @@ block content
       button.btn.btn-secondary(type="button", onclick="OpenSettings()") Settings
   #settings.popup-wrapper 
     .popup-content
+      button.btn.btn-warning(onclick="GenerateTitle()") Generate new title by AI
       form#settings-form
-        label(for="context") Set a context/system message (*Not supported/ignored for "o1" models)
+        label(for="context") Set a context/system message
         textarea#context.form-control(name="context", rows="7", placeholder="Type your context here...")
         label(for="category") Conversation category
         input#category.form-control(type="text", name="category", value="Chat5")
@@ -45,10 +46,6 @@ block content
       h4 Select a conversation to load
       ul#loadlist
       button.btn.btn-danger(type="button", onclick="CloseLoad()") Cancel
-  hr
-  button.btn.btn-primary(onclick="StartVoiceMode(this)") Start Voice Mode
-  #transcript
-  pre#voice_out.hidden
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
   script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)

@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { OpenaicalllogDBModel, OpenaimodelDBModel } = require('../database');
 const { OpenAI } = require('openai');
+const { zodResponseFormat } = require('openai/helpers/zod');
 
 // Set your OpenAI API key (I use 2 projects, so 2 API keys)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -191,6 +192,26 @@ const chatGPT = async (messages, model, private_msg=false) => {
         messages,
         model,
       });
+    }
+    return response;
+  } catch (error) {
+    console.error(`Error while calling ChatGPT API: ${error}`);
+    return null;
+  }
+};
+
+const chatGPT_beta = async (messages, model, private_msg=false, zod) => {
+  const inputParameters = {
+    model: model,
+    messages,
+    response_format: zodResponseFormat(zod.object, zod.title),
+  };
+  try {
+    let response;
+    if (private_msg) {
+      response = await openai_private.beta.chat.completions.parse(inputParameters);
+    } else {
+      response = await openai.beta.chat.completions.parse(inputParameters);
     }
     return response;
   } catch (error) {
@@ -504,6 +525,7 @@ module.exports = {
   GetOpenAIModels,
   OpenAIAPICallLog,
   chatGPT,
+  chatGPT_beta,
   chatGPT_o1,
   chatGPT_Tool,
   embedding,

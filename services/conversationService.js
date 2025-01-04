@@ -629,6 +629,18 @@ class ConversationService {
     return conversation._id.toString();
   }
 
+  /**
+   * Create an AI generated title for conversation and update database
+   * @param {*} id 
+   */
+  async aiTitle(id) {
+    const conversation = await this.conversationModel.findById(id);
+    const title = await this.messageService.CreateTitle(conversation.messages);
+    conversation.title = title;
+    await conversation.save();
+    return title;
+  }
+
   async deleteConversation(id) {
     return await this.conversationModel.deleteOne({_id: id});
   }

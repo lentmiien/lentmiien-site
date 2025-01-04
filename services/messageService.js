@@ -1,9 +1,16 @@
 const fs = require('fs');
 const marked = require('marked');
-const { chatGPT, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
 const { groq, groq_vision } = require('../utils/groq');
 const { googleAI } = require('../utils/google');
+const { z } = require('zod');
+
+const { AIModelCards } = require('../database');
+
+const Title = z.object({
+  conversation_title: z.string(),
+});
 
 // Message service operations: managing individual messages within a conversation
 
@@ -90,7 +97,8 @@ class MessageService {
 
   async createMessage(use_vision, vision_messages, text_messages, sender, parameters, images, provider='OpenAI', reasoning_effort='medium', private_msg=false) {
     // Send to OpenAI API
-    let response;
+    const model = (await AIModelCards.find({api_model: provider}))[0];
+    let response = null;
     if (provider === "OpenAI") response = await chatGPT(vision_messages, 'gpt-4o', private_msg);
     if (provider === "OpenAI_latest") response = await chatGPT(vision_messages, 'gpt-4o-2024-11-20', private_msg);
     if (provider === "OpenAI_mini") response = await chatGPT(vision_messages, 'gpt-4o-mini', private_msg);
@@ -99,6 +107,12 @@ class MessageService {
     if (provider.indexOf("GroqV-") === 0) response = await groq_vision(vision_messages, provider.split("GroqV-")[1]);
     if (provider.indexOf("o1-") === 0) response = await chatGPT_o1(vision_messages, provider, reasoning_effort, private_msg);
     if (provider.indexOf("Google-") === 0) response = await googleAI(vision_messages, provider.split("Google-")[1]);
+    if (response == null) {
+      if (model.provider === "OpenAI") response = await chatGPT(vision_messages, model.api_model, private_msg);
+      if (model.provider === "Anthropic") response = await anthropic(vision_messages, model.api_model);
+      if (model.provider === "Groq") response = await groq(vision_messages, model.api_model);
+      if (model.provider === "Google") response = await googleAI(vision_messages, model.api_model);
+    }
 
     // Save a copy in temporary folder, for debugging
     // fs.writeFileSync(`./tmp_data/${Date.now()}[${provider}].json`, JSON.stringify(response, null, 2));
@@ -135,6 +149,41 @@ class MessageService {
 
     // Return entry to user
     return { db_entry };
+  }
+
+  async CreateTitle(message_ids) {
+    const msgs = await this.getMessagesByIdArray(message_ids, false);
+    const use_model = 'gpt-4o-mini';
+    const use_messages = [];
+    use_messages.push({
+      role: "system",
+      content: [
+        { type: 'text', text: "Your task is to come up with a short, suitable title for the following conversation." }
+      ]
+    });
+    for (let i = 0; i < msgs.length; i++) {
+      use_messages.push({
+        role: "user",
+        content: [ { type: 'text', text: msgs[i].prompt } ]
+      });
+      use_messages.push({
+        role: "assistant",
+        content: [ { type: 'text', text: msgs[i].response } ]
+      });
+    }
+    use_messages.push({
+      role: "user",
+      content: [ { type: 'text', text: 'Please give me a suitable title for our conversation. Please only respond with the title.' } ]
+    });
+    try {
+      const response = await chatGPT_beta(use_messages, use_model, true, {object: Title, title: "title"});
+      const details = response.choices[0].message.parsed;
+      const title = details.conversation_title;
+      return title;
+    } catch (error) {
+      console.error(error);
+      return "Error generating title";
+    }
   }
 
   async createMessagesSummary(messages, tokens = 16001) {
