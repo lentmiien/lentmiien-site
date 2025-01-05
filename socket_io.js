@@ -69,6 +69,8 @@ module.exports = (server, sessionMiddleware) => {
       //socket.model
       if (conversation.default_model && conversation.default_model.length > 0) {
         socket.model = conversation.default_model;
+      } else {
+        socket.model = 'gpt-4o-mini';
       }
       //socket.conversation_id
       socket.conversation_id = id;

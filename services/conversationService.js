@@ -133,6 +133,7 @@ class ConversationService {
       knowledge_injects: [],
       messages: [],
       updated_date: new Date(),
+      default_model: "gpt-4o-mini",
     };
     const conv_entry = await new this.conversationModel(conversation_entry).save();
     return conv_entry._id.toString();
@@ -154,6 +155,7 @@ class ConversationService {
       knowledge_injects: [],
       messages: [],
       updated_date: new Date(),
+      default_model: original_conversation.default_model || "gpt-4o-mini",
     };
 
     for (let i = 0; i < original_conversation.knowledge_injects.length; i++) {
@@ -190,6 +192,7 @@ class ConversationService {
       knowledge_injects: [],
       messages: message_id_array,
       updated_date: new Date(),
+      default_model: "gpt-4o-mini",
     };
     const conv_entry = await new this.conversationModel(conversation_entry).save();
     return conv_entry._id.toString();
@@ -497,6 +500,7 @@ class ConversationService {
         knowledge_injects: [],
         messages: [ message_data.db_entry._id.toString() ],
         updated_date: new Date(),
+        default_model: provider,
       };
       if ("knowledge" in parameters) {
         for (let i = 0; i < parameters.knowledge.length; i++) {
@@ -529,6 +533,7 @@ class ConversationService {
       msg.push(message_data.db_entry._id.toString());
       conversation.messages = msg;
       conversation.updated_date = new Date();
+      conversation.default_model = provider;
       await conversation.save();
       return conversation._id.toString();
     }
@@ -587,6 +592,7 @@ class ConversationService {
       knowledge_injects: [],
       messages: [ message_data.db_entry._id.toString() ],
       updated_date: new Date(),
+      default_model: provider,
     };
     const conv_entry = await new this.conversationModel(conversation_entry).save();
     return conv_entry._id.toString();

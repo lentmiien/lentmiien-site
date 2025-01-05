@@ -68,7 +68,8 @@ socket.on('displayConversationContent', data => {
   // Clear conversation window
   messagesList.innerHTML = '';
   // Set default model and settings
-  model.value = data.conversation.default_model;
+  console.log(data.conversation);
+  model.value = data.conversation.default_model && data.conversation.default_model.length > 0 ? data.conversation.default_model : "gpt-4o-mini";
   contextInput.value = data.conversation.context_prompt;
   categoryInput.value = data.conversation.category;
   tagsInput.value = data.conversation.tags.join(",");
