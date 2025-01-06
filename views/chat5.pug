@@ -17,6 +17,9 @@ block content
         option(value="gpt-4o-mini") Default (gpt-4o-mini)
         each m in models 
           option(value=m.api_model)= m.model_name
+        each m in models 
+          if m.batch_use
+            option(value=`batch+${m.api_model}`)= `[Batch] ${m.model_name}`
       button.btn.btn-primary(type="submit") Send
       button.btn.btn-secondary(type="button", onclick="OpenSettings()") Settings
   #settings.popup-wrapper 
