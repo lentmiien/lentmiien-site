@@ -50,12 +50,13 @@ const BatchRequest = new mongoose.Schema({
 module.exports = mongoose.model('batchrequest', BatchRequest);
 */
 
-const valid_models = ["gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "claude-3-5-sonnet-20241022", "o1-mini-2024-09-12", "o1-preview-2024-09-12"];
+const valid_models = ["gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "gpt-4o-mini-2024-07-18", "claude-3-5-sonnet-20241022", "o1-mini-2024-09-12", "o1-preview-2024-09-12"];
 const model_provider = {
   "gpt-4o-2024-11-20": "OpenAI",
   "gpt-4o-2024-08-06": "OpenAI",
   "gpt-4o": "OpenAI",
   "gpt-4o-mini": "OpenAI",
+  "gpt-4o-mini-2024-07-18": "OpenAI",
   "claude-3-5-sonnet-20241022": "Anthropic",
   "o1-mini-2024-09-12": "OpenAI",
   "o1-preview-2024-09-12": "OpenAI",
@@ -135,6 +136,8 @@ class BatchService {
       images,
     });
     await newPrompt.save();
+
+    return conversation_id;
   }
 
   async triggerBatchRequest() {
@@ -155,6 +158,7 @@ class BatchService {
           "gpt-4o-2024-08-06": [],
           "gpt-4o": [],
           "gpt-4o-mini": [],
+          "gpt-4o-mini-2024-07-18": [],
           "claude-3-5-sonnet-20241022": [],
           "o1-mini-2024-09-12": [],
           "o1-preview-2024-09-12": [],

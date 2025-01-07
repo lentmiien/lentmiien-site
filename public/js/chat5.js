@@ -186,6 +186,23 @@ messageForm.addEventListener('submit', function (e) {
   editor.reset();
 });
 
+socket.on('batchPending', function (message) {
+  addMessageToChat('User', message);
+  addMessageToChat('Assistant', `### **Batch pending**
+[View](/chat4/batch_status)`);
+
+  // Clear file upload
+  statusDiv.textContent = "";
+
+  // Generate a title if empty
+  // if (title.innerText.length === 0) {
+  //   socket.emit('createTitle');
+  // }
+
+  // Attach copy functionality to code blocks
+  attachCopyListeners();
+});
+
 socket.on('aiResponse', function (message) {
   addMessageToChat('User', message.prompt, message.images.map(d => d.filename));
   addMessageToChat('Assistant', message.response);

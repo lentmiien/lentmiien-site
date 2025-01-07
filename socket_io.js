@@ -156,13 +156,21 @@ module.exports = (server, sessionMiddleware) => {
         category: socket.category,
       };
       try {
-        const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", true, [])
-        socket.images = [];
-        socket.conversation_id = conversation_id;
-        const conversation = await conversationService.getConversationsById(conversation_id);
-        const message = await messageService.getMessageById(conversation.messages[conversation.messages.length-1]);
-        socket.emit('aiResponse', message);
-        await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
+        if (socket.model.indexOf("batch+") === 0) {
+          const api_model = socket.model.split("+")[1];
+          const conversation_id = await batchService.addPromptToBatch(userName, userMessage, socket.conversation_id, socket.images, parameters, api_model);
+          socket.images = [];
+          socket.conversation_id = conversation_id;
+          socket.emit('batchPending', userMessage);
+        } else {
+          const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", true, [])
+          socket.images = [];
+          socket.conversation_id = conversation_id;
+          const conversation = await conversationService.getConversationsById(conversation_id);
+          const message = await messageService.getMessageById(conversation.messages[conversation.messages.length-1]);
+          socket.emit('aiResponse', message);
+          await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
+        }
       } catch (error) {
         console.error('Error processing data:', error);
         socket.emit('error', 'An error occurred while processing your request.');
