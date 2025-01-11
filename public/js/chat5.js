@@ -69,6 +69,7 @@ socket.on('displayConversationContent', data => {
   messagesList.innerHTML = '';
   // Set default model and settings
   console.log(data.conversation);
+  console.log(data.messages);
   model.value = data.conversation.default_model && data.conversation.default_model.length > 0 ? data.conversation.default_model : "gpt-4o-mini";
   contextInput.value = data.conversation.context_prompt;
   categoryInput.value = data.conversation.category;
@@ -77,7 +78,7 @@ socket.on('displayConversationContent', data => {
   // Populate conversation from database
   data.messages.forEach(m => {
     addMessageToChat('User', m.prompt, m.images.map(d => d.filename));
-    addMessageToChat('Assistant', m.response);
+    addMessageToChat('Assistant', m.response, [], m.sound);
   });
   attachCopyListeners();
 });
@@ -205,7 +206,7 @@ socket.on('batchPending', function (message) {
 
 socket.on('aiResponse', function (message) {
   addMessageToChat('User', message.prompt, message.images.map(d => d.filename));
-  addMessageToChat('Assistant', message.response);
+  addMessageToChat('Assistant', message.response, [], message.sound);
 
   // Clear file upload
   statusDiv.textContent = "";
@@ -234,7 +235,7 @@ function addMessageToChat(sender, messageContent, images = null, audio = null) {
   item.classList.add(sender.toLowerCase());
 
   // Set initial content (converted from Markdown to HTML)
-  item.innerHTML = `<strong>${sender}:</strong><br>${marked.parse(messageContent)}${audio ? '<br><audio controls><source scr="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
+  item.innerHTML = `<strong>${sender}:</strong><br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
 
   messagesList.appendChild(item);
   window.scrollTo(0, document.body.scrollHeight);
@@ -274,44 +275,3 @@ function attachCopyListeners() {
     }
   });
 }
-
-
-
-
-///////////////////////////////////////////////////////////
-///////////-------------- OLD ----------------/////////////
-
-
-
-// Handle incoming chunks from the server
-socket.on('aiResponseChunk', function (chunk) {
-  if (assistantMessageElement) {
-    // Append the new chunk to the existing content
-    assistantMessageElement.dataset.content += chunk;
-
-    // Update the HTML content by converting Markdown to HTML
-    assistantMessageElement.innerHTML = `<strong>Assistant:</strong><br>${marked.parse(assistantMessageElement.dataset.content)}`;
-  }
-});
-
-// Handle end of assistant's response
-
-
-
-
-
-
-/***********************************
- * 
- * Settings
- * 
- */
-
-
-
-/********************************
- * 
- *  Load
- * 
- */
-

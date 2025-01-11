@@ -1,6 +1,6 @@
 const fs = require('fs');
 const marked = require('marked');
-const { chatGPT, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, chatGPTaudio, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
 const { groq, groq_vision } = require('../utils/groq');
 const { googleAI } = require('../utils/google');
@@ -106,6 +106,7 @@ class MessageService {
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
     if (provider.indexOf("GroqV-") === 0) response = await groq_vision(vision_messages, provider.split("GroqV-")[1]);
     if (provider.indexOf("o1-") === 0) response = await chatGPT_o1(vision_messages, provider, reasoning_effort, private_msg);
+    if (provider.indexOf("-audio-") >= 0) response = await chatGPTaudio(vision_messages, provider, private_msg);
     if (provider.indexOf("Google-") === 0) response = await googleAI(vision_messages, provider.split("Google-")[1]);
     if (response == null) {
       if (model.provider === "OpenAI") response = await chatGPT(vision_messages, model.api_model, private_msg);
@@ -116,6 +117,15 @@ class MessageService {
 
     // Save a copy in temporary folder, for debugging
     // fs.writeFileSync(`./tmp_data/${Date.now()}[${provider}].json`, JSON.stringify(response, null, 2));
+    let filename = null;
+    if (response.choices[0].message && response.choices[0].message.audio) {
+      filename = `resp-${Date.now()}.mp3`;
+      fs.writeFileSync(
+        `./public/mp3/${filename}`,
+        Buffer.from(response.choices[0].message.audio.data, 'base64'),
+        { encoding: "utf-8" }
+      );
+    }
 
     // Save to database
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
@@ -124,9 +134,9 @@ class MessageService {
       category: parameters.category,
       tags: tags_array,
       prompt: parameters.prompt,
-      response: response.choices[0].message.content,
+      response: filename ? response.choices[0].message.audio.transcript : response.choices[0].message.content,
       images,
-      sound: '',
+      sound: filename ? filename : '',
     };
     const db_entry = await new this.messageModel(chat_message_entry).save();
 

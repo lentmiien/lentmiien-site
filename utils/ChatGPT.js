@@ -200,6 +200,31 @@ const chatGPT = async (messages, model, private_msg=false) => {
   }
 };
 
+const chatGPTaudio = async (messages, model, private_msg=false) => {
+  try {
+    let response;
+    if (private_msg) {
+      response = await openai_private.chat.completions.create({
+        model,
+        modalities: ["text", "audio"],
+        audio: { voice: "sage", format: "mp3" },
+        messages,
+      });
+    } else {
+      response = await openai.chat.completions.create({
+        model,
+        modalities: ["text", "audio"],
+        audio: { voice: "sage", format: "mp3" },
+        messages,
+      });
+    }
+    return response;
+  } catch (error) {
+    console.error(`Error while calling ChatGPT API: ${error}`);
+    return null;
+  }
+};
+
 const chatGPT_beta = async (messages, model, private_msg=false, zod) => {
   const inputParameters = {
     model: model,
@@ -525,6 +550,7 @@ module.exports = {
   GetOpenAIModels,
   OpenAIAPICallLog,
   chatGPT,
+  chatGPTaudio,
   chatGPT_beta,
   chatGPT_o1,
   chatGPT_Tool,
