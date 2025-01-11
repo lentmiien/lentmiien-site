@@ -230,7 +230,7 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
     for (let i = 0; i < messages.length; i++) {
       if (messages.role === "system") {
         messages.role === "developer";
-        messages.content[0].text += "\n\nFormatting reenabled";
+        messages.content[0].text += "\n\nYou should format all responses in Markdown.\n\nFormatting reenabled";
       }
     }
     use_msg = messages;
