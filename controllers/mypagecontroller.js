@@ -9,16 +9,10 @@ const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
 exports.mypage = (req, res) => {
   // Do something fun here, to show om mypage!
   const models = GetOpenAIModels();
-  let has_o1 = false;
-  let has_o3 = false;
-  models.forEach(m => {
-    if (m.model === "o1") has_o1 = true;
-    if (m.model === "o3") has_o3 = true;
-  });
   const ts = Math.round((Date.now() - (1000 * 60 * 60 * 24 * 30)) / 1000);
   const new_models = models.filter(d => d.created > ts);
 
-  res.render('mypage', {has_o1, has_o3, new_models});
+  res.render('mypage', {new_models});
 };
 
 exports.blogpost = async (req, res) => {
