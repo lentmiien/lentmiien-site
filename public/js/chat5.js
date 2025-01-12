@@ -18,10 +18,9 @@ const load_keyword = document.getElementById('load_keyword');
 const loadlist = document.getElementById('loadlist');
 const fileInput = document.getElementById('fileInput');
 const statusDiv = document.getElementById('status');
+const loadingPopup = document.getElementById("loadingPopup");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-
-let assistantMessageElement;// Point to current assistant message, while waiting for a response
 
 // Setup markdown editor
 const editor = new toastui.Editor({
@@ -179,6 +178,9 @@ messageForm.addEventListener('submit', function (e) {
   e.preventDefault(); // Prevent page reload
   const msg = editor.getMarkdown();
   if (msg === '') return;
+
+  // Show loading screen until getting a response
+  showLoadingPopup();
   
   // Send the message to the server
   socket.emit('userMessage', msg);
@@ -218,6 +220,9 @@ socket.on('aiResponse', function (message) {
 
   // Attach copy functionality to code blocks
   attachCopyListeners();
+
+  // Done, close loading screen
+  hideLoadingPopup();
 });
 
 /////////////////////////////
@@ -274,4 +279,14 @@ function attachCopyListeners() {
       code.dataset.copyListener = 'true';
     }
   });
+}
+
+// Function to show the loading popup
+function showLoadingPopup() {
+  loadingPopup.style.display = 'block';
+}
+
+// Function to hide the loading popup
+function hideLoadingPopup() {
+  loadingPopup.style.display = 'none';
 }

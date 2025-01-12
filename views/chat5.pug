@@ -48,6 +48,11 @@ block content
       h4 Select a conversation to load
       ul#loadlist
       button.btn.btn-danger(type="button", onclick="CloseLoad()") Cancel
+  #loadingPopup.loading-popup
+    span.close-btn(onclick="hideLoadingPopup()") &times;
+    .loading-content
+      .loader
+      p Loading...
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
   script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
