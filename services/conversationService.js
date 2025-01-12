@@ -31,6 +31,24 @@ class ConversationService {
     this.conversationModel = conversationModel;
     this.messageService = messageService;
     this.knowledgeService = knowledgeService;
+
+    this.categoryList = [];
+  }
+
+  async generateCategoryList() {
+    const conversations = await this.conversationModel.find();
+    for (let i = 0; i < conversations.length; i++) {
+      if (this.categoryList.indexOf(conversations[i].category) === -1) {
+        this.categoryList.push(conversations[i].category);
+      }
+    }
+  }
+
+  async getCategories() {
+    if (this.categoryList.length === 0) {
+      await this.generateCategoryList();
+    }
+    return this.categoryList;
   }
 
   async getConversationsForUser(user_id, params=null) {

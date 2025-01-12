@@ -4,7 +4,8 @@ block content
   .row
     .col
       h1 Chat Room
-    .col 
+    .col.d-flex.justify-content-evenly
+      a.btn.btn-secondary(href="/chat5") New conversation
       button.btn.btn-secondary(type="button", onclick="OpenLoad()") Load conversation
   h3#title
   ul#messages
@@ -29,9 +30,15 @@ block content
         label(for="context") Set a context/system message
         textarea#context.form-control(name="context", rows="7", placeholder="Type your context here...")
         label(for="category") Conversation category
-        input#category.form-control(type="text", name="category", value="Chat5")
+        .input-group
+          input#category.form-control(type="text", name="category", value="Chat5")
+          select#clist.form-control(name="clist", onchange="SetCategory(this)") 
+            option(value="Chat5") Chat5
         label(for="tags") Conversation tags (*Comma-separated string)
         input#tags.form-control(type="text", name="tags", value="chat5")
+        .form-check
+          input#dulpicate.form-check-input(type="checkbox", onclick="ToggleDuplicate(this)")
+          label.form-check-label(for="dulpicate")  Duplicate conversation
         button.btn.btn-primary(type="submit") Update/Close
   #load.popup-wrapper 
     .popup-content

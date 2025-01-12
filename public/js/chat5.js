@@ -19,6 +19,7 @@ const loadlist = document.getElementById('loadlist');
 const fileInput = document.getElementById('fileInput');
 const statusDiv = document.getElementById('status');
 const loadingPopup = document.getElementById("loadingPopup");
+const clist = document.getElementById("clist");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -76,8 +77,9 @@ socket.on('displayConversationContent', data => {
   title.innerText = data.conversation.title;
   // Populate conversation from database
   data.messages.forEach(m => {
-    addMessageToChat('User', m.prompt, m.images.map(d => d.filename));
-    addMessageToChat('Assistant', m.response, [], m.sound);
+    addDeleteCheckbox(m._id.toString());
+    addMessageToChat(m._id.toString(), 'User', m.prompt, m.images.map(d => d.filename));
+    addMessageToChat(m._id.toString(), 'Assistant', m.response, [], m.sound);
   });
   attachCopyListeners();
 });
@@ -88,6 +90,15 @@ function CloseLoad() {
 
 ////////////////////////
 //----- Settings -----//
+
+socket.on('setCategories', categories => {
+  categories.forEach(c => {
+    const option = document.createElement("option");
+    option.value = c;
+    option.innerText = c;
+    clist.append(option);
+  });
+});
 
 function OpenSettings() {
   settings.style.display = "block";
@@ -123,6 +134,24 @@ socket.on('setTitle', title_text => {
 function UpdateModel(e) {
   socket.emit('userSelectModel', e.value);
 }
+
+function ToggleDuplicate(e) {
+  socket.emit('toggleDuplicate', e.checked);
+}
+
+function ProcessDeleteCheckbox(e) {
+  socket.emit('toggleDeleteMessage', {id: e.value, state: e.checked});
+}
+
+socket.on('deleteMessagesFromUI', msg_ids => {
+  console.log("Deleting messages: ", msg_ids);
+  msg_ids.forEach(id => {
+    const elements = document.getElementsByClassName(id);
+    for (let i = elements.length-1; i >= 0; i--) {
+      messagesList.removeChild(elements[i]);
+    }
+  });
+});
 
 /////////////////////////////
 //----- Upload images -----//
@@ -190,8 +219,8 @@ messageForm.addEventListener('submit', function (e) {
 });
 
 socket.on('batchPending', function (message) {
-  addMessageToChat('User', message);
-  addMessageToChat('Assistant', `### **Batch pending**
+  addMessageToChat('batch', 'User', message);
+  addMessageToChat('batch', 'Assistant', `### **Batch pending**
 [View](/chat4/batch_status)`);
 
   // Clear file upload
@@ -207,8 +236,9 @@ socket.on('batchPending', function (message) {
 });
 
 socket.on('aiResponse', function (message) {
-  addMessageToChat('User', message.prompt, message.images.map(d => d.filename));
-  addMessageToChat('Assistant', message.response, [], message.sound);
+  addDeleteCheckbox(message._id.toString());
+  addMessageToChat(message._id.toString(), 'User', message.prompt, message.images.map(d => d.filename));
+  addMessageToChat(message._id.toString(), 'Assistant', message.response, [], message.sound);
 
   // Clear file upload
   statusDiv.textContent = "";
@@ -234,10 +264,23 @@ socket.on('error', function (errorMessage) {
 ////////////////////////////////
 //----- Helper functions -----//
 
+// Message delete checkbox
+function addDeleteCheckbox(message_id) {
+  const item = document.createElement('li');
+  item.classList.add(message_id);
+
+  item.innerHTML = `<input type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below`;
+
+  messagesList.appendChild(item);
+
+  return item;
+}
+
 // Function to add a message to the chat
-function addMessageToChat(sender, messageContent, images = null, audio = null) {
+function addMessageToChat(message_id, sender, messageContent, images = null, audio = null) {
   const item = document.createElement('li');
   item.classList.add(sender.toLowerCase());
+  item.classList.add(message_id);
 
   // Set initial content (converted from Markdown to HTML)
   item.innerHTML = `<strong>${sender}:</strong><br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
@@ -289,4 +332,8 @@ function showLoadingPopup() {
 // Function to hide the loading popup
 function hideLoadingPopup() {
   loadingPopup.style.display = 'none';
+}
+
+function SetCategory(e) {
+  categoryInput.value = e.value;
 }

@@ -49,6 +49,8 @@ module.exports = (server, sessionMiddleware) => {
     socket.category = 'Chat5';
     socket.tags = 'chat5';
     socket.images = [];
+    socket.duplicate = false;
+    socket.delete_messages = [];
 
     console.log(`${userName} connected: ${userId}`);
 
@@ -114,6 +116,18 @@ module.exports = (server, sessionMiddleware) => {
       socket.emit('setTitle', title);
     });
 
+    socket.on('toggleDuplicate', async (state) => {
+      socket.duplicate = state;
+    });
+
+    socket.on('toggleDeleteMessage', async (params) => {
+      if (params.state) {
+        socket.delete_messages.push(params.id);
+      } else {
+        socket.delete_messages = socket.delete_messages.filter(d => d != params.id);
+      }
+    });
+
     /////////////////////////////
     //----- Upload images -----//
 
@@ -156,6 +170,9 @@ module.exports = (server, sessionMiddleware) => {
         category: socket.category,
       };
       try {
+        if (socket.duplicate && socket.conversation_id != "new") {
+          socket.conversation_id = await conversationService.copyConversation(socket.conversation_id, null, null);
+        }
         if (socket.model.indexOf("batch+") === 0) {
           const api_model = socket.model.split("+")[1];
           const conversation_id = await batchService.addPromptToBatch(userName, userMessage, socket.conversation_id, socket.images, parameters, api_model);
@@ -163,8 +180,10 @@ module.exports = (server, sessionMiddleware) => {
           socket.conversation_id = conversation_id;
           socket.emit('batchPending', userMessage);
         } else {
-          const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", true, [])
+          const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", true, socket.delete_messages);
           socket.images = [];
+          socket.emit('deleteMessagesFromUI', socket.delete_messages);
+          socket.delete_messages = [];
           socket.conversation_id = conversation_id;
           const conversation = await conversationService.getConversationsById(conversation_id);
           const message = await messageService.getMessageById(conversation.messages[conversation.messages.length-1]);
@@ -180,5 +199,8 @@ module.exports = (server, sessionMiddleware) => {
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
     });
+
+    const categories = await conversationService.getCategories();
+    socket.emit('setCategories', categories);
   });
 };
