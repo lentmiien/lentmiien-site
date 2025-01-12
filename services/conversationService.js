@@ -289,6 +289,15 @@ class ConversationService {
     }
   }
 
+  async deleteOneMessage(conversation_id, message_id) {
+    const conversation = await this.conversationModel.findById(conversation_id);
+    if (conversation) {
+      conversation.messages = conversation.messages.filter(d => d != message_id);
+      await conversation.save();
+    }
+    return conversation_id;
+  }
+
   async generateMessageArrayForConversation(conversation_id, for_summary = false, use_context = true) {
     const messages = [];
     const inject_prompt_lookup = {

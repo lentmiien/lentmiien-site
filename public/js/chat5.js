@@ -143,6 +143,10 @@ function ProcessDeleteCheckbox(e) {
   socket.emit('toggleDeleteMessage', {id: e.value, state: e.checked});
 }
 
+function DeleteOneMessageFromConversation(id) {
+  socket.emit('deleteOneMessage', id);
+}
+
 socket.on('deleteMessagesFromUI', msg_ids => {
   console.log("Deleting messages: ", msg_ids);
   msg_ids.forEach(id => {
@@ -269,7 +273,7 @@ function addDeleteCheckbox(message_id) {
   const item = document.createElement('li');
   item.classList.add(message_id);
 
-  item.innerHTML = `<input type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below`;
+  item.innerHTML = `<input type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below<button class="btn btn-danger float-end" onclick="DeleteOneMessageFromConversation('${message_id}')">Delete</button>`;
 
   messagesList.appendChild(item);
 

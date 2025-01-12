@@ -128,6 +128,13 @@ module.exports = (server, sessionMiddleware) => {
       }
     });
 
+    socket.on('deleteOneMessage', async (id) => {
+      if (socket.conversation_id != "new") {
+        await conversationService.deleteOneMessage(socket.conversation_id, id);
+        socket.emit('deleteMessagesFromUI', [id]);
+      }
+    });
+
     /////////////////////////////
     //----- Upload images -----//
 
