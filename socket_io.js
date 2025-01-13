@@ -188,7 +188,7 @@ module.exports = (server, sessionMiddleware) => {
           socket.conversation_id = conversation_id;
           socket.emit('batchPending', userMessage);
         } else {
-          const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", true, socket.delete_messages);
+          const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", false, socket.delete_messages);
           socket.images = [];
           socket.emit('deleteMessagesFromUI', socket.delete_messages);
           socket.delete_messages = [];
