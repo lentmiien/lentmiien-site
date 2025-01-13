@@ -33,6 +33,7 @@ class ConversationService {
     this.knowledgeService = knowledgeService;
 
     this.categoryList = [];
+    this.tagList = [];
   }
 
   async generateCategoryList() {
@@ -42,6 +43,7 @@ class ConversationService {
         this.categoryList.push(conversations[i].category);
       }
     }
+    this.categoryList.sort();
   }
 
   async getCategories() {
@@ -49,6 +51,27 @@ class ConversationService {
       await this.generateCategoryList();
     }
     return this.categoryList;
+  }
+
+  async generateTagList() {
+    const conversations = await this.conversationModel.find();
+    for (let i = 0; i < conversations.length; i++) {
+      if (conversations[i].tags) {
+        for (let j = 0; j < conversations[i].tags.length; j++) {
+          if (this.tagList.indexOf(conversations[i].tags[j]) === -1) {
+            this.tagList.push(conversations[i].tags[j]);
+          }
+        }
+      }
+    }
+    this.tagList.sort();
+  }
+
+  async getTags() {
+    if (this.tagList.length === 0) {
+      await this.generateTagList();
+    }
+    return this.tagList;
   }
 
   async getConversationsForUser(user_id, params=null) {

@@ -210,5 +210,8 @@ module.exports = (server, sessionMiddleware) => {
 
     const categories = await conversationService.getCategories();
     socket.emit('setCategories', categories);
+
+    const tags = await conversationService.getTags();
+    socket.emit('setTags', tags);
   });
 };

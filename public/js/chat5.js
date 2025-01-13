@@ -20,6 +20,9 @@ const fileInput = document.getElementById('fileInput');
 const statusDiv = document.getElementById('status');
 const loadingPopup = document.getElementById("loadingPopup");
 const clist = document.getElementById("clist");
+const cllist = document.getElementById("cllist");
+const tlist = document.getElementById("tlist");
+const tllist = document.getElementById("tllist");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -97,6 +100,25 @@ socket.on('setCategories', categories => {
     option.value = c;
     option.innerText = c;
     clist.append(option);
+
+    const option2 = document.createElement("option");
+    option2.value = c;
+    option2.innerText = c;
+    cllist.append(option2);
+  });
+});
+
+socket.on('setTags', tags => {
+  tags.forEach(c => {
+    const option = document.createElement("option");
+    option.value = c;
+    option.innerText = c;
+    tlist.append(option);
+
+    const option2 = document.createElement("option");
+    option2.value = c;
+    option2.innerText = c;
+    tllist.append(option2);
   });
 });
 
@@ -340,4 +362,28 @@ function hideLoadingPopup() {
 
 function SetCategory(e) {
   categoryInput.value = e.value;
+}
+
+function SetLoadCategory(e) {
+  load_category.value = e.value;
+  UpdateLoad();
+}
+
+function SetTag(e) {
+  if (tagsInput.value.length === 0) {
+    tagsInput.value = e.value
+  } else {
+    const tags = tagsInput.value.split(", ").join(",").split(",");
+    if (tags.indexOf(e.value) >= 0) {
+      tagsInput.value = tags.filter(t => t != e.value).join(",");
+    } else {
+      tags.push(e.value);
+      tagsInput.value = tags.join(",");
+    }
+  }
+}
+
+function SetLoadTag(e) {
+  load_tags.value = e.value;
+  UpdateLoad();
 }
