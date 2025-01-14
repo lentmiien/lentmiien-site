@@ -78,4 +78,11 @@ exports.add_location = async (req, res) => {
   });
   await newLocation.save();
   res.json({ success: true, location: newLocation });
-}
+};
+
+// Navigate to location
+exports.navigate_to_location = async (req, res) => {
+  const longitude = 0;
+  const latitude = 0;
+  res.render('navigate_to_location', {longitude, latitude});
+};

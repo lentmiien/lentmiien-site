@@ -1,0 +1,10 @@
+extends layout
+
+block content
+  h1 Navigator 
+  p Destination: 
+    b= `Longitude: ${longitude}, Latitude: ${latitude}`
+  canvas#compassCanvas(width="300" height="300")
+    div#distanceLabel
+    div#status
+  script(src="/js/navigate_to_location.js")
