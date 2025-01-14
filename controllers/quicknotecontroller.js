@@ -1,7 +1,8 @@
 const { LocationModel, QuicknoteModel } = require('../database');
 
-exports.quick_note = (req, res) => {
-  res.render('quick_note');
+exports.quick_note = async (req, res) => {
+  const locations = await LocationModel.find();
+  res.render('quick_note', {locations});
 };
 
 // Create a new quick note
@@ -82,7 +83,7 @@ exports.add_location = async (req, res) => {
 
 // Navigate to location
 exports.navigate_to_location = async (req, res) => {
-  const longitude = 0;
-  const latitude = 0;
+  const longitude = req.params.longitude;
+  const latitude = req.params.latitude;
   res.render('navigate_to_location', {longitude, latitude});
 };

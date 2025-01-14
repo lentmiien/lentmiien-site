@@ -2,8 +2,8 @@
  * 1) SET YOUR TARGET LOCATION HERE                          *
  *************************************************************/
 const target = {
-  lat: 141,
-  lon: 36
+  lat: parseFloat(document.getElementById('longitude').innerHTML),
+  lon: parseFloat(document.getElementById('latitude').innerHTML)
 };
 
 /*************************************************************

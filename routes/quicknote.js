@@ -14,6 +14,6 @@ router.delete('/delete_old', controller.delete_old);
 
 router.post('/add_location', controller.add_location);
 
-router.get('/navigate_to_location', controller.navigate_to_location);
+router.get('/navigate_to_location/:longitude/:latitude', controller.navigate_to_location);
 
 module.exports = router;

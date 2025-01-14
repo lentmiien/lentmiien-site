@@ -4,4 +4,8 @@ block content
   h1 Quick Notes Review
   #quickNotes
   button#deleteOldNotes.btn.btn-danger Delete notes older than 30 days
+  hr
+  h2 Saved locations 
+  each l in locations
+    a.btn.btn-link(href=`/quicknote/navigate_to_location/${l.location.coordinates[1]}/${l.location.coordinates[0]}`)= l.name 
   script(src="/js/quick_note.js") 

@@ -4,6 +4,8 @@ block content
   h1 Navigator 
   p Destination: 
     b= `Longitude: ${longitude}, Latitude: ${latitude}`
+  div#longitude.hidden= longitude
+  div#latitude.hidden= latitude
   canvas#compassCanvas(width="300" height="300")
   div#distanceLabel
   div#status
