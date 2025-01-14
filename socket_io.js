@@ -102,8 +102,7 @@ module.exports = (server, sessionMiddleware) => {
         socket.tags != data.tags
       )) {
         // Updating conversation
-        const tag_array = data.tags.split(", ").join(",").split(",");
-        await conversationService.updateConversationSettings(socket.conversation_id, data.context, data.category, tag_array);
+        await conversationService.updateConversationSettings(socket.conversation_id, data.context, data.category, data.tags);
         console.log(`New settings: ${JSON.stringify(data, null, 2)}`);
       }
       socket.context = data.context
@@ -173,7 +172,7 @@ module.exports = (server, sessionMiddleware) => {
       const parameters = {
         context: socket.context,
         prompt: userMessage,
-        tags: socket.tags.split(", ").join(",").split(","),
+        tags: socket.tags,
         title: socket.conversationTitle,
         category: socket.category,
       };
