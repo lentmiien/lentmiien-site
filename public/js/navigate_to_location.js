@@ -148,6 +148,9 @@ function onPositionUpdate(position) {
   userLat = position.coords.latitude;
   userLon = position.coords.longitude;
   // drawCompass(); // Removed to update once per second
+
+  document.getElementById('la').innerText = position.coords.latitude;
+  document.getElementById('lo').innerText = position.coords.longitude;
 }
 
 function onPositionError(err) {
