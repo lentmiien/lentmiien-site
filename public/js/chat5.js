@@ -239,9 +239,6 @@ messageForm.addEventListener('submit', function (e) {
   
   // Send the message to the server
   socket.emit('userMessage', msg);
-
-  // Clear the input field
-  editor.reset();
 });
 
 socket.on('batchPending', function (message) {
@@ -276,6 +273,9 @@ socket.on('aiResponse', function (message) {
 
   // Attach copy functionality to code blocks
   attachCopyListeners();
+
+  // Clear the input field
+  editor.reset();
 
   // Done, close loading screen
   hideLoadingPopup();
