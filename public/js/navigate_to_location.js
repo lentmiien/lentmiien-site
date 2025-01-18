@@ -65,6 +65,8 @@ function computeBearing(lat1, lon1, lat2, lon2) {
  * Main Render function: draws on the canvas                 *
  *************************************************************/
 function drawCompass() {
+  document.getElementById("time").innerText = new Date();
+  
   const canvas = document.getElementById("compassCanvas");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
