@@ -23,6 +23,8 @@ const clist = document.getElementById("clist");
 const cllist = document.getElementById("cllist");
 const tlist = document.getElementById("tlist");
 const tllist = document.getElementById("tllist");
+const context_templates = document.getElementById("context_templates");
+const text_templates = document.getElementById("text_templates");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -119,6 +121,31 @@ socket.on('setTags', tags => {
     option2.value = c;
     option2.innerText = c;
     tllist.append(option2);
+  });
+});
+
+socket.on('setTemplates', templates => {
+  templates.forEach(t => {
+    /*
+Title: { type: String, required: true, max: 100 },
+Type: { type: String, required: true, max: 100 },
+Category: { type: String, required: true, max: 100 },
+TemplateText: { type: String, required: true },
+    */
+    if (t.Type === "context") {
+      const option = document.createElement("option");
+      option.value = t.TemplateText;
+      option.innerText = t.Title;
+      option.title = t.TemplateText;
+      context_templates.append(option);
+    }
+    if (t.Type === "chat") {
+      const option = document.createElement("option");
+      option.value = t.TemplateText;
+      option.innerText = t.Title;
+      option.title = t.TemplateText;
+      text_templates.append(option);
+    }
   });
 });
 
@@ -386,4 +413,12 @@ function SetTag(e) {
 function SetLoadTag(e) {
   load_tags.value = e.value;
   UpdateLoad();
+}
+
+function SetContext(e) {
+  contextInput.value = e.value;
+}
+
+function SetText(e) {
+  editor.setMarkdown(e.value);
 }

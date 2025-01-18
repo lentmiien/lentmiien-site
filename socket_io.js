@@ -4,14 +4,16 @@ const fs = require('fs');
 
 const MessageService = require('./services/messageService');
 const ConversationService = require('./services/conversationService');
+const TemplateService = require('./services/templateService');
 const KnowledgeService = require('./services/knowledgeService');
 const BatchService = require('./services/batchService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, BatchPromptModel, BatchRequestModel, UseraccountModel } = require('./database');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, BatchPromptModel, BatchRequestModel, UseraccountModel } = require('./database');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
+const templateService = new TemplateService(Chat3TemplateModel);
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 
 const TEMP_DIR = path.join(__dirname, 'tmp_data');
@@ -212,5 +214,8 @@ module.exports = (server, sessionMiddleware) => {
 
     const tags = await conversationService.getTags();
     socket.emit('setTags', tags);
+
+    const templates = await templateService.getTemplates();
+    socket.emit('setTemplates', templates);
   });
 };

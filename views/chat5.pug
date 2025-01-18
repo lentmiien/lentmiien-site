@@ -11,7 +11,10 @@ block content
   ul#messages
   form#message-form
     #message
-    input#fileInput.form-control(type="file", name="fileInput", multiple, accept="image/*")
+    .input-group
+      input#fileInput.form-control(type="file", name="fileInput", multiple, accept="image/*")
+      select#text_templates.form-control(name="text_templates", onchange="SetText(this)")
+        option(value="") - Select a template text - 
     #status
     .input-group
       select#model.form-control(name="model", onchange="UpdateModel(this)")
@@ -29,6 +32,8 @@ block content
       form#settings-form
         label(for="context") Set a context/system message
         textarea#context.form-control(name="context", rows="7", placeholder="Type your context here...")
+        select#context_templates.form-control(onchange="SetContext(this)")
+          option(value="") - Select a template -
         label(for="category") Conversation category
         .input-group
           input#category.form-control(type="text", name="category", value="Chat5")
