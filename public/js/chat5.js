@@ -339,7 +339,7 @@ function addMessageToChat(message_id, sender, messageContent, images = null, aud
   item.innerHTML = `<strong>${sender}:</strong><br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
 
   messagesList.appendChild(item);
-  window.scrollTo(0, document.body.scrollHeight);
+  // window.scrollTo(0, document.body.scrollHeight);
 
   return item;
 }
