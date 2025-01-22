@@ -86,6 +86,7 @@ module.exports = (server, sessionMiddleware) => {
       socket.tags = conversation.tags.join(",");
 
       // Return values to user, for user to setup their values
+      socket.emit('setID', id);
       socket.emit('displayConversationContent', {conversation, messages});
     });
 
@@ -171,9 +172,20 @@ module.exports = (server, sessionMiddleware) => {
 
     // Handle incoming messages from the client
     socket.on('userMessage', async (userMessage) => {
+      // Refresh variables, in case of re-connection
+      socket.context = userMessage.context;
+      socket.tags = userMessage.tags;
+      socket.conversationTitle = userMessage.conversationTitle;
+      socket.category = userMessage.category;
+      socket.duplicate = userMessage.duplicate;
+      socket.conversation_id = userMessage.conversation_id;
+      socket.model = userMessage.model;
+      socket.images = userMessage.images;
+      socket.delete_messages = userMessage.delete_messages;
+
       const parameters = {
         context: socket.context,
-        prompt: userMessage,
+        prompt: userMessage.msg,
         tags: socket.tags,
         title: socket.conversationTitle,
         category: socket.category,
@@ -181,13 +193,15 @@ module.exports = (server, sessionMiddleware) => {
       try {
         if (socket.duplicate && socket.conversation_id != "new") {
           socket.conversation_id = await conversationService.copyConversation(socket.conversation_id, null, null);
+          socket.emit('setID', socket.conversation_id);
         }
         if (socket.model.indexOf("batch+") === 0) {
           const api_model = socket.model.split("+")[1];
-          const conversation_id = await batchService.addPromptToBatch(userName, userMessage, socket.conversation_id, socket.images, parameters, api_model);
+          const conversation_id = await batchService.addPromptToBatch(userName, userMessage.msg, socket.conversation_id, socket.images, parameters, api_model);
           socket.images = [];
           socket.conversation_id = conversation_id;
-          socket.emit('batchPending', userMessage);
+          socket.emit('setID', socket.conversation_id);
+          socket.emit('batchPending', userMessage.msg);
         } else {
           const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", false, socket.delete_messages);
           socket.images = [];
@@ -196,6 +210,7 @@ module.exports = (server, sessionMiddleware) => {
           socket.conversation_id = conversation_id;
           const conversation = await conversationService.getConversationsById(conversation_id);
           const message = await messageService.getMessageById(conversation.messages[conversation.messages.length-1]);
+          socket.emit('setID', socket.conversation_id);
           socket.emit('aiResponse', message);
           await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
         }

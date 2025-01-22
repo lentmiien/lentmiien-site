@@ -25,6 +25,8 @@ const tlist = document.getElementById("tlist");
 const tllist = document.getElementById("tllist");
 const context_templates = document.getElementById("context_templates");
 const text_templates = document.getElementById("text_templates");
+const dulpicate = document.getElementById("dulpicate");
+const conversation_id = document.getElementById("conversation_id");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -73,8 +75,6 @@ socket.on('displayConversationContent', data => {
   // Clear conversation window
   messagesList.innerHTML = '';
   // Set default model and settings
-  console.log(data.conversation);
-  console.log(data.messages);
   model.value = data.conversation.default_model && data.conversation.default_model.length > 0 ? data.conversation.default_model : "gpt-4o-mini";
   contextInput.value = data.conversation.context_prompt;
   categoryInput.value = data.conversation.category;
@@ -126,12 +126,6 @@ socket.on('setTags', tags => {
 
 socket.on('setTemplates', templates => {
   templates.forEach(t => {
-    /*
-Title: { type: String, required: true, max: 100 },
-Type: { type: String, required: true, max: 100 },
-Category: { type: String, required: true, max: 100 },
-TemplateText: { type: String, required: true },
-    */
     if (t.Type === "context") {
       const option = document.createElement("option");
       option.value = t.TemplateText;
@@ -178,6 +172,10 @@ settingsForm.addEventListener('submit', function (e) {
 
 socket.on('setTitle', title_text => {
   title.innerText = title_text;
+});
+
+socket.on('setID', id => {
+  conversation_id.innerText = id;
 });
 
 function UpdateModel(e) {
@@ -245,6 +243,7 @@ fileInput.addEventListener('change', () => {
 // Handle successful uploads
 socket.on('uploadSuccess', (data) => {
   statusDiv.innerHTML = `Uploaded:<br>${data.savedImages.join('<br>')}`;
+  statusDiv.dataset.files = JSON.stringify(data.savedImages);
 });
 
 // Handle upload errors
@@ -263,9 +262,29 @@ messageForm.addEventListener('submit', function (e) {
 
   // Show loading screen until getting a response
   showLoadingPopup();
+
+  // Check del_checkbox
+  const delete_messages = [];
+  const del_checkbox = document.getElementsByClassName("del_checkbox");
+  for (let i = 0; i < del_checkbox.length; i++) {
+    if (del_checkbox[i].checked) {
+      delete_messages.push(del_checkbox[i].value);
+    }
+  }
   
   // Send the message to the server
-  socket.emit('userMessage', msg);
+  socket.emit('userMessage', {
+    context: contextInput.value,
+    msg,
+    tags: tagsInput.value.length > 0 ? tagsInput.value : 'chat5',
+    conversationTitle: title.innerText.length > 1 ? title.innerText : "Placeholder",
+    category: categoryInput.value.length > 0 ? categoryInput.value : 'Chat5',
+    duplicate: dulpicate.checked,
+    conversation_id: conversation_id.innerText,
+    model: model.value,
+    images: JSON.parse(statusDiv.dataset.files),
+    delete_messages,
+  });
 });
 
 socket.on('batchPending', function (message) {
@@ -275,11 +294,7 @@ socket.on('batchPending', function (message) {
 
   // Clear file upload
   statusDiv.textContent = "";
-
-  // Generate a title if empty
-  // if (title.innerText.length === 0) {
-  //   socket.emit('createTitle');
-  // }
+  statusDiv.dataset.files = "[]";
 
   // Attach copy functionality to code blocks
   attachCopyListeners();
@@ -292,6 +307,7 @@ socket.on('aiResponse', function (message) {
 
   // Clear file upload
   statusDiv.textContent = "";
+  statusDiv.dataset.files = "[]";
 
   // Generate a title if empty
   if (title.innerText.length === 0) {
@@ -322,7 +338,7 @@ function addDeleteCheckbox(message_id) {
   const item = document.createElement('li');
   item.classList.add(message_id);
 
-  item.innerHTML = `<input type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below<button class="btn btn-danger float-end" onclick="DeleteOneMessageFromConversation('${message_id}')">Delete</button>`;
+  item.innerHTML = `<input class="del_checkbox" type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below<button class="btn btn-danger float-end" onclick="DeleteOneMessageFromConversation('${message_id}')">Delete</button>`;
 
   messagesList.appendChild(item);
 

@@ -8,6 +8,7 @@ block content
       a.btn.btn-secondary(href="/chat5") New conversation
       button.btn.btn-secondary(type="button", onclick="OpenLoad()") Load conversation
   h3#title
+  i#conversation_id new
   ul#messages
   form#message-form
     #message
@@ -15,7 +16,7 @@ block content
       input#fileInput.form-control(type="file", name="fileInput", multiple, accept="image/*")
       select#text_templates.form-control(name="text_templates", onchange="SetText(this)")
         option(value="") - Select a template text - 
-    #status
+    #status(data-files="[]")
     .input-group
       select#model.form-control(name="model", onchange="UpdateModel(this)")
         option(value="gpt-4o-mini") Default (gpt-4o-mini)
