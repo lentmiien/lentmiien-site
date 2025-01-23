@@ -138,6 +138,10 @@ module.exports = (server, sessionMiddleware) => {
       }
     });
 
+    socket.on('SaveTemplate', async (data) => {
+      await templateService.createTemplate(data.Title, data.Type, data.Category, data.TemplateText);
+    });
+
     /////////////////////////////
     //----- Upload images -----//
 

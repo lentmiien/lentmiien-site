@@ -30,6 +30,7 @@ block content
   #settings.popup-wrapper 
     .popup-content
       button.btn.btn-warning(onclick="GenerateTitle()") Generate new title by AI
+      button.btn.btn-warning(onclick="OpenTemplate()") Create template
       form#settings-form
         label(for="context") Set a context/system message
         textarea#context.form-control(name="context", rows="7", placeholder="Type your context here...")
@@ -70,6 +71,18 @@ block content
       h4 Select a conversation to load
       ul#loadlist
       button.btn.btn-danger(type="button", onclick="CloseLoad()") Cancel
+  #template_pop.popup-wrapper 
+    .popup-content
+      .row 
+        .col 
+          h3 Create a template 
+          input#template_title.form-control(type="text", name="template_title", placeholder="Template name")
+          textarea#template_content.form-control(name="template_content", rows="7", placeholder="Type your template here...")
+          select#template_type.form-control(name="template_type") 
+            option(value="chat") Chat
+            option(value="context") Context
+          button.btn.btn-primary(type="button", onclick="SaveTemplate()") Save
+          button.btn.btn-danger(type="button", onclick="CloseTemplate()") Close
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content

@@ -19,22 +19,24 @@ class TemplateService {
   }
 
   async createTemplate(title, type, category, text) {
-    // const message = await this.messageModel.create({
-    //   conversationId,
-    //   text,
-    //   sender,
-    //   createdAt: new Date(),
-    // });
-    // return message;
+    const entry = {
+      Title: title,
+      Type: type,
+      Category: category,
+      TemplateText: text,
+    };
+    const db_entry = await new this.templateModel(entry).save();
+    return db_entry;
   }
 
   async updateTemplate(templateId, newTitle, newType, newCategory, newText) {
-    // const message = await this.messageModel.findByIdAndUpdate(
-    //   messageId,
-    //   { text: newText },
-    //   { new: true }
-    // );
-    // return message;
+    const entry = await this.templateModel.find({_id: templateId});
+    entry[0].Title = newTitle;
+    entry[0].Type = newType;
+    entry[0].Category = newCategory;
+    entry[0].TemplateText = newText;
+    await entry[0].save();
+    return entry[0];
   }
 }
 

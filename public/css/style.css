@@ -524,7 +524,7 @@ code:hover::after {
   opacity: 1;
 }
 
-#settings, #load {
+#settings, #load, #template_pop {
   z-index: 9999;
 }
 

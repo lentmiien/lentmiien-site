@@ -27,6 +27,10 @@ const context_templates = document.getElementById("context_templates");
 const text_templates = document.getElementById("text_templates");
 const dulpicate = document.getElementById("dulpicate");
 const conversation_id = document.getElementById("conversation_id");
+const template_pop = document.getElementById("template_pop");
+const template_title = document.getElementById("template_title");
+const template_content = document.getElementById("template_content");
+const template_type = document.getElementById("template_type");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -437,4 +441,39 @@ function SetContext(e) {
 
 function SetText(e) {
   editor.setMarkdown(e.value);
+}
+
+function OpenTemplate() {
+  settings.style.display = "none";
+  template_pop.style.display = 'block';
+}
+
+function SaveTemplate() {
+  socket.emit('SaveTemplate', {
+    Title: template_title.value,
+    Type: template_type.value,
+    Category: categoryInput.value,
+    TemplateText: template_content.value,
+  });
+
+  if (template_type.value === "context") {
+    const option = document.createElement("option");
+    option.value = template_content.value;
+    option.innerText = template_title.value;
+    option.title = template_content.value;
+    context_templates.append(option);
+  }
+  if (template_type.value === "chat") {
+    const option = document.createElement("option");
+    option.value = template_content.value;
+    option.innerText = template_title.value;
+    option.title = template_content.value;
+    text_templates.append(option);
+  }
+
+  CloseTemplate();
+}
+
+function CloseTemplate() {
+  template_pop.style.display = 'none';
 }
