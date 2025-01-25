@@ -356,12 +356,24 @@ function addMessageToChat(message_id, sender, messageContent, images = null, aud
   item.classList.add(message_id);
 
   // Set initial content (converted from Markdown to HTML)
-  item.innerHTML = `<strong>${sender}:</strong><br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
+  const sender_element = document.createElement("strong");
+  sender_element.innerText = sender;
+  const copy_raw_button = document.createElement("button");
+  copy_raw_button.innerText = "Copy RAW";
+  copy_raw_button.dataset.raw = messageContent;
+  copy_raw_button.setAttribute("onclick", "CopyRAW(this)");
 
-  messagesList.appendChild(item);
+  item.append(sender_element, copy_raw_button);
+  item.innerHTML += `<br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
+
+  messagesList.append(item);
   // window.scrollTo(0, document.body.scrollHeight);
 
   return item;
+}
+
+function CopyRAW(e) {
+  navigator.clipboard.writeText(e.dataset.raw);
 }
 
 // Function to attach copy listeners to all <code> elements
