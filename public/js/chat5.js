@@ -366,6 +366,7 @@ function addMessageToChat(message_id, sender, messageContent, images = null, aud
   copy_raw_button.innerText = "Copy RAW";
   copy_raw_button.dataset.raw = messageContent;
   copy_raw_button.setAttribute("onclick", "CopyRAW(this)");
+  copy_raw_button.classList.add("btn", "btn-link");
 
   item.append(sender_element, copy_raw_button);
   item.innerHTML += `<br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
