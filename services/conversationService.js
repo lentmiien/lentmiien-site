@@ -91,6 +91,16 @@ class ConversationService {
     }
   }
 
+  async get50LastUpdatedConversationsForUser(user_id) {
+    const find_query = {
+      user_id
+    };
+
+    const conversations = await this.conversationModel.find(find_query).sort({ updated_date: -1 }).exec();
+
+    return conversations.filter((d, i) => i < 50);
+  }
+
   async getConversationsForUserQuery(user_id, query) {
     const find_query = {
       user_id

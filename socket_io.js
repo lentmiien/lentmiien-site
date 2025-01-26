@@ -59,6 +59,11 @@ module.exports = (server, sessionMiddleware) => {
     /////////////////////////////////
     //----- Load conversation -----//
 
+    socket.on('loadLast50Coversations', async () => {
+      const conversations = await conversationService.get50LastUpdatedConversationsForUser(userName);
+      socket.emit('displayConversations', conversations);
+    });
+
     socket.on('loadConversations', async (query) => {
       const conversations = await conversationService.getConversationsForUserQuery(userName, query);
       socket.emit('displayConversations', conversations);

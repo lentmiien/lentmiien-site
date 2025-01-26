@@ -49,6 +49,10 @@ function OpenLoad() {
   load_category.value = "";
   load_tags.value = "";
   load_keyword.value = "";
+
+  // Load last 50 updated conversations
+  socket.emit('loadLast50Coversations');
+
   load.style.display = "block";
 }
 
