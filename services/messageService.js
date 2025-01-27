@@ -101,7 +101,7 @@ class MessageService {
     let response = null;
     if (provider === "OpenAI") response = await chatGPT(vision_messages, 'gpt-4o', private_msg);
     if (provider === "OpenAI_latest") response = await chatGPT(vision_messages, 'gpt-4o-2024-11-20', private_msg);
-    if (provider === "OpenAI_mini") response = await chatGPT(vision_messages, 'gpt-4o-mini', private_msg);
+    if (provider === "OpenAI_mini" || provider === "gpt-4o-mini") response = await chatGPT(vision_messages, 'gpt-4o-mini', private_msg);
     if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20241022');
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
     if (provider.indexOf("GroqV-") === 0) response = await groq_vision(vision_messages, provider.split("GroqV-")[1]);
