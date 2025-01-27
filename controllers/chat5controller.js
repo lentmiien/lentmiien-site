@@ -6,7 +6,7 @@ exports.index = async (req, res) => {
   // Load available OpenAI models
   const models = await AIModelCards.find();
   const available = openai.GetOpenAIModels().map(d => d.model);
-  const usable_models = models.filter(d => d.provider === "OpenAI" && available.indexOf(d.api_model) >= 0 && d.model_type === "chat");
+  const usable_models = models.filter(d => ((d.provider === "OpenAI" && available.indexOf(d.api_model) >= 0) || d.provider != "OpenAI") && d.model_type === "chat");
 
   res.render("chat5", {models: usable_models});
 };
