@@ -10,7 +10,7 @@
   width: 30vw; /* Fixed width */
   height: 25px; /* Fixed height */
   cursor: pointer;
-  z-index: 5;
+  z-index: 500;
   background-color: #000; /* Example background color */
   color: #fff; /* Example icon color */
   border-radius: 5px; /* Optional: for rounded corners */
@@ -54,7 +54,7 @@
   color: white;
   padding-top: 60px; /* Makes room for content below the top edge */
   overflow-y: scroll; /* Allows scrolling */
-  z-index: 4; /* Ensures the navbar is below the toggle icon but above other content */
+  z-index: 499; /* Ensures the navbar is below the toggle icon but above other content */
 }
 
 .navbar .type-1-link {
