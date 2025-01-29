@@ -382,7 +382,8 @@ class ConversationService {
     // Set old messages
     const prev_messages = await this.messageService.getMessagesByIdArray(conversation.messages.reverse(), false);
     // Append messages
-    for (let i = 0; i < prev_messages.length; i++) {
+    const start_i = conversation.max_messages && conversation.max_messages > 0 ? prev_messages.length - conversation.max_messages : 0;
+    for (let i = start_i > 0 ? start_i : 0; i < prev_messages.length; i++) {
       const m = prev_messages[i];
       const content = [{ type: 'text', text: m.prompt }];
       for (let x = 0; x < m.images.length && for_summary === false; x++) {
