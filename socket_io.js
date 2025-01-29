@@ -198,6 +198,7 @@ module.exports = (server, sessionMiddleware) => {
         tags: socket.tags,
         title: socket.conversationTitle,
         category: socket.category,
+        max: userMessage.max,
       };
       try {
         if (socket.duplicate && socket.conversation_id != "new") {

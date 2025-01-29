@@ -25,6 +25,7 @@ block content
         each m in models 
           if m.batch_use
             option(value=`batch+${m.api_model}`)= `[Batch] ${m.model_name}`
+      input#max.form-control(type="number", name="max", value="0")
       button.btn.btn-primary(type="submit") Send
       button.btn.btn-secondary(type="button", onclick="OpenSettings()") Settings
   #settings.popup-wrapper 

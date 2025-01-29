@@ -31,6 +31,7 @@ const template_pop = document.getElementById("template_pop");
 const template_title = document.getElementById("template_title");
 const template_content = document.getElementById("template_content");
 const template_type = document.getElementById("template_type");
+const max = document.getElementById("max");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -88,6 +89,7 @@ socket.on('displayConversationContent', data => {
   categoryInput.value = data.conversation.category;
   tagsInput.value = data.conversation.tags.join(",");
   title.innerText = data.conversation.title;
+  max.value = data.conversation.max_messages ? data.conversation.max_messages : 0;
   // Populate conversation from database
   data.messages.forEach(m => {
     addDeleteCheckbox(m._id.toString());
@@ -292,6 +294,7 @@ messageForm.addEventListener('submit', function (e) {
     model: model.value,
     images: JSON.parse(statusDiv.dataset.files),
     delete_messages,
+    max: parseInt(max.value),
   });
 });
 

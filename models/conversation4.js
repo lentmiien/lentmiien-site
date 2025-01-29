@@ -20,6 +20,7 @@ const Conversation4 = new mongoose.Schema({
     default: Date.now,
   },
   default_model: { type: String, max: 100 },
+  max_messages: { type: Number },
 });
 
 module.exports = mongoose.model('conversation4', Conversation4);

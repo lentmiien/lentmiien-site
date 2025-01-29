@@ -380,7 +380,7 @@ class ConversationService {
     }
 
     // Set old messages
-    const prev_messages = await this.messageService.getMessagesByIdArray(conversation.messages, false);
+    const prev_messages = await this.messageService.getMessagesByIdArray(conversation.messages.reverse(), false);
     // Append messages
     for (let i = 0; i < prev_messages.length; i++) {
       const m = prev_messages[i];
@@ -459,10 +459,11 @@ class ConversationService {
     // Set previous messages, if not a new conversation
     if (conversation_id != 'new') {
       const conversation = await this.conversationModel.findById(conversation_id);
-      const m_id = conversation.messages.filter(d => delete_messages.indexOf(d) === -1);
+      const m_id = conversation.messages.filter(d => delete_messages.indexOf(d) === -1).reverse();
       const prev_messages = await this.messageService.getMessagesByIdArray(m_id, false, parameters);
       // Append messages
-      for (let i = 0; i < prev_messages.length; i++) {
+      const start_i = parameters.max && parameters.max > 0 ? prev_messages.length - parameters.max : 0;
+      for (let i = start_i > 0 ? start_i : 0; i < prev_messages.length; i++) {
         const m = prev_messages[i];
         const content = [{ type: 'text', text: m.prompt }];
         for (let x = 0; x < m.images.length; x++) {
@@ -544,6 +545,7 @@ class ConversationService {
     }
 
     // Create new message
+    console.log(text_messages);
     const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider, reasoning_effort, private_msg);
 
     // Save conversation to database
@@ -561,6 +563,7 @@ class ConversationService {
         messages: [ message_data.db_entry._id.toString() ],
         updated_date: new Date(),
         default_model: provider,
+        max_messages: parameters.max ? parameters.max : 0,
       };
       if ("knowledge" in parameters) {
         for (let i = 0; i < parameters.knowledge.length; i++) {
@@ -581,6 +584,7 @@ class ConversationService {
       conversation.tags = tags_array;
       conversation.context_prompt = parameters.context;
       conversation.knowledge_injects = [];
+      conversation.max_messages = parameters.max ? parameters.max : 0;
       if ("knowledge" in parameters) {
         for (let i = 0; i < parameters.knowledge.length; i++) {
           conversation.knowledge_injects.push({
