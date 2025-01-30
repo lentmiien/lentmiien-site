@@ -546,7 +546,6 @@ class ConversationService {
     }
 
     // Create new message
-    console.log(text_messages);
     const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider, reasoning_effort, private_msg);
 
     // Save conversation to database
