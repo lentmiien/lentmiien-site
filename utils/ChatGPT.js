@@ -251,11 +251,11 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
   // "system" -> "developer", starting from "o1-2024-12-17"
   // Include "Formatting reenabled" in developer message to get markdown output
   let use_msg;
-  if (model === "o1-2024-12-17" || model === "o1") {
+  if (model === "o1-2024-12-17" || model === "o1" || model === "o3-mini-2025-01-31") {
     for (let i = 0; i < messages.length; i++) {
       if (messages.role === "system") {
         messages.role === "developer";
-        messages.content[0].text += "\n\nYou should format all responses in Markdown.\n\nFormatting reenabled";
+        messages.content[0].text += "Formatting re-enabled\nYou should format all responses in Markdown.\n\n";
       }
     }
     use_msg = messages;
@@ -267,7 +267,7 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
       messages: use_msg,
       model,
     };
-    if (reasoning_effort && (model === "o1-2024-12-17" || model === "o1")) {
+    if (reasoning_effort && (model === "o1-2024-12-17" || model === "o1" || model === "o3-mini-2025-01-31")) {
       openai_load["reasoning_effort"] = reasoning_effort;
     }
     let response;

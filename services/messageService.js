@@ -105,7 +105,7 @@ class MessageService {
     if (provider === "Anthropic") response = await anthropic(vision_messages, 'claude-3-5-sonnet-20241022');
     if (provider.indexOf("Groq-") === 0) response = await groq(vision_messages, provider.split("Groq-")[1]);
     if (provider.indexOf("GroqV-") === 0) response = await groq_vision(vision_messages, provider.split("GroqV-")[1]);
-    if (provider.indexOf("o1-") === 0) response = await chatGPT_o1(vision_messages, provider, reasoning_effort, private_msg);
+    if (provider.indexOf("o1-") === 0 || provider.indexOf("o3-") === 0) response = await chatGPT_o1(vision_messages, provider, reasoning_effort, private_msg);
     if (provider.indexOf("-audio-") >= 0) response = await chatGPTaudio(vision_messages, provider, private_msg);
     if (provider.indexOf("Google-") === 0) response = await googleAI(vision_messages, provider.split("Google-")[1]);
     if (response == null) {
