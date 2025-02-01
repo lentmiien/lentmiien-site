@@ -309,6 +309,12 @@ socket.on('batchPending', function (message) {
 
   // Attach copy functionality to code blocks
   attachCopyListeners();
+
+  // Clear the input field
+  editor.reset();
+
+  // Done, close loading screen
+  hideLoadingPopup();
 });
 
 socket.on('aiResponse', function (message) {
