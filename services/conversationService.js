@@ -331,7 +331,7 @@ class ConversationService {
     return conversation_id;
   }
 
-  async generateMessageArrayForConversation(conversation_id, for_summary = false, use_context = true) {
+  async generateMessageArrayForConversation(conversation_id, for_summary = false, use_context = true, context_role = 'system') {
     const messages = [];
     const inject_prompt_lookup = {
       context: "This is some additional context:",
@@ -347,7 +347,7 @@ class ConversationService {
     if (use_context) {
       if (for_summary) {
         messages.push({
-          role: 'system',
+          role: context_role,
           content: [
             { type: 'text', text: "Hello ChatGPT, during this session, we will be discussing various topics. At the end of our conversation, I will ask you for a summary. This summary should provide a clear and concise overview of the key points and main ideas discussed, without necessarily preserving the original order. The aim is to make the summary easy and quick to read so that anyone can grasp the content of our conversation without needing to read everything. Feel free to rearrange the content for better clarity and coherence. When I am ready for the summary, I will use a specific prompt to request it." }
           ]
@@ -370,7 +370,7 @@ class ConversationService {
         }
         if (context.length > 0) {
           messages.push({
-            role: 'system',
+            role: context_role,
             content: [
               { type: 'text', text: context }
             ]
@@ -546,7 +546,6 @@ class ConversationService {
     }
 
     // Create new message
-    console.log(text_messages);
     const message_data = await this.messageService.createMessage(use_vision, vision_messages, text_messages, user_id, parameters, images, provider, reasoning_effort, private_msg);
 
     // Save conversation to database

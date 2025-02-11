@@ -50,7 +50,7 @@ const BatchRequest = new mongoose.Schema({
 module.exports = mongoose.model('batchrequest', BatchRequest);
 */
 
-const valid_models = ["gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "gpt-4o-mini-2024-07-18", "claude-3-5-sonnet-20241022", "o1-mini-2024-09-12", "o1-preview-2024-09-12"];
+const valid_models = ["gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "gpt-4o-mini-2024-07-18", "claude-3-5-sonnet-20241022", "o1-2024-12-17", "o3-mini-2025-01-31"];
 const model_provider = {
   "gpt-4o-2024-11-20": "OpenAI",
   "gpt-4o-2024-08-06": "OpenAI",
@@ -58,8 +58,8 @@ const model_provider = {
   "gpt-4o-mini": "OpenAI",
   "gpt-4o-mini-2024-07-18": "OpenAI",
   "claude-3-5-sonnet-20241022": "Anthropic",
-  "o1-mini-2024-09-12": "OpenAI",
-  "o1-preview-2024-09-12": "OpenAI",
+  "o1-2024-12-17": "OpenAI",
+  "o3-mini-2025-01-31": "OpenAI",
 };
 
 class BatchService {
@@ -160,8 +160,8 @@ class BatchService {
           "gpt-4o-mini": [],
           "gpt-4o-mini-2024-07-18": [],
           "claude-3-5-sonnet-20241022": [],
-          "o1-mini-2024-09-12": [],
-          "o1-preview-2024-09-12": [],
+          "o1-2024-12-17": [],
+          "o3-mini-2025-01-31": [],
         };
         const models = valid_models;
 
@@ -177,7 +177,7 @@ class BatchService {
             },
           };
           // Get data from conversation
-          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id, newPrompts[i].prompt === "@SUMMARY", model_to_use.indexOf("o1-") !== 0);
+          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id, newPrompts[i].prompt === "@SUMMARY", true, model_to_use === "o1-2024-12-17" || model_to_use === "o3-mini-2025-01-31" ? "developer" : "system");
           if (messages === null) {
             // If messages is `null`, then the conversation has been deleted, so delete prompt and continue
             await this.BatchPromptDatabase.deleteOne({custom_id: newPrompts[i].custom_id});
