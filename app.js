@@ -79,6 +79,8 @@ passport.deserializeUser((id, done) => {
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'pug');
 
+const htmlDirectory = path.join(__dirname, 'public', 'html');
+
 // Middleware to set res.locals
 app.use(async (req, res, next) => {
   res.locals.loggedIn = req.isAuthenticated();
@@ -119,6 +121,13 @@ app.use(async (req, res, next) => {
   res.locals.twitter_description = 'Welcome to the digital home of Lennart, where technology meets culinary art and cultural exploration. Based in Japan with Swedish origins, I am a seasoned programmer specializing in JavaScript, AI, and machine learning. I lead a dynamic team to enhance English customer service through innovative tech solutions. Beyond programming, I indulge in fusing Swedish and Japanese culinary traditions, finding joy in creating nutritious and delicious dishes. My life in Japan enriches me deeply, embracing its culture in my journey of personal and professional growth. Through this website, I aim to share my adventures in integrating technology with everyday life, culinary experiments, and the insights gained from my cross-cultural experiences. Join me in exploring the seamless blend of innovation, tradition, and natural beauty.';
   res.locals.twitter_image = 'https://home.lentmiien.com/image.jpg';
   res.locals.twitter_image_alt = 'A fusion of Swedish and Japanese cultures set within a modern, technology-driven landscape. Picture a serene Japanese garden blending seamlessly into a snowy Swedish forest. In the foreground, a traditional Swedish wooden table filled with a mix of Japanese and Swedish dishes, expertly prepared and beautifully presented. Scattered among these dishes are subtle elements of technology, such as a futuristic AI interface and small, high-tech gadgets that enhance the dining experience. A harmonious blend of nature, technology, gastronomy, and cultural integration, capturing the essence of a balanced, innovative lifestyle.';
+
+  // Load HTML test content
+  const htmlPaths = [];
+  fs.readdirSync(htmlDirectory).forEach(file => {
+    htmlPaths.push({path: `/html/${file}`, name: file.split(".")[0]})
+  });
+  res.locals["htmlPaths"] = htmlPaths;
 
   next();
 });
