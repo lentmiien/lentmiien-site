@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Impossible-to-Lose Tetris</title>
+    <style>
+      body {
+        background: #222;
+        color: #eee;
+        margin: 0;
+        text-align: center;
+        font-family: sans-serif;
+      }
+      canvas {
+        background: #111;
+        display: block;
+        margin: 20px auto;
+        border: 2px solid #555;
+      }
+      #score {
+        font-size: 1.2em;
+        margin: 10px;
+      }
+      #instructions {
+        font-size: 0.9em;
+        color: #ccc;
+        max-width: 600px;
+        margin: 10px auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Impossible-to-Lose Tetris</h1>
+    <canvas id="tetris" width="300" height="600"></canvas>
+    <div id="score">Score: 0</div>
+    <div id="instructions">
+      Use arrow keys to move and rotate (Left/Right/Up) and Down to drop faster. On touch devices, swipe left/right to move, swipe down to drop, and tap to rotate.
+      <br /><br />
+      As you play, your moves will be scored normally, but if the blocks stack too high a safety net will clear the top row automatically – this rescue gives a lower score bonus. Try to keep the board low to gain extra points!
+    </div>
+    <script>
+      // ----- Game Constants -----
+      const COLS = 10;
+      const ROWS = 20;
+      const BLOCK_SIZE = 30; // canvas pixels per block
+      // Drop speed (in milliseconds). A slow game pace for beginners.
+      let dropInterval = 1000;
+
+      // ----- Canvas Setup -----
+      const canvas = document.getElementById('tetris');
+      const ctx = canvas.getContext('2d');
+      ctx.scale(BLOCK_SIZE / 30, BLOCK_SIZE / 30); // scale drawing (if using 30px blocks drawn on a 300x600 canvas)
+
+      // ----- Tetromino Shapes (using matrices) -----
+      // Shapes: I, J, L, O, S, T, Z
+      const TETROMINOES = {
+        I: [
+          [0, 0, 0, 0],
+          [1, 1, 1, 1],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0]
+        ],
+        J: [
+          [1, 0, 0],
+          [1, 1, 1],
+          [0, 0, 0]
+        ],
+        L: [
+          [0, 0, 1],
+          [1, 1, 1],
+          [0, 0, 0]
+        ],
+        O: [
+          [1, 1],
+          [1, 1]
+        ],
+        S: [
+          [0, 1, 1],
+          [1, 1, 0],
+          [0, 0, 0]
+        ],
+        T: [
+          [0, 1, 0],
+          [1, 1, 1],
+          [0, 0, 0]
+        ],
+        Z: [
+          [1, 1, 0],
+          [0, 1, 1],
+          [0, 0, 0]
+        ]
+      };
+
+      // Optional colors for each piece
+      const COLORS = {
+        I: '#00f0f0',
+        J: '#0000f0',
+        L: '#f0a000',
+        O: '#f0f000',
+        S: '#00f000',
+        T: '#a000f0',
+        Z: '#f00000'
+      };
+
+      // ----- Create the Board -----
+      function createMatrix(width, height) {
+        const matrix = [];
+        for (let i = 0; i < height; i++) {
+          matrix.push(new Array(width).fill(0));
+        }
+        return matrix;
+      }
+      let board = createMatrix(COLS, ROWS);
+
+      // ----- Utility: Draw a Matrix -----
+      function drawMatrix(matrix, offset) {
+        matrix.forEach((row, y) => {
+          row.forEach((value, x) => {
+            if (value !== 0) {
+              ctx.fillStyle = value.color || value;
+              ctx.fillRect((x + offset.x) * 30, (y + offset.y) * 30, 30, 30);
+              ctx.strokeStyle = '#222';
+              ctx.lineWidth = 2;
+              ctx.strokeRect((x + offset.x) * 30, (y + offset.y) * 30, 30, 30);
+            }
+          });
+        });
+      }
+
+      // ----- Merging piece onto board -----
+      function merge(board, piece) {
+        piece.matrix.forEach((row, y) => {
+          row.forEach((value, x) => {
+            if (value !== 0) {
+              board[y + piece.pos.y][x + piece.pos.x] = { color: piece.color };
+            }
+          });
+        });
+      }
+
+      // ----- Collision Detection -----
+      function collide(board, piece) {
+        const m = piece.matrix;
+        const o = piece.pos;
+        for (let y = 0; y < m.length; y++) {
+          for (let x = 0; x < m[y].length; x++) {
+            if (m[y][x] !== 0 &&
+              (board[y + o.y] && board[y + o.y][x + o.x]) !== 0) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      // ----- Piece Rotation -----
+      function rotate(matrix, dir) {
+        // Transpose matrix
+        for (let y = 0; y < matrix.length; y++) {
+          for (let x = 0; x < y; x++) {
+            [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+          }
+        }
+        // Reverse rows (for clockwise) or columns (for anticlockwise)
+        if (dir > 0) {
+          matrix.forEach(row => row.reverse());
+        } else {
+          matrix.reverse();
+        }
+      }
+
+      // ----- Create a new random piece -----
+      function createPiece(type) {
+        let matrix = TETROMINOES[type];
+        // Clone the matrix (so later modifications don’t alter the original)
+        matrix = matrix.map(row => row.slice());
+        return {
+          matrix: matrix,
+          pos: {x: 0, y: 0},
+          type: type,
+          color: COLORS[type]
+        }
+      }
+
+      // ----- Game Variables -----
+      let piece = null;
+      let dropCounter = 0;
+      let lastTime = 0;
+      let score = 0;
+      // Counter for how many "rescue" clears have occurred
+      let rescueCount = 0;
+
+      // ----- Score Display -----
+      function updateScore() {
+        // Show score and optionally rescue count
+        document.getElementById('score').innerText = 'Score: ' + score + ' (Rescues used: ' + rescueCount + ')';
+      }
+
+      // ----- Clearing Completed Rows -----
+      function sweepBoard() {
+        let cleared = 0;
+        outer: for (let y = board.length - 1; y >= 0; y--) {
+          // Check if every cell in row is not 0
+          for (let x = 0; x < board[y].length; x++) {
+            if (board[y][x] === 0) {
+              continue outer;
+            }
+          }
+          const row = board.splice(y, 1)[0].fill(0);
+          board.unshift(row);
+          y++;
+          cleared++;
+        }
+        if (cleared > 0) {
+          // Full clears yield full score bonus
+          score += cleared * 10;
+        }
+      }
+
+      // ----- Emergency Safety Net Mechanism -----
+      // The game is made impossible to lose by automatically “rescuing”
+      // the board if pieces stack too high (i.e. occupied cells in the top row).
+      // However, if this rescue is triggered, it grants a smaller score reward.
+      function safetyNet() {
+        // Check the top row (row 0)
+        let rescueNeeded = false;
+        for (let x = 0; x < COLS; x++) {
+          if (board[0][x] !== 0) {
+            rescueNeeded = true;
+            break;
+          }
+        }
+        if (rescueNeeded) {
+          // Optional: Flash a brief rescue animation (omitted for brevity)
+          // Remove the top row by shifting down the board.
+          board.shift();
+          board.push(new Array(COLS).fill(0));
+          rescueCount++;
+          // Award a smaller bonus for rescue clears.
+          score += 5;
+        }
+      }
+
+      // ----- Create a new piece and place it near the top middle. -----
+      function newPiece() {
+        const types = 'TJLOSZI';
+        const type = types[Math.floor(Math.random() * types.length)];
+        piece = createPiece(type);
+        piece.pos.x = Math.floor((COLS - piece.matrix[0].length) / 2);
+        piece.pos.y = 0;
+        // Instead of game over, use our safe-net if collision occurs right away.
+        if (collide(board, piece)) {
+          safetyNet();
+          // Try again (rarely multiple rescues might be needed)
+          if (collide(board, piece)) {
+            // In an extreme case, just clear the board:
+            board = createMatrix(COLS, ROWS);
+          }
+        }
+      }
+
+      // ----- Piece Drop Function (called repeatedly) -----
+      function drop() {
+        piece.pos.y++;
+        if (collide(board, piece)) {
+          piece.pos.y--;
+          merge(board, piece);
+          // Clear any full rows (normal sweep)
+          sweepBoard();
+          newPiece();
+        }
+        dropCounter = 0;
+      }
+
+      // ----- Movement Functions -----
+      function move(offsetX) {
+        piece.pos.x += offsetX;
+        if (collide(board, piece)) {
+          piece.pos.x -= offsetX;
+        }
+      }
+
+      function rotatePiece(dir) {
+        const pos = piece.pos.x;
+        let offset = 1;
+        rotate(piece.matrix, dir);
+        while (collide(board, piece)) {
+          piece.pos.x += offset;
+          offset = -(offset + (offset > 0 ? 1 : -1));
+          if (offset > piece.matrix[0].length) {
+            // Undo rotation if no valid position
+            rotate(piece.matrix, -dir);
+            piece.pos.x = pos;
+            return;
+          }
+        }
+      }
+
+      // ----- Drawing the Board and Piece -----
+      function draw() {
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawMatrix(board, {x: 0, y: 0});
+        drawMatrix(piece.matrix, piece.pos);
+      }
+
+      // ----- The Main Update Loop -----
+      function update(time = 0) {
+        const deltaTime = time - lastTime;
+        lastTime = time;
+        dropCounter += deltaTime;
+        // Slow drop interval for beginners
+        if (dropCounter > dropInterval) {
+          drop();
+        }
+        safetyNet();  // Check safety net each frame.
+        draw();
+        updateScore();
+        requestAnimationFrame(update);
+      }
+
+      // ----- Input Handling -----
+      // Keyboard Controls
+      document.addEventListener('keydown', event => {
+        if (event.key === 'ArrowLeft') {       // Move Left
+          move(-1);
+        } else if (event.key === 'ArrowRight') { // Move Right
+          move(1);
+        } else if (event.key === 'ArrowDown') {  // Soft Drop (faster drop)
+          drop();
+        } else if (event.key === 'ArrowUp') {    // Rotate
+          rotatePiece(1);
+        }
+      });
+
+      // Touch Controls: Basic swipe detection.
+      let touchStartX = null;
+      let touchStartY = null;
+      canvas.addEventListener('touchstart', e => {
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        e.preventDefault();
+      });
+      canvas.addEventListener('touchmove', e => {
+        if (!touchStartX || !touchStartY) {
+          return;
+        }
+        const touch = e.touches[0];
+        const diffX = touch.clientX - touchStartX;
+        const diffY = touch.clientY - touchStartY;
+        // Horizontal swipe
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+          if (diffX > 20) {
+            move(1);
+            touchStartX = null;
+          } else if (diffX < -20) {
+            move(-1);
+            touchStartX = null;
+          }
+        } else if (diffY > 20) {
+          // Swipe down triggers drop
+          drop();
+          touchStartY = null;
+        }
+        e.preventDefault();
+      });
+      canvas.addEventListener('touchend', e => {
+        // A tap (no swipe) rotates the piece.
+        // Only trigger if no significant movement occurred.
+        if (touchStartX !== null && touchStartY !== null) {
+          rotatePiece(1);
+        }
+        touchStartX = null;
+        touchStartY = null;
+        e.preventDefault();
+      });
+
+      // ----- Start the Game! -----
+      newPiece();
+      updateScore();
+      update();
+    </script>
+  </body>
+</html>
