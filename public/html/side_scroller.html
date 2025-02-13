@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Simple Side Scroller</title>
+    <style>
+      body { margin: 0; overflow: hidden; background: #222; color: #fff; }
+      #menu { position: absolute; top: 20px; left: 20px; z-index: 10; }
+      button { margin: 4px; font-size: 16px; }
+      canvas { display: block; background: #333; }
+    </style>
+  </head>
+  <body>
+    <div id="menu">
+      <h2>Choose a Level</h2>
+      <div id="levels"></div>
+    </div>
+    <canvas id="gameCanvas" width="800" height="200"></canvas>
+
+    <script>
+      // ----- Level File Format ----- 
+      // Each level is defined as a string of characters.
+      // Valid characters:
+      //  'S' : Start tile (platform) - also where the player starts.
+      //  'G' : Goal tile (platform) - touching this means you win.
+      //  'X' : Regular platform tile.
+      //  ' ' (space): Hole - no platform.
+      // The level is one-tile high and extends horizontally.
+      
+      const levelDefinitions = [
+        {
+          name: "Easy",
+          // A level with a long platform except a few small holes
+          data: "SXXXX  XXXX  XXXXX  G"
+        },
+        {
+          name: "Mixed",
+          // A level with several holes you must jump over.
+          data: "SXX XX  XXXX  XX  XXXX  G"
+        },
+        {
+          name: "Challenging",
+          // A level with intermittent platforms
+          data: "S X X  XX  X X   XXX  G"
+        }
+      ];
+
+      // ----- Global Game Settings -----
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      
+      // Tile settings
+      const tileWidth = 50;    // Each level character occupies 50 px width.
+      const tileHeight = 20;   // Height of the platform blocks.
+      const groundY = canvas.height - tileHeight;  // Y position where platforms are drawn.
+
+      // Player settings
+      const playerRadius = 15;
+      const playerSpeed = 3;
+      const jumpSpeed = -8;
+      const gravity = 0.4;
+      
+      // Game variables
+      let levelData = [];    // An array where each element corresponds to a tile.
+      let levelLength = 0;   // Number of tiles
+      let player = { x: 0, y: 0, vx: 0, vy: 0, onGround: false };
+      let cameraX = 0;
+      let goalIndex = -1;    // The tile index of the goal.
+      let gameActive = false;
+      let gameWon = false;
+
+      // Input state
+      let keys = {};
+
+      // ----- Level Parsing -----
+      function loadLevel(levelString) {
+        // Remove any extra whitespace at beginning and end.
+        levelString = levelString.trim();
+        levelData = levelString.split(""); // Array of characters.
+        levelLength = levelData.length;
+
+        // Find the starting tile. (Assume only one 'S'.)
+        let startIndex = levelData.indexOf("S");
+        if(startIndex === -1) {
+          startIndex = 0;
+        }
+        // Position player: center of the tile.
+        player.x = startIndex * tileWidth + tileWidth/2;
+        // Start on the platform if there is one.
+        player.y = groundY - playerRadius;
+        player.vx = 0;
+        player.vy = 0;
+        player.onGround = true;
+        
+        // Find goal index
+        goalIndex = levelData.indexOf("G");
+      }
+
+      // ----- Input Handling -----
+      window.addEventListener("keydown", function(e) {
+        keys[e.code] = true;
+      });
+      window.addEventListener("keyup", function(e) {
+        keys[e.code] = false;
+      });
+      
+      // ----- Game Loop -----
+      function update() {
+        if (!gameActive) return;  // Stop updating if game is not active
+
+        // Horizontal movement (left/right arrows)
+        if(keys["ArrowRight"]) {
+          player.vx = playerSpeed;
+        } else if(keys["ArrowLeft"]) {
+          player.vx = -playerSpeed;
+        } else {
+          player.vx = 0;
+        }
+        
+        // Jumping (up arrow or Space)
+        if((keys["Space"] || keys["ArrowUp"]) && player.onGround) {
+          player.vy = jumpSpeed;
+          player.onGround = false;
+        }
+        
+        // Apply gravity.
+        player.vy += gravity;
+        
+        // Update player position.
+        player.x += player.vx;
+        player.y += player.vy;
+        
+        // Determine which tile is under the player (by center x).
+        let col = Math.floor(player.x / tileWidth);
+        // If the col is within the level and the tile is not a hole, the ground exists.
+        if(col >= 0 && col < levelLength && levelData[col] !== " ") {
+          let platformY = groundY; // same y for all platforms.
+          // Simple collision: if player is going down and below platform level, snap to the platform.
+          if(player.y + playerRadius > platformY) {
+            player.y = platformY - playerRadius;
+            player.vy = 0;
+            player.onGround = true;
+          }
+        } else {
+          // In a hole: the player is in mid-air.
+          player.onGround = false;
+        }
+        
+        // Check for falling off the level.
+        if(player.y - playerRadius > canvas.height) {
+          // Restart the level if the player falls off.
+          loadLevel(currentLevel.data);
+        }
+        
+        // Victory condition: if player's x reaches the goal tile.
+        if(goalIndex !== -1 && player.x > goalIndex * tileWidth) {
+          gameWon = true;
+          gameActive = false;
+        }
+        
+        // Update camera so that the player remains visible.
+        // Here we use a simple camera that follows player's x.
+        cameraX = player.x - 150;
+        if(cameraX < 0) cameraX = 0;
+      }
+
+      // ----- Drawing -----
+      function draw() {
+        // Clear the canvas.
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw the level platforms.
+        for (let i = 0; i < levelLength; i++) {
+          let tile = levelData[i];
+          if(tile !== " ") {
+            // Draw a rectangle for the platform tile.
+            let x = i * tileWidth - cameraX;
+            ctx.fillStyle = (tile === "G") ? "#FFD700" : "#555"; // goal tile is gold.
+            ctx.fillRect(x, groundY, tileWidth, tileHeight);
+            
+            // If it's the start tile, mark it with another color border.
+            if(tile === "S") {
+              ctx.strokeStyle = "#0F0";
+              ctx.lineWidth = 2;
+              ctx.strokeRect(x, groundY, tileWidth, tileHeight);
+            }
+          }
+        }
+        
+        // Draw the player as a circle.
+        let playerScreenX = player.x - cameraX;
+        ctx.beginPath();
+        ctx.arc(playerScreenX, player.y, playerRadius, 0, Math.PI*2);
+        ctx.fillStyle = "#0FF";
+        ctx.fill();
+        ctx.strokeStyle = "#000";
+        ctx.stroke();
+        
+        // If the game is won, display a message.
+        if(gameWon) {
+          ctx.fillStyle = "#FFF";
+          ctx.font = "30px sans-serif";
+          ctx.fillText("You Win!", canvas.width/2 - 50, canvas.height/2);
+        }
+      }
+
+      // ----- Main Loop -----
+      function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+      }
+
+      // ----- Level Menu Handling -----
+      let currentLevel = null;
+      const levelsDiv = document.getElementById("levels");
+      const menuDiv = document.getElementById("menu");
+
+      function showLevelMenu() {
+        // Create a button for each level.
+        levelDefinitions.forEach(level => {
+          let btn = document.createElement("button");
+          btn.textContent = level.name;
+          btn.addEventListener("click", () => {
+            currentLevel = level;
+            loadLevel(level.data);
+            gameActive = true;
+            gameWon = false;
+            menuDiv.style.display = "none";
+          });
+          levelsDiv.appendChild(btn);
+        });
+      }
+      
+      // Start the game loop and show the menu.
+      showLevelMenu();
+      gameLoop();
+    </script>
+  </body>
+</html>
