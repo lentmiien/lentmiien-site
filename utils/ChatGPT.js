@@ -255,7 +255,6 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
     for (let i = 0; i < messages.length; i++) {
       if (messages.role === "system") {
         messages.role === "developer";
-        messages.content[0].text += "Formatting re-enabled\nYou should format all responses in Markdown.\n\n";
       }
     }
     use_msg = messages;
@@ -275,6 +274,10 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
       response = await openai_private.chat.completions.create(openai_load);
     } else {
       response = await openai.chat.completions.create(openai_load);
+    }
+    // o1 and o3-mini don't generate markdown, so put in codeblock to handle as text (to prevent html generation from disrupting the page)
+    if (model === "o1-2024-12-17" || model === "o1" || model === "o3-mini-2025-01-31") {
+      response.choices[0].message.content = "```\n" + response.choices[0].message.content + "\n```";
     }
     return response;
   } catch (error) {
