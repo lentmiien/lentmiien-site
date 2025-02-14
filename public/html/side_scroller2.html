@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Enhanced Side Scroller</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #222;
+      color: #eee;
+      font-family: sans-serif;
+    }
+    #menu {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    #menu select, #menu button {
+      font-size: 16px;
+      margin: 5px 0;
+      padding: 5px;
+    }
+    #menu h2 {
+      margin: 0 0 10px 0;
+      font-size: 18px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <!-- Level select menu -->
+  <div id="menu">
+    <h2>Select Level</h2>
+    <select id="levelSelect"></select>
+    <button id="startBtn">Start Level</button>
+  </div>
+  <!-- The Canvas for the game -->
+  <canvas id="gameCanvas"></canvas>
+
+  <script>
+    // Get canvas and context
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    // Set canvas to full window size
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Game parameters
+    const tileSize = 100;                            // Width of one “tile”
+    const gravity = 0.5;                            // Gravity acceleration
+    const jumpSpeed = -12;                          // Initial jump velocity
+    const forwardSpeed = 3;                         // Horizontal automatic movement
+    const maxDoubleJumps = 1;                       // Number of allowed double jumps
+
+    // The level file format:
+    // Each level is defined as a single-line string. Each character represents a tile:
+    // "S" - start tile
+    // "G" - goal tile
+    // "-" - platform tile
+    // " " (space) - gap
+
+    const levels = {
+      "Level 1": "S---- ----G",
+      "Level 2": "S----  -- -  -G",
+      "Level 3": "S---  -- -- --  -G",
+      "Level 4": "S--  - -- -  -- -  --G",
+      "Level 5": "S---  -  -- --- -  - --G",
+      "Level 6": "S--  -- - --  --  - -- -G",
+      "Level 7": "S---  - - -- -  - --- -  -G",
+      "Level 8": "S--  - --- -- -  ---  - -- G",
+      "Level 9": "S---  -- - ---  --  - ---  --G",
+      "Level 10": "S-  - --  - ---  - --  - ---  --G",
+    };
+
+    // Populate level select menu
+    const levelSelect = document.getElementById('levelSelect');
+    for (let name in levels) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      levelSelect.appendChild(opt);
+    }
+
+    // Game state
+    let player = {
+      x: 0,
+      y: 0,
+      vy: 0,
+      radius: 20,
+      onGround: false,
+      jumpsLeft: maxDoubleJumps,  // Remaining double jumps
+    };
+
+    let currentLevelString = "";
+    let levelTiles = [];     // Array of characters representing tiles
+    let levelLength = 0;
+    let gameRunning = false;
+    let cameraOffsetX = 0;
+    let groundY = 0;         // Will be set based on canvas height
+
+    // Set ground level
+    function setGroundLevel() {
+      groundY = canvas.height - tileSize;
+    }
+    setGroundLevel();
+
+    // Event listeners
+    document.getElementById('startBtn').addEventListener('click', startLevel);
+    // Space jump (keyboard)
+    window.addEventListener('keydown', (e) => {
+      if (e.code === "Space") {
+        performJump();
+      }
+    });
+    // Touch jump (touchscreens)
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      performJump();
+    });
+    // Handle window resizing
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      setGroundLevel();
+    });
+
+    // Perform jump with double jump mechanics
+    function performJump() {
+      if (player.onGround) {
+        player.vy = jumpSpeed;
+        player.onGround = false;
+        player.jumpsLeft = maxDoubleJumps;
+      } else if (player.jumpsLeft > 0) {
+        player.vy = jumpSpeed;
+        player.jumpsLeft--;
+      }
+    }
+
+    // Start a level
+    function startLevel() {
+      const lvlName = levelSelect.value;
+      currentLevelString = levels[lvlName];
+      currentLevelString = currentLevelString.trim();
+      levelTiles = currentLevelString.split('');
+      levelLength = levelTiles.length;
+      // Find start position
+      let startIndex = levelTiles.findIndex(ch => ch === 'S');
+      if (startIndex < 0) startIndex = 0;
+      // Initialize player position
+      player.x = startIndex * tileSize + tileSize / 2;
+      player.y = groundY - player.radius;
+      player.vy = 0;
+      player.onGround = true;
+      player.jumpsLeft = maxDoubleJumps;
+      // Reset camera
+      cameraOffsetX = 0;
+      gameRunning = true;
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Game loop
+    function gameLoop() {
+      if (!gameRunning) return;
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Update game state
+    function update() {
+      // Move player forward
+      player.x += forwardSpeed;
+
+      // Apply gravity
+      player.vy += gravity;
+      player.y += player.vy;
+
+      // Collision detection with the ground
+      let tileIndex = Math.floor(player.x / tileSize);
+      if (tileIndex >= 0 && tileIndex < levelTiles.length) {
+        const tile = levelTiles[tileIndex];
+        if (tile === 'S' || tile === 'G' || tile === '-') {
+          if (player.y + player.radius > groundY) {
+            player.y = groundY - player.radius;
+            player.vy = 0;
+            player.onGround = true;
+            player.jumpsLeft = maxDoubleJumps;  // Reset double jumps on landing
+          }
+        } else {
+          player.onGround = false;
+        }
+      } else {
+        player.onGround = false;
+      }
+
+      // Check for goal
+      if (tileIndex >= 0 && tileIndex < levelTiles.length) {
+        if (levelTiles[tileIndex] === 'G') {
+          gameRunning = false;
+          setTimeout(() => alert("🎉 You reached the goal! 🎉"), 100);
+        }
+      }
+
+      // Death condition
+      if (player.y - player.radius > canvas.height) {
+        gameRunning = false;
+        setTimeout(() => alert("💀 You fell! Try again."), 100);
+      }
+
+      // Update camera offset to keep player 100px from the left
+      cameraOffsetX = player.x - 100;
+      if (cameraOffsetX < 0) cameraOffsetX = 0;
+    }
+
+    // Draw game elements
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.translate(-cameraOffsetX, 0);
+
+      // Draw ground
+      for (let i = 0; i < levelTiles.length; i++) {
+        const tile = levelTiles[i];
+        let x = i * tileSize;
+        if (tile === 'S' || tile === 'G' || tile === '-') {
+          if (tile === 'G') {
+            ctx.fillStyle = "#4CAF50"; // Green for goal
+          } else if (tile === 'S') {
+            ctx.fillStyle = "#2196F3"; // Blue for start
+          } else {
+            ctx.fillStyle = "#888";      // Grey for platforms
+          }
+          ctx.fillRect(x, groundY, tileSize, tileSize);
+        }
+      }
+
+      // Draw player
+      ctx.fillStyle = "#FFC107"; // Amber color
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+
+      // Optional: Display remaining jumps
+      ctx.fillStyle = "#fff";
+      ctx.font = "20px sans-serif";
+      ctx.fillText(`Double Jumps Left: ${player.jumpsLeft}`, 10, 60);
+    }
+
+    // Optional: Auto-start first level on page load
+    // window.onload = startLevel;
+
+  </script>
+</body>
+</html>
