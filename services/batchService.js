@@ -1,5 +1,6 @@
 const { upload_file, download_file, delete_file, start_batch, batch_status } = require('../utils/ChatGPT');
 const { anthropic_batch_start, anthropic_batch_status, anthropic_batch_results } = require('../utils/anthropic');
+const { AIModelCards } = require('../database');
 
 /*
 const mongoose = require('mongoose');
@@ -50,17 +51,25 @@ const BatchRequest = new mongoose.Schema({
 module.exports = mongoose.model('batchrequest', BatchRequest);
 */
 
-const valid_models = ["gpt-4o-2024-11-20", "gpt-4o-2024-08-06", "gpt-4o", "gpt-4o-mini", "gpt-4o-mini-2024-07-18", "claude-3-5-sonnet-20241022", "o1-2024-12-17", "o3-mini-2025-01-31"];
-const model_provider = {
-  "gpt-4o-2024-11-20": "OpenAI",
-  "gpt-4o-2024-08-06": "OpenAI",
-  "gpt-4o": "OpenAI",
-  "gpt-4o-mini": "OpenAI",
-  "gpt-4o-mini-2024-07-18": "OpenAI",
-  "claude-3-5-sonnet-20241022": "Anthropic",
-  "o1-2024-12-17": "OpenAI",
-  "o3-mini-2025-01-31": "OpenAI",
+const valid_models = [];
+const model_provider = {};
+const redirect_models = {
+  "o1": "o1-2024-12-17",
+  "o1-preview": "o1-preview-2024-09-12",
+  "gpt-4o": "gpt-4o-2024-11-20",
+  "o1-mini": "o1-mini-2024-09-12",
+  "o3-mini": "o3-mini-2025-01-31",
+  "gpt-4o-mini": "gpt-4o-mini-2024-07-18",
 };
+
+async function LoadModels() {
+  const batch_models = await AIModelCards.find({model_type:"chat", batch_use: true});
+  for (let i = 0; i < batch_models.length; i++) {
+    valid_models.push(batch_models[i].api_model);
+    model_provider[batch_models[i].api_model] = batch_models[i].provider;
+  }
+}
+LoadModels();
 
 class BatchService {
   constructor(BatchPromptDatabase, BatchRequestDatabase, messageService, conversationService) {
@@ -89,6 +98,9 @@ class BatchService {
   }
 
   async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters, model="gpt-4o") {
+    if (valid_models.indexOf(model) === -1) model = redirect_models[model];
+    if (valid_models.indexOf(model) === -1) return;
+
     if (prompt === "@SUMMARY") {
       // Prevent duplicate
       const results = await this.BatchPromptDatabase.find({conversation_id: in_conversation_id, request_id: "new"});
@@ -153,16 +165,10 @@ class BatchService {
       const newPrompts = await this.BatchPromptDatabase.find({ request_id: 'new' });
       if (newPrompts.length) {
         // Generate batch data
-        const prompt_data = {
-          "gpt-4o-2024-11-20": [],
-          "gpt-4o-2024-08-06": [],
-          "gpt-4o": [],
-          "gpt-4o-mini": [],
-          "gpt-4o-mini-2024-07-18": [],
-          "claude-3-5-sonnet-20241022": [],
-          "o1-2024-12-17": [],
-          "o3-mini-2025-01-31": [],
-        };
+        const prompt_data = {};
+        for (let c = 0; c < valid_models.length; c++) {
+          prompt_data[valid_models[c]] = [];
+        }
         const models = valid_models;
 
         for (let i = 0; i < newPrompts.length; i++) {
@@ -403,6 +409,10 @@ class BatchService {
       }
     }
     return {requests: completed_requests, prompts: completed_prompts};
+  }
+
+  async deletePromptById(id) {
+    await this.BatchPromptDatabase.deleteOne({custom_id: id});
   }
 }
 
