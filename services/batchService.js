@@ -410,6 +410,10 @@ class BatchService {
     }
     return {requests: completed_requests, prompts: completed_prompts};
   }
+
+  async deletePromptById(id) {
+    await this.BatchPromptDatabase.deleteOne({custom_id: id});
+  }
 }
 
 module.exports = BatchService;

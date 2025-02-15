@@ -61,6 +61,7 @@ router.get('/batch_status', controller.batch_status);
 router.post('/batch_start', controller.batch_start);
 router.post('/batch_update/:id', controller.batch_update);
 router.post('/batch_import', controller.batch_import);
+router.get('/batch_prompt_delete/:id', controller.batch_prompt_delete);
 
 // Ask Category
 router.post('/ask_category/:id', upload.array('imgs'), controller.ask_category);

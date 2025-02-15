@@ -14,7 +14,8 @@ block content
               div= `User: ${d.user_id}, Model: ${d.model}`
               div= d.prompt === "@SUMMARY" ? "summary" : "prompt"
               if name === d.user_id
-                a(href=`/chat4/chat/${d.conversation_id}`) View chat
+                a.btn.btn-outline-primary(href=`/chat4/chat/${d.conversation_id}`) View chat
+                a.btn.btn-outline-danger(href=`/chat4/batch_prompt_delete/${d.custom_id}`) Delete
     .col
       h4 Requests (1 week)
       button.btn.btn-success(onclick="ProcessCompleted()") Process completed

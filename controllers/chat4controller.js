@@ -489,6 +489,12 @@ exports.batch_import = async (req, res) => {
   res.json(status);
 };
 
+exports.batch_prompt_delete = async (req, res) => {
+  const id = req.params.id;
+  await batchService.deletePromptById(id);
+  res.redirect('/chat4/batch_status');
+};
+
 exports.redact_page = async (req, res) => {
   const message = await messageService.getMessageById(req.params.id);
   res.render("redact_page", {message, conversation_id: req.query.conversation});
