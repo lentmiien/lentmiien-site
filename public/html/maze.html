@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Maze Game</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+      #gameContainer {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        background: #eee;
+      }
+      /* The canvas underlying game */
+      #gameCanvas {
+        position: absolute;
+        left: 0;
+        top: 0;
+        background: #fff;
+      }
+      /* Timer as progress bar */
+      #timerBar {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        width: 300px;
+        height: 10px;
+        background: green;
+        border: 2px solid #333;
+        overflow: hidden;
+      }
+      /* Overlay for game over screen */
+      #gameOverScreen {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8);
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        font-family: sans-serif;
+        z-index: 10;
+      }
+      #gameOverScreen h1 {
+        font-size: 48px;
+        margin-bottom: 20px;
+      }
+      #gameOverScreen button {
+        padding: 10px 20px;
+        font-size: 18px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="gameContainer">
+      <canvas id="gameCanvas"></canvas>
+      <div id="timerBar"></div>
+      <div id="gameOverScreen" style="display:none;">
+        <h1>Game Over!</h1>
+        <div id="stats"></div>
+        <button onclick="restartGame()">Play Again</button>
+      </div>
+    </div>
+    <script>
+      // Global game settings and state variables
+      let canvas, ctx;
+      let canvasWidth, canvasHeight;
+      let cellSize = 40; // size in pixels for each cell (display purposes)
+      let maze = null; // will hold maze object
+      let level = 1;
+      let score = 0;
+      let treasures = [];
+      let numTreasures = 5;
+      let startPos = null, goalPos = null;
+      let playerPos = null;
+      let timerDuration = 10 * 60 * 1000; // 10 minutes in milliseconds
+      let timerStart;
+      let timerInterval;
+      let mazeOffsetX = 0, mazeOffsetY = 0;
+      // For swipe detection on touch devices.
+      let touchStartX, touchStartY;
+      
+      // Maze cell definition
+      class Cell {
+        constructor(x, y) {
+          this.x = x;
+          this.y = y;
+          // Walls: top, right, bottom, left (true = wall exists)
+          this.walls = { top: true, right: true, bottom: true, left: true };
+          this.visited = false;
+        }
+      }
+      
+      // Maze generator using recursive backtracking algorithm.
+      class Maze {
+        constructor(cols, rows) {
+          this.cols = cols;
+          this.rows = rows;
+          this.grid = [];
+          for (let y = 0; y < rows; y++) {
+            let row = [];
+            for (let x = 0; x < cols; x++) {
+              row.push(new Cell(x, y));
+            }
+            this.grid.push(row);
+          }
+          this.generateMaze();
+        }
+        
+        generateMaze() {
+          let stack = [];
+          let current = this.grid[0][0];
+          current.visited = true;
+          let totalCells = this.cols * this.rows;
+          let visitedCells = 1;
+          
+          while (visitedCells < totalCells) {
+            let neighbors = this.getUnvisitedNeighbors(current);
+            if (neighbors.length > 0) {
+              // Choose a random neighbor
+              let next = neighbors[Math.floor(Math.random() * neighbors.length)];
+              // Remove wall between current and chosen neighbor
+              this.removeWalls(current, next);
+              stack.push(current);
+              current = next;
+              current.visited = true;
+              visitedCells++;
+            } else if (stack.length > 0) {
+              current = stack.pop();
+            }
+          }
+        }
+        
+        getUnvisitedNeighbors(cell) {
+          const { x, y } = cell;
+          let neighbors = [];
+          // top neighbor:
+          if (y > 0 && !this.grid[y - 1][x].visited) neighbors.push(this.grid[y - 1][x]);
+          // right neighbor:
+          if (x < this.cols - 1 && !this.grid[y][x + 1].visited) neighbors.push(this.grid[y][x + 1]);
+          // bottom:
+          if (y < this.rows - 1 && !this.grid[y + 1][x].visited) neighbors.push(this.grid[y + 1][x]);
+          // left:
+          if (x > 0 && !this.grid[y][x - 1].visited) neighbors.push(this.grid[y][x - 1]);
+          return neighbors;
+        }
+        
+        removeWalls(current, next) {
+          let dx = next.x - current.x;
+          let dy = next.y - current.y;
+          if (dx === 1) { // next cell is to the right
+            current.walls.right = false;
+            next.walls.left = false;
+          } else if (dx === -1) { // next cell is to the left
+            current.walls.left = false;
+            next.walls.right = false;
+          } else if (dy === 1) { // next cell below
+            current.walls.bottom = false;
+            next.walls.top = false;
+          } else if (dy === -1) { // next cell above
+            current.walls.top = false;
+            next.walls.bottom = false;
+          }
+        }
+      }
+      
+      // Initializes the game when the page loads.
+      function initGame() {
+        canvas = document.getElementById("gameCanvas");
+        ctx = canvas.getContext("2d");
+        startNewLevel();
+        resizeCanvas();
+        window.addEventListener("resize", resizeCanvas);
+        // Keyboard and touch controls.
+        window.addEventListener("keydown", handleKeyDown);
+        canvas.addEventListener("touchstart", handleTouchStart, {passive: false});
+        canvas.addEventListener("touchend", handleTouchEnd, {passive: false});
+      }
+      
+      // Adjust canvas size to fill the container.
+      function resizeCanvas() {
+        canvasWidth = window.innerWidth;
+        canvasHeight = window.innerHeight;
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        draw();
+      }
+      
+      // Prepare a new maze level.
+      function startNewLevel() {
+        // Increase maze dimensions as level goes up.
+        let cols = 5 + level;  // starting maze is 6x6, for example
+        let rows = 5 + level;
+        maze = new Maze(cols, rows);
+      
+        // Reset positions:
+        // Choose random start and goal that are at least half the maze dimension apart.
+        do {
+          startPos = {
+            x: Math.floor(Math.random() * cols),
+            y: Math.floor(Math.random() * rows)
+          };
+          goalPos = {
+            x: Math.floor(Math.random() * cols),
+            y: Math.floor(Math.random() * rows)
+          };
+        } while (Math.abs(startPos.x - goalPos.x) < cols / 2 &&
+                 Math.abs(startPos.y - goalPos.y) < rows / 2);
+      
+        playerPos = { ...startPos };
+      
+        // Create treasures in random cells (avoid start and goal).
+        treasures = [];
+        let colors = ["red", "blue", "green", "purple", "orange"];
+        for (let i = 0; i < numTreasures; i++) {
+          let pos;
+          do {
+            pos = {
+              x: Math.floor(Math.random() * cols),
+              y: Math.floor(Math.random() * rows)
+            };
+          } while ((pos.x === startPos.x && pos.y === startPos.y) ||
+                   (pos.x === goalPos.x && pos.y === goalPos.y) ||
+                   treasures.some(t => t.x === pos.x && t.y === pos.y));
+          treasures.push({x: pos.x, y: pos.y, color: colors[i % colors.length], collected: false});
+        }
+      
+        // Reset the timer.
+        clearInterval(timerInterval);
+        timerStart = Date.now();
+        timerInterval = setInterval(updateTimer, 100);
+      
+        // Redraw immediately.
+        draw();
+      }
+      
+      // Timer update function.
+      function updateTimer() {
+        let elapsed = Date.now() - timerStart;
+        let remaining = timerDuration - elapsed;
+        if (remaining <= 0) {
+          remaining = 0;
+          endGame();
+        }
+        updateTimerBar(remaining);
+      }
+      
+      // Draw the timer progress bar.
+      function updateTimerBar(remaining) {
+        let timerBar = document.getElementById("timerBar");
+        let percent = (remaining / timerDuration) * 100;
+        timerBar.style.width = Math.floor((300 * remaining)/timerDuration) + "px";  // progress bar is 300px wide at start.
+      
+        // Flash red if less than 30 seconds remain.
+        if (remaining < 30000) {
+          // Calculate flashing interval based on remaining time.
+          let flashSpeed = Math.max(100, remaining / 10);
+          if (Math.floor(Date.now() / flashSpeed) % 2 === 0) {
+            timerBar.style.background = "red";
+          } else {
+            timerBar.style.background = "orange";
+          }
+        } else {
+          timerBar.style.background = "green";
+        }
+      }
+      
+      // End game when timer runs out.
+      function endGame() {
+        clearInterval(timerInterval);
+        // Display game over screen with stats.
+        let gameOverScreen = document.getElementById("gameOverScreen");
+        let statsDiv = document.getElementById("stats");
+        statsDiv.innerHTML = 
+          "<p>Level reached: " + level + "</p>" +
+          "<p>Score: " + score + "</p>";
+        gameOverScreen.style.display = "flex";
+      }
+      
+      // Clear game over screen and restart from level 1.
+      function restartGame() {
+        level = 1;
+        score = 0;
+        document.getElementById("gameOverScreen").style.display = "none";
+        startNewLevel();
+      }
+      
+      // Keyboard control handler.
+      function handleKeyDown(e) {
+        let dir = null;
+        switch(e.key) {
+          case "ArrowUp": case "w": dir = "up"; break;
+          case "ArrowDown": case "s": dir = "down"; break;
+          case "ArrowLeft": case "a": dir = "left"; break;
+          case "ArrowRight": case "d": dir = "right"; break;
+        }
+        if (dir) {
+          movePlayer(dir);
+        }
+      }
+      
+      // Touch events for swipe control.
+      function handleTouchStart(e) {
+        e.preventDefault();
+        let touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      }
+      
+      function handleTouchEnd(e) {
+        e.preventDefault();
+        let touch = e.changedTouches[0];
+        let dx = touch.clientX - touchStartX;
+        let dy = touch.clientY - touchStartY;
+        let absDx = Math.abs(dx);
+        let absDy = Math.abs(dy);
+        let threshold = 30;  // minimum swipe threshold
+        if (Math.max(absDx, absDy) < threshold) return;
+        let direction;
+        if (absDx > absDy) {
+          direction = (dx > 0) ? "right" : "left";
+        } else {
+          direction = (dy > 0) ? "down" : "up";
+        }
+        movePlayer(direction);
+      }
+      
+      // Move the player if there is no wall in that direction.
+      function movePlayer(dir) {
+        const { x, y } = playerPos;
+        let cell = maze.grid[y][x];
+        let newX = x, newY = y;
+        if (dir === "up" && !cell.walls.top) newY--;
+        else if (dir === "down" && !cell.walls.bottom) newY++;
+        else if (dir === "left" && !cell.walls.left) newX--;
+        else if (dir === "right" && !cell.walls.right) newX++;
+        // Check bounds.
+        if (newX < 0 || newX >= maze.cols || newY < 0 || newY >= maze.rows) return;
+        playerPos = { x: newX, y: newY };
+      
+        // Check if player has collected a treasure.
+        treasures.forEach(t => {
+          if (!t.collected && t.x === newX && t.y === newY) {
+            t.collected = true;
+            score += 10;   // bonus points for treasure
+          }
+        });
+      
+        // Check if reached the goal.
+        if (newX === goalPos.x && newY === goalPos.y) {
+          score += 50;  // bonus for finishing maze
+          level++;
+          startNewLevel();
+          return;
+        }
+      
+        draw();
+      }
+      
+      // Draw everything on the canvas.
+      function draw() {
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      
+        // Calculate maze drawing dimensions.
+        let mazeWidth = maze.cols * cellSize;
+        let mazeHeight = maze.rows * cellSize;
+      
+        // Calculate offset so that player is centered if possible.
+        let playerScreenX = canvasWidth / 2 - playerPos.x * cellSize - cellSize / 2;
+        let playerScreenY = canvasHeight / 2 - playerPos.y * cellSize - cellSize / 2;
+      
+        // Clamp so that we don’t show areas outside of maze.
+        mazeOffsetX = Math.min(0, Math.max(canvasWidth - mazeWidth, playerScreenX));
+        mazeOffsetY = Math.min(0, Math.max(canvasHeight - mazeHeight, playerScreenY));
+      
+        ctx.save();
+        ctx.translate(mazeOffsetX, mazeOffsetY);
+      
+        // Draw maze grid.
+        ctx.strokeStyle = "#000";
+        ctx.lineWidth = 2;
+      
+        for (let y = 0; y < maze.rows; y++) {
+          for (let x = 0; x < maze.cols; x++) {
+            let cell = maze.grid[y][x];
+            let xPos = x * cellSize;
+            let yPos = y * cellSize;
+            // For each wall, draw if it exists.
+            ctx.beginPath();
+            if (cell.walls.top) {
+              ctx.moveTo(xPos, yPos);
+              ctx.lineTo(xPos + cellSize, yPos);
+            }
+            if (cell.walls.right) {
+              ctx.moveTo(xPos + cellSize, yPos);
+              ctx.lineTo(xPos + cellSize, yPos + cellSize);
+            }
+            if (cell.walls.bottom) {
+              ctx.moveTo(xPos + cellSize, yPos + cellSize);
+              ctx.lineTo(xPos, yPos + cellSize);
+            }
+            if (cell.walls.left) {
+              ctx.moveTo(xPos, yPos + cellSize);
+              ctx.lineTo(xPos, yPos);
+            }
+            ctx.stroke();
+          }
+        }
+      
+        // Draw treasures.
+        treasures.forEach(t => {
+          if (!t.collected) {
+            let centerX = t.x * cellSize + cellSize/2;
+            let centerY = t.y * cellSize + cellSize/2;
+            ctx.beginPath();
+            ctx.fillStyle = t.color;
+            ctx.arc(centerX, centerY, cellSize/6, 0, Math.PI*2);
+            ctx.fill();
+          }
+        });
+      
+        // Draw start and goal.
+        // Start: draw a green square.
+        ctx.fillStyle = "lightgreen";
+        ctx.fillRect(startPos.x * cellSize + cellSize*0.25, startPos.y * cellSize + cellSize*0.25, cellSize*0.5, cellSize*0.5);
+      
+        // Goal: draw a gold square.
+        ctx.fillStyle = "gold";
+        ctx.fillRect(goalPos.x * cellSize + cellSize*0.25, goalPos.y * cellSize + cellSize*0.25, cellSize*0.5, cellSize*0.5);
+      
+        // Draw the player.
+        ctx.beginPath();
+        ctx.fillStyle = "blue";
+        let px = playerPos.x * cellSize + cellSize/2;
+        let py = playerPos.y * cellSize + cellSize/2;
+        ctx.arc(px, py, cellSize/3, 0, Math.PI*2);
+        ctx.fill();
+      
+        ctx.restore();
+      }
+      
+      // Start the game once the page is loaded.
+      window.onload = initGame;
+    </script>
+  </body>
+</html>
