@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Solar System Simulation</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        background: #000;
+        color: #fff;
+        font-family: sans-serif;
+      }
+      #controls {
+        position: absolute;
+        z-index: 10;
+        top: 10px;
+        left: 10px;
+        background: rgba(0,0,0,0.5);
+        padding: 10px;
+        border-radius: 8px;
+      }
+      #controls label {
+        font-size: 14px;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="controls">
+      <div>
+        <label for="timeScale">Time Scale: <span id="timeVal">1</span>x</label>
+        <br />
+        <input id="timeScale" type="range" min="0.1" max="10" step="0.1" value="1">
+      </div>
+      <div style="font-size: 12px; margin-top:8px;">
+        Drag to pan. Pinch or use mouse wheel to zoom.
+      </div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <script>
+      // Get canvas and context
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Global camera transformation state:
+      let panX = 0;
+      let panY = 0;
+      let zoom = 1;  // additional zoom factor (1 means using posScale as computed)
+      let posScale = 1; // will be calculated in resizeCanvas()
+
+      // Global simulation variables.
+      let simulationTime = 0; // in seconds (simulated)
+      let lastRealTime = performance.now();
+      let globalTimeScale = 1.0;  // adjustable speed multiplier
+
+      // Resize canvas to fill window.
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        // Calculate the initial “position scale”: we want the outer orbit (Neptune ~30 AU, plus a margin) to fit.
+        // We'll use about 35 AU radius so that the whole system is visible.
+        posScale = Math.min(canvas.width, canvas.height) / (2 * 35);
+        // Set the initial pan offset to center the Solar System at canvas center.
+        panX = canvas.width / 2;
+        panY = canvas.height / 2;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+
+      // For touch and pointer handling
+      let isPanning = false;
+      let lastPanPos = { x: 0, y: 0 };
+      let pointers = new Map(); // for multi-touch pinch zoom
+
+      // A helper that converts solar system coordinates (in AU) to canvas coordinates.
+      function worldToScreen(x, y) {
+        return {
+          x: panX + x * posScale * zoom,
+          y: panY + y * posScale * zoom
+        };
+      }
+
+      // Data for solar system bodies.
+      // Distances in AU; radii in AU (real numbers) – note that real radii are very small compared to orbit sizes.
+      // For drawing, we will use a separate size scale factor so that the Sun is drawn with a visible radius.
+      const sizeScale = 5000;  // multiply body radius in AU to get pixel size (if too small, a minimum is used)
+      const minBodyRadius = 5; // minimum pixel radius
+
+      // Each planet object has: name, orbitRadius (AU), orbitalPeriod (seconds, so that Earth=60s),
+      // bodyRadius (AU), color, and (optionally) an array of moons.
+      const planets = [
+        {
+          name: "Mercury",
+          orbitRadius: 0.39,
+          orbitalPeriod: 60 * (88 / 365),  // approx 14.5 s
+          bodyRadius: 696700 * 0.001/149597.87 / 100, // “scaled” sun-radius formula not used – see below.
+          // For Mercury, we use its radius in AU:
+          bodyRadius: 2440 / 149597870,
+          color: "#aaa",
+          moons: []
+        },
+        {
+          name: "Venus",
+          orbitRadius: 0.72,
+          orbitalPeriod: 60 * (225 / 365),  // ~37 s
+          bodyRadius: 6052 / 149597870,
+          color: "#f5d78e",
+          moons: []
+        },
+        {
+          name: "Earth",
+          orbitRadius: 1,
+          orbitalPeriod: 60,  // Earth: 60 seconds
+          bodyRadius: 6371 / 149597870,
+          color: "#2e7aff",
+          moons: [
+            {
+              name: "Moon",
+              orbitRadius: 384400 / 149597870,  // ~0.00257 AU
+              orbitalPeriod: 5,  // made–up period for visualization
+              bodyRadius: 1737 / 149597870,
+              color: "#888"
+            }
+          ]
+        },
+        {
+          name: "Mars",
+          orbitRadius: 1.52,
+          orbitalPeriod: 60 * (687 / 365),  // ~113 s
+          bodyRadius: 3389 / 149597870,
+          color: "#b22222",
+          moons: [
+            {
+              name: "Phobos",
+              orbitRadius: 9376 / 149597870, // ~0.0000627 AU
+              orbitalPeriod: 4,
+              bodyRadius: 11 / 149597870,
+              color: "#ddd"
+            },
+            {
+              name: "Deimos",
+              orbitRadius: 23463 / 149597870, // ~0.000157 AU
+              orbitalPeriod: 5,
+              bodyRadius: 6 / 149597870,
+              color: "#ccc"
+            }
+          ]
+        },
+        {
+          name: "Jupiter",
+          orbitRadius: 5.20,
+          orbitalPeriod: 60 * (4333 / 365),  // ~712 s
+          bodyRadius: 69911 / 149597870,
+          color: "#e6b422",
+          moons: [
+            {
+              name: "Io",
+              orbitRadius: 421700 / 149597870,  // ~0.00282 AU
+              orbitalPeriod: 5,
+              bodyRadius: 1821 / 149597870,
+              color: "#fdd"
+            },
+            {
+              name: "Europa",
+              orbitRadius: 671034 / 149597870,  // ~0.00449 AU
+              orbitalPeriod: 6,
+              bodyRadius: 1561 / 149597870,
+              color: "#eef"
+            },
+            {
+              name: "Ganymede",
+              orbitRadius: 1070400 / 149597870,  // ~0.00716 AU
+              orbitalPeriod: 7,
+              bodyRadius: 2634 / 149597870,
+              color: "#ddf"
+            },
+            {
+              name: "Callisto",
+              orbitRadius: 1882700 / 149597870,  // ~0.01258 AU
+              orbitalPeriod: 8,
+              bodyRadius: 2410 / 149597870,
+              color: "#cce"
+            }
+          ]
+        },
+        {
+          name: "Saturn",
+          orbitRadius: 9.58,
+          orbitalPeriod: 60 * (10759 / 365),  // ~1769 s
+          bodyRadius: 58232 / 149597870,
+          color: "#f9e79b",
+          moons: [
+            {
+              name: "Titan",
+              orbitRadius: 1221870 / 149597870, // ~0.00817 AU
+              orbitalPeriod: 8,
+              bodyRadius: 2575 / 149597870,
+              color: "#fed"
+            }
+          ]
+        },
+        {
+          name: "Uranus",
+          orbitRadius: 19.2,
+          orbitalPeriod: 60 * (30687 / 365), // ~5040 s
+          bodyRadius: 25362 / 149597870,
+          color: "#8be",
+          moons: [
+            {
+              name: "Titania",
+              orbitRadius: 788900 / 149597870, // ~0.00527 AU
+              orbitalPeriod: 7,
+              bodyRadius: 788 / 149597870,
+              color: "#dde"
+            },
+            {
+              name: "Oberon",
+              orbitRadius: 583500 / 149597870, // ~0.00390 AU
+              orbitalPeriod: 8,
+              bodyRadius: 761 / 149597870,
+              color: "#ccd"
+            }
+          ]
+        },
+        {
+          name: "Neptune",
+          orbitRadius: 30.1,
+          orbitalPeriod: 60 * (60190 / 365), // ~9900 s
+          bodyRadius: 24622 / 149597870,
+          color: "#66f",
+          moons: [
+            {
+              name: "Triton",
+              orbitRadius: 354800 / 149597870, // ~0.00237 AU
+              orbitalPeriod: 8,
+              bodyRadius: 1353 / 149597870,
+              color: "#99f"
+            }
+          ]
+        }
+      ];
+
+      // The Sun (placed at the center) – note: static.
+      const sun = {
+        name: "Sun",
+        x: 0,
+        y: 0,
+        bodyRadius: 696700 / 149597870,  // in AU (roughly 0.00465)
+        color: "#ffaa00"
+      };
+
+      // Generate a simple asteroid belt between about 2.2 AU and 3.2 AU.
+      const asteroids = [];
+      const numAsteroids = 300;
+      for (let i = 0; i < numAsteroids; i++) {
+        const orbitRadius = 2.2 + Math.random() * (3.2 - 2.2);
+        const angle = Math.random() * 2 * Math.PI;
+        // Each asteroid is just a point with a tiny orbit (we’ll not animate them individually)
+        asteroids.push({ orbitRadius, angle, bodyRadius: 0.000005, color: "#666" });
+      }
+
+      // UI Control: Time scale slider.
+      const timeSlider = document.getElementById("timeScale");
+      const timeValLabel = document.getElementById("timeVal");
+      timeSlider.addEventListener("input", () => {
+        globalTimeScale = parseFloat(timeSlider.value);
+        timeValLabel.textContent = timeSlider.value;
+      });
+
+      // Animation loop.
+      function animate() {
+        const now = performance.now();
+        const deltaSec = (now - lastRealTime) / 1000;
+        lastRealTime = now;
+        simulationTime += deltaSec * globalTimeScale;
+        drawScene();
+        requestAnimationFrame(animate);
+      }
+
+      // Drawing the scene.
+      function drawScene() {
+        ctx.save();
+        // Clear the canvas.
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Fill background.
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw dotted orbit paths for each planet.
+        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        for (let planet of planets) {
+          const screenPos = worldToScreen(0, 0);
+          ctx.beginPath();
+          ctx.arc(panX, panY, planet.orbitRadius * posScale * zoom, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+        // Asteroid belt (draw as many small points around a circle)
+        ctx.setLineDash([]);
+        for (let ast of asteroids) {
+          const x = ast.orbitRadius * Math.cos(ast.angle);
+          const y = ast.orbitRadius * Math.sin(ast.angle);
+          const s = worldToScreen(x, y);
+          ctx.fillStyle = ast.color;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, 1, 0, 2*Math.PI);
+          ctx.fill();
+        }
+
+        // Draw the Sun.
+        const sunScreen = worldToScreen(sun.x, sun.y);
+        let sunPixRadius = sun.bodyRadius * sizeScale;
+        if(sunPixRadius < minBodyRadius) sunPixRadius = minBodyRadius;
+        ctx.fillStyle = sun.color;
+        ctx.beginPath();
+        ctx.arc(sunScreen.x, sunScreen.y, sunPixRadius, 0, 2*Math.PI);
+        ctx.fill();
+
+        // For each planet, compute its current angle along its orbit.
+        for (let planet of planets) {
+          const angle = (simulationTime / planet.orbitalPeriod) * 2 * Math.PI;
+          const x = planet.orbitRadius * Math.cos(angle);
+          const y = planet.orbitRadius * Math.sin(angle);
+          const planetScreen = worldToScreen(x, y);
+          // Draw planet
+          let planetPixRadius = planet.bodyRadius * sizeScale;
+          if(planetPixRadius < minBodyRadius) planetPixRadius = minBodyRadius;
+          ctx.fillStyle = planet.color;
+          ctx.beginPath();
+          ctx.arc(planetScreen.x, planetScreen.y, planetPixRadius, 0, 2*Math.PI);
+          ctx.fill();
+          
+          // Draw planet name (optional)
+          // ctx.fillStyle = "#fff";
+          // ctx.font = "10px sans-serif";
+          // ctx.fillText(planet.name, planetScreen.x + planetPixRadius + 2, planetScreen.y);
+
+          // Draw moons (if any): use their own orbit around the planet.
+          if (planet.moons) {
+            ctx.strokeStyle = "rgba(255,255,255,0.15)";
+            ctx.setLineDash([2, 2]);
+            for (let moon of planet.moons) {
+              const mAngle = (simulationTime / moon.orbitalPeriod) * 2 * Math.PI;
+              const mx = x + moon.orbitRadius * Math.cos(mAngle);
+              const my = y + moon.orbitRadius * Math.sin(mAngle);
+              const moonScreen = worldToScreen(mx, my);
+              // Draw the moon’s orbit (dotted) around the planet.
+              ctx.beginPath();
+              const planetScreenPos = planetScreen;
+              ctx.arc(planetScreenPos.x, planetScreenPos.y, moon.orbitRadius * posScale * zoom, 0, 2*Math.PI);
+              ctx.stroke();
+              
+              // Draw the moon.
+              let moonPixRadius = moon.bodyRadius * sizeScale;
+              if(moonPixRadius < 3) moonPixRadius = 3;
+              ctx.fillStyle = moon.color;
+              ctx.beginPath();
+              ctx.arc(moonScreen.x, moonScreen.y, moonPixRadius, 0, 2*Math.PI);
+              ctx.fill();
+            }
+            ctx.setLineDash([]);
+          }
+        }
+        
+        ctx.restore();
+      }
+
+      // --- Pointer & Touch handling for panning and pinch/zoom ---
+      function onPointerDown(e) {
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size === 1) {
+          isPanning = true;
+          lastPanPos = { x: e.clientX, y: e.clientY };
+        }
+      }
+      function onPointerMove(e) {
+        if (!pointers.has(e.pointerId)) return;
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size === 1 && isPanning) {
+          // Single pointer panning.
+          const dx = e.clientX - lastPanPos.x;
+          const dy = e.clientY - lastPanPos.y;
+          panX += dx;
+          panY += dy;
+          lastPanPos = { x: e.clientX, y: e.clientY };
+        } else if (pointers.size === 2) {
+          // Pinch zoom.
+          const pts = Array.from(pointers.values());
+          const currentDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+          if (typeof pinchStartDist === "undefined") {
+            pinchStartDist = currentDistance;
+            pinchStartZoom = zoom;
+          } else {
+            const factor = currentDistance / pinchStartDist;
+            zoom = pinchStartZoom * factor;
+          }
+        }
+      }
+      function onPointerUp(e) {
+        pointers.delete(e.pointerId);
+        if (pointers.size < 2) {
+          pinchStartDist = undefined;
+          pinchStartZoom = undefined;
+        }
+        if (pointers.size === 0) {
+          isPanning = false;
+        }
+      }
+      let pinchStartDist, pinchStartZoom;
+      canvas.addEventListener("pointerdown", onPointerDown);
+      canvas.addEventListener("pointermove", onPointerMove);
+      canvas.addEventListener("pointerup", onPointerUp);
+      canvas.addEventListener("pointercancel", onPointerUp);
+      canvas.addEventListener("pointerleave", onPointerUp);
+
+      // Also add mouse wheel for zooming.
+      canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const delta = -e.deltaY;
+        // Adjust zoom sensitivity.
+        const zoomFactor = 1 + delta / 1000;
+        // To zoom with respect to the mouse pointer, adjust pan as well.
+        const mousePosBefore = { x: e.clientX, y: e.clientY };
+        // Convert mouse position to "world" coordinates.
+        const worldX = (mousePosBefore.x - panX) / (posScale * zoom);
+        const worldY = (mousePosBefore.y - panY) / (posScale * zoom);
+
+        zoom *= zoomFactor;
+        // Adjust pan so that the world coordinate remains under the pointer.
+        panX = e.clientX - worldX * posScale * zoom;
+        panY = e.clientY - worldY * posScale * zoom;
+      }, { passive: false });
+
+      // Start animation.
+      animate();
+    </script>
+  </body>
+</html>
