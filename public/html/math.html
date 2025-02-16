@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Math Quiz Game</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .hidden { display: none; }
+    #stats { margin-top: 20px; }
+    button { margin-top: 5px; margin-right: 5px; }
+  </style>
+</head>
+<body>
+
+  <h1>Math Quiz Game</h1>
+  <div id="game">
+    <p id="question">Press "New Game" to start!</p>
+    <input type="number" id="answer" placeholder="Your answer">
+    <br>
+    <button id="submit">Submit Answer</button>
+    <button id="newGame">New Game</button>
+    <button id="endGame">End Game</button>
+  </div>
+
+  <div id="stats" class="hidden">
+    <h2>Game Statistics</h2>
+    <div id="opStats"></div>
+    <button id="playAgain">Play Again</button>
+  </div>
+
+  <script>
+    // Global variables
+    let currentQuestion = {};
+    // Stats for each operator
+    let stats = {
+      addition: { correct: 0, total: 0 },
+      subtraction: { correct: 0, total: 0 },
+      multiplication: { correct: 0, total: 0 },
+      division: { correct: 0, total: 0 }
+    };
+    // Overall game state
+    let gameActive = false;
+
+    // Utility: returns a random integer between min and max (inclusive)
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    // Increase difficulty based on operation performance.
+    // We use a simple formula: max operand = base(10) + [totalAnswered for op * correctRate * 5]
+    function getMaxForOp(op) {
+      const base = 10;
+      let opStats = stats[op];
+      if (opStats.total === 0) return base;
+      let correctRate = opStats.correct / opStats.total;
+      let extra = Math.floor(opStats.total * correctRate) * 5;
+      return base + extra;
+    }
+
+    // Generate a new question.
+    function generateQuestion() {
+      // Pick a random operator from the four
+      let ops = ["addition", "subtraction", "multiplication", "division"];
+      let op = ops[randomInt(0, ops.length - 1)];
+
+      // Use the difficulty scale for that operator
+      let max = getMaxForOp(op);
+      let num1, num2, questionStr, answer;
+
+      switch (op) {
+        case "addition":
+          num1 = randomInt(1, max);
+          num2 = randomInt(1, max);
+          answer = num1 + num2;
+          questionStr = num1 + " + " + num2 + " = ?";
+          break;
+
+        case "subtraction":
+          // Ensure non-negative results by ordering the numbers
+          num1 = randomInt(1, max);
+          num2 = randomInt(1, max);
+          if (num1 < num2) [num1, num2] = [num2, num1];
+          answer = num1 - num2;
+          questionStr = num1 + " - " + num2 + " = ?";
+          break;
+
+        case "multiplication":
+          num1 = randomInt(1, max);
+          num2 = randomInt(1, max);
+          answer = num1 * num2;
+          questionStr = num1 + " × " + num2 + " = ?";
+          break;
+
+        case "division":
+          // For division: pick divisor and quotient, then compute dividend.
+          num2 = randomInt(1, max);           // divisor
+          answer = randomInt(1, max);          // quotient
+          num1 = num2 * answer;                // dividend so that division comes out clean
+          questionStr = num1 + " ÷ " + num2 + " = ?";
+          break;
+      }
+
+      currentQuestion = { op: op, answer: answer, questionStr: questionStr };
+      document.getElementById("question").innerText = questionStr;
+      document.getElementById("answer").value = "";
+      document.getElementById("answer").focus();
+    }
+
+    // Handling the answer submit
+    function checkAnswer() {
+      if (!gameActive) return;
+      let userInput = document.getElementById("answer").value;
+      if (userInput === "") return;  // No answer provided
+
+      // Convert to number
+      let userAnswer = Number(userInput);
+      let correctAnswer = currentQuestion.answer;
+      let op = currentQuestion.op;
+      
+      // Update stats: increment total for current operation.
+      stats[op].total++;
+
+      if (userAnswer === correctAnswer) {
+        stats[op].correct++;
+        alert("Correct!");
+      } else {
+        alert("Incorrect. The correct answer was " + correctAnswer + ".");
+      }
+      
+      // Generate the next question.
+      generateQuestion();
+    }
+
+    // Display statistics for the current playthrough.
+    function showStatistics() {
+      gameActive = false;
+      document.getElementById("game").classList.add("hidden");
+      let opStatsDiv = document.getElementById("opStats");
+      opStatsDiv.innerHTML = "";
+      
+      // Create a table of stats for each operation.
+      let tableHTML = "<table border='1' cellspacing='0' cellpadding='5'><tr><th>Operation</th><th>Correct</th><th>Total</th><th>Accuracy</th></tr>";
+      for (let op in stats) {
+        let opStat = stats[op];
+        let accuracy = opStat.total ? ((opStat.correct / opStat.total) * 100).toFixed(1) + "%" : "N/A";
+        // Capitalize first letter for display.
+        let capOp = op.charAt(0).toUpperCase() + op.slice(1);
+        tableHTML += "<tr><td>" + capOp + "</td><td>" + opStat.correct + "</td><td>" + opStat.total + "</td><td>" + accuracy + "</td></tr>";
+      }
+      tableHTML += "</table>";
+      
+      opStatsDiv.innerHTML = tableHTML;
+      
+      document.getElementById("stats").classList.remove("hidden");
+    }
+
+    // Resets the game state
+    function resetGame() {
+      // Reset stats.
+      stats = {
+        addition: { correct: 0, total: 0 },
+        subtraction: { correct: 0, total: 0 },
+        multiplication: { correct: 0, total: 0 },
+        division: { correct: 0, total: 0 }
+      };
+
+      gameActive = true;
+      document.getElementById("stats").classList.add("hidden");
+      document.getElementById("game").classList.remove("hidden");
+      generateQuestion();
+    }
+
+    // Event listeners
+    document.getElementById("submit").addEventListener("click", checkAnswer);
+    // Allow pressing "Enter" to submit answer
+    document.getElementById("answer").addEventListener("keyup", function(e) {
+      if (e.key === "Enter") { checkAnswer(); }
+    });
+    document.getElementById("newGame").addEventListener("click", resetGame);
+    document.getElementById("endGame").addEventListener("click", showStatistics);
+    document.getElementById("playAgain").addEventListener("click", resetGame);
+
+    // When the page loads, the game is idle until the player clicks "New Game".
+  </script>
+
+</body>
+</html>
