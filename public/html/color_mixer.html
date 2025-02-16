@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Paint Color Mixer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+    #mixer {
+      position: relative;
+      width: 300px;
+      height: 300px;
+      margin: 0 auto;
+      background-color: #f9f9f9;
+      border: 1px solid #ccc;
+    }
+    .circle {
+      position: absolute;
+      border-radius: 50%;
+      border: 2px solid #333;
+    }
+    /* Main circles (large) */
+    .main {
+      width: 60px;
+      height: 60px;
+      line-height: 60px;
+      font-weight: bold;
+    }
+    /* Mixed circles (small) */
+    .mix {
+      width: 40px;
+      height: 40px;
+      font-size: 0.8em;
+    }
+    /* Positioning – these numbers position the circles on the container */
+    /* Main circles: positions at 3 vertices of a triangle */
+    /* 60 x 60 */
+    #main1 { top: 20px; left: 120px; }
+    #main2 { top: 200px; left: 20px; }
+    #main3 { top: 200px; left: 220px; }
+    /* Mix circles between main ones (placed near the midpoint) */
+    /* 40 x 40 */
+    #mix12 { top: 120px; left: 80px; }
+    #mix23 { top: 210px; left: 130px; }
+    #mix31 { top: 120px; left: 180px; }
+    /* Center mix of all 3 */
+    #mix123 { top: 155px; left: 135px; width: 30px; height: 30px; border-width: 1px; }
+  </style>
+</head>
+<body>
+  <h1>Paint Color Mixer</h1>
+  <p>Select three colors:</p>
+  <div>
+    <label>Color 1: <input type="color" id="color1" value="#0000ff"></label>
+    <label>Color 2: <input type="color" id="color2" value="#ffff00"></label>
+    <label>Color 3: <input type="color" id="color3" value="#ff0000"></label>
+  </div>
+  <br>
+  <div id="mixer">
+    <!-- Main circles -->
+    <div id="main1" class="circle main"></div>
+    <div id="main2" class="circle main"></div>
+    <div id="main3" class="circle main"></div>
+    <!-- Mixed circles between pairs -->
+    <div id="mix12" class="circle mix"></div>
+    <div id="mix23" class="circle mix"></div>
+    <div id="mix31" class="circle mix"></div>
+    <!-- Mixed circle for all three -->
+    <div id="mix123" class="circle"></div>
+  </div>
+
+  <script>
+    // Helper: Convert hex color string to {r, g, b} (0–255)
+    function hexToRgb(hex) {
+      hex = hex.replace("#", "");
+      if (hex.length === 3) {
+        hex = hex.split("").map(function (h) { return h + h; }).join("");
+      }
+      const num = parseInt(hex, 16);
+      return {
+        r: (num >> 16) & 255,
+        g: (num >> 8) & 255,
+        b: num & 255
+      };
+    }
+    // Helper: Convert {r, g, b} to hex string
+    function rgbToHex(rgb) {
+      function comp(c) {
+        const hex = c.toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+      }
+      return "#" + comp(rgb.r) + comp(rgb.g) + comp(rgb.b);
+    }
+
+    // --- RYB conversion functions for approximate paint-mixing simulation ---
+    // These functions expect color components in the range 0 to 1.
+    function rgbToRyb(rgb) {
+      let r = rgb[0], g = rgb[1], b = rgb[2];
+      // Remove the white component
+      const w = Math.min(r, g, b);
+      r -= w; g -= w; b -= w;
+      const max = Math.max(r, g, b);
+      // Get the yellow out of the red+green.
+      let y = Math.min(r, g);
+      r -= y; g -= y;
+      // Adjust blue and green.
+      if(b > 0 && g > 0) {
+        b /= 2.0;
+        g /= 2.0;
+      }
+      y += g;
+      const maxRyb = Math.max(r, y, b);
+      if(maxRyb > 0) {
+        const n = max / maxRyb;
+        r *= n; y *= n; b *= n;
+      }
+      r += w; y += w; b += w;
+      return [r, y, b];
+    }
+    function rybToRgb(ryb) {
+      let r = ryb[0], y = ryb[1], b = ryb[2];
+      // Remove white
+      const w = Math.min(r, y, b);
+      r -= w; y -= w; b -= w;
+      const max = Math.max(r, y, b);
+      // Get green back out of yellow and blue.
+      let g = Math.min(y, b);
+      y -= g; b -= g;
+      if(b > 0 && g > 0) {
+        b *= 2.0;
+        g *= 2.0;
+      }
+      r += y; g += y;
+      const maxRGB = Math.max(r, g, b);
+      if(maxRGB > 0) {
+        const n = max / maxRGB;
+        r *= n; g *= n; b *= n;
+      }
+      r += w; g += w; b += w;
+      return [r, g, b];
+    }
+
+    // Mix an array of colors (each expressed as a hex string) using the RYB “paint” mixing.
+    function mixColors(colorHexArray) {
+      const rybList = colorHexArray.map(function(hex) {
+        const rgb = hexToRgb(hex);
+        // Normalize to 0–1
+        const rgbNorm = [rgb.r/255, rgb.g/255, rgb.b/255];
+        return rgbToRyb(rgbNorm);
+      });
+      
+      // Average each channel in RYB space.
+      let sum = [0,0,0];
+      rybList.forEach(function(ryb) {
+        sum[0] += ryb[0];
+        sum[1] += ryb[1];
+        sum[2] += ryb[2];
+      });
+      const count = rybList.length;
+      const avgRyb = [ sum[0]/count, sum[1]/count, sum[2]/count ];
+      
+      // Convert back to RGB.
+      const avgRgb = rybToRgb(avgRyb);
+      // Clamp to [0,1] then to [0,255]
+      const rgbFinal = {
+          r: Math.min(255, Math.max(0, Math.round(avgRgb[0]*255))),
+          g: Math.min(255, Math.max(0, Math.round(avgRgb[1]*255))),
+          b: Math.min(255, Math.max(0, Math.round(avgRgb[2]*255)))
+      };
+      return rgbToHex(rgbFinal);
+    }
+
+    // Update all displayed circles.
+    function updateMix() {
+      // Get the three chosen colors.
+      const col1 = document.getElementById("color1").value;
+      const col2 = document.getElementById("color2").value;
+      const col3 = document.getElementById("color3").value;
+      
+      // Set main circles.
+      document.getElementById("main1").style.backgroundColor = col1;
+      document.getElementById("main2").style.backgroundColor = col2;
+      document.getElementById("main3").style.backgroundColor = col3;
+      
+      // Mix for each pair.
+      const mix12 = mixColors([col1, col2]);
+      const mix23 = mixColors([col2, col3]);
+      const mix31 = mixColors([col3, col1]);
+      
+      document.getElementById("mix12").style.backgroundColor = mix12;
+      document.getElementById("mix23").style.backgroundColor = mix23;
+      document.getElementById("mix31").style.backgroundColor = mix31;
+      
+      // Mix all three.
+      const mix123 = mixColors([col1, col2, col3]);
+      document.getElementById("mix123").style.backgroundColor = mix123;
+    }
+    
+    // Set up event listeners.
+    document.getElementById("color1").addEventListener("input", updateMix);
+    document.getElementById("color2").addEventListener("input", updateMix);
+    document.getElementById("color3").addEventListener("input", updateMix);
+    
+    // Initialize display.
+    updateMix();
+  </script>
+</body>
+</html>
