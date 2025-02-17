@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Simple Paint with Layers</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 20px;
+      }
+      #toolbar {
+        margin-bottom: 10px;
+      }
+      #canvasContainer {
+        position: relative;
+        border: 1px solid #ccc;
+        width: 800px;
+        height: 600px;
+        cursor: crosshair;
+      }
+      /* Each layer canvas will fit exactly the container */
+      #canvasContainer canvas {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+      button, select, input[type="file"] {
+        margin-right: 5px;
+        margin-bottom: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Simple Paint with Layers</h1>
+    <div id="toolbar">
+      <!-- Layer management -->
+      <button id="addLayerBtn">Add Layer</button>
+      <button id="deleteLayerBtn">Delete Active Layer</button>
+      <select id="layerSelect"></select>
+      
+      <!-- File operations -->
+      <button id="flattenSaveBtn">Flatten &amp; Save Image</button>
+      <button id="saveLayerBtn">Save Active Layer</button>
+      <input type="file" id="loadImageInput" accept="image/png,image/jpeg">
+      <label for="loadImageInput" style="border: 1px solid #ccc; padding: 2px 6px; cursor: pointer;">Load Image to Active Layer</label>
+    </div>
+    
+    <div id="canvasContainer"></div>
+    
+    <script>
+      // Global variables for the editor
+      const canvasContainer = document.getElementById('canvasContainer');
+      const addLayerBtn = document.getElementById('addLayerBtn');
+      const deleteLayerBtn = document.getElementById('deleteLayerBtn');
+      const layerSelect = document.getElementById('layerSelect');
+      const flattenSaveBtn = document.getElementById('flattenSaveBtn');
+      const saveLayerBtn = document.getElementById('saveLayerBtn');
+      const loadImageInput = document.getElementById('loadImageInput');
+    
+      const containerWidth = canvasContainer.clientWidth;
+      const containerHeight = canvasContainer.clientHeight;
+    
+      let layers = [];  // Array of objects: {canvas, context, name}
+      let activeLayerIndex = 0;
+    
+      // Variables for drawing
+      let drawing = false;
+      let lastX = 0, lastY = 0;
+    
+      // Helper: create a new canvas layer and add it with a designated name
+      function createLayer(name) {
+        const canvas = document.createElement('canvas');
+        canvas.width = containerWidth;
+        canvas.height = containerHeight;
+        // Transparent background so layers below can show through.
+        const context = canvas.getContext('2d');
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.lineWidth = 5;
+        context.strokeStyle = '#000';
+    
+        // Add drawing event listeners to the canvas.
+        canvas.addEventListener('mousedown', (e) => {
+          if (layers[activeLayerIndex].canvas !== canvas) return; // only work on active layer
+          drawing = true;
+          const pos = getMousePos(e);
+          lastX = pos.x;
+          lastY = pos.y;
+        });
+    
+        canvas.addEventListener('mousemove', (e) => {
+          if (!drawing || layers[activeLayerIndex].canvas !== canvas) return;
+          const pos = getMousePos(e);
+          context.beginPath();
+          context.moveTo(lastX, lastY);
+          context.lineTo(pos.x, pos.y);
+          context.stroke();
+          lastX = pos.x;
+          lastY = pos.y;
+        });
+    
+        canvas.addEventListener('mouseup', () => drawing = false);
+        canvas.addEventListener('mouseleave', () => drawing = false);
+    
+        // Give the canvas a unique ID and add it to the container.
+        canvas.id = "layer" + layers.length;
+        canvasContainer.appendChild(canvas);
+    
+        return { canvas, context, name };
+      }
+    
+      // Helper: update the layer select control
+      function updateLayerSelect() {
+        layerSelect.innerHTML = ''; // clear options
+        layers.forEach((layer, index) => {
+          const opt = document.createElement('option');
+          opt.value = index;
+          opt.innerText = layer.name;
+          if (index === activeLayerIndex) {
+            opt.selected = true;
+          }
+          layerSelect.appendChild(opt);
+        });
+      }
+    
+      // Helper: Get mouse position relative to container
+      function getMousePos(evt) {
+        const rect = canvasContainer.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+      }
+    
+      // Create the initial layer.
+      function init() {
+        const layer = createLayer("Layer 1");
+        layers.push(layer);
+        activeLayerIndex = 0;
+        updateLayerSelect();
+      }
+    
+      // Add a new layer on top (it will be the active layer).
+      addLayerBtn.addEventListener('click', () => {
+        const newLayer = createLayer("Layer " + (layers.length + 1));
+        layers.push(newLayer);
+        activeLayerIndex = layers.length - 1;
+        updateLayerSelect();
+      });
+    
+      // Allow user to choose active layer by selecting from the dropdown.
+      layerSelect.addEventListener('change', (e) => {
+        activeLayerIndex = parseInt(e.target.value);
+      });
+    
+      // Delete active layer (if more than one exists)
+      deleteLayerBtn.addEventListener('click', () => {
+        if (layers.length <= 1) {
+          alert("At least one layer must remain.");
+          return;
+        }
+        // Remove the canvas element from DOM
+        const removedLayer = layers.splice(activeLayerIndex, 1)[0];
+        canvasContainer.removeChild(removedLayer.canvas);
+    
+        // Renumber the names (optional)
+        layers.forEach((layer, idx) => {
+          layer.name = "Layer " + (idx + 1);
+        });
+        activeLayerIndex = Math.max(0, activeLayerIndex - 1);
+        updateLayerSelect();
+      });
+    
+      // Flatten & save: merge layers into one canvas and trigger download.
+      flattenSaveBtn.addEventListener('click', () => {
+        const flatCanvas = document.createElement('canvas');
+        flatCanvas.width = containerWidth;
+        flatCanvas.height = containerHeight;
+        const ctx = flatCanvas.getContext('2d');
+    
+        // Draw layers in order (first layer in array is bottom)
+        layers.forEach((layer) => {
+          ctx.drawImage(layer.canvas, 0, 0);
+        });
+    
+        // Create a download link
+        const dataURL = flatCanvas.toDataURL("image/png");
+        downloadURI(dataURL, "flattened.png");
+      });
+    
+      // Save active layer as a PNG.
+      saveLayerBtn.addEventListener('click', () => {
+        const layer = layers[activeLayerIndex];
+        const dataURL = layer.canvas.toDataURL("image/png");
+        downloadURI(dataURL, layer.name + ".png");
+      });
+    
+      // Helper: create a temporary anchor link to trigger download.
+      function downloadURI(uri, name) {
+        const link = document.createElement("a");
+        link.download = name;
+        link.href = uri;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    
+      // Load an image file into the active layer.
+      loadImageInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const img = new Image();
+          img.onload = function() {
+            const layer = layers[activeLayerIndex];
+            // Optionally clear the canvas before drawing.
+            layer.context.clearRect(0, 0, containerWidth, containerHeight);
+            // Draw the loaded image at position (0,0)
+            layer.context.drawImage(img, 0, 0, containerWidth, containerHeight);
+          };
+          img.src = evt.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    
+      // Initialize the paint editor.
+      init();
+    </script>
+  </body>
+</html>
