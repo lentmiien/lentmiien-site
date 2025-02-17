@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Math Quiz Game</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    button { margin-top: 10px; margin-right: 5px; padding: 8px 12px; }
+    
+    /* Modal overlay for feedback and start */
+    .modalOverlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .modalContent {
+      background: #fff;
+      padding: 20px 30px;
+      text-align: center;
+      border-radius: 8px;
+      max-width: 90%;
+    }
+    .hidden { display: none; }
+    
+    /* Game and stats section */
+    #game, #stats { margin-top: 20px; }
+    table { border-collapse: collapse; margin-top: 10px; }
+    table, th, td { border: 1px solid #aaa; padding: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Math Quiz Game</h1>
+  
+  <!-- Start Game Modal -->
+  <div id="startModal" class="modalOverlay">
+    <div class="modalContent">
+      <h2>Welcome to the Math Quiz</h2>
+      <p>Please select the starting maximum number for questions:</p>
+      <input type="number" id="startingBoundaryInput" value="10" min="5" style="width:60px;">
+      <br>
+      <button id="startGameBtn">Start Game</button>
+    </div>
+  </div>
+  
+  <!-- Feedback Modal (hidden by default) -->
+  <div id="feedbackModal" class="modalOverlay hidden">
+    <div class="modalContent" id="feedbackContent" style="font-size: 1.5em;">
+      <!-- Feedback message gets inserted here -->
+    </div>
+  </div>
+  
+  <!-- Main game area -->
+  <div id="game" class="hidden">
+    <p id="questionText">Question will appear here.</p>
+    <input type="number" id="answerInput" placeholder="Your answer">
+    <br>
+    <button id="submitAnswerBtn">Submit Answer</button>
+    <button id="endGameBtn">End Game</button>
+  </div>
+  
+  <!-- Stats / final report area -->
+  <div id="stats" class="hidden">
+    <h2>Game Statistics</h2>
+    <div id="opStats"></div>
+    <h3>Your Questions</h3>
+    <div id="questionLog"></div>
+    <br>
+    <button id="playAgainBtn">Play Again</button>
+  </div>
+  
+  <script>
+    // Global game state
+    let gameActive = false;
+    let currentQuestion = {}; // This will hold { op, questionStr, answer }
+    let questionLog = []; // Array to store each answered question
+
+    // Statistics for each operation (we add a counter for difficulty progress)
+    let stats = {
+      addition: { correct: 0, total: 0, diffCounter: 0 },
+      subtraction: { correct: 0, total: 0, diffCounter: 0 },
+      multiplication: { correct: 0, total: 0, diffCounter: 0 },
+      division: { correct: 0, total: 0, diffCounter: 0 }
+    };
+
+    // Current difficulty (upper bound) for each operation.
+    let difficulty = {
+      addition: 10,
+      subtraction: 10,
+      multiplication: 10,
+      division: 10
+    };
+
+    // Utility: returns a random integer between min and max (inclusive)
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    // Generate a new question based on the current difficulty for a randomly chosen op.
+    function generateQuestion() {
+      let ops = ["addition", "subtraction", "multiplication", "division"];
+      let op = ops[randomInt(0, ops.length - 1)];
+      let max = difficulty[op];
+      let num1, num2, questionStr, answer;
+
+      switch(op) {
+        case "addition":
+          num1 = randomInt(1, max);
+          num2 = randomInt(1, max);
+          answer = num1 + num2;
+          questionStr = num1 + " + " + num2 + " = ?";
+          break;
+        case "subtraction":
+          num1 = randomInt(1, max);
+          num2 = randomInt(1, max);
+          if(num1 < num2) { [num1, num2] = [num2, num1]; }
+          answer = num1 - num2;
+          questionStr = num1 + " - " + num2 + " = ?";
+          break;
+        case "multiplication":
+          num1 = randomInt(1, max);
+          num2 = randomInt(1, max);
+          answer = num1 * num2;
+          questionStr = num1 + " × " + num2 + " = ?";
+          break;
+        case "division":
+          // For division: choose divisor and quotient, then compute dividend.
+          num2 = randomInt(1, max);
+          answer = randomInt(1, max);
+          num1 = num2 * answer;
+          questionStr = num1 + " ÷ " + num2 + " = ?";
+          break;
+      }
+
+      currentQuestion = { op, questionStr, answer };
+      document.getElementById("questionText").innerText = questionStr;
+      document.getElementById("answerInput").value = "";
+      document.getElementById("answerInput").focus();
+    }
+
+    // Show feedback using our feedback modal.
+    function showFeedback(isCorrect, correctAnswer, callback) {
+      let modal = document.getElementById("feedbackModal");
+      let content = document.getElementById("feedbackContent");
+      if(isCorrect) {
+        content.innerText = "Correct! 😊";
+      } else {
+        content.innerText = "Incorrect 😞\nThe correct answer was " + correctAnswer;
+      }
+      modal.classList.remove("hidden");
+      // Hide after 1.5 seconds and then run callback (like generating the next question)
+      setTimeout(() => {
+        modal.classList.add("hidden");
+        if (callback) callback();
+      }, 1500);
+    }
+
+    // Update difficulty based on the operation and whether the answer was correct.
+    function updateDifficulty(op, wasCorrect) {
+      if (!wasCorrect) return; // No update on a wrong answer
+
+      // Determine the threshold: if overall accuracy (for op) is 100% so far then use the lower threshold.
+      let opStats = stats[op];
+      let threshold;
+      if(op === "addition" || op === "subtraction") {
+        threshold = (opStats.correct === opStats.total) ? 1 : 2;
+      } else {  // multiplication or division
+        threshold = (opStats.correct === opStats.total) ? 3 : 5;
+      }
+      // Increase the diff counter for this op.
+      opStats.diffCounter++;
+      if(opStats.diffCounter >= threshold) {
+        difficulty[op]++;
+        opStats.diffCounter = 0;
+      }
+    }
+
+    // Handle the submitted answer.
+    function checkAnswer() {
+      if(!gameActive) return;
+      let userInput = document.getElementById("answerInput").value.trim();
+      if(userInput === "") return;
+      let userAnswer = Number(userInput);
+      let wasCorrect = (userAnswer === currentQuestion.answer);
+      let op = currentQuestion.op;
+      
+      // Update stats
+      stats[op].total++;
+      if(wasCorrect) stats[op].correct++;
+      
+      // Log this question for the final report.
+      questionLog.push({
+        op: op,
+        question: currentQuestion.questionStr,
+        correctAnswer: currentQuestion.answer,
+        userAnswer: userAnswer,
+        correct: wasCorrect
+      });
+      
+      // Update difficulty based on this answer.
+      updateDifficulty(op, wasCorrect);
+      
+      // Show feedback modal then generate next question.
+      showFeedback(wasCorrect, currentQuestion.answer, generateQuestion);
+    }
+    
+    // Display end-game statistics and the question log.
+    function showStatistics() {
+      gameActive = false;
+      // Hide game area and show stats area.
+      document.getElementById("game").classList.add("hidden");
+      let opStatsDiv = document.getElementById("opStats");
+      let tableHTML = "<table><tr><th>Operation</th><th>Correct</th><th>Total</th><th>Accuracy</th><th>Final Difficulty</th></tr>";
+      for (let op in stats) {
+        let opStat = stats[op];
+        let accuracy = opStat.total ? ((opStat.correct / opStat.total)*100).toFixed(1) + "%" : "N/A";
+        let capOp = op.charAt(0).toUpperCase() + op.slice(1);
+        tableHTML += "<tr><td>" + capOp + "</td><td>" + opStat.correct + "</td><td>" + opStat.total + "</td><td>" + accuracy + "</td><td>" + difficulty[op] + "</td></tr>";
+      }
+      tableHTML += "</table>";
+      opStatsDiv.innerHTML = tableHTML;
+      
+      // Also show a log of all questions answered.
+      let logHTML = "<table><tr><th>#</th><th>Question</th><th>Your Answer</th><th>Correct Answer</th><th>Result</th></tr>";
+      questionLog.forEach((q, index) => {
+        logHTML += "<tr>";
+        logHTML += "<td>" + (index+1) + "</td>";
+        logHTML += "<td>" + q.question + "</td>";
+        logHTML += "<td>" + q.userAnswer + "</td>";
+        logHTML += "<td>" + q.correctAnswer + "</td>";
+        logHTML += "<td>" + (q.correct ? "😊" : "😞") + "</td>";
+        logHTML += "</tr>";
+      });
+      logHTML += "</table>";
+      document.getElementById("questionLog").innerHTML = logHTML;
+      
+      document.getElementById("stats").classList.remove("hidden");
+    }
+
+    // Reset game state for a new game.
+    function resetGame(startBound) {
+      // Set initial difficulties from the starting boundary.
+      difficulty.addition = startBound;
+      difficulty.subtraction = startBound;
+      difficulty.multiplication = startBound;
+      difficulty.division = startBound;
+      
+      // Reset stats and the diff counters.
+      stats = {
+        addition: { correct: 0, total: 0, diffCounter: 0 },
+        subtraction: { correct: 0, total: 0, diffCounter: 0 },
+        multiplication: { correct: 0, total: 0, diffCounter: 0 },
+        division: { correct: 0, total: 0, diffCounter: 0 }
+      };
+      // Reset question log.
+      questionLog = [];
+      
+      // Hide stats area (if visible) and show game area.
+      document.getElementById("stats").classList.add("hidden");
+      document.getElementById("game").classList.remove("hidden");
+      gameActive = true;
+      generateQuestion();
+    }
+
+    // ---------------- Event Listeners ----------------
+    
+    // When the user clicks the Start Game button in the start modal...
+    document.getElementById("startGameBtn").addEventListener("click", () => {
+      let startInput = document.getElementById("startingBoundaryInput").value;
+      let startingBoundary = Number(startInput) || 10;
+      // Hide the start modal.
+      document.getElementById("startModal").classList.add("hidden");
+      resetGame(startingBoundary);
+    });
+    
+    // When the user clicks the Submit Answer button...
+    document.getElementById("submitAnswerBtn").addEventListener("click", checkAnswer);
+    document.getElementById("answerInput").addEventListener("keyup", function(e) {
+      if(e.key === "Enter") checkAnswer();
+    });
+    
+    // End Game button to stop playing and show stats.
+    document.getElementById("endGameBtn").addEventListener("click", showStatistics);
+    
+    // Play Again button (shown in stats view) to restart the game.
+    document.getElementById("playAgainBtn").addEventListener("click", () => {
+      // Show the start modal again so that the player can select a new starting boundary.
+      document.getElementById("startModal").classList.remove("hidden");
+      document.getElementById("stats").classList.add("hidden");
+    });
+    
+    // (Optional) Let the player press Esc to end game.
+    document.addEventListener("keyup", function(e) {
+      if(e.key === "Escape" && gameActive) {
+        showStatistics();
+      }
+    });
+    
+    // On page load, the start modal is shown. The game area remains hidden until the player clicks "Start Game".
+  </script>
+</body>
+</html>

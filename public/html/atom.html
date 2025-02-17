@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Atom Building Blocks Illustration</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f0f0f0; }
+    canvas { background: #fff; border: 1px solid #ccc; margin-top: 20px; }
+    .description { max-width: 800px; margin: 20px auto; text-align: left; background: #fff; padding: 20px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Atom Building Blocks Illustration</h1>
+  <canvas id="atomCanvas" width="800" height="600"></canvas>
+  
+  <div class="description">
+    <h2>What is Depicted?</h2>
+    <p>
+      This illustration shows an atom in a modern “layered” view. At the core is the atomic nucleus, portrayed as a cluster of protons and neutrons:
+    </p>
+    <ul>
+      <li>
+        <strong>Protons</strong>: Shown as red circles. Protons are positively charged particles. Modern physics tells us that they are not elementary particles; rather, they are made up of three quarks bound together by the strong force.
+      </li>
+      <li>
+        <strong>Neutrons</strong>: Shown as blue circles. Neutrons are electrically neutral but, like protons, are made up of three quarks. They stabilize the nucleus through the interplay of nuclear forces.
+      </li>
+    </ul>
+    <p>
+      Surrounding the nucleus is the electron “cloud”. Instead of fixed orbits as in the early Bohr model, electrons are best understood as being described by quantum mechanical probability distributions. In our illustration, semi-transparent elliptical paths suggest the regions where electrons are likely to be found.
+    </p>
+    <p>
+      Note: While our picture uses the “orbital” metaphor for clarity, the actual quantum mechanical electron cloud has a more complex structure described by wavefunctions that sometimes have no sharp boundaries.
+    </p>
+    <p>
+      This diagram is a simplified visual metaphor designed to capture the key elements of atomic structure as understood today.
+    </p>
+  </div>
+  
+  <script>
+    // Get the canvas element and drawing context
+    const canvas = document.getElementById('atomCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Center of the canvas (nucleus center)
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    // Helper functions
+    function drawCircle(x, y, radius, color, opacity=1.0) {
+      ctx.save();
+      ctx.globalAlpha = opacity;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw the nucleus – a cluster of protons and neutrons
+    // For our example, we will depict an average light nucleus, e.g. Carbon-12,
+    // though we simply place 6 “protons” and 6 “neutrons” randomly in a small region.
+    const nucleusRadius = 40; // control nucleus size
+    const numProtons = 6;
+    const numNeutrons = 6;
+    const nucleusParticles = [];
+
+    // Generate positions for protons and neutrons within a circle (nucleus)
+    function randomPointInCircle(radius) {
+      const t = 2 * Math.PI * Math.random();
+      const r = radius * Math.sqrt(Math.random());
+      return { x: r * Math.cos(t), y: r * Math.sin(t) };
+    }
+
+    // Store nucleus particles with type and coordinates
+    for (let i = 0; i < numProtons; i++) {
+      const pos = randomPointInCircle(nucleusRadius);
+      nucleusParticles.push({ x: cx + pos.x, y: cy + pos.y, type: 'proton' });
+    }
+    for (let i = 0; i < numNeutrons; i++) {
+      const pos = randomPointInCircle(nucleusRadius);
+      nucleusParticles.push({ x: cx + pos.x, y: cy + pos.y, type: 'neutron' });
+    }
+
+    // Draw nucleus particles
+    nucleusParticles.forEach(particle => {
+      if (particle.type === 'proton') {
+        drawCircle(particle.x, particle.y, 8, 'red');
+        // Optionally, indicate the substructure (quarks) with smaller dots:
+        // (In reality, quarks are confined to a very small region inside the proton.)
+        drawCircle(particle.x - 3, particle.y - 3, 2, 'darkred');
+        drawCircle(particle.x + 3, particle.y - 3, 2, 'darkred');
+        drawCircle(particle.x, particle.y + 3, 2, 'darkred');
+      } else if (particle.type === 'neutron') {
+        drawCircle(particle.x, particle.y, 8, 'blue');
+        // Draw approximate quark positions (not to scale)
+        drawCircle(particle.x - 3, particle.y - 3, 2, 'navy');
+        drawCircle(particle.x + 3, particle.y - 3, 2, 'navy');
+        drawCircle(particle.x, particle.y + 3, 2, 'navy');
+      }
+    });
+
+    // Draw electron probability clouds as fuzzy orbital rings.
+    // In a real atom, electrons do not travel in fixed orbits.
+    // Here we show 2 “electron orbitals” as semi-transparent elliptical rings.
+    function drawFuzzyOrbital(x, y, radiusX, radiusY, color) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      // Create a radial gradient to simulate a fuzzy border
+      let grad = ctx.createRadialGradient(x, y, radiusX * 0.8, x, y, radiusX);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = grad;
+      ctx.beginPath();
+      ctx.ellipse(x, y, radiusX, radiusY, 0, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Outer orbital - representing outer electron density cloud
+    drawFuzzyOrbital(cx, cy, 200, 140, 'green');
+    // Inner orbital - representing a lower energy electron distribution
+    drawFuzzyOrbital(cx, cy, 120, 90, 'orange');
+
+    // Optionally, add labels
+    ctx.font = '16px Arial';
+    ctx.fillStyle = 'black';
+    ctx.fillText('Nucleus', cx - 30, cy - nucleusRadius - 20);
+    ctx.fillText('Electron Cloud', cx + 150, cy - 100);
+
+    // Additional: indicate that electrons are point-like particles
+    // Here, draw a few small dots along the inner orbital to illustrate that electrons are detected as localized events.
+    const electronPositions = [];
+    for (let i = 0; i < 4; i++){
+      let angle = Math.random() * 2 * Math.PI;
+      let r = 120; // radius of inner orbital
+      electronPositions.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+    }
+    electronPositions.forEach(pos => {
+      drawCircle(pos.x, pos.y, 4, 'purple', 0.9);
+    });
+  </script>
+</body>
+</html>
