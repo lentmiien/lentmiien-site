@@ -2,12 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Paint Color Mixer</title>
+  <title>Paint Color Mixer with Sliders</title>
   <style>
     body {
       font-family: sans-serif;
       text-align: center;
       margin: 20px;
+    }
+    .colorGroup {
+      margin-bottom: 20px;
+      padding: 10px;
+      display: inline-block;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .colorGroup label {
+      display: block;
+      margin: 5px 0;
+    }
+    .slider {
+      width: 180px;
     }
     #mixer {
       position: relative;
@@ -22,27 +36,25 @@
       border-radius: 50%;
       border: 2px solid #333;
     }
-    /* Main circles (large) */
+    /* Main circles (60 x 60) */
     .main {
       width: 60px;
       height: 60px;
       line-height: 60px;
       font-weight: bold;
     }
-    /* Mixed circles (small) */
+    /* Mix circles (40 x 40) */
     .mix {
       width: 40px;
       height: 40px;
       font-size: 0.8em;
     }
-    /* Positioning – these numbers position the circles on the container */
+    /* Positioning – using the updated coordinates */
     /* Main circles: positions at 3 vertices of a triangle */
-    /* 60 x 60 */
     #main1 { top: 20px; left: 120px; }
     #main2 { top: 200px; left: 20px; }
     #main3 { top: 200px; left: 220px; }
-    /* Mix circles between main ones (placed near the midpoint) */
-    /* 40 x 40 */
+    /* Mix circles between main ones */
     #mix12 { top: 120px; left: 80px; }
     #mix23 { top: 210px; left: 130px; }
     #mix31 { top: 120px; left: 180px; }
@@ -51,14 +63,42 @@
   </style>
 </head>
 <body>
-  <h1>Paint Color Mixer</h1>
-  <p>Select three colors:</p>
-  <div>
-    <label>Color 1: <input type="color" id="color1" value="#0000ff"></label>
-    <label>Color 2: <input type="color" id="color2" value="#ffff00"></label>
-    <label>Color 3: <input type="color" id="color3" value="#ff0000"></label>
+  <h1>Paint Color Mixer with Sliders & Color Picker</h1>
+  <p>Select three colors (choose via the color picker or slide the red/green/blue bars):</p>
+
+  <!-- Color Selection for Color 1 -->
+  <div class="colorGroup">
+    <h3>Color 1</h3>
+    <label>Color Picker:
+      <input type="color" id="color1" value="#0000ff">
+    </label>
+    <label>Red: <input type="range" id="slider1_r" class="slider" min="0" max="255" value="0"></label>
+    <label>Green: <input type="range" id="slider1_g" class="slider" min="0" max="255" value="0"></label>
+    <label>Blue: <input type="range" id="slider1_b" class="slider" min="0" max="255" value="255"></label>
   </div>
-  <br>
+
+  <!-- Color Selection for Color 2 -->
+  <div class="colorGroup">
+    <h3>Color 2</h3>
+    <label>Color Picker:
+      <input type="color" id="color2" value="#ffff00">
+    </label>
+    <label>Red: <input type="range" id="slider2_r" class="slider" min="0" max="255" value="255"></label>
+    <label>Green: <input type="range" id="slider2_g" class="slider" min="0" max="255" value="255"></label>
+    <label>Blue: <input type="range" id="slider2_b" class="slider" min="0" max="255" value="0"></label>
+  </div>
+
+  <!-- Color Selection for Color 3 -->
+  <div class="colorGroup">
+    <h3>Color 3</h3>
+    <label>Color Picker:
+      <input type="color" id="color3" value="#ff0000">
+    </label>
+    <label>Red: <input type="range" id="slider3_r" class="slider" min="0" max="255" value="255"></label>
+    <label>Green: <input type="range" id="slider3_g" class="slider" min="0" max="255" value="0"></label>
+    <label>Blue: <input type="range" id="slider3_b" class="slider" min="0" max="255" value="0"></label>
+  </div>
+
   <div id="mixer">
     <!-- Main circles -->
     <div id="main1" class="circle main"></div>
@@ -86,6 +126,7 @@
         b: num & 255
       };
     }
+
     // Helper: Convert {r, g, b} to hex string
     function rgbToHex(rgb) {
       function comp(c) {
@@ -96,7 +137,7 @@
     }
 
     // --- RYB conversion functions for approximate paint-mixing simulation ---
-    // These functions expect color components in the range 0 to 1.
+    // Works in normalized 0–1 range.
     function rgbToRyb(rgb) {
       let r = rgb[0], g = rgb[1], b = rgb[2];
       // Remove the white component
@@ -120,6 +161,7 @@
       r += w; y += w; b += w;
       return [r, y, b];
     }
+
     function rybToRgb(ryb) {
       let r = ryb[0], y = ryb[1], b = ryb[2];
       // Remove white
@@ -143,16 +185,16 @@
       return [r, g, b];
     }
 
-    // Mix an array of colors (each expressed as a hex string) using the RYB “paint” mixing.
+    // Mix an array of colors (each expressed as a hex string) using the RYB “paint” mixing effect.
     function mixColors(colorHexArray) {
       const rybList = colorHexArray.map(function(hex) {
         const rgb = hexToRgb(hex);
-        // Normalize to 0–1
+        // normalize values to 0–1
         const rgbNorm = [rgb.r/255, rgb.g/255, rgb.b/255];
         return rgbToRyb(rgbNorm);
       });
       
-      // Average each channel in RYB space.
+      // Average in RYB space.
       let sum = [0,0,0];
       rybList.forEach(function(ryb) {
         sum[0] += ryb[0];
@@ -164,7 +206,7 @@
       
       // Convert back to RGB.
       const avgRgb = rybToRgb(avgRyb);
-      // Clamp to [0,1] then to [0,255]
+      // Clamp and scale to [0,255]
       const rgbFinal = {
           r: Math.min(255, Math.max(0, Math.round(avgRgb[0]*255))),
           g: Math.min(255, Math.max(0, Math.round(avgRgb[1]*255))),
@@ -172,10 +214,29 @@
       };
       return rgbToHex(rgbFinal);
     }
-
-    // Update all displayed circles.
+    
+    // --- Synchronization between color pickers and sliders ---
+    // For each color group, when a color picker changes, update the corresponding sliders
+    // and when a slider changes, update the corresponding color picker.
+    function updateSlidersFromPicker(colorId, sliderPrefix) {
+      const color = document.getElementById(colorId).value;
+      const rgb = hexToRgb(color);
+      document.getElementById(sliderPrefix + "_r").value = rgb.r;
+      document.getElementById(sliderPrefix + "_g").value = rgb.g;
+      document.getElementById(sliderPrefix + "_b").value = rgb.b;
+    }
+    
+    function updatePickerFromSliders(colorId, sliderPrefix) {
+      const r = document.getElementById(sliderPrefix + "_r").value;
+      const g = document.getElementById(sliderPrefix + "_g").value;
+      const b = document.getElementById(sliderPrefix + "_b").value;
+      const hex = rgbToHex({r: parseInt(r), g: parseInt(g), b: parseInt(b)});
+      document.getElementById(colorId).value = hex;
+    }
+    
+    // Update all circles with latest colors and mixes.
     function updateMix() {
-      // Get the three chosen colors.
+      // Get the three chosen colors from the pickers.
       const col1 = document.getElementById("color1").value;
       const col2 = document.getElementById("color2").value;
       const col3 = document.getElementById("color3").value;
@@ -185,7 +246,7 @@
       document.getElementById("main2").style.backgroundColor = col2;
       document.getElementById("main3").style.backgroundColor = col3;
       
-      // Mix for each pair.
+      // Mix each pair.
       const mix12 = mixColors([col1, col2]);
       const mix23 = mixColors([col2, col3]);
       const mix31 = mixColors([col3, col1]);
@@ -199,13 +260,36 @@
       document.getElementById("mix123").style.backgroundColor = mix123;
     }
     
-    // Set up event listeners.
-    document.getElementById("color1").addEventListener("input", updateMix);
-    document.getElementById("color2").addEventListener("input", updateMix);
-    document.getElementById("color3").addEventListener("input", updateMix);
+    // Set up event listeners for color pickers and sliders for each of the 3 color groups.
+    function setupColorGroup(colorId, sliderPrefix) {
+      // When the picker changes, update sliders and the mix.
+      document.getElementById(colorId).addEventListener("input", function() {
+        updateSlidersFromPicker(colorId, sliderPrefix);
+        updateMix();
+      });
+      
+      // For each slider, when changed, update the picker and the mix.
+      const sliders = ["_r", "_g", "_b"];
+      sliders.forEach(function(suffix) {
+        document.getElementById(sliderPrefix + suffix).addEventListener("input", function() {
+          updatePickerFromSliders(colorId, sliderPrefix);
+          updateMix();
+        });
+      });
+    }
     
-    // Initialize display.
-    updateMix();
+    // Initialize synchronization for all three color groups.
+    setupColorGroup("color1", "slider1");
+    setupColorGroup("color2", "slider2");
+    setupColorGroup("color3", "slider3");
+    
+    // Initialize slider positions from initial color picker values.
+    updateSlidersFromPicker("color1", "slider1");
+    updateSlidersFromPicker("color2", "slider2");
+    updateSlidersFromPicker("color3", "slider3");
+    
+    // Set up listeners to update the mix when any slider or picker changes.
+    updateMix(); // initial mix
   </script>
 </body>
 </html>
