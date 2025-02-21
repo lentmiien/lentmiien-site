@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Lava Lamp Visualization</title>
+    <style>
+      /* Remove default page margins and ensure the canvas fills the window */
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #000;
+      }
+      canvas {
+        display: block;
+      }
+      /* Position the UI elements on top of the canvas */
+      .ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 10;
+        font-family: sans-serif;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ui">
+      Lava Lamp Color: <input type="color" id="colorPicker" value="#FF4500" />
+    </div>
+    <canvas id="canvas"></canvas>
+    <script>
+      // Get canvas and context, and set canvas size to the window's dimensions.
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      // Get the color picker and set the initial blob color.
+      const colorPicker = document.getElementById('colorPicker');
+      let blobColor = colorPicker.value;
+      colorPicker.addEventListener('input', (e) => {
+        blobColor = e.target.value;
+      });
+
+      // Settings for our animated blob.
+      let time = 0;
+      const numPoints = 32; // How many points make up the blob’s perimeter.
+      const phaseOffsets = [];
+      // Pre-initialize random offsets for each point; they add a little "randomness"
+      for (let i = 0; i < numPoints; i++) {
+        phaseOffsets.push(Math.random() * 1000);
+      }
+
+      function animate() {
+        time += 0.02;
+
+        // Clear the canvas each frame.
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Choose a center position for our lava blob.
+        let centerX = canvas.width / 2;
+        // Position the blob a bit below center to evoke a lava-lamp shape.
+        let centerY = canvas.height * 0.75;
+        // Base radius is a fraction of the smaller canvas dimension.
+        const baseRadius = Math.min(canvas.width, canvas.height) * 0.15;
+
+        // Begin drawing the shape.
+        ctx.beginPath();
+        for (let i = 0; i <= numPoints; i++) {
+          const angle = (i / numPoints) * Math.PI * 2;
+          // Compute a little variation in the radius using a sine function.
+          // Multiplying the angle by 3 gives extra undulation.
+          const radiusVariation = Math.sin(angle * 3 + time + phaseOffsets[i % numPoints]) * (baseRadius * 0.25);
+          // The effective radius at this point.
+          const r = baseRadius + radiusVariation;
+          // Compute x and y based on the adjusted radius.
+          const x = centerX + Math.cos(angle) * r;
+          const y = centerY + Math.sin(angle) * r;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+
+        // Create a radial gradient fill so that the center is a solid color
+        // and it smoothly darkens at the edges—mimicking a glowing blob.
+        const gradient = ctx.createRadialGradient(
+          centerX,
+          centerY,
+          baseRadius * 0.2,
+          centerX,
+          centerY,
+          baseRadius
+        );
+        gradient.addColorStop(0, blobColor);
+        gradient.addColorStop(1, 'black');
+        ctx.fillStyle = gradient;
+
+        // Optional: add some glow by using a shadow.
+        ctx.shadowColor = blobColor;
+        ctx.shadowBlur = 20;
+
+        // Fill the blob.
+        ctx.fill();
+
+        // Reset shadow settings (so they don’t affect other drawings).
+        ctx.shadowBlur = 0;
+
+        // Request the next frame.
+        requestAnimationFrame(animate);
+      }
+
+      // Kick off the animation.
+      animate();
+    </script>
+  </body>
+</html>
