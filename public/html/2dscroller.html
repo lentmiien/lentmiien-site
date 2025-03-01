@@ -93,6 +93,188 @@
     </div>
     
     <script>
+      // Levels
+      const LEVELS = [
+        // Level 0 – basic level with one upgrade.
+        {
+          platforms: [
+            { x: 0, y: 550, width: 800, height: 50 },
+            { x: 200, y: 450, width: 150, height: 20 },
+            { x: 450, y: 400, width: 150, height: 20 },
+            { x: 600, y: 300, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 230, y: 410, width: 20, height: 20 },
+            { type: "star", x: 480, y: 360, width: 20, height: 20 },
+            { type: "star", x: 700, y: 260, width: 20, height: 20 },
+            { type: "gem", subtype: "doubleJump", x: 700, y: 500, width: 20, height: 20, color: "#00f" },
+          ],
+        },
+        // Level 1 – basic level with gravityBoots upgrade.
+        {
+          platforms: [
+            { x: 0, y: 750, width: 800, height: 50 },
+            { x: 100, y: 650, width: 100, height: 20 },
+            { x: 250, y: 550, width: 100, height: 20 },
+            { x: 400, y: 450, width: 100, height: 20 },
+            { x: 550, y: 550, width: 100, height: 20 },
+            { x: 700, y: 650, width: 100, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 120, y: 610, width: 20, height: 20 },
+            { type: "star", x: 270, y: 510, width: 20, height: 20 },
+            { type: "star", x: 420, y: 410, width: 20, height: 20 },
+            { type: "star", x: 570, y: 510, width: 20, height: 20 },
+            { type: "star", x: 720, y: 610, width: 20, height: 20 },
+            { type: "gem", subtype: "gravityBoots", x: 720, y: 700, width: 20, height: 20, color: "#800080" },
+          ],
+        },
+        // Level 2 – no upgrades, only stars.
+        {
+          platforms: [
+            { x: 0, y: 600, width: 800, height: 50 },
+            { x: 150, y: 540, width: 100, height: 20 },
+            { x: 350, y: 490, width: 100, height: 20 },
+            { x: 550, y: 540, width: 100, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 170, y: 460, width: 20, height: 20 },
+            { type: "star", x: 370, y: 410, width: 20, height: 20 },
+            { type: "star", x: 570, y: 460, width: 20, height: 20 },
+          ],
+        },
+        // Level 3 – multiple upgrades available on the floor.
+        {
+          platforms: [
+            { x: 0, y: 550, width: 800, height: 50 },
+            { x: 300, y: 450, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "gem", subtype: "doubleJump", x: 100, y: 530, width: 20, height: 20, color: "#00f" },
+            { type: "gem", subtype: "extraSpeed", x: 600, y: 530, width: 20, height: 20, color: "#0f0" },
+          ],
+        },
+        // Level 4 – platforms at various heights.
+        {
+          platforms: [
+            { x: 0, y: 700, width: 800, height: 50 },
+            { x: 200, y: 600, width: 150, height: 20 },
+            { x: 450, y: 550, width: 150, height: 20 },
+            { x: 300, y: 450, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 220, y: 560, width: 20, height: 20 },
+            { type: "gem", subtype: "gravityBoots", x: 20, y: 670, width: 20, height: 20, color: "#800080" },
+          ],
+        },
+        // Level 5 – a level with no upgrades and several stars.
+        {
+          platforms: [
+            { x: 0, y: 500, width: 800, height: 50 },
+            { x: 100, y: 440, width: 150, height: 20 },
+            { x: 300, y: 390, width: 150, height: 20 },
+            { x: 500, y: 340, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 120, y: 360, width: 20, height: 20 },
+            { type: "star", x: 320, y: 310, width: 20, height: 20 },
+            { type: "star", x: 520, y: 260, width: 20, height: 20 },
+          ],
+        },
+        // Level 6 – two rows of platforms with a doubleJump upgrade.
+        {
+          platforms: [
+            { x: 0, y: 650, width: 800, height: 50 },
+            { x: 150, y: 550, width: 100, height: 20 },
+            { x: 350, y: 500, width: 100, height: 20 },
+            { x: 550, y: 550, width: 100, height: 20 },
+            { x: 300, y: 400, width: 200, height: 20 },
+          ],
+          collectibles: [
+            { type: "gem", subtype: "doubleJump", x: 50, y: 630, width: 20, height: 20, color: "#00f" },
+            { type: "star", x: 370, y: 460, width: 20, height: 20 },
+          ],
+        },
+        // Level 7 – platforms with an extraSpeed upgrade.
+        {
+          platforms: [
+            { x: 0, y: 600, width: 800, height: 50 },
+            { x: 250, y: 540, width: 100, height: 20 },
+            { x: 450, y: 490, width: 100, height: 20 },
+          ],
+          collectibles: [
+            { type: "gem", subtype: "extraSpeed", x: 700, y: 580, width: 20, height: 20, color: "#0f0" },
+            { type: "star", x: 270, y: 460, width: 20, height: 20 },
+            { type: "star", x: 470, y: 410, width: 20, height: 20 },
+          ],
+        },
+        // Level 8 – a tall level with a long vertical extent.
+        {
+          platforms: [
+            { x: 0, y: 1000, width: 800, height: 50 },
+            { x: 100, y: 900, width: 150, height: 20 },
+            { x: 300, y: 800, width: 150, height: 20 },
+            { x: 500, y: 700, width: 150, height: 20 },
+            { x: 200, y: 600, width: 150, height: 20 },
+            { x: 400, y: 500, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 120, y: 860, width: 20, height: 20 },
+            { type: "star", x: 320, y: 760, width: 20, height: 20 },
+            { type: "star", x: 520, y: 660, width: 20, height: 20 },
+            { type: "gem", subtype: "gravityBoots", x: 20, y: 980, width: 20, height: 20, color: "#800080" },
+          ],
+        },
+        // Level 9 – moderate level with two upgrades on the floor.
+        {
+          platforms: [
+            { x: 0, y: 650, width: 800, height: 50 },
+            { x: 200, y: 600, width: 150, height: 20 },
+            { x: 500, y: 550, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "gem", subtype: "doubleJump", x: 50, y: 630, width: 20, height: 20, color: "#00f" },
+            { type: "gem", subtype: "extraSpeed", x: 750, y: 630, width: 20, height: 20, color: "#0f0" },
+            { type: "star", x: 230, y: 560, width: 20, height: 20 },
+          ],
+        },
+        // Level 10 – a simple, single-platform level with several stars.
+        {
+          platforms: [
+            { x: 0, y: 550, width: 800, height: 50 },
+          ],
+          collectibles: [
+            { type: "star", x: 150, y: 510, width: 20, height: 20 },
+            { type: "star", x: 300, y: 510, width: 20, height: 20 },
+            { type: "star", x: 450, y: 510, width: 20, height: 20 },
+            { type: "star", x: 600, y: 510, width: 20, height: 20 },
+            { type: "gem", subtype: "gravityBoots", x: 20, y: 530, width: 20, height: 20, color: "#800080" },
+          ],
+        },
+        // Level 11 – a particularly tall level to test long-level scrolling and upgrade pacing.
+        {
+          platforms: [
+            { x: 0, y: 1200, width: 800, height: 50 },
+            { x: 120, y: 1100, width: 150, height: 20 },
+            { x: 300, y: 1000, width: 150, height: 20 },
+            { x: 480, y: 900, width: 150, height: 20 },
+            { x: 660, y: 800, width: 150, height: 20 },
+            { x: 300, y: 700, width: 150, height: 20 },
+            { x: 100, y: 600, width: 150, height: 20 },
+            { x: 300, y: 500, width: 350, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 140, y: 1060, width: 20, height: 20 },
+            { type: "star", x: 320, y: 960, width: 20, height: 20 },
+            { type: "gem", subtype: "doubleJump", x: 500, y: 1150, width: 20, height: 20, color: "#00f" },
+            { type: "star", x: 680, y: 760, width: 20, height: 20 },
+            { type: "gem", subtype: "extraSpeed", x: 320, y: 660, width: 20, height: 20, color: "#0f0" },
+            { type: "star", x: 120, y: 560, width: 20, height: 20 },
+            { type: "star", x: 520, y: 460, width: 20, height: 20 },
+          ],
+        },
+      ];
+
       // Get canvas and score display.
       const canvas = document.getElementById("gameCanvas");
       const ctx = canvas.getContext("2d");
@@ -227,42 +409,7 @@
       
       // Levels data.
       // Note: Levels can be made taller than the canvas, so vertical scrolling will show the extra space.
-      const levels = [
-        {
-          platforms: [
-            { x: 0, y: 550, width: 800, height: 50 },
-            { x: 200, y: 450, width: 150, height: 20 },
-            { x: 450, y: 400, width: 150, height: 20 },
-            // A taller layout – extra platforms higher up.
-            { x: 600, y: 300, width: 150, height: 20 },
-          ],
-          collectibles: [
-            { type: "star", x: 230, y: 410, width: 20, height: 20 },
-            { type: "star", x: 480, y: 360, width: 20, height: 20 },
-            { type: "star", x: 700, y: 260, width: 20, height: 20 },
-            { type: "gem", subtype: "doubleJump", x: 700, y: 500, width: 20, height: 20, color: "#00f" },
-          ],
-        },
-        {
-          platforms: [
-            { x: 0, y: 750, width: 800, height: 50 },
-            { x: 100, y: 650, width: 100, height: 20 },
-            { x: 250, y: 550, width: 100, height: 20 },
-            { x: 400, y: 450, width: 100, height: 20 },
-            { x: 550, y: 550, width: 100, height: 20 },
-            { x: 700, y: 650, width: 100, height: 20 },
-          ],
-          collectibles: [
-            { type: "star", x: 120, y: 610, width: 20, height: 20 },
-            { type: "star", x: 270, y: 510, width: 20, height: 20 },
-            { type: "star", x: 420, y: 410, width: 20, height: 20 },
-            { type: "star", x: 570, y: 510, width: 20, height: 20 },
-            { type: "star", x: 720, y: 610, width: 20, height: 20 },
-            { type: "gem", subtype: "gravityBoots", x: 720, y: 700, width: 20, height: 20, color: "#800080" },
-          ],
-        },
-      ];
-      
+      const levels = JSON.parse(JSON.stringify(LEVELS));
       let level = levels[currentLevel];
       
       // Rectangle collision helper.
@@ -317,41 +464,10 @@
       
       // Reset levels to their original state (i.e. collectibles available again)
       function resetLevels() {
-        // Deep clone the levels data or simply reset each level as required.
-        // For simplicity we'll recreate the levels array. In a more complex game, you may want to
-        // store an originalLevels definition and deep-clone it.
-        levels[0] = {
-          platforms: [
-            { x: 0, y: 550, width: 800, height: 50 },
-            { x: 200, y: 450, width: 150, height: 20 },
-            { x: 450, y: 400, width: 150, height: 20 },
-            { x: 600, y: 300, width: 150, height: 20 },
-          ],
-          collectibles: [
-            { type: "star", x: 230, y: 410, width: 20, height: 20 },
-            { type: "star", x: 480, y: 360, width: 20, height: 20 },
-            { type: "star", x: 700, y: 260, width: 20, height: 20 },
-            { type: "gem", subtype: "doubleJump", x: 700, y: 500, width: 20, height: 20, color: "#00f" },
-          ],
-        };
-        levels[1] = {
-          platforms: [
-            { x: 0, y: 750, width: 800, height: 50 },
-            { x: 100, y: 650, width: 100, height: 20 },
-            { x: 250, y: 550, width: 100, height: 20 },
-            { x: 400, y: 450, width: 100, height: 20 },
-            { x: 550, y: 550, width: 100, height: 20 },
-            { x: 700, y: 650, width: 100, height: 20 },
-          ],
-          collectibles: [
-            { type: "star", x: 120, y: 610, width: 20, height: 20 },
-            { type: "star", x: 270, y: 510, width: 20, height: 20 },
-            { type: "star", x: 420, y: 410, width: 20, height: 20 },
-            { type: "star", x: 570, y: 510, width: 20, height: 20 },
-            { type: "star", x: 720, y: 610, width: 20, height: 20 },
-            { type: "gem", subtype: "gravityBoots", x: 720, y: 700, width: 20, height: 20, color: "#800080" },
-          ],
-        };
+        // Create a deep copy of the constant LEVELS array.
+        levels = JSON.parse(JSON.stringify(LEVELS));
+        currentLevel = 0;
+        level = levels[currentLevel];
       }
       
       function update() {
@@ -467,9 +583,7 @@
       restartBtn.addEventListener("click", function() {
         popupEl.style.display = "none";
         score = 0;
-        currentLevel = 0;
         resetLevels();
-        level = levels[currentLevel];
         resetPlayer();
       });
       
