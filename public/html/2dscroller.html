@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>The Adventures of Little Pixel Hero</title>
+    <style>
+      body {
+        margin: 0;
+        background-color: #eef;
+        overflow: hidden;
+      }
+      #gameCanvas {
+        display: block;
+        margin: auto;
+        background-color: #a0d8f1; /* light sky-blue */
+        border: 2px solid #333;
+      }
+      #ui {
+        text-align: center;
+        font-family: sans-serif;
+        font-size: 20px;
+      }
+      /* Touch Controls */
+      #touch-controls {
+        position: fixed;
+        bottom: 20px;
+        width: 100%;
+        pointer-events: none;
+      }
+      .touch-button {
+        pointer-events: auto;
+        position: absolute;
+        background: rgba(255, 255, 255, 0.8);
+        border: 2px solid #333;
+        border-radius: 10px;
+        font-size: 20px;
+        padding: 10px;
+      }
+      #leftBtn {
+        left: 20px;
+      }
+      #rightBtn {
+        left: 120px;
+      }
+      #jumpBtn {
+        right: 20px;
+      }
+      /* Game Complete Popup */
+      #gameCompletePopup {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+      #gameCompletePopup > div {
+        background: #fff;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        font-family: sans-serif;
+      }
+      #restartBtn {
+        margin-top: 20px;
+        padding: 10px 20px;
+        font-size: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui">Score: <span id="score">0</span></div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <!-- On-screen Touch Controls -->
+    <div id="touch-controls">
+      <button id="leftBtn" class="touch-button">←</button>
+      <button id="rightBtn" class="touch-button">→</button>
+      <button id="jumpBtn" class="touch-button">Jump</button>
+    </div>
+    
+    <!-- Game Complete Popup Overlay -->
+    <div id="gameCompletePopup">
+      <div>
+        <h2>Game Complete!</h2>
+        <p>Your Score: <span id="finalScore"></span></p>
+        <button id="restartBtn">Restart</button>
+      </div>
+    </div>
+    
+    <script>
+      // Get canvas and score display.
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const scoreEl = document.getElementById("score");
+      const popupEl = document.getElementById("gameCompletePopup");
+      const finalScoreEl = document.getElementById("finalScore");
+      const restartBtn = document.getElementById("restartBtn");
+    
+      // Global game variables.
+      let score = 0;
+      let currentLevel = 0;
+      const gravity = 0.6;
+    
+      // A simple camera for vertical scrolling (only vertical offset is applied).
+      let cameraY = 0;
+    
+      // Input object for directional controls.
+      const keys = {
+        left: false,
+        right: false,
+      };
+      
+      // jumpTriggered ensures we only process one jump per press.
+      let jumpTriggered = false;
+      
+      // Jump function – called from discrete jump events.
+      function jump() {
+        if(player.canJump) {
+          player.vy = player.jumpStrength;
+          player.canJump = false;
+        } else if(player.upgrades.doubleJump && !player.hasDoubleJumped) {
+          player.vy = player.jumpStrength;
+          player.hasDoubleJumped = true;
+        }
+      }
+      
+      // Keyboard Listeners – only process jump on keydown when jumpTriggered is false.
+      document.addEventListener("keydown", function(e) {
+        if(e.key === "ArrowLeft") keys.left = true;
+        if(e.key === "ArrowRight") keys.right = true;
+        if((e.key === "ArrowUp" || e.key === " ") && !jumpTriggered) {
+          jump();
+          jumpTriggered = true;
+        }
+      });
+      document.addEventListener("keyup", function(e) {
+        if(e.key === "ArrowLeft") keys.left = false;
+        if(e.key === "ArrowRight") keys.right = false;
+        if(e.key === "ArrowUp" || e.key === " ") {
+          jumpTriggered = false;
+        }
+      });
+      
+      // Touch Controls:
+      // Left Button
+      const leftBtn = document.getElementById('leftBtn');
+      leftBtn.addEventListener("touchstart", function(e) {
+        e.preventDefault();
+        keys.left = true;
+      });
+      leftBtn.addEventListener("touchend", function(e) {
+        e.preventDefault();
+        keys.left = false;
+      });
+      leftBtn.addEventListener("mousedown", function(e) {
+        keys.left = true;
+      });
+      leftBtn.addEventListener("mouseup", function(e) {
+        keys.left = false;
+      });
+      
+      // Right Button
+      const rightBtn = document.getElementById('rightBtn');
+      rightBtn.addEventListener("touchstart", function(e) {
+        e.preventDefault();
+        keys.right = true;
+      });
+      rightBtn.addEventListener("touchend", function(e) {
+        e.preventDefault();
+        keys.right = false;
+      });
+      rightBtn.addEventListener("mousedown", function(e) {
+        keys.right = true;
+      });
+      rightBtn.addEventListener("mouseup", function(e) {
+        keys.right = false;
+      });
+      
+      // Jump Button – process a jump only on fresh press.
+      const jumpBtn = document.getElementById('jumpBtn');
+      jumpBtn.addEventListener("touchstart", function(e) {
+        e.preventDefault();
+        if(!jumpTriggered) {
+          jump();
+          jumpTriggered = true;
+        }
+      });
+      jumpBtn.addEventListener("touchend", function(e) {
+        e.preventDefault();
+        jumpTriggered = false;
+      });
+      jumpBtn.addEventListener("mousedown", function(e) {
+        if(!jumpTriggered) {
+          jump();
+          jumpTriggered = true;
+        }
+      });
+      jumpBtn.addEventListener("mouseup", function(e) {
+        jumpTriggered = false;
+      });
+      
+      // The Player object.
+      const player = {
+        x: 50,
+        y: 500,
+        width: 30,
+        height: 30,
+        color: "#f00",
+        vx: 0,
+        vy: 0,
+        speed: 4,
+        jumpStrength: -10,
+        canJump: false,
+        // Upgrades are now reset for each level.
+        upgrades: {
+          doubleJump: false,
+          gravityBoots: false,
+          extraSpeed: false,
+        },
+        hasDoubleJumped: false,
+      };
+      
+      // Levels data.
+      // Note: Levels can be made taller than the canvas, so vertical scrolling will show the extra space.
+      const levels = [
+        {
+          platforms: [
+            { x: 0, y: 550, width: 800, height: 50 },
+            { x: 200, y: 450, width: 150, height: 20 },
+            { x: 450, y: 400, width: 150, height: 20 },
+            // A taller layout – extra platforms higher up.
+            { x: 600, y: 300, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 230, y: 410, width: 20, height: 20 },
+            { type: "star", x: 480, y: 360, width: 20, height: 20 },
+            { type: "star", x: 700, y: 260, width: 20, height: 20 },
+            { type: "gem", subtype: "doubleJump", x: 700, y: 500, width: 20, height: 20, color: "#00f" },
+          ],
+        },
+        {
+          platforms: [
+            { x: 0, y: 750, width: 800, height: 50 },
+            { x: 100, y: 650, width: 100, height: 20 },
+            { x: 250, y: 550, width: 100, height: 20 },
+            { x: 400, y: 450, width: 100, height: 20 },
+            { x: 550, y: 550, width: 100, height: 20 },
+            { x: 700, y: 650, width: 100, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 120, y: 610, width: 20, height: 20 },
+            { type: "star", x: 270, y: 510, width: 20, height: 20 },
+            { type: "star", x: 420, y: 410, width: 20, height: 20 },
+            { type: "star", x: 570, y: 510, width: 20, height: 20 },
+            { type: "star", x: 720, y: 610, width: 20, height: 20 },
+            { type: "gem", subtype: "gravityBoots", x: 720, y: 700, width: 20, height: 20, color: "#800080" },
+          ],
+        },
+      ];
+      
+      let level = levels[currentLevel];
+      
+      // Rectangle collision helper.
+      function rectIntersect(a, b) {
+        return (
+          a.x < b.x + b.width &&
+          a.x + a.width > b.x &&
+          a.y < b.y + b.height &&
+          a.y + a.height > b.y
+        );
+      }
+      
+      // Helper to draw a rectangle with vertical camera adjustment.
+      function drawRect(obj) {
+        ctx.fillStyle = obj.color || "#333";
+        ctx.fillRect(obj.x, obj.y - cameraY, obj.width, obj.height);
+      }
+      
+      // Draw a star as a triangle.
+      function drawStar(item) {
+        ctx.fillStyle = "#ff0";
+        ctx.beginPath();
+        ctx.moveTo(item.x + item.width/2, item.y - cameraY);
+        ctx.lineTo(item.x, item.y + item.height - cameraY);
+        ctx.lineTo(item.x + item.width, item.y + item.height - cameraY);
+        ctx.closePath();
+        ctx.fill();
+      }
+      
+      // Draw a gem as a circle.
+      function drawGem(item) {
+        ctx.fillStyle = item.color || "#0f0";
+        ctx.beginPath();
+        ctx.arc(item.x + item.width/2, item.y + item.height/2 - cameraY, item.width/2, 0, Math.PI*2);
+        ctx.fill();
+      }
+      
+      // Reset player state and position when a level begins.
+      function resetPlayer() {
+        player.x = 50;
+        // For this demo, assume the player always starts near the bottom of the level.
+        player.y = level.platforms[0].y - player.height;
+        player.vx = 0;
+        player.vy = 0;
+        player.canJump = false;
+        player.hasDoubleJumped = false;
+        // Reset upgrades when a new level is started.
+        player.upgrades.doubleJump = false;
+        player.upgrades.gravityBoots = false;
+        player.upgrades.extraSpeed = false;
+      }
+      
+      // Reset levels to their original state (i.e. collectibles available again)
+      function resetLevels() {
+        // Deep clone the levels data or simply reset each level as required.
+        // For simplicity we'll recreate the levels array. In a more complex game, you may want to
+        // store an originalLevels definition and deep-clone it.
+        levels[0] = {
+          platforms: [
+            { x: 0, y: 550, width: 800, height: 50 },
+            { x: 200, y: 450, width: 150, height: 20 },
+            { x: 450, y: 400, width: 150, height: 20 },
+            { x: 600, y: 300, width: 150, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 230, y: 410, width: 20, height: 20 },
+            { type: "star", x: 480, y: 360, width: 20, height: 20 },
+            { type: "star", x: 700, y: 260, width: 20, height: 20 },
+            { type: "gem", subtype: "doubleJump", x: 700, y: 500, width: 20, height: 20, color: "#00f" },
+          ],
+        };
+        levels[1] = {
+          platforms: [
+            { x: 0, y: 750, width: 800, height: 50 },
+            { x: 100, y: 650, width: 100, height: 20 },
+            { x: 250, y: 550, width: 100, height: 20 },
+            { x: 400, y: 450, width: 100, height: 20 },
+            { x: 550, y: 550, width: 100, height: 20 },
+            { x: 700, y: 650, width: 100, height: 20 },
+          ],
+          collectibles: [
+            { type: "star", x: 120, y: 610, width: 20, height: 20 },
+            { type: "star", x: 270, y: 510, width: 20, height: 20 },
+            { type: "star", x: 420, y: 410, width: 20, height: 20 },
+            { type: "star", x: 570, y: 510, width: 20, height: 20 },
+            { type: "star", x: 720, y: 610, width: 20, height: 20 },
+            { type: "gem", subtype: "gravityBoots", x: 720, y: 700, width: 20, height: 20, color: "#800080" },
+          ],
+        };
+      }
+      
+      function update() {
+        // Horizontal movement using keys.left/right.
+        if (keys.left) {
+          player.vx = -player.speed;
+        } else if (keys.right) {
+          player.vx = player.speed;
+        } else {
+          player.vx = 0;
+        }
+        
+        // Apply gravity — if the player has the gravity boots upgrade, gravity is reduced.
+        let appliedGravity = player.upgrades.gravityBoots ? gravity * 0.5 : gravity;
+        player.vy += appliedGravity;
+        
+        // Update the player's position.
+        player.x += player.vx;
+        player.y += player.vy;
+        
+        // Prevent the player from leaving the screen horizontally.
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+        
+        // Collision detection with platforms.
+        player.canJump = false;
+        for(let plat of level.platforms){
+          const playerRect = { x: player.x, y: player.y, width: player.width, height: player.height };
+          if(rectIntersect(playerRect, plat)){
+            // Land on top of the platform.
+            if(player.vy >= 0 && player.y + player.height - player.vy <= plat.y) {
+              player.y = plat.y - player.height;
+              player.vy = 0;
+              player.canJump = true;
+              player.hasDoubleJumped = false;
+            }
+          }
+        }
+        
+        // Reset if the player falls off the level.
+        if(player.y - cameraY > canvas.height){
+          resetPlayer();
+          // Also reset the camera to start at the level’s bottom.
+          cameraY = level.platforms[0].y - canvas.height;
+        }
+        
+        // Check for collectible collisions.
+        for(let i = level.collectibles.length - 1; i >= 0; i--){
+          let item = level.collectibles[i];
+          const itemRect = { x: item.x, y: item.y, width: item.width, height: item.height };
+          if(rectIntersect(player, itemRect)){
+            if(item.type === "star"){
+              score += 10;
+            } else if(item.type === "gem"){
+              if(item.subtype === "doubleJump"){
+                player.upgrades.doubleJump = true;
+              } else if(item.subtype === "gravityBoots"){
+                player.upgrades.gravityBoots = true;
+              }
+            }
+            level.collectibles.splice(i, 1);
+          }
+        }
+        
+        // Advance to the next level if all collectibles have been gathered.
+        if(level.collectibles.length === 0){
+          currentLevel++;
+          if(currentLevel < levels.length){
+            level = levels[currentLevel];
+            resetPlayer();
+            // Optionally you can display a nonintrusive on-screen message here.
+          } else {
+            // Game complete – display the popup overlay.
+            finalScoreEl.innerText = score;
+            popupEl.style.display = "flex";
+          }
+        }
+        
+        // Update vertical camera: center the view roughly on the player's y, clamped to 0.
+        cameraY = player.y - canvas.height/2;
+        if(cameraY < 0) cameraY = 0;
+      }
+      
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw platforms.
+        for(let plat of level.platforms){
+          drawRect({ x: plat.x, y: plat.y, width: plat.width, height: plat.height, color: "#654321" });
+        }
+        
+        // Draw collectibles.
+        for(let item of level.collectibles){
+          if(item.type === "star"){
+            drawStar(item);
+          } else if(item.type === "gem"){
+            drawGem(item);
+          }
+        }
+        
+        // Draw the player.
+        drawRect(player);
+        scoreEl.innerText = score;
+      }
+      
+      function gameLoop(){
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+      }
+      
+      // Restart the game from scratch.
+      restartBtn.addEventListener("click", function() {
+        popupEl.style.display = "none";
+        score = 0;
+        currentLevel = 0;
+        resetLevels();
+        level = levels[currentLevel];
+        resetPlayer();
+      });
+      
+      // Start the game.
+      resetPlayer();
+      gameLoop();
+    </script>
+  </body>
+</html>
