@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watermelon Game – Falling Pieces Version</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* The game board: a fixed-size box centered in the viewport */
+      #gameBoard {
+        position: relative;
+        background: #e0e0e0;
+        margin: 20px auto;
+        border: 2px solid #555;
+        width: 360px;
+        height: 600px;
+        overflow: hidden;
+      }
+      /* Each circle is an absolutely positioned div */
+      .circle {
+        position: absolute;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        user-select: none;
+        touch-action: none;
+      }
+      /* The "next piece" preview at the top (inside the board) */
+      #nextPiece {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        background: rgba(255,255,255,0.8);
+        border-bottom: 1px solid #aaa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+      }
+      /* Score board above the board */
+      #scoreBoard {
+        text-align: center;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scoreBoard">
+      Score: <span id="score">0</span> | High Score (this session):
+      <span id="highScore">0</span>
+    </div>
+    <div id="gameBoard">
+      <div id="nextPiece">Drag left/right then release to drop</div>
+    </div>
+
+    <script>
+      /**********************************
+       SETTINGS & UTILITY FUNCTIONS
+      **********************************/
+      const board = document.getElementById("gameBoard");
+      const scoreEl = document.getElementById("score");
+      const highScoreEl = document.getElementById("highScore");
+      const nextPieceEl = document.getElementById("nextPiece");
+      
+      // Board dimensions.
+      const boardWidth = board.clientWidth;
+      const boardHeight = board.clientHeight;
+
+      // Physics parameters.
+      const gravity = 0.5;          // Constant gravitational acceleration (px/frame²)
+      const friction = 0.98;        // Damping factor for velocities after collisions.
+      const bounceDamping = 0.5;    // Energy loss on collision with boundaries.
+
+      // Base diameter for a value=1 circle.
+      const baseDiameter = 50;
+      
+      // Define colors for circle values.
+      const valueColors = {
+        1: "#66BB6A",
+        2: "#43A047",
+        3: "#2E7D32",
+        4: "#1B5E20",
+        5: "#0D3B12"
+      };
+
+      // Score.
+      let score = 0;
+      let highScore = sessionStorage.getItem("highScore") 
+                     ? parseInt(sessionStorage.getItem("highScore"))
+                     : 0;
+      scoreEl.textContent = score;
+      highScoreEl.textContent = highScore;
+
+      // Utility: get a random integer in [min, max]
+      function randInt(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      /**********************************
+       GAME STATE & OBJECTS
+      **********************************/
+      // Array storing all circles.
+      // Each circle object:
+      // { id, value, x, y, vx, vy, radius, diameter, element, dragging (bool), dropped (bool) }
+      let circles = [];
+      let circleIdCounter = 0;
+
+      // The current (player controlled) piece waiting at the top.
+      let currentPiece = null;
+      // Drop locked for 3 seconds after a drop.
+      let dropLocked = false;
+
+      /**********************************
+       CIRCLE CREATION & REMOVAL
+      **********************************/
+      // When creating a circle, if the "dropped" property is not provided,
+      // default to true – meaning physics is active on it.
+      function createCircle(value, x, y, options = {}) {
+        const diameter = baseDiameter + (value - 1) * 10;
+        const radius = diameter / 2;
+        const div = document.createElement("div");
+        div.classList.add("circle");
+        div.style.width = diameter + "px";
+        div.style.height = diameter + "px";
+        div.style.background = valueColors[value] || "#000";
+        div.textContent = value;
+        // Place using absolute positioning.
+        div.style.left = x + "px";
+        div.style.top = y + "px";
+        board.appendChild(div);
+
+        const circleObj = {
+          id: circleIdCounter++,
+          value: value,
+          x: x,
+          y: y,
+          vx: options.vx || 0,
+          vy: options.vy || 0,
+          radius: radius,
+          diameter: diameter,
+          element: div,
+          // dragging is true only while the user is actively moving the piece.
+          dragging: options.dragging || false,
+          // dropped indicates whether the piece is “released” (active in physics).
+          // For pieces created normally (merges or settled pieces) dropped is true.
+          // For the current piece we will set dropped to false until the player lets go.
+          dropped: (options.dropped === undefined) ? true : options.dropped
+        };
+
+        circles.push(circleObj);
+        return circleObj;
+      }
+      
+      function removeCircle(circleObj) {
+        board.removeChild(circleObj.element);
+        circles = circles.filter(c => c.id !== circleObj.id);
+      }
+      
+      /**********************************
+       CURRENT PIECE CONTROL
+      **********************************/
+      // Randomly choose a piece value among the three smallest sizes.
+      function getRandomPieceValue() {
+        return [1, 2, 3][randInt(0, 2)];
+      }
+      
+      // Spawn a new current piece at the top center with dropped=false.
+      function spawnCurrentPiece() {
+        const value = getRandomPieceValue();
+        const diameter = baseDiameter + (value - 1) * 10;
+        const x = (boardWidth - diameter) / 2;
+        const y = 10; // near the top, below the overlay.
+      
+        // Current piece is not yet dropped.
+        currentPiece = createCircle(value, x, y, { dragging: false, dropped: false });
+        // Ensure the current piece is rendered on top.
+        currentPiece.element.style.zIndex = 1000;
+  
+        // Add pointer event listeners for horizontal drag.
+        currentPiece.element.addEventListener("pointerdown", onCurrentPiecePointerDown);
+      }
+      
+      let currentPieceData = {
+        offsetX: 0,
+        dragging: false
+      };
+      
+      function onCurrentPiecePointerDown(e) {
+        if(dropLocked) return;
+        e.preventDefault();
+        currentPieceData.dragging = true;
+        currentPiece.dragging = true;
+        const rect = currentPiece.element.getBoundingClientRect();
+        currentPieceData.offsetX = e.clientX - rect.left;
+        // Attach move and up events.
+        board.addEventListener("pointermove", onCurrentPiecePointerMove);
+        board.addEventListener("pointerup", onCurrentPiecePointerUp);
+        board.addEventListener("pointercancel", onCurrentPiecePointerUp);
+      }
+      
+      function onCurrentPiecePointerMove(e) {
+        if(!currentPieceData.dragging || !currentPiece) return;
+        let newX = e.clientX - currentPieceData.offsetX - board.getBoundingClientRect().left;
+        // Constrain within horizontal bounds.
+        newX = Math.max(0, Math.min(newX, boardWidth - currentPiece.diameter));
+        currentPiece.x = newX;
+        currentPiece.element.style.left = newX + "px";
+      }
+      
+      // When the player releases the piece, mark it as dropped so that physics takes over.
+      function onCurrentPiecePointerUp(e) {
+        if(!currentPieceData.dragging) return;
+        currentPieceData.dragging = false;
+        if(currentPiece) {
+          currentPiece.dragging = false;
+          // Mark the piece as dropped so that gravity and collisions are applied.
+          currentPiece.dropped = true;
+          // Remove pointer event listeners.
+          board.removeEventListener("pointermove", onCurrentPiecePointerMove);
+          board.removeEventListener("pointerup", onCurrentPiecePointerUp);
+          board.removeEventListener("pointercancel", onCurrentPiecePointerUp);
+          // Reset its z-index.
+          currentPiece.element.style.zIndex = "";
+        }
+        currentPiece = null;
+  
+        // Lock dropping for 3 seconds.
+        dropLocked = true;
+        setTimeout(() => {
+          dropLocked = false;
+          spawnCurrentPiece();
+        }, 3000);
+      }
+      
+      /**********************************
+       PHYSICS & COLLISION UPDATE LOOP
+      **********************************/
+      function physicsUpdate() {
+        // Update each circle’s position and velocity.
+        circles.forEach(circle => {
+          // Do not update physics if the circle is actively being dragged or hasn't been dropped yet.
+          if (circle.dragging || circle.dropped === false) return;
+          // Apply gravity.
+          circle.vy += gravity;
+          // Update position.
+          circle.x += circle.vx;
+          circle.y += circle.vy;
+  
+          // Boundary collisions:
+          // Floor.
+          if(circle.y + circle.diameter > boardHeight){
+            circle.y = boardHeight - circle.diameter;
+            circle.vy = -Math.abs(circle.vy) * bounceDamping;
+            if(Math.abs(circle.vy) < 1){
+              circle.vy = 0;
+            }
+          }
+          // Ceiling.
+          if(circle.y < 0){
+            circle.y = 0;
+            circle.vy = Math.abs(circle.vy) * bounceDamping;
+          }
+          // Left wall.
+          if(circle.x < 0){
+            circle.x = 0;
+            circle.vx = Math.abs(circle.vx) * bounceDamping;
+          }
+          // Right wall.
+          if(circle.x + circle.diameter > boardWidth){
+            circle.x = boardWidth - circle.diameter;
+            circle.vx = -Math.abs(circle.vx) * bounceDamping;
+          }
+  
+          // Apply friction.
+          circle.vx *= friction;
+          circle.vy *= friction;
+  
+          // Update the DOM position.
+          circle.element.style.left = circle.x + "px";
+          circle.element.style.top = circle.y + "px";
+        });
+  
+        // Collision detection between every pair of circles.
+        for(let i = 0; i < circles.length; i++){
+          for(let j = i + 1; j < circles.length; j++){
+            const A = circles[i];
+            const B = circles[j];
+            resolveCollision(A, B);
+          }
+        }
+  
+        requestAnimationFrame(physicsUpdate);
+      }
+      
+      // Determine if two circles overlap.
+      function circlesOverlap(A, B) {
+        const ax = A.x + A.radius;
+        const ay = A.y + A.radius;
+        const bx = B.x + B.radius;
+        const by = B.y + B.radius;
+        const dx = bx - ax;
+        const dy = by - ay;
+        const dist = Math.hypot(dx, dy);
+        return dist < (A.radius + B.radius);
+      }
+      
+      // Resolve collision between two circles:
+      // If they are the same value, merge them;
+      // otherwise, push them apart.
+      function resolveCollision(A, B) {
+        // Only process if both pieces are active (dropped) or if one is in the process of merging.
+        if(circlesOverlap(A, B)){
+          if(A.value === B.value) {
+            mergeCircles(A, B);
+          } else {
+            separateCircles(A, B);
+          }
+        }
+      }
+  
+      // Push overlapping circles apart.
+      function separateCircles(A, B) {
+        const ax = A.x + A.radius;
+        const ay = A.y + A.radius;
+        const bx = B.x + B.radius;
+        const by = B.y + B.radius;
+        let dx = bx - ax;
+        let dy = by - ay;
+        let distance = Math.hypot(dx, dy);
+        if(distance === 0){
+          dx = 1;
+          dy = 0;
+          distance = 1;
+        }
+        const overlap = (A.radius + B.radius) - distance;
+        // Distribute push equally.
+        const pushX = (dx / distance) * overlap;
+        const pushY = (dy / distance) * overlap;
+  
+        A.x -= pushX * 0.5;
+        A.y -= pushY * 0.5;
+        B.x += pushX * 0.5;
+        B.y += pushY * 0.5;
+  
+        // Adjust velocities.
+        A.vx -= (dx / distance) * 0.2;
+        A.vy -= (dy / distance) * 0.2;
+        B.vx += (dx / distance) * 0.2;
+        B.vy += (dy / distance) * 0.2;
+      }
+      
+      // Merge two circles of the same value.
+      function mergeCircles(A, B) {
+        // Compute center of the combined circles.
+        const centerX = (A.x + B.x) / 2 + A.radius;
+        const centerY = (A.y + B.y) / 2 + A.radius;
+        const newValue = A.value + 1;
+  
+        // Remove the two circles.
+        removeCircle(A);
+        removeCircle(B);
+  
+        // Create the new merged circle. New circles default to dropped, enabling physics.
+        const diameter = baseDiameter + (newValue - 1) * 10;
+        const radius = diameter / 2;
+        const newX = centerX - radius;
+        const newY = centerY - radius;
+  
+        const newCircle = createCircle(newValue, newX, newY, { vx: 0, vy: -2 });
+  
+        // Update score.
+        score += newValue * 10;
+        scoreEl.textContent = score;
+        if(score > highScore){
+          highScore = score;
+          highScoreEl.textContent = highScore;
+          sessionStorage.setItem("highScore", highScore);
+        }
+  
+        // Check for further overlaps with the newly created circle.
+        circles.slice().forEach(other => {
+          if(other.id === newCircle.id) return;
+          if(circlesOverlap(newCircle, other)){
+            if(other.value === newCircle.value){
+              mergeCircles(newCircle, other);
+            } else {
+              separateCircles(newCircle, other);
+            }
+          }
+        });
+      }
+      
+      /**********************************
+       GAME INITIALIZATION
+      **********************************/
+      function initGame() {
+        circles.forEach(c => {
+          if(c.element.parentElement === board){
+            board.removeChild(c.element);
+          }
+        });
+        circles = [];
+        score = 0;
+        scoreEl.textContent = score;
+  
+        currentPiece = null;
+        dropLocked = false;
+        spawnCurrentPiece();
+  
+        requestAnimationFrame(physicsUpdate);
+      }
+  
+      window.addEventListener("load", initGame);
+  
+    </script>
+  </body>
+</html>
