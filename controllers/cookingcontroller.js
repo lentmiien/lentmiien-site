@@ -150,6 +150,14 @@ exports.update_cooking_calendar = async (req, res) => {
   }
 };
 
+exports.cooking_statistics = async (req, res) => {
+  const stats = await getCookingStatistics();
+  const knowledge = await Chat4KnowledgeModel.find({category: "Recipe"});
+  const knowledge_lookup = {};
+  knowledge.forEach(k => knowledge_lookup[k._id.toString()] = k.title);
+  res.render("cooking_statistics", {stats, knowledge_lookup});
+};
+
 /**
  * helper functions
  */
@@ -178,4 +186,111 @@ function createDatesArray() {
   }
   
   return datesArray;
+}
+
+/**
+ * Fetches cooking statistics from the database.
+ *
+ * @returns {Promise<Array>} An array of objects containing cooking statistics.
+ */
+async function getCookingStatistics() {
+  try {
+    const today = new Date();
+
+    // Helper function to subtract days from a date
+    const subtractDays = (date, days) => {
+      const result = new Date(date);
+      result.setDate(result.getDate() - days);
+      return result;
+    };
+
+    // Define date boundaries
+    const last10Start = subtractDays(today, 10);
+    const last90Start = subtractDays(today, 90);
+    const last180Start = subtractDays(today, 180);
+
+    // Aggregation pipeline
+    const pipeline = [
+      {
+        // Combine cooking fields into an array and filter out nulls
+        $project: {
+          date: 1,
+          cookingItems: {
+            $filter: {
+              input: ["$dinnerToCook", "$lunchToCook", "$dessertToCook"],
+              as: "item",
+              cond: { $ne: ["$$item", null] }
+            }
+          }
+        }
+      },
+      { $unwind: "$cookingItems" }, // Flatten the array
+      {
+        // Convert the date string to a Date object
+        $addFields: {
+          dateObj: {
+            $dateFromString: {
+              dateString: "$date",
+              format: "%Y-%m-%d",
+              onError: null
+            }
+          }
+        }
+      },
+      {
+        // Group by the unique cooking item and compute counts
+        $group: {
+          _id: "$cookingItems",
+          totalCount: { $sum: 1 },
+          countLast90Days: {
+            $sum: {
+              $cond: [{ $gte: ["$dateObj", last90Start] }, 1, 0]
+            }
+          },
+          countPrev90Days: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gte: ["$dateObj", last180Start] },
+                    { $lt: ["$dateObj", last90Start] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          },
+          existInLast10Days: {
+            $max: {
+              $cond: [{ $gte: ["$dateObj", last10Start] }, true, false]
+            }
+          }
+        }
+      },
+      {
+        // Restructure the output
+        $project: {
+          uniqueString: "$_id",
+          _id: 0,
+          existInLast10Days: 1,
+          countLast90Days: 1,
+          countPrev90Days: 1,
+          totalCount: 1
+        }
+      },
+      {
+        // Sort by countLast90Days in descending order
+        $sort: { countLast90Days: -1 }
+      }
+    ];
+
+    // Execute the aggregation
+    const results = await CookingCalendarModel.aggregate(pipeline).exec();
+
+    return results;
+  } catch (error) {
+    console.error("Error fetching cooking statistics:", error);
+    throw error;
+  }
 }

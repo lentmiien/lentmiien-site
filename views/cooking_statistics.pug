@@ -1,0 +1,21 @@
+extends layout
+
+block content
+  h2 Cooking statistics 
+  table.table.table-striped 
+    thead 
+      tr 
+        th Food 
+        th Recent 
+        th Count last 90 days 
+        th Count previous 90 days
+        th Total count 
+    tbody 
+      each food in stats 
+        if knowledge_lookup[food.uniqueString]
+          tr 
+            td= knowledge_lookup[food.uniqueString]
+            td= food.existInLast10Days
+            td= food.countLast90Days
+            td= food.countPrev90Days
+            td= food.totalCount

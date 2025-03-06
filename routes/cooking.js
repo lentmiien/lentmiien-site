@@ -9,4 +9,6 @@ router.get('/', controller.index);
 
 router.post('/update_cooking_calendar', controller.update_cooking_calendar);
 
+router.get('/cooking_statistics', controller.cooking_statistics);
+
 module.exports = router;

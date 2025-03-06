@@ -3,6 +3,7 @@ extends layout
 block content
   - const day_map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
   h2 Cooking calendar
+  a.btn.btn-link(href="/cooking/cooking_statistics") View statistics
   each cookday, i in cookingCalendar
     .row 
       .col.foodday
