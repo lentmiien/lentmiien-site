@@ -3,7 +3,7 @@ const fs = require("fs");
 // Require necessary database models
 // const { ArticleModel } = require('../database');
 
-const galleryPath = "C:\\Users\\lentm\\Downloads\\imgs";// Current path for testing
+const galleryPath = process.env.GALLERY_PATH;
 
 exports.index = async (req, res) => {
   const images = [];
