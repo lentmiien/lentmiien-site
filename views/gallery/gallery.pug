@@ -3,4 +3,4 @@ extends ../layout
 block content
   h2 Welcome to the gallery!
   each i in images
-    a.btn.btn-link(href=`/gallery/view/${i}`)= i 
+    a.btn.btn-link(href=`/gallery/view?img=${i}`)= i 

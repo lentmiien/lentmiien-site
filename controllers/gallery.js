@@ -20,8 +20,8 @@ exports.index = async (req, res) => {
 
 exports.view = async (req, res) => {
   try {
-    const imageFile = req.params.file;
-    const image = await Images.findOne({ imageFile });
+    const imageFile = req.query.img;
+    const image = await Images.findOne({ filename: imageFile });
     res.render('gallery/view', { imageFile, image });
   } catch (error) {
     console.error(error);
@@ -56,7 +56,7 @@ exports.rate = async (req, res) => {
     }
     
     await image.save();
-    res.redirect(`/gallery/view/${imageFile}`);
+    res.redirect(`/gallery/view?img=${imageFile}`);
   } catch (err) {
     console.error(err);
     res.status(500).send('Server Error');
