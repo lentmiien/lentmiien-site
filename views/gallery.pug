@@ -1,0 +1,6 @@
+extends layout
+
+block content
+  h2 Welcome to the gallery!
+  each i in images
+    a.btn.btn-link(href=`/gallery/image/${i}`, target="_blank")= i 

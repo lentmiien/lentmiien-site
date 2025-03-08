@@ -85,6 +85,7 @@ exports.manage_roles = async (req, res) => {
       "emergencystock",
       "receipt",
       "product",
+      "gallery",
       "test",
       "archive",
     ]
