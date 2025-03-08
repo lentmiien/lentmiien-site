@@ -1,0 +1,37 @@
+extends ../layout
+
+block content
+  img(src=`/gallery/image/${imageFile}`, style="max-width: 100%;", alt=imageFile)
+  
+  if image
+    h2 Existing Comments and Ratings
+    p Comment: #{image.comment}
+    ul
+      each rating in image.ratings
+        li #{rating.category}: #{rating.score}
+  
+  h2 Add / Update Comment and Ratings
+  form(action=`/gallery/rate/${imageFile}`, method='POST')
+    div
+      label(for='comment') Comment:
+      textarea.form-control(name='comment', id='comment')= image ? image.comment : ''
+    //- Assuming you have predefined categories
+    - var categories = ['Overall Likeability', 'Visual Appeal', 'Quality', 'Mood/Atmosphere', 'Storytelling/Narrative', 'Use of Colors', 'Excitement/Interest', 'Artistic Style/Creativity'];
+    .row
+      each category in categories
+        .col
+          label(for=category)= category + ':'
+          select.form-control(name=category, id=category)
+            option(value='0') 0
+            option(value='1') 1
+            option(value='2') 2
+            option(value='3') 3
+            //- Pre-select existing rating if available
+            if image
+              each rating in image.ratings
+                if rating.category === category
+                  script.
+                    document.addEventListener('DOMContentLoaded', function() {
+                      document.getElementById('#{category}').value = #{rating.score};
+                    });
+    button.btn.btn-primary(type='submit') Submit

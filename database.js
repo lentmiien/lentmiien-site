@@ -83,6 +83,8 @@ const ProductDetails = require('./models/product_details');
 const OpenAIUsage = require('./models/openai_usage');
 // AI model cards
 const AIModelCards = require('./models/ai_model_card');
+// Gallery images
+const Images = require('./models/image');
 
 // Export models
 module.exports = {
@@ -132,4 +134,5 @@ module.exports = {
   ProductDetails,
   OpenAIUsage,
   AIModelCards,
+  Images,
 };
