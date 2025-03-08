@@ -4,3 +4,5 @@ block content
   h2 Welcome to the gallery!
   each i in images
     a.btn.btn-link(href=`/gallery/view?img=${i}`)= i 
+  h3 Slideshows 
+  a.btn.btn-link(href="/gallery/slideshow/random") Random slideshow 

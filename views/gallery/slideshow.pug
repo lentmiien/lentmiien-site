@@ -1,0 +1,50 @@
+extends ../layout.pug
+
+block content
+  h1 Slideshow: #{type}
+  if images.length === 0
+    p No images to display.
+  else
+    div.controls
+      button#prev-button.btn.btn-primary(type='button') Previous
+      button#next-button.btn.btn-primary(type='button') Next
+    div.slideshow-container
+      img#slideshow-image(src=`/gallery/image/${images[currentIndex]}`, alt=images[currentIndex], style="max-width: 100%;")
+
+    //- Embedded data for images
+    script.
+      const images = !{JSON.stringify(images)};
+      let currentIndex = !{currentIndex};
+      
+      const imgElement = document.getElementById('slideshow-image');
+      const prevButton = document.getElementById('prev-button');
+      const nextButton = document.getElementById('next-button');
+
+      prevButton.addEventListener('click', () => {
+        if (currentIndex > 0) {
+          currentIndex--;
+          updateSlideshow();
+        }
+      });
+
+      nextButton.addEventListener('click', () => {
+        if (currentIndex < images.length - 1) {
+          currentIndex++;
+          updateSlideshow();
+        }
+      });
+
+      function updateSlideshow() {
+        imgElement.src = `/gallery/image/${images[currentIndex]}`;
+        preloadNextImage();
+      }
+
+      function preloadNextImage() {
+        if (currentIndex + 1 < images.length) {
+          const nextImg = new Image();
+          nextImg.src = `/gallery/image/${images[currentIndex + 1]}`;
+        }
+      }
+
+      // Initial preload
+      preloadNextImage();

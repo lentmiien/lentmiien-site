@@ -30,3 +30,19 @@ block content
             option(value='2') 2
             option(value='3') 3
     button.btn.btn-primary(type='submit') Submit
+  
+  //- Navigation Buttons
+  div.navigation
+    if previousImage
+      a.btn.btn-link(href=`/gallery/view?img=${previousImage}`) ← Previous
+    | 
+    if nextImage
+      a.btn.btn-link(href=`/gallery/view?img=${nextImage}`) Next →
+
+  //- Quick Access Links for Slideshows based on Categories
+  if image && image.ratings
+    h2 Start Slideshow Based on Categories
+    ul
+      each rating in image.ratings
+        li 
+          a(href=`/gallery/slideshow/category?category=${rating.category}&minRating=${rating.score}`) Slideshow: #{rating.category} ≥ #{rating.score}
