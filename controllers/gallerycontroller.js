@@ -85,6 +85,7 @@ exports.category_slideshow = async (req, res) => {
   const { category, minRating } = req.query;
 
   try {
+    const diskImages = await getImageFiles();
     // Find images with the specified category rating >= minRating
     const images = await Images.find({
       'ratings': {
@@ -95,7 +96,7 @@ exports.category_slideshow = async (req, res) => {
       }
     }).select('filename');
 
-    const filteredFilenames = images.map(img => img.filename);
+    const filteredFilenames = images.map(img => img.filename).filter(d => diskImages.indexOf(d) >= 0).sort(() => 0.5 - Math.random());
     res.render('gallery/slideshow', { images: filteredFilenames, type: `Category: ${category} ≥ ${minRating}`, currentIndex: 0 });
   } catch (err) {
     console.error(err);

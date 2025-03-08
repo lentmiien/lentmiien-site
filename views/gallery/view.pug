@@ -11,7 +11,7 @@ block content
         li #{rating.category}: #{rating.score}
   
   h2 Add / Update Comment and Ratings
-  - var categories = ['Overall Likeability', 'Visual Appeal', 'Quality', 'Mood/Atmosphere', 'Storytelling/Narrative', 'Use of Colors', 'Excitement/Interest', 'Artistic Style/Creativity'];
+  - let categories = ['Like', 'Visual', 'Atmosphere', 'Storytelling', 'Sexual']
   form(action=`/gallery/rate/${imageFile}`, method='POST')
     div
       label(for='comment') Comment:
