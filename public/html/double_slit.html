@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Double Slit Experiment Animation</title>
+    <style>
+      body {
+        background-color: #111;
+        margin: 0;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        background-color: #222;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+
+    <script>
+      // ──────────────────────────────────────────────────────────────── 
+      // PARAMETERS (feel free to modify these to adjust simulation)
+      // ──────────────────────────────────────────────────────────────── 
+      const params = {
+        wavelength: 8, // (in arbitrary pixels) controls fringe spacing: think of λ
+        slitWidth: 20, // width of each slit (for drawing illustration)
+        slitSeparation: 80, // center-to-center distance between the two slits
+        detectionRate: 0.3, // probability per frame of a photon detection event (adjustable)
+        beamSpeed: 3, // speed at which wavefronts propagate (in pixels per frame)
+        waveInterval: 30, // interval (in frames) between launching new wavefront pulses
+        maxPhotonPoints: 500, // maximum number of detection dots to accumulate
+      };
+
+      // ──────────────────────────────────────────────────────────────── 
+      // SETUP: Canvas and Geometry
+      // ──────────────────────────────────────────────────────────────── 
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // Set canvas size to fill the window
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+
+      // Define geometry positions
+      const geometry = {
+        // The coherent source is on the far left center:
+        sourceX: 50,
+        sourceY: canvas.height / 2,
+        // The slits are drawn as a vertical pair at a fixed x position.
+        slitX: canvas.width * 0.3,
+        slitY: canvas.height / 2, // central vertical position of slits
+        // Slits will lie centered on slitY; each slit is drawn as a vertical opening.
+        // The detection screen is a vertical line near the right edge:
+        screenX: canvas.width * 0.9,
+      };
+
+      // Distance from slit plane to screen (for probability calculation)
+      let L = geometry.screenX - geometry.slitX;
+
+      // ──────────────────────────────────────────────────────────────── 
+      // DATA STRUCTURES: Arrays to track wavefronts and photon detections
+      // ──────────────────────────────────────────────────────────────── 
+      // For each slit, we record wave–front pulses that started at a given time.
+      let wavefronts = []; // Each object: {slit: 1 or 2, r: initial radius (0), maxAlpha: starting transparency}
+      // For photon detection events on the screen:
+      let photonDetections = [];
+
+      // A frame counter for timing new wavefront pulses and new detection events.
+      let frameCount = 0;
+
+      // ──────────────────────────────────────────────────────────────── 
+      // FUNCTIONS: Drawing utility functions
+      // ──────────────────────────────────────────────────────────────── 
+
+      // Draw the source laser as a glowing circle.
+      function drawSource() {
+        ctx.save();
+        ctx.fillStyle = "cyan";
+        ctx.beginPath();
+        ctx.arc(geometry.sourceX, geometry.sourceY, 8, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw the double slits as two vertical openings in an opaque barrier.
+      function drawSlits() {
+        ctx.save();
+
+        // Draw a dark barrier (a rectangle) over the region around the slits.
+        const barrierLeft = geometry.slitX - params.slitSeparation / 2 - params.slitWidth / 2;
+        const barrierRight = geometry.slitX + params.slitSeparation / 2 + params.slitWidth / 2;
+        ctx.fillStyle = "#444";
+        ctx.fillRect(
+          barrierLeft,
+          0,
+          barrierRight - barrierLeft,
+          canvas.height
+        );
+
+        // Now "cut out" (clear) the two slits.
+        ctx.globalCompositeOperation = "destination-out";
+        // Upper slit: draw rectangle to clear out slit area.
+        ctx.fillRect(
+          geometry.slitX - params.slitWidth / 2,
+          geometry.slitY - params.slitSeparation / 2 - params.slitWidth / 2,
+          params.slitWidth,
+          params.slitWidth
+        );
+        // Lower slit:
+        ctx.fillRect(
+          geometry.slitX - params.slitWidth / 2,
+          geometry.slitY + params.slitSeparation / 2 - params.slitWidth / 2,
+          params.slitWidth,
+          params.slitWidth
+        );
+        ctx.globalCompositeOperation = "source-over";
+
+        ctx.restore();
+      }
+
+      // Draw the detection screen: a vertical line near the right edge.
+      function drawScreen() {
+        ctx.save();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(geometry.screenX, 0);
+        ctx.lineTo(geometry.screenX, canvas.height);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Draw all wavefronts emanating from one of the slits.
+      function drawWavefronts() {
+        ctx.save();
+        ctx.strokeStyle = "rgba(0, 255, 255, 0.6)";
+        ctx.lineWidth = 2;
+        // For each wavefront, draw a circle (arc) centered at the slit position.
+        wavefronts.forEach(wave => {
+          // Compute both slit positions
+          let cx = geometry.slitX;
+          let cy = wave.slit === 1
+            ? geometry.slitY - params.slitSeparation / 2  // upper slit
+            : geometry.slitY + params.slitSeparation / 2;  // lower slit
+
+          // Fade out older wavefronts gradually.
+          let alpha = Math.max(1 - wave.r / (L + 100), 0);
+          ctx.strokeStyle = "rgba(0, 255, 255, " + alpha + ")";
+          ctx.beginPath();
+          ctx.arc(cx, cy, wave.r, 0, 2 * Math.PI);
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
+
+      // Draw the accumulated photon detections on the screen.
+      function drawPhotonDetections() {
+        ctx.save();
+        // Photons appear as small glowing points.
+        photonDetections.forEach(p => {
+          ctx.fillStyle = "rgba(255,255,50," + p.alpha + ")";
+          ctx.beginPath();
+          ctx.arc(geometry.screenX, p.y, 3, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+        ctx.restore();
+      }
+
+      // ──────────────────────────────────────────────────────────────── 
+      // PHOTON DETECTION: Calculate the interference probability at a vertical position.
+      // The interference pattern is roughly given by I(y) ∝ cos²( (π * d * y_eff)/(λ * L) )
+      // where y_eff is the vertical displacement from the central axis of the screen.
+      // ──────────────────────────────────────────────────────────────── 
+      function interferenceIntensity(y) {
+        // Center of the detection screen vertically is the same as slit center.
+        let y_center = geometry.slitY;
+        let y_eff = y - y_center;
+        // d: effective slit separation
+        let d = params.slitSeparation;
+        let phase = Math.PI * d * y_eff / (params.wavelength * L);
+        // cos^2 intensity
+        return Math.pow(Math.cos(phase), 2);
+      }
+
+      // A helper function using rejection sampling to pick one y value for a photon event
+      // according to the interference intensity distribution.
+      function samplePhotonY() {
+        // Define the vertical range – we use the whole canvas height.
+        let y_min = 0;
+        let y_max = canvas.height;
+        let maxI = 1; // maximum intensity occurs when cos^2(...)=1
+
+        let attempt = 0;
+        while (attempt < 1000) {
+          let yCandidate = y_min + Math.random() * (y_max - y_min);
+          let prob = interferenceIntensity(yCandidate); // between 0 and 1
+          // Uniform random chance in [0, maxI]
+          if (Math.random() * maxI <= prob) {
+            return yCandidate;
+          }
+          attempt++;
+        }
+        // Fallback if rejection sampling fails.
+        return canvas.height / 2;
+      }
+
+      // ──────────────────────────────────────────────────────────────── 
+      // ANIMATION LOOP
+      // ──────────────────────────────────────────────────────────────── 
+      function animate() {
+        // Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Redefine geometry.screenX and L if canvas size changed.
+        geometry.screenX = canvas.width * 0.9;
+        L = geometry.screenX - geometry.slitX;
+
+        // Draw static scene elements: source, barrier with slits, detection screen.
+        drawSource();
+        drawSlits();
+        drawScreen();
+
+        // Animate the coherent beam: Draw a simple line from source to the slits.
+        ctx.save();
+        ctx.strokeStyle = "cyan";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(geometry.sourceX, geometry.sourceY);
+        ctx.lineTo(geometry.slitX, geometry.sourceY);
+        ctx.stroke();
+        ctx.restore();
+
+        // ─── Animate wavefront pulses emerging from each slit  ───
+        // Every 'waveInterval' frames, add a new wavefront at each slit.
+        if (frameCount % params.waveInterval === 0) {
+          // Create a wavefront pulse starting at each slit (slit 1: upper, slit 2: lower)
+          wavefronts.push({ slit: 1, r: 0 });
+          wavefronts.push({ slit: 2, r: 0 });
+        }
+        // Update and draw all wavefronts:
+        wavefronts.forEach(wave => {
+          wave.r += params.beamSpeed;
+        });
+        // Remove wavefronts that have expanded past the detection screen (plus a little extra)
+        wavefronts = wavefronts.filter(wave => wave.r <= L + 100);
+        drawWavefronts();
+
+        // ─── Photon detection events (discrete particle-like detections) ───
+        // With a chance defined by detectionRate, simulate a detection.
+        if (Math.random() < params.detectionRate && photonDetections.length < params.maxPhotonPoints) {
+          let yDetection = samplePhotonY();
+          // Each detection dot will fade in (alpha set high initially)
+          photonDetections.push({ y: yDetection, alpha: 1 });
+        }
+        // Optionally, make the detection dots fade a tiny bit over time for a glowing effect.
+        photonDetections.forEach(p => {
+          p.alpha = Math.max(p.alpha - 0.002, 0.5);
+        });
+        drawPhotonDetections();
+
+        // ─── Show an overlay text note (optional) ───
+        ctx.save();
+        ctx.fillStyle = "white";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("Double Slit Experiment Simulation", 10, 20);
+        ctx.restore();
+
+        frameCount++;
+        requestAnimationFrame(animate);
+      }
+      // Start the animation
+      animate();
+    </script>
+  </body>
+</html>
