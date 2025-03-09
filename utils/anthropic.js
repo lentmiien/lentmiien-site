@@ -3,7 +3,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const anthropicAPI = new Anthropic();
 
 const anthropic = async (messages, model) => {
-  const max_tokens = 4096;
+  const max_tokens = 8192;
   const temperature = 1;
   const system = messages[0].content[0].text;
   messages.shift();

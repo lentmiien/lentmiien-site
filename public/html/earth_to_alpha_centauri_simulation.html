@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Futuristic Rocket Journey: Earth to Alpha Centauri</title>
+    <style>
+      /* Simple page style – the canvas fills most of the screen */
+      body {
+        margin: 0;
+        background-color: #000;
+        color: #fff;
+        font-family: Arial, sans-serif;
+        overflow: hidden;
+      }
+      #simulationCanvas {
+        display: block;
+        margin: 0 auto;
+        background-color: #111;
+      }
+      /* Dashboard text styling */
+      .dashboard {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        font-size: 16px;
+        line-height: 1.3;
+        color: #0f0;
+        text-shadow: 1px 1px 2px #000;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Canvas for the animation -->
+    <canvas id="simulationCanvas" width="1000" height="600"></canvas>
+
+    <!-- All JavaScript code embedded -->
+    <script>
+      /*
+        FUTURISTIC ROCKET JOURNEY SIMULATION
+        -------------------------------------
+        This simulation shows a simplified 2D side-view journey
+        from Earth (left) to the Alpha Centauri star system (right)
+        over exactly 1 hour (3600 seconds of simulation time).
+      
+        Major simulation components:
+          1. Canvas & object initialization
+          2. Animation update loop (updating simulation time, rocket physics, and drawing)
+          3. Particle system for propulsion exhaust
+          4. Gravitational assist “boosts” (at Jupiter and Saturn)
+          5. Dashboard telemetry rendering
+      
+        We use basic geometric shapes:
+          • Earth: blue-green circle on far left.
+          • Jupiter: large brown circle (labeled) at ~1/3 canvas.
+          • Saturn: large grey circle (labeled) at ~2/3 canvas.
+          • Alpha Centauri: yellowish-white circle on far right.
+          • The rocket: a white triangle with a particle (exhaust) trail.
+      
+        Invented physics data: 
+          • Initial rocket mass ≈ 500,000 kg (with ~90% fusion fuel, i.e. 450,000 kg, and 50,000 kg structure).
+          • The rocket accelerates in phases and eventually reaches around 15%-17% of the speed of light (~45,000–50,000 km/s),
+              then decelerates for orbital insertion.
+          • Gravitational assists (at Jupiter and Saturn) “boost” the velocity instantly.
+          • Telemetry and dashboard data are shown as text.
+      
+        Helpful comments are included for each section.
+      */
+
+      // Global variables for canvas and simulation state:
+      var canvas, ctx;
+      var lastTime = null;
+      var simulationTime = 0; // simulation time in seconds (0 to 3600)
+
+      // Total simulation duration (in seconds)
+      const TOTAL_SIM_TIME = 3600;
+
+      // A fictitious total journey distance (Alpha Centauri is ~41e12 km away)
+      const TOTAL_DISTANCE = 41e12; // 41 trillion km
+
+      // Speed of light constant (km/s) for dashboard percentage calculation.
+      const SPEED_OF_LIGHT = 299792;
+
+      // Rocket object: contains all the physics variables used in telemetry.
+      var rocket = {
+        // We do not calculate canvas position via physics integration.
+        // Instead, we use a linear interpolation from Earth to Alpha Centauri over 3600 sec.
+        // (This makes sure the rocket is at Alpha Centauri exactly at T = 3600 sec.)
+        x: 0,  // canvas x position (computed each frame)
+        y: 0,  // canvas y position (computed each frame)
+
+        // The speed (km/s) used only for telemetry (and drawn on the dashboard)
+        velocity: 0, 
+        // For our purposes, the acceleration is handled piecewise.
+      
+        // Fuel/mass information:
+        structureMass: 50000, // kg (rocket dry mass)
+        initialFuel: 450000,  // kg reserved as fusion propellant (90% of 500000 kg)
+        fuelRemaining: 450000, // kg will reduce over time
+      
+        // (Optional) For advanced simulations, one could integrate rocket mass loss.
+        // Here we simply reduce fuel linearly over the journey.
+        get mass() {
+          return this.structureMass + this.fuelRemaining;
+        }
+      };
+
+      // Two booleans to ensure one-time boost events
+      var jupiterBoostApplied = false;
+      var saturnBoostApplied  = false;
+
+      // Particle system for displaying rocket exhaust
+      var particles = []; // array of active particles
+
+      // Define positions for Earth, Jupiter, Saturn, and Alpha Centauri on the canvas.
+      // For simplicity, we set them statically.
+      var earth = {
+        x: 50,
+        y: 300,
+        radius: 40,
+        color: "#3cb371"  // blue-green
+      };
+
+      var jupiter = {
+        x: 350,  // ~1/3 of the width (visually)
+        y: 200,
+        radius: 35,
+        color: "#8B4513", // brownish
+        label: "Jupiter"
+      };
+
+      var saturn = {
+        x: 650,  // ~2/3 of width
+        y: 400,
+        radius: 30,
+        color: "#A9A9A9", // grey
+        label: "Saturn"
+      };
+
+      var alphaCentauri = {
+        x: 950,
+        y: 300,
+        radius: 50,
+        color: "#ffffe0",  // yellowish-white
+        label: "Alpha Centauri"
+      };
+
+      // Function: init()
+      // Initializes canvas, objects, and starts the animation loop.
+      function init() {
+        canvas = document.getElementById("simulationCanvas");
+        ctx = canvas.getContext("2d");
+        
+        // Set initial rocket canvas position to Earth’s location.
+        rocket.x = earth.x;
+        rocket.y = earth.y;
+
+        // Reset simulation time and boost flags.
+        simulationTime = 0;
+        lastTime = performance.now();
+        jupiterBoostApplied = false;
+        saturnBoostApplied = false;
+
+        // Start the animation loop.
+        requestAnimationFrame(animationLoop);
+      }
+
+      // Function: animationLoop(timestamp)
+      // Main update & draw loop, using requestAnimationFrame for smooth animation.
+      function animationLoop(timestamp) {
+        // Calculate time difference (in seconds) since last update.
+        var dt = (timestamp - lastTime) / 1000;
+        lastTime = timestamp;
+      
+        // Only run simulation if we haven't exceeded 1 hour.
+        if (simulationTime < TOTAL_SIM_TIME) {
+          update(dt);
+          draw();
+          requestAnimationFrame(animationLoop);
+        } else {
+          // Final frame: ensure last output and end simulation.
+          simulationTime = TOTAL_SIM_TIME;
+          update(0);
+          draw();
+          // Optionally, show a “Mission Complete” message.
+          ctx.fillStyle = "#fff";
+          ctx.font = "36px Arial";
+          ctx.fillText("Mission Complete", canvas.width/2 - 140, canvas.height/2 );
+        }
+      }
+
+      // Function: update(dt)
+      // Updates simulation time, rocket physics (velocity, fuel) and exhaust particles.
+      function update(dt) {
+        // Increase simulation time by dt seconds.
+        simulationTime += dt;
+        if (simulationTime > TOTAL_SIM_TIME) simulationTime = TOTAL_SIM_TIME;
+
+        //----------- Update Rocket Telemetry (Velocity and Fuel) ------------
+        /* 
+          We use a simplified piecewise “physics”:
+          • 0 <= t < 900 sec: Rocket accelerates from 0 using acceleration a1.
+          • At roughly t = 900 sec near Jupiter, a gravitational assist gives an extra boost.
+          • 900 <= t < 2000 sec: Continued acceleration.
+          • At t = 2000 sec near Saturn, an additional boost is applied.
+          • 2000 <= t < 3200 sec: Cruise phase (no extra acceleration).
+          • 3200 <= t <= 3600 sec: Deceleration for orbital insertion at Alpha Centauri.
+        */
+
+        // Phase 1: 0 <= t < 900 sec (Ramp up acceleration)
+        if (simulationTime < 900) {
+          // Constant acceleration to achieve roughly 15,000 km/s at 900 sec:
+          var acc1 = 15000 / 900; // ~16.67 km/s²
+          rocket.velocity += acc1 * dt;
+        }
+
+        // Gravitational Assist #1 – Jupiter boost (apply once when simulation reaches ~900 sec)
+        if (simulationTime >= 900 && !jupiterBoostApplied) {
+          // Instant boost of 10,000 km/s (fictitious boost for gravitational slingshot effect).
+          rocket.velocity += 10000;
+          jupiterBoostApplied = true;
+        }
+
+        // Phase 2: 900 <= t < 2000 sec: Continued acceleration to cruising speed.
+        if (simulationTime >= 900 && simulationTime < 2000) {
+          // Accelerate to roughly 45,000 km/s by t = 2000 sec.
+          // Using an acceleration of about 18.18 km/s².
+          var acc2 = 20000 / (2000 - 900); // ~18.18 km/s², note: added boost already raises velocity.
+          rocket.velocity += acc2 * dt;
+        }
+
+        // Gravitational Assist #2 – Saturn boost (apply once when simulation reaches ~2000 sec)
+        if (simulationTime >= 2000 && !saturnBoostApplied) {
+          // Instant boost of 5,000 km/s.
+          rocket.velocity += 5000;
+          saturnBoostApplied = true;
+        }
+
+        // Phase 3: 2000 <= t < 3200 sec: Cruise phase (no extra acceleration)
+        // In this phase, we leave velocity nearly constant.
+        if (simulationTime >= 2000 && simulationTime < 3200) {
+          // Optionally, one could add slight acceleration or particle effects.
+          // We do nothing so that rocket.velocity remains about ~50,000 km/s.
+        }
+
+        // Phase 4: 3200 <= t <= 3600 sec: Deceleration phase to reach near zero speed at destination.
+        if (simulationTime >= 3200) {
+          // Apply a constant deceleration to lower velocity.
+          // Here we use -125 km/s² (this is fictitious; feel free to adjust).
+          var deceleration = 125;
+          rocket.velocity -= deceleration * dt;
+          if (rocket.velocity < 0) rocket.velocity = 0;
+        }
+
+        //----------- Update Fuel Consumption ------------
+        // For simplicity, we assume the fuel is consumed linearly with time.
+        rocket.fuelRemaining = Math.max(0, rocket.initialFuel * (1 - simulationTime / TOTAL_SIM_TIME));
+      
+        //----------- Update Particle System (Exhaust) ------------
+        updateParticles(dt);
+
+        //----------- Update Rocket Canvas Position ------------
+        /*
+          Instead of integrating using rocket.velocity (which in telemetry is fictitious),
+          we linearly interpolate the rocket’s canvas x-position from Earth to Alpha Centauri
+          to guarantee it reaches the destination exactly at simulationTime = 3600 sec.
+        */
+        var progress = simulationTime / TOTAL_SIM_TIME; // 0 to 1
+        // Leave margins (Earth.x and alphaCentauri.x) for clarity.
+        rocket.x = earth.x + progress * (alphaCentauri.x - earth.x);
+        // For simplicity, keep y constant at Earth's y.
+        rocket.y = earth.y;
+      }
+
+      // Function: updateParticles(dt)
+      // Creates new particles behind the rocket and updates all existing particles.
+      function updateParticles(dt) {
+        // Spawn new particles from the rocket's rear as exhaust.
+        // The particle system uses thin lines that fade quickly, with colors white-blue-orange.
+        if (simulationTime < TOTAL_SIM_TIME) { // spawn only during flight, not on final deceleration.
+          // Create 3 to 5 particles per frame randomly.
+          var count = Math.floor(Math.random() * 3) + 3;
+          for (var i = 0; i < count; i++) {
+            // Each particle is spawned a few pixels behind the rocket.
+            particles.push({
+              x: rocket.x - 20,
+              y: rocket.y + (Math.random() * 10 - 5),  // slight vertical randomness
+              // Give a slight random velocity (moving leftwards, opposite to the rocket direction).
+              vx: - (Math.random() * 15 + 5),
+              vy: (Math.random() * 10 - 5),
+              life: 1.0, // life in seconds
+              maxLife: 1.0,
+              color: randomExhaustColor()
+            });
+          }
+        }
+
+        // Update each particle’s position and decrease its life.
+        for (var i = particles.length - 1; i >= 0; i--) {
+          var p = particles[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.life -= dt;
+          if (p.life <= 0) {
+            // Remove dead particle.
+            particles.splice(i, 1);
+          }
+        }
+      }
+
+      // Function: randomExhaustColor()
+      // Returns a random color string from our exhaust palette.
+      function randomExhaustColor() {
+        // Choose among white, blue or orange variants.
+        var colors = ["#FFFFFF", "#ADD8E6", "#FFA500"];
+        return colors[Math.floor(Math.random() * colors.length)];
+      }
+
+      // Function: draw()
+      // Clears the canvas and draws the background objects, rocket, particles, and dashboard.
+      function draw() {
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw background bodies: Earth, Jupiter, Saturn, and Alpha Centauri.
+        drawPlanet(earth);
+        drawPlanet(jupiter);
+        drawPlanet(saturn);
+        drawPlanet(alphaCentauri);
+
+        // Draw labels for Jupiter, Saturn and Alpha Centauri.
+        drawLabel(jupiter);
+        drawLabel(saturn);
+        drawLabel(alphaCentauri);
+
+        // Draw rocket (as a simplified triangle).
+        drawRocket();
+
+        // Draw rocket’s exhaust particles.
+        drawParticles();
+
+        // Draw the dashboard overlay with telemetry stats.
+        drawDashboard();
+      }
+
+      // Function: drawPlanet(obj)
+      // Draws a circle representing a planet or star system.
+      function drawPlanet(obj) {
+        ctx.beginPath();
+        ctx.arc(obj.x, obj.y, obj.radius, 0, Math.PI * 2);
+        ctx.fillStyle = obj.color;
+        ctx.fill();
+      }
+
+      // Function: drawLabel(obj)
+      // Draws the planet’s label above or below it.
+      function drawLabel(obj) {
+        ctx.font = "16px Arial";
+        ctx.fillStyle = "#fff";
+        // Position label slightly offset.
+        ctx.fillText(obj.label, obj.x - obj.radius, obj.y - obj.radius - 10);
+      }
+
+      // Function: drawRocket()
+      // Draws a white triangle representing the rocket.
+      function drawRocket() {
+        ctx.save();
+        ctx.translate(rocket.x, rocket.y);
+        // For simplicity, point the triangle to the right.
+        ctx.beginPath();
+        ctx.moveTo(0, -10);
+        ctx.lineTo(30, 0);
+        ctx.lineTo(0, 10);
+        ctx.closePath();
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Function: drawParticles()
+      // Draws all exhaust particles as small lines or circles.
+      function drawParticles() {
+        for (var i = 0; i < particles.length; i++) {
+          var p = particles[i];
+          var alpha = p.life / p.maxLife;  // Fade out with life.
+          ctx.fillStyle = p.color;
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+        }
+      }
+
+      // Function: drawDashboard()
+      // Draws a text-based dashboard overlay that explains the mission telemetry.
+      function drawDashboard() {
+        ctx.font = "16px monospace";
+        ctx.fillStyle = "#0f0";
+      
+        // Calculate formatted mission time (T+HH:MM:SS)
+        var t = Math.floor(simulationTime);
+        var hrs = Math.floor(t / 3600);
+        var mins = Math.floor((t % 3600) / 60);
+        var secs = t % 60;
+        var timeString = "T+" + (hrs < 10 ? "0" + hrs : hrs) + ":" +
+                                 (mins < 10 ? "0" + mins : mins) + ":" +
+                                 (secs < 10 ? "0" + secs : secs);
+      
+        // Compute displayed distance traveled and remaining using linear interpolation.
+        var distanceTraveled = simulationTime / TOTAL_SIM_TIME * TOTAL_DISTANCE;
+        var distanceRemaining = Math.max(0, TOTAL_DISTANCE - distanceTraveled);
+
+        // Compute percentage of speed of light.
+        var speedPct = (rocket.velocity / SPEED_OF_LIGHT * 100).toFixed(1);
+
+        // Compute fuel left percentage.
+        var fuelPct = (rocket.fuelRemaining / rocket.initialFuel * 100).toFixed(1);
+
+        // Build telemetry strings.
+        var lines = [];
+        lines.push("Mission Timer: " + timeString + " / T+01:00:00");
+        lines.push("Current Speed: " + rocket.velocity.toFixed(0) + " km/s (" + speedPct + "% c)");
+        lines.push("Distance traveled: " + formatNumber(distanceTraveled) + " km");
+        lines.push("Distance remaining: " + formatNumber(distanceRemaining) + " km");
+        lines.push("Rocket Mass: " + formatNumber(rocket.mass) + " kg");
+        lines.push("Fuel remaining: " + formatNumber(rocket.fuelRemaining) + " kg (" + fuelPct + "%)");
+
+        // Draw background shadow for readability.
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+        ctx.fillRect(10, 10, 380, lines.length * 20 + 10);
+
+        // Draw each telemetry line.
+        ctx.font = "16px monospace";
+        ctx.fillStyle = "#0f0";
+        for (var i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], 20, 35 + i * 20);
+        }
+      }
+
+      // Utility: formatNumber(n)
+      // Formats a number with commas for readability.
+      function formatNumber(n) {
+        return n.toLocaleString("en-US", {maximumFractionDigits: 0});
+      }
+
+      // Initialize simulation when the window has loaded.
+      window.addEventListener("load", init);
+    </script>
+  </body>
+</html>

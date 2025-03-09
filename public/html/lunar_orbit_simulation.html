@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Rocket Launch to Lunar Orbit Simulation</title>
+  <style>
+    /* Make the canvas fill the browser window with a dark background */
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; background: #000; }
+    /* Overlay text styling */
+    #overlay {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.4;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <!-- A simple div for overlaying numerical status text -->
+  <div id="overlay"></div>
+  <canvas id="simCanvas" width="1200" height="600"></canvas>
+
+  <script>
+/*
+  Rocket Launch to Lunar Orbit Simulation
+  -----------------------------------------
+  This simulation runs for 300 seconds (5 minutes real time) and shows a simplified 2D side–view of
+  a rocket launching from Earth, performing a gravity–turn and trans–lunar injection burn,
+  then executing a retrograde burn near the Moon for orbit insertion.
+  
+  Physics and drawing notes:
+  • Earth is drawn as a blue–green circle (radius 100 px) positioned at left.
+  • Moon is drawn as a grey circle (radius 30 px) at the right.
+  • The rocket is rendered as a small white rectangle rotated along its instantaneous flight direction.
+  • A particle system is used to simulate the rocket exhaust (colors white to orange, fading out).
+  
+  Simulation “physics”:
+  • We simulate the rocket state (position, velocity, mass) in “km” and “km/s”.
+  • Earth’s center is defined at simulation coordinate (0, 0) and Moon’s center at (384400, 0).
+  • The rocket is assumed to start at Earth’s surface (we use 6371 km altitude for Earth’s surface).
+  • Two gravitational bodies act on the rocket (using an inverse–square law):
+      – Earth: GM = 398600 km³/s²
+      – Moon: GM = 4902.8 km³/s²
+  • The propulsion is applied in three phases:
+      Phase 1 (t from 0 to 203 s): Main burn. For t ∈ [0,150] the thrust vector linearly “turns” from vertical (90°)
+         to horizontal (0°). Then for t ∈ [150,203] the rocket fires horizontally.
+         • Thrust force F_main = 3.77e7 N (constant). In km/s² acceleration: F/m/1000.
+         • Fuel consumption rate = 12816 kg/s.
+      Phase 2 (t from 203 to 280 s): Coast – no thrust.
+      Phase 3 (t from 280 to 300 s): Retrograde burn for orbit insertion against the velocity vector.
+         • Thrust force F_insertion = 1e6 N.
+         • Fuel consumption rate here is lower – about 340 kg/s.
+  • The fuel and mass update uses an initial mass of 2.9e6 kg, with 90% propellant (2.61e6 kg).
+    A “structure mass” of 2.9e5 kg remains.
+  
+  Display overlay shows:
+      Mission Timer, Rocket Velocity, Distance from Earth/Moon,
+      Rocket Mass, and Fuel remaining.
+*/
+
+// Get canvas and overlay elements
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+
+// ---------------- Simulation Constants ---------------- //
+
+// Duration of simulation (in seconds)
+const SIM_DURATION = 300.0;  // 5 minutes animation
+
+// Time conversion: real mission time (259200 s, ~3 days) compressed into 300 s simulation.
+const TIME_SCALE = 259200 / SIM_DURATION;  // each simulation second represents 864 real seconds
+
+// Gravitational constants (in km³/s²)
+const GM_EARTH = 398600;  // Earth
+const GM_MOON  = 4902.8;  // Moon
+
+// Positions of celestial bodies in simulation coordinates (in km)
+const earthCenter = { x: 0, y: 0 };  
+const moonCenter  = { x: 384400, y: 0 }; // approx Earth–Moon center distance
+
+// Rocket parameters
+const INITIAL_MASS = 2.9e6;            // kg, total starting mass.
+const STRUCTURE_MASS = 2.9e5;          // kg, non–fuel mass (~10% of initial).
+const INITIAL_FUEL = INITIAL_MASS - STRUCTURE_MASS;  // ~2.61e6 kg
+
+// Main engine (phase 1) parameters
+const F_MAIN = 3.77e7;   // N, main engine constant thrust.
+const F_MAIN_ACCEL = F_MAIN / (INITIAL_MASS * 1000); // km/s² (initially about 0.013 km/s² ~13 m/s²)
+const BURN_RATE_MAIN = 12816;  // kg/s, fuel consumption during main burn.
+const MAIN_BURN_END = 203.0;   // s, main burn cutoff.
+
+// Retrograde burn (phase 3) parameters (for orbit insertion near Moon)
+const F_INSERT = 1e6;  // N, retrograde thrust magnitude.
+const BURN_RATE_INSERT = 340;   // kg/s approx.
+const INSERT_BURN_START = 280.0; // s start retrograde burn.
+const INSERT_BURN_END   = SIM_DURATION; // s end at 300 s.
+
+// ---------------- Drawing Scale and Transform ---------------- //
+// We use simulation positions (in km) for the rocket. We want to map the horizontal distance
+// [0, 384400 km] onto the canvas (with margins). (Vertical positions are offset relative to rocket launch altitude.)
+
+const marginX = 150;  // left/right margin in pixels
+const marginY = 150;  // top/bottom margin in pixels
+const simXRange = moonCenter.x - earthCenter.x; // ~384400 km
+
+// Horizontal scale: pixels per km
+const scale = (canvas.width - 2 * marginX) / simXRange;
+
+// For vertical: we use the same scale so that the trajectory is not distorted.
+// However, note that Earth and Moon are drawn with fixed radii.
+const verticalOffset = canvas.height - marginY; // baseline (Earth surface drawing level)
+
+// The rocket’s initial simulated altitude is Earth’s surface = 6371 km. We want that to map to the Earth drawing.
+const launchAltitude = 6371;
+
+// Convert simulation (x in km, y in km altitude above Earth's center) to canvas coordinates.
+// For drawing, we want Earth’s center (0,0) to appear at (marginX, verticalOffset),
+// and add the rocket’s altitude relative to Earth’s center.
+function simToScreen(pos) {
+  return {
+    x: marginX + pos.x * scale,
+    // y is inverted: higher simulation altitude appears higher on canvas.
+    // We set y = verticalOffset - (simAltitude - launchAltitude)*scale.
+    y: verticalOffset - ((pos.y - launchAltitude) * scale)
+  };
+}
+
+// ---------------- Rocket State ---------------- //
+let rocket = {
+  // Starting at Earth’s surface: x = 0 (directly above Earth center) but for side–view we begin at (0, launchAltitude)
+  pos: { x: 0, y: launchAltitude },
+  vel: { x: 0, y: 0 },   // in km/s
+  mass: INITIAL_MASS,    // kg (including fuel)
+  fuel: INITIAL_FUEL     // kg
+};
+
+// Simulation time (s)
+let simTime = 0;
+
+// ---------------- Particle System for Exhaust ---------------- //
+let particles = [];
+// Each particle is an object: { pos: {x, y}, vel: {x, y}, lifetime: number, maxLifetime: number, color }
+
+function spawnParticle(origin, baseDir) {
+  // Create a particle at the rocket’s exhaust emit location.
+  // baseDir is the unit vector opposite to the thrust direction.
+  // We vary the velocity slightly randomly.
+  const angleVariation = (Math.random() - 0.5) * Math.PI / 8; // small variation +/- 22.5°
+  const cosVar = Math.cos(angleVariation);
+  const sinVar = Math.sin(angleVariation);
+  let dir = {
+    x: baseDir.x * cosVar - baseDir.y * sinVar,
+    y: baseDir.x * sinVar + baseDir.y * cosVar
+  };
+  // Particle initial speed (km/s) – chosen to look like rapid dispersal (scaled arbitrarily)
+  const speed = 0.05 + Math.random()*0.05;
+  particles.push({
+    pos: { x: origin.x, y: origin.y },
+    vel: { x: dir.x * speed, y: dir.y * speed },
+    lifetime: 0,
+    maxLifetime: 0.8 + Math.random()*0.4  // seconds
+  });
+}
+
+function updateParticles(dt) {
+  // Update particle positions and fade them out.
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    p.lifetime += dt;
+    p.pos.x += p.vel.x * dt;
+    p.pos.y += p.vel.y * dt;
+    if (p.lifetime > p.maxLifetime) {
+      particles.splice(i,1);
+    }
+  }
+}
+
+// ---------------- Simulation Update ---------------- //
+function updateSimulation(dt) {
+  // dt is in seconds of simulation time.
+  // Calculate gravitational acceleration.
+  function gravityAcc(bodyCenter, GM) {
+    let dx = rocket.pos.x - bodyCenter.x;
+    let dy = rocket.pos.y - bodyCenter.y;
+    let dist2 = dx*dx + dy*dy;
+    let dist = Math.sqrt(dist2);
+    // Avoid singularity very near the body.
+    let accelMag = GM / (dist2 * dist);
+    return { x: -accelMag * dx, y: -accelMag * dy };
+  }
+
+  let aEarth = gravityAcc(earthCenter, GM_EARTH);
+  let aMoon  = gravityAcc(moonCenter, GM_MOON);
+  // Total gravitational acceleration:
+  let a_grav = { x: aEarth.x + aMoon.x, y: aEarth.y + aMoon.y };
+
+  // ---------------- Determine Thrust Phase and Compute Thrust Acceleration ---------------- //
+  let a_thrust = { x: 0, y: 0 };
+  let thrustActive = false;
+  let thrustDirection = { x: 0, y: 0 }; // for particle emission
+
+  // Phase 1: Main burn (t < MAIN_BURN_END)
+  if (simTime < MAIN_BURN_END) {
+    thrustActive = true;
+    let currentThrust = F_MAIN;
+    // Determine thrust vector direction.
+    // For t between 0 and 150 s, the engine rotates from vertical (90°) to horizontal (0°).
+    let angleDeg = 0;
+    if (simTime <= 150) {
+      let frac = simTime / 150;
+      // at t=0: 90°, at t=150: 0°.
+      angleDeg = (1 - frac) * 90;
+    } else {
+      angleDeg = 0;
+    }
+    let angleRad = angleDeg * Math.PI / 180;
+    // In our simulation, 0° corresponds to +x (horizontal) and 90° to +y (vertical).
+    thrustDirection = { x: Math.cos(angleRad), y: Math.sin(angleRad) };
+    // Compute acceleration from thrust. (F/(m*1000) gives km/s²)
+    let aMag = currentThrust / (rocket.mass * 1000);
+    a_thrust.x = aMag * thrustDirection.x;
+    a_thrust.y = aMag * thrustDirection.y;
+
+    // Fuel consumption for main burn.
+    let fuelBurn = BURN_RATE_MAIN * dt;
+    if (rocket.fuel > fuelBurn) {
+      rocket.fuel -= fuelBurn;
+      rocket.mass -= fuelBurn;
+    } else {
+      // Out of fuel – set thrust off.
+      rocket.mass = STRUCTURE_MASS;
+      rocket.fuel = 0;
+      thrustActive = false;
+    }
+  }
+  // Phase 3: Retrograde burn (if between INSERT_BURN_START and INSERT_BURN_END)
+  else if (simTime >= INSERT_BURN_START && simTime <= INSERT_BURN_END) {
+    thrustActive = true;
+    // Thrust is applied opposite the rocket velocity.
+    let v = rocket.vel;
+    let vMag = Math.sqrt(v.x*v.x + v.y*v.y);
+    if (vMag === 0) { 
+      thrustDirection = { x: 0, y: 0 };
+    } else {
+      thrustDirection = { x: -v.x / vMag, y: -v.y / vMag };
+    }
+    let aMag = F_INSERT / (rocket.mass * 1000);
+    a_thrust.x = aMag * thrustDirection.x;
+    a_thrust.y = aMag * thrustDirection.y;
+    // Fuel consumption for insertion burn.
+    let fuelBurn = BURN_RATE_INSERT * dt;
+    if (rocket.fuel > fuelBurn) {
+      rocket.fuel -= fuelBurn;
+      rocket.mass -= fuelBurn;
+    } else {
+      rocket.mass = STRUCTURE_MASS;
+      rocket.fuel = 0;
+      thrustActive = false;
+    }
+  }
+  // Else: coast, thrust off.
+  
+  // Total acceleration = thrust + gravity.
+  let totalAcc = { 
+    x: a_thrust.x + a_grav.x, 
+    y: a_thrust.y + a_grav.y 
+  };
+
+  // Euler integration to update velocity and position.
+  rocket.vel.x += totalAcc.x * dt;
+  rocket.vel.y += totalAcc.y * dt;
+  rocket.pos.x += rocket.vel.x * dt;
+  rocket.pos.y += rocket.vel.y * dt;
+
+  // Spawn exhaust particles when thrust is active.
+  if (thrustActive && (thrustDirection.x !== 0 || thrustDirection.y !== 0)) {
+    // Determine exhaust spawn location at the tail of the rocket.
+    // For a simple rectangle, assume the exhaust comes from the opposite of thrust.
+    let tailPos = {
+      x: rocket.pos.x - thrustDirection.x * 20,  // 20 km offset (arbitrary scaling for visual effect)
+      y: rocket.pos.y - thrustDirection.y * 20
+    };
+    // Spawn a few particles per frame.
+    for (let i = 0; i < 3; i++) {
+      spawnParticle(tailPos, { x: -thrustDirection.x, y: -thrustDirection.y });
+    }
+  }
+  
+  // Advance simulation clock.
+  simTime += dt;
+}
+
+// ---------------- Render Function ---------------- //
+function draw() {
+  // Clear canvas.
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw stars / background (optional: here we use plain black background).
+  
+  // Draw Earth – fixed position and size.
+  // Earth is drawn at left: center at (marginX, verticalOffset) with fixed 100 px radius.
+  ctx.beginPath();
+  ctx.arc(marginX, verticalOffset, 100, 0, 2 * Math.PI);
+  ctx.fillStyle = '#2e8b57';  // blue-green color.
+  ctx.fill();
+  
+  // Draw Moon – fixed position near right (canvas.width - marginX, verticalOffset)
+  ctx.beginPath();
+  ctx.arc(canvas.width - marginX, verticalOffset, 30, 0, 2 * Math.PI);
+  ctx.fillStyle = '#777'; // grey
+  ctx.fill();
+
+  // Draw rocket.
+  // Convert simulation position to canvas coordinate.
+  let scrPos = simToScreen(rocket.pos);
+
+  // Determine rocket drawing angle based on velocity (default upward if nearly zero)
+  let angle = 0;
+  let vMag = Math.sqrt(rocket.vel.x*rocket.vel.x + rocket.vel.y*rocket.vel.y);
+  if (vMag > 0.0001) {
+    angle = Math.atan2(rocket.vel.y, rocket.vel.x);
+  } else {
+    angle = -Math.PI/2;  // default pointing up.
+  }
+  // Save context and rotate.
+  ctx.save();
+  ctx.translate(scrPos.x, scrPos.y);
+  ctx.rotate(angle);
+  // Draw rocket as a rectangle (width 8 px, height 24 px), centered at (0,0) with the tip pointing forward.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-4, -12, 8, 24);
+  ctx.restore();
+  
+  // Draw exhaust particles.
+  particles.forEach(p => {
+    let sp = simToScreen(p.pos);
+    // Fade based on lifetime.
+    let alpha = 1 - p.lifetime / p.maxLifetime;
+    // For a color transition from white to orange.
+    let r = 255;
+    let g = Math.floor(200 * alpha + 55);
+    let b = Math.floor(150 * alpha);
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 3, 0, 2 * Math.PI);
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    ctx.fill();
+  });
+  
+  // Draw mission data overlay.
+  drawOverlay();
+}
+
+function drawOverlay() {
+  // Calculate mission elapsed time in mm:ss.
+  let elapsed = simTime;
+  let minutes = Math.floor(elapsed / 60);
+  let seconds = Math.floor(elapsed % 60);
+  let timerStr = `Mission Timer: T+${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2, '0')}`;
+
+  // Rocket speed (km/s)
+  let speed = Math.sqrt(rocket.vel.x*rocket.vel.x + rocket.vel.y*rocket.vel.y).toFixed(3);
+
+  // Distance from Earth (from Earth center) and Moon.
+  let dxEarth = rocket.pos.x - earthCenter.x;
+  let dyEarth = rocket.pos.y - earthCenter.y;
+  let distEarth = Math.sqrt(dxEarth*dxEarth + dyEarth*dyEarth).toFixed(0);
+
+  let dxMoon = rocket.pos.x - moonCenter.x;
+  let dyMoon = rocket.pos.y - moonCenter.y;
+  let distMoon = Math.sqrt(dxMoon*dxMoon + dyMoon*dyMoon).toFixed(0);
+
+  // Rocket mass and fuel remaining.
+  let massStr = rocket.mass.toFixed(0);
+  let fuelStr = rocket.fuel.toFixed(0);
+  let fuelPct = ((rocket.fuel / INITIAL_FUEL)*100).toFixed(1);
+
+  // Build overlay text.
+  let text = `
+${timerStr}
+Current velocity: ${speed} km/s
+Distance from Earth: ${distEarth} km
+Distance from Moon: ${distMoon} km
+Rocket mass: ${massStr} kg
+Fuel remaining: ${fuelPct}% (${fuelStr} kg)
+  `;
+  overlay.innerText = text;
+}
+
+// ---------------- Main Animation Loop ---------------- //
+let lastTime = null;
+function animate(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  // dt in seconds; we limit the maximum dt for stability.
+  let dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+  
+  // Update simulation state.
+  updateSimulation(dt);
+  updateParticles(dt);
+  
+  // Render the scene.
+  draw();
+  
+  // Continue animation if simulation time is not exceeded.
+  if (simTime < SIM_DURATION) {
+    requestAnimationFrame(animate);
+  } else {
+    // Optionally, display mission complete message.
+    ctx.fillStyle = '#fff';
+    ctx.font = "30px monospace";
+    ctx.fillText("Mission Complete!", canvas.width/2 - 100, canvas.height/2);
+  }
+}
+
+// ---------------- Start Simulation ---------------- //
+function init() {
+  // Reset variables if needed.
+  simTime = 0;
+  rocket = {
+    pos: { x: 0, y: launchAltitude },
+    vel: { x: 0, y: 0 },
+    mass: INITIAL_MASS,
+    fuel: INITIAL_FUEL
+  };
+  particles = [];
+  lastTime = null;
+  requestAnimationFrame(animate);
+}
+
+// Start the simulation when the window loads.
+window.onload = init;
+
+  </script>
+</body>
+</html>
