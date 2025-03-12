@@ -180,18 +180,29 @@ const GetOpenAIAPICallHistory = async (user_id) => {
 };
 
 const chatGPT = async (messages, model, private_msg=false) => {
+  const inputParameters = {
+    model,
+    messages,
+  };
+  if (model === "gpt-4o-search-preview-2025-03-11" || model === "gpt-4o-mini-search-preview-2025-03-11") {
+    inputParameters["web_search_options"] = {
+      // user_location: {
+      //   type: "approximate",
+      //   approximate: {
+      //     country: "GB",
+      //     city: "London",
+      //     region: "London",
+      //   },
+      // },
+      search_context_size: "high",// high / medium / low
+    };
+  }
   try {
     let response;
     if (private_msg) {
-      response = await openai_private.chat.completions.create({
-        messages,
-        model,
-      });
+      response = await openai_private.chat.completions.create(inputParameters);
     } else {
-      response = await openai.chat.completions.create({
-        messages,
-        model,
-      });
+      response = await openai.chat.completions.create(inputParameters);
     }
     return response;
   } catch (error) {
