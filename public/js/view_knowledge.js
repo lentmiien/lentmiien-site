@@ -15,3 +15,7 @@ setActionButton("Know top", KnowledgeTop);
 function KnowledgeTop() {
   open("/chat4/knowledgelist", "_self");
 }
+
+function CopyKnowledge(e) {
+  navigator.clipboard.writeText(`# ${e.dataset.title}\n\n${e.dataset.content}`);
+}
