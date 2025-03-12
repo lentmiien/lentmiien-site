@@ -79,3 +79,13 @@ exports.dht22 = async (req, res) => {
 exports.test_editor = (req, res) => {
   res.render("test_editor");
 }
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.api_test = (req, res) => {
+  res.json({
+    message: "Hello and welcome to Lennart's website!",
+    url: "https://my.lentmiien.com/"
+  });
+}

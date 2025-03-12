@@ -38,4 +38,9 @@ router.get('/dht22', controller.dht22);
 /****************************/
 router.get('/test_editor', controller.test_editor);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/api_test', controller.api_test);
+
 module.exports = router;
