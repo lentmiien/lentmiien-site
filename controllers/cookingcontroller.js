@@ -28,19 +28,19 @@ exports.index = async (req, res) => {
       lunch: {
         name: "not set",
         is_url: false,
-        knoledge_id: "",
+        knowledge_id: "",
         image: "",
       },
       dinner: {
         name: "not set",
         is_url: false,
-        knoledge_id: "",
+        knowledge_id: "",
         image: "",
       },
       dessert: {
         name: "not set",
         is_url: false,
-        knoledge_id: "",
+        knowledge_id: "",
         image: "",
       },
     });
@@ -52,7 +52,7 @@ exports.index = async (req, res) => {
       if (know_index >= 0) {
         // Get details from knowledge entry
         cookingCalendar[index].lunch.name = knowledge[know_index].title;
-        cookingCalendar[index].lunch.knoledge_id = c.lunchToCook;
+        cookingCalendar[index].lunch.knowledge_id = c.lunchToCook;
         cookingCalendar[index].lunch.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
       } else {
         if (c.lunchToCook.length > 0) {
@@ -65,7 +65,7 @@ exports.index = async (req, res) => {
       if (know_index >= 0) {
         // Get details from knowledge entry
         cookingCalendar[index].dinner.name = knowledge[know_index].title;
-        cookingCalendar[index].dinner.knoledge_id = c.dinnerToCook;
+        cookingCalendar[index].dinner.knowledge_id = c.dinnerToCook;
         cookingCalendar[index].dinner.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
       } else {
         if (c.dinnerToCook.length > 0) {
@@ -78,7 +78,7 @@ exports.index = async (req, res) => {
       if (know_index >= 0) {
         // Get details from knowledge entry
         cookingCalendar[index].dessert.name = knowledge[know_index].title;
-        cookingCalendar[index].dessert.knoledge_id = c.dessertToCook;
+        cookingCalendar[index].dessert.knowledge_id = c.dessertToCook;
         cookingCalendar[index].dessert.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
       } else {
         if (c.dessertToCook.length > 0) {

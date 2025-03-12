@@ -12,7 +12,8 @@ block content
           .col 
             h5 Lunch
             if cookday.lunch.image.length > 0
-              img.image-large(src=`/img/${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+              a(href=`/chat4/viewknowledge/${cookday.lunch.knowledge_id}`) 
+                img.image-large(src=`/img/${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
               br
             if cookday.lunch.is_url
               a(id=`${cookday.date}lunch`, href=`${cookday.lunch.name}`, traget="_blank")= cookday.lunch.name 
@@ -31,7 +32,8 @@ block content
           .col 
             h5 Dinner
             if cookday.dinner.image.length > 0
-              img.image-large(src=`/img/${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+              a(href=`/chat4/viewknowledge/${cookday.dinner.knowledge_id}`) 
+                img.image-large(src=`/img/${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
               br
             if cookday.dinner.is_url
               a(id=`${cookday.date}dinner`, href=`${cookday.dinner.name}`, traget="_blank")= cookday.dinner.name 
@@ -50,7 +52,8 @@ block content
           .col 
             h5 Dessert
             if cookday.dessert.image.length > 0
-              img.image-large(src=`/img/${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+              a(href=`/chat4/viewknowledge/${cookday.dessert.knowledge_id}`) 
+                img.image-large(src=`/img/${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
               br
             if cookday.dessert.is_url
               a(id=`${cookday.date}dessert`, href=`${cookday.dessert.name}`, traget="_blank")= cookday.dessert.name 
