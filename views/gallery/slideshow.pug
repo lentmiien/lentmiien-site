@@ -10,15 +10,38 @@ block content
       button#next-button.btn.btn-primary(type='button') Next
     div.slideshow-container
       img#slideshow-image(src=`/gallery/image/${images[currentIndex]}`, alt=images[currentIndex], style="max-width: 100%;")
+  
+    // If this is our "Random Unrated" slideshow, include the rating form
+    if type === "Random Unrated"
+      form#rating-form(style="margin-top: 20px;")
+        div.form-group
+          label(for='comment') Comment:
+          textarea.form-control(name='comment', id='comment')
+        - let categories = ['Like', 'Visual', 'Atmosphere', 'Storytelling', 'Sexual']
+        each category in categories
+          div.form-group
+            label(for=category)= category
+            select.form-control(name=category, id=category)
+              option(value='0') 0
+              option(value='1') 1
+              option(value='2') 2
+              option(value='3') 3
+        button#submit-rating.btn.btn-primary(type='submit') Submit Rating
+        //- A placeholder for displaying confirmation or errors
+        p#rating-feedback
 
-    //- Embedded data for images
+    // Embedded JavaScript to handle slide navigation and asynchronous rating
     script.
       const images = !{JSON.stringify(images)};
       let currentIndex = !{currentIndex};
-      
+
       const imgElement = document.getElementById('slideshow-image');
       const prevButton = document.getElementById('prev-button');
       const nextButton = document.getElementById('next-button');
+      
+      // If the rating form exists, grab it and the feedback element
+      const ratingForm = document.getElementById('rating-form');
+      const ratingFeedback = document.getElementById('rating-feedback');
 
       prevButton.addEventListener('click', () => {
         if (currentIndex > 0) {
@@ -33,18 +56,64 @@ block content
           updateSlideshow();
         }
       });
-
+      
       function updateSlideshow() {
         imgElement.src = `/gallery/image/${images[currentIndex]}`;
         preloadNextImage();
+        // When slide changes, if a rating form is present, clear any messages
+        if (ratingFeedback) {
+          ratingFeedback.textContent = '';
+        }
+        // Optionally reset the form fields (if you want to)
+        if (ratingForm) {
+          ratingForm.reset();
+        }
       }
-
+      
       function preloadNextImage() {
         if (currentIndex + 1 < images.length) {
           const nextImg = new Image();
           nextImg.src = `/gallery/image/${images[currentIndex + 1]}`;
         }
       }
+      
+      // Handle asynchronous rating form submission
+      if (ratingForm) {
+        ratingForm.addEventListener('submit', async (e) => {
+          e.preventDefault(); // Prevent default form submission
 
+          // Gather form data into an object
+          const formData = new FormData(ratingForm);
+          const data = {};
+          formData.forEach((value, key) => {
+            data[key] = value;
+          });
+
+          try {
+            // Send the data using fetch to the API endpoint
+            const response = await fetch(`/gallery/api/rate/${images[currentIndex]}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+              ratingFeedback.style.color = 'green';
+              ratingFeedback.textContent = 'Rating saved successfully!';
+            } else {
+              ratingFeedback.style.color = 'red';
+              ratingFeedback.textContent = `Error: ${result.message}`;
+            }
+          } catch (err) {
+            console.error(err);
+            ratingFeedback.style.color = 'red';
+            ratingFeedback.textContent = 'Server error while saving rating.';
+          }
+        });
+      }
+      
       // Initial preload
       preloadNextImage();
