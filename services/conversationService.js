@@ -331,6 +331,12 @@ class ConversationService {
     return conversation_id;
   }
 
+  async emailOneMessage(conversation_id, message_id) {
+    const conversation = await this.conversationModel.findById(conversation_id);
+    await this.messageService.emailOneMessage(message_id, conversation.title);
+    return conversation_id;
+  }
+
   async generateMessageArrayForConversation(conversation_id, for_summary = false, use_context = true, context_role = 'system') {
     const messages = [];
     const inject_prompt_lookup = {

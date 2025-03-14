@@ -286,6 +286,12 @@ class MessageService {
     return messages;
   }
 
+  async emailOneMessage(message_id, title) {
+    const message = await this.getMessageById(message_id);
+    await MailgunSend(message.response, title);
+    return message_id;
+  }
+
   /*****
    * TOOLS TEST
    */
@@ -342,6 +348,31 @@ class MessageService {
 
     // Return entry to user
     return { db_entry, tokens: response.usage.total_tokens };
+  }
+}
+
+const FormData = require('form-data');
+const Mailgun = require('mailgun.js');
+
+async function MailgunSend(message_content, title) {
+  const mailgun = new Mailgun(FormData);
+  const mg = mailgun.client({
+    username: "api",
+    key: process.env.MAILGUN_API_KEY || "API_KEY",
+    // When you have an EU-domain, you must specify the endpoint:
+    // url: "https://api.eu.mailgun.net/v3"
+  });
+  try {
+    const data = await mg.messages.create("sandbox77cb26bdd21c4f968fcfe1fc455ec401.mailgun.org", {
+      from: "Mailgun Sandbox <postmaster@sandbox77cb26bdd21c4f968fcfe1fc455ec401.mailgun.org>",
+      to: ["Lennart Granstrom <lentmiien@gmail.com>"],
+      subject: title,
+      text: message_content,
+    });
+
+    console.log(data); // logs response data
+  } catch (error) {
+    console.log(error); //logs any error
   }
 }
 

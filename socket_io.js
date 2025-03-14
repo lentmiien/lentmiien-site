@@ -147,6 +147,12 @@ module.exports = (server, sessionMiddleware) => {
       await templateService.createTemplate(data.Title, data.Type, data.Category, data.TemplateText);
     });
 
+    socket.on('sendAsEmail', async (id) => {
+      if (socket.conversation_id != "new") {
+        await conversationService.emailOneMessage(socket.conversation_id, id);
+      }
+    });
+
     /////////////////////////////
     //----- Upload images -----//
 
