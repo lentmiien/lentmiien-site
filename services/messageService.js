@@ -368,6 +368,7 @@ async function MailgunSend(message_content, title) {
       to: ["Lennart Granstrom <lentmiien@gmail.com>"],
       subject: title,
       text: message_content,
+      html: marked.parse(message_content),
     });
 
     console.log(data); // logs response data
