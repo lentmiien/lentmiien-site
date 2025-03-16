@@ -21,6 +21,7 @@ function CopyKnowledge(e) {
 }
 
 async function AutoTagRecipe(e) {
+  e.disabled = true;
   // POST: /chat4/generateTagsForRecipe
   // BODY: title, content
   const response = await fetch("/chat4/generateTagsForRecipe", {
