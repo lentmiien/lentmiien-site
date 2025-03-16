@@ -18,6 +18,10 @@ class TemplateService {
     return await this.templateModel.find();
   }
 
+  async getTemplatesByIdArray (ids) {
+    return await this.templateModel.find({ _id: ids });
+  }
+
   async createTemplate(title, type, category, text) {
     const entry = {
       Title: title,

@@ -21,7 +21,10 @@ block content
             label(for="k_category") Category 
             input#k_category.form-control(type="text", name="k_category", value=`${knowledge.category}`)
             label(for="k_tags") Tags (comma separated)
-            input#k_tags.form-control(type="text", name="k_tags", value=`${knowledge.tags.join(',')}`)
+            .input-group
+              input#k_tags.form-control(type="text", name="k_tags", value=`${knowledge.tags.join(',')}`)
+              if knowledge.category === "Recipe"
+                button.btn.btn-warning(type="button", data-title=knowledge.title, data-content=knowledge.contentMarkdown, onclick="AutoTagRecipe(this)") Auto-tag Recipe
             label(for="k_images") Images (comma separated filenames)
             input#k_images.form-control(type="text", name="k_images", value=`${knowledge.images.join(',')}`)
             input.btn.btn-primary(type="submit", value="Update")
@@ -50,3 +53,4 @@ block content
                         br
                         i= `Image file: ${img.filename}`
                   pre.user= messages[index].prompt
+  script(src="/js/view_knowledge.js") 

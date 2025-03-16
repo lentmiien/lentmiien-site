@@ -73,6 +73,9 @@ router.post('/redact/:id', controller.redact_post);
 // Fetch messages API
 router.get('/api/fetch_messages', controller.fetch_messages);
 
+// Tagger
+router.post('/generateTagsForRecipe', controller.generateTagsForRecipe);
+
 // Tools test
 router.post('/generate_image_tool/:id', upload.array('imgs'), controller.generate_image_tool);
 

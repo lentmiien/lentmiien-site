@@ -311,7 +311,7 @@ exports.saveknowledge = async (req, res) => {
   const originConversationId = req.body.k_conversation_id;
   const contentMarkdown = req.body.k_content;
   const category = req.body.k_category;
-  const tags = req.body.k_tags.split(', ').join(',').split(' ').join('_').split(',');
+  const tags = req.body.k_tags.toLowerCase().split(', ').join(',').split(' ').join('_').split(',');
   const input_images = req.body.k_images.split(', ').join(',').split(' ').join('_').split(',');
   const user_id = req.user.name;
 
@@ -352,7 +352,7 @@ exports.updateknowledge = async (req, res) => {
   const title = req.body.k_title;
   const contentMarkdown = req.body.k_content;
   const category = req.body.k_category;
-  const tags = req.body.k_tags.split(', ').join(',').split(' ').join('_').split(',');
+  const tags = req.body.k_tags.toLowerCase().split(', ').join(',').split(' ').join('_').split(',');
   const input_images = req.body.k_images.split(', ').join(',').split(' ').join('_').split(',');
 
   const images = [];
@@ -569,6 +569,41 @@ exports.fetch_messages = async (req, res) => {
   const messages = await messageService.fetchMessages(user_id, category ? category : null, tag ? tag : null, keyword ? keyword : null);
 
   res.json(messages);
+};
+
+exports.generateTagsForRecipe = async (req, res) => {
+  const user_id = req.user.name;
+  const title = req.body.title;
+  const content = req.body.content;
+  const messages = [];
+  const recipe = `# ${title}\n\n${content}`;
+
+  // "67d62f9e0a6afb9d5f73215e" - System message
+  // "67d62fb80a6afb9d5f732160" - Chat template: replace "[PASTE YOUR RECIPE HERE]" with actual recipe
+  const k = await templateService.getTemplatesByIdArray(["67d62f9e0a6afb9d5f73215e", "67d62fb80a6afb9d5f732160"]);
+  let systemTemplate = "";
+  let messageTemplate = "";
+  for (let i = 0; i < k.length; i++) {
+    if (k[i]._id.toString() === "67d62f9e0a6afb9d5f73215e") {
+      systemTemplate = k[i].TemplateText;
+    }
+    if (k[i]._id.toString() === "67d62fb80a6afb9d5f732160") {
+      messageTemplate = k[i].TemplateText;
+    }
+  }
+  const user_prompt = messageTemplate.split("[PASTE YOUR RECIPE HERE]").join(recipe);
+
+  messages.push({
+    role: 'system',
+    content: systemTemplate,
+  });
+  messages.push({
+    role: 'user',
+    content: user_prompt,
+  });
+
+  const response = await messageService.createMessage(null, messages, null, user_id, {tags:"tagger", category:"Tagger", prompt:user_prompt}, [], "o3-mini-2025-01-31", "low", false);
+  res.json(response.db_entry);
 };
 
 /*****

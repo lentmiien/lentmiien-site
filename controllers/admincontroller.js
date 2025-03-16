@@ -249,31 +249,5 @@ exports.delete_log_file = (req, res) => {
 
 exports.openai_usage = async (req, res) => {
   const data = (await OpenAIUsage.find()).reverse();
-  await testMailgun(data[0]);
   res.render("openai_usage", {data});
 };
-
-const FormData = require('form-data');
-const Mailgun = require('mailgun.js');
-
-async function testMailgun(test_data) {
-  const mailgun = new Mailgun(FormData);
-  const mg = mailgun.client({
-    username: "api",
-    key: process.env.MAILGUN_API_KEY || "API_KEY",
-    // When you have an EU-domain, you must specify the endpoint:
-    // url: "https://api.eu.mailgun.net/v3"
-  });
-  try {
-    const data = await mg.messages.create("sandbox77cb26bdd21c4f968fcfe1fc455ec401.mailgun.org", {
-      from: "Mailgun Sandbox <postmaster@sandbox77cb26bdd21c4f968fcfe1fc455ec401.mailgun.org>",
-      to: ["Lennart Granstrom <lentmiien@gmail.com>"],
-      subject: "Hello Lennart Granstrom - OpenAI usage last day",
-      text: `This it your OpenAI API usage from last day:\n\n${JSON.stringify(test_data, null, 2)}`,
-    });
-
-    console.log(data); // logs response data
-  } catch (error) {
-    console.log(error); //logs any error
-  }
-}
