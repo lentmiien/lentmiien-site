@@ -606,6 +606,14 @@ exports.generateTagsForRecipe = async (req, res) => {
   res.json(response.db_entry);
 };
 
+// TODO: complete!
+exports.templates_top = async (req, res) => {
+  const templates = await templateService.getTemplates();
+  res.render("templates_top", {templates});
+};
+
+exports.templates_edit = async (req, res) => {};
+
 /*****
  * TOOLS TEST
  */
