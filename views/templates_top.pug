@@ -1,0 +1,33 @@
+extends layout
+
+block content
+  h2 Manage templates 
+  form(action="/chat4/template/edit", method="post") 
+    label(for="id") Edit existing 
+    select#id.form-control(name="id", onchange="SelectTemplate(this)") 
+      option(value="new") - new -
+      each t in templates
+        option(value=t._id.toString(), title=t.TemplateText)= `[${t.Type}] [${t.Category}] ${t.Title}`
+    label(for="title") Title 
+    input#title.form-control(type="text", name="title", required)
+    label(for="type") Type 
+    select#type.form-control(name="type", required) 
+      option(value="chat") Chat
+      option(value="context") Context
+      option(value="image") Image
+    label(for="category") Category 
+    input#category.form-control(type="text", name="category", required)
+    label(for="text") Text content 
+    textarea#text.form-control(name="text", required)
+    input.btn.btn-success(type="submit", value="Save")
+  each t in templates
+    div.hidden(id=t._id.toString(), data-title=t.Title, data-type=t.Type, data-category=t.Category, data-templatetext=t.TemplateText)
+  h2 Delete template
+  form(action="/chat4/template/delete", method="post") 
+    .input-group
+      select#id_to_delete.form-control(name="id_to_delete", required) 
+        option(value="") - none -
+        each t in templates
+          option(value=t._id.toString(), title=t.TemplateText)= `[${t.Type}] [${t.Category}] ${t.Title}`
+      input.btn.btn-danger(type="submit", value="Delete")
+  script(src="/js/templates_top.js") 

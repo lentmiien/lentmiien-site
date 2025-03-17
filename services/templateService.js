@@ -42,6 +42,10 @@ class TemplateService {
     await entry[0].save();
     return entry[0];
   }
+
+  async deleteTemplateById (id) {
+    await this.templateModel.deleteOne({_id: id});
+  }
 }
 
 module.exports = TemplateService;

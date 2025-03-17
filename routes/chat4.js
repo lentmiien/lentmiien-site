@@ -76,6 +76,11 @@ router.get('/api/fetch_messages', controller.fetch_messages);
 // Tagger
 router.post('/generateTagsForRecipe', controller.generateTagsForRecipe);
 
+// Templates
+router.get('/templates', controller.templates_top);
+router.post('/template/edit', controller.templates_edit);
+router.post('/template/delete', controller.templates_delete);
+
 // Tools test
 router.post('/generate_image_tool/:id', upload.array('imgs'), controller.generate_image_tool);
 

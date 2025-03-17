@@ -606,13 +606,36 @@ exports.generateTagsForRecipe = async (req, res) => {
   res.json(response.db_entry);
 };
 
-// TODO: complete!
 exports.templates_top = async (req, res) => {
   const templates = await templateService.getTemplates();
   res.render("templates_top", {templates});
 };
 
-exports.templates_edit = async (req, res) => {};
+exports.templates_edit = async (req, res) => {
+  const templateId = req.body.id === "new" ? null : req.body.id;
+  const title = req.body.title;
+  const type = req.body.type;
+  const category = req.body.category;
+  const text = req.body.text;
+
+  if (templateId) {
+    await templateService.updateTemplate(templateId, title, type, category, text);
+  } else {
+    await templateService.createTemplate(title, type, category, text);
+  }
+
+  res.redirect("/chat4/templates");
+};
+
+exports.templates_delete = async (req, res) => {
+  const templateId = req.body.id_to_delete;
+
+  if (templateId && templateId.length > 0) {
+    await templateService.deleteTemplateById(templateId);
+  }
+
+  res.redirect("/chat4/templates");
+};
 
 /*****
  * TOOLS TEST
