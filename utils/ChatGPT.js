@@ -257,83 +257,88 @@ const chatGPT_beta = async (messages, model, private_msg=false, zod) => {
 };
 
 const responses = async (messages, model, effort) => {
-  const input = [];
-  for (const m of messages) {
-    if (m.role === "system") {
-      input.push({
-        role: "developer",
-        content: [
-          {
-            type: "input_text",
-            text: m.content[0].text,
-          },
-        ],
-      });
-    } else if (m.role === "user") {
-      input.push({
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: m.content[0].text,
-          },
-        ],
-      });
-    } else if (m.role === "assistant") {
-      input.push({
-        role: "assistant",
-        content: [
-          {
-            type: "output_text",
-            text: m.content[0].text,
-          },
-        ],
-      });
-    } else {
-      console.log(`Role "${m.role}" has not been implemented, continue without the following message:`, m);
+  try {
+    const input_messages = [];
+    for (const m of messages) {
+      if (m.role === "system") {
+        input_messages.push({
+          role: "developer",
+          content: [
+            {
+              type: "input_text",
+              text: m.content[0].text,
+            },
+          ],
+        });
+      } else if (m.role === "user") {
+        input_messages.push({
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: m.content[0].text,
+            },
+          ],
+        });
+      } else if (m.role === "assistant") {
+        input_messages.push({
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              text: m.content[0].text,
+            },
+          ],
+        });
+      } else {
+        console.log(`Role "${m.role}" has not been implemented, continue without the following message:`, m);
+      }
     }
+    const response = await openai.responses.create({
+      model,
+      input: input_messages,
+      text: {
+        "format": {
+          "type": "text"
+        }
+      },
+      reasoning: {
+        effort: effort ? effort : "medium"
+      },
+      tools: [],
+      store: false
+    });
+    return {
+      "id": response.id,
+      "object": response.object,
+      "created": response.created_at,
+      "model": response.model,
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": response.output[0].role,
+            "content": response.output[0].content[0].text,
+            "refusal": null,
+            "annotations": response.output[0].content[0].annotations
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": response.usage.input_tokens,
+        "completion_tokens": response.usage.output_tokens,
+        "total_tokens": response.usage.total_tokens,
+        "prompt_tokens_details": response.usage.input_tokens_details,
+        "completion_tokens_details": response.usage.output_tokens_details
+      },
+      "service_tier": "default"
+    };
+  } catch (error) {
+    console.error(`Error while calling the OpenAI responses API: ${error}`);
+    throw error;
   }
-  const response = await openai.responses.create({
-    model,
-    input,
-    text: {
-      "format": {
-        "type": "text"
-      }
-    },
-    reasoning: {
-      effort: effort ? effort : "medium"
-    },
-    tools: [],
-    store: true
-  });
-  return {
-    "id": response.id,
-    "object": response.object,
-    "created": response.created_at,
-    "model": response.model,
-    "choices": [
-      {
-        "index": 0,
-        "message": {
-          "role": response.output[0].role,
-          "content": response.output[0].content[0].text,
-          "refusal": null,
-          "annotations": response.output[0].content[0].annotations
-        },
-        "logprobs": null,
-        "finish_reason": "stop"
-      }
-    ],
-    "usage": {
-      "prompt_tokens": response.usage.input_tokens,
-      "completion_tokens": response.usage.output_tokens,
-      "total_tokens": response.usage.total_tokens,
-      "prompt_tokens_details": response.usage.input_tokens_details,
-      "completion_tokens_details": response.usage.output_tokens_details
-    },
-    "service_tier": "default"
-  };
 };
 
 // reasoning_effort: "low" / "medium" / "high"
