@@ -256,6 +256,86 @@ const chatGPT_beta = async (messages, model, private_msg=false, zod) => {
   }
 };
 
+const responses = async (messages, model, effort) => {
+  const input = [];
+  for (const m of messages) {
+    if (m.role === "system") {
+      input.push({
+        role: "developer",
+        content: [
+          {
+            type: "input_text",
+            text: m.content[0].text,
+          },
+        ],
+      });
+    } else if (m.role === "user") {
+      input.push({
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: m.content[0].text,
+          },
+        ],
+      });
+    } else if (m.role === "assistant") {
+      input.push({
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: m.content[0].text,
+          },
+        ],
+      });
+    } else {
+      console.log(`Role "${m.role}" has not been implemented, continue without the following message:`, m);
+    }
+  }
+  const response = await openai.responses.create({
+    model,
+    input,
+    text: {
+      "format": {
+        "type": "text"
+      }
+    },
+    reasoning: {
+      effort: effort ? effort : "medium"
+    },
+    tools: [],
+    store: true
+  });
+  return {
+    "id": response.id,
+    "object": response.object,
+    "created": response.created_at,
+    "model": response.model,
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": response.output[0].role,
+          "content": response.output[0].content[0].text,
+          "refusal": null,
+          "annotations": response.output[0].content[0].annotations
+        },
+        "logprobs": null,
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": response.usage.input_tokens,
+      "completion_tokens": response.usage.output_tokens,
+      "total_tokens": response.usage.total_tokens,
+      "prompt_tokens_details": response.usage.input_tokens_details,
+      "completion_tokens_details": response.usage.output_tokens_details
+    },
+    "service_tier": "default"
+  };
+};
+
 // reasoning_effort: "low" / "medium" / "high"
 const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=false) => {
   // context not supported, so remove context message
@@ -281,14 +361,18 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
       openai_load["reasoning_effort"] = reasoning_effort;
     }
     let response;
-    if (private_msg) {
-      response = await openai_private.chat.completions.create(openai_load);
+    if (model === "o1-pro-2025-03-19") {
+      response = await responses(messages, model, reasoning_effort);
     } else {
-      response = await openai.chat.completions.create(openai_load);
-    }
-    // o1 and o3-mini don't generate markdown, so put in codeblock to handle as text (to prevent html generation from disrupting the page)
-    if (model === "o1-2024-12-17" || model === "o1" || model === "o3-mini-2025-01-31") {
-      response.choices[0].message.content = "```\n" + response.choices[0].message.content + "\n```";
+      if (private_msg) {
+        response = await openai_private.chat.completions.create(openai_load);
+      } else {
+        response = await openai.chat.completions.create(openai_load);
+      }
+      // o1 and o3-mini don't generate markdown, so put in codeblock to handle as text (to prevent html generation from disrupting the page)
+      if (model === "o1-2024-12-17" || model === "o1" || model === "o3-mini-2025-01-31") {
+        response.choices[0].message.content = "```\n" + response.choices[0].message.content + "\n```";
+      }
     }
     return response;
   } catch (error) {
