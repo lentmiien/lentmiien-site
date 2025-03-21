@@ -306,8 +306,13 @@ const responses = async (messages, model, effort) => {
         effort: effort ? effort : "medium"
       },
       tools: [],
-      store: false
+      store: true
     });
+    console.log(response);
+    let response_message = null;
+    for (const output of response.output) {
+      if (output.type === "message") response_message = output;
+    }
     return {
       "id": response.id,
       "object": response.object,
@@ -317,10 +322,10 @@ const responses = async (messages, model, effort) => {
         {
           "index": 0,
           "message": {
-            "role": response.output[0].role,
-            "content": response.output[0].content[0].text,
+            "role": response_message.role,
+            "content": response_message.content[0].text,
             "refusal": null,
-            "annotations": response.output[0].content[0].annotations
+            "annotations": response_message.content[0].annotations
           },
           "logprobs": null,
           "finish_reason": "stop"
