@@ -290,7 +290,7 @@ class ConversationService {
     await conversation.save();
   }
 
-  async updateConversation(conversation_id, parameters) {
+  async updateConversation(conversation_id, parameters, model = null) {
     const tags_array = parameters.tags.split(', ').join(',').split(' ').join('_').split(',');
     const conversation = await this.conversationModel.findById(conversation_id);
     conversation.title = parameters.title;
@@ -298,6 +298,7 @@ class ConversationService {
     conversation.tags = tags_array;
     conversation.context_prompt = parameters.context;
     conversation.updated_date = new Date();
+    if (model) conversation.default_model = model;
     await conversation.save();
     return conversation._id.toString();
   }

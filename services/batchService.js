@@ -122,7 +122,7 @@ class BatchService {
     }
     // 3. Update conversation parameters
     if (prompt != "@SUMMARY") {
-      await this.conversationService.updateConversation(conversation_id, parameters);
+      await this.conversationService.updateConversation(conversation_id, parameters, "batch+" + model);
     }
 
     // Process input images
