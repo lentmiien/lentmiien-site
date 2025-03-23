@@ -172,10 +172,13 @@ function RunImageForm() {
 const sound_form = document.getElementById("sound_form");
 const sound_message_id = document.getElementById("sound_message_id");
 const sound_prompt = document.getElementById("sound_prompt");
+const sound_instructions = document.getElementById("sound_instructions");
+const voice_instructions = document.getElementById("voice_instructions");
 
 function RunSoundForm() {
   // Transfer prompt to sound_prompt
   sound_prompt.value = userprompt.value;
+  sound_instructions.value = voice_instructions.value;
   // Select selected message, or latest if non selected, and set message id in sound_message_id
   const start_messages = document.getElementsByName("start_message");
   sound_message_id.value = start_messages[0].value;

@@ -210,11 +210,12 @@ exports.generate_image = async (req, res) => {
 exports.generate_sound = async (req, res) => {
   const conversation_id = req.params.id;
   const prompt = req.body.sound_prompt;
+  const instructions = req.body.sound_instructions;
   const message_id = req.body.sound_message_id;
   const model = req.body.sound_model;
   const voice = req.body.sound_voice;
 
-  await messageService.generateTTS(message_id, prompt, model, voice);
+  await messageService.generateTTS(message_id, prompt, model, voice, instructions);
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };

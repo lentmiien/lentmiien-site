@@ -67,18 +67,27 @@ block content
                 option(value="1024x1792") 1024x1792
             .col
               h3 TTS
+              label(for="voice_instructions") Speak style instructions (only for "GPT 4o Mini TTS")
+              textarea#voice_instructions.form-control(name="voice_instructions") Speak in a cheerful and positive tone.
               label(for="toolttsmodel") TTS Model 
               select#toolttsmodel.form-control(name="toolttsmodel") 
+                option(value="gpt-4o-mini-tts") GPT 4o Mini TTS
                 option(value="tts-1") Text-To-Speech 1
                 option(value="tts-1-hd") Text-To-Speech 1 HD
               label(for="toolvoice") TTS Voice 
               select#toolvoice.form-control(name="toolvoice") 
-                option(value="nova") Nova
+                option(value="nova") Default (Nova)
                 option(value="alloy") Alloy
+                option(value="ash") Ash
+                option(value="ballad") Ballad
+                option(value="coral") Coral
                 option(value="echo") Echo
                 option(value="fable") Fable
                 option(value="onyx") Onyx
+                option(value="nova") Nova
+                option(value="sage") Sage
                 option(value="shimmer") Shimmer
+                option(value="verse") Verse
           .row 
             .col.button-container.mt-2 
               button.btn.btn-primary(onclick="UpdateSettings()") Update
@@ -194,6 +203,7 @@ block content
             input#sound_model(type="hidden", name="sound_model", value="tts-1")
             input#sound_voice(type="hidden", name="sound_voice", value="nova")
             textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
+            textarea#sound_instructions(style="display:none;", name="sound_instructions", cols="30", rows="10")
       .tab-content
         #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")
           .row 
