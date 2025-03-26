@@ -1,13 +1,19 @@
 const { AIModelCards } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
+const anthropic = require('../utils/anthropic');
 
 exports.index = async (req, res) => {
   // Load available OpenAI models
   const models = await AIModelCards.find();
-  const available = openai.GetOpenAIModels().map(d => d.model);
-  const usable_models = models.filter(d => ((d.provider === "OpenAI" && available.indexOf(d.api_model) >= 0) || d.provider != "OpenAI") && d.model_type === "chat");
-
+  const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
+  const availableAnthropic = anthropic.GetAnthropicModels().map(d => d.model);
+  const usable_models = models.filter(d => (
+    (d.provider === "OpenAI" && availableOpenAI.indexOf(d.api_model) >= 0) || 
+    (d.provider === "Anthropic" && availableAnthropic.indexOf(d.api_model) >= 0) || 
+    d.provider === "Google" || 
+    d.provider === "Groq" || 
+    d.provider === "Local") && d.model_type === "chat");
   res.render("chat5", {models: usable_models});
 };
 

@@ -9,10 +9,6 @@ const mime = require("mime-types");
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
 
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.5-pro-exp-03-25",
-});
-
 const generationConfig = {
   temperature: 1,
   topP: 0.95,
@@ -23,9 +19,14 @@ const generationConfig = {
   responseMimeType: "text/plain",
 };
 
-const googleAI = async (messages, model_input) => {
-  // const systemInstruction = messages.filter(m => m.role === "system")[0].content[0].text;
+const googleAI = async (messages, use_model) => {
+  const systemInstruction = messages.filter(m => m.role === "system")[0].content[0].text;
   const history = [];
+
+  const model = genAI.getGenerativeModel({
+    model: use_model,
+    systemInstruction
+  });
 
   for (let i = 0; i < messages.length-1; i++) {
     if (messages[i].role === "user") {
@@ -64,13 +65,11 @@ const googleAI = async (messages, model_input) => {
       }
     }
   }
-  console.log(result.response.text());
-
   return {
     "id": "chatcmpl-123",
     "object": "chat.completion",
     "created": Date.now(),
-    "model": "gemini-2.5-pro-exp-03-25",
+    "model": use_model,
     "system_fingerprint": "fp_44709d6fcb",
     "choices": [{
       "index": 0,

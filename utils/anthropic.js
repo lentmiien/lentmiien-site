@@ -2,6 +2,29 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const anthropicAPI = new Anthropic();
 
+const model_list = [];
+async function Models() {
+  const list = await anthropicAPI.models.list({limit: 1000});
+
+  for await (const model of list.data) {
+    model_list.push({
+      model: model.id,
+      created: Math.round(((new Date(model.created_at)).getTime())/1000),
+    })
+  }
+
+  model_list.sort((a,b) => {
+    if (a.created > b.created) return -1;
+    if (a.created < b.created) return 1;
+    return 0;
+  });
+}
+Models();
+
+const GetAnthropicModels = () => {
+  return model_list;
+};
+
 const anthropic = async (messages, model) => {
   const max_tokens = 8192;
   const temperature = 1;
@@ -87,6 +110,7 @@ const anthropic_batch_results = async (batch_id) => {
 };
 
 module.exports = {
+  GetAnthropicModels,
   anthropic,
   anthropic_batch_start,
   anthropic_batch_status,

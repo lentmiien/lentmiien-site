@@ -41,9 +41,15 @@ block content
         a.btn.btn-link(href="/product")
           img(src="/i/product.jpg", alt="Product details")
           p Product details
-  if new_models.length > 0
+  if new_openai_models.length > 0
     .row 
       .col
         h3 New OpenAI models (last 30 days)
-        each m in new_models
+        each m in new_openai_models
+          span(style="border: 1px solid gray; margin: 3px; padding: 2px; border-radius: 5px; display: inline-block;")= `${m.model} (${(new Date(m.created*1000)).toDateString()})`
+  if new_anthropic_models.length > 0
+    .row 
+      .col
+        h3 New Anthropic models (last 30 days)
+        each m in new_anthropic_models
           span(style="border: 1px solid gray; margin: 3px; padding: 2px; border-radius: 5px; display: inline-block;")= `${m.model} (${(new Date(m.created*1000)).toDateString()})`

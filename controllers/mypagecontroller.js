@@ -5,14 +5,17 @@ const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
 const { ArticleModel } = require('../database');
 const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
+const { GetAnthropicModels } = require('../utils/anthropic');
 
 exports.mypage = (req, res) => {
   // Do something fun here, to show om mypage!
-  const models = GetOpenAIModels();
   const ts = Math.round((Date.now() - (1000 * 60 * 60 * 24 * 30)) / 1000);
-  const new_models = models.filter(d => d.created > ts);
+  const OpenAI_models = GetOpenAIModels();
+  const new_openai_models = OpenAI_models.filter(d => d.created > ts);
+  const Anthropic_models = GetAnthropicModels();
+  const new_anthropic_models = Anthropic_models.filter(d => d.created > ts);
 
-  res.render('mypage', {new_models});
+  res.render('mypage', {new_openai_models, new_anthropic_models});
 };
 
 exports.blogpost = async (req, res) => {
