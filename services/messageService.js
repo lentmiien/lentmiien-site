@@ -230,11 +230,11 @@ class MessageService {
     return message;
   }
 
-  async generateTTS(messageId, tts_prompt, model = "tts-1", voice = "nova") {
+  async generateTTS(messageId, tts_prompt, model = "tts-1", voice = "nova", instructions = null) {
     // Load DB entry
     const message = await this.messageModel.findById(messageId);
     // Prompt Open AI API to generate tts sound file
-    const { filename, prompt } = await tts(model, tts_prompt, voice);
+    const { filename, prompt } = await tts(model, tts_prompt, voice, false, instructions);
     // Save meta data
     const metadata = {
       filename: filename,

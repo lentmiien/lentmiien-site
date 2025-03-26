@@ -156,6 +156,7 @@ const OpenAIAPICallLog_tts = async (user_id, api_endpoint, prompt, voice, output
   const costs = {
     "tts-1": 0.015,
     "tts-1-hd": 0.03,
+    "gpt-4o-mini-tts": 0.012,
   };
   const cost = costs[api_endpoint] * prompt.length / 1000;
 
@@ -437,28 +438,29 @@ const embedding = async (text, model, private_msg=false) => {
   }
 };
 
-const tts = async (api_endpoint, text, voice, private_msg=false) => {
-  const api_val = ["tts-1", "tts-1-hd"];
-  const v_val = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
+const tts = async (api_endpoint, text, voice, private_msg=false, instructions=null) => {
+  const api_val = ["tts-1", "tts-1-hd", "gpt-4o-mini-tts"];
+  const v_val = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"];
   if (text.length > 4096 || api_val.indexOf(api_endpoint) == -1 || v_val.indexOf(voice) == -1) {
     return 'Invalid input'
+  }
+
+  const payload = {
+    model: api_endpoint,
+    voice,
+    input: text,
+  };
+  if (instructions && instructions.length > 0 && api_endpoint === "gpt-4o-mini-tts") {
+    payload["instructions"] = instructions;
   }
 
   const filename = `sound-${Date.now()}-.mp3`;
   const outputfile = path.resolve(`./public/mp3/${filename}`);
   let mp3;
   if (private_msg) {
-    mp3 = await openai_private.audio.speech.create({
-      model: api_endpoint,
-      voice,
-      input: text,
-    });
+    mp3 = await openai_private.audio.speech.create(payload);
   } else {
-    mp3 = await openai.audio.speech.create({
-      model: api_endpoint,
-      voice,
-      input: text,
-    });
+    mp3 = await openai.audio.speech.create(payload);
   }
   const buffer = Buffer.from(await mp3.arrayBuffer());
   await fs.promises.writeFile(outputfile, buffer);
