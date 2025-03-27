@@ -20,7 +20,11 @@ const generationConfig = {
 };
 
 const googleAI = async (messages, use_model) => {
-  const systemInstruction = messages.filter(m => m.role === "system")[0].content[0].text;
+  let systemInstruction = null;
+  const system_messages = messages.filter(m => m.role === "system");
+  if (system_messages.length > 0) {
+    systemInstruction = system_messages[0].content[0].text;
+  }
   const history = [];
 
   const model = genAI.getGenerativeModel({
