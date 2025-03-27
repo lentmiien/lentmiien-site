@@ -7,7 +7,7 @@ const galleryPath = process.env.GALLERY_PATH;
 
 exports.index = async (req, res) => {
   try {
-    const images = await getImageFiles();
+    const images = [];//await getImageFiles();
     res.render('gallery/gallery', { images });
   } catch (error) {
     console.error(error);
