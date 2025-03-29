@@ -220,6 +220,33 @@ class BatchService {
           data_entry.body.messages = messages;
           // Append data_entry to prompt_data
           if (model_provider[model_to_use] === "OpenAI") {
+            // Newer reasoning models uses "developer" instead of "system"
+            const use_developer_models = ["o1-pro-2025-03-19", "o1-2024-12-17", "o3-mini-2025-01-31"];
+            if (use_developer_models.indexOf(model_to_use) >= 0) {
+              for (let i = 0; i < data_entry.body.messages.length; i++) {
+                if (data_entry.body.messages[i].role === "system") {
+                  data_entry.body.messages[i].role === "developer";
+                }
+              }
+            }
+            // o1-pro only works with "responses" API
+            if (model_to_use === "o1-pro-2025-03-19") {
+              // /v1/responses
+              data_entry.url = "/v1/responses";
+              for (let i = 0; i < data_entry.body.messages.length; i++) {
+                for (let j = 0; j < data_entry.body.messages[i].content.length; j++) {
+                  if (data_entry.body.messages[i].content[j].type === "text") {
+                    data_entry.body.messages[i].content[j].type = data_entry.body.messages[i].role === "assistant" ? "output_text" : "input_text";
+                  }
+                  if (data_entry.body.messages[i].content[j].type === "image_url") {
+                    data_entry.body.messages[i].content[j].type = "input_image";
+                  }
+                }
+              }
+              data_entry.body.input = data_entry.body.messages;
+              delete data_entry.body.messages;
+            }
+            // Append to data to send to batches API
             prompt_data[model_to_use].push(JSON.stringify(data_entry));
           } else {
             // Prepare data for Anthropic
@@ -250,7 +277,7 @@ class BatchService {
               const file_id = await upload_file(prompt_data[models[i]].join('\n'));
               
               // Save request data to request database
-              const batch_details = await start_batch(file_id);
+              const batch_details = await start_batch(file_id, true, models[i] === "o1-pro-2025-03-19" ? "/v1/responses" : "/v1/chat/completions");
               batch_id = batch_details.id;
               const newRequest = new this.BatchRequestDatabase({
                 id: batch_details.id,
@@ -358,7 +385,8 @@ class BatchService {
               if (await this.conversationService.getConversationsById(prompt_data.conversation_id)) {
                 // Append to conversation
                 const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
-                const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].response.body.choices[0].message.content, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
+                const response_text = output_data[j].response.body.object === "response" ? output_data[j].response.body.output[output_data[j].response.body.output.length-1].content[0].text : output_data[j].response.body.choices[0].message.content;
+                const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, response_text, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
                 await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
                 // Flag for generating summary
                 await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4o-mini");
