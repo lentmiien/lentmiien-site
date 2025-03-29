@@ -9,7 +9,6 @@ block content
           each item in items
             li #{category_lookup_and_stock[item.categoryId].label} (#{item.label || '-'}) - Amount: #{item.amount} #{category_lookup_and_stock[item.categoryId].unit} (#{item.rotateDate.toDateString()})
       h1 Emergency Stock Dashboard
-      a.btn.btn-link(href="/chat4/viewknowledge/66c5f84af31b7bdb8563814d") Emergency stock - 6 month plan
       a.btn.btn-link(href="/es/es_view_stock") View current stock
       a.btn.btn-link(href="/i/es.jpg") 3 person household (original list)
       br

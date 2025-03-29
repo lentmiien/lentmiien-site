@@ -3,6 +3,10 @@ const { ESCategory, ESItem } = require('../database');
 
 exports.es_dashboard = async (req, res) => {
   try {
+    const d = new Date()
+    const _30_days_ago = new Date(d.getFullYear(), d.getMonth(), d.getDate()-30);
+    await ESItem.deleteMany({ rotateDate: { $lt: _30_days_ago } });
+
     const categories = await ESCategory.find({});
     const items = await ESItem.find({});
     const category_lookup_and_stock = {};
@@ -15,7 +19,6 @@ exports.es_dashboard = async (req, res) => {
         percent: 0,
       };
     });
-    const d = new Date();
     const old_items = items.filter(i => i.rotateDate < d);
     const stock_items = items.filter(i => i.rotateDate >= d);
     // Add item stock
