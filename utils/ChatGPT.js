@@ -599,19 +599,19 @@ const delete_file = async (file_id, private_msg=true) => {
   }
 };
 
-const start_batch = async (file_id, private_msg=true) => {
+const start_batch = async (file_id, private_msg=true, endpoint="/v1/chat/completions") => {
   try {
     let batch;
     if (private_msg) {
       batch = await openai_private.batches.create({
         input_file_id: file_id,
-        endpoint: "/v1/chat/completions",
+        endpoint,
         completion_window: "24h"
       });
     } else {
       batch = await openai.batches.create({
         input_file_id: file_id,
-        endpoint: "/v1/chat/completions",
+        endpoint,
         completion_window: "24h"
       });
     }

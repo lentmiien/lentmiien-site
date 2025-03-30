@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Continuous Collision Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #1a1a1a; /* Dark background */
+        }
+        canvas {
+            border: 1px solid #444;
+            background-color: #000; /* Black canvas background */
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas"></canvas>
+
+    <script>
+        // --- Canvas Setup ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas dimensions (adjust as needed)
+        canvas.width = window.innerWidth * 0.9;
+        canvas.height = window.innerHeight * 0.9;
+
+        // Make canvas dimensions slightly smaller than viewport to see border
+        if (canvas.width > 800) canvas.width = 800;
+        if (canvas.height > 600) canvas.height = 600;
+
+        // --- Simulation Configuration ---
+        const NUM_CIRCLES = 10;         // Number of small circles
+        const PARTICLE_RADIUS = 8;      // Radius of the small circles
+        const GRAVITY = 0.1;            // Downward acceleration per frame step unit (arbitrary units)
+        const CONTAINER_LINE_WIDTH = 4; // Thickness of the container wall line
+        const CONTAINER_PADDING = 10;   // Padding inside the container wall
+        const MIN_SEPARATION = 0.01;    // Minimum separation distance to avoid overlaps
+        const TIME_STEP = 1.0;          // Represents the duration of one animation frame for physics calculations
+        const EPSILON = 1e-6;           // Small value for floating point comparisons and avoiding division by zero
+
+        // --- Container Properties (Calculated) ---
+        let containerRadius = Math.min(canvas.width, canvas.height) / 2 - CONTAINER_PADDING - CONTAINER_LINE_WIDTH / 2;
+        let containerX = canvas.width / 2;
+        let containerY = canvas.height / 2;
+        let containerInnerBoundary = containerRadius - PARTICLE_RADIUS; // Effective boundary for particle centers
+
+        // --- Global Variables ---
+        let particles = []; // Array to hold the small circle objects
+
+        // --- Utility Functions ---
+
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function getRandomColor() {
+            const hue = Math.random() * 360;
+            const saturation = 70 + Math.random() * 30; // 70% to 100%
+            const lightness = 50 + Math.random() * 20;  // 50% to 70%
+            return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+        }
+
+        // --- Initialization ---
+        function init() {
+            particles = []; // Clear existing particles
+             // Recalculate container dimensions in case of resize before init
+            containerRadius = Math.min(canvas.width, canvas.height) / 2 - CONTAINER_PADDING - CONTAINER_LINE_WIDTH / 2;
+            containerX = canvas.width / 2;
+            containerY = canvas.height / 2;
+            containerInnerBoundary = containerRadius - PARTICLE_RADIUS;
+
+            for (let i = 0; i < NUM_CIRCLES; i++) {
+                let x, y, isValidPosition;
+                let attempts = 0;
+                const maxAttempts = 1000; // Prevent infinite loops
+
+                do {
+                    isValidPosition = true;
+                    // Generate random position *within* the container circle
+                    const angle = random(0, Math.PI * 2);
+                    const radiusOffset = Math.sqrt(random(0, 1)) * (containerInnerBoundary - MIN_SEPARATION); // Ensure slightly inside
+                    x = containerX + radiusOffset * Math.cos(angle);
+                    y = containerY + radiusOffset * Math.sin(angle);
+
+                    // Check against container boundary (redundant with calculation above but safe)
+                    const distSqToCenter = (x - containerX)**2 + (y - containerY)**2;
+                    if (distSqToCenter > containerInnerBoundary**2) {
+                        isValidPosition = false;
+                        continue;
+                    }
+
+                    // Check against already placed particles
+                    for (let j = 0; j < particles.length; j++) {
+                        const p2 = particles[j];
+                        const dx = x - p2.x;
+                        const dy = y - p2.y;
+                        const distSq = dx*dx + dy*dy;
+                        const minDistSq = (PARTICLE_RADIUS * 2 + MIN_SEPARATION)**2;
+                        if (distSq < minDistSq) {
+                            isValidPosition = false;
+                            break;
+                        }
+                    }
+                    attempts++;
+                } while (!isValidPosition && attempts < maxAttempts);
+
+                if (attempts >= maxAttempts) {
+                    console.warn("Could not find a valid initial position for particle", i);
+                    // Place it at the center as a fallback, though overlap might occur
+                    x = containerX;
+                    y = containerY;
+                }
+
+                particles.push({
+                    id: i, // Unique ID for debugging
+                    x: x,
+                    y: y,
+                    vx: random(-2, 2), // Initial horizontal velocity
+                    vy: random(-2, 2), // Initial vertical velocity
+                    radius: PARTICLE_RADIUS,
+                    color: getRandomColor(),
+                    mass: 1 // Assume equal mass for simplicity
+                });
+            }
+             // Initial draw of the container
+             drawContainer();
+        }
+
+        // --- Continuous Collision Detection & Physics Update ---
+
+        /**
+         * Solves the quadratic equation At^2 + Bt + C = 0 for the smallest positive root.
+         * Returns the smallest positive root t, or Infinity if no positive real roots exist.
+         */
+        function solveQuadratic(a, b, c) {
+            if (Math.abs(a) < EPSILON) { // Linear equation: Bt + C = 0
+                if (Math.abs(b) < EPSILON) return Infinity; // No solution or infinite solutions
+                return (c > 0) ? Infinity : -c / b; // Return t if positive, else Infinity
+            }
+
+            const discriminant = b * b - 4 * a * c;
+            if (discriminant < 0) return Infinity; // No real roots
+
+            const sqrtDiscriminant = Math.sqrt(discriminant);
+            const t1 = (-b - sqrtDiscriminant) / (2 * a);
+            const t2 = (-b + sqrtDiscriminant) / (2 * a);
+
+            // Return the smallest positive root (or near-positive within EPSILON)
+            if (t1 > EPSILON && (t2 <= EPSILON || t1 < t2)) return t1;
+            if (t2 > EPSILON) return t2;
+
+            return Infinity; // No positive roots found
+        }
+
+        /**
+         * Calculates the time until a particle hits the circular container wall.
+         * Returns the time t, or Infinity if no collision within maxTime.
+         */
+        function getTimeToWallCollision(p, maxTime) {
+            const dx = p.x - containerX;
+            const dy = p.y - containerY;
+            const dvx = p.vx;
+            const dvy = p.vy; // Gravity is handled *after* moving, so not included here
+
+            const a = dvx * dvx + dvy * dvy;
+            const b = 2 * (dx * dvx + dy * dvy);
+            const c = dx * dx + dy * dy - containerInnerBoundary * containerInnerBoundary;
+
+            // If already outside or moving away from center when outside, no collision
+            // Note: This check helps but isn't foolproof if already slightly outside
+            if (c >= -EPSILON && b >= -EPSILON) {
+                 return Infinity;
+            }
+
+            const time = solveQuadratic(a, b, c);
+            return (time < maxTime && time > EPSILON) ? time : Infinity;
+        }
+
+        /**
+         * Calculates the time until two particles collide.
+         * Returns the time t, or Infinity if no collision within maxTime.
+         */
+        function getTimeToParticleCollision(p1, p2, maxTime) {
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            const dvx = p1.vx - p2.vx;
+            const dvy = p1.vy - p2.vy;
+            const sumRadii = p1.radius + p2.radius;
+
+            const a = dvx * dvx + dvy * dvy;
+            const b = 2 * (dx * dvx + dy * dvy);
+            const c = dx * dx + dy * dy - sumRadii * sumRadii;
+
+             // If already overlapping or moving apart when overlapping/touching, no future collision
+             // This prevents immediate re-collision after resolution
+            if (c <= EPSILON && b >= -EPSILON) {
+                return Infinity;
+            }
+             // If far apart and moving apart, no collision
+            if (c > EPSILON && b >= -EPSILON && a < EPSILON) { // Check relative speed if not moving towards each other
+                 return Infinity;
+             }
+
+
+            const time = solveQuadratic(a, b, c);
+            return (time < maxTime && time > EPSILON) ? time : Infinity;
+        }
+
+        /**
+         * Updates particle velocities after a wall collision.
+         */
+        function resolveWallCollision(p) {
+            const dx = p.x - containerX;
+            const dy = p.y - containerY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // Handle case where dist might be zero or very small
+            const normalX = (dist < EPSILON) ? 1 : dx / dist; // Default to horizontal normal if at center
+            const normalY = (dist < EPSILON) ? 0 : dy / dist;
+
+            const dotProduct = p.vx * normalX + p.vy * normalY;
+
+            // Reflect velocity
+            p.vx -= 2 * dotProduct * normalX;
+            p.vy -= 2 * dotProduct * normalY;
+
+            // Nudge particle slightly inward to prevent sticking
+            const nudge = MIN_SEPARATION;
+            p.x = containerX + normalX * (containerInnerBoundary - nudge);
+            p.y = containerY + normalY * (containerInnerBoundary - nudge);
+        }
+
+        /**
+         * Updates particle velocities after a particle-particle collision (elastic, equal mass).
+         */
+        function resolveParticleCollision(p1, p2) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            let dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < EPSILON) {
+                 // Extremely rare case: particles exactly overlap. Separate them slightly.
+                dist = EPSILON;
+                const angle = Math.random() * Math.PI * 2; // Random separation direction
+                p2.x += Math.cos(angle) * EPSILON;
+                p2.y += Math.sin(angle) * EPSILON;
+             }
+
+
+            // Normal vector (from p1 to p2)
+            const normalX = dx / dist;
+            const normalY = dy / dist;
+
+            // Tangent vector
+            const tangentX = -normalY;
+            const tangentY = normalX;
+
+            // Project velocities onto normal and tangent vectors
+            const v1n = p1.vx * normalX + p1.vy * normalY;
+            const v1t = p1.vx * tangentX + p1.vy * tangentY;
+            const v2n = p2.vx * normalX + p2.vy * normalY;
+            const v2t = p2.vx * tangentX + p2.vy * tangentY;
+
+            // Exchange normal velocities (assuming equal mass)
+            const v1n_new = v2n;
+            const v2n_new = v1n;
+
+            // Tangent velocities remain unchanged
+
+            // Convert back to cartesian coordinates
+            p1.vx = v1n_new * normalX + v1t * tangentX;
+            p1.vy = v1n_new * normalY + v1t * tangentY;
+            p2.vx = v2n_new * normalX + v2t * tangentX;
+            p2.vy = v2n_new * normalY + v2t * tangentY;
+
+             // Prevent sticking/overlap after collision resolution
+            const overlap = (p1.radius + p2.radius) - dist;
+            if (overlap > 0) {
+                const correctionFactor = (overlap / dist) * 0.5 + EPSILON; // Move each half the overlap distance
+                p1.x -= correctionFactor * dx;
+                p1.y -= correctionFactor * dy;
+                p2.x += correctionFactor * dx;
+                p2.y += correctionFactor * dy;
+            }
+        }
+
+        /**
+         * Moves all particles forward in time by dt, without collision checks.
+         */
+        function moveParticles(dt) {
+            for (const p of particles) {
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                // Apply gravity *during* the move for this timestep segment
+                p.vy += GRAVITY * dt;
+            }
+        }
+
+
+        /**
+         * The main physics update step using continuous collision detection.
+         */
+        function updateSimulation() {
+            let timeRemaining = TIME_STEP;
+            let collisionCount = 0; // Safety break for potential infinite loops
+            const maxCollisionsPerFrame = particles.length * 5; // Heuristic limit
+
+            while (timeRemaining > EPSILON && collisionCount < maxCollisionsPerFrame) {
+                let minCollisionTime = timeRemaining;
+                let firstCollision = null; // { type: 'wall'/'particle', particle: p, particle2: p2 (if particle type) }
+
+                // 1. Find the earliest collision time within the remaining time window
+                for (let i = 0; i < particles.length; i++) {
+                    const p1 = particles[i];
+
+                    // Check wall collision
+                    const wallTime = getTimeToWallCollision(p1, minCollisionTime);
+                    if (wallTime < minCollisionTime) {
+                        minCollisionTime = wallTime;
+                        firstCollision = { type: 'wall', particle: p1 };
+                    }
+
+                    // Check particle-particle collisions (avoid self-collision and double checks)
+                    for (let j = i + 1; j < particles.length; j++) {
+                        const p2 = particles[j];
+                        const particleTime = getTimeToParticleCollision(p1, p2, minCollisionTime);
+                        if (particleTime < minCollisionTime) {
+                            minCollisionTime = particleTime;
+                            firstCollision = { type: 'particle', particle: p1, particle2: p2 };
+                        }
+                    }
+                }
+
+                // 2. Move particles forward either to the collision time or the end of the step
+                moveParticles(minCollisionTime);
+
+                // 3. Resolve the earliest collision (if one occurred)
+                if (firstCollision) {
+                    if (firstCollision.type === 'wall') {
+                        resolveWallCollision(firstCollision.particle);
+                    } else if (firstCollision.type === 'particle') {
+                        resolveParticleCollision(firstCollision.particle, firstCollision.particle2);
+                    }
+                    collisionCount++;
+                }
+
+                // 4. Reduce the remaining time
+                timeRemaining -= minCollisionTime;
+
+                 // Safety Check: If minCollisionTime is incredibly small, break to avoid infinite loop
+                if (minCollisionTime < EPSILON && firstCollision) {
+                    console.warn("Potential infinite loop detected (collision time near zero). Breaking frame step.");
+                     // Attempt a small position nudge for involved particles to break the state
+                     if (firstCollision.type === 'wall') {
+                          resolveWallCollision(firstCollision.particle); // Re-apply nudge
+                     } else if (firstCollision.type === 'particle') {
+                          resolveParticleCollision(firstCollision.particle, firstCollision.particle2); // Re-apply nudge
+                     }
+                    break;
+                }
+            }
+            if (collisionCount >= maxCollisionsPerFrame) {
+                console.warn("Max collisions per frame reached. Simulation might be unstable.");
+            }
+        }
+
+
+        // --- Drawing ---
+
+        /**
+         * Draws the large container circle boundary.
+         */
+        function drawContainer() {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; // Semi-transparent white
+            ctx.lineWidth = CONTAINER_LINE_WIDTH;
+            ctx.beginPath();
+            ctx.arc(containerX, containerY, containerRadius, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        /**
+         * Draws all particles. Since the canvas is not cleared, this creates trails.
+         */
+        function drawParticles() {
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                // Clamp particle positions to be drawable within canvas bounds (visual fix)
+                const drawX = Math.max(p.radius, Math.min(canvas.width - p.radius, p.x));
+                const drawY = Math.max(p.radius, Math.min(canvas.height - p.radius, p.y));
+
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                // Draw at possibly clamped position for visual stability if something goes wrong
+                ctx.arc(drawX, drawY, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // --- Animation Loop ---
+
+        /**
+         * The main animation loop, called recursively via requestAnimationFrame.
+         */
+        function animate() {
+            // NO ctx.clearRect() for persistent trails
+
+            // Update physics using the continuous collision detection method
+            updateSimulation();
+
+            // Draw the particles at their new positions (creating trails)
+            drawParticles();
+
+            // Redraw the container boundary on top of trails each frame
+            drawContainer();
+
+            // Request the next animation frame
+            requestAnimationFrame(animate);
+        }
+
+        // --- Start Simulation ---
+        init();     // Initialize particle positions and velocities
+        animate();  // Start the animation loop
+
+        // --- Optional: Resize Handler ---
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth * 0.9;
+            canvas.height = window.innerHeight * 0.9;
+            if (canvas.width > 800) canvas.width = 800;
+            if (canvas.height > 600) canvas.height = 600;
+
+            // Re-calculate container dimensions and re-initialize the simulation
+            init();
+
+             // Clear canvas and redraw container after resize/re-init
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawContainer();
+        });
+
+    </script>
+</body>
+</html>
