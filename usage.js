@@ -157,11 +157,7 @@ async function fetchCostsData(options = {}) {
     }
 }
 
-async function fetchUsageSummaryLastDay() {
-  const now = new Date();
-  // Create a new Date object for the last midnight in UTC
-  const ed = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const sd = new Date(ed.getTime() - (1000*60*60*24));
+async function fetchUsageSummaryForPeriod(sd, ed) {
   const options = {
     start_time: Math.round(ed.getTime()/1000) - (60*60*24),
     end_time: Math.round(ed.getTime()/1000), // Optional
@@ -319,5 +315,5 @@ module.exports = {
     fetchAudioSpeechesUsage,
     fetchAudioTranscriptionsUsage,
     fetchCostsData,
-    fetchUsageSummaryLastDay,
+    fetchUsageSummaryForPeriod,
 };

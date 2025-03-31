@@ -126,7 +126,7 @@ deleteLogFile("app-error.log");
 deleteLogFile("app-out.log");
 
 // Fetch OpenAI usage
-const {fetchUsageSummaryLastDay} = require('./usage');
+const {fetchUsageSummaryForPeriod} = require('./usage');
 
 // Delete "test" data from chat database
 const mongoose = require("mongoose");
@@ -140,19 +140,23 @@ async function ClearTestDataFromDB() {
   await Chat4Model.deleteMany({ category: "Test" });//Test
   await Conversation4Model.deleteMany({ category: "Test" });//Test
 
-  // Get and save OpenAI usage data
-  const now = new Date();
-  const ed = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const sd = new Date(ed.getTime() - (1000*60*60*24));
-  const d_str = `${sd.getFullYear()}-${sd.getMonth() > 8 ? (sd.getMonth()+1) : '0' + (sd.getMonth()+1)}-${sd.getDate() > 9 ? sd.getDate() : '0' + sd.getDate()}`;
-  const exists = await OpenAIUsage.find({entry_date: d_str});
-  if (exists.length === 0) {
-    // Only get and save new entries
-    const summary = await fetchUsageSummaryLastDay();
-    await new OpenAIUsage(summary).save();
-    console.log("Data saved:", JSON.stringify(summary, null, 2));
-  } else {
-    console.log(`[${d_str}] usage data already exist!`)
+  // Get and save OpenAI usage data from last 30 days
+  let currentMs = Date.now() - (1000*60*60*24*30);
+  for (let i = 0; i < 31; i++) {
+    const now = new Date(currentMs);
+    const ed = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const sd = new Date(ed.getTime() - (1000*60*60*24));
+    const d_str = `${sd.getFullYear()}-${sd.getMonth() > 8 ? (sd.getMonth()+1) : '0' + (sd.getMonth()+1)}-${sd.getDate() > 9 ? sd.getDate() : '0' + sd.getDate()}`;
+    const exists = await OpenAIUsage.find({entry_date: d_str});
+    if (exists.length === 0) {
+      // Only get and save new entries
+      const summary = await fetchUsageSummaryForPeriod(sd, ed);
+      await new OpenAIUsage(summary).save();
+      console.log("Data saved:", JSON.stringify(summary, null, 2));
+    } else {
+      console.log(`[${d_str}] usage data already exist!`)
+    }
+    currentMs += 1000*60*60*24;
   }
 
   await mongoose.disconnect();
