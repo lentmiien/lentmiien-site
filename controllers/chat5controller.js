@@ -92,11 +92,11 @@ exports.story_mode = async (req, res) => {
   let image = null;
   const audio = [];
   for (const m of messages) {
-    if (m.images && m.images.length > 0) {
+    if (m.images && m.images.length > 0 && !image) {
       image = m.images[m.images.length-1].filename;
     }
     if (m.sound && m.sound.length > 0) {
-      audio.push(m.sound);
+      audio.unshift(m.sound);
     }
   }
   res.render('story_mode', {image, audio});
