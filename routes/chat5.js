@@ -10,5 +10,6 @@ router.get('/', controller.index);
 // Manage model cards
 router.get('/ai_model_cards', controller.ai_model_cards);
 router.post('/add_model_card', controller.add_model_card);
+router.get('/story_mode/:id', controller.story_mode);
 
 module.exports = router;

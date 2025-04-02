@@ -1,7 +1,15 @@
-const { AIModelCards } = require('../database');
+const { AIModelCards, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
+
+// Instantiate the services
+const MessageService = require('../services/messageService');
+const ConversationService = require('../services/conversationService');
+const KnowledgeService = require('../services/knowledgeService');
+const messageService = new MessageService(Chat4Model, FileMetaModel);
+const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
+const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 
 exports.index = async (req, res) => {
   // Load available OpenAI models
@@ -72,4 +80,24 @@ exports.add_model_card = async (req, res) => {
   }
 
   res.redirect('/chat5/ai_model_cards');
+};
+
+exports.story_mode = async (req, res) => {
+  // Load a chat in "story" mode
+  // 1. Fetch message history
+  // 2. Extract last image in conversation and use as cover image
+  // 3. Extract all audio in conversation and store in an array
+  // 4. Display page to user (Cover image + "Chapter#1-n" for each audio file)
+  const messages = await conversationService.getMessagesForConversation(req.params.id);
+  let image = null;
+  const audio = [];
+  for (const m of messages) {
+    if (m.images && m.images.length > 0) {
+      image = m.images[m.images.length-1].filename;
+    }
+    if (m.sound && m.sound.length > 0) {
+      audio.push(m.sound);
+    }
+  }
+  res.render('story_mode', {image, audio});
 };

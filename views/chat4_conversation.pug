@@ -27,6 +27,8 @@ block content
           .row 
             .col
               h3 Chat
+              a(href=`/chat5/story_mode/${conversation._id.toString()}`) Open in story mode
+              br
               label(for="tooltitle") Title
               input#tooltitle.form-control(type="text", name="tooltitle", value=`${conversation.title}`)
               .form-group

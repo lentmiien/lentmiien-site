@@ -1,0 +1,9 @@
+extends layout
+
+block content
+  h2 Story
+  img(style="max-width: 100%;", src=`/img/${image}`, alt="image")
+  each s, i in audio
+    h4= `Chapter ${i+1}`
+    audio(controls)
+      source(src=`/mp3/${s}`, type="audio/mpeg")

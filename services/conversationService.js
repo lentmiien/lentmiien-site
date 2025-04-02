@@ -74,6 +74,12 @@ class ConversationService {
     return this.tagList;
   }
 
+  async getMessagesForConversation(id) {
+    const conversation = await this.conversationModel.findById(id);
+    const messages = await this.messageService.getMessagesByIdArray(conversation.messages, false);
+    return messages;
+  }
+
   async getConversationsForUser(user_id, params=null) {
     const conversations = await this.conversationModel.find({user_id}).sort({ updated_date: -1 }).exec();
     if (params) {
