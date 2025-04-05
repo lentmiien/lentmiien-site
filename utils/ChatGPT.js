@@ -441,7 +441,7 @@ const embedding = async (text, model, private_msg=false) => {
 const tts = async (api_endpoint, text, voice, private_msg=false, instructions=null) => {
   const api_val = ["tts-1", "tts-1-hd", "gpt-4o-mini-tts"];
   const v_val = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"];
-  if (text.length > 6000 || api_val.indexOf(api_endpoint) == -1 || v_val.indexOf(voice) == -1) {
+  if (text.length > 4096 || api_val.indexOf(api_endpoint) == -1 || v_val.indexOf(voice) == -1) {
     return 'Invalid input'
   }
 
