@@ -101,3 +101,14 @@ exports.story_mode = async (req, res) => {
   }
   res.render('story_mode', {image, audio});
 };
+
+exports.edit_message = async (req, res) => {
+  const messageId = req.params.id;
+  const message = await messageService.getMessageById(messageId);
+  res.render('edit_message', {messageId, message});
+};
+
+exports.update_message = async (req, res) => {
+  // Save uploaded images
+  // Update message with id
+};

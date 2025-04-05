@@ -1,6 +1,20 @@
 const express = require('express');
 const router = express.Router();
 
+const path = require('path');
+const multer = require('multer');
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, './tmp_data/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + extension);
+  }
+});
+const upload = multer({ storage: storage });
+
 // Require controller modules.
 const controller = require('../controllers/chat5controller');
 
@@ -11,5 +25,7 @@ router.get('/', controller.index);
 router.get('/ai_model_cards', controller.ai_model_cards);
 router.post('/add_model_card', controller.add_model_card);
 router.get('/story_mode/:id', controller.story_mode);
+router.get('/edit_message/:id', controller.edit_message);
+router.post('/update_message/:id', upload.array('imgs'), controller.update_message);
 
 module.exports = router;

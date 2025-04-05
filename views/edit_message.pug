@@ -1,0 +1,29 @@
+extends layout
+
+block content
+  h2 Edit message
+  form(action=`/chat5/update_message/${messageId}`, method="post", enctype="multipart/form-data")
+    label(for="category") Category 
+    input#category.form-control(type="text", name="category", value=message.category)
+    label(for="tags") Tags (comma separated)
+    input#tags.form-control(type="text", name="tags", value=message.tags.join(","))
+    label(for="prompt") Input prompt 
+    textarea#prompt.form-control(name="prompt")= message.prompt
+    label(for="response") Output response 
+    textarea#response.form-control(name="response")= message.response
+    label(for="images") Images (comma separated)
+    input#images.form-control(type="text", name="images", value=message.images.map(d => d.filename).join(","))
+    label(for="sound") Sound 
+    input#sound.form-control(type="text", name="sound", value=message.sound)
+    each i in message.images 
+      label(for=i.filename)= `${i.filename} use quality`
+      select.form-control(id=i.filename, name=i.filename) 
+        option(value="2") High quality 
+        option(value="1") Low quality 
+        option(value="0") Do not use 
+    label(for="imgs") Upload images and attach to message (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
+    input#imgs.form-control(type="file", name="imgs", multiple) 
+    input.btn.btn-success(type="submit", value="Update message")
+  hr
+  b= messageId 
+  pre= JSON.stringify(message, null, 2)

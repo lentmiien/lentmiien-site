@@ -179,6 +179,7 @@ block content
                     span  New conversation end, 
                     input(type="checkbox", name="del_message", value=`${m._id.toString()}`)
                     span  Delete message
+                    a(href=`/chat5/edit_message/${m._id.toString()}`) Edit message
                   .assistant!= m.response_html
                     a(href=`/chat4/redact/${m._id.toString()}?conversation=${conversation._id.toString()}`) Redact
                   if m.sound.length > 0
