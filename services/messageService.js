@@ -1,4 +1,5 @@
 const fs = require('fs');
+const sharp = require('sharp');
 const marked = require('marked');
 const { chatGPT, chatGPTaudio, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
@@ -292,6 +293,40 @@ class MessageService {
     return message_id;
   }
 
+  async updateMessage(messageId, category, tags, prompt, response, images, sound, usage_settings, new_image_paths) {
+    // Save new images
+    for (const imageFile of new_image_paths) {
+      const savedImageFilename = await this.processSaveNewImage(imageFile);
+      images.push(savedImageFilename);
+      usage_settings.push({
+        filename: savedImageFilename,
+        use_type: 1,
+      });
+    }
+
+    // Prepare image array
+    const imageArray = [];
+    const uesType_to_useFlag_map = ['do not use', 'low quality', 'high quality'];
+    for (const i of usage_settings) {
+      imageArray.push({
+        filename: i.filename,
+        use_flag: uesType_to_useFlag_map[i.use_type],
+      });
+    }
+
+    // Update message
+    const message = await this.getMessageById(messageId);
+    message.category = category;
+    message.tags = tags;
+    message.prompt = prompt;
+    message.response = response;
+    message.images = imageArray;
+    message.sound = sound;
+    await message.save();
+
+    return messageId;
+  }
+
   /*****
    * TOOLS TEST
    */
@@ -348,6 +383,24 @@ class MessageService {
 
     // Return entry to user
     return { db_entry, tokens: response.usage.total_tokens };
+  }
+
+  async processSaveNewImage(filename) {
+    const file_data = fs.readFileSync(filename);
+    const img_data = await sharp(file_data);
+    const metadata = await img_data.metadata();
+    let short_side = metadata.width < metadata.height ? metadata.width : metadata.height;
+    let long_side = metadata.width > metadata.height ? metadata.width : metadata.height;
+    let scale = 1;
+    if (short_side > 768 || long_side > 2048) {
+      if (768 / short_side < scale) scale = 768 / short_side;
+      if (2048 / long_side < scale) scale = 2048 / long_side;
+    }
+    const scale_img = await img_data.resize({ width: Math.round(metadata.width * scale) });
+    const img_buffer = await scale_img.jpeg().toBuffer();
+    const new_filename = `UP-${Date.now()}.jpg`;
+    fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
+    return new_filename;
   }
 }
 

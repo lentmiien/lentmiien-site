@@ -111,4 +111,29 @@ exports.edit_message = async (req, res) => {
 exports.update_message = async (req, res) => {
   // Save uploaded images
   // Update message with id
+  const messageId = req.params.id;
+  const category = req.body.category;
+  const tags = req.body.tags.split(", ").join(",").split(",");
+  const prompt = req.body.prompt;
+  const response = req.body.response;
+  const images = req.body.images.length > 0 ? req.body.images.split(", ").join(",").split(",") : [];
+  const sound = req.body.sound;
+  const usage_settings = [];
+  const keys = Object.keys(req.body);
+  for (const key of keys) {
+    if (key.indexOf(".") >= 0 && images.indexOf(key) >= 0) {
+      usage_settings.push({
+        filename: key,
+        use_type: parseInt(req.body[key]),
+      });
+    }
+  }
+  const image_paths = [];
+  for (let i = 0; i < req.files.length; i++) {
+    image_paths.push(req.files[i].destination + req.files[i].filename);
+  }
+
+  await messageService.updateMessage(messageId, category, tags, prompt, response, images, sound, usage_settings, image_paths);
+
+  res.redirect(`/chat5/edit_message/${messageId}`);
 };
