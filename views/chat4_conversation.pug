@@ -203,10 +203,10 @@ block content
             textarea#image_prompt(style="display:none;", name="image_prompt", cols="30", rows="10")
           form#sound_form(action=`/chat4/generate_sound/${conversation._id.toString()}`, method="post")
             input#sound_message_id(type="hidden", name="sound_message_id")
-            input#sound_model(type="hidden", name="sound_model", value="tts-1")
+            input#sound_model(type="hidden", name="sound_model", value="gpt-4o-mini-tts")
             input#sound_voice(type="hidden", name="sound_voice", value="nova")
             textarea#sound_prompt(style="display:none;", name="sound_prompt", cols="30", rows="10")
-            textarea#sound_instructions(style="display:none;", name="sound_instructions", cols="30", rows="10")
+            textarea#sound_instructions(style="display:none;", name="sound_instructions", cols="30", rows="10") Speak in a cheerful and positive tone.
       .tab-content
         #templates.tab-pane.fade(role="tabpanel" aria-labelledby="templates-tab")
           .row 
