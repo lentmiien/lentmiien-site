@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Animated Maze Generator and Solver</title>
+    <style>
+      body {
+        margin: 0;
+        background: #333;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+      canvas {
+        background: #fff;
+        box-shadow: 0 0 10px rgba(0,0,0,0.5);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="mazeCanvas"></canvas>
+    <script>
+      // Configuration for maze (grid dimensions and cell size)
+      const cols = 20;
+      const rows = 20;
+      const cellSize = 25;
+
+      // Set up the canvas
+      const canvas = document.getElementById("mazeCanvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = cols * cellSize;
+      canvas.height = rows * cellSize;
+
+      // Cell class – each cell has 4 walls, a visited flag (for generation)
+      // and a flag to show it’s part of the solution path.
+      class Cell {
+        constructor(i, j) {
+          this.i = i;
+          this.j = j;
+          // walls: top, right, bottom, left
+          this.walls = [true, true, true, true];
+          this.visited = false;       // Marked when used in maze-generation
+          this.inPath = false;        // Marked when part of the final solution path
+        }
+
+        // Draw this cell: first fill if visited or if it’s part of the solution path,
+        // then draw its walls.
+        draw() {
+          const x = this.i * cellSize;
+          const y = this.j * cellSize;
+          
+          // Color the cell if visited (generation) or if part of the solution.
+          if (this.visited) {
+            ctx.fillStyle = "#b3e5fc";
+            ctx.fillRect(x, y, cellSize, cellSize);
+          }
+          if (this.inPath) {
+            ctx.fillStyle = "#ffeb3b";
+            ctx.fillRect(x, y, cellSize, cellSize);
+          }
+          
+          ctx.strokeStyle = "#000";
+          ctx.lineWidth = 2;
+          // Top wall
+          if (this.walls[0]) {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + cellSize, y);
+            ctx.stroke();
+          }
+          // Right wall
+          if (this.walls[1]) {
+            ctx.beginPath();
+            ctx.moveTo(x + cellSize, y);
+            ctx.lineTo(x + cellSize, y + cellSize);
+            ctx.stroke();
+          }
+          // Bottom wall
+          if (this.walls[2]) {
+            ctx.beginPath();
+            ctx.moveTo(x + cellSize, y + cellSize);
+            ctx.lineTo(x, y + cellSize);
+            ctx.stroke();
+          }
+          // Left wall
+          if (this.walls[3]) {
+            ctx.beginPath();
+            ctx.moveTo(x, y + cellSize);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+          }
+        }
+
+        // Highlight the current cell in the maze generation animation
+        highlight() {
+          const x = this.i * cellSize;
+          const y = this.j * cellSize;
+          ctx.fillStyle = "#4caf50";
+          ctx.fillRect(x, y, cellSize, cellSize);
+        }
+
+        // Return a random unvisited neighbor from the grid.
+        checkNeighbors(grid) {
+          let neighbors = [];
+          const top    = (this.j > 0)          ? grid[this.i + (this.j - 1) * cols] : undefined;
+          const right  = (this.i < cols - 1)     ? grid[(this.i + 1) + this.j * cols] : undefined;
+          const bottom = (this.j < rows - 1)     ? grid[this.i + (this.j + 1) * cols] : undefined;
+          const left   = (this.i > 0)          ? grid[(this.i - 1) + this.j * cols] : undefined;
+          
+          if (top && !top.visited) neighbors.push(top);
+          if (right && !right.visited) neighbors.push(right);
+          if (bottom && !bottom.visited) neighbors.push(bottom);
+          if (left && !left.visited) neighbors.push(left);
+          
+          if (neighbors.length > 0) {
+            const r = Math.floor(Math.random() * neighbors.length);
+            return neighbors[r];
+          } else {
+            return undefined;
+          }
+        }
+      }
+
+      // Build the grid of cells
+      let grid = [];
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          grid.push(new Cell(i, j));
+        }
+      }
+
+      // Helper for 2D -> 1D indexing
+      function index(i, j) {
+        if (i < 0 || j < 0 || i >= cols || j >= rows) return -1;
+        return i + j * cols;
+      }
+
+      // Maze generation using DFS (recursive backtracker) 
+      // We maintain a stack and animate one step per animation frame.
+      let current = grid[0];
+      let generationStack = [];
+      let generationComplete = false;
+
+      // Remove walls between two adjacent cells
+      function removeWalls(a, b) {
+        const x = a.i - b.i;
+        if (x === 1) {
+          a.walls[3] = false;
+          b.walls[1] = false;
+        } else if (x === -1) {
+          a.walls[1] = false;
+          b.walls[3] = false;
+        }
+        const y = a.j - b.j;
+        if (y === 1) {
+          a.walls[0] = false;
+          b.walls[2] = false;
+        } else if (y === -1) {
+          a.walls[2] = false;
+          b.walls[0] = false;
+        }
+      }
+
+      // One step of the maze generation process.
+      function generateMazeStep() {
+        current.visited = true;
+        // Grab a random unvisited neighbor
+        let next = current.checkNeighbors(grid);
+        if (next) {
+          next.visited = true;
+          generationStack.push(current);
+          removeWalls(current, next);
+          current = next;
+        } else if (generationStack.length > 0) {
+          current = generationStack.pop();
+        } else {
+          // No more cells on the stack means maze generation is complete.
+          generationComplete = true;
+        }
+      }
+
+      // Maze solver using DFS – it finds a path from the upper-left cell to the bottom-right cell.
+      let solverStack = [];
+      let solverVisited = new Array(grid.length).fill(false);
+      let solverFinished = false;
+
+      // One step of the maze solving procedure.
+      function solveMazeStep() {
+        if (solverStack.length === 0) {
+          // Begin at the starting cell (top-left)
+          solverStack.push(grid[0]);
+          solverVisited[0] = true;
+        }
+        if (solverStack.length > 0) {
+          const currentSolver = solverStack[solverStack.length - 1];
+          // Check if we have reached the goal: bottom-right cell
+          if (currentSolver.i === cols - 1 && currentSolver.j === rows - 1) {
+            // Mark all cells in the solverStack as being in the solution path.
+            for (let cell of solverStack) {
+              cell.inPath = true;
+            }
+            solverFinished = true;
+            return;
+          }
+
+          // Look for accessible neighbors (must be reachable: i.e. no wall separates the cells)
+          let neighbors = [];
+          let i = currentSolver.i;
+          let j = currentSolver.j;
+          
+          // Check top neighbor
+          if (!currentSolver.walls[0] && j > 0) {
+            const topCell = grid[index(i, j - 1)];
+            if (!solverVisited[index(i, j - 1)]) {
+              neighbors.push(topCell);
+            }
+          }
+          // Check right neighbor
+          if (!currentSolver.walls[1] && i < cols - 1) {
+            const rightCell = grid[index(i + 1, j)];
+            if (!solverVisited[index(i + 1, j)]) {
+              neighbors.push(rightCell);
+            }
+          }
+          // Check bottom neighbor
+          if (!currentSolver.walls[2] && j < rows - 1) {
+            const bottomCell = grid[index(i, j + 1)];
+            if (!solverVisited[index(i, j + 1)]) {
+              neighbors.push(bottomCell);
+            }
+          }
+          // Check left neighbor
+          if (!currentSolver.walls[3] && i > 0) {
+            const leftCell = grid[index(i - 1, j)];
+            if (!solverVisited[index(i - 1, j)]) {
+              neighbors.push(leftCell);
+            }
+          }
+          
+          if (neighbors.length > 0) {
+            // For simplicity, choose the first neighbor.
+            const nextCell = neighbors[0];
+            solverVisited[index(nextCell.i, nextCell.j)] = true;
+            solverStack.push(nextCell);
+          } else {
+            // Backtrack if there are no accessible neighbors.
+            solverStack.pop();
+          }
+        }
+      }
+
+      // There are three states:
+      //   "generating" – animating the maze generation
+      //   "solving"    – animating the maze solver
+      //   "pause"      – waiting a couple of seconds before starting a new maze.
+      let state = "generating";
+
+      function animate() {
+        // Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw all cells
+        grid.forEach(cell => cell.draw());
+        
+        // Handle states
+        if (state === "generating") {
+          if (!generationComplete) {
+            generateMazeStep();
+          } else {
+            // When generation finishes, switch to solving mode.
+            state = "solving";
+          }
+          // Highlight the current cell while generating
+          current.highlight();
+        } else if (state === "solving") {
+          if (!solverFinished) {
+            solveMazeStep();
+          } else {
+            // When solved, enter pause state for a couple of seconds.
+            state = "pause";
+            setTimeout(() => { state = "restart"; }, 2000);
+          }
+        } else if (state === "restart") {
+          resetMaze();
+          state = "generating";
+        }
+        
+        requestAnimationFrame(animate);
+      }
+
+      // Reset all global variables and rebuild a new grid.
+      function resetMaze() {
+        grid = [];
+        for (let j = 0; j < rows; j++) {
+          for (let i = 0; i < cols; i++) {
+            grid.push(new Cell(i, j));
+          }
+        }
+        current = grid[0];
+        generationStack = [];
+        generationComplete = false;
+        solverStack = [];
+        solverVisited = new Array(grid.length).fill(false);
+        solverFinished = false;
+      }
+
+      // Start the animation loop
+      requestAnimationFrame(animate);
+    </script>
+  </body>
+</html>
