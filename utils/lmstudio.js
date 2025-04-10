@@ -2,16 +2,6 @@ const { LMStudioClient, Chat } = require('@lmstudio/sdk');
 
 const client = new LMStudioClient();
 
-/*
-const imageBase64 = "Your base64 string here";
-const image = await client.files.prepareImageBase64(imageBase64);
-
-const chat = Chat.empty();
-chat.append("user", "What is this object?", { images: [image] });
-
-const prediction = model.respond(chat);
-*/
-
 const chat = async (messages) => {
   // Get any loaded LLM
   const llm = await client.llm.model();
@@ -20,8 +10,9 @@ const chat = async (messages) => {
   for (const m of messages) {
     const images = [];
     for (let i = 1; i < m.content.length; i++) {
-      if (messages[i].content[j].type === 'image_url') {
-        const image = await client.files.prepareImageBase64(m.content[i].image_url.url.split("data:image/jpeg;base64,")[1]);
+      if (m.content[i].type === 'image_url') {
+        const image = await client.files.prepareImageBase64("image.jpg", m.content[i].image_url.url.split("data:image/jpeg;base64,")[1]);
+        console.log(image);
         images.push(image);
       }
     }
@@ -31,6 +22,7 @@ const chat = async (messages) => {
       chat.append(m.role, m.content[0].text);
     }
   }
+  console.log(chat);
 
   const prediction = llm.respond(chat);
   let output = "";
