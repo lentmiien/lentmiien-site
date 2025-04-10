@@ -12,7 +12,6 @@ const chat = async (messages) => {
     for (let i = 1; i < m.content.length; i++) {
       if (m.content[i].type === 'image_url') {
         const image = await client.files.prepareImageBase64("image.jpg", m.content[i].image_url.url.split("data:image/jpeg;base64,")[1]);
-        console.log(image);
         images.push(image);
       }
     }
@@ -22,7 +21,6 @@ const chat = async (messages) => {
       chat.append(m.role, m.content[0].text);
     }
   }
-  console.log(chat);
 
   const prediction = llm.respond(chat);
   let output = "";
