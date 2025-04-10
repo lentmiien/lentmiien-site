@@ -5,6 +5,7 @@ const { chatGPT, chatGPTaudio, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig }
 const { anthropic } = require('../utils/anthropic');
 const { groq, groq_vision } = require('../utils/groq');
 const { googleAI } = require('../utils/google');
+const lmstudio = require('../utils/lmstudio');
 const { z } = require('zod');
 
 const { AIModelCards } = require('../database');
@@ -114,6 +115,7 @@ class MessageService {
       if (model.provider === "Anthropic") response = await anthropic(vision_messages, model.api_model);
       if (model.provider === "Groq") response = await groq(vision_messages, model.api_model);
       if (model.provider === "Google") response = await googleAI(vision_messages, model.api_model);
+      if (model.provider === "Local") response = await lmstudio.chat(vision_messages);
     }
 
     // Save a copy in temporary folder, for debugging
