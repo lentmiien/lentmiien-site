@@ -21,7 +21,7 @@ exports.index = async (req, res) => {
     (d.provider === "Anthropic" && availableAnthropic.indexOf(d.api_model) >= 0) || 
     d.provider === "Google" || 
     d.provider === "Groq" || 
-    d.provider === "Local") && d.model_type === "chat");
+    (d.provider === "Local" && process.env.DISABLE_LOCAL != "TRUE")) && d.model_type === "chat");
   res.render("chat5", {models: usable_models});
 };
 

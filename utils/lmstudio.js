@@ -1,8 +1,10 @@
 const { LMStudioClient, Chat } = require('@lmstudio/sdk');
 
-const client = new LMStudioClient();
+const client = process.env.DISABLE_LOCAL === "TRUE" ? null : new LMStudioClient();
 
 const chat = async (messages) => {
+  if (!client) return;
+
   // Get any loaded LLM
   const llm = await client.llm.model();
   const chat = Chat.empty();
