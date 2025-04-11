@@ -248,6 +248,11 @@ exports.delete_log_file = (req, res) => {
 };
 
 exports.openai_usage = async (req, res) => {
-  const data = (await OpenAIUsage.find()).reverse();
-  res.render("openai_usage", {data});
+  const data = await OpenAIUsage.find().sort({ entry_date: -1 }).exec();
+  const monthly_summaries = {};
+  for (const d of data) {
+    const yyyymm = d.entry_date.slice(0, 7);
+    monthly_summaries[yyyymm] = monthly_summaries[yyyymm] ? monthly_summaries[yyyymm] + d.cost : d.cost;
+  }
+  res.render("openai_usage", {data, monthly_summaries});
 };
