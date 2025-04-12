@@ -92,9 +92,9 @@ socket.on('displayConversationContent', data => {
   max.value = data.conversation.max_messages ? data.conversation.max_messages : 0;
   // Populate conversation from database
   data.messages.forEach(m => {
-    addDeleteCheckbox(m._id.toString());
     addMessageToChat(m._id.toString(), 'User', m.prompt, m.images.map(d => d.filename));
     addMessageToChat(m._id.toString(), 'Assistant', m.response, [], m.sound);
+    addDeleteCheckbox(m._id.toString());
   });
   attachCopyListeners();
 });
@@ -323,9 +323,9 @@ socket.on('batchPending', function (message) {
 });
 
 socket.on('aiResponse', function (message) {
-  addDeleteCheckbox(message._id.toString());
   addMessageToChat(message._id.toString(), 'User', message.prompt, message.images.map(d => d.filename));
   addMessageToChat(message._id.toString(), 'Assistant', message.response, [], message.sound);
+  addDeleteCheckbox(message._id.toString());
 
   // Clear file upload
   statusDiv.textContent = "";
@@ -362,7 +362,7 @@ function addDeleteCheckbox(message_id) {
 
   item.innerHTML = `<input class="del_checkbox" type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below<button class="btn btn-danger float-end" onclick="DeleteOneMessageFromConversation('${message_id}')">Delete</button><button class="btn btn-warning float-end" onclick="EmailOneMessageFromConversation('${message_id}', this)">Email</button>`;
 
-  messagesList.appendChild(item);
+  messagesList.prepend(item);
 
   return item;
 }
@@ -385,7 +385,7 @@ function addMessageToChat(message_id, sender, messageContent, images = null, aud
   item.append(sender_element, copy_raw_button);
   item.innerHTML += `<br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
 
-  messagesList.append(item);
+  messagesList.prepend(item);
   // window.scrollTo(0, document.body.scrollHeight);
 
   return item;
