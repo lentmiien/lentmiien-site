@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Realistic Earth-to-Moon Rocket Launch Simulation</title>
+  <style>
+    /* Reset defaults */
+    body, html { margin: 0; padding: 0; overflow: hidden; background: #000; }
+    canvas { display: block; background: #000; }
+    /* Stats overlay in top-left */
+    #stats {
+      position: absolute;
+      top: 10px; left: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff; padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.4em;
+      border-radius: 4px;
+    }
+    /* Controls at bottom-left */
+    #controls {
+      position: absolute;
+      bottom: 10px; left: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff; padding: 10px;
+      font-family: sans-serif;
+      font-size: 14px;
+      border-radius: 4px;
+    }
+    #controls label {
+      display: block;
+      margin-bottom: 6px;
+    }
+    #controls input[type=range] {
+      width: 200px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="stats">
+    <!-- Stats will be injected here -->
+  </div>
+  <div id="controls">
+    <label>
+      Zoom Level:
+      <input type="range" id="zoomSlider" min="0" max="100" value="50">
+    </label>
+    <label>
+      Simulation Speed (1×–100×):
+      <input type="range" id="speedSlider" min="1" max="100" value="10">
+    </label>
+  </div>
+
+  <script>
+  /*******************************************************
+   * Realistic Rocket Launch Simulation (Earth→Moon Orbit)
+   * Single HTML, inline JS & CSS.
+   *******************************************************/
+
+  // === Canvas & Viewport Setup ===
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let W = window.innerWidth, H = window.innerHeight;
+  canvas.width = W; canvas.height = H;
+  window.addEventListener('resize', () => {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W; canvas.height = H;
+  });
+
+  // === Physical Constants & Bodies ===
+  const G = 6.67408e-20;    // km^3 / (kg * s^2)
+  const M_earth = 5.972e24; // kg
+  const R_earth = 6371;     // km
+  const M_moon = 7.347673e22; // kg
+  const R_moon = 1737;      // km
+  const distEarthMoon = 384400; // km center-to-center
+
+  // Moon fixed at (+distEarthMoon, 0) in Earth-centered inertial frame.
+  const moonPos = { x: distEarthMoon, y: 0 };
+
+  // === Rocket State & Parameters ===
+  let rocket = {
+    // Start on Earth's surface at angle 0 (to the right)
+    pos: { x: R_earth, y: 0 },      // km
+    vel: { x: 0, y: 0 },            // km/s
+    dryMass: 1e5,                   // kg (structure)
+    fuelMass: 1e5,                  // kg
+    thrust: 3e6,                    // N (constant thrust)
+    isp: 350,                       // s (not used in detail, for visuals)
+    fuelConsumption: 3e6 / (350 * 9.80665), // kg/s via T = ṁ*g₀*Isp
+  };
+  rocket.mass = rocket.dryMass + rocket.fuelMass; // total mass
+
+  // Simulation timekeeping
+  let simTime = 0;  // seconds
+
+  // Orbit detection flag
+  let orbitAchieved = false;
+
+  // === UI Sliders ===
+  const zoomSlider = document.getElementById('zoomSlider');
+  const speedSlider = document.getElementById('speedSlider');
+  let zoomLevel = +zoomSlider.value / 100;        // 0.0 … 1.0
+  let timeMultiplier = +speedSlider.value;        // 1 … 100
+
+  zoomSlider.addEventListener('input', () => {
+    zoomLevel = +zoomSlider.value / 100;
+  });
+  speedSlider.addEventListener('input', () => {
+    timeMultiplier = +speedSlider.value;
+  });
+
+  // === Viewport Zoom Parameters ===
+  const viewRadiusMin = 500;      // km: close-up radius
+  const viewRadiusMax = distEarthMoon / 2; // km: far view radius
+
+  // === Main Simulation and Render Loop ===
+  function loop() {
+    // 1) Compute time step
+    const baseDt = 10;                    // 10 s per iteration
+    const dt = baseDt * timeMultiplier;   // scaled by user speed
+
+    // 2) Compute forces on rocket
+    // Vector to Earth center
+    const rx_e = -rocket.pos.x, ry_e = -rocket.pos.y;
+    const re2 = rx_e*rx_e + ry_e*ry_e;
+    const re = Math.sqrt(re2);
+    // Gravity from Earth: a = G M / r^2  toward center
+    const a_e = G * M_earth / (re2);
+    const ax_e = a_e * (rx_e / re), ay_e = a_e * (ry_e / re);
+
+    // Vector to Moon center
+    const rx_m = moonPos.x - rocket.pos.x;
+    const ry_m = moonPos.y - rocket.pos.y;
+    const rm2 = rx_m*rx_m + ry_m*ry_m;
+    const rm = Math.sqrt(rm2);
+    // Gravity from Moon
+    const a_m = G * M_moon / (rm2);
+    const ax_m = a_m * (rx_m / rm), ay_m = a_m * (ry_m / rm);
+
+    // 3) Thrust if fuel remains
+    let ax_t = 0, ay_t = 0;
+    if (rocket.fuelMass > 0) {
+      // Thrust direction: always aimed at Moon (simplification)
+      const dirx = rx_m / rm, diry = ry_m / rm;
+      // a_thrust = Thrust / mass
+      const a_th = rocket.thrust / rocket.mass / 1000; 
+      ax_t = a_th * dirx;
+      ay_t = a_th * diry;
+      // Consume fuel
+      const used = rocket.fuelConsumption * dt;
+      rocket.fuelMass = Math.max(0, rocket.fuelMass - used);
+      rocket.mass = rocket.dryMass + rocket.fuelMass;
+    }
+
+    // 4) Update velocity & position (Euler integration)
+    rocket.vel.x += (ax_e + ax_m + ax_t) * dt;
+    rocket.vel.y += (ay_e + ay_m + ay_t) * dt;
+    rocket.pos.x += rocket.vel.x * dt;
+    rocket.pos.y += rocket.vel.y * dt;
+
+    // 5) Update sim time
+    simTime += dt;
+
+    // 6) Check for stable lunar orbit:
+    if (!orbitAchieved && rm > R_moon + 50 && rm < R_moon + 300 && rocket.vel.x*rx_m + rocket.vel.y*ry_m < 0) {
+      // If close above lunar surface and moving roughly tangentially
+      const v = Math.hypot(rocket.vel.x, rocket.vel.y);
+      const v_circ = Math.sqrt(G * M_moon / rm);
+      if (Math.abs(v - v_circ) / v_circ < 0.2) {
+        orbitAchieved = true;
+      }
+    }
+
+    // 7) Draw scene
+    render();
+
+    // 8) Schedule next frame
+    requestAnimationFrame(loop);
+  }
+
+  // === Rendering Function ===
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Compute zoom-dependent scale
+    const viewR = viewRadiusMin * (1 - zoomLevel) + viewRadiusMax * zoomLevel; 
+    const scale = (H / 2) / viewR; // px per km
+
+    // Helper: world→screen coords
+    const worldToScreen = (wx, wy) => {
+      const sx = W/2 + (wx - rocket.pos.x) * scale;
+      const sy = H/2 - (wy - rocket.pos.y) * scale;
+      return { x: sx, y: sy };
+    };
+
+    // 1) Draw Earth
+    const earthScreen = worldToScreen(0, 0);
+    const Re_px = R_earth * scale;
+    ctx.beginPath();
+    ctx.arc(earthScreen.x, earthScreen.y, Re_px, 0, 2*Math.PI);
+    ctx.fillStyle = '#3366ff'; ctx.fill();
+
+    // 2) Draw Moon
+    const moonScreen = worldToScreen(moonPos.x, moonPos.y);
+    const Rm_px = R_moon * scale;
+    ctx.beginPath();
+    ctx.arc(moonScreen.x, moonScreen.y, Rm_px, 0, 2*Math.PI);
+    ctx.fillStyle = '#aaa'; ctx.fill();
+
+    // 3) Draw Rocket or Arrow
+    // Compute pixel size of rocket graphic
+    const rocketSizeKm = 50; // visual size
+    const rocketPx = rocketSizeKm * scale;
+    const centerX = W/2, centerY = H/2;
+    if (rocketPx >= 20) {
+      // Draw rocket as red triangle pointing along velocity
+      ctx.save();
+      // Determine angle
+      let ang = Math.atan2(rocket.vel.y, rocket.vel.x);
+      if (isNaN(ang)) ang = 0;
+      ctx.translate(centerX, centerY);
+      ctx.rotate(-ang + Math.PI/2);
+      ctx.beginPath();
+      ctx.moveTo(0, -rocketPx);
+      ctx.lineTo(rocketPx/2, rocketPx);
+      ctx.lineTo(-rocketPx/2, rocketPx);
+      ctx.closePath();
+      ctx.fillStyle = '#ff3333';
+      ctx.fill();
+      ctx.restore();
+    } else {
+      // Draw fixed arrow of 20px length
+      const arrowLen = 20;
+      const vnorm = Math.hypot(rocket.vel.x, rocket.vel.y) || 1;
+      const ux = rocket.vel.x / vnorm, uy = rocket.vel.y / vnorm;
+      const perpX = -uy, perpY = ux;
+      // tip at center + direction
+      const tipX = centerX + ux*arrowLen;
+      const tipY = centerY - uy*arrowLen;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(centerX + perpX*5, centerY - perpY*5);
+      ctx.lineTo(centerX - perpX*5, centerY + perpY*5);
+      ctx.fillStyle = '#ff3333';
+      ctx.fill();
+    }
+
+    // 4) Update Stats Overlay
+    const speed = Math.hypot(rocket.vel.x, rocket.vel.y); // km/s
+    const speed_kmh = (speed * 3600).toFixed(0);
+    const fuel_pct = ((rocket.fuelMass / (rocket.dryMass + 1e-12)) * 100).toFixed(1);
+    const distToEarthSurf = (re - R_earth).toFixed(1);
+    const distToMoonSurf  = (rm - R_moon).toFixed(1);
+    const time_h = Math.floor(simTime/3600), time_m = Math.floor((simTime%3600)/60), time_s = Math.floor(simTime%60);
+    let statsHTML = '';
+    statsHTML += `🚀 Speed: ${speed_kmh} km/h<br>`;
+    statsHTML += `⛽ Fuel: ${fuel_pct}%<br>`;
+    statsHTML += `🌍 Dₑₐᵣₜₕ surface: ${distToEarthSurf} km<br>`;
+    statsHTML += `🌕 Dₘₒₒₙ surface: ${distToMoonSurf} km<br>`;
+    statsHTML += `⌚ Time: ${time_h}h ${time_m}m ${time_s}s<br>`;
+    if (orbitAchieved) {
+      statsHTML += `<span style="color:#0f0;">🛰️ Stable lunar orbit achieved!</span>`;
+    }
+    document.getElementById('stats').innerHTML = statsHTML;
+  }
+
+  // === Start Simulation ===
+  requestAnimationFrame(loop);
+
+  </script>
+</body>
+</html>
