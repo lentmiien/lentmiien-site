@@ -228,7 +228,7 @@ module.exports = (server, sessionMiddleware) => {
           const message = await messageService.getMessageById(conversation.messages[conversation.messages.length-1]);
           socket.emit('setID', socket.conversation_id);
           socket.emit('aiResponse', message);
-          await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4o-mini");
+          await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4.1-nano");
         }
       } catch (error) {
         console.error('Error processing data:', error);
