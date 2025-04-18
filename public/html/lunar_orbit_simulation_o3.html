@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Earth → Moon 2‑D Rocket Simulation</title>
+
+    <!-- ──────────────────────────────  INLINE  CSS  ────────────────────────────── -->
+    <style>
+        /*  Full‑screen canvas  */
+        html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000;font-family:Arial,Helvetica,sans-serif;color:#fff}
+        #simCanvas{display:block;width:100%;height:100%;background:#000;cursor:crosshair}
+
+        /*  Sliders container  */
+        #ui{
+            position:absolute;left:10px;bottom:10px;z-index:10;
+            background:#0008;padding:10px 14px;border-radius:8px
+        }
+        #ui label{font-size:14px;display:block;margin-top:4px}
+        #ui input[type=range]{width:240px}
+
+        /*  Stats overlay  */
+        #stats{
+            position:absolute;right:10px;top:10px;z-index:10;
+            background:#0008;padding:12px 16px;border-radius:8px;font-size:14px;line-height:1.35em
+        }
+        #orbitFlag{color:#0f0;font-weight:bold}
+    </style>
+</head>
+<body>
+<canvas id="simCanvas"></canvas>
+
+<!-- ──────────────────────────────  UI : Sliders  ────────────────────────────── -->
+<div id="ui">
+    <label>
+        🔍 Zoom Level
+        <input id="zoomSlider" type="range" min="0" max="1" step="0.001" value="0">
+    </label>
+    <label>
+        ⏩ Simulation Speed (1 ‑ 100×)
+        <input id="speedSlider" type="range" min="1" max="100" step="1" value="10">
+    </label>
+</div>
+
+<!-- ──────────────────────────────  Stats Overlay  ────────────────────────────── -->
+<div id="stats">
+    <div>⏱️  Time            <span id="tVal">0</span> s</div>
+    <div>🚀 Speed          <span id="vVal">0</span> km/s</div>
+    <div>⛽ Fuel           <span id="fuelVal">100</span>%</div>
+    <div>🌍 Dist Earth    <span id="deVal">0</span> km</div>
+    <div>🌕 Dist Moon    <span id="dmVal">0</span> km</div>
+    <div id="orbitFlag" style="display:none;">🌕 Lunar Orbit Achieved!</div>
+</div>
+
+<!-- ──────────────────────────────  INLINE  JAVASCRIPT  ────────────────────────────── -->
+<script>
+/* ============================================================================
+   GLOBAL CONSTANTS (all distances in kilometres, masses in kilograms, time in seconds)
+   ============================================================================ */
+const G = 6.67430e-20;                      // Universal gravitational constant (km^3 kg^-1 s^-2)
+
+const EARTH = {
+    r: 6371,                               // radius (km)
+    m: 5.972e24,                           // mass (kg)
+    pos: {x:0, y:0},                       // fixed at origin
+    color:'#1e80ff'
+};
+
+const MOON = {
+    r: 1737,                               // radius (km)
+    m: 7.34767309e22,                      // mass (kg)
+    pos: {x:384400, y:0},                 // fixed location on +X axis
+    color:'#aaa'
+};
+
+const ROCKET_SPECS = {
+    dryMass:15000,                         // kg   (structure + engines etc.)
+    fuelMass:15000,                        // kg   (initial propellant)
+    thrust:1.0e6,                          // N    (constant full‑throttle thrust)
+    isp:300                                // s    (specific impulse)
+};
+
+/*  Derived: mass‑flow rate  ṁ = Thrust / (Isp * g0)  where g0 = 9.80665 m/s²  */
+const g0 = 9.80665;
+const MDOT = ROCKET_SPECS.thrust/(ROCKET_SPECS.isp*g0);   // kg / s  (note: thrust in Newtons, g0 in m/s²)
+                                                         // We keep MDOT in kg/s (same unit system)
+
+/* ============================================================================
+   CANVAS & VIEWPORT HANDLING
+   ============================================================================ */
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize(){canvas.width=window.innerWidth; canvas.height=window.innerHeight;}
+window.addEventListener('resize',resize);resize();
+
+/*  Slider DOM refs   */
+const zoomSlider  = document.getElementById('zoomSlider');
+const speedSlider = document.getElementById('speedSlider');
+
+/* ============================================================================
+   ROCKET STATE  (position, velocity, heading, fuel, etc.)
+   ============================================================================ */
+let rocket = {
+    pos:{x:EARTH.r+0.1, y:0},              // start on Earth's surface at equator (eastwards)
+    vel:{x:0, y:0},                        // initially at rest
+    heading:{x:1, y:0},                    // unit vector thrust direction  (updates by autopilot)
+    fuel:ROCKET_SPECS.fuelMass,            // kg
+    phase:0,                               // autopilot phase flag
+    t:0,                                   // mission elapsed time
+    orbital:false                          // flag when lunar orbit achieved
+};
+
+/* ============================================================================
+   UI  (stats update)
+   ============================================================================ */
+const tVal    = document.getElementById('tVal');
+const vVal    = document.getElementById('vVal');
+const fuelVal = document.getElementById('fuelVal');
+const deVal   = document.getElementById('deVal');
+const dmVal   = document.getElementById('dmVal');
+const orbitFlag = document.getElementById('orbitFlag');
+
+/* ============================================================================
+   MATH / VECTOR HELPERS
+   ============================================================================ */
+function mag(v){return Math.hypot(v.x,v.y);}
+function add(a,b){return {x:a.x+b.x,y:a.y+b.y};}
+function sub(a,b){return {x:a.x-b.x,y:a.y-b.y};}
+function mul(a,k){return {x:a.x*k,y:a.y*k};}
+function unit(v){const m=mag(v);return m===0?{x:0,y:0}:{x:v.x/m,y:v.y/m};}
+
+/* ============================================================================
+   AUTOPILOT LOGIC
+   Phase 0 – Earth departure burn  (full thrust, prograde)  until t=600 s
+   Phase 1 – Coast to Moon
+   Phase 2 – Lunar capture burn when within 50 000 km of Moon centre
+   Phase 3 – Orbital coast (engines off forever)
+   ============================================================================ */
+function autopilot(dt){
+    switch(rocket.phase){
+        case 0: // lift‑off / TLI
+            rocket.heading = unit(rocket.vel.x||rocket.vel.y?rocket.vel:{x:1,y:0}); // prograde (if still ~0, just +x)
+            rocket.throttle = 1;
+            if(rocket.t>600 || rocket.fuel<=0){
+                rocket.phase=1;
+            }
+            break;
+
+        case 1: // coasting to moon, engines off
+            rocket.throttle = 0;
+            // Check if within capture zone
+            if(mag(sub(rocket.pos,MOON.pos)) < 50000){
+                rocket.phase=2;
+            }
+            break;
+
+        case 2: // lunar braking burn – apply retro‑grade until near‑circular
+            {
+                const relVel = rocket.vel;               // heliocentric (same origin) but we only care direction
+                rocket.heading = unit(mul(relVel,-1));   // opposite to velocity (retro)
+                rocket.throttle = (rocket.fuel>0)?1:0;
+
+                // Determine if orbital speed achieved: compare speed vs circular velocity at current altitude
+                const rMoon = mag(sub(rocket.pos,MOON.pos));
+                const circular = Math.sqrt(G*MOON.m / rMoon);
+                if(mag(rocket.vel) < circular*1.02){     // within 2 %
+                    rocket.phase=3;
+                    rocket.throttle=0;
+                    rocket.orbital=true;
+                }
+            }
+            break;
+
+        case 3: // stable lunar orbit
+        default:
+            rocket.throttle=0;
+    }
+}
+
+/* ============================================================================
+   MAIN SIMULATION STEP  (semi‑implicit Euler)
+   ============================================================================ */
+let lastFrame = performance.now();
+function step(){
+    const now = performance.now();
+    const realDT = (now-lastFrame)/1000;                 // seconds of real wall‑clock
+    lastFrame = now;
+
+    const timeScale = Number(speedSlider.value);         // 1 … 100
+    const simDT = realDT * timeScale;                    // seconds of simulation time to advance this frame
+    if(simDT<=0) {requestAnimationFrame(step);return;}
+
+    rocket.t += simDT;
+
+    /* ── AUTOPILOT determines throttle & direction (may change phase) ── */
+    autopilot(simDT);
+
+    /* ── THRUST FORCE ── */
+    let thrustAcc = {x:0,y:0};                           // km/s²
+    if(rocket.throttle>0 && rocket.fuel>0){
+        // mass flow for this frame
+        const fuelUsed = Math.min(rocket.fuel, MDOT*simDT);
+        rocket.fuel -= fuelUsed;
+
+        // Current mass
+        const mass = ROCKET_SPECS.dryMass + rocket.fuel;
+
+        const thrustForceN = ROCKET_SPECS.thrust*rocket.throttle;   // Newtons
+        const thrustAccMS = thrustForceN / mass;                   // m/s²
+        const thrustAccKM = thrustAccMS/1000;                      // km/s²
+
+        thrustAcc = mul(rocket.heading, thrustAccKM);
+    }
+
+    /* ── GRAVITY FROM EARTH & MOON ── */
+    function gravityBody(body){
+        const rVec = sub(body.pos, rocket.pos);
+        const r = mag(rVec);
+        const a = G*body.m/(r*r);                    // km/s²
+        return mul(unit(rVec), a);                   // vector accel
+    }
+    const aEarth = gravityBody(EARTH);
+    const aMoon  = gravityBody(MOON);
+
+    // Total acceleration
+    const acc = add(add(aEarth,aMoon),thrustAcc);
+
+    /* ── Semi‑implicit Euler integration ── */
+    rocket.vel = add(rocket.vel, mul(acc, simDT));
+    rocket.pos = add(rocket.pos, mul(rocket.vel, simDT));
+
+    /* ── UPDATE STATS PANEL ── */
+    tVal.textContent   = rocket.t.toFixed(0);
+    vVal.textContent   = mag(rocket.vel).toFixed(2);
+    fuelVal.textContent= ((rocket.fuel/ROCKET_SPECS.fuelMass)*100).toFixed(1);
+    deVal.textContent  = (mag(rocket.pos)-EARTH.r).toFixed(0);
+    dmVal.textContent  = (mag(sub(rocket.pos,MOON.pos))-MOON.r).toFixed(0);
+    orbitFlag.style.display = rocket.orbital ? 'block' : 'none';
+
+    /* ── RENDER ── */
+    draw();
+
+    requestAnimationFrame(step);
+}
+
+/* ============================================================================
+   DRAWING ROUTINES
+   ============================================================================ */
+function draw(){
+    ctx.save();
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    /* ---- Determine current scale from zoom slider ----
+       Slider value 0 (close) → viewRadius  500 km
+                     1 (far)  → viewRadius 200 000 km   */
+    const zoomVal = Number(zoomSlider.value);
+    const viewRadius = 500 + (200000-500)*zoomVal;       // km from center to screen edge
+    const pxPerKm = Math.min(canvas.width,canvas.height)/(2*viewRadius);
+
+    /* ---- Define transformation: world → screen ---- */
+    function worldToScreen(p){
+        return {
+            x: canvas.width/2 +(p.x-rocket.pos.x)*pxPerKm,
+            y: canvas.height/2+(p.y-rocket.pos.y)*pxPerKm
+        };
+    }
+
+    /* ---- Draw Earth ---- */
+    ctx.fillStyle=EARTH.color;
+    const eScreen = worldToScreen(EARTH.pos);
+    ctx.beginPath();
+    ctx.arc(eScreen.x,eScreen.y,EARTH.r*pxPerKm,0,Math.PI*2);
+    ctx.fill();
+
+    /* ---- Draw Moon ---- */
+    ctx.fillStyle=MOON.color;
+    const mScreen = worldToScreen(MOON.pos);
+    ctx.beginPath();
+    ctx.arc(mScreen.x,mScreen.y,MOON.r*pxPerKm,0,Math.PI*2);
+    ctx.fill();
+
+    /* ---- Draw Rocket  ---- */
+    // Determine rocket apparent pixel size
+    const rocketSizePx = 20;                     // length in px when "close"
+    const rocketScreenSize = 0.03*pxPerKm*1000;  // treat rocket length 30 m =0.03 km
+    const tooSmall = rocketScreenSize < 20;      // threshold per spec
+
+    const rScreen = {x:canvas.width/2, y:canvas.height/2}; // by design (viewport centered)
+
+    if(tooSmall){
+        // Draw fixed‑size arrow indicating velocity direction
+        const vDir = unit(rocket.vel);
+        const arrowLen = 30;
+        const end = {x:rScreen.x+vDir.x*arrowLen, y:rScreen.y+vDir.y*arrowLen};
+        ctx.strokeStyle='#ff4040';
+        ctx.lineWidth=3;
+        ctx.beginPath();
+        ctx.moveTo(rScreen.x,rScreen.y);
+        ctx.lineTo(end.x,end.y);
+        ctx.stroke();
+        // arrow head
+        ctx.beginPath();
+        const left = {x:end.x - vDir.x*6 + vDir.y*6, y:end.y - vDir.y*6 - vDir.x*6};
+        const right= {x:end.x - vDir.x*6 - vDir.y*6, y:end.y - vDir.y*6 + vDir.x*6};
+        ctx.moveTo(end.x,end.y);ctx.lineTo(left.x,left.y);ctx.lineTo(right.x,right.y);ctx.closePath();
+        ctx.fillStyle='#ff4040';ctx.fill();
+    }else{
+        // Draw simple triangle rocket (scale with pxPerKm)
+        ctx.fillStyle='#ff4040';
+        ctx.save();
+        ctx.translate(rScreen.x,rScreen.y);
+        const ang = Math.atan2(rocket.heading.y, rocket.heading.x);
+        ctx.rotate(ang + Math.PI/2);             // point nose along heading
+        const size = rocketScreenSize;
+        ctx.beginPath();
+        ctx.moveTo(0,-size);                     // nose
+        ctx.lineTo(size*0.5,size);
+        ctx.lineTo(-size*0.5,size);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    }
+
+    ctx.restore();
+}
+
+/* ============================================================================
+   START SIMULATION
+   ============================================================================ */
+requestAnimationFrame(step);
+</script>
+</body>
+</html>

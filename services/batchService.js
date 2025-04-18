@@ -60,6 +60,9 @@ const redirect_models = {
   "o1-mini": "o1-mini-2024-09-12",
   "o3-mini": "o3-mini-2025-01-31",
   "gpt-4o-mini": "gpt-4o-mini-2024-07-18",
+  "gpt-4.1": "gpt-4.1-2025-04-14",
+  "gpt-4.1-mini": "gpt-4.1-mini-2025-04-14",
+  "gpt-4.1-nano": "gpt-4.1-nano-2025-04-14",
 };
 
 async function LoadModels() {
@@ -97,7 +100,7 @@ class BatchService {
     return conversationIds;
   }
 
-  async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters, model="gpt-4o") {
+  async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters, model="gpt-4.1") {
     if (valid_models.indexOf(model) === -1) model = redirect_models[model];
     if (valid_models.indexOf(model) === -1) return;
 
@@ -389,7 +392,7 @@ class BatchService {
                 const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, response_text, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
                 await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
                 // Flag for generating summary
-                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4o-mini");
+                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4.1-nano");
               }
               // Delete completed prompt
               await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
@@ -422,7 +425,7 @@ class BatchService {
                 const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].content.text, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
                 await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
                 // Flag for generating summary
-                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4o-mini");
+                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4.1-nano");
               }
               // Delete completed prompt
               await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});

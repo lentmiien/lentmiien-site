@@ -78,7 +78,7 @@ ${all_details.join("\n\n")}
 ---
 `;
       // const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, [], {title, category:"Product details", tags:"dhl,product_details", context, prompt}, "OpenAI_mini");
-      // await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4o-mini");
+      // await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title}, "gpt-4.1-nano");
       // const conversation = await conversationService.getConversationsById(conversation_id);
       // const messages = await messageService.getMessagesByIdArray(conversation.messages);
       // const ai_description = messages[0].response;

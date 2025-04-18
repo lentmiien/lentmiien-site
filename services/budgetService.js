@@ -10,6 +10,8 @@ const AccountDBModel = require('../models/account_db');
 const CategoryDBModel = require('../models/category_db');
 const TransactionDBModel = require('../models/transaction_db');
 
+const { Receipt } = require('../database');
+
 const budgetService = {
   async getAccounts() {
     const accounts = [];
@@ -50,6 +52,27 @@ const budgetService = {
     return {accounts, id_to_account_index};
   },
   async getDashboardData() {
+    const start = new Date(Date.now() - (1000*60*60*24*30));
+    const receipts = await Receipt.find({date: { $gte: start }}).sort('-date');
+    const receiptLookup = {}
+    for (const r of receipts) {
+      const date = parseInt(r.date.toISOString().split('T')[0].split('-').join(''));
+      const amount = r.amount;
+      if (receiptLookup[date]) receiptLookup[date][amount] = r._id.toString();
+      else receiptLookup[date] = {[amount]: r._id.toString()};
+    }
+
+    /*
+    _id: 66de1cdfd91b8c4d8ffe39de
+    date: 2024-09-08T00:00:00.000+00:00
+    amount: 6251
+    method: "debit"
+    business_name: "いなげや"
+    business_address: "神奈川県横浜市旭区本宿町31-1"
+    file: "UP-1725832408646.jpg"
+    __v: 0
+    */
+
     const dashboardData = {};
     const a = await this.getAccounts();
     const d = new Date()
@@ -83,6 +106,8 @@ const budgetService = {
             amount: 0 - t.from_fee - t.amount,
             date: t.date,
             label: t.transaction_business,
+            hasReceipt: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? true : false,
+            receiptId: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? receiptLookup[t.date][t.amount] : null,
           });
         }
       }
@@ -102,6 +127,8 @@ const budgetService = {
               amount: t.amount - t.to_fee,
               date: t.date,
               label: t.transaction_business,
+              hasReceipt: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? true : false,
+              receiptId: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? receiptLookup[t.date][t.amount] : null,
             });
           }
         }
