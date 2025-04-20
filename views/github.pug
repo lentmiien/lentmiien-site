@@ -1,21 +1,24 @@
 extends layout
-
 block content
   .row 
     .col
       h2 Select a repository 
       select#repository.form-control(name="repository", onchange="SelectRepository(this)") 
-        option(value="") - Select -
+        option(value="") – Select –
         each rep in repos
           option(value=rep.name, title=rep.description)= `${rep.name} (${rep.stars})`
-  .row 
-    .col-2
-      button.btn.btn-warning(onclick="RefreshRepository()") Refresh
-    #filestructure.col-10
+
   .row
+    .col
+      button.btn.btn-warning(onclick="RefreshRepository()") Refresh
+      button.btn.btn-success.ms-2(onclick="CopySelectedFiles()") Copy Selected
+    #filestructure.col-12.mt-3
+
+  .row.mt-4
     .col
       h2 File content: 
         b#filepath
-        button.btn.btn-primary(onclick="CopyFile()") Copy file
+        button.btn.btn-primary.ms-2(onclick="CopyFile()") Copy file
       #filecontent
-  script(src="/js/github.js") 
+
+  script(src="/js/github.js")

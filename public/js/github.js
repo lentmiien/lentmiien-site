@@ -4,6 +4,13 @@ const filepath = document.getElementById('filepath');
 let repo = '';
 const cache = {};
 
+const content_type = {
+  "js": "javascript",
+  "py": "python",
+  "pug": "pug",
+  "json": "json",
+};
+
 const lv = [
   "",
   ">",
@@ -31,63 +38,40 @@ function CreateFolderSelect(level, data) {
 }
 
 async function SelectRepository(e) {
-  // User select a repository from a select box
   repo = e.value;
-  if (repo.length === 0) {
+  if (!repo) {
     filestructure.innerHTML = '';
     filecontent.innerHTML = '';
     filepath.innerText = '';
     return;
   }
-
-  // Create or load cache entry
   if (!(repo in cache)) {
-    // Create: Send GET request to '/mypage/getfolder' -> return file structure of top folder
-    const response = await fetch(`/mypage/getfolder?repo=${repo}`);
-    const json = await response.json();
-    json.sort((a,b) => {
-      if (a.type === 'dir' && b.type === 'file') return -1;
-      if (a.type === 'file' && b.type === 'dir') return 1;
-      if (a.name < b.name) return -1;
-      if (a.name > b.name) return 1;
-      return 0;
-    });
+    const resp = await fetch(`/mypage/getfolder?repo=${repo}`);
+    const json = await resp.json();
+    json.sort(sorter);
     cache[repo] = json;
   }
-
-  // Display folder structure currently saved in cache
-  filestructure.innerHTML = `<select class="form-control" onchange="LoadFile(this)"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
   filecontent.innerHTML = '';
   filepath.innerText = '';
+  RenderTree();
 }
 
 async function RefreshRepository() {
-  const e = document.getElementById("repository");
-  // User select a repository from a select box
+  const e = document.getElementById('repository');
   repo = e.value;
-  if (repo.length === 0) {
+  if (!repo) {
     filestructure.innerHTML = '';
     filecontent.innerHTML = '';
     filepath.innerText = '';
     return;
   }
-
-  // Create: Send GET request to '/mypage/updatefolder' -> return file structure of top folder
-  const response = await fetch(`/mypage/updatefolder?repo=${repo}`);
-  const json = await response.json();
-  json.sort((a,b) => {
-    if (a.type === 'dir' && b.type === 'file') return -1;
-    if (a.type === 'file' && b.type === 'dir') return 1;
-    if (a.name < b.name) return -1;
-    if (a.name > b.name) return 1;
-    return 0;
-  });
+  const resp = await fetch(`/mypage/updatefolder?repo=${repo}`);
+  const json = await resp.json();
+  json.sort(sorter);
   cache[repo] = json;
-
-  // Display folder structure currently saved in cache
-  filestructure.innerHTML = `<select class="form-control" onchange="LoadFile(this)"><option></option>${CreateFolderSelect(0, cache[repo])}</select>`;
   filecontent.innerHTML = '';
   filepath.innerText = '';
+  RenderTree();
 }
 
 function SaveToCache(input, data, path) {
@@ -151,16 +135,72 @@ async function LoadFile(e) {
   current_file_data = c_data;
 }
 
-const content_type = {
-  "js": "javascript",
-  "py": "python",
-  "pug": "pug",
-  "json": "json",
-};
 function CopyFile() {
   const ext = filepath.innerText.split(".")[1];
   const copy_buffer = `### File: ${filepath.innerText}\n\`\`\`${ext in content_type ? content_type[ext] : ""}\n${current_file_data}\n\`\`\``;
   Copy(copy_buffer);
+}
+
+// Recursively build a <ul> tree with checkboxes for files
+function CreateFolderTree(data) {
+  let html = '<ul class="list-unstyled">';
+  data.forEach(item => {
+    if (item.type === 'dir') {
+      html += `<li><strong>📁 ${item.name}</strong>${CreateFolderTree(item.content)}</li>`;
+    } else {
+      // file
+      // use the normalized path with forward‑slashes
+      const cleanPath = item.path.split('\\').join('/');
+      html += `
+        <li>
+          <label style="cursor:pointer">
+            <input type="checkbox" 
+                   class="file-checkbox" 
+                   value="${cleanPath}">
+            🗎 ${item.name}
+          </label>
+        </li>`;
+    }
+  });
+  html += '</ul>';
+  return html;
+}
+
+// call this after you fill cache[repo]
+function RenderTree() {
+  filestructure.innerHTML = CreateFolderTree(cache[repo] || []);
+}
+
+async function CopySelectedFiles() {
+  if (!repo || !(repo in cache)) return;
+  // gather all checked file checkboxes
+  const boxes = filestructure.querySelectorAll('input.file-checkbox:checked');
+  if (boxes.length === 0) {
+    alert('No files selected');
+    return;
+  }
+
+  let markdown = '';
+
+  for (let cb of boxes) {
+    const path = cb.value;
+    // 1) try to get from cache
+    let content = LoadCacheFileData(cache[repo], path);
+    // 2) if not in cache, fetch it
+    if (!content) {
+      const resp = await fetch(`/mypage/getfile?repo=${repo}&path=${encodeURIComponent(path)}`);
+      const json = await resp.json();
+      content = json.data;
+      SaveToCache(content, cache[repo], path);
+    }
+    const ext = path.split('.').pop();
+    const lang = content_type[ext] || '';
+    // build markdown snippet
+    markdown += `### File: ${path}\n\`\`\`${lang}\n${content}\n\`\`\`\n\n`;
+  }
+
+  Copy(markdown);
+  alert('Copied ' + boxes.length + ' files to clipboard');
 }
 
 /****
@@ -175,4 +215,11 @@ function Copy(text) {
   document.addEventListener('copy', listener);
   document.execCommand('copy');
   document.removeEventListener('copy', listener);
+}
+
+function sorter(a, b) {
+  // dirs first, then alpha
+  if (a.type === 'dir' && b.type === 'file') return -1;
+  if (a.type === 'file' && b.type === 'dir') return 1;
+  return a.name.localeCompare(b.name);
 }
