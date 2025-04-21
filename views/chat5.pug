@@ -49,7 +49,14 @@ block content
             option(value="chat5") chat5
         .form-check
           input#dulpicate.form-check-input(type="checkbox", onclick="ToggleDuplicate(this)")
-          label.form-check-label(for="dulpicate")  Duplicate conversation
+          label.form-check-label(for="dulpicate")  Duplicate conversation 
+          b Reasoning: 
+          input#low(type="radio", name="reasoning", value="low", onclick="SetReasoning(this)")
+          label.form-check-label(for="low")  Low 
+          input#medium(type="radio", name="reasoning", value="medium", checked, onclick="SetReasoning(this)")
+          label.form-check-label(for="medium")  Medium 
+          input#high(type="radio", name="reasoning", value="high", onclick="SetReasoning(this)")
+          label.form-check-label(for="high")  High
         button.btn.btn-primary(type="submit") Update/Close
   #load.popup-wrapper 
     .popup-content

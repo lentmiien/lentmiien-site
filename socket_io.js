@@ -52,6 +52,7 @@ module.exports = (server, sessionMiddleware) => {
     socket.tags = 'chat5';
     socket.images = [];
     socket.duplicate = false;
+    socket.reasoning = "medium";
     socket.delete_messages = [];
 
     console.log(`${userName} connected: ${userId}`);
@@ -124,9 +125,9 @@ module.exports = (server, sessionMiddleware) => {
       socket.emit('setTitle', title);
     });
 
-    socket.on('toggleDuplicate', async (state) => {
-      socket.duplicate = state;
-    });
+    socket.on('toggleDuplicate', (state) => socket.duplicate = state);
+
+    socket.on('setReasoning', (value) => socket.reasoning = value);
 
     socket.on('toggleDeleteMessage', async (params) => {
       if (params.state) {
@@ -193,6 +194,7 @@ module.exports = (server, sessionMiddleware) => {
       socket.conversationTitle = userMessage.conversationTitle;
       socket.category = userMessage.category;
       socket.duplicate = userMessage.duplicate;
+      socket.reasoning = userMessage.reasoning;
       socket.conversation_id = userMessage.conversation_id;
       socket.model = userMessage.model;
       socket.images = userMessage.images;
@@ -219,7 +221,7 @@ module.exports = (server, sessionMiddleware) => {
           socket.emit('setID', socket.conversation_id);
           socket.emit('batchPending', userMessage.msg);
         } else {
-          const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, "medium", false, socket.delete_messages);
+          const conversation_id = await conversationService.postToConversation(userName, socket.conversation_id, socket.images, parameters, socket.model, socket.reasoning, false, socket.delete_messages);
           socket.images = [];
           socket.emit('deleteMessagesFromUI', socket.delete_messages);
           socket.delete_messages = [];

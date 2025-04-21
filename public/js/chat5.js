@@ -196,6 +196,10 @@ function ToggleDuplicate(e) {
   socket.emit('toggleDuplicate', e.checked);
 }
 
+function SetReasoning(e) {
+  socket.emit('setReasoning', e.value);
+}
+
 function ProcessDeleteCheckbox(e) {
   socket.emit('toggleDeleteMessage', {id: e.value, state: e.checked});
 }
@@ -286,6 +290,13 @@ messageForm.addEventListener('submit', function (e) {
       delete_messages.push(del_checkbox[i].value);
     }
   }
+
+  const low = document.getElementById("low");
+  // const medium = document.getElementById("medium");
+  const high = document.getElementById("high");
+  let r = "medium";
+  if (low.checked) r = "low";
+  if (high.checked) r = "high";
   
   // Send the message to the server
   socket.emit('userMessage', {
@@ -295,6 +306,7 @@ messageForm.addEventListener('submit', function (e) {
     conversationTitle: title.innerText.length > 1 ? title.innerText : "Placeholder",
     category: categoryInput.value.length > 0 ? categoryInput.value : 'Chat5',
     duplicate: dulpicate.checked,
+    reasoning: r,
     conversation_id: conversation_id.innerText,
     model: model.value,
     images: JSON.parse(statusDiv.dataset.files),
