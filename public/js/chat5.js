@@ -360,7 +360,7 @@ function addDeleteCheckbox(message_id) {
   const item = document.createElement('li');
   item.classList.add(message_id);
 
-  item.innerHTML = `<input class="del_checkbox" type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below<button class="btn btn-danger float-end" onclick="DeleteOneMessageFromConversation('${message_id}')">Delete</button><button class="btn btn-warning float-end" onclick="EmailOneMessageFromConversation('${message_id}', this)">Email</button>`;
+  item.innerHTML = `<input class="del_checkbox" type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below<button class="btn btn-danger float-end" onclick="DeleteOneMessageFromConversation('${message_id}')">Delete</button><button class="btn btn-warning float-end" onclick="EmailOneMessageFromConversation('${message_id}', this)">Email</button><a href="/chat5/edit_message/${message_id}" class="btn btn-primary float-end">Manual Edit</a>`;
 
   messagesList.prepend(item);
 
