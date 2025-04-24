@@ -1,7 +1,7 @@
 const fs = require('fs');
 const sharp = require('sharp');
 const marked = require('marked');
-const { chatGPT, chatGPTaudio, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig } = require('../utils/ChatGPT');
+const { chatGPT, chatGPTaudio, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig, ig2 } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
 const { groq, groq_vision } = require('../utils/groq');
 const { googleAI } = require('../utils/google');
@@ -231,6 +231,14 @@ class MessageService {
     });
     await message.save();
     return message;
+  }
+
+  async generateImage2(params, conversation) {
+    const message = await this.messageModel.findById(conversation.messages[conversation.messages.length-1]);
+    const image_name = await ig2(params.prompt, params.model, params.quality, params.size);
+    message.images.push({ filename: image_name, use_flag: 'do not use' });
+    await message.save();
+    return image_name;
   }
 
   async generateTTS(messageId, tts_prompt, model = "tts-1", voice = "nova", instructions = null) {

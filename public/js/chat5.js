@@ -32,6 +32,9 @@ const template_title = document.getElementById("template_title");
 const template_content = document.getElementById("template_content");
 const template_type = document.getElementById("template_type");
 const max = document.getElementById("max");
+const image_model = document.getElementById("image_model");
+const image_quality = document.getElementById("image_quality");
+const image_size = document.getElementById("image_size");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -350,6 +353,46 @@ socket.on('aiResponse', function (message) {
 
   // Attach copy functionality to code blocks
   attachCopyListeners();
+
+  // Clear the input field
+  editor.reset();
+
+  // Done, close loading screen
+  hideLoadingPopup();
+});
+
+//////////////////////////////
+//----- Image generate -----//
+function GenerateImage() {
+  // Must have a conversation with at least 1 message
+  const messages_li = document.getElementsByTagName('li');
+  const msg = editor.getMarkdown();
+  if (conversation_id.innerText.length === 0 || messages_li.length === 0 || msg.length === 0) {
+    return alert("Must have a conversation with at least 1 message");
+  }
+
+  const params = {
+    id: conversation_id.innerText,
+    model: image_model.value,
+    quality: image_quality.value,
+    size: image_size.value,
+    prompt: msg,
+  };
+
+  // Show loading screen until getting a response
+  showLoadingPopup();
+
+  socket.emit('generateImage', params);
+}
+
+socket.on('imageDone', function (image_name) {
+  // Append to last message (end of third 'li' element)
+  const messages_li = document.getElementsByTagName('li');
+  messages_li[2].innerHTML += '<br><img src="/img/' + image_name + '">';
+
+  // Clear file upload
+  statusDiv.textContent = "";
+  statusDiv.dataset.files = "[]";
 
   // Clear the input field
   editor.reset();

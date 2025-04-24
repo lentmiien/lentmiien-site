@@ -26,6 +26,7 @@ block content
             option(value=`batch+${m.api_model}`)= `[Batch] ${m.model_name}`
       input#max.form-control(type="number", name="max", value="0")
       button.btn.btn-primary(type="submit") Send
+      button.btn.btn-warning(type="button", onclick="GenerateImage()") Image
       button.btn.btn-secondary(type="button", onclick="OpenSettings()") Settings
   ul#messages
   #settings.popup-wrapper 
@@ -49,14 +50,37 @@ block content
             option(value="chat5") chat5
         .form-check
           input#dulpicate.form-check-input(type="checkbox", onclick="ToggleDuplicate(this)")
-          label.form-check-label(for="dulpicate")  Duplicate conversation 
-          b Reasoning: 
+          label.form-check-label(for="dulpicate")  Duplicate conversation
+        b Reasoning: 
+        .form-check
           input#low(type="radio", name="reasoning", value="low", onclick="SetReasoning(this)")
-          label.form-check-label(for="low")  Low 
+          label.form-check-label(for="low") Low 
+        .form-check
           input#medium(type="radio", name="reasoning", value="medium", checked, onclick="SetReasoning(this)")
-          label.form-check-label(for="medium")  Medium 
+          label.form-check-label(for="medium") Medium 
+        .form-check
           input#high(type="radio", name="reasoning", value="high", onclick="SetReasoning(this)")
-          label.form-check-label(for="high")  High
+          label.form-check-label(for="high") High
+        hr
+        .row 
+          .col 
+            label(for="image_model") Image model 
+            select#image_model.form-control(name="image_model") 
+              option(value="gpt-image-1") GPT Image 1 (32k prompt)
+              option(value="dall-e-3") DALL E 3 (4k prompt)
+          .col 
+            label(for="image_quality") Image quality 
+            select#image_quality.form-control(name="image_quality") 
+              option(value="high") High/HD
+              option(value="medium") Medium/Standard
+              option(value="low") Low(/Standard)
+          .col 
+            label(for="image_size") Image size 
+            select#image_size.form-control(name="image_size") 
+              option(value="square") Square (1024x1024)
+              option(value="landscape") Landscape (1536x1024/1792x1024)
+              option(value="portrait") Portrait (1024x1536/1024x1792)
+        hr
         button.btn.btn-primary(type="submit") Update/Close
   #load.popup-wrapper 
     .popup-content

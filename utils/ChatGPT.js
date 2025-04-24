@@ -524,6 +524,71 @@ const ig = async (prompt, quality, size, img_id = Date.now(), private_msg=false)
   // return { filename, prompt: image.data[0].revised_prompt || prompt };
 };
 
+const ig2 = async (prompt, model, quality, size) => {
+  const q_val = ["high", "medium", "low"];
+  const s_val = ["square", "landscape", "portrait"];
+  if ((model === "dall-e-3" && prompt.length > 4000) || (model === "gpt-image-1" && prompt.length > 32000) || q_val.indexOf(quality) == -1 || s_val.indexOf(size) == -1) {
+    return 'invalid input';
+  }
+
+  const q_map = {
+    high: "hd",
+    medium: "standard",
+    low: "standard"
+  };
+
+  const s_map = {
+    "dall-e-3": {
+      square: "1024x1024",
+      landscape: "1792x1024",
+      portrait: "1024x1792"
+    },
+    "gpt-image-1": {
+      square: "1024x1024",
+      landscape: "1536x1024",
+      portrait: "1024x1536"
+    },
+  };
+
+  const number = Date.now();
+  const filename = `image-${number}-.png`;
+  const outputfile = path.resolve(`./public/img/${filename}`);
+
+  const payload = {
+    prompt,
+    model,
+    n: 1,
+    quality: model === "dall-e-3" ? q_map[quality] : quality,
+    size: s_map[model][size],
+  };
+  if (model === "gpt-image-1") payload["moderation"] = "low";
+  if (model === "dall-e-3") payload["response_format"] = "b64_json";
+
+  const image = await openai.images.generate(payload);
+
+  const buffer = Buffer.from(image.data[0].b64_json, 'base64');
+  await fs.promises.writeFile(outputfile, buffer);
+
+  // Convert PNG to JPEG using sharp
+  const jpg_filename = `image-${number}-.jpg`;
+  const jpg_outputfile = path.resolve(`./public/img/${jpg_filename}`);
+  try {
+    // Convert PNG buffer to JPG
+    const jpgBuffer = await sharp(buffer)
+      .jpeg({ quality: 70 }) // Adjust the quality as needed
+      .toBuffer();
+    
+    // Save the JPG buffer to a file
+    await fs.promises.writeFile(jpg_outputfile, jpgBuffer);
+    console.log('The JPEG file has been saved successfully!');
+  } catch(err) {
+    // Handle errors
+    console.error('An error occurred:', err);
+  }
+
+  return jpg_filename;
+};
+
 const localGPT = async (messages, model) => {
   try {
     const response = await local_llm.chat.completions.create({
@@ -671,6 +736,7 @@ module.exports = {
   GetOpenAIAPICallHistory,
   tts,
   ig,
+  ig2,
   localGPT,
   upload_file,
   download_file,

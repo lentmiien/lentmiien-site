@@ -712,6 +712,12 @@ class ConversationService {
     return conversation._id.toString();
   }
 
+  async generateImage(params) {
+    const conversation = await this.conversationModel.findById(params.id);
+    const image_name = await this.messageService.generateImage2(params, conversation);
+    return image_name;
+  }
+
   /**
    * Create an AI generated title for conversation and update database
    * @param {*} id 

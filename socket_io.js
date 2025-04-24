@@ -238,6 +238,17 @@ module.exports = (server, sessionMiddleware) => {
       }
     });
 
+    //////////////////////
+    //----- Images -----//
+
+    socket.on('generateImage', async (params) => {
+      const image_name = await conversationService.generateImage(params);
+      socket.emit('imageDone', image_name);
+    });
+
+    /////////////////////
+    //----- Other -----//
+
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
     });
