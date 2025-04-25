@@ -386,9 +386,9 @@ function GenerateImage() {
 }
 
 socket.on('imageDone', function (image_name) {
-  // Append to last message (end of third 'li' element)
-  const messages_li = document.getElementsByTagName('li');
-  messages_li[2].innerHTML += '<br><img src="/img/' + image_name + '">';
+  // Append to last message (first element on page with class attribute "user")
+  const messages_li = document.getElementsByClassName('user');
+  messages_li[0].innerHTML += '<br><img src="/img/' + image_name + '">';
 
   // Clear file upload
   statusDiv.textContent = "";
