@@ -377,6 +377,7 @@ function GenerateImage() {
     quality: image_quality.value,
     size: image_size.value,
     prompt: msg,
+    images: JSON.parse(statusDiv.dataset.files),
   };
 
   // Show loading screen until getting a response

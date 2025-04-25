@@ -589,6 +589,62 @@ const ig2 = async (prompt, model, quality, size) => {
   return jpg_filename;
 };
 
+const imageEdit = async (inImages, prompt, model, quality, size) => {
+  const q_val = ["high", "medium", "low"];
+  const s_val = ["square", "landscape", "portrait"];
+  if ((model === "gpt-image-1" && prompt.length > 32000) || q_val.indexOf(quality) == -1 || s_val.indexOf(size) == -1) {
+    return 'invalid input';
+  }
+
+  const s_map = {
+    "gpt-image-1": {
+      square: "1024x1024",
+      landscape: "1536x1024",
+      portrait: "1024x1536"
+    },
+  };
+
+  const images = [];
+  for (let i = 0; i < inImages.length; i++) {
+    const image = await OpenAI.toFile(fs.createReadStream(inImages[i]), null, { type: "image/png" });
+    images.push(image);
+  }
+
+  const number = Date.now();
+  const filename = `image-${number}-.png`;
+  const outputfile = path.resolve(`./public/img/${filename}`);
+
+  const rsp = await openai.images.edit({
+    image: images,
+    prompt,
+    model,
+    quality,
+    size: s_map[model][size],
+  });
+
+  const buffer = Buffer.from(rsp.data[0].b64_json, 'base64');
+  await fs.promises.writeFile(outputfile, buffer);
+
+  // Convert PNG to JPEG using sharp
+  const jpg_filename = `image-${number}-.jpg`;
+  const jpg_outputfile = path.resolve(`./public/img/${jpg_filename}`);
+  try {
+    // Convert PNG buffer to JPG
+    const jpgBuffer = await sharp(buffer)
+      .jpeg({ quality: 70 }) // Adjust the quality as needed
+      .toBuffer();
+    
+    // Save the JPG buffer to a file
+    await fs.promises.writeFile(jpg_outputfile, jpgBuffer);
+    console.log('The JPEG file has been saved successfully!');
+  } catch(err) {
+    // Handle errors
+    console.error('An error occurred:', err);
+  }
+
+  return jpg_filename;
+};
+
 const localGPT = async (messages, model) => {
   try {
     const response = await local_llm.chat.completions.create({
@@ -737,6 +793,7 @@ module.exports = {
   tts,
   ig,
   ig2,
+  imageEdit,
   localGPT,
   upload_file,
   download_file,
