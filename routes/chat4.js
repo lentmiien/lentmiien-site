@@ -37,6 +37,7 @@ router.post('/generate_custom_message', controller.generate_custom_message);
 router.get('/knowledgelist', controller.knowledgelist);
 router.get('/viewknowledge/:id', controller.viewknowledge);
 router.post('/saveknowledge', controller.saveknowledge);
+router.get('/createknowledgefromchat/:id', controller.createknowledgefromchat);
 router.get('/editknowledge/:id', controller.editknowledge);
 router.post('/updateknowledge/:id', controller.updateknowledge);
 router.get('/deleteknowledge/:id', controller.deleteknowledge);

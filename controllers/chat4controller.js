@@ -325,6 +325,42 @@ exports.saveknowledge = async (req, res) => {
   res.redirect(`/chat4/viewknowledge/${k_id}`);
 };
 
+exports.createknowledgefromchat = async (req, res) => {
+  const knowledge_id = "new";
+  const knowledge = {
+    title: "new",
+    createdDate: new Date(),
+    updatedDate: new Date(),
+    originConversationId: req.params.id,
+    contentMarkdown: "",
+    category: "new",
+    tags: ["new"],
+    images: [],
+    user_id: req.user.name,
+  };
+  const conversation = await conversationService.getConversationsById(req.params.id);
+  if (conversation) {
+    knowledge.title = conversation.title;
+    knowledge.category = conversation.category;
+    knowledge.tags = conversation.tags;
+    const conversations = await conversationService.getConversationsInGroup(conversation.group_id);
+    const messageLookup = [];
+    for (let i = 0; i < conversations.length; i++) {
+      for (let j = 0; j < conversations[i].messages.length; j++) {
+        if (messageLookup.indexOf(conversations[i].messages[j]) === -1) {
+          messageLookup.push(conversations[i].messages[j]);
+        }
+      }
+    }
+    const messages = await messageService.getMessagesByIdArray(messageLookup, false);
+    messageLookup.reverse();
+    
+    res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations, messageLookup, messages});
+  } else {
+    res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
+  }
+};
+
 exports.editknowledge = async (req, res) => {
   const knowledge_id = req.params.id;
   const knowledge = await knowledgeService.getKnowledgesById(knowledge_id);
@@ -349,18 +385,24 @@ exports.editknowledge = async (req, res) => {
 };
 
 exports.updateknowledge = async (req, res) => {
-  const knowledge_id = req.params.id;
+  let knowledge_id = req.params.id;
   const title = req.body.k_title;
+  const originConversationId = req.body.k_originConversationId;
   const contentMarkdown = req.body.k_content;
   const category = req.body.k_category;
   const tags = req.body.k_tags.toLowerCase().split(', ').join(',').split(' ').join('_').split(',');
   const input_images = req.body.k_images.split(', ').join(',').split(' ').join('_').split(',');
+  const user_id = req.user.name;
 
   const images = [];
   input_images.forEach(d => {
     if (d.length > 0) images.push(d);
   });
-  await knowledgeService.updateKnowledge(knowledge_id, title, contentMarkdown, category, tags, images);
+  if (knowledge_id === "new") {
+    knowledge_id = await knowledgeService.createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id);
+  } else {
+    await knowledgeService.updateKnowledge(knowledge_id, title, contentMarkdown, category, tags, images);
+  }
 
   res.redirect(`/chat4/viewknowledge/${knowledge_id}`);
 };

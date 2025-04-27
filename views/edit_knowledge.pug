@@ -16,6 +16,8 @@ block content
           form(action=`/chat4/updateknowledge/${id}`, method="post") 
             label(for="k_title") Title 
             input#k_title.form-control(type="text", name="k_title", value=`${knowledge.title}`, required)
+            label(for="k_originConversationId") Conversation ID 
+            input#k_originConversationId.form-control(type="text", name="k_originConversationId", value=knowledge.originConversationId, readonly)
             label(for="k_content") Content (markdown)
             textarea#k_content.form-control(name="k_content", cols="30", rows="10")= knowledge.contentMarkdown
             label(for="k_category") Category 
