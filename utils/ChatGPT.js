@@ -777,6 +777,22 @@ const whisper = async (sound_path, private_msg=false) => {
   return transcription.text;
 }
 
+const mod = async (data) => {
+  const moderation = await openai.moderations.create({
+    model: "omni-moderation-latest",
+    input: [
+      { type: "text", text: "Explain this image" },
+      {
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${data}`,
+        }
+      }
+    ],
+  });
+  return moderation;
+}
+
 module.exports = {
   GetOpenAIModels,
   OpenAIAPICallLog,
@@ -801,4 +817,5 @@ module.exports = {
   start_batch,
   batch_status,
   whisper,
+  mod,
 };
