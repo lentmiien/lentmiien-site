@@ -1,0 +1,43 @@
+extends ../layout
+
+block content
+  h1 Analytics
+  canvas#chart(style='max-width:900px; height:400px')
+
+  h3.mt-5 Last 12 months (newest first)
+  table.table.table-striped
+    thead
+      tr
+        th Month
+        th.text-end Net
+        th.text-end Δ vs last year
+    tbody
+      each r in tableRows
+        tr
+          td #{r.month}
+          td.text-end #{r.net.toLocaleString()}
+          td.text-end
+            if r.diff != null
+              | #{r.diff >= 0 ? '+' : ''}#{r.diff.toLocaleString()}
+            else
+              | —
+  script(src='https://cdn.jsdelivr.net/npm/chart.js')
+  script.
+    const labels      = !{labels};
+    const grossSeries = !{grossSeries};
+    const netSeries   = !{netSeries};
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const ctx = document.getElementById('chart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Gross', data: grossSeries, borderColor: 'steelblue', fill:false },
+            { label: 'Net',   data: netSeries,   borderColor: 'green',     fill:false }
+          ]
+        },
+        options: { responsive: true }
+      });
+    });

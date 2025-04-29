@@ -1,78 +1,11 @@
 extends ../layout
   
 block content
-  h1 Add payroll month
-  form(method='post', action='/payroll')
-    // ——— Basic info ——————————————————————————
-    .mb-3
-      label.form-label(for='month') 月 (YYYY-MM)
-      input.form-control(type='month', name='month', required)
+  - const action = isEdit ? `/payroll/${doc._id}?_method=PUT` : '/payroll'
+  h1 #{isEdit ? 'Edit' : 'Add'} payroll
+  form(method='post', action=action)
+    include ./_formBody.pug
 
-    .row
-      .col-md-4
-        label.form-label(for='payDate') 支給日
-        input.form-control(type='date', name='payDate', value=today, required)
-      .col-md-4
-        label.form-label(for='periodStart') 計算期間開始
-        input.form-control(type='date', name='periodStart', required)
-      .col-md-4
-        label.form-label(for='periodEnd') 計算期間終了
-        input.form-control(type='date', name='periodEnd', required)
-
-    // ——— Attendance (勤怠) ——————————————————
-    h3.mt-4 勤怠
-    .row
-      each item in [['daysWorked','出勤日数'],['daysOff','休日日数'],['specialHoliday','特休日数'],['paidLeaveDays','有休日数'],['absenceDays','欠勤日数'],['remainingLeaveDays','有休残']]
-        .col-md-2.mb-2
-          label.form-label #{item[1]}
-          input.form-control(type='number', name=item[0], min='0')
-    .row
-      each item in [['paidLeaveMinutes','時間有休'],['remainingLeaveMinutes','有休残時間'],['remainingHourlyLeaveMin','時間有休残'],['workingMinutes','出勤時間'],['lateEarlyMinutes','遅早時間'],['regularOvertimeMinutes','普通残業時間']]
-        .col-md-2.mb-2
-          label.form-label #{item[1]} (HH:mm)
-          input.form-control(type='text', placeholder='0:00', name=item[0])
-
-    // ——— Earnings & deductions ——————————
-    h3.mt-4 支給 (Earnings)
-    table.table#earn-table
-      thead
-        tr
-          th label
-          th amount
-          th
-      tbody
-        tr
-          td: input.form-control(name='earnLabel', list="earn")
-          td: input.form-control(name='earnAmount', type='number', step='1')
-          td
-    button.btn.btn-sm.btn-secondary(type='button', onclick='addEarn()') + add row
-
-    h3.mt-4 控除 (Deductions)
-    table.table#deduct-table
-      thead
-        tr
-          th label
-          th amount
-          th
-      tbody
-        tr
-          td: input.form-control(name='deductLabel', list="deduct")
-          td: input.form-control(name='deductAmount', type='number')
-          td
-    button.btn.btn-sm.btn-secondary(type='button', onclick='addDeduct()') + add row
-
-    // ——— Totals ————————————————————————————
-    .row.mt-4
-      each item in [['grossAmount','総支給金額'],['totalDeductions','控除合計額'],['netAmount','差引支給額']]
-        .col-md-4.mb-2
-          label.form-label #{item[1]}
-          input.form-control(type='number', name=item[0])
-
-    .mb-3
-      label.form-label(for='notes') 備考
-      textarea.form-control(name='notes', rows='2')
-
-    button.btn.btn-primary.mt-3(type='submit') save
   script(src='/js/payroll-form.js')
 
   datalist#earn
@@ -81,9 +14,12 @@ block content
     option(value="Position Allowance")
     option(value="Child Allowance")
     option(value="Overtime Pay")
+    option(value="Tax Correction")
   datalist#deduct
     option(value="Health Insurance")
     option(value="Welfare Pension")
     option(value="Employment Insurance")
     option(value="Income Tax")
     option(value="Resident Tax")
+    option(value="Purchase")
+    option(value="Tax Correction")

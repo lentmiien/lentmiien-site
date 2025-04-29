@@ -3,6 +3,7 @@ extends ../layout
 block content
   h1 Monthly payroll list
   a.btn(href='/payroll/new') + Add month
+  a.btn(href='/payroll/analytics') Analytics
 
   if docs.length
     table.table.table-striped.mt-3
@@ -22,5 +23,7 @@ block content
             td.text-end #{d.netAmount.toLocaleString()}
             td
               a.btn.btn-sm.btn-primary(href=`/payroll/${d._id}`) view
+              a.btn.btn-sm.btn-warning.ms-1(href=`/payroll/${d._id}/edit`) edit
+
   else
     p No data yet.  Add your first month!
