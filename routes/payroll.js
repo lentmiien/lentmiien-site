@@ -9,6 +9,7 @@ router.use(methodOverride('_method'));
 router.get('/',            ctl.list);
 router.get('/new',         ctl.renderNewForm);
 router.get('/analytics',   ctl.analytics);
+router.get('/dashboard',   ctl.dashboard);
 
 /* create */
 router.post('/',           ctl.create);
@@ -19,7 +20,5 @@ router.put('/:id',         ctl.update);
 
 /* details must stay last */
 router.get('/:id',         ctl.details);
-
-router.get('/dashboard', ctl.dashboard);
 
 module.exports = router;
