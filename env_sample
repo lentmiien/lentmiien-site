@@ -17,3 +17,6 @@ DROPBOX_REDIRECT_URI=
 MAILGUN_API_KEY=
 GALLERY_PATH=
 DISABLE_LOCAL=
+employeeNo=
+employeeName=
+department=

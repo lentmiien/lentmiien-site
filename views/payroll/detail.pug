@@ -1,0 +1,43 @@
+extends ../layout
+
+block content
+  h1 Payroll #{p.month}
+  a.btn.btn-secondary(href='/payroll') ← back
+
+  h3 Basic
+  ul
+    li 社員番号 #{p.employeeNo}
+    li 氏名 #{p.employeeName}
+    li 所属 #{p.department}
+    li 支給日 #{p.payDate.toISOString().substring(0,10)}
+    li 計算期間 #{p.periodStart.toISOString().substring(0,10)} – #{p.periodEnd.toISOString().substring(0,10)}
+
+  h3 勤怠
+  table.table.table-sm
+    tbody
+      each row in Object.entries(p.attendance)
+        tr
+          td= row[0]
+          td.text-end= row[1]
+
+  h3 支給
+  table.table.table-sm
+    tbody
+      each e in p.earnings
+        tr
+          td= e.label
+          td.text-end= e.amount.toLocaleString()
+
+  h3 控除
+  table.table.table-sm
+    tbody
+      each d in p.deductions
+        tr
+          td= d.label
+          td.text-end= d.amount.toLocaleString()
+
+  h3 Totals
+  ul
+    li 総支給金額: #{p.grossAmount.toLocaleString()}
+    li 控除合計額: #{p.totalDeductions.toLocaleString()}
+    li 差引支給額: #{p.netAmount.toLocaleString()}

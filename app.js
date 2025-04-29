@@ -179,6 +179,7 @@ const esRouter = require('./routes/es');
 const receiptRouter = require('./routes/receipt');
 const productRouter = require('./routes/product_details');
 const galleryRouter = require('./routes/gallery');
+const payrollRouter = require('./routes/payroll');
 const adminRouter = require('./routes/admin');
 
 app.use('/', indexRouter);
@@ -204,6 +205,7 @@ app.use('/es', isAuthenticated, authorize("emergencystock"), esRouter);
 app.use('/receipt', isAuthenticated, authorize("receipt"), receiptRouter);
 app.use('/product', isAuthenticated, authorize("product"), productRouter);
 app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
+app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(

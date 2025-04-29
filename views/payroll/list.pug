@@ -1,0 +1,26 @@
+extends ../layout
+
+block content
+  h1 Monthly payroll list
+  a.btn(href='/payroll/new') + Add month
+
+  if docs.length
+    table.table.table-striped.mt-3
+      thead
+        tr
+          th Month
+          th Pay date
+          th Gross
+          th Net
+          th
+      tbody
+        each d in docs
+          tr
+            td #{d.month}
+            td #{d.payDate.toISOString().substring(0,10)}
+            td.text-end #{d.grossAmount.toLocaleString()}
+            td.text-end #{d.netAmount.toLocaleString()}
+            td
+              a.btn.btn-sm.btn-primary(href=`/payroll/${d._id}`) view
+  else
+    p No data yet.  Add your first month!

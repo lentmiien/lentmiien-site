@@ -85,6 +85,8 @@ const OpenAIUsage = require('./models/openai_usage');
 const AIModelCards = require('./models/ai_model_card');
 // Gallery images
 const Images = require('./models/image');
+// Payroll
+const Payroll = require('./models/Payroll')
 
 // Export models
 module.exports = {
@@ -135,4 +137,5 @@ module.exports = {
   OpenAIUsage,
   AIModelCards,
   Images,
+  Payroll,
 };
