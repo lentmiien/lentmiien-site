@@ -26,8 +26,7 @@ block content
           td.text-end #{r.net.toLocaleString()}
           td.text-end #{r.netYoY != null ? r.netYoY.toFixed(1)+'%' : '—'}
 
-  // --- 6-MONTH FORECAST TABLE --------------------------------------
-  h3.mt-5 6-month forecast (based on avg YoY growth #{(forecast.length && forecast[0].predicted? ( (forecast[0].predicted / (yearSummary.at(-1)?.net||1) )-1 )*100 : 0).toFixed(1)}%)
+  h3.mt-5 6-month forecast
   table.table.table-bordered.w-auto
     thead: tr
       th Month
