@@ -100,7 +100,4 @@ const PayrollSchema = new mongoose.Schema(
   }
 );
 
-/* Optional uniqueness: one record per employee per month */
-PayrollSchema.index({ employeeNo: 1, month: 1 }, { unique: true });
-
 module.exports = mongoose.model('Payroll', PayrollSchema);

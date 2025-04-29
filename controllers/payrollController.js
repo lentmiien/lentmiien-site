@@ -13,6 +13,21 @@ const MY_INFO = Object.freeze({
 /* tiny helpers ------------------------------------------------------------ */
 const toInt      = v => parseInt(v, 10) || 0;
 const parseMoney = v => Number(v.toString().replace(/[, ]/g, '')) || 0;
+const asArray = v =>
+  v == null              ? []          :
+  Array.isArray(v)       ? v           :
+  /* string/number etc. */ [ v ];
+const mapLines = (lbls, amts) => {
+  const labels  = asArray(lbls);
+  const amounts = asArray(amts);
+
+  return labels
+    .map((label, i) => ({
+        label,
+        amount: parseMoney(amounts[i])
+    }))
+    .filter(x => x.label);          // keep only non-empty rows
+};
 
 /* HH:mm  -> minutes  (eg. “2:04” -> 124)                                   */
 function timeToMin(str = '0:00') {
@@ -65,10 +80,10 @@ exports.create = async (req, res, next) => {
     };
 
     /* earnings[] & deductions[] ---------------------------------------- */
-    const mapLines = (lbls = [], amts = []) =>
-      lbls
-        .map((lbl, i) => ({ label: lbl, amount: parseMoney(amts[i]) }))
-        .filter(l => l.label);
+    // const mapLines = (lbls = [], amts = []) =>
+    //   lbls
+    //     .map((lbl, i) => ({ label: lbl, amount: parseMoney(amts[i]) }))
+    //     .filter(l => l.label);
 
     const earnings    = mapLines(b.earnLabel, b.earnAmount);
     const deductions  = mapLines(b.deductLabel, b.deductAmount);
@@ -153,9 +168,9 @@ exports.update = async (req, res, next) => {
       regularOvertimeMinutes  : timeToMin(b.regularOvertimeMinutes)
     };
 
-    const mapLines = (lbls = [], amts = []) =>
-      lbls.map((l, i) => ({ label: l, amount: parseMoney(amts[i]) }))
-          .filter(x => x.label);
+    // const mapLines = (lbls = [], amts = []) =>
+    //   lbls.map((l, i) => ({ label: l, amount: parseMoney(amts[i]) }))
+    //       .filter(x => x.label);
 
     const earnings   = mapLines(b.earnLabel,   b.earnAmount);
     const deductions = mapLines(b.deductLabel, b.deductAmount);

@@ -37,8 +37,8 @@ table.table#earn-table
       th
   tbody
     tr
-      td: input.form-control(name='earnLabel', list="earn")
-      td: input.form-control(name='earnAmount', type='number', step='1')
+      td: input.form-control(name='earnLabel[]', list="earn")
+      td: input.form-control(name='earnAmount[]', type='number', step='1')
       td
 button.btn.btn-sm.btn-secondary(type='button', onclick='addEarn()') + add row
 
@@ -51,8 +51,8 @@ table.table#deduct-table
       th
   tbody
     tr
-      td: input.form-control(name='deductLabel', list="deduct")
-      td: input.form-control(name='deductAmount', type='number')
+      td: input.form-control(name='deductLabel[]', list="deduct")
+      td: input.form-control(name='deductAmount[]', type='number')
       td
 button.btn.btn-sm.btn-secondary(type='button', onclick='addDeduct()') + add row
 
