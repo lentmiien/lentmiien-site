@@ -1,0 +1,51 @@
+
+extends ../layout
+block content
+  h1 Payroll dashboard
+  a.btn.btn-secondary(href='/payroll') ← back to list
+
+  // --- MULTI-YEAR NET CHART ----------------------------------------
+  canvas#netChart.w-100(style='max-width:980px;height:420px')
+
+  // --- YEARLY SUMMARY TABLE ----------------------------------------
+  h3.mt-5 Yearly totals
+  table.table.table-striped
+    thead
+      tr
+        th Year
+        th.text-end Gross
+        th.text-end Gross YoY %
+        th.text-end Net
+        th.text-end Net YoY %
+    tbody
+      each r in yearSummary
+        tr
+          td #{r.year}
+          td.text-end #{r.gross.toLocaleString()}
+          td.text-end #{r.grossYoY != null ? r.grossYoY.toFixed(1)+'%' : '—'}
+          td.text-end #{r.net.toLocaleString()}
+          td.text-end #{r.netYoY != null ? r.netYoY.toFixed(1)+'%' : '—'}
+
+  // --- 6-MONTH FORECAST TABLE --------------------------------------
+  h3.mt-5 6-month forecast (based on avg YoY growth #{(forecast.length && forecast[0].predicted? ( (forecast[0].predicted / (yearSummary.at(-1)?.net||1) )-1 )*100 : 0).toFixed(1)}%)
+  table.table.table-bordered.w-auto
+    thead: tr
+      th Month
+      th.text-end Predicted net
+    tbody
+      each f in forecast
+        tr
+          td #{f.month}
+          td.text-end #{f.predicted.toLocaleString()}
+
+block scripts
+  script(src='https://cdn.jsdelivr.net/npm/chart.js')
+  script.
+    const ctx = document.getElementById('netChart').getContext('2d');
+    const datasets = !{chartData};
+    new Chart(ctx,{
+      type:'line',
+      data:{ labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+             datasets },
+      options:{ responsive:true, plugins:{legend:{position:'bottom'}} }
+    });

@@ -251,3 +251,105 @@ exports.analytics = async (req, res, next) => {
   } catch (e) { next(e); }
 };
 
+/* ------------------------------------------------------------------------- *
+ *  DASHBOARD   /payroll/dashboard
+ * ------------------------------------------------------------------------- */
+exports.dashboard = async (req, res, next) => {
+  try {
+    const rows = await Payroll.find().lean();
+
+    /* 1. merge bonus+salary into single YYYY-MM bucket ---------------- */
+    const byMonth = new Map();                        // 'YYYY-MM' -> {gross,net,year,mm}
+    rows.forEach(r => {
+      const key = r.month;
+      if (!byMonth.has(key))
+        byMonth.set(key, { gross:0, net:0, year:+key.slice(0,4), mm:+key.slice(5) });
+      const x = byMonth.get(key);
+      x.gross += r.grossAmount;
+      x.net   += r.netAmount;
+    });
+
+    /* 2. split into yearly structure --------------------------------- */
+    const yearMap = new Map();                        // 2024 -> [12 numbers]
+    byMonth.forEach(({net,year,mm}) => {
+      if (!yearMap.has(year))
+        yearMap.set(year, Array(12).fill(null));
+      yearMap.get(year)[mm-1] = net;
+    });
+
+    /* 3. yearly totals & YoY % --------------------------------------- */
+    const yearsSorted = Array.from(yearMap.keys()).sort();
+    const yearSummary = yearsSorted.map(y => {
+      const gross = rows.filter(r => r.month.startsWith(y))
+                        .reduce((s,r)=>s+r.grossAmount,0);
+      const net   = (yearMap.get(y) || []).reduce((s,v)=>s+(v||0),0);
+      return {year:y,gross,net};
+    });
+    yearSummary.forEach((r,i,arr)=>{
+      if (i===0) return;
+      r.grossYoY = arr[i-1].gross? ((r.gross-arr[i-1].gross)/arr[i-1].gross)*100: null;
+      r.netYoY   = arr[i-1].net?   ((r.net  -arr[i-1].net  )/arr[i-1].net  )*100: null;
+    });
+
+    /* 4. forecast ----------------------------------------------------- */
+    // find latest month we have
+    const latestKey = Array.from(byMonth.keys()).sort().pop();   // e.g. '2025-04'
+    const [latestYear, latestM] = latestKey.split('-').map(Number);
+
+    // collect YoY ratios for the last (up to) 6 months that HAVE last-year data
+    const ratios = [];
+    for (let i=0; ratios.length<6 && i<12; i++) {
+      const d = new Date(latestYear, latestM-1-i);               // go back month by month
+      const keyThis = d.toISOString().slice(0,7);                // yyyy-mm
+      d.setFullYear(d.getFullYear()-1);
+      const keyPrev = d.toISOString().slice(0,7);
+      if (byMonth.has(keyThis) && byMonth.has(keyPrev)) {
+        const rNow = byMonth.get(keyThis).net;
+        const rPrev= byMonth.get(keyPrev).net;
+        ratios.push(rPrev? rNow/rPrev : 1);
+      }
+    }
+    const avgRatio = ratios.length? ratios.reduce((s,v)=>s+v,0)/ratios.length : 1;
+
+    // build 6-month forecast (array of {key, predictedNet})
+    const forecast = [];
+    for (let i=1;i<=6;i++){
+      const d = new Date(latestYear, latestM-1+i);
+      const keyNext = d.toISOString().slice(0,7);
+      const dPrev   = new Date(d); dPrev.setFullYear(dPrev.getFullYear()-1);
+      const keyPrev = dPrev.toISOString().slice(0,7);
+      const base    = byMonth.get(keyPrev)?.net ?? 0;
+      forecast.push({month:keyNext, predicted: Math.round(base*avgRatio)});
+    }
+
+    /* 5. prep data for Chart.js -------------------------------------- */
+    const chartDatasets = yearsSorted.map((y,idx) => ({
+      label : String(y),
+      data  : yearMap.get(y),
+      borderColor : `hsl(${idx*60},70%,40%)`,
+      spanGaps: true,
+      fill:false
+    }));
+    // add forecast as dashed line
+    chartDatasets.push({
+      label: 'Forecast',
+      data : forecast.reduce((arr,f)=>{
+                const [yy,mm]=f.month.split('-').map(Number);
+                if (!yearMap.has(yy)) yearMap.set(yy, Array(12).fill(null));
+                yearMap.get(yy)[mm-1] = f.predicted;
+                return arr;
+             },[]), // we don't use this array directly
+      borderColor:'black',
+      borderDash:[5,5],
+      fill:false,
+      pointRadius:0
+    });
+
+    res.render('payroll/dashboard', {
+      yearsSorted,
+      chartData : JSON.stringify(chartDatasets),
+      yearSummary,
+      forecast
+    });
+  } catch(e){ next(e); }
+};

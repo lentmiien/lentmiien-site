@@ -20,4 +20,6 @@ router.put('/:id',         ctl.update);
 /* details must stay last */
 router.get('/:id',         ctl.details);
 
+router.get('/dashboard', ctl.dashboard);
+
 module.exports = router;
