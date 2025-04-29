@@ -37,7 +37,6 @@ block content
           td #{f.month}
           td.text-end #{f.predicted.toLocaleString()}
 
-block scripts
   script(src='https://cdn.jsdelivr.net/npm/chart.js')
   script.
     const ctx = document.getElementById('netChart').getContext('2d');
