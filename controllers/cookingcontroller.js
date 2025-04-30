@@ -120,6 +120,97 @@ exports.index = async (req, res) => {
   res.render('cooking_index', {cookingCalendar, knowledge});
 };
 
+exports.edit_date = async (req, res) => {
+  const d = new Date(req.query.date);
+  const dates_array = [{date: formatDate(d), day: d.getDay()}];
+  const dates_only = dates_array.map(d => d.date);
+  const calendar = await CookingCalendarModel.find({date: dates_only});
+  const knowledge = await Chat4KnowledgeModel.find({category: "Recipe"});
+
+  knowledge.sort((a,b) => {
+    if (a.title < b.title) return -1;
+    if (a.title > b.title) return 1;
+    return 0;
+  });
+
+  const knowledge_lookup = [];
+  knowledge.forEach(k => knowledge_lookup.push(k._id.toString()));
+
+  // Generate structure holding the cooking calendar for the 7 days,
+  // fill in empty entries where there were no data from database
+  const cookingCalendar = [];
+  dates_array.forEach(date => {
+    cookingCalendar.push({
+      date: date.date,
+      day: date.day,
+      lunch: {
+        name: "not set",
+        is_url: false,
+        knowledge_id: "",
+        image: "",
+      },
+      dinner: {
+        name: "not set",
+        is_url: false,
+        knowledge_id: "",
+        image: "",
+      },
+      dessert: {
+        name: "not set",
+        is_url: false,
+        knowledge_id: "",
+        image: "",
+      },
+    });
+  });
+  calendar.forEach(c => {
+    const index = dates_only.indexOf(c.date);
+    if (index >= 0) {
+      let know_index = knowledge_lookup.indexOf(c.lunchToCook);
+      if (know_index >= 0) {
+        // Get details from knowledge entry
+        cookingCalendar[index].lunch.name = knowledge[know_index].title;
+        cookingCalendar[index].lunch.knowledge_id = c.lunchToCook;
+        cookingCalendar[index].lunch.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
+      } else {
+        if (c.lunchToCook.length > 0) {
+          // Assume to be URL
+          cookingCalendar[index].lunch.name = c.lunchToCook;
+          cookingCalendar[index].lunch.is_url = true;
+        }
+      }
+      know_index = knowledge_lookup.indexOf(c.dinnerToCook);
+      if (know_index >= 0) {
+        // Get details from knowledge entry
+        cookingCalendar[index].dinner.name = knowledge[know_index].title;
+        cookingCalendar[index].dinner.knowledge_id = c.dinnerToCook;
+        cookingCalendar[index].dinner.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
+      } else {
+        if (c.dinnerToCook.length > 0) {
+          // Assume to be URL
+          cookingCalendar[index].dinner.name = c.dinnerToCook;
+          cookingCalendar[index].dinner.is_url = true;
+        }
+      }
+      know_index = knowledge_lookup.indexOf(c.dessertToCook);
+      if (know_index >= 0) {
+        // Get details from knowledge entry
+        cookingCalendar[index].dessert.name = knowledge[know_index].title;
+        cookingCalendar[index].dessert.knowledge_id = c.dessertToCook;
+        cookingCalendar[index].dessert.image = knowledge[know_index].images.length > 0 ? knowledge[know_index].images[0] : null;
+      } else {
+        if (c.dessertToCook.length > 0) {
+          // Assume to be URL
+          cookingCalendar[index].dessert.name = c.dessertToCook;
+          cookingCalendar[index].dessert.is_url = true;
+        }
+      }
+    }
+  });
+
+  res.render('cooking_index', {cookingCalendar, knowledge});
+};
+
 // API endpoint to accept one update for a date, and respond to user when done
 // The date can be a new or existing entry in database
 exports.update_cooking_calendar = async (req, res) => {

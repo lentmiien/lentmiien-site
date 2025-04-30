@@ -32,3 +32,8 @@ async function AddUpdateCookingCalendar(date, type) {
 
   // If not "OK", then display error message
 }
+
+function EditDate() {
+  const date = document.getElementById("edate").value;
+  open(`/cooking/edit_date?date=${date}`, '_self');
+}
