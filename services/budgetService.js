@@ -63,14 +63,17 @@ const budgetService = {
     }
 
     // Payroll.payDate within last 30 days
-    const pays = await Payroll.find({payDay: {$gte: start}});
+    const pays = await Payroll.find({payDate: {$gte: start}});
     const payLookup = {};
     for (const p of pays) {
-      const date = parseInt(p.payDay.toISOString().split('T')[0].split('-').join(''));
+      const date = parseInt(p.payDate.toISOString().split('T')[0].split('-').join(''));
       const amount = p.bankTransferAmount;
       if (payLookup[date]) payLookup[date][amount] = p._id.toString();
       else payLookup[date] = {[amount]: p._id.toString()};
     }
+    console.log(start);
+    console.log(pays);
+    console.log(payLookup);
 
     const dashboardData = {};
     const a = await this.getAccounts();
