@@ -10,7 +10,7 @@ const AccountDBModel = require('../models/account_db');
 const CategoryDBModel = require('../models/category_db');
 const TransactionDBModel = require('../models/transaction_db');
 
-const { Receipt } = require('../database');
+const { Receipt, Payroll } = require('../database');
 
 const budgetService = {
   async getAccounts() {
@@ -62,16 +62,15 @@ const budgetService = {
       else receiptLookup[date] = {[amount]: r._id.toString()};
     }
 
-    /*
-    _id: 66de1cdfd91b8c4d8ffe39de
-    date: 2024-09-08T00:00:00.000+00:00
-    amount: 6251
-    method: "debit"
-    business_name: "いなげや"
-    business_address: "神奈川県横浜市旭区本宿町31-1"
-    file: "UP-1725832408646.jpg"
-    __v: 0
-    */
+    // Payroll.payDate within last 30 days
+    const pays = await Payroll.find({payDay: {$gte: start}});
+    const payLookup = {};
+    for (const p of pays) {
+      const date = parseInt(p.payDay.toISOString().split('T')[0].split('-').join(''));
+      const amount = p.bankTransferAmount;
+      if (payLookup[date]) payLookup[date][amount] = p._id.toString();
+      else payLookup[date] = {[amount]: p._id.toString()};
+    }
 
     const dashboardData = {};
     const a = await this.getAccounts();
@@ -108,6 +107,8 @@ const budgetService = {
             label: t.transaction_business,
             hasReceipt: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? true : false,
             receiptId: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? receiptLookup[t.date][t.amount] : null,
+            hasPay: payLookup[t.date] && payLookup[t.date][t.amount] ? true : false,
+            payId: payLookup[t.date] && payLookup[t.date][t.amount] ? payLookup[t.date][t.amount] : null,
           });
         }
       }
@@ -129,6 +130,8 @@ const budgetService = {
               label: t.transaction_business,
               hasReceipt: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? true : false,
               receiptId: receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? receiptLookup[t.date][t.amount] : null,
+              hasPay: payLookup[t.date] && payLookup[t.date][t.amount] ? true : false,
+              payId: payLookup[t.date] && payLookup[t.date][t.amount] ? payLookup[t.date][t.amount] : null,
             });
           }
         }
