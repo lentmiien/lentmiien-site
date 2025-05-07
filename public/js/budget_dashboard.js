@@ -22,3 +22,189 @@ async function DeleteTransaction(id, thisButtonElement) {
     element[i].parentNode.removeChild(element[i]);
   }
 }
+
+/* ────────────────────────────────────────────────────────────────
+   1.  Helper for AJAX
+   ────────────────────────────────────────────────────────────────*/
+   async function api(path, opts={}) {
+    const res = await fetch(path, {
+      headers: {'Content-Type':'application/json'},
+      credentials:'same-origin',
+      ...opts
+    });
+    return res.json();
+  }
+  
+  /* ────────────────────────────────────────────────────────────────
+     2.  CATEGORY LINE  CHART
+     ────────────────────────────────────────────────────────────────*/
+  const sel     = document.getElementById('categorySelect');
+  const chartEl = document.getElementById('chart');
+  const MARGIN  = {top:20,right:10,bottom:30,left:50};
+  const WIDTH   = 900, HEIGHT = 350;
+  
+  let svg, xScale,yScale,line,colors;
+  
+  async function loadCategories(){
+    const raw = await api('/budget/api/summary');     // all categories
+    // feed <select>
+    Object.keys(raw).forEach(c=>{
+        const o=document.createElement('option');
+        o.value=o.textContent=c;
+        sel.appendChild(o);
+    });
+    // store for later drawing if user picks
+    sel.dataset.data = JSON.stringify(raw);
+  }
+  loadCategories();
+  
+  /* draw when user chooses category */
+  sel.addEventListener('change', e=>{
+     if(!e.target.value) return;
+     const raw = JSON.parse(sel.dataset.data)[e.target.value];
+     drawLines(e.target.value, raw);
+  });
+  
+  function drawLines(category, data){
+     // data = {year: [12 nums]}
+     chartEl.innerHTML='';          // reset
+     svg = d3.select(chartEl)
+             .append('svg')
+             .attr('width', WIDTH)
+             .attr('height',HEIGHT);
+     const years = Object.keys(data);
+     const allValues = years.flatMap(y=>data[y]);
+     yScale = d3.scaleLinear()
+                .domain([0, d3.max(allValues)]).nice()
+                .range([HEIGHT-MARGIN.bottom,MARGIN.top]);
+     xScale = d3.scalePoint()
+                .domain(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'])
+                .range([MARGIN.left, WIDTH-MARGIN.right]);
+     colors = d3.scaleOrdinal().domain(years).range(d3.schemeTableau10);
+     line = d3.line()
+              .x((d,i)=>xScale(xScale.domain()[i]))
+              .y(d=>yScale(d));
+     years.forEach(y=>{
+        svg.append('path')
+           .datum(data[y])
+           .attr('fill','none')
+           .attr('stroke',colors(y))
+           .attr('stroke-width',2)
+           .attr('d',line)
+           .attr('class','yearLine');
+        // dots & click handler
+        svg.selectAll(`.dot-${y}`)
+           .data(data[y])
+           .enter()
+           .append('circle')
+           .attr('class',`dot-${y}`)
+           .attr('cx',(d,i)=>xScale(xScale.domain()[i]))
+           .attr('cy',d=>yScale(d))
+           .attr('r',4)
+           .attr('fill',colors(y))
+           .style('cursor','pointer')
+           .on('click',(ev,d,i)=>showBreakdown(category,y,i+1));
+     });
+     // axes
+     svg.append('g')
+        .attr('transform',`translate(0,${HEIGHT-MARGIN.bottom})`)
+        .call(d3.axisBottom(xScale));
+     svg.append('g')
+        .attr('transform',`translate(${MARGIN.left},0)`)
+        .call(d3.axisLeft(yScale));
+  }
+  
+  /* ────────────────────────────────────────────────────────────────
+     3.  PIE chart in modal
+     ────────────────────────────────────────────────────────────────*/
+  async function showBreakdown(cat,year,month){
+     const bd = await api(`/budget/api/breakdown/${cat}/${year}/${month}`);
+     const rows = bd.rows;
+     // draw pie
+     const size = 220;
+     const radius = size/2;
+     const pieSvg = d3.select('#piechart').html('')
+         .append('svg')
+         .attr('width',size)
+         .attr('height',size)
+         .append('g')
+         .attr('transform',`translate(${radius},${radius})`);
+     const pie = d3.pie().value(d=>d.total);
+     const arc = d3.arc().innerRadius(0).outerRadius(radius-10);
+     const color = d3.scaleOrdinal().domain(rows.map(r=>r._id)).range(d3.schemeSet2);
+     pieSvg.selectAll('path')
+           .data(pie(rows))
+           .enter()
+           .append('path')
+           .attr('d',arc)
+           .attr('fill',d=>color(d.data._id))
+           .append('title')
+           .text(d=>`${d.data._id}: ${d.data.total}`);
+     // stats
+     const st = bd.stats;
+     document.getElementById('stats').textContent = JSON.stringify(st,null,2);
+     // open modal (uses bootstrap)
+     $('#modalBreakdown').modal('show');
+  }
+  
+  /* ────────────────────────────────────────────────────────────────
+     4.  AUTOCOMPLETE + auto-fill new transaction form
+     ────────────────────────────────────────────────────────────────*/
+  const businessInput = document.getElementById('business');
+  let timer=null, suggestionsBox;
+  businessInput.addEventListener('input',e=>{
+     clearTimeout(timer);
+     timer=setTimeout(async ()=>{
+         const term=e.target.value;
+         if(term.length<2) return;
+         const list= await api(`/budget/api/business?term=${encodeURIComponent(term)}`);
+         showSuggestions(list.map(i=>i.name));
+     },180);
+  });
+  function showSuggestions(arr){
+     if(!suggestionsBox){
+       suggestionsBox=document.createElement('div');
+       suggestionsBox.className='list-group position-absolute';
+       businessInput.parentNode.appendChild(suggestionsBox);
+     }
+     suggestionsBox.innerHTML='';
+     arr.forEach(txt=>{
+        const a=document.createElement('a');
+        a.className='list-group-item list-group-item-action';
+        a.textContent=txt;
+        a.onclick=()=>{ businessInput.value=txt; suggestionsBox.innerHTML=''; fetchDefaults(txt);};
+        suggestionsBox.appendChild(a);
+     });
+  }
+  async function fetchDefaults(name){
+     const obj = await api(`/budget/api/business/values?name=${encodeURIComponent(name)}`);
+     ['from_account','to_account','from_fee','to_fee','categories','tags','type']
+     .forEach(f=>{
+        if(obj[f]!=null && document.getElementById(f.replace(/_/,'')).value===''){
+            document.getElementById(f.replace(/_/,'')).value=obj[f];
+        }
+     });
+     if(obj.amountAvg && !document.getElementById('amount').value){
+         document.getElementById('amount').value = obj.amountAvg;
+     }
+  }
+  
+  /* ────────────────────────────────────────────────────────────────
+     5.  POST new transaction
+     ────────────────────────────────────────────────────────────────*/
+  document.getElementById('newTransactionForm')
+  .addEventListener('submit',async ev=>{
+     ev.preventDefault();
+     const formData = new FormData(ev.target);
+     const data = Object.fromEntries(formData.entries());
+     data.amount     = parseFloat(data.amount);
+     data.from_fee   = parseFloat(data.from_fee||0);
+     data.to_fee     = parseFloat(data.to_fee||0);
+     data.date       = parseInt(data.date);
+     const res = await api('/budget/api/transaction',{
+          method:'POST',
+          body: JSON.stringify(data)
+     });
+     alert('saved!');
+     ev.target.reset();
+  });  
