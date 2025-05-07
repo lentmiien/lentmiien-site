@@ -2,9 +2,9 @@ const axios = require('axios');
 const simpleGit = require('simple-git');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
+// const os = require('os');
 
-const tempDir = path.join(os.tmpdir(), 'github-repos');
+const tempDir = path.join(__dirname, '..', 'github-repos');
 const git = simpleGit();
 
 // GitHub Personal Access Token

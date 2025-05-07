@@ -1,6 +1,7 @@
 node_modules
 tmp_data
 cache
+github-repos
 .env
 public/img
 public/mp3

@@ -21,7 +21,7 @@ function ensureFileExists(filePath, defaultContent) {
 }
 
 // The directories to ensure exist
-const dirsToCheck = ['tmp_data', 'cache', 'public/temp'];
+const dirsToCheck = ['tmp_data', 'cache', 'public/temp', 'github-repos'];
 
 dirsToCheck.forEach(dir => ensureDirExists(dir));
 
