@@ -252,6 +252,15 @@ async function insertTransaction(body){
   return t.save();
 }
 
+/* helper list for selects / drop-downs */
+async function getReferenceLists(){
+  const acc   = await AccountDBModel.find().select('_id name');
+  const cats  = await CategoryDBModel.find().select('_id title');
+  const types = await TransactionDBModel.distinct('type');
+  const tags  = await TransactionDBModel.distinct('tags');
+  return {accounts:acc, categories:cats, types, tags};
+}
+
 /* ── export */
 module.exports = {
   ...budgetService,                       // keep old public methods
@@ -259,5 +268,6 @@ module.exports = {
   getCategoryBreakdown     : breakdown,
   searchBusiness,
   businessLastValues,
-  insertTransaction
+  insertTransaction,
+  getReferenceLists,
 };

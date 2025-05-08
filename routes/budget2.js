@@ -14,5 +14,6 @@ router.get('/api/breakdown/:cat/:y/:m', controller.breakdown);        // cat, ye
 router.get('/api/business',             controller.businessList);     // ?term=abc
 router.get('/api/business/values',      controller.businessDefaults); // ?name=Seven-Eleven
 router.post('/api/transaction',         controller.newTransaction);   // create
+router.get ('/api/lists',               controller.lists);
 
 module.exports = router;

@@ -46,17 +46,51 @@ async function DeleteTransaction(id, thisButtonElement) {
   let svg, xScale,yScale,line,colors;
   
   async function loadCategories(){
-    const raw = await api('/budget/api/summary');     // all categories
-    // feed <select>
-    Object.keys(raw).forEach(c=>{
-        const o=document.createElement('option');
-        o.value=o.textContent=c;
-        sel.appendChild(o);
-    });
-    // store for later drawing if user picks
-    sel.dataset.data = JSON.stringify(raw);
-  }
+   const [raw, lists] = await Promise.all([
+         api('/budget/api/summary'),          // totals keyed by id
+         api('/budget/api/lists')             // we need id → title map
+   ]);
+   const id2title = Object.fromEntries(
+         lists.categories.map(c=>[c._id, c.title]));
+ 
+   // feed <select>
+   Object.keys(raw).forEach(id=>{
+       const o=document.createElement('option');
+       o.value=id;
+       o.textContent=id2title[id.split("@")[0]] || id;      // fall back if no title
+       sel.appendChild(o);
+   });
+   sel.dataset.data = JSON.stringify(raw);
+ }
+ 
   loadCategories();
+
+  /*  populate the 4 selects and tag-datalist  */
+(async function fillReferenceLists(){
+   const ref = await api('/budget/api/lists');
+ 
+   function fill(id, data, textProp){
+      const sel=document.getElementById(id);
+      sel.innerHTML='<option value="">-- choose --</option>';
+      data.forEach(r=>{
+         const opt=document.createElement('option');
+         opt.value=r._id || r;                 // r is string for types
+         opt.textContent=r[textProp] || r;
+         sel.appendChild(opt);
+      });
+   }
+   fill('from', ref.accounts ,'name');
+   fill('to',   ref.accounts ,'name');
+   fill('cat',  ref.categories,'title');
+   fill('type', ref.types);
+ 
+   // tags datalist
+   const dl=document.getElementById('tagList');
+   ref.tags.forEach(t=>{
+      const o=document.createElement('option');
+      o.value=t; dl.appendChild(o);
+   });
+ })();
   
   /* draw when user chooses category */
   sel.addEventListener('change', e=>{
@@ -144,7 +178,8 @@ async function DeleteTransaction(id, thisButtonElement) {
      const st = bd.stats;
      document.getElementById('stats').textContent = JSON.stringify(st,null,2);
      // open modal (uses bootstrap)
-     $('#modalBreakdown').modal('show');
+     const modalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalBreakdown'));
+     modalInstance.show();
   }
   
   /* ────────────────────────────────────────────────────────────────
@@ -176,18 +211,28 @@ async function DeleteTransaction(id, thisButtonElement) {
         suggestionsBox.appendChild(a);
      });
   }
-  async function fetchDefaults(name){
-     const obj = await api(`/budget/api/business/values?name=${encodeURIComponent(name)}`);
-     ['from_account','to_account','from_fee','to_fee','categories','tags','type']
-     .forEach(f=>{
-        if(obj[f]!=null && document.getElementById(f.replace(/_/,'')).value===''){
-            document.getElementById(f.replace(/_/,'')).value=obj[f];
-        }
-     });
-     if(obj.amountAvg && !document.getElementById('amount').value){
-         document.getElementById('amount').value = obj.amountAvg;
-     }
-  }
+/*  map db-field  ->  real html element id  */
+const FIELD2ID = {
+  from_account : 'from',
+  to_account   : 'to',
+  from_fee     : 'from_fee',
+  to_fee       : 'to_fee',
+  categories   : 'cat',
+  tags         : 'tags',
+  type         : 'type'
+};
+async function fetchDefaults(name){
+   const obj = await api(`/budget/api/business/values?name=${encodeURIComponent(name)}`);
+   Object.keys(FIELD2ID).forEach(f=>{
+      const htmlId = FIELD2ID[f];
+      if (obj[f] != null && document.getElementById(htmlId).value === '') {
+         document.getElementById(htmlId).value = obj[f];
+      }
+   });
+   if(obj.amountAvg && !document.getElementById('amount').value){
+      document.getElementById('amount').value = obj.amountAvg;
+   }
+}
   
   /* ────────────────────────────────────────────────────────────────
      5.  POST new transaction

@@ -43,3 +43,7 @@ exports.newTransaction = async (req,res)=>{
   const t = await BudgetService.insertTransaction(req.body);
   res.status(201).json(t);
 };
+
+exports.lists = async (req,res)=>{
+  res.json(await BudgetService.getReferenceLists());
+};

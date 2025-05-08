@@ -55,23 +55,23 @@ block content
         input#amount.form-control(type="number", step="any", name="amount")
       .col-md-2
         label.form-label(for="from") From Account
-        input#from.form-control(type="text", name="from_account")
+        select#from.form-select(name="from_account")
       .col-md-2
         label.form-label(for="to") To Account
-        input#to.form-control(type="text", name="to_account")
+        select#to.form-select(name="to_account")
       .col-md-2
         label.form-label(for="cat") Category
-        input#cat.form-control(type="text", name="categories")
+        select#cat.form-select(name="categories")
     .row.mt-2
       .col-md-2
         label.form-label(for="date") Date (yyyymmdd)
         input#date.form-control(type="number", name="date")
       .col-md-2
         label.form-label(for="type") Type
-        input#type.form-control(type="text", name="type")
+        select#type.form-select(name="type")
       .col-md-2
         label.form-label(for="tags") Tags
-        input#tags.form-control(type="text", name="tags")
+        input#tags.form-control(type="text", name="tags", list="tagList")
       .col-md-2
         label.form-label(for="from_fee") From fee
         input#from_fee.form-control(type="number", step="any", name="from_fee")
@@ -79,6 +79,7 @@ block content
         label.form-label(for="to_fee") To fee
         input#to_fee.form-control(type="number", step="any", name="to_fee")
     button.btn.btn-primary.mt-2(type="submit") Save
+  datalist#tagList
   .row
     each a in data.accounts 
       .col 
@@ -106,5 +107,6 @@ block content
                       b ✔
                 td
                   button.btn.btn-outline-danger(onclick=`DeleteTransaction("${t.id}", this)`) ✘
+  script(src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js")
   script(src="https://d3js.org/d3.v7.min.js")
   script(src="/js/budget_dashboard.js", defer) 
