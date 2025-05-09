@@ -137,7 +137,7 @@ async function DeleteTransaction(id, thisButtonElement) {
            .attr('r',4)
            .attr('fill',colors(y))
            .style('cursor','pointer')
-           .on('click',(ev,d,i)=>showBreakdown(category,y,i+1));
+           .on('click',(ev,d)=>showBreakdown(category,y,Math.round(1+11*(ev.clientX-60)/840)));
      });
      // axes
      svg.append('g')
@@ -151,36 +151,53 @@ async function DeleteTransaction(id, thisButtonElement) {
   /* ────────────────────────────────────────────────────────────────
      3.  PIE chart in modal
      ────────────────────────────────────────────────────────────────*/
-  async function showBreakdown(cat,year,month){
-     const bd = await api(`/budget/api/breakdown/${cat}/${year}/${month}`);
-     const rows = bd.rows;
-     // draw pie
-     const size = 220;
-     const radius = size/2;
-     const pieSvg = d3.select('#piechart').html('')
-         .append('svg')
-         .attr('width',size)
-         .attr('height',size)
-         .append('g')
-         .attr('transform',`translate(${radius},${radius})`);
-     const pie = d3.pie().value(d=>d.total);
-     const arc = d3.arc().innerRadius(0).outerRadius(radius-10);
-     const color = d3.scaleOrdinal().domain(rows.map(r=>r._id)).range(d3.schemeSet2);
-     pieSvg.selectAll('path')
-           .data(pie(rows))
-           .enter()
-           .append('path')
-           .attr('d',arc)
-           .attr('fill',d=>color(d.data._id))
-           .append('title')
-           .text(d=>`${d.data._id}: ${d.data.total}`);
-     // stats
-     const st = bd.stats;
-     document.getElementById('stats').textContent = JSON.stringify(st,null,2);
-     // open modal (uses bootstrap)
-     const modalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalBreakdown'));
-     modalInstance.show();
-  }
+     async function showBreakdown(cat,year,month){
+      console.log(cat,year,month);
+      const bd  = await api(`/budget/api/breakdown/${cat}/${year}/${month}`);
+      const rows = bd.rows;
+   
+      /* ---- clear containers first ---- */
+      const pieBox   = d3.select('#piechart').html('');
+      document.getElementById('stats').textContent = '';
+   
+      /* ---- only draw a pie when we actually have data ---- */
+      if (rows.length) {
+          const size   = 220,
+                radius = size / 2;
+          const svg = pieBox.append('svg')
+                            .attr('width', size)
+                            .attr('height', size)
+                            .style('pointer-events','none')      // avoid overlay problems
+                            .append('g')
+                            .attr('transform',`translate(${radius},${radius})`);
+   
+          const pie  = d3.pie().value(d=>d.total);
+          const arc  = d3.arc().innerRadius(0).outerRadius(radius-10);
+          const color= d3.scaleOrdinal()
+                         .domain(rows.map(r=>r._id))
+                         .range(d3.schemeSet2);
+   
+          svg.selectAll('path')
+             .data(pie(rows))
+             .enter().append('path')
+             .attr('d',arc)
+             .attr('fill',d=>color(d.data._id))
+             .append('title')
+             .text(d=>`${d.data._id}: ${d.data.total}`);
+      } else {
+          pieBox.append('em').text('No transactions for this month.');
+      }
+   
+      /* ---- statistics ---- */
+      document.getElementById('stats')
+              .textContent = JSON.stringify(bd.stats, null, 2);
+   
+      /* ---- show modal (Bootstrap-5, no jQuery) ---- */
+      bootstrap.Modal.getOrCreateInstance(
+           document.getElementById('modalBreakdown')
+      ).show();
+   }
+   
   
   /* ────────────────────────────────────────────────────────────────
      4.  AUTOCOMPLETE + auto-fill new transaction form

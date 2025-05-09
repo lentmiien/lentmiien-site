@@ -30,18 +30,19 @@ block content
   select#categorySelect.form-select.mb-2
     option(selected value="") -- choose category --
   #chart(style="height:380px")
-  //- modal for month breakdown
-  #modalBreakdown.modal.fade(tabindex="-1", role="dialog")
-    .modal-dialog.modal-lg(role="document")
+  //- modal for month breakdown  ─── BS-5 markup
+  #modalBreakdown.modal.fade(tabindex="-1", aria-hidden="true")
+    .modal-dialog.modal-lg
       .modal-content
         .modal-header
-          h5.modal-title= 'Breakdown'
-          button.close(type="button", data-dismiss="modal") ×
+          h5.modal-title Breakdown
+          button.btn-close(type="button", data-bs-dismiss="modal", aria-label="Close")
         .modal-body
           #piechart(style="height:240px")
           pre#stats
         .modal-footer
-          button.btn.btn-secondary(type="button", data-dismiss="modal") Close
+          button.btn.btn-secondary(type="button", data-bs-dismiss="modal") Close
+
 
   hr
   h3 Add new transaction
@@ -65,7 +66,7 @@ block content
     .row.mt-2
       .col-md-2
         label.form-label(for="date") Date (yyyymmdd)
-        input#date.form-control(type="number", name="date")
+        input#date.form-control(type="number", name="date", required)
       .col-md-2
         label.form-label(for="type") Type
         select#type.form-select(name="type")

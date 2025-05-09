@@ -199,22 +199,27 @@ async function breakdown(cat,year,month){
   const lower = year*10000 + month*100;         // yyyy mm 01
   const upper = lower+32;                       // a bit sloppy but OK
   const rows= await TransactionDBModel.aggregate([
-    {$match:{categories:cat, date:{$gte:lower,$lt:upper}}},
+    {$match:{
+      categories: { $regex: `^${cat}` },         // begin with objectId
+      date      : { $gte: lower, $lt: upper }
+    }},
     {$group:{_id:'$transaction_business', total:{$sum:'$amount'}}},
     {$sort:{total:-1}}
   ]);
+  /* ---------- statistics ---------- */
   const numbers = rows.map(r=>r.total);
-  const stats = {
-    count: numbers.length,
-    sum  : numbers.reduce((a,b)=>a+b,0),
-    min  : Math.min(...numbers),
-    max  : Math.max(...numbers),
-    avg  : numbers.length? (numbers.reduce((a,b)=>a+b,0)/numbers.length):0
-  };
-  // very naive outlier:  > avg + 2*std
-  const std = Math.sqrt(numbers.reduce((a,x)=>a+Math.pow(x-stats.avg,2),0)/numbers.length||1);
-  stats.outlierThreshold = stats.avg + 2*std;
-  stats.std = std;
+  const stats   = { count: numbers.length };
+  if (numbers.length) {
+    stats.sum = numbers.reduce((a,b)=>a+b,0);
+    stats.min = Math.min(...numbers);
+    stats.max = Math.max(...numbers);
+    stats.avg = stats.sum / stats.count;
+    const variance = numbers.reduce((s,x)=>s + Math.pow(x-stats.avg,2),0) / stats.count;
+    stats.std  = Math.sqrt(variance);
+    stats.outlierThreshold = stats.avg + 2*stats.std;
+  } else {
+    Object.assign(stats,{sum:0,min:null,max:null,avg:0,std:0,outlierThreshold:0});
+  }
   return {rows,stats};
 }
 
