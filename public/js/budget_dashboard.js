@@ -152,15 +152,16 @@ async function DeleteTransaction(id, thisButtonElement) {
      3.  PIE chart in modal
      ────────────────────────────────────────────────────────────────*/
      async function showBreakdown(cat,year,month){
-      console.log(cat,year,month);
       const bd  = await api(`/budget/api/breakdown/${cat}/${year}/${month}`);
       const rows = bd.rows;
+      console.log(bd);
    
       /* ---- clear containers first ---- */
       const pieBox   = d3.select('#piechart').html('');
       document.getElementById('stats').textContent = '';
    
       /* ---- only draw a pie when we actually have data ---- */
+      let color = null;
       if (rows.length) {
           const size   = 220,
                 radius = size / 2;
@@ -173,7 +174,7 @@ async function DeleteTransaction(id, thisButtonElement) {
    
           const pie  = d3.pie().value(d=>d.total);
           const arc  = d3.arc().innerRadius(0).outerRadius(radius-10);
-          const color= d3.scaleOrdinal()
+          color      = d3.scaleOrdinal()
                          .domain(rows.map(r=>r._id))
                          .range(d3.schemeSet2);
    
@@ -191,6 +192,11 @@ async function DeleteTransaction(id, thisButtonElement) {
       /* ---- statistics ---- */
       document.getElementById('stats')
               .textContent = JSON.stringify(bd.stats, null, 2);
+              //legend
+      let leg_str = "";
+      for (const d of bd.rows) leg_str += `<div style="background-color: ${color(d._id)};padding: 2px;">${d._id}: ${d.total}</div>`;
+      document.getElementById('legend').innerHTML = leg_str;
+            //   .textContent = JSON.stringify(bd.rows, null, 2);
    
       /* ---- show modal (Bootstrap-5, no jQuery) ---- */
       bootstrap.Modal.getOrCreateInstance(

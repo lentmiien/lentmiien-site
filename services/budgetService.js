@@ -205,7 +205,7 @@ async function breakdown(cat,year,month){
   ]);
   /* ---------- statistics ---------- */
   const numbers = rows.map(r=>r.total);
-  const stats   = { count: numbers.length };
+  const stats   = { date: `${year}-${month}`, count: numbers.length };
   if (numbers.length) {
     stats.sum = numbers.reduce((a,b)=>a+b,0);
     stats.min = Math.min(...numbers);

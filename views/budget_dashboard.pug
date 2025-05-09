@@ -38,8 +38,13 @@ block content
           h5.modal-title Breakdown
           button.btn-close(type="button", data-bs-dismiss="modal", aria-label="Close")
         .modal-body
-          #piechart(style="height:240px")
-          pre#stats
+          .row 
+            .col
+              #piechart(style="height:240px")
+            .col 
+              pre#legend
+            .col
+              pre#stats
         .modal-footer
           button.btn.btn-secondary(type="button", data-bs-dismiss="modal") Close
 
