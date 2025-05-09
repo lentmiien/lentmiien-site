@@ -71,9 +71,6 @@ const budgetService = {
       if (payLookup[date]) payLookup[date][amount] = p._id.toString();
       else payLookup[date] = {[amount]: p._id.toString()};
     }
-    console.log(start);
-    console.log(pays);
-    console.log(payLookup);
 
     const dashboardData = {};
     const a = await this.getAccounts();
