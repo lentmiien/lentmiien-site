@@ -71,9 +71,6 @@ const budgetService = {
       if (payLookup[date]) payLookup[date][amount] = p._id.toString();
       else payLookup[date] = {[amount]: p._id.toString()};
     }
-    console.log(start);
-    console.log(pays);
-    console.log(payLookup);
 
     const dashboardData = {};
     const a = await this.getAccounts();
@@ -161,4 +158,118 @@ const budgetService = {
   },
 };
 
-module.exports = budgetService;
+ /* ──────────────────────────────
+    1) MONTHLY CATEGORY TOTALS
+    ──────────────────────────────*/
+
+function catPipe(category){
+  const pipe=[
+    {$match: category ? {categories: category} : {}},
+    {$addFields:{
+        year : {$floor: {$divide: ['$date',10000]}},
+        month: {$floor: {$divide:[{$mod:['$date',10000]},100]}}
+    }},
+    {$group:{
+        _id:{year:'$year',month:'$month',cat:'$categories'},
+        total:{$sum:'$amount'}
+    }},
+    {$sort:{'_id.cat':1,'_id.year':1,'_id.month':1}}
+  ];
+  return pipe;
+}
+
+async function aggTotals(category){
+  const rows = await TransactionDBModel.aggregate(catPipe(category));
+  // reshape to {cat: {year: [12 numbers]}}
+  const out = {};
+  rows.forEach(r=>{
+     const {cat,year,month} = r._id;
+     if(!out[cat]) out[cat]={};
+     if(!out[cat][year]) out[cat][year]=Array(12).fill(0);
+     out[cat][year][month-1]= r.total;       // month is 1-12
+  });
+  return out;                       // convenient for the graph code
+}
+
+/* 2)  BREAKDOWN for single month */
+async function breakdown(cat,year,month){
+  const lower = year*10000 + month*100;         // yyyy mm 01
+  const upper = lower+32;                       // a bit sloppy but OK
+  const rows= await TransactionDBModel.aggregate([
+    {$match:{
+      categories: { $regex: `^${cat}` },         // begin with objectId
+      date      : { $gte: lower, $lt: upper }
+    }},
+    {$group:{_id:'$transaction_business', total:{$sum:'$amount'}}},
+    {$sort:{total:-1}}
+  ]);
+  /* ---------- statistics ---------- */
+  const numbers = rows.map(r=>r.total);
+  const stats   = { date: `${year}-${month}`, count: numbers.length };
+  if (numbers.length) {
+    stats.sum = numbers.reduce((a,b)=>a+b,0);
+    stats.min = Math.min(...numbers);
+    stats.max = Math.max(...numbers);
+    stats.avg = stats.sum / stats.count;
+    const variance = numbers.reduce((s,x)=>s + Math.pow(x-stats.avg,2),0) / stats.count;
+    stats.std  = Math.sqrt(variance);
+    stats.outlierThreshold = stats.avg + 2*stats.std;
+  } else {
+    Object.assign(stats,{sum:0,min:null,max:null,avg:0,std:0,outlierThreshold:0});
+  }
+  return {rows,stats};
+}
+
+/* 3)  Business Name Helpers */
+async function searchBusiness(term){
+  if(!term) return [];
+  return TransactionDBModel.aggregate([
+     {$match:{transaction_business:{$regex:term,$options:'i'}}},
+     {$group:{_id:'$transaction_business'}},
+     {$limit:8},
+     {$project:{_id:0,name:'$_id'}}
+  ]);
+}
+
+async function businessLastValues(name){
+  if(!name) return {};
+  const rows = await TransactionDBModel.find({transaction_business:name})
+        .sort({date:-1}).limit(10).lean();
+  if(!rows.length) return {};
+  const fields = ['from_account','to_account','from_fee','to_fee','categories','tags','type'];
+  const out={};
+  fields.forEach(f=>{
+     const uniq=[...new Set(rows.map(r=>r[f]))];
+     if(uniq.length===1) out[f]=uniq[0];           // force fill
+     else                out[f]=null;              // user must choose
+  });
+  // give also the usual amount range
+  out.amountAvg = rows.reduce((a,b)=>a+b.amount,0)/rows.length;
+  return out;
+}
+
+/* 4)  Insert new transaction  */
+async function insertTransaction(body){
+  const t = new TransactionDBModel(body);
+  return t.save();
+}
+
+/* helper list for selects / drop-downs */
+async function getReferenceLists(){
+  const acc   = await AccountDBModel.find().select('_id name');
+  const cats  = await CategoryDBModel.find().select('_id title');
+  const types = await TransactionDBModel.distinct('type');
+  const tags  = await TransactionDBModel.distinct('tags');
+  return {accounts:acc, categories:cats, types, tags};
+}
+
+/* ── export */
+module.exports = {
+  ...budgetService,                       // keep old public methods
+  getCategoryMonthlyTotals : aggTotals,
+  getCategoryBreakdown     : breakdown,
+  searchBusiness,
+  businessLastValues,
+  insertTransaction,
+  getReferenceLists,
+};

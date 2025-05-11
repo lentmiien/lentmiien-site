@@ -25,6 +25,67 @@ block content
         td 
         td= `${total} JPY`
         td= `${total_change_last_month} JPY`
+  //-  ── NEW UI elements ─────────────────────────────
+  h3 Category overview (year over year)
+  select#categorySelect.form-select.mb-2
+    option(selected value="") -- choose category --
+  #chart(style="height:380px")
+  //- modal for month breakdown  ─── BS-5 markup
+  #modalBreakdown.modal.fade(style="z-index:1051;", tabindex="-1", aria-hidden="true")
+    .modal-dialog.modal-lg
+      .modal-content
+        .modal-header
+          h5.modal-title Breakdown
+          button.btn-close(type="button", data-bs-dismiss="modal", aria-label="Close")
+        .modal-body
+          .row 
+            .col
+              #piechart(style="height:240px")
+            .col 
+              pre#legend
+            .col
+              pre#stats
+        .modal-footer
+          button.btn.btn-secondary(type="button", data-bs-dismiss="modal") Close
+
+
+  hr
+  h3 Add new transaction
+  form#newTransactionForm
+    .row
+      .col-md-3
+        label.form-label(for="business") Business
+        input#business.form-control(type="text", name="transaction_business")
+      .col-md-2
+        label.form-label(for="amount") Amount
+        input#amount.form-control(type="number", step="any", name="amount")
+      .col-md-2
+        label.form-label(for="from") From Account
+        select#from.form-select(name="from_account")
+      .col-md-2
+        label.form-label(for="to") To Account
+        select#to.form-select(name="to_account")
+      .col-md-2
+        label.form-label(for="cat") Category
+        select#cat.form-select(name="categories")
+    .row.mt-2
+      .col-md-2
+        label.form-label(for="date") Date (yyyymmdd)
+        input#date.form-control(type="number", name="date", required)
+      .col-md-2
+        label.form-label(for="type") Type
+        select#type.form-select(name="type")
+      .col-md-2
+        label.form-label(for="tags") Tags
+        input#tags.form-control(type="text", name="tags", list="tagList")
+      .col-md-2
+        label.form-label(for="from_fee") From fee
+        input#from_fee.form-control(type="number", step="any", name="from_fee")
+      .col-md-2
+        label.form-label(for="to_fee") To fee
+        input#to_fee.form-control(type="number", step="any", name="to_fee")
+    button.btn.btn-primary.mt-2(type="submit") Save
+  datalist#tagList
   .row
     each a in data.accounts 
       .col 
@@ -52,4 +113,6 @@ block content
                       b ✔
                 td
                   button.btn.btn-outline-danger(onclick=`DeleteTransaction("${t.id}", this)`) ✘
+  script(src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js")
+  script(src="https://d3js.org/d3.v7.min.js")
   script(src="/js/budget_dashboard.js", defer) 
