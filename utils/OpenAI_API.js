@@ -4,7 +4,7 @@ const { OpenAI } = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const responsesModels = ["o1-pro-2025-03-19"];
+const responsesModels = ["o1-pro-2025-03-19", "codex-mini-latest"];
 const reasoningModels = [
   "o1-2024-12-17",
   "o3-mini-2025-01-31",
@@ -126,6 +126,7 @@ function GenerateMessagesArray_Responses(context, messages, prompt, isImageModel
     }
   }
   messageArray.push({
+    type: 'message',
     role: 'user',
     content,
   });
@@ -184,15 +185,15 @@ const chat = async (conversation, messages, prompt, model, beta = null) => {
       const inputParameters = {
         model: model.api_model,
         input: messageArray,
-        text: { format: { type: "text" } },
-        tools: [],
-        store: false,
+        // text: { format: { type: "text" } },
+        tools: prompt.tools ? prompt.tools : [],
+        // store: false,
       };
-      if (prompt.effort && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = { effort: prompt.effort };
+      if (prompt.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = prompt.reasoning;
       response = await openai.responses.create(inputParameters);
     }
     return {
-      output_text: isChatAPI ? response.choices[0].message.content : response.output_text,
+      output: response,
       promptImages
     };
   } catch (error) {
