@@ -564,3 +564,8 @@ function SaveTemplate() {
 function CloseTemplate() {
   template_pop.style.display = 'none';
 }
+
+// Load conversation at startup, unless id === "new"
+if (conversation_id.innerText != "new") {
+  socket.emit('fetchConversation', conversation_id.innerText);
+}

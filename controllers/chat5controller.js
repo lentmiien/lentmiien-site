@@ -22,7 +22,12 @@ exports.index = async (req, res) => {
     d.provider === "Google" || 
     d.provider === "Groq" || 
     (d.provider === "Local" && process.env.DISABLE_LOCAL != "TRUE")) && d.model_type === "chat");
-  res.render("chat5", {models: usable_models});
+  // Open conversation
+  let conversationId = null;
+  if (req.query.id && req.query.id.length > 0) {
+    conversationId = req.query.id;
+  }
+  res.render("chat5", {models: usable_models, conversationId});
 };
 
 exports.ai_model_cards = async (req, res) => {

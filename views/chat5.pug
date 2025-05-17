@@ -8,7 +8,7 @@ block content
       a.btn.btn-secondary(href="/chat5") New conversation
       button.btn.btn-secondary(type="button", onclick="OpenLoad()") Load conversation
   h3#title
-  i#conversation_id new
+  i#conversation_id= conversationId ? conversationId : "new"
   form#message-form
     #message
     .input-group
