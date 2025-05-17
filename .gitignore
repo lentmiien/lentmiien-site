@@ -1,5 +1,6 @@
 node_modules
 tmp_data
+reference_material
 cache
 github-repos
 .env

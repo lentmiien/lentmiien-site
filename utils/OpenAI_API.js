@@ -4,11 +4,12 @@ const { OpenAI } = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const responsesModels = ["o1-pro-2025-03-19", "codex-mini-latest"];
+const responsesModels = ["o1-pro-2025-03-19", "codex-mini-latest", "o4-mini"];
 const reasoningModels = [
   "o1-2024-12-17",
   "o3-mini-2025-01-31",
   "o1-pro-2025-03-19",
+  "o4-mini",
 ];
 
 function GenerateMessagesArray_Chat(context, messages, prompt, isImageModel) {
@@ -185,10 +186,10 @@ const chat = async (conversation, messages, prompt, model, beta = null) => {
       const inputParameters = {
         model: model.api_model,
         input: messageArray,
-        // text: { format: { type: "text" } },
         tools: prompt.tools ? prompt.tools : [],
         // store: false,
       };
+      if (prompt.text) inputParameters['text'] = prompt.text;
       if (prompt.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = prompt.reasoning;
       response = await openai.responses.create(inputParameters);
     }
