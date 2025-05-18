@@ -43,7 +43,8 @@ const editor = new toastui.Editor({
   el: document.querySelector('#message'),
   height: '500px',
   initialEditType: 'wysiwyg',
-  previewStyle: 'vertical'
+  // previewStyle: 'vertical',
+  // theme: 'dark',
 });
 
 /////////////////////////////////
