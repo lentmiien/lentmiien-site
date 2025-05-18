@@ -101,6 +101,7 @@ socket.on('displayConversationContent', data => {
     addDeleteCheckbox(m._id.toString());
   });
   attachCopyListeners();
+  formatTables();
 });
 
 function CloseLoad() {
@@ -331,6 +332,9 @@ socket.on('batchPending', function (message) {
   // Attach copy functionality to code blocks
   attachCopyListeners();
 
+  // Format tables
+  formatTables();
+
   // Clear the input field
   editor.reset();
 
@@ -354,6 +358,9 @@ socket.on('aiResponse', function (message) {
 
   // Attach copy functionality to code blocks
   attachCopyListeners();
+
+  // Format tables
+  formatTables();
 
   // Clear the input field
   editor.reset();
@@ -483,6 +490,13 @@ function attachCopyListeners() {
       code.dataset.copyListener = 'true';
     }
   });
+}
+
+function formatTables() {
+  const tables = document.getElementsByTagName("table");
+  for (const t of tables) {
+    t.classList.add("table");
+  }
 }
 
 // Function to show the loading popup
