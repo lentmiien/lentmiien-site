@@ -51,7 +51,7 @@ function GenerateMessagesArray_Chat(context, messages, prompt, isImageModel) {
   }
   // Append prompt
   const content = [];
-  content.push({ type: 'text', text: prompt.text });
+  content.push({ type: 'text', text: prompt.prompt });
   if (isImageModel) {
     for (const image of prompt.images) {
       const { new_filename, b64 } = loadProcessNewImageToBase64(image.filename);
@@ -112,7 +112,10 @@ function GenerateMessagesArray_Responses(context, messages, prompt, isImageModel
   }
   // Append prompt
   const content = [];
-  content.push({ type: 'input_text', text: prompt.text });
+  for (const m of prompt.chat_array) {
+    content.push({ type: 'input_text', text: `${m.name}: ${m.text}` });
+  }
+  content.push({ type: 'input_text', text: prompt.prompt });
   if (isImageModel) {
     for (const image of prompt.images) {
       const { new_filename, b64 } = loadProcessNewImageToBase64(image.filename);
