@@ -166,7 +166,7 @@ class MessageService {
 
   async CreateTitle(message_ids) {
     const msgs = await this.getMessagesByIdArray(message_ids, false);
-    const use_model = 'gpt-4o-mini';
+    const use_model = 'gpt-4.1-nano-2025-04-14';
     const use_messages = [];
     use_messages.push({
       role: "system",
