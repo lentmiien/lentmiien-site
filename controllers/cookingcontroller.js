@@ -245,8 +245,12 @@ exports.cooking_statistics = async (req, res) => {
   const stats = await getCookingStatistics();
   const knowledge = await Chat4KnowledgeModel.find({category: "Recipe"});
   const knowledge_lookup = {};
-  knowledge.forEach(k => knowledge_lookup[k._id.toString()] = k.title);
-  res.render("cooking_statistics", {stats, knowledge_lookup});
+  const knowledge_lookup_used = {};
+  knowledge.forEach(k => {
+    knowledge_lookup[k._id.toString()] = k.title;
+    knowledge_lookup_used[k._id.toString()] = false;
+  });
+  res.render("cooking_statistics", {stats, knowledge_lookup, knowledge_lookup_used});
 };
 
 /**

@@ -13,6 +13,7 @@ block content
     tbody 
       each food in stats 
         if knowledge_lookup[food.uniqueString]
+          - knowledge_lookup_used[food.uniqueString] = true
           tr 
             td
               a(href=`/chat4/viewknowledge/${food.uniqueString}`)= knowledge_lookup[food.uniqueString]
@@ -20,3 +21,13 @@ block content
             td= food.countLast90Days
             td= food.countPrev90Days
             td= food.totalCount
+      - const allKeys = Object.keys(knowledge_lookup_used)
+      each key in allKeys 
+        if knowledge_lookup_used[key] === false 
+          tr 
+            td
+              a(href=`/chat4/viewknowledge/${key}`)= knowledge_lookup[key]
+            td 
+            td 
+            td 
+            td 
