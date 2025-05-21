@@ -32,6 +32,7 @@ html(lang='en')
     //- link(rel="stylesheet" href="https://uicdn.toast.com/editor/latest/theme/toastui-editor-dark.min.css")
     link(rel="stylesheet", href="/css/style.css")
     link(rel="stylesheet", href="/css/nav.css")
+    block styles
   body
     .nav-placeholder
     .navbar-icon(onclick="toggleNavbar()") ☰
@@ -111,6 +112,7 @@ html(lang='en')
               a.type-1-link(href="/budget", style="width:100%;") Accounting (new)
               a.type-1-link(href="/gallery", style="width:100%;") Gallery
               a.type-1-link(href="/payroll", style="width:100%;") Payroll
+              a.type-1-link(href="/scheduleTask/calendar", style="width:100%;") Schedule
         if permissions && permissions.indexOf("archive") >= 0
           .navbar-column
             h2 Archive

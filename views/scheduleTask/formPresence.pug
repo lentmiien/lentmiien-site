@@ -1,0 +1,32 @@
+extends ../layout
+
+block content
+  .container.mt-4
+    h3 New Presence Schedule
+    form(method="post", action="/scheduleTask/new/presence")
+      .mb-3
+        label.form-label(for="title") Title
+        input.form-control(type="text", name="title", required)
+      .mb-3
+        label.form-label(for="location") Location
+        input.form-control(type="text", name="location", required, placeholder="e.g. home, office")
+      .mb-3
+        label.form-label(for="purpose") Purpose
+        input.form-control(type="text", name="purpose", placeholder="Why here?")
+      .mb-3
+        label.form-label Start
+        input.form-control(type="datetime-local", name="start", required)
+      .mb-3
+        label.form-label End
+        input.form-control(type="datetime-local", name="end", required)
+      button.btn.btn-success(type="submit") Save
+      a.btn.btn-secondary(href="/scheduleTask/calendar") Cancel
+
+  if error
+    .alert.alert-danger= error
+  if conflicts
+    .alert.alert-warning
+      | Overlaps:
+      ul
+        each c in conflicts
+          li: a(href=`/scheduleTask/edit/${c._id}`, target="_blank")= c.title

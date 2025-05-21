@@ -1,0 +1,28 @@
+extends ../layout
+
+block content
+  .container.mt-4
+    h3 New Task
+    form(method="post", action="/scheduleTask/new/task")
+      .mb-3
+        label.form-label(for="title") Title
+        input.form-control(type="text", name="title", required)
+      .mb-3
+        label.form-label(for="description") Description
+        textarea.form-control(name="description")
+      .mb-3
+        label.form-label(for="type") Type
+        select.form-select(name="type")
+          option(value="todo") ToDo
+          option(value="tobuy") ToBuy
+      .mb-3
+        label.form-label(for="start") Start (Earliest Show)
+        input.form-control(type="datetime-local", name="start")
+      .mb-3
+        label.form-label(for="end") Deadline
+        input.form-control(type="datetime-local", name="end")
+      button.btn.btn-success(type="submit") Save
+      a.btn.btn-secondary(href="/scheduleTask/calendar") Cancel
+
+  if error
+    .alert.alert-danger= error

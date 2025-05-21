@@ -1,0 +1,59 @@
+extends ../layout
+
+block content
+  .container
+    a.btn.btn-outline-success(href="/scheduleTask/new/presence") New Presence
+    a.btn.btn-outline-primary(href="/scheduleTask/new/task") New Task
+
+    //- Overdue bar placeholder (will be inserted by JS)
+    #overdueBar
+
+    h2.mt-4.mb-2 Schedule (Next 3 Days)
+    // Grid rendered via calendar.js
+    #calendarGrid
+
+    //- Modals for task and slot (hidden, filled by JS)
+    #taskModal.modal.fade(style="z-index:1051;", tabindex="0")
+      .modal-dialog
+        .modal-content
+          .modal-header
+            h5.modal-title Task Details
+            button.btn-close(type="button", data-bs-dismiss="modal")
+          .modal-body
+            // JS populates this
+          .modal-footer
+            button.btn.btn-primary(type='button', data-bs-dismiss='modal') Edit
+            button.btn.btn-secondary(type='button', data-bs-dismiss='modal') Close
+
+    #slotModal.modal.fade(style="z-index:1051;", tabindex="0")
+      .modal-dialog
+        .modal-content
+          .modal-header
+            h5.modal-title Slot Details
+            button.btn-close(type="button", data-bs-dismiss="modal")
+          .modal-body
+            // JS populates this
+          .modal-footer
+            button.btn.btn-success(type='button') New Presence
+            button.btn.btn-primary(type='button') New Task
+            button.btn.btn-secondary(type="button", data-bs-dismiss="modal") Close
+
+  //- Scripts
+  script(src="/js/scheduleTask/api.js")
+  script(src="/js/scheduleTask/calendar.js")
+  script(src="/js/scheduleTask/interactions.js")
+
+block styles
+  style.
+    .calendar-slot {
+      min-height: 32px;
+      border-bottom: 1px solid #f1f1f1;
+      cursor: pointer;
+      padding: 2px 4px;
+      overflow-x: auto;
+      display: flex;
+      align-items: flex-start;
+    }
+    .slot-time { font-size: .85em; color: #888; min-width: 45px; display: inline-block; }
+    .slot-tasks { flex: 1; display: inline-block; }
+    .calendar-day-label { font-weight: bold; }

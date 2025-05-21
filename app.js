@@ -180,6 +180,7 @@ const receiptRouter = require('./routes/receipt');
 const productRouter = require('./routes/product_details');
 const galleryRouter = require('./routes/gallery');
 const payrollRouter = require('./routes/payroll');
+const scheduleTaskRouter = require('./routes/scheduleTaskRoute');
 const adminRouter = require('./routes/admin');
 
 app.use('/', indexRouter);
@@ -206,6 +207,7 @@ app.use('/receipt', isAuthenticated, authorize("receipt"), receiptRouter);
 app.use('/product', isAuthenticated, authorize("product"), productRouter);
 app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
 app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
+app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(

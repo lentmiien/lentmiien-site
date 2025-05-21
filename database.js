@@ -86,7 +86,10 @@ const AIModelCards = require('./models/ai_model_card');
 // Gallery images
 const Images = require('./models/image');
 // Payroll
-const Payroll = require('./models/Payroll')
+const Payroll = require('./models/Payroll');
+// Schedule-Task
+const Task = require('./models/scheduleTask/Task');
+const Palette = require('./models/scheduleTask/Palette');
 
 // Export models
 module.exports = {
@@ -138,4 +141,6 @@ module.exports = {
   AIModelCards,
   Images,
   Payroll,
+  Task,
+  Palette,
 };
