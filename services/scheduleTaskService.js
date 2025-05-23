@@ -62,7 +62,10 @@ class ScheduleTaskService {
       'location.commute':   { bgColor: '#FFF3E0', border: null },
       'location.travel':    { bgColor: '#EDE7F6', border: null },
       'purpose.work':       { bgColor: null, border: '#1565C0' },
-      'purpose.travel':     { bgColor: null, border: '#6A1B9A' }
+      'purpose.travel':     { bgColor: null, border: '#6A1B9A' },
+      'purpose.hospital':   { bgColor: null, border: '#F542B9' },
+      'purpose.son':        { bgColor: null, border: '#AD3F0C' },
+      'purpose.eatout':     { bgColor: null, border: '#3BC442' },
     };
     const docs = await Palette.find({}).lean();
     const custom = {};
