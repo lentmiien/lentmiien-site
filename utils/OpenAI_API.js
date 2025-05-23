@@ -10,7 +10,6 @@ const reasoningModels = [
   "o3-mini-2025-01-31",
   "o1-pro-2025-03-19",
   "o4-mini",
-  "gpt-4.1",
 ];
 
 function GenerateMessagesArray_Chat(context, messages, prompt, isImageModel) {
