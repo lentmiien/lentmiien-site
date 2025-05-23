@@ -4,12 +4,13 @@ const { OpenAI } = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const responsesModels = ["o1-pro-2025-03-19", "codex-mini-latest", "o4-mini"];
+const responsesModels = ["o1-pro-2025-03-19", "codex-mini-latest", "o4-mini", "gpt-4.1"];
 const reasoningModels = [
   "o1-2024-12-17",
   "o3-mini-2025-01-31",
   "o1-pro-2025-03-19",
   "o4-mini",
+  "gpt-4.1",
 ];
 
 function GenerateMessagesArray_Chat(context, messages, prompt, isImageModel) {
