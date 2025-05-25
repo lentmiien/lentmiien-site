@@ -114,7 +114,6 @@ exports.updateTaskApi = async function(req, res, next) {
  * PATCH /api/tasks/:id/done - Mark as (un)done
  */
 exports.toggleDoneApi = async function(req, res, next) {
-  console.log(req.user.name, req.params.id, req.body.done);
   try {
     const userId = req.user.name;
     const id = req.params.id;
@@ -146,7 +145,8 @@ exports.paletteApi = async function(req, res, next) {
 };
 
 exports.renderPresenceForm = (req, res) => {
-  res.render('scheduleTask/formPresence', { error: null });
+  const prefill = req.query.prefill ? new Date(req.query.prefill) : null;
+  res.render('scheduleTask/formPresence', { error: null, prefillStart: prefill ? prefill.toISOString().slice(0,16) : ''});
 };
 
 exports.savePresence = async (req, res, next) => {
@@ -181,7 +181,8 @@ exports.savePresence = async (req, res, next) => {
 };
 
 exports.renderTaskForm = (req, res) => {
-  res.render('scheduleTask/formTask', { error: null });
+  const prefill = req.query.prefill ? new Date(req.query.prefill) : null;
+  res.render('scheduleTask/formTask', { error: null, prefillStart: prefill ? prefill.toISOString().slice(0,16) : '' });
 };
 
 exports.saveTask = async (req, res, next) => {

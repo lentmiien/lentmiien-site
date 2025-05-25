@@ -22,7 +22,7 @@ block content
           .modal-body
             // JS populates this
           .modal-footer
-            button.btn.btn-primary(type='button', data-bs-dismiss='modal') Edit
+            button.btn.btn-primary.btn-edit(type='button', data-bs-dismiss='modal') Edit
             button.btn.btn-secondary(type='button', data-bs-dismiss='modal') Close
 
     #slotModal.modal.fade(style="z-index:1051;", tabindex="0")
@@ -34,14 +34,14 @@ block content
           .modal-body
             // JS populates this
           .modal-footer
-            button.btn.btn-success(type='button') New Presence
-            button.btn.btn-primary(type='button') New Task
+            button.btn.btn-success.btn-new-presence(type='button') New Presence
+            button.btn.btn-primary.btn-new-task(type='button') New Task
             button.btn.btn-secondary(type="button", data-bs-dismiss="modal") Close
 
   //- Scripts
-  script(src="/js/scheduleTask/api.js")
-  script(src="/js/scheduleTask/calendar.js")
-  script(src="/js/scheduleTask/interactions.js")
+  script(src="/js/scheduleTask/api.js", defer)
+  script(src="/js/scheduleTask/calendar.js", defer)
+  script(src="/js/scheduleTask/interactions.js", defer)
 
 block styles
   style.
@@ -57,3 +57,7 @@ block styles
     .slot-time { font-size: .85em; color: #888; min-width: 45px; display: inline-block; }
     .slot-tasks { flex: 1; display: inline-block; }
     .calendar-day-label { font-weight: bold; }
+    .schedule-task-pill { cursor:pointer; white-space:nowrap }
+    .current-slot { outline: 2px solid #dc3545; }        /* red outline for now-slot */
+    @media (max-width: 767px){ .slot-time{display:none;} } /* hide time text on xs */
+
