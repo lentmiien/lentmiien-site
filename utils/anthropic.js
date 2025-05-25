@@ -25,8 +25,16 @@ const GetAnthropicModels = () => {
   return model_list;
 };
 
+const max_per_model = {
+  "claude-opus-4-20250514": 32000,
+  "claude-3-5-sonnet-20241022": 8192,
+  "claude-3-7-sonnet-20250219": 64000,
+  "claude-sonnet-4-20250514": 64000,
+  "claude-3-5-haiku-20241022": 8192,
+}
+
 const anthropic = async (messages, model) => {
-  const max_tokens = 8192;
+  const max_tokens = max_per_model[model] ? max_per_model[model] : 32000;
   const temperature = 1;
   const system = messages[0].content[0].text;
   messages.shift();
