@@ -36,8 +36,11 @@ const max_per_model = {
 const anthropic = async (messages, model) => {
   const max_tokens = max_per_model[model] ? max_per_model[model] : 32000;
   const temperature = 1;
-  const system = messages[0].content[0].text;
-  messages.shift();
+  let system = "You are a helpful assistant";
+  if (messages[0].role === "system") {
+    system = messages[0].content[0].text;
+    messages.shift();
+  }
   // Rearrange image input in format expected by Anthropic API
   for (let i = 0; i < messages.length; i++) {
     let image_count = 0;
@@ -65,11 +68,42 @@ const anthropic = async (messages, model) => {
     }
   }
   try {
-    const msg = await anthropicAPI.messages.create({ model, max_tokens, temperature, system, messages });
-    // Adjust response format, so function can be used in place of other API calls, without breaking the code
-    msg.choices = msg.content;
-    msg.choices[0].message = { content: msg.choices[0].text };
-    msg.usage.total_tokens = msg.usage.input_tokens + msg.usage.output_tokens;
+    let text_response = "";
+
+    const msg = await new Promise((resolve, reject) => {
+      // Start the streaming API call
+      anthropicAPI.messages.stream({
+        system,
+        messages,
+        model,
+        max_tokens,
+        temperature,
+      })
+      .on('text', text => {
+        // Collect streamed text
+        text_response += text;
+      })
+      .on('end', () => {
+        // When the stream ends, resolve the Promise with the complete response object
+        const msg = {
+          choices: [
+            {
+              message: { content: text_response }
+            }
+          ],
+          usage: {
+            total_tokens: 0
+          }
+        };
+        resolve(msg);
+      })
+      .on('error', err => {
+        // If an error occurs, reject the Promise
+        console.error("Stream error:", err);
+        reject(err);
+      });
+    });
+
     return msg;
   } catch (error) {
     console.error(`Error while calling Anthropic API: ${error}`);
