@@ -6,8 +6,9 @@ const ImageDataFolder = './public/img';
 const { ArticleModel } = require('../database');
 const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
 const { GetAnthropicModels } = require('../utils/anthropic');
+const ScheduleTaskService = require('../services/scheduleTaskService');
 
-exports.mypage = (req, res) => {
+exports.mypage = async (req, res) => {
   // Do something fun here, to show om mypage!
   const ts = Math.round((Date.now() - (1000 * 60 * 60 * 24 * 30)) / 1000);
   const OpenAI_models = GetOpenAIModels();
@@ -15,7 +16,13 @@ exports.mypage = (req, res) => {
   const Anthropic_models = GetAnthropicModels();
   const new_anthropic_models = Anthropic_models.filter(d => d.created > ts);
 
-  res.render('mypage', {new_openai_models, new_anthropic_models});
+  const userId = req.user.name;
+  const today = ScheduleTaskService.roundToSlot(new Date());
+  const from = today;
+  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
+  const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
+
+  res.render('mypage', {new_openai_models, new_anthropic_models, tasks});
 };
 
 exports.blogpost = async (req, res) => {

@@ -3,6 +3,14 @@ extends layout
 block content
   .row 
     .col 
+      each t in tasks 
+        if !t.done && t.type === "todo"
+          span.badge.bg-primary.me-1.schedule-task-pill= t.title
+      each t in tasks 
+        if !t.done && t.type === "tobuy"
+          span.badge.bg-warning.text-dark.me-1.schedule-task-pill= t.title
+  .row 
+    .col 
       a.btn.btn-link(href="/mypage/blogpost")
         img(src="/i/blog.jpg", alt="blogpost")
         p Write blog
