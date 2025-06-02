@@ -22,7 +22,7 @@ exports.mypage = async (req, res) => {
   const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
   const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
 
-  res.render('mypage', {new_openai_models, new_anthropic_models, tasks});
+  res.render('mypage', {new_openai_models, new_anthropic_models, tasks: tasks.filter(t => !t.done && ((t.start && t.start < to) || !t.start))});
 };
 
 exports.blogpost = async (req, res) => {
