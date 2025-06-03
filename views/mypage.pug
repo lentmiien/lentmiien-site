@@ -5,7 +5,7 @@ block content
     .col 
       each t in tasks 
         if !t.done && t.type === "todo"
-          span.badge.bg-primary.me-1.schedule-task-pill= t.title
+          span.badge.bg-primary.me-1.schedule-task-pill= `${t.title} in ${t.start && t.start.getTime() > Date.now() ? Math.round((t.start.getTime() - Date.now()) / (1000*60*60)) : t.end && t.end.getTime() > Date.now() ? Math.round((t.end.getTime() - Date.now()) / (1000*60*60)) : 0} hour(s)`
       each t in tasks 
         if !t.done && t.type === "tobuy"
           span.badge.bg-warning.text-dark.me-1.schedule-task-pill= t.title
