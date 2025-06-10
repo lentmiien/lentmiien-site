@@ -372,7 +372,7 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
       openai_load["reasoning_effort"] = reasoning_effort;
     }
     let response;
-    if (model === "o1-pro-2025-03-19") {
+    if (model === "o1-pro-2025-03-19" || model === "o3-pro-2025-06-10") {
       response = await responses(messages, model, reasoning_effort);
     } else {
       if (private_msg) {

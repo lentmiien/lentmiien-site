@@ -224,7 +224,7 @@ class BatchService {
           // Append data_entry to prompt_data
           if (model_provider[model_to_use] === "OpenAI") {
             // Newer reasoning models uses "developer" instead of "system"
-            const use_developer_models = ["o1-pro-2025-03-19", "o1-2024-12-17", "o3-mini-2025-01-31"];
+            const use_developer_models = ["o1-pro-2025-03-19", "o1-2024-12-17", "o3-mini-2025-01-31", "o3-pro-2025-06-10"];
             if (use_developer_models.indexOf(model_to_use) >= 0) {
               for (let i = 0; i < data_entry.body.messages.length; i++) {
                 if (data_entry.body.messages[i].role === "system") {
@@ -232,8 +232,8 @@ class BatchService {
                 }
               }
             }
-            // o1-pro only works with "responses" API
-            if (model_to_use === "o1-pro-2025-03-19") {
+            // o1-pro and o3-pro only works with "responses" API
+            if (model_to_use === "o1-pro-2025-03-19" || model_to_use === "o3-pro-2025-06-10") {
               // /v1/responses
               data_entry.url = "/v1/responses";
               for (let i = 0; i < data_entry.body.messages.length; i++) {
@@ -280,7 +280,7 @@ class BatchService {
               const file_id = await upload_file(prompt_data[models[i]].join('\n'));
               
               // Save request data to request database
-              const batch_details = await start_batch(file_id, true, models[i] === "o1-pro-2025-03-19" ? "/v1/responses" : "/v1/chat/completions");
+              const batch_details = await start_batch(file_id, true, models[i] === "o1-pro-2025-03-19" || models[i] === "o3-pro-2025-06-10" ? "/v1/responses" : "/v1/chat/completions");
               batch_id = batch_details.id;
               const newRequest = new this.BatchRequestDatabase({
                 id: batch_details.id,
