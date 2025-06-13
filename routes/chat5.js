@@ -27,5 +27,7 @@ router.post('/add_model_card', controller.add_model_card);
 router.get('/story_mode/:id', controller.story_mode);
 router.get('/edit_message/:id', controller.edit_message);
 router.post('/update_message/:id', upload.array('imgs'), controller.update_message);
+router.get('/top', controller.view_chat5_top);
+router.get('/chat/:id', controller.view_chat5);
 
 module.exports = router;

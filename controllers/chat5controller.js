@@ -1,4 +1,6 @@
-const { AIModelCards, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
+const marked = require('marked');
+
+const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
@@ -141,4 +143,24 @@ exports.update_message = async (req, res) => {
   await messageService.updateMessage(messageId, category, tags, prompt, response, images, sound, usage_settings, image_paths);
 
   res.redirect(`/chat5/edit_message/${messageId}`);
+};
+
+exports.view_chat5_top = async (req, res) => {
+  const conversations = await Conversation5Model.find();
+  res.render("chat5_top", {conversations});
+};
+
+exports.view_chat5 = async (req, res) => {
+  const id = req.params.id;
+  const conversation = await Conversation5Model.findById(id);
+  const messages = await Chat5Model.find({_id: conversation.messages});
+
+  // Generate HTML from marked content
+  messages.forEach(m => {
+    if (m.content.text && m.content.text.length > 0) {
+      m.content.html = marked.parse(m.content.text);
+    }
+  })
+
+  res.render("chat5_chat", {conversation, messages});
 };

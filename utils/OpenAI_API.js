@@ -4,78 +4,14 @@ const { OpenAI } = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const responsesModels = ["o1-pro-2025-03-19", "codex-mini-latest", "o4-mini", "gpt-4.1"];
 const reasoningModels = [
-  "o1-2024-12-17",
-  "o3-mini-2025-01-31",
-  "o1-pro-2025-03-19",
-  "o4-mini",
+  "o3-pro-2025-06-10",
+  "o3-2025-04-16",
+  "o4-mini-2025-04-16",
 ];
 
-function GenerateMessagesArray_Chat(context, messages, prompt, isImageModel) {
+function GenerateMessagesArray_Responses(context, messages, isImageModel) {
   const messageArray = [];
-  const promptImages = [];
-  if (context.type != "none" && context.prompt && context.prompt.length > 0) {
-    messageArray.push({
-      role: context.type,
-      content: [{ type: 'text', text: context.prompt }],
-    });
-  }
-
-  // Messages
-  for (const message of messages) {
-    const content = [];
-    content.push({ type: 'text', text: message.prompt });
-    if (isImageModel) {
-      for (const image of message.images) {
-        if (image.use_flag != "do not use") {
-          const b64 = loadImageToBase64(image.filename);
-          content.push({
-            type: "image_url",
-            image_url: {
-              url: `data:image/jpeg;base64,${b64}`,
-              detail: image.use_flag === 'high quality' ? 'high' : 'low',
-            }
-          });
-        }
-      }
-    }
-    messageArray.push({
-      role: 'user',
-      content,
-    });
-    messageArray.push({
-      role: 'assistant',
-      content: [{ type: 'text', text: message.response }],
-    });
-  }
-  // Append prompt
-  const content = [];
-  content.push({ type: 'text', text: prompt.prompt });
-  if (isImageModel) {
-    for (const image of prompt.images) {
-      const { new_filename, b64 } = loadProcessNewImageToBase64(image.filename);
-      promptImages.push(new_filename);
-      content.push({
-        type: "image_url",
-        image_url: {
-          url: `data:image/jpeg;base64,${b64}`,
-          detail: 'high',
-        }
-      });
-    }
-  }
-  messageArray.push({
-    role: 'user',
-    content,
-  });
-
-  return { messageArray, promptImages };
-}
-
-function GenerateMessagesArray_Responses(context, messages, prompt, isImageModel) {
-  const messageArray = [];
-  const promptImages = [];
   if (context.type != "none" && context.prompt && context.prompt.length > 0) {
     messageArray.push({
       role: context.type,
@@ -84,58 +20,38 @@ function GenerateMessagesArray_Responses(context, messages, prompt, isImageModel
   }
 
   // Messages
+  let role = messages[0].user_id === "bot" ? 'assistant' : 'user';
+  let content = [];
   for (const message of messages) {
-    const content = [];
-    content.push({ type: 'input_text', text: message.prompt });
-    if (isImageModel) {
-      for (const image of message.images) {
-        if (image.use_flag != "do not use") {
-          const b64 = loadImageToBase64(image.filename);
-          content.push({
-            type: "input_image",
-            image_url: {
-              url: `data:image/jpeg;base64,${b64}`,
-              detail: image.use_flag === 'high quality' ? 'high' : 'low',
-            }
-          });
+    const this_role = message.user_id === "bot" ? 'assistant' : 'user';
+    if (role != this_role) {
+      messageArray.push({
+        role,
+        content,
+      });
+      role = this_role;
+      content = [];
+    }
+    if (!message.hideFromBot) {
+      if (message.contentType === "text") {
+        content.push({ type: this_role === "user" ? 'input_text' : 'output_text', text: message.content.text });
+      }
+      if (message.contentType === "image") {
+        if (isImageModel && this_role === "user") {
+          content.push({ type: 'input_image', image_url: `data:image/jpeg;base64,${message.content.image}` });
+        }
+        else {
+          content.push({ type: this_role === "user" ? 'input_text' : 'output_text', text: `Image prompt: ${message.content.revisedPrompt}` });
         }
       }
     }
-    messageArray.push({
-      role: 'user',
-      content,
-    });
-    messageArray.push({
-      role: 'assistant',
-      content: [{ type: 'output_text', text: message.response }],
-    });
-  }
-  // Append prompt
-  const content = [];
-  for (const m of prompt.chat_array) {
-    content.push({ type: 'input_text', text: `${m.name}: ${m.text}` });
-  }
-  content.push({ type: 'input_text', text: prompt.prompt });
-  if (isImageModel) {
-    for (const image of prompt.images) {
-      const { new_filename, b64 } = loadProcessNewImageToBase64(image.filename);
-      promptImages.push(new_filename);
-      content.push({
-        type: "input_image",
-        image_url: {
-          url: `data:image/jpeg;base64,${b64}`,
-          detail: 'high',
-        }
-      });
-    }
   }
   messageArray.push({
-    type: 'message',
-    role: 'user',
+    role,
     content,
   });
 
-  return { messageArray, promptImages };
+  return messageArray;
 }
 
 function loadImageToBase64(filename) {
@@ -163,43 +79,28 @@ async function loadProcessNewImageToBase64(filename) {
   return { new_filename, b64 };
 }
 
-const chat = async (conversation, messages, prompt, model, beta = null) => {
-  const isChatAPI = responsesModels.indexOf(model.api_model) === -1;
-  const { messageArray, promptImages } = isChatAPI ? 
-    GenerateMessagesArray_Chat({type: model.context_type, prompt: conversation.context_prompt}, messages, prompt, model.in_modalities.indexOf("image") >= 0) : 
-    GenerateMessagesArray_Responses({type: model.context_type, prompt: conversation.context_prompt}, messages, prompt, model.in_modalities.indexOf("image") >= 0);
+const chat = async (conversation, messages, model, tools_map) => {
+  const messageArray = GenerateMessagesArray_Responses({type: model.context_type, prompt: conversation.metadata.context_prompt}, messages, model.in_modalities.indexOf("image") >= 0);
+
+  const tools = [];
+  if (conversation.metadata.tools && conversation.metadata.tools.length > 0) {
+    for (const t of conversation.metadata.tools) {
+      tools.push(tools_map[t]);
+    }
+  }
 
   // Connect to API
   try {
-    let response;
-    if (isChatAPI) {
-      const inputParameters = {
-        model: model.api_model,
-        messages: messageArray,
-        store: false,
-      };
-      if (prompt.effort && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning_effort"] = prompt.effort;
-      if (beta) {
-        inputParameters["response_format"] = zodResponseFormat(beta.zod.object, beta.zod.title);
-        response = await openai.beta.chat.completions.parse(inputParameters);
-      } else {
-        response = await openai.chat.completions.create(inputParameters);
-      }
-    } else {
-      const inputParameters = {
-        model: model.api_model,
-        input: messageArray,
-        tools: prompt.tools ? prompt.tools : [],
-        // store: false,
-      };
-      if (prompt.text) inputParameters['text'] = prompt.text;
-      if (prompt.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = prompt.reasoning;
-      response = await openai.responses.create(inputParameters);
-    }
-    return {
-      output: response,
-      promptImages
+    const inputParameters = {
+      model: model.api_model,
+      input: messageArray,
+      tools,
+      // store: false,
     };
+    if (conversation.metadata.outputFormat) inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
+    if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = conversation.metadata.reasoning;
+    const response = await openai.responses.create(inputParameters);
+    return response;
   } catch (error) {
     console.error(`Error while calling ChatGPT API: ${error}`);
     return null;

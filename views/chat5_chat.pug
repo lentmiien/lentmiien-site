@@ -1,0 +1,22 @@
+extends layout
+
+block content
+  h2= conversation.title
+  - let user = null
+  each m in messages 
+    if user != m.user_id 
+      hr
+      div
+        b= m.user_id 
+      - user = m.user_id
+    if m.contentType === "text"
+      span!= m.content.html 
+    if m.contentType === "image"
+      img(src=`data:image/png;base64,${m.content.image}`, alt=m.content.revisedPrompt, style="max-width: 400px;")
+      br
+      i= m.content.revisedPrompt
+
+  hr
+  pre= JSON.stringify(conversation, null, 2)
+  each m in messages 
+    pre= JSON.stringify(m, null, 2)
