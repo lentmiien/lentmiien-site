@@ -1,31 +1,20 @@
 const fs = require('fs');
 const sharp = require('sharp');
 
+const { Conversation5Model } = require('../database');
+
+// Conversation5Model.metadata
+const DEFAULT_SETTINGS = {
+  contextPrompt: "",
+  model: "gpt-4.1-2025-04-14",
+  maxMessages: 999,
+  maxAudioMessages: 3,
+  tools: [],
+  reasoning: "medium",
+  outputFormat: "text",
+};
+
 // Conversation service operations: managing conversation sessions and summary
-
-/* conversationModel
-{
-  user_id: { type: String, required: true, max: 100 },
-  group_id: { type: String, required: true, max: 100 },
-  title: { type: String, required: true, max: 255 },
-  description: { type: String },
-  category: { type: String, required: true, max: 100 },
-  tags: [{ type: String, max: 100 }],
-  context_prompt: { type: String },
-  knowledge_injects: [
-    {
-      knowledge_id: { type: String, required: true },
-      use_type: { type: String, required: true, enum: ['context', 'reference', 'example'] },
-    }
-  ],
-  messages: [{ type: String, required: true, max: 100 }],
-  updated_date: {
-    type: Date,
-    default: Date.now,
-  },
-}
-*/
-
 class ConversationService {
   constructor(conversationModel, messageService, knowledgeService) {
     this.conversationModel = conversationModel;
@@ -850,6 +839,116 @@ class ConversationService {
       await conversation.save();
       return conversation._id.toString();
     }
+  }
+
+  // CHAT5
+  async createNewConversation(userId, settings = DEFAULT_SETTINGS) {
+    const conv = new Conversation5Model({
+      title: "New Conversation",
+      category: "Chat5",
+      metadata: settings,
+      members: [userId],
+      messages: []
+    });
+    await conv.save();
+    return conv;
+  }
+
+  async loadConversation(conversationId) {
+    const conv = await Conversation5Model.findById(conversationId);
+    if (conv) return conv; 
+
+    // Try old database
+    const oldConv = await this.conversationModel.findById(conversationId);
+    if (oldConv) {
+      const convertedConv = this.convertOldConversation(oldConv);
+      return convertedConv; // NOT persisted yet! transient only!
+    }
+
+    throw new Error("Conversation not found");
+  }
+
+  async convertOldConversation(conversation) {
+    const newFormat = {
+      title: conversation.title,
+      summary: conversation.description,
+      category: conversation.category,
+      tags: conversation.tags,
+      messages: conversation.messages,
+      metadata: {
+        contextPrompt: conversation.context_prompt,
+        model: conversation.default_model ? conversation.default_model : "gpt-4.1-2025-04-14",
+        maxMessages: conversation.max_messages ? conversation.max_messages : 999,
+        maxAudioMessages: 3,
+        tools: [],
+        reasoning: "medium",
+        outputFormat: "text",
+      },
+      members: [conversation.user_id],
+    };
+    const conv = new Conversation5Model(newFormat);
+    return conv;
+  }
+
+  async postToConversation({conversationId, userId, messageContent, messageType, generateAI=false}) {
+    let conversation = await Conversation5Model.findById(conversationId);
+
+    if (!conversation) {
+      const oldConv = await this.conversationModel.findById(conversationId);
+      if (oldConv) {
+        conversation = this.convertOldConversation(oldConv);
+        conversation.messages = this.messageService.convertOldMessages(conversation.messages);
+        await conversation.save(); // Conversation persisted now!
+      } else {
+        throw new Error("Conversation not found");
+      }
+    }
+
+    // Add user message
+    const userMessage = await this.messageService.createMessage({ userId, content: messageContent, contentType: messageType, category: conversation.category, tags: conversation.tags });
+    conversation.messages.push(userMessage._id.toString());
+
+    let aiMessages = [];
+    if (generateAI) {
+      aiMessages = await this.messageService.generateAIMessage({conversation});
+      for (const m of aiMessages) {
+        conversation.messages.push(m._id.toString());
+      }
+    }
+
+    conversation.updatedAt = new Date();
+    await conversation.save();
+
+    return { conversation, userMessage, aiMessages };
+  }
+
+  async updateSettings(conversationId, settingsUpdates) {
+    let conversation = await Conversation5Model.findById(conversationId);
+
+    if (!conversation) {
+      const oldConv = await this.conversationModel.findById(conversationId);
+      if (oldConv) {
+        conversation = this.convertOldConversation(oldConv);
+        conversation.messages = this.messageService.convertOldMessages(conversation.messages);
+        await conversation.save();
+      } else {
+        throw new Error("Conversation not found");
+      }
+    }
+
+    conversation.metadata = {...conversation.metadata, ...settingsUpdates};
+    conversation.updatedAt = new Date();
+    await conversation.save();
+    return conversation;
+  }
+
+  async listUserConversations(userId) {
+    const newConvs = await Conversation5Model.find({members: userId});
+    const oldConvs = await this.conversationModel.find({user_id: userId});
+
+    const oldConvsConverted = oldConvs.map(conv => this.convertOldConversation(conv));
+
+    return [...newConvs, ...oldConvsConverted];
   }
 }
 

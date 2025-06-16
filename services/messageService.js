@@ -6,37 +6,16 @@ const { anthropic } = require('../utils/anthropic');
 const { groq, groq_vision } = require('../utils/groq');
 const { googleAI } = require('../utils/google');
 const lmstudio = require('../utils/lmstudio');
+const ai = require('../utils/OpenAI_API');
 const { z } = require('zod');
 
-const { AIModelCards } = require('../database');
+const { AIModelCards, Chat5Model } = require('../database');
 
 const Title = z.object({
   conversation_title: z.string(),
 });
 
 // Message service operations: managing individual messages within a conversation
-
-/* messageModel
-{
-  user_id: { type: String, required: true, max: 100 },
-  category: { type: String, required: true, max: 100 },
-  tags: [{ type: String, max: 100 }],
-  prompt: { type: String, required: true },
-  response: { type: String, required: true },
-  images: [
-    {
-      filename: { type: String, required: true },
-      use_flag: { type: String, required: true, enum: ['high quality', 'low quality', 'do not use'] },
-    }
-  ],
-  sound: { type: String, required: false, max: 255 },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-  },
-}
-*/
-
 class MessageService {
   constructor(messageModel, fileMetaModel) {
     this.messageModel = messageModel;
@@ -416,6 +395,155 @@ class MessageService {
     const new_filename = `UP-${Date.now()}.jpg`;
     fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
     return new_filename;
+  }
+
+  // CHAT5
+  async convertOldMessages(oldIdArray) {
+    const newIdsArray = [];
+    // Load from old database, transform, and save to new database
+    for (const id of oldIdArray) {
+      const m = await this.getMessageById(id);
+      if (m) {
+        // Images
+        if (m.images && m.images.length > 0) {
+          for (const i of m.images) {
+            const newFormat = {
+              user_id: m.user_id,
+              category: m.category,
+              tags: m.tags,
+              contentType: "image",
+              content: {
+                text: null,
+                image: i.filename,
+                audio: null,
+                tts: null,
+                transcript: null,
+                revisedPrompt: "",
+                imageQuality: i.use_flag === "high quality" ? "high" : "low",
+                toolOutput: null,
+              },
+              timestamp: m.timestamp,
+              hideFromBot: i.use_flag === "do not use" ? true : false,
+            };
+            const msg = new Chat5Model(newFormat);
+            await msg.save();
+            newIdsArray.push(msg._id.toString());
+          }
+        }
+        // Audio
+        if (m.sound && m.sound.length > 0) {
+          const newFormat = {
+            user_id: m.user_id,
+            category: m.category,
+            tags: m.tags,
+            contentType: "audio",
+            content: {
+              text: null,
+              image: null,
+              audio: null,
+              tts: m.sound,
+              transcript: "",
+              revisedPrompt: null,
+              imageQuality: null,
+              toolOutput: null,
+            },
+            timestamp: m.timestamp,
+            hideFromBot: true,
+          };
+          const msg = new Chat5Model(newFormat);
+          await msg.save();
+          newIdsArray.push(msg._id.toString());
+        }
+        // Text (user)
+        const newFormatU = {
+          user_id: m.user_id,
+          category: m.category,
+          tags: m.tags,
+          contentType: "text",
+          content: {
+            text: m.prompt,
+            image: null,
+            audio: null,
+            tts: null,
+            transcript: null,
+            revisedPrompt: null,
+            imageQuality: null,
+            toolOutput: null,
+          },
+          timestamp: m.timestamp,
+          hideFromBot: false,
+        };
+        const msgU = new Chat5Model(newFormatU);
+        await msgU.save();
+        newIdsArray.push(msgU._id.toString());
+        // Text (bot)
+        const newFormatB = {
+          user_id: "bot",
+          category: m.category,
+          tags: m.tags,
+          contentType: "text",
+          content: {
+            text: m.response,
+            image: null,
+            audio: null,
+            tts: null,
+            transcript: null,
+            revisedPrompt: null,
+            imageQuality: null,
+            toolOutput: null,
+          },
+          timestamp: m.timestamp,
+          hideFromBot: false,
+        };
+        const msgB = new Chat5Model(newFormatB);
+        await msgB.save();
+        newIdsArray.push(msgB._id.toString());
+      }
+    }
+
+    return newIdsArray;
+  }
+
+  async createMessage({ userId, content, contentType, category, tags }) {
+    // Save the input as a new message to database
+    const message = {
+      user_id: userId,
+      category: category,
+      tags: tags,
+      contentType,
+      content,
+      timestamp: new Date(),
+      hideFromBot: false,
+    };
+    const msg = new Chat5Model(message);
+    await msg.save();
+    return msg;
+  }
+
+  async generateAIMessage({conversation}) {
+    const newAiMessages = [];
+    // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
+    const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];
+    // TODO: Only support OpenAi at this stage
+    if (model.provider != "OpenAI") return null;
+    const messages = await Chat5Model.find({_id: conversation.messages});
+    const resp = await ai.chat(conversation, messages, model);
+    for (const m of resp) {
+      const message = {
+        user_id: "bot",
+        category: conversation.category,
+        tags: conversation.tags,
+        contentType: m.contentType,
+        content: m.content,
+        timestamp: new Date(),
+        hideFromBot: m.hideFromBot,
+      };
+      const msg = new Chat5Model(message);
+      await msg.save();
+      newAiMessages.push(msg);
+    }
+
+    return newAiMessages;
   }
 }
 

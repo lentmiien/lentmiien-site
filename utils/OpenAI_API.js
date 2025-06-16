@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const sharp = require('sharp');
 const { OpenAI } = require('openai');
 
@@ -9,6 +10,15 @@ const reasoningModels = [
   "o3-2025-04-16",
   "o4-mini-2025-04-16",
 ];
+
+const type_map = {
+  "message": "text",
+  "image_generation_call": "image",
+};
+
+const tools_map = {
+  "image_generation": { "type": "image_generation" }
+};
 
 function GenerateMessagesArray_Responses(context, messages, isImageModel) {
   const messageArray = [];
@@ -38,7 +48,8 @@ function GenerateMessagesArray_Responses(context, messages, isImageModel) {
       }
       if (message.contentType === "image") {
         if (isImageModel && this_role === "user") {
-          content.push({ type: 'input_image', image_url: `data:image/jpeg;base64,${message.content.image}` });
+          const b64_img = loadImageToBase64(message.content.image);
+          content.push({ type: 'input_image', image_url: `data:image/jpeg;base64,${b64_img}` });
         }
         else {
           content.push({ type: this_role === "user" ? 'input_text' : 'output_text', text: `Image prompt: ${message.content.revisedPrompt}` });
@@ -60,26 +71,45 @@ function loadImageToBase64(filename) {
   return b64_img;
 }
 
-async function loadProcessNewImageToBase64(filename) {
-  const file_data = fs.readFileSync(filename);
-  const img_data = sharp(file_data);
-  const metadata = await img_data.metadata();
-  let short_side = metadata.width < metadata.height ? metadata.width : metadata.height;
-  let long_side = metadata.width > metadata.height ? metadata.width : metadata.height;
-  let scale = 1;
-  if (short_side > 768 || long_side > 2048) {
-    if (768 / short_side < scale) scale = 768 / short_side;
-    if (2048 / long_side < scale) scale = 2048 / long_side;
-  }
-  const scale_img = img_data.resize({ width: Math.round(metadata.width * scale) });
-  const img_buffer = await scale_img.jpeg().toBuffer();
-  const new_filename = `UP-${Date.now()}.jpg`;
-  fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
-  const b64 = Buffer.from(img_buffer).toString('base64');
-  return { new_filename, b64 };
+async function saveImageFromBase64(b64_img) {
+  const number = Date.now();
+  const filename = `image-${number}-.png`;
+  const outputfile = path.resolve(`./public/img/${filename}`);
+  const data = b64_img;
+  const buffer = Buffer.from(data, 'base64');
+  await fs.promises.writeFile(outputfile, buffer);
+
+  const jpg_filename = `image-${number}-.jpg`;
+  const jpg_outputfile = path.resolve(`./public/img/${jpg_filename}`);
+  const jpgBuffer = await sharp(buffer).jpeg({ quality: 70 }).toBuffer();
+  await fs.promises.writeFile(jpg_outputfile, jpgBuffer);
+
+  return jpg_filename;
 }
 
-const chat = async (conversation, messages, model, tools_map) => {
+async function convertOutput (d) {
+  const type = type_map[d.type];
+  let image_file = null;
+  if (type === "image") {
+    image_file = await saveImageFromBase64(d.result);
+  }
+  return {
+    contentType: type,
+    content: {
+      text: type === "text" ? d.content[0].text : null,
+      image: image_file,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: type === "image" ? d.revised_prompt : null,
+      imageQuality:  type === "image" ? "high" : null,
+      toolOutput: null,
+    },
+    hideFromBot: type === "image" ? true : false,
+  };
+}
+
+const chat = async (conversation, messages, model) => {
   const messageArray = GenerateMessagesArray_Responses({type: model.context_type, prompt: conversation.metadata.context_prompt}, messages, model.in_modalities.indexOf("image") >= 0);
 
   const tools = [];
@@ -100,7 +130,12 @@ const chat = async (conversation, messages, model, tools_map) => {
     if (conversation.metadata.outputFormat) inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
     if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = conversation.metadata.reasoning;
     const response = await openai.responses.create(inputParameters);
-    return response;
+    const output = [];
+    for (const d of response.output) {
+      const data = await convertOutput(d);
+      output.push(data);
+    }
+    return output;
   } catch (error) {
     console.error(`Error while calling ChatGPT API: ${error}`);
     return null;
