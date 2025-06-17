@@ -15,6 +15,21 @@ block content
       img(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt, style="max-width: 400px;")
       br
       i= m.content.revisedPrompt
+    if m.contentType === "tool"
+      div
+        i= m.content.toolOutput
+  hr
+  form(action=`/chat5/chat/${conversation._id.toString()}`, method="post") 
+    label(for="prompt") Prompt
+    textarea#prompt.form-control(name="prompt")
+    label(for="tools") Tools
+    select#tools.form-control(name="tools", multiple) 
+      option(value="image_generation") Generate Images
+      option(value="web_search_preview") Search Web
+    .form-check 
+      input#generate_ai.form-check-input(type="checkbox", name="generate_ai")
+      label.form-check-label(for="generate_ai") Generate AI response
+    input.btn.btn-success(type="submit", value="Send")
 
   hr
   pre= JSON.stringify(conversation, null, 2)

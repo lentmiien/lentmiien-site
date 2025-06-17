@@ -164,3 +164,46 @@ exports.view_chat5 = async (req, res) => {
 
   res.render("chat5_chat", {conversation, messages});
 };
+
+exports.post_chat5 = async (req, res) => {
+  const id = req.params.id;
+  const user_id = req.user.name;
+
+  // Setup tools array
+  const tools = utils.normalizeInputToArrayOfStrings(req.body.tools);
+  if (tools.length > 0) {
+    const conv = await Conversation5Model.findById(id);
+    conv.metadata.tools = tools;
+    await conv.save();
+  }
+
+  // Post to conversation
+  await conversationService.postToConversation({
+    conversationId: id,
+    userId: user_id,
+    messageContent: {
+      text: req.body.prompt,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: null,
+    },
+    messageType: "text",
+    generateAI: req.body.generate_ai && req.body.generate_ai === "on" ? true : false,
+  });
+
+  const conversation = await Conversation5Model.findById(id);
+  const messages = await Chat5Model.find({_id: conversation.messages});
+
+  // Generate HTML from marked content
+  messages.forEach(m => {
+    if (m.content.text && m.content.text.length > 0) {
+      m.content.html = marked.parse(m.content.text);
+    }
+  })
+
+  res.render("chat5_chat", {conversation, messages});
+};

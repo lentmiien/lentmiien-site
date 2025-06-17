@@ -29,5 +29,6 @@ router.get('/edit_message/:id', controller.edit_message);
 router.post('/update_message/:id', upload.array('imgs'), controller.update_message);
 router.get('/top', controller.view_chat5_top);
 router.get('/chat/:id', controller.view_chat5);
+router.post('/chat/:id', controller.post_chat5);
 
 module.exports = router;

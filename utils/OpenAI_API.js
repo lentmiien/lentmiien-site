@@ -12,12 +12,14 @@ const reasoningModels = [
 ];
 
 const type_map = {
-  "message": "text",
-  "image_generation_call": "image",
+  message: "text",
+  image_generation_call: "image",
+  web_search_call: "tool",
 };
 
 const tools_map = {
-  "image_generation": { "type": "image_generation" }
+  image_generation: { type: "image_generation" },
+  web_search_preview: { type: "web_search_preview" },
 };
 
 function GenerateMessagesArray_Responses(context, messages, isImageModel) {
@@ -89,24 +91,57 @@ async function saveImageFromBase64(b64_img) {
 
 async function convertOutput (d) {
   const type = type_map[d.type];
-  let image_file = null;
-  if (type === "image") {
-    image_file = await saveImageFromBase64(d.result);
+  switch (d.type) {
+    case "message":
+      return {
+        contentType: type,
+        content: {
+          text: d.content[0].text,
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: null,
+        },
+        hideFromBot: false,
+      };
+    case "image_generation_call":
+      const image_file = await saveImageFromBase64(d.result);
+      return {
+        contentType: type,
+        content: {
+          text: null,
+          image: image_file,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: d.revised_prompt,
+          imageQuality: "high",
+          toolOutput: null,
+        },
+        hideFromBot: true,
+      };
+    case "web_search_call":
+      return {
+        contentType: type,
+        content: {
+          text: null,
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: `${d.type}: ${d.status}`,
+        },
+        hideFromBot: true,
+      };
+    default:
+      console.log("Type undefined: ", d);
+      return null;
   }
-  return {
-    contentType: type,
-    content: {
-      text: type === "text" ? d.content[0].text : null,
-      image: image_file,
-      audio: null,
-      tts: null,
-      transcript: null,
-      revisedPrompt: type === "image" ? d.revised_prompt : null,
-      imageQuality:  type === "image" ? "high" : null,
-      toolOutput: null,
-    },
-    hideFromBot: type === "image" ? true : false,
-  };
 }
 
 const chat = async (conversation, messages, model) => {
@@ -130,10 +165,17 @@ const chat = async (conversation, messages, model) => {
     if (conversation.metadata.outputFormat) inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
     if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = conversation.metadata.reasoning;
     const response = await openai.responses.create(inputParameters);
+    // For debugging purposes, save a copy of response to temporary folder
+    const filename = `response-${Date.now()}-.json`;
+    const outputfile = path.resolve(`./tmp_data/${filename}`);
+    await fs.promises.writeFile(outputfile, JSON.stringify(response, null, 2));
+    // DEBUG_END
     const output = [];
     for (const d of response.output) {
       const data = await convertOutput(d);
-      output.push(data);
+      if (data) {
+        output.push(data);
+      }
     }
     return output;
   } catch (error) {
