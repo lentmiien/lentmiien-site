@@ -15,6 +15,7 @@ const type_map = {
   message: "text",
   image_generation_call: "image",
   web_search_call: "tool",
+  reasoning: "reasoning",
 };
 
 const tools_map = {
@@ -138,6 +139,25 @@ async function convertOutput (d) {
         },
         hideFromBot: true,
       };
+    case "reasoning":
+      if (d.summary.length === 0) {
+        return null;
+      } else {
+        return {
+          contentType: type,
+          content: {
+            text: d.summary[0].text,
+            image: null,
+            audio: null,
+            tts: null,
+            transcript: null,
+            revisedPrompt: null,
+            imageQuality: null,
+            toolOutput: null,
+          },
+          hideFromBot: true,
+        };
+      }
     default:
       console.log("Type undefined: ", d);
       return null;
@@ -160,11 +180,17 @@ const chat = async (conversation, messages, model) => {
       model: model.api_model,
       input: messageArray,
       tools,
+      background: true,
       // store: false,
     };
     if (conversation.metadata.outputFormat) inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
-    if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = conversation.metadata.reasoning;
-    const response = await openai.responses.create(inputParameters);
+    if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = {effort: conversation.metadata.reasoning, summary: "detailed"};
+    let response = await openai.responses.create(inputParameters);
+    while (response.status === "queued" || response.status === "in_progress") {
+      console.log("Current status: " + response.status);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2 seconds
+      response = await openai.responses.retrieve(response.id);
+    }
     // For debugging purposes, save a copy of response to temporary folder
     const filename = `response-${Date.now()}-.json`;
     const outputfile = path.resolve(`./tmp_data/${filename}`);

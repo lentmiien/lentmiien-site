@@ -18,6 +18,9 @@ block content
     if m.contentType === "tool"
       div
         i= m.content.toolOutput
+    if m.contentType === "reasoning"
+      div
+        i!= m.content.html
   hr
   form(action=`/chat5/chat/${conversation._id.toString()}`, method="post") 
     label(for="prompt") Prompt
@@ -26,6 +29,11 @@ block content
     select#tools.form-control(name="tools", multiple) 
       option(value="image_generation") Generate Images
       option(value="web_search_preview") Search Web
+    label(for="model") Model 
+    select#model.form-control(name="model") 
+      option(value="") - Use previous / Default -
+      each m in chat_models
+        option(value=m.api_model)= m.model_name
     .form-check 
       input#generate_ai.form-check-input(type="checkbox", name="generate_ai")
       label.form-check-label(for="generate_ai") Generate AI response

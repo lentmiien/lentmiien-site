@@ -145,7 +145,13 @@ exports.update_message = async (req, res) => {
   res.redirect(`/chat5/edit_message/${messageId}`);
 };
 
+let chat_models = [];
 exports.view_chat5_top = async (req, res) => {
+  // Load available OpenAI models
+  const models = await AIModelCards.find();
+  const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
+  chat_models = models.filter(d => (d.provider === "OpenAI" && availableOpenAI.indexOf(d.api_model) >= 0) && d.model_type === "chat");
+
   const conversations = await Conversation5Model.find();
   res.render("chat5_top", {conversations});
 };
@@ -162,20 +168,21 @@ exports.view_chat5 = async (req, res) => {
     }
   })
 
-  res.render("chat5_chat", {conversation, messages});
+  res.render("chat5_chat", {conversation, messages, chat_models});
 };
 
 exports.post_chat5 = async (req, res) => {
   const id = req.params.id;
   const user_id = req.user.name;
 
-  // Setup tools array
+  // Update settings
+  const conv = await Conversation5Model.findById(id);
   const tools = utils.normalizeInputToArrayOfStrings(req.body.tools);
-  if (tools.length > 0) {
-    const conv = await Conversation5Model.findById(id);
-    conv.metadata.tools = tools;
-    await conv.save();
+  conv.metadata.tools = tools;
+  if (req.body.model && req.body.model.length > 0) {
+    conv.metadata.model = req.body.model;
   }
+  await conv.save();
 
   // Post to conversation
   await conversationService.postToConversation({
@@ -205,5 +212,5 @@ exports.post_chat5 = async (req, res) => {
     }
   })
 
-  res.render("chat5_chat", {conversation, messages});
+  res.render("chat5_chat", {conversation, messages, chat_models});
 };
