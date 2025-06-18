@@ -2,6 +2,8 @@ extends layout
 
 block content
   h2 Chat 5 list 
+  div
+    a(href=`/chat5/chat/NEW`) +NEW
   each c in conversations
     div 
       a(href=`/chat5/chat/${c._id.toString()}`)= c.title

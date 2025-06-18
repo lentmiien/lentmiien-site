@@ -187,7 +187,6 @@ const chat = async (conversation, messages, model) => {
     if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = {effort: conversation.metadata.reasoning, summary: "detailed"};
     let response = await openai.responses.create(inputParameters);
     while (response.status === "queued" || response.status === "in_progress") {
-      console.log("Current status: " + response.status);
       await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2 seconds
       response = await openai.responses.retrieve(response.id);
     }

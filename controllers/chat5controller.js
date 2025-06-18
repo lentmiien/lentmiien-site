@@ -158,8 +158,8 @@ exports.view_chat5_top = async (req, res) => {
 
 exports.view_chat5 = async (req, res) => {
   const id = req.params.id;
-  const conversation = await Conversation5Model.findById(id);
-  const messages = await Chat5Model.find({_id: conversation.messages});
+  const conversation = id === "NEW" ? null : await Conversation5Model.findById(id);
+  const messages = conversation ? await Chat5Model.find({_id: conversation.messages}) : [];
 
   // Generate HTML from marked content
   messages.forEach(m => {
@@ -168,12 +168,18 @@ exports.view_chat5 = async (req, res) => {
     }
   })
 
-  res.render("chat5_chat", {conversation, messages, chat_models});
+  res.render("chat5_chat", {conversation: conversation ? conversation : {title:"NEW", _id:"NEW"}, messages, chat_models});
 };
 
 exports.post_chat5 = async (req, res) => {
-  const id = req.params.id;
+  let id = req.params.id;
   const user_id = req.user.name;
+
+  // If new conversation
+  if (id === "NEW") {
+    const c = await conversationService.createNewConversation(user_id);
+    id = c._id.toString();
+  }
 
   // Update settings
   const conv = await Conversation5Model.findById(id);
