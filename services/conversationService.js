@@ -856,19 +856,23 @@ class ConversationService {
 
   async loadConversation(conversationId) {
     const conv = await Conversation5Model.findById(conversationId);
-    if (conv) return conv; 
+    if (conv) {
+      const msg = await this.messageService.loadMessagesInNewFormat(conv.messages, true);
+      return {conv, msg};
+    }
 
     // Try old database
     const oldConv = await this.conversationModel.findById(conversationId);
     if (oldConv) {
       const convertedConv = this.convertOldConversation(oldConv);
-      return convertedConv; // NOT persisted yet! transient only!
+      const msg = await this.messageService.loadMessagesInNewFormat(oldConv.messages, false);
+      return {conv: convertedConv, msg};
     }
 
     throw new Error("Conversation not found");
   }
 
-  async convertOldConversation(conversation) {
+  convertOldConversation(conversation) {
     const newFormat = {
       title: conversation.title,
       summary: conversation.description,
@@ -946,7 +950,13 @@ class ConversationService {
     const newConvs = await Conversation5Model.find({members: userId});
     const oldConvs = await this.conversationModel.find({user_id: userId});
 
-    const oldConvsConverted = oldConvs.map(conv => this.convertOldConversation(conv));
+    // Minimal conversation
+    const oldConvsConverted = oldConvs.map(conv => {
+      return {
+        _id: conv._id,
+        title: conv.title,
+      };
+    });
 
     return [...newConvs, ...oldConvsConverted];
   }

@@ -398,6 +398,123 @@ class MessageService {
   }
 
   // CHAT5
+  async loadMessagesInNewFormat(idArray, isNew = true) {
+    if (isNew) {
+      const messages = await Chat5Model.find({_id: idArray});
+      messages.sort((a,b) => {
+        const a_i = idArray.indexOf(a._id.toString());
+        const b_i = idArray.indexOf(b._id.toString());
+        if (a_i < b_i) return -1;
+        if (a_i > b_i) return 1;
+        return 0;
+      });
+      return messages;
+    } else {
+      const messages = await this.messageModel.find({_id: idArray});
+      messages.sort((a,b) => {
+        const a_i = idArray.indexOf(a._id.toString());
+        const b_i = idArray.indexOf(b._id.toString());
+        if (a_i < b_i) return -1;
+        if (a_i > b_i) return 1;
+        return 0;
+      });
+      const new_messages = [];
+      for (const m of messages) {
+        // Images
+        if (m.images && m.images.length > 0) {
+          for (const i of m.images) {
+            const newFormat = {
+              user_id: m.user_id,
+              category: m.category,
+              tags: m.tags,
+              contentType: "image",
+              content: {
+                text: null,
+                image: i.filename,
+                audio: null,
+                tts: null,
+                transcript: null,
+                revisedPrompt: "",
+                imageQuality: i.use_flag === "high quality" ? "high" : "low",
+                toolOutput: null,
+              },
+              timestamp: m.timestamp,
+              hideFromBot: i.use_flag === "do not use" ? true : false,
+            };
+            const msg = new Chat5Model(newFormat);
+            new_messages.push(msg);
+          }
+        }
+        // Audio
+        if (m.sound && m.sound.length > 0) {
+          const newFormat = {
+            user_id: m.user_id,
+            category: m.category,
+            tags: m.tags,
+            contentType: "audio",
+            content: {
+              text: null,
+              image: null,
+              audio: null,
+              tts: m.sound,
+              transcript: "",
+              revisedPrompt: null,
+              imageQuality: null,
+              toolOutput: null,
+            },
+            timestamp: m.timestamp,
+            hideFromBot: true,
+          };
+          const msg = new Chat5Model(newFormat);
+          new_messages.push(msg);
+        }
+        // Text (user)
+        const newFormatU = {
+          user_id: m.user_id,
+          category: m.category,
+          tags: m.tags,
+          contentType: "text",
+          content: {
+            text: m.prompt,
+            image: null,
+            audio: null,
+            tts: null,
+            transcript: null,
+            revisedPrompt: null,
+            imageQuality: null,
+            toolOutput: null,
+          },
+          timestamp: m.timestamp,
+          hideFromBot: false,
+        };
+        const msgU = new Chat5Model(newFormatU);
+        new_messages.push(msgU);
+        // Text (bot)
+        const newFormatB = {
+          user_id: "bot",
+          category: m.category,
+          tags: m.tags,
+          contentType: "text",
+          content: {
+            text: m.response,
+            image: null,
+            audio: null,
+            tts: null,
+            transcript: null,
+            revisedPrompt: null,
+            imageQuality: null,
+            toolOutput: null,
+          },
+          timestamp: m.timestamp,
+          hideFromBot: false,
+        };
+        const msgB = new Chat5Model(newFormatB);
+        new_messages.push(msgB);
+      }
+      return new_messages;
+    }
+  }
+
   async convertOldMessages(oldIdArray) {
     const newIdsArray = [];
     // Load from old database, transform, and save to new database

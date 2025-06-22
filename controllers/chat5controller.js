@@ -147,19 +147,34 @@ exports.update_message = async (req, res) => {
 
 let chat_models = [];
 exports.view_chat5_top = async (req, res) => {
+  const user_id = req.user.name;
   // Load available OpenAI models
   const models = await AIModelCards.find();
   const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
   chat_models = models.filter(d => (d.provider === "OpenAI" && availableOpenAI.indexOf(d.api_model) >= 0) && d.model_type === "chat");
 
-  const conversations = await Conversation5Model.find();
+  // const conversations = await Conversation5Model.find();
+  // const old_conversations = await conversationService.getConversationsForUser(user_id);
+
+  const conversations = await conversationService.listUserConversations(user_id);
+
   res.render("chat5_top", {conversations});
 };
 
 exports.view_chat5 = async (req, res) => {
   const id = req.params.id;
-  const conversation = id === "NEW" ? null : await Conversation5Model.findById(id);
-  const messages = conversation ? await Chat5Model.find({_id: conversation.messages}) : [];
+
+  let conversation = undefined;
+  let messages = undefined;
+
+  if (id === "NEW") {
+    conversation = null;
+    messages = [];
+  } else {
+    const data = await conversationService.loadConversation(id);
+    conversation = data.conv;
+    messages = data.msg;
+  }
 
   // Generate HTML from marked content
   messages.forEach(m => {
