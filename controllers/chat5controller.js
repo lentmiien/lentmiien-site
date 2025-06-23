@@ -206,7 +206,7 @@ exports.post_chat5 = async (req, res) => {
   await conv.save();
 
   // Post to conversation
-  await conversationService.postToConversation({
+  await conversationService.postToConversationNew({
     conversationId: id,
     userId: user_id,
     messageContent: {

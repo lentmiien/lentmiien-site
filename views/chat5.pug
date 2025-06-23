@@ -18,7 +18,7 @@ block content
     #status(data-files="[]")
     .input-group
       select#model.form-control(name="model", onchange="UpdateModel(this)")
-        option(value="gpt-4o-mini") Default (gpt-4o-mini)
+        option(value="gpt-4.1-2025-04-14") Default (gpt-4.1)
         each m in models 
           option(value=m.api_model)= m.model_name
         each m in models 

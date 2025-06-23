@@ -621,7 +621,7 @@ class MessageService {
     return newIdsArray;
   }
 
-  async createMessage({ userId, content, contentType, category, tags }) {
+  async createMessageNew({ userId, content, contentType, category, tags }) {
     // Save the input as a new message to database
     const message = {
       user_id: userId,

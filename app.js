@@ -362,5 +362,5 @@ server.listen(PORT, () => {
 });
 
 // Setup Socket.io
-const socketIO = require('./socket_io');
+const socketIO = require('./socket_io/index');
 socketIO(server, sessionMiddleware);

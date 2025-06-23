@@ -894,7 +894,7 @@ class ConversationService {
     return conv;
   }
 
-  async postToConversation({conversationId, userId, messageContent, messageType, generateAI=false}) {
+  async postToConversationNew({conversationId, userId, messageContent, messageType, generateAI=false}) {
     let conversation = await Conversation5Model.findById(conversationId);
 
     if (!conversation) {
@@ -909,7 +909,7 @@ class ConversationService {
     }
 
     // Add user message
-    const userMessage = await this.messageService.createMessage({ userId, content: messageContent, contentType: messageType, category: conversation.category, tags: conversation.tags });
+    const userMessage = await this.messageService.createMessageNew({ userId, content: messageContent, contentType: messageType, category: conversation.category, tags: conversation.tags });
     conversation.messages.push(userMessage._id.toString());
 
     let aiMessages = [];
