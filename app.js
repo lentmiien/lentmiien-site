@@ -29,6 +29,11 @@ const sessionMiddleware = expressSession({
 });
 app.use(sessionMiddleware);
 
+// Setup webhooks
+app.use(express.text({ type: 'application/json' }));
+const webhook = require('./routes/webhook');
+app.use('/webhook', webhook);
+
 // Body parsers
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
@@ -182,7 +187,6 @@ const galleryRouter = require('./routes/gallery');
 const payrollRouter = require('./routes/payroll');
 const scheduleTaskRouter = require('./routes/scheduleTaskRoute');
 const adminRouter = require('./routes/admin');
-const webhook = require('./routes/webhook');
 
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
@@ -210,7 +214,6 @@ app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
 app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
-app.use('/webhook', webhook);
 
 app.post(
   '/login',

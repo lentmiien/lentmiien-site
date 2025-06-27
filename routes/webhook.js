@@ -5,6 +5,6 @@ const router = express.Router();
 const controller = require('../controllers/webhook');
 
 /* GET home page. */
-router.post('/openai', express.text({ type: 'application/json' }), controller.openai);
+router.post('/openai', controller.openai);
 
 module.exports = router;
