@@ -95,21 +95,21 @@ exports.index = async (req, res) => {
     const index = dates_only.indexOf(d.requestDate);
 
     if (d.lunchToCook.length > 0) {
-      if ("request" in cookingCalendar[index].lunch) {
+      if (cookingCalendar[index].lunch.request) {
         cookingCalendar[index].lunch.request.push(`${d.requesterName} wants ${d.lunchToCook}`)
       } else {
         cookingCalendar[index].lunch.request = [`${d.requesterName} wants ${d.lunchToCook}`];
       }
     }
     if (d.dinnerToCook.length > 0) {
-      if ("request" in cookingCalendar[index].dinner) {
+      if (cookingCalendar[index].dinner.request) {
         cookingCalendar[index].dinner.request.push(`${d.requesterName} wants ${d.dinnerToCook}`)
       } else {
         cookingCalendar[index].dinner.request = [`${d.requesterName} wants ${d.dinnerToCook}`];
       }
     }
     if (d.dessertToCook.length > 0) {
-      if ("request" in cookingCalendar[index].dessert) {
+      if (cookingCalendar[index].dessert.request) {
         cookingCalendar[index].dessert.request.push(`${d.requesterName} wants ${d.dessertToCook}`)
       } else {
         cookingCalendar[index].dessert.request = [`${d.requesterName} wants ${d.dessertToCook}`];
@@ -219,21 +219,21 @@ exports.update_cooking_calendar = async (req, res) => {
     // new entry
     const data = {
       date: req.body.date,
-      lunchToCook: "lunch" in req.body ? req.body.lunch : "",
-      dinnerToCook: "dinner" in req.body ? req.body.dinner : "",
-      dessertToCook: "dessert" in req.body ? req.body.dessert : "",
+      lunchToCook: req.body.lunch ? req.body.lunch : "",
+      dinnerToCook: req.body.dinner ? req.body.dinner : "",
+      dessertToCook: req.body.dessert ? req.body.dessert : "",
     }
     const entry = await new CookingCalendarModel(data).save();
     return res.json({status: "OK", msg: `${entry._id.toString()} (${req.body.date}): entry saved!`});
   } else {
     // update and save entry
-    if ("lunch" in req.body) {
+    if (req.body.lunch) {
       entry_to_update[0].lunchToCook = req.body.lunch;
     }
-    if ("dinner" in req.body) {
+    if (req.body.dinner) {
       entry_to_update[0].dinnerToCook = req.body.dinner;
     }
-    if ("dessert" in req.body) {
+    if (req.body.dessert) {
       entry_to_update[0].dessertToCook = req.body.dessert;
     }
     await entry_to_update[0].save();
