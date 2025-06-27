@@ -2,6 +2,8 @@ const OpenAI = require('openai');
 const { zodResponseFormat } = require('openai/helpers/zod');
 const { z } = require('zod');
 
+const fs = require('fs');
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -44,8 +46,8 @@ exports.upload_receipt = async (req, res) => {
 
   for (let i = 0; i < req.files.length; i++) {
     const { new_filename, b64_img } = await conversationService.loadProcessNewImageToBase64(req.files[i].destination + req.files[i].filename);
-    const response = await openai.beta.chat.completions.parse({
-      model: "gpt-4o-mini",
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1",
       messages: [
         { role: "system", content: context },
         { role: "user", content: [
@@ -61,7 +63,7 @@ exports.upload_receipt = async (req, res) => {
       ],
       response_format: zodResponseFormat(ReciptDetails, "recipt_details"),
     });
-    const recipt_details = response.choices[0].message.parsed;
+    const recipt_details = JSON.parse(response.choices[0].message.content);
 
     const newReceipt = new Receipt({
       date: new Date(recipt_details.date),
