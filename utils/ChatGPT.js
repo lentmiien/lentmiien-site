@@ -721,9 +721,9 @@ const delete_file = async (file_id, private_msg=true) => {
   try {
     let response;
     if (private_msg) {
-      response = await openai_private.files.del(file_id);
+      response = await openai_private.files.delete(file_id);
     } else {
-      response = await openai.files.del(file_id);
+      response = await openai.files.delete(file_id);
     }
     
     return response;
