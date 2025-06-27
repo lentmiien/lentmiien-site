@@ -20,7 +20,8 @@ exports.openai = async (req, res) => {
 
     if (event.type === "batch.completed") {
       const response_id = event.data.id;
-      // Process batch
+      await batchService.checkBatchStatus(response_id);
+      await batchService.processBatchResponses();
       console.log("Batch completed:", response_id);
     }
   } catch (error) {
