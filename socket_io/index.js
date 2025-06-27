@@ -29,12 +29,12 @@ module.exports = (server, sessionMiddleware) => {
     const userId = socket.request.session.passport.user;
     const userName = (await UseraccountModel.findOne({ _id: userId })).name;
 
-    console.log(`${userName} connected: ${userId}`);
+    // console.log(`${userName} connected: ${userId}`);
 
     await registerChat5Handlers({ socket, userName });
 
     socket.on('disconnect', () => {
-      console.log(`User disconnected: ${userId}`);
+      // console.log(`User disconnected: ${userId}`);
     });
   });
 };
