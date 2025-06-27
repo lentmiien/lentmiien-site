@@ -169,7 +169,7 @@ class MessageService {
     });
     try {
       const response = await chatGPT_beta(use_messages, use_model, true, {object: Title, title: "title"});
-      const details = response.choices[0].message.parsed;
+      const details = response.output_parsed;
       const title = details.conversation_title;
       return title;
     } catch (error) {

@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const { OpenaicalllogDBModel, OpenaimodelDBModel } = require('../database');
 const { OpenAI } = require('openai');
-const { zodResponseFormat } = require('openai/helpers/zod');
+const { zodTextFormat } = require('openai/helpers/zod');
 
 // Set your OpenAI API key (I use 2 projects, so 2 API keys)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -240,15 +240,28 @@ const chatGPTaudio = async (messages, model, private_msg=false) => {
 const chatGPT_beta = async (messages, model, private_msg=false, zod) => {
   const inputParameters = {
     model: model,
-    messages,
-    response_format: zodResponseFormat(zod.object, zod.title),
+    input: [],
+    text: {
+      format: zodTextFormat(zod.object, zod.title),
+    },
   };
+  messages.forEach(m => {
+    inputParameters.input.push({
+      role: m.role,
+      content: [
+        {
+          type: `${m.role === "assistant" ? "output" : "input"}_${m.content[0].type}`,
+          text: m.content[0].text,
+        }
+      ]
+    });
+  });
   try {
     let response;
     if (private_msg) {
-      response = await openai_private.beta.chat.completions.parse(inputParameters);
+      response = await openai_private.responses.parse(inputParameters);
     } else {
-      response = await openai.beta.chat.completions.parse(inputParameters);
+      response = await openai.responses.parse(inputParameters);
     }
     return response;
   } catch (error) {
