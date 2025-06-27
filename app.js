@@ -30,7 +30,7 @@ const sessionMiddleware = expressSession({
 app.use(sessionMiddleware);
 
 // Setup webhooks
-app.use(express.text({ type: 'application/json' }));
+// app.use(express.text({ type: 'application/json' }));
 const webhook = require('./routes/webhook');
 app.use('/webhook', webhook);
 
