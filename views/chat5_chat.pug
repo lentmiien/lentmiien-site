@@ -2,44 +2,84 @@ extends layout
 
 block content
   h2= conversation.title
+  p#id= conversation._id
   - let user = null
-  each m in messages 
-    if user != m.user_id 
+  #conversationContainer
+    each m in messages 
+      if user != m.user_id 
+        hr
+        div.userlabel(data-user=m.user_id)
+          b= m.user_id 
+        - user = m.user_id
+      if m.contentType === "text"
+        span!= m.content.html 
+      if m.contentType === "image"
+        img(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt, style="max-height: 200px;")
+        br
+        i= m.content.revisedPrompt
+      if m.contentType === "tool"
+        div
+          i= m.content.toolOutput
+      if m.contentType === "reasoning"
+        div
+          i!= m.content.html
+  ul#pills-tab.nav.nav-pills.mb-3(role="tablist") 
+    li.nav-item(role="presentation") 
+      button#pills-chat-tab.nav-link.active(data-bs-toggle="pill" data-bs-target="#pills-chat" type="button" role="tab" aria-controls="pills-chat" aria-selected="true") Chat
+    li.nav-item(role="presentation") 
+      button#pills-settings-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-settings" type="button" role="tab" aria-controls="pills-settings" aria-selected="false") Settings
+    li.nav-item(role="presentation") 
+      button#pills-raw-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-raw" type="button" role="tab" aria-controls="pills-raw" aria-selected="false") Raw
+  #pills-tabContent.tab-content
+    #pills-chat.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="pills-chat-tab" tabindex="0")
+      label(for="fileInput") Append image to conversation
+      input#fileInput.form-control(type="file", name="fileInput", accept="image/*")
       hr
-      div
-        b= m.user_id 
-      - user = m.user_id
-    if m.contentType === "text"
-      span!= m.content.html 
-    if m.contentType === "image"
-      img(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt, style="max-width: 400px;")
-      br
-      i= m.content.revisedPrompt
-    if m.contentType === "tool"
-      div
-        i= m.content.toolOutput
-    if m.contentType === "reasoning"
-      div
-        i!= m.content.html
-  hr
-  form(action=`/chat5/chat/${conversation._id.toString()}`, method="post") 
-    label(for="prompt") Prompt
-    textarea#prompt.form-control(name="prompt")
-    label(for="tools") Tools
-    select#tools.form-control(name="tools", multiple) 
-      option(value="image_generation") Generate Images
-      option(value="web_search_preview") Search Web
-    label(for="model") Model 
-    select#model.form-control(name="model") 
-      option(value="") - Use previous / Default -
-      each m in chat_models
-        option(value=m.api_model)= m.model_name
-    .form-check 
-      input#generate_ai.form-check-input(type="checkbox", name="generate_ai")
-      label.form-check-label(for="generate_ai") Generate AI response
-    input.btn.btn-success(type="submit", value="Send")
-
-  hr
-  pre= JSON.stringify(conversation, null, 2)
-  each m in messages 
-    pre= JSON.stringify(m, null, 2)
+      label(for="message") Append message to conversation
+      #message
+      .d-flex.justify-content-evenly
+        button.btn.btn-success(onclick="Append()") Append
+        button.btn.btn-success(onclick="") Send & Response
+        button.btn.btn-success(onclick="") Response
+      hr
+      label(for="audio") Append audio to conversation
+      #audio
+        b TODO (upload file or record)
+    #pills-settings.tab-pane.fade(role="tabpanel" aria-labelledby="pills-settings-tab" tabindex="0")
+      label(for="title") Title 
+      .input-group 
+        input#title.form-control(type="title", value=conversation.title)
+        button.btn.btn-warning(onclick="") AI Generate 
+      label(for="category") Category 
+      input#category.form-control(type="text", value=conversation.category)
+      label(for="tags") Tags 
+      input#tags.form-control(type="text", value=conversation.tags.join(", "))
+      label(for="context") Context 
+      textarea#context.form-control(name="context")= conversation.metadata.contextPrompt
+      label(for="tools") Tools 
+      select#tools.form-control(name="tools", multiple) 
+        option(value="image_generation", selected=conversation.metadata.tools.indexOf("image_generation")>=0) Generate Images
+        option(value="web_search_preview", selected=conversation.metadata.tools.indexOf("web_search_preview")>=0) Search Web
+      label(for="model") Model 
+      select#model.form-control(name="model") 
+        option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})
+        each m in chat_models
+          option(value=m.api_model)= m.model_name
+      label(for="reasoning") Reasoning effort 
+      select#reasoning.form-control(name="reasoning") 
+        option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
+        option(value="low") Low 
+        option(value="medium") Medium 
+        option(value="high") High 
+      label(for="members") Members 
+      input#members.form-control(type="text", value=conversation.members.join(", "))
+      .d-flex.justify-content-evenly
+        button.btn.btn-success(onclick="") Update
+    #pills-raw.tab-pane.fade(role="tabpanel" aria-labelledby="pills-raw-tab" tabindex="0")
+      pre= JSON.stringify(conversation, null, 2)
+      each m in messages 
+        pre= JSON.stringify(m, null, 2)
+  script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
+  script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
+  script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
+  script(src="/js/chat5_5.js", defer)
