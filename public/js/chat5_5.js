@@ -1,6 +1,8 @@
 // Create a socket connection
 const socket = io();
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 // Setup markdown editor
 const editor = new toastui.Editor({
   el: document.querySelector('#message'),
@@ -16,6 +18,40 @@ function Append() {
   socket.emit('chat5-append', {conversation_id, prompt});
   editor.reset();
 }
+
+document.getElementById("fileInput").addEventListener('change', () => {
+  const files = document.getElementById("fileInput").files;
+  if (files.length === 0) return;
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+
+    if (file.size > MAX_FILE_SIZE) continue;
+
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      const conversation_id = document.getElementById("id").innerHTML;
+      const arrayBuffer = event.target.result;
+      socket.emit('chat5-uploadImage', {
+        conversation_id,
+        name: file.name,
+        buffer: arrayBuffer
+      });
+    };
+
+    reader.onerror = () => {
+      console.error('Error reading file:', file.name);
+    };
+
+    reader.readAsArrayBuffer(file);
+  }
+});
+
+// Handle upload errors
+socket.on('chat5-uploadError', (data) => {
+  alert(`\nError: ${data.message}`);
+});
 
 socket.on('chat5-messages', ({id, messages}) => {
   document.getElementById("id").innerHTML = id;
@@ -59,10 +95,11 @@ function message(m) {
     img.src = `/img/${m.content.image}`;
     img.alt = m.content.revisedPrompt;
     img.style.maxHeight = "200px";
-    const br = document.createElement("br");
+    const p = document.createElement("p");
     const i = document.createElement("i");
     i.innerText = m.content.revisedPrompt;
-    document.getElementById("conversationContainer").append(img, br, i);
+    p.append(i);
+    document.getElementById("conversationContainer").append(img, p);
   }
   if (m.contentType === "tool") {
     const div = document.createElement("div");

@@ -1,4 +1,6 @@
 const path = require('path');
+const fs = require('fs');
+const sharp = require('sharp');
 
 const { 
   Chat4Model,
@@ -23,8 +25,22 @@ const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messa
 
 const TEMP_DIR = path.join(__dirname, '../../tmp_data');
 
-function someChat5_5Helper(foo) {
-  // ...do something
+async function ProcessUploadedImage(tmpFile) {
+  const file_data = fs.readFileSync(tmpFile);
+  const img_data = sharp(file_data);
+  const metadata = await img_data.metadata();
+  let short_side = metadata.width < metadata.height ? metadata.width : metadata.height;
+  let long_side = metadata.width > metadata.height ? metadata.width : metadata.height;
+  let scale = 1;
+  if (short_side > 768 || long_side > 2048) {
+    if (768 / short_side < scale) scale = 768 / short_side;
+    if (2048 / long_side < scale) scale = 2048 / long_side;
+  }
+  const scale_img = img_data.resize({ width: Math.round(metadata.width * scale) });
+  const img_buffer = await scale_img.jpeg().toBuffer();
+  const new_filename = `UP-${Date.now()}.jpg`;
+  fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
+  return new_filename;
 }
 
 module.exports = {
@@ -45,7 +61,7 @@ module.exports = {
     batchService
   },
   helpers: {
-    someChat5_5Helper
+    ProcessUploadedImage
   },
   TEMP_DIR
 };

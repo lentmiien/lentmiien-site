@@ -960,6 +960,10 @@ class ConversationService {
 
     return [...newConvs, ...oldConvsConverted];
   }
+
+  async deleteNewConversation(id) {
+    await Conversation5Model.deleteOne({_id: id});
+  }
 }
 
 module.exports = ConversationService;

@@ -15,8 +15,8 @@ block content
         span!= m.content.html 
       if m.contentType === "image"
         img(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt, style="max-height: 200px;")
-        br
-        i= m.content.revisedPrompt
+        p
+          i= m.content.revisedPrompt
       if m.contentType === "tool"
         div
           i= m.content.toolOutput
