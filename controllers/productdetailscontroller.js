@@ -83,8 +83,8 @@ ${all_details.join("\n\n")}
       // const messages = await messageService.getMessagesByIdArray(conversation.messages);
       // const ai_description = messages[0].response;
       
-      const response = await openai.beta.chat.completions.parse({
-        model: "gpt-4o-mini",
+      const response = await openai.chat.completions.create({
+        model: "gpt-4.1",
         messages: [
           { role: "system", content: context },
           { role: "user", content: [
@@ -93,7 +93,7 @@ ${all_details.join("\n\n")}
         ],
         response_format: zodResponseFormat(CustomsDetails, "customs_details"),
       });
-      const customs_details = response.choices[0].message.parsed;
+      const customs_details = JSON.parse(response.choices[0].message.content);
       
       // Save to database
       const newProduct = new ProductDetails({
