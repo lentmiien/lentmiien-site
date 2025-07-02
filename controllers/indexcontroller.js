@@ -89,3 +89,10 @@ exports.api_test = (req, res) => {
     url: "https://my.lentmiien.com/"
   });
 }
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.img_select = (req, res) => {
+  res.render("img_select");
+}

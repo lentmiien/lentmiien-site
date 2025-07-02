@@ -43,4 +43,9 @@ router.get('/test_editor', controller.test_editor);
 /****************************/
 router.get('/api_test', controller.api_test);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/img_select', controller.img_select);
+
 module.exports = router;

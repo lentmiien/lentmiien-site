@@ -1,0 +1,33 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/img_select.css")
+
+block content
+  .point-editor-container
+    .date-row
+      label(for="pe-date") Date:
+      input#pe-date(type="date", name="pe-date")
+    #pe-img-wrap.image-canvas-wrap
+      img#pe-img(src="/i/img_select.jpg", alt="Base", draggable="false")
+      #pe-points-overlay.points-overlay
+      #pe-img-hitbox(style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;cursor:crosshair;")
+    .slider-group
+      div 
+        .slider-label
+          span Radius (px): 
+            strong#pe-radius-val 7
+        input#pe-radius(type="range", name="pe-radius", min="1", max="25", value="7")
+      div 
+        .slider-label
+          span Opacity: 
+            stong#pe-opacity-val 80%
+        input#pe-opacity(type="range", name="pe-opacity", min="25", max="100", value="80")
+    #pe-point-list.point-list
+    .editor-buttons
+      button#pe-load(type="button") Load
+      button#pe-save(type="button") Save
+      button#pe-clear.clear(type="button") Clear
+
+block script
+  script(src="/js/img_select.js")

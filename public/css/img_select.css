@@ -1,0 +1,137 @@
+/* --- STYLE BELOW --- */
+body {
+  font-family: Arial, sans-serif;
+  background: #f8f8fa;
+  margin: 0;
+  padding: 2em;
+  color: #333;
+}
+.point-editor-container {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 1.5em 2em 2em 2em;
+  box-shadow: 0 3px 30px rgba(0,0,0,0.06);
+}
+.date-row {
+  margin-bottom: 0.8em;
+  display: flex;
+  align-items: center;
+}
+.date-row label {
+  font-weight: bold;
+  margin-right: 0.5em;
+}
+.image-canvas-wrap {
+  position: relative;
+  width: 350px;
+  height: 200px;
+  margin: 0 auto 1em auto;
+  background: #eee;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  overflow: hidden;
+  touch-action: none;
+}
+.image-canvas-wrap img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+.points-overlay {
+  position: absolute;
+  left: 0; top: 0; width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+.points-overlay .point {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid #15b0ff;
+  transform: translate(-50%, -50%);
+  pointer-events: auto !important;
+  z-index: 10;
+  box-sizing: border-box;
+}
+.points-overlay .point.selected {
+  border-color: #e87300;
+  box-shadow: 0 0 0 2px #e8730040;
+}
+.slider-group {
+  margin-bottom: 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+}
+.slider-label {
+  font-size: 0.95em;
+  margin-bottom: 0.2em;
+  display: flex; justify-content: space-between;
+  gap: 0.5em;
+  font-weight: 500;
+}
+.point-list {
+  margin-bottom: 1em;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid #ddd;
+  background: #f9f9fc;
+}
+.point-item, .point-item-add {
+  padding: 0.5em 1em;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+  transition: background 0.15s;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 15px;
+}
+.point-item:last-child { border-bottom: none; }
+.point-item.selected, .point-item-add.selected {
+  background: #d5ebff;
+}
+.point-item-add {
+  color: #46b;
+  font-weight: bold;
+  background: #eef6fc;
+}
+.point-item-add:before {
+  content: "+";
+  font-weight: bold;
+  color: #44b;
+  margin-right: 0.3em;
+}
+.editor-buttons {
+  display: flex;
+  gap: 1em;
+  justify-content: flex-end;
+  margin-top: 0.8em;
+}
+.editor-buttons button {
+  border: none;
+  background: #2185d0;
+  color: #fff;
+  padding: 0.5em 1.3em;
+  font-size: 1em;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.editor-buttons button:hover {
+  background: #106dbe;
+}
+.editor-buttons button.clear {
+  background: #eee;
+  color: #666;
+  border: 1px solid #bbb;
+}
+@media (max-width: 500px) {
+  .point-editor-container { max-width: 98vw; padding: 0.6em; }
+  .image-canvas-wrap { width: 97vw; max-width: 98vw; }
+}
