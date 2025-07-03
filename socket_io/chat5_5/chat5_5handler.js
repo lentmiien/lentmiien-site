@@ -22,7 +22,9 @@ module.exports = async function registerChat5_5Handlers({
   ////////////////////////////
   //----- Upload text ------//
   // Append to conversation //
-  socket.on('chat5-append', async ({conversation_id, prompt}) => {
+  socket.on('chat5-append', async (data) => {
+    const {conversation_id, prompt} = data;
+    console.log(data);
     let id = conversation_id;
     const user_id = userName;
   

@@ -62,7 +62,7 @@ socket.on('chat5-messages', ({id, messages}) => {
 
 function AddMessageToUI(m) {
   const ul = document.getElementsByClassName("userlabel");
-  if (ul[ul.length-1].dataset.user === m.user_id) {
+  if (ul.length > 0 && ul[ul.length-1].dataset.user === m.user_id) {
     // Simply append message
     message(m);
   } else {

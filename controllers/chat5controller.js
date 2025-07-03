@@ -161,6 +161,25 @@ exports.view_chat5_top = async (req, res) => {
   res.render("chat5_top", {conversations});
 };
 
+const DEFAULT_CONVERSATION = {
+  _id: "NEW",
+  title: "NEW",
+  summary: "New conversation",
+  category: "Chat5",
+  tags: ["chat5"],
+  messages: [],
+  metadata: {
+    contextPrompt: "",
+    model: "gpt-4.1-2025-04-14",
+    maxMessages: 999,
+    maxAudioMessages: 3,
+    tools: [],
+    reasoning: "medium",
+    outputFormat: "text",
+  },
+  members: [],
+};
+
 exports.view_chat5 = async (req, res) => {
   const id = req.params.id;
 
@@ -183,7 +202,7 @@ exports.view_chat5 = async (req, res) => {
     }
   })
 
-  res.render("chat5_chat", {conversation: conversation ? conversation : {title:"NEW", _id:"NEW"}, messages, chat_models});
+  res.render("chat5_chat", {conversation: conversation ? conversation : DEFAULT_CONVERSATION, messages, chat_models});
 };
 
 exports.post_chat5 = async (req, res) => {
