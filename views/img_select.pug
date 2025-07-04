@@ -5,9 +5,11 @@ block styles
 
 block content
   .point-editor-container
-    .date-row
+    .form-row
       label(for="pe-date") Date:
       input#pe-date(type="date", name="pe-date")
+      label(for="pe-category", style="margin-left:1.2em;") Category:
+      select#pe-category(name="pe-category") 
     #pe-img-wrap.image-canvas-wrap
       img#pe-img(src="/i/img_select.jpg", alt="Base", draggable="false")
       #pe-points-overlay.points-overlay
@@ -28,6 +30,7 @@ block content
       button#pe-load(type="button") Load
       button#pe-save(type="button") Save
       button#pe-clear.clear(type="button") Clear
+      button#pe-delete.clear(type="delete") Delete selected point
 
 block script
   script(src="/js/img_select.js")

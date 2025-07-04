@@ -1,26 +1,26 @@
-/* --- STYLE BELOW --- */
 body {
   font-family: Arial, sans-serif;
-  background: #f8f8fa;
+  background: #1a1a1a;
   margin: 0;
   padding: 2em;
-  color: #333;
+  color: #eee;
 }
 .point-editor-container {
-  background: #fff;
-  border: 1px solid #ddd;
+  background: #181f18;
+  border: 1px solid #244;
   border-radius: 8px;
   max-width: 500px;
   margin: 0 auto;
   padding: 1.5em 2em 2em 2em;
-  box-shadow: 0 3px 30px rgba(0,0,0,0.06);
+  box-shadow: 0 3px 30px rgba(0,0,0,0.13);
 }
-.date-row {
+.form-row {
   margin-bottom: 0.8em;
   display: flex;
   align-items: center;
+  gap: 1.1em;
 }
-.date-row label {
+.form-row label {
   font-weight: bold;
   margin-right: 0.5em;
 }
@@ -29,8 +29,8 @@ body {
   width: 350px;
   height: 200px;
   margin: 0 auto 1em auto;
-  background: #eee;
-  border: 1px solid #ccc;
+  background: #090b08;
+  border: 1px solid #244;
   border-radius: 6px;
   overflow: hidden;
   touch-action: none;
@@ -41,6 +41,8 @@ body {
   display: block;
   pointer-events: none;
   user-select: none;
+  filter: brightness(1.5) saturate(0.7) hue-rotate(86deg) contrast(1.1);
+  background: #214f2a;
 }
 .points-overlay {
   position: absolute;
@@ -51,15 +53,17 @@ body {
 .points-overlay .point {
   position: absolute;
   border-radius: 50%;
-  border: 2px solid #15b0ff;
+  border-width: 2px;
+  border-style: solid;
   transform: translate(-50%, -50%);
   pointer-events: auto !important;
   z-index: 10;
   box-sizing: border-box;
+  background-clip: padding-box;
+  transition: box-shadow 0.15s;
 }
 .points-overlay .point.selected {
-  border-color: #e87300;
-  box-shadow: 0 0 0 2px #e8730040;
+  box-shadow: 0 0 0 2px #f6cc0040, 0 0 3px #fff;
 }
 .slider-group {
   margin-bottom: 1em;
@@ -78,33 +82,33 @@ body {
   margin-bottom: 1em;
   border-radius: 5px;
   overflow: hidden;
-  border: 1px solid #ddd;
-  background: #f9f9fc;
+  border: 1px solid #222b22;
+  background: #171c14;
 }
 .point-item, .point-item-add {
   padding: 0.5em 1em;
   cursor: pointer;
-  border-bottom: 1px solid #eee;
-  transition: background 0.15s;
+  border-bottom: 1px solid #222b22;
+  transition: background 0.19s;
   min-height: 30px;
   display: flex;
   align-items: center;
-  gap: 0.5em;
+  gap: 0.65em;
   font-size: 15px;
 }
 .point-item:last-child { border-bottom: none; }
 .point-item.selected, .point-item-add.selected {
-  background: #d5ebff;
+  background: #223f20;
 }
 .point-item-add {
-  color: #46b;
+  color: #59f;
   font-weight: bold;
-  background: #eef6fc;
+  background: #162215;
 }
 .point-item-add:before {
   content: "+";
   font-weight: bold;
-  color: #44b;
+  color: #68f;
   margin-right: 0.3em;
 }
 .editor-buttons {
@@ -112,10 +116,11 @@ body {
   gap: 1em;
   justify-content: flex-end;
   margin-top: 0.8em;
+  flex-wrap: wrap;
 }
 .editor-buttons button {
   border: none;
-  background: #2185d0;
+  background: #368541;
   color: #fff;
   padding: 0.5em 1.3em;
   font-size: 1em;
@@ -124,14 +129,46 @@ body {
   transition: background 0.18s;
 }
 .editor-buttons button:hover {
-  background: #106dbe;
+  background: #235b29;
 }
 .editor-buttons button.clear {
-  background: #eee;
-  color: #666;
-  border: 1px solid #bbb;
+  background: #1a1a1a;
+  color: #bbb;
+  border: 1px solid #393939;
+}
+.editor-buttons button.delete {
+  background: #b8203a;
+  color: #fff;
+  border: none;
+}
+.editor-buttons button.delete:disabled {
+  background: #442127;
+  color: #865e65;
+  cursor: not-allowed;
+}
+.editor-buttons button.delete:hover:enabled {
+  background: #a11020;
+}
+.cat-dot {
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  margin-right: 0.5em;
+  border: 2px solid #0008;
+  box-shadow: 0 1px 2px #000b;
+  flex-shrink: 0;
+  display: inline-block;
+}
+select#pe-category {
+  border-radius: 4px;
+  border: 1px solid #385c3a;
+  color: #e8ffeb;
+  background: #183c18;
+  font-size: 1em;
+  padding: 0.2em 0.6em;
 }
 @media (max-width: 500px) {
   .point-editor-container { max-width: 98vw; padding: 0.6em; }
   .image-canvas-wrap { width: 97vw; max-width: 98vw; }
+  .editor-buttons { flex-direction: column; align-items: stretch; }
 }
