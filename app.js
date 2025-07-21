@@ -38,6 +38,9 @@ app.use('/webhook', webhook);
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
 
+// App health
+app.use('/health', (req, res) => res.json({status: "ok"}));
+
 // Passport setup
 app.use(passport.initialize());
 app.use(passport.session());
