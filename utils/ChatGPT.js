@@ -322,7 +322,6 @@ const responses = async (messages, model, effort) => {
       tools: [],
       store: true
     });
-    console.log(response);
     let response_message = null;
     for (const output of response.output) {
       if (output.type === "message") response_message = output;
