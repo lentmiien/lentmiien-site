@@ -13,6 +13,7 @@ const editor = new toastui.Editor({
 });
 
 function Append(send, resp) {
+  showLoadingPopup();
   const conversation_id = document.getElementById("id").innerHTML;
   const prompt = editor.getMarkdown();
   socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp});
@@ -58,6 +59,7 @@ socket.on('chat5-messages', ({id, messages}) => {
   for (const m of messages) {
     AddMessageToUI(m);
   }
+  hideLoadingPopup();
 });
 
 function AddMessageToUI(m) {
@@ -124,3 +126,15 @@ function message(m) {
 // socket.on('displayConversations', conversation_array => {
 //   
 // });
+
+const loadingPopup = document.getElementById("loadingPopup");
+
+// Function to show the loading popup
+function showLoadingPopup() {
+  loadingPopup.style.display = 'block';
+}
+
+// Function to hide the loading popup
+function hideLoadingPopup() {
+  loadingPopup.style.display = 'none';
+}

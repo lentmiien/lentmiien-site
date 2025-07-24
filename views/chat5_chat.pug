@@ -79,6 +79,11 @@ block content
       pre= JSON.stringify(conversation, null, 2)
       each m in messages 
         pre= JSON.stringify(m, null, 2)
+  #loadingPopup.loading-popup
+    span.close-btn(onclick="hideLoadingPopup()") &times;
+    .loading-content
+      .loader
+      p Loading...
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
   script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
