@@ -12,11 +12,11 @@ const editor = new toastui.Editor({
   // theme: 'dark',
 });
 
-function Append() {
+function Append(send, resp) {
   const conversation_id = document.getElementById("id").innerHTML;
   const prompt = editor.getMarkdown();
-  socket.emit('chat5-append', {conversation_id, prompt});
-  editor.reset();
+  socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp});
+  if (send) editor.reset();
 }
 
 document.getElementById("fileInput").addEventListener('change', () => {

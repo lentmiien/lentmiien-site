@@ -23,7 +23,7 @@ module.exports = async function registerChat5_5Handlers({
   //----- Upload text ------//
   // Append to conversation //
   socket.on('chat5-append', async (data) => {
-    const {conversation_id, prompt} = data;
+    const {conversation_id, prompt, response} = data;
     console.log(data);
     let id = conversation_id;
     const user_id = userName;
@@ -35,24 +35,28 @@ module.exports = async function registerChat5_5Handlers({
     }
   
     // Post to conversation
-    const { userMessage } = await conversationService.postToConversationNew({
-      conversationId: id,
-      userId: user_id,
-      messageContent: {
-        text: prompt,
-        image: null,
-        audio: null,
-        tts: null,
-        transcript: null,
-        revisedPrompt: null,
-        imageQuality: null,
-        toolOutput: null,
-      },
-      messageType: "text",
-      generateAI: false,
-    });
-  
-    socket.emit('chat5-messages', {id, messages: [userMessage]});
+    if (prompt) {
+      const { userMessage } = await conversationService.postToConversationNew({
+        conversationId: id,
+        userId: user_id,
+        messageContent: {
+          text: prompt,
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: null,
+        },
+        messageType: "text",
+        generateAI: response,
+      });
+
+      socket.emit('chat5-messages', {id, messages: [userMessage]});
+    } else {
+      // TODO: Only generate an AI response, based on current conversation
+    }
   });
 
   ////////////////////////////
