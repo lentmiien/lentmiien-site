@@ -909,9 +909,13 @@ class ConversationService {
     }
 
     // Add user message
-    const userMessage = await this.messageService.createMessageNew({ userId, content: messageContent, contentType: messageType, category: conversation.category, tags: conversation.tags });
-    conversation.messages.push(userMessage._id.toString());
+    let userMessage = null;
+    if (messageContent) {
+      userMessage = await this.messageService.createMessageNew({ userId, content: messageContent, contentType: messageType, category: conversation.category, tags: conversation.tags });
+      conversation.messages.push(userMessage._id.toString());
+    }
 
+    // Generate AI response
     let aiMessages = [];
     if (generateAI) {
       aiMessages = await this.messageService.generateAIMessage({conversation});
@@ -920,6 +924,7 @@ class ConversationService {
       }
     }
 
+    // Save changes
     conversation.updatedAt = new Date();
     await conversation.save();
 

@@ -36,7 +36,7 @@ module.exports = async function registerChat5_5Handlers({
   
     // Post to conversation
     if (prompt) {
-      const { userMessage } = await conversationService.postToConversationNew({
+      const { userMessage, aiMessages } = await conversationService.postToConversationNew({
         conversationId: id,
         userId: user_id,
         messageContent: {
@@ -53,9 +53,19 @@ module.exports = async function registerChat5_5Handlers({
         generateAI: response,
       });
 
-      socket.emit('chat5-messages', {id, messages: [userMessage]});
+      aiMessages.unshift(userMessage);
+
+      socket.emit('chat5-messages', {id, messages: aiMessages});
     } else {
-      // TODO: Only generate an AI response, based on current conversation
+      const { aiMessages } = await conversationService.postToConversationNew({
+        conversationId: id,
+        userId: user_id,
+        messageContent: null,
+        messageType: null,
+        generateAI: response,
+      });
+
+      socket.emit('chat5-messages', {id, messages: aiMessages});
     }
   });
 
