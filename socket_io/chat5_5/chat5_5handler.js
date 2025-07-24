@@ -24,7 +24,6 @@ module.exports = async function registerChat5_5Handlers({
   // Append to conversation //
   socket.on('chat5-append', async (data) => {
     const {conversation_id, prompt, response} = data;
-    console.log(data);
     let id = conversation_id;
     const user_id = userName;
   
