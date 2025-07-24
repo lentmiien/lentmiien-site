@@ -132,11 +132,15 @@ const {fetchUsageSummaryForPeriod} = require('./usage');
 const mongoose = require("mongoose");
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
+const batchprompt = require('./models/batchprompt');
+const embedding = require('./models/embedding');
+const openaicalllog = require('./models/openaicalllog');
 const OpenAIUsage = require('./models/openai_usage');
 const mongoDB_url = process.env.MONGOOSE_URL;
 async function ClearTestDataFromDB() {
   await mongoose.connect(mongoDB_url);
 
+  // Delete test data
   await Chat4Model.deleteMany({ category: "Test" });//Test
   await Conversation4Model.deleteMany({ category: "Test" });//Test
 
@@ -158,6 +162,13 @@ async function ClearTestDataFromDB() {
     }
     currentMs += 1000*60*60*24;
   }
+
+  // Delete old data
+  const oneMonthAgo = new Date();
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  await batchprompt.deleteMany({ timestamp: { $lt: oneMonthAgo } });
+  await embedding.deleteMany({});
+  await openaicalllog.deleteMany({});
 
   await mongoose.disconnect();
 }
