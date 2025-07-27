@@ -308,7 +308,7 @@ const responses = async (messages, model, effort) => {
         console.log(`Role "${m.role}" has not been implemented, continue without the following message:`, m);
       }
     }
-    const response = await openai.responses.create({
+    let response = await openai.responses.create({
       model,
       input: input_messages,
       text: {
@@ -320,8 +320,13 @@ const responses = async (messages, model, effort) => {
         effort: effort ? effort : "medium"
       },
       tools: [],
+      background: true,
       store: true
     });
+    while (response.status === "queued" || response.status === "in_progress") {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2 seconds
+      response = await openai.responses.retrieve(response.id);
+    }
     let response_message = null;
     for (const output of response.output) {
       if (output.type === "message") response_message = output;
