@@ -166,6 +166,7 @@ app.use('/mp3', express.static(path.join(__dirname, 'public', 'mp3'), {
 // Routes
 const indexRouter = require('./routes/index');
 const apiRouter = require('./routes/api');
+const dummyapiRouter = require('./routes/dummyapi');
 const blogRouter = require('./routes/blog');
 const cookingPublicRouter = require('./routes/cooking_public');
 const mypageRouter = require('./routes/mypage');
@@ -193,6 +194,7 @@ const adminRouter = require('./routes/admin');
 
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
+app.use('/mydhlapi/test/v2', dummyapiRouter);
 app.use('/blog', blogRouter);
 app.use('/cookingp', cookingPublicRouter);
 app.use('/mypage', isAuthenticated, mypageRouter);
