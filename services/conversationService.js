@@ -14,6 +14,14 @@ const DEFAULT_SETTINGS = {
   outputFormat: "text",
 };
 
+// Default conversation properties
+const DEFAULT_PROPERTY = {
+  title: "New conversation",
+  category: "Chat5",
+  tags: [ "chat5" ],
+  members: [],
+};
+
 // Conversation service operations: managing conversation sessions and summary
 class ConversationService {
   constructor(conversationModel, messageService, knowledgeService) {
@@ -842,12 +850,15 @@ class ConversationService {
   }
 
   // CHAT5
-  async createNewConversation(userId, settings = DEFAULT_SETTINGS) {
+  async createNewConversation(userId, settings = DEFAULT_SETTINGS, conv_property = DEFAULT_PROPERTY) {
+    const members = conv_property.members;
+    if (members.indexOf(userId) === -1) members.push(userId);
     const conv = new Conversation5Model({
-      title: "New Conversation",
-      category: "Chat5",
+      title: conv_property.title,
+      category: conv_property.category,
+      tags: conv_property.tags,
       metadata: settings,
-      members: [userId],
+      members: members.filter(d => d.length > 0),
       messages: []
     });
     await conv.save();

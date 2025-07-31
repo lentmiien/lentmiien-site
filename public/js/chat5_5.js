@@ -16,7 +16,20 @@ function Append(send, resp) {
   showLoadingPopup();
   const conversation_id = document.getElementById("id").innerHTML;
   const prompt = editor.getMarkdown();
-  socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp});
+  // Get settings
+  const tool_select = document.getElementById("tools");
+  const tool_array = Array.from(tool_select.selectedOptions).map(option => option.value);
+  const settings = {
+    title: document.getElementById("title").value,
+    category: document.getElementById("category").value,
+    tags: document.getElementById("tags").value.split(", ").join(",").split(","),
+    context: document.getElementById("context").value,
+    tools: tool_array,
+    model: document.getElementById("model").value,
+    reasoning: document.getElementById("reasoning").value,
+    members: document.getElementById("members").value.split(", ").join(",").split(","),
+  };
+  socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp, settings});
   if (send) editor.reset();
 }
 

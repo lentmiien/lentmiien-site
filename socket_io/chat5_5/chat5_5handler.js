@@ -23,13 +23,26 @@ module.exports = async function registerChat5_5Handlers({
   //----- Upload text ------//
   // Append to conversation //
   socket.on('chat5-append', async (data) => {
-    const {conversation_id, prompt, response} = data;
+    const {conversation_id, prompt, response, settings} = data;
     let id = conversation_id;
     const user_id = userName;
-  
+
     // If new conversation
     if (id === "NEW") {
-      const c = await conversationService.createNewConversation(user_id);
+      const c = await conversationService.createNewConversation(user_id, {
+        contextPrompt: settings.context,
+        model: settings.model,
+        maxMessages: 999,
+        maxAudioMessages: 3,
+        tools: settings.tools,
+        reasoning: settings.reasoning,
+        outputFormat: "text",
+      }, {
+        title: settings.title,
+        category: settings.category,
+        tags: settings.tags,
+        members: settings.members,
+      });
       id = c._id.toString();
     }
   
