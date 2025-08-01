@@ -27,22 +27,25 @@ module.exports = async function registerChat5_5Handlers({
     let id = conversation_id;
     const user_id = userName;
 
+    const setting_params = {
+      contextPrompt: settings.context,
+      model: settings.model,
+      maxMessages: 999,
+      maxAudioMessages: 3,
+      tools: settings.tools,
+      reasoning: settings.reasoning,
+      outputFormat: "text",
+    };
+    const conv_params = {
+      title: settings.title,
+      category: settings.category,
+      tags: settings.tags,
+      members: settings.members,
+    };
+
     // If new conversation
     if (id === "NEW") {
-      const c = await conversationService.createNewConversation(user_id, {
-        contextPrompt: settings.context,
-        model: settings.model,
-        maxMessages: 999,
-        maxAudioMessages: 3,
-        tools: settings.tools,
-        reasoning: settings.reasoning,
-        outputFormat: "text",
-      }, {
-        title: settings.title,
-        category: settings.category,
-        tags: settings.tags,
-        members: settings.members,
-      });
+      const c = await conversationService.createNewConversation(user_id, setting_params, conv_params);
       id = c._id.toString();
     }
   
@@ -63,6 +66,8 @@ module.exports = async function registerChat5_5Handlers({
         },
         messageType: "text",
         generateAI: response,
+        s: setting_params,
+        c: conv_params,
       });
 
       aiMessages.unshift(userMessage);
@@ -75,6 +80,8 @@ module.exports = async function registerChat5_5Handlers({
         messageContent: null,
         messageType: null,
         generateAI: response,
+        s: setting_params,
+        c: conv_params,
       });
 
       socket.emit('chat5-messages', {id, messages: aiMessages});

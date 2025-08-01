@@ -905,7 +905,7 @@ class ConversationService {
     return conv;
   }
 
-  async postToConversationNew({conversationId, userId, messageContent, messageType, generateAI=false}) {
+  async postToConversationNew({conversationId, userId, messageContent, messageType, generateAI=false, s, c}) {
     let conversation = await Conversation5Model.findById(conversationId);
 
     if (!conversation) {
@@ -917,6 +917,25 @@ class ConversationService {
       } else {
         throw new Error("Conversation not found");
       }
+    }
+
+    // Update settings
+    if (s) {
+      conversation.metadata.contextPrompt = s.contextPrompt;
+      conversation.metadata.model = s.model;
+      conversation.metadata.maxMessages = s.maxMessages;
+      conversation.metadata.maxAudioMessages = s.maxAudioMessages;
+      conversation.metadata.tools = s.tools;
+      conversation.metadata.reasoning = s.reasoning;
+      conversation.metadata.outputFormat = s.outputFormat;
+    }
+    const members = c.members;
+    if (members.indexOf(userId) === -1) members.push(userId);
+    if (c) {
+      conversation.title = c.title;
+      conversation.category = c.category;
+      conversation.tags = c.tags;
+      conversation.members = members.filter(d => d.length > 0);
     }
 
     // Add user message

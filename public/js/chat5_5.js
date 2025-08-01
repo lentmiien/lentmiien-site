@@ -69,6 +69,7 @@ socket.on('chat5-uploadError', (data) => {
 
 socket.on('chat5-messages', ({id, messages}) => {
   document.getElementById("id").innerHTML = id;
+  document.getElementById("conversation_title").innerHTML = document.getElementById("title").value;
   for (const m of messages) {
     AddMessageToUI(m);
   }

@@ -1,7 +1,7 @@
 extends layout
 
 block content
-  h2= conversation.title
+  h2#conversation_title= conversation.title
   p#id= conversation._id
   - let user = null
   #conversationContainer
