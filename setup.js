@@ -157,8 +157,6 @@ async function ClearTestDataFromDB() {
       const summary = await fetchUsageSummaryForPeriod(sd, ed);
       await new OpenAIUsage(summary).save();
       console.log("Data saved:", JSON.stringify(summary, null, 2));
-    } else {
-      console.log(`[${d_str}] usage data already exist!`)
     }
     currentMs += 1000*60*60*24;
   }
