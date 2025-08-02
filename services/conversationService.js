@@ -929,9 +929,9 @@ class ConversationService {
       conversation.metadata.reasoning = s.reasoning;
       conversation.metadata.outputFormat = s.outputFormat;
     }
-    const members = c.members;
-    if (members.indexOf(userId) === -1) members.push(userId);
     if (c) {
+      const members = c.members;
+      if (members.indexOf(userId) === -1) members.push(userId);
       conversation.title = c.title;
       conversation.category = c.category;
       conversation.tags = c.tags;
