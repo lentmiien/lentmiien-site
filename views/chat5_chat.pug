@@ -11,18 +11,19 @@ block content
         div.userlabel(data-user=m.user_id)
           b= m.user_id 
         - user = m.user_id
-      if m.contentType === "text"
-        span!= m.content.html 
-      if m.contentType === "image"
-        img(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt, style="max-height: 200px;")
-        p
-          i= m.content.revisedPrompt
-      if m.contentType === "tool"
-        div
-          i= m.content.toolOutput
-      if m.contentType === "reasoning"
-        div
-          i!= m.content.html
+      div(class=m.hideFromBot?"bg-secondary":"")
+        if m.contentType === "text"
+          span!= m.content.html 
+        if m.contentType === "image"
+          img(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt, style="max-height: 200px;")
+          p
+            i= m.content.revisedPrompt
+        if m.contentType === "tool"
+          div
+            i= m.content.toolOutput
+        if m.contentType === "reasoning"
+          div
+            i!= m.content.html
   ul#pills-tab.nav.nav-pills.mb-3(role="tablist") 
     li.nav-item(role="presentation") 
       button#pills-chat-tab.nav-link.active(data-bs-toggle="pill" data-bs-target="#pills-chat" type="button" role="tab" aria-controls="pills-chat" aria-selected="true") Chat
