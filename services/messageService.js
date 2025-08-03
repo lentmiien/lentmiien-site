@@ -662,6 +662,12 @@ class MessageService {
 
     return newAiMessages;
   }
+
+  async toggleHideFromBot({message_id, state}) {
+    let message = await Chat5Model.findById(message_id);
+    message.hideFromBot = state;
+    await message.save();
+  }
 }
 
 const FormData = require('form-data');

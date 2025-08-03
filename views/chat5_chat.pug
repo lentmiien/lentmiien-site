@@ -76,9 +76,99 @@ block content
       .d-flex.justify-content-evenly
         button.btn.btn-success(onclick="") Update
     #pills-raw.tab-pane.fade(role="tabpanel" aria-labelledby="pills-raw-tab" tabindex="0")
-      pre= JSON.stringify(conversation, null, 2)
-      each m in messages 
-        pre= JSON.stringify(m, null, 2)
+      h3 Conversation 
+      .row 
+        .col 
+          div 
+            b _id: 
+            span= conversation._id
+          div 
+            b title: 
+            span= conversation.title
+          div 
+            b category: 
+            span= conversation.category
+          div 
+            b tags: 
+            span= conversation.tags.join(", ")
+          div 
+            b members: 
+            span= conversation.members.join(", ")
+          div 
+            b Messages: 
+            textarea#message_history.form-control(name="message_history")= conversation.messages.join("\n")
+            button.btn.btn-primary(onclick="EditMessageArray()") Update message history
+        .col 
+          h4 Metadata 
+          div 
+            b contextPrompt: 
+            span= conversation.metadata.contextPrompt
+          div 
+            b model: 
+            span= conversation.metadata.model
+          div 
+            b maxMessages: 
+            span= conversation.metadata.maxMessages
+          div 
+            b maxAudioMessages: 
+            span= conversation.metadata.maxAudioMessages
+          div 
+            b tools: 
+            span= conversation.metadata.tools.join(", ")
+          div 
+            b reasoning: 
+            span= conversation.metadata.reasoning
+          div 
+            b outputFormat: 
+            span= conversation.metadata.outputFormat
+      each m, i in messages 
+        h3= `Message#${i}`
+        .row 
+          .col 
+            div 
+              b _id: 
+              span= m._id
+            div 
+              b user_id: 
+              span= m.user_id
+            div 
+              b category: 
+              span= m.category
+            div 
+              b tags: 
+              span= m.tags.join(", ")
+            div 
+              b contentType: 
+              span= m.contentType
+            div 
+              b Hide from bot: 
+              input(type="checkbox", data-id=m._id, checked=m.hideFromBot, onchange="ToggleHideFromBot(this)")
+          .col
+            h4 Content 
+            div 
+              b text: 
+              span= m.content.text
+            div 
+              b image: 
+              span= m.content.image
+            div 
+              b audio: 
+              span= m.content.audio
+            div 
+              b tts: 
+              span= m.content.tts
+            div 
+              b transcript: 
+              span= m.content.transcript
+            div 
+              b revisedPrompt: 
+              span= m.content.revisedPrompt
+            div 
+              b imageQuality: 
+              span= m.content.imageQuality
+            div 
+              b toolOutput: 
+              span= m.content.toolOutput
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content

@@ -146,4 +146,18 @@ module.exports = async function registerChat5_5Handlers({
       }
     });
   });
+
+  // Edit message arraay
+  socket.on('chat5-editmessagearray-up', async (data) => {
+    const { conversation_id, newArray } = data;
+    await conversationService.updateMessageArray(conversation_id, newArray);
+    socket.emit('chat5-editmessagearray-done');
+  });
+
+  // Toggle hide from bot
+  socket.on('chat5-togglehidefrombot-up', async (data) => {
+    const { message_id, state } = data;
+    await messageService.toggleHideFromBot({message_id, state});
+    socket.emit('chat5-togglehidefrombot-done');
+  });
 };

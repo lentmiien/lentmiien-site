@@ -981,6 +981,12 @@ class ConversationService {
     return conversation;
   }
 
+  async updateMessageArray(conversationId, newArray) {
+    let conversation = await Conversation5Model.findById(conversationId);
+    conversation.messages = newArray;
+    await conversation.save();
+  }
+
   async listUserConversations(userId) {
     const newConvs = await Conversation5Model.find({members: userId});
     const oldConvs = await this.conversationModel.find({user_id: userId});

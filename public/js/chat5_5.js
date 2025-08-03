@@ -62,6 +62,28 @@ document.getElementById("fileInput").addEventListener('change', () => {
   }
 });
 
+// Edit message array
+function EditMessageArray() {
+  showLoadingPopup();
+  const conversation_id = document.getElementById("id").innerHTML;
+  const newArray = document.getElementById("message_history").value.split('\n');
+  socket.emit('chat5-editmessagearray-up', {conversation_id, newArray});
+}
+socket.on('chat5-editmessagearray-done', () => {
+  hideLoadingPopup();
+});
+
+// Toggle hide from bot
+function ToggleHideFromBot(e) {
+  showLoadingPopup();
+  const message_id = e.dataset.id;
+  const state = e.checked;
+  socket.emit('chat5-togglehidefrombot-up', {message_id, state});
+}
+socket.on('chat5-togglehidefrombot-done', () => {
+  hideLoadingPopup();
+});
+
 // Handle upload errors
 socket.on('chat5-uploadError', (data) => {
   alert(`\nError: ${data.message}`);
