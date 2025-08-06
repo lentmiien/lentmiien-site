@@ -876,6 +876,7 @@ class ConversationService {
     const oldConv = await this.conversationModel.findById(conversationId);
     if (oldConv) {
       const convertedConv = this.convertOldConversation(oldConv);
+      convertedConv._id = conversationId;
       const msg = await this.messageService.loadMessagesInNewFormat(oldConv.messages, false);
       return {conv: convertedConv, msg};
     }
@@ -912,7 +913,7 @@ class ConversationService {
       const oldConv = await this.conversationModel.findById(conversationId);
       if (oldConv) {
         conversation = this.convertOldConversation(oldConv);
-        conversation.messages = this.messageService.convertOldMessages(conversation.messages);
+        conversation.messages = await this.messageService.convertOldMessages(conversation.messages);
         await conversation.save(); // Conversation persisted now!
       } else {
         throw new Error("Conversation not found");
@@ -996,6 +997,7 @@ class ConversationService {
       return {
         _id: conv._id,
         title: conv.title,
+        updatedAt: conv.updated_date,
       };
     });
 

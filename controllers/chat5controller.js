@@ -158,6 +158,12 @@ exports.view_chat5_top = async (req, res) => {
 
   const conversations = await conversationService.listUserConversations(user_id);
 
+  conversations.sort((a, b) => {
+    if (a.updatedAt > b.updatedAt) return -1;
+    if (a.updatedAt < b.updatedAt) return 1;
+    return 0;
+  });
+
   res.render("chat5_top", {conversations});
 };
 
