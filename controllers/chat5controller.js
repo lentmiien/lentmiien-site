@@ -153,18 +153,42 @@ exports.view_chat5_top = async (req, res) => {
   const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
   chat_models = models.filter(d => (d.provider === "OpenAI" && availableOpenAI.indexOf(d.api_model) >= 0) && d.model_type === "chat");
 
-  // const conversations = await Conversation5Model.find();
-  // const old_conversations = await conversationService.getConversationsForUser(user_id);
-
+  // Get both new and old conversations, and sort from new to old
   const conversations = await conversationService.listUserConversations(user_id);
-
   conversations.sort((a, b) => {
     if (a.updatedAt > b.updatedAt) return -1;
     if (a.updatedAt < b.updatedAt) return 1;
     return 0;
   });
 
-  res.render("chat5_top", {conversations});
+  // Generate category list, sorted on average date of last 5 entries per category
+  const categoryMap = new Map();
+  for (const item of conversations) {
+    const cat = item.category;
+    if (!categoryMap.has(cat)) {
+      categoryMap.set(cat, []);
+    }
+    const arr = categoryMap.get(cat);
+    // Only keep up to 5 newest items
+    if (arr.length < 5) {
+      arr.push(item);
+    }
+  }
+  const categoryAverages = [];
+  for (const [category, catItems] of categoryMap.entries()) {
+    // Make sure updatedAt is treated as a Date (or a timestamp)
+    const times = catItems.map((item) => new Date(item.updatedAt).getTime());
+    const avg = times.reduce((acc, t) => acc + t, 0) / times.length;
+    categoryAverages.push({ category, avgUpdatedAt: avg });
+  }
+
+  // Sort categories by average updatedAt descending (most recently updated categories first)
+  categoryAverages.sort((a, b) => b.avgUpdatedAt - a.avgUpdatedAt);
+
+  // Final result: just the sorted unique categories
+  const sortedCategories = categoryAverages.map((e) => e.category);
+
+  res.render("chat5_top", {conversations, sortedCategories});
 };
 
 const DEFAULT_CONVERSATION = {

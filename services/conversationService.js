@@ -998,6 +998,7 @@ class ConversationService {
         _id: conv._id,
         title: conv.title,
         updatedAt: conv.updated_date,
+        category: conv.category,
       };
     });
 

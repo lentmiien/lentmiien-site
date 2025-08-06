@@ -1,9 +1,23 @@
 extends layout
 
 block content
-  h2 Chat 5 list 
-  div
-    a(href=`/chat5/chat/NEW`) +NEW
+  .row
+    .col 
+      h2 Chat 5 list 
+  .row 
+    .col 
+      label(for="filter") Filter 
+      select#filter.form-control(name="filter", onchange="Filter(this)") 
+        option(value="") - all -
+        each c in sortedCategories
+          option(value=c)= c
+    .col
+      a.btn.btn-primary(href=`/chat5/chat/NEW`) +NEW
   each c in conversations
-    div 
-      a(href=`/chat5/chat/${c._id.toString()}`)= c.title
+    div(class="entry", data-category=c.category) 
+      a(href=`/chat5/chat/${c._id.toString()}`)
+        b= c.title
+        span= ` (${c.category})`
+
+block script
+  script(src="/js/chat5_top.js")
