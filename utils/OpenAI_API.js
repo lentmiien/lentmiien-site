@@ -9,6 +9,9 @@ const reasoningModels = [
   "o3-pro-2025-06-10",
   "o3-2025-04-16",
   "o4-mini-2025-04-16",
+  "gpt-5-2025-08-07",
+  "gpt-5-mini-2025-08-07",
+  "gpt-5-nano-2025-08-07",
 ];
 
 const type_map = {
@@ -183,7 +186,10 @@ const chat = async (conversation, messages, model) => {
       background: true,
       // store: false,
     };
-    if (conversation.metadata.outputFormat) inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
+    if (conversation.metadata.outputFormat) {
+      inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
+      // TODO: verbosity for GTP-5 models `text: {"verbosity": "medium"}` // low, medium, high
+    }
     if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = {effort: conversation.metadata.reasoning, summary: "detailed"};
     let response = await openai.responses.create(inputParameters);
     while (response.status === "queued" || response.status === "in_progress") {
