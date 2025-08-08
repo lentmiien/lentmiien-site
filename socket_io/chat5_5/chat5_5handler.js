@@ -161,4 +161,9 @@ module.exports = async function registerChat5_5Handlers({
     await messageService.toggleHideFromBot({message_id, state});
     socket.emit('chat5-togglehidefrombot-done');
   });
+
+  // Edit text
+  socket.on('chat5-edittext-up', async (data) => {
+    await messageService.editTextNew(data);
+  });
 };

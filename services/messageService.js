@@ -668,6 +668,12 @@ class MessageService {
     message.hideFromBot = state;
     await message.save();
   }
+
+  async editTextNew({message_id, type, value}) {
+    let message = await Chat5Model.findById(message_id);
+    message.content[type] = value;
+    await message.save();
+  }
 }
 
 const FormData = require('form-data');

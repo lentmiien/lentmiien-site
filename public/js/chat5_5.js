@@ -175,3 +175,22 @@ function showLoadingPopup() {
 function hideLoadingPopup() {
   loadingPopup.style.display = 'none';
 }
+
+const myModal = new bootstrap.Modal(document.getElementById('editTextModal'));
+
+function EditText(e) {
+  document.getElementById("text_to_edit_id").value = e.dataset.id;
+  document.getElementById("text_to_edit_type").value = e.dataset.type;
+  document.getElementById("text_to_edit").value = e.dataset.content;
+  myModal.show();
+}
+
+function SaveText() {
+  const data = {
+    message_id: document.getElementById("text_to_edit_id").value,
+    type: document.getElementById("text_to_edit_type").value,
+    value: document.getElementById("text_to_edit").value,
+  };
+  socket.emit('chat5-edittext-up', data);
+  myModal.hide();
+}

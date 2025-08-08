@@ -157,33 +157,49 @@ block content
             h4 Content 
             div 
               b text: 
-              span= m.content.text
+                button.btn.btn-link(data-id=m._id, data-type="text", data-content=m.content.text, onclick=`EditText(this)`) Edit
+              div= m.content.text
             div 
               b image: 
-              span= m.content.image
+                button.btn.btn-link(data-id=m._id, data-type="image", data-content=m.content.image, onclick=`EditText(this)`) Edit
+              div= m.content.image
             div 
               b audio: 
-              span= m.content.audio
+                button.btn.btn-link(data-id=m._id, data-type="audio", data-content=m.content.audio, onclick=`EditText(this)`) Edit
+              div= m.content.audio
             div 
               b tts: 
-              span= m.content.tts
+                button.btn.btn-link(data-id=m._id, data-type="tts", data-content=m.content.tts, onclick=`EditText(this)`) Edit
+              div= m.content.tts
             div 
               b transcript: 
-              span= m.content.transcript
+                button.btn.btn-link(data-id=m._id, data-type="transcript", data-content=m.content.transcript, onclick=`EditText(this)`) Edit
+              div= m.content.transcript
             div 
               b revisedPrompt: 
-              span= m.content.revisedPrompt
+                button.btn.btn-link(data-id=m._id, data-type="revisedPrompt", data-content=m.content.revisedPrompt, onclick=`EditText(this)`) Edit
+              div= m.content.revisedPrompt
             div 
               b imageQuality: 
-              span= m.content.imageQuality
+                button.btn.btn-link(data-id=m._id, data-type="imageQuality", data-content=m.content.imageQuality, onclick=`EditText(this)`) Edit
+              div= m.content.imageQuality
             div 
               b toolOutput: 
-              span= m.content.toolOutput
+                button.btn.btn-link(data-id=m._id, data-type="toolOutput", data-content=m.content.toolOutput, onclick=`EditText(this)`) Edit
+              div= m.content.toolOutput
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content
       .loader
       p Loading...
+  #editTextModal.modal.fade(style="z-index:9999;" tabindex="-1" aria-labelledby="editTextModalLabel" aria-hidden="true")
+    .modal-dialog
+      .modal-content
+        label#text_to_edit_label(for="text_to_edit") text
+        textarea#text_to_edit.form-control(name="text_to_edit")
+        input#text_to_edit_id(type="hidden", name="text_to_edit_id")
+        input#text_to_edit_type(type="hidden", name="text_to_edit_type")
+        button.btn.btn-success(onclick="SaveText()") Save
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
   script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
