@@ -69,6 +69,12 @@ block content
       label(for="reasoning") Reasoning effort 
       select#reasoning.form-control(name="reasoning") 
         option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
+        option(value="minimal") Minimal 
+        option(value="low") Low 
+        option(value="medium") Medium 
+        option(value="high") High 
+      select#verbosity.form-control(name="verbosity") 
+        option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})
         option(value="low") Low 
         option(value="medium") Medium 
         option(value="high") High 
@@ -119,6 +125,9 @@ block content
           div 
             b reasoning: 
             span= conversation.metadata.reasoning
+          div 
+            b verbosity: 
+            span= conversation.metadata.verbosity
           div 
             b outputFormat: 
             span= conversation.metadata.outputFormat

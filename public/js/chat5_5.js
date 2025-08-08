@@ -27,6 +27,7 @@ function Append(send, resp) {
     tools: tool_array,
     model: document.getElementById("model").value,
     reasoning: document.getElementById("reasoning").value,
+    verbosity: document.getElementById("verbosity").value,
     members: document.getElementById("members").value.split(", ").join(",").split(","),
   };
   socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp, settings});

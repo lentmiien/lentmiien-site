@@ -16,7 +16,7 @@ block content
   each c in conversations
     div(class="entry", data-category=c.category) 
       a(href=`/chat5/chat/${c._id.toString()}`)
-        b= c.title
+        b= `${c.old?"*":""}${c.title}`
         span= ` (${c.category})`
 
 block script

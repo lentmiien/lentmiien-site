@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   maxAudioMessages: 3,
   tools: [],
   reasoning: "medium",
+  verbosity: "medium",
   outputFormat: "text",
 };
 
@@ -850,6 +851,10 @@ class ConversationService {
   }
 
   // CHAT5
+  // CHAT5
+  // CHAT5
+  // CHAT5
+  // CHAT5
   async createNewConversation(userId, settings = DEFAULT_SETTINGS, conv_property = DEFAULT_PROPERTY) {
     const members = conv_property.members;
     if (members.indexOf(userId) === -1) members.push(userId);
@@ -928,6 +933,7 @@ class ConversationService {
       conversation.metadata.maxAudioMessages = s.maxAudioMessages;
       conversation.metadata.tools = s.tools;
       conversation.metadata.reasoning = s.reasoning;
+      conversation.metadata.verbosity = s.verbosity;
       conversation.metadata.outputFormat = s.outputFormat;
     }
     if (c) {
@@ -999,6 +1005,7 @@ class ConversationService {
         title: conv.title,
         updatedAt: conv.updated_date,
         category: conv.category,
+        old: true,
       };
     });
 

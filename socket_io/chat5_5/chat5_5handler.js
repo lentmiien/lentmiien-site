@@ -34,6 +34,7 @@ module.exports = async function registerChat5_5Handlers({
       maxAudioMessages: 3,
       tools: settings.tools,
       reasoning: settings.reasoning,
+      verbosity: settings.verbosity,
       outputFormat: "text",
     };
     const conv_params = {

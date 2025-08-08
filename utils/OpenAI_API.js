@@ -188,7 +188,9 @@ const chat = async (conversation, messages, model) => {
     };
     if (conversation.metadata.outputFormat) {
       inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
-      // TODO: verbosity for GTP-5 models `text: {"verbosity": "medium"}` // low, medium, high
+      if (model.api_model.indexOf("gpt-5") === 0 && conversation.metadata.verbosity) {
+        inputParameters['text']['verbosity'] = conversation.metadata.verbosity;
+      }
     }
     if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = {effort: conversation.metadata.reasoning, summary: "detailed"};
     let response = await openai.responses.create(inputParameters);
