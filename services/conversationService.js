@@ -6,7 +6,7 @@ const { Conversation5Model } = require('../database');
 // Conversation5Model.metadata
 const DEFAULT_SETTINGS = {
   contextPrompt: "",
-  model: "gpt-4.1-2025-04-14",
+  model: "gpt-5-2025-08-07",
   maxMessages: 999,
   maxAudioMessages: 3,
   tools: [],
