@@ -192,5 +192,6 @@ function SaveText() {
     value: document.getElementById("text_to_edit").value,
   };
   socket.emit('chat5-edittext-up', data);
+  document.getElementById(`${data.message_id}${data.type}`).innerHTML = data.value;
   myModal.hide();
 }
