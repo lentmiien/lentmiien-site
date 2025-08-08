@@ -124,10 +124,13 @@ function AddMessageToUI(m) {
 }
 
 function message(m) {
+  const msg_div = document.createElement('div');
+  if (m.hideFromBot) msg_div.classList.add("bg-secondary");
   if (m.contentType === "text") {
     const span = document.createElement("span");
+    span.id = `${m._id}textout`;
     span.innerHTML = marked.parse(m.content.text);
-    document.getElementById("conversationContainer").append(span);
+    msg_div.append(span);
   }
   if (m.contentType === "image") {
     const img = document.createElement("img");
@@ -138,22 +141,23 @@ function message(m) {
     const i = document.createElement("i");
     i.innerText = m.content.revisedPrompt;
     p.append(i);
-    document.getElementById("conversationContainer").append(img, p);
+    msg_div.append(img, p);
   }
   if (m.contentType === "tool") {
     const div = document.createElement("div");
     const i = document.createElement("i");
     i.innerText = m.content.toolOutput;
     div.append(i);
-    document.getElementById("conversationContainer").append(div);
+    msg_div.append(div);
   }
   if (m.contentType === "reasoning") {
     const div = document.createElement("div");
     const i = document.createElement("i");
     i.innerText = marked.parse(m.content.text);
     div.append(i);
-    document.getElementById("conversationContainer").append(div);
+    msg_div.append(div);
   }
+  document.getElementById("conversationContainer").append(msg_div);
 }
 
 // function UpdateLoad() {
@@ -193,5 +197,8 @@ function SaveText() {
   };
   socket.emit('chat5-edittext-up', data);
   document.getElementById(`${data.message_id}${data.type}`).innerHTML = data.value;
+  if (data.type === "text") {
+    document.getElementById(`${data.message_id}textout`).innerHTML = marked.parse(data.value);
+  }
   myModal.hide();
 }
