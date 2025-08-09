@@ -73,6 +73,7 @@ block content
         option(value="low") Low 
         option(value="medium") Medium 
         option(value="high") High 
+      label(for="verbosity") Verbosity 
       select#verbosity.form-control(name="verbosity") 
         option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})
         option(value="low") Low 
