@@ -23,7 +23,7 @@ block content
           img(src="/i/chat.jpg", alt="chat")
           p Chat
         a.btn.btn-link(href="/chat5/top")
-          img(src="/i/chat.jpg", alt="chat")
+          img(src="/i/chat5.jpg", alt="chat5")
           p Chat 5
         a.btn.btn-link(href="/chat4/knowledgelist?category=Recipe")
           img(src="/i/cookbook.jpg", alt="cookbook")
@@ -52,6 +52,22 @@ block content
         a.btn.btn-link(href="/product")
           img(src="/i/product.jpg", alt="Product details")
           p Product details
+      if permissions && permissions.indexOf("gallery") >= 0
+        a.btn.btn-link(href="/gallery")
+          img(src="/i/gallery.jpg", alt="Gallery")
+          p Gallery
+      if permissions && permissions.indexOf("payroll") >= 0
+        a.btn.btn-link(href="/payroll")
+          img(src="/i/payroll.jpg", alt="Payroll")
+          p Payroll
+      if permissions && permissions.indexOf("emergencystock") >= 0
+        a.btn.btn-link(href="/es/es_dashboard")
+          img(src="/i/stock.jpg", alt="Emergency stock")
+          p Emergency stock
+      if permissions && permissions.indexOf("scheduletask") >= 0
+        a.btn.btn-link(href="/scheduleTask/calendar")
+          img(src="/i/schedule.jpg", alt="Calendar")
+          p Calendar
   if new_openai_models.length > 0
     .row 
       .col
