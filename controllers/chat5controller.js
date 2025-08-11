@@ -1,4 +1,5 @@
 const marked = require('marked');
+const sanitizeHtml = require('sanitize-html');
 
 const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
 const utils = require('../utils/utils');
@@ -211,6 +212,43 @@ const DEFAULT_CONVERSATION = {
   members: [],
 };
 
+const renderer = new marked.Renderer();
+function escapeHtml(str) { return str.replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":"'"}[c])); }
+renderer.html = (html) => escapeHtml(html); // raw HTML in markdown becomes text
+function looksLikeFullHtmlDocument(s) { return /<!doctype html/i.test(s) || /<html[\s>]/i.test(s) || /<head[\s>]/i.test(s) || /<body[\s>]/i.test(s); }
+
+function renderMarkdownSafe(md) {
+  if (looksLikeFullHtmlDocument(md)) {
+  md = 'html\n' + md + '\n';
+  }
+
+  const html = marked.parse(md, { renderer });
+
+  const clean = sanitizeHtml(html, {
+    // Keep only what you want to allow in user content:
+    allowedTags: [
+      'p','em','strong','blockquote','a','ul','ol','li','pre','code','hr','br',
+      'h1','h2','h3','h4','h5','h6'
+    ],
+    allowedAttributes: {
+      a: ['href','title','target','rel'],
+      code: ['class']
+    },
+    allowedSchemes: ['http','https','mailto'],
+    // Important: escape any unexpected tags (e.g., someone typed <script>)
+    disallowedTagsMode: 'escape',
+    // Optionally normalize links to be safe:
+    transformTags: {
+      'a': (tagName, attribs) => ({
+      tagName: 'a',
+      attribs: { ...attribs, rel: 'noopener noreferrer nofollow', target: '_blank' }
+      })
+    }
+  });
+
+  return clean;
+}
+
 exports.view_chat5 = async (req, res) => {
   const id = req.params.id;
 
@@ -229,7 +267,7 @@ exports.view_chat5 = async (req, res) => {
   // Generate HTML from marked content
   messages.forEach(m => {
     if (m.content.text && m.content.text.length > 0) {
-      m.content.html = marked.parse(m.content.text);
+      m.content.html = renderMarkdownSafe(m.content.text);
     }
   })
 
