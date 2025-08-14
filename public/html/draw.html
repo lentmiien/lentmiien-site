@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pixel Coloring — Paint by Number</title>
+<style>
+  :root {
+    --bg: #0b0f1c;
+    --panel: #11182a;
+    --panel-2: #0f1530;
+    --panel-3: #18223f;
+    --text: #e7ebff;
+    --muted: #aab3da;
+    --accent: #78a8ff;
+    --accent-2: #90ee90;
+    --warn: #ffd36e;
+    --danger: #ff6d8a;
+    --grid-line: #d5d9ff1a;
+    --grid-5-line: #a9b1ff29;
+    --hl: #6ef4ff;
+    --hl-fill: rgba(96, 255, 255, 0.16);
+    --swatch-outline: #0004;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", sans-serif; }
+  body::before {
+    /* subtle grain overlay */
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" opacity="0.03" width="120" height="120" viewBox="0 0 100 100"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)"/></svg>');
+    mix-blend-mode: soft-light;
+  }
+  h1 { font-size: 20px; margin: 0 0 8px; font-weight: 700; letter-spacing: 0.2px; }
+  small { color: var(--muted); }
+
+  .wrap {
+    display: grid; grid-template-rows: auto auto 1fr auto; gap: 10px; height: 100%;
+    padding: 12px;
+  }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid #2a335d; border-radius: 12px; padding: 12px;
+    box-shadow: 0 10px 30px #0005 inset, 0 12px 30px #0003;
+  }
+
+  .controls { padding: 12px 12px 8px; }
+  .controls .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  .controls label { font-size: 13px; color: var(--muted); display: inline-flex; gap: 8px; align-items: center; }
+
+  .btn, .swatch { cursor: pointer; }
+  .btn {
+    background: linear-gradient(180deg, #86b1ff, #3c73ff);
+    border: none; color: #06102c; padding: 8px 12px; border-radius: 9px; font-weight: 700;
+    box-shadow: 0 6px 18px #2a4cff44, 0 0 0 1px #1a2b5f inset;
+  }
+  .btn.secondary { background: linear-gradient(180deg, #3a4165, #2a3159); color: var(--text); box-shadow: 0 6px 16px #0006, 0 0 0 1px #3b4479 inset; }
+  .btn.ghost { background: transparent; border: 1px solid #3b4479; color: var(--text); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .segmented {
+    display: inline-flex; background: #182142; border: 1px solid #2b3564; border-radius: 10px; padding: 2px;
+    box-shadow: 0 4px 10px #0005 inset;
+  }
+  .segmented input { display: none; }
+  .segmented label {
+    user-select: none; padding: 6px 10px; border-radius: 8px; font-size: 12px; color: var(--muted); font-weight: 700;
+  }
+  .segmented input:checked + label {
+    background: linear-gradient(180deg, #36468b, #2a376f); color: #eaf0ff; box-shadow: 0 2px 10px #2f4cff55 inset, 0 0 0 1px #4767cc inset;
+  }
+
+  .topbar { display: grid; gap: 8px; }
+  .stats { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; }
+  .stat { font-size: 12px; color: var(--muted); }
+  .stat b { color: var(--text); }
+  .divider { width: 1px; height: 18px; background: #283058; }
+
+  .progress {
+    position: relative; height: 10px; background: #151b33; border: 1px solid #27305c; border-radius: 999px; overflow: hidden;
+  }
+  .progress .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+    background: linear-gradient(90deg, #3c73ff, #76f8ff);
+    box-shadow: 0 0 16px #76f8ff44;
+    transition: width 240ms ease;
+  }
+
+  .board-wrap {
+    position: relative; background: radial-gradient(1000px 600px at 20% -10%, #1a2448, transparent), #0b0f1d;
+    border: 1px solid #2a335d; border-radius: 12px; overflow: auto; min-height: 40vh; max-height: 68vh; touch-action: auto;
+  }
+  canvas#board { display: block; image-rendering: pixelated; transform-origin: top left; background: #fff; }
+
+  .palette {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(52px, 1fr);
+    gap: 10px; overflow-x: auto; padding: 8px 4px;
+  }
+  .swatch {
+    display: grid; grid-template-rows: 1fr auto; place-items: center;
+    height: 58px; border-radius: 10px; color: #000; font-weight: 800; position: relative; user-select: none;
+    outline: 1px solid var(--swatch-outline); border: 2px solid #0000;
+  }
+  .swatch .tag {
+    position: absolute; top: 6px; right: 6px; background: #000a; color: #fff; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.2px;
+  }
+  .swatch .remain {
+    position: absolute; bottom: 6px; right: 6px; background: #000b; color: #fff; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: 0.2px;
+    box-shadow: 0 0 0 1px #0004 inset;
+  }
+  .swatch.selected { border-color: var(--accent-2); outline: 2px solid #fff8; box-shadow: 0 0 0 2px #0006 inset; }
+  .swatch .name { font-size: 12px; color: #111; text-shadow: 0 1px 0 #ffffffbb; }
+
+  .finish {
+    position: fixed; inset: 0; background: #0009; display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .finish .card {
+    background: linear-gradient(180deg, #121a31, #0f1629);
+    border: 1px solid #2a335d; border-radius: 14px; padding: 16px; max-width: 720px; width: 100%; color: var(--text);
+    box-shadow: 0 10px 40px #000b, 0 0 0 1px #2a335d inset;
+  }
+  .finish h2 { margin: 4px 0 6px; }
+  .finish .grid {
+    display: grid; grid-template-columns: 200px 1fr; gap: 12px;
+  }
+  .finish .preview {
+    background: #0e1324; border: 1px solid #2b3564; border-radius: 10px; overflow: hidden; display: grid; place-items: center; min-height: 140px;
+  }
+  .finish .preview img, .finish .preview canvas { max-width: 100%; height: auto; display: block; }
+  .finish .rows { display: grid; gap: 6px; }
+  .score {
+    margin-top: 12px; padding: 10px; border-radius: 10px; background: #151c36; border: 1px solid #2a335d;
+  }
+  .score .row { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); }
+  .score .row b { color: var(--text); }
+  .final { font-size: 18px; font-weight: 800; color: #eaffff; }
+
+  .hidden { display: none !important; }
+
+  /* Responsive */
+  @media (max-width: 800px) {
+    .finish .grid { grid-template-columns: 1fr; }
+    .board-wrap { min-height: 52vh; max-height: none; height: 56vh; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="controls card">
+      <h1>Pixel Coloring — Paint by Number</h1>
+      <div class="row">
+        <label class="file">
+          <span>Upload image:</span>
+          <input id="fileInput" type="file" accept="image/*" />
+        </label>
+        <div class="segmented" id="difficultySeg">
+          <input type="radio" name="diff" id="d1" value="mini" checked><label for="d1">Mini</label>
+          <input type="radio" name="diff" id="d2" value="casual"><label for="d2">Casual</label>
+          <input type="radio" name="diff" id="d3" value="normal"><label for="d3">Normal</label>
+          <input type="radio" name="diff" id="d4" value="hard"><label for="d4">Hard</label>
+          <input type="radio" name="diff" id="d5" value="expert"><label for="d5">Expert</label>
+          <input type="radio" name="diff" id="d6" value="unlimited"><label for="d6">Unlimited</label>
+        </div>
+        <label>
+          Max colors: <span id="maxColorsVal">12</span>
+          <input id="maxColors" type="range" min="2" max="20" step="1" value="12" />
+        </label>
+        <button id="startBtn" class="btn secondary" disabled>Prepare</button>
+        <button id="resetBtn" class="btn ghost" disabled>Reset</button>
+      </div>
+      <div class="row">
+        <small>Tip: Difficulty limits the total number of cells (pixels). Larger levels keep more detail.</small>
+      </div>
+    </div>
+
+    <div class="topbar card hidden" id="topbar">
+      <div class="stats">
+        <div class="stat">Difficulty: <b><span id="diffName">Normal</span></b></div>
+        <div class="stat">Selected: <b><span id="selColorName">#000000</span></b> (#<span id="selColorIndex">1</span>)</div>
+        <div class="divider"></div>
+        <div class="stat">Remaining: <b><span id="cellsRemaining">0</span></b></div>
+        <div class="stat">Mistakes: <b><span id="mistakes">0</span></b></div>
+        <div class="stat">Time: <b><span id="timer">00:00</span></b></div>
+        <div style="flex:1"></div>
+        <label>Zoom: <span id="zoomVal">2.0x</span>
+          <input id="zoomRange" type="range" min="1" max="6" step="0.1" value="2" />
+        </label>
+        <button id="newGameBtn" class="btn secondary">New image</button>
+      </div>
+      <div class="progress"><div id="progressFill" class="fill"></div></div>
+    </div>
+
+    <div class="board-wrap card">
+      <canvas id="board" width="0" height="0"></canvas>
+    </div>
+
+    <div id="palette" class="palette card hidden" aria-label="Color palette"></div>
+  </div>
+
+  <div class="finish" id="finish">
+    <div class="card">
+      <h2>All done! Great job</h2>
+      <div class="grid">
+        <div class="preview"><img id="finishPreview" alt="Original image preview" /></div>
+        <div class="rows">
+          <div><b>Time:</b> <span id="finishTime">00:00</span></div>
+          <div><b>Mistakes:</b> <span id="finishMistakes">0</span></div>
+          <div><b>Difficulty:</b> <span id="finishDiff"></span></div>
+          <div class="score">
+            <div class="row"><span>Accuracy score</span><b id="scoreAccuracy">0</b></div>
+            <div class="row"><span>Time bonus</span><b id="scoreTimeBonus">+0</b></div>
+            <div class="row"><span>Difficulty multiplier</span><b id="scoreMult">x1.0</b></div>
+            <div class="row final"><span>Total score</span><b id="scoreTotal">0</b></div>
+          </div>
+          <div style="display:flex; gap:10px; margin-top:10px;">
+            <button id="finishNewGame" class="btn">Start a new game</button>
+            <button id="finishClose" class="btn secondary">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  // Difficulty presets: maxCells caps W*H (Mini..Expert), Unlimited uses original size (soft-capped for perf)
+  const DIFFICULTY = {
+    mini:      { name: 'Mini',      maxCells: 576,   mult: 0.9 },   // ~24x24
+    casual:    { name: 'Casual',    maxCells: 1024,  mult: 1.0 },   // ~32x32
+    normal:    { name: 'Normal',    maxCells: 2304,  mult: 1.2 },   // ~48x48
+    hard:      { name: 'Hard',      maxCells: 4096,  mult: 1.5 },   // ~64x64
+    expert:    { name: 'Expert',    maxCells: 9216,  mult: 1.8 },   // ~96x96
+    unlimited: { name: 'Unlimited', maxCells: Infinity, mult: 2.0 } // uses original resolution (soft-capped)
+  };
+
+  // State
+  const state = {
+    image: null,     // Image()
+    imageURL: null,  // object URL
+    width: 0, height: 0,
+    maxColors: 12,
+    palette: [],              // [{r,g,b,hex}]
+    targetIdx: null,          // Uint8Array (0..k-1)
+    currentIdx: null,         // Int16Array (-1 = empty/unknown)
+    locked: null,             // Uint8Array (0/1)
+    countsTotal: null,        // Uint32Array length K
+    countsRemain: null,       // Uint32Array length K
+    remaining: 0,
+    mistakes: 0,
+    startedAt: 0,
+    timerInterval: null,
+    selectedColor: 0,
+    zoom: 2,
+    baseCell: 16,             // px per grid cell in canvas coords
+    prepared: false,
+    difficultyKey: 'normal',  // one of DIFFICULTY keys
+  };
+
+  // Elements
+  const fileInput = document.getElementById('fileInput');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const maxColorsRange = document.getElementById('maxColors');
+  const maxColorsVal = document.getElementById('maxColorsVal');
+  const diffSeg = document.getElementById('difficultySeg');
+  const topbar = document.getElementById('topbar');
+  const board = document.getElementById('board');
+  const ctx = board.getContext('2d');
+  const paletteEl = document.getElementById('palette');
+  const selColorNameEl = document.getElementById('selColorName');
+  const selColorIndexEl = document.getElementById('selColorIndex');
+  const cellsRemainingEl = document.getElementById('cellsRemaining');
+  const mistakesEl = document.getElementById('mistakes');
+  const timerEl = document.getElementById('timer');
+  const zoomRange = document.getElementById('zoomRange');
+  const zoomVal = document.getElementById('zoomVal');
+  const diffNameEl = document.getElementById('diffName');
+  const progressFill = document.getElementById('progressFill');
+  const newGameBtn = document.getElementById('newGameBtn');
+
+  const finish = document.getElementById('finish');
+  const finishTime = document.getElementById('finishTime');
+  const finishMistakes = document.getElementById('finishMistakes');
+  const finishDiff = document.getElementById('finishDiff');
+  const finishPreview = document.getElementById('finishPreview');
+  const scoreAccuracy = document.getElementById('scoreAccuracy');
+  const scoreTimeBonus = document.getElementById('scoreTimeBonus');
+  const scoreMult = document.getElementById('scoreMult');
+  const scoreTotal = document.getElementById('scoreTotal');
+  const finishNewGame = document.getElementById('finishNewGame');
+  const finishClose = document.getElementById('finishClose');
+
+  maxColorsVal.textContent = maxColorsRange.value;
+  zoomVal.textContent = Number(zoomRange.value).toFixed(1) + 'x';
+
+  // File handling
+  fileInput.addEventListener('change', () => {
+    // revoke old URL
+    if (state.imageURL) { try { URL.revokeObjectURL(state.imageURL); } catch (_) {} }
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) { startBtn.disabled = true; resetBtn.disabled = true; return; }
+    state.imageURL = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => { state.image = img; startBtn.disabled = false; resetBtn.disabled = false; };
+    img.onerror = () => { alert('Could not load image. Please try a different file.'); startBtn.disabled = true; };
+    img.src = state.imageURL;
+  });
+
+  // Difficulty selection
+  diffSeg.addEventListener('change', () => {
+    const sel = diffSeg.querySelector('input[name="diff"]:checked');
+    state.difficultyKey = sel ? sel.value : 'normal';
+  });
+
+  maxColorsRange.addEventListener('input', () => {
+    maxColorsVal.textContent = maxColorsRange.value;
+  });
+
+  startBtn.addEventListener('click', async () => {
+    if (!state.image) return;
+    state.maxColors = clamp(+maxColorsRange.value, 2, 20);
+
+    try {
+      const { w, h } = computeGridSize(state.image.width, state.image.height, DIFFICULTY[state.difficultyKey].maxCells);
+      const { imageData, qWidth, qHeight } = drawToSizedCanvasWH(state.image, w, h);
+      const quant = await quantizeImageKMeans(imageData, state.maxColors);
+
+      const reordered = reorderPaletteByCount(quant.palette, quant.labels, qWidth, qHeight);
+      initGame(qWidth, qHeight, reordered.palette, reordered.labels);
+      renderInitial();
+      showGameUI(true);
+    } catch (err) {
+      console.error(err);
+      alert('Something went wrong preparing the image.');
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    startBtn.disabled = true; resetBtn.disabled = true;
+    teardownGame(); showGameUI(false);
+  });
+
+  newGameBtn.addEventListener('click', () => {
+    scrollTo({ top: 0, behavior: 'smooth' });
+    fileInput.click();
+  });
+
+  finishNewGame.addEventListener('click', () => {
+    finish.style.display = 'none';
+    scrollTo({ top: 0, behavior: 'smooth' });
+    fileInput.click();
+  });
+  finishClose.addEventListener('click', () => {
+    finish.style.display = 'none';
+  });
+
+  zoomRange.addEventListener('input', () => {
+    state.zoom = +zoomRange.value;
+    zoomVal.textContent = state.zoom.toFixed(1) + 'x';
+    applyZoom();
+  });
+
+  function showGameUI(isPlaying) {
+    if (isPlaying) { topbar.classList.remove('hidden'); paletteEl.classList.remove('hidden'); }
+    else { topbar.classList.add('hidden'); paletteEl.classList.add('hidden'); }
+  }
+
+  // Init
+  function initGame(w, h, palette, labels) {
+    state.width = w; state.height = h; state.palette = palette;
+    const N = w * h;
+    state.targetIdx = labels; // Uint8Array
+    state.currentIdx = new Int16Array(N); state.currentIdx.fill(-1);
+    state.locked = new Uint8Array(N); state.locked.fill(0);
+    state.remaining = N; state.mistakes = 0; state.selectedColor = 0; state.prepared = true;
+
+    // Count totals per color
+    const k = palette.length;
+    state.countsTotal = new Uint32Array(k);
+    for (let i = 0; i < N; i++) state.countsTotal[labels[i]]++;
+    state.countsRemain = new Uint32Array(state.countsTotal);
+
+    board.width = w * state.baseCell; board.height = h * state.baseCell;
+
+    // Timer
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    state.startedAt = Date.now();
+    state.timerInterval = setInterval(() => timerEl.textContent = formatDuration(Date.now() - state.startedAt), 500);
+    timerEl.textContent = '00:00';
+    mistakesEl.textContent = '0';
+    cellsRemainingEl.textContent = String(state.remaining);
+
+    // UI labels
+    diffNameEl.textContent = DIFFICULTY[state.difficultyKey].name;
+    renderPalette(); // creates swatches with counters
+    updateSwatchCounters();
+    updateProgress();
+
+    state.zoom = +zoomRange.value; applyZoom();
+
+    // Show original image on finish later
+    finishPreview.src = state.imageURL || '';
+  }
+
+  function teardownGame() {
+    state.prepared = false;
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    board.width = 0; board.height = 0;
+    paletteEl.innerHTML = '';
+    timerEl.textContent = '00:00'; mistakesEl.textContent = '0'; cellsRemainingEl.textContent = '0';
+    selColorNameEl.textContent = '#000000'; selColorIndexEl.textContent = '1';
+  }
+
+  // Render — split backgrounds and overlays so we can re-highlight without erasing grid
+  function renderInitial() {
+    if (!state.prepared) return;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, board.width, board.height);
+    drawGridLines();
+    drawAllOverlay(); // numbers + initial highlights
+  }
+
+  function drawGridLines() {
+    const W = state.width, H = state.height, s = state.baseCell;
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = getCSSVar('--grid-line'); // fine grid
+    ctx.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const X = x * s + 0.5; ctx.moveTo(X, 0); ctx.lineTo(X, H * s);
+    }
+    for (let y = 0; y <= H; y++) {
+      const Y = y * s + 0.5; ctx.moveTo(0, Y); ctx.lineTo(W * s, Y);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = getCSSVar('--grid-5-line'); // bold every 5th
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 5) {
+      const X = x * s + 0.5; ctx.moveTo(X, 0); ctx.lineTo(X, H * s);
+    }
+    for (let y = 0; y <= H; y += 5) {
+      const Y = y * s + 0.5; ctx.moveTo(0, Y); ctx.lineTo(W * s, Y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCellBackground(i) {
+    const W = state.width, s = state.baseCell;
+    const x = i % W, y = (i / W) | 0;
+    const px = x * s, py = y * s;
+    if (state.currentIdx[i] >= 0) {
+      const c = state.palette[state.currentIdx[i]];
+      ctx.fillStyle = c.hex; ctx.fillRect(px, py, s, s);
+    } else {
+      // leave white (already filled), no need to repaint
+    }
+  }
+
+  function drawCellOverlay(i) {
+    const W = state.width, s = state.baseCell;
+    const x = i % W, y = (i / W) | 0;
+    const px = x * s, py = y * s;
+
+    // Subtle highlight for target cells of selected color
+    const want = state.targetIdx[i];
+    if (!state.locked[i] && want === state.selectedColor) {
+      ctx.save();
+      // translucent inset fill
+      ctx.fillStyle = getCSSVar('--hl-fill');
+      ctx.fillRect(px + 1.5, py + 1.5, s - 3, s - 3);
+      // inner ring
+      ctx.strokeStyle = getCSSVar('--hl'); ctx.lineWidth = 1.5;
+      ctx.strokeRect(px + 2.5, py + 2.5, s - 5, s - 5);
+      // center dot
+      ctx.beginPath(); ctx.arc(px + s/2, py + s/2, Math.max(1.2, s*0.08), 0, 2*Math.PI);
+      ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw number if not locked
+    if (!state.locked[i]) {
+      const bg = state.currentIdx[i] >= 0 ? state.palette[state.currentIdx[i]] : { r: 255, g: 255, b: 255 };
+      const contrast = textOnBG(bg.r, bg.g, bg.b);
+      ctx.fillStyle = contrast === 'dark' ? '#121212' : '#ffffff';
+      ctx.font = `bold ${Math.floor(s * 0.62)}px system-ui, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(want + 1), px + s/2, py + s/2 + 0.5);
+    }
+  }
+
+  function drawAllOverlay() {
+    const N = state.width * state.height;
+    // Clear overlays? We purposely don't clear since overlays are drawn on top of white and grid.
+    // However, numbers/highlights can accumulate if we repaint without clearing.
+    // So we refresh overlays by redrawing white cell area with globalCompositeOperation 'destination-over'? That's tricky.
+    // Instead, recompose overlays by re-filling the whole white background and grid ONCE, then repaint current colors, then overlays.
+    // To avoid heavy work often, we only do this heavy pass when selection changes.
+    ctx.save();
+    // full recomposition: background white, then colored cells, then grid, then overlays
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, board.width, board.height);
+
+    // backgrounds for painted cells only
+    const Ntot = N;
+    for (let i = 0; i < Ntot; i++) {
+      if (state.currentIdx[i] >= 0) drawCellBackground(i);
+    }
+
+    // grid lines back on top
+    drawGridLines();
+
+    // overlay: numbers + highlights
+    for (let i = 0; i < Ntot; i++) drawCellOverlay(i);
+    ctx.restore();
+  }
+
+  function applyZoom() {
+    board.style.transform = `scale(${state.zoom})`;
+  }
+
+  // Palette UI
+  function renderPalette() {
+    paletteEl.innerHTML = '';
+    state.palette.forEach((c, i) => {
+      const sw = document.createElement('button');
+      sw.className = 'swatch';
+      sw.style.background = c.hex;
+      sw.title = `${c.hex} (#${i + 1})`;
+      sw.innerHTML = `
+        <div class="tag">#${i + 1}</div>
+        <div class="remain" id="remain-${i}">0</div>
+        <div class="name">${c.hex}</div>
+      `;
+      sw.addEventListener('click', () => {
+        state.selectedColor = i;
+        selColorNameEl.textContent = c.hex;
+        selColorIndexEl.textContent = String(i + 1);
+        [...paletteEl.children].forEach(el => el.classList.remove('selected'));
+        sw.classList.add('selected');
+        // Redraw overlays to update highlights
+        drawAllOverlay();
+      });
+      if (i === state.selectedColor) sw.classList.add('selected');
+      paletteEl.appendChild(sw);
+    });
+    selColorNameEl.textContent = state.palette[state.selectedColor]?.hex || '#000000';
+    selColorIndexEl.textContent = String(state.selectedColor + 1);
+  }
+
+  function updateSwatchCounters() {
+    const k = state.palette.length;
+    for (let i = 0; i < k; i++) {
+      const el = document.getElementById(`remain-${i}`);
+      if (!el) continue;
+      const rem = state.countsRemain[i] || 0;
+      el.textContent = rem > 0 ? rem : '✓';
+      el.style.background = rem > 0 ? '#000b' : 'linear-gradient(180deg, #43d67a, #16a551)';
+    }
+  }
+
+  function updateProgress() {
+    const N = state.width * state.height;
+    const done = N - state.remaining;
+    const pct = N ? (done / N) * 100 : 0;
+    progressFill.style.width = `${pct}%`;
+    cellsRemainingEl.textContent = String(state.remaining);
+  }
+
+  // Interaction
+  bindBoardEvents();
+  function bindBoardEvents() {
+    let painting = false;
+    let lastCell = -1;
+    let pointerMoved = false;
+    let downX = 0, downY = 0;
+    board.addEventListener('pointerdown', (e) => {
+      if (!state.prepared) return;
+      board.setPointerCapture(e.pointerId);
+      painting = (e.pointerType === 'mouse');
+      pointerMoved = false; downX = e.clientX; downY = e.clientY;
+      if (painting) { e.preventDefault(); paintAtEvent(e); }
+    });
+    board.addEventListener('pointermove', (e) => {
+      if (!state.prepared) return;
+      const dx = Math.abs(e.clientX - downX), dy = Math.abs(e.clientY - downY);
+      if (dx + dy > 6) pointerMoved = true;
+      if (painting) { e.preventDefault(); paintAtEvent(e); }
+    });
+    board.addEventListener('pointerup', (e) => {
+      if (!state.prepared) return;
+      if (!painting && !pointerMoved) paintAtEvent(e);
+      painting = false; lastCell = -1;
+    });
+    board.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) return;
+      if (!state.prepared) return;
+      e.preventDefault();
+      const delta = Math.sign(e.deltaY);
+      let z = state.zoom + (delta > 0 ? -0.2 : 0.2);
+      z = clamp(z, +zoomRange.min, +zoomRange.max);
+      state.zoom = z; zoomRange.value = String(z);
+      zoomVal.textContent = state.zoom.toFixed(1) + 'x';
+      applyZoom();
+    }, { passive: false });
+
+    function paintAtEvent(e) {
+      const cell = clientToCell(e.clientX, e.clientY);
+      if (cell < 0) return;
+      if (painting && cell === lastCell) return;
+      lastCell = cell;
+      applyPaint(cell);
+    }
+  }
+
+  function clientToCell(clientX, clientY) {
+    const rect = board.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return -1;
+    const scaleX = rect.width / (state.width * state.baseCell);
+    const scaleY = rect.height / (state.height * state.baseCell);
+    const x = Math.floor((clientX - rect.left) / scaleX / state.baseCell);
+    const y = Math.floor((clientY - rect.top) / scaleY / state.baseCell);
+    if (x < 0 || y < 0 || x >= state.width || y >= state.height) return -1;
+    return y * state.width + x;
+  }
+
+  function applyPaint(i) {
+    if (!state.prepared) return;
+    if (state.locked[i]) return;
+
+    const want = state.targetIdx[i];
+    const sel = state.selectedColor;
+
+    // Always fill with selected color (feedback)
+    state.currentIdx[i] = sel;
+    drawCellBackground(i);
+
+    if (sel === want) {
+      // correct: lock, hide number, update counters/progress
+      if (!state.locked[i]) {
+        state.locked[i] = 1;
+        state.remaining--;
+        if (state.countsRemain[want] > 0) state.countsRemain[want]--;
+        updateSwatchCounters();
+        updateProgress();
+        if (state.remaining <= 0) onFinish();
+      }
+    } else {
+      // mistake
+      state.mistakes++;
+      mistakesEl.textContent = String(state.mistakes);
+    }
+
+    // Overlay update for this cell (number/lock/highlight)
+    drawCellOverlay(i);
+  }
+
+  // Finish + scoring
+  function onFinish() {
+    if (state.timerInterval) { clearInterval(state.timerInterval); state.timerInterval = null; }
+    const elapsedMs = Date.now() - state.startedAt;
+    finishTime.textContent = formatDuration(elapsedMs);
+    finishMistakes.textContent = String(state.mistakes);
+
+    const d = DIFFICULTY[state.difficultyKey];
+    finishDiff.textContent = `${d.name}`;
+
+    // Score
+    const N = state.width * state.height;
+    const accuracyScore = Math.max(-50, Math.round(100 - (state.mistakes / Math.max(1, N)) * 150));
+    const secs = elapsedMs / 1000;
+    const t1 = N;          // full time bonus if under N sec
+    const t2 = 5 * N;      // zero bonus at 5N sec
+    let timeBonus = 0;
+    if (secs <= t1) timeBonus = 50;
+    else if (secs >= t2) timeBonus = 0;
+    else timeBonus = Math.round(50 * (1 - (secs - t1) / (t2 - t1)));
+    const mult = d.mult;
+    const total = Math.round((accuracyScore + timeBonus) * mult);
+
+    scoreAccuracy.textContent = String(accuracyScore);
+    scoreTimeBonus.textContent = (timeBonus >= 0 ? '+' : '') + String(timeBonus);
+    scoreMult.textContent = 'x' + mult.toFixed(1);
+    scoreTotal.textContent = String(total);
+
+    finish.style.display = 'flex';
+  }
+
+  // Utils
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function rgbToHex(r, g, b) { return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''); }
+  function formatDuration(ms) {
+    const s = Math.max(0, Math.round(ms / 1000)); const m = Math.floor(s / 60); const ss = s % 60;
+    return String(m).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  }
+  function srgb2lin(c) { return (c <= 0.04045) ? (c / 12.92) : Math.pow((c + 0.055) / 1.055, 2.4); }
+  function textOnBG(r, g, b) {
+    const lum = 0.2126 * srgb2lin(r/255) + 0.7152 * srgb2lin(g/255) + 0.0722 * srgb2lin(b/255);
+    return lum > 0.5 ? 'dark' : 'light';
+  }
+  function getCSSVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  // Grid sizing according to difficulty (preserves aspect, no upscaling beyond original)
+  function computeGridSize(imgW, imgH, maxCells) {
+    // Soft cap for unlimited to keep UI responsive on huge photos
+    const SOFT_CAP = 20000;
+    const origCells = imgW * imgH;
+    const aspect = imgW / imgH;
+
+    if (!isFinite(maxCells)) {
+      // Unlimited: use original unless it's enormous, then softly scale down
+      if (origCells <= SOFT_CAP) return { w: imgW, h: imgH };
+      const scale = Math.sqrt(SOFT_CAP / origCells);
+      const w = Math.max(1, Math.floor(imgW * scale));
+      const h = Math.max(1, Math.floor(imgH * scale));
+      return { w, h };
+    }
+
+    if (origCells <= maxCells) {
+      // No need to upscale; keep original
+      return { w: imgW, h: imgH };
+    }
+
+    // Find largest (w,h) with w*h <= maxCells, preserving aspect
+    let w = Math.floor(Math.sqrt(maxCells * aspect));
+    w = Math.min(w, imgW); if (w < 1) w = 1;
+    let h = Math.floor(w / aspect); if (h < 1) h = 1;
+    // ensure within cap
+    while (w * h > maxCells) {
+      w--; if (w < 1) break;
+      h = Math.floor(w / aspect);
+      if (h < 1) h = 1;
+    }
+    return { w, h };
+  }
+
+  function drawToSizedCanvasWH(img, w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+    x.drawImage(img, 0, 0, w, h);
+    const imageData = x.getImageData(0, 0, w, h);
+    return { imageData, qWidth: w, qHeight: h };
+  }
+
+  // Quantization (k-means with k-means++ init)
+  async function quantizeImageKMeans(imageData, maxColors) {
+    const { data, width, height } = imageData;
+    const N = width * height;
+    const pixels = new Uint8Array(N * 3);
+    for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+      let r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+      if (a < 10) { r = 255; g = 255; b = 255; }
+      pixels[j + 0] = r; pixels[j + 1] = g; pixels[j + 2] = b;
+    }
+
+    // Unique colors check (fast path)
+    const uniqMap = new Map();
+    for (let i = 0; i < N; i++) {
+      const r = pixels[i*3+0], g = pixels[i*3+1], b = pixels[i*3+2];
+      const key = `${r},${g},${b}`; if (!uniqMap.has(key)) uniqMap.set(key, [r,g,b]);
+    }
+    const uniqueColors = Array.from(uniqMap.values());
+    const k = Math.min(maxColors, uniqueColors.length);
+    if (k === uniqueColors.length) {
+      const palette = uniqueColors.map(c => ({ r: c[0], g: c[1], b: c[2], hex: rgbToHex(c[0], c[1], c[2]) }));
+      const indexOf = new Map(uniqueColors.map((c, i) => [c.join(','), i]));
+      const labels = new Uint8Array(N);
+      for (let i = 0; i < N; i++) {
+        const r = pixels[i*3+0], g = pixels[i*3+1], b = pixels[i*3+2];
+        labels[i] = indexOf.get([r,g,b].join(',')) | 0;
+      }
+      return { palette, labels };
+    }
+
+    const centers = kmeansPlusPlusInit(pixels, N, k);
+    const maxIters = 20;
+    const labels = new Uint8Array(N); labels.fill(255);
+    let changed = true; let iter = 0;
+    const sums = new Float64Array(k * 3);
+    const counts = new Uint32Array(k);
+
+    while (iter < maxIters && changed) {
+      sums.fill(0); counts.fill(0); changed = false;
+      for (let i = 0; i < N; i++) {
+        const r = pixels[i*3], g = pixels[i*3+1], b = pixels[i*3+2];
+        let best = 0, bestD = Infinity;
+        for (let c = 0; c < k; c++) {
+          const cr = centers[c*3], cg = centers[c*3+1], cb = centers[c*3+2];
+          const dr = r - cr, dg = g - cg, db = b - cb;
+          const d2 = dr*dr + dg*dg + db*db;
+          if (d2 < bestD) { bestD = d2; best = c; }
+        }
+        if (labels[i] !== best) { changed = true; labels[i] = best; }
+        sums[best*3] += r; sums[best*3+1] += g; sums[best*3+2] += b; counts[best]++;
+      }
+      for (let c = 0; c < k; c++) {
+        if (counts[c] > 0) {
+          centers[c*3] = sums[c*3] / counts[c];
+          centers[c*3+1] = sums[c*3+1] / counts[c];
+          centers[c*3+2] = sums[c*3+2] / counts[c];
+        } else {
+          // re-seed empty cluster
+          const rnd = (Math.random() * N) | 0;
+          centers[c*3] = pixels[rnd*3]; centers[c*3+1] = pixels[rnd*3+1]; centers[c*3+2] = pixels[rnd*3+2];
+        }
+      }
+      iter++; if (iter % 4 === 0) await microtask();
+    }
+
+    const palette = [];
+    for (let c = 0; c < k; c++) {
+      const r = clamp(Math.round(centers[c*3]), 0, 255);
+      const g = clamp(Math.round(centers[c*3+1]), 0, 255);
+      const b = clamp(Math.round(centers[c*3+2]), 0, 255);
+      palette.push({ r, g, b, hex: rgbToHex(r,g,b) });
+    }
+    return { palette, labels };
+  }
+
+  function kmeansPlusPlusInit(pixels, N, k) {
+    const centers = new Float64Array(k * 3);
+    let idx = (Math.random() * N) | 0;
+    centers[0] = pixels[idx*3]; centers[1] = pixels[idx*3+1]; centers[2] = pixels[idx*3+2];
+    const d2 = new Float64Array(N);
+    for (let i = 0; i < N; i++) d2[i] = Infinity;
+    for (let c = 1; c < k; c++) {
+      for (let i = 0; i < N; i++) {
+        const r = pixels[i*3], g = pixels[i*3+1], b = pixels[i*3+2];
+        let bestD = d2[i];
+        for (let ci = 0; ci < c; ci++) {
+          const cr = centers[ci*3], cg = centers[ci*3+1], cb = centers[ci*3+2];
+          const dr = r - cr, dg = g - cg, db = b - cb;
+          const dist2 = dr*dr + dg*dg + db*db;
+          if (dist2 < bestD) bestD = dist2;
+        }
+        d2[i] = bestD;
+      }
+      let sum = 0; for (let i = 0; i < N; i++) sum += d2[i];
+      if (sum <= 0) {
+        const ri = (Math.random() * N) | 0;
+        centers[c*3] = pixels[ri*3]; centers[c*3+1] = pixels[ri*3+1]; centers[c*3+2] = pixels[ri*3+2];
+      } else {
+        let rnum = Math.random() * sum, chosen = 0;
+        for (let i = 0; i < N; i++) { rnum -= d2[i]; if (rnum <= 0) { chosen = i; break; } }
+        centers[c*3] = pixels[chosen*3]; centers[c*3+1] = pixels[chosen*3+1]; centers[c*3+2] = pixels[chosen*3+2];
+      }
+    }
+    return centers;
+  }
+
+  function reorderPaletteByCount(palette, labels, w, h) {
+    const k = palette.length;
+    const counts = new Uint32Array(k);
+    const N = w * h;
+    for (let i = 0; i < N; i++) counts[labels[i]]++;
+    const order = Array.from({ length: k }, (_, i) => i).sort((a, b) => counts[b] - counts[a]);
+    const indexMap = new Uint8Array(k);
+    for (let i = 0; i < k; i++) indexMap[order[i]] = i;
+    const newPalette = order.map(i => palette[i]);
+    const newLabels = new Uint8Array(N);
+    for (let i = 0; i < N; i++) newLabels[i] = indexMap[labels[i]];
+    return { palette: newPalette, labels: newLabels };
+  }
+
+  function microtask() { return new Promise(requestAnimationFrame); }
+
+})();
+</script>
+</body>
+</html>
