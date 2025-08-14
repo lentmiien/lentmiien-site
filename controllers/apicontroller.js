@@ -82,3 +82,8 @@ exports.getChatEntries = async (req, res) => {
 exports.testConnect = async (req, res) => {
   res.json({status: "OK"});
 };
+
+exports.fetchFeedback = async (req, res) => {
+  const {conv, msg} = await conversationService.loadConversation("689d3d435f68766cf42f085f");
+  res.json({message: msg[msg.length-1].content.text});
+}

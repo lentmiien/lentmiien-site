@@ -18,5 +18,6 @@ router.get('/getChatEntries', controller.getChatEntries);
 
 /* External */
 router.get('/testConnect', controller.testConnect);
+router.get('/fetchFeedback', controller.fetchFeedback);
 
 module.exports = router;
