@@ -16,4 +16,7 @@ router.post('/deleteHealthEntry', controller.deleteHealthEntry);
 /* Chat */
 router.get('/getChatEntries', controller.getChatEntries);
 
+/* External */
+router.get('/testConnect', controller.testConnect);
+
 module.exports = router;

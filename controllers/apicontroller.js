@@ -74,3 +74,11 @@ exports.getChatEntries = async (req, res) => {
 
   res.json(entries);
 };
+
+/*******************
+ * EXTERNAL
+ */
+
+exports.testConnect = async (req, res) => {
+  res.json({status: "OK"});
+};

@@ -13,6 +13,7 @@ const LocalStrategy = require('passport-local').Strategy;
 const expressSession = require('express-session');
 const bcrypt = require('bcryptjs');
 const expressStaticGzip = require('express-static-gzip');
+const crypto = require('crypto');
 
 // Database models
 const { UseraccountModel, RoleModel } = require('./database');
@@ -228,12 +229,50 @@ app.post(
   })
 );
 
+
+// Helper: constant-time compare to avoid timing attacks
+function timingSafeEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function getBearerToken(req) {
+  const auth = req.get('authorization') || '';
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1] : null;
+}
+
+function isApiRequest(req) {
+  // Works whether or not the middleware is mounted globally or on a router
+  return req.originalUrl && req.originalUrl.startsWith('/api');
+}
+
 // Authentication and authorization middlewares
 function isAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) {
+  // 1) Session-based authentication (e.g., Passport)
+  if (typeof req.isAuthenticated === 'function' && req.isAuthenticated()) {
+    req.authType = 'session';
     return next();
   }
-  res.redirect('/login');
+
+  // 2) API key for /api routes
+  if (isApiRequest(req)) {
+    const token = getBearerToken(req);
+    const expected = process.env.API_KEY;
+
+    if (expected && token && timingSafeEqual(token, expected)) {
+      req.authType = 'apiKey';
+      return next();
+    }
+
+    // For API routes, return JSON 401 (never redirect)
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // 3) Non-API routes: keep existing redirect behavior
+  return res.redirect('/login');
 }
 
 function authorize(routeName) {
