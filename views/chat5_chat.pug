@@ -197,7 +197,7 @@ block content
     .modal-dialog
       .modal-content
         label#text_to_edit_label(for="text_to_edit") text
-        textarea#text_to_edit.form-control(name="text_to_edit")
+        textarea#text_to_edit.form-control(name="text_to_edit", cols="50", rows="30")
         input#text_to_edit_id(type="hidden", name="text_to_edit_id")
         input#text_to_edit_type(type="hidden", name="text_to_edit_type")
         button.btn.btn-success(onclick="SaveText()") Save
