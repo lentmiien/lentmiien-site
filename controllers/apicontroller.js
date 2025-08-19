@@ -55,7 +55,7 @@ const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
 const KnowledgeService = require('../services/knowledgeService');
 const BatchService = require('../services/batchService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, BatchPromptModel, BatchRequestModel } = require('../database');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, BatchPromptModel, BatchRequestModel, Task } = require('../database');
 const { whisper } = require('../utils/ChatGPT');
 
 // Instantiate the services
@@ -78,6 +78,7 @@ exports.getChatEntries = async (req, res) => {
 /*******************
  * EXTERNAL
  */
+const ScheduleTaskService = require('../services/scheduleTaskService');
 
 exports.testConnect = async (req, res) => {
   res.json({status: "OK"});
@@ -87,3 +88,23 @@ exports.fetchFeedback = async (req, res) => {
   const {conv, msg} = await conversationService.loadConversation("689d3d435f68766cf42f085f");
   res.json({message: msg[msg.length-1].content.text});
 }
+
+exports.setTask = async (req, res) => {
+  const userId = "Lennart";
+  try {
+    const { title, description, type, start, end } = req.body;
+    let doc = new Task({
+      userId,
+      type,
+      title,
+      description,
+      start: start ? ScheduleTaskService.roundToSlot(new Date(start)) : null,
+      end: end ? ScheduleTaskService.roundToSlot(new Date(end)) : null,
+      done: false,
+    });
+    await doc.save();
+    res.json({status: "OK", doc});
+  } catch(err) {
+    res.json({status: "Failed", doc: null});
+  }
+};
