@@ -19,6 +19,6 @@ router.get('/getChatEntries', controller.getChatEntries);
 /* External */
 router.get('/testConnect', controller.testConnect);
 router.get('/fetchFeedback', controller.fetchFeedback);
-router.get('/setTask', controller.setTask);
+router.post('/setTask', controller.setTask);
 
 module.exports = router;
