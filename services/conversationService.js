@@ -994,6 +994,14 @@ class ConversationService {
     await conversation.save();
   }
 
+  async generateTitle(conversationId) {
+    let conversation = await Conversation5Model.findById(conversationId);
+    const title = await this.messageService.GenerateTitle(conversation.messages);
+    conversation.title = title;
+    await conversation.save();
+    return title;
+  }
+
   async listUserConversations(userId) {
     const newConvs = await Conversation5Model.find({members: userId});
     const oldConvs = await this.conversationModel.find({user_id: userId});

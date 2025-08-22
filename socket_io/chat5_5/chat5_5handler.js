@@ -166,4 +166,11 @@ module.exports = async function registerChat5_5Handlers({
   socket.on('chat5-edittext-up', async (data) => {
     await messageService.editTextNew(data);
   });
+
+  // Generate title
+  socket.on('chat5-generatetitle-up', async (data) => {
+    const { conversation_id } = data;
+    const title = await conversationService.generateTitle(conversation_id);
+    socket.emit('chat5-generatetitle-done', {title});
+  });
 };

@@ -85,6 +85,18 @@ socket.on('chat5-togglehidefrombot-done', () => {
   hideLoadingPopup();
 });
 
+// Generate title
+function GenerateTitle() {
+  showLoadingPopup();
+  const conversation_id = document.getElementById("id").innerHTML;
+  socket.emit('chat5-generatetitle-up', {conversation_id});
+}
+socket.on('chat5-generatetitle-done', (data) => {
+  document.getElementById("title").value = data.title;
+  document.getElementById("conversation_title").innerHTML = data.title;
+  hideLoadingPopup();
+});
+
 // Handle upload errors
 socket.on('chat5-uploadError', (data) => {
   alert(`\nError: ${data.message}`);

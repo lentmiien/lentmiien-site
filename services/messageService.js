@@ -674,6 +674,54 @@ class MessageService {
     message.content[type] = value;
     await message.save();
   }
+
+  async GenerateTitle(message_ids) {
+    const msgs = await this.loadMessagesInNewFormat(message_ids, true);
+    const use_model = 'gpt-4.1-nano-2025-04-14';
+    const use_messages = [];
+    use_messages.push({
+      role: "system",
+      content: [
+        { type: 'text', text: "Your task is to come up with a short, suitable title for the following conversation." }
+      ]
+    });
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].contentType === "text") {
+        if (msgs[i].user_id === "bot") {
+          if (use_messages[use_messages.length-1].role === "assistant") {
+            use_messages[use_messages.length-1].content.push({ type: 'text', text: msgs[i].content.text });
+          } else {
+            use_messages.push({
+              role: "assistant",
+              content: [ { type: 'text', text: msgs[i].content.text } ]
+            });
+          }
+        } else {
+          if (use_messages[use_messages.length-1].role === "user") {
+            use_messages[use_messages.length-1].content.push({ type: 'text', text: msgs[i].content.text });
+          } else {
+            use_messages.push({
+              role: "user",
+              content: [ { type: 'text', text: msgs[i].content.text } ]
+            });
+          }
+        }
+      }
+    }
+    use_messages.push({
+      role: "user",
+      content: [ { type: 'text', text: 'Please give me a suitable title for our conversation. Please only respond with the title.' } ]
+    });
+    try {
+      const response = await chatGPT_beta(use_messages, use_model, true, {object: Title, title: "title"});
+      const details = response.output_parsed;
+      const title = details.conversation_title;
+      return title;
+    } catch (error) {
+      console.error(error);
+      return "Error generating title";
+    }
+  }
 }
 
 const FormData = require('form-data');
