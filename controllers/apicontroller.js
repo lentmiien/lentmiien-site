@@ -90,11 +90,10 @@ exports.fetchFeedback = async (req, res) => {
 }
 
 exports.setTask = async (req, res) => {
-  const userId = "Lennart";
   try {
-    const { title, description, type, start, end } = req.body;
+    const { title, description, type, start, end, userId } = req.body;
     let doc = new Task({
-      userId,
+      userId: userId ? userId : "Lennart",
       type,
       title,
       description,
