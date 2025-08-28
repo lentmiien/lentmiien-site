@@ -68,6 +68,10 @@ block content
         a.btn.btn-link(href="/scheduleTask/calendar")
           img(src="/i/schedule.jpg", alt="Calendar")
           p Calendar
+      if permissions && permissions.indexOf("image_gen") >= 0
+        a.btn.btn-link(href="/image_gen")
+          img(src="/i/img_gen.jpg", alt="Generate and edit images")
+          p Image Gen
   if new_openai_models.length > 0
     .row 
       .col
