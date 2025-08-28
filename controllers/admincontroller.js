@@ -88,6 +88,7 @@ exports.manage_roles = async (req, res) => {
       "gallery",
       "payroll",
       "scheduletask",
+      "image_gen",
       "test",
       "archive",
     ]

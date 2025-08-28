@@ -191,6 +191,7 @@ const productRouter = require('./routes/product_details');
 const galleryRouter = require('./routes/gallery');
 const payrollRouter = require('./routes/payroll');
 const scheduleTaskRouter = require('./routes/scheduleTaskRoute');
+const imageGenRouter = require('./routes/image_gen');
 const adminRouter = require('./routes/admin');
 
 app.use('/', indexRouter);
@@ -219,6 +220,7 @@ app.use('/product', isAuthenticated, authorize("product"), productRouter);
 app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
 app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);
+app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(

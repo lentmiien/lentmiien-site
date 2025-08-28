@@ -22,3 +22,5 @@ employeeNo=
 employeeName=
 department=
 API_KEY=
+COMFY_API_BASE=
+COMFY_API_KEY=
