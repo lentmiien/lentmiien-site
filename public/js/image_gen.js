@@ -1,4 +1,4 @@
-// public/js/image_gen.js
+// public/js/image_gen.js (full updated, includes rating + prompt library)
 (function(){
   const $ = (s, r=document)=>r.querySelector(s);
   const logEl = $('#log');
@@ -6,6 +6,8 @@
 
   let workflows = [];
   let wfMap = new Map();
+  let currentJobId = null;
+  let ratingBarVisible = false;
 
   function setStatus(t){ statusPill.textContent = t; }
   function log(msg, cls){
@@ -33,13 +35,13 @@
 
   // Health
   $('#btnHealth').addEventListener('click', async ()=>{
-    try{
+    try {
       const j = await api('/api/health');
       const dot = $('#healthDot');
       dot.textContent = j.ok ? 'ok' : 'error';
       dot.className = `badge ${j.ok ? 'bg-success' : 'bg-danger'}`;
       log('Health ok.');
-    }catch(e){
+    } catch (e) {
       const dot = $('#healthDot');
       dot.textContent = 'error';
       dot.className = 'badge bg-danger';
@@ -100,7 +102,6 @@
     const area = $('#formArea');
     def.inputs.forEach(spec => area.appendChild(ctl(spec)));
   }
-
   async function loadWorkflows(){
     setStatus('loading');
     try{
@@ -132,24 +133,6 @@
     renderForm(def);
   });
 
-  // Example prompts
-  const EXAMPLES = [
-    'A vibrant, warm neon-lit street in Hong Kong, cinematic, volumetric haze, high detail.',
-    'Ancient library with floating candles, golden beams, dust motes, fantasy matte painting.',
-    'Cyberpunk alley in rain, colorful reflections, fog, sharp focus, ultra-detailed.',
-    'Snowy mountain temple above the clouds at sunrise, serene, dramatic god-rays.',
-    'Retro-futuristic city park at dusk, pastel sky, isometric style, soft lighting.'
-  ];
-  $('#btnExample1').addEventListener('click', ()=>{
-    const def = wfMap.get($('#wfSelect').value);
-    if(!def) return;
-    const promptCtl = $('#inp_prompt');
-    if (promptCtl) {
-      promptCtl.value = EXAMPLES[Math.floor(Math.random()*EXAMPLES.length)];
-      log('Inserted example prompt.');
-    }
-  });
-
   // Generate
   async function generate(){
     const def = wfMap.get($('#wfSelect').value);
@@ -173,12 +156,14 @@
 
     $('#btnGenerate').disabled = true;
     setStatus('queuing');
+    hideRatingBar();
     try{
       const resp = await api('/api/generate', {
         method: 'POST',
         body: JSON.stringify({ workflow: $('#wfSelect').value, inputs })
       });
-      $('#jobId').value = resp.job_id;
+      $('#jobId').value = resp.job_id || '';
+      currentJobId = resp.job_id || null;
       $('#jobStatus').textContent = 'queued';
       log(`Queued job ${resp.job_id}`);
       await poll(resp.job_id);
@@ -197,7 +182,7 @@
   async function poll(jobId){
     setStatus('waiting');
     $('#results').innerHTML = '';
-    for (let i=0;i<300;i++){ // up to ~10 minutes @2s
+    for (let i=0;i<300;i++){
       try{
         const j = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
         $('#jobStatus').textContent = j.status;
@@ -205,6 +190,7 @@
           setStatus('completed');
           log(`Completed with ${j.files.length} image(s).`, 'text-success');
           await showResults(jobId, j.files);
+          showRatingBar(jobId);
           return;
         } else if (j.status === 'failed') {
           setStatus('failed');
@@ -227,10 +213,7 @@
       const url = `/image_gen/api/jobs/${encodeURIComponent(jobId)}/images/${i}`;
       try{
         const resp = await fetch(url);
-        if (!resp.ok) {
-          const msg = await resp.text().catch(()=> '');
-          throw new Error(`Image fetch ${resp.status}: ${msg.slice(0,200)}`);
-        }
+        if (!resp.ok) throw new Error(`Image ${i} ${resp.status}`);
         const blob = await resp.blob();
         const objUrl = URL.createObjectURL(blob);
         const col = document.createElement('div'); col.className = 'col';
@@ -246,6 +229,47 @@
     }
   }
 
+  // Rating bar
+  function showRatingBar(jobId){
+    if (!jobId || ratingBarVisible) return;
+    const cont = document.createElement('div');
+    cont.id = 'ratingBar';
+    cont.className = 'd-flex gap-2 align-items-center mt-3';
+    cont.innerHTML = `
+      <span class="text-muted">Rate this result:</span>
+      <div class="btn-group" role="group" aria-label="Rating">
+        <button type="button" class="btn btn-outline-secondary" data-rate="bad">Bad</button>
+        <button type="button" class="btn btn-outline-primary" data-rate="ok">OK</button>
+        <button type="button" class="btn btn-outline-success" data-rate="good">Good</button>
+        <button type="button" class="btn btn-success" data-rate="great">Great</button>
+      </div>
+      <span id="ratingMsg" class="text-muted"></span>
+    `;
+    const jobCard = document.getElementById("job_card_body") || document.body;
+    jobCard.appendChild(cont);
+    cont.querySelectorAll('button[data-rate]').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        const rating = e.currentTarget.getAttribute('data-rate');
+        try{
+          cont.querySelectorAll('button').forEach(b=>b.disabled=true);
+          const resp = await api('/api/rate', { method:'POST', body: JSON.stringify({ job_id: jobId, rating }) });
+          $('#ratingMsg').textContent = 'Thanks!';
+          setTimeout(hideRatingBar, 1200);
+        }catch(err){
+          $('#ratingMsg').textContent = 'Rating failed';
+          log('Rate failed: ' + err.message, 'text-danger');
+          cont.querySelectorAll('button').forEach(b=>b.disabled=false);
+        }
+      });
+    });
+    ratingBarVisible = true;
+  }
+  function hideRatingBar(){
+    const el = $('#ratingBar');
+    if (el) el.remove();
+    ratingBarVisible = false;
+  }
+
   // Upload
   $('#btnUpload').addEventListener('click', async ()=>{
     const f = $('#fileUp').files[0];
@@ -253,7 +277,7 @@
     const fd = new FormData(); fd.append('image', f, f.name);
     try{
       const r = await api('/api/files/input', { method:'POST', body: fd });
-      $('#lastUpload').textContent = `Uploaded as ${r.filename || r.file || '(see ComfyUI response)'}`;
+      $('#lastUpload').textContent = `Uploaded as ${r.filename || r.file || '(see response)'}`;
       log(`Uploaded ${f.name}${r.filename ? ' -> ' + r.filename : ''}`, 'text-success');
       const imageCtl = $('#inp_image'); if (imageCtl && r.filename) imageCtl.value = r.filename;
     }catch(e){
@@ -275,8 +299,9 @@
         const card = document.createElement('div'); card.className = 'thumb';
         const img = document.createElement('img'); img.alt = name;
         try{
-          const blob = await fetch(`/image_gen/api/files/${bucket}/${encodeURIComponent(name)}`).then(r=>r.blob());
-          img.src = URL.createObjectURL(blob);
+          const r = await fetch(`/image_gen/api/files/${bucket}/${encodeURIComponent(name)}`);
+          if (r.ok) img.src = URL.createObjectURL(await r.blob());
+          else img.remove();
         }catch{ img.remove(); }
         const cap = document.createElement('div'); cap.className='muted mt-1'; cap.textContent = `${bucket}/ ${name}`;
         card.appendChild(img); card.appendChild(cap);
@@ -291,6 +316,66 @@
       log('List failed: ' + e.message, 'text-danger');
     }
   }
+
+  // Prompt Library Modal
+  const modalEl = $('#promptModal');
+  let bsModal = null;
+  function openPromptLib(type='positive'){
+    if (!bsModal) bsModal = new bootstrap.Modal(modalEl);
+    // set tabs visual
+    $('#tabPos').classList.toggle('active', type==='positive');
+    $('#tabNeg').classList.toggle('active', type==='negative');
+    modalEl.dataset.type = type;
+    $('#libShowAll').checked = false; // default filtered view
+    loadPromptList();
+    bsModal.show();
+  }
+  async function loadPromptList(){
+    const type = modalEl.dataset.type || 'positive';
+    const wfKey = $('#wfSelect').value;
+    const show = $('#libShowAll').checked ? 'all' : 'default';
+    const list = $('#promptList');
+    list.innerHTML = '<div class="text-muted">Loading…</div>';
+    try{
+      const j = await api(`/api/prompts?workflow=${encodeURIComponent(wfKey)}&type=${encodeURIComponent(type)}&show=${show}`);
+      const items = j.items || [];
+      if (!items.length) {
+        list.innerHTML = '<div class="text-muted">No prompts yet.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      for (const it of items) {
+        const li = document.createElement('div');
+        li.className = 'list-group-item';
+        li.innerHTML = `
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="me-3" style="white-space:pre-wrap">${escapeHtml(it.prompt)}</div>
+            <div class="text-end" style="min-width:140px">
+              <div><span class="badge bg-primary-subtle text-primary">avg ${(it.average||0).toFixed(2)}</span></div>
+              <div class="text-muted small">uses ${it.uses} • rated ${it.rating_count}</div>
+              <button type="button" class="btn btn-sm btn-outline-success mt-2" data-insert="1">Use</button>
+            </div>
+          </div>`;
+        li.querySelector('[data-insert]').addEventListener('click', ()=>{
+          if (type === 'positive') {
+            const p = $('#inp_prompt'); if (p) p.value = it.prompt;
+          } else {
+            const n = $('#inp_negative'); if (n) n.value = it.prompt;
+          }
+          log('Inserted prompt from library.');
+          // keep modal open so you can insert both if you want
+        });
+        list.appendChild(li);
+      }
+    }catch(e){
+      list.innerHTML = `<div class="text-danger">Failed to load: ${e.message}</div>`;
+    }
+  }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+  $('#btnPromptLib').addEventListener('click', ()=> openPromptLib('positive'));
+  $('#tabPos').addEventListener('click', ()=> { openPromptLib('positive'); });
+  $('#tabNeg').addEventListener('click', ()=> { openPromptLib('negative'); });
+  $('#libShowAll').addEventListener('change', loadPromptList);
 
   // Auto-load
   loadWorkflows();

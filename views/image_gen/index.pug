@@ -9,6 +9,7 @@ block styles
     .monospace{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
     .log{background:#0b0d12;color:#e9ecef;border:1px solid #1f232b;border-radius:.5rem;padding:.75rem;max-height:200px;overflow:auto}
     .pill{display:inline-block;padding:.15rem .5rem;border-radius:50rem;background:#0d1220;border:1px solid #2a2f3a;font-size:.8rem;margin-left:.25rem}
+    #promptModal{z-index:99999;}
 
 block content
   .container.py-3
@@ -41,7 +42,7 @@ block content
         form#genForm
           .row.g-3#formArea
           .d-flex.gap-2.mt-3
-            button#btnExample1.btn.btn-outline-secondary(type="button") Insert example prompt
+            button#btnPromptLib.btn.btn-outline-secondary(type="button") Prompt library…
             button#btnGenerate.btn.btn-success(type="button") Generate
 
     // Upload & browse
@@ -64,7 +65,7 @@ block content
 
     // Jobs
     .card.mb-3
-      .card-body
+      #job_card_body.card-body
         h2.h6 Job
         .row.g-3.align-items-end
           .col-md-6
@@ -81,6 +82,27 @@ block content
       .card-body
         h2.h6 Log
         .log#log
+
+    #promptModal.modal.fade(tabindex='-1' aria-hidden='true')
+      .modal-dialog.modal-lg
+        .modal-content
+          .modal-header
+            h5.modal-title Prompt library
+            button.btn-close(type='button' data-bs-dismiss='modal' aria-label='Close')
+          .modal-body
+            .d-flex.justify-content-between.align-items-center.mb-2
+              ul.nav.nav-tabs(role='tablist')
+                li.nav-item
+                  button#tabPos.nav-link.active(type='button' role='tab') Positive
+                li.nav-item
+                  button#tabNeg.nav-link(type='button' role='tab') Negative
+              .form-check.form-switch
+                input#libShowAll.form-check-input(type='checkbox')
+                label.form-check-label(for='libShowAll') Show all
+            // List
+            .list-group#promptList(style='max-height: 420px; overflow:auto;')
+          .modal-footer
+            button.btn.btn-secondary(type='button' data-bs-dismiss='modal') Close
 
 block script
   //- Serve this file from /public/js/image_gen.js

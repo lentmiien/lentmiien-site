@@ -92,6 +92,8 @@ const Payroll = require('./models/Payroll');
 // Schedule-Task
 const Task = require('./models/scheduleTask/Task');
 const Palette = require('./models/scheduleTask/Palette');
+// ComfyUI prompts
+const Prompt = require('./models/prompt');
 
 // Export models
 module.exports = {
@@ -147,4 +149,5 @@ module.exports = {
   Payroll,
   Task,
   Palette,
+  Prompt,
 };
