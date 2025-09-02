@@ -87,6 +87,12 @@ module.exports = async function registerChat5_5Handlers({
 
       socket.emit('chat5-messages', {id, messages: aiMessages});
     }
+
+    // Generate a title if not yet set
+    if (settings.title === "NEW") {
+      const title = await conversationService.generateTitle(id);
+      socket.emit('chat5-generatetitle-done', {title});
+    }
   });
 
   ////////////////////////////
