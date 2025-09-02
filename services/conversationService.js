@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS = {
 
 // Default conversation properties
 const DEFAULT_PROPERTY = {
-  title: "New conversation",
+  title: "NEW",
   category: "Chat5",
   tags: [ "chat5" ],
   members: [],
