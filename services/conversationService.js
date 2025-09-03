@@ -957,7 +957,9 @@ class ConversationService {
     if (generateAI) {
       aiMessages = await this.messageService.generateAIMessage({conversation});
       for (const m of aiMessages) {
-        conversation.messages.push(m._id.toString());
+        if (!m.error) {
+          conversation.messages.push(m._id.toString());
+        }
       }
     }
 

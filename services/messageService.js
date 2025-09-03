@@ -646,18 +646,22 @@ class MessageService {
     const messages = await Chat5Model.find({_id: conversation.messages});
     const resp = await ai.chat(conversation, messages, model);
     for (const m of resp) {
-      const message = {
-        user_id: "bot",
-        category: conversation.category,
-        tags: conversation.tags,
-        contentType: m.contentType,
-        content: m.content,
-        timestamp: new Date(),
-        hideFromBot: m.hideFromBot,
-      };
-      const msg = new Chat5Model(message);
-      await msg.save();
-      newAiMessages.push(msg);
+      if (m.error) {
+        newAiMessages.push(m);
+      } else {
+        const message = {
+          user_id: "bot",
+          category: conversation.category,
+          tags: conversation.tags,
+          contentType: m.contentType,
+          content: m.content,
+          timestamp: new Date(),
+          hideFromBot: m.hideFromBot,
+        };
+        const msg = new Chat5Model(message);
+        await msg.save();
+        newAiMessages.push(msg);
+      }
     }
 
     return newAiMessages;

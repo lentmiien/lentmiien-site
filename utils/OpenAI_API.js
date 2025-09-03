@@ -210,6 +210,7 @@ const chat = async (conversation, messages, model) => {
         output.push(data);
       }
     }
+    output.push({error:response.error});
     return output;
   } catch (error) {
     console.error(`Error while calling ChatGPT API: ${error}`);

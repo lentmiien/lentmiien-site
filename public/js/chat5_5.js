@@ -106,7 +106,11 @@ socket.on('chat5-messages', ({id, messages}) => {
   document.getElementById("id").innerHTML = id;
   document.getElementById("conversation_title").innerHTML = document.getElementById("title").value;
   for (const m of messages) {
-    AddMessageToUI(m);
+    if (m.error) {
+      console.log(m.error);
+    } else {
+      AddMessageToUI(m);
+    }
   }
   hideLoadingPopup();
 });
