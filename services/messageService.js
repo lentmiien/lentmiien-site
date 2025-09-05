@@ -646,8 +646,8 @@ class MessageService {
     const messages = await Chat5Model.find({_id: conversation.messages});
     const resp = await ai.chat(conversation, messages, model);
     for (const m of resp) {
-      if (m.error) {
-        newAiMessages.push(m);
+      if (Object.hasOwn(m, 'error')) {
+        if (m.error) newAiMessages.push(m);
       } else {
         const message = {
           user_id: "bot",
