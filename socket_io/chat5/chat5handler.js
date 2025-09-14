@@ -3,6 +3,7 @@ const path = require('path');
 const context = require('./chat5context');
 
 module.exports = async function registerChat5Handlers({
+  io,
   socket,
   userName
 }) {

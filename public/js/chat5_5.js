@@ -12,6 +12,15 @@ const editor = new toastui.Editor({
   // theme: 'dark',
 });
 
+function SwitchConversation(new_id) {
+  if (document.getElementById("id").innerHTML != "NEW") {
+    const conversation_id = document.getElementById("id").innerHTML;
+    socket.emit('chat5-leaveConversation', {conversationId: conversation_id});
+  }
+  socket.emit('chat5-joinConversation', {conversationId: new_id});
+  document.getElementById("id").innerHTML = new_id;
+}
+
 function Append(send, resp) {
   showLoadingPopup();
   const conversation_id = document.getElementById("id").innerHTML;
@@ -103,7 +112,7 @@ socket.on('chat5-uploadError', (data) => {
 });
 
 socket.on('chat5-messages', ({id, messages}) => {
-  document.getElementById("id").innerHTML = id;
+  SwitchConversation(id);
   document.getElementById("conversation_title").innerHTML = document.getElementById("title").value;
   for (const m of messages) {
     if (m.error) {
@@ -218,3 +227,15 @@ function SaveText() {
   }
   myModal.hide();
 }
+
+function JoinOnStart() {
+  if (document.getElementById("id").innerHTML != "NEW") {
+    const conversation_id = document.getElementById("id").innerHTML;
+    socket.emit('chat5-joinConversation', {conversationId: conversation_id});
+  }
+}
+setTimeout(JoinOnStart, 5000);
+
+socket.on('chat5-notice', (data) => {
+  console.log(`A new message was posted to "${data.title}" (${data.id})`);
+});

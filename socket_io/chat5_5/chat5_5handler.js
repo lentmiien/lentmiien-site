@@ -3,6 +3,7 @@ const path = require('path');
 const context = require('./chat5_5context');
 
 module.exports = async function registerChat5_5Handlers({
+  io,
   socket,
   userName
 }) {
@@ -18,6 +19,29 @@ module.exports = async function registerChat5_5Handlers({
     },
     TEMP_DIR
   } = context;
+
+  const roomForUser = io.userRoom;
+  const roomForConversation = io.conversationRoom;
+
+  function notifyMembers(user, members, event, payload, { excludeCurrentSocket = true } = {}) {
+    if (members.indexOf(user) === -1) members.push(user);
+    const rooms = members.map(roomForUser);
+    if (excludeCurrentSocket) {
+      socket.to(rooms).emit(event, payload);
+    } else {
+      io.to(rooms).emit(event, payload);
+    }
+  }
+
+  ///////////////////////////////////
+  //----- Conversation rooms ------//
+  // Join/Leave conversation room  //
+  socket.on('chat5-joinConversation', async (data) => {
+    socket.join(roomForConversation(data.conversationId));
+  });
+  socket.on('chat5-leaveConversation', async (data) => {
+    socket.leave(roomForConversation(data.conversationId));
+  });
 
   ////////////////////////////
   //----- Upload text ------//
@@ -49,6 +73,8 @@ module.exports = async function registerChat5_5Handlers({
       const c = await conversationService.createNewConversation(user_id, setting_params, conv_params);
       id = c._id.toString();
     }
+
+    const convRoom = roomForConversation(id);
   
     // Post to conversation
     if (prompt) {
@@ -73,7 +99,12 @@ module.exports = async function registerChat5_5Handlers({
 
       aiMessages.unshift(userMessage);
 
-      socket.emit('chat5-messages', {id, messages: aiMessages});
+      if (conversation_id === "NEW") {
+        socket.emit('chat5-messages', {id, messages: aiMessages});
+      } else {
+        io.to(convRoom).emit('chat5-messages', { id, messages: aiMessages });
+      }
+      notifyMembers(user_id, settings.members, 'chat5-notice', { id, title: settings.title }, { excludeCurrentSocket: true });
     } else {
       const { aiMessages } = await conversationService.postToConversationNew({
         conversationId: id,
@@ -85,7 +116,12 @@ module.exports = async function registerChat5_5Handlers({
         c: conv_params,
       });
 
-      socket.emit('chat5-messages', {id, messages: aiMessages});
+      if (conversation_id === "NEW") {
+        socket.emit('chat5-messages', {id, messages: aiMessages});
+      } else {
+        io.to(convRoom).emit('chat5-messages', { id, messages: aiMessages });
+      }
+      notifyMembers(user_id, settings.members, 'chat5-notice', { id, title: settings.title }, { excludeCurrentSocket: true });
     }
 
     // Generate a title if not yet set

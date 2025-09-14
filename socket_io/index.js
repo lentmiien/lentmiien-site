@@ -5,6 +5,9 @@ const { UseraccountModel } = require('../database');
 const registerChat5Handlers = require('./chat5/chat5handler');
 const registerChat5_5Handlers = require('./chat5_5/chat5_5handler');
 
+function roomForUser(userName) { return `user:${encodeURIComponent(String(userName))}`; }
+function roomForConversation(conversationId) { return `conversation:${String(conversationId)}`; }
+
 module.exports = (server, sessionMiddleware) => {
   const io = socketIO(server, {maxHttpBufferSize: 10 * 1024 * 1024});
 
@@ -32,11 +35,19 @@ module.exports = (server, sessionMiddleware) => {
 
     // console.log(`${userName} connected: ${userId}`);
 
-    await registerChat5Handlers({ socket, userName });
-    await registerChat5_5Handlers({ socket, userName });
+    socket.data.userName = userName;
+    await socket.join(roomForUser(userName));
+
+    await registerChat5Handlers({ io, socket, userName });
+    await registerChat5_5Handlers({ io, socket, userName });
 
     socket.on('disconnect', () => {
       // console.log(`User disconnected: ${userId}`);
     });
   });
+
+  io.userRoom = roomForUser;
+  io.conversationRoom = roomForConversation;
+
+  return io;
 };

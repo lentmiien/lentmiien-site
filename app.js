@@ -30,6 +30,11 @@ const sessionMiddleware = expressSession({
 });
 app.use(sessionMiddleware);
 
+// Setup Socket.io
+const socketIO = require('./socket_io/index');
+const io = socketIO(server, sessionMiddleware);
+app.set('io', io);
+
 // Setup webhooks
 // app.use(express.text({ type: 'application/json' }));
 const webhook = require('./routes/webhook');
@@ -411,7 +416,3 @@ const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   console.log(`Server started on port ${PORT}`);
 });
-
-// Setup Socket.io
-const socketIO = require('./socket_io/index');
-socketIO(server, sessionMiddleware);

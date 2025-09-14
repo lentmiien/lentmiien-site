@@ -24,6 +24,15 @@ exports.openai = async (req, res) => {
       await batchService.processBatchResponses();
       console.log("Batch completed:", response_id);
     }
+
+    // DEBUG TEST
+    // background task
+    // inform Socket.IO
+    const io = req.app.get('io');
+    const toUserRoom = io.userRoom;
+    const room = toUserRoom('Lennart');
+    const payload = { id: 'conv_placeholder_123', title: 'Placeholder Conversation' };
+    io.to(room).emit('chat5-notice', payload);
   } catch (error) {
     // Note: The error class is on the *class*, not the instance
     if (error instanceof OpenAI.InvalidWebhookSignatureError) {
