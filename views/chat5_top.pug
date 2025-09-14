@@ -1,23 +1,155 @@
 extends layout
-
 block content
-  .row
+  .row.mb-3
     .col 
-      h2 Chat 5 list 
-  .row 
-    .col 
-      label(for="filter") Filter 
-      select#filter.form-control(name="filter", onchange="Filter(this)") 
+      h2.mb-0 Chat 5 list 
+  .row.g-2.align-items-center.mb-3
+    .col-md-6
+      label(for="filter").form-label.mb-1 Filter 
+      select#filter.form-select(name="filter", onchange="Filter(this)") 
         option(value="") - all -
         each c in sortedCategories
           option(value=c)= c
-    .col
+    .col-md-6.text-md-end.mt-2.mt-md-0
       a.btn.btn-primary(href=`/chat5/chat/NEW`) +NEW
+
+  //- Group headers and cards
+  - const now = Date.now()
+  - const MIN = 60 * 1000
+  - const HOUR = 60 * MIN
+  - const DAY = 24 * HOUR
+  - const WEEK = 7 * DAY
+  - const MONTH = 30 * DAY
+  - const YEAR = 365 * DAY
+  - const bucketFor = (d) => {
+  -   const diff = now - new Date(d).getTime()
+  -   if (diff < HOUR) return 'Updated within the last hour'
+  -   if (diff < 6 * HOUR) return 'Updated within the last 6 hours'
+  -   if (diff < DAY) return 'Updated within the last day'
+  -   if (diff < 3 * DAY) return 'Updated within the last 3 days'
+  -   if (diff < WEEK) return 'Updated within the last week'
+  -   if (diff < 2 * WEEK) return 'Updated within the last 2 weeks'
+  -   if (diff < MONTH) return 'Updated within the last month'
+  -   if (diff < 3 * MONTH) return 'Updated within the last 3 months'
+  -   if (diff < 6 * MONTH) return 'Updated within the last 6 months'
+  -   if (diff < YEAR) return 'Updated within the last year'
+  -   return 'Updated over a year ago'
+  - }
+  - const timeAgo = (d) => {
+  -   const ms = now - new Date(d).getTime()
+  -   if (ms < MIN) return '<1m'
+  -   if (ms < HOUR) return Math.floor(ms / MIN) + 'm'
+  -   if (ms < DAY) return Math.floor(ms / HOUR) + 'h'
+  -   if (ms < WEEK) return Math.floor(ms / DAY) + 'd'
+  -   if (ms < MONTH) return Math.floor(ms / WEEK) + 'w'
+  -   if (ms < YEAR) return Math.floor(ms / MONTH) + 'mo'
+  -   return Math.floor(ms / YEAR) + 'y'
+  - }
+  - let lastBucket = null
+
   each c in conversations
-    div(class="entry", data-category=c.category) 
-      a(href=`/chat5/chat/${c._id.toString()}`)
-        b= `${c.old?"*":""}${c.title}`
-        span= ` (${c.category})`
+    - const b = bucketFor(c.updatedAt)
+    if b !== lastBucket
+      - lastBucket = b
+      .bucket-header.mt-4.mb-2
+        h6.text-muted.small.mb-0= b
+
+    //- Card
+    - const tagsStr = (c.tags && c.tags.length) ? c.tags.join(', ') : ''
+    - const membersStr = (c.members && c.members.length) ? c.members.join(', ') : ''
+    - const msgCount = (c.messages && c.messages.length) ? c.messages.length : 0
+    - const createdISO = c.createdAt
+    - const updatedISO = c.updatedAt
+    .entry.card.entry-card.mb-2(data-category=c.category data-age-bucket=b
+      data-title=c.title
+      data-summary=(c.summary || '')
+      data-category-label=c.category
+      data-tags=tagsStr
+      data-messages-count=msgCount
+      data-members=membersStr
+      data-created-iso=createdISO
+      data-updated-iso=updatedISO
+      data-open-href=`/chat5/chat/${c._id.toString()}`)
+      .card-body.py-2
+        .d-flex.flex-column.flex-md-row.align-items-md-center.justify-content-between.gap-2
+          .d-flex.flex-column
+            .d-flex.align-items-center.gap-2
+              a.link-dark.text-decoration-none.fs-6.fw-semibold(href=`/chat5/chat/${c._id.toString()}`)= `${c.old?"*":""}${c.title}`
+              span.badge.bg-secondary-subtle.text-secondary.border.border-secondary-subtle= c.category
+            .small.text-muted
+              | Updated #{timeAgo(c.updatedAt)} • #{msgCount} msg#{msgCount === 1 ? '' : 's'}
+          .d-flex.align-items-center.gap-2.ms-md-3
+            if c.tags && c.tags.length
+              //- show first few tags as badges (optional)
+              each t, idx in c.tags.slice(0, 3)
+                span.badge.bg-light.text-secondary.border= t
+              if c.tags.length > 3
+                span.badge.bg-light.text-secondary.border= `+${c.tags.length - 3}`
+            button.btn.btn-outline-secondary.btn-sm(data-preview type="button" data-bs-toggle="modal" data-bs-target="#convPreviewModal") Preview
+            a.btn.btn-outline-primary.btn-sm(href=`/chat5/chat/${c._id.toString()}`) Open
+
+  //- Preview Modal
+  .modal.fade#convPreviewModal(tabindex="-1" aria-labelledby="convPreviewLabel" aria-hidden="true")
+    .modal-dialog.modal-lg.modal-dialog-scrollable
+      .modal-content
+        .modal-header
+          h5.modal-title#convPreviewLabel Conversation preview
+          button.btn-close(type="button" data-bs-dismiss="modal" aria-label="Close")
+        .modal-body
+          h6#previewTitle.mb-2
+          p#previewSummary.text-body
+          hr
+          .row.row-cols-1.row-cols-md-2.g-3
+            .col
+              small.text-uppercase.text-muted Category
+              div#previewCategory.fw-medium
+            .col
+              small.text-uppercase.text-muted Tags
+              div#previewTags
+            .col
+              small.text-uppercase.text-muted Messages
+              div#previewMessagesCount
+            .col
+              small.text-uppercase.text-muted Members
+              div#previewMembers
+            .col
+              small.text-uppercase.text-muted Created
+              div#previewCreated
+            .col
+              small.text-uppercase.text-muted Updated
+              div#previewUpdated
+        .modal-footer
+          a.btn.btn-primary#previewOpenLink(href="#") Open conversation
+          button.btn.btn-secondary(type="button" data-bs-dismiss="modal") Close
+
+block styles
+  style.
+    .bucket-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(255,255,255,0.9);
+      backdrop-filter: saturate(120%) blur(4px);
+      padding: 2px 4px;
+      border-top: 1px solid #eee;
+    }
+    .entry-card {
+      border: 1px solid #eee;
+      transition: box-shadow 120ms ease, transform 120ms ease, border-color 120ms ease;
+    }
+    .entry-card:hover {
+      box-shadow: 0 .25rem .75rem rgba(0,0,0,.06);
+      border-color: #e2e2e2;
+    }
+    .bg-secondary-subtle {
+      background-color: #f1f3f5 !important;
+    }
+    .border-secondary-subtle {
+      border-color: #e9ecef !important;
+    }
+    #convPreviewModal {
+      z-index: 9999;
+    }
 
 block script
   script(src="/js/chat5_top.js")
