@@ -638,33 +638,34 @@ class MessageService {
   }
 
   async generateAIMessage({conversation}) {
-    const newAiMessages = [];
     // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
     const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];
     // TODO: Only support OpenAi at this stage
     if (model.provider != "OpenAI") return null;
     const messages = await Chat5Model.find({_id: conversation.messages});
-    const resp = await ai.chat(conversation, messages, model);
-    for (const m of resp) {
-      if (Object.hasOwn(m, 'error')) {
-        if (m.error) newAiMessages.push(m);
-      } else {
-        const message = {
-          user_id: "bot",
-          category: conversation.category,
-          tags: conversation.tags,
-          contentType: m.contentType,
-          content: m.content,
-          timestamp: new Date(),
-          hideFromBot: m.hideFromBot,
-        };
-        const msg = new Chat5Model(message);
-        await msg.save();
-        newAiMessages.push(msg);
-      }
-    }
+    const response_id = await ai.chat(conversation, messages, model);
 
-    return newAiMessages;
+    const message = {
+      user_id: "bot",
+      category: conversation.category,
+      tags: conversation.tags,
+      contentType: "text",
+      content: {
+        text: "Pending response",
+        image: null,
+        audio: null,
+        tts: null,
+        transcript: null,
+        revisedPrompt: null,
+        imageQuality: null,
+        toolOutput: null,
+      },
+      timestamp: new Date(),
+      hideFromBot: true,
+    };
+    const msg = new Chat5Model(message);
+    await msg.save();
+    return {response_id, msg};
   }
 
   async toggleHideFromBot({message_id, state}) {
@@ -725,6 +726,33 @@ class MessageService {
       console.error(error);
       return "Error generating title";
     }
+  }
+
+  // const messages = await this.messageService.processCompletedResponse(conversation, response_id, r.placeholder_id);
+  async processCompletedResponse(conversation, response_id, placeholder_id) {
+    const newAiMessages = [];
+    // TODO: Only support OpenAi at this stage
+    const resp = await ai.fetchCompleted(response_id);
+    for (const m of resp) {
+      if (Object.hasOwn(m, 'error')) {
+        if (m.error) newAiMessages.push(m);
+      } else {
+        const message = {
+          user_id: "bot",
+          category: conversation.category,
+          tags: conversation.tags,
+          contentType: m.contentType,
+          content: m.content,
+          timestamp: new Date(),
+          hideFromBot: m.hideFromBot,
+        };
+        const msg = new Chat5Model(message);
+        await msg.save();
+        newAiMessages.push(msg);
+      }
+    }
+
+    return newAiMessages;
   }
 }
 

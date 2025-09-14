@@ -194,24 +194,7 @@ const chat = async (conversation, messages, model) => {
     }
     if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = {effort: conversation.metadata.reasoning, summary: "detailed"};
     let response = await openai.responses.create(inputParameters);
-    while (response.status === "queued" || response.status === "in_progress") {
-      await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2 seconds
-      response = await openai.responses.retrieve(response.id);
-    }
-    // For debugging purposes, save a copy of response to temporary folder
-    const filename = `response-${Date.now()}-.json`;
-    const outputfile = path.resolve(`./tmp_data/${filename}`);
-    await fs.promises.writeFile(outputfile, JSON.stringify(response, null, 2));
-    // DEBUG_END
-    const output = [];
-    for (const d of response.output) {
-      const data = await convertOutput(d);
-      if (data) {
-        output.push(data);
-      }
-    }
-    output.push({error:response.error});
-    return output;
+    return response.id;
   } catch (error) {
     console.error(`Error while calling ChatGPT API: ${error}`);
     return null;
@@ -231,7 +214,31 @@ const embedding = async (text, model) => {
   }
 };
 
+const fetchCompleted = async (response_id) => {
+  try {
+    response = await openai.responses.retrieve(response_id);
+    // For debugging purposes, save a copy of response to temporary folder
+    const filename = `response-${Date.now()}-.json`;
+    const outputfile = path.resolve(`./tmp_data/${filename}`);
+    await fs.promises.writeFile(outputfile, JSON.stringify(response, null, 2));
+    // DEBUG_END
+    const output = [];
+    for (const d of response.output) {
+      const data = await convertOutput(d);
+      if (data) {
+        output.push(data);
+      }
+    }
+    output.push({error:response.error});
+    return output;
+  } catch (error) {
+    console.error(`Error while fetching completed response API: ${error}`);
+    return null;
+  }
+}
+
 module.exports = {
   chat,
   embedding,
+  fetchCompleted,
 }

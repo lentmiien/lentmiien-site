@@ -22,17 +22,19 @@ exports.openai = async (req, res) => {
       const response_id = event.data.id;
       await batchService.checkBatchStatus(response_id);
       await batchService.processBatchResponses();
-      console.log("Batch completed:", response_id);
     }
 
-    // DEBUG TEST
-    // background task
-    // inform Socket.IO
-    const io = req.app.get('io');
-    const toUserRoom = io.userRoom;
-    const room = toUserRoom('Lennart');
-    const payload = { id: 'conv_placeholder_123', title: 'Placeholder Conversation' };
-    io.to(room).emit('chat5-notice', payload);
+    if (event.type === "response.completed") {
+      const io = req.app.get('io');
+      const roomForUser = io.userRoom;
+      const roomForConversation = io.conversationRoom;
+      const response_id = event.data.id;
+      const {conversation, messages, placeholder_id} = await conversationService.processCompletedResponse(response_id);
+      const convRoom = roomForConversation(conversation._id.toString());
+      io.to(convRoom).emit('chat5-messages', { id: conversation._id.toString(), messages, placeholder_id });
+      const rooms = conversation.members.map(roomForUser);
+      io.to(rooms).emit('chat5-notice', { id: conversation._id.toString(), title: conversation.title });
+    }
   } catch (error) {
     // Note: The error class is on the *class*, not the instance
     if (error instanceof OpenAI.InvalidWebhookSignatureError) {

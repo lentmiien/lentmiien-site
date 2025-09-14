@@ -1,7 +1,7 @@
 const fs = require('fs');
 const sharp = require('sharp');
 
-const { Conversation5Model } = require('../database');
+const { Conversation5Model, PendingRequests } = require('../database');
 
 // Conversation5Model.metadata
 const DEFAULT_SETTINGS = {
@@ -955,12 +955,23 @@ class ConversationService {
     // Generate AI response
     let aiMessages = [];
     if (generateAI) {
-      aiMessages = await this.messageService.generateAIMessage({conversation});
-      for (const m of aiMessages) {
+      const {response_id, msg} = await this.messageService.generateAIMessage({conversation});
+      let placeholder_id = null;
+      for (const m of msg) {
         if (!m.error) {
+          placeholder_id = m._id.toString();
           conversation.messages.push(m._id.toString());
         }
       }
+
+      // Save pending request
+      const pending_req = {
+        response_id,
+        conversation_id: conversation._id.toString(),
+        placeholder_id,
+      };
+      const pr = new PendingRequests(pending_req);
+      await pr.save();
     }
 
     // Save changes
@@ -1020,6 +1031,22 @@ class ConversationService {
     });
 
     return [...newConvs, ...oldConvsConverted];
+  }
+
+  // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
+  async processCompletedResponse(response_id) {
+    const r = await PendingRequests.findOne({response_id});
+    const conversation = await Conversation5Model.findById(r.conversation_id);
+    const messages = await this.messageService.processCompletedResponse(conversation, response_id, r.placeholder_id);
+    conversation.messages = conversation.messages.filter(d => d != r.placeholder_id);
+    for (const m of messages) {
+      if (!m.error) {
+        conversation.messages.push(m._id.toString());
+      }
+    }
+    await conversation.save();
+    await PendingRequests.deleteOne({_id: r._id});
+    return { conversation, messages, placeholder_id: r.placeholder_id };
   }
 
   async deleteNewConversation(id) {
