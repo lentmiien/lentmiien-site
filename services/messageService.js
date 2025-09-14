@@ -729,7 +729,7 @@ class MessageService {
   }
 
   // const messages = await this.messageService.processCompletedResponse(conversation, response_id, r.placeholder_id);
-  async processCompletedResponse(conversation, response_id, placeholder_id) {
+  async processCompletedResponse(conversation, response_id) {
     const newAiMessages = [];
     // TODO: Only support OpenAi at this stage
     const resp = await ai.fetchCompleted(response_id);

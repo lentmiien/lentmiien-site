@@ -31,7 +31,7 @@ exports.openai = async (req, res) => {
       const response_id = event.data.id;
       const {conversation, messages, placeholder_id} = await conversationService.processCompletedResponse(response_id);
       const convRoom = roomForConversation(conversation._id.toString());
-      io.to(convRoom).emit('chat5-messages', { id: conversation._id.toString(), messages, placeholder_id });
+      io.to(convRoom).emit('chat5-messages', { id: conversation._id.toString(), messages });
       const rooms = conversation.members.map(roomForUser);
       io.to(rooms).emit('chat5-notice', { id: conversation._id.toString(), title: conversation.title });
     }

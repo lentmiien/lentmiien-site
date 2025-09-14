@@ -956,13 +956,9 @@ class ConversationService {
     let aiMessages = [];
     if (generateAI) {
       const {response_id, msg} = await this.messageService.generateAIMessage({conversation});
-      let placeholder_id = null;
-      for (const m of msg) {
-        if (!m.error) {
-          placeholder_id = m._id.toString();
-          conversation.messages.push(m._id.toString());
-        }
-      }
+      let placeholder_id = msg._id.toString();
+      conversation.messages.push(msg._id.toString());
+      aiMessages.push(msg);
 
       // Save pending request
       const pending_req = {
@@ -1037,7 +1033,7 @@ class ConversationService {
   async processCompletedResponse(response_id) {
     const r = await PendingRequests.findOne({response_id});
     const conversation = await Conversation5Model.findById(r.conversation_id);
-    const messages = await this.messageService.processCompletedResponse(conversation, response_id, r.placeholder_id);
+    const messages = await this.messageService.processCompletedResponse(conversation, response_id);
     conversation.messages = conversation.messages.filter(d => d != r.placeholder_id);
     for (const m of messages) {
       if (!m.error) {
