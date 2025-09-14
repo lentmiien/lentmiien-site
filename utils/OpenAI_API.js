@@ -3,7 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { OpenAI } = require('openai');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
 
 const reasoningModels = [
   "o3-pro-2025-06-10",
