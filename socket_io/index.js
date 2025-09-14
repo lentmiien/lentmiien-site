@@ -33,17 +33,14 @@ module.exports = (server, sessionMiddleware) => {
     const userId = socket.request.session.passport.user;
     const userName = (await UseraccountModel.findOne({ _id: userId })).name;
 
-    // console.log(`${userName} connected: ${userId}`);
-
     socket.data.userName = userName;
     await socket.join(roomForUser(userName));
 
     await registerChat5Handlers({ io, socket, userName });
     await registerChat5_5Handlers({ io, socket, userName });
 
-    socket.on('disconnect', () => {
-      // console.log(`User disconnected: ${userId}`);
-    });
+    socket.emit('welcome');
+    socket.on('disconnect', () => {});
   });
 
   io.userRoom = roomForUser;

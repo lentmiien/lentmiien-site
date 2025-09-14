@@ -127,7 +127,7 @@ module.exports = async function registerChat5_5Handlers({
     // Generate a title if not yet set
     if (settings.title === "NEW") {
       const title = await conversationService.generateTitle(id);
-      socket.emit('chat5-generatetitle-done', {title});
+      io.to(convRoom).emit('chat5-generatetitle-done', {title});
     }
   });
 
@@ -149,6 +149,8 @@ module.exports = async function registerChat5_5Handlers({
       const c = await conversationService.createNewConversation(user_id);
       id = c._id.toString();
     }
+
+    const convRoom = roomForConversation(id);
 
     // Pre-process and save to appropriate folder
     const uniqueName = `${Date.now()}_${name}`;
@@ -185,7 +187,13 @@ module.exports = async function registerChat5_5Handlers({
           messageType: "image",
           generateAI: false,
         });
-        socket.emit('chat5-messages', {id, messages: [userMessage]});
+
+        if (conversation_id === "NEW") {
+          socket.emit('chat5-messages', {id, messages: [userMessage]});
+        } else {
+          io.to(convRoom).emit('chat5-messages', { id, messages: [userMessage] });
+        }
+        notifyMembers(user_id, [], 'chat5-notice', { id, title: "New Image" }, { excludeCurrentSocket: true });
       }
     });
   });
@@ -213,6 +221,7 @@ module.exports = async function registerChat5_5Handlers({
   socket.on('chat5-generatetitle-up', async (data) => {
     const { conversation_id } = data;
     const title = await conversationService.generateTitle(conversation_id);
-    socket.emit('chat5-generatetitle-done', {title});
+    const convRoom = roomForConversation(conversation_id);
+    io.to(convRoom).emit('chat5-generatetitle-done', {title});
   });
 };

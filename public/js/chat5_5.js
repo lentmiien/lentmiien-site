@@ -13,6 +13,8 @@ const editor = new toastui.Editor({
 });
 
 function SwitchConversation(new_id) {
+  if (document.getElementById("id").innerHTML === new_id) return;
+
   if (document.getElementById("id").innerHTML != "NEW") {
     const conversation_id = document.getElementById("id").innerHTML;
     socket.emit('chat5-leaveConversation', {conversationId: conversation_id});
@@ -185,14 +187,6 @@ function message(m) {
   document.getElementById("conversationContainer").append(msg_div);
 }
 
-// function UpdateLoad() {
-//   socket.emit('loadConversations', {category: load_category.value, tags: load_tags.value, keyword: load_keyword.value});
-// }
-
-// socket.on('displayConversations', conversation_array => {
-//   
-// });
-
 const loadingPopup = document.getElementById("loadingPopup");
 
 // Function to show the loading popup
@@ -228,13 +222,12 @@ function SaveText() {
   myModal.hide();
 }
 
-function JoinOnStart() {
+socket.on('welcome', () => {
   if (document.getElementById("id").innerHTML != "NEW") {
     const conversation_id = document.getElementById("id").innerHTML;
     socket.emit('chat5-joinConversation', {conversationId: conversation_id});
   }
-}
-setTimeout(JoinOnStart, 5000);
+});
 
 socket.on('chat5-notice', (data) => {
   console.log(`A new message was posted to "${data.title}" (${data.id})`);
