@@ -1,5 +1,6 @@
 // Create a socket connection
 const socket = io();
+window.socket = socket;
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
