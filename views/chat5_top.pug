@@ -90,12 +90,12 @@ block content
 
   //- Preview Modal
   .modal.fade#convPreviewModal(tabindex="-1" aria-labelledby="convPreviewLabel" aria-hidden="true")
-    .modal-dialog.modal-lg.modal-dialog-scrollable
+    .modal-dialog.modal-lg.modal-dialog-scrollable.modal-fullscreen-sm-down
       .modal-content
         .modal-header
           h5.modal-title#convPreviewLabel Conversation preview
           button.btn-close(type="button" data-bs-dismiss="modal" aria-label="Close")
-        .modal-body
+        .modal-body.overflow-auto(style="max-height: 70vh;")
           h6#previewTitle.mb-2
           p#previewSummary.text-body
           hr
@@ -149,6 +149,9 @@ block styles
     }
     #convPreviewModal {
       z-index: 9999;
+    }
+    #convPreviewModal .modal-body {
+      -webkit-overflow-scrolling: touch;
     }
 
 block script
