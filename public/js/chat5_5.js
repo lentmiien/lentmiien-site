@@ -333,7 +333,7 @@ socket.on('welcome', () => {
     if (existing) {
       if (container.firstChild !== existing) container.prepend(existing);
       clearTimeout(existing._timer);
-      existing._timer = setTimeout(() => removeNotice(existing), 5000);
+      existing._timer = setTimeout(() => removeNotice(existing), 10000);
       return;
     }
 
@@ -373,7 +373,7 @@ socket.on('welcome', () => {
     });
 
     // 5) Auto-hide after 5s
-    el._timer = setTimeout(() => removeNotice(el), 5000);
+    el._timer = setTimeout(() => removeNotice(el), 10000);
   }
 
   // Hook up the socket event
