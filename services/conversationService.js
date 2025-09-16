@@ -1029,6 +1029,15 @@ class ConversationService {
     return [...newConvs, ...oldConvsConverted];
   }
 
+  async fetchPending() {
+    const p = await PendingRequests.find({});
+    const msg_ids = [];
+    for (let i = 0; i < p.length; i++) {
+      msg_ids.push(p.conversation_id);
+    }
+    return msg_ids;
+  }
+
   // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
   async processCompletedResponse(response_id) {
     const r = await PendingRequests.findOne({response_id});

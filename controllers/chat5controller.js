@@ -189,7 +189,10 @@ exports.view_chat5_top = async (req, res) => {
   // Final result: just the sorted unique categories
   const sortedCategories = categoryAverages.map((e) => e.category);
 
-  res.render("chat5_top", {conversations, sortedCategories});
+  // Fetch pending requests
+  const pending_conversation_ids = await conversationService.fetchPending();
+
+  res.render("chat5_top", {conversations, sortedCategories, pending_conversation_ids});
 };
 
 const DEFAULT_CONVERSATION = {

@@ -74,7 +74,7 @@ block content
         .d-flex.flex-column.flex-md-row.align-items-md-center.justify-content-between.gap-2
           .d-flex.flex-column
             .d-flex.align-items-center.gap-2
-              a.link-dark.text-decoration-none.fs-6.fw-semibold(href=`/chat5/chat/${c._id.toString()}`)= `${c.old?"*":""}${c.title}`
+              a.link-dark.text-decoration-none.fs-6.fw-semibold(href=`/chat5/chat/${c._id.toString()}`)= `${c.old?"*":""}${c.title}${pending_conversation_ids.indexOf(c._id.toString()) >= 0 ? " [P]" : ""}`
               span.badge.bg-secondary-subtle.text-secondary.border.border-secondary-subtle= c.category
             .small.text-muted
               | Updated #{timeAgo(c.updatedAt)} • #{msgCount} msg#{msgCount === 1 ? '' : 's'}
