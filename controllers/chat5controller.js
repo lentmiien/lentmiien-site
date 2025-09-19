@@ -1,7 +1,7 @@
 const marked = require('marked');
 const sanitizeHtml = require('sanitize-html');
 
-const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
+const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
@@ -10,9 +10,11 @@ const anthropic = require('../utils/anthropic');
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
+const TemplateService = require('../services/templateService');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
+const templateService = new TemplateService(Chat3TemplateModel);
 
 exports.index = async (req, res) => {
   // Load available OpenAI models
@@ -274,7 +276,8 @@ exports.view_chat5 = async (req, res) => {
     }
   })
 
-  res.render("chat5_chat", {conversation: conversation ? conversation : DEFAULT_CONVERSATION, messages, chat_models});
+  const templates = await templateService.getTemplates();
+  res.render("chat5_chat", {conversation: conversation ? conversation : DEFAULT_CONVERSATION, messages, chat_models, templates});
 };
 
 exports.post_chat5 = async (req, res) => {
@@ -324,5 +327,6 @@ exports.post_chat5 = async (req, res) => {
     }
   })
 
-  res.render("chat5_chat", {conversation, messages, chat_models});
+  const templates = await templateService.getTemplates();
+  res.render("chat5_chat", {conversation, messages, chat_models, templates});
 };

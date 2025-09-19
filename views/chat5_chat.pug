@@ -37,6 +37,15 @@ block content
       input#fileInput.form-control(type="file", name="fileInput", accept="image/*")
       hr
       label(for="message") Append message to conversation
+      // Template selector for chat messages
+      .d-flex.align-items-center.flex-wrap.gap-2.mb-2
+        label.form-label.mb-0(for="messageTemplateSelect") Template
+        select#messageTemplateSelect.form-select.form-select-sm(style="max-width: 360px;")
+          option(value="") -- Select chat template --
+          each t in templates
+            if t.Type === 'chat'
+              option(value=t._id)= t.Category + ' - ' + t.Title
+        button#messageTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current message as template") Save as template
       #message
       .d-flex.justify-content-evenly
         button.btn.btn-success(onclick="Append(true, false)") Append
@@ -56,6 +65,15 @@ block content
       label(for="tags") Tags 
       input#tags.form-control(type="text", value=conversation.tags.join(", "))
       label(for="context") Context 
+      // Template selector for context
+      .d-flex.align-items-center.flex-wrap.gap-2.mb-2
+        label.form-label.mb-0(for="contextTemplateSelect") Template
+        select#contextTemplateSelect.form-select.form-select-sm(style="max-width: 360px;")
+          option(value="") -- Select context template --
+          each t in templates
+            if t.Type === 'context'
+              option(value=t._id)= t.Category + ' - ' + t.Title
+        button#contextTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current context as template") Save as template
       textarea#context.form-control(name="context")= conversation.metadata.contextPrompt
       label(for="tools") Tools 
       select#tools.form-control(name="tools", multiple) 
@@ -204,4 +222,89 @@ block content
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
   script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
+  // Expose templates to client-side JS
+  script.
+    window.chatTemplates = !{JSON.stringify(templates)};
+  // Wire template selectors to inputs
+  script.
+    (function(){
+      function byId(id){ return document.getElementById(id); }
+      function getTemplateById(id){
+        if (!window.chatTemplates || !id) return null;
+        return window.chatTemplates.find(t => String(t._id) === String(id));
+      }
+      // On DOM ready
+      document.addEventListener('DOMContentLoaded', function(){
+        var msgSel = byId('messageTemplateSelect');
+        if (msgSel) {
+          msgSel.addEventListener('change', function(e){
+            var t = getTemplateById(e.target.value);
+            if (t && window.editor && typeof window.editor.setMarkdown === 'function') {
+              window.editor.setMarkdown(t.TemplateText || '');
+            }
+          });
+        }
+        var msgSave = byId('messageTemplateSave');
+        if (msgSave) {
+          msgSave.addEventListener('click', function(){
+            var title = window.prompt('Enter a title for this chat template:');
+            if (!title) return;
+            var category = byId('category')?.value || 'General';
+            var text = (window.editor && typeof window.editor.getMarkdown === 'function') ? window.editor.getMarkdown() : '';
+            var payload = { Title: title, Type: 'chat', Category: category, TemplateText: text };
+            // Button state: disable + saving text
+            var btn = msgSave;
+            var prev = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Saving...';
+            if (window.socket) {
+              window.socket.emit('chat5-savetemplate', payload, function(resp){
+                btn.disabled = false; btn.textContent = prev;
+                if (!resp || resp.ok !== true) {
+                  alert((resp && resp.message) ? resp.message : 'Failed to save template');
+                }
+              });
+            } else {
+              btn.disabled = false; btn.textContent = prev;
+              alert('Socket not available');
+            }
+          });
+        }
+        var ctxSel = byId('contextTemplateSelect');
+        if (ctxSel) {
+          ctxSel.addEventListener('change', function(e){
+            var t = getTemplateById(e.target.value);
+            var ta = byId('context');
+            if (t && ta) {
+              ta.value = t.TemplateText || '';
+            }
+          });
+        }
+        var ctxSave = byId('contextTemplateSave');
+        if (ctxSave) {
+          ctxSave.addEventListener('click', function(){
+            var title = window.prompt('Enter a title for this context template:');
+            if (!title) return;
+            var category = byId('category')?.value || 'General';
+            var ta = byId('context');
+            var text = ta ? ta.value : '';
+            var payload = { Title: title, Type: 'context', Category: category, TemplateText: text };
+            // Button state: disable + saving text
+            var btn = ctxSave;
+            var prev = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Saving...';
+            if (window.socket) {
+              window.socket.emit('chat5-savetemplate', payload, function(resp){
+                btn.disabled = false; btn.textContent = prev;
+                if (!resp || resp.ok !== true) {
+                  alert((resp && resp.message) ? resp.message : 'Failed to save template');
+                }
+              });
+            } else {
+              btn.disabled = false; btn.textContent = prev;
+              alert('Socket not available');
+            }
+          });
+        }
+      });
+    })();
   script(src="/js/chat5_5.js", defer)

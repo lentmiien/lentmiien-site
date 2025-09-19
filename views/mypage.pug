@@ -1,5 +1,23 @@
 extends layout
 
+block styles
+  style.
+    /* Scoped styles for My Page tiles */
+    .mypage-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:16px; }
+    a.mypage-tile { text-decoration:none; color:inherit; display:block; }
+    .img-card { display:block; border-radius:16px; padding:2px; background: linear-gradient(135deg,#dbeafe,#fce7f3 40%,#fef9c3); transition: transform .15s ease, box-shadow .15s ease; }
+    .img-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+    .img-card__inner { position:relative; overflow:hidden; border-radius:14px; background:#fff; }
+    .mypage-img { width:100%; height:160px; object-fit:cover; display:block; background:#111; }
+    .img-card__label { position:absolute; left:8px; right:8px; bottom:8px; padding:6px 10px; border-radius:10px; background: rgba(255,255,255,.88); color:#111; font-weight:600; text-align:center; border:1px solid rgba(0,0,0,.06); backdrop-filter: blur(4px); }
+
+mixin tile(href, src, alt, label)
+  a.mypage-tile(href=href)
+    .img-card
+      .img-card__inner
+        img.mypage-img(src=src, alt=alt)
+        span.img-card__label= label
+
 block content
   .row 
     .col 
@@ -11,67 +29,34 @@ block content
           span.badge.bg-warning.text-dark.me-1.schedule-task-pill= t.title
   .row 
     .col 
-      a.btn.btn-link(href="/mypage/blogpost")
-        img(src="/i/blog.jpg", alt="blogpost")
-        p Write blog
-      if permissions && permissions.indexOf("accounting") >= 0
-        a.btn.btn-link(href="/accounting/add_transaction")
-          img(src="/i/budget.jpg", alt="budget")
-          p Add transaction
-      if permissions && permissions.indexOf("chat4") >= 0
-        a.btn.btn-link(href="/chat5")
-          img(src="/i/chat.jpg", alt="chat")
-          p Chat
-        a.btn.btn-link(href="/chat5/top")
-          img(src="/i/chat5.jpg", alt="chat5")
-          p Chat 5
-        a.btn.btn-link(href="/chat4/knowledgelist?category=Recipe")
-          img(src="/i/cookbook.jpg", alt="cookbook")
-          p Cookbook
-        a.btn.btn-link(href="/chat4/knowledgelist")
-          img(src="/i/knowledge.jpg", alt="knowledge")
-          p Knowledge
-      if permissions && permissions.indexOf("cooking") >= 0
-        a.btn.btn-link(href="/cooking")
-          img(src="/i/calendar.jpg", alt="cooking calendar")
-          p Cooking calendar
-      a.btn.btn-link(href="/chat4/batch_status")
-        img(src="/i/batch.jpg", alt="batch")
-        p Batch
-      a.btn.btn-link(href="/")
-        img(src="/i/vueapp.jpg", alt="vue app")
-        p VUE app
-      a.btn.btn-link(href="/mypage/pdf_to_jpg")
-        img(src="/i/pdfconv.jpg", alt="PDF to image converter")
-        p PDF to Image
-      if permissions && permissions.indexOf("receipt") >= 0
-        a.btn.btn-link(href="/receipt")
-          img(src="/i/receipt.jpg", alt="upload receipt")
-          p Upload receipt
-      if permissions && permissions.indexOf("product") >= 0
-        a.btn.btn-link(href="/product")
-          img(src="/i/product.jpg", alt="Product details")
-          p Product details
-      if permissions && permissions.indexOf("gallery") >= 0
-        a.btn.btn-link(href="/gallery")
-          img(src="/i/gallery.jpg", alt="Gallery")
-          p Gallery
-      if permissions && permissions.indexOf("payroll") >= 0
-        a.btn.btn-link(href="/payroll")
-          img(src="/i/payroll.jpg", alt="Payroll")
-          p Payroll
-      if permissions && permissions.indexOf("emergencystock") >= 0
-        a.btn.btn-link(href="/es/es_dashboard")
-          img(src="/i/stock.jpg", alt="Emergency stock")
-          p Emergency stock
-      if permissions && permissions.indexOf("scheduletask") >= 0
-        a.btn.btn-link(href="/scheduleTask/calendar")
-          img(src="/i/schedule.jpg", alt="Calendar")
-          p Calendar
-      if permissions && permissions.indexOf("image_gen") >= 0
-        a.btn.btn-link(href="/image_gen")
-          img(src="/i/img_gen.jpg", alt="Generate and edit images")
-          p Image Gen
+      .mypage-grid
+        +tile('/mypage/blogpost', '/i/blog.jpg', 'blogpost', 'Write blog')
+        if permissions && permissions.indexOf("accounting") >= 0
+          +tile('/accounting/add_transaction', '/i/budget.jpg', 'budget', 'Add transaction')
+        if permissions && permissions.indexOf("chat4") >= 0
+          +tile('/chat5', '/i/chat.jpg', 'chat', 'Chat')
+          +tile('/chat5/top', '/i/chat5.jpg', 'chat5', 'Chat 5')
+          +tile('/chat4/knowledgelist?category=Recipe', '/i/cookbook.jpg', 'cookbook', 'Cookbook')
+          +tile('/chat4/knowledgelist', '/i/knowledge.jpg', 'knowledge', 'Knowledge')
+        if permissions && permissions.indexOf("cooking") >= 0
+          +tile('/cooking', '/i/calendar.jpg', 'cooking calendar', 'Cooking calendar')
+        +tile('/chat4/batch_status', '/i/batch.jpg', 'batch', 'Batch')
+        +tile('/', '/i/vueapp.jpg', 'vue app', 'VUE app')
+        +tile('/mypage/pdf_to_jpg', '/i/pdfconv.jpg', 'PDF to image converter', 'PDF to Image')
+        if permissions && permissions.indexOf("receipt") >= 0
+          +tile('/receipt', '/i/receipt.jpg', 'upload receipt', 'Upload receipt')
+        if permissions && permissions.indexOf("product") >= 0
+          +tile('/product', '/i/product.jpg', 'Product details', 'Product details')
+        if permissions && permissions.indexOf("gallery") >= 0
+          +tile('/gallery', '/i/gallery.jpg', 'Gallery', 'Gallery')
+        if permissions && permissions.indexOf("payroll") >= 0
+          +tile('/payroll', '/i/payroll.jpg', 'Payroll', 'Payroll')
+        if permissions && permissions.indexOf("emergencystock") >= 0
+          +tile('/es/es_dashboard', '/i/stock.jpg', 'Emergency stock', 'Emergency stock')
+        if permissions && permissions.indexOf("scheduletask") >= 0
+          +tile('/scheduleTask/calendar', '/i/schedule.jpg', 'Calendar', 'Calendar')
+        if permissions && permissions.indexOf("image_gen") >= 0
+          +tile('/image_gen', '/i/img_gen.jpg', 'Generate and edit images', 'Image Gen')
   if new_openai_models.length > 0
     .row 
       .col

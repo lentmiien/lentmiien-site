@@ -12,6 +12,8 @@ const editor = new toastui.Editor({
   // previewStyle: 'vertical',
   // theme: 'dark',
 });
+// Make accessible to inline scripts
+window.editor = editor;
 
 function SwitchConversation(new_id) {
   if (document.getElementById("id").innerHTML === new_id) return;
