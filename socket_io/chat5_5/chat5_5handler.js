@@ -224,4 +224,15 @@ module.exports = async function registerChat5_5Handlers({
     const convRoom = roomForConversation(conversation_id);
     io.to(convRoom).emit('chat5-generatetitle-done', {title});
   });
+
+  // Save current content as a template (with ack)
+  socket.on('chat5-savetemplate', async (data, ack) => {
+    try {
+      await templateService.createTemplate(data.Title, data.Type, data.Category, data.TemplateText);
+      if (typeof ack === 'function') ack({ ok: true });
+    } catch (err) {
+      console.error('Failed to save template:', err);
+      if (typeof ack === 'function') ack({ ok: false, message: 'Failed to save template' });
+    }
+  });
 };
