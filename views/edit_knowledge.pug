@@ -18,6 +18,7 @@ block content
             input#k_title.form-control(type="text", name="k_title", value=`${knowledge.title}`, required)
             label(for="k_originConversationId") Conversation ID 
             input#k_originConversationId.form-control(type="text", name="k_originConversationId", value=knowledge.originConversationId, readonly)
+            input#k_originType(type="hidden", name="k_originType", value=`${knowledge.originType?knowledge.originType:'chat4'}`)
             label(for="k_content") Content (markdown)
             textarea#k_content.form-control(name="k_content", cols="30", rows="10")= knowledge.contentMarkdown
             label(for="k_category") Category 
