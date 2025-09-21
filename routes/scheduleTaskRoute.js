@@ -4,6 +4,8 @@ const ctrl = require('../controllers/scheduleTaskController');
 
 // Main calendar view (user page)
 router.get('/calendar', ctrl.renderCalendarPage);
+// Upcoming tasks (grouped by month)
+router.get('/upcoming', ctrl.renderUpcomingTasksPage);
 
 // API endpoints
 router.get('/api/tasks', ctrl.listTasksApi);

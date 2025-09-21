@@ -27,6 +27,7 @@ block content
       each t in tasks 
         if !t.done && t.type === "tobuy"
           span.badge.bg-warning.text-dark.me-1.schedule-task-pill= t.title
+      a.badge.bg-secondary.me-1.schedule-task-pill(href='/scheduleTask/upcoming') All tasks
   .row 
     .col 
       .mypage-grid
