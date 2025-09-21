@@ -3,13 +3,12 @@ async function AddUpdateCookingCalendar(date, type) {
   const s = document.getElementById(`${date}${type}_select`);
 
   const select_value = s.value;
-  const input_value = document.getElementById(`${date}${type}_input`).value;
-  const food_name = input_value.length > 0 ? input_value : s.options[s.selectedIndex].text;
+  const food_name = s.options[s.selectedIndex].text;
 
   // Send POST request to server '/cooking/update_cooking_calendar'
   const post_data = {
     date,
-    [type]: input_value.length > 0 ? input_value : select_value,
+    [type]: select_value,
   };
   const response = await fetch("/cooking/update_cooking_calendar", {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
