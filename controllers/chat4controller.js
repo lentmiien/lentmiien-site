@@ -332,6 +332,7 @@ exports.createknowledgefromchat = async (req, res) => {
     createdDate: new Date(),
     updatedDate: new Date(),
     originConversationId: req.params.id,
+    originType: 'chat4',
     contentMarkdown: "",
     category: "new",
     tags: ["new"],
@@ -357,30 +358,143 @@ exports.createknowledgefromchat = async (req, res) => {
     
     res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations, messageLookup, messages});
   } else {
-    res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
+    // Try chat5 format
+    try {
+      const { conv, msg } = await conversationService.loadConversation(req.params.id);
+      if (conv) {
+        // Mark as chat5-origin
+        knowledge.originType = 'chat5';
+        knowledge.title = conv.title;
+        knowledge.category = conv.category;
+        knowledge.tags = conv.tags;
+
+        // Filter to only text and image content and transform to chat4-like for view
+        const filtered = msg.filter(m => m.contentType === 'text' || m.contentType === 'image');
+        const transformed = [];
+        let current = null;
+        const pushCurrent = () => {
+          if (current && (current.prompt.length > 0 || current.response.length > 0 || current.images.length > 0 || (current.sound && current.sound.length > 0))) {
+            transformed.push(current);
+          }
+          current = null;
+        };
+        for (const m of filtered) {
+          if (m.contentType === 'text') {
+            if (m.user_id === 'bot') {
+              if (!current) current = { prompt: '', response: '', images: [], sound: '' };
+              if (current.response && current.response.length > 0) {
+                pushCurrent();
+                current = { prompt: '', response: '', images: [], sound: '' };
+              }
+              current.response = (current.response ? current.response + '\n' : '') + (m.content.text || '');
+            } else {
+              if (current && (current.prompt.length > 0 || current.response.length > 0 || current.images.length > 0)) {
+                pushCurrent();
+              }
+              current = { prompt: m.content.text || '', response: '', images: [], sound: '' };
+            }
+          } else if (m.contentType === 'image') {
+            const img = {
+              filename: m.content.image,
+              use_flag: m.hideFromBot ? 'do not use' : (m.content.imageQuality === 'high' ? 'high quality' : 'low quality'),
+            };
+            if (!current) current = { prompt: '', response: '', images: [img], sound: '' };
+            else current.images.push(img);
+          }
+        }
+        pushCurrent();
+
+        // Build a minimal conversation wrapper as expected by the view
+        const messageLookup = transformed.map((_, i) => `chat5-${i}`);
+        const conversations = [{
+          _id: conv._id,
+          messages: messageLookup,
+        }];
+
+        res.render("edit_knowledge", { id: knowledge_id, knowledge, conversations, messageLookup, messages: transformed });
+      } else {
+        res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
+      }
+    } catch (e) {
+      res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
+    }
   }
 };
 
 exports.editknowledge = async (req, res) => {
   const knowledge_id = req.params.id;
   const knowledge = await knowledgeService.getKnowledgesById(knowledge_id);
-  const conversation = await conversationService.getConversationsById(knowledge.originConversationId);
-  if (conversation) {
-    const conversations = await conversationService.getConversationsInGroup(conversation.group_id);
-    const messageLookup = [];
-    for (let i = 0; i < conversations.length; i++) {
-      for (let j = 0; j < conversations[i].messages.length; j++) {
-        if (messageLookup.indexOf(conversations[i].messages[j]) === -1) {
-          messageLookup.push(conversations[i].messages[j]);
+  if (knowledge.originType === 'chat5') {
+    // Load chat5 content
+    try {
+      const { conv, msg } = await conversationService.loadConversation(knowledge.originConversationId);
+      if (conv) {
+        // Filter to only text and image and transform
+        const filtered = msg.filter(m => m.contentType === 'text' || m.contentType === 'image');
+        const transformed = [];
+        let current = null;
+        const pushCurrent = () => {
+          if (current && (current.prompt.length > 0 || current.response.length > 0 || current.images.length > 0 || (current.sound && current.sound.length > 0))) {
+            transformed.push(current);
+          }
+          current = null;
+        };
+        for (const m of filtered) {
+          if (m.contentType === 'text') {
+            if (m.user_id === 'bot') {
+              if (!current) current = { prompt: '', response: '', images: [], sound: '' };
+              if (current.response && current.response.length > 0) {
+                pushCurrent();
+                current = { prompt: '', response: '', images: [], sound: '' };
+              }
+              current.response = (current.response ? current.response + '\n' : '') + (m.content.text || '');
+            } else {
+              if (current && (current.prompt.length > 0 || current.response.length > 0 || current.images.length > 0)) {
+                pushCurrent();
+              }
+              current = { prompt: m.content.text || '', response: '', images: [], sound: '' };
+            }
+          } else if (m.contentType === 'image') {
+            const img = {
+              filename: m.content.image,
+              use_flag: m.hideFromBot ? 'do not use' : (m.content.imageQuality === 'high' ? 'high quality' : 'low quality'),
+            };
+            if (!current) current = { prompt: '', response: '', images: [img], sound: '' };
+            else current.images.push(img);
+          }
+        }
+        pushCurrent();
+
+        const messageLookup = transformed.map((_, i) => `chat5-${i}`);
+        const conversations = [{ _id: conv._id, messages: messageLookup }];
+
+        res.render("edit_knowledge", { id: knowledge_id, knowledge, conversations, messageLookup, messages: transformed });
+      } else {
+        res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
+      }
+    } catch (e) {
+      res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
+    }
+  } else {
+    // Default: chat4 content
+    const conversation = await conversationService.getConversationsById(knowledge.originConversationId);
+    if (conversation) {
+      const conversations = await conversationService.getConversationsInGroup(conversation.group_id);
+      const messageLookup = [];
+      for (let i = 0; i < conversations.length; i++) {
+        for (let j = 0; j < conversations[i].messages.length; j++) {
+          if (messageLookup.indexOf(conversations[i].messages[j]) === -1) {
+            messageLookup.push(conversations[i].messages[j]);
+          }
         }
       }
+      const messages = await messageService.getMessagesByIdArray(messageLookup, false);
+      messageLookup.reverse();
+
+      res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations, messageLookup, messages});
+    } else {
+      res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
     }
-    const messages = await messageService.getMessagesByIdArray(messageLookup, false);
-    messageLookup.reverse();
-    
-    res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations, messageLookup, messages});
-  } else {
-    res.render("edit_knowledge", {id: knowledge_id, knowledge, conversations: [], messageLookup: [], messages: []});
   }
 };
 
@@ -388,6 +502,7 @@ exports.updateknowledge = async (req, res) => {
   let knowledge_id = req.params.id;
   const title = req.body.k_title;
   const originConversationId = req.body.k_originConversationId;
+  const originType = req.body.k_originType ? req.body.k_originType : 'chat4';
   const contentMarkdown = req.body.k_content;
   const category = req.body.k_category;
   const tags = req.body.k_tags.toLowerCase().split(', ').join(',').split(' ').join('_').split(',');
@@ -399,7 +514,7 @@ exports.updateknowledge = async (req, res) => {
     if (d.length > 0) images.push(d);
   });
   if (knowledge_id === "new") {
-    knowledge_id = await knowledgeService.createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id);
+    knowledge_id = await knowledgeService.createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id, originType);
   } else {
     await knowledgeService.updateKnowledge(knowledge_id, title, contentMarkdown, category, tags, images);
   }

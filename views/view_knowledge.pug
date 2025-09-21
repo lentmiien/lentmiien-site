@@ -6,7 +6,10 @@ block content
       h2= knowledge.title
       i= `Updated: ${knowledge.updatedDate}`
       .button-container 
-        a.btn.btn-outline-primary(href=`/chat5?id=${knowledge.originConversationId}`) Show chat 
+        if knowledge.originType && knowledge.originType === 'chat5'
+          a.btn.btn-outline-primary(href=`/chat5/chat/${knowledge.originConversationId}`) Show chat 
+        else
+          a.btn.btn-outline-primary(href=`/chat5?id=${knowledge.originConversationId}`) Show chat 
         a.btn.btn-outline-primary(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge 
         button.btn.btn-outline-warning(data-title=knowledge.title, data-content=knowledge.contentMarkdown, onclick="CopyKnowledge(this)") Copy
         a.btn.btn-outline-primary(href=`/chat4/knowledgelist`) Back

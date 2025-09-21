@@ -23,12 +23,17 @@ class KnowledgeService {
 
   async getKnowledgesById(k_id) {
     const knowledge = await this.knowledgeModel.findById(k_id);
+    // Backward compatibility: default to chat4 if not set
+    if (!knowledge.originType) knowledge.originType = 'chat4';
     knowledge.contentHTML = marked.parse(knowledge.contentMarkdown);
     return knowledge;
   }
 
   async getKnowledgesByUser(user_id) {
-    return await this.knowledgeModel.find({ user_id }).sort({ updatedDate: -1 }).exec();
+    const list = await this.knowledgeModel.find({ user_id }).sort({ updatedDate: -1 }).exec();
+    // Ensure originType is present for legacy entries
+    list.forEach(k => { if (!k.originType) k.originType = 'chat4'; });
+    return list;
   }
 
   async getKnowledgesByIdArray(k_ids) {
@@ -39,13 +44,14 @@ class KnowledgeService {
     return await this.knowledgeModel.find({ category });
   }
 
-  async createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id) {
+  async createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id, originType = 'chat4') {
     const date = new Date();
     const knowledge_entry = {
       title,
       createdDate: date,
       updatedDate: date,
       originConversationId,
+      originType,
       contentMarkdown,
       category,
       tags,
