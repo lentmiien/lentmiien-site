@@ -206,6 +206,83 @@ exports.saveTask = async (req, res, next) => {
 };
 
 /**
+ * GET /edit/:id - Render edit form for an existing task
+ */
+exports.renderEditForm = async (req, res, next) => {
+  try {
+    const userId = req.user.name;
+    const id = req.params.id;
+    const doc = await Task.findOne({ _id: id, userId }).lean();
+    if (!doc) return res.status(404).send('Not found');
+    res.render('scheduleTask/edit', {
+      doc,
+      isPresence: doc.type === 'presence',
+      error: null
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /edit/:id - Update an existing task from form submit
+ */
+exports.saveEdit = async (req, res, next) => {
+  const userId = req.user.name;
+  const id = req.params.id;
+  try {
+    const doc = await Task.findOne({ _id: id, userId });
+    if (!doc) return res.status(404).send('Not found');
+
+    // Common fields
+    if (typeof req.body.title === 'string') doc.title = req.body.title;
+
+    if (doc.type === 'presence') {
+      // Presence-specific fields
+      if (typeof req.body.location === 'string') doc.location = req.body.location;
+      if (typeof req.body.purpose === 'string') doc.purpose = req.body.purpose;
+
+      if (req.body.start) doc.start = ScheduleTaskService.roundToSlot(new Date(req.body.start));
+      if (req.body.end)   doc.end   = ScheduleTaskService.roundToSlot(new Date(req.body.end));
+
+      // Validate and check overlap (exclude self)
+      const conflicts = await ScheduleTaskService.detectPresenceConflict(
+        userId, doc.start, doc.end, doc._id
+      );
+      if (conflicts.length > 0) {
+        return res.render('scheduleTask/edit', {
+          doc: { ...doc.toObject(), start: doc.start, end: doc.end },
+          isPresence: true,
+          error: 'Presence overlaps with existing schedule',
+          conflicts
+        });
+      }
+    } else {
+      // Task (todo/tobuy)
+      if (typeof req.body.description === 'string') doc.description = req.body.description;
+      if (req.body.start) doc.start = ScheduleTaskService.roundToSlot(new Date(req.body.start));
+      if (req.body.end)   doc.end   = ScheduleTaskService.roundToSlot(new Date(req.body.end));
+    }
+
+    await doc.save();
+    return res.redirect('/scheduleTask/calendar');
+  } catch (err) {
+    // Re-render with error
+    try {
+      const leanDoc = await Task.findOne({ _id: id, userId }).lean();
+      if (!leanDoc) return res.status(404).send('Not found');
+      res.render('scheduleTask/edit', {
+        doc: leanDoc,
+        isPresence: leanDoc.type === 'presence',
+        error: err.message
+      });
+    } catch (e) {
+      next(err);
+    }
+  }
+};
+
+/**
  * GET /upcoming - Upcoming tasks grouped by month
  * - Only non-completed tasks (type in ['todo','tobuy'])
  * - Sections: Expired, then current month, then future months that have tasks
