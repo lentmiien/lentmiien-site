@@ -205,3 +205,55 @@ exports.saveTask = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /upcoming - Upcoming tasks grouped by month
+ * - Only non-completed tasks (type in ['todo','tobuy'])
+ * - Sections: Expired, then current month, then future months that have tasks
+ * - Effective date = end || start || today
+ */
+exports.renderUpcomingTasksPage = async function(req, res, next) {
+  try {
+    const userId = req.user.name;
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const raw = await Task.find({
+      userId,
+      done: false,
+      type: { $in: ['todo', 'tobuy'] }
+    }).lean();
+
+    const tasks = raw.map(t => {
+      const eff = t.end ? new Date(t.end) : (t.start ? new Date(t.start) : new Date(today));
+      return { ...t, effectiveDate: eff };
+    }).sort((a, b) => a.effectiveDate - b.effectiveDate);
+
+    const expired = [];
+    const futureMap = new Map(); // key: 'YYYY-MM' -> { label, items: [] }
+
+    for (const t of tasks) {
+      const d = t.effectiveDate;
+      if (d < startOfToday) {
+        expired.push(t);
+        continue;
+      }
+      const y = d.getFullYear();
+      const m = d.getMonth(); // 0-based
+      const key = `${y}-${String(m+1).padStart(2, '0')}`;
+      const label = `${d.toLocaleString('en-US', { month: 'long' })} - ${y}`;
+      if (!futureMap.has(key)) futureMap.set(key, { key, label, items: [] });
+      futureMap.get(key).items.push(t);
+    }
+
+    const groups = Array.from(futureMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+
+    res.render('scheduleTask/upcoming', {
+      expired,
+      groups,
+      today
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+

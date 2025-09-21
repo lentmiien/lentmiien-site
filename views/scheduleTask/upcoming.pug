@@ -1,0 +1,70 @@
+extends ../layout
+
+block content
+  .container
+    .d-flex.gap-2.flex-wrap.mb-3
+      a.btn.btn-outline-secondary(href='/scheduleTask/calendar') ← Calendar
+      a.btn.btn-outline-success(href='/scheduleTask/new/presence') New Presence
+      a.btn.btn-outline-primary(href='/scheduleTask/new/task') New Task
+
+    h2.mt-2.mb-3 Upcoming Tasks
+    p.text-muted.small
+      | Showing non-completed tasks. Grouped by month using each task's end date if available,
+      | otherwise start date, otherwise today. Expired tasks are shown first.
+
+    if expired && expired.length
+      h3.mt-4.mb-2 Expired
+      .row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-3.section-expired
+        each t in expired
+          .col
+            .task-card.card(class=t.type)
+              .card-body
+                .d-flex.justify-content-between.align-items-start.mb-1
+                  h5.card-title.mb-0= t.title
+                  button.btn.btn-sm.btn-outline-success.btn-complete(data-id=t._id) Mark as done
+                if t.description
+                  p.card-text.text-secondary= t.description
+                .d-flex.justify-content-between.align-items-center.mt-2
+                  span.badge.rounded-pill(class=t.type)= t.type
+                  span.task-date #{new Date(t.effectiveDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric'})}
+
+    each g in groups
+      if g.items && g.items.length
+        h3.mt-4.mb-2= g.label
+        .row.row-cols-1.row-cols-md-2.row-cols-lg-3.g-3.section-group(data-key=g.key)
+          each t in g.items
+            .col
+              .task-card.card(class=t.type)
+                .card-body
+                  .d-flex.justify-content-between.align-items-start.mb-1
+                    h5.card-title.mb-0= t.title
+                    button.btn.btn-sm.btn-outline-success.btn-complete(data-id=t._id) Mark as done
+                  if t.description
+                    p.card-text.text-secondary= t.description
+                  .d-flex.justify-content-between.align-items-center.mt-2
+                    span.badge.rounded-pill(class=t.type)= t.type
+                    span.task-date #{new Date(t.effectiveDate).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric'})}
+
+  //- Scripts
+  script(src='/js/scheduleTask/upcoming.js', defer)
+
+block styles
+  style.
+    /* Page-specific modern, clean styles */
+    .task-card { border: none; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+    .task-card .card-body { padding: 16px 16px 14px 16px; }
+    .task-card .card-title { font-weight: 600; }
+    .task-card .task-date { font-size: .9rem; color: #6c757d; }
+    .task-card .badge { text-transform: uppercase; font-weight: 600; letter-spacing: .02em; }
+
+    /* Type accents */
+    .task-card.todo { border-left: 6px solid #2F80ED; background: #F3F8FF; }
+    .task-card.tobuy { border-left: 6px solid #F2994A; background: #FFF6EF; }
+    .badge.todo { background-color: #2F80ED; }
+    .badge.tobuy { background-color: #F2994A; }
+
+    /* Responsive tweaks */
+    @media (max-width: 575.98px) {
+      .task-card .card-title { font-size: 1.05rem; }
+      .task-card .card-text { font-size: .95rem; }
+    }
