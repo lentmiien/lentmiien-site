@@ -1,0 +1,49 @@
+extends ../layout
+
+block content
+  - const startVal = doc.start ? new Date(doc.start).toISOString().slice(0,16) : ''
+  - const endVal   = doc.end   ? new Date(doc.end).toISOString().slice(0,16)   : ''
+
+  .container.mt-4
+    h3 Edit #{isPresence ? 'Presence' : (doc.type === 'tobuy' ? 'To Buy' : 'Task')}
+    form(method="post", action=`/scheduleTask/edit/${doc._id}`)
+      .mb-3
+        label.form-label(for="title") Title
+        input.form-control(type="text", name="title", required, value=doc.title)
+
+      if isPresence
+        .mb-3
+          label.form-label(for="location") Location
+          input.form-control(type="text", name="location", required, value=doc.location)
+        .mb-3
+          label.form-label(for="purpose") Purpose
+          input.form-control(type="text", name="purpose", value=doc.purpose)
+        .mb-3
+          label.form-label(for="start") Start
+          input.form-control(type="datetime-local", name="start", required, value=startVal)
+        .mb-3
+          label.form-label(for="end") End
+          input.form-control(type="datetime-local", name="end", required, value=endVal)
+      else
+        .mb-3
+          label.form-label(for="description") Description
+          textarea.form-control(name="description")= doc.description
+        .mb-3
+          label.form-label(for="start") Start (Earliest Show)
+          input.form-control(type="datetime-local", name="start", value=startVal)
+        .mb-3
+          label.form-label(for="end") Deadline
+          input.form-control(type="datetime-local", name="end", value=endVal)
+
+      button.btn.btn-success(type="submit") Save
+      a.btn.btn-secondary.ms-2(href="/scheduleTask/calendar") Cancel
+
+  if error
+    .alert.alert-danger.mt-3= error
+  if conflicts
+    .alert.alert-warning.mt-2
+      | Overlaps:
+      ul
+        each c in conflicts
+          li: a(href=`/scheduleTask/edit/${c._id}`, target="_blank") #{c.title} (#{new Date(c.start).toLocaleString()} - #{new Date(c.end).toLocaleString()})
+

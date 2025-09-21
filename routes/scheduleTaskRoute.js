@@ -20,4 +20,8 @@ router.post('/new/presence', ctrl.savePresence);
 router.get('/new/task', ctrl.renderTaskForm);
 router.post('/new/task', ctrl.saveTask);
 
+// Edit existing task
+router.get('/edit/:id', ctrl.renderEditForm);
+router.post('/edit/:id', ctrl.saveEdit);
+
 module.exports = router;
