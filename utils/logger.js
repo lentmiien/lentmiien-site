@@ -31,6 +31,45 @@ function getLogFilePath(date = new Date()) {
   return path.join(LOG_DIR, `app-${isoDate}.log`);
 }
 
+function isPlainObject(value) {
+  return Object.prototype.toString.call(value) === '[object Object]';
+}
+
+function isOptionsObject(value) {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return Object.prototype.hasOwnProperty.call(value, 'category') ||
+    Object.prototype.hasOwnProperty.call(value, 'metadata');
+}
+
+function normalizeOptions(args) {
+  if (!args || args.length === 0) {
+    return {};
+  }
+
+  if (args.length === 1) {
+    const candidate = args[0];
+
+    if (candidate instanceof Error) {
+      return { metadata: candidate };
+    }
+
+    if (isOptionsObject(candidate)) {
+      return candidate;
+    }
+
+    if (typeof candidate === 'object' && candidate !== null) {
+      return { metadata: candidate };
+    }
+
+    return { metadata: candidate };
+  }
+
+  return { metadata: args };
+}
+
+
 function createReplacer() {
   const seen = new WeakSet();
   return (key, value) => {
@@ -105,7 +144,7 @@ function logToConsole(entry) {
   }
 }
 
-async function writeLog(level, message, options = {}) {
+async function writeLog(level, message, ...args) {
   const normalizedLevel = level.toLowerCase();
 
   if (!LEVEL_PRIORITY[normalizedLevel]) {
@@ -116,18 +155,27 @@ async function writeLog(level, message, options = {}) {
     return;
   }
 
+  const options = normalizeOptions(args);
+
   const entry = {
     timestamp: new Date().toISOString(),
     level: normalizedLevel,
     message: formatMessage(message),
   };
 
-  if (options && options.category) {
+  if (options.category) {
     entry.category = options.category;
   }
 
-  if (options && options.metadata !== undefined) {
+  let metadataSet = false;
+
+  if (Object.prototype.hasOwnProperty.call(options, 'metadata')) {
     entry.metadata = options.metadata;
+    metadataSet = true;
+  }
+
+  if (!metadataSet && typeof message === 'object' && message !== null) {
+    entry.metadata = message;
   }
 
   logToConsole(entry);
@@ -149,20 +197,20 @@ async function writeLog(level, message, options = {}) {
 }
 
 const logger = {
-  log(level, message, options) {
-    return writeLog(level, message, options);
+  log(level, message, ...args) {
+    return writeLog(level, message, ...args);
   },
-  notice(message, options) {
-    return writeLog('notice', message, options);
+  notice(message, ...args) {
+    return writeLog('notice', message, ...args);
   },
-  warning(message, options) {
-    return writeLog('warning', message, options);
+  warning(message, ...args) {
+    return writeLog('warning', message, ...args);
   },
-  error(message, options) {
-    return writeLog('error', message, options);
+  error(message, ...args) {
+    return writeLog('error', message, ...args);
   },
-  debug(message, options) {
-    return writeLog('debug', message, options);
+  debug(message, ...args) {
+    return writeLog('debug', message, ...args);
   },
   levels: LOG_LEVELS.reduce((acc, level) => {
     acc[level.toUpperCase()] = level;

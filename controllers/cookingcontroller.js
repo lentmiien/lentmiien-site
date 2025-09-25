@@ -1,5 +1,6 @@
 // Require necessary database models
 const { CookingCalendarModel, CookingRequestModel, Chat4KnowledgeModel } = require('../database');
+const logger = require('../utils/logger');
 
 exports.index = async (req, res) => {
   // Get 7 dates, starting from today and get the calendar values for the dates
@@ -385,7 +386,7 @@ async function getCookingStatistics() {
 
     return results;
   } catch (error) {
-    console.error("Error fetching cooking statistics:", error);
+    logger.error("Error fetching cooking statistics:", error);
     throw error;
   }
 }

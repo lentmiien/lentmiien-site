@@ -1,4 +1,5 @@
 const { LogModel, SummaryModel, AggregatedDataModel, DetailedDataModel, Dht22AggregatedData, Dht22DetailedData } = require('../database');
+const logger = require('../utils/logger');
 
 exports.index = (req, res) => {
   res.render('index');
@@ -34,7 +35,7 @@ exports.download_test = async (req, res) => {
     // Finalize the archive
     await archive.finalize();
   } catch (err) {
-    console.error('Error occurred:', err);
+    logger.error('Error occurred:', err);
     res.sendStatus(500);
   }
 };

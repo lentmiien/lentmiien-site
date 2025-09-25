@@ -3,12 +3,13 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const logger = require('./utils/logger');
 
 // Function to ensure that a directory exists
 function ensureDirExists(dirPath) {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
-    console.log(`Directory created: ${dirPath}`);
+    logger.notice(`Directory created: ${dirPath}`);
   }
 }
 
@@ -16,7 +17,7 @@ function ensureDirExists(dirPath) {
 function ensureFileExists(filePath, defaultContent) {
   if (!fs.existsSync(filePath)) {
     fs.writeFileSync(filePath, defaultContent);
-    console.log(`File created: ${filePath}`);
+    logger.notice(`File created: ${filePath}`);
   }
 }
 
@@ -57,7 +58,7 @@ clearDirectory(TEMP_DIR);
 
 // Check for the existence of the .env file
 if (!fs.existsSync('.env')) {
-  console.warn('Warning: .env file does not exist. Some configurations might be missing.');
+  logger.warning('Warning: .env file does not exist. Some configurations might be missing.');
 }
 
 // Convert DALL-E images to JPG, if only PNG exist
@@ -79,18 +80,18 @@ async function convertPngToJpgInFolder(folderPath) {
           await fs.promises.access(jpgPath);
         } catch {
           // JPG does not exist, convert PNG to JPG
-          console.log(`Converting ${file} to JPG...`);
+          logger.notice(`Converting ${file} to JPG...`);
           const pngPath = path.join(folderPath, file);
           const pngBuffer = await fs.promises.readFile(pngPath);
           const jpgBuffer = await sharp(pngBuffer).jpeg({ quality: 70 }).toBuffer();
           await fs.promises.writeFile(jpgPath, jpgBuffer);
-          console.log(`Successfully converted ${file} to JPG.`);
+          logger.notice(`Successfully converted ${file} to JPG.`);
         }
       }
     }
-    console.log("Conversion process completed.");
+    logger.notice("Conversion process completed.");
   } catch (err) {
-    console.error('An error occurred:', err);
+    logger.error('An error occurred:', err);
   }
 }
 
@@ -104,13 +105,13 @@ function deleteLogFile(filename) {
 
   // Validate that the file exists and is within the log directory
   if (!fs.existsSync(filePath)) {
-    console.log(`File '${filePath}' not found!`)
+    logger.notice(`File '${filePath}' not found!`)
     return;
   }
 
   // Ensure that the path is a file and not a directory
   if (!fs.statSync(filePath).isFile()) {
-    console.log(`'${filePath}' is not a file!`)
+    logger.notice(`'${filePath}' is not a file!`)
     return;
   }
 
@@ -118,7 +119,7 @@ function deleteLogFile(filename) {
   try {
     fs.unlinkSync(filePath);
   } catch (err) {
-    console.log(`Error deleting '${filePath}'`)
+    logger.notice(`Error deleting '${filePath}'`)
     return;
   }
 }
@@ -147,14 +148,14 @@ async function pruneOldLogs(directory, retentionDays) {
         }
         if ((now - stats.mtimeMs) > retentionMs) {
           await fs.promises.unlink(filePath);
-          console.log(`Removed old log file: ${filePath}`);
+          logger.notice(`Removed old log file: ${filePath}`);
         }
       } catch (err) {
-        console.warn(`Unable to inspect log file: ${filePath}`, err);
+        logger.warning(`Unable to inspect log file: ${filePath}`, err);
       }
     }));
   } catch (err) {
-    console.error('Failed to prune local log files:', err);
+    logger.error('Failed to prune local log files:', err);
   }
 }
 
@@ -191,7 +192,7 @@ async function ClearTestDataFromDB() {
       // Only get and save new entries
       const summary = await fetchUsageSummaryForPeriod(sd, ed);
       await new OpenAIUsage(summary).save();
-      console.log("Data saved:", JSON.stringify(summary, null, 2));
+      logger.notice("Data saved:", JSON.stringify(summary, null, 2));
     }
     currentMs += 1000*60*60*24;
   }
@@ -226,7 +227,7 @@ async function main() {
     const auth = await authorize(JSON.parse(content));
     await checkEmails(auth);
   } catch (err) {
-    console.error('Error:', err);
+    logger.error('Error:', err);
   }
 }
 
@@ -249,7 +250,7 @@ function getNewToken(oAuth2Client) {
       access_type: 'offline',
       scope: SCOPES,
     });
-    console.log('Authorize this app by visiting this url:', authUrl);
+    logger.notice('Authorize this app by visiting this url:', authUrl);
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
@@ -261,7 +262,7 @@ function getNewToken(oAuth2Client) {
         oAuth2Client.setCredentials(token);
         try {
           await fs2.writeFile(TOKEN_PATH, JSON.stringify(token));
-          console.log('Token stored to', TOKEN_PATH);
+          logger.notice('Token stored to', TOKEN_PATH);
           resolve(oAuth2Client);
         } catch (err) {
           reject('Error storing token');
@@ -282,7 +283,7 @@ async function checkEmails(auth) {
 
     const messages = res.data.messages;
     if (messages && messages.length) {
-      console.log(`Found ${messages.length} messages to process.`);
+      logger.notice(`Found ${messages.length} messages to process.`);
       
       // Fetch all email contents first
       const emailContents = await Promise.all(messages.map(async (message) => {
@@ -302,50 +303,50 @@ async function checkEmails(auth) {
       // Process emails in the background
       processEmailsInBackground(emailContents);
     } else {
-      console.log('No messages found.');
+      logger.notice('No messages found.');
     }
   } catch (err) {
-    console.error('The API returned an error:', err);
+    logger.error('The API returned an error:', err);
   }
 }
 
 function processEmailsInBackground(emailContents) {
-  console.log('Starting background processing of emails...');
+  logger.notice('Starting background processing of emails...');
   
   (async function processEmails() {
     for (const content of emailContents) {
       await verifyEmailContent(content);
     }
-    console.log('Finished processing all emails.');
+    logger.notice('Finished processing all emails.');
   })();
 }
 
 async function verifyEmailContent(content) {
-  console.log('Verifying email content...');
+  logger.notice('Verifying email content...');
   
   try {
     // Simulate sending data to AI model and saving to 'to verify' database
     const extractedData = await sendToAIModel(content);
     await saveToVerifyDatabase(extractedData);
-    console.log('Email content processed and saved for verification.');
+    logger.notice('Email content processed and saved for verification.');
   } catch (err) {
-    console.error('Error processing email content:', err);
+    logger.error('Error processing email content:', err);
   }
 }
 
 async function sendToAIModel(content) {
   // Simulate sending data to AI model
-  console.log('Sending data to AI model...');
+  logger.notice('Sending data to AI model...');
   await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
   return { extractedData: content };
 }
 
 async function saveToVerifyDatabase(data) {
   // Simulate saving to 'to verify' database
-  console.log('Saving to verify database...');
+  logger.notice('Saving to verify database...');
   await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate delay
-  console.log('Data saved:', data);
+  logger.notice('Data saved:', data);
 }
 
 // Run the main function when the app starts
-// main().catch(console.error);
+// main().catch(logger.error);

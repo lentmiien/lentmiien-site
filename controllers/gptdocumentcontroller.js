@@ -1,5 +1,6 @@
 const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
+const logger = require('../utils/logger');
 
 const { ChatModel, DocumentModel, TextnodeModel } = require('../database');
 
@@ -55,7 +56,7 @@ async function QueryChatGPT(messages, title, username) {
     // Return response
     return response.choices[0].message.content;
   } else {
-    console.log('Failed to get a response from ChatGPT.');
+    logger.notice('Failed to get a response from ChatGPT.');
 
     // Return error
     return 'Failed to get a response from ChatGPT.';
@@ -227,7 +228,7 @@ exports.generate_text_node = (req, res) => {
         text: response.choices[0].message.content
       });
     } else {
-      console.log('Failed to get a response from ChatGPT.');
+      logger.notice('Failed to get a response from ChatGPT.');
 
       // Render edit page for user
       res.render("text_edit", {
@@ -246,7 +247,7 @@ exports.generate_text_node = (req, res) => {
 };
 
 exports.save_text_node = (req, res) => {
-  // console.log(req.body);
+  // logger.notice(req.body);
 
   // Save text node
   const document_id = req.body.document_id;

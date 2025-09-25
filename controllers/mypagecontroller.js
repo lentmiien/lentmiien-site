@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Poppler } = require('node-poppler');
+const logger = require('../utils/logger');
 const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
 const { ArticleModel } = require('../database');
@@ -62,7 +63,7 @@ exports.post_blogpost = (req, res) => {
       .then((updatedArticle) => {
         res.redirect("/blog");
       })
-      .catch((err) => console.error('Error updating user:', err));
+      .catch((err) => logger.error('Error updating user:', err));
   } else {
     // New entry
     const entry_to_save = new ArticleModel({

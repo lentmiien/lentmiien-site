@@ -1,6 +1,7 @@
 const marked = require('marked');
 const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
+const logger = require('../utils/logger');
 
 // Require necessary database models
 const { Chat2Model } = require('../database');
@@ -216,7 +217,7 @@ exports.post = (req, res) => {
       
       const user_index = entries_to_save.length - 1;
       entries_to_save[user_index].tokens = response.usage.prompt_tokens;
-      console.log(`Approximated tokens: ${approximate_tokens}; Actual tokens: ${response.usage.prompt_tokens}; Error: ${approximate_tokens - response.usage.prompt_tokens}`)
+      logger.notice(`Approximated tokens: ${approximate_tokens}; Actual tokens: ${response.usage.prompt_tokens}; Error: ${approximate_tokens - response.usage.prompt_tokens}`)
       entries_to_save.push({
         title: req.body.title,
         username: req.user.name,
@@ -231,7 +232,7 @@ exports.post = (req, res) => {
       Chat2Model.collection.insertMany(entries_to_save);
       setTimeout(() => res.redirect(`/chat2?id=${id}`), 100);
     } else {
-      console.log('Failed to get a response from ChatGPT.');
+      logger.notice('Failed to get a response from ChatGPT.');
       res.redirect(`/chat2`);
     }
   });

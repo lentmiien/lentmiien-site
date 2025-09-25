@@ -1,4 +1,5 @@
 const Groq = require('groq-sdk');
+const logger = require('./logger');
 
 const groq_api = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -27,7 +28,7 @@ const groq = async (messages, model) => {
     });
     return completion;
   } catch (err) {
-    console.error(`Error while calling Groq API: ${err}`);
+    logger.error(`Error while calling Groq API: ${err}`);
     return null;
   }
 };
@@ -42,7 +43,7 @@ const groq_vision = async (messages, model) => {
     });
     return completion;
   } catch (err) {
-    console.error(`Error while calling Groq API: ${err}`);
+    logger.error(`Error while calling Groq API: ${err}`);
     return null;
   }
 };

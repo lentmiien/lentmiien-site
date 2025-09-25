@@ -1,4 +1,5 @@
 const fs = require("fs");
+const logger = require('../utils/logger');
 
 // Require necessary database models
 const { Images } = require('../database');
@@ -10,7 +11,7 @@ exports.index = async (req, res) => {
     const images = [];//await getImageFiles();
     res.render('gallery/gallery', { images });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send('Server Error');
   }
 };
@@ -30,7 +31,7 @@ exports.view = async (req, res) => {
     const image = await Images.findOne({ filename: imageFile });
     res.render('gallery/view', { imageFile, image, previousImage, nextImage });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send('Server Error');
   }
 };
@@ -64,7 +65,7 @@ exports.rate = async (req, res) => {
     await image.save();
     res.redirect(`/gallery/view?img=${imageFile}`);
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).send('Server Error');
   }
 };
@@ -100,7 +101,7 @@ exports.apiRate = async (req, res) => {
     // Return a JSON response indicating success
     return res.json({ success: true, message: 'Rating saved successfully', imageFile, ratings: ratingsArray });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     return res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -112,7 +113,7 @@ exports.random_slideshow = async (req, res) => {
     const shuffled = images.sort(() => 0.5 - Math.random());
     res.render('gallery/slideshow', { images: shuffled, type: 'Random', currentIndex: 0 });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).send('Server Error');
   }
 };
@@ -135,7 +136,7 @@ exports.category_slideshow = async (req, res) => {
     const filteredFilenames = images.map(img => img.filename).filter(d => diskImages.indexOf(d) >= 0).sort(() => 0.5 - Math.random());
     res.render('gallery/slideshow', { images: filteredFilenames, type: `Category: ${category} ≥ ${minRating}`, currentIndex: 0 });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).send('Server Error');
   }
 };
@@ -162,7 +163,7 @@ exports.random_unrated_slideshow = async (req, res) => {
     // Render the slideshow view, and send along the type so the view can display the rating form.
     res.render('gallery/slideshow', { images: shuffled, type: 'Random Unrated', currentIndex: 0 });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).send('Server Error');
   }
 };
@@ -173,7 +174,7 @@ exports.image = async (req, res) => {
     const filepath = galleryPath + "\\" + filename;
     res.sendFile(filepath);
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).send('Server Error');
   }
 };

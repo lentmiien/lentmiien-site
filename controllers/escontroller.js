@@ -1,5 +1,6 @@
 // Require necessary database models
 const { ESCategory, ESItem } = require('../database');
+const logger = require('../utils/logger');
 
 exports.es_dashboard = async (req, res) => {
   try {
@@ -26,8 +27,8 @@ exports.es_dashboard = async (req, res) => {
       if (i.categoryId in category_lookup_and_stock) {
         category_lookup_and_stock[i.categoryId].stock += i.amount;
       } else {
-        console.log('--- Untracked item ---');
-        console.log(i);
+        logger.notice('--- Untracked item ---');
+        logger.notice(i);
       }
     });
     // Calculate percentages
@@ -67,8 +68,8 @@ exports.es_view_stock = async (req, res) => {
         category_lookup_and_stock[i.categoryId].stock += i.amount;
         category_lookup_and_stock[i.categoryId].items.push(i);
       } else {
-        console.log('--- Untracked item ---');
-        console.log(i);
+        logger.notice('--- Untracked item ---');
+        logger.notice(i);
       }
     });
     // Calculate percentages
@@ -128,7 +129,7 @@ exports.edit_category = async (req, res) => {
 
     res.redirect('/es/es_dashboard');
   } catch (err) {
-    console.error('Error in edit_category:', err);
+    logger.error('Error in edit_category:', err);
     if (err.name === 'ValidationError') {
       res.status(400).send(`Validation Error: ${err.message}`);
     } else {
@@ -178,7 +179,7 @@ exports.add_item = async (req, res) => {
 
     res.redirect('/es/es_dashboard');
   } catch (err) {
-    console.error('Error in add_item:', err);
+    logger.error('Error in add_item:', err);
     if (err.name === 'ValidationError') {
       res.status(400).send(`Validation Error: ${err.message}`);
     } else {

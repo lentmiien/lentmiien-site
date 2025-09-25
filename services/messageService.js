@@ -8,6 +8,7 @@ const { googleAI } = require('../utils/google');
 const lmstudio = require('../utils/lmstudio');
 const ai = require('../utils/OpenAI_API');
 const { z } = require('zod');
+const logger = require('../utils/logger');
 
 const { AIModelCards, Chat5Model } = require('../database');
 
@@ -173,7 +174,7 @@ class MessageService {
       const title = details.conversation_title;
       return title;
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       return "Error generating title";
     }
   }
@@ -723,7 +724,7 @@ class MessageService {
       const title = details.conversation_title;
       return title;
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       return "Error generating title";
     }
   }
@@ -776,9 +777,9 @@ async function MailgunSend(message_content, title) {
       html: marked.parse(message_content),
     });
 
-    console.log(data); // logs response data
+    logger.notice(data); // logs response data
   } catch (error) {
-    console.log(error); //logs any error
+    logger.notice(error); //logs any error
   }
 }
 

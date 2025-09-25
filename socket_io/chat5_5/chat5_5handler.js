@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const context = require('./chat5_5context');
+const logger = require('../../utils/logger');
 
 module.exports = async function registerChat5_5Handlers({
   io,
@@ -161,14 +162,14 @@ module.exports = async function registerChat5_5Handlers({
 
     fs.writeFile(filePath, fileBuffer, async (err) => {
       if (err) {
-        console.error(`Error saving file ${name}:`, err);
+        logger.error(`Error saving file ${name}:`, err);
         // Delete created conversation if new, and an error occured
         if (conversation_id === "NEW") {
           await conversationService.deleteNewConversation(id);
         }
         socket.emit('chat5-uploadError', { message: `Failed to upload ${name}` });
       } else {
-        console.log(`File saved: ${filePath}`);
+        logger.notice(`File saved: ${filePath}`);
         const uploadFile = await ProcessUploadedImage(filePath);
         // Post to conversation
         const { userMessage } = await conversationService.postToConversationNew({
@@ -231,7 +232,7 @@ module.exports = async function registerChat5_5Handlers({
       await templateService.createTemplate(data.Title, data.Type, data.Category, data.TemplateText);
       if (typeof ack === 'function') ack({ ok: true });
     } catch (err) {
-      console.error('Failed to save template:', err);
+      logger.error('Failed to save template:', err);
       if (typeof ack === 'function') ack({ ok: false, message: 'Failed to save template' });
     }
   });

@@ -4,6 +4,7 @@ const marked = require('marked');
 const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig, localGPT } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 const kparser = require('../utils/knowledgeParser');
+const logger = require('../utils/logger');
 
 const default_models = require("../cache/default_models.json");
 
@@ -224,14 +225,14 @@ exports.post = async (req, res) => {
 
       res.json({status: "OK", msg: "Saved!"});
     } catch (err) {
-      console.error("Error saving data to database (Chat3): ", err);
+      logger.error("Error saving data to database (Chat3): ", err);
       res.json({status: "ERROR", msg: "Error saving data to database (Chat3)."});
     }
 
     // Generate embedding for response, and save to embedding database
     // Return _id of response entry in database to user (user side will reload page with the id)
   } else {
-    console.log('Failed to get a response from ChatGPT.');
+    logger.notice('Failed to get a response from ChatGPT.');
     res.json({status: "ERROR", msg: "Failed to get a response from ChatGPT."});
   }
 };
@@ -340,7 +341,7 @@ exports.generate_image = async (req, res) => {
     // Refresh page
     res.json({status: "OK", msg: "Saved!"});
   } catch (err) {
-    console.log('Failed to generate image: ', err);
+    logger.notice('Failed to generate image: ', err);
     res.json({status: "ERROR", msg: "Failed to generate image."});
   }
 }
@@ -373,7 +374,7 @@ exports.generate_tts = async (req, res) => {
     // Refresh page
     res.json({status: "OK", msg: "Saved!"});
   } catch (err) {
-    console.log('Failed to generate sound: ', err);
+    logger.notice('Failed to generate sound: ', err);
     res.json({status: "ERROR", msg: "Failed to generate sound."});
   }
 }
@@ -611,9 +612,9 @@ exports.manage_knowledge_add_post = async (req, res) => {
   // Save the JSON string to a file
   fs.writeFile(outputPath, jsonString, (err) => {
     if (err) {
-        console.error('Error writing file:', err);
+        logger.error('Error writing file:', err);
     } else {
-        console.log('File saved successfully!');
+        logger.notice('File saved successfully!');
     }
   });
 
@@ -721,9 +722,9 @@ exports.set_default_model = async (req, res) => {
   // Save the JSON string to a file
   fs.writeFile(outputPath, jsonString, (err) => {
     if (err) {
-      console.error('Error writing file:', err);
+      logger.error('Error writing file:', err);
     } else {
-      console.log('File saved successfully!');
+      logger.notice('File saved successfully!');
     }
   });
 
@@ -827,11 +828,11 @@ exports.post_simple_chat = async (req, res) => {
       // Return response message and conversation id
       res.json({status: "OK", msg: "Saved!", data: {response: marked.parse(response.choices[0].message.content), id: ConversationID}});
     } catch (err) {
-      console.error("Error saving data to database (Chat3): ", err);
+      logger.error("Error saving data to database (Chat3): ", err);
       res.json({status: "ERROR", msg: "Error saving data to database (Chat3)."});
     }
   } else {
-    console.log('Failed to get a response from ChatGPT.');
+    logger.notice('Failed to get a response from ChatGPT.');
     res.json({status: "ERROR", msg: "Failed to get a response from ChatGPT."});
   }
 };
