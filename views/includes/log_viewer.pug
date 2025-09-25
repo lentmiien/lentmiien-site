@@ -1,0 +1,54 @@
+﻿mixin logViewer(files, selectedFile, entries, levels, filters, categories, hasUncategorized, formAction)
+  - const levelLabels = levels.map((level) => level.charAt(0).toUpperCase() + level.slice(1));
+  section.log-viewer
+    h1.log-viewer__title Application Logs
+    if !files.length
+      p.log-viewer__empty No log files found.
+    else
+      form.log-viewer__filters(method='get', action=formAction)
+        .log-viewer__filters-row
+          .log-viewer__field
+            label.log-viewer__label(for='file-select') Log file
+            select#file-select.log-viewer__select(name='file')
+              each file, index in files
+                - const isSelectedFile = file.name === selectedFile || (!selectedFile && index === 0)
+                option(value=file.name selected=isSelectedFile)
+                  | #{file.name} · #{new Date(file.mtime).toLocaleString()}
+          .log-viewer__field
+            label.log-viewer__label(for='level-select') Level
+            select#level-select.log-viewer__select(name='level')
+              option(value='all' selected=(filters.level === 'all')) All levels
+              each level, idx in levels
+                option(value=level selected=(filters.level === level))= levelLabels[idx]
+          .log-viewer__field
+            label.log-viewer__label(for='category-select') Category
+            select#category-select.log-viewer__select(name='category')
+              option(value='all' selected=(filters.category === 'all')) All categories
+              if hasUncategorized
+                option(value='uncategorized' selected=(filters.category === 'uncategorized')) Uncategorized
+              each category in categories
+                option(value=category selected=(filters.category === category))= category
+        button.log-viewer__submit(type='submit') Apply filters
+      if selectedFile
+        .log-viewer__summary
+          span Selected file:
+          strong #{selectedFile}
+          - const activeFile = files.find((file) => file.name === selectedFile)
+          if activeFile
+            span · Updated #{new Date(activeFile.mtime).toLocaleString()}
+            span · #{Math.ceil(activeFile.size / 1024)} KB
+      if !entries.length
+        p.log-viewer__empty No log entries match the selected filters.
+      else
+        ul.log-viewer__list
+          each entry in entries
+            - const entryLevel = (entry.level || 'notice').toLowerCase()
+            li(class=`log-viewer__item log-viewer__item--${entryLevel}`)
+              header.log-viewer__item-header
+                span.log-viewer__timestamp #{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Unknown time'}
+                span.log-viewer__level #{entryLevel.toUpperCase()}
+                if entry.category
+                  span.log-viewer__category #{entry.category}
+              p.log-viewer__message= entry.message
+              if entry.metadata
+                pre.log-viewer__metadata= JSON.stringify(entry.metadata, null, 2)

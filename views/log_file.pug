@@ -1,5 +1,10 @@
 extends layout
 
+include includes/log_viewer
+
+block styles
+  style
+    include includes/log_viewer_styles.css
+
 block content
-  h2= `PM2 log data (${file})`
-  pre= file_data
+  +logViewer(files, selectedFile, entries, levels, filters, categories, hasUncategorized, formAction)

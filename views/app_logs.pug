@@ -1,8 +1,10 @@
 extends layout
 
+include includes/log_viewer
+
+block styles
+  style
+    include includes/log_viewer_styles.css
+
 block content
-  h2 PM2 log files
-  each file in files
-    div
-      a.btn.btn-link(href=`/admin/log_file/${file}`)= file
-      a.btn.btn-danger(href=`/admin/delete_log_file/${file}`) Delete
+  +logViewer(files, selectedFile, entries, levels, filters, categories, hasUncategorized, formAction)
