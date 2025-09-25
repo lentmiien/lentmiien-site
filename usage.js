@@ -1,4 +1,5 @@
 // usage.js
+const logger = require('./utils/logger');
 require('dotenv').config();
 const axios = require('axios');
 
@@ -84,7 +85,7 @@ async function fetchUsage(usageType, options = {}) {
     } catch (error) {
         // Handle errors appropriately
         if (error.response) {
-          console.log(error.response.data);
+          logger.notice(error.response.data);
           throw new Error(`API Error: ${error.response.status} - ${error.response.data}`);
         } else {
           throw new Error(`Request Error: ${error.message}`);
@@ -149,7 +150,7 @@ async function fetchCostsData(options = {}) {
         return response.data;
     } catch (error) {
         if (error.response) {
-            console.log(error.response.data);
+            logger.notice(error.response.data);
             throw new Error(`API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
         } else {
             throw new Error(`Request Error: ${error.message}`);
@@ -179,7 +180,7 @@ async function fetchUsageSummaryForPeriod(sd, ed) {
 
     // Fetch Completions Usage
     const completionsData = await fetchCompletionsUsage(options);
-    // console.log('Completions Usage:', JSON.stringify(completionsData, null, 2));
+    // logger.notice('Completions Usage:', JSON.stringify(completionsData, null, 2));
     const completions_model_index = [];
     summary['completions'] = [];
     completionsData.data.forEach(d => {
@@ -205,7 +206,7 @@ async function fetchUsageSummaryForPeriod(sd, ed) {
 
     // Fetch Embeddings Usage
     const embeddingsData = await fetchEmbeddingsUsage(options);
-    // console.log('Embeddings Usage:', JSON.stringify(embeddingsData, null, 2));
+    // logger.notice('Embeddings Usage:', JSON.stringify(embeddingsData, null, 2));
     const embeddings_model_index = [];
     summary['embeddings'] = [];
     embeddingsData.data.forEach(d => {
@@ -227,7 +228,7 @@ async function fetchUsageSummaryForPeriod(sd, ed) {
 
     // Fetch Images Usage
     const imagesData = await fetchImagesUsage(options);
-    // console.log('Images Usage:', JSON.stringify(imagesData, null, 2));
+    // logger.notice('Images Usage:', JSON.stringify(imagesData, null, 2));
     const images_model_index = [];
     summary['images'] = [];
     imagesData.data.forEach(d => {
@@ -249,7 +250,7 @@ async function fetchUsageSummaryForPeriod(sd, ed) {
 
     // Fetch Audio Speeches Usage
     const audioSpeechesData = await fetchAudioSpeechesUsage(options);
-    // console.log('Audio Speeches Usage:', JSON.stringify(audioSpeechesData, null, 2));
+    // logger.notice('Audio Speeches Usage:', JSON.stringify(audioSpeechesData, null, 2));
     const speeches_model_index = [];
     summary['speeches'] = [];
     audioSpeechesData.data.forEach(d => {
@@ -271,7 +272,7 @@ async function fetchUsageSummaryForPeriod(sd, ed) {
 
     // Fetch Audio Transcriptions Usage
     const audioTranscriptionsData = await fetchAudioTranscriptionsUsage(options);
-    // console.log('Audio Transcriptions Usage:', JSON.stringify(audioTranscriptionsData, null, 2));
+    // logger.notice('Audio Transcriptions Usage:', JSON.stringify(audioTranscriptionsData, null, 2));
     const transcriptions_model_index = [];
     summary['transcriptions'] = [];
     audioTranscriptionsData.data.forEach(d => {
@@ -293,7 +294,7 @@ async function fetchUsageSummaryForPeriod(sd, ed) {
 
     // Fetch Audio Transcriptions Usage
     const costsData = await fetchCostsData(options);
-    // console.log('Cost:', JSON.stringify(costsData, null, 2));
+    // logger.notice('Cost:', JSON.stringify(costsData, null, 2));
     summary['cost'] = 0;
     costsData.data.forEach(d => {
       d.results.forEach(r => {
@@ -303,7 +304,7 @@ async function fetchUsageSummaryForPeriod(sd, ed) {
 
     return summary;
   } catch (error) {
-    console.error('Error fetching usage data:', error.message);
+    logger.error('Error fetching usage data:', error.message);
     return undefined;
   }
 }

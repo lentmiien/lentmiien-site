@@ -2,6 +2,7 @@
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
+const logger = require('../utils/logger');
 
 const { Prompt } = require('../database');
 
@@ -134,7 +135,7 @@ exports.getJobImage = async (req, res) => {
     const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
-      console.error('[getJobImage] upstream', r.status, txt);
+      logger.error('[getJobImage] upstream', r.status, txt);
       return errorJson(res, r.status, 'upstream error', txt);
     }
     const ct = r.headers.get('content-type') || 'image/png';
@@ -145,7 +146,7 @@ exports.getJobImage = async (req, res) => {
     res.end(Buffer.from(ab));
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
-    console.error('[getJobImage] error', e);
+    logger.error('[getJobImage] error', e);
     return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream image', String(e.message || e));
   }
 };
@@ -173,7 +174,7 @@ exports.getFile = async (req, res) => {
     const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
-      console.error('[getFile] upstream', r.status, txt);
+      logger.error('[getFile] upstream', r.status, txt);
       return errorJson(res, r.status, 'upstream error', txt);
     }
     const ct = r.headers.get('content-type') || 'application/octet-stream';
@@ -184,7 +185,7 @@ exports.getFile = async (req, res) => {
     res.end(Buffer.from(ab));
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
-    console.error('[getFile] error', e);
+    logger.error('[getFile] error', e);
     return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream file', String(e.message || e));
   }
 };
@@ -257,7 +258,7 @@ exports.rateJob = async (req, res) => {
 
     return res.json({ ok: true });
   } catch (e) {
-    console.error('[rateJob] error', e);
+    logger.error('[rateJob] error', e);
     return errorJson(res, 500, 'failed to record rating', String(e.message || e));
   }
 };
@@ -305,7 +306,7 @@ exports.listPrompts = async (req, res) => {
     items.sort((a, b) => (b.average - a.average) || (b.uses - a.uses) || (new Date(b.last_used_at) - new Date(a.last_used_at)));
     return res.json({ items: items.slice(0, limit) });
   } catch (e) {
-    console.error('[listPrompts] error', e);
+    logger.error('[listPrompts] error', e);
     return errorJson(res, 500, 'failed to list prompts', String(e.message || e));
   }
 };

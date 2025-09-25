@@ -1,3 +1,4 @@
+const logger = require('./utils/logger');
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -28,7 +29,7 @@ async function listDropboxFiles(dbx) {
 async function uploadFile(dbx, filePath, dropboxPath) {
   const content = fs.readFileSync(filePath);
   await dbx.filesUpload({ path: dropboxPath, contents: content, mode: { ".tag": "overwrite" } });
-  console.log(`Uploaded: ${filePath} to ${dropboxPath}`);
+  logger.notice(`Uploaded: ${filePath} to ${dropboxPath}`);
 }
 
 // Main function for backup process
@@ -45,9 +46,9 @@ async function backup() {
       }
     }
 
-    console.log('Backup completed successfully.');
+    logger.notice('Backup completed successfully.');
   } catch (error) {
-    console.error('Error during backup:', error);
+    logger.error('Error during backup:', error);
   }
 }
 
@@ -55,7 +56,7 @@ async function backup() {
 async function downloadFile(dbx, dropboxPath, localPath) {
   const response = await dbx.filesDownload({ path: dropboxPath });
   fs.writeFileSync(localPath, response.result.fileBinary, 'binary');
-  console.log(`Downloaded: ${dropboxPath} to ${localPath}`);
+  logger.notice(`Downloaded: ${dropboxPath} to ${localPath}`);
 }
 
 // Main function for setup process
@@ -78,10 +79,11 @@ async function setup() {
       }
     }
 
-    console.log('Setup completed successfully.');
+    logger.notice('Setup completed successfully.');
   } catch (error) {
-    console.error('Error during setup:', error);
+    logger.error('Error during setup:', error);
   }
 }
 
 module.exports = { backup, setup };
+

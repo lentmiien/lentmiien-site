@@ -1,4 +1,5 @@
 // Box templates
+const logger = require('../utils/logger');
 const boxTemplates = {
   'AA': [256, 181, 45, 100],
   'A': [256, 181, 112, 110],
@@ -313,7 +314,7 @@ function fit_smallest(items, boxes) {
   // End timer
   const total_time_in_seconds = Math.round((Date.now() - start_ts) / 1000);
   if(!bestSolution) {
-    console.log(`No solution found, processed ${items.length} items in ${total_time_in_seconds} seconds.`);
+    logger.notice(`No solution found, processed ${items.length} items in ${total_time_in_seconds} seconds.`);
   }
 
   return ("solution" in bestSolution ? bestSolution.solution : null);
@@ -431,7 +432,7 @@ function placeItems(itemsToPlace, placedItems, boxes, corners) {
           });
           alternative_solutions = [];// Reset alternatives
 
-          // console.log("New best solution: ", bestSolution);
+          // logger.notice("New best solution: ", bestSolution);
         } else if (bestSolution.box_volume === smallest_box_volume && bestSolution.item_volume === bb_x * bb_y * bb_z) {
           alternative_solutions.push([...placedItems]);
         }
@@ -449,7 +450,7 @@ function placeItems(itemsToPlace, placedItems, boxes, corners) {
         });
         alternative_solutions = [];// Reset alternatives
 
-        // console.log("Current best solution: ", bestSolution);
+        // logger.notice("Current best solution: ", bestSolution);
       }
     }
 

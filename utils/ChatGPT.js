@@ -5,6 +5,7 @@ const path = require("path");
 const { OpenaicalllogDBModel, OpenaimodelDBModel } = require('../database');
 const { OpenAI } = require('openai');
 const { zodTextFormat } = require('openai/helpers/zod');
+const logger = require('./logger');
 
 // Set your OpenAI API key (I use 2 projects, so 2 API keys)
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -207,7 +208,7 @@ const chatGPT = async (messages, model, private_msg=false) => {
     }
     return response;
   } catch (error) {
-    console.error(`Error while calling ChatGPT API: ${error}`);
+    logger.error(`Error while calling ChatGPT API: ${error}`);
     return null;
   }
 };
@@ -232,7 +233,7 @@ const chatGPTaudio = async (messages, model, private_msg=false) => {
     }
     return response;
   } catch (error) {
-    console.error(`Error while calling ChatGPT API: ${error}`);
+    logger.error(`Error while calling ChatGPT API: ${error}`);
     return null;
   }
 };
@@ -265,7 +266,7 @@ const chatGPT_beta = async (messages, model, private_msg=false, zod) => {
     }
     return response;
   } catch (error) {
-    console.error(`Error while calling ChatGPT API: ${error}`);
+    logger.error(`Error while calling ChatGPT API: ${error}`);
     return null;
   }
 };
@@ -305,7 +306,7 @@ const responses = async (messages, model, effort) => {
           ],
         });
       } else {
-        console.log(`Role "${m.role}" has not been implemented, continue without the following message:`, m);
+        logger.notice(`Role "${m.role}" has not been implemented, continue without the following message:`, m);
       }
     }
     let response = await openai.responses.create({
@@ -359,7 +360,7 @@ const responses = async (messages, model, effort) => {
       "service_tier": "default"
     };
   } catch (error) {
-    console.error(`Error while calling the OpenAI responses API: ${error}`);
+    logger.error(`Error while calling the OpenAI responses API: ${error}`);
     throw error;
   }
 };
@@ -404,7 +405,7 @@ const chatGPT_o1 = async (messages, model, reasoning_effort = null, private_msg=
     }
     return response;
   } catch (error) {
-    console.error(`Error while calling the OpenAI API: ${error}`);
+    logger.error(`Error while calling the OpenAI API: ${error}`);
     return null;
   }
 };
@@ -429,7 +430,7 @@ const chatGPT_Tool = async (messages, model, tools, tool_choice, private_msg=fal
     }
     return response;
   } catch (error) {
-    console.error(`Error while calling ChatGPT API: ${error}`);
+    logger.error(`Error while calling ChatGPT API: ${error}`);
     return null;
   }
 };
@@ -450,7 +451,7 @@ const embedding = async (text, model, private_msg=false) => {
     }
     return response;
   } catch (error) {
-    console.error(`Error while calling Embedding API: ${error}`);
+    logger.error(`Error while calling Embedding API: ${error}`);
     return null;
   }
 };
@@ -531,10 +532,10 @@ const ig = async (prompt, quality, size, img_id = Date.now(), private_msg=false)
     
     // Save the JPG buffer to a file
     await fs.promises.writeFile(jpg_outputfile, jpgBuffer);
-    console.log('The JPEG file has been saved successfully!');
+    logger.notice('The JPEG file has been saved successfully!');
   } catch(err) {
     // Handle errors
-    console.error('An error occurred:', err);
+    logger.error('An error occurred:', err);
   }
 
   return { filename: jpg_filename, prompt: image.data[0].revised_prompt || prompt };
@@ -597,10 +598,10 @@ const ig2 = async (prompt, model, quality, size) => {
     
     // Save the JPG buffer to a file
     await fs.promises.writeFile(jpg_outputfile, jpgBuffer);
-    console.log('The JPEG file has been saved successfully!');
+    logger.notice('The JPEG file has been saved successfully!');
   } catch(err) {
     // Handle errors
-    console.error('An error occurred:', err);
+    logger.error('An error occurred:', err);
   }
 
   return jpg_filename;
@@ -653,10 +654,10 @@ const imageEdit = async (inImages, prompt, model, quality, size) => {
     
     // Save the JPG buffer to a file
     await fs.promises.writeFile(jpg_outputfile, jpgBuffer);
-    console.log('The JPEG file has been saved successfully!');
+    logger.notice('The JPEG file has been saved successfully!');
   } catch(err) {
     // Handle errors
-    console.error('An error occurred:', err);
+    logger.error('An error occurred:', err);
   }
 
   return jpg_filename;
@@ -670,7 +671,7 @@ const localGPT = async (messages, model) => {
     });
     return response;
   } catch (error) {
-    console.error(`Error while calling LocalGPT API: ${error}`);
+    logger.error(`Error while calling LocalGPT API: ${error}`);
     return null;
   }
 };
@@ -697,7 +698,7 @@ const upload_file = async (file_data, private_msg=true) => {
 
     return fileUploader.id;
   } catch (error) {
-    console.error(`[upload_file] Error while calling OpenAI API: ${error}`);
+    logger.error(`[upload_file] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };
@@ -716,7 +717,7 @@ const download_file = async (file_id, private_msg=true) => {
     
     return outputs;
   } catch (error) {
-    console.error(`[download_file] Error while calling OpenAI API: ${error}`);
+    logger.error(`[download_file] Error while calling OpenAI API: ${error}`);
     return [];
   }
 };
@@ -732,7 +733,7 @@ const delete_file = async (file_id, private_msg=true) => {
     
     return response;
   } catch (error) {
-    console.error(`[delete_file] Error while calling OpenAI API: ${error}`);
+    logger.error(`[delete_file] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };
@@ -756,7 +757,7 @@ const start_batch = async (file_id, private_msg=true, endpoint="/v1/chat/complet
     
     return batch;
   } catch (error) {
-    console.error(`[start_batch] Error while calling OpenAI API: ${error}`);
+    logger.error(`[start_batch] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };
@@ -772,7 +773,7 @@ const batch_status = async (batch_id, private_msg=true) => {
     
     return batch;
   } catch (error) {
-    console.error(`[batch_status] Error while calling OpenAI API: ${error}`);
+    logger.error(`[batch_status] Error while calling OpenAI API: ${error}`);
     return null;
   }
 };

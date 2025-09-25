@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { OpenAI } = require('openai');
+const logger = require('./logger');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
 
@@ -162,7 +163,7 @@ async function convertOutput (d) {
         };
       }
     default:
-      console.log("Type undefined: ", d);
+      logger.notice("Type undefined: ", d);
       return null;
   }
 }
@@ -196,7 +197,7 @@ const chat = async (conversation, messages, model) => {
     let response = await openai.responses.create(inputParameters);
     return response.id;
   } catch (error) {
-    console.error(`Error while calling ChatGPT API: ${error}`);
+    logger.error(`Error while calling ChatGPT API: ${error}`);
     return null;
   }
 };
@@ -209,7 +210,7 @@ const embedding = async (text, model) => {
     });
     return response;
   } catch (error) {
-    console.error(`Error while calling Embedding API: ${error}`);
+    logger.error(`Error while calling Embedding API: ${error}`);
     return null;
   }
 };
@@ -232,7 +233,7 @@ const fetchCompleted = async (response_id) => {
     output.push({error:response.error});
     return output;
   } catch (error) {
-    console.error(`Error while fetching completed response API: ${error}`);
+    logger.error(`Error while fetching completed response API: ${error}`);
     return null;
   }
 }

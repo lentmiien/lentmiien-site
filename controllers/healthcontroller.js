@@ -1,4 +1,5 @@
 const { HealthEntry } = require('../database');
+const logger = require('../utils/logger');
 
 // Front-end
 exports.top = (req, res) => {
@@ -37,7 +38,7 @@ exports.edit = async (req, res) => {
 
   } catch (error) {
     // Log the error and render an error page or send an error response
-    console.error(`Error fetching entry for editing: ${error.message}`);
+    logger.error(`Error fetching entry for editing: ${error.message}`);
     res.status(500).render('error', { error: 'Could not fetch entry for editing' });
   }
 };
@@ -87,7 +88,7 @@ exports.addHealthEntry = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`Error adding health entry: ${error.message}`);
+    logger.error(`Error adding health entry: ${error.message}`);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 };
@@ -119,7 +120,7 @@ exports.getHealthEntry = async (req, res) => {
     });
   } catch (error) {
     // Log and respond with error information in case of a server error
-    console.error(`Error fetching health entry: ${error.message}`);
+    logger.error(`Error fetching health entry: ${error.message}`);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 };
@@ -162,7 +163,7 @@ exports.updateHealthEntry = async (req, res) => {
 
   } catch (error) {
     // Log and respond with error information in case of server error
-    console.error(`Error updating health entry: ${error.message}`);
+    logger.error(`Error updating health entry: ${error.message}`);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 };
@@ -200,7 +201,7 @@ exports.getHealthEntries = async (req, res) => {
 
   } catch (error) {
     // Log and respond with error information in case of a server error
-    console.error(`Error fetching health entries: ${error.message}`);
+    logger.error(`Error fetching health entries: ${error.message}`);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 };
@@ -231,7 +232,7 @@ exports.deleteHealthEntry = async (req, res) => {
 
   } catch (error) {
     // Log error and return an internal server error response
-    console.error(`Error deleting health entry: ${error.message}`);
+    logger.error(`Error deleting health entry: ${error.message}`);
     return res.status(500).json({ message: 'Internal server error.' });
   }
 };
@@ -276,7 +277,7 @@ exports.append_diary = async (req, res) => {
           res.status(201).json({ status: 'OK', message: 'New diary entry created with id.' });
       }
   } catch (error) {
-      console.error(`Error appending diary ID: ${error.message}`);
+      logger.error(`Error appending diary ID: ${error.message}`);
       res.status(500).json({ status: 'ERROR', message: 'Server error while processing request.' });
   }
 };

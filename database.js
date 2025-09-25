@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const logger = require('./utils/logger');
 
 // mongoose.set('useFindAndModify', false);
 
@@ -7,14 +8,18 @@ const mongoDB_url = process.env.MONGOOSE_URL;
 // mongoose.connect(mongoDB_url, { useNewUrlParser: true, useUnifiedTopology: true });
 
 mongoose.connect(mongoDB_url).then(() => {
-  console.log('Database connected');
+  logger.notice('Database connected', { category: 'database' });
+}).catch((err) => {
+  logger.error('MongoDB connection error', { category: 'database', metadata: { error: err } });
 });
 
 // Get the default connection
 const db = mongoose.connection;
 
 // Bind connection to error event (to get notification of connection errors)
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
+db.on('error', (err) => {
+  logger.error('MongoDB connection error', { category: 'database', metadata: { error: err } });
+});
 
 // User
 const UseraccountModel = require('./models/useraccount');

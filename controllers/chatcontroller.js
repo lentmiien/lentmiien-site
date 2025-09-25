@@ -1,5 +1,6 @@
 const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
+const logger = require('../utils/logger');
 
 // Require necessary database models
 const { ChatModel } = require('../database');
@@ -98,7 +99,7 @@ exports.index = (req, res) => {
     }
 
     // Debuging stuff
-    // console.log(chat_hist);
+    // logger.notice(chat_hist);
 
     res.render('chat', { usage, chat_list, chat_hist, chat_id, chat_title, chat_context });
   });
@@ -186,7 +187,7 @@ exports.post = (req, res) => {
       ChatModel.collection.insertMany(entries_to_save);
       setTimeout(() => res.redirect(`/chat?id=${id}`), 100);
     } else {
-      console.log('Failed to get a response from ChatGPT.');
+      logger.notice('Failed to get a response from ChatGPT.');
       res.redirect(`/chat`);
     }
   });

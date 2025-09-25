@@ -3,6 +3,7 @@ const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
 const BatchService = require('../services/batchService');
 const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, BatchPromptModel, BatchRequestModel } = require('../database');
+const logger = require('../utils/logger');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
@@ -38,12 +39,11 @@ exports.openai = async (req, res) => {
   } catch (error) {
     // Note: The error class is on the *class*, not the instance
     if (error instanceof OpenAI.InvalidWebhookSignatureError) {
-      console.error("Invalid signature", error);
+      logger.error("Invalid signature", error);
       res.status(400).send("Invalid signature");
     } else {
-      console.error(error);
+      logger.error(error);
       res.status(500).send("Server error");
     }
   }
 };
-

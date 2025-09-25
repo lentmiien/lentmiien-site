@@ -1,6 +1,7 @@
 const marked = require('marked');// For formatting blog post entries
 const sharp = require('sharp');// For getting image size
 const fs = require('fs').promises;
+const logger = require('../utils/logger');
 
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
@@ -276,7 +277,7 @@ async function getImageDimensions(imagePath) {
     const metadata = await sharp(imagePath).metadata();
     return {width: metadata.width, height: metadata.height};
   } catch (error) {
-    console.error('Error processing image:', error);
+    logger.error('Error processing image:', error);
     return undefined;
   }
 }
@@ -711,7 +712,7 @@ exports.redact_post = async (req, res) => {
     await message.save();
     res.redirect(`/chat4/chat/${req.body.conversation_id}`);
   } catch (error) {
-    console.log(error);
+    logger.notice(error);
     res.redirect(`/chat4/redact/${req.params.id}`);
   }
 }

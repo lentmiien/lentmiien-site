@@ -1,3 +1,4 @@
+const logger = require('./logger');
 const {
   GoogleGenerativeAI,
   HarmCategory,
@@ -62,9 +63,9 @@ const googleAI = async (messages, use_model) => {
         try {
           const filename = `output_${candidate_index}_${part_index}.${mime.extension(part.inlineData.mimeType)}`;
           fs.writeFileSync(filename, Buffer.from(part.inlineData.data, 'base64'));
-          console.log(`Output written to: ${filename}`);
+          logger.notice(`Output written to: ${filename}`);
         } catch (err) {
-          console.error(err);
+          logger.error(err);
         }
       }
     }
@@ -185,7 +186,7 @@ const googleAI = async (messages, use_model) => {
 //       }
 //     };
 //   } catch (error) {
-//     console.error(`Error while calling Google AI API: ${error}`);
+//     logger.error(`Error while calling Google AI API: ${error}`);
 //     return null;
 //   }
 // };

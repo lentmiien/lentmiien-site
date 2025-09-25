@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const context = require('./chat5context');
+const logger = require('../../utils/logger');
 
 module.exports = async function registerChat5Handlers({
   io,
@@ -73,7 +74,7 @@ module.exports = async function registerChat5Handlers({
 
   socket.on('userSelectModel', async (model) => {
     socket.model = model;
-    console.log(`Switching to model "${model}".`);
+    logger.notice(`Switching to model "${model}".`);
   });
 
   socket.on('userUpdateSettings', async (data) => {
@@ -84,7 +85,7 @@ module.exports = async function registerChat5Handlers({
     )) {
       // Updating conversation
       await conversationService.updateConversationSettings(socket.conversation_id, data.context, data.category, data.tags);
-      console.log(`New settings: ${JSON.stringify(data, null, 2)}`);
+      logger.notice(`New settings: ${JSON.stringify(data, null, 2)}`);
     }
     socket.context = data.context
     socket.category = data.category;
@@ -145,10 +146,10 @@ module.exports = async function registerChat5Handlers({
 
     fs.writeFile(filePath, fileBuffer, (err) => {
       if (err) {
-        console.error(`Error saving file ${name}:`, err);
+        logger.error(`Error saving file ${name}:`, err);
         socket.emit('uploadError', { message: `Failed to upload ${name}` });
       } else {
-        console.log(`File saved: ${filePath}`);
+        logger.notice(`File saved: ${filePath}`);
         socket.images.push(filePath);
         socket.emit('uploadSuccess', { savedImages: socket.images });
       }
@@ -205,7 +206,7 @@ module.exports = async function registerChat5Handlers({
         await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4.1-nano");
       }
     } catch (error) {
-      console.error('Error processing data:', error);
+      logger.error('Error processing data:', error);
       socket.emit('error', 'An error occurred while processing your request.');
     }
   });

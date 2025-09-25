@@ -130,123 +130,195 @@ exports.update_role = async (req, res) => {
 
 const fs = require('fs');
 const path = require('path');
+const logger = require('../utils/logger');
 
-const logPath = '/home/lentmiien/.pm2/logs/';
+const LOGS_DIR = path.resolve(__dirname, '..', 'logs');
+const LOG_LEVELS = ['debug', 'notice', 'warning', 'error'];
+const MAX_LOG_ENTRIES = 1000;
 
-// Updated getPM2LogFiles function to filter out subfolders
-function getPM2LogFiles() {
+function getLogFiles() {
+  if (!fs.existsSync(LOGS_DIR)) {
+    return [];
+  }
+
+  return fs.readdirSync(LOGS_DIR)
+    .filter((file) => file.endsWith('.log'))
+    .map((file) => {
+      const filePath = path.join(LOGS_DIR, file);
+      const stats = fs.statSync(filePath);
+      return {
+        name: file,
+        size: stats.size,
+        mtime: stats.mtime,
+      };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+}
+
+function sanitizeFileName(fileName) {
+  if (!fileName) {
+    return null;
+  }
+
+  if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+    return null;
+  }
+
+  return fileName;
+}
+
+function readLogEntries(fileName, limit = MAX_LOG_ENTRIES) {
+  const filePath = path.join(LOGS_DIR, fileName);
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error('Log file not found.');
+  }
+
+  const fileContents = fs.readFileSync(filePath, 'utf8');
+  const lines = fileContents.split(/\r?\n/).filter(Boolean);
+  const entries = [];
+
+  for (let i = lines.length - 1; i >= 0 && entries.length < limit; i -= 1) {
+    const line = lines[i].trim();
+    if (!line) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(line);
+      entries.push(parsed);
+    } catch (err) {
+      continue;
+    }
+  }
+
+  return entries;
+}
+
+function getCategoryOptions(entries) {
+  const categories = new Set();
+  let hasUncategorized = false;
+
+  entries.forEach((entry) => {
+    if (entry && entry.category) {
+      categories.add(entry.category);
+    } else {
+      hasUncategorized = true;
+    }
+  });
+
+  return {
+    categories: Array.from(categories).sort((a, b) => a.localeCompare(b)),
+    hasUncategorized,
+  };
+}
+
+function filterEntries(entries, filters) {
+  return entries.filter((entry) => {
+    if (!entry) {
+      return false;
+    }
+
+    const level = (entry.level || '').toLowerCase();
+    if (filters.level !== 'all' && level !== filters.level) {
+      return false;
+    }
+
+    if (filters.category === 'all') {
+      return true;
+    }
+
+    if (filters.category === 'uncategorized') {
+      return !entry.category;
+    }
+
+    return entry.category === filters.category;
+  });
+}
+
+function renderLogViewer(req, res, { selectedFile: overrideFile, strict = false, template = 'app_logs' } = {}) {
   try {
-    const files = fs.readdirSync(logPath);
-    const fileNames = files.filter(file => {
-      const filePath = path.join(logPath, file);
-      return fs.statSync(filePath).isFile();
+    const files = getLogFiles();
+    const fileNames = files.map((file) => file.name);
+    const requestedFile = overrideFile || req.query.file;
+    let selectedFile = sanitizeFileName(requestedFile);
+
+    if (requestedFile && !selectedFile) {
+      if (strict) {
+        return res.status(400).render('error_page', { error: 'Invalid file name.' });
+      }
+      selectedFile = null;
+    }
+
+    if (selectedFile && !fileNames.includes(selectedFile)) {
+      if (strict) {
+        return res.status(404).render('error_page', { error: 'Log file not found.' });
+      }
+      selectedFile = null;
+    }
+
+    if (!selectedFile && files.length > 0) {
+      selectedFile = files[0].name;
+    }
+
+    const requestedLevel = (req.query.level || 'all').toLowerCase();
+    const filters = {
+      level: LOG_LEVELS.includes(requestedLevel) ? requestedLevel : 'all',
+      category: req.query.category && req.query.category !== '' ? req.query.category : 'all',
+    };
+
+    let entries = [];
+    let categories = [];
+    let hasUncategorized = false;
+
+    if (selectedFile) {
+      const rawEntries = readLogEntries(selectedFile);
+      const categoryData = getCategoryOptions(rawEntries);
+      categories = categoryData.categories;
+      hasUncategorized = categoryData.hasUncategorized;
+      entries = filterEntries(rawEntries, filters);
+    }
+
+    return res.render(template, {
+      files,
+      selectedFile,
+      entries,
+      levels: LOG_LEVELS,
+      filters,
+      categories,
+      hasUncategorized,
+      formAction: '/admin/app_logs',
     });
-    return fileNames;
-  } catch (err) {
-    throw new Error(`Error reading directory: ${err.message}`);
-  }
-}
-
-// Existing getLogFileContent function
-function getLogFileContent(filename) {
-  const filePath = path.join(logPath, filename);
-  
-  // Validate that the file exists and is within the log directory
-  if (!fs.existsSync(filePath)) {
-    throw new Error('File does not exist.');
-  }
-
-  // Ensure that the path is a file and not a directory
-  if (!fs.statSync(filePath).isFile()) {
-    throw new Error('Specified path is not a file.');
-  }
-
-  try {
-    const data = fs.readFileSync(filePath, 'utf8');
-    return data;
-  } catch (err) {
-    throw new Error(`Error reading file: ${err.message}`);
-  }
-}
-
-// Function to delete a specific log file
-function deleteLogFile(filename) {
-  const filePath = path.join(logPath, filename);
-
-  // Validate that the file exists and is within the log directory
-  if (!fs.existsSync(filePath)) {
-    throw new Error('File does not exist.');
-  }
-
-  // Ensure that the path is a file and not a directory
-  if (!fs.statSync(filePath).isFile()) {
-    throw new Error('Specified path is not a file.');
-  }
-
-  // Delete the file
-  try {
-    fs.unlinkSync(filePath);
-  } catch (err) {
-    throw new Error(`Error deleting file: ${err.message}`);
-  }
-}
-
-// Updated app_logs function with try...catch and error handling
-exports.app_logs = (req, res) => {
-  try {
-    const files = getPM2LogFiles();
-    res.render("app_logs", { files });
   } catch (error) {
-    res.status(500).render('error_page', {error: `Error fetching log files: ${error.message}`});
+    logger.error('Failed to render log viewer', { category: 'admin_logs', metadata: { error } });
+    return res.status(500).render('error_page', { error: `Error loading logs: ${error.message}` });
   }
-};
+}
 
-// Updated log_file function with try...catch and error handling
-exports.log_file = (req, res) => {
-  try {
-    const filename = req.params.file;
+exports.app_logs = (req, res) => renderLogViewer(req, res, { template: 'app_logs' });
 
-    // Security: Validate the filename
-    if (filename.includes('..') || filename.includes('/')) {
-      return res.status(400).render('error_page', {error: 'Invalid file name.'});
-    }
+exports.log_file = (req, res) => renderLogViewer(req, res, { selectedFile: req.params.file, strict: true, template: 'log_file' });
 
-    // Check if the file is in the list of PM2 log files
-    const allowedFiles = getPM2LogFiles();
-    if (!allowedFiles.includes(filename)) {
-      return res.status(404).render('error_page', {error: 'File not found.'});
-    }
-
-    const file_data = getLogFileContent(filename);
-    res.render("log_file", { file_data, file: filename });
-  } catch (error) {
-    res.status(500).render('error_page', {error: `Error reading log file: ${error.message}`});
-  }
-};
-
-// Endpoint to delete a log file
 exports.delete_log_file = (req, res) => {
   try {
-    const filename = req.params.file;
+    const filename = sanitizeFileName(req.params.file);
 
-    // Security: Validate the filename
-    if (filename.includes('..') || filename.includes('/')) {
-      return res.status(400).render('error_page', {error: 'Invalid file name.'});
+    if (!filename) {
+      return res.status(400).render('error_page', { error: 'Invalid file name.' });
     }
 
-    // Check if the file is in the list of PM2 log files
-    const allowedFiles = getPM2LogFiles();
+    const allowedFiles = getLogFiles().map((file) => file.name);
     if (!allowedFiles.includes(filename)) {
-      return res.status(404).render('error_page', {error: 'File not found.'});
+      return res.status(404).render('error_page', { error: 'File not found.' });
     }
 
-    // Delete the log file
-    deleteLogFile(filename);
+    const filePath = path.join(LOGS_DIR, filename);
+    fs.unlinkSync(filePath);
 
-    // Redirect back to the logs list with a success message
-    res.redirect('/admin/app_logs');
+    return res.redirect('/admin/app_logs');
   } catch (error) {
-    res.status(500).render('error_page', {error: `Error deleting log file: ${error.message}`});
+    logger.error('Failed to delete log file', { category: 'admin_logs', metadata: { error } });
+    return res.status(500).render('error_page', { error: `Error deleting log file: ${error.message}` });
   }
 };
 
@@ -259,3 +331,4 @@ exports.openai_usage = async (req, res) => {
   }
   res.render("openai_usage", {data, monthly_summaries});
 };
+

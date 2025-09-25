@@ -1,6 +1,7 @@
 const { upload_file, download_file, delete_file, start_batch, batch_status } = require('../utils/ChatGPT');
 const { anthropic_batch_start, anthropic_batch_status, anthropic_batch_results } = require('../utils/anthropic');
 const { AIModelCards } = require('../database');
+const logger = require('../utils/logger');
 
 /*
 const mongoose = require('mongoose');
@@ -330,7 +331,7 @@ class BatchService {
         return {ids: [], requests: [{}]};
       }
     } catch (error) {
-      console.error("Error triggering batch request:", error);
+      logger.error("Error triggering batch request:", error);
       return {ids: [], requests: [{}]};
     }
   }

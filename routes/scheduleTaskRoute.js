@@ -4,6 +4,8 @@ const ctrl = require('../controllers/scheduleTaskController');
 
 // Main calendar view (user page)
 router.get('/calendar', ctrl.renderCalendarPage);
+// Upcoming tasks (grouped by month)
+router.get('/upcoming', ctrl.renderUpcomingTasksPage);
 
 // API endpoints
 router.get('/api/tasks', ctrl.listTasksApi);
@@ -17,5 +19,9 @@ router.post('/new/presence', ctrl.savePresence);
 
 router.get('/new/task', ctrl.renderTaskForm);
 router.post('/new/task', ctrl.saveTask);
+
+// Edit existing task
+router.get('/edit/:id', ctrl.renderEditForm);
+router.post('/edit/:id', ctrl.saveEdit);
 
 module.exports = router;

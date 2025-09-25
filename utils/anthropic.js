@@ -1,4 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const logger = require('./logger');
 
 const anthropicAPI = new Anthropic();
 
@@ -99,14 +100,14 @@ const anthropic = async (messages, model) => {
       })
       .on('error', err => {
         // If an error occurs, reject the Promise
-        console.error("Stream error:", err);
+        logger.error("Stream error:", err);
         reject(err);
       });
     });
 
     return msg;
   } catch (error) {
-    console.error(`Error while calling Anthropic API: ${error}`);
+    logger.error(`Error while calling Anthropic API: ${error}`);
     return null;
   }
 };
@@ -144,8 +145,8 @@ const anthropic_batch_results = async (batch_id) => {
         usage: result.result.message.usage,
       });
     } else {
-      console.error(result);
-      console.error(result.result.error.error);
+      logger.error(result);
+      logger.error(result.result.error.error);
     }
   }
   return output;

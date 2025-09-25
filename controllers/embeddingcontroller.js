@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const marked = require('marked');
+const logger = require('../utils/logger');
 
 const { chatGPT, embedding, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
@@ -31,9 +32,9 @@ async function CacheEmbeddings() {
   // Save the JSON string to a file
   fs.writeFile(outputPath, jsonString, (err) => {
     if (err) {
-        console.error('Error writing file:', err);
+        logger.error('Error writing file:', err);
     } else {
-        console.log('File saved successfully!');
+        logger.notice('File saved successfully!');
     }
   });
 }
@@ -216,7 +217,7 @@ exports.query = async (req, res) => {
       await OpenAIAPICallLog(req.user.name, selected_model, gpt_response.usage.prompt_tokens, gpt_response.usage.completion_tokens, JSON.stringify(messages), gpt_response.choices[0].message.content);
 
       const user_index = entries_to_save.length - 1;
-      console.log(`Approximated tokens: ${token_counter}; Actual tokens: ${gpt_response.usage.prompt_tokens}; Error: ${token_counter - gpt_response.usage.prompt_tokens}`)
+      logger.notice(`Approximated tokens: ${token_counter}; Actual tokens: ${gpt_response.usage.prompt_tokens}; Error: ${token_counter - gpt_response.usage.prompt_tokens}`)
       entries_to_save[user_index].tokens = gpt_response.usage.prompt_tokens;
       entries_to_save.push({
         title: req.body.title,
@@ -241,7 +242,7 @@ exports.query = async (req, res) => {
       // Return the ChatGPT response and the chat conversations to the user
       res.render("embedding_query", {query: req.body.query, answer, refs: chat_texts, conversations});
     } else {
-      console.log('Failed to get a response from ChatGPT.');
+      logger.notice('Failed to get a response from ChatGPT.');
       res.redirect(`/embedding`);
     }
   } else {

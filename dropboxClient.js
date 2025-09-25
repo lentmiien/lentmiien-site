@@ -1,4 +1,5 @@
 // dropboxClient.js
+const logger = require('./utils/logger');
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -28,7 +29,7 @@ let tokenData = {};
 if (fs.existsSync(tokenPath)) {
   tokenData = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
 } else {
-  console.error('tokens.json not found. Please run authorize.js first.');
+  logger.error('tokens.json not found. Please run authorize.js first.');
   process.exit(1);
 }
 
@@ -51,10 +52,10 @@ async function getValidAccessToken() {
 
       // Save the updated tokens back to the `tokens.json` file
       fs.writeFileSync(tokenPath, JSON.stringify(updatedToken, null, 2), 'utf8');
-      console.log('Access token refreshed');
+      logger.notice('Access token refreshed');
       return refreshedToken.token.access_token;
     } catch (error) {
-      console.error('Error refreshing access token:', error.message);
+      logger.error('Error refreshing access token:', error.message);
       process.exit(1);
     }
   }

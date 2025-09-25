@@ -1,5 +1,6 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const sharp = require('sharp');
+const logger = require('../utils/logger');
 
 const { Conversation5Model, PendingRequests } = require('../database');
 
@@ -616,7 +617,7 @@ class ConversationService {
 
   async askCategory(user_id, new_images, parameters, provider="OpenAI", max_count=10, private_msg=false) {
     if (new_images.length > 0) {
-      console.warning("Images not supported in `askCategory(...)`, and is ignored.")
+      logger.warning("Images not supported in `askCategory(...)`, and is ignored.")
     }
 
     const messages = [];

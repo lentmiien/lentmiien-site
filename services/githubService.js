@@ -2,6 +2,7 @@ const axios = require('axios');
 const simpleGit = require('simple-git');
 const path = require('path');
 const fs = require('fs');
+const logger = require('../utils/logger');
 // const os = require('os');
 
 const tempDir = path.join(__dirname, '..', 'github-repos');
@@ -52,7 +53,7 @@ class GitHubService {
           hasNextPage = linkHeader && linkHeader.includes('rel="next"');
           page++;
         } catch (error) {
-          console.error('Error fetching repositories:', error.message);
+          logger.error('Error fetching repositories:', error.message);
           throw error;
         }
       }
@@ -102,14 +103,14 @@ class GitHubService {
     try {
       if (!fs.existsSync(repoDir)) {
         await git.clone(`https://github.com/lentmiien/${repoName}.git`, repoDir);
-        console.log(`Repository cloned: ${repoDir}`);
+        logger.notice(`Repository cloned: ${repoDir}`);
       } else {
-        console.log(`Repository already exists: ${repoDir}`);
+        logger.notice(`Repository already exists: ${repoDir}`);
       }
 
       return await this.loadFolderStructure(repoDir, repoDir);
     } catch (error) {
-      console.error('Error fetching repository contents:', error.message);
+      logger.error('Error fetching repository contents:', error.message);
       throw error;
     }
   }
@@ -121,7 +122,7 @@ class GitHubService {
       await git.pull('origin', branch);
       return await this.loadFolderStructure(repoDir, repoDir);
     } catch (error) {
-      console.error('Error pulling repository contents:', error.message);
+      logger.error('Error pulling repository contents:', error.message);
       throw error;
     }
   }
@@ -142,7 +143,7 @@ class GitHubService {
         return null;
       }
     } catch (error) {
-      console.error('Error fetching file content:', error.message);
+      logger.error('Error fetching file content:', error.message);
       throw error;
     }
   }
