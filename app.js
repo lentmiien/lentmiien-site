@@ -4,6 +4,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const logger = require('./utils/logger');
 
 // NPM packages
 const express = require('express');
@@ -21,6 +22,7 @@ const { UseraccountModel, RoleModel } = require('./database');
 // Initialize app and server
 const app = express();
 const server = http.createServer(app);
+app.set('logger', logger);
 
 // Session middleware
 const sessionMiddleware = expressSession({
@@ -414,5 +416,9 @@ app.get('/games', (req, res) => {
 // Start the server
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+  logger.notice(`Server started on port ${PORT}`, { category: 'server' });
+});
+
+server.on('error', (err) => {
+  logger.error('Server encountered an error', { category: 'server', metadata: { error: err } });
 });

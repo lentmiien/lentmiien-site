@@ -125,6 +125,41 @@ function deleteLogFile(filename) {
 deleteLogFile("app-error.log");
 deleteLogFile("app-out.log");
 
+const LOG_RETENTION_DAYS = 7;
+const LOCAL_LOG_DIR = path.join(__dirname, 'logs');
+
+async function pruneOldLogs(directory, retentionDays) {
+  try {
+    await fs.promises.mkdir(directory, { recursive: true });
+    const entries = await fs.promises.readdir(directory);
+    const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    await Promise.all(entries.map(async (entry) => {
+      const filePath = path.join(directory, entry);
+      try {
+        const stats = await fs.promises.stat(filePath);
+        if (!stats.isFile()) {
+          return;
+        }
+        if (!entry.toLowerCase().endsWith('.log')) {
+          return;
+        }
+        if ((now - stats.mtimeMs) > retentionMs) {
+          await fs.promises.unlink(filePath);
+          console.log(`Removed old log file: ${filePath}`);
+        }
+      } catch (err) {
+        console.warn(`Unable to inspect log file: ${filePath}`, err);
+      }
+    }));
+  } catch (err) {
+    console.error('Failed to prune local log files:', err);
+  }
+}
+
+pruneOldLogs(LOCAL_LOG_DIR, LOG_RETENTION_DAYS);
+
 // Fetch OpenAI usage
 const {fetchUsageSummaryForPeriod} = require('./usage');
 
