@@ -230,7 +230,7 @@ function renderMarkdownSafe(md) {
     // Keep only what you want to allow in user content:
     allowedTags: [
       'p','em','strong','blockquote','a','ul','ol','li','pre','code','hr','br',
-      'h1','h2','h3','h4','h5','h6'
+      'h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td'
     ],
     allowedAttributes: {
       a: ['href','title','target','rel'],
