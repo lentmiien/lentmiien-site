@@ -11,6 +11,27 @@ exports.delete = async (req, res) => {
   res.json({deletedId: id});
 }
 
+exports.reviewTransactions = async (req, res) => {
+  const period = resolvePeriodFromRequest(req);
+  const canonicalPath = `/budget/review/${period.year}/${padMonth(period.month)}`;
+  const hasParams = Boolean(req.params && req.params.year && req.params.month);
+  const hasPeriodQuery = typeof req.query.period === 'string';
+  const yearParam = hasParams ? req.params.year : null;
+  const monthParam = hasParams ? req.params.month : null;
+
+  if (!hasParams || hasPeriodQuery || yearParam !== String(period.year) || monthParam !== padMonth(period.month)) {
+    return res.redirect(canonicalPath);
+  }
+
+  const { transactions, summary } = await BudgetService.getTransactionsByPeriod(period.year, period.month);
+  res.render('budget_review', {
+    transactions,
+    summary,
+    periodLabel: `${period.year}-${padMonth(period.month)}`,
+    currentPeriod: period,
+  });
+};
+
 /* ───────────────── API ───────────────── */
 
 //   /budget/api/summary?category=Food
@@ -47,3 +68,32 @@ exports.newTransaction = async (req,res)=>{
 exports.lists = async (req,res)=>{
   res.json(await BudgetService.getReferenceLists());
 };
+function resolvePeriodFromRequest(req) {
+  const now = new Date();
+  const fallback = { year: now.getFullYear(), month: now.getMonth() + 1 };
+
+  const periodQuery = typeof req.query.period === 'string' ? req.query.period : null;
+  if (periodQuery && /^\d{4}-(0[1-9]|1[0-2])$/.test(periodQuery)) {
+    const [queryYear, queryMonth] = periodQuery.split('-');
+    return {
+      year: Number.parseInt(queryYear, 10),
+      month: Number.parseInt(queryMonth, 10),
+    };
+  }
+
+  const params = req.params || {};
+  if (params.year && params.month) {
+    const yearNum = Number.parseInt(params.year, 10);
+    const monthNum = Number.parseInt(params.month, 10);
+    if (Number.isInteger(yearNum) && Number.isInteger(monthNum) && monthNum >= 1 && monthNum <= 12) {
+      return { year: yearNum, month: monthNum };
+    }
+  }
+
+  return fallback;
+}
+
+function padMonth(month) {
+  return month.toString().padStart(2, '0');
+}
+

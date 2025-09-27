@@ -7,6 +7,8 @@ var controller = require('../controllers/budget2controller');
 /* GET home page */
 router.get('/', controller.index);
 router.get('/delete/:id', controller.delete);
+router.get('/review', controller.reviewTransactions);
+router.get('/review/:year/:month', controller.reviewTransactions);
 
 /* ── REST ––––––––––––––––––––––––––––––––– */
 router.get('/api/summary',              controller.summary);          // ?category=x

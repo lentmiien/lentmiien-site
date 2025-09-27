@@ -1,0 +1,99 @@
+extends layout
+
+block content
+  h2.mb-3 Budget Transaction Review
+  p.text-muted.mb-4 Review transactions recorded in a past month. Use the selector below to jump between periods and tidy up mistakes quickly.
+
+  form#periodSelector.mb-4
+    label.form-label(for='periodPicker') Period
+    input#periodPicker.form-control(type='month', name='period', value=periodLabel)
+
+  if summary
+    .d-flex.flex-wrap.gap-4.mb-4
+      .pe-4
+        span.text-muted.d-block Total Amount
+        span.fs-5= summary.totalAmount.toLocaleString()
+      .pe-4
+        span.text-muted.d-block Transactions
+        span.fs-5= summary.count
+      .pe-4
+        span.text-muted.d-block Showing
+        span.fs-5 #{periodLabel}
+
+  if transactions && transactions.length
+    table.table.table-striped.table-hover
+      thead
+        tr
+          th Date
+          th Business
+          th.text-end Amount
+          th Accounts
+          th Category
+          th Tags
+          th Type
+          th Fees
+          th.text-end Actions
+      tbody
+        each t in transactions
+          tr(id='transaction-' + t.id)
+            td= t.displayDate
+            td
+              strong= t.transaction_business
+            td.text-end= t.amount.toLocaleString()
+            td
+              span.d-block From: #{t.fromAccountName}
+              span.d-block To: #{t.toAccountName}
+            td= t.categories
+            td= t.tags
+            td= t.type
+            td
+              span.d-block From fee: #{t.from_fee}
+              span.d-block To fee: #{t.to_fee}
+            td.text-end
+              button.btn.btn-sm.btn-outline-danger(type='button', data-delete-id=t.id) Delete
+  else
+    p.text-muted No transactions were recorded for this period.
+
+  script.
+    (function() {
+      const periodInput = document.getElementById('periodPicker');
+      if (periodInput) {
+        periodInput.addEventListener('change', function() {
+          if (!this.value) return;
+          const parts = this.value.split('-');
+          if (parts.length !== 2) return;
+          const [year, month] = parts;
+          window.location.href = `/budget/review/${year}/${month}`;
+        });
+      }
+
+      document.querySelectorAll('[data-delete-id]').forEach(function(button) {
+        button.addEventListener('click', async function() {
+          const id = this.dataset.deleteId;
+          if (!id) return;
+          const row = document.getElementById(`transaction-${id}`);
+          if (!window.confirm('Delete this transaction?')) {
+            return;
+          }
+          this.disabled = true;
+          this.classList.remove('btn-outline-danger');
+          this.classList.add('btn-secondary');
+          try {
+            await fetch(`/budget/delete/${id}`, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+            });
+            if (row) {
+              row.remove();
+            }
+          } catch (err) {
+            console.error(err);
+            this.disabled = false;
+            this.classList.add('btn-outline-danger');
+            this.classList.remove('btn-secondary');
+            window.alert('Failed to delete the transaction. Please try again.');
+          }
+        });
+      });
+    }());

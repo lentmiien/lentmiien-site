@@ -263,7 +263,53 @@ async function getReferenceLists(){
   return {accounts:acc, categories:cats, types, tags};
 }
 
-/* ── export */
+async function getTransactionsByPeriod(year, month) {
+  const yearNum = Number.parseInt(year, 10);
+  const monthNum = Number.parseInt(month, 10);
+  if (!Number.isInteger(yearNum) || !Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12) {
+    throw new Error('Invalid year/month for transaction lookup');
+  }
+  const lower = yearNum * 10000 + monthNum * 100;
+  const upper = lower + 32;
+
+  const [transactions, accounts] = await Promise.all([
+    TransactionDBModel.find({ date: { $gte: lower, $lt: upper } }).sort({ date: 1, transaction_business: 1 }).lean(),
+    AccountDBModel.find().select('_id name').lean(),
+  ]);
+
+  const accountMap = accounts.reduce((acc, account) => {
+    acc[account._id.toString()] = account.name;
+    return acc;
+  }, {});
+
+  const formatted = transactions.map(t => {
+    const id = t._id.toString();
+    const dateStr = t.date.toString().padStart(8, '0');
+    const displayDate = `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
+    return {
+      ...t,
+      _id: id,
+      id,
+      displayDate,
+      fromAccountName: accountMap[t.from_account] || t.from_account,
+      toAccountName: accountMap[t.to_account] || t.to_account,
+    };
+  });
+
+  const totalAmount = formatted.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+  return {
+    transactions: formatted,
+    summary: {
+      totalAmount,
+      count: formatted.length,
+      year: yearNum,
+      month: monthNum,
+    },
+  };
+}
+
+ /* ── export */
 module.exports = {
   ...budgetService,                       // keep old public methods
   getCategoryMonthlyTotals : aggTotals,
@@ -272,4 +318,5 @@ module.exports = {
   businessLastValues,
   insertTransaction,
   getReferenceLists,
+  getTransactionsByPeriod,
 };
