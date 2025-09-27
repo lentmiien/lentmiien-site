@@ -1,16 +1,60 @@
 extends layout
 
+block styles
+  link(rel='stylesheet', href='/css/es_dashboard.css')
+
 block content
-  .row 
-    .col
-      h1 Emergency Stock Dashboard
-      a.btn.btn-link(href="/es/es_dashboard") Dashboard
-      br
-      b= `${average}% done`
-      ul
+  .es-dashboard
+    .es-dashboard__intro
+      h1 Emergency Stock Inventory
+      p.es-dashboard__tagline Up-to-date view of everything on hand by category.
+      .es-dashboard__links
+        a.es-link(href='/es/es_dashboard') Back to dashboard
+        a.es-link(href='/i/es.jpg') 3 person household (original list)
+    .es-dashboard__preparedness
+      .es-card
+        .es-card__header
+          span.es-card__eyebrow Overall Preparedness
+          span.es-card__figure #{average}%
+        .es-progress
+          .es-progress__track
+            .es-progress__bar(style=`width: ${average}%;`)
+          span.es-progress__label= `${average}% stocked`
+    - const today = new Date();
+    - const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    if categories && categories.length
+      .es-dashboard__grid.es-dashboard__grid--full
         each category in categories
-          li #{category.name} - Recommended: #{category.recommendedStock} #{category.unit} 
-            b= `(${category_lookup_and_stock[category._id.toString()].stock} ${category.unit}: ${category_lookup_and_stock[category._id.toString()].percent}%)`
-              ol 
-                each item in category_lookup_and_stock[category._id.toString()].items
-                  li= `${item.label ? item.label + ' ' : ''}${item.amount} ${category.unit} (Expire: ${item.rotateDate.toDateString()})`
+          - const stockData = category_lookup_and_stock[category._id.toString()];
+          .es-card.es-card--category
+            .es-card__header
+              h2 #{category.name}
+              if stockData
+                span.es-card__meta= `${stockData.stock} ${category.unit} | ${stockData.percent}%`
+              else
+                span.es-card__meta No stock data
+            if stockData
+              .es-progress.es-progress--compact
+                .es-progress__track
+                  - const categoryPercent = Math.min(stockData.percent, 100);
+                  .es-progress__bar(style=`width: ${categoryPercent}%;`)
+                span.es-progress__label= `Recommended ${category.recommendedStock} ${category.unit}`
+              if stockData.items && stockData.items.length
+                ul.es-item-list.es-item-list--compact
+                  each item in stockData.items
+                    - const expiresSoon = item.rotateDate < nextMonth;
+                    li(class=`es-item${expiresSoon ? ' es-item--warning' : ''}`)
+                      .es-item__details
+                        span.es-item__category= item.label || 'Unlabeled item'
+                      .es-item__meta
+                        if expiresSoon
+                          span.es-item__flag.es-item__flag--warning Expiring soon
+                        span= `${item.amount} ${category.unit}`
+                        span= `Expires ${item.rotateDate.toDateString()}`
+              else
+                p.es-empty-state No items currently in stock for this category.
+            else
+              p.es-empty-state No stock data available for this category.
+    else
+      .es-card
+        p.es-empty-state No categories found.
