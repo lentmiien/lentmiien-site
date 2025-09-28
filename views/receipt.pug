@@ -1,30 +1,273 @@
-extends layout
+﻿extends layout
+
+block styles
+  style.
+    .receipt-page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+      color: #1d2333;
+    }
+    .receipt-page h1 {
+      font-size: clamp(2rem, 1.6rem + 1vw, 2.6rem);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .receipt-page .page-intro {
+      margin-bottom: 2.5rem;
+      color: #64748b;
+      max-width: 520px;
+    }
+    .section-card {
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 24px 60px -45px rgba(13, 27, 62, 0.55);
+      border: 1px solid rgba(30, 64, 175, 0.08);
+    }
+    .section-card h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: #1e293b;
+    }
+    .section-subtitle {
+      margin-bottom: 1.5rem;
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+    .upload-card label {
+      display: block;
+      font-weight: 500;
+      color: #334155;
+      margin-bottom: 0.75rem;
+    }
+    .upload-card .input-group {
+      gap: 0.75rem;
+      align-items: stretch;
+    }
+    .upload-card .form-control {
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      padding: 0.75rem 1rem;
+      background: #f8fafc;
+      color: #1f2937;
+    }
+    .upload-card .btn-primary {
+      border-radius: 12px;
+      padding: 0.65rem 1.6rem;
+      font-weight: 500;
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+    .upload-card .btn-primary:hover {
+      background: #1e40af;
+      border-color: #1e40af;
+    }
+    .history-header {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-bottom: 1.5rem;
+    }
+    .history-header h2 {
+      margin: 0;
+    }
+    .history-count {
+      font-size: 0.85rem;
+      color: #475569;
+      background: rgba(29, 78, 216, 0.08);
+      border-radius: 999px;
+      padding: 0.25rem 0.75rem;
+    }
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: transparent;
+    }
+    .history-table thead th {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7b8794;
+      font-weight: 600;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+    }
+    .history-table tbody tr {
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .history-table tbody tr:last-child {
+      border-bottom: none;
+    }
+    .history-table tbody tr:hover {
+      background: rgba(29, 78, 216, 0.05);
+    }
+    .history-table td {
+      padding: 0.9rem 0;
+      vertical-align: middle;
+      font-size: 0.95rem;
+      color: #1f2937;
+    }
+    .history-table .amount-cell {
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .history-table .business-name {
+      display: block;
+      font-weight: 500;
+      color: #1f2937;
+    }
+    .history-table .business-line {
+      display: block;
+      color: #64748b;
+      font-size: 0.85rem;
+      margin-top: 0.25rem;
+    }
+    .history-table .actions {
+      text-align: right;
+    }
+    .history-table .action-buttons {
+      display: inline-flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .history-table .action-buttons .btn {
+      border-radius: 999px;
+      padding: 0.45rem 1.05rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    .history-table .action-buttons .btn-secondary {
+      background: rgba(15, 23, 42, 0.05);
+      border: none;
+      color: #1f2937;
+    }
+    .history-table .action-buttons .btn-secondary:hover {
+      background: rgba(15, 23, 42, 0.12);
+      color: #0f172a;
+    }
+    .history-empty {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: #64748b;
+      border: 1px dashed rgba(100, 116, 139, 0.4);
+      border-radius: 16px;
+    }
+    .history-empty h3 {
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    @media (max-width: 992px) {
+      .section-card {
+        padding: 1.75rem;
+      }
+    }
+    @media (max-width: 768px) {
+      .receipt-page {
+        padding: 2.5rem 1rem 3rem;
+      }
+      .history-table thead {
+        display: none;
+      }
+      .history-table tbody tr {
+        display: block;
+        background: #f9fbff;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 18px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+      }
+      .history-table tbody tr:hover {
+        background: #eef3ff;
+        transform: translateY(-2px);
+      }
+      .history-table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 0.5rem 0;
+        border: none;
+      }
+      .history-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.7rem;
+        margin-right: 1rem;
+      }
+      .history-table .actions {
+        text-align: left;
+        margin-top: 0.75rem;
+      }
+      .history-table .action-buttons {
+        width: 100%;
+        display: flex;
+        justify-content: flex-start;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .history-table .action-buttons .btn {
+        flex: 1 1 auto;
+        min-width: 120px;
+        text-align: center;
+      }
+    }
+    @media (max-width: 500px) {
+      .history-table .action-buttons .btn {
+        flex: 1 1 100%;
+      }
+    }
 
 block content
-  h2 Upload a receipt 
-  form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data") 
-    label(for="imgs") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
-    .input-group
-      input#imgs.form-control(type="file", name="imgs", multiple)
-      input.btn.btn-primary(type="submit", value="Upload")
-  h2 History 
-  table.table.table-striped 
-    thead 
-      tr 
-        th Date
-        th Amount
-        th Method
-        th Business 
-    tbody 
-      each d in receipts
-        tr 
-          td= d.date.toJSON().split('T')[0]
-          td= d.amount
-          td= d.method
-          td= `${d.business_name} - ${d.business_address}`
-        tr
-          td(colspan="4") 
-            .input-group
-              a.btn.btn-primary(href=`/receipt/view_receipt/${d._id.toString()}`) View/Edit
-              a.btn.btn-secondary(href=`/accounting/add_transaction?from_account=${d.method === 'cash' ? "63aafe30fb2f5072d6609331" : "63aafe6dfb2f5072d6609333"}&to_account=EXT&date=${d.date.toJSON().split('T')[0]}&amount=${d.amount}&transaction_business=${d.business_name}&type=expense`) Add to budget
-              a.btn.btn-danger(href=`/receipt/delete_receipt/${d._id.toString()}`) Delete
+  .receipt-page
+    h1 Receipt Inbox
+    p.page-intro Collect, review, and act on purchase receipts in one minimal workspace.
+    section.section-card.upload-card
+      h2 Upload a receipt
+      p.section-subtitle Supported formats: JPEG, PNG, WebP, AVIF, GIF, SVG, TIFF.
+      form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data")
+        label(for="imgs") Select receipt image files
+        .input-group
+          input#imgs.form-control(type="file", name="imgs", multiple)
+          input.btn.btn-primary(type="submit", value="Upload")
+    section.section-card.history-card
+      .history-header
+        h2 History
+        if receipts && receipts.length
+          span.history-count= receipts.length === 1 ? '1 receipt' : receipts.length + ' receipts'
+      if receipts && receipts.length
+        .table-responsive
+          table.history-table
+            thead
+              tr
+                th Date
+                th Amount
+                th Method
+                th Business
+                th Actions
+            tbody
+              each d in receipts
+                tr
+                  td(data-label='Date')= d.date.toJSON().split('T')[0]
+                  td.amount-cell(data-label='Amount')= d.amount
+                  td(data-label='Method')= d.method
+                  td(data-label='Business')
+                    span.business-name= d.business_name
+                    if d.business_address
+                      span.business-line= d.business_address
+                  td.actions(data-label='Actions')
+                    .action-buttons
+                      a.btn.btn-primary(href=`/receipt/view_receipt/${d._id.toString()}`) View/Edit
+                      a.btn.btn-secondary(href=`/accounting/add_transaction?from_account=${d.method === 'cash' ? "63aafe30fb2f5072d6609331" : "63aafe6dfb2f5072d6609333"}&to_account=EXT&date=${d.date.toJSON().split('T')[0]}&amount=${d.amount}&transaction_business=${d.business_name}&type=expense`) Add to budget
+                      a.btn.btn-danger(href=`/receipt/delete_receipt/${d._id.toString()}`) Delete
+      else
+        .history-empty
+          h3 Nothing here yet
+          p Upload a receipt to start building your archive.

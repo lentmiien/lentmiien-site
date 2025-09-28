@@ -1,24 +1,325 @@
-extends layout
+﻿extends layout
+
+block styles
+  style.
+    .receipt-edit-page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 4rem;
+      color: #1d2333;
+    }
+    .receipt-edit-page h1 {
+      font-size: clamp(2rem, 1.6rem + 1vw, 2.6rem);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .receipt-edit-page .page-intro {
+      margin-bottom: 2.5rem;
+      color: #64748b;
+      max-width: 640px;
+    }
+    .section-card {
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 24px 60px -45px rgba(13, 27, 62, 0.55);
+      border: 1px solid rgba(30, 64, 175, 0.08);
+    }
+    .section-card h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: #1e293b;
+    }
+    .section-subtitle {
+      margin-bottom: 1.5rem;
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+    .upload-card label {
+      display: block;
+      font-weight: 500;
+      color: #334155;
+      margin-bottom: 0.75rem;
+    }
+    .upload-card .input-group {
+      gap: 0.75rem;
+      align-items: stretch;
+    }
+    .upload-card .form-control {
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      padding: 0.75rem 1rem;
+      background: #f8fafc;
+      color: #1f2937;
+    }
+    .upload-card .btn-primary {
+      border-radius: 12px;
+      padding: 0.65rem 1.6rem;
+      font-weight: 500;
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+    .upload-card .btn-primary:hover {
+      background: #1e40af;
+      border-color: #1e40af;
+    }
+    .review-card {
+      display: flex;
+      flex-direction: column;
+    }
+    .review-card .section-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .review-card .section-header h2 {
+      margin-bottom: 0;
+    }
+    .review-card .receipt-meta {
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .view-toggle {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(29, 78, 216, 0.08);
+      padding: 0.35rem;
+      border-radius: 999px;
+      gap: 0.35rem;
+      margin-bottom: 1.5rem;
+    }
+    .view-toggle button {
+      border: none;
+      background: transparent;
+      padding: 0.45rem 1.25rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #1f2937;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .view-toggle button.is-active {
+      background: #1d4ed8;
+      color: #ffffff;
+      box-shadow: 0 15px 30px -22px rgba(29, 78, 216, 0.8);
+    }
+    .view-panels {
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+    }
+    .view-panel {
+      display: none;
+      background: #f8fafc;
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 1.5rem;
+    }
+    .view-panel.active {
+      display: block;
+    }
+    .receipt-image-frame {
+      background: linear-gradient(135deg, rgba(226, 232, 240, 0.65), rgba(148, 163, 184, 0.35));
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+    .receipt-image {
+      width: 100%;
+      max-height: 70vh;
+      object-fit: contain;
+      border-radius: 14px;
+      box-shadow: 0 28px 80px -48px rgba(15, 23, 42, 0.55);
+      background: #ffffff;
+    }
+    .receipt-image-frame figcaption {
+      font-size: 0.85rem;
+      color: #475569;
+    }
+    .receipt-form .form-grid {
+      display: grid;
+      gap: 1.25rem;
+    }
+    .receipt-form .form-field label {
+      display: block;
+      font-weight: 500;
+      color: #334155;
+      margin-bottom: 0.5rem;
+    }
+    .receipt-form .form-field .form-control {
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      padding: 0.7rem 1rem;
+      background: #f8fafc;
+      color: #1f2937;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .receipt-form .form-field .form-control:focus {
+      border-color: #1d4ed8;
+      box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.2);
+      outline: none;
+      background: #ffffff;
+    }
+    .receipt-form .form-actions {
+      margin-top: 1.5rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .receipt-form .btn-success {
+      border-radius: 999px;
+      padding: 0.65rem 1.85rem;
+      font-weight: 600;
+      background: #059669;
+      border-color: #059669;
+    }
+    .receipt-form .btn-success:hover {
+      background: #047857;
+      border-color: #047857;
+    }
+    .debug-card h2 {
+      margin-bottom: 1rem;
+    }
+    pre.pretty-json {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 16px;
+      padding: 1.25rem;
+      font-size: 0.85rem;
+      overflow: auto;
+    }
+    @media (min-width: 768px) {
+      .receipt-form .form-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .receipt-form .form-grid .form-field:nth-child(odd) {
+        padding-right: 0.25rem;
+      }
+      .receipt-form .form-grid .form-field:nth-child(even) {
+        padding-left: 0.25rem;
+      }
+      .receipt-form .form-grid .form-field:last-child {
+        grid-column: 1 / -1;
+        padding: 0;
+      }
+    }
+    @media (min-width: 992px) {
+      .view-toggle {
+        display: none !important;
+      }
+      .view-panels {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 2rem;
+      }
+      .view-panel {
+        display: block;
+      }
+      .receipt-image {
+        max-height: 80vh;
+      }
+    }
+    @media (max-width: 600px) {
+      .section-card {
+        padding: 1.5rem;
+      }
+      .view-toggle {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .view-toggle button {
+        flex: 1 1 50%;
+        text-align: center;
+      }
+      .receipt-form .form-actions {
+        justify-content: stretch;
+      }
+      .receipt-form .btn-success {
+        width: 100%;
+      }
+    }
 
 block content
-  h2 Upload another receipt 
-  form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data") 
-    label(for="imgs") Upload an image (JPEG, PNG, WebP, AVIF, GIF, SVG or TIFF)
-    .input-group
-      input#imgs.form-control(type="file", name="imgs", multiple)
-      input.btn.btn-primary(type="submit", value="Upload")
-  h2 Review receipt details 
-  img(src=`/img/${receipt.file}`, alt="receipt")
-  form(action=`/receipt/correct_receipt/${receipt._id.toString()}`, method="post") 
-    label(for="date") 
-    input#date.form-control(type="date", name="date", value=receipt.date.toJSON().split('T')[0])
-    label(for="amount") 
-    input#amount.form-control(type="number", name="amount", value=receipt.amount)
-    label(for="method") 
-    input#method.form-control(type="text", name="method", value=receipt.method)
-    label(for="business_name") 
-    input#business_name.form-control(type="text", name="business_name", value=receipt.business_name)
-    label(for="business_address") 
-    input#business_address.form-control(type="text", name="business_address", value=receipt.business_address)
-    input.btn.btn-success(type="submit", value="Update")
-  pre= JSON.stringify(test_data, null, 2)
+  .receipt-edit-page
+    h1 Receipt workspace
+    p.page-intro Upload additional records, compare the source image, and fine-tune the stored details without leaving the page.
+    section.section-card.upload-card
+      h2 Upload another receipt
+      p.section-subtitle Supported formats: JPEG, PNG, WebP, AVIF, GIF, SVG, TIFF.
+      form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data")
+        label(for="imgs") Select receipt image files
+        .input-group
+          input#imgs.form-control(type="file", name="imgs", multiple)
+          input.btn.btn-primary(type="submit", value="Upload")
+    section.section-card.review-card
+      .section-header
+        h2 Review receipt details
+        span.receipt-meta Last updated #{new Date(receipt.updatedAt || receipt.date).toLocaleDateString()}
+      .view-toggle.js-view-toggle
+        button.is-active(type="button", data-panel="image") Receipt image
+        button(type="button", data-panel="form") Receipt details
+      .view-panels
+        .view-panel.active(data-panel="image")
+          figure.receipt-image-frame
+            img.receipt-image(src=`/img/${receipt.file}`, alt="Receipt preview")
+            figcaption Zoom with your browser to inspect the fine print.
+        .view-panel(data-panel="form")
+          form.receipt-form(action=`/receipt/correct_receipt/${receipt._id.toString()}`, method="post")
+            .form-grid
+              .form-field
+                label(for="date") Date
+                input#date.form-control(type="date", name="date", value=receipt.date.toJSON().split('T')[0])
+              .form-field
+                label(for="amount") Amount
+                input#amount.form-control(type="number", name="amount", value=receipt.amount, step="0.01")
+              .form-field
+                label(for="method") Payment method
+                input#method.form-control(type="text", name="method", value=receipt.method)
+              .form-field
+                label(for="business_name") Business name
+                input#business_name.form-control(type="text", name="business_name", value=receipt.business_name)
+              .form-field
+                label(for="business_address") Business address
+                input#business_address.form-control(type="text", name="business_address", value=receipt.business_address)
+            .form-actions
+              input.btn.btn-success(type="submit", value="Update receipt")
+    if test_data
+      section.section-card.debug-card
+        h2 Debug data
+        pre.pretty-json= JSON.stringify(test_data, null, 2)
+
+block script
+  script.
+    document.addEventListener('DOMContentLoaded', function () {
+      var toggleGroup = document.querySelector('.js-view-toggle');
+      if (!toggleGroup) {
+        return;
+      }
+      var buttons = toggleGroup.querySelectorAll('button[data-panel]');
+      var panels = document.querySelectorAll('.view-panel[data-panel]');
+      var activate = function (id) {
+        buttons.forEach(function (button) {
+          button.classList.toggle('is-active', button.dataset.panel === id);
+        });
+        panels.forEach(function (panel) {
+          panel.classList.toggle('active', panel.dataset.panel === id);
+        });
+      };
+      buttons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          activate(button.dataset.panel);
+        });
+      });
+      if (buttons.length) {
+        var current = Array.prototype.find.call(buttons, function (button) {
+          return button.classList.contains('is-active');
+        });
+        activate((current || buttons[0]).dataset.panel);
+      }
+    });
