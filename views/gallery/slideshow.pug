@@ -1,119 +1,525 @@
 extends ../layout.pug
 
+block styles
+  style.
+    body.slideshow-fixed {
+      overflow: hidden;
+    }
+    .slideshow-page {
+      height: calc(100dvh - 60px);
+      display: flex;
+      flex-direction: column;
+      gap: clamp(0.75rem, 2vw, 1.5rem);
+      padding: clamp(1rem, 4vw, 2.5rem);
+      box-sizing: border-box;
+      margin: 0 auto;
+      max-width: 1100px;
+      background: rgba(255, 255, 255, 0.86);
+      backdrop-filter: blur(10px);
+      border-radius: 28px;
+      box-shadow: 0 32px 60px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
+    }
+    .slideshow-page--empty {
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+    .slideshow-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .slideshow-titlegroup {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .slideshow-title {
+      margin: 0;
+      font-size: clamp(1.35rem, 3.5vw, 1.85rem);
+      font-weight: 600;
+      color: #0f172a;
+    }
+    .slideshow-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      color: #475569;
+      font-weight: 500;
+      flex-wrap: wrap;
+    }
+    #progress-indicator {
+      min-width: 3.5rem;
+      text-align: center;
+    }
+    .slideshow-type-label {
+      padding: 0.25rem 0.8rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.08);
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #475569;
+    }
+    .slideshow-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .slideshow-button {
+      border: none;
+      border-radius: 999px;
+      padding: 0.55rem 1.35rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      line-height: 1;
+      cursor: pointer;
+      transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+      background: rgba(15, 23, 42, 0.06);
+      color: #0f172a;
+    }
+    .slideshow-button:hover:not(:disabled),
+    .slideshow-button:focus-visible:not(:disabled) {
+      background: rgba(15, 23, 42, 0.12);
+    }
+    .slideshow-button:focus-visible {
+      outline: 2px solid #4338ca;
+      outline-offset: 2px;
+    }
+    .slideshow-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.35;
+      transform: none;
+    }
+    .slideshow-button.slideshow-primary {
+      background: linear-gradient(135deg, #4338ca, #2563eb);
+      color: #ffffff;
+      box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25);
+    }
+    .slideshow-button.slideshow-primary:hover:not(:disabled),
+    .slideshow-button.slideshow-primary:focus-visible:not(:disabled) {
+      background: linear-gradient(135deg, #3730a3, #1d4ed8);
+    }
+    .slideshow-main {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+    }
+    .slideshow-image-frame {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: clamp(0.75rem, 3vw, 2.5rem);
+      background: radial-gradient(circle at top, rgba(99, 102, 241, 0.18), rgba(148, 163, 184, 0.1) 42%, transparent 85%);
+      border-radius: 22px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      overflow: hidden;
+    }
+    #slideshow-image {
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      border-radius: 18px;
+      box-shadow: 0 20px 36px rgba(15, 23, 42, 0.2);
+      background-color: #ffffff;
+    }
+    .slideshow-form {
+      display: flex;
+      flex-direction: column;
+      gap: clamp(0.75rem, 2vw, 1.25rem);
+      padding: clamp(0.9rem, 3vw, 1.5rem);
+      background: rgba(248, 250, 252, 0.95);
+      border-radius: 22px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      flex-shrink: 0;
+    }
+    .rating-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+      gap: 0.8rem 1.1rem;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .rating-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .rating-label {
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: #1e293b;
+      font-size: 0.95rem;
+    }
+    .rating-options {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: #ffffff;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      overflow: hidden;
+    }
+    .rating-option {
+      position: relative;
+    }
+    .rating-option input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .rating-option label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.45rem 0.25rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: #475569;
+      cursor: pointer;
+      transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    }
+    .rating-option input:checked + label {
+      background: rgba(79, 70, 229, 0.15);
+      color: #312e81;
+    }
+    .rating-option label:hover {
+      background: rgba(148, 163, 184, 0.2);
+    }
+    .rating-option input:focus-visible + label {
+      outline: 2px solid #4338ca;
+      outline-offset: -2px;
+    }
+    .comment-toggle {
+      border: 1px dashed rgba(148, 163, 184, 0.6);
+      border-radius: 18px;
+      padding: 0.75rem;
+      background: rgba(255, 255, 255, 0.7);
+      transition: border-style 0.2s ease, background-color 0.2s ease;
+    }
+    .comment-toggle[open] {
+      border-style: solid;
+      background: rgba(255, 255, 255, 0.9);
+    }
+    .comment-toggle summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #334155;
+      cursor: pointer;
+    }
+    .comment-toggle summary::marker,
+    .comment-toggle summary::-webkit-details-marker {
+      display: none;
+    }
+    .comment-toggle textarea {
+      margin-top: 0.75rem;
+      width: 100%;
+      min-height: 3.25rem;
+      max-height: 8rem;
+      resize: vertical;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.6);
+      padding: 0.6rem 0.75rem;
+      font-size: 0.9rem;
+      color: #0f172a;
+      background: #ffffff;
+    }
+    .comment-toggle textarea::placeholder {
+      color: #94a3b8;
+    }
+    .form-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    #rating-feedback {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #475569;
+      min-height: 1.2rem;
+      flex: 1 1 auto;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    @media (max-width: 900px) {
+      .slideshow-page {
+        max-width: 100%;
+        height: calc(100dvh - 40px);
+        border-radius: 0;
+        backdrop-filter: none;
+        box-shadow: none;
+        background: #f8fafc;
+      }
+      .slideshow-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.65rem;
+      }
+      .slideshow-controls {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .slideshow-form {
+        border-radius: 18px;
+        padding: 0.85rem;
+      }
+      .rating-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+    }
+    @media (max-width: 600px) {
+      .slideshow-page {
+        padding: 0.85rem;
+      }
+      .rating-grid {
+        grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+      }
+      .slideshow-image-frame {
+        padding: 0.85rem;
+      }
+      .comment-toggle textarea {
+        max-height: 6.5rem;
+      }
+    }
+    @media (max-height: 720px) {
+      .slideshow-page {
+        gap: 0.75rem;
+        padding: 0.75rem;
+      }
+      .slideshow-form {
+        gap: 0.75rem;
+      }
+      .slideshow-title {
+        font-size: 1.25rem;
+      }
+      .rating-label {
+        font-size: 0.85rem;
+      }
+      .slideshow-button {
+        padding: 0.5rem 1.1rem;
+      }
+    }
+
 block content
-  h1 Slideshow: #{type}
-  if images.length === 0
-    p No images to display.
-  else
-    div.controls
-      button#prev-button.btn.btn-primary(type='button') Previous
-      button#next-button.btn.btn-primary(type='button') Next
-    div.slideshow-container
-      img#slideshow-image(src=`/gallery/image/${images[currentIndex]}`, alt=images[currentIndex], style="max-width: 100%;")
-  
-    // If this is our "Random Unrated" slideshow, include the rating form
-    if type === "Random Unrated"
-      form#rating-form(style="margin-top: 20px;")
-        div.form-group
-          label(for='comment') Comment:
-          textarea.form-control(name='comment', id='comment')
-        - let categories = ['Like', 'Visual', 'Atmosphere', 'Storytelling', 'Sexual']
-        each category in categories
-          div.form-group
-            label(for=category)= category
-            select.form-control(name=category, id=category)
-              option(value='0') 0
-              option(value='1') 1
-              option(value='2') 2
-              option(value='3') 3
-        button#submit-rating.btn.btn-primary(type='submit') Submit Rating
-        //- A placeholder for displaying confirmation or errors
-        p#rating-feedback
+  - const hasImages = images.length > 0;
+  .slideshow-page(class=hasImages ? '' : 'slideshow-page--empty')
+    if !hasImages
+      h1.slideshow-title Slideshow: #{type}
+      p No images to display.
+    else
+      header.slideshow-header
+        .slideshow-titlegroup
+          h1.slideshow-title Slideshow: #{type}
+          .slideshow-meta
+            span#progress-indicator(aria-live='polite') #{currentIndex + 1} / #{images.length}
+            span.slideshow-type-label= type
+        .slideshow-controls
+          button#prev-button.slideshow-button(type='button') Previous
+          button#next-button.slideshow-button(type='button') Next
+      .slideshow-main
+        .slideshow-image-frame
+          img#slideshow-image(src=`/gallery/image/${images[currentIndex]}`, alt=images[currentIndex])
+      if type === 'Random Unrated'
+        form#rating-form.slideshow-form
+          fieldset.rating-grid
+            legend.sr-only Rate this image
+            - const categories = ['Like', 'Visual', 'Atmosphere', 'Storytelling', 'Sexual'];
+            each category in categories
+              - const safeCategory = category.toLowerCase().replace(/\s+/g, '-');
+              div.rating-row
+                span.rating-label= category
+                div.rating-options
+                  each score in [0, 1, 2, 3]
+                    - const optionId = `${safeCategory}-${score}`;
+                    div.rating-option
+                      input(type='radio', name=category, id=optionId, value=score, checked=score === 0)
+                      label(for=optionId)= score
+          details.comment-toggle
+            summary Add optional comment
+            label.sr-only(for='comment') Comment
+            textarea#comment(name='comment', placeholder='Leave a quick note (optional)')
+          .form-actions
+            p#rating-feedback
+            button#submit-rating.slideshow-button.slideshow-primary(type='submit') Submit Rating
 
-    // Embedded JavaScript to handle slide navigation and asynchronous rating
-    script.
-      const images = !{JSON.stringify(images)};
-      let currentIndex = !{currentIndex};
+    if hasImages
+      script.
+        (function() {
+          const imageList = !{JSON.stringify(images)};
+          let currentIndex = !{currentIndex};
+          if (!Array.isArray(imageList) || !imageList.length) {
+            return;
+          }
 
-      const imgElement = document.getElementById('slideshow-image');
-      const prevButton = document.getElementById('prev-button');
-      const nextButton = document.getElementById('next-button');
-      
-      // If the rating form exists, grab it and the feedback element
-      const ratingForm = document.getElementById('rating-form');
-      const ratingFeedback = document.getElementById('rating-feedback');
+          const body = document.body;
+          body.classList.add('slideshow-fixed');
 
-      prevButton.addEventListener('click', () => {
-        if (currentIndex > 0) {
-          currentIndex--;
-          updateSlideshow();
-        }
-      });
+          const removeBodyClass = () => body.classList.remove('slideshow-fixed');
 
-      nextButton.addEventListener('click', () => {
-        if (currentIndex < images.length - 1) {
-          currentIndex++;
-          updateSlideshow();
-        }
-      });
-      
-      function updateSlideshow() {
-        imgElement.src = `/gallery/image/${images[currentIndex]}`;
-        preloadNextImage();
-        // When slide changes, if a rating form is present, clear any messages
-        if (ratingFeedback) {
-          ratingFeedback.textContent = '';
-        }
-        // Optionally reset the form fields (if you want to)
-        if (ratingForm) {
-          ratingForm.reset();
-        }
-      }
-      
-      function preloadNextImage() {
-        if (currentIndex + 1 < images.length) {
-          const nextImg = new Image();
-          nextImg.src = `/gallery/image/${images[currentIndex + 1]}`;
-        }
-      }
-      
-      // Handle asynchronous rating form submission
-      if (ratingForm) {
-        ratingForm.addEventListener('submit', async (e) => {
-          e.preventDefault(); // Prevent default form submission
+          window.addEventListener('beforeunload', removeBodyClass);
+          window.addEventListener('unload', removeBodyClass);
 
-          // Gather form data into an object
-          const formData = new FormData(ratingForm);
-          const data = {};
-          formData.forEach((value, key) => {
-            data[key] = value;
+          const imgElement = document.getElementById('slideshow-image');
+          const prevButton = document.getElementById('prev-button');
+          const nextButton = document.getElementById('next-button');
+          const progressIndicator = document.getElementById('progress-indicator');
+          const ratingForm = document.getElementById('rating-form');
+          const ratingFeedback = document.getElementById('rating-feedback');
+          const submitButton = document.getElementById('submit-rating');
+          const commentToggle = ratingForm ? ratingForm.querySelector('.comment-toggle') : null;
+          const submitButtonText = submitButton ? submitButton.textContent : '';
+
+          const updateControls = () => {
+            if (prevButton) {
+              prevButton.disabled = currentIndex === 0;
+            }
+            if (nextButton) {
+              nextButton.disabled = currentIndex >= imageList.length - 1;
+            }
+            if (progressIndicator) {
+              progressIndicator.textContent = `${currentIndex + 1} / ${imageList.length}`;
+            }
+          };
+
+          const clearFeedback = () => {
+            if (ratingFeedback) {
+              ratingFeedback.textContent = '';
+              ratingFeedback.style.color = '#475569';
+            }
+          };
+
+          const preloadNextImage = () => {
+            if (currentIndex + 1 < imageList.length) {
+              const nextImg = new Image();
+              nextImg.src = `/gallery/image/${imageList[currentIndex + 1]}`;
+            }
+          };
+
+          const updateSlideshow = () => {
+            imgElement.src = `/gallery/image/${imageList[currentIndex]}`;
+            imgElement.alt = imageList[currentIndex];
+            clearFeedback();
+            if (ratingForm) {
+              ratingForm.reset();
+            }
+            if (commentToggle && commentToggle.hasAttribute('open')) {
+              commentToggle.removeAttribute('open');
+            }
+            updateControls();
+            preloadNextImage();
+          };
+
+          const goToSlide = (index) => {
+            if (index < 0 || index >= imageList.length) {
+              return;
+            }
+            currentIndex = index;
+            updateSlideshow();
+          };
+
+          prevButton?.addEventListener('click', () => {
+            if (currentIndex > 0) {
+              goToSlide(currentIndex - 1);
+            }
           });
 
-          try {
-            // Send the data using fetch to the API endpoint
-            const response = await fetch(`/gallery/api/rate/${images[currentIndex]}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify(data)
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-              ratingFeedback.style.color = 'green';
-              ratingFeedback.textContent = 'Rating saved successfully!';
-            } else {
-              ratingFeedback.style.color = 'red';
-              ratingFeedback.textContent = `Error: ${result.message}`;
+          nextButton?.addEventListener('click', () => {
+            if (currentIndex < imageList.length - 1) {
+              goToSlide(currentIndex + 1);
             }
-          } catch (err) {
-            console.error(err);
-            ratingFeedback.style.color = 'red';
-            ratingFeedback.textContent = 'Server error while saving rating.';
+          });
+
+          if (ratingForm) {
+            ratingForm.addEventListener('submit', async (event) => {
+              event.preventDefault();
+
+              if (!ratingFeedback) {
+                return;
+              }
+
+              const formData = new FormData(ratingForm);
+              const payload = {};
+
+              formData.forEach((value, key) => {
+                payload[key] = value;
+              });
+
+              if (payload.comment && !payload.comment.trim()) {
+                delete payload.comment;
+              }
+
+              ratingFeedback.style.color = '#475569';
+              ratingFeedback.textContent = 'Saving...';
+
+              if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.textContent = 'Saving...';
+              }
+
+              try {
+                const response = await fetch(`/gallery/api/rate/${imageList[currentIndex]}`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                  ratingFeedback.style.color = '#0f766e';
+                  ratingFeedback.textContent = 'Rating saved.';
+                  setTimeout(() => {
+                    if (currentIndex < imageList.length - 1) {
+                      goToSlide(currentIndex + 1);
+                    } else {
+                      ratingFeedback.textContent = 'Rating saved. End of slideshow.';
+                    }
+                  }, 250);
+                } else {
+                  ratingFeedback.style.color = '#dc2626';
+                  ratingFeedback.textContent = `Error: ${result.message}`;
+                }
+              } catch (error) {
+                console.error(error);
+                ratingFeedback.style.color = '#dc2626';
+                ratingFeedback.textContent = 'Server error while saving rating.';
+              } finally {
+                if (submitButton) {
+                  submitButton.disabled = false;
+                  submitButton.textContent = submitButtonText;
+                }
+              }
+            });
           }
-        });
-      }
-      
-      // Initial preload
-      preloadNextImage();
+
+          updateSlideshow();
+        })();
+
+
