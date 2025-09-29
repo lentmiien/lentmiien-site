@@ -1041,18 +1041,34 @@ class ConversationService {
 
   // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
   async processCompletedResponse(response_id) {
-    const r = await PendingRequests.findOne({response_id});
-    const conversation = await Conversation5Model.findById(r.conversation_id);
+    const pending = await PendingRequests.findOne({response_id});
+
+    if (!pending) {
+      logger.warning('No pending request found for completed response', { response_id });
+      return null;
+    }
+
+    const conversation = await Conversation5Model.findById(pending.conversation_id);
+
+    if (!conversation) {
+      logger.warning('Conversation not found for completed response', { response_id, conversation_id: pending.conversation_id });
+      await PendingRequests.deleteOne({_id: pending._id});
+      return { conversation: null, messages: [], placeholder_id: pending.placeholder_id };
+    }
+
     const messages = await this.messageService.processCompletedResponse(conversation, response_id);
-    conversation.messages = conversation.messages.filter(d => d != r.placeholder_id);
+
+    conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
     for (const m of messages) {
       if (!m.error) {
         conversation.messages.push(m._id.toString());
       }
     }
+
     await conversation.save();
-    await PendingRequests.deleteOne({_id: r._id});
-    return { conversation, messages, placeholder_id: r.placeholder_id };
+    await PendingRequests.deleteOne({_id: pending._id});
+
+    return { conversation, messages, placeholder_id: pending.placeholder_id };
   }
 
   async deleteNewConversation(id) {

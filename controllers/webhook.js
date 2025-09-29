@@ -13,37 +13,62 @@ const { OpenAI } = require('openai');
 const client = new OpenAI({ webhookSecret: process.env.OPENAI_WEBHOOK_SECRET });
 
 exports.openai = async (req, res) => {
+  let event;
+
   try {
-    const event = await client.webhooks.unwrap(req.body, req.headers);
+    event = await client.webhooks.unwrap(req.body, req.headers);
+  } catch (error) {
+    if (error instanceof OpenAI.InvalidWebhookSignatureError) {
+      logger.error('Invalid signature', error);
+      return res.status(400).send('Invalid signature');
+    }
 
-    // Send response first, then process data
-    res.status(200).send();
+    logger.error('Failed to unwrap OpenAI webhook event', error);
+    return res.status(500).send('Server error');
+  }
 
-    if (event.type === "batch.completed") {
+  logger.debug('OpenAI webhook event received', { type: event.type, data: event.data });
+
+  res.status(200).send();
+
+  try {
+    if (event.type === 'batch.completed') {
       const response_id = event.data.id;
       await batchService.checkBatchStatus(response_id);
       await batchService.processBatchResponses();
     }
 
-    if (event.type === "response.completed") {
+    if (event.type === 'response.completed') {
+      const response_id = event.data.id;
+      const result = await conversationService.processCompletedResponse(response_id);
+
+      if (!result) {
+        logger.warning('No pending conversation for completed response', { response_id });
+        return;
+      }
+
+      const { conversation, messages } = result;
+
+      if (!conversation) {
+        logger.warning('Conversation missing for completed response', { response_id });
+        return;
+      }
+
       const io = req.app.get('io');
+
+      if (!io) {
+        logger.warning('Socket.IO instance not available for webhook response', { response_id });
+        return;
+      }
+
       const roomForUser = io.userRoom;
       const roomForConversation = io.conversationRoom;
-      const response_id = event.data.id;
-      const {conversation, messages, placeholder_id} = await conversationService.processCompletedResponse(response_id);
       const convRoom = roomForConversation(conversation._id.toString());
       io.to(convRoom).emit('chat5-messages', { id: conversation._id.toString(), messages });
       const rooms = conversation.members.map(roomForUser);
       io.to(rooms).emit('chat5-notice', { id: conversation._id.toString(), title: conversation.title });
     }
   } catch (error) {
-    // Note: The error class is on the *class*, not the instance
-    if (error instanceof OpenAI.InvalidWebhookSignatureError) {
-      logger.error("Invalid signature", error);
-      res.status(400).send("Invalid signature");
-    } else {
-      logger.error(error);
-      res.status(500).send("Server error");
-    }
+    logger.error('Failed to process OpenAI webhook event', { error, type: event.type });
   }
 };
