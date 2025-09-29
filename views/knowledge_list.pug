@@ -1,31 +1,76 @@
 extends layout
 
+block styles
+  link(rel='stylesheet', href='/css/knowledge_list.css')
+
 block content
-  .row
-    .col
-      h2 Knowledge list
-      hr
-  .row 
-    .col 
-      label(for="category_filter") Choose category to show 
-      select#category_filter.form-control(name="category_filter", onchange="FilterCategory(this)") 
-        option(value="") - Show all -
-        each category in knowledge_categories
-          option(value=category)= category
-    .col
-      label(for="tag_filter") Choose tag to show 
-      select#tag_filter.form-control(name="tag_filter", onchange="FilterTag(this)") 
-        option(value="") - Show all -
-        each tag in knowledge_tags
-          option(value=tag.label)= tag.label
-  each category in knowledge_categories
-    .row.category_container(id=`${category}_container`) 
-      .col 
-        hr
-        p
-          b= category
-        each knowledge in knowledges
-          if knowledge.category === category
-            span.tag_container(data-tags=`|${knowledge.tags.join('|')}|`)
-              a.btn.btn-link(href=`/chat4/viewknowledge/${knowledge._id.toString()}`)= knowledge.title
-  script(src="/js/knowledge_list.js") 
+  - const formatDate = (value) => {
+  -   if (!value) return 'Unknown';
+  -   try {
+  -     return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  -   } catch (err) {
+  -     return value;
+  -   }
+  - };
+  .knowledge-page
+    .knowledge-header
+      h1 Knowledge Library
+      p Explore saved references by category. Use filters to focus on what you need.
+    .knowledge-toolbar
+      .knowledge-filters
+        .filter-control
+          label(for='category_filter') Category
+          select#category_filter.form-select(name='category_filter')
+            option(value='') All categories
+            each category in knowledge_categories
+              option(value=category)= category
+        .filter-control
+          label(for='tag_filter') Tag
+          select#tag_filter.form-select(name='tag_filter')
+            option(value='') All tags
+            each tag in knowledge_tags
+              option(value=tag.label)= tag.label
+      if knowledges && knowledges.length
+        .knowledge-summary
+          span #{knowledges.length} #{knowledges.length === 1 ? 'entry' : 'entries'} | Newest first
+        p.knowledge-no-results.hidden No entries match the current filters.
+  if !knowledges || knowledges.length === 0
+    .knowledge-empty
+      p No knowledge entries yet. Start by adding a new note.
+  else
+    each category in knowledge_categories
+      - const categoryEntries = knowledges.filter(function(item) { return item.category === category; });
+      if categoryEntries.length
+        section.knowledge-section.category_container(id=`${category}_container`, data-category=category)
+          header.section-header
+            h2.section-title #{category}
+            span.section-count #{categoryEntries.length} #{categoryEntries.length === 1 ? 'entry' : 'entries'}
+          .knowledge-grid
+            each knowledge in categoryEntries
+              - const previewImages = knowledge.images ? knowledge.images.slice(0, 3) : [];
+              article.knowledge-card(data-tags=`|${knowledge.tags.join('|')}|`)
+                .knowledge-card__body
+                  header.knowledge-card__header
+                    h3.knowledge-card__title
+                      a.knowledge-link(href=`/chat4/viewknowledge/${knowledge._id.toString()}`)= knowledge.title
+                  if knowledge.tags && knowledge.tags.length
+                    ul.knowledge-tags
+                      each tag in knowledge.tags
+                        li.knowledge-tag #{tag}
+                  .knowledge-meta
+                    span.meta-label Created
+                    span.meta-value #{formatDate(knowledge.createdDate)}
+                    if knowledge.updatedDate && knowledge.updatedDate !== knowledge.createdDate
+                      span.meta-separator |
+                      span.meta-label Updated
+                      span.meta-value #{formatDate(knowledge.updatedDate)}
+                  if previewImages.length
+                    .knowledge-preview-actions
+                      button.knowledge-preview-btn(type='button', data-images=previewImages.join('|')) Preview
+                      if knowledge.images.length > previewImages.length
+                        span.preview-note + #{knowledge.images.length - previewImages.length} more
+                    .knowledge-preview(hidden data-loaded='false')
+                      span.preview-placeholder Select preview to load images
+
+block script
+  script(src='/js/knowledge_list.js', defer)
