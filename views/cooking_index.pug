@@ -1,56 +1,154 @@
 extends layout
 
+block styles
+  link(rel='stylesheet', href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css')
+  style.
+    .calendar-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .calendar-card {
+      border: 1px solid #e9ecef;
+      border-radius: 14px;
+      padding: 1.25rem;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+      background: #ffffff;
+    }
+    .calendar-card h5 {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .calendar-card small {
+      color: #6c757d;
+    }
+    .category-group {
+      border-top: 1px solid #f1f3f5;
+      padding-top: 0.75rem;
+      margin-top: 0.75rem;
+    }
+    .category-group:first-of-type {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
+    }
+    .entry-item {
+      border: 1px solid #f1f3f5;
+      border-radius: 12px;
+      padding: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f8f9fa;
+      margin-bottom: 0.5rem;
+      gap: 0.75rem;
+    }
+    .entry-meta {
+      font-size: 0.85rem;
+      color: #6c757d;
+    }
+    .entry-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .recipe-list {
+      max-height: 320px;
+      overflow-y: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+    }
+    .recipe-list .list-group-item {
+      cursor: pointer;
+    }
+    .recipe-list .list-group-item.active {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+    }
+    @media (max-width: 576px) {
+      .calendar-controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .calendar-card {
+        padding: 1rem;
+      }
+      .entry-item {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .entry-actions {
+        width: 100%;
+        justify-content: flex-end;
+      }
+    }
+
 block content
-  - const day_map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-  h2 Cooking calendar
-  a.btn.btn-link(href="/cooking/cooking_statistics") View statistics
-  .input-group 
-    input#edate.form-control(type="date", name="edate")
-    button.btn.btn-primary(onclick="EditDate()") Edit date
-  each cookday, i in cookingCalendar
-    .row 
-      .col.foodday
-        h3.date-title= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
-        .row 
-          .col 
-            h5 Lunch
-            if cookday.lunch.image.length > 0
-              div
-                a(href=`/chat4/viewknowledge/${cookday.lunch.knowledge_id}`) 
-                  img.image-large(src=`/img/${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
-            div 
-              b(id=`${cookday.date}lunch`)= cookday.lunch.name
-            .input-group 
-              select.form-control(id=`${cookday.date}lunch_select`, name="change_food") 
-                option(value="") -- Select food --
-                each o in knowledge
-                  option(value=`${o._id.toString()}`)= o.title 
-              button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','lunch')`) Update
-          .col 
-            h5 Dinner
-            if cookday.dinner.image.length > 0
-              div
-                a(href=`/chat4/viewknowledge/${cookday.dinner.knowledge_id}`) 
-                  img.image-large(src=`/img/${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
-            div 
-              b(id=`${cookday.date}dinner`)= cookday.dinner.name
-            .input-group 
-              select.form-control(id=`${cookday.date}dinner_select`, name="change_food") 
-                option(value="") -- Select food --
-                each o in knowledge
-                  option(value=`${o._id.toString()}`)= o.title 
-              button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dinner')`) Update
-          .col 
-            h5 Dessert
-            if cookday.dessert.image.length > 0
-              div
-                a(href=`/chat4/viewknowledge/${cookday.dessert.knowledge_id}`) 
-                  img.image-large(src=`/img/${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
-            b(id=`${cookday.date}dessert`)= cookday.dessert.name
-            .input-group 
-              select.form-control(id=`${cookday.date}dessert_select`, name="change_food") 
-                option(value="") -- Select food --
-                each o in knowledge
-                  option(value=`${o._id.toString()}`)= o.title 
-              button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dessert')`) Update
-  script(src="/cooking_index.js")
+  .d-flex.flex-wrap.align-items-center.justify-content-between.mb-3.gap-3
+    h2.mb-0 Cooking calendar - version 2
+    .d-flex.gap-2.flex-wrap
+      a.btn.btn-outline-secondary(href='/cooking') View legacy calendar
+      a.btn.btn-primary(href='/cooking/v2/statistics') View statistics
+  .card.border-0.shadow-sm.mb-4
+    .card-body
+      .calendar-controls
+        .btn-group
+          button#prevWeek.btn.btn-outline-secondary(type='button')
+            i.bi.bi-chevron-left
+            |  Previous
+          button#nextWeek.btn.btn-outline-secondary(type='button')
+            | Next
+            i.bi.bi-chevron-right.ms-2
+        .flex-grow-1
+          label.form-label(for='weekStart') Week starting
+          input#weekStart.form-control(type='date', value=initialDate)
+        button#reloadCalendar.btn.btn-outline-primary(type='button') Refresh
+  #calendarDays.row.g-4
+    .col-12
+      .text-center.text-muted.py-5 Loading calendar...
+
+  // Recipe selection modal
+  .modal.fade#recipeModal(tabindex='-1', aria-hidden='true', style="z-index:1051;")
+    .modal-dialog.modal-dialog-centered.modal-xl
+      .modal-content
+        .modal-header
+          h5.modal-title Select a recipe
+          button.btn-close(type='button' data-bs-dismiss='modal' aria-label='Close')
+        .modal-body
+          p.text-muted#selectedDateLabel.mb-3 Schedule a recipe
+          form.row.g-3.mb-3
+            .col-12.col-lg-4
+              label.form-label(for='categorySelect') Category
+              select#categorySelect.form-select
+            .col-12.col-lg-4
+              label.form-label(for='customCategory') Custom category
+              input#customCategory.form-control(type='text' placeholder='Optional - override category')
+            .col-12.col-lg-4
+              label.form-label(for='recipeSearch') Search recipes
+              input#recipeSearch.form-control(type='search' placeholder='Search by name')
+          #recentWarning.alert.alert-warning.d-none(role='alert') Recently cooked warning
+          .recipe-list.list-group
+          .mt-3.d-flex.justify-content-between.align-items-center
+            small.text-muted#recipeCount 0 recipes
+            button#scheduleRecipe.btn.btn-primary(type='button' disabled) Schedule recipe
+        .modal-footer
+          button.btn.btn-outline-secondary(type='button' data-bs-dismiss='modal') Cancel
+  // Toast container for feedback
+  .toast-container.position-fixed.bottom-0.end-0.p-3(style='z-index: 1080;')
+    .toast.align-items-center.text-white.bg-success.border-0(role='status' aria-live='polite' aria-atomic='true')
+      .d-flex
+        .toast-body#toastMessage Action completed
+        button.btn-close.btn-close-white.me-2.m-auto(type='button' data-bs-dismiss='toast' aria-label='Close')
+
+block script
+  script.
+    window.COOKING_CALENDAR_V2 = {
+      initialDate: '#{initialDate}',
+      categories: !{JSON.stringify(categories)},
+    };
+  script(src='/cooking_index.js', defer)

@@ -1,0 +1,56 @@
+extends layout
+
+block content
+  - const day_map = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+  h2 Cooking calendar
+  a.btn.btn-link(href="/cooking/cooking_statistics") View statistics
+  .input-group 
+    input#edate.form-control(type="date", name="edate")
+    button.btn.btn-primary(onclick="EditDate()") Edit date
+  each cookday, i in cookingCalendar
+    .row 
+      .col.foodday
+        h3.date-title= `${i === 0 ? "Today" : day_map[cookday.day]} (${cookday.date})`
+        .row 
+          .col 
+            h5 Lunch
+            if cookday.lunch.image.length > 0
+              div
+                a(href=`/chat4/viewknowledge/${cookday.lunch.knowledge_id}`) 
+                  img.image-large(src=`/img/${cookday.lunch.image}`, alt=`${cookday.lunch.name}`)
+            div 
+              b(id=`${cookday.date}lunch`)= cookday.lunch.name
+            .input-group 
+              select.form-control(id=`${cookday.date}lunch_select`, name="change_food") 
+                option(value="") -- Select food --
+                each o in knowledge
+                  option(value=`${o._id.toString()}`)= o.title 
+              button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','lunch')`) Update
+          .col 
+            h5 Dinner
+            if cookday.dinner.image.length > 0
+              div
+                a(href=`/chat4/viewknowledge/${cookday.dinner.knowledge_id}`) 
+                  img.image-large(src=`/img/${cookday.dinner.image}`, alt=`${cookday.dinner.name}`)
+            div 
+              b(id=`${cookday.date}dinner`)= cookday.dinner.name
+            .input-group 
+              select.form-control(id=`${cookday.date}dinner_select`, name="change_food") 
+                option(value="") -- Select food --
+                each o in knowledge
+                  option(value=`${o._id.toString()}`)= o.title 
+              button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dinner')`) Update
+          .col 
+            h5 Dessert
+            if cookday.dessert.image.length > 0
+              div
+                a(href=`/chat4/viewknowledge/${cookday.dessert.knowledge_id}`) 
+                  img.image-large(src=`/img/${cookday.dessert.image}`, alt=`${cookday.dessert.name}`)
+            b(id=`${cookday.date}dessert`)= cookday.dessert.name
+            .input-group 
+              select.form-control(id=`${cookday.date}dessert_select`, name="change_food") 
+                option(value="") -- Select food --
+                each o in knowledge
+                  option(value=`${o._id.toString()}`)= o.title 
+              button.btn.btn-primary(onclick=`AddUpdateCookingCalendar('${cookday.date}','dessert')`) Update
+  script(src="/cooking_index_v1.js")

@@ -1,0 +1,17 @@
+I want to create a version 2 of the "Cooking calendar":
+- controllers/cookingcontroller.js
+- routes/cooking.js
+- views/cooking_index.pug
+- views/cooking_statistics.pug
+- public/cooking_index.js
+
+First, I want a new database, that can store an array of recipes for each day to cook, and each recipe can be assigned a category, like "Lunch", "Dinner", "Dessert", etc. with the possibility of saving multiple recipes for a category on any given date. So, instead of being locked up at 3 recipes per day (current), I want the user to be able to add as many recipes as they need.
+Secondly, I'd like to add a cooking calendar service class in the "services" folder, to handle all the logic for this tool, and the controller should make use of this service class, to simplify the code.
+I still want to use `Chat4KnowledgeModel` database, entries with `category: "Recipe"`, as the recipe database, as it's my most recent and extensive database.
+I want to completely remove `CookingRequestModel`, and even the concept of "requests", so I only keep the core cooking calendar, and the statistics page.
+For entering a recipe to the calendar, I need to select an existing recipe, a date, and a category; to discourage frequent repeats, I want to warn the user if they select a food that was cooked within the last 10 days, but the user can ignore the warning, and regularly cooked food is recommended, as that's usually good food.
+I want the page styling to be modern and minimalistic, and it should display nicely on both large and small screens.
+
+For now, develop the version 2 in parallel existences with the current version, and once I'm satisfied, I'll discontinue the old version. I want to be able to transition data from the current version to the new version, but only after I'm ready for the full transition, so I can keep the statistics page accurate from historic data.
+
+The current statistics page is quite useful for selecting food to cook, because I can see what food I cooked within the last 10 days, and see how often I cook certain food, with recently commonly cooked food at the top, but it can be a little annoying to go to the statistics page to find a food, then return to the cooking calendar and search for the food again in the select box, so if this could be moved to a "select a food" modal on the cooking calendar page, that might be more useful, and still give the same benefits.

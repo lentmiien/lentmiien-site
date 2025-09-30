@@ -1,33 +1,36 @@
 extends layout
 
 block content
-  h2 Cooking statistics 
-  table.table.table-striped 
-    thead 
-      tr 
-        th Food 
-        th Recent 
-        th Count last 90 days 
-        th Count previous 90 days
-        th Total count 
-    tbody 
-      each food in stats 
-        if knowledge_lookup[food.uniqueString]
-          - knowledge_lookup_used[food.uniqueString] = true
-          tr 
-            td
-              a(href=`/chat4/viewknowledge/${food.uniqueString}`)= knowledge_lookup[food.uniqueString]
-            td= food.existInLast10Days
-            td= food.countLast90Days
-            td= food.countPrev90Days
-            td= food.totalCount
-      - const allKeys = Object.keys(knowledge_lookup_used)
-      each key in allKeys 
-        if knowledge_lookup_used[key] === false 
-          tr 
-            td
-              a(href=`/chat4/viewknowledge/${key}`)= knowledge_lookup[key]
-            td 
-            td 
-            td 
-            td 
+  .d-flex.flex-wrap.align-items-center.justify-content-between.mb-3.gap-3
+    h2.mb-0 Cooking statistics - version 2
+    .d-flex.gap-2.flex-wrap
+      a.btn.btn-outline-secondary(href='/cooking/v2') Back to calendar
+      a.btn.btn-outline-secondary(href='/cooking/cooking_statistics') Legacy statistics
+  if !stats || stats.length === 0
+    .alert.alert-info No statistics available yet. Schedule some recipes to see insights here.
+  else
+    .table-responsive.shadow-sm.rounded
+      table.table.table-striped.align-middle.mb-0
+        thead
+          tr
+            th(scope='col') Recipe
+            th(scope='col') Last cooked
+            th(scope='col') Cooked last 10 days
+            th(scope='col') Count (90d)
+            th(scope='col') Previous 90d
+            th(scope='col') Total
+        tbody
+          each item in stats
+            - const usage = item.usage || {}
+            tr(class=usage.existInLast10Days ? 'table-warning' : '')
+              td
+                a(href=`/chat4/viewknowledge/${item.recipeId}`)= item.title
+              td= usage.lastCookedDate || 'Not recorded'
+              td
+                if usage.existInLast10Days
+                  span.badge.bg-success.ms-0 Yes
+                else
+                  span.badge.bg-secondary.ms-0 No
+              td= usage.countLast90Days || 0
+              td= usage.countPrev90Days || 0
+              td= usage.totalCount || 0

@@ -60,7 +60,7 @@ const OpenaicalllogDBModel = require('./models/openaicalllog');
 const OpenaimodelDBModel = require('./models/openaimodel');
 // Cooking calendar
 const CookingCalendarModel = require('./models/CookingCalendar');
-const CookingRequestModel = require('./models/CookingRequest');
+const CookingCalendarV2Model = require('./models/CookingCalendarV2');
 // Health log
 const HealthEntry = require('./models/healthentry');
 // Agents
@@ -133,7 +133,7 @@ module.exports = {
   OpenaicalllogDBModel,
   OpenaimodelDBModel,
   CookingCalendarModel,
-  CookingRequestModel,
+  CookingCalendarV2Model,
   HealthEntry,
   AgentModel,
   BatchPromptModel,
