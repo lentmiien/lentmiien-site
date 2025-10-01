@@ -7,7 +7,8 @@
     "prestart": "node setup",
     "start": "node app",
     "git_test": "node git_test",
-    "test": "node test"
+    "test": "node test",
+    "codex-todo": "codex \"In '/todo.txt', I've listed an update I want to do for this project, please check the '/todo.txt' and start coding the changes.\""
   },
   "repository": {
     "type": "git",
