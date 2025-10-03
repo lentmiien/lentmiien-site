@@ -1,1 +1,5 @@
-No current todos
+Please add a new route and route controller, for uploading temporary files to the "tmp_data/" folder, and view a list of all files in the same folder, with download option.
+The intention is for transfering smaller files, like up to 10MB at most, and as we are using the "tmp_data/" folder, the content is periodically deleted, so it's just for temporary use.
+This route should require `isAuthenticated` and `isAdmin`, and should accept any types of files.
+
+Use a modern minimalistic style for the UI, and create the necessary PUG templates and JavaScript files, do not put JavaScript inline in the PUG template.

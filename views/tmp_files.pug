@@ -1,0 +1,29 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/tmp_files.css')
+
+block content
+  section.tmp-files(data-max-size=maxFileSizeMB)
+    header.tmp-files__header
+      h1.tmp-files__title Temporary File Transfer
+      p.tmp-files__subtitle Upload and share files up to #{maxFileSizeMB}MB. Stored items are regularly cleaned up.
+    form#uploadForm.tmp-files__form(method='post', action='/tmp-files/upload', enctype='multipart/form-data')
+      label.tmp-files__label(for='fileInput') Select a file to upload
+      div#dropZone.tmp-files__dropzone
+        span Drag & drop or
+        button#browseButton.btn(type='button') Browse
+      input#fileInput(type='file', name='file', required, hidden)
+      div.tmp-files__form-actions
+        button#uploadButton.btn.btn-primary(type='submit') Upload
+        span#uploadHint.tmp-files__hint Accepted size: up to #{maxFileSizeMB}MB
+    div#statusMessage.tmp-files__status(role='status', aria-live='polite')
+    section.tmp-files__list
+      header.tmp-files__list-header
+        h2 Current Files
+        button#refreshButton.btn.btn-light(type='button') Refresh
+      ul#filesContainer.tmp-files__items
+        li.tmp-files__empty(data-empty-message='Files will show up here once uploaded.') No files yet.
+
+block script
+  script(src='/js/tmp_files.js', defer)
