@@ -203,7 +203,7 @@ const adminRouter = require('./routes/admin');
 
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
-app.use('/mydhlapi/test/v2', dummyapiRouter);
+app.use('/mydhlapi/test', dummyapiRouter);
 app.use('/blog', blogRouter);
 app.use('/cookingp', cookingPublicRouter);
 app.use('/mypage', isAuthenticated, mypageRouter);

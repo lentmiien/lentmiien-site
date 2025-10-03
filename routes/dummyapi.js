@@ -4,6 +4,7 @@ const router = express.Router();
 // Require controller modules.
 const controller = require('../controllers/dummyapicontroller');
 
-router.post('/shipping/labels', controller.shipping_labels);
+router.get('/identifiers', controller.shipping_identifiers);
+router.post('/shipments', controller.shipping_labels);
 
 module.exports = router;
