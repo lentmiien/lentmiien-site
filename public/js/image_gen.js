@@ -210,24 +210,41 @@
     const wrap = $('#results');
     wrap.innerHTML = '';
     for (let i=0;i<files.length;i++){
-      const url = `/image_gen/api/jobs/${encodeURIComponent(jobId)}/images/${i}`;
-      try{
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Image ${i} ${resp.status}`);
-        const blob = await resp.blob();
-        const objUrl = URL.createObjectURL(blob);
-        const col = document.createElement('div'); col.className = 'col';
-        const card = document.createElement('div'); card.className = 'thumb';
-        const img = document.createElement('img'); img.src = objUrl; img.alt = files[i].filename;
-        const caption = document.createElement('div'); caption.className = 'muted mt-1'; caption.textContent = files[i].filename;
-        const dl = document.createElement('a'); dl.href = objUrl; dl.download = files[i].filename; dl.textContent = 'Download';
-        card.appendChild(img); card.appendChild(caption); card.appendChild(dl);
-        col.appendChild(card); wrap.appendChild(col);
-      }catch(e){
-        log('Render image failed: ' + e.message, 'text-danger');
+    const fileMeta = files[i];
+    const filename = typeof fileMeta === 'string'
+      ? fileMeta
+      : (fileMeta?.filename || fileMeta?.name || fileMeta?.file || `image_${i}.png`);
+    const url = `/image_gen/api/jobs/${encodeURIComponent(jobId)}/images/${i}${filename ? `?filename=${encodeURIComponent(filename)}` : ''}`;
+    try{
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Image ${i} ${resp.status}`);
+      const contentType = resp.headers.get('content-type') || 'image/png';
+      const cacheUrl = filename ? `/imgen/${encodeURIComponent(filename)}` : null;
+      const arrayBuffer = await resp.arrayBuffer();
+
+      let imgSrc = cacheUrl;
+      let downloadHref = cacheUrl;
+      if (!cacheUrl) {
+        const blob = new Blob([arrayBuffer], { type: contentType });
+        imgSrc = URL.createObjectURL(blob);
+        downloadHref = imgSrc;
       }
+
+      const col = document.createElement('div'); col.className = 'col';
+      const card = document.createElement('div'); card.className = 'thumb';
+      const img = document.createElement('img'); img.src = imgSrc; img.alt = filename;
+      if (!cacheUrl) {
+        img.addEventListener('load', () => { try { URL.revokeObjectURL(imgSrc); } catch {} }, { once: true });
+      }
+      const caption = document.createElement('div'); caption.className = 'muted mt-1'; caption.textContent = filename;
+      const dl = document.createElement('a'); dl.href = downloadHref; dl.download = filename; dl.textContent = 'Download';
+      card.appendChild(img); card.appendChild(caption); card.appendChild(dl);
+      col.appendChild(card); wrap.appendChild(col);
+    }catch(e){
+      log('Render image failed: ' + e.message, 'text-danger');
     }
   }
+}
 
   // Rating bar
   function showRatingBar(jobId){
@@ -288,26 +305,91 @@
   // Browse
   $('#btnListInput').addEventListener('click', ()=> list('input'));
   $('#btnListOutput').addEventListener('click', ()=> list('output'));
+  const hideBtn = $('#btnHideBrowse');
+  if (hideBtn) {
+    hideBtn.addEventListener('click', () => {
+      const area = $('#browseArea');
+      if (area) area.innerHTML = '';
+      log('Cleared browse list.');
+    });
+  }
 
   async function list(bucket){
     const area = $('#browseArea'); area.innerHTML = '';
     try{
       const j = await api(`/api/files/${bucket}`);
-      log(`Listed ${j.files.length} file(s) in ${bucket}/.`);
-      for (const name of j.files) {
+      const items = (Array.isArray(j.cached) && j.cached.length)
+        ? j.cached
+        : (Array.isArray(j.files) ? j.files.map(name => ({ name, original: name, bucket, url: null })) : []);
+
+      log(`Listed ${items.length} file(s) in ${bucket}/.`);
+      for (const item of items) {
+        const displayName = item.name || item.original;
+        const originalName = item.original || displayName;
         const col = document.createElement('div'); col.className = 'col';
         const card = document.createElement('div'); card.className = 'thumb';
-        const img = document.createElement('img'); img.alt = name;
-        try{
-          const r = await fetch(`/image_gen/api/files/${bucket}/${encodeURIComponent(name)}`);
-          if (r.ok) img.src = URL.createObjectURL(await r.blob());
-          else img.remove();
-        }catch{ img.remove(); }
-        const cap = document.createElement('div'); cap.className='muted mt-1'; cap.textContent = `${bucket}/ ${name}`;
-        card.appendChild(img); card.appendChild(cap);
-        if (bucket === 'input') {
+        const img = document.createElement('img'); img.alt = displayName || originalName || 'image'; img.loading = 'lazy';
+
+        let hasImage = false;
+        if (item.url) {
+          img.src = item.url;
+          hasImage = true;
+        } else if (originalName) {
+          try{
+            const r = await fetch(`/image_gen/api/files/${bucket}/${encodeURIComponent(originalName)}`);
+            if (r.ok) {
+              const blob = await r.blob();
+              const objUrl = URL.createObjectURL(blob);
+              img.src = objUrl;
+              hasImage = true;
+              img.addEventListener('load', () => { try { URL.revokeObjectURL(objUrl); } catch {} }, { once: true });
+            } else {
+              img.remove();
+            }
+          }catch{ img.remove(); }
+        } else {
+          img.remove();
+        }
+
+        if (hasImage) card.appendChild(img);
+
+        const cap = document.createElement('div'); cap.className='muted mt-1'; cap.textContent = `${bucket}/ ${displayName || originalName || '(unknown)'}`;
+        card.appendChild(cap);
+
+        if (bucket === 'input' && (displayName || originalName)) {
+          const useName = displayName || originalName;
           const btn = document.createElement('button'); btn.className='btn btn-sm btn-outline-primary mt-2'; btn.textContent='Use for img2img';
-          btn.addEventListener('click', ()=>{ const i=$('#inp_image'); if(i){ i.value=name; log(`Selected ${name} for img2img.`);} });
+          btn.addEventListener('click', ()=>{
+            const i=$('#inp_image');
+            if(i){
+              i.value=useName;
+              log(`Selected ${useName} for img2img.`);
+            }
+          });
+          card.appendChild(btn);
+        }
+        if (bucket === 'output' && (displayName || originalName)) {
+          const useName = displayName || originalName;
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-sm btn-outline-success mt-2';
+          btn.textContent = 'Use for img2img';
+          btn.addEventListener('click', async () => {
+            try{
+              btn.disabled = true;
+              const resp = await api('/api/files/promote', {
+                method: 'POST',
+                body: JSON.stringify({ bucket: 'output', filename: originalName || useName })
+              });
+              const newName = resp.filename || useName;
+              const inputCtl = $('#inp_image');
+              if (inputCtl) inputCtl.value = newName;
+              log(`Copied ${useName} to input as ${newName}.`, 'text-success');
+            }catch(err){
+              log('Promote failed: ' + err.message, 'text-danger');
+            }finally{
+              btn.disabled = false;
+            }
+          });
           card.appendChild(btn);
         }
         col.appendChild(card); area.appendChild(col);

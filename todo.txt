@@ -1,5 +1,5 @@
-Please add a new route and route controller, for uploading temporary files to the "tmp_data/" folder, and view a list of all files in the same folder, with download option.
-The intention is for transfering smaller files, like up to 10MB at most, and as we are using the "tmp_data/" folder, the content is periodically deleted, so it's just for temporary use.
-This route should require `isAuthenticated` and `isAdmin`, and should accept any types of files.
+In `controllers/image_gen.controller.js`, I have functions for listing files from the input and output folders, however, this flow is really slow when the number of files are more than a few files (a couple-few seconds per image). Could we create some kind of cashing on the server side? Also, when generating a new image, also save it to the new cashing folder.
 
-Use a modern minimalistic style for the UI, and create the necessary PUG templates and JavaScript files, do not put JavaScript inline in the PUG template.
+To make things simple, lets put the cashing folder to be `public/imgen`, then the user can easily access the cashed images through the URL `/imgen/${filename}`. So also update the UI to work with this cashing flow (display cashed images where applicable, and put the filename part as input image when selecting to use an input image for further image generations, 'image-to-image generations').
+
+When clicking to view the input or output folder lists in the UI, the server should fetch the file list, then download new files to the cashing folder.

@@ -12,6 +12,11 @@ const COMFY_API_KEY  = process.env.COMFY_API_KEY;
 const DEFAULT_TIMEOUT = 15000;
 
 const TMP_DIR = path.join(__dirname, '../tmp_data');
+const CACHE_DIR = path.join(__dirname, '../public/imgen');
+const CACHE_CONCURRENCY = 5;
+
+// Track in-flight downloads to avoid duplicate fetches
+const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
 
 // In-memory maps to tie a queued job to the prompt records used
 const jobPromptMap = new Map(); // jobId -> { posId: ObjectId|null, negId: ObjectId|null }
@@ -20,6 +25,7 @@ const MAP_TTL_MS = 24 * 60 * 60 * 1000; // drop job mappings after 24h
 
 // Ensure tmp dir exists
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
+if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 // Small helpers
 function apiHeaders(extra = {}) {
@@ -27,6 +33,95 @@ function apiHeaders(extra = {}) {
 }
 function errorJson(res, status, message, details) {
   return res.status(status).json({ error: message, details });
+}
+
+function toSafeName(name) {
+  const str = String(name || '').trim();
+  if (!str) return null;
+  const base = path.basename(str);
+  if (!base || base === '.' || base === '..') return null;
+  return base;
+}
+
+function buildCacheRecord(name) {
+  const safeName = toSafeName(name);
+  if (!safeName) return null;
+  const localPath = path.join(CACHE_DIR, safeName);
+  const url = `/imgen/${encodeURIComponent(safeName)}`;
+  return { safeName, localPath, url };
+}
+
+async function writeCacheFile(name, buffer) {
+  const rec = buildCacheRecord(name);
+  if (!rec) return null;
+  await fsp.writeFile(rec.localPath, buffer);
+  return rec;
+}
+
+async function ensureCached(bucket, name) {
+  const rec = buildCacheRecord(name);
+  if (!rec) return null;
+
+  try {
+    await fsp.access(rec.localPath, fs.constants.R_OK);
+    return rec;
+  } catch (_) {
+    // continue to download
+  }
+
+  const key = `${bucket}:${rec.safeName}`;
+  if (!inFlightDownloads.has(key)) {
+    const promise = (async () => {
+      try {
+        const remoteUrl = `${COMFY_API_BASE}/v1/files/${bucket}/${encodeURIComponent(name)}`;
+        const r = await fetch(remoteUrl, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
+        if (!r.ok) {
+          const txt = await r.text().catch(() => '');
+          throw new Error(`upstream ${r.status} ${txt}`.trim());
+        }
+        const buf = Buffer.from(await r.arrayBuffer());
+        await fsp.writeFile(rec.localPath, buf);
+        return rec;
+      } finally {
+        inFlightDownloads.delete(key);
+      }
+    })();
+    inFlightDownloads.set(key, promise);
+  }
+
+  try {
+    return await inFlightDownloads.get(key);
+  } catch (err) {
+    logger.warn(`[ensureCached] failed for ${bucket}/${name}: ${err && err.message ? err.message : err}`);
+    return null;
+  }
+}
+
+async function resolveCachedRecord(bucket, name) {
+  const rec = await ensureCached(bucket, name);
+  if (rec) return rec;
+  const fallback = buildCacheRecord(name);
+  if (!fallback) return null;
+  try {
+    await fsp.access(fallback.localPath, fs.constants.R_OK);
+    return fallback;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function mapWithConcurrency(items, limit, iterator) {
+  const results = new Array(items.length);
+  let index = 0;
+  const worker = async () => {
+    while (index < items.length) {
+      const current = index++;
+      results[current] = await iterator(items[current], current);
+    }
+  };
+  const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(workers);
+  return results;
 }
 
 // Helper to ensure an unrated use is recorded (create-or-increment)
@@ -140,10 +235,19 @@ exports.getJobImage = async (req, res) => {
     }
     const ct = r.headers.get('content-type') || 'image/png';
     const ab = await r.arrayBuffer();
+    const buf = Buffer.from(ab);
+    const suggestedName = req.query?.filename;
+    if (suggestedName) {
+      try {
+        await writeCacheFile(suggestedName, buf);
+      } catch (err) {
+        logger.warn('[getJobImage] failed to persist cache', err);
+      }
+    }
     res.setHeader('Content-Type', ct);
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
-    res.end(Buffer.from(ab));
+    res.end(buf);
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
     logger.error('[getJobImage] error', e);
@@ -158,7 +262,36 @@ exports.listFiles = async (req, res) => {
   try {
     const r = await fetch(`${COMFY_API_BASE}/v1/files/${bucket}`, { headers: apiHeaders() });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    res.json(await r.json());
+    const remoteJson = await r.json();
+    const remoteFiles = Array.isArray(remoteJson?.files) ? remoteJson.files : [];
+
+    const names = remoteFiles.map(item => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') {
+        return item.filename || item.name || item.file || item.file_name || item.path || '';
+      }
+      return '';
+    }).filter(Boolean);
+
+    const cachedEntries = await mapWithConcurrency(names, CACHE_CONCURRENCY, async (original) => {
+      const safeName = toSafeName(original);
+      if (!safeName) {
+        return { original, bucket, name: null, url: null };
+      }
+      const cacheRecord = await resolveCachedRecord(bucket, original);
+      return {
+        original,
+        name: safeName,
+        bucket,
+        url: cacheRecord ? cacheRecord.url : null
+      };
+    });
+
+    const payload = Object.assign({}, remoteJson, {
+      files: names,
+      cached: cachedEntries
+    });
+    res.json(payload);
   } catch (e) {
     return errorJson(res, 502, 'failed to list files', String(e.message || e));
   }
@@ -170,6 +303,19 @@ exports.getFile = async (req, res) => {
   if (!['input', 'output'].includes(bucket)) return errorJson(res, 400, 'bucket must be input or output');
   const name = req.params.filename;
   try {
+    const cacheRecord = await resolveCachedRecord(bucket, name);
+    if (cacheRecord && cacheRecord.localPath) {
+      res.setHeader('Content-Disposition', `inline; filename="${name.replace(/"/g, '')}"`);
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.sendFile(cacheRecord.localPath, (err) => {
+        if (err) {
+          logger.error('[getFile] failed to send cached file', err);
+          return res.status(500).end();
+        }
+      });
+    }
+
+    // Fallback to proxying directly if caching failed
     const url = `${COMFY_API_BASE}/v1/files/${bucket}/${encodeURIComponent(name)}`;
     const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
     if (!r.ok) {
@@ -182,11 +328,68 @@ exports.getFile = async (req, res) => {
     res.setHeader('Content-Type', ct);
     res.setHeader('Content-Disposition', `inline; filename="${name.replace(/"/g, '')}"`);
     res.setHeader('Cache-Control', 'private, max-age=86400');
-    res.end(Buffer.from(ab));
+    const buf = Buffer.from(ab);
+    try {
+      await writeCacheFile(name, buf);
+    } catch (err) {
+      logger.warn('[getFile] failed to persist fallback cache', err);
+    }
+    res.end(buf);
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
     logger.error('[getFile] error', e);
     return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream file', String(e.message || e));
+  }
+};
+
+function guessImageMime(name) {
+  const ext = path.extname(String(name || '')).toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  return 'application/octet-stream';
+}
+
+// POST /image_gen/api/files/promote
+exports.promoteCachedFile = async (req, res) => {
+  try {
+    const bucket = (req.body?.bucket || 'output').trim();
+    const filename = req.body?.filename;
+    if (!filename) return errorJson(res, 400, 'filename required');
+    if (!['input', 'output'].includes(bucket)) return errorJson(res, 400, 'bucket must be input or output');
+    const safeName = toSafeName(filename);
+    if (!safeName) return errorJson(res, 400, 'invalid filename');
+
+    const cacheRecord = await resolveCachedRecord(bucket, filename);
+    if (!cacheRecord || !cacheRecord.localPath) {
+      return errorJson(res, 404, 'cached file not found');
+    }
+
+    const buf = await fsp.readFile(cacheRecord.localPath);
+    const mime = guessImageMime(safeName);
+    const fd = new FormData();
+    const blob = new Blob([buf], { type: mime });
+    fd.append('image', blob, safeName);
+
+    const r = await fetch(`${COMFY_API_BASE}/v1/files/input`, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: fd
+    });
+    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
+    const json = await r.json().catch(() => ({}));
+    const savedName = json?.filename || json?.file || safeName;
+
+    try {
+      await writeCacheFile(savedName, buf);
+    } catch (err) {
+      logger.warn('[promoteCachedFile] failed to persist cache', err);
+    }
+
+    res.json({ ok: true, filename: savedName });
+  } catch (e) {
+    logger.error('[promoteCachedFile] error', e);
+    return errorJson(res, 500, 'failed to promote cached file', String(e.message || e));
   }
 };
 
@@ -208,6 +411,14 @@ exports.uploadInput = async (req, res) => {
     });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
     const json = await r.json().catch(() => ({}));
+    const savedName = json?.filename || json?.file || fileName;
+    if (savedName) {
+      try {
+        await writeCacheFile(savedName, buf);
+      } catch (err) {
+        logger.warn('[uploadInput] failed to persist cache', err);
+      }
+    }
     res.json(json);
   } catch (e) {
     return errorJson(res, 502, 'failed to upload to ComfyUI API', String(e.message || e));

@@ -44,6 +44,7 @@ router.get('/api/jobs/:id/images/:index', ctrl.getJobImage);
 router.get('/api/files/:bucket', ctrl.listFiles);
 router.get('/api/files/:bucket/:filename', ctrl.getFile);
 router.post('/api/files/input', upload.single('image'), ctrl.uploadInput);
+router.post('/api/files/promote', ctrl.promoteCachedFile);
 router.get('/api/prompts', ctrl.listPrompts);
 router.post('/api/rate', ctrl.rateJob);
 
