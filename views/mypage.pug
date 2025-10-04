@@ -20,14 +20,19 @@ mixin tile(href, src, alt, label)
 
 block content
   .row 
-    .col 
-      each t in tasks 
-        if !t.done && t.type === "todo"
-          span.badge.bg-primary.me-1.schedule-task-pill= `${t.title} in ${t.start && t.start.getTime() > Date.now() ? Math.round((t.start.getTime() - Date.now()) / (1000*60*60)) : t.end && t.end.getTime() > Date.now() ? Math.round((t.end.getTime() - Date.now()) / (1000*60*60)) : 0} hour(s)`
-      each t in tasks 
-        if !t.done && t.type === "tobuy"
-          span.badge.bg-warning.text-dark.me-1.schedule-task-pill= t.title
-      a.badge.bg-secondary.me-1.schedule-task-pill(href='/scheduleTask/upcoming') All tasks
+    a(href='/scheduleTask/upcoming')
+      .col 
+        - let noTasks = true
+        each t in tasks 
+          if !t.done && t.type === "todo"
+            - noTasks = false
+            span.badge.bg-primary.me-1.schedule-task-pill= `${t.title} in ${t.start && t.start.getTime() > Date.now() ? Math.round((t.start.getTime() - Date.now()) / (1000*60*60)) : t.end && t.end.getTime() > Date.now() ? Math.round((t.end.getTime() - Date.now()) / (1000*60*60)) : 0} hour(s)`
+        each t in tasks 
+          if !t.done && t.type === "tobuy"
+            - noTasks = false
+            span.badge.bg-warning.text-dark.me-1.schedule-task-pill= t.title
+        if noTasks
+          span.badge.bg-secondary.me-1.schedule-task-pill Show all tasks
   .row 
     .col 
       .mypage-grid
