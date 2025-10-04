@@ -1,15 +1,40 @@
 extends layout
 
+block append styles
+  link(rel='stylesheet', href='/css/pdf-to-jpg.css')
+
 block content
-  .row 
-    .col 
-      h1 Upload PDF to convert to JPGs
-      form(action="/mypage/convert_pdf_to_jpg", method="post", enctype="multipart/form-data") 
-        label(for="pdf") PDF file
-        .input-group
-          input#pdf.form-control(type="file", name="pdf")
-          input.btn.btn-primary(type="submit", value="Convert")
-  .row 
-    .col 
-      each img in imageUrls
-        img(src=img, alt="")
+  section.pdf-converter
+    .converter-layout
+      .converter-panel.is-open(data-converter-panel)
+        button.converter-panel-toggle(type='button', data-panel-toggle, aria-expanded='true', aria-controls='converterPanelResults')
+          span Upload next PDF
+        .panel-inner#converterPanelResults
+          h1.converter-title Your JPGs are ready
+          p.converter-subtitle Scroll through the converted pages and keep the next upload within reach.
+          form.converter-form(action="/mypage/convert_pdf_to_jpg", method="post", enctype="multipart/form-data")
+            label.upload-dropzone(for="pdf")
+              strong Upload another PDF
+              span Drag and drop or choose a new file to convert
+              input#pdf(type="file", name="pdf", accept=".pdf", required)
+            button.converter-submit(type="submit", data-submit-btn) Convert next PDF
+          p.converter-note As soon as you select a file we start the conversion, keeping pages in their original order.
+      .converter-content
+        if imageUrls && imageUrls.length
+          .page-gallery
+            each img, idx in imageUrls
+              .page-frame
+                span.page-label Page #{idx + 1}
+                img.page-image(src=img, alt='Converted PDF page ' + (idx + 1), data-viewer-src=img, data-viewer-label='Page ' + (idx + 1), tabindex='0', role='button')
+        else
+          .empty-state
+            strong No images to show yet
+            span Pick a PDF to generate your gallery of JPG pages.
+    .image-viewer(data-image-viewer aria-hidden='true')
+      .image-viewer__content
+        button.image-viewer__close(type='button', data-viewer-close, aria-label='Close preview') &times;
+        img.image-viewer__img(data-viewer-img alt='')
+        span.image-viewer__label(data-viewer-label)
+
+block append script
+  script(src='/js/pdf-to-jpg.js', defer)

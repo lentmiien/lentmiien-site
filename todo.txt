@@ -1,7 +1,5 @@
-In `controllers/admincontroller.js`, I have the route controller function `openai_usage` that render the PUG template `views/openai_usage.pug`. For this page, I'd like to improve the design, and add a few graphs to make it easier to visualize my usage.
+In `controllers/mypagecontroller.js`, I have the route controller functions `pdf_to_jpg` and `convert_pdf_to_jpg` for handling a PDF to JPG converter. The conversion works well, but the page design isn't that great, as I just quickly put it together to make the page usable. So, please help me update the PUG templates `views/pdf_to_jpg.pug` and `views/pdf_to_jpg_output.pug` with a modern minimalistic design.
 
-So, for starter, import `d3.js` for plotting graphs (`script(src="https://d3js.org/d3.v7.min.js")`), and add a JavaScript file for the actual plotting code (in the `public/js` folder), do not write JavaScript code inline in the PUG template file.
+Also, I'd like the output to display nicely on both large and small screens, and make it visible where one page ends and the next starts, just a minimal visible indicator.
 
-At the top, plot a graph of my monthly usage, for the entire period. After that, display some sort of card layout for each month, displaying the total values for the month, and can be expanded to show daily graphs for the month. I also want to show some key metrics, like most used model for each type of data collected.
-
-Other than that, I just want a simplistic moden look of the page, and the page should be rather compact when no entries has been expanded. The page should also display nicely on both large and small screens.
+Also, when viewing a converted PDF file, I often find my self scrolling down, and then I need to convert the next file, so I need to scroll up again, so it would be nice if the "upload next file" form could stay sticky to the top or bottom of the screen, for easy access.

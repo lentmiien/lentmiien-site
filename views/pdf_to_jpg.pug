@@ -1,11 +1,41 @@
 extends layout
 
+block append styles
+  link(rel='stylesheet', href='/css/pdf-to-jpg.css')
+
 block content
-  .row 
-    .col 
-      h1 Upload PDF to convert to JPGs
-      form(action="/mypage/convert_pdf_to_jpg", method="post", enctype="multipart/form-data") 
-        label(for="pdf") PDF file
-        .input-group
-          input#pdf.form-control(type="file", name="pdf")
-          input.btn.btn-primary(type="submit", value="Convert")
+  section.pdf-converter
+    .converter-layout
+      .converter-panel.is-open(data-converter-panel)
+        button.converter-panel-toggle(type='button', data-panel-toggle, aria-expanded='true', aria-controls='converterPanel')
+          span Upload a PDF
+        .panel-inner#converterPanel
+          h1.converter-title PDF to JPG converter
+          p.converter-subtitle Turn any PDF into individual JPG pages with a clean, minimal gallery view.
+          form.converter-form(action="/mypage/convert_pdf_to_jpg", method="post", enctype="multipart/form-data")
+            label.upload-dropzone(for="pdf")
+              strong Upload a PDF
+              span Drag and drop or choose a file from your device
+              input#pdf(type="file", name="pdf", accept=".pdf", required)
+            button.converter-submit(type="submit", data-submit-btn) Convert PDF
+          p.converter-note Conversion starts automatically when you pick a file, and we keep every page in order.
+      .converter-content
+        .info-card
+          h2 What happens next
+          ul
+            li Each page becomes a standalone, high-resolution JPG you can download or share.
+            li Converted pages appear instantly so you can review them without leaving the page.
+            li Run another conversion at any time&mdash;the upload form stays within reach on the results page.
+        .info-card
+          h2 Tips for best results
+          ul
+            li Larger PDFs may take slightly longer to process; keep the tab open until it finishes.
+            li Make sure your document permissions allow downloads to preserve full quality.
+    .image-viewer(data-image-viewer aria-hidden='true')
+      .image-viewer__content
+        button.image-viewer__close(type='button', data-viewer-close, aria-label='Close preview') &times;
+        img.image-viewer__img(data-viewer-img alt='')
+        span.image-viewer__label(data-viewer-label)
+
+block append script
+  script(src='/js/pdf-to-jpg.js', defer)
