@@ -1,53 +1,87 @@
 extends layout
 
+block styles
+  link(rel='stylesheet', href='/css/openaiUsage.css')
+
 block content
-  h1 OpenAI usage 
-  - let keys = Object.keys(monthly_summaries)
-  table.table.table-striped 
-    thead 
-      tr 
-        th Date 
-        th Cost
-    tbody 
-      each key in keys
-        tr 
-          td= key 
-          td= `$${Math.round(monthly_summaries[key]*100)/100} USD`
-  each d in data
-    hr
-    div 
-      h2= d.entry_date
-        b= ` ($${Math.round(100 * d.cost) / 100} USD)`
-      if d.completions && d.completions.length > 0
-        .openaiusage-completions
-          h5 Completions 
-          each e in d.completions
-            div 
-              b= `${e.model}: `
-              span= `${e.input_tokens} input, `
-              if e.input_cached_tokens > 0
-                span= `${e.input_cached_tokens} cached, `
-              span= `${e.output_tokens} output, `
-              span= `${e.num_model_requests} retuests`
-      if d.embeddings && d.embeddings.length > 0
-        .openaiusage-embeddings
-          h5 Embeddings 
-          each e in d.embeddings
-            pre= JSON.stringify(e)
-      if d.images && d.images.length > 0
-        .openaiusage-images
-          h5 Images 
-          each e in d.images
-            div 
-              b= `${e.model}: `
-              span= `${e.num_model_requests} retuests`
-      if d.speeches && d.speeches.length > 0
-        .openaiusage-speeches
-          h5 Speeches 
-          each e in d.speeches
-            pre= JSON.stringify(e)
-      if d.transcriptions && d.transcriptions.length > 0
-        .openaiusage-transcriptions
-          h5 Transcriptions 
-          each e in d.transcriptions
-            pre= JSON.stringify(e)
+  .openai-usage
+    .openai-usage__header
+      h1 OpenAI Usage
+      p.openai-usage__subtitle Visualize spending trends and drill into detailed activity.
+
+    if monthlyTimeline && monthlyTimeline.length
+      section.openai-usage__section
+        header.section-header
+          h2.section-title Monthly Spending Overview
+          p.section-subtitle Track how usage evolves across months.
+        #monthlyUsageChart.chart-container(data-chart='monthly')
+    else
+      .openai-usage__empty
+        p No usage data available yet.
+
+    if usageMetrics && usageMetrics.length
+      section.openai-usage__section
+        header.section-header
+          h2.section-title Key Metrics
+          p.section-subtitle Most frequently used models by category.
+        .metrics-grid
+          each metric in usageMetrics
+            .metric-card
+              .metric-card__type= metric.label
+              .metric-card__model= metric.topModel
+              .metric-card__meta
+                span.metric-card__stat
+                  strong Requests:
+                  |  #{metric.topModelRequests}
+                if metric.topModelTokens && metric.topModelTokens > 0
+                  span.metric-card__stat
+                    strong Tokens:
+                    |  #{metric.topModelTokens}
+
+    if monthlyCards && monthlyCards.length
+      section.openai-usage__section
+        header.section-header
+          h2.section-title Monthly Details
+          p.section-subtitle Expand a month to view daily trends and activity highlights.
+        .month-card-grid
+          each monthData in monthlyCards
+            details.month-card(data-month=monthData.month)
+              summary.month-card__summary
+                .summary-content
+                  .summary-heading
+                    span.summary-month= monthData.label
+                    span.summary-total= `$${monthData.totalCost.toFixed(2)}`
+                  span.summary-meta #{monthData.dailyEntries.length} #{monthData.dailyEntries.length === 1 ? 'day' : 'days'} tracked
+              .month-card__body
+                .month-card__chart
+                  .month-card__chart-container(data-month=monthData.month)
+                if monthData.dailyEntries && monthData.dailyEntries.length
+                  .month-card__table-wrapper
+                    table.table.table-sm.month-card__table
+                      thead
+                        tr
+                          th(scope='col') Date
+                          th(scope='col') Cost (USD)
+                          th(scope='col') Highlights
+                      tbody
+                        each entry in monthData.dailyEntries
+                          - const highlightParts = [];
+                          if entry.completions && entry.completions.length
+                            - highlightParts.push(`${entry.completions.length} completions`);
+                          if entry.embeddings && entry.embeddings.length
+                            - highlightParts.push(`${entry.embeddings.length} embeddings`);
+                          if entry.images && entry.images.length
+                            - highlightParts.push(`${entry.images.length} images`);
+                          if entry.speeches && entry.speeches.length
+                            - highlightParts.push(`${entry.speeches.length} speech jobs`);
+                          if entry.transcriptions && entry.transcriptions.length
+                            - highlightParts.push(`${entry.transcriptions.length} transcriptions`);
+                          tr
+                            td= entry.date
+                            td= `$${entry.cost.toFixed(2)}`
+                            td= highlightParts.length ? highlightParts.join(' · ') : 'N/A'
+
+block script
+  script(src='https://d3js.org/d3.v7.min.js', defer)
+  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, usageMetrics })}
+  script(src='/js/openaiUsage.js', defer)

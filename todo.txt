@@ -1,5 +1,7 @@
-In `controllers/image_gen.controller.js`, I have functions for listing files from the input and output folders, however, this flow is really slow when the number of files are more than a few files (a couple-few seconds per image). Could we create some kind of cashing on the server side? Also, when generating a new image, also save it to the new cashing folder.
+In `controllers/admincontroller.js`, I have the route controller function `openai_usage` that render the PUG template `views/openai_usage.pug`. For this page, I'd like to improve the design, and add a few graphs to make it easier to visualize my usage.
 
-To make things simple, lets put the cashing folder to be `public/imgen`, then the user can easily access the cashed images through the URL `/imgen/${filename}`. So also update the UI to work with this cashing flow (display cashed images where applicable, and put the filename part as input image when selecting to use an input image for further image generations, 'image-to-image generations').
+So, for starter, import `d3.js` for plotting graphs (`script(src="https://d3js.org/d3.v7.min.js")`), and add a JavaScript file for the actual plotting code (in the `public/js` folder), do not write JavaScript code inline in the PUG template file.
 
-When clicking to view the input or output folder lists in the UI, the server should fetch the file list, then download new files to the cashing folder.
+At the top, plot a graph of my monthly usage, for the entire period. After that, display some sort of card layout for each month, displaying the total values for the month, and can be expanded to show daily graphs for the month. I also want to show some key metrics, like most used model for each type of data collected.
+
+Other than that, I just want a simplistic moden look of the page, and the page should be rather compact when no entries has been expanded. The page should also display nicely on both large and small screens.

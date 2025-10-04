@@ -323,12 +323,150 @@ exports.delete_log_file = (req, res) => {
 };
 
 exports.openai_usage = async (req, res) => {
-  const data = await OpenAIUsage.find().sort({ entry_date: -1 }).exec();
-  const monthly_summaries = {};
-  for (const d of data) {
-    const yyyymm = d.entry_date.slice(0, 7);
-    monthly_summaries[yyyymm] = monthly_summaries[yyyymm] ? monthly_summaries[yyyymm] + d.cost : d.cost;
-  }
-  res.render("openai_usage", {data, monthly_summaries});
+  const entries = await OpenAIUsage.find().sort({ entry_date: 1 }).lean().exec();
+
+  const monthMap = new Map();
+  const modelMetrics = {
+    completions: {},
+    embeddings: {},
+    images: {},
+    speeches: {},
+    transcriptions: {},
+  };
+
+  const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const getRequestsValue = (entry) => {
+    const keys = ['num_model_requests', 'request_count', 'num_requests', 'count'];
+    for (const key of keys) {
+      if (typeof entry[key] === 'number') {
+        return entry[key];
+      }
+    }
+    return 1;
+  };
+
+  const getTokenValue = (entry) => {
+    const tokenFields = ['total_tokens', 'tokens'];
+    let total = 0;
+    for (const field of tokenFields) {
+      if (typeof entry[field] === 'number') {
+        total += entry[field];
+      }
+    }
+    if (typeof entry.input_tokens === 'number') {
+      total += entry.input_tokens;
+    }
+    if (typeof entry.output_tokens === 'number') {
+      total += entry.output_tokens;
+    }
+    if (typeof entry.cached_tokens === 'number') {
+      total += entry.cached_tokens;
+    }
+    if (typeof entry.input_cached_tokens === 'number') {
+      total += entry.input_cached_tokens;
+    }
+    return total;
+  };
+
+  const accumulateMetric = (bucket, item) => {
+    const model = item.model || 'unknown';
+    if (!bucket[model]) {
+      bucket[model] = { requests: 0, tokens: 0 };
+    }
+    bucket[model].requests += getRequestsValue(item);
+    bucket[model].tokens += getTokenValue(item);
+  };
+
+  entries.forEach((entry) => {
+    const monthKey = (entry.entry_date || '').slice(0, 7);
+    if (!monthKey) {
+      return;
+    }
+
+    if (!monthMap.has(monthKey)) {
+      const [yearStr, monthStr] = monthKey.split('-');
+      const monthIndex = Math.max(0, Math.min(11, (parseInt(monthStr, 10) || 1) - 1));
+      monthMap.set(monthKey, {
+        month: monthKey,
+        label: `${MONTH_NAMES[monthIndex]} ${yearStr}`,
+        totalCost: 0,
+        dailyEntries: [],
+      });
+    }
+
+    const monthBucket = monthMap.get(monthKey);
+    monthBucket.totalCost += entry.cost || 0;
+    monthBucket.dailyEntries.push({
+      date: entry.entry_date,
+      cost: entry.cost || 0,
+      completions: entry.completions || [],
+      embeddings: entry.embeddings || [],
+      images: entry.images || [],
+      speeches: entry.speeches || [],
+      transcriptions: entry.transcriptions || [],
+    });
+
+    (entry.completions || []).forEach((item) => accumulateMetric(modelMetrics.completions, item));
+    (entry.embeddings || []).forEach((item) => accumulateMetric(modelMetrics.embeddings, item));
+    (entry.images || []).forEach((item) => accumulateMetric(modelMetrics.images, item));
+    (entry.speeches || []).forEach((item) => accumulateMetric(modelMetrics.speeches, item));
+    (entry.transcriptions || []).forEach((item) => accumulateMetric(modelMetrics.transcriptions, item));
+  });
+
+  const monthlyTimeline = Array.from(monthMap.values())
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map(({ month, label, totalCost }) => ({ month, label, totalCost }));
+
+  const monthlyCards = Array.from(monthMap.values())
+    .map((monthData) => ({
+      ...monthData,
+      dailyEntries: monthData.dailyEntries.sort((a, b) => a.date.localeCompare(b.date)),
+    }))
+    .sort((a, b) => b.month.localeCompare(a.month));
+
+  const usageMetrics = Object.entries(modelMetrics).map(([key, metrics]) => {
+    const models = Object.entries(metrics).map(([model, values]) => ({
+      model,
+      requests: values.requests,
+      tokens: values.tokens,
+    })).sort((a, b) => {
+      if (b.requests === a.requests) {
+        return b.tokens - a.tokens;
+      }
+      return b.requests - a.requests;
+    });
+
+    if (models.length === 0) {
+      return null;
+    }
+
+    const [top] = models;
+    const labelMap = {
+      completions: 'Completions',
+      embeddings: 'Embeddings',
+      images: 'Images',
+      speeches: 'Speech',
+      transcriptions: 'Transcription',
+    };
+
+    return {
+      key,
+      label: labelMap[key] || key,
+      topModel: top.model,
+      topModelRequests: top.requests,
+      topModelTokens: top.tokens,
+      models,
+    };
+  }).filter(Boolean);
+
+  res.render('openai_usage', {
+    monthlyTimeline,
+    monthlyCards,
+    usageMetrics,
+  });
 };
 

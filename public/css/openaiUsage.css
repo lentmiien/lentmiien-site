@@ -1,0 +1,241 @@
+.openai-usage {
+  padding: 1.5rem 0 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.openai-usage__header {
+  text-align: center;
+}
+
+.openai-usage__header h1 {
+  margin-bottom: 0.25rem;
+}
+
+.openai-usage__subtitle {
+  color: #6c757d;
+  margin: 0 auto;
+  max-width: 560px;
+}
+
+.openai-usage__section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.section-subtitle {
+  margin: 0;
+  color: #6c757d;
+}
+
+.openai-usage__empty {
+  text-align: center;
+  color: #6c757d;
+  padding: 2rem 0;
+}
+
+.chart-container {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  min-height: 320px;
+  position: relative;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.metric-card {
+  border-radius: 14px;
+  padding: 1.25rem;
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.04));
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.metric-card__type {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  color: #1d4ed8;
+}
+
+.metric-card__model {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.metric-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: #1f2937;
+  font-size: 0.9rem;
+}
+
+.metric-card__stat strong {
+  margin-right: 0.35rem;
+}
+
+.month-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.month-card {
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.month-card[open] {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+}
+
+.month-card__summary {
+  padding: 1.25rem 1.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.month-card__summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.summary-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.summary-month {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.summary-total {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.summary-meta {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.month-card__body {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.month-card__chart-container {
+  width: 100%;
+  height: 220px;
+  position: relative;
+}
+
+.month-card__table-wrapper {
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+.month-card__table {
+  margin-bottom: 0;
+}
+
+.month-card__table tbody tr:nth-child(odd) {
+  background-color: rgba(241, 245, 249, 0.45);
+}
+
+.month-card__table td,
+.month-card__table th {
+  vertical-align: middle;
+}
+
+.chart-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #ffffff;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.35);
+  white-space: nowrap;
+  transform: translate(-9999px, -9999px);
+  transition: opacity 0.15s ease;
+  z-index: 2;
+}
+
+@media (max-width: 768px) {
+  .summary-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .summary-total {
+    font-size: 1rem;
+  }
+
+  .chart-container {
+    padding: 1rem;
+    min-height: 260px;
+  }
+
+  .month-card__body {
+    padding: 1.25rem;
+  }
+}
