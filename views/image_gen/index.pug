@@ -41,6 +41,7 @@ block content
         hr
         form#genForm
           .row.g-3#formArea
+          datalist#inputImageNames
           .d-flex.gap-2.mt-3
             button#btnPromptLib.btn.btn-outline-secondary(type="button") Prompt library…
             button#btnGenerate.btn.btn-success(type="button") Generate
@@ -100,6 +101,8 @@ block content
               .form-check.form-switch
                 input#libShowAll.form-check-input(type='checkbox')
                 label.form-check-label(for='libShowAll') Show all
+            .mb-3
+              input#promptFilter.form-control.form-control-sm(type='search' placeholder='Filter prompts...' autocomplete='off')
             // List
             .list-group#promptList(style='max-height: 420px; overflow:auto;')
           .modal-footer

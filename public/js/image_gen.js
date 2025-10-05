@@ -3,11 +3,18 @@
   const $ = (s, r=document)=>r.querySelector(s);
   const logEl = $('#log');
   const statusPill = $('#statusPill');
+  const promptFilterInput = $('#promptFilter');
 
   let workflows = [];
   let wfMap = new Map();
   let currentJobId = null;
   let ratingBarVisible = false;
+  let lastFocusedImageInputId = null;
+  const imageDatalistId = 'inputImageNames';
+  const inputFilenameState = {
+    names: [],
+    fetchPromise: null
+  };
 
   function setStatus(t){ statusPill.textContent = t; }
   function log(msg, cls){
@@ -31,6 +38,189 @@
     const ct = r.headers.get('content-type') || '';
     if(ct.includes('application/json')) return r.json();
     return r;
+  }
+
+  function isImageInputSpec(spec){
+    if (!spec || !spec.key) return false;
+    const type = (spec.type || '').toLowerCase();
+    if (type === 'image' || type === 'file') return true;
+    const key = spec.key.toLowerCase();
+    if (key === 'image' || key === 'input_image') return true;
+    if (/^image(_\d+)?$/.test(key)) return true;
+    if (/^image\d+$/.test(key)) return true;
+    if (key.endsWith('_image')) return true;
+    return false;
+  }
+
+  function ensureImageDatalist(){
+    let list = document.getElementById(imageDatalistId);
+    if (!list) {
+      list = document.createElement('datalist');
+      list.id = imageDatalistId;
+      document.body.appendChild(list);
+    }
+    return list;
+  }
+
+  function renderImageFilenameOptions(){
+    const list = ensureImageDatalist();
+    list.innerHTML = '';
+    const names = inputFilenameState.names.slice().sort((a, b) => a.localeCompare(b));
+    for (const name of names) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      list.appendChild(opt);
+    }
+  }
+
+  function mergeInputFilename(name){
+    if (!name) return;
+    if (!inputFilenameState.names.includes(name)) {
+      inputFilenameState.names.push(name);
+      renderImageFilenameOptions();
+    }
+  }
+
+  function mergeInputFilenames(names){
+    let added = false;
+    for (const name of names || []) {
+      if (name && !inputFilenameState.names.includes(name)) {
+        inputFilenameState.names.push(name);
+        added = true;
+      }
+    }
+    if (added) renderImageFilenameOptions();
+  }
+
+  function extractNamesFromFileResponse(resp){
+    const set = new Set();
+    if (!resp) return [];
+    if (Array.isArray(resp.cached)) {
+      resp.cached.forEach(item => {
+        if (item?.name) set.add(item.name);
+        if (item?.original) set.add(item.original);
+      });
+    }
+    if (Array.isArray(resp.files)) {
+      resp.files.forEach(entry => {
+        if (typeof entry === 'string') {
+          set.add(entry);
+        } else if (entry) {
+          if (entry.name) set.add(entry.name);
+          if (entry.original) set.add(entry.original);
+        }
+      });
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }
+
+  async function ensureInputFileNames(force = false){
+    if (!force && inputFilenameState.names.length) return inputFilenameState.names;
+    if (inputFilenameState.fetchPromise && !force) return inputFilenameState.fetchPromise;
+    inputFilenameState.fetchPromise = (async () => {
+      try {
+        const resp = await api('/api/files/input');
+        const names = extractNamesFromFileResponse(resp);
+        inputFilenameState.names = names;
+        renderImageFilenameOptions();
+        return names;
+      } catch (_) {
+        return [];
+      } finally {
+        inputFilenameState.fetchPromise = null;
+      }
+    })();
+    return inputFilenameState.fetchPromise;
+  }
+
+  function handleImageInputFocus(e){
+    lastFocusedImageInputId = e.currentTarget.id;
+    if (!inputFilenameState.names.length && !inputFilenameState.fetchPromise) {
+      ensureInputFileNames().catch(()=>{});
+    }
+  }
+
+  function registerImageInputField(input, spec){
+    if (!input) return;
+    ensureImageDatalist();
+    input.dataset.imageInput = '1';
+    input.dataset.imageKey = spec?.key || '';
+    input.setAttribute('list', imageDatalistId);
+    if (!input.placeholder) input.placeholder = 'filename in input/ (e.g. photo.png)';
+    input.addEventListener('focus', handleImageInputFocus);
+    input.addEventListener('click', handleImageInputFocus);
+  }
+
+  function getImageInputs(){
+    return Array.from(document.querySelectorAll('#formArea input[data-image-input="1"]'));
+  }
+
+  function getPreferredImageInput(){
+    const inputs = getImageInputs();
+    if (!inputs.length) return null;
+    if (lastFocusedImageInputId) {
+      const focused = document.getElementById(lastFocusedImageInputId);
+      if (focused && inputs.includes(focused)) return focused;
+    }
+    return inputs[0];
+  }
+
+  function setImageInputValue(value, opts = {}){
+    const target = getPreferredImageInput();
+    if (!target) {
+      if (!opts.silent) log('No image input fields available.', 'text-warning');
+      return false;
+    }
+    target.value = value;
+    try {
+      target.focus({ preventScroll: true });
+    } catch (_) {
+      try { target.focus(); } catch (_) {}
+    }
+    if (!opts.silent) {
+      const label = target.dataset.imageKey || 'image';
+      log(`Selected ${value} for ${label}.`);
+    }
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+    lastFocusedImageInputId = target.id;
+    return true;
+  }
+
+  function initializeImageInputs(imageControls){
+    if (!imageControls.length) {
+      lastFocusedImageInputId = null;
+      return;
+    }
+    const extras = imageControls.slice(1);
+    imageControls.forEach(({ col, input, spec }, index) => {
+      registerImageInputField(input, spec);
+      col.classList.add('image-input');
+      if (index === 0) {
+        lastFocusedImageInputId = input.id;
+        col.classList.remove('d-none');
+      } else {
+        col.classList.add('d-none', 'image-input-extra');
+      }
+    });
+    if (extras.length) {
+      const firstCol = imageControls[0].col;
+      const wrap = document.createElement('div');
+      wrap.className = 'mt-2';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm btn-outline-secondary';
+      btn.textContent = `Show ${extras.length} more image input${extras.length > 1 ? 's' : ''}`;
+      btn.setAttribute('data-expanded', '0');
+      btn.addEventListener('click', () => {
+        const expand = btn.getAttribute('data-expanded') !== '1';
+        btn.setAttribute('data-expanded', expand ? '1' : '0');
+        extras.forEach(({ col }) => col.classList.toggle('d-none', !expand));
+        btn.textContent = expand ? 'Hide extra image inputs' : `Show ${extras.length} more image input${extras.length > 1 ? 's' : ''}`;
+      });
+      wrap.appendChild(btn);
+      firstCol.appendChild(wrap);
+    }
   }
 
   // Health
@@ -84,7 +274,7 @@
     }
     ctrl.id = id;
     if (spec.default !== undefined) ctrl.value = spec.default;
-    if (spec.key === 'image') ctrl.placeholder = 'filename in input/ (e.g. photo.png)';
+    if (isImageInputSpec(spec) && ctrl.tagName === 'INPUT') ctrl.placeholder = 'filename in input/ (e.g. photo.png)';
     col.appendChild(ctrl);
 
     if (spec.note || spec.default !== undefined) {
@@ -100,7 +290,16 @@
     if(!def) return;
     $('#wfDesc').textContent = def.description || '';
     const area = $('#formArea');
-    def.inputs.forEach(spec => area.appendChild(ctl(spec)));
+    const imageControls = [];
+    def.inputs.forEach(spec => {
+      const col = ctl(spec);
+      area.appendChild(col);
+      if (isImageInputSpec(spec)) {
+        const input = col.querySelector('#inp_' + spec.key);
+        if (input) imageControls.push({ spec, col, input });
+      }
+    });
+    initializeImageInputs(imageControls);
   }
   async function loadWorkflows(){
     setStatus('loading');
@@ -296,7 +495,10 @@
       const r = await api('/api/files/input', { method:'POST', body: fd });
       $('#lastUpload').textContent = `Uploaded as ${r.filename || r.file || '(see response)'}`;
       log(`Uploaded ${f.name}${r.filename ? ' -> ' + r.filename : ''}`, 'text-success');
-      const imageCtl = $('#inp_image'); if (imageCtl && r.filename) imageCtl.value = r.filename;
+      if (r.filename) {
+        mergeInputFilename(r.filename);
+        setImageInputValue(r.filename, { silent: true });
+      }
     }catch(e){
       log('Upload failed: ' + e.message, 'text-danger');
     }
@@ -321,6 +523,11 @@
       const items = (Array.isArray(j.cached) && j.cached.length)
         ? j.cached
         : (Array.isArray(j.files) ? j.files.map(name => ({ name, original: name, bucket, url: null })) : []);
+
+      if (bucket === 'input') {
+        const names = items.map(it => it.name || it.original).filter(Boolean);
+        mergeInputFilenames(names);
+      }
 
       log(`Listed ${items.length} file(s) in ${bucket}/.`);
       for (const item of items) {
@@ -360,11 +567,8 @@
           const useName = displayName || originalName;
           const btn = document.createElement('button'); btn.className='btn btn-sm btn-outline-primary mt-2'; btn.textContent='Use for img2img';
           btn.addEventListener('click', ()=>{
-            const i=$('#inp_image');
-            if(i){
-              i.value=useName;
-              log(`Selected ${useName} for img2img.`);
-            }
+            mergeInputFilename(useName);
+            setImageInputValue(useName);
           });
           card.appendChild(btn);
         }
@@ -381,8 +585,8 @@
                 body: JSON.stringify({ bucket: 'output', filename: originalName || useName })
               });
               const newName = resp.filename || useName;
-              const inputCtl = $('#inp_image');
-              if (inputCtl) inputCtl.value = newName;
+              mergeInputFilename(newName);
+              setImageInputValue(newName, { silent: true });
               log(`Copied ${useName} to input as ${newName}.`, 'text-success');
             }catch(err){
               log('Promote failed: ' + err.message, 'text-danger');
@@ -408,6 +612,8 @@
     $('#tabPos').classList.toggle('active', type==='positive');
     $('#tabNeg').classList.toggle('active', type==='negative');
     modalEl.dataset.type = type;
+    modalEl._promptItems = [];
+    if (promptFilterInput) promptFilterInput.value = '';
     $('#libShowAll').checked = false; // default filtered view
     loadPromptList();
     bsModal.show();
@@ -420,37 +626,51 @@
     list.innerHTML = '<div class="text-muted">Loading…</div>';
     try{
       const j = await api(`/api/prompts?workflow=${encodeURIComponent(wfKey)}&type=${encodeURIComponent(type)}&show=${show}`);
-      const items = j.items || [];
-      if (!items.length) {
-        list.innerHTML = '<div class="text-muted">No prompts yet.</div>';
-        return;
-      }
-      list.innerHTML = '';
-      for (const it of items) {
-        const li = document.createElement('div');
-        li.className = 'list-group-item';
-        li.innerHTML = `
-          <div class="d-flex justify-content-between align-items-start">
-            <div class="me-3" style="white-space:pre-wrap">${escapeHtml(it.prompt)}</div>
-            <div class="text-end" style="min-width:140px">
-              <div><span class="badge bg-primary-subtle text-primary">avg ${(it.average||0).toFixed(2)}</span></div>
-              <div class="text-muted small">uses ${it.uses} • rated ${it.rating_count}</div>
-              <button type="button" class="btn btn-sm btn-outline-success mt-2" data-insert="1">Use</button>
-            </div>
-          </div>`;
-        li.querySelector('[data-insert]').addEventListener('click', ()=>{
-          if (type === 'positive') {
-            const p = $('#inp_prompt'); if (p) p.value = it.prompt;
-          } else {
-            const n = $('#inp_negative'); if (n) n.value = it.prompt;
-          }
-          log('Inserted prompt from library.');
-          // keep modal open so you can insert both if you want
-        });
-        list.appendChild(li);
-      }
+      modalEl._promptItems = j.items || [];
+      renderPromptItems(modalEl._promptItems);
     }catch(e){
+      modalEl._promptItems = [];
       list.innerHTML = `<div class="text-danger">Failed to load: ${e.message}</div>`;
+    }
+  }
+  function renderPromptItems(items){
+    const list = $('#promptList');
+    if (!list) return;
+    const filterValue = (promptFilterInput?.value || '').trim().toLowerCase();
+    const type = modalEl.dataset.type || 'positive';
+    if (!items || !items.length) {
+      list.innerHTML = '<div class="text-muted">No prompts yet.</div>';
+      return;
+    }
+    const filtered = filterValue
+      ? items.filter(it => String(it.prompt || '').toLowerCase().includes(filterValue))
+      : items;
+    if (!filtered.length) {
+      list.innerHTML = '<div class="text-muted">No prompts match filter.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const it of filtered) {
+      const li = document.createElement('div');
+      li.className = 'list-group-item';
+      li.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="me-3" style="white-space:pre-wrap">${escapeHtml(it.prompt)}</div>
+          <div class="text-end" style="min-width:140px">
+            <div><span class="badge bg-primary-subtle text-primary">avg ${(it.average||0).toFixed(2)}</span></div>
+            <div class="text-muted small">uses ${it.uses} • rated ${it.rating_count}</div>
+            <button type="button" class="btn btn-sm btn-outline-success mt-2" data-insert="1">Use</button>
+          </div>
+        </div>`;
+      li.querySelector('[data-insert]').addEventListener('click', ()=>{
+        if (type === 'positive') {
+          const p = $('#inp_prompt'); if (p) p.value = it.prompt;
+        } else {
+          const n = $('#inp_negative'); if (n) n.value = it.prompt;
+        }
+        log('Inserted prompt from library.');
+      });
+      list.appendChild(li);
     }
   }
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
@@ -458,6 +678,11 @@
   $('#tabPos').addEventListener('click', ()=> { openPromptLib('positive'); });
   $('#tabNeg').addEventListener('click', ()=> { openPromptLib('negative'); });
   $('#libShowAll').addEventListener('change', loadPromptList);
+  if (promptFilterInput) {
+    promptFilterInput.addEventListener('input', () => {
+      renderPromptItems(modalEl._promptItems || []);
+    });
+  }
 
   // Auto-load
   loadWorkflows();
