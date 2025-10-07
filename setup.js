@@ -145,6 +145,7 @@ const batchprompt = require('./models/batchprompt');
 const embedding = require('./models/embedding');
 const openaicalllog = require('./models/openaicalllog');
 const OpenAIUsage = require('./models/openai_usage');
+const SoraVideo = require('./models/sora_video');
 const mongoDB_url = process.env.MONGOOSE_URL;
 async function ClearTestDataFromDB() {
   await mongoose.connect(mongoDB_url);
@@ -176,6 +177,25 @@ async function ClearTestDataFromDB() {
   await batchprompt.deleteMany({ timestamp: { $lt: oneMonthAgo } });
   await embedding.deleteMany({});
   await openaicalllog.deleteMany({});
+
+  // Delete low-rated Sora videos and remove files
+  const lowRatedVideos = await SoraVideo.find({ rating: 1, filename: { $nin: ['', null] } }).lean();
+  if (lowRatedVideos.length > 0) {
+    const videoDir = path.join(__dirname, 'public', 'video');
+    for (const video of lowRatedVideos) {
+      const videoPath = path.join(videoDir, video.filename);
+      try {
+        await fs.promises.unlink(videoPath);
+        logger.notice(`Removed low-rated video file: ${videoPath}`);
+      } catch (err) {
+        if (err.code !== 'ENOENT') {
+          logger.warning(`Unable to remove video file: ${videoPath}`, err);
+        }
+      }
+    }
+    await SoraVideo.deleteMany({ _id: { $in: lowRatedVideos.map((video) => video._id) } });
+    logger.notice(`Deleted ${lowRatedVideos.length} low-rated Sora videos from database.`);
+  }
 
   await mongoose.disconnect();
 }

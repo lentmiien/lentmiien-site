@@ -100,6 +100,8 @@ const Task = require('./models/scheduleTask/Task');
 const Palette = require('./models/scheduleTask/Palette');
 // ComfyUI prompts
 const Prompt = require('./models/prompt');
+// Sora videos
+const SoraVideo = require('./models/sora_video');
 
 // Export models
 module.exports = {
@@ -157,4 +159,5 @@ module.exports = {
   Task,
   Palette,
   Prompt,
+  SoraVideo,
 };

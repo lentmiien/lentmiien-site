@@ -1,0 +1,112 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/sora.css')
+
+block content
+  section#sora-app.sora-app
+    .container-fluid
+      .row.justify-content-center
+        .col-xl-10.col-xxl-8
+          h1.sora-title Sora 2 Studio
+          p.sora-subtitle Craft cinematic experiments with Sora 2, track generation progress, and curate your personal video library.
+
+          form#sora-generate-form.sora-card.sora-form
+            .row.g-3
+              .col-12
+                label.form-label(for='sora-prompt') Prompt
+                textarea#sora-prompt.form-control(name='prompt', rows='3', placeholder='Describe the scene you want to create...') 
+              .col-md-3
+                label.form-label(for='sora-model') Model
+                select#sora-model.form-select(name='model')
+                  each key in modelKeys
+                    option(value=key, selected=key === primaryModel)= modelOptions[key].label
+              .col-md-3
+                label.form-label(for='sora-seconds') Seconds
+                select#sora-seconds.form-select(name='seconds')
+                  if primaryModel && modelOptions[primaryModel]
+                    each sec in modelOptions[primaryModel].seconds
+                      option(value=sec)= sec + ' sec'
+              .col-md-3
+                label.form-label(for='sora-size') Size
+                select#sora-size.form-select(name='size')
+                  if primaryModel && modelOptions[primaryModel]
+                    each sz in modelOptions[primaryModel].sizes
+                      option(value=sz)= sz
+              .col-md-3
+                label.form-label(for='sora-category') Category
+                input#sora-category.form-control(type='text', name='category', placeholder='e.g. Portfolio', list='sora-category-list')
+                datalist#sora-category-list
+                  each cat in categoryList
+                    option(value=cat)
+            .d-flex.flex-wrap.align-items-center.gap-3.mt-3
+              small.text-muted.mb-0 Ratings: 1 Garbage · 2 Bad · 3 OK · 4 Good · 5 Awesome
+              button#sora-generate-btn.sora-submit(type='submit') Generate video
+
+          #sora-status.sora-status
+            .sora-card
+              .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2
+                h2.h5.mb-0 Generation progress
+                span#sora-status-label.text-muted
+              .progress.mt-3(role='progressbar' aria-valuemin='0' aria-valuemax='100')
+                .progress-bar#sora-status-progress(style='width:0%' aria-valuenow='0')
+              p#sora-status-message.text-muted.mt-3.mb-0
+
+          .sora-card.sora-form.mt-4
+            .d-flex.align-items-center.justify-content-between.flex-wrap.gap-2.mb-3
+              h2.h5.mb-0 Video library
+              span.badge.bg-secondary#sora-total-count 0 videos
+            form#sora-filter-form
+              .sora-filters
+                .form-group
+                  label.form-label(for='sora-search') Keyword
+                  input#sora-search.form-control(type='search', name='search', placeholder='Search prompt or category')
+                .form-group
+                  label.form-label(for='sora-filter-model') Model
+                  select#sora-filter-model.form-select(name='model')
+                    option(value='') All models
+                    each key in modelKeys
+                      option(value=key)= modelOptions[key].label
+                .form-group
+                  label.form-label(for='sora-filter-seconds') Seconds
+                  select#sora-filter-seconds.form-select(name='seconds')
+                    option(value='') All durations
+                    each sec in secondsOptions
+                      option(value=sec)= sec + ' sec'
+                .form-group
+                  label.form-label(for='sora-filter-size') Size
+                  select#sora-filter-size.form-select(name='size')
+                    option(value='') All sizes
+                    each sz in sizeOptions
+                      option(value=sz)= sz
+                .form-group
+                  label.form-label(for='sora-filter-category') Category
+                  select#sora-filter-category.form-select(name='category')
+                    option(value='') All categories
+                    each cat in categoryList
+                      option(value=cat)= cat
+                .form-group
+                  label.form-label(for='sora-filter-rating') Rating
+                  select#sora-filter-rating.form-select(name='rating')
+                    option(value='') Default (3+)
+                    option(value='all') All ratings
+                    each rating in ratingOptions
+                      option(value=rating)= '≥ ' + rating + ' ' + ratingDescriptions[rating]
+              .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2.mt-3
+                button#sora-reset-filters.btn.btn-outline-secondary.btn-sm(type='button') Reset filters
+                div.text-muted.small Current page: 
+                  span#sora-page-indicator 1 / 1
+
+          #sora-empty-state.sora-empty-state(style='display:none;')
+            span No videos found. Adjust filters or generate a new video to get started.
+
+          #sora-video-grid.sora-grid
+
+          nav#sora-pagination.sora-pagination
+            button#sora-prev.btn(type='button') ◀ Previous
+            button#sora-next.btn(type='button') Next ▶
+
+block script
+  - const soraConfig = { modelOptions, defaultPageSize, ratingDescriptions, categories: categoryList };
+  script#sora-config(type='application/json')!= JSON.stringify(soraConfig)
+  script(src='/js/sora.js', defer)

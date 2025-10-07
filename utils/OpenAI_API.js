@@ -5,6 +5,7 @@ const { OpenAI } = require('openai');
 const logger = require('./logger');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
+const VIDEO_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'video');
 
 const reasoningModels = [
   "o3-pro-2025-06-10",
@@ -279,9 +280,29 @@ const fetchVideo = async (video_id) => {
 
   const filename = `video_${Date.now()}.mp4`;
 
-  require('fs').writeFileSync(`C:/Users/lentm/Documents/Programming/lentmiien-site/public/video/${filename}`, buffer);
+  await fs.promises.mkdir(VIDEO_OUTPUT_DIR, { recursive: true });
+  const filepath = path.join(VIDEO_OUTPUT_DIR, filename);
+  await fs.promises.writeFile(filepath, buffer);
 
   return filename;
+}
+
+const checkVideoProgress = async (video_id) => {
+  try {
+    const video = await openai.videos.retrieve(video_id);
+    const error = video.error ?? null;
+    return {
+      id: video.id,
+      status: video.status,
+      progress: video.progress ?? 0,
+      eta: video.eta ?? null,
+      output: video.output ?? null,
+      error,
+    };
+  } catch (error) {
+    logger.error('Failed to check video progress', { error });
+    return null;
+  }
 }
 
 module.exports = {
@@ -291,4 +312,5 @@ module.exports = {
   generateVideo,
   waitAndFetchVideo,
   fetchVideo,
+  checkVideoProgress,
 }

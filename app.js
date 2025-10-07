@@ -199,6 +199,7 @@ const galleryRouter = require('./routes/gallery');
 const payrollRouter = require('./routes/payroll');
 const scheduleTaskRouter = require('./routes/scheduleTaskRoute');
 const imageGenRouter = require('./routes/image_gen');
+const soraRouter = require('./routes/sora');
 const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
 
@@ -229,6 +230,7 @@ app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
 app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);
 app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
+app.use('/sora', isAuthenticated, authorize("sora"), soraRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
