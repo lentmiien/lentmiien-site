@@ -35,22 +35,22 @@ block content
       div *Replaces existing entry if 'Provider' and 'API Model' exactly matches an existing entry
       form(action="/chat5/add_model_card", method="post") 
         label(for="model_name") Model Name 
-        input#model_name.form-control(type="text", name="model_name")
+        input#model_name.form-control(type="text", name="model_name", required)
         label(for="provider") Provider 
-        select#provider.form-control(name="provider") 
+        select#provider.form-control(name="provider", required) 
           option(value="OpenAI") OpenAI
           option(value="Anthropic") Anthropic
           option(value="Google") Google
           option(value="Groq") Groq
           option(value="Local") Local
         label(for="api_model") API Model 
-        input#api_model.form-control(type="text", name="api_model")
+        input#api_model.form-control(type="text", name="api_model", required)
         label(for="input_1m_token_cost") Input token cost per 1m tokens in USD
-        input#input_1m_token_cost.form-control(type="text", name="input_1m_token_cost")
+        input#input_1m_token_cost.form-control(type="text", name="input_1m_token_cost", required)
         label(for="output_1m_token_cost") Output token cost per 1m tokens in USD
-        input#output_1m_token_cost.form-control(type="text", name="output_1m_token_cost")
+        input#output_1m_token_cost.form-control(type="text", name="output_1m_token_cost", required)
         label(for="model_type") Model Type 
-        select#model_type.form-control(name="model_type") 
+        select#model_type.form-control(name="model_type", required) 
           option(value="chat") Chat
           option(value="embedding") Embedding
           option(value="image") Image
@@ -58,23 +58,23 @@ block content
           option(value="realtime") Realtime
           option(value="video") Video
         label(for="in_modalities") Input modalities 
-        select#in_modalities.form-control(name="in_modalities", multiple) 
+        select#in_modalities.form-control(name="in_modalities", multiple, required) 
           option(value="text") Text
           option(value="image") Image
           option(value="audio") Audio
           option(value="video") Video
           option(value="vector") Vector
         label(for="out_modalities") Output modalities 
-        select#out_modalities.form-control(name="out_modalities", multiple) 
+        select#out_modalities.form-control(name="out_modalities", multiple, required) 
           option(value="text") Text
           option(value="image") Image
           option(value="audio") Audio
           option(value="video") Video
           option(value="vector") Vector
         label(for="max_tokens") Max Total Tokens
-        input#max_tokens.form-control(type="number", name="max_tokens")
+        input#max_tokens.form-control(type="number", name="max_tokens", required)
         label(for="max_out_tokens") Max Output Tokens
-        input#max_out_tokens.form-control(type="number", name="max_out_tokens")
+        input#max_out_tokens.form-control(type="number", name="max_out_tokens", required)
         .form-check
           input#batch_use.form-check-input(type="checkbox", name="batch_use")
           label.form-check-label(for="batch_use") Can be used for batch?
