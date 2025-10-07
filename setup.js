@@ -22,7 +22,7 @@ function ensureFileExists(filePath, defaultContent) {
 }
 
 // The directories to ensure exist
-const dirsToCheck = ['tmp_data', 'cache', 'public/temp', 'github-repos', 'logs'];
+const dirsToCheck = ['tmp_data', 'cache', 'public/temp', 'public/video', 'github-repos', 'logs'];
 
 dirsToCheck.forEach(dir => ensureDirExists(dir));
 

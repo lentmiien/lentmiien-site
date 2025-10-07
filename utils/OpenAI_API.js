@@ -238,8 +238,57 @@ const fetchCompleted = async (response_id) => {
   }
 }
 
+const generateVideo = async (prompt, model) => {
+  const video = await openai.videos.create({model, prompt});
+  logger.debug('OpenAI generate video response', { data: video });
+  return video;
+}
+
+const waitAndFetchVideo = async (video) => {
+  let progress = video.progress ?? 0;
+
+  while (video.status === 'in_progress' || video.status === 'queued') {
+    video = await openai.videos.retrieve(video.id);
+    progress = video.progress ?? 0;
+
+    // Display progress bar
+    const barLength = 30;
+    const filledLength = Math.floor((progress / 100) * barLength);
+    // Simple ASCII progress visualization for terminal output
+    const bar = '='.repeat(filledLength) + '-'.repeat(barLength - filledLength);
+    const statusText = video.status === 'queued' ? 'Queued' : 'Processing';
+
+    console.log(`${statusText}: [${bar}] ${progress.toFixed(1)}%`);
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  if (video.status === 'failed') {
+    logger.error('Video generation failed');
+    return false;
+  }
+
+  return await fetchVideo(video.id);
+}
+
+const fetchVideo = async (video_id) => {
+  const content = await openai.videos.downloadContent(video_id);
+
+  const body = content.arrayBuffer();
+  const buffer = Buffer.from(await body);
+
+  const filename = `video_${Date.now()}.mp4`;
+
+  require('fs').writeFileSync(`C:/Users/lentm/Documents/Programming/lentmiien-site/public/video/${filename}`, buffer);
+
+  return filename;
+}
+
 module.exports = {
   chat,
   embedding,
   fetchCompleted,
+  generateVideo,
+  waitAndFetchVideo,
+  fetchVideo,
 }
