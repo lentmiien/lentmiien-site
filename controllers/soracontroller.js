@@ -26,6 +26,16 @@ const RATING_DESCRIPTIONS = {
   5: 'Awesome',
 };
 
+const PENDING_STATUSES = ['queued', 'in_progress'];
+const DEFAULT_POLL_INTERVAL_MS = 5 * 60 * 1000;
+const rawPollInterval = parseInt(process.env.SORA_STATUS_POLL_MS, 10);
+const BACKGROUND_POLL_INTERVAL_MS = Number.isNaN(rawPollInterval) ? DEFAULT_POLL_INTERVAL_MS : Math.max(0, rawPollInterval);
+const rawPollBatchSize = parseInt(process.env.SORA_STATUS_POLL_BATCH, 10);
+const BACKGROUND_POLL_BATCH_SIZE = Number.isNaN(rawPollBatchSize) || rawPollBatchSize <= 0 ? 10 : rawPollBatchSize;
+
+let backgroundPollInterval;
+let pollInFlight = false;
+
 function serializeVideo(doc) {
   const raw = doc.toObject ? doc.toObject() : doc;
   const filename = raw.filename || '';
@@ -54,6 +64,97 @@ function sanitizeCategory(category) {
   if (!category) return '';
   return category.trim().slice(0, 120);
 }
+
+async function refreshVideoStatus(videoDoc) {
+  const status = await checkVideoProgress(videoDoc.openaiId);
+  if (!status) {
+    const error = new Error('Unable to fetch video status');
+    error.code = 'STATUS_UNAVAILABLE';
+    throw error;
+  }
+
+  videoDoc.status = status.status || videoDoc.status;
+  videoDoc.progress = typeof status.progress === 'number'
+    ? Math.max(0, Math.min(status.progress, 100))
+    : videoDoc.progress;
+
+  if (status.status === 'completed') {
+    if (!videoDoc.filename) {
+      try {
+        const filename = await fetchVideo(videoDoc.openaiId);
+        videoDoc.filename = filename;
+        videoDoc.completedAt = new Date();
+      } catch (downloadError) {
+        videoDoc.status = 'failed';
+        videoDoc.errorMessage = 'Download failed';
+        logger.error('Failed to save generated video', { downloadError });
+      }
+    } else if (!videoDoc.completedAt) {
+      videoDoc.completedAt = new Date();
+    }
+  }
+
+  if (status.status === 'failed') {
+    videoDoc.errorMessage = status.error ? JSON.stringify(status.error) : videoDoc.errorMessage;
+  }
+
+  const needsSave = videoDoc.isModified();
+  if (needsSave) {
+    await videoDoc.save();
+  }
+  return videoDoc;
+}
+
+async function pollPendingVideosOnce() {
+  if (pollInFlight) {
+    return;
+  }
+
+  pollInFlight = true;
+  try {
+    const pendingVideos = await SoraVideo.find({ status: { $in: PENDING_STATUSES } })
+      .sort({ updatedAt: 1 })
+      .limit(BACKGROUND_POLL_BATCH_SIZE);
+
+    for (const videoDoc of pendingVideos) {
+      try {
+        await refreshVideoStatus(videoDoc);
+      } catch (error) {
+        if (error && error.code === 'STATUS_UNAVAILABLE') {
+          logger.debug('Background Sora status check skipped (service unavailable)', { videoId: String(videoDoc._id) });
+        } else {
+          logger.warning('Background Sora status check failed', { videoId: String(videoDoc._id), error });
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('Background Sora status polling failed', { error });
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+function startBackgroundStatusPolling() {
+  if (backgroundPollInterval || BACKGROUND_POLL_INTERVAL_MS === 0) {
+    return;
+  }
+
+  backgroundPollInterval = setInterval(() => {
+    pollPendingVideosOnce().catch((error) => {
+      logger.error('Unhandled error in Sora background poll loop', { error });
+    });
+  }, BACKGROUND_POLL_INTERVAL_MS);
+
+  if (backgroundPollInterval.unref) {
+    backgroundPollInterval.unref();
+  }
+
+  pollPendingVideosOnce().catch((error) => {
+    logger.error('Initial Sora background poll failed', { error });
+  });
+}
+
+startBackgroundStatusPolling();
 
 exports.renderLanding = async (_req, res) => {
   try {
@@ -253,31 +354,14 @@ exports.getVideoStatus = async (req, res) => {
       return res.json({ video: serializeVideo(videoDoc) });
     }
 
-    const status = await checkVideoProgress(videoDoc.openaiId);
-    if (!status) {
-      return res.status(502).json({ error: 'Unable to fetch video status' });
-    }
-
-    videoDoc.status = status.status || videoDoc.status;
-    videoDoc.progress = typeof status.progress === 'number' ? Math.max(0, Math.min(status.progress, 100)) : videoDoc.progress;
-
-    if (status.status === 'completed' && !videoDoc.filename) {
-      try {
-        const filename = await fetchVideo(videoDoc.openaiId);
-        videoDoc.filename = filename;
-        videoDoc.completedAt = new Date();
-      } catch (downloadError) {
-        videoDoc.status = 'failed';
-        videoDoc.errorMessage = 'Download failed';
-        logger.error('Failed to save generated video', { downloadError });
+    try {
+      await refreshVideoStatus(videoDoc);
+    } catch (error) {
+      if (error && error.code === 'STATUS_UNAVAILABLE') {
+        return res.status(502).json({ error: 'Unable to fetch video status' });
       }
+      throw error;
     }
-
-    if (status.status === 'failed') {
-      videoDoc.errorMessage = status.error ? JSON.stringify(status.error) : videoDoc.errorMessage;
-    }
-
-    await videoDoc.save();
 
     res.json({ video: serializeVideo(videoDoc) });
   } catch (error) {
