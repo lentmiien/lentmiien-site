@@ -238,8 +238,8 @@ const fetchCompleted = async (response_id) => {
   }
 }
 
-const generateVideo = async (prompt, model) => {
-  const video = await openai.videos.create({model, prompt});
+const generateVideo = async (prompt, model, seconds, size) => {
+  const video = await openai.videos.create({model, prompt, seconds, size});
   logger.debug('OpenAI generate video response', { data: video });
   return video;
 }
@@ -260,7 +260,7 @@ const waitAndFetchVideo = async (video) => {
 
     console.log(`${statusText}: [${bar}] ${progress.toFixed(1)}%`);
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 10000));
   }
 
   if (video.status === 'failed') {
