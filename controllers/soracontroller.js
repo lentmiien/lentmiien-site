@@ -1,5 +1,5 @@
 const { SoraVideo } = require('../database');
-const { generateVideo, fetchVideo, checkVideoProgress } = require('../utils/OpenAI_API');
+const { generateVideo, checkVideoProgress } = require('../utils/OpenAI_API');
 const logger = require('../utils/logger');
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -78,20 +78,8 @@ async function refreshVideoStatus(videoDoc) {
     ? Math.max(0, Math.min(status.progress, 100))
     : videoDoc.progress;
 
-  if (status.status === 'completed') {
-    if (!videoDoc.filename) {
-      try {
-        const filename = await fetchVideo(videoDoc.openaiId);
-        videoDoc.filename = filename;
-        videoDoc.completedAt = new Date();
-      } catch (downloadError) {
-        videoDoc.status = 'failed';
-        videoDoc.errorMessage = 'Download failed';
-        logger.error('Failed to save generated video', { downloadError });
-      }
-    } else if (!videoDoc.completedAt) {
-      videoDoc.completedAt = new Date();
-    }
+  if (status.status === 'completed' && videoDoc.filename && !videoDoc.completedAt) {
+    videoDoc.completedAt = new Date();
   }
 
   if (status.status === 'failed') {

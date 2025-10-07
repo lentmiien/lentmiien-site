@@ -1,33 +1,7 @@
-In `test.js`, I tested out OpenAI's new Sora 2 model, and I also created a couple of API wrapper functions in `utils/OpenAI_API.js`.
+OpenAI just enabled video generation webhooks in the API.
 
-Wrapper functions:
-- generateVideo: Start a new generation
-- waitAndFetchVideo: Wait for generation to complete, and return the filename
-- fetchVideo: Saves the completed file to disk (*Need to replace absolute path with relative path)
+So, in `controllers/webhook.js`, I want to listen for the 2 new webhooks (`event.type`) below:
+- 'video.completed': call `fetchVideo` from `utils/OpenAI_API.js`, with the `event.data.id` to get the filename, then update the appropriate database entry in `SoraVideo`
+- 'video.failed': call `checkVideoProgress` from `utils/OpenAI_API.js`, with the `event.data.id` to get the error message, then update the appropriate database entry in `SoraVideo`
 
-I'm quite satisfied and would like to introduce a new route/controller in my app, for hosting my own Sora 2 interface.
-
-Additionally, I want to add a new database to hold all my generated videos, in the database I want to store generation metadata and the filename of the generated video. The videos should be stored in the folder `public/video`.
-The metadata I want to store are:
-- Filename
-- Generated date (started and completed)
-- Prompt
-- Seconds
-- Size
-- My own category (specifically for grouping and filtering videos)
-- My own rating (1 Bad - 5 Great)
-
-For the UI, I want a landing page, with a small/compact input form at the top (prompt, model, seconds, size and category), with a searchable/filterable list of generated videos below, I want to be able to do keyword search and filter based on model, seconds, size, rating and category. I don't want to display to many videos at the same time, so paginate the list with a reasonable number of videos per page.
-I think I want to add another API wrapper function that check the progress of the current generation, and have the user call this function through the new router, that can expose some API like endpoints, and based on the results, show a progress bar, and enable the form for another input when done.
-I want the UI to be modern and minimalistic, and it should work on both large and small screens.
-For the UI PUG template files, don't put any inline JavaScript in the PUG files, create JavaScript files in the `public/js` folder.
-Display the generated list as some sort of card layout, with the prompt and a quick to access rating button. The default filtering should show videos rated 3 and above, all other filters should show all.
-
-In the `setup.js` script, I want to check the database for videos rated as 1, delete the files from `public/video` and the database entries.
-
-Rating description:
-- 1: Garbage
-- 2: Bad
-- 3: OK
-- 4: Good
-- 5: Awesome
+Also, now that the webhook fetches the completed video, I want to remove the fetching from the `controllers/soracontroller.js`, but I still want to check on the progress, to display the progress bar to in the UI, but it can just stop checking when done.

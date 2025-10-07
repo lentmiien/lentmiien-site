@@ -2,12 +2,13 @@ const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
 const BatchService = require('../services/batchService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, BatchPromptModel, BatchRequestModel } = require('../database');
+const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, BatchPromptModel, BatchRequestModel, SoraVideo } = require('../database');
 const logger = require('../utils/logger');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
+const { fetchVideo, checkVideoProgress } = require('../utils/OpenAI_API');
 
 const { OpenAI } = require('openai');
 const client = new OpenAI({ webhookSecret: process.env.OPENAI_WEBHOOK_SECRET });
@@ -32,6 +33,80 @@ exports.openai = async (req, res) => {
   res.status(200).send();
 
   try {
+    if (event.type === 'video.completed') {
+      const openaiId = event?.data?.id;
+
+      if (!openaiId) {
+        logger.warning('Video completed webhook missing video id', { event });
+        return;
+      }
+
+      const videoDoc = await SoraVideo.findOne({ openaiId });
+
+      if (!videoDoc) {
+        logger.warning('Video completed webhook received for unknown Sora video', { openaiId });
+        return;
+      }
+
+      try {
+        const filename = await fetchVideo(openaiId);
+        videoDoc.filename = filename;
+        videoDoc.status = 'completed';
+        videoDoc.progress = 100;
+        videoDoc.completedAt = new Date();
+        videoDoc.errorMessage = '';
+        await videoDoc.save();
+        logger.info('Sora video marked completed via webhook', { openaiId, filename });
+      } catch (downloadError) {
+        videoDoc.status = 'failed';
+        videoDoc.errorMessage = 'Download failed';
+        await videoDoc.save();
+        logger.error('Failed to download Sora video on completion webhook', { openaiId, downloadError });
+      }
+    }
+
+    if (event.type === 'video.failed') {
+      const openaiId = event?.data?.id;
+
+      if (!openaiId) {
+        logger.warning('Video failed webhook missing video id', { event });
+        return;
+      }
+
+      const videoDoc = await SoraVideo.findOne({ openaiId });
+
+      if (!videoDoc) {
+        logger.warning('Video failed webhook received for unknown Sora video', { openaiId });
+        return;
+      }
+
+      const status = await checkVideoProgress(openaiId);
+      const progress = status && typeof status.progress === 'number'
+        ? Math.max(0, Math.min(status.progress, 100))
+        : videoDoc.progress;
+      const rawError = status && status.error ? status.error : event?.data?.error;
+      let errorMessage = '';
+
+      if (rawError) {
+        if (typeof rawError === 'string') {
+          errorMessage = rawError;
+        } else {
+          try {
+            errorMessage = JSON.stringify(rawError);
+          } catch (jsonError) {
+            errorMessage = String(rawError);
+            logger.debug('Could not stringify video error payload', { jsonError });
+          }
+        }
+      }
+
+      videoDoc.status = 'failed';
+      videoDoc.progress = progress;
+      videoDoc.errorMessage = errorMessage || videoDoc.errorMessage || 'Video generation failed';
+      await videoDoc.save();
+      logger.info('Sora video marked failed via webhook', { openaiId, progress });
+    }
+
     if (event.type === 'batch.completed') {
       const response_id = event.data.id;
       await batchService.checkBatchStatus(response_id);
