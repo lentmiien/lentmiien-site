@@ -7,7 +7,7 @@
     "prestart": "node setup",
     "start": "node app",
     "git_test": "node git_test",
-    "test": "node test",
+    "test": "jest --coverage",
     "codex": "codex",
     "codex-update": "npm install -g @openai/codex@latest",
     "codex-todo": "codex \"In '/todo.txt', I've listed an update I want to do for this project, please check the '/todo.txt' and start coding the changes.\""
@@ -60,5 +60,8 @@
     "socket.io": "^4.8.0",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0"
   }
 }
