@@ -1,0 +1,330 @@
+jest.mock('../../models/account', () => ({ find: jest.fn() }));
+jest.mock('../../models/transaction', () => ({ find: jest.fn() }));
+jest.mock('../../models/typecategory', () => ({ find: jest.fn() }));
+jest.mock('../../models/typetag', () => ({ find: jest.fn() }));
+
+const mockTransactionDbModel = jest.fn(function (doc) {
+  this.doc = doc;
+  this.save = jest.fn().mockResolvedValue({ _id: 'new-id', ...doc });
+  return this;
+});
+
+mockTransactionDbModel.find = jest.fn();
+mockTransactionDbModel.findOne = jest.fn();
+mockTransactionDbModel.findOneAndUpdate = jest.fn();
+mockTransactionDbModel.deleteOne = jest.fn();
+mockTransactionDbModel.aggregate = jest.fn();
+mockTransactionDbModel.distinct = jest.fn();
+
+jest.mock('../../models/transaction_db', () => mockTransactionDbModel);
+jest.mock('../../models/account_db', () => ({
+  find: jest.fn()
+}));
+jest.mock('../../models/category_db', () => ({
+  find: jest.fn()
+}));
+
+jest.mock('../../database', () => ({
+  Receipt: { find: jest.fn() },
+  Payroll: { find: jest.fn() }
+}));
+
+jest.mock('../../utils/logger', () => ({
+  error: jest.fn(),
+  notice: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn()
+}));
+
+const AccountModel = require('../../models/account');
+const AccountDBModel = require('../../models/account_db');
+const CategoryDBModel = require('../../models/category_db');
+const TransactionDBModel = require('../../models/transaction_db');
+const { Receipt, Payroll } = require('../../database');
+const budgetService = require('../../services/budgetService');
+
+const createObjectId = (value) => ({
+  toString: () => value
+});
+
+describe('budgetService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockTransactionDbModel.mockClear();
+  });
+
+  describe('getAccounts', () => {
+    test('merges legacy and new account sources', async () => {
+      AccountModel.find.mockResolvedValue([
+        { account_name: 'Checking' }
+      ]);
+      const accountId = 'acc-1';
+      AccountDBModel.find.mockResolvedValue([
+        {
+          _id: createObjectId(accountId),
+          name: 'Checking',
+          balance: 500,
+          balance_date: 20240501
+        },
+        {
+          _id: createObjectId('acc-2'),
+          name: 'Brokerage',
+          balance: 200,
+          balance_date: 20240410
+        }
+      ]);
+
+      const result = await budgetService.getAccounts();
+
+      expect(result.accounts).toEqual([
+        {
+          name: 'Checking',
+          balance: 500,
+          balance_date: 20240501,
+          new_balance_date: 20240501
+        },
+        {
+          name: 'Brokerage',
+          balance: 200,
+          balance_date: 20240410,
+          new_balance_date: 20240410
+        }
+      ]);
+      expect(result.id_to_account_index).toEqual({
+        [accountId]: 0,
+        'acc-2': 1
+      });
+    });
+  });
+
+  describe('getDashboardData', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-05-20T00:00:00Z'));
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('computes account deltas and recent transactions', async () => {
+      AccountModel.find.mockResolvedValue([]);
+      const accountId = 'acc-3';
+      AccountDBModel.find.mockResolvedValue([
+        {
+          _id: createObjectId(accountId),
+          name: 'Main',
+          balance: 1000,
+          balance_date: 20240501
+        }
+      ]);
+
+      Receipt.find.mockReturnValue({
+        sort: jest.fn().mockResolvedValue([
+          {
+            _id: createObjectId('rec-1'),
+            date: new Date('2024-05-19T00:00:00Z'),
+            amount: 150
+          }
+        ])
+      });
+
+      Payroll.find.mockResolvedValue([
+        {
+          _id: createObjectId('pay-1'),
+          payDate: new Date('2024-05-19T00:00:00Z'),
+          bankTransferAmount: 150
+        }
+      ]);
+
+      TransactionDBModel.find.mockResolvedValue([
+        {
+          _id: createObjectId('tx-1'),
+          to_account: accountId,
+          from_account: 'external',
+          amount: 150,
+          from_fee: 0,
+          to_fee: 10,
+          date: 20240519,
+          transaction_business: 'Grocer'
+        }
+      ]);
+
+      const dashboard = await budgetService.getDashboardData();
+
+      expect(dashboard.accounts).toHaveLength(1);
+      const [account] = dashboard.accounts;
+      expect(account.balance).toBe(1140);
+      expect(account.last_30_days_transactions).toEqual([
+        expect.objectContaining({
+          id: 'tx-1',
+          amount: 140,
+          label: 'Grocer',
+          hasReceipt: true,
+          hasPay: true
+        })
+      ]);
+    });
+  });
+
+  test('DeleteTransaction delegates to model', async () => {
+    TransactionDBModel.deleteOne.mockResolvedValue({ deletedCount: 1 });
+    await budgetService.DeleteTransaction('tx-123');
+    expect(TransactionDBModel.deleteOne).toHaveBeenCalledWith({ _id: 'tx-123' });
+  });
+
+  test('getCategoryMonthlyTotals reshapes aggregate data', async () => {
+    TransactionDBModel.aggregate.mockResolvedValue([
+      { _id: { cat: 'Food', year: 2024, month: 1 }, total: 100 },
+      { _id: { cat: 'Food', year: 2024, month: 2 }, total: 50 }
+    ]);
+
+    const totals = await budgetService.getCategoryMonthlyTotals('Food');
+
+    expect(TransactionDBModel.aggregate).toHaveBeenCalledWith(expect.any(Array));
+    expect(totals).toEqual({
+      Food: {
+        2024: [100, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      }
+    });
+  });
+
+  test('getCategoryBreakdown returns rows and statistics', async () => {
+    TransactionDBModel.aggregate.mockResolvedValue([
+      { _id: 'Shop A', total: 80 },
+      { _id: 'Shop B', total: 20 }
+    ]);
+
+    const result = await budgetService.getCategoryBreakdown('Food', 2024, 1);
+
+    expect(result.rows).toHaveLength(2);
+    expect(result.stats).toMatchObject({
+      date: '2024-1',
+      sum: 100,
+      avg: 50,
+      count: 2
+    });
+  });
+
+  test('searchBusiness queries distinct business names', async () => {
+    TransactionDBModel.aggregate.mockResolvedValue([{ name: 'Cafe' }]);
+    const rows = await budgetService.searchBusiness('ca');
+    expect(TransactionDBModel.aggregate).toHaveBeenCalledWith(expect.any(Array));
+    expect(rows).toEqual([{ name: 'Cafe' }]);
+  });
+
+  test('businessLastValues returns field defaults from recent entries', async () => {
+    const recentRows = [
+      {
+        from_account: 'a1',
+        to_account: 'a2',
+        from_fee: 1,
+        to_fee: 0,
+        categories: 'Food',
+        tags: 'dine',
+        type: 'expense',
+        amount: 40
+      },
+      {
+        from_account: 'a1',
+        to_account: 'a2',
+        from_fee: 1,
+        to_fee: 0,
+        categories: 'Food',
+        tags: 'dine',
+        type: 'expense',
+        amount: 50
+      }
+    ];
+
+    TransactionDBModel.find.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        limit: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue(recentRows)
+        })
+      })
+    });
+
+    const values = await budgetService.businessLastValues('Cafe');
+
+    expect(values).toMatchObject({
+      from_account: 'a1',
+      to_account: 'a2',
+      amountAvg: 45
+    });
+  });
+
+  test('insertTransaction persists new document', async () => {
+    const body = { amount: 10 };
+    const saved = await budgetService.insertTransaction(body);
+
+    expect(TransactionDBModel).toHaveBeenCalledWith(body);
+    expect(saved).toEqual({ _id: 'new-id', amount: 10 });
+  });
+
+  test('getReferenceLists gathers selection data', async () => {
+    AccountDBModel.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([{ _id: 'a', name: 'Main' }])
+    });
+    CategoryDBModel.find.mockReturnValue({
+      select: jest.fn().mockResolvedValue([{ _id: 'c', title: 'Food' }])
+    });
+    TransactionDBModel.distinct
+      .mockResolvedValueOnce(['expense', 'income'])
+      .mockResolvedValueOnce(['tag1', 'tag2']);
+
+    const lists = await budgetService.getReferenceLists();
+
+    expect(lists).toEqual({
+      accounts: [{ _id: 'a', name: 'Main' }],
+      categories: [{ _id: 'c', title: 'Food' }],
+      types: ['expense', 'income'],
+      tags: ['tag1', 'tag2']
+    });
+  });
+
+  test('getTransactionsByPeriod validates input and formats records', async () => {
+    TransactionDBModel.find.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          {
+            _id: createObjectId('tx-2'),
+            date: 20240515,
+            transaction_business: 'Store',
+            amount: 25,
+            from_account: 'accA',
+            to_account: 'accB'
+          }
+        ])
+      })
+    });
+
+    AccountDBModel.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([
+          { _id: createObjectId('accA'), name: 'Wallet' },
+          { _id: createObjectId('accB'), name: 'Card' }
+        ])
+      })
+    });
+
+    const result = await budgetService.getTransactionsByPeriod('2024', '5');
+
+    expect(result.summary).toEqual({
+      totalAmount: 25,
+      count: 1,
+      year: 2024,
+      month: 5
+    });
+    expect(result.transactions[0]).toMatchObject({
+      id: 'tx-2',
+      displayDate: '2024-05-15',
+      fromAccountName: 'Wallet',
+      toAccountName: 'Card'
+    });
+  });
+
+  test('getTransactionsByPeriod rejects invalid inputs', async () => {
+    await expect(budgetService.getTransactionsByPeriod('2024', '13'))
+      .rejects.toThrow('Invalid year/month for transaction lookup');
+  });
+});
