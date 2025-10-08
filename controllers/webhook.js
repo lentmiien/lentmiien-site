@@ -56,7 +56,7 @@ exports.openai = async (req, res) => {
         videoDoc.completedAt = new Date();
         videoDoc.errorMessage = '';
         await videoDoc.save();
-        logger.info('Sora video marked completed via webhook', { openaiId, filename });
+        logger.notice('Sora video marked completed via webhook', { openaiId, filename });
       } catch (downloadError) {
         videoDoc.status = 'failed';
         videoDoc.errorMessage = 'Download failed';
@@ -104,7 +104,7 @@ exports.openai = async (req, res) => {
       videoDoc.progress = progress;
       videoDoc.errorMessage = errorMessage || videoDoc.errorMessage || 'Video generation failed';
       await videoDoc.save();
-      logger.info('Sora video marked failed via webhook', { openaiId, progress });
+      logger.notice('Sora video marked failed via webhook', { openaiId, progress });
     }
 
     if (event.type === 'batch.completed') {

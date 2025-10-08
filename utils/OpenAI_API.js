@@ -291,7 +291,6 @@ const checkVideoProgress = async (video_id) => {
   try {
     const video = await openai.videos.retrieve(video_id);
     const error = video.error ?? null;
-    console.log(video);
     return {
       id: video.id,
       status: video.status,
