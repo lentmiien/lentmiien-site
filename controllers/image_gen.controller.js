@@ -297,13 +297,16 @@ async function refreshJobCounters(jobId) {
     }
   }
   counters.total = total;
-  const progress = counters.total > 0 ? counters.completed / counters.total : 0;
+  const progressNumerator = counters.completed + counters.canceled;
+  const progress = counters.total > 0 ? progressNumerator / counters.total : 0;
   const updates = {
     counters,
     progress,
     variables_available: computeAvailableVariables(job)
   };
-  if (job.status !== 'Canceled' && counters.total > 0 && counters.pending === 0 && counters.processing === 0) {
+  const unfinished = (counters.pending || 0) + (counters.processing || 0) + (counters.paused || 0);
+  const allDone = counters.total > 0 && unfinished === 0;
+  if (allDone && job.status !== 'Canceled') {
     updates.status = 'Completed';
     if (!job.completed_at) updates.completed_at = new Date();
   }
@@ -727,7 +730,7 @@ exports.updateBulkJobStatus = async (req, res) => {
     const jobId = toObjectId(req.params.id);
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const action = String(req.body?.action || '').trim().toLowerCase();
-    const allowed = ['start', 'pause', 'resume', 'cancel'];
+    const allowed = ['start', 'pause', 'resume', 'cancel', 'redo_canceled'];
     if (!allowed.includes(action)) return errorJson(res, 400, 'invalid action');
 
     const job = await BulkJob.findById(jobId);
@@ -769,6 +772,36 @@ exports.updateBulkJobStatus = async (req, res) => {
           }
         }
       );
+    } else if (action === 'redo_canceled') {
+      const resetResult = await BulkTestPrompt.updateMany(
+        { job: jobId, status: 'Canceled' },
+        {
+          $set: {
+            status: 'Pending',
+            comfy_error: null,
+            comfy_job_id: null,
+            filename: null,
+            file_url: null,
+            score_total: 0,
+            score_count: 0
+          },
+          $unset: {
+            started_at: 1,
+            completed_at: 1
+          }
+        }
+      );
+      if (!resetResult.modifiedCount) {
+        const refreshed = await refreshJobCounters(jobId);
+        return res.json({ job: refreshed || job.toObject() });
+      }
+      updates.completed_at = null;
+      if (job.status === 'Canceled' || job.status === 'Completed') {
+        updates.status = 'Processing';
+        shouldWake = true;
+      } else if (job.status === 'Processing') {
+        shouldWake = true;
+      }
     }
     await BulkJob.updateOne({ _id: jobId }, { $set: updates });
     const refreshed = await refreshJobCounters(jobId);

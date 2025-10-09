@@ -104,7 +104,7 @@ exports.openai = async (req, res) => {
       videoDoc.progress = progress;
       videoDoc.errorMessage = errorMessage || videoDoc.errorMessage || 'Video generation failed';
       await videoDoc.save();
-      logger.notice('Sora video marked failed via webhook', { openaiId, progress });
+      logger.notice('Sora video marked failed via webhook', { openaiId, progress, error: videoDoc.errorMessage });
     }
 
     if (event.type === 'batch.completed') {

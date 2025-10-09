@@ -3,7 +3,7 @@ extends ../layout
 
 block styles
   style.
-    .panel{background:#0f111a;color:white;border:1px solid #1f222c;border-radius:.75rem;padding:1.5rem;margin-bottom:1.25rem}
+    .panel{background:#0f111a;color:#f1f3f9;border:1px solid #1f222c;border-radius:.75rem;padding:1.5rem;margin-bottom:1.25rem}
     .panel h2{font-size:1.05rem;margin-bottom:1rem;color:#e9ecef}
     .status-pill{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:50rem;font-size:.75rem;border:1px solid #2c3140;background:#11131b;color:#d1d5db;text-transform:uppercase;letter-spacing:.05em}
     .progress-wrap{margin:1rem 0}
@@ -16,20 +16,21 @@ block styles
     .matrix-table tr:last-child td{border-bottom:none}
     .matrix-table th:last-child,.matrix-table td:last-child{border-right:none}
     .matrix-cell{display:flex;flex-direction:column;gap:.5rem;min-width:220px}
-    .matrix-cell .avg{font-size:.85rem;color:#6c757d}
+    .matrix-cell .avg{font-size:.85rem;color:#9aa5c2}
     .matrix-cell .thumb-grid{display:grid;gap:.5rem;grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
     .matrix-thumb{background:#141826;border:1px solid #1f2330;border-radius:.5rem;padding:.4rem;text-align:center}
     .matrix-thumb img{max-width:100%;border-radius:.35rem}
-    .matrix-thumb .meta{font-size:.75rem;color:#adb5bd;margin-top:.25rem;word-break:break-word}
+    .matrix-thumb .meta{font-size:.75rem;color:#b7c1df;margin-top:.25rem;word-break:break-word}
     .prompt-table{width:100%;border-collapse:collapse;border:1px solid #1f2330;border-radius:.75rem;overflow:hidden}
     .prompt-table th,.prompt-table td{padding:.6rem;border-bottom:1px solid #1f2330;background:#101320;color:#dee2e6;font-size:.9rem}
     .prompt-table th{background:#141826;text-transform:uppercase;font-size:.75rem;letter-spacing:.05em}
     .prompt-table tr:last-child td{border-bottom:none}
-    .auto-refresh-note{font-size:.85rem;color:#6c757d}
+    .auto-refresh-note{font-size:.85rem;color:#9aa5c2}
+    .text-soft{color:#9aa5c2}
 
 block content
   .container.py-4#jobRoot(data-job-id=jobId)
-    a.text-decoration-none.text-muted(href="/image_gen/bulk") ← Back to bulk jobs
+    a.text-decoration-none.text-soft(href="/image_gen/bulk") Back to bulk jobs
     .d-flex.flex-wrap.justify-content-between.align-items-center.mt-2.mb-3
       div
         h1.h4.mb-2 Job detail
@@ -39,6 +40,7 @@ block content
         button#pauseBtn.btn.btn-warning.btn-sm(type="button") Pause
         button#resumeBtn.btn.btn-primary.btn-sm(type="button") Resume
         button#cancelBtn.btn.btn-outline-danger.btn-sm(type="button") Cancel
+        button#redoBtn.btn.btn-outline-info.btn-sm(type="button") Redo canceled prompts
     .panel
       h2 Overview
       .row.g-3
@@ -71,7 +73,7 @@ block content
         h2.mb-0 Comparison matrix
         span.auto-refresh-note Matrix refreshes with job data every minute.
       if !jobId
-        p.text-muted Invalid job id.
+        p.text-soft Invalid job id.
       else
         .row.g-3.align-items-end
           .col-md-4

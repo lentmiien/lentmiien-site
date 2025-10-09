@@ -81,13 +81,13 @@
     if (isSpecialPrompt) {
       ctrl.value = '(managed per template)';
       ctrl.disabled = true;
-      ctrl.classList.add('bg-dark'/*,'text-muted'*/);
+      ctrl.classList.add('bg-dark');
     }
     col.appendChild(ctrl);
 
     if (spec.note || spec.default !== undefined) {
       const small = document.createElement('small');
-      // small.className = 'text-muted';
+      small.className = 'text-soft';
       const parts = [];
       if (spec.note) parts.push(spec.note);
       if (spec.default !== undefined && !isSpecialPrompt) parts.push(`default: ${spec.default}`);
@@ -102,8 +102,7 @@
     const def = state.workflowMap.get(key);
     workflowInputs.innerHTML = '';
     if (!def) {
-      // workflowInputs.innerHTML = '<div class="text-muted">Select a workflow to configure base inputs.</div>';
-      workflowInputs.innerHTML = '<div>Select a workflow to configure base inputs.</div>';
+      workflowInputs.innerHTML = '<div class="text-soft">Select a workflow to configure base inputs.</div>';
       return;
     }
     const row = document.createElement('div');
@@ -331,7 +330,7 @@
       formStatus.className = 'text-warning';
     } else {
       formStatus.textContent = `Ready to generate ${combos} variation${combos === 1 ? '' : 's'}.`;
-      // formStatus.className = 'text-muted';
+      formStatus.className = 'text-soft';
     }
   }
 
@@ -366,8 +365,7 @@
 
   async function loadWorkflows() {
     try {
-      // workflowInputs.innerHTML = '<div class="text-muted">Loading workflows…</div>';
-      workflowInputs.innerHTML = '<div>Loading workflows…</div>';
+      workflowInputs.innerHTML = '<div class="text-soft">Loading workflows…</div>';
       const data = await api('/api/workflows');
       state.workflows = data.workflows || [];
       state.workflowMap = new Map(state.workflows.map(w => [w.key, w]));

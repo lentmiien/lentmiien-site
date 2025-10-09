@@ -28,14 +28,14 @@
     const resp = await fetch(`/image_gen${path}`, opts);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new Error(`${resp.status} ${resp.statusText} — ${text}`.trim());
+      throw new Error(`${resp.status} ${resp.statusText} - ${text}`.trim());
     }
     const ct = resp.headers.get('content-type') || '';
     if (ct.includes('application/json')) return resp.json();
     return resp;
   }
 
-  function setStatus(message, tone = 'muted') {
+  function setStatus(message, tone = 'soft') {
     statusEl.textContent = message;
     statusEl.className = `status-note text-${tone}`;
   }
@@ -93,7 +93,7 @@
 
   async function loadPair() {
     try {
-      setStatus('Loading pair…', 'muted');
+      setStatus('Loading pair…', 'soft');
       disableButtons(true);
       const data = await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/score-pair`);
       currentPair = data.pair || null;
@@ -105,7 +105,7 @@
       }
       renderSide(leftCard, leftImage, leftMeta, currentPair[0], 'left');
       renderSide(rightCard, rightImage, rightMeta, currentPair[1], 'right');
-      setStatus('Choose which output you prefer.', 'muted');
+      setStatus('Choose which output you prefer.', 'soft');
     } catch (err) {
       setStatus(`Failed to load pair: ${err.message}`, 'danger');
       currentPair = null;
@@ -118,7 +118,7 @@
     if (!currentPair || currentPair.length < 2) return;
     try {
       disableButtons(true);
-      setStatus('Submitting vote…', 'muted');
+      setStatus('Submitting vote…', 'soft');
       await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/score`, {
         method: 'POST',
         body: JSON.stringify({
@@ -151,3 +151,4 @@
 
   loadPair();
 })();
+

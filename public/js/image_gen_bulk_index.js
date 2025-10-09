@@ -69,8 +69,7 @@
   function renderJobs(items) {
     jobListEl.innerHTML = '';
     if (!items || !items.length) {
-      // jobListEl.innerHTML = '<div class="text-muted">No bulk jobs yet.</div>';
-      jobListEl.innerHTML = '<div>No bulk jobs yet.</div>';
+      jobListEl.innerHTML = '<div class="text-soft">No bulk jobs yet.</div>';
       return;
     }
     items.forEach((job) => {
@@ -109,7 +108,7 @@
       progressWrap.appendChild(bar);
 
       const counters = document.createElement('div');
-      // counters.className = 'text-muted';
+      counters.className = 'text-soft';
       counters.textContent = counterLines(job.counters).join(' • ');
 
       const actionWrap = document.createElement('div');
@@ -133,6 +132,14 @@
       scoreBtn.href = `/image_gen/bulk/${encodeURIComponent(job.id)}/score`;
       scoreBtn.textContent = 'Open scoring';
       actionWrap.appendChild(scoreBtn);
+      if ((job.counters?.canceled || 0) > 0) {
+        const redoBtn = document.createElement('button');
+        redoBtn.type = 'button';
+        redoBtn.className = 'btn btn-sm btn-outline-info';
+        redoBtn.textContent = 'Redo canceled';
+        redoBtn.addEventListener('click', () => updateStatus(job.id, 'redo_canceled'));
+        actionWrap.appendChild(redoBtn);
+      }
 
       card.appendChild(header);
       card.appendChild(meta);

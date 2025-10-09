@@ -3,19 +3,20 @@ extends ../layout
 
 block styles
   style.
-    .panel{background:#0f111a;color:white;border:1px solid #1f222c;border-radius:.75rem;padding:1.5rem;margin-bottom:1.25rem}
+    .panel{background:#0f111a;color:#f1f3f9;border:1px solid #1f222c;border-radius:.75rem;padding:1.5rem;margin-bottom:1.25rem}
     .panel h2{font-size:1.05rem;margin-bottom:1rem;color:#e9ecef}
-    .panel small{color:#6c757d}
+    .panel small{color:#9aa5c2}
     .template-item,.placeholder-item{background:#141826;border:1px solid #1f2330;border-radius:.75rem;padding:1rem;margin-bottom:.75rem}
     .template-item h3,.placeholder-item h3{font-size:.95rem;margin-bottom:.75rem}
     .flex-gap{display:flex;flex-wrap:wrap;gap:.75rem}
     .pill{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:50rem;font-size:.75rem;border:1px solid #2c3140;background:#11131b;color:#d1d5db;text-transform:uppercase;letter-spacing:.05em}
     textarea.form-control{min-height:120px}
     .sticky-actions{position:sticky;bottom:0;background:rgba(15,17,26,0.95);backdrop-filter:blur(12px);padding:1rem;border-top:1px solid #1f2330;margin:0 -1.5rem -1.5rem -1.5rem;border-radius:0 0 .75rem .75rem}
+    .text-soft{color:#9aa5c2}
 
 block content
   .container.py-4
-    a.text-decoration-none.text-muted(href="/image_gen/bulk") ← Back to bulk jobs
+    a.text-decoration-none.text-soft(href="/image_gen/bulk") Back to bulk jobs
     h1.h4.mt-2.mb-3 Create Bulk Prompt Experiment
     form#jobForm
       .panel
@@ -28,21 +29,21 @@ block content
             label.form-label(for="workflowSelect") Workflow
             select#workflowSelect.form-select(required)
         .mt-3
-          small.text-muted Choose a workflow first to configure base inputs. Prompt and negative prompt inputs will be handled per template.
+          small.text-soft Choose a workflow first to configure base inputs. Prompt and negative prompt inputs will be handled per template.
         .mt-3#workflowInputs
-          .text-muted Loading workflow definitions…
+          .text-soft Loading workflow definitions…
       .panel
         .d-flex.justify-content-between.align-items-center.mb-2
           h2.mb-0 Prompt Templates
           button#addTemplateBtn.btn.btn-outline-secondary.btn-sm(type="button") Add template
-        p.text-muted.mb-3 Provide at least one prompt template. Use placeholders like {{style}}. All templates must share the same placeholders.
+        p.text-soft.mb-3 Provide at least one prompt template. Use placeholders like {{style}}. All templates must share the same placeholders.
         #templateList
         .alert.alert-warning.d-none#templateEmptyAlert Please add at least one prompt template.
       .panel
         .d-flex.justify-content-between.align-items-center.mb-2
           h2.mb-0 Placeholder Values
           button#addPlaceholderBtn.btn.btn-outline-secondary.btn-sm(type="button") Add placeholder
-        p.text-muted.mb-3 Define each placeholder referenced by your templates. Values are newline-separated.
+        p.text-soft.mb-3 Define each placeholder referenced by your templates. Values are newline-separated.
         #placeholderList
         .alert.alert-info.d-none#placeholderHint Placeholder keys detected from templates will appear here automatically.
       .panel
@@ -54,10 +55,10 @@ block content
           span.pill#summaryPrompts 0 templates
           span.pill#summaryPlaceholders 0 placeholders
           span.pill#summaryCombinations 0 combinations
-        p.text-muted.mb-0 A job will generate every combination of placeholders across all templates. With a negative prompt supplied the job will run both with and without it.
+        p.text-soft.mb-0 A job will generate every combination of placeholders across all templates. With a negative prompt supplied the job will run both with and without it.
       .panel
         .sticky-actions.d-flex.gap-2.flex-wrap.justify-content-between.align-items-center
-          span#formStatus.text-muted
+          span#formStatus.text-soft
           .d-flex.gap-2
             a.btn.btn-outline-secondary(href="/image_gen/bulk") Cancel
             button#submitBtn.btn.btn-primary(type="submit") Create job

@@ -19,6 +19,7 @@
   const pauseBtn = document.getElementById('pauseBtn');
   const resumeBtn = document.getElementById('resumeBtn');
   const cancelBtn = document.getElementById('cancelBtn');
+  const redoBtn = document.getElementById('redoBtn');
   const varSelectA = document.getElementById('varSelectA');
   const varSelectB = document.getElementById('varSelectB');
   const refreshMatrixBtn = document.getElementById('refreshMatrixBtn');
@@ -38,7 +39,7 @@
     const resp = await fetch(`/image_gen${path}`, opts);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new Error(`${resp.status} ${resp.statusText} — ${text}`.trim());
+      throw new Error(`${resp.status} ${resp.statusText} - ${text}`.trim());
     }
     const ct = resp.headers.get('content-type') || '';
     if (ct.includes('application/json')) return resp.json();
@@ -81,6 +82,7 @@
       <li>Completed: ${merged.completed}</li>
       <li>Canceled: ${merged.canceled}</li>
     `;
+    return merged;
   }
 
   function updateActionButtons(status) {
@@ -103,6 +105,21 @@
       btn.disabled = false;
     } else {
       btn.classList.add('d-none');
+    }
+  }
+
+  function updateRedoButton(counters, status) {
+    if (!redoBtn) return;
+    const canceled = counters?.canceled || 0;
+    if (canceled > 0) {
+      redoBtn.classList.remove('d-none');
+      redoBtn.disabled = false;
+    } else {
+      redoBtn.classList.add('d-none');
+    }
+    if ((status || '').toLowerCase() === 'canceled') {
+      redoBtn.classList.remove('d-none');
+      redoBtn.disabled = false;
     }
   }
 
@@ -131,7 +148,7 @@
   }
 
   function formatVariableKey(key) {
-    if (!key) return '—';
+    if (!key) return '-';
     if (key === 'template') return 'Template';
     if (key === 'negative') return 'Negative prompt';
     if (key.startsWith('placeholder:')) {
@@ -152,13 +169,13 @@
       jobCompletedEl.textContent = formatDate(job.completed_at);
       setStatusPill(job.status);
       setProgress(job.progress, job.counters);
-      renderCounts(job.counters);
+      const counters = renderCounts(job.counters);
       updateActionButtons(job.status);
+      updateRedoButton(counters, job.status);
       populateVariableSelects(job.variables_available || []);
       if (currentVars.a && currentVars.b && currentVars.a !== currentVars.b) {
         await loadMatrix(true);
       } else {
-        // matrixArea.innerHTML = '<div class="text-muted">Select two different variables to render the matrix.</div>';
         matrixArea.innerHTML = '<div>Select two different variables to render the matrix.</div>';
       }
     } catch (err) {
@@ -169,7 +186,6 @@
   function renderMatrix(data) {
     const rows = data.data || [];
     if (!rows.length) {
-      // matrixArea.innerHTML = '<div class="text-muted">No completed prompts for the selected variables yet.</div>';
       matrixArea.innerHTML = '<div>No completed prompts for the selected variables yet.</div>';
       return;
     }
@@ -179,11 +195,11 @@
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
     const corner = document.createElement('th');
-    corner.textContent = `${formatVariableKey(data.varA)} ↓ / ${formatVariableKey(data.varB)} →`;
+    corner.textContent = `${formatVariableKey(data.varA)} ↁE/ ${formatVariableKey(data.varB)} →`;
     headRow.appendChild(corner);
     cols.forEach((col) => {
       const th = document.createElement('th');
-      th.textContent = col || '—';
+      th.textContent = col || '-';
       headRow.appendChild(th);
     });
     thead.appendChild(headRow);
@@ -193,7 +209,7 @@
     rows.forEach((row) => {
       const tr = document.createElement('tr');
       const th = document.createElement('th');
-      th.textContent = row.value || '—';
+      th.textContent = row.value || '-';
       tr.appendChild(th);
       (row.columns || []).forEach((col, idx) => {
         const td = document.createElement('td');
@@ -231,7 +247,6 @@
           });
         } else {
           const empty = document.createElement('div');
-          // empty.className = 'text-muted';
           empty.textContent = 'No results yet';
           grid.appendChild(empty);
         }
@@ -249,13 +264,11 @@
   async function loadMatrix(force) {
     if (!currentVars.a || !currentVars.b || currentVars.a === currentVars.b) {
       if (force) {
-        // matrixArea.innerHTML = '<div class="text-muted">Select two different variables to render the matrix.</div>';
         matrixArea.innerHTML = '<div>Select two different variables to render the matrix.</div>';
       }
       return;
     }
     try {
-      // matrixArea.innerHTML = '<div class="text-muted">Loading matrix…</div>';
       matrixArea.innerHTML = '<div>Loading matrix…</div>';
       const data = await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/matrix?varA=${encodeURIComponent(currentVars.a)}&varB=${encodeURIComponent(currentVars.b)}`);
       renderMatrix(data);
@@ -267,20 +280,18 @@
   function renderPrompts(items) {
     promptTableBody.innerHTML = '';
     if (!items || !items.length) {
-      // promptTableBody.innerHTML = '<tr><td colspan="6" class="text-muted">No prompts recorded yet.</td></tr>';
       promptTableBody.innerHTML = '<tr><td colspan="6">No prompts recorded yet.</td></tr>';
       return;
     }
     items.forEach((item) => {
       const tr = document.createElement('tr');
       const templateTd = document.createElement('td');
-      // templateTd.innerHTML = `<div>${item.template_label || 'Template'}</div><div class="text-muted small">${item.prompt_text || ''}</div>`;
       templateTd.innerHTML = `<div>${item.template_label || 'Template'}</div><div class="small">${item.prompt_text || ''}</div>`;
 
       const placeholdersTd = document.createElement('td');
       const placeholders = item.placeholder_values || {};
       const placeholderLines = Object.entries(placeholders).map(([key, value]) => `${key}: ${value}`);
-      placeholdersTd.textContent = placeholderLines.join(', ') || '—';
+      placeholdersTd.textContent = placeholderLines.join(', ') || '-';
 
       const negativeTd = document.createElement('td');
       negativeTd.textContent = item.negative_used ? 'With negative' : 'No negative';
@@ -308,7 +319,6 @@
   async function loadPrompts(showLoading = true) {
     try {
       if (showLoading) {
-        // promptTableBody.innerHTML = '<tr><td colspan="6" class="text-muted">Loading…</td></tr>';
         promptTableBody.innerHTML = '<tr><td colspan="6">Loading…</td></tr>';
       }
       const data = await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/prompts?limit=200`);
@@ -335,7 +345,7 @@
   }
 
   function disableActionButtons(disabled) {
-    [startBtn, pauseBtn, resumeBtn, cancelBtn].forEach(btn => {
+    [startBtn, pauseBtn, resumeBtn, cancelBtn, redoBtn].forEach(btn => {
       if (!btn) return;
       btn.disabled = disabled;
     });
@@ -353,6 +363,7 @@
   pauseBtn?.addEventListener('click', () => updateStatus('pause'));
   resumeBtn?.addEventListener('click', () => updateStatus('resume'));
   cancelBtn?.addEventListener('click', () => updateStatus('cancel'));
+  redoBtn?.addEventListener('click', () => updateStatus('redo_canceled'));
   varSelectA?.addEventListener('change', () => {
     currentVars.a = varSelectA.value;
     loadMatrix(true);
@@ -368,3 +379,4 @@
   loadPrompts(true);
   setupAutoRefresh();
 })();
+
