@@ -102,6 +102,9 @@ const Palette = require('./models/scheduleTask/Palette');
 const Prompt = require('./models/prompt');
 // Sora videos
 const SoraVideo = require('./models/sora_video');
+// Image gen bulk
+const BulkJob = require('./models/bulk_job');
+const BulkTestPrompt = require('./models/bulk_test_prompt');
 
 // Export models
 module.exports = {
@@ -160,4 +163,6 @@ module.exports = {
   Palette,
   Prompt,
   SoraVideo,
+  BulkJob,
+  BulkTestPrompt,
 };

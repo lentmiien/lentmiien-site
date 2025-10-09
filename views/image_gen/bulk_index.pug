@@ -1,0 +1,28 @@
+//- views/image_gen/bulk_index.pug
+extends ../layout
+
+block styles
+  style.
+    .bulk-card{background:#0f111a;color:white;border:1px solid #1f222c;border-radius:.75rem;padding:1.25rem;margin-bottom:1rem;box-shadow:0 6px 20px rgba(0,0,0,0.15)}
+    .bulk-card h3{font-size:1.1rem;margin:0 0 .5rem 0}
+    .bulk-meta{display:flex;flex-wrap:wrap;gap:.75rem;font-size:.9rem;color:#adb5bd}
+    .bulk-progress{height:.4rem;border-radius:1rem;background:#1f2330;overflow:hidden;margin:.5rem 0 1rem}
+    .bulk-progress-bar{height:100%;background:linear-gradient(90deg,#4f9cff,#6fddff)}
+    .bulk-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+    .auto-refresh-note{font-size:.85rem;color:#6c757d}
+    .status-pill{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:50rem;font-size:.75rem;border:1px solid #2c3140;background:#11131b;color:#d1d5db;text-transform:uppercase;letter-spacing:.05em}
+
+block content
+  .container.py-4
+    .d-flex.justify-content-between.align-items-start.mb-3
+      div
+        h1.h4.mb-1 Bulk Prompt Experiments
+        p.auto-refresh-note.mb-0 Updated every minute, or refresh manually.
+      a.btn.btn-primary(href="/image_gen/bulk/new") Create new job
+    .d-flex.align-items-center.gap-2.mb-3
+      button#refreshBtn.btn.btn-outline-secondary.btn-sm(type="button") Refresh now
+      span#refreshStatus.auto-refresh-note
+    #jobList
+
+block script
+  script(src="/js/image_gen_bulk_index.js")

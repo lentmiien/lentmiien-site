@@ -1,0 +1,105 @@
+//- views/image_gen/bulk_job.pug
+extends ../layout
+
+block styles
+  style.
+    .panel{background:#0f111a;color:white;border:1px solid #1f222c;border-radius:.75rem;padding:1.5rem;margin-bottom:1.25rem}
+    .panel h2{font-size:1.05rem;margin-bottom:1rem;color:#e9ecef}
+    .status-pill{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:50rem;font-size:.75rem;border:1px solid #2c3140;background:#11131b;color:#d1d5db;text-transform:uppercase;letter-spacing:.05em}
+    .progress-wrap{margin:1rem 0}
+    .progress{height:.5rem;border-radius:1rem;background:#1f2330;overflow:hidden}
+    .progress-bar{background:linear-gradient(90deg,#4f9cff,#6fddff)}
+    .matrix-scroll{overflow-x:auto;padding-bottom:1rem}
+    .matrix-table{min-width:640px;border-collapse:separate;border-spacing:0;border:1px solid #1f2330;border-radius:.75rem;overflow:hidden}
+    .matrix-table th,.matrix-table td{padding:.75rem;border-bottom:1px solid #1f2330;border-right:1px solid #1f2330;background:#101320;color:#dee2e6;vertical-align:top}
+    .matrix-table thead th{background:#141826;color:#dbe4ff;text-transform:uppercase;font-size:.75rem;letter-spacing:.05em}
+    .matrix-table tr:last-child td{border-bottom:none}
+    .matrix-table th:last-child,.matrix-table td:last-child{border-right:none}
+    .matrix-cell{display:flex;flex-direction:column;gap:.5rem;min-width:220px}
+    .matrix-cell .avg{font-size:.85rem;color:#6c757d}
+    .matrix-cell .thumb-grid{display:grid;gap:.5rem;grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
+    .matrix-thumb{background:#141826;border:1px solid #1f2330;border-radius:.5rem;padding:.4rem;text-align:center}
+    .matrix-thumb img{max-width:100%;border-radius:.35rem}
+    .matrix-thumb .meta{font-size:.75rem;color:#adb5bd;margin-top:.25rem;word-break:break-word}
+    .prompt-table{width:100%;border-collapse:collapse;border:1px solid #1f2330;border-radius:.75rem;overflow:hidden}
+    .prompt-table th,.prompt-table td{padding:.6rem;border-bottom:1px solid #1f2330;background:#101320;color:#dee2e6;font-size:.9rem}
+    .prompt-table th{background:#141826;text-transform:uppercase;font-size:.75rem;letter-spacing:.05em}
+    .prompt-table tr:last-child td{border-bottom:none}
+    .auto-refresh-note{font-size:.85rem;color:#6c757d}
+
+block content
+  .container.py-4#jobRoot(data-job-id=jobId)
+    a.text-decoration-none.text-muted(href="/image_gen/bulk") ← Back to bulk jobs
+    .d-flex.flex-wrap.justify-content-between.align-items-center.mt-2.mb-3
+      div
+        h1.h4.mb-2 Job detail
+        span#jobStatusPill.status-pill unknown
+      .d-flex.gap-2.flex-wrap
+        button#startBtn.btn.btn-success.btn-sm(type="button") Start
+        button#pauseBtn.btn.btn-warning.btn-sm(type="button") Pause
+        button#resumeBtn.btn.btn-primary.btn-sm(type="button") Resume
+        button#cancelBtn.btn.btn-outline-danger.btn-sm(type="button") Cancel
+    .panel
+      h2 Overview
+      .row.g-3
+        .col-md-6
+          dl.row.mb-0
+            dt.col-5 Name
+            dd.col-7#jobName -
+            dt.col-5 Workflow
+            dd.col-7#jobWorkflow -
+            dt.col-5 Created
+            dd.col-7#jobCreated -
+            dt.col-5 Updated
+            dd.col-7#jobUpdated -
+        .col-md-6
+          .progress-wrap
+            label.form-label Progress
+            .progress
+              .progress-bar#jobProgress(style="width:0%")
+            small.auto-refresh-note#jobProgressLabel 0 / 0 completed
+          dl.row.mb-0
+            dt.col-5 Started
+            dd.col-7#jobStarted -
+            dt.col-5 Completed
+            dd.col-7#jobCompleted -
+      hr
+      h2.mb-2 Counts
+      ul#jobCounts.list-unstyled.mb-0
+    .panel
+      .d-flex.flex-wrap.gap-2.align-items-center.mb-3
+        h2.mb-0 Comparison matrix
+        span.auto-refresh-note Matrix refreshes with job data every minute.
+      if !jobId
+        p.text-muted Invalid job id.
+      else
+        .row.g-3.align-items-end
+          .col-md-4
+            label.form-label(for="varSelectA") Variable A
+            select#varSelectA.form-select
+          .col-md-4
+            label.form-label(for="varSelectB") Variable B
+            select#varSelectB.form-select
+          .col-md-4
+            button#refreshMatrixBtn.btn.btn-outline-secondary.btn-sm(type="button") Refresh matrix
+        .matrix-scroll.mt-3
+          #matrixArea
+    .panel
+      h2 Prompts
+      .d-flex.justify-content-between.align-items-center.mb-2
+        span.auto-refresh-note Showing up to 200 prompts
+        button#refreshPromptsBtn.btn.btn-outline-secondary.btn-sm(type="button") Refresh
+      .table-responsive
+        table.prompt-table
+          thead
+            tr
+              th(scope="col") Template
+              th(scope="col") Placeholders
+              th(scope="col") Negative?
+              th(scope="col") Status
+              th(scope="col") Score
+              th(scope="col") Updated
+          tbody#promptTableBody
+
+block script
+  script(src="/js/image_gen_bulk_job.js")

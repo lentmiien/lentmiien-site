@@ -34,6 +34,10 @@ router.use('/api', express.json({ limit: '1mb' }));
 
 // Landing page
 router.get('/', ctrl.renderLanding);
+router.get('/bulk', ctrl.renderBulkLanding);
+router.get('/bulk/new', ctrl.renderBulkCreate);
+router.get('/bulk/:id/score', ctrl.renderBulkScoring);
+router.get('/bulk/:id', ctrl.renderBulkJob);
 
 // API proxy endpoints (browser talks to these; server talks to Comfy API)
 router.get('/api/health', ctrl.health);
@@ -47,5 +51,13 @@ router.post('/api/files/input', upload.single('image'), ctrl.uploadInput);
 router.post('/api/files/promote', ctrl.promoteCachedFile);
 router.get('/api/prompts', ctrl.listPrompts);
 router.post('/api/rate', ctrl.rateJob);
+router.get('/api/bulk/jobs', ctrl.listBulkJobs);
+router.post('/api/bulk/jobs', ctrl.createBulkJob);
+router.get('/api/bulk/jobs/:id', ctrl.getBulkJob);
+router.patch('/api/bulk/jobs/:id/status', ctrl.updateBulkJobStatus);
+router.get('/api/bulk/jobs/:id/prompts', ctrl.listBulkTestPrompts);
+router.get('/api/bulk/jobs/:id/matrix', ctrl.getBulkMatrix);
+router.get('/api/bulk/jobs/:id/score-pair', ctrl.getBulkScorePair);
+router.post('/api/bulk/jobs/:id/score', ctrl.submitBulkScore);
 
 module.exports = router;

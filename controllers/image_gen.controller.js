@@ -2,9 +2,10 @@
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
+const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
-const { Prompt } = require('../database');
+const { Prompt, BulkJob, BulkTestPrompt } = require('../database');
 
 // CHANGE THESE two lines to match your ComfyUI API box
 const COMFY_API_BASE = process.env.COMFY_API_BASE; // your personal ComfyUI API base
@@ -124,6 +125,369 @@ async function mapWithConcurrency(items, limit, iterator) {
   return results;
 }
 
+const BULK_PROMPT_STATUSES = Object.freeze(['Pending', 'Processing', 'Paused', 'Completed', 'Canceled']);
+const BULK_WORKER_INTERVAL_MS = 4000;
+const BULK_JOB_POLL_DELAY_MS = 2000;
+const BULK_JOB_POLL_LIMIT = 180;
+const BULK_DOWNLOAD_TIMEOUT_MS = 60000;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractPlaceholders(template) {
+  const keys = new Set();
+  const regex = /{{\s*([\w.-]+)\s*}}/g;
+  let match;
+  const text = String(template || '');
+  while ((match = regex.exec(text)) !== null) {
+    keys.add(match[1]);
+  }
+  return Array.from(keys);
+}
+
+function ensureConsistentPlaceholders(templates) {
+  if (!Array.isArray(templates) || !templates.length) return [];
+  const baseKeys = extractPlaceholders(templates[0].template);
+  const baseSet = new Set(baseKeys);
+  for (let i = 1; i < templates.length; i++) {
+    const keys = extractPlaceholders(templates[i].template);
+    if (keys.length !== baseSet.size) return null;
+    for (const key of keys) {
+      if (!baseSet.has(key)) return null;
+    }
+  }
+  return baseKeys;
+}
+
+function computeAvailableVariables(job) {
+  const vars = [];
+  const templates = Array.isArray(job?.prompt_templates) ? job.prompt_templates : [];
+  if (templates.length > 1) vars.push('template');
+  const placeholders = Array.isArray(job?.placeholder_values) ? job.placeholder_values : [];
+  for (const entry of placeholders) {
+    if (!entry || !entry.key) continue;
+    const values = Array.isArray(entry.values) ? entry.values : [];
+    if (values.length > 1) vars.push(`placeholder:${entry.key}`);
+  }
+  if (job?.negative_prompt) vars.push('negative');
+  return vars;
+}
+
+function generatePlaceholderCombinations(defs) {
+  if (!Array.isArray(defs) || defs.length === 0) return [{}];
+  const combos = [];
+  const walk = (index, acc) => {
+    if (index >= defs.length) {
+      combos.push(Object.assign({}, acc));
+      return;
+    }
+    const entry = defs[index];
+    if (!entry || !entry.key) {
+      walk(index + 1, acc);
+      return;
+    }
+    const values = Array.isArray(entry.values) && entry.values.length ? entry.values : [''];
+    for (const value of values) {
+      acc[entry.key] = value;
+      walk(index + 1, acc);
+    }
+    delete acc[entry.key];
+  };
+  walk(0, {});
+  return combos;
+}
+
+function applyTemplateValues(template, values) {
+  const text = String(template || '');
+  return text.replace(/{{\s*([\w.-]+)\s*}}/g, (_m, key) => {
+    if (Object.prototype.hasOwnProperty.call(values, key)) {
+      const val = values[key];
+      return val === undefined || val === null ? '' : String(val);
+    }
+    return '';
+  });
+}
+
+function buildVariablesObject(job, templateLabel, placeholderValues, negativeUsed) {
+  const vars = {};
+  const templates = Array.isArray(job?.prompt_templates) ? job.prompt_templates : [];
+  if (templates.length > 1) vars.template = templateLabel;
+  const placeholders = Array.isArray(job?.placeholder_values) ? job.placeholder_values : [];
+  for (const entry of placeholders) {
+    if (!entry || !entry.key) continue;
+    if (Object.prototype.hasOwnProperty.call(placeholderValues, entry.key)) {
+      vars[`placeholder:${entry.key}`] = String(placeholderValues[entry.key]);
+    }
+  }
+  if (job?.negative_prompt) {
+    vars.negative = negativeUsed ? 'With negative' : 'No negative';
+  }
+  return vars;
+}
+
+function toPlainVariables(variables) {
+  if (!variables) return {};
+  if (variables instanceof Map) return Object.fromEntries(variables.entries());
+  if (typeof variables.toObject === 'function') return variables.toObject();
+  if (typeof variables === 'object') {
+    return Object.assign({}, variables);
+  }
+  return {};
+}
+
+async function seedBulkTestPrompts(jobDoc) {
+  const job = jobDoc?.toObject ? jobDoc.toObject() : jobDoc;
+  if (!job || !job._id) return 0;
+  const templates = Array.isArray(job.prompt_templates) ? job.prompt_templates : [];
+  if (!templates.length) return 0;
+  const combos = generatePlaceholderCombinations(job.placeholder_values || []);
+  const negVariants = job.negative_prompt ? [false, true] : [false];
+  const docs = [];
+  templates.forEach((tpl, index) => {
+    const label = tpl?.label?.trim() || `Prompt ${index + 1}`;
+    for (const combo of combos) {
+      const placeholderCopy = Object.assign({}, combo);
+      for (const negativeUsed of negVariants) {
+        const promptText = applyTemplateValues(tpl.template, placeholderCopy);
+        docs.push({
+          job: job._id,
+          template_index: index,
+          template_label: label,
+          prompt_text: promptText,
+          placeholder_values: Object.assign({}, placeholderCopy),
+          negative_used: negativeUsed,
+          variables: buildVariablesObject(job, label, placeholderCopy, negativeUsed),
+          status: 'Pending'
+        });
+      }
+    }
+  });
+  if (!docs.length) return 0;
+  await BulkTestPrompt.insertMany(docs);
+  return docs.length;
+}
+
+async function refreshJobCounters(jobId) {
+  const job = await BulkJob.findById(jobId);
+  if (!job) return null;
+  const statusCounts = await BulkTestPrompt.aggregate([
+    { $match: { job: job._id } },
+    { $group: { _id: '$status', count: { $sum: 1 } } }
+  ]);
+  const counters = {
+    total: 0,
+    pending: 0,
+    processing: 0,
+    paused: 0,
+    completed: 0,
+    canceled: 0
+  };
+  let total = 0;
+  for (const entry of statusCounts) {
+    total += entry.count || 0;
+    const key = entry._id;
+    if (key && typeof key === 'string') {
+      const lower = key.toLowerCase();
+      if (lower === 'pending') counters.pending = entry.count;
+      if (lower === 'processing') counters.processing = entry.count;
+      if (lower === 'paused') counters.paused = entry.count;
+      if (lower === 'completed') counters.completed = entry.count;
+      if (lower === 'canceled') counters.canceled = entry.count;
+    }
+  }
+  counters.total = total;
+  const progress = counters.total > 0 ? counters.completed / counters.total : 0;
+  const updates = {
+    counters,
+    progress,
+    variables_available: computeAvailableVariables(job)
+  };
+  if (job.status !== 'Canceled' && counters.total > 0 && counters.pending === 0 && counters.processing === 0) {
+    updates.status = 'Completed';
+    if (!job.completed_at) updates.completed_at = new Date();
+  }
+  await BulkJob.updateOne({ _id: job._id }, { $set: updates });
+  return Object.assign(job.toObject(), updates);
+}
+
+function toObjectId(id) {
+  if (!id) return null;
+  if (id instanceof mongoose.Types.ObjectId) return id;
+  if (mongoose.Types.ObjectId.isValid(id)) return new mongoose.Types.ObjectId(id);
+  return null;
+}
+
+let bulkWorkerRunning = false;
+let bulkWorkerPending = false;
+
+async function waitForComfyJob(jobId) {
+  for (let attempt = 0; attempt < BULK_JOB_POLL_LIMIT; attempt++) {
+    const r = await fetch(`${COMFY_API_BASE}/v1/jobs/${encodeURIComponent(jobId)}`, {
+      headers: apiHeaders()
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      throw new Error(`job status ${r.status} ${txt}`.trim());
+    }
+    const json = await r.json();
+    const status = json?.status;
+    if (status === 'completed' || status === 'failed' || status === 'canceled') {
+      return json;
+    }
+    await delay(BULK_JOB_POLL_DELAY_MS);
+  }
+  throw new Error('upstream job timeout');
+}
+
+async function downloadComfyOutputs(jobId, files, fallbackPrefix) {
+  const stored = [];
+  const list = Array.isArray(files) ? files : [];
+  for (let i = 0; i < list.length; i++) {
+    const meta = list[i];
+    const original = typeof meta === 'string'
+      ? meta
+      : (meta?.filename || meta?.name || meta?.file || meta?.path || null);
+    const fallback = `${fallbackPrefix}_${i}.png`;
+    const safeName = toSafeName(original) || toSafeName(fallback) || `bulk_${jobId}_${i}.png`;
+    const url = `${COMFY_API_BASE}/v1/jobs/${encodeURIComponent(jobId)}/images/${i}`;
+    const r = await fetch(url, {
+      headers: apiHeaders(),
+      signal: AbortSignal.timeout(BULK_DOWNLOAD_TIMEOUT_MS)
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      throw new Error(`image download ${r.status} ${txt}`.trim());
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    const rec = await writeCacheFile(safeName, buf);
+    stored.push(rec?.safeName || safeName);
+  }
+  return stored;
+}
+
+async function processBulkPrompt(job, prompt) {
+  try {
+    const inputs = Object.assign({}, job.base_inputs || {});
+    inputs.prompt = prompt.prompt_text;
+    if (job.negative_prompt) {
+      inputs.negative = prompt.negative_used ? job.negative_prompt : '';
+    } else {
+      delete inputs.negative;
+    }
+
+    const queuedResp = await fetch(`${COMFY_API_BASE}/v1/generate`, {
+      method: 'POST',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ workflow: job.workflow, inputs })
+    });
+    if (!queuedResp.ok) {
+      const txt = await queuedResp.text().catch(() => '');
+      throw new Error(`queue failed ${queuedResp.status} ${txt}`.trim());
+    }
+    const queued = await queuedResp.json().catch(() => null);
+    const comfyJobId = queued?.job_id;
+    if (!comfyJobId) throw new Error('missing job id from ComfyUI');
+
+    await BulkTestPrompt.updateOne(
+      { _id: prompt._id },
+      { $set: { comfy_job_id: comfyJobId } }
+    );
+
+    const result = await waitForComfyJob(comfyJobId);
+    if (result?.status !== 'completed') {
+      const errMsg = result?.error || 'upstream generation failed';
+      throw new Error(errMsg);
+    }
+    const stored = await downloadComfyOutputs(comfyJobId, result.files, `bulk_${prompt._id}`);
+    const primary = stored[0] || null;
+    await BulkTestPrompt.updateOne(
+      { _id: prompt._id },
+      {
+        $set: {
+          status: 'Completed',
+          completed_at: new Date(),
+          filename: primary,
+          file_url: primary ? `/imgen/${encodeURIComponent(primary)}` : null,
+          comfy_error: null
+        }
+      }
+    );
+  } catch (err) {
+    logger.error('[bulkWorker] prompt processing failed', err);
+    await BulkTestPrompt.updateOne(
+      { _id: prompt._id },
+      {
+        $set: {
+          status: 'Canceled',
+          comfy_error: String(err?.message || err),
+          completed_at: new Date()
+        }
+      }
+    );
+  } finally {
+    await refreshJobCounters(job._id);
+  }
+}
+
+async function bulkWorkerTick() {
+  if (bulkWorkerRunning) return;
+  bulkWorkerRunning = true;
+  try {
+    const job = await BulkJob.findOne({ status: 'Processing' }).sort({ updated_at: 1 });
+    if (!job) return;
+    const now = new Date();
+    const prompt = await BulkTestPrompt.findOneAndUpdate(
+      { job: job._id, status: 'Pending' },
+      { $set: { status: 'Processing', started_at: now } },
+      { sort: { created_at: 1 }, new: true }
+    );
+    if (!prompt) {
+      await refreshJobCounters(job._id);
+      return;
+    }
+    const freshJob = await BulkJob.findById(job._id);
+    if (!freshJob || freshJob.status !== 'Processing') {
+      await BulkTestPrompt.updateOne(
+        { _id: prompt._id },
+        { $set: { status: 'Pending' }, $unset: { started_at: 1 } }
+      );
+      return;
+    }
+    if (!freshJob.started_at) {
+      await BulkJob.updateOne(
+        { _id: freshJob._id, started_at: { $exists: false } },
+        { $set: { started_at: new Date() } }
+      );
+    }
+    await processBulkPrompt(freshJob, prompt);
+  } catch (err) {
+    logger.error('[bulkWorkerTick] error', err);
+  } finally {
+    bulkWorkerRunning = false;
+  }
+}
+
+function wakeBulkWorker() {
+  if (bulkWorkerRunning || bulkWorkerPending) return;
+  bulkWorkerPending = true;
+  setTimeout(() => {
+    bulkWorkerPending = false;
+    if (bulkWorkerRunning) return;
+    bulkWorkerTick().catch((err) => {
+      logger.error('[bulkWorker] wake error', err);
+    });
+  }, 25);
+}
+
+setInterval(() => {
+  if (bulkWorkerRunning) return;
+  bulkWorkerTick().catch((err) => {
+    logger.error('[bulkWorker] loop error', err);
+  });
+}, BULK_WORKER_INTERVAL_MS).unref?.();
+
+
 // Helper to ensure an unrated use is recorded (create-or-increment)
 async function touchPromptUse({ type, workflow, text }) {
   const promptText = (text || '').trim();
@@ -158,6 +522,453 @@ exports.renderLanding = (req, res) => {
   res.render('image_gen/index', {
     title: 'ComfyUI – Image Generation',
   });
+};
+
+exports.renderBulkLanding = (req, res) => {
+  res.render('image_gen/bulk_index', {
+    title: 'ComfyUI  EBulk Jobs',
+  });
+};
+
+exports.renderBulkCreate = (req, res) => {
+  res.render('image_gen/bulk_create', {
+    title: 'ComfyUI  ENew Bulk Job',
+  });
+};
+
+exports.renderBulkJob = (req, res) => {
+  res.render('image_gen/bulk_job', {
+    title: 'ComfyUI  EBulk Job Detail',
+    jobId: req.params.id,
+  });
+};
+
+exports.renderBulkScoring = (req, res) => {
+  res.render('image_gen/bulk_scoring', {
+    title: 'ComfyUI  EBulk Scoring',
+    jobId: req.params.id,
+  });
+};
+
+exports.listBulkJobs = async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit || 100)));
+    const jobs = await BulkJob.find({})
+      .sort({ created_at: -1 })
+      .limit(limit)
+      .lean();
+    const items = jobs.map((job) => ({
+      id: String(job._id),
+      name: job.name,
+      status: job.status,
+      progress: job.progress || 0,
+      workflow: job.workflow,
+      counters: Object.assign({
+        total: 0,
+        pending: 0,
+        processing: 0,
+        paused: 0,
+        completed: 0,
+        canceled: 0
+      }, job.counters || {}),
+      variables: job.variables_available || [],
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+      started_at: job.started_at,
+      completed_at: job.completed_at
+    }));
+    res.json({ items });
+  } catch (e) {
+    logger.error('[listBulkJobs] error', e);
+    return errorJson(res, 500, 'failed to list bulk jobs', String(e.message || e));
+  }
+};
+
+exports.createBulkJob = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const name = String(body.name || '').trim();
+    const workflow = String(body.workflow || '').trim();
+    if (!name) return errorJson(res, 400, 'name required');
+    if (!workflow) return errorJson(res, 400, 'workflow required');
+
+    const templatesInput = Array.isArray(body.templates) ? body.templates : [];
+    const templates = templatesInput.map((tpl, idx) => {
+      const rawLabel = tpl && typeof tpl.label === 'string' ? tpl.label : `Prompt ${idx + 1}`;
+      const rawTemplate = tpl && typeof tpl.template === 'string' ? tpl.template : '';
+      const label = rawLabel.trim() || `Prompt ${idx + 1}`;
+      const template = rawTemplate.trim();
+      return { label, template };
+    }).filter(tpl => tpl.template);
+    if (!templates.length) return errorJson(res, 400, 'at least one prompt template required');
+
+    const placeholderKeys = ensureConsistentPlaceholders(templates);
+    if (placeholderKeys === null) {
+      return errorJson(res, 400, 'all templates must use the same placeholder keys');
+    }
+
+    const placeholderValuesSource = body.placeholderValues || {};
+    const placeholderValues = [];
+    for (const key of placeholderKeys) {
+      const raw = placeholderValuesSource[key];
+      let values = [];
+      if (Array.isArray(raw)) {
+        values = raw;
+      } else if (typeof raw === 'string') {
+        values = raw.split(/\r?\n/);
+      }
+      const cleaned = values.map(v => String(v || '').trim()).filter(Boolean);
+      if (!cleaned.length) {
+        return errorJson(res, 400, `placeholder "${key}" requires at least one value`);
+      }
+      placeholderValues.push({ key, values: cleaned });
+    }
+
+    const negativePrompt = typeof body.negativePrompt === 'string'
+      ? body.negativePrompt.trim()
+      : '';
+
+    const baseInputsRaw = body.baseInputs;
+    const baseInputs = (baseInputsRaw && typeof baseInputsRaw === 'object' && !Array.isArray(baseInputsRaw))
+      ? Object.assign({}, baseInputsRaw)
+      : {};
+    delete baseInputs.prompt;
+    delete baseInputs.negative;
+
+    const jobData = {
+      name,
+      workflow,
+      prompt_templates: templates,
+      placeholder_keys: placeholderKeys,
+      placeholder_values: placeholderValues,
+      negative_prompt: negativePrompt || null,
+      base_inputs: baseInputs,
+      status: 'Created',
+      counters: {
+        total: 0,
+        pending: 0,
+        processing: 0,
+        paused: 0,
+        completed: 0,
+        canceled: 0
+      },
+      progress: 0,
+      variables_available: computeAvailableVariables({
+        prompt_templates: templates,
+        placeholder_values: placeholderValues,
+        negative_prompt: negativePrompt || null
+      })
+    };
+
+    const job = await BulkJob.create(jobData);
+    const totalPrompts = await seedBulkTestPrompts(job);
+    const refreshed = await refreshJobCounters(job._id);
+
+    res.status(201).json({
+      id: String(job._id),
+      name: job.name,
+      total_prompts: totalPrompts,
+      counters: refreshed?.counters || jobData.counters,
+      status: refreshed?.status || job.status,
+    });
+  } catch (e) {
+    logger.error('[createBulkJob] error', e);
+    return errorJson(res, 500, 'failed to create bulk job', String(e.message || e));
+  }
+};
+
+exports.getBulkJob = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const job = await BulkJob.findById(jobId).lean();
+    if (!job) return errorJson(res, 404, 'bulk job not found');
+
+    const scoreAgg = await BulkTestPrompt.aggregate([
+      { $match: { job: jobId, score_count: { $gt: 0 } } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$score_total' },
+          count: { $sum: '$score_count' }
+        }
+      }
+    ]);
+    const scoreTotal = scoreAgg[0]?.total || 0;
+    const scoreCount = scoreAgg[0]?.count || 0;
+
+    res.json({
+      job: Object.assign({}, job, {
+        id: String(job._id),
+        counters: Object.assign({
+          total: 0,
+          pending: 0,
+          processing: 0,
+          paused: 0,
+          completed: 0,
+          canceled: 0
+        }, job.counters || {}),
+        variables_available: computeAvailableVariables(job)
+      }),
+      score: {
+        total: scoreTotal,
+        count: scoreCount,
+        average: scoreCount > 0 ? scoreTotal / scoreCount : 0
+      }
+    });
+  } catch (e) {
+    logger.error('[getBulkJob] error', e);
+    return errorJson(res, 500, 'failed to load bulk job', String(e.message || e));
+  }
+};
+
+exports.updateBulkJobStatus = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const action = String(req.body?.action || '').trim().toLowerCase();
+    const allowed = ['start', 'pause', 'resume', 'cancel'];
+    if (!allowed.includes(action)) return errorJson(res, 400, 'invalid action');
+
+    const job = await BulkJob.findById(jobId);
+    if (!job) return errorJson(res, 404, 'bulk job not found');
+
+    const updates = { updated_at: new Date() };
+    let shouldWake = false;
+    if (action === 'start' || action === 'resume') {
+      if (job.status === 'Completed') return errorJson(res, 409, 'job already completed');
+      if (job.status === 'Canceled') return errorJson(res, 409, 'job canceled');
+      updates.status = 'Processing';
+      if (!job.started_at) updates.started_at = new Date();
+      await BulkTestPrompt.updateMany(
+        { job: jobId, status: 'Paused' },
+        { $set: { status: 'Pending' } }
+      );
+      shouldWake = true;
+    } else if (action === 'pause') {
+      if (job.status === 'Completed') return errorJson(res, 409, 'job already completed');
+      if (job.status === 'Canceled') return errorJson(res, 409, 'job canceled');
+      updates.status = 'Paused';
+      await BulkTestPrompt.updateMany(
+        { job: jobId, status: 'Pending' },
+        { $set: { status: 'Paused' } }
+      );
+    } else if (action === 'cancel') {
+      if (job.status === 'Canceled') {
+        return res.json({ job: job.toObject() });
+      }
+      updates.status = 'Canceled';
+      updates.completed_at = new Date();
+      await BulkTestPrompt.updateMany(
+        { job: jobId, status: { $nin: ['Completed', 'Canceled'] } },
+        {
+          $set: {
+            status: 'Canceled',
+            comfy_error: 'Canceled by user',
+            completed_at: new Date()
+          }
+        }
+      );
+    }
+    await BulkJob.updateOne({ _id: jobId }, { $set: updates });
+    const refreshed = await refreshJobCounters(jobId);
+    if (shouldWake) wakeBulkWorker();
+    res.json({ job: refreshed || (await BulkJob.findById(jobId).lean()) });
+  } catch (e) {
+    logger.error('[updateBulkJobStatus] error', e);
+    return errorJson(res, 500, 'failed to update job status', String(e.message || e));
+  }
+};
+
+exports.listBulkTestPrompts = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const filter = { job: jobId };
+    const status = String(req.query.status || '').trim();
+    if (status) {
+      if (!BULK_PROMPT_STATUSES.includes(status)) {
+        return errorJson(res, 400, 'invalid status filter');
+      }
+      filter.status = status;
+    }
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit || 200)));
+    const prompts = await BulkTestPrompt.find(filter)
+      .sort({ created_at: 1 })
+      .limit(limit)
+      .lean();
+    const items = prompts.map((doc) => ({
+      id: String(doc._id),
+      status: doc.status,
+      template_index: doc.template_index,
+      template_label: doc.template_label,
+      prompt_text: doc.prompt_text,
+      placeholder_values: doc.placeholder_values || {},
+      negative_used: doc.negative_used,
+      filename: doc.filename,
+      file_url: doc.file_url,
+      comfy_job_id: doc.comfy_job_id,
+      comfy_error: doc.comfy_error,
+      score_total: doc.score_total || 0,
+      score_count: doc.score_count || 0,
+      variables: toPlainVariables(doc.variables),
+      created_at: doc.created_at,
+      updated_at: doc.updated_at,
+      started_at: doc.started_at,
+      completed_at: doc.completed_at
+    }));
+    res.json({ items });
+  } catch (e) {
+    logger.error('[listBulkTestPrompts] error', e);
+    return errorJson(res, 500, 'failed to list test prompts', String(e.message || e));
+  }
+};
+
+exports.getBulkMatrix = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const job = await BulkJob.findById(jobId).lean();
+    if (!job) return errorJson(res, 404, 'bulk job not found');
+
+    const availableVars = new Set(computeAvailableVariables(job));
+    const varA = String(req.query.varA || '').trim() || (job.variables_available?.[0] || '');
+    const varB = String(req.query.varB || '').trim() || (job.variables_available?.[1] || '');
+    if (!availableVars.has(varA) || !availableVars.has(varB) || varA === varB) {
+      return errorJson(res, 400, 'invalid variable selection');
+    }
+
+    const prompts = await BulkTestPrompt.find({ job: jobId, status: 'Completed' }).lean();
+    const rowValues = new Set();
+    const colValues = new Set();
+    const matrix = new Map();
+
+    const valueFor = (doc, key) => {
+      const vars = toPlainVariables(doc.variables);
+      if (vars && Object.prototype.hasOwnProperty.call(vars, key)) return vars[key];
+      if (key === 'template') return doc.template_label;
+      if (key === 'negative') return doc.negative_used ? 'With negative' : 'No negative';
+      if (key.startsWith('placeholder:')) {
+        const placeholderKey = key.slice('placeholder:'.length);
+        return doc.placeholder_values?.[placeholderKey] || '';
+      }
+      return '';
+    };
+
+    for (const doc of prompts) {
+      const rowKey = valueFor(doc, varA);
+      const colKey = valueFor(doc, varB);
+      rowValues.add(rowKey);
+      colValues.add(colKey);
+      const mapKey = `${rowKey}||${colKey}`;
+      if (!matrix.has(mapKey)) matrix.set(mapKey, []);
+      matrix.get(mapKey).push(doc);
+    }
+
+    const rows = Array.from(rowValues);
+    const cols = Array.from(colValues);
+    const data = rows.map((rowKey) => {
+      return {
+        value: rowKey,
+        columns: cols.map((colKey) => {
+          const docs = matrix.get(`${rowKey}||${colKey}`) || [];
+          const mapped = docs.map((doc) => {
+            const avg = (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0;
+            return {
+              id: String(doc._id),
+              filename: doc.filename,
+              file_url: doc.file_url,
+              score_average: avg,
+              score_count: doc.score_count || 0,
+              comfy_job_id: doc.comfy_job_id,
+              completed_at: doc.completed_at
+            };
+          });
+          const avgScore = mapped.length
+            ? mapped.reduce((sum, item) => sum + item.score_average, 0) / mapped.length
+            : 0;
+          return {
+            value: colKey,
+            prompts: mapped,
+            average_score: avgScore
+          };
+        })
+      };
+    });
+
+    res.json({
+      varA,
+      varB,
+      rows,
+      cols,
+      data
+    });
+  } catch (e) {
+    logger.error('[getBulkMatrix] error', e);
+    return errorJson(res, 500, 'failed to build comparison matrix', String(e.message || e));
+  }
+};
+
+exports.getBulkScorePair = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const docs = await BulkTestPrompt.aggregate([
+      { $match: { job: jobId, status: 'Completed', filename: { $ne: null } } },
+      { $sample: { size: 2 } }
+    ]);
+    if (docs.length < 2) return errorJson(res, 404, 'not enough completed images to score');
+    const pair = docs.map((doc) => ({
+      id: String(doc._id),
+      filename: doc.filename,
+      file_url: doc.file_url,
+      template_label: doc.template_label,
+      negative_used: doc.negative_used,
+      variables: toPlainVariables(doc.variables),
+      score_average: (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0,
+      score_count: doc.score_count || 0
+    }));
+    res.json({ pair });
+  } catch (e) {
+    logger.error('[getBulkScorePair] error', e);
+    return errorJson(res, 500, 'failed to select scoring pair', String(e.message || e));
+  }
+};
+
+exports.submitBulkScore = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const leftId = toObjectId(req.body?.left_id);
+    const rightId = toObjectId(req.body?.right_id);
+    const winner = String(req.body?.winner || '').trim().toLowerCase();
+    if (!leftId || !rightId) return errorJson(res, 400, 'invalid prompt ids');
+    if (!['left', 'right', 'tie'].includes(winner)) return errorJson(res, 400, 'invalid winner');
+
+    const prompts = await BulkTestPrompt.find({ _id: { $in: [leftId, rightId] }, job: jobId }).lean();
+    if (prompts.length !== 2) return errorJson(res, 404, 'prompts not found for job');
+
+    const leftInc = { score_count: 1, score_total: 0 };
+    const rightInc = { score_count: 1, score_total: 0 };
+    if (winner === 'left') {
+      leftInc.score_total = 1;
+    } else if (winner === 'right') {
+      rightInc.score_total = 1;
+    } else {
+      leftInc.score_total = 0.5;
+      rightInc.score_total = 0.5;
+    }
+
+    await Promise.all([
+      BulkTestPrompt.updateOne({ _id: leftId }, { $inc: leftInc }),
+      BulkTestPrompt.updateOne({ _id: rightId }, { $inc: rightInc })
+    ]);
+
+    res.json({ ok: true });
+  } catch (e) {
+    logger.error('[submitBulkScore] error', e);
+    return errorJson(res, 500, 'failed to record score', String(e.message || e));
+  }
 };
 
 // Proxy: list workflows

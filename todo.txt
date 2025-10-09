@@ -1,7 +1,26 @@
-OpenAI just enabled video generation webhooks in the API.
+For the `controllers/image_gen.controller.js` tool, I want to create a new interface for bulk processing. The tool is intended for prompt testing, and should have the following functionality:
+- User can specify one or more prompt templates, that can have one or more placeholder strings
+- User can specify an array of one or more values to test for each placeholder
+- The app will create a list of all possible combinations
+- The app will send the prompts to the ComfyUI API, one-by-one (so I can easily interrupt the process on the user side if needed, stop after current generation is completed, so no need for additional functionality on the ComfyUI side) 
+- A bulk job can have a static negative prompt (no placeholder values), or `null`, if negative prompt is set, the test should be performed with and without the negative prompt
+- Once generation is complete, user can specify 2 "variables", to view a grid of all variations based those specific values changing (*variables = prompt templates if more than one, placeholder values with more than 1 value, negative prompt or no prompt if set)
 
-So, in `controllers/webhook.js`, I want to listen for the 2 new webhooks (`event.type`) below:
-- 'video.completed': call `fetchVideo` from `utils/OpenAI_API.js`, with the `event.data.id` to get the filename, then update the appropriate database entry in `SoraVideo`
-- 'video.failed': call `checkVideoProgress` from `utils/OpenAI_API.js`, with the `event.data.id` to get the error message, then update the appropriate database entry in `SoraVideo`
+Limitations:
+- All prompts for a specific bulk must have the same set of placeholder values (to ensure a clean test set/output, without special cases)
 
-Also, now that the webhook fetches the completed video, I want to remove the fetching from the `controllers/soracontroller.js`, but I still want to check on the progress, to display the progress bar to in the UI, but it can just stop checking when done.
+Databases:
+- Bulk job: store prompts and placeholder values for a specific bulk job, and metadata, such as process status and progress
+    - Statuses: "Created", "Paused", "Processing", "Completed", "Canceled"
+- Test prompt: all the final prompts to test (with placeholder values replaced), which job it belongs to, a list of the "variables" used (to lookup the output matrix), status, filename of generated file, some sort of scoring
+    - Statuses: "Paused", "Pending", "Processing", "Completed", "Canceled"
+
+On the user side, I want the following layouts:
+- Landing page, with a list of all bulk jobs, with processing statuses, progress, "Start"/"Pause"/"Resume"/"Cancel" buttons for non-completed jobs, make the UI query the server every 1 minute for updates
+- A bulk job top page, with details and variables compare matrix (display individual scoring and average for each variable shown), make the UI query the server every 1 minute for updates
+- A scoring page, that shows 2 random images from a bulk job, for the user to rate which image they like better (or equal), to accumulate a score for the images
+- A create new job page, for user to specify an X number of prompts, and inputs for each placeholder value, and an optional negative prompt
+
+The backend should continiously look for "Pending" test prompts, and send one-by-one to the ComfyUI API, fetch completed generations to cashing folder `public/imgen`.
+
+For the UI, generate PUG templates with a modern minimalistic style, do not add inline JavaScript in the PUG templates, instead create JavaScript files in `public/js`. With the exception for the comparsion matrix, all pages should display nicely both on large and small screens, comparsion matrix layout can make use of as much horizontal scrollong as needed.
