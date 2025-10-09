@@ -40,17 +40,17 @@ block content
                   each cat in categoryList
                     option(value=cat)
             .d-flex.flex-wrap.align-items-center.gap-3.mt-3
-              small.text-muted.mb-0 Ratings: 1 Garbage · 2 Bad · 3 OK · 4 Good · 5 Awesome
+              small.mb-0 Ratings: 1 Garbage · 2 Bad · 3 OK · 4 Good · 5 Awesome
               button#sora-generate-btn.sora-submit(type='submit') Generate video
 
           #sora-status.sora-status
             .sora-card
               .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2
                 h2.h5.mb-0 Generation progress
-                span#sora-status-label.text-muted
+                span#sora-status-label
               .progress.mt-3(role='progressbar' aria-valuemin='0' aria-valuemax='100')
                 .progress-bar#sora-status-progress(style='width:0%' aria-valuenow='0')
-              p#sora-status-message.text-muted.mt-3.mb-0
+              p#sora-status-message.mt-3.mb-0
 
           .sora-card.sora-form.mt-4
             .d-flex.align-items-center.justify-content-between.flex-wrap.gap-2.mb-3
@@ -94,7 +94,7 @@ block content
                       option(value=rating)= '≥ ' + rating + ' ' + ratingDescriptions[rating]
               .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2.mt-3
                 button#sora-reset-filters.btn.btn-outline-secondary.btn-sm(type='button') Reset filters
-                div.text-muted.small Current page: 
+                div.small Current page: 
                   span#sora-page-indicator 1 / 1
 
           #sora-empty-state.sora-empty-state(style='display:none;')

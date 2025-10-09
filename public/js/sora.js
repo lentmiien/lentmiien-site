@@ -250,7 +250,7 @@
     const videoClass = orientation ? ` orientation-${orientation}` : '';
     const preview = video.fileUrl
       ? `<video class="sora-video-player${videoClass}" src="${escapeHtml(video.fileUrl)}" controls preload="metadata"></video>`
-      : `<div class="sora-video-placeholder text-muted small">Status: ${escapeHtml(statusText)} ${progressText ? `(${escapeHtml(progressText)})` : ''}</div>`;
+      : `<div class="sora-video-placeholder small">Status: ${escapeHtml(statusText)} ${progressText ? `(${escapeHtml(progressText)})` : ''}</div>`;
     const promptDataset = encodePromptDataset(video.prompt || '');
     const promptTitle = escapeHtml((video.prompt || '').replace(/\s+/g, ' ').trim());
 
