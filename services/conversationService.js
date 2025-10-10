@@ -875,7 +875,7 @@ class ConversationService {
     const conv = await Conversation5Model.findById(conversationId);
     if (conv) {
       const msg = await this.messageService.loadMessagesInNewFormat(conv.messages, true);
-      return {conv, msg};
+      return {conv, msg, source: 'conversation5'};
     }
 
     // Try old database
@@ -884,7 +884,7 @@ class ConversationService {
       const convertedConv = this.convertOldConversation(oldConv);
       convertedConv._id = conversationId;
       const msg = await this.messageService.loadMessagesInNewFormat(oldConv.messages, false);
-      return {conv: convertedConv, msg};
+      return {conv: convertedConv, msg, source: 'conversation4'};
     }
 
     throw new Error("Conversation not found");
@@ -998,6 +998,61 @@ class ConversationService {
     return conversation;
   }
 
+  async updateConversationDetails(conversationId, updates) {
+    const conversation = await Conversation5Model.findById(conversationId);
+    if (!conversation) return null;
+
+    const sanitizeArray = (value) => {
+      if (!Array.isArray(value)) return [];
+      return [...new Set(value.map(v => (typeof v === 'string' ? v.trim() : '')).filter(v => v.length > 0))];
+    };
+
+    if (typeof updates.title === 'string') {
+      conversation.title = updates.title.trim() || conversation.title;
+    }
+    if (typeof updates.category === 'string' && updates.category.trim().length > 0) {
+      conversation.category = updates.category.trim();
+    }
+    if (Array.isArray(updates.tags)) {
+      const cleanedTags = sanitizeArray(updates.tags);
+      conversation.tags = cleanedTags;
+    }
+    if (Array.isArray(updates.members)) {
+      conversation.members = sanitizeArray(updates.members);
+    }
+    if (typeof updates.summary === 'string') {
+      conversation.summary = updates.summary.trim();
+    }
+
+    const meta = conversation.metadata || {};
+    if (typeof updates.contextPrompt === 'string') {
+      meta.contextPrompt = updates.contextPrompt;
+    }
+    if (typeof updates.model === 'string' && updates.model.trim().length > 0) {
+      meta.model = updates.model.trim();
+    }
+    if (typeof updates.reasoning === 'string' && updates.reasoning.trim().length > 0) {
+      meta.reasoning = updates.reasoning.trim();
+    }
+    if (typeof updates.verbosity === 'string' && updates.verbosity.trim().length > 0) {
+      meta.verbosity = updates.verbosity.trim();
+    }
+    if (typeof updates.maxMessages !== 'undefined') {
+      const parsed = parseInt(updates.maxMessages, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        meta.maxMessages = parsed;
+      }
+    }
+    if (Array.isArray(updates.tools)) {
+      meta.tools = sanitizeArray(updates.tools);
+    }
+
+    conversation.metadata = meta;
+    conversation.updatedAt = new Date();
+    await conversation.save();
+    return conversation;
+  }
+
   async updateMessageArray(conversationId, newArray) {
     let conversation = await Conversation5Model.findById(conversationId);
     conversation.messages = newArray;
@@ -1010,6 +1065,21 @@ class ConversationService {
     conversation.title = title;
     await conversation.save();
     return title;
+  }
+
+  async generateSummaryNew(conversationId) {
+    const conversation = await Conversation5Model.findById(conversationId);
+    if (!conversation) {
+      throw new Error('Conversation not found in conversation5 database');
+    }
+
+    const messages = await this.messageService.loadMessagesInNewFormat(conversation.messages, true);
+    const summary = await this.messageService.generateChat5Summary({ conversation, messages });
+    conversation.summary = summary;
+    conversation.updatedAt = new Date();
+    await conversation.save();
+
+    return summary;
   }
 
   async listUserConversations(userId) {

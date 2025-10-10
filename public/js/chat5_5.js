@@ -14,6 +14,18 @@ const editor = new toastui.Editor({
 // Make accessible to inline scripts
 window.editor = editor;
 
+function splitInputList(value) {
+  if (!value || typeof value !== 'string') return [];
+  return value.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
+}
+
+function setUpdateButtonState() {
+  const idEl = document.getElementById('id');
+  const btn = document.getElementById('updateSettingsButton');
+  if (!idEl || !btn) return;
+  btn.disabled = idEl.dataset.source !== 'conversation5';
+}
+
 function SwitchConversation(new_id) {
   if (document.getElementById("id").innerHTML === new_id) return;
 
@@ -32,19 +44,66 @@ function Append(send, resp) {
   // Get settings
   const tool_select = document.getElementById("tools");
   const tool_array = Array.from(tool_select.selectedOptions).map(option => option.value);
+  const tags = splitInputList(document.getElementById("tags").value);
+  const members = splitInputList(document.getElementById("members").value);
+  const maxMessagesInput = parseInt(document.getElementById("maxMessages").value, 10);
+  const maxMessages = Number.isNaN(maxMessagesInput) || maxMessagesInput <= 0 ? 999 : maxMessagesInput;
   const settings = {
     title: document.getElementById("title").value,
     category: document.getElementById("category").value,
-    tags: document.getElementById("tags").value.split(", ").join(",").split(","),
+    tags,
     context: document.getElementById("context").value,
     tools: tool_array,
     model: document.getElementById("model").value,
     reasoning: document.getElementById("reasoning").value,
     verbosity: document.getElementById("verbosity").value,
-    members: document.getElementById("members").value.split(", ").join(",").split(","),
+    members,
+    maxMessages,
   };
   socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp, settings});
   if (send) editor.reset();
+}
+
+function UpdateConversation() {
+  const idEl = document.getElementById("id");
+  const conversation_id = idEl.innerHTML;
+  if (conversation_id === "NEW") {
+    alert('Please create the conversation before updating its settings.');
+    return;
+  }
+  if (idEl.dataset.source !== 'conversation5') {
+    alert('Updating settings is only supported for chat5 conversations.');
+    return;
+  }
+
+  showLoadingPopup();
+
+  const toolSelect = document.getElementById("tools");
+  const selectedTools = Array.from(toolSelect.selectedOptions).map(option => option.value);
+  const maxMessagesInput = parseInt(document.getElementById("maxMessages").value, 10);
+  const updates = {
+    title: document.getElementById("title").value,
+    category: document.getElementById("category").value,
+    tags: splitInputList(document.getElementById("tags").value),
+    contextPrompt: document.getElementById("context").value,
+    model: document.getElementById("model").value,
+    reasoning: document.getElementById("reasoning").value,
+    verbosity: document.getElementById("verbosity").value,
+    maxMessages: Number.isNaN(maxMessagesInput) || maxMessagesInput <= 0 ? undefined : maxMessagesInput,
+    tools: selectedTools,
+    members: splitInputList(document.getElementById("members").value),
+    summary: document.getElementById("summary").value,
+  };
+
+  socket.emit('chat5-updateConversation', { conversation_id, updates }, (resp) => {
+    hideLoadingPopup();
+    if (!resp || resp.ok !== true) {
+      alert(resp && resp.message ? resp.message : 'Failed to update conversation.');
+      return;
+    }
+    idEl.dataset.source = 'conversation5';
+    setUpdateButtonState();
+  });
 }
 
 document.getElementById("fileInput").addEventListener('change', () => {
@@ -110,6 +169,26 @@ socket.on('chat5-generatetitle-done', (data) => {
   hideLoadingPopup();
 });
 
+// Generate summary
+function GenerateSummary() {
+  const idEl = document.getElementById("id");
+  if (idEl.dataset.source !== 'conversation5') {
+    alert('Generating summaries is only supported for chat5 conversations.');
+    return;
+  }
+  showLoadingPopup();
+  const conversation_id = idEl.innerHTML;
+  socket.emit('chat5-generatesummary-up', { conversation_id });
+}
+socket.on('chat5-generatesummary-done', (data) => {
+  document.getElementById("summary").value = data.summary || '';
+  hideLoadingPopup();
+});
+socket.on('chat5-generatesummary-error', (data) => {
+  hideLoadingPopup();
+  alert(data && data.message ? data.message : 'Unable to generate summary at this time.');
+});
+
 // Handle upload errors
 socket.on('chat5-uploadError', (data) => {
   alert(`\nError: ${data.message}`);
@@ -118,6 +197,11 @@ socket.on('chat5-uploadError', (data) => {
 socket.on('chat5-messages', ({id, messages}) => {
   SwitchConversation(id);
   document.getElementById("conversation_title").innerHTML = document.getElementById("title").value;
+  const idEl = document.getElementById("id");
+  if (id !== "NEW") {
+    idEl.dataset.source = 'conversation5';
+    setUpdateButtonState();
+  }
   for (const m of messages) {
     if (m.error) {
       console.log(m.error);
@@ -126,6 +210,60 @@ socket.on('chat5-messages', ({id, messages}) => {
     }
   }
   hideLoadingPopup();
+});
+
+socket.on('chat5-conversation-settings-updated', (data) => {
+  const currentId = document.getElementById("id").innerHTML;
+  if (currentId !== data.conversationId) return;
+
+  document.getElementById("conversation_title").innerHTML = data.title;
+  document.getElementById("title").value = data.title;
+  document.getElementById("category").value = data.category;
+  document.getElementById("tags").value = Array.isArray(data.tags) ? data.tags.join(', ') : '';
+  document.getElementById("context").value = data.metadata?.contextPrompt || '';
+
+  const modelSelect = document.getElementById("model");
+  if (modelSelect && data.metadata) {
+    let option = Array.from(modelSelect.options).find(opt => opt.value === data.metadata.model);
+    if (!option && modelSelect.options.length > 0) {
+      option = modelSelect.options[0];
+      option.value = data.metadata.model;
+      option.textContent = `Use previous (${data.metadata.model})`;
+    } else if (option && modelSelect.options.length > 0) {
+      modelSelect.options[0].value = data.metadata.model;
+      modelSelect.options[0].textContent = `Use previous (${data.metadata.model})`;
+    }
+    modelSelect.value = data.metadata.model;
+  }
+
+  const reasoningSelect = document.getElementById("reasoning");
+  if (reasoningSelect && data.metadata?.reasoning) {
+    reasoningSelect.value = data.metadata.reasoning;
+  }
+
+  const verbositySelect = document.getElementById("verbosity");
+  if (verbositySelect && data.metadata?.verbosity) {
+    verbositySelect.value = data.metadata.verbosity;
+  }
+
+  const toolsSelect = document.getElementById("tools");
+  if (toolsSelect && data.metadata?.tools) {
+    const selectedTools = new Set(data.metadata.tools);
+    Array.from(toolsSelect.options).forEach((option) => {
+      option.selected = selectedTools.has(option.value);
+    });
+  }
+
+  if (data.metadata && typeof data.metadata.maxMessages !== 'undefined') {
+    document.getElementById("maxMessages").value = data.metadata.maxMessages;
+  }
+
+  document.getElementById("members").value = Array.isArray(data.members) ? data.members.join(', ') : '';
+  document.getElementById("summary").value = data.summary || '';
+
+  const idEl = document.getElementById("id");
+  idEl.dataset.source = 'conversation5';
+  setUpdateButtonState();
 });
 
 function AddMessageToUI(m) {
@@ -230,3 +368,5 @@ socket.on('welcome', () => {
     socket.emit('chat5-joinConversation', {conversationId: conversation_id});
   }
 });
+
+document.addEventListener('DOMContentLoaded', setUpdateButtonState);

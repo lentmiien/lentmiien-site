@@ -52,10 +52,13 @@ module.exports = async function registerChat5_5Handlers({
     let id = conversation_id;
     const user_id = userName;
 
+    const parsedMaxMessages = parseInt(settings.maxMessages, 10);
+    const effectiveMaxMessages = Number.isNaN(parsedMaxMessages) || parsedMaxMessages <= 0 ? 999 : parsedMaxMessages;
+
     const setting_params = {
       contextPrompt: settings.context,
       model: settings.model,
-      maxMessages: 999,
+      maxMessages: effectiveMaxMessages,
       maxAudioMessages: 3,
       tools: settings.tools,
       reasoning: settings.reasoning,
@@ -224,6 +227,49 @@ module.exports = async function registerChat5_5Handlers({
     const title = await conversationService.generateTitle(conversation_id);
     const convRoom = roomForConversation(conversation_id);
     io.to(convRoom).emit('chat5-generatetitle-done', {title});
+  });
+
+  // Update conversation settings
+  socket.on('chat5-updateConversation', async (data, ack) => {
+    const { conversation_id, updates } = data;
+    try {
+      const conversation = await conversationService.updateConversationDetails(conversation_id, updates);
+      if (!conversation) {
+        const message = 'Conversation settings can only be updated for chat5 entries.';
+        if (typeof ack === 'function') ack({ ok: false, message });
+        return;
+      }
+
+      const convRoom = roomForConversation(conversation_id);
+      const payload = {
+        conversationId: conversation_id,
+        title: conversation.title,
+        category: conversation.category,
+        tags: conversation.tags,
+        members: conversation.members,
+        metadata: conversation.metadata,
+        summary: conversation.summary,
+      };
+
+      io.to(convRoom).emit('chat5-conversation-settings-updated', payload);
+      if (typeof ack === 'function') ack({ ok: true, conversation: payload });
+    } catch (error) {
+      logger.error('Failed to update chat5 conversation settings', error);
+      if (typeof ack === 'function') ack({ ok: false, message: 'Failed to update conversation settings.' });
+    }
+  });
+
+  // Generate summary
+  socket.on('chat5-generatesummary-up', async (data) => {
+    const { conversation_id } = data;
+    try {
+      const summary = await conversationService.generateSummaryNew(conversation_id);
+      const convRoom = roomForConversation(conversation_id);
+      io.to(convRoom).emit('chat5-generatesummary-done', { summary });
+    } catch (error) {
+      logger.error('Failed to generate chat5 conversation summary', error);
+      socket.emit('chat5-generatesummary-error', { message: 'Unable to generate summary. Please try again later.' });
+    }
   });
 
   // Save current content as a template (with ack)

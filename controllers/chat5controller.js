@@ -259,14 +259,17 @@ exports.view_chat5 = async (req, res) => {
 
   let conversation = undefined;
   let messages = undefined;
+  let conversationSource = 'conversation5';
 
   if (id === "NEW") {
     conversation = null;
     messages = [];
+    conversationSource = 'unsaved';
   } else {
     const data = await conversationService.loadConversation(id);
     conversation = data.conv;
     messages = data.msg;
+    conversationSource = data.source || 'conversation5';
   }
 
   // Generate HTML from marked content
@@ -277,7 +280,13 @@ exports.view_chat5 = async (req, res) => {
   })
 
   const templates = await templateService.getTemplates();
-  res.render("chat5_chat", {conversation: conversation ? conversation : DEFAULT_CONVERSATION, messages, chat_models, templates});
+  res.render("chat5_chat", {
+    conversation: conversation ? conversation : DEFAULT_CONVERSATION,
+    messages,
+    chat_models,
+    templates,
+    conversationSource
+  });
 };
 
 exports.post_chat5 = async (req, res) => {

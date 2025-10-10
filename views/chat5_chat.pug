@@ -2,7 +2,7 @@ extends layout
 
 block content
   h2#conversation_title= conversation.title
-  p#id= conversation._id
+  p#id(data-source=conversationSource)= conversation._id
   .d-flex.gap-2.mb-2
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
   - let user = null
@@ -62,6 +62,10 @@ block content
       .input-group 
         input#title.form-control(type="title", value=conversation.title)
         button.btn.btn-warning(onclick="GenerateTitle()") AI Generate 
+      label(for="summary") Summary 
+      .d-flex.flex-wrap.gap-2.align-items-start
+        textarea#summary.form-control.flex-grow-1(rows="4")= conversation.summary || ''
+        button.btn.btn-warning(type="button", onclick="GenerateSummary()") AI Generate
       label(for="category") Category 
       input#category.form-control(type="text", value=conversation.category)
       label(for="tags") Tags 
@@ -86,6 +90,8 @@ block content
         option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})
         each m in chat_models
           option(value=m.api_model)= m.model_name
+      label(for="maxMessages") Max messages 
+      input#maxMessages.form-control(type="number", min="1", value=conversation.metadata.maxMessages)
       label(for="reasoning") Reasoning effort 
       select#reasoning.form-control(name="reasoning") 
         option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
@@ -102,7 +108,7 @@ block content
       label(for="members") Members 
       input#members.form-control(type="text", value=conversation.members.join(", "))
       .d-flex.justify-content-evenly
-        button.btn.btn-success(onclick="") Update
+        button#updateSettingsButton.btn.btn-success(type="button", onclick="UpdateConversation()", disabled=conversationSource !== 'conversation5') Update
     #pills-raw.tab-pane.fade(role="tabpanel" aria-labelledby="pills-raw-tab" tabindex="0")
       h3 Conversation 
       .row 

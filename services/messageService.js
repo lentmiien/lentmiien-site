@@ -188,6 +188,52 @@ class MessageService {
     return summary.choices[0].message.content;
   }
 
+  async generateChat5Summary({ conversation, messages, model = 'gpt-4.1-mini' }) {
+    const visibleMessages = messages.filter((message) => (
+      message &&
+      message.contentType === 'text' &&
+      message.hideFromBot !== true &&
+      message.content &&
+      typeof message.content.text === 'string' &&
+      message.content.text.trim().length > 0
+    ));
+
+    if (visibleMessages.length === 0) {
+      return '';
+    }
+
+    const promptMessages = [{
+      role: 'system',
+      content: [
+        {
+          type: 'text',
+          text: 'You are an assistant that summarizes conversations. Provide a concise summary (no more than five sentences) that captures the main topics, conclusions, and action items discussed. Base the summary solely on the provided visible text messages and ignore any references to images, audio, or tool outputs. Respond with plain text only.'
+        }
+      ]
+    }];
+
+    visibleMessages.forEach((message) => {
+      const role = message.user_id === 'bot' ? 'assistant' : 'user';
+      promptMessages.push({
+        role,
+        content: [
+          {
+            type: 'text',
+            text: message.content.text
+          }
+        ]
+      });
+    });
+
+    const response = await chatGPT(promptMessages, model);
+
+    if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
+      throw new Error('Failed to generate conversation summary');
+    }
+
+    return (response.choices[0].message.content || '').trim();
+  }
+
   async generateImage(messageId, image_prompt, quality = 'hd', size = '1024x1024', img_id = null) {
     // Load DB entry
     const message = await this.messageModel.findById(messageId);
