@@ -184,32 +184,79 @@
   }
 
   function renderMatrix(data) {
-    const rows = data.data || [];
-    if (!rows.length) {
+    const matrixRows = data.data || [];
+    if (!matrixRows.length) {
       matrixArea.innerHTML = '<div>No completed prompts for the selected variables yet.</div>';
       return;
     }
     const cols = data.cols || [];
+    const columnStats = cols.map(() => ({ sum: 0, count: 0 }));
+    const rowStats = matrixRows.map((row) => {
+      let sum = 0;
+      let count = 0;
+      (row.columns || []).forEach((col, idx) => {
+        const promptsCount = Array.isArray(col.prompts) ? col.prompts.length : 0;
+        if (!promptsCount) return;
+        const cellAvgRaw = Number(col.average_score);
+        const cellAvg = Number.isFinite(cellAvgRaw) ? cellAvgRaw : 0;
+        sum += cellAvg * promptsCount;
+        count += promptsCount;
+        const columnStat = columnStats[idx];
+        if (columnStat) {
+          columnStat.sum += cellAvg * promptsCount;
+          columnStat.count += promptsCount;
+        }
+      });
+      return { sum, count };
+    });
+    const rowAverages = rowStats.map((stat) => stat.count > 0 ? stat.sum / stat.count : 0);
+    const columnAverages = columnStats.map((stat) => stat.count > 0 ? stat.sum / stat.count : 0);
+    const overallStats = columnStats.reduce((acc, stat) => {
+      acc.sum += stat.sum;
+      acc.count += stat.count;
+      return acc;
+    }, { sum: 0, count: 0 });
+    const overallAverage = overallStats.count > 0 ? overallStats.sum / overallStats.count : 0;
     const table = document.createElement('table');
     table.className = 'matrix-table';
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
     const corner = document.createElement('th');
-    corner.textContent = `${formatVariableKey(data.varA)} ↁE/ ${formatVariableKey(data.varB)} →`;
+    const cornerLabel = document.createElement('div');
+    cornerLabel.textContent = `${formatVariableKey(data.varA)} vs ${formatVariableKey(data.varB)}`;
+    const cornerAvg = document.createElement('div');
+    cornerAvg.className = 'avg';
+    cornerAvg.textContent = overallStats.count > 0 ? `Avg ${overallAverage.toFixed(2)}` : 'Avg -';
+    corner.appendChild(cornerLabel);
+    corner.appendChild(cornerAvg);
     headRow.appendChild(corner);
-    cols.forEach((col) => {
+    cols.forEach((col, idx) => {
       const th = document.createElement('th');
-      th.textContent = col || '-';
+      const label = document.createElement('div');
+      label.textContent = col || '-';
+      th.appendChild(label);
+      const avgEl = document.createElement('div');
+      avgEl.className = 'avg';
+      const colStat = columnStats[idx];
+      avgEl.textContent = colStat && colStat.count > 0 ? `Avg ${columnAverages[idx].toFixed(2)}` : 'Avg -';
+      th.appendChild(avgEl);
       headRow.appendChild(th);
     });
     thead.appendChild(headRow);
     table.appendChild(thead);
 
     const tbody = document.createElement('tbody');
-    rows.forEach((row) => {
+    matrixRows.forEach((row, rowIndex) => {
       const tr = document.createElement('tr');
       const th = document.createElement('th');
-      th.textContent = row.value || '-';
+      const rowLabel = document.createElement('div');
+      rowLabel.textContent = row.value || '-';
+      const rowAvgEl = document.createElement('div');
+      rowAvgEl.className = 'avg';
+      const rowStat = rowStats[rowIndex];
+      rowAvgEl.textContent = rowStat && rowStat.count > 0 ? `Avg ${rowAverages[rowIndex].toFixed(2)}` : 'Avg -';
+      th.appendChild(rowLabel);
+      th.appendChild(rowAvgEl);
       tr.appendChild(th);
       (row.columns || []).forEach((col, idx) => {
         const td = document.createElement('td');
@@ -217,8 +264,10 @@
         cellWrap.className = 'matrix-cell';
         const avgText = document.createElement('div');
         avgText.className = 'avg';
-        const avgValue = col.average_score || 0;
-        avgText.textContent = `Avg ${(avgValue).toFixed(2)} • ${col.prompts?.length || 0} item(s)`;
+        const cellAvgRaw = Number(col.average_score);
+        const avgValue = Number.isFinite(cellAvgRaw) ? cellAvgRaw : 0;
+        const promptCount = Array.isArray(col.prompts) ? col.prompts.length : 0;
+        avgText.textContent = `Avg ${avgValue.toFixed(2)} - ${promptCount} item(s)`;
         cellWrap.appendChild(avgText);
         const grid = document.createElement('div');
         grid.className = 'thumb-grid';
