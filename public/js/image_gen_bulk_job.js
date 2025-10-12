@@ -30,6 +30,7 @@
   let currentVars = { a: null, b: null };
   let availableVariables = [];
   let autoRefreshTimer = null;
+  let lastJobStatus = null;
 
   async function api(path, init = {}) {
     const opts = Object.assign({ headers: {} }, init);
@@ -170,21 +171,34 @@
       jobUpdatedEl.textContent = formatDate(job.updated_at);
       jobStartedEl.textContent = formatDate(job.started_at);
       jobCompletedEl.textContent = formatDate(job.completed_at);
-      setStatusPill(job.status);
-      setProgress(job.progress, job.counters);
-      const counters = renderCounts(job.counters);
-      updateActionButtons(job.status);
-      updateRedoButton(counters, job.status);
-      populateVariableSelects(job.variables_available || []);
-      if (currentVars.a && currentVars.b && currentVars.a !== currentVars.b) {
-        await loadMatrix(true);
-      } else {
-        matrixArea.innerHTML = '<div>Select two different variables to render the matrix.</div>';
+        setStatusPill(job.status);
+        setProgress(job.progress, job.counters);
+        const counters = renderCounts(job.counters);
+        updateActionButtons(job.status);
+        updateRedoButton(counters, job.status);
+        populateVariableSelects(job.variables_available || []);
+
+        const statusNormalized = (job.status || '').toLowerCase();
+        const hasValidVars = currentVars.a && currentVars.b && currentVars.a !== currentVars.b;
+
+        if (!hasValidVars) {
+          matrixArea.innerHTML = '<div>Select two different variables to render the matrix.</div>';
+        } else {
+          const shouldRefreshMatrix =
+            lastJobStatus === null ||
+            statusNormalized === 'processing' ||
+            (lastJobStatus === 'processing' && statusNormalized !== 'processing');
+
+          if (shouldRefreshMatrix) {
+            await loadMatrix(true);
+          }
+        }
+
+        lastJobStatus = statusNormalized;
+      } catch (err) {
+        matrixArea.innerHTML = `<div class="text-danger">Failed to load job: ${err.message}</div>`;
       }
-    } catch (err) {
-      matrixArea.innerHTML = `<div class="text-danger">Failed to load job: ${err.message}</div>`;
     }
-  }
 
   function renderMatrix(data) {
     const matrixRows = data.data || [];
