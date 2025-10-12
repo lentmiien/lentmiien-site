@@ -12,6 +12,7 @@ const BulkTestPromptSchema = new mongoose.Schema({
   template_label: { type: String, required: true, trim: true },
   prompt_text: { type: String, required: true, trim: true },
   placeholder_values: { type: mongoose.Schema.Types.Mixed, default: {} },
+  input_values: { type: mongoose.Schema.Types.Mixed, default: {} },
   negative_used: { type: Boolean, default: false },
   variables: { type: Map, of: String, default: {} },
   status: {

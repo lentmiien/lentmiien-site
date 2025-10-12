@@ -15,6 +15,7 @@ const DEFAULT_TIMEOUT = 15000;
 const TMP_DIR = path.join(__dirname, '../tmp_data');
 const CACHE_DIR = path.join(__dirname, '../public/imgen');
 const CACHE_CONCURRENCY = 5;
+const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
 
 // Track in-flight downloads to avoid duplicate fetches
 const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
@@ -170,6 +171,12 @@ function computeAvailableVariables(job) {
     const values = Array.isArray(entry.values) ? entry.values : [];
     if (values.length > 1) vars.push(`placeholder:${entry.key}`);
   }
+  const imageInputs = Array.isArray(job?.image_inputs) ? job.image_inputs : [];
+  for (const entry of imageInputs) {
+    if (!entry || !entry.key) continue;
+    const values = Array.isArray(entry.values) ? entry.values : [];
+    if (values.length > 1) vars.push(`input:${entry.key}`);
+  }
   if (job?.negative_prompt) vars.push('negative');
   return vars;
 }
@@ -198,6 +205,41 @@ function generatePlaceholderCombinations(defs) {
   return combos;
 }
 
+function generateVariantCombinations(placeholderDefs, imageDefs) {
+  const placeholderCombos = generatePlaceholderCombinations(placeholderDefs);
+  const imageEntries = Array.isArray(imageDefs)
+    ? imageDefs.filter((entry) => entry && entry.key)
+    : [];
+  if (!imageEntries.length) {
+    return placeholderCombos.map((placeholders) => ({
+      placeholders: Object.assign({}, placeholders),
+      inputs: {}
+    }));
+  }
+  const combos = [];
+  for (const placeholderSet of placeholderCombos) {
+    const placeholderCopy = Object.assign({}, placeholderSet);
+    const walk = (index, inputAcc) => {
+      if (index >= imageEntries.length) {
+        combos.push({
+          placeholders: Object.assign({}, placeholderCopy),
+          inputs: Object.assign({}, inputAcc)
+        });
+        return;
+      }
+      const entry = imageEntries[index];
+      const values = Array.isArray(entry.values) && entry.values.length ? entry.values : [''];
+      for (const value of values) {
+        inputAcc[entry.key] = value;
+        walk(index + 1, inputAcc);
+      }
+      delete inputAcc[entry.key];
+    };
+    walk(0, {});
+  }
+  return combos;
+}
+
 function applyTemplateValues(template, values) {
   const text = String(template || '');
   return text.replace(/{{\s*([\w.-]+)\s*}}/g, (_m, key) => {
@@ -209,7 +251,7 @@ function applyTemplateValues(template, values) {
   });
 }
 
-function buildVariablesObject(job, templateLabel, placeholderValues, negativeUsed) {
+function buildVariablesObject(job, templateLabel, placeholderValues, negativeUsed, inputValues = {}) {
   const vars = {};
   const templates = Array.isArray(job?.prompt_templates) ? job.prompt_templates : [];
   if (templates.length > 1) vars.template = templateLabel;
@@ -218,6 +260,13 @@ function buildVariablesObject(job, templateLabel, placeholderValues, negativeUse
     if (!entry || !entry.key) continue;
     if (Object.prototype.hasOwnProperty.call(placeholderValues, entry.key)) {
       vars[`placeholder:${entry.key}`] = String(placeholderValues[entry.key]);
+    }
+  }
+  const imageInputs = Array.isArray(job?.image_inputs) ? job.image_inputs : [];
+  for (const entry of imageInputs) {
+    if (!entry || !entry.key) continue;
+    if (Object.prototype.hasOwnProperty.call(inputValues, entry.key)) {
+      vars[`input:${entry.key}`] = String(inputValues[entry.key]);
     }
   }
   if (job?.negative_prompt) {
@@ -241,23 +290,27 @@ async function seedBulkTestPrompts(jobDoc) {
   if (!job || !job._id) return 0;
   const templates = Array.isArray(job.prompt_templates) ? job.prompt_templates : [];
   if (!templates.length) return 0;
-  const combos = generatePlaceholderCombinations(job.placeholder_values || []);
+  const combos = generateVariantCombinations(job.placeholder_values || [], job.image_inputs || []);
   const negVariants = job.negative_prompt ? [false, true] : [false];
   const docs = [];
   templates.forEach((tpl, index) => {
     const label = tpl?.label?.trim() || `Prompt ${index + 1}`;
     for (const combo of combos) {
-      const placeholderCopy = Object.assign({}, combo);
+      const placeholderCopy = Object.assign({}, combo?.placeholders || {});
+      const inputCopy = Object.assign({}, combo?.inputs || {});
       for (const negativeUsed of negVariants) {
-        const promptText = applyTemplateValues(tpl.template, placeholderCopy);
+        const placeholderValues = Object.assign({}, placeholderCopy);
+        const inputValues = Object.assign({}, inputCopy);
+        const promptText = applyTemplateValues(tpl.template, placeholderValues);
         docs.push({
           job: job._id,
           template_index: index,
           template_label: label,
           prompt_text: promptText,
-          placeholder_values: Object.assign({}, placeholderCopy),
+          placeholder_values: placeholderValues,
+          input_values: inputValues,
           negative_used: negativeUsed,
-          variables: buildVariablesObject(job, label, placeholderCopy, negativeUsed),
+          variables: buildVariablesObject(job, label, placeholderValues, negativeUsed, inputValues),
           status: 'Pending'
         });
       }
@@ -377,6 +430,13 @@ async function processBulkPrompt(job, prompt) {
       inputs.negative = prompt.negative_used ? job.negative_prompt : '';
     } else {
       delete inputs.negative;
+    }
+    if (prompt.input_values && typeof prompt.input_values === 'object') {
+      for (const [key, value] of Object.entries(prompt.input_values)) {
+        if (!key) continue;
+        const str = String(value ?? '').trim();
+        if (str) inputs[key] = str;
+      }
     }
 
     const queuedResp = await fetch(`${COMFY_API_BASE}/v1/generate`, {
@@ -627,6 +687,26 @@ exports.createBulkJob = async (req, res) => {
       placeholderValues.push({ key, values: cleaned });
     }
 
+    const imageInputsSource = (body.imageInputs && typeof body.imageInputs === 'object')
+      ? body.imageInputs
+      : {};
+    const imageInputs = [];
+    for (const key of IMAGE_INPUT_KEYS) {
+      if (!Object.prototype.hasOwnProperty.call(imageInputsSource, key)) continue;
+      const raw = imageInputsSource[key];
+      let values = [];
+      if (Array.isArray(raw)) {
+        values = raw;
+      } else if (typeof raw === 'string') {
+        values = raw.split(/\r?\n/);
+      }
+      const cleaned = values.map(v => String(v || '').trim()).filter(Boolean);
+      if (!cleaned.length) {
+        return errorJson(res, 400, `image input "${key}" requires at least one filename`);
+      }
+      imageInputs.push({ key, values: cleaned });
+    }
+
     const negativePrompt = typeof body.negativePrompt === 'string'
       ? body.negativePrompt.trim()
       : '';
@@ -644,6 +724,7 @@ exports.createBulkJob = async (req, res) => {
       prompt_templates: templates,
       placeholder_keys: placeholderKeys,
       placeholder_values: placeholderValues,
+      image_inputs: imageInputs,
       negative_prompt: negativePrompt || null,
       base_inputs: baseInputs,
       status: 'Created',
@@ -659,6 +740,7 @@ exports.createBulkJob = async (req, res) => {
       variables_available: computeAvailableVariables({
         prompt_templates: templates,
         placeholder_values: placeholderValues,
+        image_inputs: imageInputs,
         negative_prompt: negativePrompt || null
       })
     };
@@ -837,6 +919,7 @@ exports.listBulkTestPrompts = async (req, res) => {
       template_label: doc.template_label,
       prompt_text: doc.prompt_text,
       placeholder_values: doc.placeholder_values || {},
+      input_values: doc.input_values || {},
       negative_used: doc.negative_used,
       filename: doc.filename,
       file_url: doc.file_url,
@@ -878,15 +961,19 @@ exports.getBulkMatrix = async (req, res) => {
 
     const valueFor = (doc, key) => {
       const vars = toPlainVariables(doc.variables);
-      if (vars && Object.prototype.hasOwnProperty.call(vars, key)) return vars[key];
-      if (key === 'template') return doc.template_label;
-      if (key === 'negative') return doc.negative_used ? 'With negative' : 'No negative';
-      if (key.startsWith('placeholder:')) {
-        const placeholderKey = key.slice('placeholder:'.length);
-        return doc.placeholder_values?.[placeholderKey] || '';
-      }
-      return '';
-    };
+    if (vars && Object.prototype.hasOwnProperty.call(vars, key)) return vars[key];
+    if (key === 'template') return doc.template_label;
+    if (key === 'negative') return doc.negative_used ? 'With negative' : 'No negative';
+    if (key.startsWith('placeholder:')) {
+      const placeholderKey = key.slice('placeholder:'.length);
+      return doc.placeholder_values?.[placeholderKey] || '';
+    }
+    if (key.startsWith('input:')) {
+      const inputKey = key.slice('input:'.length);
+      return doc.input_values?.[inputKey] || '';
+    }
+    return '';
+  };
 
     for (const doc of prompts) {
       const rowKey = valueFor(doc, varA);

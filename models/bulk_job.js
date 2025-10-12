@@ -13,6 +13,10 @@ const BulkJobSchema = new mongoose.Schema({
     key: { type: String, required: true, trim: true },
     values: { type: [String], default: [] }
   }],
+  image_inputs: [{
+    key: { type: String, required: true, trim: true },
+    values: { type: [String], default: [] }
+  }],
   negative_prompt: { type: String, default: null },
   status: {
     type: String,

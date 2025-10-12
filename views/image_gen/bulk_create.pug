@@ -32,6 +32,11 @@ block content
           small.text-soft Choose a workflow first to configure base inputs. Prompt and negative prompt inputs will be handled per template.
         .mt-3#workflowInputs
           .text-soft Loading workflow definitions…
+        .mt-4#workflowImageInputs.d-none
+          h3.h6.mb-2 Image filename lists
+          p.text-soft.mb-3 Provide one filename per line for each image input. Filenames must already exist in the ComfyUI input folder.
+          #imageInputList
+          .alert.alert-warning.d-none#imageInputAlert Image filename lists are required for workflows that use image inputs.
       .panel
         .d-flex.justify-content-between.align-items-center.mb-2
           h2.mb-0 Prompt Templates
@@ -54,6 +59,7 @@ block content
         .flex-gap.mb-2
           span.pill#summaryPrompts 0 templates
           span.pill#summaryPlaceholders 0 placeholders
+          span.pill#summaryImages 0 image inputs
           span.pill#summaryCombinations 0 combinations
         p.text-soft.mb-0 A job will generate every combination of placeholders across all templates. With a negative prompt supplied the job will run both with and without it.
       .panel

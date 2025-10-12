@@ -15,10 +15,17 @@
   const summaryCombinations = document.getElementById('summaryCombinations');
   const formStatus = document.getElementById('formStatus');
   const submitBtn = document.getElementById('submitBtn');
+  const workflowImageInputs = document.getElementById('workflowImageInputs');
+  const imageInputList = document.getElementById('imageInputList');
+  const imageInputAlert = document.getElementById('imageInputAlert');
+  const summaryImages = document.getElementById('summaryImages');
+
+  const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
 
   const state = {
     workflows: [],
-    workflowMap: new Map()
+    workflowMap: new Map(),
+    currentImageSpecs: []
   };
 
   async function api(path, init = {}) {
@@ -101,16 +108,78 @@
     const key = workflowSelect.value;
     const def = state.workflowMap.get(key);
     workflowInputs.innerHTML = '';
+    state.currentImageSpecs = [];
     if (!def) {
       workflowInputs.innerHTML = '<div class="text-soft">Select a workflow to configure base inputs.</div>';
+      renderImageInputs([]);
       return;
     }
     const row = document.createElement('div');
     row.className = 'row g-3';
+    const imageSpecs = [];
+    let hasBaseInputs = false;
     def.inputs.forEach((spec) => {
+      if (IMAGE_INPUT_KEYS.includes(spec.key)) {
+        imageSpecs.push(spec);
+        return;
+      }
+      hasBaseInputs = true;
       row.appendChild(createInputControl(spec));
     });
-    workflowInputs.appendChild(row);
+    if (hasBaseInputs) {
+      workflowInputs.appendChild(row);
+    } else {
+      workflowInputs.innerHTML = '<div class="text-soft">This workflow has no additional base inputs.</div>';
+    }
+    renderImageInputs(imageSpecs);
+  }
+
+  function renderImageInputs(specs = []) {
+    if (!workflowImageInputs || !imageInputList || !imageInputAlert) return;
+    imageInputList.innerHTML = '';
+    state.currentImageSpecs = Array.isArray(specs) ? specs.slice() : [];
+    if (!state.currentImageSpecs.length) {
+      workflowImageInputs.classList.add('d-none');
+      imageInputAlert.classList.add('d-none');
+      updateSummary();
+      return;
+    }
+    workflowImageInputs.classList.remove('d-none');
+    state.currentImageSpecs.forEach((spec) => {
+      if (!spec || !spec.key) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'placeholder-item';
+      wrapper.dataset.imageKey = spec.key;
+
+      const title = document.createElement('h3');
+      title.className = 'mb-2';
+      title.textContent = spec.key + (spec.required ? ' *' : '');
+      wrapper.appendChild(title);
+
+      const textarea = document.createElement('textarea');
+      textarea.className = 'form-control image-input-values';
+      textarea.rows = 4;
+      textarea.id = `wfImg_${spec.key}`;
+      textarea.dataset.imageKey = spec.key;
+      textarea.placeholder = 'example.png\nexample-2.png';
+      if (Array.isArray(spec.default)) {
+        textarea.value = spec.default.join('\n');
+      } else if (spec.default) {
+        textarea.value = spec.default;
+      }
+      textarea.addEventListener('input', updateSummary);
+      wrapper.appendChild(textarea);
+
+      const note = document.createElement('small');
+      note.className = 'text-soft';
+      const noteParts = ['Enter one filename per line.'];
+      if (spec.note) noteParts.push(spec.note);
+      note.textContent = noteParts.join(' ');
+      wrapper.appendChild(note);
+
+      imageInputList.appendChild(wrapper);
+    });
+    updateSummary();
   }
 
   function extractPlaceholdersFromTemplates() {
@@ -292,6 +361,51 @@
     return values;
   }
 
+  function gatherImageInputValues() {
+    const values = {};
+    if (!state.currentImageSpecs.length) return values;
+    state.currentImageSpecs.forEach((spec) => {
+      const key = spec?.key;
+      if (!key) return;
+      const textarea = imageInputList?.querySelector(`textarea[data-image-key="${key}"]`);
+      if (!textarea) {
+        values[key] = [];
+        return;
+      }
+      const lines = textarea.value.split(/\r?\n/).map((v) => v.trim()).filter(Boolean);
+      values[key] = lines;
+    });
+    return values;
+  }
+
+  function collectImageInputs() {
+    const values = gatherImageInputValues();
+    if (!state.currentImageSpecs.length) return values;
+    const missing = [];
+    state.currentImageSpecs.forEach((spec) => {
+      const key = spec?.key;
+      if (!key) return;
+      const entries = values[key] || [];
+      if (!entries.length) missing.push(key);
+    });
+    if (missing.length) {
+      throw new Error(`Image input(s) ${missing.join(', ')} require at least one filename.`);
+    }
+    return values;
+  }
+
+  function computeImageMultiplier(imageValues) {
+    if (!state.currentImageSpecs.length) return 1;
+    let multiplier = 1;
+    for (const spec of state.currentImageSpecs) {
+      if (!spec || !spec.key) continue;
+      const entries = imageValues?.[spec.key] || [];
+      if (!entries.length) return 0;
+      multiplier *= entries.length;
+    }
+    return multiplier;
+  }
+
   function computeCombinationEstimate() {
     const templateCount = templateList.querySelectorAll('.template-item').length;
     if (!templateCount) return 0;
@@ -303,27 +417,50 @@
       if (!entries.length) return 0;
       multiplier *= entries.length;
     }
+    const imageValues = gatherImageInputValues();
+    const imageMultiplier = computeImageMultiplier(imageValues);
+    if (imageMultiplier === 0) return 0;
     const negativeFactor = negativePrompt.value.trim() ? 2 : 1;
-    return templateCount * multiplier * negativeFactor;
+    return templateCount * multiplier * imageMultiplier * negativeFactor;
   }
 
   function updateSummary() {
     const templateCount = templateList.querySelectorAll('.template-item').length;
     const placeholderCount = placeholderList.querySelectorAll('.placeholder-item').length;
+    const imageCount = state.currentImageSpecs.length;
+    const placeholderValues = gatherPlaceholderValues();
+    const detected = extractPlaceholdersFromTemplates();
+    const missingPlaceholders = detected.filter((key) => !(placeholderValues[key] && placeholderValues[key].length));
+    const imageValues = gatherImageInputValues();
+    const missingImages = state.currentImageSpecs
+      .map((spec) => spec?.key)
+      .filter((key) => key && !(imageValues[key] && imageValues[key].length));
     const combos = computeCombinationEstimate();
 
     summaryPrompts.textContent = `${templateCount} template${templateCount === 1 ? '' : 's'}`;
     summaryPlaceholders.textContent = `${placeholderCount} placeholder${placeholderCount === 1 ? '' : 's'}`;
+    if (summaryImages) {
+      summaryImages.textContent = `${imageCount} image input${imageCount === 1 ? '' : 's'}`;
+    }
     summaryCombinations.textContent = `${combos} combination${combos === 1 ? '' : 's'}`;
 
-    const placeholderValues = gatherPlaceholderValues();
-    const detected = extractPlaceholdersFromTemplates();
-    const missing = detected.filter((key) => !(placeholderValues[key] && placeholderValues[key].length));
+    if (workflowImageInputs && imageInputAlert) {
+      if (state.currentImageSpecs.length && missingImages.length) {
+        imageInputAlert.classList.remove('d-none');
+        imageInputAlert.textContent = `Add filenames for image input(s): ${missingImages.join(', ')}`;
+      } else {
+        imageInputAlert.classList.add('d-none');
+      }
+    }
+
     if (!templateCount) {
       formStatus.textContent = 'Add at least one template.';
       formStatus.className = 'text-warning';
-    } else if (missing.length) {
-      formStatus.textContent = `Add values for placeholder(s): ${missing.join(', ')}`;
+    } else if (missingPlaceholders.length) {
+      formStatus.textContent = `Add values for placeholder(s): ${missingPlaceholders.join(', ')}`;
+      formStatus.className = 'text-warning';
+    } else if (missingImages.length) {
+      formStatus.textContent = `Add filenames for image input(s): ${missingImages.join(', ')}`;
       formStatus.className = 'text-warning';
     } else if (!combos) {
       formStatus.textContent = 'Specify values to produce combinations.';
@@ -341,6 +478,7 @@
     const inputs = {};
     for (const spec of def.inputs) {
       if (spec.key === 'prompt' || spec.key === 'negative') continue;
+      if (IMAGE_INPUT_KEYS.includes(spec.key)) continue;
       const el = document.getElementById(`wfInp_${spec.key}`);
       if (!el) continue;
       if (spec.type === 'number') {
@@ -408,6 +546,8 @@
         if (!values.length) throw new Error(`Placeholder "${key}" needs at least one value.`);
       }
 
+      const imageInputs = collectImageInputs();
+
       const baseInputs = collectBaseInputs();
       const payload = {
         name,
@@ -415,7 +555,8 @@
         templates,
         placeholderValues,
         negativePrompt: negativePrompt.value,
-        baseInputs
+        baseInputs,
+        imageInputs
       };
 
       const resp = await api('/api/bulk/jobs', {

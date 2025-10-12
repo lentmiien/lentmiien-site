@@ -154,6 +154,9 @@
     if (key.startsWith('placeholder:')) {
       return `Placeholder: ${key.slice('placeholder:'.length)}`;
     }
+    if (key.startsWith('input:')) {
+      return `Image input: ${key.slice('input:'.length)}`;
+    }
     return key;
   }
 
