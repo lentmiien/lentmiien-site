@@ -14,7 +14,7 @@
 }
 
 .openai-usage__subtitle {
-  color: #6c757d;
+  color: var(--text-muted);
   margin: 0 auto;
   max-width: 560px;
 }
@@ -39,20 +39,21 @@
 
 .section-subtitle {
   margin: 0;
-  color: #6c757d;
+  color: var(--text-muted);
 }
 
 .openai-usage__empty {
   text-align: center;
-  color: #6c757d;
+  color: var(--text-muted);
   padding: 2rem 0;
 }
 
 .chart-container {
-  background: #ffffff;
+  background: var(--surface-1);
   border-radius: 16px;
   padding: 1.5rem;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border);
   min-height: 320px;
   position: relative;
 }
@@ -66,8 +67,9 @@
 .metric-card {
   border-radius: 14px;
   padding: 1.25rem;
-  background: linear-gradient(160deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.04));
-  border: 1px solid rgba(59, 130, 246, 0.15);
+  background: linear-gradient(160deg, rgba(255, 194, 71, 0.18), rgba(23, 26, 32, 0.85));
+  border: 1px solid rgba(255, 194, 71, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -77,20 +79,20 @@
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-size: 0.75rem;
-  color: #1d4ed8;
+  color: var(--accent);
 }
 
 .metric-card__model {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text);
 }
 
 .metric-card__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
-  color: #1f2937;
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -106,16 +108,16 @@
 
 .month-card {
   border-radius: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.28);
   overflow: hidden;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .month-card[open] {
   transform: translateY(-2px);
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 28px 56px rgba(0, 0, 0, 0.32);
 }
 
 .month-card__summary {
@@ -144,22 +146,22 @@
 .summary-month {
   font-weight: 600;
   font-size: 1.1rem;
-  color: #0f172a;
+  color: var(--text);
 }
 
 .summary-total {
   font-weight: 600;
   font-size: 1.1rem;
-  color: #0f172a;
+  color: var(--accent);
 }
 
 .summary-meta {
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
 .month-card__body {
-  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  border-top: 1px solid var(--border);
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
@@ -176,7 +178,7 @@
   max-height: 260px;
   overflow: auto;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.05);
+  border: 1px solid var(--border);
 }
 
 .month-card__table {
@@ -184,7 +186,7 @@
 }
 
 .month-card__table tbody tr:nth-child(odd) {
-  background-color: rgba(241, 245, 249, 0.45);
+  background-color: rgba(255, 194, 71, 0.08);
 }
 
 .month-card__table td,
@@ -198,7 +200,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
@@ -208,8 +210,8 @@
   left: 0;
   padding: 0.45rem 0.65rem;
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.92);
-  color: #ffffff;
+  background: rgba(32, 36, 42, 0.92);
+  color: var(--text);
   font-size: 0.8rem;
   line-height: 1.2;
   pointer-events: none;

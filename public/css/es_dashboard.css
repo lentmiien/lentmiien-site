@@ -1,12 +1,12 @@
 :root {
-  --es-accent: #2563eb;
-  --es-accent-strong: #1d4ed8;
-  --es-accent-soft: rgba(37, 99, 235, 0.12);
-  --es-surface: #ffffff;
-  --es-surface-alt: #f3f4f6;
-  --es-border: #e2e8f0;
-  --es-text: #1f2937;
-  --es-text-muted: #6b7280;
+  --es-accent: var(--accent);
+  --es-accent-strong: var(--brand);
+  --es-accent-soft: rgba(255, 194, 71, 0.16);
+  --es-surface: rgba(23, 26, 32, 0.92);
+  --es-surface-alt: rgba(27, 32, 38, 0.7);
+  --es-border: var(--border);
+  --es-text: var(--text);
+  --es-text-muted: var(--text-secondary);
 }
 
 .es-dashboard {
@@ -17,13 +17,14 @@
 }
 
 .es-dashboard__intro {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.02));
+  background: linear-gradient(135deg, rgba(255, 194, 71, 0.18), rgba(23, 26, 32, 0.82));
   border-radius: 24px;
   padding: 2rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 194, 71, 0.25);
 }
 
 .es-dashboard__intro h1 {
@@ -51,18 +52,19 @@
   gap: 0.4rem;
   padding: 0.5rem 0.9rem;
   border-radius: 999px;
-  border: 1px solid transparent;
-  background-color: var(--es-surface);
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(255, 194, 71, 0.3);
+  background-color: rgba(23, 26, 32, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(255, 194, 71, 0.25), 0 12px 26px rgba(0, 0, 0, 0.28);
   color: var(--es-accent-strong);
   font-weight: 600;
   text-decoration: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .es-link:hover {
   transform: translateY(-1px);
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 194, 71, 0.4), 0 16px 32px rgba(0, 0, 0, 0.32);
+  border-color: rgba(255, 194, 71, 0.5);
 }
 
 .es-dashboard__preparedness {
@@ -73,8 +75,8 @@
   background: var(--es-surface);
   border-radius: 20px;
   padding: 1.75rem;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(38, 43, 52, 0.75);
 }
 
 .es-card + .es-card {
@@ -126,8 +128,8 @@
   top: 0;
   bottom: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--es-accent), #60a5fa);
-  box-shadow: 0 5px 15px rgba(37, 99, 235, 0.35);
+  background: linear-gradient(90deg, var(--es-accent), var(--es-accent-strong));
+  box-shadow: 0 5px 15px rgba(255, 194, 71, 0.32);
   transition: width 0.45s ease;
 }
 
@@ -242,7 +244,7 @@
 }
 
 .es-category--ready .es-category__percent {
-  color: #15803d;
+  color: var(--success);
 }
 
 .es-category__meta {
@@ -263,8 +265,8 @@
 
 .es-button--primary {
   background: var(--es-accent);
-  color: #fff;
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+  color: var(--text-inverse);
+  box-shadow: 0 12px 26px rgba(255, 194, 71, 0.28);
 }
 
 .es-button--primary:hover {
@@ -278,7 +280,7 @@
 }
 
 .es-button--ghost:hover {
-  background: rgba(37, 99, 235, 0.18);
+  background: rgba(255, 194, 71, 0.24);
   transform: translateY(-1px);
 }
 
@@ -312,7 +314,7 @@
 
 .es-card input:focus,
 .es-card select:focus {
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 194, 71, 0.25);
   border-color: var(--es-accent);
   outline: none;
 }
@@ -336,7 +338,7 @@
 }
 
 .es-card--collapsible[open] summary {
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  border-bottom: 1px solid rgba(38, 43, 52, 0.65);
 }
 
 .es-card--collapsible form {
@@ -358,13 +360,13 @@
   }
 }
 .es-form--primed {
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 4px rgba(255, 194, 71, 0.18);
   border-radius: 16px;
   transition: box-shadow 0.3s ease;
 }
 
 .es-button.is-active {
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 0 0 3px rgba(255, 194, 71, 0.28);
 }
 .es-dashboard__grid--full {
   grid-template-columns: minmax(0, 1fr);
@@ -429,6 +431,6 @@
 }
 
 .es-item__flag--warning {
-  background: rgba(249, 115, 22, 0.18);
-  color: #c2410c;
+  background: rgba(255, 194, 71, 0.2);
+  color: var(--brand);
 }

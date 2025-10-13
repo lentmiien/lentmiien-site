@@ -1,59 +1,58 @@
 extends layout
 
 block content
-  .row
-    .col
-      ul#myTab.nav.nav-tabs(role="tablist")
+  .knowledge-page
+    ul#myTab.nav.nav-tabs.mb-3(role="tablist")
+      li.nav-item(role="presentation")
+        button#knowledge-tab.nav-link.active(data-bs-toggle="tab", data-bs-target="#knowledge", type="button", role="tab", aria-controls="knowledge", aria-selected="true") Knowledge 
+      each conversation, i in conversations 
         li.nav-item(role="presentation")
-          button#knowledge-tab.nav-link.active(data-bs-toggle="tab", data-bs-target="#knowledge", type="button", role="tab", aria-controls="knowledge", aria-selected="true") Knowledge 
-        each conversation, i in conversations 
-          li.nav-item(role="presentation")
-            button.nav-link(id=`chat${i}-tab`, data-bs-toggle="tab", data-bs-target=`#chat${i}`, type="button", role="tab", aria-controls=`chat${i}`, aria-selected="false")= `${conversation._id.toString() === knowledge.originConversationId ? "Origin" : "Chat " + i}`
-      #myTabContent.tab-content
-        #knowledge.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="knowledge-tab")
-          b Update to Knowledge database
-          hr
-          form(action=`/chat4/updateknowledge/${id}`, method="post") 
+          button.nav-link(id=`chat${i}-tab`, data-bs-toggle="tab", data-bs-target=`#chat${i}`, type="button", role="tab", aria-controls=`chat${i}`, aria-selected="false")= `${conversation._id.toString() === knowledge.originConversationId ? "Origin" : "Chat " + i}`
+    #myTabContent.tab-content
+      #knowledge.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="knowledge-tab")
+        .knowledge-section
+          h3.knowledge-heading Update Knowledge entry
+          p.knowledge-subheading Keep the record in sync with the originating conversation.
+          form.knowledge-form(action=`/chat4/updateknowledge/${id}`, method="post") 
             label(for="k_title") Title 
             input#k_title.form-control(type="text", name="k_title", value=`${knowledge.title}`, required)
             label(for="k_originConversationId") Conversation ID 
             input#k_originConversationId.form-control(type="text", name="k_originConversationId", value=knowledge.originConversationId, readonly)
             input#k_originType(type="hidden", name="k_originType", value=`${knowledge.originType?knowledge.originType:'chat4'}`)
             label(for="k_content") Content (markdown)
-            textarea#k_content.form-control(name="k_content", cols="30", rows="10")= knowledge.contentMarkdown
+            textarea#k_content.form-control.knowledge-editor-area(name="k_content", cols="30", rows="10")= knowledge.contentMarkdown
             label(for="k_category") Category 
             input#k_category.form-control(type="text", name="k_category", value=`${knowledge.category}`)
             label(for="k_tags") Tags (comma separated)
-            .input-group
+            .input-group.knowledge-tags
               input#k_tags.form-control(type="text", name="k_tags", value=`${knowledge.tags.join(',')}`)
               if knowledge.category === "Recipe"
                 button.btn.btn-warning(type="button", data-title=knowledge.title, data-content=knowledge.contentMarkdown, onclick="AutoTagRecipe(this)") Auto-tag Recipe
             label(for="k_images") Images (comma separated filenames)
             input#k_images.form-control(type="text", name="k_images", value=`${knowledge.images.join(',')}`)
-            input.btn.btn-primary(type="submit", value="Update")
-        each conversation, i in conversations 
-          .tab-pane.fade(id=`chat${i}`, role="tabpanel" aria-labelledby=`chat${i}-tab`)
-            b Raw chat data (markdown)
-            hr
-            div
-              - let x = conversation.messages.length
-              while x > 0
-                - x = x - 1
-                - const m = conversation.messages[x]
-                - const index = messageLookup.indexOf(m)
-                div 
-                  p.header-row 
-                    b Response:
-                  pre.assistant= messages[index].response
-                  if messages[index].sound.length > 0
-                    i= `Audio file: ${messages[index].sound}`
-                  p.header-row 
-                    b Prompt: 
-                  if messages[index].images.length > 0
-                    each img in messages[index].images
-                      div
-                        img.image-large(src=`/img/${img.filename}`, alt="image")
-                        br
-                        i= `Image file: ${img.filename}`
-                  pre.user= messages[index].prompt
+            div.knowledge-actions
+              input.btn.btn-primary(type="submit", value="Update entry")
+      each conversation, i in conversations 
+        .tab-pane.fade.knowledge-raw(id=`chat${i}`, role="tabpanel" aria-labelledby=`chat${i}-tab`)
+          h3.knowledge-heading Raw chat data (markdown)
+          p.knowledge-subheading Review the original assistant responses alongside prompts.
+          - let x = conversation.messages.length
+          while x > 0
+            - x = x - 1
+            - const m = conversation.messages[x]
+            - const index = messageLookup.indexOf(m)
+            .knowledge-message-block 
+              p.header-row 
+                b Response
+              pre.assistant= messages[index].response
+              if messages[index].sound.length > 0
+                p.knowledge-meta= `Audio file: ${messages[index].sound}`
+              p.header-row 
+                b Prompt
+              if messages[index].images.length > 0
+                each img in messages[index].images
+                  figure.knowledge-image-block
+                    img.image-large(src=`/img/${img.filename}`, alt="image")
+                    figcaption.knowledge-meta= `Image file: ${img.filename}`
+              pre.user= messages[index].prompt
   script(src="/js/view_knowledge.js") 

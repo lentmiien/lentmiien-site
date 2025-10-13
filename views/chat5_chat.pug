@@ -1,115 +1,123 @@
 extends layout
 
 block content
-  h2#conversation_title= conversation.title
-  p#id(data-source=conversationSource)= conversation._id
-  .d-flex.gap-2.mb-2
+  h2#conversation_title.chat5-title= conversation.title
+  p#id.chat5-meta(data-source=conversationSource)= conversation._id
+  .chat5-header-actions.d-flex.gap-2.mb-3
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
   - let user = null
-  #conversationContainer
+  #conversationContainer.chat5-history
     each m in messages 
       if user != m.user_id 
-        hr
-        div.userlabel(data-user=m.user_id)
+        hr.chat5-divider
+        div.userlabel.chat5-user-label(data-user=m.user_id)
           b= m.user_id 
         - user = m.user_id
-      div(class=m.hideFromBot?"bg-secondary":"")
-        if m.contentType === "text"
-          span(id=`${m._id}textout`)!= m.content.html 
-        if m.contentType === "image"
-          img(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt, style="max-height: 200px;")
-          p
-            i= m.content.revisedPrompt
-        if m.contentType === "tool"
-          div
-            i= m.content.toolOutput
-        if m.contentType === "reasoning"
-          div
-            i!= m.content.html
-  ul#pills-tab.nav.nav-pills.mb-3(role="tablist") 
+      - const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT'
+      div(class={
+          'chat5-message': true,
+          'chat5-message--hidden': m.hideFromBot,
+          'chat5-message--bot': isBot
+        })
+        if isBot
+          img.chat5-avatar(src='/i/avatar.jpg', alt='Bot avatar')
+        .chat5-message-body
+          if m.contentType === "text"
+            span.chat5-message-text(id=`${m._id}textout`)!= m.content.html 
+          if m.contentType === "image"
+            img.chat5-message-image(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt)
+            p.chat5-image-caption
+              i= m.content.revisedPrompt
+          if m.contentType === "tool"
+            div.chat5-message-tool
+              i= m.content.toolOutput
+          if m.contentType === "reasoning"
+            div.chat5-message-reasoning
+              i!= m.content.html
+  ul#pills-tab.nav.nav-pills.mb-3.chat5-tabs(role="tablist") 
     li.nav-item(role="presentation") 
       button#pills-chat-tab.nav-link.active(data-bs-toggle="pill" data-bs-target="#pills-chat" type="button" role="tab" aria-controls="pills-chat" aria-selected="true") Chat
     li.nav-item(role="presentation") 
       button#pills-settings-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-settings" type="button" role="tab" aria-controls="pills-settings" aria-selected="false") Settings
     li.nav-item(role="presentation") 
       button#pills-raw-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-raw" type="button" role="tab" aria-controls="pills-raw" aria-selected="false") Raw
-  #pills-tabContent.tab-content
-    #pills-chat.tab-pane.fade.show.active(role="tabpanel" aria-labelledby="pills-chat-tab" tabindex="0")
-      label(for="fileInput") Append image to conversation
+  #pills-tabContent.tab-content.chat5-tab-content
+    #pills-chat.tab-pane.fade.show.active.chat5-pane(role="tabpanel" aria-labelledby="pills-chat-tab" tabindex="0")
+      label.chat5-input-label(for="fileInput") Append image to conversation
       input#fileInput.form-control(type="file", name="fileInput", accept="image/*")
-      hr
-      label(for="message") Append message to conversation
+      hr.chat5-divider
+      label.chat5-input-label(for="message") Append message to conversation
       // Template selector for chat messages
-      .d-flex.align-items-center.flex-wrap.gap-2.mb-2
-        label.form-label.mb-0(for="messageTemplateSelect") Template
-        select#messageTemplateSelect.form-select.form-select-sm(style="max-width: 360px;")
+      .chat5-template-controls.d-flex.align-items-center.flex-wrap.gap-2.mb-2
+        label.form-label.mb-0.chat5-input-label(for="messageTemplateSelect") Template
+        select#messageTemplateSelect.form-select.form-select-sm.chat5-template-select
           option(value="") -- Select chat template --
           each t in templates
             if t.Type === 'chat'
               option(value=t._id)= t.Category + ' - ' + t.Title
         button#messageTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current message as template") Save as template
-      #message
-      .d-flex.justify-content-evenly
+      #message.chat5-editor
+      .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
         button.btn.btn-success(onclick="Append(true, false)") Append
         button.btn.btn-success(onclick="Append(true, true)") Send & Response
         button.btn.btn-success(onclick="Append(false, true)") Response
-      hr
-      label(for="audio") Append audio to conversation
-      #audio
-        b TODO (upload file or record)
-    #pills-settings.tab-pane.fade(role="tabpanel" aria-labelledby="pills-settings-tab" tabindex="0")
-      label(for="title") Title 
-      .input-group 
+      hr.chat5-divider
+      label.chat5-input-label(for="audio") Append audio to conversation
+      #audio.chat5-audio
+        b.chat5-todo TODO (upload file or record)
+    #pills-settings.tab-pane.fade.chat5-pane(role="tabpanel" aria-labelledby="pills-settings-tab" tabindex="0")
+      label.chat5-input-label(for="title") Title 
+      .input-group.chat5-input-group 
         input#title.form-control(type="title", value=conversation.title)
         button.btn.btn-warning(onclick="GenerateTitle()") AI Generate 
-      label(for="summary") Summary 
-      .d-flex.flex-wrap.gap-2.align-items-start
+      label.chat5-input-label(for="summary") Summary 
+      .d-flex.flex-wrap.gap-2.align-items-start.chat5-summary-group
         textarea#summary.form-control.flex-grow-1(rows="4")= conversation.summary || ''
         button.btn.btn-warning(type="button", onclick="GenerateSummary()") AI Generate
-      label(for="category") Category 
+      label.chat5-input-label(for="category") Category 
       input#category.form-control(type="text", value=conversation.category)
-      label(for="tags") Tags 
+      label.chat5-input-label(for="tags") Tags 
       input#tags.form-control(type="text", value=conversation.tags.join(", "))
-      label(for="context") Context 
+      label.chat5-input-label(for="context") Context 
       // Template selector for context
-      .d-flex.align-items-center.flex-wrap.gap-2.mb-2
-        label.form-label.mb-0(for="contextTemplateSelect") Template
-        select#contextTemplateSelect.form-select.form-select-sm(style="max-width: 360px;")
+      .d-flex.align-items-center.flex-wrap.gap-2.mb-2.chat5-template-controls
+        label.form-label.mb-0.chat5-input-label(for="contextTemplateSelect") Template
+        select#contextTemplateSelect.form-select.form-select-sm.chat5-template-select
           option(value="") -- Select context template --
           each t in templates
             if t.Type === 'context'
               option(value=t._id)= t.Category + ' - ' + t.Title
         button#contextTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current context as template") Save as template
       textarea#context.form-control(name="context")= conversation.metadata.contextPrompt
-      label(for="tools") Tools 
+      label.chat5-input-label(for="tools") Tools 
       select#tools.form-control(name="tools", multiple) 
         option(value="image_generation", selected=conversation.metadata.tools.indexOf("image_generation")>=0) Generate Images
         option(value="web_search_preview", selected=conversation.metadata.tools.indexOf("web_search_preview")>=0) Search Web
-      label(for="model") Model 
+      label.chat5-input-label(for="model") Model 
       select#model.form-control(name="model") 
         option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})
         each m in chat_models
           option(value=m.api_model)= m.model_name
-      label(for="maxMessages") Max messages 
+      label.chat5-input-label(for="maxMessages") Max messages 
       input#maxMessages.form-control(type="number", min="1", value=conversation.metadata.maxMessages)
-      label(for="reasoning") Reasoning effort 
+      label.chat5-input-label(for="reasoning") Reasoning effort 
       select#reasoning.form-control(name="reasoning") 
         option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
         option(value="minimal") Minimal 
         option(value="low") Low 
         option(value="medium") Medium 
         option(value="high") High 
-      label(for="verbosity") Verbosity 
+      label.chat5-input-label(for="verbosity") Verbosity 
       select#verbosity.form-control(name="verbosity") 
         option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})
         option(value="low") Low 
         option(value="medium") Medium 
         option(value="high") High 
-      label(for="members") Members 
+      label.chat5-input-label(for="members") Members 
       input#members.form-control(type="text", value=conversation.members.join(", "))
-      .d-flex.justify-content-evenly
+      .chat5-update-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
         button#updateSettingsButton.btn.btn-success(type="button", onclick="UpdateConversation()", disabled=conversationSource !== 'conversation5') Update
-    #pills-raw.tab-pane.fade(role="tabpanel" aria-labelledby="pills-raw-tab" tabindex="0")
+    #pills-raw.tab-pane.fade.chat5-pane(role="tabpanel" aria-labelledby="pills-raw-tab" tabindex="0")
       h3 Conversation 
       .row 
         .col 
@@ -219,7 +227,7 @@ block content
     .loading-content
       .loader
       p Loading...
-  #editTextModal.modal.fade(style="z-index:9999;" tabindex="-1" aria-labelledby="editTextModalLabel" aria-hidden="true")
+  #editTextModal.modal.fade(tabindex="-1" aria-labelledby="editTextModalLabel" aria-hidden="true")
     .modal-dialog
       .modal-content
         label#text_to_edit_label(for="text_to_edit") text

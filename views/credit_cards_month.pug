@@ -12,7 +12,7 @@ block content
       .credit-month__nav
         button#prevMonthBtn(type="button") < Prev
         button#nextMonthBtn(type="button") Next >
-        select#cardSelectMonth.credit-select
+        select#cardSelectMonth.credit-select.form-select
           each card in cards
             option(value=card.id, selected=card.id === activeCardId)= card.name
     .credit-month__content
@@ -62,7 +62,7 @@ block content
           h4.credit-section-title Comparison vs previous month
           .comparison-card__body
     .month-bottom-bar
-      a#backToDashboard(href="/budget/cards") Back to dashboard
+      a#backToDashboard.btn.btn-outline-primary(href="/budget/cards") Back to dashboard
       span.inline-feedback#updatedAtInfo
 
 block script

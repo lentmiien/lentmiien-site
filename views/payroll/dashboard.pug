@@ -1,42 +1,53 @@
-
 extends ../layout
+
 block content
-  h1 Payroll dashboard
-  a.btn.btn-secondary(href='/payroll') ← back to list
+  .payroll-dashboard-page
+    .payroll-header.d-flex.flex-wrap.align-items-center.justify-content-between.mb-3.gap-2
+      h1.mb-0 Payroll dashboard
+      a.btn.btn-outline-secondary(href='/payroll') ↁEBack to list
 
-  // --- MULTI-YEAR NET CHART ----------------------------------------
-  canvas#netChart.w-100(style='max-width:980px;height:420px')
+    .card.payroll-chart-card.mb-4
+      .card-body
+        h3.card-title.mb-3 Multi-year net trend
+        canvas#netChart.w-100(style='max-width:980px;height:420px')
 
-  // --- YEARLY SUMMARY TABLE ----------------------------------------
-  h3.mt-5 Yearly totals
-  table.table.table-striped
-    thead
-      tr
-        th Year
-        th.text-end Gross
-        th.text-end Gross YoY %
-        th.text-end Net
-        th.text-end Net YoY %
-    tbody
-      each r in yearSummary
-        tr
-          td #{r.year}
-          td.text-end #{r.gross.toLocaleString()}
-          td.text-end #{r.grossYoY != null ? r.grossYoY.toFixed(1)+'%' : '—'}
-          td.text-end #{r.net.toLocaleString()}
-          td.text-end #{r.netYoY != null ? r.netYoY.toFixed(1)+'%' : '—'}
+    .card.mb-4
+      .card-body
+        h3.card-title.mb-3 Yearly totals
+        .table-responsive
+          table.table.table-striped.table-dark.align-middle.mb-0
+            thead
+              tr
+                th Year
+                th.text-end Gross
+                th.text-end Gross YoY %
+                th.text-end Net
+                th.text-end Net YoY %
+            tbody
+              each r in yearSummary
+                tr
+                  td #{r.year}
+                  td.text-end #{r.gross.toLocaleString()}
+                  td.text-end #{r.grossYoY != null ? r.grossYoY.toFixed(1)+'%' : '—'}
+                  td.text-end #{r.net.toLocaleString()}
+                  td.text-end #{r.netYoY != null ? r.netYoY.toFixed(1)+'%' : '—'}
 
-  h3.mt-5 6-month forecast
-  table.table.table-bordered.w-auto
-    thead: tr
-      th Month
-      th.text-end Predicted net
-    tbody
-      each f in forecast
-        tr
-          td #{f.month}
-          td.text-end #{f.predicted.toLocaleString()}
+    .card
+      .card-body
+        h3.card-title.mb-3 6-month forecast
+        .table-responsive.w-auto
+          table.table.table-bordered.table-dark.align-middle.mb-0
+            thead
+              tr
+                th Month
+                th.text-end Predicted net
+            tbody
+              each f in forecast
+                tr
+                  td #{f.month}
+                  td.text-end #{f.predicted.toLocaleString()}
 
+block script
   script(src='https://cdn.jsdelivr.net/npm/chart.js')
   script.
     const ctx = document.getElementById('netChart').getContext('2d');

@@ -1,30 +1,35 @@
 extends ../layout
 
 block content
-  h1 Monthly payroll list
-  a.btn(href='/payroll/new') + Add month
-  a.btn(href='/payroll/analytics') Analytics
-  a.btn.ms-2(href='/payroll/dashboard') Dashboard
+  .payroll-list-page
+    .payroll-header.d-flex.flex-wrap.align-items-center.justify-content-between.mb-3.gap-2
+      h1.mb-0 Monthly payroll list
+      .d-flex.flex-wrap.gap-2
+        a.btn.btn-primary(href='/payroll/new') + Add month
+        a.btn.btn-outline-secondary(href='/payroll/analytics') Analytics
+        a.btn.btn-outline-primary(href='/payroll/dashboard') Dashboard
 
-  if docs.length
-    table.table.table-striped.mt-3
-      thead
-        tr
-          th Month
-          th Pay date
-          th Gross
-          th Net
-          th
-      tbody
-        each d in docs
-          tr
-            td #{d.month}
-            td #{d.payDate.toISOString().substring(0,10)}
-            td.text-end #{d.grossAmount.toLocaleString()}
-            td.text-end #{d.netAmount.toLocaleString()}
-            td
-              a.btn.btn-sm.btn-primary(href=`/payroll/${d._id}`) view
-              a.btn.btn-sm.btn-warning.ms-1(href=`/payroll/${d._id}/edit`) edit
-
-  else
-    p No data yet.  Add your first month!
+    if docs.length
+      .table-responsive.shadow-sm.rounded
+        table.table.table-striped.table-dark.align-middle.mb-0
+          thead
+            tr
+              th Month
+              th Pay date
+              th.text-end Gross
+              th.text-end Net
+              th Actions
+          tbody
+            each d in docs
+              tr
+                td #{d.month}
+                td #{d.payDate.toISOString().substring(0,10)}
+                td.text-end #{d.grossAmount.toLocaleString()}
+                td.text-end #{d.netAmount.toLocaleString()}
+                td
+                  .payroll-actions
+                    a.btn.btn-sm.btn-primary(href=`/payroll/${d._id}`) View
+                    a.btn.btn-sm.btn-warning.ms-1(href=`/payroll/${d._id}/edit`) Edit
+    else
+      .empty-state
+        p No data yet. Add your first month!
