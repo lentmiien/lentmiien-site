@@ -9,7 +9,7 @@ const editor = new toastui.Editor({
   height: '500px',
   initialEditType: 'markdown',
   // previewStyle: 'vertical',
-  // theme: 'dark',
+  theme: 'dark',
 });
 // Make accessible to inline scripts
 window.editor = editor;
