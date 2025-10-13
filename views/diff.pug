@@ -1,0 +1,212 @@
+//- views/diff.pug
+doctype html
+html(lang="en")
+  head
+    meta(charset="utf-8")
+    meta(name="viewport", content="width=device-width, initial-scale=1")
+    title #{title || 'JSON Diff'}
+    //- Bootstrap 5
+    link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css", integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH", crossorigin="anonymous")
+
+    style.
+      body { background-color: #f7f8fa; }
+      .diff-table { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: .875rem; }
+      .diff-path code { white-space: pre-wrap; word-break: break-word; }
+      .row-added { border-left: 4px solid #2ecc71; background-color: #eafaf1; }
+      .row-removed { border-left: 4px solid #e74c3c; background-color: #fff1f0; }
+      .row-changed { border-left: 4px solid #f39c12; background-color: #fff8e5; }
+      .row-typeMismatch { border-left: 4px solid #6c5ce7; background-color: #f5f2ff; }
+      .value code { white-space: pre-wrap; word-break: break-word; }
+      .badge-cat { text-transform: capitalize; }
+      .toolbar { gap: .5rem; }
+      .sticky-header { position: sticky; top: 0; z-index: 1; background: #fff; }
+      .copy-btn { opacity: .7; transition: opacity .15s ease-in-out; }
+      .copy-btn:hover { opacity: 1; }
+
+  body
+    .container.py-4
+      .row 
+        form(action="/diff", method="post") 
+          .col 
+            label(for="a") Side A JSON 
+            textarea#a.form-control(name="a")
+          .col 
+            label(for="b") Side B JSON 
+            textarea#b.form-control(name="b")
+            input.btn.btn-success(type="submit", value="Compare")
+      .d-flex.align-items-center.mb-3
+        h1.h4.mb-0 #{title || 'JSON Diff'}
+        .ms-3
+          span.badge.bg-warning-subtle.text-warning.border.border-warning.me-1
+            | Changed:
+            span.ms-1= diff.summary.changed
+          span.badge.bg-success-subtle.text-success.border.border-success.me-1
+            | Added:
+            span.ms-1= diff.summary.added
+          span.badge.bg-danger-subtle.text-danger.border.border-danger.me-1
+            | Removed:
+            span.ms-1= diff.summary.removed
+          span.badge.bg-primary-subtle.text-primary.border.border-primary.me-1
+            | Types:
+            span.ms-1= diff.summary.typeMismatch
+          span.badge.bg-secondary-subtle.text-secondary.border.border-secondary
+            | Total:
+            span.ms-1= diff.summary.total
+
+      .d-flex.flex-wrap.align-items-center.toolbar.mb-3
+        .btn-group.btn-group-sm(role="group" aria-label="Filter kinds")
+          -
+            const allKinds = ['changed','added','removed','typeMismatch'];
+            const kindLabels = {
+              changed: 'Changed',
+              added: 'Added',
+              removed: 'Removed',
+              typeMismatch: 'Type mismatch'
+            };
+            const kindBtnClasses = {
+              changed: 'btn-outline-warning',
+              added: 'btn-outline-success',
+              removed: 'btn-outline-danger',
+              typeMismatch: 'btn-outline-primary'
+            };
+          each k in allKinds
+            - const cid = `toggle-${k}`;
+            input.btn-check(type="checkbox", id=cid, checked, data-filter-kind=k)
+            label.btn(class=kindBtnClasses[k], for=cid)= kindLabels[k]
+        .ms-auto
+          input#searchInput.form-control.form-control-sm(type="search", placeholder="Filter by path or value...")
+
+      if diff.summary.total === 0
+        .alert.alert-success.shadow-sm No differences found.
+      else
+        .table-responsive
+          table.table.table-hover.align-middle.diff-table
+            thead.sticky-header
+              tr
+                th(style="width:38%") Path
+                th(style="width:28%") #{typeof sideALabel === 'string' ? sideALabel : 'A'}
+                th(style="width:28%") #{typeof sideBLabel === 'string' ? sideBLabel : 'B'}
+                th(style="width:6%") Kind
+            tbody
+              -
+                const renderRow = (e) => {
+                  const cls = `row-${e.kind}`;
+                  const badgeClassMap = {
+                    changed: 'bg-warning-subtle text-warning border border-warning',
+                    added: 'bg-success-subtle text-success border border-success',
+                    removed: 'bg-danger-subtle text-danger border border-danger',
+                    typeMismatch: 'bg-primary-subtle text-primary border border-primary',
+                    unchanged: 'bg-secondary-subtle text-secondary border border-secondary'
+                  };
+                  const label = (e.kind === 'typeMismatch') ? 'type mismatch' : e.kind;
+                  const badgeClass = badgeClassMap[e.kind] || 'bg-secondary';
+                  return { cls, badgeClass, label };
+                };
+              each e in diff.groups.changed
+                - const meta = renderRow(e);
+                tr(class=meta.cls data-kind=e.kind data-path=e.path data-aval=e.aDisplay data-bval=e.bDisplay)
+                  td.diff-path
+                    code= e.path
+                    button.btn.btn-sm.btn-light.border.copy-btn.ms-2(type="button" title="Copy path" data-copy-path=e.path)
+                      i.bi.bi-clipboard
+                  td.value
+                    if e.aType !== 'undefined'
+                      code= e.aDisplay
+                    else
+                      span.text-muted fst-italic (missing)
+                  td.value
+                    if e.bType !== 'undefined'
+                      code= e.bDisplay
+                    else
+                      span.text-muted fst-italic (missing)
+                  td
+                    span.badge.badge-cat(class=meta.badgeClass)= meta.label
+              each e in diff.groups.added
+                - const meta = renderRow(e);
+                tr(class=meta.cls data-kind=e.kind data-path=e.path data-aval=e.aDisplay data-bval=e.bDisplay)
+                  td.diff-path
+                    code= e.path
+                    button.btn.btn-sm.btn-light.border.copy-btn.ms-2(type="button" title="Copy path" data-copy-path=e.path)
+                      i.bi.bi-clipboard
+                  td.value
+                    span.text-muted fst-italic (missing)
+                  td.value
+                    code= e.bDisplay
+                  td
+                    span.badge.badge-cat(class=meta.badgeClass)= meta.label
+              each e in diff.groups.removed
+                - const meta = renderRow(e);
+                tr(class=meta.cls data-kind=e.kind data-path=e.path data-aval=e.aDisplay data-bval=e.bDisplay)
+                  td.diff-path
+                    code= e.path
+                    button.btn.btn-sm.btn-light.border.copy-btn.ms-2(type="button" title="Copy path" data-copy-path=e.path)
+                      i.bi.bi-clipboard
+                  td.value
+                    code= e.aDisplay
+                  td.value
+                    span.text-muted fst-italic (missing)
+                  td
+                    span.badge.badge-cat(class=meta.badgeClass)= meta.label
+              each e in diff.groups.typeMismatch
+                - const meta = renderRow(e);
+                tr(class=meta.cls data-kind=e.kind data-path=e.path data-aval=e.aDisplay data-bval=e.bDisplay)
+                  td.diff-path
+                    code= e.path
+                    button.btn.btn-sm.btn-light.border.copy-btn.ms-2(type="button" title="Copy path" data-copy-path=e.path)
+                      i.bi.bi-clipboard
+                  td.value
+                    code= e.aDisplay
+                  td.value
+                    code= e.bDisplay
+                  td
+                    span.badge.badge-cat(class=meta.badgeClass)= meta.label
+
+    //- Optional Bootstrap Icons for clipboard icon; safe if not present (will just show blank)
+    link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css")
+
+    script.
+      document.addEventListener('DOMContentLoaded', () => {
+        const toggles = document.querySelectorAll('[data-filter-kind]');
+        const searchInput = document.getElementById('searchInput');
+        const rows = Array.from(document.querySelectorAll('tbody tr'));
+
+        function applyFilters() {
+          const activeKinds = new Set(Array.from(toggles).filter(t => t.checked).map(t => t.getAttribute('data-filter-kind')));
+          const q = (searchInput.value || '').trim().toLowerCase();
+
+          rows.forEach(tr => {
+            const kind = tr.dataset.kind;
+            let show = activeKinds.has(kind);
+            if (show && q) {
+              const hay = (tr.dataset.path + ' ' + (tr.dataset.aval || '') + ' ' + (tr.dataset.bval || '')).toLowerCase();
+              show = hay.includes(q);
+            }
+            tr.style.display = show ? '' : 'none';
+          });
+        }
+
+        toggles.forEach(t => t.addEventListener('change', applyFilters));
+        searchInput.addEventListener('input', applyFilters);
+        applyFilters();
+
+        document.querySelectorAll('[data-copy-path]').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const path = btn.getAttribute('data-copy-path');
+            try {
+              await navigator.clipboard.writeText(path);
+              btn.classList.add('btn-success');
+              setTimeout(() => btn.classList.remove('btn-success'), 600);
+            } catch {
+              // Fallback: select a temporary input
+              const i = document.createElement('input');
+              i.value = path;
+              document.body.appendChild(i);
+              i.select();
+              document.execCommand('copy');
+              document.body.removeChild(i);
+              btn.classList.add('btn-success');
+              setTimeout(() => btn.classList.remove('btn-success'), 600);
+            }
+          });
+        });
+      });

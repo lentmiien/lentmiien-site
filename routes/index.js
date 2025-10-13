@@ -48,4 +48,10 @@ router.get('/api_test', controller.api_test);
 /****************************/
 router.get('/img_select', controller.img_select);
 
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+router.get('/diff', controller.diff);
+router.post('/diff', controller.diff);
+
 module.exports = router;

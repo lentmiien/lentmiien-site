@@ -1,5 +1,6 @@
 const { LogModel, SummaryModel, AggregatedDataModel, DetailedDataModel, Dht22AggregatedData, Dht22DetailedData } = require('../database');
 const logger = require('../utils/logger');
+const { diffJSON } = require('../utils/diffJSON');
 
 exports.index = (req, res) => {
   res.render('index');
@@ -96,4 +97,20 @@ exports.api_test = (req, res) => {
 /****************************/
 exports.img_select = (req, res) => {
   res.render("img_select");
+}
+
+/****************************/
+// TEST TEST TEST TEST TEST //
+/****************************/
+exports.diff = async (req, res) => {
+  let a = { user: { name: 'Alice', age: 29 }, items: [ { id: 1, price: 9.99 }, 2 ] };
+  let b = { user: { name: 'Alice B', age: 29 }, items: [ { id: 1, price: 12.99 }, 2, 3 ] };
+
+  if (req.body && req.body.a && req.body.b) {
+    a = JSON.parse(req.body.a);
+    b = JSON.parse(req.body.b);
+  }
+
+  const diff = diffJSON(a, b, { onTypeMismatch: 'record' }); // or 'expand'
+  res.render('diff', { title: 'JSON Diff', diff, sideALabel: 'Left (A)', sideBLabel: 'Right (B)' });
 }
