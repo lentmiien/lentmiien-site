@@ -1,4 +1,21 @@
-In the PUG template `views/chat5_chat.pug` I have the button `button.btn.btn-success(onclick="") Update`, that has not yet been implemented.
-Please help me implement this button, to simply update the conversation parameters, but it should only work for entries from the `conversation5.js` database, if loading a `conversation4.js` conversation, the button can remain disabled. Lets also expose the `maxMessages` database field in the UI, to set the cutoff for long conversations.
+In my "budget2" router and controller, I'd like to add a new simple tool for tracking my Credit Card usage. Input should be manual, and each input should have a transaction date, a label, a transaction amount (that can be negative for repayments), an external flag (for use outside Amazon), and an external multiplier.
+*External transactions usually takes longer to show up in the app, an also give a 1% point-back at the end of the month, external multiplier is 1% by default, but can be changed for purchases in certain stores, if there is a larger point-back. The point calculation is to sum all transactions from the month, then apply the point percentage and round to nearest integer.
 
-Also, I'd like to enable creating a conversation summary, similarly as creating a conversation title through AI, something like the `button.btn.btn-warning(onclick="GenerateTitle()") AI Generate` button on the same page, but for generating a summary. Create the necessary backend functionality to support this functionality and add the button to the UI. I'd like to use the OpenAI model `gpt-4.1-mini` for generating the summaries, ignore images, and generate summaries based on the text messages that aren't hidden from the bot.
+I want the following pages:
+* A landing page, showing a graph (d3.js) of my total usage from the last 6 months, total repayments within the same months, and points earned within the same months, points will be much lower than usage/repayments, so display point amount on the left side y-axis, and usage/repayments on the right side y-axis, and go from old on the left, to new on the right, for the x-axis. Below the graph, I want a table showing the transactions from the current month, old at bottom, new at top, with an input row for a new transactions as the first row below the header row. I want labels to be free-text input with auto-complete generated from the last 6 months of data, with most common at top.
+* A monthly details page, showing a graph of the daily running total, some simple statistics from the month, and a comparsion with previous month. There should be buttons to step forward/backward a month, and I want to page to cover the full viewport, without need for scrolling.
+* I also want a CSV bulk upload function for a one-time use, to initiate my database with data from the start of 2025, when I started using my card and had a 0 JPY usage. Going forward, I think I want to store my usage balance at the end of each month, which becomes the scheduled repayment at the 26th (or following business day) for the next month, and use this value to calculate my current balance (transactions after the last end-of-month), but I don't want to auto save this value, when the next month starts, I want to show my calculated end of month usage balance with a "confirm" button on the landing page, and once my app update with the data from last month, I just press the "confirm" button if the values matches, or add any missing transactions until they matches and press the "confirm" button.
+
+CSV format:
+```
+date,label,amount
+YYYY-MM-DD,text,number
+```
+(number can be a negative value, example "-18696")
+
+Just to make the app future proof, link every entry to a specific credit card (only have one right now, but might need a second and possible third in the future). So, all in all I need 3 databases for this tool:
+* Credit Card: store issued date, credit limit, and a name (I don't want to store my specific credit card details for security reasons)
+* Monthly balance: store usage balance at end of each month, lets also store pre-calculated values of credit card usage, total repayments, and external points for the month
+* Transactions: store individual transaction details
+
+As for the overall style, go for a modern minimalistic look.

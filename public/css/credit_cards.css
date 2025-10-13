@@ -1,0 +1,461 @@
+:root {
+  --credit-surface: #ffffff;
+  --credit-muted: #6b7280;
+  --credit-border: #e5e7eb;
+  --credit-accent: #2563eb;
+  --credit-accent-soft: rgba(37, 99, 235, 0.1);
+  --credit-positive: #16a34a;
+  --credit-negative: #dc2626;
+  --credit-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.credit-dashboard {
+  background: var(--credit-surface);
+  border-radius: 18px;
+  padding: 24px 28px;
+  box-shadow: var(--credit-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.credit-dashboard__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.credit-dashboard__title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.credit-dashboard__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.credit-limit-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.credit-limit-form input {
+  width: 160px;
+  border-radius: 10px;
+  border: 1px solid var(--credit-border);
+  padding: 8px 12px;
+}
+
+.credit-limit-form button {
+  white-space: nowrap;
+}
+
+.credit-select {
+  min-width: 220px;
+  border-radius: 999px;
+  border: 1px solid var(--credit-border);
+  padding: 8px 18px;
+  font-weight: 500;
+}
+
+.metric-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.metric-card {
+  border: 1px solid var(--credit-border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  background: var(--credit-surface);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metric-card__label {
+  font-size: 0.85rem;
+  color: var(--credit-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.metric-card__value {
+  font-size: 1.55rem;
+  font-weight: 600;
+}
+
+.metric-card__value--positive {
+  color: var(--credit-positive);
+}
+
+.metric-card__value--negative {
+  color: var(--credit-negative);
+}
+
+.chart-panel {
+  border: 1px solid var(--credit-border);
+  border-radius: 16px;
+  background: var(--credit-surface);
+  padding: 20px 24px;
+  box-shadow: 0 2px 15px rgba(15, 23, 42, 0.05);
+}
+
+.chart-panel h3 {
+  margin-bottom: 12px;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+#usageChart {
+  width: 100%;
+  min-height: 320px;
+}
+
+.pending-confirmations {
+  border-radius: 14px;
+  border: 1px solid var(--credit-border);
+  background: var(--credit-accent-soft);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pending-confirmations__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.pending-confirmations__item strong {
+  font-size: 1rem;
+}
+
+.credit-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.05);
+}
+
+.credit-table thead {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.credit-table th,
+.credit-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.credit-table tbody tr:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.credit-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.credit-table__amount {
+  font-weight: 600;
+}
+
+.credit-table__amount--positive {
+  color: var(--credit-positive);
+}
+
+.credit-table__amount--negative {
+  color: var(--credit-negative);
+}
+
+.credit-table__external {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--credit-accent);
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
+.form-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.credit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.subtle-btn {
+  border: 1px solid var(--credit-border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 600;
+  background: var(--credit-surface);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.subtle-btn:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: var(--credit-accent);
+}
+
+.credit-section-title {
+  margin-bottom: 12px;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.csv-upload {
+  border: 1px dashed var(--credit-border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.csv-upload input[type="file"] {
+  border: 1px solid var(--credit-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fafafa;
+}
+
+.inline-feedback {
+  font-size: 0.9rem;
+  color: var(--credit-muted);
+}
+
+.inline-feedback--error {
+  color: var(--credit-negative);
+}
+
+.badge-soft {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--credit-accent);
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.credit-month {
+  min-height: calc(100vh - 120px);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 24px;
+  padding: 32px 28px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.04), transparent 45%);
+}
+
+.credit-month__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.credit-month__header h2 {
+  font-size: 1.75rem;
+  margin: 0;
+}
+
+.credit-month__nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.credit-month__nav button {
+  border: none;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--credit-accent);
+  padding: 10px 16px;
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.credit-month__nav button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.credit-month__nav button:not(:disabled):hover {
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.credit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.credit-month__content {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.running-chart {
+  border-radius: 20px;
+  border: 1px solid var(--credit-border);
+  background: var(--credit-surface);
+  padding: 20px;
+  box-shadow: var(--credit-shadow);
+}
+
+.running-chart svg {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+}
+
+.month-summary {
+  border-radius: 20px;
+  background: var(--credit-surface);
+  border: 1px solid var(--credit-border);
+  box-shadow: var(--credit-shadow);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.month-summary__stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.month-summary__value {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.month-summary__percent {
+  font-size: 0.9rem;
+  color: var(--credit-muted);
+}
+
+.month-summary__hint {
+  font-size: 0.8rem;
+  color: var(--credit-muted);
+  text-align: right;
+}
+
+.month-summary__stat span {
+  color: var(--credit-muted);
+}
+
+.month-summary__stat strong {
+  font-size: 1.1rem;
+}
+
+.comparison-card {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 16px 18px;
+  background: rgba(15, 23, 42, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comparison-card__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.95rem;
+}
+
+.comparison-card__delta {
+  font-weight: 600;
+}
+
+.comparison-card__delta--up {
+  color: var(--credit-positive);
+}
+
+.comparison-card__delta--down {
+  color: var(--credit-negative);
+}
+
+.month-bottom-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.month-bottom-bar a {
+  text-decoration: none;
+  font-weight: 600;
+  color: var(--credit-accent);
+}
+
+@media (max-width: 992px) {
+  .credit-month__content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .credit-dashboard {
+    padding: 20px;
+  }
+
+  .credit-month {
+    padding: 24px 18px;
+  }
+
+  .credit-limit-form {
+    width: 100%;
+  }
+
+  .credit-limit-form input {
+    flex: 1;
+    min-width: 0;
+  }
+}

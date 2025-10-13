@@ -105,6 +105,10 @@ const SoraVideo = require('./models/sora_video');
 // Image gen bulk
 const BulkJob = require('./models/bulk_job');
 const BulkTestPrompt = require('./models/bulk_test_prompt');
+// Credit cards
+const CreditCard = require('./models/credit_card');
+const CreditCardMonthlyBalance = require('./models/credit_card_monthly_balance');
+const CreditCardTransaction = require('./models/credit_card_transaction');
 
 // Export models
 module.exports = {
@@ -165,4 +169,7 @@ module.exports = {
   SoraVideo,
   BulkJob,
   BulkTestPrompt,
+  CreditCard,
+  CreditCardMonthlyBalance,
+  CreditCardTransaction,
 };

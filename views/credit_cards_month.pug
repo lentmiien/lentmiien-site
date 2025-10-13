@@ -1,0 +1,82 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/credit_cards.css")
+
+block content
+  .credit-month
+    .credit-month__header
+      .credit-month__info
+        h2#monthTitle --
+        p.inline-feedback Running balance visualised for the selected month.
+      .credit-month__nav
+        button#prevMonthBtn(type="button") < Prev
+        button#nextMonthBtn(type="button") Next >
+        select#cardSelectMonth.credit-select
+          each card in cards
+            option(value=card.id, selected=card.id === activeCardId)= card.name
+    .credit-month__content
+      .running-chart
+        svg#runningChart
+      .month-summary
+        h3.credit-section-title Monthly snapshot
+        .month-summary__stat
+          span Credit limit
+          .month-summary__value
+            strong#summaryLimit --
+        .month-summary__stat
+          span Starting balance
+          .month-summary__value
+            strong#summaryStarting --
+            span.month-summary__percent#summaryStartingPercent --
+        .month-summary__stat
+          span Closing balance
+          .month-summary__value
+            strong#summaryClosing --
+            span.month-summary__percent#summaryClosingPercent --
+        .month-summary__stat
+          span Usage total
+          .month-summary__value
+            strong#summaryUsage --
+            span.month-summary__percent#summaryUsagePercent --
+        .month-summary__stat
+          span Repayments total
+          .month-summary__value
+            strong#summaryRepay --
+            span.month-summary__percent#summaryRepayPercent --
+        .month-summary__stat
+          span Net change
+          .month-summary__value
+            strong#summaryNet --
+            span.month-summary__percent#summaryNetPercent --
+        .month-summary__stat
+          span Points earned
+          strong#summaryPoints --
+        .month-summary__stat
+          span Peak utilization
+          .month-summary__value
+            strong#summaryPeak --
+            span.month-summary__percent#summaryPeakPercent --
+          span.month-summary__hint#summaryPeakDate --
+        .comparison-card#comparisonBlock
+          h4.credit-section-title Comparison vs previous month
+          .comparison-card__body
+    .month-bottom-bar
+      a#backToDashboard(href="/budget/cards") Back to dashboard
+      span.inline-feedback#updatedAtInfo
+
+block script
+  script(src="https://d3js.org/d3.v7.min.js")
+  script.
+    window.creditCardMonthPage = {
+      cards: !{JSON.stringify(cards || [])},
+      activeCardId: !{JSON.stringify(activeCardId || null)},
+      year: !{JSON.stringify(year)},
+      month: !{JSON.stringify(month)},
+      routes: {
+        monthData: '/budget/cards/api/month',
+        dashboard: '/budget/cards',
+        monthViewBase: '/budget/cards/month',
+      },
+    };
+  script(src="/js/credit_cards_month.js", defer)
