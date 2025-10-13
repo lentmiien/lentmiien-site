@@ -1,16 +1,5 @@
 extends layout
 
-block styles
-  style.
-    /* Scoped styles for My Page tiles */
-    .mypage-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:16px; }
-    a.mypage-tile { text-decoration:none; color:inherit; display:block; }
-    .img-card { display:block; border-radius:16px; padding:2px; background: linear-gradient(135deg,#dbeafe,#fce7f3 40%,#fef9c3); transition: transform .15s ease, box-shadow .15s ease; }
-    .img-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.15); }
-    .img-card__inner { position:relative; overflow:hidden; border-radius:14px; background:#fff; }
-    .mypage-img { width:100%; height:160px; object-fit:cover; display:block; background:#111; }
-    .img-card__label { position:absolute; left:8px; right:8px; bottom:8px; padding:6px 10px; border-radius:10px; background: rgba(255,255,255,.88); color:#111; font-weight:600; text-align:center; border:1px solid rgba(0,0,0,.06); backdrop-filter: blur(4px); }
-
 mixin tile(href, src, alt, label)
   a.mypage-tile(href=href)
     .img-card
@@ -26,13 +15,13 @@ block content
         each t in tasks 
           if !t.done && t.type === "todo"
             - noTasks = false
-            span.badge.bg-primary.me-1.schedule-task-pill= `${t.title} in ${t.start && t.start.getTime() > Date.now() ? Math.round((t.start.getTime() - Date.now()) / (1000*60*60)) : t.end && t.end.getTime() > Date.now() ? Math.round((t.end.getTime() - Date.now()) / (1000*60*60)) : 0} hour(s)`
+            span.badge.schedule-task-pill.schedule-task-pill--todo= `${t.title} in ${t.start && t.start.getTime() > Date.now() ? Math.round((t.start.getTime() - Date.now()) / (1000*60*60)) : t.end && t.end.getTime() > Date.now() ? Math.round((t.end.getTime() - Date.now()) / (1000*60*60)) : 0} hour(s)`
         each t in tasks 
           if !t.done && t.type === "tobuy"
             - noTasks = false
-            span.badge.bg-warning.text-dark.me-1.schedule-task-pill= t.title
+            span.badge.schedule-task-pill.schedule-task-pill--tobuy= t.title
         if noTasks
-          span.badge.bg-secondary.me-1.schedule-task-pill Show all tasks
+          span.badge.schedule-task-pill.schedule-task-pill--empty Show all tasks
   .row 
     .col 
       .mypage-grid
@@ -69,12 +58,12 @@ block content
   if new_openai_models.length > 0
     .row 
       .col
-        h3 New OpenAI models (last 30 days)
+        h3.mypage-section-title New OpenAI models (last 30 days)
         each m in new_openai_models
-          span(style="border: 1px solid gray; margin: 3px; padding: 2px; border-radius: 5px; display: inline-block;")= `${m.model} (${(new Date(m.created*1000)).toDateString()})`
+          span.model-tag.model-tag--openai= `${m.model} (${(new Date(m.created*1000)).toDateString()})`
   if new_anthropic_models.length > 0
     .row 
       .col
-        h3 New Anthropic models (last 30 days)
+        h3.mypage-section-title New Anthropic models (last 30 days)
         each m in new_anthropic_models
-          span(style="border: 1px solid gray; margin: 3px; padding: 2px; border-radius: 5px; display: inline-block;")= `${m.model} (${(new Date(m.created*1000)).toDateString()})`
+          span.model-tag.model-tag--anthropic= `${m.model} (${(new Date(m.created*1000)).toDateString()})`
