@@ -14,6 +14,89 @@ const editor = new toastui.Editor({
 // Make accessible to inline scripts
 window.editor = editor;
 
+function copyTextToClipboard(text) {
+  if (!text && text !== '') {
+    return Promise.resolve();
+  }
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (successful) {
+        resolve();
+      } else {
+        reject(new Error('Copy command was unsuccessful'));
+      }
+    } catch (err) {
+      document.body.removeChild(textarea);
+      reject(err);
+    }
+  });
+}
+
+function setCopyFeedback(el, status) {
+  if (!el) return;
+  if (!status) {
+    delete el.dataset.copyStatus;
+    return;
+  }
+  el.dataset.copyStatus = status;
+  setTimeout(() => {
+    if (el.dataset.copyStatus === status) {
+      delete el.dataset.copyStatus;
+    }
+  }, 1500);
+}
+
+function registerCodeCopyHandlers(root) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  const blocks = root.querySelectorAll('pre code');
+  if (!blocks.length) return;
+  blocks.forEach((codeEl) => {
+    const pre = codeEl.closest('pre');
+    if (!pre || pre.dataset.copyBound === 'true') return;
+    pre.dataset.copyBound = 'true';
+    pre.addEventListener('click', () => {
+      const codeText = codeEl.innerText || codeEl.textContent || '';
+      if (!codeText) return;
+      copyTextToClipboard(codeText)
+        .then(() => setCopyFeedback(pre, 'copied'))
+        .catch(() => {
+          console.warn('Unable to copy code block to clipboard');
+          setCopyFeedback(pre, '');
+        });
+    });
+  });
+}
+
+function enhanceTables(root) {
+  if (!root || typeof root.querySelectorAll !== 'function') return;
+  const tables = root.querySelectorAll('table');
+  if (!tables.length) return;
+  tables.forEach((table) => {
+    if (!table.classList.contains('table')) {
+      table.classList.add('table', 'table-striped', 'table-dark');
+    }
+    if (!table.closest('.chat5-table-wrapper')) {
+      const wrapper = document.createElement('div');
+      wrapper.classList.add('chat5-table-wrapper');
+      table.parentNode.insertBefore(wrapper, table);
+      wrapper.appendChild(table);
+    }
+    table.dataset.tableEnhanced = 'true';
+  });
+}
+
 function splitInputList(value) {
   if (!value || typeof value !== 'string') return [];
   return value.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
@@ -291,40 +374,67 @@ function AddMessageToUI(m) {
 }
 
 function message(m) {
-  const msg_div = document.createElement('div');
-  if (m.hideFromBot) msg_div.classList.add("bg-secondary");
+  const container = document.getElementById("conversationContainer");
+  if (!container) return;
+
+  const messageWrapper = document.createElement('div');
+  messageWrapper.classList.add('chat5-message');
+  if (m.hideFromBot) {
+    messageWrapper.classList.add('chat5-message--hidden');
+  }
+  const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT';
+  if (isBot) {
+    messageWrapper.classList.add('chat5-message--bot');
+    const avatar = document.createElement('img');
+    avatar.classList.add('chat5-avatar');
+    avatar.src = '/i/avatar.jpg';
+    avatar.alt = 'Bot avatar';
+    messageWrapper.appendChild(avatar);
+  }
+
+  const body = document.createElement('div');
+  body.classList.add('chat5-message-body');
+
   if (m.contentType === "text") {
     const span = document.createElement("span");
+    span.classList.add('chat5-message-text');
     span.id = `${m._id}textout`;
     span.innerHTML = marked.parse(m.content.text);
-    msg_div.append(span);
+    body.append(span);
   }
   if (m.contentType === "image") {
     const img = document.createElement("img");
+    img.classList.add('chat5-message-image');
     img.src = `/img/${m.content.image}`;
     img.alt = m.content.revisedPrompt;
-    img.style.maxHeight = "200px";
-    const p = document.createElement("p");
-    const i = document.createElement("i");
-    i.innerText = m.content.revisedPrompt;
-    p.append(i);
-    msg_div.append(img, p);
+    const caption = document.createElement("p");
+    caption.classList.add('chat5-image-caption');
+    const italics = document.createElement("i");
+    italics.innerText = m.content.revisedPrompt;
+    caption.append(italics);
+    body.append(img, caption);
   }
   if (m.contentType === "tool") {
     const div = document.createElement("div");
-    const i = document.createElement("i");
-    i.innerText = m.content.toolOutput;
-    div.append(i);
-    msg_div.append(div);
+    div.classList.add('chat5-message-tool');
+    const italics = document.createElement("i");
+    italics.innerText = m.content.toolOutput;
+    div.append(italics);
+    body.append(div);
   }
   if (m.contentType === "reasoning") {
     const div = document.createElement("div");
-    const i = document.createElement("i");
-    i.innerText = marked.parse(m.content.text);
-    div.append(i);
-    msg_div.append(div);
+    div.classList.add('chat5-message-reasoning');
+    const italics = document.createElement("i");
+    italics.innerHTML = marked.parse(m.content.text);
+    div.append(italics);
+    body.append(div);
   }
-  document.getElementById("conversationContainer").append(msg_div);
+
+  messageWrapper.appendChild(body);
+  container.append(messageWrapper);
+  registerCodeCopyHandlers(body);
+  enhanceTables(body);
 }
 
 const loadingPopup = document.getElementById("loadingPopup");
@@ -370,3 +480,8 @@ socket.on('welcome', () => {
 });
 
 document.addEventListener('DOMContentLoaded', setUpdateButtonState);
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.getElementById('conversationContainer');
+  registerCodeCopyHandlers(container);
+  enhanceTables(container);
+});

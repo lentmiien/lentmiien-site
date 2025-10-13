@@ -1621,6 +1621,64 @@ label,
   color: var(--text);
 }
 
+.chat5-message-body pre,
+#conversationContainer pre {
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  cursor: pointer;
+}
+
+.chat5-message-body pre[data-copy-status="copied"],
+#conversationContainer pre[data-copy-status="copied"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(255, 194, 71, 0.3);
+}
+
+.chat5-message-body pre code,
+#conversationContainer pre code {
+  display: block;
+  color: inherit;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: inherit;
+}
+
+.chat5-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+  padding-bottom: 6px;
+}
+
+/* .chat5-message-body table,
+#conversationContainer table {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  box-sizing: border-box;
+  table-layout: auto;
+}
+
+.chat5-table-wrapper table {
+  min-width: 100%;
+}
+
+.chat5-message-body table th,
+.chat5-message-body table td,
+#conversationContainer table th,
+#conversationContainer table td {
+  word-break: break-word;
+  white-space: normal;
+} */
+
 .chat5-message-image {
   display: block;
   border-radius: 10px;
@@ -1662,6 +1720,7 @@ label,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
 }
 
 .chat5-tabs .nav-link {
