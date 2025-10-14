@@ -359,10 +359,17 @@ exports.startGeneration = async (req, res) => {
 
     let processedImagePath = null;
     if (req.file && req.file.path) {
+      logger.debug('Processing Sora reference image', {
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+        sizeBytes: req.file.size,
+        targetSize: size,
+      });
       cleanupTargets.push(req.file.path);
       try {
         processedImagePath = await resizeReferenceImage(req.file.path, size);
         cleanupTargets.push(processedImagePath);
+        logger.debug('Resized Sora reference image', { processedImagePath });
       } catch (error) {
         logger.error('Failed to prepare Sora reference image', { error });
         return res.status(400).json({ error: 'Unable to process reference image. Please try a different file.' });

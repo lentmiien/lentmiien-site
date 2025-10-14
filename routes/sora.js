@@ -49,7 +49,7 @@ router.post('/api/videos', (req, res, next) => {
       }
       return next(error);
     }
-    return controller.startGeneration(req, res);
+    controller.startGeneration(req, res).catch(next);
   });
 });
 router.get('/api/videos/:id/status', controller.getVideoStatus);
