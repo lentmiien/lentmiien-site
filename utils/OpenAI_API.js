@@ -249,7 +249,13 @@ const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
     };
 
     if (inputImagePath) {
-      payload.input_reference = fs.createReadStream(inputImagePath);
+      const filename = path.basename(inputImagePath) || 'reference.jpg';
+      const inputReference = await OpenAI.toFile(
+        fs.createReadStream(inputImagePath),
+        filename,
+        { type: 'image/jpeg' },
+      );
+      payload.input_reference = inputReference;
     }
 
     const video = await openai.videos.create(payload);
