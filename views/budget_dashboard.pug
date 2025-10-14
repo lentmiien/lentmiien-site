@@ -2,7 +2,7 @@ extends layout
 
 block content
   h2 Budget Dashboard 
-  table.table.table-striped 
+  table.table.table-striped.table-dark 
     thead 
       tr 
         th Account 
@@ -90,7 +90,7 @@ block content
     each a in data.accounts 
       .col 
         h4= a.name
-        table.table.table-striped 
+        table.table.table-striped.table-dark 
           thead 
             tr 
               th Date 

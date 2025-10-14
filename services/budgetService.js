@@ -272,10 +272,39 @@ async function getTransactionsByPeriod(year, month) {
   const lower = yearNum * 10000 + monthNum * 100;
   const upper = lower + 32;
 
-  const [transactions, accounts] = await Promise.all([
+  const monthStart = new Date(yearNum, monthNum - 1, 1);
+  const monthEnd = new Date(yearNum, monthNum, 1);
+
+  const [transactions, accounts, receipts, payrolls] = await Promise.all([
     TransactionDBModel.find({ date: { $gte: lower, $lt: upper } }).sort({ date: 1, transaction_business: 1 }).lean(),
     AccountDBModel.find().select('_id name').lean(),
+    Receipt.find({ date: { $gte: monthStart, $lt: monthEnd } }).select('_id date amount').lean(),
+    Payroll.find({ payDate: { $gte: monthStart, $lt: monthEnd } }).select('_id payDate bankTransferAmount').lean(),
   ]);
+
+  const receiptLookup = {};
+  receipts.forEach(receipt => {
+    const dateNumber = Number.parseInt(receipt.date.toISOString().slice(0, 10).replace(/-/g, ''), 10);
+    if (!Number.isFinite(dateNumber)) {
+      return;
+    }
+    if (!receiptLookup[dateNumber]) {
+      receiptLookup[dateNumber] = {};
+    }
+    receiptLookup[dateNumber][receipt.amount] = receipt._id.toString();
+  });
+
+  const payrollLookup = {};
+  payrolls.forEach(payroll => {
+    const dateNumber = Number.parseInt(payroll.payDate.toISOString().slice(0, 10).replace(/-/g, ''), 10);
+    if (!Number.isFinite(dateNumber)) {
+      return;
+    }
+    if (!payrollLookup[dateNumber]) {
+      payrollLookup[dateNumber] = {};
+    }
+    payrollLookup[dateNumber][payroll.bankTransferAmount] = payroll._id.toString();
+  });
 
   const accountMap = accounts.reduce((acc, account) => {
     acc[account._id.toString()] = account.name;
@@ -286,6 +315,8 @@ async function getTransactionsByPeriod(year, month) {
     const id = t._id.toString();
     const dateStr = t.date.toString().padStart(8, '0');
     const displayDate = `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
+    const receiptId = receiptLookup[t.date] && receiptLookup[t.date][t.amount] ? receiptLookup[t.date][t.amount] : null;
+    const payrollId = payrollLookup[t.date] && payrollLookup[t.date][t.amount] ? payrollLookup[t.date][t.amount] : null;
     return {
       ...t,
       _id: id,
@@ -293,6 +324,10 @@ async function getTransactionsByPeriod(year, month) {
       displayDate,
       fromAccountName: accountMap[t.from_account] || t.from_account,
       toAccountName: accountMap[t.to_account] || t.to_account,
+      linkedReceiptId: receiptId,
+      linkedPayrollId: payrollId,
+      hasLinkedReceipt: Boolean(receiptId),
+      hasLinkedPayroll: Boolean(payrollId),
     };
   });
 

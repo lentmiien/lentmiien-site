@@ -1,58 +1,98 @@
 extends layout
 
 block content
-  h2.mb-3 Budget Transaction Review
-  p.text-muted.mb-4 Review transactions recorded in a past month. Use the selector below to jump between periods and tidy up mistakes quickly.
+  .budget-review
+    .d-flex.flex-wrap.align-items-center.justify-content-between.mb-3
+      h2.mb-2 Budget Transaction Review
+      if periodLabel
+        span.badge.bg-secondary-subtle.text-uppercase.fw-semibold(style='color: var(--accent); letter-spacing: 0.08em;') #{periodLabel}
+    p.text-muted.mb-4 A dark-mode friendly review of recorded transactions. Select a month to surface matching receipts and payroll entries instantly.
 
-  form#periodSelector.mb-4
-    label.form-label(for='periodPicker') Period
-    input#periodPicker.form-control(type='month', name='period', value=periodLabel)
+    .card.mb-4
+      .card-body
+        form#periodSelector
+          label.form-label.text-secondary(for='periodPicker') Period
+          input#periodPicker.form-control(type='month', name='period', value=periodLabel)
 
-  if summary
-    .d-flex.flex-wrap.gap-4.mb-4
-      .pe-4
-        span.text-muted.d-block Total Amount
-        span.fs-5= summary.totalAmount.toLocaleString()
-      .pe-4
-        span.text-muted.d-block Transactions
-        span.fs-5= summary.count
-      .pe-4
-        span.text-muted.d-block Showing
-        span.fs-5 #{periodLabel}
+    if summary
+      .row.g-3.mb-4
+        .col-md-4.col-sm-6
+          .card.shadow-sm.h-100
+            .card-body
+              span.text-muted.text-uppercase.small.d-block.mb-2 Total Amount
+              .d-flex.align-items-baseline.gap-2
+                span.fs-4.fw-semibold(style='color: var(--accent);')= summary.totalAmount.toLocaleString()
+                span.text-muted.small JPY
+        .col-md-4.col-sm-6
+          .card.shadow-sm.h-100
+            .card-body
+              span.text-muted.text-uppercase.small.d-block.mb-2 Transactions
+              span.fs-4.fw-semibold(style='color: var(--text);')= summary.count
+        .col-md-4.col-sm-6
+          .card.shadow-sm.h-100
+            .card-body
+              span.text-muted.text-uppercase.small.d-block.mb-2 Showing
+              span.fs-5.fw-semibold(style='color: var(--brand);') #{periodLabel}
 
-  if transactions && transactions.length
-    table.table.table-striped.table-hover
-      thead
-        tr
-          th Date
-          th Business
-          th.text-end Amount
-          th Accounts
-          th Category
-          th Tags
-          th Type
-          th Fees
-          th.text-end Actions
-      tbody
-        each t in transactions
-          tr(id='transaction-' + t.id)
-            td= t.displayDate
-            td
-              strong= t.transaction_business
-            td.text-end= t.amount.toLocaleString()
-            td
-              span.d-block From: #{t.fromAccountName}
-              span.d-block To: #{t.toAccountName}
-            td= t.categories
-            td= t.tags
-            td= t.type
-            td
-              span.d-block From fee: #{t.from_fee}
-              span.d-block To fee: #{t.to_fee}
-            td.text-end
-              button.btn.btn-sm.btn-outline-danger(type='button', data-delete-id=t.id) Delete
-  else
-    p.text-muted No transactions were recorded for this period.
+    if transactions && transactions.length
+      .table-responsive.shadow-sm
+        table.table.table-striped.table-dark.table-hover.mb-0
+          thead
+            tr
+              th Date
+              th Business
+              th.text-end Amount
+              th Accounts
+              th Category
+              th Tags
+              th Type
+              th Fees
+              th Linked Records
+              th.text-end Actions
+          tbody
+            each t in transactions
+              tr(id='transaction-' + t.id)
+                td.align-middle= t.displayDate
+                td.align-middle
+                  strong.d-block.fw-semibold= t.transaction_business
+                  if t.memo
+                    span.text-muted.small= t.memo
+                td.text-end.align-middle
+                  span.text-monospace= t.amount.toLocaleString()
+                td.align-middle
+                  span.d-block.text-secondary.small From: #{t.fromAccountName}
+                  span.d-block.text-secondary.small To: #{t.toAccountName}
+                td.align-middle
+                  if t.categories
+                    span.badge.bg-secondary-subtle= t.categories
+                  else
+                    span.text-muted --
+                td.align-middle
+                  - const tagList = Array.isArray(t.tags) ? t.tags : (t.tags ? String(t.tags).split(',').map(tag => tag.trim()).filter(Boolean) : []);
+                  if tagList.length
+                    each tag in tagList
+                      span.badge.bg-secondary-subtle.me-1= tag
+                  else
+                    span.text-muted --
+                td.align-middle= t.type || '--'
+                td.align-middle
+                  span.d-block.text-secondary.small From fee: #{t.from_fee}
+                  span.d-block.text-secondary.small To fee: #{t.to_fee}
+                td.align-middle
+                  if t.hasLinkedReceipt || t.hasLinkedPayroll
+                    .d-flex.flex-wrap.gap-2
+                      if t.hasLinkedReceipt
+                        a.btn.btn-sm.btn-outline-primary(href=`/receipt/view_receipt/${t.linkedReceiptId}`, target='_blank', rel='noopener') Receipt
+                      if t.hasLinkedPayroll
+                        a.btn.btn-sm.btn-outline-secondary(href=`/payroll/${t.linkedPayrollId}`, target='_blank', rel='noopener') Payroll
+                  else
+                    span.text-muted --
+                td.text-end.align-middle
+                  button.btn.btn-sm.btn-outline-danger(type='button', data-delete-id=t.id) Delete
+    else
+      .card.bg-transparent.border-secondary-subtle
+        .card-body
+          p.text-muted.mb-0 No transactions were recorded for this period.
 
   script.
     (function() {

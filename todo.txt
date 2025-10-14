@@ -1,38 +1,6 @@
-I want to create a simple YAML viewer in my app, by adding a new route/controller.
+In `controllers/budget2controller.js`, I have a route (reviewTransactions) for displaying a review page to the user (views/budget_review.pug). Similarly to how I get receipt and payroll data in `BudgetService.getDashboardData()` for the budget dashboard, I want to get the same data for the specific period for the review page, and display for all transactions with the same date and amount, a link to the receipt or payroll data. I don't have a precise mapping, but it is very unusual that I have 2 transactions the same date, for the same amount, so matching date and amount is good enough for my use case.
 
-I want to use the `swagger-ui-express` npm library, and the functionality should be:
-* A landing page, that shows a list of all files in the `public/yaml` folder, when the user clicks a file, they'll be taken to the viewer page for that file
-* A viewer page, to view the selected documentation
+Receipt URL: `/receipt/view_receipt/${receipt Id}`
+Payroll URL: `/payroll/${payroll Id}`
 
-Can this be done?
-
-I have the following example code:
-```
-const express = require('express')
-const fs = require('fs')
-const YAML = require('yaml')
-const swaggerUi = require('swagger-ui-express')
-const app = express()
-const specText = fs.readFileSync('./openapi.yaml', 'utf8')
-const spec = YAML.parse(specText)
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(spec, { explorer: true, swaggerOptions: { validatorUrl: null } }))
-app.listen(3000, () => console.log('Docs: http://localhost:3000/docs'))
-```
-
-Or if using URL:
-```
-const express = require('express')
-const fs = require('fs')
-const YAML = require('yaml')
-const swaggerUi = require('swagger-ui-express')
-const app = express()
-const specText = fs.readFileSync('./openapi.yaml', 'utf8')
-const spec = YAML.parse(specText)
-app.get('/openapi.json', (req, res) => res.json(spec))
-app.use('/docs', swaggerUi.serveFiles(null, { swaggerOptions: { url: '/openapi.json' } }), swaggerUi.setup(null, { explorer: true }))
-app.listen(3000, () => console.log('Docs: http://localhost:3000/docs'))
-```
-
-Please add this new functionality to my page.
-
-The landing page should be a PUG template, following my coloring guidelines in `README-Colors.md`, the viewer can be opened in a new page/tab, with the standard swagger UI styling.
+While we are updating `views/budget_review.pug`, also make sure that the color scheme matches the description in `README-Colors.md`.
