@@ -11,7 +11,7 @@ block content
           h1.sora-title Sora 2 Studio
           p.sora-subtitle Craft cinematic experiments with Sora 2, track generation progress, and curate your personal video library.
 
-          form#sora-generate-form.sora-card.sora-form
+          form#sora-generate-form.sora-card.sora-form(enctype='multipart/form-data')
             .row.g-3
               .col-12
                 label.form-label(for='sora-prompt') Prompt
@@ -39,6 +39,10 @@ block content
                 datalist#sora-category-list
                   each cat in categoryList
                     option(value=cat)
+              .col-md-6
+                label.form-label(for='sora-input-image') Reference image (optional)
+                input#sora-input-image.form-control(type='file', name='inputImage', accept='image/*')
+                small.sora-field-hint Max 20&nbsp;MB. Image is resized to match the selected video size.
             .d-flex.flex-wrap.align-items-center.gap-3.mt-3
               small.mb-0 Ratings: 1 Garbage · 2 Bad · 3 OK · 4 Good · 5 Awesome
               button#sora-generate-btn.sora-submit(type='submit') Generate video

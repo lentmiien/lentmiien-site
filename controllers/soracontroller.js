@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+const sharp = require('sharp');
 const { SoraVideo } = require('../database');
 const { generateVideo, checkVideoProgress } = require('../utils/OpenAI_API');
 const logger = require('../utils/logger');
@@ -32,6 +35,49 @@ const rawPollInterval = parseInt(process.env.SORA_STATUS_POLL_MS, 10);
 const BACKGROUND_POLL_INTERVAL_MS = Number.isNaN(rawPollInterval) ? DEFAULT_POLL_INTERVAL_MS : Math.max(0, rawPollInterval);
 const rawPollBatchSize = parseInt(process.env.SORA_STATUS_POLL_BATCH, 10);
 const BACKGROUND_POLL_BATCH_SIZE = Number.isNaN(rawPollBatchSize) || rawPollBatchSize <= 0 ? 10 : rawPollBatchSize;
+
+const TMP_DATA_DIR = path.resolve(__dirname, '..', 'tmp_data');
+const PROCESSED_IMAGE_PREFIX = 'sora-input-processed';
+
+function parseVideoSize(size) {
+  if (!size) {
+    return null;
+  }
+  const parts = String(size).toLowerCase().split('x');
+  if (parts.length !== 2) {
+    return null;
+  }
+  const width = parseInt(parts[0], 10);
+  const height = parseInt(parts[1], 10);
+  if (Number.isNaN(width) || Number.isNaN(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+}
+
+async function resizeReferenceImage(sourcePath, size) {
+  const dimensions = parseVideoSize(size);
+  if (!dimensions) {
+    throw new Error(`Unsupported video size: ${size}`);
+  }
+  await fs.promises.mkdir(TMP_DATA_DIR, { recursive: true });
+  const filename = `${PROCESSED_IMAGE_PREFIX}-${Date.now()}-${Math.round(Math.random() * 1e6)}.jpg`;
+  const outputPath = path.join(TMP_DATA_DIR, filename);
+  await sharp(sourcePath)
+    .resize(dimensions.width, dimensions.height, { fit: 'cover' })
+    .jpeg({ quality: 92 })
+    .toFile(outputPath);
+  return outputPath;
+}
+
+function removeFileQuietly(filepath) {
+  if (!filepath) {
+    return Promise.resolve();
+  }
+  return fs.promises.unlink(filepath).catch((error) => {
+    logger.debug('Unable to remove temporary Sora image', { filepath, error });
+  });
+}
 
 let backgroundPollInterval;
 let pollInFlight = false;
@@ -283,6 +329,7 @@ exports.listVideos = async (req, res) => {
 };
 
 exports.startGeneration = async (req, res) => {
+  const cleanupTargets = [];
   try {
     const prompt = (req.body.prompt || '').trim();
     const model = (req.body.model || '').trim();
@@ -306,7 +353,29 @@ exports.startGeneration = async (req, res) => {
       return res.status(400).json({ error: 'Invalid size for selected model' });
     }
 
-    const generation = await generateVideo(prompt, model, seconds.toString(), size);
+    if (req.fileValidationError) {
+      return res.status(400).json({ error: req.fileValidationError });
+    }
+
+    let processedImagePath = null;
+    if (req.file && req.file.path) {
+      cleanupTargets.push(req.file.path);
+      try {
+        processedImagePath = await resizeReferenceImage(req.file.path, size);
+        cleanupTargets.push(processedImagePath);
+      } catch (error) {
+        logger.error('Failed to prepare Sora reference image', { error });
+        return res.status(400).json({ error: 'Unable to process reference image. Please try a different file.' });
+      }
+    }
+
+    const generation = await generateVideo(
+      prompt,
+      model,
+      seconds.toString(),
+      size,
+      processedImagePath,
+    );
     if (!generation || !generation.id) {
       return res.status(502).json({ error: 'Video generation failed to start' });
     }
@@ -327,6 +396,8 @@ exports.startGeneration = async (req, res) => {
   } catch (error) {
     logger.error('Failed to start Sora video generation', { error });
     res.status(500).json({ error: 'Unable to start generation' });
+  } finally {
+    await Promise.all(cleanupTargets.map((filepath) => removeFileQuietly(filepath)));
   }
 };
 

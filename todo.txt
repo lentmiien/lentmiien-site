@@ -1,21 +1,18 @@
-In my "budget2" router and controller, I'd like to add a new simple tool for tracking my Credit Card usage. Input should be manual, and each input should have a transaction date, a label, a transaction amount (that can be negative for repayments), an external flag (for use outside Amazon), and an external multiplier.
-*External transactions usually takes longer to show up in the app, an also give a 1% point-back at the end of the month, external multiplier is 1% by default, but can be changed for purchases in certain stores, if there is a larger point-back. The point calculation is to sum all transactions from the month, then apply the point percentage and round to nearest integer.
+In my "sora" route (routes/sora.js) and controller (controllers/soracontroller.js), and the UI (views/sora.pug), I want to add an optional input image. If the user don't specify any image, the app should continue working as before, but if the user specifies an input image, temporary save the uploaded image to the `tmp_data` folder, then in `utils/OpenAI_API.js`, when using the `generateVideo` function, the image should be inserted, as a `file` in the `input_reference` parameter to the OpenAI API. So you need to add an input parameter to the function, but only set `input_reference` if there is a valid input. Important: the `input_reference` image must have the same size as the `size` parameter for the video, so also resize the image using the `sharp` library, before sending it to the API.
 
-I want the following pages:
-* A landing page, showing a graph (d3.js) of my total usage from the last 6 months, total repayments within the same months, and points earned within the same months, points will be much lower than usage/repayments, so display point amount on the left side y-axis, and usage/repayments on the right side y-axis, and go from old on the left, to new on the right, for the x-axis. Below the graph, I want a table showing the transactions from the current month, old at bottom, new at top, with an input row for a new transactions as the first row below the header row. I want labels to be free-text input with auto-complete generated from the last 6 months of data, with most common at top.
-* A monthly details page, showing a graph of the daily running total, some simple statistics from the month, and a comparsion with previous month. There should be buttons to step forward/backward a month, and I want to page to cover the full viewport, without need for scrolling.
-* I also want a CSV bulk upload function for a one-time use, to initiate my database with data from the start of 2025, when I started using my card and had a 0 JPY usage. Going forward, I think I want to store my usage balance at the end of each month, which becomes the scheduled repayment at the 26th (or following business day) for the next month, and use this value to calculate my current balance (transactions after the last end-of-month), but I don't want to auto save this value, when the next month starts, I want to show my calculated end of month usage balance with a "confirm" button on the landing page, and once my app update with the data from last month, I just press the "confirm" button if the values matches, or add any missing transactions until they matches and press the "confirm" button.
-
-CSV format:
+OpenAI only provide example code for curl, so convert the code below to JavaScript, and update my code to work with input images, if an image has been provided:
 ```
-date,label,amount
-YYYY-MM-DD,text,number
+curl -X POST "https://api.openai.com/v1/videos" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: multipart/form-data" \
+  -F prompt="She turns around and smiles, then slowly walks out of the frame." \
+  -F model="sora-2-pro" \
+  -F size="1280x720" \
+  -F seconds="8" \
+  -F input_reference="@sample_720p.jpeg;type=image/jpeg"
 ```
-(number can be a negative value, example "-18696")
+Note: the existing code already handles 'prompt', 'model', 'size', and 'seconds'. So what I need is to add an optional image input to my existing code.
 
-Just to make the app future proof, link every entry to a specific credit card (only have one right now, but might need a second and possible third in the future). So, all in all I need 3 databases for this tool:
-* Credit Card: store issued date, credit limit, and a name (I don't want to store my specific credit card details for security reasons)
-* Monthly balance: store usage balance at end of each month, lets also store pre-calculated values of credit card usage, total repayments, and external points for the month
-* Transactions: store individual transaction details
+I think this is how to create the file object: `const input_reference = await OpenAI.toFile(fs.createReadStream(inImage), null, { type: "image/jpeg" });`.
 
-As for the overall style, go for a modern minimalistic look.
+While we are reviewing the sora video generator tool, also update the color scheme to match the description in `README-Colors.md`.

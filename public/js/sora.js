@@ -50,6 +50,7 @@
     size: document.getElementById('sora-size'),
     category: document.getElementById('sora-category'),
     categoryDatalist: document.getElementById('sora-category-list'),
+    inputImage: document.getElementById('sora-input-image'),
     generateBtn: document.getElementById('sora-generate-btn'),
     statusSection: document.getElementById('sora-status'),
     statusLabel: document.getElementById('sora-status-label'),
@@ -436,14 +437,13 @@
 
   async function handleGenerationSubmit(event) {
     event.preventDefault();
-    const payload = {
-      prompt: dom.prompt.value.trim(),
-      model: dom.model.value,
-      seconds: dom.seconds.value,
-      size: dom.size.value,
-      category: dom.category.value.trim(),
-    };
-    if (!payload.prompt) {
+    const promptValue = dom.prompt.value.trim();
+    const modelValue = dom.model.value;
+    const secondsValue = dom.seconds.value;
+    const sizeValue = dom.size.value;
+    const categoryValue = dom.category.value.trim();
+
+    if (!promptValue) {
       setStatus({
         visible: true,
         label: 'Validation error',
@@ -452,6 +452,17 @@
         tone: 'error',
       });
       return;
+    }
+
+    const formData = new FormData();
+    formData.append('prompt', promptValue);
+    formData.append('model', modelValue);
+    formData.append('seconds', secondsValue);
+    formData.append('size', sizeValue);
+    formData.append('category', categoryValue);
+    const hasReferenceImage = dom.inputImage && dom.inputImage.files && dom.inputImage.files.length > 0;
+    if (hasReferenceImage) {
+      formData.append('inputImage', dom.inputImage.files[0]);
     }
 
     setFormDisabled(true);
@@ -465,8 +476,7 @@
     try {
       const response = await fetch('/sora/api/videos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: formData,
       });
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));

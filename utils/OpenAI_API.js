@@ -239,11 +239,36 @@ const fetchCompleted = async (response_id) => {
   }
 }
 
-const generateVideo = async (prompt, model, seconds, size) => {
-  const video = await openai.videos.create({model, prompt, seconds, size});
-  logger.debug('OpenAI generate video response', { data: video });
-  return video;
-}
+const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
+  try {
+    const payload = {
+      model,
+      prompt,
+      seconds,
+      size,
+    };
+
+    if (inputImagePath) {
+      const filename = path.basename(inputImagePath) || 'reference.jpg';
+      const inputReference = await OpenAI.toFile(
+        fs.createReadStream(inputImagePath),
+        filename,
+        { type: 'image/jpeg' },
+      );
+      payload.input_reference = inputReference;
+    }
+
+    const video = await openai.videos.create(payload);
+    logger.debug('OpenAI generate video response', {
+      data: video,
+      hasReference: Boolean(payload.input_reference),
+    });
+    return video;
+  } catch (error) {
+    logger.error('Failed to create Sora video via OpenAI API', { error });
+    throw error;
+  }
+};
 
 const waitAndFetchVideo = async (video) => {
   let progress = video.progress ?? 0;
