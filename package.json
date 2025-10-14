@@ -58,7 +58,9 @@
     "simple-git": "^3.25.0",
     "simple-oauth2": "^5.1.0",
     "socket.io": "^4.8.0",
+    "swagger-ui-express": "^5.0.1",
     "ws": "^8.18.0",
+    "yaml": "^2.8.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -1,0 +1,33 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/yaml-viewer.css')
+
+block content
+  main.yaml-viewer
+    .yaml-viewer__container
+      header.yaml-viewer__header
+        span.yaml-viewer__eyebrow YAML Viewer
+        h1.yaml-viewer__title YAML Documentation Library
+        p.yaml-viewer__subtitle Browse API specifications available in the `public/yaml` folder. Open them in Swagger UI for a quick review or download the source file.
+      if files && files.length
+        section.yaml-viewer__list
+          each file in files
+            article.yaml-card
+              header.yaml-card__header
+                h2.yaml-card__title= file.displayName || file.name
+                span.yaml-card__meta #{file.sizeLabel} • Updated #{file.modifiedAtLabel}
+              section.yaml-card__filename
+                span.yaml-card__label File Name
+                span.yaml-card__value= file.name
+              footer.yaml-card__actions
+                a.yaml-card__action.yaml-card__action--primary(href=file.viewPath, target='_blank', rel='noopener noreferrer') Open in Viewer
+                a.yaml-card__action(href=file.rawPath, download=file.name) Download YAML
+                a.yaml-card__action(href=file.specPath, target='_blank', rel='noopener noreferrer') View JSON
+      else
+        section.yaml-viewer__empty
+          p No YAML documentation files were found.
+          p
+            | Add files to 
+            strong public/yaml
+            |  and refresh this page to see them listed.

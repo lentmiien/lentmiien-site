@@ -202,12 +202,14 @@ const imageGenRouter = require('./routes/image_gen');
 const soraRouter = require('./routes/sora');
 const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
+const yamlRouter = require('./routes/yaml');
 
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
 app.use('/mydhlapi/test', dummyapiRouter);
 app.use('/blog', blogRouter);
 app.use('/cookingp', cookingPublicRouter);
+app.use('/yaml-viewer', yamlRouter);
 app.use('/mypage', isAuthenticated, mypageRouter);
 app.use('/chat', isAuthenticated, authorize("chat"), chatRouter);
 app.use('/chat2', isAuthenticated, authorize("chat2"), chat2Router);

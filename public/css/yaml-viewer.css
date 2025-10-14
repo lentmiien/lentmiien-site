@@ -1,0 +1,169 @@
+.yaml-viewer {
+  padding: 48px 0 64px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.yaml-viewer__container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.yaml-viewer__header {
+  margin-bottom: 32px;
+}
+
+.yaml-viewer__eyebrow {
+  color: var(--accent);
+  font-size: 0.85rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.yaml-viewer__title {
+  margin: 0 0 12px;
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.yaml-viewer__subtitle {
+  margin: 0;
+  max-width: 680px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.yaml-viewer__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.yaml-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.yaml-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 24px 44px rgba(255, 194, 71, 0.1);
+  transform: translateY(-4px);
+}
+
+.yaml-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.yaml-card__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.yaml-card__meta {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.yaml-card__filename {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.yaml-card__label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.yaml-card__value {
+  color: var(--text);
+}
+
+.yaml-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.yaml-card__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.yaml-card__action:hover,
+.yaml-card__action:focus {
+  background: var(--accent-tint);
+  color: var(--text);
+  border-color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.yaml-card__action--primary {
+  background: var(--brand);
+  border-color: transparent;
+  color: var(--text-inverse);
+  box-shadow: 0 12px 24px rgba(255, 106, 31, 0.24);
+}
+
+.yaml-card__action--primary:hover,
+.yaml-card__action--primary:focus {
+  background: var(--brand-hover);
+  color: var(--text-inverse);
+  box-shadow: 0 16px 26px rgba(255, 123, 59, 0.25);
+}
+
+.yaml-viewer__empty {
+  margin-top: 32px;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px dashed var(--divider);
+  background: var(--surface-1);
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.yaml-viewer__empty strong {
+  color: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .yaml-viewer__title {
+    font-size: 1.8rem;
+  }
+
+  .yaml-viewer__list {
+    grid-template-columns: 1fr;
+  }
+
+  .yaml-card {
+    padding: 20px;
+  }
+}

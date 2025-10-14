@@ -10,6 +10,7 @@ public/img
 public/mp3
 public/imgen
 public/video
+public/yaml
 utils/batch_input.jsonl
 public/temp/
 credentials.json
