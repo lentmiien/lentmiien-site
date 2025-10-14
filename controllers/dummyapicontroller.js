@@ -24,7 +24,5 @@ exports.shipping_identifiers = (req, res) => {
 
 exports.shipping_labels = (req, res) => {
   logger.debug('Shipping label API request', { data: req.body });
-  res.json({
-    labelResponse: labelResponse_sample
-  });
+  res.json(labelResponse_sample);
 };
