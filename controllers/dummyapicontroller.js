@@ -10,7 +10,15 @@ exports.shipping_identifiers = (req, res) => {
     array.push((Date.now()+i).toString());
   }
   res.json({
-    [type]: array
+    "warnings": [
+      "Warning message if anything goes wrong"
+    ],
+    "identifiers": [
+      {
+        "typeCode": type,
+        "list": array
+      }
+    ]
   });
 };
 
