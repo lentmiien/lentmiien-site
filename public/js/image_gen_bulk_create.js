@@ -48,7 +48,9 @@
     state.workflows.forEach((wf, idx) => {
       const opt = document.createElement('option');
       opt.value = wf.key;
-      opt.textContent = wf.name || wf.key;
+      const labelParts = [wf.name || wf.key];
+      if (wf.outputType) { labelParts.push('· ' + wf.outputType.toUpperCase()); }
+      opt.textContent = labelParts.join(' ');
       if (idx === 0) opt.selected = true;
       workflowSelect.appendChild(opt);
     });

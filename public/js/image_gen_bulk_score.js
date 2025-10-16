@@ -7,8 +7,8 @@
 
   const leftCard = document.getElementById('leftCard');
   const rightCard = document.getElementById('rightCard');
-  const leftImage = document.getElementById('leftImage');
-  const rightImage = document.getElementById('rightImage');
+  const leftMedia = document.getElementById('leftMedia');
+  const rightMedia = document.getElementById('rightMedia');
   const leftMeta = document.getElementById('leftMeta');
   const rightMeta = document.getElementById('rightMeta');
   const voteLeftBtn = document.getElementById('voteLeftBtn');
@@ -19,6 +19,37 @@
   const statusEl = document.getElementById('scoreStatus');
 
   let currentPair = null;
+
+  function detectMediaTypeFromName(name) {
+    const lower = String(name || '').toLowerCase();
+    if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.mov') || lower.endsWith('.mkv') || lower.endsWith('.m4v')) return 'video';
+    if (lower.endsWith('.gif')) return 'gif';
+    return 'image';
+  }
+
+  function createMediaElement(data) {
+    const filename = data?.filename || '';
+    const mediaType = (data?.media_type || detectMediaTypeFromName(filename)).toLowerCase();
+    const src = data?.cached_url || data?.download_url || data?.file_url || '';
+    let el;
+    if (mediaType === 'video') {
+      el = document.createElement('video');
+      el.controls = true;
+      el.preload = 'metadata';
+      el.playsInline = true;
+      el.muted = true;
+    } else {
+      el = document.createElement('img');
+      el.alt = filename || 'Preview';
+    }
+    el.className = 'score-media-el';
+    if (src) {
+      el.src = src;
+    } else {
+      el.classList.add('score-media-empty');
+    }
+    return { element: el, mediaType };
+  }
 
   async function api(path, init = {}) {
     const opts = Object.assign({ headers: {} }, init);
@@ -40,29 +71,23 @@
     statusEl.className = `status-note text-${tone}`;
   }
 
-  function renderSide(card, imageEl, metaEl, data, side) {
+  function renderSide(card, mediaWrap, metaEl, data, side) {
     if (!data) {
-      imageEl.src = '';
-      imageEl.alt = 'No preview';
-      imageEl.style.opacity = '0.2';
-      metaEl.textContent = 'No image available';
+      mediaWrap.innerHTML = '<div class="score-media-placeholder">No preview yet</div>';
+      metaEl.textContent = 'No media available';
       card.classList.add('disabled');
       return;
     }
     card.classList.remove('disabled');
-    imageEl.style.opacity = '1';
-    if (data.file_url) {
-      imageEl.src = data.file_url;
-      imageEl.alt = data.filename || `${side} preview`;
-    } else {
-      imageEl.removeAttribute('src');
-      imageEl.alt = 'No image';
-      imageEl.style.opacity = '0.3';
-    }
+    mediaWrap.innerHTML = '';
+    const { element, mediaType } = createMediaElement(data);
+    mediaWrap.appendChild(element);
+
     const avg = (data.score_average || 0).toFixed(2);
     const count = data.score_count || 0;
     const vars = data.variables || {};
     const lines = [];
+    if (mediaType === 'video') lines.push('Output: Video');
     if (data.template_label) lines.push(`Template: ${data.template_label}`);
     if (data.negative_used !== undefined) {
       lines.push(data.negative_used ? 'With negative prompt' : 'No negative prompt');
@@ -98,13 +123,13 @@
       const data = await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/score-pair`);
       currentPair = data.pair || null;
       if (!currentPair || currentPair.length < 2) {
-        renderSide(leftCard, leftImage, leftMeta, null, 'left');
-        renderSide(rightCard, rightImage, rightMeta, null, 'right');
-        setStatus('Not enough completed images to score yet.', 'warning');
-        return;
-      }
-      renderSide(leftCard, leftImage, leftMeta, currentPair[0], 'left');
-      renderSide(rightCard, rightImage, rightMeta, currentPair[1], 'right');
+      renderSide(leftCard, leftMedia, leftMeta, null, 'left');
+      renderSide(rightCard, rightMedia, rightMeta, null, 'right');
+      setStatus('Not enough completed images to score yet.', 'warning');
+      return;
+    }
+    renderSide(leftCard, leftMedia, leftMeta, currentPair[0], 'left');
+    renderSide(rightCard, rightMedia, rightMeta, currentPair[1], 'right');
       setStatus('Choose which output you prefer.', 'soft');
     } catch (err) {
       setStatus(`Failed to load pair: ${err.message}`, 'danger');

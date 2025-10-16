@@ -1,18 +1,19 @@
-//- views/image_gen/bulk_create.pug
+﻿//- views/image_gen/bulk_create.pug
 extends ../layout
 
 block styles
   style.
-    .panel{background:#0f111a;color:#f1f3f9;border:1px solid #1f222c;border-radius:.75rem;padding:1.5rem;margin-bottom:1.25rem}
-    .panel h2{font-size:1.05rem;margin-bottom:1rem;color:#e9ecef}
-    .panel small{color:#9aa5c2}
-    .template-item,.placeholder-item{background:#141826;border:1px solid #1f2330;border-radius:.75rem;padding:1rem;margin-bottom:.75rem}
-    .template-item h3,.placeholder-item h3{font-size:.95rem;margin-bottom:.75rem}
+    .panel{background:var(--surface-1);color:var(--text);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 20px 48px rgba(0,0,0,0.28)}
+    .panel h2{font-size:1.05rem;margin-bottom:1rem;color:var(--text)}
+    .panel small{color:var(--text-muted)}
+    .template-item,.placeholder-item{background:var(--surface-2);border:1px solid var(--divider);border-radius:.85rem;padding:1rem;margin-bottom:.75rem}
+    .template-item h3,.placeholder-item h3{font-size:.95rem;margin-bottom:.75rem;color:var(--text-secondary)}
     .flex-gap{display:flex;flex-wrap:wrap;gap:.75rem}
-    .pill{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:50rem;font-size:.75rem;border:1px solid #2c3140;background:#11131b;color:#d1d5db;text-transform:uppercase;letter-spacing:.05em}
-    textarea.form-control{min-height:120px}
-    .sticky-actions{position:sticky;bottom:0;background:rgba(15,17,26,0.95);backdrop-filter:blur(12px);padding:1rem;border-top:1px solid #1f2330;margin:0 -1.5rem -1.5rem -1.5rem;border-radius:0 0 .75rem .75rem}
-    .text-soft{color:#9aa5c2}
+    .pill{display:inline-flex;align-items:center;padding:.25rem .75rem;border-radius:999px;border:1px solid var(--divider);background:var(--surface-2);color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;font-size:.72rem}
+    textarea.form-control{min-height:120px;background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
+    .sticky-actions{position:sticky;bottom:0;background:rgba(14,15,19,0.92);backdrop-filter:blur(12px);padding:1rem;border-top:1px solid var(--border);margin:0 -1.5rem -1.5rem;border-radius:0 0 1rem 1rem;box-shadow:0 -12px 32px rgba(0,0,0,0.4)}
+    .text-soft{color:var(--text-muted)}
+    .text-soft{color:var(--text-muted)}
 
 block content
   .container.py-4

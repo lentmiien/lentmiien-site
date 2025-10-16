@@ -16,6 +16,26 @@
     fetchPromise: null
   };
 
+  function detectMediaTypeFromName(name) {
+    const lower = String(name || '').toLowerCase();
+    if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.mov') || lower.endsWith('.mkv') || lower.endsWith('.m4v')) {
+      return 'video';
+    }
+    if (lower.endsWith('.gif')) return 'gif';
+    if (lower.endsWith('.png') || lower.endsWith('.apng') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.webp') || lower.endsWith('.bmp')) {
+      return 'image';
+    }
+    return 'image';
+  }
+
+  function formatMediaBadgeText(mediaType) {
+    if (!mediaType) return 'FILE';
+    const mt = mediaType.toLowerCase();
+    if (mt === 'video') return 'VIDEO';
+    if (mt === 'gif') return 'GIF';
+    return 'IMAGE';
+  }
+
   function setStatus(t){ statusPill.textContent = t; }
   function log(msg, cls){
     const t = new Date().toLocaleTimeString();
@@ -288,7 +308,14 @@
   function renderForm(def){
     clearForm();
     if(!def) return;
-    $('#wfDesc').textContent = def.description || '';
+    const descParts = [];
+    if (def.description) descParts.push(def.description);
+    if (def.outputType) {
+      const typeLabel = def.outputType === 'video' ? 'Outputs video.' : 'Outputs images.';
+      descParts.push(typeLabel);
+    }
+    $('#wfDesc').textContent = descParts.join(' ');
+    $('#wfDesc').dataset.outputType = def.outputType || '';
     const area = $('#formArea');
     const imageControls = [];
     def.inputs.forEach(spec => {
@@ -311,7 +338,14 @@
       sel.innerHTML = '';
       workflows.forEach(w => {
         const opt = document.createElement('option');
-        opt.value = w.key; opt.textContent = w.name || w.key;
+        opt.value = w.key;
+        const labelParts = [];
+        labelParts.push(w.name || w.key);
+        if (w.outputType) {
+          labelParts.push(`· ${w.outputType.toUpperCase()}`);
+        }
+        opt.textContent = labelParts.join(' ');
+        opt.dataset.outputType = w.outputType || '';
         sel.appendChild(opt);
       });
       $('#wfCount').textContent = `${workflows.length} loaded`;
@@ -387,7 +421,16 @@
         $('#jobStatus').textContent = j.status;
         if (j.status === 'completed') {
           setStatus('completed');
-          log(`Completed with ${j.files.length} image(s).`, 'text-success');
+          const counts = (j.files || []).reduce((acc, file) => {
+            const mt = (file?.media_type || '').toLowerCase();
+            if (mt === 'video') acc.videos += 1;
+            else acc.images += 1;
+            return acc;
+          }, { images: 0, videos: 0 });
+          const parts = [];
+          if (counts.images) parts.push(`${counts.images} image${counts.images === 1 ? '' : 's'}`);
+          if (counts.videos) parts.push(`${counts.videos} video${counts.videos === 1 ? '' : 's'}`);
+          log(`Completed with ${parts.join(' and ') || 'no files'}.`, 'text-success');
           await showResults(jobId, j.files);
           showRatingBar(jobId);
           return;
@@ -408,42 +451,105 @@
   async function showResults(jobId, files){
     const wrap = $('#results');
     wrap.innerHTML = '';
-    for (let i=0;i<files.length;i++){
-    const fileMeta = files[i];
-    const filename = typeof fileMeta === 'string'
-      ? fileMeta
-      : (fileMeta?.filename || fileMeta?.name || fileMeta?.file || `image_${i}.png`);
-    const url = `/image_gen/api/jobs/${encodeURIComponent(jobId)}/images/${i}${filename ? `?filename=${encodeURIComponent(filename)}` : ''}`;
-    try{
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Image ${i} ${resp.status}`);
-      const contentType = resp.headers.get('content-type') || 'image/png';
-      const cacheUrl = filename ? `/imgen/${encodeURIComponent(filename)}` : null;
-      const arrayBuffer = await resp.arrayBuffer();
+    if (!Array.isArray(files) || !files.length) {
+      wrap.innerHTML = '<div class="text-muted">No outputs yet.</div>';
+      return;
+    }
+    for (let index = 0; index < files.length; index++) {
+      const fileMeta = files[index];
+      const data = typeof fileMeta === 'string' ? { filename: fileMeta } : (fileMeta || {});
+      const filename = data.filename || data.name || data.file || `file_${index}`;
+      const mediaType = (data.media_type || detectMediaTypeFromName(filename)).toLowerCase();
+      const bucketHint = data.bucket || (mediaType === 'video' ? 'video' : 'output');
+      const downloadUrl = data.download_url || `/image_gen/api/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(index)}?filename=${encodeURIComponent(filename)}&bucket=${encodeURIComponent(bucketHint)}&mediaType=${encodeURIComponent(mediaType)}`;
 
-      let imgSrc = cacheUrl;
-      let downloadHref = cacheUrl;
-      if (!cacheUrl) {
-        const blob = new Blob([arrayBuffer], { type: contentType });
-        imgSrc = URL.createObjectURL(blob);
-        downloadHref = imgSrc;
+      let mediaSrc = data.cached_url || data.remote_url || '';
+      let objectUrl = null;
+      if (downloadUrl) {
+        try {
+          const resp = await fetch(downloadUrl);
+          if (!resp.ok) {
+            throw new Error(`${resp.status} ${resp.statusText}`);
+          }
+          const blob = await resp.blob();
+          if (data.cached_url) {
+            mediaSrc = data.cached_url;
+          } else {
+            objectUrl = URL.createObjectURL(blob);
+            mediaSrc = objectUrl;
+          }
+        } catch (err) {
+          log(`Fetch output failed (${filename}): ${err.message}`, 'text-danger');
+        }
+      }
+      if (!mediaSrc) {
+        mediaSrc = data.cached_url || data.remote_url || '';
       }
 
-      const col = document.createElement('div'); col.className = 'col';
-      const card = document.createElement('div'); card.className = 'thumb';
-      const img = document.createElement('img'); img.src = imgSrc; img.alt = filename;
-      if (!cacheUrl) {
-        img.addEventListener('load', () => { try { URL.revokeObjectURL(imgSrc); } catch {} }, { once: true });
+      const col = document.createElement('div');
+      col.className = 'col';
+      const card = document.createElement('div');
+      card.className = `thumb ${mediaType === 'video' ? 'thumb-video' : 'thumb-image'}`;
+
+      const badge = document.createElement('span');
+      badge.className = `media-badge media-badge--${mediaType}`;
+      badge.textContent = formatMediaBadgeText(mediaType);
+      card.appendChild(badge);
+
+      let mediaEl;
+      if (mediaType === 'video') {
+        mediaEl = document.createElement('video');
+        mediaEl.controls = true;
+        mediaEl.preload = 'metadata';
+        mediaEl.playsInline = true;
+        mediaEl.muted = true;
+      } else {
+        mediaEl = document.createElement('img');
+        mediaEl.alt = filename;
       }
-      const caption = document.createElement('div'); caption.className = 'muted mt-1'; caption.textContent = filename;
-      const dl = document.createElement('a'); dl.href = downloadHref; dl.download = filename; dl.textContent = 'Download';
-      card.appendChild(img); card.appendChild(caption); card.appendChild(dl);
-      col.appendChild(card); wrap.appendChild(col);
-    }catch(e){
-      log('Render image failed: ' + e.message, 'text-danger');
+      mediaEl.classList.add('thumb-media');
+      if (mediaSrc) {
+        mediaEl.src = mediaSrc;
+      } else {
+        mediaEl.classList.add('thumb-media--empty');
+      }
+      if (objectUrl) {
+        const eventName = mediaType === 'video' ? 'loadeddata' : 'load';
+        mediaEl.addEventListener(eventName, () => {
+          try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+        }, { once: true });
+      }
+
+      const caption = document.createElement('div');
+      caption.className = 'muted mt-2';
+      caption.textContent = filename;
+
+      const actionRow = document.createElement('div');
+      actionRow.className = 'd-flex justify-content-between align-items-center mt-2';
+
+      const meta = document.createElement('span');
+      meta.className = 'text-muted small';
+      const bucketLabel = data.bucket || bucketHint || '';
+      meta.textContent = bucketLabel ? `${bucketLabel}/` : '';
+      actionRow.appendChild(meta);
+
+      const downloadHref = data.cached_url || downloadUrl || data.remote_url || '';
+      if (downloadHref) {
+        const dl = document.createElement('a');
+        dl.href = downloadHref;
+        dl.download = filename;
+        dl.className = 'btn btn-sm btn-outline-primary';
+        dl.textContent = 'Download';
+        actionRow.appendChild(dl);
+      }
+
+      card.appendChild(mediaEl);
+      card.appendChild(caption);
+      card.appendChild(actionRow);
+      col.appendChild(card);
+      wrap.appendChild(col);
     }
   }
-}
 
   // Rating bar
   function showRatingBar(jobId){
@@ -507,6 +613,10 @@
   // Browse
   $('#btnListInput').addEventListener('click', ()=> list('input'));
   $('#btnListOutput').addEventListener('click', ()=> list('output'));
+  const listVideoBtn = $('#btnListVideo');
+  if (listVideoBtn) {
+    listVideoBtn.addEventListener('click', () => list('video'));
+  }
   const hideBtn = $('#btnHideBrowse');
   if (hideBtn) {
     hideBtn.addEventListener('click', () => {
@@ -534,31 +644,30 @@
         const displayName = item.name || item.original;
         const originalName = item.original || displayName;
         const col = document.createElement('div'); col.className = 'col';
-        const card = document.createElement('div'); card.className = 'thumb';
-        const img = document.createElement('img'); img.alt = displayName || originalName || 'image'; img.loading = 'lazy';
+        const card = document.createElement('div'); card.className = `thumb thumb-${bucket}`;
 
-        let hasImage = false;
-        if (item.url) {
-          img.src = item.url;
-          hasImage = true;
-        } else if (originalName) {
-          try{
-            const r = await fetch(`/image_gen/api/files/${bucket}/${encodeURIComponent(originalName)}`);
-            if (r.ok) {
-              const blob = await r.blob();
-              const objUrl = URL.createObjectURL(blob);
-              img.src = objUrl;
-              hasImage = true;
-              img.addEventListener('load', () => { try { URL.revokeObjectURL(objUrl); } catch {} }, { once: true });
-            } else {
-              img.remove();
-            }
-          }catch{ img.remove(); }
+        const mediaType = item.media_type || detectMediaTypeFromName(displayName || originalName);
+        const src = item.url || (originalName ? `/image_gen/api/files/${bucket}/${encodeURIComponent(originalName)}` : '');
+
+        let mediaEl;
+        if (mediaType === 'video') {
+          mediaEl = document.createElement('video');
+          mediaEl.controls = true;
+          mediaEl.preload = 'metadata';
+          mediaEl.playsInline = true;
+          mediaEl.muted = true;
         } else {
-          img.remove();
+          mediaEl = document.createElement('img');
+          mediaEl.alt = displayName || originalName || 'preview';
+          mediaEl.loading = 'lazy';
         }
-
-        if (hasImage) card.appendChild(img);
+        mediaEl.classList.add('thumb-media');
+        if (src) {
+          mediaEl.src = src;
+        } else {
+          mediaEl.classList.add('thumb-media--empty');
+        }
+        card.appendChild(mediaEl);
 
         const cap = document.createElement('div'); cap.className='muted mt-1'; cap.textContent = `${bucket}/ ${displayName || originalName || '(unknown)'}`;
         card.appendChild(cap);
@@ -572,7 +681,7 @@
           });
           card.appendChild(btn);
         }
-        if (bucket === 'output' && (displayName || originalName)) {
+        if (bucket === 'output' && (mediaType === 'image' || mediaType === 'gif') && (displayName || originalName)) {
           const useName = displayName || originalName;
           const btn = document.createElement('button');
           btn.className = 'btn btn-sm btn-outline-success mt-2';

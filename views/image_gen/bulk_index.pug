@@ -3,15 +3,16 @@ extends ../layout
 
 block styles
   style.
-    .bulk-card{background:#0f111a;color:#f1f3f9;border:1px solid #1f222c;border-radius:.75rem;padding:1.25rem;margin-bottom:1rem;box-shadow:0 6px 20px rgba(0,0,0,0.15)}
-    .bulk-card h3{font-size:1.1rem;margin:0 0 .5rem 0}
-    .bulk-meta{display:flex;flex-wrap:wrap;gap:.75rem;font-size:.9rem;color:#b7c1df}
-    .bulk-progress{height:.4rem;border-radius:1rem;background:#1f2330;overflow:hidden;margin:.5rem 0 1rem}
-    .bulk-progress-bar{height:100%;background:linear-gradient(90deg,#4f9cff,#6fddff)}
+    .bulk-card{background:var(--surface-1);color:var(--text);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:1.25rem;box-shadow:0 20px 48px rgba(0,0,0,0.28);transition:transform .2s ease}
+    .bulk-card:hover{transform:translateY(-2px)}
+    .bulk-card h3{font-size:1.1rem;margin:0 0 .5rem;color:var(--text)}
+    .bulk-meta{display:flex;flex-wrap:wrap;gap:.75rem;font-size:.9rem;color:var(--text-secondary)}
+    .bulk-progress{height:.45rem;border-radius:1rem;background:var(--surface-2);overflow:hidden;margin:.75rem 0 1rem}
+    .bulk-progress-bar{height:100%;background:linear-gradient(90deg,var(--brand),var(--accent))}
     .bulk-actions{display:flex;flex-wrap:wrap;gap:.5rem}
-    .auto-refresh-note{font-size:.85rem;color:#9aa5c2}
-    .status-pill{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:50rem;font-size:.75rem;border:1px solid #2c3140;background:#11131b;color:#d1d5db;text-transform:uppercase;letter-spacing:.05em}
-    .text-soft{color:#9aa5c2}
+    .auto-refresh-note{font-size:.85rem;color:var(--text-muted)}
+    .status-pill{display:inline-flex;align-items:center;padding:.25rem .7rem;border-radius:999px;font-size:.72rem;border:1px solid var(--divider);background:var(--surface-2);color:var(--text-secondary);letter-spacing:.08em;text-transform:uppercase}
+    .text-soft{color:var(--text-muted)}
 
 block content
   .container.py-4

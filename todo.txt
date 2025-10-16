@@ -1,6 +1,5 @@
-In `controllers/budget2controller.js`, I have a route (reviewTransactions) for displaying a review page to the user (views/budget_review.pug). Similarly to how I get receipt and payroll data in `BudgetService.getDashboardData()` for the budget dashboard, I want to get the same data for the specific period for the review page, and display for all transactions with the same date and amount, a link to the receipt or payroll data. I don't have a precise mapping, but it is very unusual that I have 2 transactions the same date, for the same amount, so matching date and amount is good enough for my use case.
+The ComfyUI server app was updated to handle video files, so please update the image generating router (routes/image_gen.js), controller (controllers/image_gen.controller.js), and UI (views/image_gen/*.pug) to handle video generations as well. Please cache videos to the folder `public/video`, for quicker access, and display a video player when the video is completed. Rating the prompts and the prompt library, shouldn't be any different, for the new video workflows. Lets just create one combined router/controller for both image and video generation. Be sure to add the "video" folder as an option for checking generated content.
 
-Receipt URL: `/receipt/view_receipt/${receipt Id}`
-Payroll URL: `/payroll/${payroll Id}`
+Please refer to `ComfyUI_server_changes.md` for a detailed description of the changes.
 
-While we are updating `views/budget_review.pug`, also make sure that the color scheme matches the description in `README-Colors.md`.
+Also, make sure to follow the color scheme described in `README-Colors.md`, for the UI.

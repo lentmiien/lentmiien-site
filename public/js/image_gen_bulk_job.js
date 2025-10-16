@@ -47,6 +47,38 @@
     return resp;
   }
 
+  function detectMediaTypeFromName(name) {
+    const lower = String(name || '').toLowerCase();
+    if (lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.mov') || lower.endsWith('.mkv') || lower.endsWith('.m4v')) return 'video';
+    if (lower.endsWith('.gif')) return 'gif';
+    return 'image';
+  }
+
+  function createMatrixPreview(prompt) {
+    const filename = prompt?.filename || '';
+    const mediaType = (prompt?.media_type || detectMediaTypeFromName(filename)).toLowerCase();
+    const src = prompt?.cached_url || prompt?.download_url || prompt?.file_url || '';
+    let el;
+    if (mediaType === 'video') {
+      el = document.createElement('video');
+      el.muted = true;
+      el.loop = true;
+      el.controls = false;
+      el.playsInline = true;
+      el.preload = 'metadata';
+    } else {
+      el = document.createElement('img');
+      el.alt = filename || 'Preview';
+    }
+    el.className = 'matrix-thumb-media';
+    if (src) {
+      el.src = src;
+    } else {
+      el.classList.add('matrix-thumb-media--empty');
+    }
+    return { element: el, mediaType };
+  }
+
   function formatDate(value) {
     if (!value) return '-';
     const d = new Date(value);
@@ -292,19 +324,22 @@
           col.prompts.forEach((prompt) => {
             const card = document.createElement('a');
             card.className = 'matrix-thumb';
-            if (prompt.file_url) {
-              card.href = prompt.file_url;
+            const linkUrl = prompt.download_url || prompt.file_url || '#';
+            if (linkUrl !== '#') {
+              card.href = linkUrl;
               card.target = '_blank';
             } else {
               card.href = '#';
               card.addEventListener('click', (e) => e.preventDefault());
             }
-            if (prompt.file_url) {
-              const img = document.createElement('img');
-              img.src = prompt.file_url;
-              img.alt = prompt.filename || `Prompt ${prompt.id}`;
-              card.appendChild(img);
+            const preview = createMatrixPreview(prompt);
+            if (preview.element) {
+              card.appendChild(preview.element);
             }
+            const badge = document.createElement('span');
+            badge.className = `matrix-thumb-badge matrix-thumb-badge--${preview.mediaType}`;
+            badge.textContent = preview.mediaType === 'video' ? 'VIDEO' : (preview.mediaType === 'gif' ? 'GIF' : 'IMAGE');
+            card.appendChild(badge);
             const meta = document.createElement('div');
             meta.className = 'meta';
             meta.textContent = `${(prompt.score_average || 0).toFixed(2)} (${prompt.score_count || 0})`;

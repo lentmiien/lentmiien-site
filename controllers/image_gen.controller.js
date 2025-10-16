@@ -13,7 +13,12 @@ const COMFY_API_KEY  = process.env.COMFY_API_KEY;
 const DEFAULT_TIMEOUT = 15000;
 
 const TMP_DIR = path.join(__dirname, '../tmp_data');
-const CACHE_DIR = path.join(__dirname, '../public/imgen');
+const CACHE_CONFIG = {
+  input: { dir: path.join(__dirname, '../public/imgen'), prefix: '/imgen' },
+  output: { dir: path.join(__dirname, '../public/imgen'), prefix: '/imgen' },
+  video: { dir: path.join(__dirname, '../public/video'), prefix: '/video' }
+};
+const CACHE_DEFAULT_BUCKET = 'output';
 const CACHE_CONCURRENCY = 5;
 const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
 
@@ -25,9 +30,13 @@ const jobPromptMap = new Map(); // jobId -> { posId: ObjectId|null, negId: Objec
 const ratedJobs = new Set();    // jobIds already rated (prevents double rating)
 const MAP_TTL_MS = 24 * 60 * 60 * 1000; // drop job mappings after 24h
 
-// Ensure tmp dir exists
+// Ensure tmp/cache dirs exist
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
-if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+for (const cfg of Object.values(CACHE_CONFIG)) {
+  if (cfg && cfg.dir && !fs.existsSync(cfg.dir)) {
+    fs.mkdirSync(cfg.dir, { recursive: true });
+  }
+}
 
 // Small helpers
 function apiHeaders(extra = {}) {
@@ -45,23 +54,32 @@ function toSafeName(name) {
   return base;
 }
 
-function buildCacheRecord(name) {
-  const safeName = toSafeName(name);
-  if (!safeName) return null;
-  const localPath = path.join(CACHE_DIR, safeName);
-  const url = `/imgen/${encodeURIComponent(safeName)}`;
-  return { safeName, localPath, url };
+function getCacheConfig(bucketHint, mediaType) {
+  if (bucketHint && CACHE_CONFIG[bucketHint]) return CACHE_CONFIG[bucketHint];
+  if (mediaType === 'video') return CACHE_CONFIG.video;
+  return CACHE_CONFIG[CACHE_DEFAULT_BUCKET];
 }
 
-async function writeCacheFile(name, buffer) {
-  const rec = buildCacheRecord(name);
+function buildCacheRecord(name, { bucket, mediaType } = {}) {
+  const safeName = toSafeName(name);
+  if (!safeName) return null;
+  const cfg = getCacheConfig(bucket, mediaType);
+  if (!cfg) return null;
+  const localPath = path.join(cfg.dir, safeName);
+  const url = `${cfg.prefix}/${encodeURIComponent(safeName)}`;
+  return { safeName, localPath, url, bucket: bucket || null };
+}
+
+async function writeCacheFile(name, buffer, { bucket, mediaType } = {}) {
+  const rec = buildCacheRecord(name, { bucket, mediaType });
   if (!rec) return null;
+  await fsp.mkdir(path.dirname(rec.localPath), { recursive: true });
   await fsp.writeFile(rec.localPath, buffer);
   return rec;
 }
 
-async function ensureCached(bucket, name) {
-  const rec = buildCacheRecord(name);
+async function ensureCached(bucket, name, mediaType) {
+  const rec = buildCacheRecord(name, { bucket, mediaType });
   if (!rec) return null;
 
   try {
@@ -71,17 +89,19 @@ async function ensureCached(bucket, name) {
     // continue to download
   }
 
-  const key = `${bucket}:${rec.safeName}`;
+  const effectiveBucket = bucket || (mediaType === 'video' ? 'video' : CACHE_DEFAULT_BUCKET);
+  const key = `${effectiveBucket}:${rec.safeName}`;
   if (!inFlightDownloads.has(key)) {
     const promise = (async () => {
       try {
-        const remoteUrl = `${COMFY_API_BASE}/v1/files/${bucket}/${encodeURIComponent(name)}`;
+        const remoteUrl = `${COMFY_API_BASE}/v1/files/${effectiveBucket}/${encodeURIComponent(name)}`;
         const r = await fetch(remoteUrl, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
         if (!r.ok) {
           const txt = await r.text().catch(() => '');
           throw new Error(`upstream ${r.status} ${txt}`.trim());
         }
         const buf = Buffer.from(await r.arrayBuffer());
+        await fsp.mkdir(path.dirname(rec.localPath), { recursive: true });
         await fsp.writeFile(rec.localPath, buf);
         return rec;
       } finally {
@@ -100,9 +120,10 @@ async function ensureCached(bucket, name) {
 }
 
 async function resolveCachedRecord(bucket, name) {
-  const rec = await ensureCached(bucket, name);
+  const mediaType = detectMediaType(name);
+  const rec = await ensureCached(bucket, name, mediaType);
   if (rec) return rec;
-  const fallback = buildCacheRecord(name);
+  const fallback = buildCacheRecord(name, { bucket, mediaType });
   if (!fallback) return null;
   try {
     await fsp.access(fallback.localPath, fs.constants.R_OK);
@@ -124,6 +145,59 @@ async function mapWithConcurrency(items, limit, iterator) {
   const workers = Array.from({ length: Math.min(limit, items.length) }, worker);
   await Promise.all(workers);
   return results;
+}
+
+function detectMediaType(name, fallback = 'image') {
+  const ext = path.extname(String(name || '')).toLowerCase();
+  if (!ext) return fallback;
+  if (['.mp4', '.mov', '.mkv', '.webm', '.m4v'].includes(ext)) return 'video';
+  if (ext === '.gif') return 'gif';
+  if (['.png', '.apng', '.jpg', '.jpeg', '.jfif', '.pjpeg', '.pjp', '.bmp', '.webp', '.tiff'].includes(ext)) return 'image';
+  return fallback;
+}
+
+function detectMimeType(mediaType, name) {
+  const ext = path.extname(String(name || '')).toLowerCase();
+  if (mediaType === 'video') {
+    if (ext === '.webm') return 'video/webm';
+    if (ext === '.mov') return 'video/quicktime';
+    if (ext === '.m4v') return 'video/x-m4v';
+    if (ext === '.mkv') return 'video/x-matroska';
+    return 'video/mp4';
+  }
+  if (mediaType === 'gif' || ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.jpg' || ext === '.jpeg' || ext === '.jfif' || ext === '.pjpeg' || ext === '.pjp') return 'image/jpeg';
+  if (ext === '.bmp') return 'image/bmp';
+  if (ext === '.tiff' || ext === '.tif') return 'image/tiff';
+  return 'image/png';
+}
+
+function normalizeJobFiles(jobId, files) {
+  if (!Array.isArray(files)) return [];
+  return files.map((entry, index) => {
+    const base = typeof entry === 'string' ? { filename: entry } : Object.assign({}, entry);
+    const rawName = base.filename || base.name || base.file || base.file_name || `file_${index}`;
+    const safeName = toSafeName(rawName) || `file_${index}`;
+    const mediaType = base.media_type || detectMediaType(safeName);
+    const bucket = base.bucket || (mediaType === 'video' ? 'video' : 'output');
+    const cacheCfg = getCacheConfig(bucket, mediaType);
+    const cachedUrl = cacheCfg ? `${cacheCfg.prefix}/${encodeURIComponent(safeName)}` : null;
+    const query = new URLSearchParams();
+    query.set('filename', safeName);
+    if (bucket) query.set('bucket', bucket);
+    if (mediaType) query.set('mediaType', mediaType);
+    const localUrl = `/image_gen/api/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(index)}?${query.toString()}`;
+    return Object.assign({}, base, {
+      index,
+      filename: safeName,
+      bucket,
+      media_type: mediaType,
+      cached_url: cachedUrl,
+      remote_url: base.download_url || base.url || base.path || null,
+      download_url: localUrl
+    });
+  });
 }
 
 const BULK_PROMPT_STATUSES = Object.freeze(['Pending', 'Processing', 'Paused', 'Completed', 'Canceled']);
@@ -994,10 +1068,17 @@ exports.getBulkMatrix = async (req, res) => {
           const docs = matrix.get(`${rowKey}||${colKey}`) || [];
           const mapped = docs.map((doc) => {
             const avg = (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0;
+            const mediaType = detectMediaType(doc.filename);
+            const bucket = mediaType === 'video' ? 'video' : 'output';
+            const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType }) : null;
+            const downloadUrl = doc.filename ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}` : null;
             return {
               id: String(doc._id),
               filename: doc.filename,
               file_url: doc.file_url,
+              media_type: mediaType,
+              download_url: downloadUrl,
+              cached_url: cacheRec ? cacheRec.url : null,
               score_average: avg,
               score_count: doc.score_count || 0,
               comfy_job_id: doc.comfy_job_id,
@@ -1038,16 +1119,25 @@ exports.getBulkScorePair = async (req, res) => {
       { $sample: { size: 2 } }
     ]);
     if (docs.length < 2) return errorJson(res, 404, 'not enough completed images to score');
-    const pair = docs.map((doc) => ({
-      id: String(doc._id),
-      filename: doc.filename,
-      file_url: doc.file_url,
-      template_label: doc.template_label,
-      negative_used: doc.negative_used,
-      variables: toPlainVariables(doc.variables),
-      score_average: (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0,
-      score_count: doc.score_count || 0
-    }));
+    const pair = docs.map((doc) => {
+      const mediaType = detectMediaType(doc.filename);
+      const bucket = mediaType === 'video' ? 'video' : 'output';
+      const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType }) : null;
+      const downloadUrl = doc.filename ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}` : null;
+      return {
+        id: String(doc._id),
+        filename: doc.filename,
+        file_url: doc.file_url,
+        media_type: mediaType,
+        download_url: downloadUrl,
+        cached_url: cacheRec ? cacheRec.url : null,
+        template_label: doc.template_label,
+        negative_used: doc.negative_used,
+        variables: toPlainVariables(doc.variables),
+        score_average: (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0,
+        score_count: doc.score_count || 0
+      };
+    });
     res.json({ pair });
   } catch (e) {
     logger.error('[getBulkScorePair] error', e);
@@ -1144,35 +1234,46 @@ exports.generate = async (req, res) => {
 // Proxy: job status
 exports.getJob = async (req, res) => {
   try {
-    const r = await fetch(`${COMFY_API_BASE}/v1/jobs/${encodeURIComponent(req.params.id)}`, {
+    const jobId = encodeURIComponent(req.params.id);
+    const r = await fetch(`${COMFY_API_BASE}/v1/jobs/${jobId}`, {
       headers: apiHeaders()
     });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    res.json(await r.json());
+    const json = await r.json();
+    if (json && Array.isArray(json.files)) {
+      json.files = normalizeJobFiles(req.params.id, json.files);
+    } else {
+      json.files = normalizeJobFiles(req.params.id, []);
+    }
+    res.json(json);
   } catch (e) {
     return errorJson(res, 502, 'failed to fetch job', String(e.message || e));
   }
 };
 
-// Proxy: stream job image
-exports.getJobImage = async (req, res) => {
+// Proxy: stream job file (image or video)
+exports.getJobFile = async (req, res) => {
   try {
-    const url = `${COMFY_API_BASE}/v1/jobs/${encodeURIComponent(req.params.id)}/images/${encodeURIComponent(req.params.index)}`;
+    const jobId = encodeURIComponent(req.params.id);
+    const index = encodeURIComponent(req.params.index);
+    const bucket = (req.query?.bucket || '').trim() || null;
+    const fileName = req.query?.filename;
+    const mediaType = (req.query?.mediaType || '').trim() || detectMediaType(fileName);
+    const url = `${COMFY_API_BASE}/v1/jobs/${jobId}/files/${index}`;
     const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
-      logger.error('[getJobImage] upstream', r.status, txt);
+      logger.error('[getJobFile] upstream', r.status, txt);
       return errorJson(res, r.status, 'upstream error', txt);
     }
-    const ct = r.headers.get('content-type') || 'image/png';
+    const ct = r.headers.get('content-type') || detectMimeType(mediaType, fileName);
     const ab = await r.arrayBuffer();
     const buf = Buffer.from(ab);
-    const suggestedName = req.query?.filename;
-    if (suggestedName) {
+    if (fileName) {
       try {
-        await writeCacheFile(suggestedName, buf);
+        await writeCacheFile(fileName, buf, { bucket, mediaType });
       } catch (err) {
-        logger.warn('[getJobImage] failed to persist cache', err);
+        logger.warn('[getJobFile] failed to persist cache', err);
       }
     }
     res.setHeader('Content-Type', ct);
@@ -1181,15 +1282,18 @@ exports.getJobImage = async (req, res) => {
     res.end(buf);
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
-    logger.error('[getJobImage] error', e);
-    return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream image', String(e.message || e));
+    logger.error('[getJobFile] error', e);
+    return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream file', String(e.message || e));
   }
 };
+
+// Back-compat alias for older clients hitting /images/:index
+exports.getJobImage = exports.getJobFile;
 
 // Proxy: list input/output
 exports.listFiles = async (req, res) => {
   const bucket = req.params.bucket;
-  if (!['input', 'output'].includes(bucket)) return errorJson(res, 400, 'bucket must be input or output');
+  if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
   try {
     const r = await fetch(`${COMFY_API_BASE}/v1/files/${bucket}`, { headers: apiHeaders() });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
@@ -1207,13 +1311,15 @@ exports.listFiles = async (req, res) => {
     const cachedEntries = await mapWithConcurrency(names, CACHE_CONCURRENCY, async (original) => {
       const safeName = toSafeName(original);
       if (!safeName) {
-        return { original, bucket, name: null, url: null };
+        return { original, bucket, name: null, url: null, media_type: detectMediaType(original) };
       }
+      const mediaType = detectMediaType(original);
       const cacheRecord = await resolveCachedRecord(bucket, original);
       return {
         original,
         name: safeName,
         bucket,
+        media_type: mediaType,
         url: cacheRecord ? cacheRecord.url : null
       };
     });
@@ -1231,7 +1337,7 @@ exports.listFiles = async (req, res) => {
 // Proxy: stream file by name
 exports.getFile = async (req, res) => {
   const bucket = req.params.bucket;
-  if (!['input', 'output'].includes(bucket)) return errorJson(res, 400, 'bucket must be input or output');
+  if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
   const name = req.params.filename;
   try {
     const cacheRecord = await resolveCachedRecord(bucket, name);
@@ -1254,14 +1360,15 @@ exports.getFile = async (req, res) => {
       logger.error('[getFile] upstream', r.status, txt);
       return errorJson(res, r.status, 'upstream error', txt);
     }
-    const ct = r.headers.get('content-type') || 'application/octet-stream';
+    const mediaType = detectMediaType(name);
+    const ct = r.headers.get('content-type') || detectMimeType(mediaType, name);
     const ab = await r.arrayBuffer();
     res.setHeader('Content-Type', ct);
     res.setHeader('Content-Disposition', `inline; filename="${name.replace(/"/g, '')}"`);
     res.setHeader('Cache-Control', 'private, max-age=86400');
     const buf = Buffer.from(ab);
     try {
-      await writeCacheFile(name, buf);
+      await writeCacheFile(name, buf, { bucket, mediaType });
     } catch (err) {
       logger.warn('[getFile] failed to persist fallback cache', err);
     }
@@ -1274,11 +1381,7 @@ exports.getFile = async (req, res) => {
 };
 
 function guessImageMime(name) {
-  const ext = path.extname(String(name || '')).toLowerCase();
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
-  if (ext === '.png') return 'image/png';
-  if (ext === '.webp') return 'image/webp';
-  return 'application/octet-stream';
+  return detectMimeType('image', name);
 }
 
 // POST /image_gen/api/files/promote
@@ -1290,6 +1393,10 @@ exports.promoteCachedFile = async (req, res) => {
     if (!['input', 'output'].includes(bucket)) return errorJson(res, 400, 'bucket must be input or output');
     const safeName = toSafeName(filename);
     if (!safeName) return errorJson(res, 400, 'invalid filename');
+    const mediaType = detectMediaType(filename);
+    if (mediaType !== 'image') {
+      return errorJson(res, 400, 'only image files can be promoted to input');
+    }
 
     const cacheRecord = await resolveCachedRecord(bucket, filename);
     if (!cacheRecord || !cacheRecord.localPath) {
@@ -1312,7 +1419,7 @@ exports.promoteCachedFile = async (req, res) => {
     const savedName = json?.filename || json?.file || safeName;
 
     try {
-      await writeCacheFile(savedName, buf);
+      await writeCacheFile(savedName, buf, { bucket: 'input', mediaType: detectMediaType(savedName) });
     } catch (err) {
       logger.warn('[promoteCachedFile] failed to persist cache', err);
     }
@@ -1345,7 +1452,7 @@ exports.uploadInput = async (req, res) => {
     const savedName = json?.filename || json?.file || fileName;
     if (savedName) {
       try {
-        await writeCacheFile(savedName, buf);
+        await writeCacheFile(savedName, buf, { bucket: 'input', mediaType: detectMediaType(savedName) });
       } catch (err) {
         logger.warn('[uploadInput] failed to persist cache', err);
       }

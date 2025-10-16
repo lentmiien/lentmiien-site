@@ -44,7 +44,8 @@ router.get('/api/health', ctrl.health);
 router.get('/api/workflows', ctrl.getWorkflows);
 router.post('/api/generate', ctrl.generate);
 router.get('/api/jobs/:id', ctrl.getJob);
-router.get('/api/jobs/:id/images/:index', ctrl.getJobImage);
+router.get('/api/jobs/:id/files/:index', ctrl.getJobFile);
+router.get('/api/jobs/:id/images/:index', ctrl.getJobImage); // legacy alias
 router.get('/api/files/:bucket', ctrl.listFiles);
 router.get('/api/files/:bucket/:filename', ctrl.getFile);
 router.post('/api/files/input', upload.single('image'), ctrl.uploadInput);

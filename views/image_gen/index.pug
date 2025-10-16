@@ -3,19 +3,32 @@ extends ../layout
 
 block styles
   style.
-    .muted{color:#6c757d}
-    .thumb{border:1px solid #dee2e6;border-radius:.5rem;padding:.5rem;background:#0d0f14}
-    .thumb img{max-width:100%;height:auto;border-radius:.25rem}
-    .monospace{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-    .log{background:#0b0d12;color:#e9ecef;border:1px solid #1f232b;border-radius:.5rem;padding:.75rem;max-height:200px;overflow:auto}
-    .pill{display:inline-block;padding:.15rem .5rem;border-radius:50rem;background:#0d1220;border:1px solid #2a2f3a;font-size:.8rem;margin-left:.25rem}
+    .imgen-page .card{background:var(--surface-1);border:1px solid var(--border);color:var(--text);box-shadow:0 18px 40px rgba(0,0,0,0.26);border-radius:1rem}
+    .imgen-page .card h2{color:var(--text);letter-spacing:.04em;text-transform:uppercase;font-size:.8rem}
+    .imgen-page .form-label{color:var(--text-secondary);font-weight:600;letter-spacing:.02em}
+    .muted{color:var(--text-muted)}
+    .thumb{position:relative;background:var(--surface-1);border:1px solid var(--border);border-radius:.75rem;padding:.75rem;box-shadow:0 16px 32px rgba(0,0,0,0.22);overflow:hidden}
+    .thumb-media{width:100%;border-radius:.5rem;border:1px solid var(--divider);background:var(--surface-2);max-height:420px;display:block;object-fit:contain}
+    .thumb-media--empty{display:flex;align-items:center;justify-content:center;min-height:160px;border:1px dashed var(--divider);color:var(--text-muted);font-size:.85rem}
+    .thumb-video .thumb-media{background:#000}
+    .media-badge{position:absolute;top:.75rem;right:.75rem;padding:.2rem .6rem;border-radius:999px;font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;background:var(--surface-3);color:var(--accent);border:1px solid var(--accent)}
+    .media-badge--video{background:var(--brand-tint);color:var(--brand);border-color:var(--brand)}
+    .media-badge--gif{background:var(--accent-tint);color:var(--accent);border-color:var(--accent)}
+    .thumb .btn{margin-top:.6rem}
+    .monospace{font-family:'JetBrains Mono','Fira Code',monospace;font-size:.85rem}
+    .log{background:var(--surface-1);color:var(--text);border:1px solid var(--border);border-radius:.75rem;padding:.75rem;max-height:220px;overflow:auto}
+    .pill{display:inline-flex;align-items:center;padding:.25rem .75rem;border-radius:999px;background:var(--surface-2);border:1px solid var(--divider);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary);margin-left:.75rem}
+    #statusPill{border-color:var(--accent);background:var(--accent-tint);color:var(--accent)}
+    .browse-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+    .browse-grid{margin-top:.75rem}
+    .browse-actions button{min-width:0}
     #promptModal{z-index:99999;}
 
 block content
-  .container.py-3
+  .container.py-3.imgen-page
     .d-flex.align-items-center.mb-3
-      h1.h4.mb-0 ComfyUI – Image Generation
-      span#statusPill.pill.ms-2 idle
+      h1.h4.mb-0 ComfyUI Image &amp; Video Studio
+      span#statusPill.pill idle
 
     // Settings (optional health)
     .card.mb-3
@@ -59,11 +72,13 @@ block content
               small#lastUpload.muted
           .col-md-6
             label.form-label Browse
-            .d-flex.gap-2
+            small.text-muted.d-block.mb-2 Completed videos appear under the video bucket after rendering.
+            .browse-actions
               button#btnListInput.btn.btn-outline-secondary(type="button") List input
               button#btnListOutput.btn.btn-outline-secondary(type="button") List output
+              button#btnListVideo.btn.btn-outline-secondary(type="button") List video
               button#btnHideBrowse.btn.btn-outline-secondary(type="button") Hide
-        .row.row-cols-2.row-cols-md-4.g-3.mt-2#browseArea
+        .row.row-cols-2.row-cols-md-4.g-3.browse-grid#browseArea
 
     // Jobs
     .card.mb-3
