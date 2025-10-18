@@ -79,6 +79,27 @@
     return { element: el, mediaType };
   }
 
+  function pickBestPrompt(prompts) {
+    if (!Array.isArray(prompts) || !prompts.length) return null;
+    let bestScore = -Infinity;
+    let bestOptions = [];
+    prompts.forEach((prompt) => {
+      const raw = Number(prompt?.score_average);
+      const score = Number.isFinite(raw) ? raw : 0;
+      if (score > bestScore) {
+        bestScore = score;
+        bestOptions = [prompt];
+        return;
+      }
+      if (score === bestScore) {
+        bestOptions.push(prompt);
+      }
+    });
+    const candidates = bestOptions.length ? bestOptions : prompts;
+    const index = Math.floor(Math.random() * candidates.length);
+    return candidates[index];
+  }
+
   function formatDate(value) {
     if (!value) return '-';
     const d = new Date(value);
@@ -317,14 +338,14 @@
         const avgValue = Number.isFinite(cellAvgRaw) ? cellAvgRaw : 0;
         const promptCount = Array.isArray(col.prompts) ? col.prompts.length : 0;
         avgText.textContent = `Avg ${avgValue.toFixed(2)} - ${promptCount} item(s)`;
-        cellWrap.appendChild(avgText);
-        const grid = document.createElement('div');
-        grid.className = 'thumb-grid';
-        if (col.prompts && col.prompts.length) {
-          col.prompts.forEach((prompt) => {
+          cellWrap.appendChild(avgText);
+          const grid = document.createElement('div');
+          grid.className = 'thumb-grid';
+          if (col.prompts && col.prompts.length) {
+            const prompt = pickBestPrompt(col.prompts);
             const card = document.createElement('a');
             card.className = 'matrix-thumb';
-            const linkUrl = prompt.download_url || prompt.file_url || '#';
+            const linkUrl = prompt?.download_url || prompt?.file_url || '#';
             if (linkUrl !== '#') {
               card.href = linkUrl;
               card.target = '_blank';
@@ -332,7 +353,7 @@
               card.href = '#';
               card.addEventListener('click', (e) => e.preventDefault());
             }
-            const preview = createMatrixPreview(prompt);
+            const preview = createMatrixPreview(prompt || {});
             if (preview.element) {
               card.appendChild(preview.element);
             }
@@ -342,15 +363,16 @@
             card.appendChild(badge);
             const meta = document.createElement('div');
             meta.className = 'meta';
-            meta.textContent = `${(prompt.score_average || 0).toFixed(2)} (${prompt.score_count || 0})`;
+            const scoreAvg = Number(prompt?.score_average);
+            const formattedScore = Number.isFinite(scoreAvg) ? scoreAvg : 0;
+            meta.textContent = `${formattedScore.toFixed(2)} (${prompt?.score_count || 0})`;
             card.appendChild(meta);
             grid.appendChild(card);
-          });
-        } else {
-          const empty = document.createElement('div');
-          empty.textContent = 'No results yet';
-          grid.appendChild(empty);
-        }
+          } else {
+            const empty = document.createElement('div');
+            empty.textContent = 'No results yet';
+            grid.appendChild(empty);
+          }
         cellWrap.appendChild(grid);
         td.appendChild(cellWrap);
         tr.appendChild(td);
