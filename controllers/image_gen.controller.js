@@ -202,8 +202,8 @@ function normalizeJobFiles(jobId, files) {
 
 const BULK_PROMPT_STATUSES = Object.freeze(['Pending', 'Processing', 'Paused', 'Completed', 'Canceled']);
 const BULK_WORKER_INTERVAL_MS = 4000;
-const BULK_JOB_POLL_DELAY_MS = 2000;
-const BULK_JOB_POLL_LIMIT = 180;
+const BULK_JOB_POLL_DELAY_MS = 5000;
+const BULK_JOB_POLL_LIMIT = 400;
 const BULK_DOWNLOAD_TIMEOUT_MS = 60000;
 
 function delay(ms) {
