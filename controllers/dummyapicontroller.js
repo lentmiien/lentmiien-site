@@ -2,7 +2,7 @@ const logger = require('../utils/logger');
 const labelResponse_sample = require('../sample_data/labelResponse.json');
 
 exports.shipping_identifiers = (req, res) => {
-  logger.debug('Shipping identifier API request', { data: req.query });
+  logger.debug('Shipping identifier API request', { headers: req.headers, data: req.query });
   const size = req.query.size && parseInt(req.query.size) > 0 ? parseInt(req.query.size) : 1;
   const type = req.query.type ? req.query.type : "SID";
   const array = [];
@@ -23,6 +23,6 @@ exports.shipping_identifiers = (req, res) => {
 };
 
 exports.shipping_labels = (req, res) => {
-  logger.debug('Shipping label API request', { data: req.body });
+  logger.debug('Shipping label API request', { headers: req.headers, data: req.body });
   res.json(labelResponse_sample);
 };
