@@ -58,6 +58,59 @@ function setCopyFeedback(el, status) {
   }, 1500);
 }
 
+function resolveMessageCopySource(m) {
+  if (!m || typeof m !== 'object') return '';
+  const content = m.content || {};
+  const sources = [
+    content.text,
+    content.transcript,
+    content.revisedPrompt,
+    content.toolOutput,
+  ];
+  for (const value of sources) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return '';
+}
+
+function bindMessageCopyButton(btn, providedText) {
+  if (!btn || btn.dataset.copyBound === 'true') return;
+  const text = typeof providedText === 'string' && providedText.length > 0
+    ? providedText
+    : btn.getAttribute('data-copy-text');
+  if (typeof text !== 'string' || text.trim().length === 0) return;
+  btn.dataset.copyText = text;
+  btn.dataset.copyBound = 'true';
+  btn.addEventListener('click', () => {
+    copyTextToClipboard(text)
+      .then(() => setCopyFeedback(btn, 'copied'))
+      .catch((err) => {
+        console.warn('Unable to copy message text to clipboard', err);
+        setCopyFeedback(btn, 'failed');
+      });
+  });
+}
+
+function createMessageCopyButton(text) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.classList.add('chat5-copy-button');
+  btn.setAttribute('aria-label', 'Copy message text');
+  btn.textContent = 'Copy';
+  bindMessageCopyButton(btn, text);
+  return btn;
+}
+
+function initializeMessageCopyButtons(root) {
+  const scope = root || document;
+  if (!scope || typeof scope.querySelectorAll !== 'function') return;
+  const buttons = scope.querySelectorAll('.chat5-copy-button');
+  if (!buttons.length) return;
+  buttons.forEach((btn) => bindMessageCopyButton(btn));
+}
+
 function registerCodeCopyHandlers(root) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
   const blocks = root.querySelectorAll('pre code');
@@ -395,6 +448,12 @@ function message(m) {
   const body = document.createElement('div');
   body.classList.add('chat5-message-body');
 
+  const copyText = resolveMessageCopySource(m);
+  if (copyText) {
+    const copyBtn = createMessageCopyButton(copyText);
+    messageWrapper.appendChild(copyBtn);
+  }
+
   if (m.contentType === "text") {
     const span = document.createElement("span");
     span.classList.add('chat5-message-text');
@@ -482,6 +541,7 @@ socket.on('welcome', () => {
 document.addEventListener('DOMContentLoaded', setUpdateButtonState);
 document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('conversationContainer');
+  initializeMessageCopyButtons(container);
   registerCodeCopyHandlers(container);
   enhanceTables(container);
 });

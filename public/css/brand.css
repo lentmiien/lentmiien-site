@@ -1605,6 +1605,51 @@ label,
   display: flex;
   gap: 14px;
   align-items: flex-start;
+  position: relative;
+}
+
+.chat5-copy-button {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  opacity: 0.85;
+}
+
+.chat5-copy-button:hover,
+.chat5-copy-button:focus {
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 1;
+  outline: none;
+}
+
+.chat5-copy-button[data-copy-status="copied"]::after {
+  content: 'Copied';
+  position: absolute;
+  top: 110%;
+  right: 0;
+  font-size: 0.65rem;
+  color: var(--accent);
+  padding-top: 2px;
+}
+
+.chat5-copy-button[data-copy-status="failed"]::after {
+  content: 'Failed';
+  position: absolute;
+  top: 110%;
+  right: 0;
+  font-size: 0.65rem;
+  color: #ff6a1f;
+  padding-top: 2px;
 }
 
 .chat5-message--hidden {

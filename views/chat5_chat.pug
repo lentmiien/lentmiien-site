@@ -14,6 +14,8 @@ block content
           b= m.user_id 
         - user = m.user_id
       - const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT'
+      - const copyText = (m && m.content) ? (m.content.text || m.content.transcript || m.content.revisedPrompt || m.content.toolOutput || '') : ''
+      - const hasCopyText = typeof copyText === 'string' && copyText.trim().length > 0
       div(class={
           'chat5-message': true,
           'chat5-message--hidden': m.hideFromBot,
@@ -21,6 +23,8 @@ block content
         })
         if isBot
           img.chat5-avatar(src='/i/avatar.jpg', alt='Bot avatar')
+        if hasCopyText
+          button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copyText) Copy
         .chat5-message-body
           if m.contentType === "text"
             span.chat5-message-text(id=`${m._id}textout`)!= m.content.html 

@@ -1,5 +1,7 @@
-The ComfyUI server app was updated to handle video files, so please update the image generating router (routes/image_gen.js), controller (controllers/image_gen.controller.js), and UI (views/image_gen/*.pug) to handle video generations as well. Please cache videos to the folder `public/video`, for quicker access, and display a video player when the video is completed. Rating the prompts and the prompt library, shouldn't be any different, for the new video workflows. Lets just create one combined router/controller for both image and video generation. Be sure to add the "video" folder as an option for checking generated content.
+In `public/js/chat5_5.js` when adding a message to the UI, please add a small button in the upper right corner of the `messageWrapper`, that blend into the UI (isn't very visible), for copying the raw text content, but only for entries that have text content in either of the following data fields, in the following priority:
+1. `m.content.text`
+2. `m.content.transcript`
+3. `m.content.revisedPrompt`
+4. `m.content.toolOutput`
 
-Please refer to `ComfyUI_server_changes.md` for a detailed description of the changes.
-
-Also, make sure to follow the color scheme described in `README-Colors.md`, for the UI.
+Also do the same changes in `views/chat5_chat.pug`, so that opening existing conversations also have this functionality.
