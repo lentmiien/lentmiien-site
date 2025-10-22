@@ -801,6 +801,18 @@ class MessageService {
 
     return newAiMessages;
   }
+
+  async processFailedResponse(conversation, response_id) {
+    // TODO: Only support OpenAi at this stage
+    const resp = await ai.fetchCompleted(response_id);
+    let error_msg = "Unknown error";
+    for (const m of resp) {
+      if (Object.hasOwn(m, 'error')) {
+        if (m.error) error_msg = m.error;
+      }
+    }
+    return error_msg;
+  }
 }
 
 const FormData = require('form-data');

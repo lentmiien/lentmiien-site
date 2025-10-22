@@ -1141,6 +1141,32 @@ class ConversationService {
     return { conversation, messages, placeholder_id: pending.placeholder_id };
   }
 
+  async processFailedResponse(response_id) {
+    const pending = await PendingRequests.findOne({response_id});
+
+    if (!pending) {
+      logger.warning('No pending request found for failed response', { response_id });
+      return 'No pending request found for failed response';
+    }
+
+    const conversation = await Conversation5Model.findById(pending.conversation_id);
+
+    if (!conversation) {
+      logger.warning('Conversation not found for failed response', { response_id, conversation_id: pending.conversation_id });
+      await PendingRequests.deleteOne({_id: pending._id});
+      return 'Conversation not found for failed response';
+    }
+
+    const error_msg = await this.messageService.processFailedResponse(conversation, response_id);
+
+    conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
+
+    await conversation.save();
+    await PendingRequests.deleteOne({_id: pending._id});
+
+    return error_msg;
+  }
+
   async deleteNewConversation(id) {
     await Conversation5Model.deleteOne({_id: id});
   }

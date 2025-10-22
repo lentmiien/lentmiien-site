@@ -143,6 +143,12 @@ exports.openai = async (req, res) => {
       const rooms = conversation.members.map(roomForUser);
       io.to(rooms).emit('chat5-notice', { id: conversation._id.toString(), title: conversation.title });
     }
+
+    if (event.type === 'response.cancelled' || event.type === 'response.failed' || event.type === 'response.incomplete') {
+      const response_id = event.data.id;
+      const error_msg = await conversationService.processFailedResponse(response_id);
+      logger.debug(`Response failed [type=${event.type}]`, { error_msg });
+    }
   } catch (error) {
     logger.error('Failed to process OpenAI webhook event', { error, type: event.type });
   }
