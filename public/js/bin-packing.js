@@ -375,6 +375,7 @@
       scene: null,
       camera: null,
       animationFrame: null,
+      animationLoopActive: false,
       layerGroups: [],
       pallets: [],
       activeIndex: null,
@@ -413,6 +414,14 @@
     };
 
     var cancelAnimation = function () {
+      if (
+        viewerState.renderer &&
+        typeof viewerState.renderer.setAnimationLoop === 'function' &&
+        viewerState.animationLoopActive
+      ) {
+        viewerState.renderer.setAnimationLoop(null);
+        viewerState.animationLoopActive = false;
+      }
       if (viewerState.animationFrame) {
         cancelAnimationFrame(viewerState.animationFrame);
         viewerState.animationFrame = null;
@@ -434,17 +443,37 @@
       if (!viewerState.canvas) {
         return false;
       }
-      if (!viewerState.renderer && window.THREE && typeof THREE.WebGLRenderer === 'function') {
-        viewerState.renderer = new THREE.WebGLRenderer({
+
+      var three = window.THREE;
+
+      if (!viewerState.renderer && three && typeof three.WebGLRenderer === 'function') {
+        viewerState.renderer = new three.WebGLRenderer({
           canvas: viewerState.canvas,
           antialias: true,
           alpha: true,
         });
+
         viewerState.renderer.setPixelRatio(window.devicePixelRatio || 1);
+
+        if (typeof viewerState.renderer.outputColorSpace !== 'undefined' && typeof three.SRGBColorSpace !== 'undefined') {
+          viewerState.renderer.outputColorSpace = three.SRGBColorSpace;
+        } else if (typeof viewerState.renderer.outputEncoding !== 'undefined' && typeof three.sRGBEncoding !== 'undefined') {
+          viewerState.renderer.outputEncoding = three.sRGBEncoding;
+        }
+
+        if (three && three.ColorManagement) {
+          if (typeof three.ColorManagement.legacyMode !== 'undefined') {
+            three.ColorManagement.legacyMode = false;
+          } else if (typeof three.ColorManagement.enabled !== 'undefined') {
+            three.ColorManagement.enabled = true;
+          }
+        }
       }
+
       if (!viewerState.renderer) {
         return false;
       }
+
       updateRendererSize();
       return true;
     };
@@ -478,6 +507,8 @@
       });
       viewerState.scene = null;
       viewerState.camera = null;
+      viewerState.animationLoopActive = false;
+      viewerState.animationFrame = null;
       viewerState.layerGroups = [];
       viewerState.containerGroup = null;
       viewerState.currentVisibleLayers = 0;
@@ -657,6 +688,28 @@
       viewerState.renderer.render(viewerState.scene, viewerState.camera);
     };
 
+    var startRenderLoop = function () {
+      if (!viewerState.renderer || !viewerState.scene || !viewerState.camera) {
+        return;
+      }
+
+      viewerState.animationFrame = null;
+
+      if (typeof viewerState.renderer.setAnimationLoop === 'function') {
+        viewerState.renderer.setAnimationLoop(function () {
+          if (!viewerState.scene || !viewerState.camera) {
+            viewerState.renderer.setAnimationLoop(null);
+            viewerState.animationLoopActive = false;
+            return;
+          }
+          viewerState.renderer.render(viewerState.scene, viewerState.camera);
+        });
+        viewerState.animationLoopActive = true;
+      } else {
+        renderFrame();
+      }
+    };
+
     var openViewer = function (pallet) {
       if (!viewerState.modal || !viewerState.canvas || !pallet) {
         return;
@@ -686,7 +739,7 @@
         viewerState.closeBtn.focus();
       }
 
-      renderFrame();
+      startRenderLoop();
     };
 
     var closeViewer = function () {
