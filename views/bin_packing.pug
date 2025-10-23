@@ -98,6 +98,18 @@ block content
                 dd(data-meta-items)
           div#binPackOutput.bin-pack__output
             p.bin-pack__placeholder No packing requests submitted yet.
+    .bin-pack__viewer-overlay(data-viewer-modal aria-hidden='true')
+      .bin-pack__viewer
+        header.bin-pack__viewer-header
+          h3.bin-pack__viewer-title Pallet Preview
+          button(type='button' class='bin-pack__viewer-close' data-viewer-close aria-label='Close preview') x
+        .bin-pack__viewer-body
+          canvas#binPackViewerCanvas(data-viewer-canvas aria-label='3D pallet preview')
+        footer.bin-pack__viewer-footer
+          button(type='button' class='bin-pack__viewer-btn' data-layer-down disabled) Down
+          span.bin-pack__viewer-layer(data-layer-label) Layer 0 of 0
+          button(type='button' class='bin-pack__viewer-btn' data-layer-up disabled) Up
 
 block append script
+  script(src='https://cdnjs.cloudflare.com/ajax/libs/three.js/0.155.0/three.min.js', defer)
   script(src='/js/bin-packing.js', defer)
