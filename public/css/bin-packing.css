@@ -354,6 +354,44 @@
   color: var(--text-secondary);
 }
 
+.bin-pack__layers {
+  display: grid;
+  gap: 12px;
+}
+
+.bin-pack__layer {
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--surface-1);
+}
+
+.bin-pack__layer--base {
+  border-color: rgba(255, 194, 71, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 194, 71, 0.2);
+}
+
+.bin-pack__layer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.bin-pack__layer-title {
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+}
+
+.bin-pack__layer-range {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
 .bin-pack__placement-list,
 .bin-pack__not-placed {
   list-style: none;

@@ -27,6 +27,163 @@
 
   var REQUIRED_KEYS = ['id', 'w', 'd', 'h', 'weight', 'qty'];
 
+  var EPSILON = 0.001;
+
+  var computeLayers = function (placements) {
+    if (!Array.isArray(placements) || placements.length === 0) {
+      return [];
+    }
+
+    var items = placements.map(function (placement, index) {
+      var bottom = Number(placement && placement.z);
+      if (!Number.isFinite(bottom)) {
+        bottom = 0;
+      }
+      var height = Number(placement && placement.h);
+      if (!Number.isFinite(height)) {
+        height = 0;
+      }
+      var top = bottom + height;
+      return {
+        index: index,
+        bottom: bottom,
+        top: top,
+      };
+    });
+
+    var total = items.length;
+    var assigned = new Set();
+    var internalLayers = [];
+
+    var baseIndices = [];
+    items.forEach(function (item) {
+      if (item.bottom <= EPSILON) {
+        baseIndices.push(item.index);
+      }
+    });
+
+    if (baseIndices.length) {
+      var baseEnd = Infinity;
+      baseIndices.forEach(function (idx) {
+        var top = items[idx].top;
+        if (top < baseEnd) {
+          baseEnd = top;
+        }
+      });
+      if (!Number.isFinite(baseEnd)) {
+        baseEnd = 0;
+      }
+      internalLayers.push({
+        start: 0,
+        end: baseEnd,
+        indices: baseIndices.slice(),
+      });
+      baseIndices.forEach(function (idx) {
+        assigned.add(idx);
+      });
+    }
+
+    while (assigned.size < total) {
+      var startItem = null;
+      items.forEach(function (item) {
+        if (assigned.has(item.index)) {
+          return;
+        }
+        if (!startItem || item.bottom < startItem.bottom - EPSILON) {
+          startItem = item;
+        }
+      });
+
+      if (!startItem) {
+        break;
+      }
+
+      var layerStart = startItem.bottom;
+      var plane = layerStart;
+      var active = new Set();
+      var layerIndices = new Set();
+      var layerEnd = layerStart;
+
+      while (true) {
+        items.forEach(function (item) {
+          if (assigned.has(item.index) || active.has(item.index)) {
+            return;
+          }
+          if (item.bottom <= plane + EPSILON) {
+            active.add(item.index);
+          }
+        });
+
+        if (!active.has(startItem.index)) {
+          active.add(startItem.index);
+        }
+
+        if (active.size === 0) {
+          break;
+        }
+
+        var nextTop = Infinity;
+        active.forEach(function (idx) {
+          var top = items[idx].top;
+          if (top < nextTop) {
+            nextTop = top;
+          }
+        });
+
+        var nextBottom = Infinity;
+        items.forEach(function (item) {
+          if (assigned.has(item.index) || active.has(item.index)) {
+            return;
+          }
+          if (item.bottom > plane + EPSILON && item.bottom < nextBottom) {
+            nextBottom = item.bottom;
+          }
+        });
+
+        if (nextTop <= nextBottom + EPSILON) {
+          active.forEach(function (idx) {
+            layerIndices.add(idx);
+            assigned.add(idx);
+          });
+          layerEnd = nextTop;
+          break;
+        }
+
+        if (Number.isFinite(nextBottom)) {
+          plane = nextBottom;
+        } else {
+          active.forEach(function (idx) {
+            layerIndices.add(idx);
+            assigned.add(idx);
+          });
+          layerEnd = nextTop;
+          break;
+        }
+      }
+
+      if (layerIndices.size > 0) {
+        internalLayers.push({
+          start: layerStart,
+          end: layerEnd,
+          indices: Array.from(layerIndices),
+        });
+      } else {
+        assigned.add(startItem.index);
+      }
+    }
+
+    return internalLayers.map(function (layer, position) {
+      return {
+        index: position + 1,
+        start: layer.start,
+        end: layer.end,
+        placements: layer.indices.map(function (idx) {
+          return placements[idx];
+        }),
+      };
+    });
+  };
+
   var formatNumber = function (value, digits) {
     if (!Number.isFinite(value)) {
       return '0';
@@ -469,6 +626,10 @@
 
       if (Array.isArray(data.pallets) && data.pallets.length) {
         data.pallets.forEach(function (pallet, index) {
+          var placements = Array.isArray(pallet.placements) ? pallet.placements : [];
+          var layers = computeLayers(placements);
+          var layerCount = layers.length;
+
           var card = createElement('div', 'bin-pack__result-card');
           var header = createElement('div', 'bin-pack__result-header');
           var titleText = 'Container ' + (pallet.containerId || pallet.id || (index + 1));
@@ -479,23 +640,70 @@
           var body = createElement('div', 'bin-pack__result-body');
           var summaryInfo = createElement('div', 'bin-pack__summary');
           summaryInfo.appendChild(createElement('div', null, 'Size: ' + formatNumber(pallet.w, 0) + ' x ' + formatNumber(pallet.d, 0) + ' x ' + formatNumber(pallet.h, 0) + ' mm'));
+          summaryInfo.appendChild(createElement('div', null, 'Layers: ' + layerCount));
           body.appendChild(summaryInfo);
 
-          if (Array.isArray(pallet.placements) && pallet.placements.length) {
-            var placementList = createElement('ul', 'bin-pack__placement-list');
-            pallet.placements.forEach(function (placement) {
-              var item = createElement('li', 'bin-pack__placement');
-              var strong = createElement('strong', null, placement.itemId || 'Item');
-              item.appendChild(strong);
-              var detail = [
-                'origin (' + formatNumber(placement.x, 0) + ', ' + formatNumber(placement.y, 0) + ', ' + formatNumber(placement.z, 0) + ') mm',
-                'size ' + formatNumber(placement.w, 0) + ' x ' + formatNumber(placement.d, 0) + ' x ' + formatNumber(placement.h, 0) + ' mm',
-                'rotation ' + (placement.rotation || 'default'),
-              ].join(' | ');
-              item.appendChild(createElement('span', null, ' ' + detail));
-              placementList.appendChild(item);
-            });
-            body.appendChild(placementList);
+          var buildPlacementListItem = function (placement) {
+            var item = createElement('li', 'bin-pack__placement');
+            var strong = createElement('strong', null, placement.itemId || 'Item');
+            item.appendChild(strong);
+            var detail = [
+              'origin (' + formatNumber(placement.x, 0) + ', ' + formatNumber(placement.y, 0) + ', ' + formatNumber(placement.z, 0) + ') mm',
+              'size ' + formatNumber(placement.w, 0) + ' x ' + formatNumber(placement.d, 0) + ' x ' + formatNumber(placement.h, 0) + ' mm',
+              'rotation ' + (placement.rotation || 'default'),
+            ].join(' | ');
+            item.appendChild(createElement('span', null, ' ' + detail));
+            return item;
+          };
+
+          if (placements.length) {
+            if (layerCount) {
+              var layersContainer = createElement('div', 'bin-pack__layers');
+              layers.forEach(function (layer) {
+                var layerCard = createElement('div', 'bin-pack__layer');
+                if (layer.start <= EPSILON) {
+                  layerCard.classList.add('bin-pack__layer--base');
+                }
+
+                var layerHeader = createElement('div', 'bin-pack__layer-header');
+                var titleLabel = 'Layer ' + layer.index + (layer.start <= EPSILON ? ' (Base)' : '');
+                layerHeader.appendChild(createElement('div', 'bin-pack__layer-title', titleLabel));
+
+                var hasStart = Number.isFinite(layer.start);
+                var hasEnd = Number.isFinite(layer.end);
+                if (hasStart || hasEnd) {
+                  var startText = hasStart ? formatNumber(layer.start, 0) : '';
+                  var endText = hasEnd ? formatNumber(layer.end, 0) : '';
+                  var rangeText = '';
+                  if (hasStart && hasEnd) {
+                    rangeText = startText + ' - ' + endText + ' mm';
+                  } else if (hasStart) {
+                    rangeText = startText + ' mm';
+                  } else if (hasEnd) {
+                    rangeText = endText + ' mm';
+                  }
+                  if (rangeText) {
+                    layerHeader.appendChild(createElement('div', 'bin-pack__layer-range', rangeText));
+                  }
+                }
+
+                layerCard.appendChild(layerHeader);
+
+                var layerList = createElement('ul', 'bin-pack__placement-list');
+                layer.placements.forEach(function (placement) {
+                  layerList.appendChild(buildPlacementListItem(placement));
+                });
+                layerCard.appendChild(layerList);
+                layersContainer.appendChild(layerCard);
+              });
+              body.appendChild(layersContainer);
+            } else {
+              var fallbackList = createElement('ul', 'bin-pack__placement-list');
+              placements.forEach(function (placement) {
+                fallbackList.appendChild(buildPlacementListItem(placement));
+              });
+              body.appendChild(fallbackList);
+            }
           } else {
             body.appendChild(createElement('p', 'bin-pack__placeholder', 'No placements returned for this container.'));
           }
