@@ -1,10 +1,17 @@
 // API for the VUE app
 
+const binpackingController = require('./binpackingcontroller');
+
 exports.root = async (req, res, next) => {
   // Do some initial checks and setups
 
   next();
 }
+
+/*******************
+ * BIN PACKING
+ */
+exports.binPacking = (req, res) => binpackingController.run(req, res);
 
 /*******************
  * HEALTH

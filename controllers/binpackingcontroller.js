@@ -37,7 +37,13 @@ exports.index = (req, res) => {
 
 exports.run = async (req, res) => {
   try {
-    const parsed = requestSchema.parse(req.body);
+    const sanitizedBody = {
+      algorithm: req.body?.algorithm || 'laff',
+      container: req.body?.container,
+      items: req.body?.items,
+    };
+
+    const parsed = requestSchema.parse(sanitizedBody);
     const totalItemCount = parsed.items.reduce((sum, item) => sum + item.qty, 0);
 
     if (parsed.algorithm === 'bruteforce' && totalItemCount >= 8) {
@@ -92,3 +98,5 @@ exports.run = async (req, res) => {
     });
   }
 };
+
+exports.requestSchema = requestSchema;
