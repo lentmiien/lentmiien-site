@@ -536,7 +536,8 @@
       var height = viewerState.canvas ? (viewerState.canvas.clientHeight || viewerState.canvas.height || 1) : 1;
 
       viewerState.camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 200);
-      viewerState.camera.position.set(6, 6, 7.5);
+      var cameraDistanceFactor = 1.12; // pull the camera back slightly so the pallet stays in frame
+      viewerState.camera.position.set(6 * cameraDistanceFactor, 6 * cameraDistanceFactor, 7.5 * cameraDistanceFactor);
       viewerState.camera.lookAt(0, 0, 0);
 
       updateRendererSize();
