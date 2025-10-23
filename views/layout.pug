@@ -100,6 +100,8 @@ html(lang='en')
               h2 Test stuff
               if permissions && permissions.indexOf("box") >= 0
                 a.type-1-link(href="/box", style="width:100%;") Box packer
+              if permissions && permissions.indexOf("binpacking") >= 0
+                a.type-1-link(href="/binpacking", style="width:100%;") 3D Bin Packing
               a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
               if permissions && permissions.indexOf("quicknote") >= 0
                 a.type-1-link(href="/quicknote", style="width:100%;") Quick note

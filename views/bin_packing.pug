@@ -1,0 +1,103 @@
+extends layout
+
+block append styles
+  link(rel='stylesheet', href='/css/bin-packing.css')
+
+block content
+  section.bin-pack
+    header.bin-pack__header
+      h1.bin-pack__title 3D Bin Packing
+      p.bin-pack__subtitle Plan container loads with the local packing API and review placements instantly.
+    .bin-pack__grid
+      .bin-pack__column.bin-pack__column--form
+        article.bin-pack__panel
+          form#binPackForm.bin-pack__form(novalidate)
+            fieldset.bin-pack__fieldset
+              legend.bin-pack__legend Container configuration
+              .bin-pack__field
+                label(for='containerId') Container ID
+                input#containerId.bin-pack__input(type='text', name='containerId', placeholder='e.g. pallet-48x40', required)
+                p.bin-pack__hint Provide a name to identify the output.
+              .bin-pack__input-grid
+                .bin-pack__field
+                  label(for='containerWidth') Width (mm)
+                  input#containerWidth.bin-pack__input(type='number', name='containerWidth', min='1', step='0.01', required)
+                .bin-pack__field
+                  label(for='containerDepth') Depth (mm)
+                  input#containerDepth.bin-pack__input(type='number', name='containerDepth', min='1', step='0.01', required)
+                .bin-pack__field
+                  label(for='containerHeight') Height (mm)
+                  input#containerHeight.bin-pack__input(type='number', name='containerHeight', min='1', step='0.01', required)
+                .bin-pack__field
+                  label(for='containerEmptyWeight') Empty weight (kg)
+                  input#containerEmptyWeight.bin-pack__input(type='number', name='containerEmptyWeight', min='0', step='0.01', required)
+                .bin-pack__field
+                  label(for='containerMaxLoadWeight') Max load weight (kg)
+                  input#containerMaxLoadWeight.bin-pack__input(type='number', name='containerMaxLoadWeight', min='0', step='0.01', required)
+            fieldset.bin-pack__fieldset
+              legend.bin-pack__legend Items
+              .bin-pack__field
+                label(for='itemsFile') Upload CSV
+                input#itemsFile(type='file', accept='.csv', data-file-input)
+                p.bin-pack__hint Accepts columns: id,w,d,h,weight,qty with a header row.
+              .bin-pack__field
+                label(for='itemsTextarea') Items CSV (header row required)
+                textarea#itemsTextarea.bin-pack__textarea(name='itemsCsv', rows='8', placeholder='id,w,d,h,weight,qty')
+              .bin-pack__actions
+                button(type='button', class='bin-pack__secondary', data-fill-sample) Load sample data
+                button(type='button', class='bin-pack__secondary', data-clear-items) Clear items
+              ul.bin-pack__errors(data-parse-errors, aria-live='polite')
+            fieldset.bin-pack__fieldset
+              legend.bin-pack__legend Algorithm
+              .bin-pack__field.bin-pack__field--algorithm
+                label(for='algorithm') Choose algorithm
+                select#algorithm.bin-pack__select(name='algorithm')
+                  each algo in algorithms
+                    if algo === 'laff'
+                      option(value=algo, selected) #{algo}
+                    else
+                      option(value=algo) #{algo}
+                p.bin-pack__hint(data-bruteforce-note) Bruteforce available for fewer than 8 total items.
+            button#binPackSubmit.bin-pack__submit(type='submit') Run packing
+      .bin-pack__column
+        article.bin-pack__panel.bin-pack__panel--compact
+          h2.bin-pack__panel-title Item overview
+          dl.bin-pack__stats
+            div
+              dt Unique SKUs
+              dd(data-unique-count) 0
+            div
+              dt Total items
+              dd(data-total-count) 0
+            div
+              dt Total weight (kg)
+              dd(data-total-weight) 0
+          table.bin-pack__table
+            thead
+              tr
+                th(scope='col') ID
+                th(scope='col') Size (W x D x H)
+                th(scope='col') Weight
+                th(scope='col') Qty
+            tbody(data-item-table)
+              tr.bin-pack__table-empty
+                td(colspan='4') Items will appear here after parsing the CSV.
+        article.bin-pack__panel
+          h2.bin-pack__panel-title Packing output
+          div.bin-pack__status(data-request-status, aria-live='polite')
+          div.bin-pack__meta(data-meta-summary, hidden)
+            dl
+              div
+                dt Algorithm
+                dd(data-meta-algorithm)
+              div
+                dt Container
+                dd(data-meta-container)
+              div
+                dt Total items
+                dd(data-meta-items)
+          div#binPackOutput.bin-pack__output
+            p.bin-pack__placeholder No packing requests submitted yet.
+
+block append script
+  script(src='/js/bin-packing.js', defer)

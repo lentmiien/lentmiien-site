@@ -90,6 +90,7 @@ exports.manage_roles = async (req, res) => {
       "scheduletask",
       "image_gen",
       "sora",
+      "binpacking",
       "test",
       "archive",
     ]

@@ -1,7 +1,72 @@
-In `public/js/chat5_5.js` when adding a message to the UI, please add a small button in the upper right corner of the `messageWrapper`, that blend into the UI (isn't very visible), for copying the raw text content, but only for entries that have text content in either of the following data fields, in the following priority:
-1. `m.content.text`
-2. `m.content.transcript`
-3. `m.content.revisedPrompt`
-4. `m.content.toolOutput`
+I want to add a new router/controller tool, built on a new local API that I created. It's a 3d bin packing API, with a single input route for packing boxes in a container.
 
-Also do the same changes in `views/chat5_chat.pug`, so that opening existing conversations also have this functionality.
+The URL is `localhost:8080/pack`, and the POST body is of the following format:
+```
+{
+  "algorithm": "string",
+  "maxContainers": 0,
+  "minimizeContainers": true,
+  "container": {
+    "id": "string",
+    "w": 0,
+    "d": 0,
+    "h": 0,
+    "emptyWeight": 0,
+    "maxLoadWeight": 0
+  },
+  "items": [
+    {
+      "id": "string",
+      "w": 0,
+      "d": 0,
+      "h": 0,
+      "weight": 0,
+      "qty": 0,
+      "rotate3D": true
+    }
+  ]
+}
+```
+
+For the `algorithm`, I want to use "laff" as default, and "plain" as an option, and if the number of items are small (less than 8 for now) "bruteforce" can also be used. The `maxContainers` can be fixed as 0, meaning "no max". The `minimizeContainers` can be fixed as true. The algorithm only support 1 size container, expose the "w", "d", "h", "emptyWeight" and "maxLoadWeight" in the UI to the user. For the item list, I want to allow for either a CSV file upload, or a textarea element where the user can copy-paste the data in CSV format, with a header row; but I want to skip "rotate3D" from the input and keep it fixed to true.
+
+The return data from the API call will be of the following format:
+```
+{
+  "success": true,
+  "containersUsed": 0,
+  "pallets": [
+    {
+      "containerId": "string",
+      "index": 0,
+      "w": 0,
+      "d": 0,
+      "h": 0,
+      "placements": [
+        {
+          "itemId": "string",
+          "x": 0,
+          "y": 0,
+          "z": 0,
+          "w": 0,
+          "d": 0,
+          "h": 0,
+          "rotation": "string"
+        }
+      ]
+    }
+  ],
+  "note": "string",
+  "notPlaced": [
+    {
+      "itemId": "string",
+      "count": 0,
+      "reason": "string"
+    }
+  ]
+}
+```
+
+I do want to do more things with the output, but for now, just display the output nicely in some way to the user.
+
+Create the route/controller, necessary pug templates and JavaScripts, do not put inline JavaScript in the pug templates, and make sure to follow the styling guidelines in `README-Colors.md`. Also add a link to the new tool in the nav bar in `views/layout.pug`.
