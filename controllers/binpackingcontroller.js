@@ -46,8 +46,6 @@ exports.run = async (req, res) => {
     const parsed = requestSchema.parse(sanitizedBody);
     const totalItemCount = parsed.items.reduce((sum, item) => sum + item.qty, 0);
 
-    logger.debug("Received packing request", {parsed});
-
     if (parsed.algorithm === 'bruteforce' && totalItemCount >= 8) {
       return res.status(400).json({
         success: false,
@@ -66,11 +64,7 @@ exports.run = async (req, res) => {
       })),
     };
 
-    logger.debug("Sending data to packing API", {apiPayload});
-
     const apiResponse = await binPackingService.pack(apiPayload);
-
-    logger.debug("Received response from packing API", {apiResponse});
 
     res.json({
       success: Boolean(apiResponse?.success),
