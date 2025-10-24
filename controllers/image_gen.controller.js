@@ -205,6 +205,11 @@ const BULK_WORKER_INTERVAL_MS = 4000;
 const BULK_JOB_POLL_DELAY_MS = 5000;
 const BULK_JOB_POLL_LIMIT = 400;
 const BULK_DOWNLOAD_TIMEOUT_MS = 60000;
+const GALLERY_BATCH_RATING_VALUES = Object.freeze({
+  bad: 0,
+  neutral: 0.5,
+  good: 1
+});
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -355,6 +360,25 @@ function toPlainVariables(variables) {
   if (typeof variables.toObject === 'function') return variables.toObject();
   if (typeof variables === 'object') {
     return Object.assign({}, variables);
+  }
+  return {};
+}
+
+function parseGalleryFilters(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch (err) {
+      logger.warn('[parseGalleryFilters] failed to parse filters JSON', err);
+    }
+    return {};
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return Object.assign({}, raw);
   }
   return {};
 }
@@ -1107,6 +1131,212 @@ exports.getBulkMatrix = async (req, res) => {
   } catch (e) {
     logger.error('[getBulkMatrix] error', e);
     return errorJson(res, 500, 'failed to build comparison matrix', String(e.message || e));
+  }
+};
+
+exports.listBulkGalleryImages = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const job = await BulkJob.findById(jobId).lean();
+    if (!job) return errorJson(res, 404, 'bulk job not found');
+
+    const filters = parseGalleryFilters(req.query.filters);
+    const normalizedFilters = {};
+    const match = {
+      job: jobId,
+      status: 'Completed',
+      filename: { $ne: null }
+    };
+
+    for (const [rawKey, rawValue] of Object.entries(filters || {})) {
+      const key = String(rawKey || '').trim();
+      const value = String(rawValue ?? '').trim();
+      if (!key || !value) continue;
+      normalizedFilters[key] = value;
+      if (key === 'template') {
+        match.template_label = value;
+      } else if (key === 'negative') {
+        if (value.toLowerCase() === 'with negative') {
+          match.negative_used = true;
+        } else if (value.toLowerCase() === 'no negative') {
+          match.negative_used = false;
+        } else if (value) {
+          const lower = value.toLowerCase();
+          match.negative_used = lower === 'true' || lower === '1';
+        }
+      } else if (key.startsWith('placeholder:')) {
+        const placeholderKey = key.slice('placeholder:'.length);
+        if (placeholderKey) {
+          match[`placeholder_values.${placeholderKey}`] = value;
+        }
+      } else if (key.startsWith('input:')) {
+        const inputKey = key.slice('input:'.length);
+        if (inputKey) {
+          match[`input_values.${inputKey}`] = value;
+        }
+      } else {
+        match[`variables.${key}`] = value;
+      }
+    }
+
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 25)));
+    const fetchLimit = Math.min(500, Math.max(limit * 4, limit + 20));
+
+    const pipeline = [
+      { $match: match },
+      {
+        $addFields: {
+          score_average: {
+            $cond: [
+              { $gt: ['$score_count', 0] },
+              { $divide: ['$score_total', '$score_count'] },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $facet: {
+          items: [
+            { $sort: { score_average: -1, score_count: -1, updated_at: -1, _id: 1 } },
+            { $limit: fetchLimit }
+          ],
+          total: [
+            { $count: 'value' }
+          ]
+        }
+      }
+    ];
+
+    const [result = {}] = await BulkTestPrompt.aggregate(pipeline);
+    const docs = Array.isArray(result.items) ? result.items : [];
+    const totalMatches = Array.isArray(result.total) && result.total.length
+      ? Number(result.total[0].value) || 0
+      : 0;
+
+    const groups = new Map();
+    const averages = [];
+    docs.forEach((doc) => {
+      const avg = Number(doc.score_average) || 0;
+      const key = avg.toFixed(6);
+      if (!groups.has(key)) {
+        groups.set(key, []);
+        averages.push({ key, avg });
+      }
+      groups.get(key).push(doc);
+    });
+    averages.sort((a, b) => b.avg - a.avg);
+
+    const shuffleInPlace = (arr) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    };
+
+    const selectedDocs = [];
+    for (const { key } of averages) {
+      const group = groups.get(key) || [];
+      if (group.length > 1) shuffleInPlace(group);
+      for (const doc of group) {
+        if (selectedDocs.length >= limit) break;
+        selectedDocs.push(doc);
+      }
+      if (selectedDocs.length >= limit) break;
+    }
+
+    const items = selectedDocs.map((doc) => {
+      const mediaType = detectMediaType(doc.filename);
+      const bucket = mediaType === 'video' ? 'video' : 'output';
+      const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType }) : null;
+      const downloadUrl = doc.filename ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}` : null;
+      const scoreTotal = Number(doc.score_total || 0);
+      const scoreCount = Number(doc.score_count || 0);
+      const scoreAverage = Number.isFinite(doc.score_average) ? Number(doc.score_average) : 0;
+      return {
+        id: String(doc._id),
+        filename: doc.filename,
+        media_type: mediaType,
+        cached_url: cacheRec ? cacheRec.url : null,
+        download_url: downloadUrl,
+        score_total: scoreTotal,
+        score_count: scoreCount,
+        score_average: scoreAverage,
+        template_label: doc.template_label,
+        placeholder_values: doc.placeholder_values || {},
+        input_values: doc.input_values || {},
+        variables: toPlainVariables(doc.variables),
+        negative_used: !!doc.negative_used,
+        completed_at: doc.completed_at
+      };
+    });
+
+    res.json({
+      filters: normalizedFilters,
+      limit,
+      total: totalMatches,
+      returned: items.length,
+      items
+    });
+  } catch (e) {
+    logger.error('[listBulkGalleryImages] error', e);
+    return errorJson(res, 500, 'failed to load gallery images', String(e.message || e));
+  }
+};
+
+exports.submitBulkGalleryRating = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const jobExists = await BulkJob.exists({ _id: jobId });
+    if (!jobExists) return errorJson(res, 404, 'bulk job not found');
+
+    const ratingKey = String(req.body?.rating || '').trim().toLowerCase();
+    const ratingValue = GALLERY_BATCH_RATING_VALUES[ratingKey];
+    if (ratingValue === undefined) {
+      return errorJson(res, 400, 'rating must be one of: good, neutral, bad');
+    }
+
+    const rawIds = Array.isArray(req.body?.prompt_ids) ? req.body.prompt_ids : [];
+    if (!rawIds.length) return errorJson(res, 400, 'prompt_ids required');
+    const dedupedIds = [];
+    const seen = new Set();
+    rawIds.forEach((raw) => {
+      const objId = toObjectId(raw);
+      if (!objId) return;
+      const key = String(objId);
+      if (seen.has(key)) return;
+      seen.add(key);
+      dedupedIds.push(objId);
+    });
+    if (!dedupedIds.length) return errorJson(res, 400, 'no valid prompt ids provided');
+
+    const update = await BulkTestPrompt.updateMany(
+      {
+        _id: { $in: dedupedIds },
+        job: jobId,
+        status: 'Completed',
+        filename: { $ne: null }
+      },
+      {
+        $inc: {
+          score_total: ratingValue,
+          score_count: 1
+        }
+      }
+    );
+
+    res.json({
+      ok: true,
+      rating: ratingKey,
+      rating_value: ratingValue,
+      matched: update.matchedCount || 0,
+      modified: update.modifiedCount || 0
+    });
+  } catch (e) {
+    logger.error('[submitBulkGalleryRating] error', e);
+    return errorJson(res, 500, 'failed to apply gallery rating', String(e.message || e));
   }
 };
 

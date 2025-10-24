@@ -33,6 +33,16 @@ block styles
     .auto-refresh-note{font-size:.85rem;color:var(--text-muted)}
     .text-soft{color:var(--text-muted)}
     .text-soft{color:var(--text-muted)}
+    .gallery-filter{background:var(--surface-1);border:1px solid var(--border);border-radius:1rem;padding:1rem}
+    .gallery-filter .form-select{background:var(--surface-1);color:var(--text)}
+    .gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem}
+    .gallery-card{display:flex;flex-direction:column;gap:.6rem;background:var(--surface-2);border:1px solid var(--divider);border-radius:.75rem;padding:.75rem}
+    .gallery-media{width:100%;border-radius:.5rem;border:1px solid var(--border);object-fit:cover;max-height:240px;background:var(--surface-1)}
+    .gallery-media--video{object-fit:contain}
+    .gallery-meta{font-size:.75rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:.35rem}
+    .gallery-meta .tag{display:inline-flex;align-items:center;gap:.3rem;background:var(--surface-3);border:1px solid var(--divider);border-radius:999px;padding:.2rem .6rem;font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)}
+    .gallery-summary{font-size:.85rem;color:var(--text-muted)}
+    .gallery-rating-controls .btn{min-width:72px}
 
 block content
   .container.py-4#jobRoot(data-job-id=jobId)
@@ -92,6 +102,35 @@ block content
             button#refreshMatrixBtn.btn.btn-outline-secondary.btn-sm(type="button") Refresh matrix
         .matrix-scroll.mt-3
           #matrixArea
+    .panel
+      .d-flex.justify-content-between.align-items-center.mb-2.flex-wrap.gap-2
+        h2.mb-0 Variant gallery
+        span.auto-refresh-note Select filters and submit to view up to 25 items. Leave blank to see the top rated combinations.
+      form#galleryFilterForm.gallery-filter
+        #galleryFilterFields.row.g-3
+        .d-flex.gap-2.flex-wrap.mt-3
+          button#galleryApplyBtn.btn.btn-outline-secondary.btn-sm(type="submit") Show images
+          button#galleryResetBtn.btn.btn-link.btn-sm(type="button") Clear filters
+      #gallerySummary.gallery-summary.mt-2
+      #galleryResults.mt-3
+        .text-soft#galleryLoading(style="display:none") Loading images…
+        .text-soft#galleryEmpty(style="display:none") No images match the current filters yet.
+        .text-danger#galleryError(style="display:none")
+        #galleryGrid.gallery-grid
+      form#galleryRateForm.mt-3
+        fieldset.border-0.p-0.m-0.gallery-rating-controls.d-none#galleryRatingControls
+          legend.visually-hidden Rate shown images
+          .d-flex.flex-wrap.align-items-center.gap-3
+            span.fw-semibold Rate shown images:
+            .btn-group(role="group" aria-label="Rate images")
+              input#galleryRatingGood.btn-check(type="radio" name="galleryRating" value="good")
+              label.btn.btn-outline-success(for="galleryRatingGood") Good
+              input#galleryRatingNeutral.btn-check(type="radio" name="galleryRating" value="neutral")
+              label.btn.btn-outline-secondary(for="galleryRatingNeutral") Neutral
+              input#galleryRatingBad.btn-check(type="radio" name="galleryRating" value="bad")
+              label.btn.btn-outline-danger(for="galleryRatingBad") Bad
+            button#galleryRateSubmitBtn.btn.btn-primary.btn-sm(type="submit") Submit rating
+            button#galleryRateCancelBtn.btn.btn-link.btn-sm(type="button") Cancel
     .panel
       h2 Prompts
       .d-flex.justify-content-between.align-items-center.mb-2

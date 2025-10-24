@@ -58,7 +58,9 @@ router.get('/api/bulk/jobs/:id', ctrl.getBulkJob);
 router.patch('/api/bulk/jobs/:id/status', ctrl.updateBulkJobStatus);
 router.get('/api/bulk/jobs/:id/prompts', ctrl.listBulkTestPrompts);
 router.get('/api/bulk/jobs/:id/matrix', ctrl.getBulkMatrix);
+router.get('/api/bulk/jobs/:id/gallery', ctrl.listBulkGalleryImages);
 router.get('/api/bulk/jobs/:id/score-pair', ctrl.getBulkScorePair);
 router.post('/api/bulk/jobs/:id/score', ctrl.submitBulkScore);
+router.post('/api/bulk/jobs/:id/gallery/rate', ctrl.submitBulkGalleryRating);
 
 module.exports = router;

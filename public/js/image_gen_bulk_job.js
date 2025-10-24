@@ -26,11 +26,38 @@
   const matrixArea = document.getElementById('matrixArea');
   const promptTableBody = document.getElementById('promptTableBody');
   const refreshPromptsBtn = document.getElementById('refreshPromptsBtn');
+  const galleryFilterForm = document.getElementById('galleryFilterForm');
+  const galleryFilterFields = document.getElementById('galleryFilterFields');
+  const gallerySummary = document.getElementById('gallerySummary');
+  const galleryLoading = document.getElementById('galleryLoading');
+  const galleryEmpty = document.getElementById('galleryEmpty');
+  const galleryError = document.getElementById('galleryError');
+  const galleryGrid = document.getElementById('galleryGrid');
+  const galleryResetBtn = document.getElementById('galleryResetBtn');
+  const galleryRateForm = document.getElementById('galleryRateForm');
+  const galleryRatingControls = document.getElementById('galleryRatingControls');
+  const galleryRateSubmitBtn = document.getElementById('galleryRateSubmitBtn');
+  const galleryRateCancelBtn = document.getElementById('galleryRateCancelBtn');
 
   let currentVars = { a: null, b: null };
   let availableVariables = [];
   let autoRefreshTimer = null;
   let lastJobStatus = null;
+  let jobDetails = null;
+  let galleryInitialized = false;
+  let galleryOptionsFingerprint = '';
+  const gallerySelects = new Map();
+  const galleryState = {
+    filters: {},
+    items: [],
+    ratingLocked: false,
+    lastResponse: null
+  };
+  const GALLERY_RATING_VALUES = Object.freeze({
+    good: 1,
+    neutral: 0.5,
+    bad: 0
+  });
 
   async function api(path, init = {}) {
     const opts = Object.assign({ headers: {} }, init);
@@ -214,6 +241,339 @@
     return key;
   }
 
+  function uniqueList(values) {
+    const seen = new Set();
+    const list = [];
+    (Array.isArray(values) ? values : []).forEach((value) => {
+      const text = String(value ?? '').trim();
+      if (!text || seen.has(text)) return;
+      seen.add(text);
+      list.push(text);
+    });
+    return list;
+  }
+
+  function slugifyFilterKey(key) {
+    const base = String(key || 'field').toLowerCase();
+    const slug = base.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return `gallery-filter-${slug || 'field'}`;
+  }
+
+  function valuesForVariable(job, key) {
+    if (!job || !key) return [];
+    if (key === 'template') {
+      const labels = (Array.isArray(job.prompt_templates) ? job.prompt_templates : [])
+        .map((tpl) => tpl && typeof tpl.label === 'string' ? tpl.label : '')
+        .filter(Boolean);
+      return uniqueList(labels);
+    }
+    if (key === 'negative') {
+      return ['With negative', 'No negative'];
+    }
+    if (key.startsWith('placeholder:')) {
+      const placeholderKey = key.slice('placeholder:'.length);
+      const entry = Array.isArray(job.placeholder_values)
+        ? job.placeholder_values.find((item) => item && item.key === placeholderKey)
+        : null;
+      return entry ? uniqueList(entry.values || []) : [];
+    }
+    if (key.startsWith('input:')) {
+      const inputKey = key.slice('input:'.length);
+      const entry = Array.isArray(job.image_inputs)
+        ? job.image_inputs.find((item) => item && item.key === inputKey)
+        : null;
+      return entry ? uniqueList(entry.values || []) : [];
+    }
+    return [];
+  }
+
+  function buildGalleryOptions(job) {
+    const variables = Array.isArray(job?.variables_available) ? job.variables_available : [];
+    return variables.map((key) => ({
+      key,
+      label: formatVariableKey(key),
+      values: valuesForVariable(job, key)
+    }));
+  }
+
+  function renderGalleryFilterFields(job) {
+    if (!galleryFilterFields) return false;
+    const options = buildGalleryOptions(job);
+    const fingerprint = JSON.stringify(options.map((opt) => ({ key: opt.key, values: opt.values })));
+    if (fingerprint === galleryOptionsFingerprint) return false;
+    galleryOptionsFingerprint = fingerprint;
+    gallerySelects.clear();
+    galleryFilterFields.innerHTML = '';
+    if (!options.length) {
+      const msg = document.createElement('div');
+      msg.className = 'col-12 text-soft';
+      msg.textContent = 'No variable filters are available for this job.';
+      galleryFilterFields.appendChild(msg);
+      return true;
+    }
+    const validKeys = new Set(options.map((opt) => opt.key));
+    Object.keys(galleryState.filters || {}).forEach((key) => {
+      if (!validKeys.has(key)) {
+        delete galleryState.filters[key];
+      }
+    });
+    options.forEach((opt) => {
+      const col = document.createElement('div');
+      col.className = 'col-md-4 col-sm-6';
+      const label = document.createElement('label');
+      const selectId = slugifyFilterKey(opt.key);
+      label.className = 'form-label';
+      label.setAttribute('for', selectId);
+      label.textContent = opt.label;
+      const select = document.createElement('select');
+      select.className = 'form-select';
+      select.id = selectId;
+      select.dataset.filterKey = opt.key;
+      const allOption = document.createElement('option');
+      allOption.value = '';
+      allOption.textContent = 'All';
+      select.appendChild(allOption);
+      opt.values.forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        select.appendChild(option);
+      });
+      const savedValue = galleryState.filters?.[opt.key];
+      if (savedValue && opt.values.includes(savedValue)) {
+        select.value = savedValue;
+      }
+      select.addEventListener('change', () => {
+        galleryState.ratingLocked = false;
+      });
+      col.appendChild(label);
+      col.appendChild(select);
+      galleryFilterFields.appendChild(col);
+      gallerySelects.set(opt.key, select);
+    });
+    return true;
+  }
+
+  function collectGalleryFilters() {
+    const filters = {};
+    gallerySelects.forEach((select, key) => {
+      if (!select) return;
+      const value = String(select.value || '').trim();
+      if (value) filters[key] = value;
+    });
+    return filters;
+  }
+
+  function setGalleryLoading(visible) {
+    if (!galleryLoading) return;
+    galleryLoading.style.display = visible ? '' : 'none';
+  }
+
+  function setGalleryError(message) {
+    if (!galleryError) return;
+    if (!message) {
+      galleryError.textContent = '';
+      galleryError.style.display = 'none';
+      return;
+    }
+    galleryError.textContent = message;
+    galleryError.style.display = '';
+  }
+
+  function setGalleryEmpty(visible) {
+    if (!galleryEmpty) return;
+    galleryEmpty.style.display = visible ? '' : 'none';
+  }
+
+  function showGalleryRatingControls(visible) {
+    if (!galleryRatingControls) return;
+    if (visible) {
+      galleryRatingControls.classList.remove('d-none');
+      if (galleryRateSubmitBtn) galleryRateSubmitBtn.disabled = false;
+    } else {
+      galleryRatingControls.classList.add('d-none');
+    }
+  }
+
+  function updateGallerySummary(data) {
+    if (!gallerySummary) return;
+    const returned = Array.isArray(data?.items) ? data.items.length : 0;
+    if (!returned) {
+      gallerySummary.textContent = '';
+      return;
+    }
+    const total = Number(data?.total || returned);
+    const filterKeys = Object.keys(galleryState.filters || {});
+    const scope = filterKeys.length ? 'the current filters' : 'all variants';
+    if (total > returned) {
+      gallerySummary.textContent = `Showing ${returned} of ${total} matching images for ${scope}.`;
+    } else {
+      gallerySummary.textContent = `Showing ${returned} image${returned === 1 ? '' : 's'} for ${scope}.`;
+    }
+  }
+
+  function createGalleryMediaElement(item) {
+    const filename = item?.filename || '';
+    const mediaType = (item?.media_type || detectMediaTypeFromName(filename)).toLowerCase();
+    const src = item?.cached_url || item?.download_url || item?.file_url || '';
+    let el;
+    if (mediaType === 'video') {
+      el = document.createElement('video');
+      el.controls = true;
+      el.playsInline = true;
+      el.preload = 'metadata';
+      el.muted = true;
+      el.loop = false;
+    } else {
+      el = document.createElement('img');
+      el.alt = filename || 'Image preview';
+      el.loading = 'lazy';
+    }
+    el.classList.add('gallery-media');
+    if (mediaType === 'video') el.classList.add('gallery-media--video');
+    if (src) el.src = src;
+    return el;
+  }
+
+  function createGalleryCard(item) {
+    const card = document.createElement('article');
+    card.className = 'gallery-card';
+    card.dataset.promptId = item.id || '';
+    card.dataset.scoreTotal = String(item.score_total || 0);
+    card.dataset.scoreCount = String(item.score_count || 0);
+    const mediaEl = createGalleryMediaElement(item);
+    card.appendChild(mediaEl);
+
+    const meta = document.createElement('div');
+    meta.className = 'gallery-meta';
+
+    const avg = Number(item.score_average || 0);
+    const count = Number(item.score_count || 0);
+    const scoreLine = document.createElement('div');
+    scoreLine.textContent = `Score ${avg.toFixed(2)} (${count})`;
+    meta.appendChild(scoreLine);
+
+    if (item.template_label) {
+      const tplLine = document.createElement('div');
+      tplLine.textContent = `Template: ${item.template_label}`;
+      meta.appendChild(tplLine);
+    }
+
+    const placeholders = Object.entries(item.placeholder_values || {});
+    if (placeholders.length) {
+      const placeholderLine = document.createElement('div');
+      placeholderLine.textContent = `Placeholders: ${placeholders.map(([k, v]) => `${k}: ${v}`).join(', ')}`;
+      meta.appendChild(placeholderLine);
+    }
+
+    const inputs = Object.entries(item.input_values || {});
+    if (inputs.length) {
+      const inputLine = document.createElement('div');
+      inputLine.textContent = `Inputs: ${inputs.map(([k, v]) => `${k}: ${v}`).join(', ')}`;
+      meta.appendChild(inputLine);
+    }
+
+    if (item.negative_used !== undefined) {
+      const negativeLine = document.createElement('div');
+      negativeLine.textContent = `Negative: ${item.negative_used ? 'With negative' : 'No negative'}`;
+      meta.appendChild(negativeLine);
+    }
+
+    if (item.completed_at) {
+      const completedLine = document.createElement('div');
+      completedLine.textContent = `Completed: ${formatDate(item.completed_at)}`;
+      meta.appendChild(completedLine);
+    }
+
+    if (item.download_url) {
+      const linkLine = document.createElement('div');
+      const link = document.createElement('a');
+      link.href = item.download_url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open original';
+      link.className = 'small';
+      linkLine.appendChild(link);
+      meta.appendChild(linkLine);
+    }
+
+    card.appendChild(meta);
+    return card;
+  }
+
+  function renderGalleryItems(items) {
+    if (!galleryGrid) return;
+    galleryGrid.innerHTML = '';
+    items.forEach((item) => {
+      const card = createGalleryCard(item);
+      galleryGrid.appendChild(card);
+    });
+    setGalleryEmpty(!items.length);
+  }
+
+  async function loadGalleryImages({ showLoading = true, keepRatingLock = false } = {}) {
+    if (!galleryFilterForm || !galleryGrid) return;
+    const filters = collectGalleryFilters();
+    if (!keepRatingLock) galleryState.ratingLocked = false;
+    galleryState.filters = filters;
+    if (showLoading) setGalleryLoading(true);
+    setGalleryError('');
+    setGalleryEmpty(false);
+    try {
+      const params = new URLSearchParams();
+      params.set('limit', '25');
+      if (Object.keys(filters).length) {
+        params.set('filters', JSON.stringify(filters));
+      }
+      const data = await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/gallery?${params.toString()}`);
+      galleryState.lastResponse = data;
+      const items = Array.isArray(data.items) ? data.items : [];
+      galleryState.items = items.map((item) => Object.assign({}, item));
+      renderGalleryItems(galleryState.items);
+      updateGallerySummary(data);
+      setGalleryLoading(false);
+      if (items.length && !galleryState.ratingLocked) {
+        showGalleryRatingControls(true);
+        galleryRateForm?.reset();
+      } else {
+        showGalleryRatingControls(false);
+      }
+    } catch (err) {
+      setGalleryLoading(false);
+      galleryGrid.innerHTML = '';
+      showGalleryRatingControls(false);
+      setGalleryError(err.message || 'Failed to load images.');
+    }
+  }
+
+  function getSelectedGalleryRating() {
+    if (!galleryRateForm) return null;
+    const selected = galleryRateForm.querySelector('input[name="galleryRating"]:checked');
+    return selected ? selected.value : null;
+  }
+
+  function applyGalleryRatingLocally(ratingKey) {
+    const delta = GALLERY_RATING_VALUES[ratingKey];
+    if (delta === undefined) return;
+    galleryState.items = galleryState.items.map((item) => {
+      const total = Number(item.score_total || 0) + delta;
+      const count = Number(item.score_count || 0) + 1;
+      const average = count > 0 ? total / count : 0;
+      return Object.assign({}, item, {
+        score_total: total,
+        score_count: count,
+        score_average: average
+      });
+    });
+    if (galleryState.lastResponse) {
+      galleryState.lastResponse.items = galleryState.items;
+    }
+    renderGalleryItems(galleryState.items);
+    if (galleryState.lastResponse) {
+      updateGallerySummary(galleryState.lastResponse);
+    }
+  }
+
   async function loadJob() {
     try {
       const data = await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}`);
@@ -230,6 +590,14 @@
         updateActionButtons(job.status);
         updateRedoButton(counters, job.status);
         populateVariableSelects(job.variables_available || []);
+        const filtersUpdated = renderGalleryFilterFields(job);
+        jobDetails = job;
+        if (!galleryInitialized) {
+          galleryInitialized = true;
+          await loadGalleryImages({ showLoading: true });
+        } else if (filtersUpdated) {
+          await loadGalleryImages({ showLoading: true });
+        }
 
         const statusNormalized = (job.status || '').toLowerCase();
         const hasValidVars = currentVars.a && currentVars.b && currentVars.a !== currentVars.b;
@@ -497,6 +865,54 @@
   });
   refreshMatrixBtn?.addEventListener('click', () => loadMatrix(true));
   refreshPromptsBtn?.addEventListener('click', () => loadPrompts(true));
+  galleryFilterForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    loadGalleryImages({ showLoading: true });
+  });
+  galleryResetBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    galleryFilterForm?.reset();
+    gallerySelects.forEach((select) => {
+      if (select) select.value = '';
+    });
+    galleryState.filters = {};
+    loadGalleryImages({ showLoading: true });
+  });
+  galleryRateForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (galleryState.ratingLocked) return;
+    if (!galleryState.items.length) return;
+    const rating = getSelectedGalleryRating();
+    if (!rating) {
+      alert('Select a rating before submitting.');
+      return;
+    }
+    setGalleryError('');
+    if (galleryRateSubmitBtn) galleryRateSubmitBtn.disabled = true;
+    try {
+      await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/gallery/rate`, {
+        method: 'POST',
+        body: JSON.stringify({
+          rating,
+          prompt_ids: galleryState.items.map((item) => item.id)
+        })
+      });
+      applyGalleryRatingLocally(rating);
+      galleryState.ratingLocked = true;
+      showGalleryRatingControls(false);
+      galleryRateForm.reset();
+    } catch (err) {
+      setGalleryError(`Failed to submit rating: ${err.message}`);
+    } finally {
+      if (galleryRateSubmitBtn) galleryRateSubmitBtn.disabled = false;
+    }
+  });
+  galleryRateCancelBtn?.addEventListener('click', (event) => {
+    event.preventDefault();
+    galleryState.ratingLocked = true;
+    showGalleryRatingControls(false);
+    galleryRateForm?.reset();
+  });
 
   loadJob();
   loadPrompts(true);
