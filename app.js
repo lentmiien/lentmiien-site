@@ -34,6 +34,7 @@ app.use(sessionMiddleware);
 
 // Setup Socket.io
 const socketIO = require('./socket_io/index');
+const scheduleDailyBatchTrigger = require('./schedulers/batchTrigger');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
 
@@ -430,3 +431,5 @@ server.listen(PORT, () => {
 server.on('error', (err) => {
   logger.error('Server encountered an error', { category: 'server', metadata: { error: err } });
 });
+
+scheduleDailyBatchTrigger();

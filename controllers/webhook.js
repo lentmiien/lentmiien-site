@@ -108,9 +108,25 @@ exports.openai = async (req, res) => {
     }
 
     if (event.type === 'batch.completed') {
-      const response_id = event.data.id;
-      await batchService.checkBatchStatus(response_id);
-      await batchService.processBatchResponses();
+      const batchId = event.data.id;
+      await batchService.checkBatchStatus(batchId);
+      const result = await batchService.processBatchResponses();
+
+      const io = req.app.get('io');
+      if (io && result && Array.isArray(result.conversations) && result.conversations.length > 0) {
+        const roomForConversation = io.conversationRoom;
+        const roomForUser = io.userRoom;
+
+        for (const update of result.conversations) {
+          const { conversationId, messages, placeholderId, members = [], title } = update;
+          const convRoom = roomForConversation(conversationId);
+          io.to(convRoom).emit('chat5-messages', { id: conversationId, messages, placeholderId });
+          if (Array.isArray(members) && members.length > 0) {
+            const rooms = members.map(roomForUser);
+            io.to(rooms).emit('chat5-notice', { id: conversationId, title });
+          }
+        }
+      }
     }
 
     if (event.type === 'response.completed') {

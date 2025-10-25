@@ -7,6 +7,7 @@ const {
   Conversation4Model,
   Chat4KnowledgeModel,
   Chat3TemplateModel,
+  Conversation5Model,
   FileMetaModel,
   BatchPromptModel,
   BatchRequestModel } = require('../../database');
@@ -49,6 +50,7 @@ module.exports = {
     Conversation4Model,
     Chat4KnowledgeModel,
     Chat3TemplateModel,
+    Conversation5Model,
     FileMetaModel,
     BatchPromptModel,
     BatchRequestModel

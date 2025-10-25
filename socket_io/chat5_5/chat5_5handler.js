@@ -9,6 +9,9 @@ module.exports = async function registerChat5_5Handlers({
   userName
 }) {
   const {
+    models: {
+      Conversation5Model,
+    },
     services: {
       messageService,
       conversationService,
@@ -132,6 +135,111 @@ module.exports = async function registerChat5_5Handlers({
     if (settings.title === "NEW") {
       const title = await conversationService.generateTitle(id);
       io.to(convRoom).emit('chat5-generatetitle-done', {title});
+    }
+  });
+
+  socket.on('chat5-batch', async (data) => {
+    const { conversation_id, prompt, includePrompt, settings } = data;
+    let id = conversation_id;
+    const user_id = userName;
+
+    const parsedMaxMessages = parseInt(settings.maxMessages, 10);
+    const effectiveMaxMessages = Number.isNaN(parsedMaxMessages) || parsedMaxMessages <= 0 ? 999 : parsedMaxMessages;
+
+    const setting_params = {
+      contextPrompt: settings.context,
+      model: settings.model,
+      maxMessages: effectiveMaxMessages,
+      maxAudioMessages: 3,
+      tools: settings.tools,
+      reasoning: settings.reasoning,
+      verbosity: settings.verbosity,
+      outputFormat: "text",
+    };
+    const conv_params = {
+      title: settings.title,
+      category: settings.category,
+      tags: settings.tags,
+      members: settings.members,
+    };
+
+    try {
+      if (id === "NEW") {
+        const c = await conversationService.createNewConversation(user_id, setting_params, conv_params);
+        id = c._id.toString();
+      }
+
+      const convRoom = roomForConversation(id);
+
+      const { userMessage } = await conversationService.postToConversationNew({
+        conversationId: id,
+        userId: user_id,
+        messageContent: includePrompt ? {
+          text: prompt,
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: null,
+        } : null,
+        messageType: includePrompt ? "text" : null,
+        generateAI: false,
+        s: setting_params,
+        c: conv_params,
+      });
+
+      const conversation = await Conversation5Model.findById(id);
+      if (!conversation) {
+        socket.emit('chat5-batch-error', { message: 'Conversation not found while queuing batch request.' });
+        return;
+      }
+
+      const placeholder = await messageService.createMessageNew({
+        userId: "bot",
+        contentType: "text",
+        content: {
+          text: "Pending batch response",
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: null,
+        },
+        category: conversation.category,
+        tags: conversation.tags,
+      });
+
+      conversation.messages.push(placeholder._id.toString());
+      conversation.updatedAt = new Date();
+      await conversation.save();
+
+      await batchService.addPromptToBatch({
+        userId: user_id,
+        conversationId: id,
+        messageId: placeholder._id.toString(),
+        model: settings.model,
+        title: settings.title,
+        taskType: 'response',
+      });
+
+      const packets = [];
+      if (userMessage) packets.unshift(userMessage);
+      packets.push(placeholder);
+
+      if (conversation_id === "NEW") {
+        socket.emit('chat5-messages', { id, messages: packets });
+      } else {
+        io.to(convRoom).emit('chat5-messages', { id, messages: packets });
+      }
+
+      notifyMembers(user_id, settings.members, 'chat5-notice', { id, title: settings.title }, { excludeCurrentSocket: true });
+    } catch (error) {
+      logger.error('Failed to queue batch request', error);
+      socket.emit('chat5-batch-error', { message: 'Unable to queue batch request.' });
     }
   });
 

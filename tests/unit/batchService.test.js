@@ -1,32 +1,40 @@
 const mockModelCards = [
-  { api_model: 'gpt-4.1-2025-04-14', provider: 'OpenAI' },
-  { api_model: 'gpt-4.1-nano-2025-04-14', provider: 'OpenAI' },
-  { api_model: 'o1-2024-12-17', provider: 'OpenAI' }
+  {
+    api_model: 'gpt-4.1-2025-04-14',
+    provider: 'OpenAI',
+    model_type: 'chat',
+    batch_use: true,
+    in_modalities: ['text'],
+    context_type: 'system',
+  },
+  {
+    api_model: 'gpt-4.1-nano-2025-04-14',
+    provider: 'OpenAI',
+    model_type: 'chat',
+    batch_use: true,
+    in_modalities: ['text'],
+    context_type: 'system',
+  },
 ];
 
 jest.mock('../../database', () => ({
-  AIModelCards: { find: jest.fn().mockResolvedValue(mockModelCards) }
+  AIModelCards: { find: jest.fn().mockResolvedValue(mockModelCards) },
 }));
 
-jest.mock('../../utils/ChatGPT', () => ({
-  upload_file: jest.fn(),
-  download_file: jest.fn(),
-  delete_file: jest.fn(),
-  start_batch: jest.fn(),
-  batch_status: jest.fn()
-}));
-
-jest.mock('../../utils/anthropic', () => ({
-  anthropic_batch_start: jest.fn(),
-  anthropic_batch_status: jest.fn(),
-  anthropic_batch_results: jest.fn()
+jest.mock('../../utils/OpenAI_API', () => ({
+  uploadBatchFile: jest.fn(),
+  startBatchJob: jest.fn(),
+  retrieveBatchStatus: jest.fn(),
+  downloadBatchOutput: jest.fn(),
+  deleteBatchFile: jest.fn(),
+  convertResponseBody: jest.fn(),
 }));
 
 jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
+  warn: jest.fn(),
   notice: jest.fn(),
   info: jest.fn(),
-  warn: jest.fn()
 }));
 
 const { AIModelCards } = require('../../database');
@@ -45,29 +53,25 @@ const createBatchPromptModel = () => {
   model.find = jest.fn();
   model.findOne = jest.fn();
   model.deleteOne = jest.fn();
+  model.updateMany = jest.fn();
   model.mockDocs = docs;
   return model;
 };
 
 const createBatchRequestModel = () => {
-  const docs = [];
   const model = jest.fn(function (doc) {
-    docs.push(doc);
     this.doc = doc;
     this.save = jest.fn().mockResolvedValue(doc);
     return this;
   });
   model.find = jest.fn();
   model.findOne = jest.fn();
-  model.mockDocs = docs;
   return model;
 };
 
-describe('BatchService', () => {
+describe('BatchService (chat5)', () => {
   let BatchPromptDatabase;
   let BatchRequestDatabase;
-  let messageService;
-  let conversationService;
   let service;
 
   beforeAll(async () => {
@@ -77,129 +81,76 @@ describe('BatchService', () => {
   beforeEach(async () => {
     BatchPromptDatabase = createBatchPromptModel();
     BatchRequestDatabase = createBatchRequestModel();
-    messageService = {
-      CreateCustomMessage: jest.fn(),
-      createMessage: jest.fn()
-    };
-    conversationService = {
-      generateConversationFromMessages: jest.fn().mockResolvedValue('generated-conv'),
-      createEmptyConversation: jest.fn().mockResolvedValue('new-conv'),
-      copyConversation: jest.fn().mockResolvedValue('copied-conv'),
-      updateConversation: jest.fn().mockResolvedValue(),
-      loadProcessNewImageToBase64: jest.fn().mockResolvedValue({
-        new_filename: 'processed.png',
-        b64_img: 'b64-data'
-      }),
-      loadImageToBase64: jest.fn().mockResolvedValue('b64-from-store'),
-      generateMessageArrayForConversation: jest.fn().mockResolvedValue([]),
-      updateSummary: jest.fn(),
-      getConversationsById: jest.fn(),
-      getCategoryTagsForConversationsById: jest.fn(),
-      appendMessageToConversation: jest.fn(),
-      postToConversation: jest.fn()
-    };
     service = new BatchService(
       BatchPromptDatabase,
       BatchRequestDatabase,
-      messageService,
-      conversationService
+      { processConvertedOutputs: jest.fn() },
+      {},
     );
     await flushPromises();
   });
 
-  test('getAll returns prompts and recent requests', async () => {
-    const promptDocs = [{ custom_id: 'p1' }];
-    const requestDocs = [
-      { id: 'r1', created_at: new Date() },
-      { id: 'r2', created_at: new Date() }
-    ];
-    BatchPromptDatabase.find.mockResolvedValue(promptDocs);
-    BatchRequestDatabase.find.mockResolvedValue(requestDocs);
-
-    const result = await service.getAll();
-
-    expect(BatchPromptDatabase.find).toHaveBeenCalledWith();
-    expect(BatchRequestDatabase.find).toHaveBeenCalledWith({
-      created_at: expect.objectContaining({ $gt: expect.any(Date) })
-    });
-    expect(result.prompts).toBe(promptDocs);
-    expect(result.requests.map((r) => r.id)).toEqual(['r2', 'r1']);
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
-  test('getPromptConversationIds filters duplicates and summary prompts', async () => {
-    BatchPromptDatabase.find.mockResolvedValue([
-      { conversation_id: 'c1', prompt: 'Question' },
-      { conversation_id: 'c1', prompt: '@SUMMARY' },
-      { conversation_id: 'c2', prompt: 'Request' }
-    ]);
-
-    const ids = await service.getPromptConversationIds();
-
-    expect(ids).toEqual(['c1', 'c2']);
-  });
-
-  test('addPromptToBatch creates new conversation and saves prompt', async () => {
+  test('addPromptToBatch queues response entry when model supported', async () => {
     BatchPromptDatabase.find.mockResolvedValue([]);
 
-    const conversationId = await service.addPromptToBatch(
-      'user-1',
-      'Provide details',
-      'new',
-      ['img-path'],
-      { title: 'Batch Title', tags: 'alpha,beta' },
-      'gpt-4.1'
-    );
+    const payload = {
+      userId: 'user-1',
+      conversationId: 'conv-123',
+      messageId: 'msg-456',
+      model: 'gpt-4.1',
+      title: 'Conversation',
+      taskType: 'response',
+    };
 
-    expect(conversationId).toBe('new-conv');
-    expect(conversationService.createEmptyConversation).toHaveBeenCalledWith('user-1');
-    expect(conversationService.updateConversation).toHaveBeenCalledWith(
-      'new-conv',
-      { title: 'Batch Title', tags: 'alpha,beta' },
-      'batch+gpt-4.1-2025-04-14'
-    );
-    expect(conversationService.loadProcessNewImageToBase64).toHaveBeenCalledWith('img-path');
+    const result = await service.addPromptToBatch(payload);
+
+    expect(result).toBe('conv-123');
+    expect(BatchPromptDatabase.mockDocs).toHaveLength(1);
     expect(BatchPromptDatabase.mockDocs[0]).toMatchObject({
-      title: 'Batch Title',
-      conversation_id: 'new-conv',
+      conversation_id: 'conv-123',
+      message_id: 'msg-456',
       model: 'gpt-4.1-2025-04-14',
-      prompt: 'Provide details',
-      images: [
-        { filename: 'processed.png', use_flag: 'high quality' }
-      ]
+      task_type: 'response',
+      user_id: 'user-1',
     });
   });
 
-  test('addPromptToBatch skips duplicate summary requests', async () => {
-    BatchPromptDatabase.find.mockResolvedValueOnce([{ request_id: 'new' }]);
+  test('addPromptToBatch skips summary duplicates', async () => {
+    BatchPromptDatabase.find.mockResolvedValue([{ task_type: 'summary', request_id: 'new' }]);
 
-    const result = await service.addPromptToBatch(
-      'user-1',
-      '@SUMMARY',
-      'conv-1',
-      [],
-      { title: 'Summary' },
-      'gpt-4.1'
-    );
+    const result = await service.addPromptToBatch({
+      userId: 'user-1',
+      conversationId: 'conv-123',
+      model: 'gpt-4.1',
+      title: 'Summary',
+      taskType: 'summary',
+    });
 
-    expect(result).toBeUndefined();
+    expect(result).toBe('conv-123');
     expect(BatchPromptDatabase.mockDocs).toHaveLength(0);
   });
 
-  test('triggerBatchRequest removes prompts when conversation missing', async () => {
-    BatchPromptDatabase.find.mockResolvedValue([
-      {
-        custom_id: 'custom-1',
-        conversation_id: 'conv-1',
-        prompt: 'Hello',
-        model: 'gpt-4.1-2025-04-14',
-        images: []
+  test('getPromptConversationIds returns pending response conversation ids', async () => {
+    const docs = [
+      { conversation_id: 'conv-1', request_id: 'new', task_type: 'response' },
+      { conversation_id: 'conv-1', request_id: 'started', task_type: 'response' },
+      { conversation_id: 'conv-2', request_id: 'new', task_type: 'summary' },
+      { conversation_id: 'conv-3', request_id: 'new', task_type: 'response' },
+    ];
+
+    BatchPromptDatabase.find.mockImplementation((query) => {
+      if (query && query.task_type === 'response') {
+        return Promise.resolve(docs.filter((doc) => doc.task_type === 'response'));
       }
-    ]);
-    conversationService.generateMessageArrayForConversation.mockResolvedValueOnce(null);
+      return Promise.resolve(docs);
+    });
 
-    const result = await service.triggerBatchRequest();
+    const ids = await service.getPromptConversationIds();
 
-    expect(BatchPromptDatabase.deleteOne).toHaveBeenCalledWith({ custom_id: 'custom-1' });
-    expect(result).toEqual({ ids: [], requests: [] });
+    expect(ids).toEqual(['conv-1', 'conv-3']);
   });
 });

@@ -239,6 +239,87 @@ const fetchCompleted = async (response_id) => {
   }
 }
 
+const uploadBatchFile = async (contents) => {
+  try {
+    const buffer = Buffer.from(contents, 'utf-8');
+    const file = await openai.files.create({
+      file: await OpenAI.toFile(buffer, `batch-${Date.now()}.jsonl`, {
+        type: 'application/jsonl',
+      }),
+      purpose: 'batch',
+    });
+    return file;
+  } catch (error) {
+    logger.error('Failed to upload batch file to OpenAI', { error });
+    return null;
+  }
+};
+
+const startBatchJob = async ({ fileId, endpoint = '/v1/responses', completionWindow = '24h' }) => {
+  try {
+    const batch = await openai.batches.create({
+      input_file_id: fileId,
+      endpoint,
+      completion_window: completionWindow,
+    });
+    return batch;
+  } catch (error) {
+    logger.error('Failed to start OpenAI batch job', { error });
+    return null;
+  }
+};
+
+const retrieveBatchStatus = async (batchId) => {
+  try {
+    return await openai.batches.retrieve(batchId);
+  } catch (error) {
+    logger.error('Failed to retrieve OpenAI batch status', { error, batchId });
+    return null;
+  }
+};
+
+const downloadBatchOutput = async (fileId) => {
+  try {
+    const response = await openai.files.content(fileId);
+    const body = await response.text();
+    return body
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line));
+  } catch (error) {
+    logger.error('Failed to download OpenAI batch output file', { error, fileId });
+    return null;
+  }
+};
+
+const deleteBatchFile = async (fileId) => {
+  try {
+    await openai.files.delete(fileId);
+    return true;
+  } catch (error) {
+    logger.error('Failed to delete OpenAI batch file', { error, fileId });
+    return false;
+  }
+};
+
+const convertResponseBody = async (body) => {
+  if (!body) return [{ error: 'Empty response body' }];
+
+  const converted = [];
+
+  if (Array.isArray(body.output)) {
+    for (const item of body.output) {
+      const data = await convertOutput(item);
+      if (data) {
+        converted.push(data);
+      }
+    }
+  }
+
+  converted.push({ error: body.error ?? null });
+  return converted;
+};
+
 const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
   try {
     const payload = {
@@ -334,6 +415,12 @@ module.exports = {
   chat,
   embedding,
   fetchCompleted,
+  uploadBatchFile,
+  startBatchJob,
+  retrieveBatchStatus,
+  downloadBatchOutput,
+  deleteBatchFile,
+  convertResponseBody,
   generateVideo,
   waitAndFetchVideo,
   fetchVideo,

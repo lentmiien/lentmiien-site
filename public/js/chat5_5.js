@@ -13,6 +13,7 @@ const editor = new toastui.Editor({
 });
 // Make accessible to inline scripts
 window.editor = editor;
+const chatModels = Array.isArray(window.chatModels) ? window.chatModels : [];
 
 function copyTextToClipboard(text) {
   if (!text && text !== '') {
@@ -155,6 +156,56 @@ function splitInputList(value) {
   return value.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
+function collectChatSettings() {
+  const toolSelect = document.getElementById('tools');
+  const modelSelect = document.getElementById('model');
+  const reasoning = document.getElementById('reasoning');
+  const verbosity = document.getElementById('verbosity');
+  const titleInput = document.getElementById('title');
+  const categoryInput = document.getElementById('category');
+  const tagsInput = document.getElementById('tags');
+  const membersInput = document.getElementById('members');
+  const contextInput = document.getElementById('context');
+  const maxMessagesEl = document.getElementById('maxMessages');
+
+  const toolArray = toolSelect ? Array.from(toolSelect.selectedOptions).map((option) => option.value) : [];
+  const tags = splitInputList(tagsInput ? tagsInput.value : '');
+  const members = splitInputList(membersInput ? membersInput.value : '');
+  const maxMessagesInput = maxMessagesEl ? parseInt(maxMessagesEl.value, 10) : NaN;
+
+  return {
+    title: titleInput ? titleInput.value : '',
+    category: categoryInput ? categoryInput.value : '',
+    tags,
+    context: contextInput ? contextInput.value : '',
+    tools: toolArray,
+    model: modelSelect ? modelSelect.value : '',
+    reasoning: reasoning ? reasoning.value : 'medium',
+    verbosity: verbosity ? verbosity.value : 'medium',
+    members,
+    maxMessages: Number.isNaN(maxMessagesInput) || maxMessagesInput <= 0 ? 999 : maxMessagesInput,
+  };
+}
+
+function getSelectedModel() {
+  const modelSelect = document.getElementById('model');
+  return modelSelect ? modelSelect.value : '';
+}
+
+function isBatchModelSelected() {
+  const selected = getSelectedModel();
+  if (!selected || !Array.isArray(chatModels)) return false;
+  return chatModels.some((model) => model.api_model === selected && model.batch_use);
+}
+
+function updateBatchButtons() {
+  const enabled = isBatchModelSelected();
+  ['batchSendResponse', 'batchResponse'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !enabled;
+  });
+}
+
 function setUpdateButtonState() {
   const idEl = document.getElementById('id');
   const btn = document.getElementById('updateSettingsButton');
@@ -171,33 +222,30 @@ function SwitchConversation(new_id) {
   }
   socket.emit('chat5-joinConversation', {conversationId: new_id});
   document.getElementById("id").innerHTML = new_id;
+  updateBatchButtons();
 }
 
 function Append(send, resp) {
   showLoadingPopup();
   const conversation_id = document.getElementById("id").innerHTML;
   const prompt = editor.getMarkdown();
-  // Get settings
-  const tool_select = document.getElementById("tools");
-  const tool_array = Array.from(tool_select.selectedOptions).map(option => option.value);
-  const tags = splitInputList(document.getElementById("tags").value);
-  const members = splitInputList(document.getElementById("members").value);
-  const maxMessagesInput = parseInt(document.getElementById("maxMessages").value, 10);
-  const maxMessages = Number.isNaN(maxMessagesInput) || maxMessagesInput <= 0 ? 999 : maxMessagesInput;
-  const settings = {
-    title: document.getElementById("title").value,
-    category: document.getElementById("category").value,
-    tags,
-    context: document.getElementById("context").value,
-    tools: tool_array,
-    model: document.getElementById("model").value,
-    reasoning: document.getElementById("reasoning").value,
-    verbosity: document.getElementById("verbosity").value,
-    members,
-    maxMessages,
-  };
+  const settings = collectChatSettings();
   socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp, settings});
   if (send) editor.reset();
+}
+
+function QueueBatch(includePrompt) {
+  if (!isBatchModelSelected()) {
+    alert('Selected model does not support batch processing.');
+    return;
+  }
+
+  showLoadingPopup();
+  const conversation_id = document.getElementById("id").innerHTML;
+  const prompt = includePrompt ? editor.getMarkdown() : null;
+  const settings = collectChatSettings();
+  socket.emit('chat5-batch', { conversation_id, prompt, includePrompt, settings });
+  if (includePrompt) editor.reset();
 }
 
 function UpdateConversation() {
@@ -330,13 +378,22 @@ socket.on('chat5-uploadError', (data) => {
   alert(`\nError: ${data.message}`);
 });
 
-socket.on('chat5-messages', ({id, messages}) => {
+socket.on('chat5-batch-error', (data) => {
+  hideLoadingPopup();
+  const message = data && data.message ? data.message : 'Unable to queue batch request.';
+  alert(message);
+});
+
+socket.on('chat5-messages', ({id, messages, placeholderId}) => {
   SwitchConversation(id);
   document.getElementById("conversation_title").innerHTML = document.getElementById("title").value;
   const idEl = document.getElementById("id");
   if (id !== "NEW") {
     idEl.dataset.source = 'conversation5';
     setUpdateButtonState();
+  }
+  if (placeholderId) {
+    removeMessageFromUI(placeholderId);
   }
   for (const m of messages) {
     if (m.error) {
@@ -426,12 +483,25 @@ function AddMessageToUI(m) {
   document.getElementById("pills-raw").append(pre);
 }
 
+function removeMessageFromUI(messageId) {
+  if (!messageId) return;
+  const container = document.getElementById("conversationContainer");
+  if (!container) return;
+  const element = container.querySelector(`.chat5-message[data-id="${messageId}"]`);
+  if (element && element.parentNode) {
+    element.parentNode.removeChild(element);
+  }
+}
+
 function message(m) {
   const container = document.getElementById("conversationContainer");
   if (!container) return;
 
   const messageWrapper = document.createElement('div');
   messageWrapper.classList.add('chat5-message');
+  if (m._id) {
+    messageWrapper.dataset.id = m._id;
+  }
   if (m.hideFromBot) {
     messageWrapper.classList.add('chat5-message--hidden');
   }
@@ -540,8 +610,16 @@ socket.on('welcome', () => {
 
 document.addEventListener('DOMContentLoaded', setUpdateButtonState);
 document.addEventListener('DOMContentLoaded', () => {
+  const modelSelect = document.getElementById('model');
+  if (modelSelect) {
+    modelSelect.addEventListener('change', updateBatchButtons);
+  }
+  updateBatchButtons();
+});
+document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('conversationContainer');
   initializeMessageCopyButtons(container);
   registerCodeCopyHandlers(container);
   enhanceTables(container);
 });
+

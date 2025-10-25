@@ -156,7 +156,13 @@ exports.post = async (req, res) => {
   const conversation_id = await conversationService.postToConversation(user_id, use_conversation_id, image_paths, req.body, req.body.provider, reasoning_effort, private_msg, delete_messages);
 
   // Add summary request to batch process
-  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title}, "gpt-4.1-nano");
+  await batchService.addPromptToBatch({
+    userId: user_id,
+    conversationId,
+    model: 'gpt-4.1-nano',
+    title: req.body.title,
+    taskType: 'summary',
+  });
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };
@@ -173,7 +179,13 @@ exports.ask_category = async (req, res) => {
   const conversation_id = await conversationService.askCategory(user_id, image_paths, req.body, req.body.provider, parseInt(req.body.max_count), private_msg);
 
   // Add summary request to batch process
-  await batchService.addPromptToBatch(user_id, "@SUMMARY", conversation_id, [], {title: req.body.title}, "gpt-4.1-nano");
+  await batchService.addPromptToBatch({
+    userId: user_id,
+    conversationId,
+    model: 'gpt-4.1-nano',
+    title: req.body.title,
+    taskType: 'summary',
+  });
 
   res.redirect(`/chat4/chat/${conversation_id}`);
 };

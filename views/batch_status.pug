@@ -8,11 +8,11 @@ block content
       button.btn.btn-success(onclick="StartBatch()") Start batch work (pending)
       .prompt-container
         each d in prompts 
-          .prompt-entry(id=d.custom_id, class=`${d.request_id === "new" ? "pending" : "processing"}`, title=`${name === d.user_id ? d.prompt : ""}`) 
+          .prompt-entry(id=d.custom_id, class=`${d.request_id === "new" ? "pending" : "processing"}`, title=`${d.task_type === 'response' ? d.message_id : ''}`) 
             b= d.title
             div
               div= `User: ${d.user_id}, Model: ${d.model}`
-              div= d.prompt === "@SUMMARY" ? "summary" : "prompt"
+              div= d.task_type === 'summary' ? 'summary' : 'response'
               if name === d.user_id
                 a.btn.btn-outline-primary(href=`/chat4/chat/${d.conversation_id}`) View chat
                 a.btn.btn-outline-danger(href=`/chat4/batch_prompt_delete/${d.custom_id}`) Delete

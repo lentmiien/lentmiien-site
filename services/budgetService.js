@@ -278,8 +278,8 @@ async function getTransactionsByPeriod(year, month) {
   const [transactions, accounts, receipts, payrolls] = await Promise.all([
     TransactionDBModel.find({ date: { $gte: lower, $lt: upper } }).sort({ date: 1, transaction_business: 1 }).lean(),
     AccountDBModel.find().select('_id name').lean(),
-    Receipt.find({ date: { $gte: monthStart, $lt: monthEnd } }).select('_id date amount').lean(),
-    Payroll.find({ payDate: { $gte: monthStart, $lt: monthEnd } }).select('_id payDate bankTransferAmount').lean(),
+    Receipt.find({ date: { $gte: monthStart, $lt: monthEnd } }),
+    Payroll.find({ payDate: { $gte: monthStart, $lt: monthEnd } }),
   ]);
 
   const receiptLookup = {};

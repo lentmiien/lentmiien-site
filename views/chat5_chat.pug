@@ -16,7 +16,7 @@ block content
       - const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT'
       - const copyText = (m && m.content) ? (m.content.text || m.content.transcript || m.content.revisedPrompt || m.content.toolOutput || '') : ''
       - const hasCopyText = typeof copyText === 'string' && copyText.trim().length > 0
-      div(class={
+      div(data-id=m._id, class={
           'chat5-message': true,
           'chat5-message--hidden': m.hideFromBot,
           'chat5-message--bot': isBot
@@ -62,9 +62,11 @@ block content
         button#messageTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current message as template") Save as template
       #message.chat5-editor
       .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
-        button.btn.btn-success(onclick="Append(true, false)") Append
-        button.btn.btn-success(onclick="Append(true, true)") Send & Response
-        button.btn.btn-success(onclick="Append(false, true)") Response
+        button.btn.btn-success(type="button", onclick="Append(true, false)") Append
+        button.btn.btn-success#sendAndResponse(type="button", onclick="Append(true, true)") Send & Response
+        button.btn.btn-success#respondOnly(type="button", onclick="Append(false, true)") Response
+        button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)", disabled) Batch Send & Response
+        button.btn.btn-outline-success#batchResponse(type="button", onclick="QueueBatch(false)", disabled) Batch Response
       hr.chat5-divider
       label.chat5-input-label(for="audio") Append audio to conversation
       #audio.chat5-audio
@@ -245,6 +247,7 @@ block content
   // Expose templates to client-side JS
   script.
     window.chatTemplates = !{JSON.stringify(templates)};
+    window.chatModels = !{JSON.stringify(chat_models)};
   // Wire template selectors to inputs
   script.
     (function(){

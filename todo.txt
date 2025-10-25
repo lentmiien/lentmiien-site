@@ -1,72 +1,17 @@
-I want to add a new router/controller tool, built on a new local API that I created. It's a 3d bin packing API, with a single input route for packing boxes in a container.
+For my `services/batchService.js` service class, I want to add support for chat5 conversations, the newer version after chat4 that I'm currently using. I really want to transition away from chat4, as chat5 already has backward compatibility to open and continue on chat4 conversations. I'll probably just remove support for Anthropic batch processing, as I really only use OpenAI models right now, and could add Anthropic back in the future if I want.
 
-The URL is `localhost:8080/pack`, and the POST body is of the following format:
-```
-{
-  "algorithm": "string",
-  "maxContainers": 0,
-  "minimizeContainers": true,
-  "container": {
-    "id": "string",
-    "w": 0,
-    "d": 0,
-    "h": 0,
-    "emptyWeight": 0,
-    "maxLoadWeight": 0
-  },
-  "items": [
-    {
-      "id": "string",
-      "w": 0,
-      "d": 0,
-      "h": 0,
-      "weight": 0,
-      "qty": 0,
-      "rotate3D": true
-    }
-  ]
-}
-```
+In `models/batchprompt.js`, I'll probably have `conversation_id` reference a "conversation5" entry instead of "conversation4", switch from `prompt` to `message_id`, which should be the id of the "chat5" placeholder message, that just says something like "Pending batch response". I'll remove `images`, as this is handled by "conversation5", storing message ids of messages containing images.
 
-For the `algorithm`, I want to use "laff" as default, and "plain" as an option, and if the number of items are small (less than 8 for now) "bruteforce" can also be used. The `maxContainers` can be fixed as 0, meaning "no max". The `minimizeContainers` can be fixed as true. The algorithm only support 1 size container, expose the "w", "d", "h", "emptyWeight" and "maxLoadWeight" in the UI to the user. For the item list, I want to allow for either a CSV file upload, or a textarea element where the user can copy-paste the data in CSV format, with a header row; but I want to skip "rotate3D" from the input and keep it fixed to true.
+`models/batchrequest.js` can probably stay the same, I don't see anything that needs to change.
 
-The return data from the API call will be of the following format:
-```
-{
-  "success": true,
-  "containersUsed": 0,
-  "pallets": [
-    {
-      "containerId": "string",
-      "index": 0,
-      "w": 0,
-      "d": 0,
-      "h": 0,
-      "placements": [
-        {
-          "itemId": "string",
-          "x": 0,
-          "y": 0,
-          "z": 0,
-          "w": 0,
-          "d": 0,
-          "h": 0,
-          "rotation": "string"
-        }
-      ]
-    }
-  ],
-  "note": "string",
-  "notPlaced": [
-    {
-      "itemId": "string",
-      "count": 0,
-      "reason": "string"
-    }
-  ]
-}
-```
+My current batch service, mainly uses the chat completions endpoint in the OpenAI API, but I want to take this opportunity to switch to only use the responses endpoint.
 
-I do want to do more things with the output, but for now, just display the output nicely in some way to the user.
+In "chat4" I store all messages as a prompt-response pairs, but for "chat5" I now store prompt texts, prompt images and responses as individual messages, and I also store image generation calls, web search calls, and reasoning texts as individual messages, so when generating the files to send to the batch API, I both need to parse the input message array correctly, and be sure to save all parts of the response. So, add the necessary batch API helper functions to `utils/OpenAI_API.js`, and make use of `services/conversationService.js` and `services/messageService.js` to properly save the data to the "chat5" databases.
 
-Create the route/controller, necessary pug templates and JavaScripts, do not put inline JavaScript in the pug templates, and make sure to follow the styling guidelines in `README-Colors.md`. Also add a link to the new tool in the nav bar in `views/layout.pug`.
+Note: `processBatchResponses()` is called automatically (from a webhook), when a batch is done in the API.
+
+Additionally, I'd like to add a scheduled call to `triggerBatchRequest()`, every day at 19:00, and just run the function if there are any pending requests.
+
+For the "chat5" UI, in `views/chat5_chat.pug`, next to the "Send & Response" and "Response" buttons, I want to add batch versions of the buttons, but only enable the buttons if a batch supported model has been selected, meaning that the model selected in the HTML element "#model", looking in the `chat_models` array, the `batch_use` value of the selected model has the value `true`. When sending a message to the batch processing, the basic functionality should be the same as "Send & Response" and "Response", but instead redirecting the request to the batch service, but still add the user message and a placeholder "response" to the UI, as is done with the current buttons.
+
+When actually starting the batch request processing, the placeholder message should be ignored, group consequtive user messages, and ignore messages that has the `hideFromBot` value set to true.

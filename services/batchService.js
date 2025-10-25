@@ -1,79 +1,110 @@
-const { upload_file, download_file, delete_file, start_batch, batch_status } = require('../utils/ChatGPT');
-const { anthropic_batch_start, anthropic_batch_status, anthropic_batch_results } = require('../utils/anthropic');
-const { AIModelCards } = require('../database');
+const {
+  uploadBatchFile,
+  startBatchJob,
+  retrieveBatchStatus,
+  downloadBatchOutput,
+  deleteBatchFile,
+  convertResponseBody,
+} = require('../utils/OpenAI_API');
+const { AIModelCards, Conversation5Model, Chat5Model } = require('../database');
 const logger = require('../utils/logger');
 
-/*
-const mongoose = require('mongoose');
-
-const BatchPrompt = new mongoose.Schema({
-  title: { type: String, required: true },
-  custom_id: { type: String, required: true },
-  conversation_id: { type: String, required: true, max: 100 },
-  request_id: { type: String, required: true, max: 100 },
-  user_id: { type: String, required: true, max: 100 },
-  prompt: { type: String, required: true },
-  response: { type: String },
-  model: {
-    type: String,
-    default: "gpt-4o"
-  },
-  images: [
-    {
-      filename: { type: String, required: true },
-      use_flag: { type: String, required: true, enum: ['high quality', 'low quality', 'do not use'] },
-    }
-  ],
-  timestamp: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-module.exports = mongoose.model('batchprompt', BatchPrompt);
-*/
-/*
-const mongoose = require('mongoose');
-
-const BatchRequest = new mongoose.Schema({
-  id: { type: String, required: true },
-  input_file_id: { type: String, required: true },
-  provider: { type: String, required: true },
-  status: { type: String, required: true },
-  output_file_id: { type: String, required: true },
-  error_file_id: { type: String, required: true },
-  created_at: { type: Date, required: true },
-  completed_at: { type: Date, required: true },
-  request_counts_total: { type: Number, required: true },
-  request_counts_completed: { type: Number, required: true },
-  request_counts_failed: { type: Number, required: true },
-});
-
-module.exports = mongoose.model('batchrequest', BatchRequest);
-*/
-
-const valid_models = [];
-const model_provider = {};
 const redirect_models = {
-  "o1": "o1-2024-12-17",
-  "o1-preview": "o1-preview-2024-09-12",
-  "gpt-4o": "gpt-4o-2024-11-20",
-  "o1-mini": "o1-mini-2024-09-12",
-  "o3-mini": "o3-mini-2025-01-31",
-  "gpt-4o-mini": "gpt-4o-mini-2024-07-18",
-  "gpt-4.1": "gpt-4.1-2025-04-14",
-  "gpt-4.1-mini": "gpt-4.1-mini-2025-04-14",
-  "gpt-4.1-nano": "gpt-4.1-nano-2025-04-14",
+  o1: 'o1-2024-12-17',
+  'o1-preview': 'o1-preview-2024-09-12',
+  'gpt-4o': 'gpt-4o-2024-11-20',
+  'o1-mini': 'o1-mini-2024-09-12',
+  'o3-mini': 'o3-mini-2025-01-31',
+  'gpt-4o-mini': 'gpt-4o-mini-2024-07-18',
+  'gpt-4.1': 'gpt-4.1-2025-04-14',
+  'gpt-4.1-mini': 'gpt-4.1-mini-2025-04-14',
+  'gpt-4.1-nano': 'gpt-4.1-nano-2025-04-14',
 };
 
-async function LoadModels() {
-  const batch_models = await AIModelCards.find({model_type:"chat", batch_use: true});
-  for (let i = 0; i < batch_models.length; i++) {
-    valid_models.push(batch_models[i].api_model);
-    model_provider[batch_models[i].api_model] = batch_models[i].provider;
+const reasoningModels = [
+  'o3-pro-2025-06-10',
+  'o3-2025-04-16',
+  'o4-mini-2025-04-16',
+  'gpt-5-2025-08-07',
+  'gpt-5-mini-2025-08-07',
+  'gpt-5-nano-2025-08-07',
+];
+
+const TOOL_MAP = {
+  image_generation: { type: 'image_generation' },
+  web_search_preview: { type: 'web_search_preview' },
+};
+
+const SUMMARY_PROMPT = 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to read the entire conversation.';
+
+const modelCache = new Map();
+let loadModelsPromise = null;
+
+async function ensureModelsLoaded() {
+  if (!loadModelsPromise) {
+    loadModelsPromise = AIModelCards.find({ model_type: 'chat', batch_use: true, provider: 'OpenAI' })
+      .then((cards) => {
+        modelCache.clear();
+        cards.forEach((card) => {
+          modelCache.set(card.api_model, card);
+        });
+        return cards;
+      })
+      .catch((error) => {
+        logger.error('Failed to load batch-capable model cards', { error });
+        modelCache.clear();
+      });
   }
+  await loadModelsPromise;
 }
-LoadModels();
+
+function normalizeModelName(model) {
+  if (!model) return null;
+  if (modelCache.has(model)) return model;
+  if (redirect_models[model] && modelCache.has(redirect_models[model])) {
+    return redirect_models[model];
+  }
+  return null;
+}
+
+function mapTools(toolNames) {
+  if (!Array.isArray(toolNames) || toolNames.length === 0) return [];
+  const mapped = [];
+  for (const tool of toolNames) {
+    if (TOOL_MAP[tool]) {
+      mapped.push(TOOL_MAP[tool]);
+    }
+  }
+  return mapped;
+}
+
+function buildTextSettings(conversation, modelName) {
+  const metadata = conversation?.metadata || {};
+  if (!metadata.outputFormat) return null;
+  const textConfig = { format: { type: metadata.outputFormat } };
+  if (typeof modelName === 'string' && modelName.startsWith('gpt-5') && metadata.verbosity) {
+    textConfig.verbosity = metadata.verbosity;
+  }
+  return textConfig;
+}
+
+function extractSummaryText(body) {
+  if (!body || !Array.isArray(body.output)) return null;
+  const parts = [];
+
+  for (const item of body.output) {
+    if (item.type === 'message' && Array.isArray(item.content)) {
+      for (const content of item.content) {
+        if (content.type === 'output_text' && typeof content.text === 'string') {
+          parts.push(content.text);
+        }
+      }
+    }
+  }
+
+  if (parts.length === 0) return null;
+  return parts.join('\n\n').trim();
+}
 
 class BatchService {
   constructor(BatchPromptDatabase, BatchRequestDatabase, messageService, conversationService) {
@@ -84,367 +115,475 @@ class BatchService {
   }
 
   async getAll() {
-    const d = new Date(Date.now() - (1000*60*60*24*7));
+    const weekAgo = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7);
     const prompts = await this.BatchPromptDatabase.find();
-    const requests = (await this.BatchRequestDatabase.find({created_at: { $gt: d}})).reverse();
+    const requests = (await this.BatchRequestDatabase.find({ created_at: { $gt: weekAgo } })).reverse();
     return { prompts, requests };
   }
 
   async getPromptConversationIds() {
     const conversationIds = [];
-    const prompts = await this.BatchPromptDatabase.find();
-    prompts.forEach(d => {
-      if (conversationIds.indexOf(d.conversation_id) === -1 && d.prompt != "@SUMMARY") {
-        conversationIds.push(d.conversation_id);
+    const prompts = await this.BatchPromptDatabase.find({ task_type: 'response' });
+    prompts.forEach((prompt) => {
+      if (prompt.request_id === 'new' && conversationIds.indexOf(prompt.conversation_id) === -1) {
+        conversationIds.push(prompt.conversation_id);
       }
     });
     return conversationIds;
   }
 
-  async addPromptToBatch(user_id, prompt, in_conversation_id, image_paths, parameters, model="gpt-4.1") {
-    if (valid_models.indexOf(model) === -1) model = redirect_models[model];
-    if (valid_models.indexOf(model) === -1) return;
-
-    if (prompt === "@SUMMARY") {
-      // Prevent duplicate
-      const results = await this.BatchPromptDatabase.find({conversation_id: in_conversation_id, request_id: "new"});
-      if (results.length > 0) return;
+  async addPromptToBatch(...args) {
+    let options = null;
+    if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
+      options = args[0];
+    } else {
+      logger.warn('Deprecated addPromptToBatch signature detected; request ignored', { argsCount: args.length });
+      if (args.length >= 3) {
+        return args[2];
+      }
+      return null;
     }
 
-    let conversation_id = in_conversation_id;
-    // Save a prompt to BatchPrompt
-    // TODO If new conversation, also create an empty conversation, to get a conversation id
-    if ("append_message_ids" in parameters && parameters.append_message_ids.length > 0) {
-      // 0. If creating new conversation from existing messages
-      conversation_id = await this.conversationService.generateConversationFromMessages(user_id, parameters.append_message_ids.split(","));
-    } else if (conversation_id === "new") {
-      // 1. If new conversation, create an empty new conversation
-      conversation_id = await this.conversationService.createEmptyConversation(user_id);
-    } else if ("start_message" in parameters || "end_message" in parameters) {
-      // 2. If start/end copy id, create a copy of the conversation
-      conversation_id = await this.conversationService.copyConversation(conversation_id, parameters.start_message, parameters.end_message);
-    }
-    // 3. Update conversation parameters
-    if (prompt != "@SUMMARY") {
-      await this.conversationService.updateConversation(conversation_id, parameters, "batch+" + model);
+    const {
+      userId,
+      conversationId,
+      messageId = null,
+      model = 'gpt-4.1-2025-04-14',
+      title = '(no title)',
+      taskType = 'response',
+    } = options;
+
+    await ensureModelsLoaded();
+    const normalizedModel = normalizeModelName(model);
+    if (!normalizedModel) {
+      logger.warn('Skipping batch prompt due to unsupported model', { model });
+      return null;
     }
 
-    // Process input images
-    const images = [];
-    for (let i = 0; i < image_paths.length; i++) {
-      const image_data = await this.conversationService.loadProcessNewImageToBase64(image_paths[i]);
-      images.push({
-        filename: image_data.new_filename,
-        use_flag: 'high quality'
+    if (taskType === 'response' && !messageId) {
+      logger.warn('Cannot queue batch response without placeholder message', { conversationId, userId });
+      return null;
+    }
+
+    if (taskType === 'summary') {
+      const existing = await this.BatchPromptDatabase.find({
+        conversation_id: conversationId,
+        task_type: 'summary',
+        request_id: 'new',
       });
+      if (existing.length > 0) {
+        return conversationId;
+      }
     }
 
-    // Save pending prompt to database
-    const custom_id = `prompt-${new Date().getTime()}-${Math.random().toString(36).substring(2, 15)}`;
-    const newPrompt = new this.BatchPromptDatabase({
-      title: parameters.title,
-      custom_id,
-      conversation_id,
-      request_id: "new",
-      user_id,
-      prompt,
-      model,
-      images,
+    const customId = `prompt-${Date.now()}-${Math.random().toString(36).substring(2, 12)}`;
+    const entry = new this.BatchPromptDatabase({
+      title,
+      custom_id: customId,
+      conversation_id: conversationId,
+      request_id: 'new',
+      user_id: userId,
+      message_id: messageId,
+      model: normalizedModel,
+      task_type: taskType,
     });
-    await newPrompt.save();
-
-    return conversation_id;
+    await entry.save();
+    return conversationId;
   }
 
   async triggerBatchRequest() {
-    // Take all BatchPrompt entries with request_id === "new"
-    // Generate batch data file
-    // Upload to OpenAI's API, file id -> BatchPrompt
-    // Start a batch work and save to BatchRequest, batch id -> BatchPrompt
-    // Fixed to generate 1 batch request for each model being used
-    try {
-      const processed_ids = [];
-  
-      // Fetch all new prompts
-      const newPrompts = await this.BatchPromptDatabase.find({ request_id: 'new' });
-      if (newPrompts.length) {
-        // Generate batch data
-        const prompt_data = {};
-        for (let c = 0; c < valid_models.length; c++) {
-          prompt_data[valid_models[c]] = [];
-        }
-        const models = valid_models;
-
-        for (let i = 0; i < newPrompts.length; i++) {
-          const model_to_use = newPrompts[i].model ? newPrompts[i].model : 'gpt-4o-2024-11-20';
-          const data_entry = {
-            custom_id: newPrompts[i].custom_id,
-            method: 'POST',
-            url: '/v1/chat/completions',
-            body: {
-              model: model_to_use,
-              messages: [],
-            },
-          };
-          // Get data from conversation
-          const messages =  await this.conversationService.generateMessageArrayForConversation(newPrompts[i].conversation_id, newPrompts[i].prompt === "@SUMMARY", true, model_to_use === "o1-2024-12-17" || model_to_use === "o3-mini-2025-01-31" ? "developer" : "system");
-          if (messages === null) {
-            // If messages is `null`, then the conversation has been deleted, so delete prompt and continue
-            await this.BatchPromptDatabase.deleteOne({custom_id: newPrompts[i].custom_id});
-            continue;
-          }
-          // Append prompt
-          if (newPrompts[i].prompt === "@SUMMARY") {
-            messages.push({
-              role: 'user',
-              content: [
-                { type: 'text', text: "Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation." },
-              ]
-            });
-          } else {
-            messages.push({
-              role: 'user',
-              content: [
-                { type: 'text', text: newPrompts[i].prompt },
-              ]
-            });
-            // Append input images
-            const index = messages.length-1;
-            for (let j = 0; j < newPrompts[i].images.length; j++) {
-              const b64_img = await this.conversationService.loadImageToBase64(newPrompts[i].images[j].filename);
-              messages[index].content.push({
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${b64_img}`,
-                }
-              });
-            }
-          }
-
-          data_entry.body.messages = messages;
-          // Append data_entry to prompt_data
-          if (model_provider[model_to_use] === "OpenAI") {
-            // Newer reasoning models uses "developer" instead of "system"
-            const use_developer_models = ["o1-pro-2025-03-19", "o1-2024-12-17", "o3-mini-2025-01-31", "o3-pro-2025-06-10"];
-            if (use_developer_models.indexOf(model_to_use) >= 0) {
-              for (let i = 0; i < data_entry.body.messages.length; i++) {
-                if (data_entry.body.messages[i].role === "system") {
-                  data_entry.body.messages[i].role === "developer";
-                }
-              }
-            }
-            // o1-pro and o3-pro only works with "responses" API
-            if (model_to_use === "o1-pro-2025-03-19" || model_to_use === "o3-pro-2025-06-10") {
-              // /v1/responses
-              data_entry.url = "/v1/responses";
-              for (let i = 0; i < data_entry.body.messages.length; i++) {
-                for (let j = 0; j < data_entry.body.messages[i].content.length; j++) {
-                  if (data_entry.body.messages[i].content[j].type === "text") {
-                    data_entry.body.messages[i].content[j].type = data_entry.body.messages[i].role === "assistant" ? "output_text" : "input_text";
-                  }
-                  if (data_entry.body.messages[i].content[j].type === "image_url") {
-                    data_entry.body.messages[i].content[j].type = "input_image";
-                  }
-                }
-              }
-              data_entry.body.input = data_entry.body.messages;
-              delete data_entry.body.messages;
-            }
-            // Append to data to send to batches API
-            prompt_data[model_to_use].push(JSON.stringify(data_entry));
-          } else {
-            // Prepare data for Anthropic
-            let system = null;
-            const anthropic_data = {
-              custom_id: data_entry.custom_id,
-              model: model_to_use,
-              max_tokens: 8192,
-              messages: [],
-            };
-            data_entry.body.messages.forEach(m => {
-              if (m.role === "system") system = m.content.text;
-              else anthropic_data.messages.push(m);//TODO: fix vision input format
-            });
-            if (system) anthropic_data.system = system;
-            prompt_data[model_to_use].push(anthropic_data);
-          }
-          
-          processed_ids.push(newPrompts[i].custom_id);
-        }
-
-        const requests = [];
-        for (let i = 0; i < models.length; i++) {
-          if (prompt_data[models[i]].length > 0) {
-            let batch_id = "";
-            if (model_provider[models[i]] === "OpenAI") {
-              // Send to batch API (file + start request)
-              const file_id = await upload_file(prompt_data[models[i]].join('\n'));
-              
-              // Save request data to request database
-              const batch_details = await start_batch(file_id, true, models[i] === "o1-pro-2025-03-19" || models[i] === "o3-pro-2025-06-10" ? "/v1/responses" : "/v1/chat/completions");
-              batch_id = batch_details.id;
-              const newRequest = new this.BatchRequestDatabase({
-                id: batch_details.id,
-                input_file_id: file_id,
-                provider: model_provider[models[i]],
-                status: batch_details.status,
-                output_file_id: "null",
-                error_file_id: "null",
-                created_at: new Date(batch_details.created_at*1000),
-                completed_at: new Date(batch_details.expires_at*1000),
-                request_counts_total: prompt_data[models[i]].length,
-                request_counts_completed: 0,
-                request_counts_failed: 0,
-              });
-              await newRequest.save();
-              requests.push(newRequest);
-            } else {
-              // Anthropic batch request
-              // Save request data to request database
-              const batch_details = await anthropic_batch_start(prompt_data[models[i]]);
-              batch_id = batch_details.id;
-              const newRequest = new this.BatchRequestDatabase({
-                id: batch_details.id,
-                input_file_id: "no_file",
-                provider: model_provider[models[i]],
-                status: batch_details.processing_status,
-                output_file_id: "no_file",
-                error_file_id: "no_file",
-                created_at: new Date(batch_details.created_at),
-                completed_at: new Date(batch_details.expires_at),
-                request_counts_total: prompt_data[models[i]].length,
-                request_counts_completed: 0,
-                request_counts_failed: 0,
-              });
-              await newRequest.save();
-              requests.push(newRequest);
-            }
-            
-            // Update prompt entries with request id
-            await this.BatchPromptDatabase.updateMany({ request_id: 'new' }, { request_id: batch_id });
-          }
-        }
-
-        // Return ids and new request data
-        return {ids: processed_ids, requests};
-      } else {
-        return {ids: [], requests: [{}]};
-      }
-    } catch (error) {
-      logger.error("Error triggering batch request:", error);
-      return {ids: [], requests: [{}]};
+    await ensureModelsLoaded();
+    const newPrompts = await this.BatchPromptDatabase.find({ request_id: 'new' });
+    if (!newPrompts.length) {
+      return { ids: [], requests: [] };
     }
+
+    const requestsByModel = new Map();
+    const processedIds = [];
+    const savedRequests = [];
+
+    for (const prompt of newPrompts) {
+      const normalizedModel = normalizeModelName(prompt.model);
+      if (!normalizedModel) {
+        logger.warn('Dropping batch prompt with unknown model', { model: prompt.model, custom_id: prompt.custom_id });
+        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+        continue;
+      }
+
+      const snapshot = await this._loadConversationSnapshot(prompt);
+      if (!snapshot) {
+        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+        continue;
+      }
+
+      const modelCard = modelCache.get(normalizedModel);
+      const input = await this._buildInputFromSnapshot({
+        prompt,
+        conversation: snapshot.conversation,
+        messages: snapshot.messages,
+        modelCard,
+      });
+
+      if (!input || input.length === 0) {
+        logger.warn('Skipping batch prompt with empty input', { custom_id: prompt.custom_id });
+        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+        continue;
+      }
+
+      const body = {
+        model: normalizedModel,
+        input,
+      };
+
+      const tools = mapTools(snapshot.conversation.metadata?.tools || []);
+      if (tools.length > 0) {
+        body.tools = tools;
+      }
+
+      const textSettings = buildTextSettings(snapshot.conversation, normalizedModel);
+      if (textSettings) {
+        body.text = textSettings;
+      }
+
+      if (snapshot.conversation.metadata?.reasoning && reasoningModels.includes(normalizedModel)) {
+        body.reasoning = { effort: snapshot.conversation.metadata.reasoning, summary: 'detailed' };
+      }
+
+      const requestEntry = {
+        custom_id: prompt.custom_id,
+        method: 'POST',
+        url: '/v1/responses',
+        body,
+      };
+
+      if (!requestsByModel.has(normalizedModel)) {
+        requestsByModel.set(normalizedModel, []);
+      }
+
+      requestsByModel.get(normalizedModel).push({ prompt, request: requestEntry });
+    }
+
+    for (const [modelName, entries] of requestsByModel.entries()) {
+      if (!entries.length) continue;
+
+      const payload = entries.map((entry) => JSON.stringify(entry.request)).join('\n');
+      if (!payload.trim()) continue;
+
+      const file = await uploadBatchFile(payload);
+      if (!file || !file.id) {
+        logger.error('Failed to upload batch payload to OpenAI', { model: modelName });
+        continue;
+      }
+
+      const batch = await startBatchJob({ fileId: file.id, endpoint: '/v1/responses' });
+      if (!batch || !batch.id) {
+        logger.error('Failed to start OpenAI batch job', { model: modelName });
+        await deleteBatchFile(file.id);
+        continue;
+      }
+
+      const requestDoc = new this.BatchRequestDatabase({
+        id: batch.id,
+        input_file_id: file.id,
+        provider: 'OpenAI',
+        status: batch.status,
+        output_file_id: batch.output_file_id ?? 'null',
+        error_file_id: batch.error_file_id ?? 'null',
+        created_at: batch.created_at ? new Date(batch.created_at * 1000) : new Date(),
+        completed_at: batch.expires_at ? new Date(batch.expires_at * 1000) : new Date(),
+        request_counts_total: batch.request_counts?.total ?? entries.length,
+        request_counts_completed: batch.request_counts?.completed ?? 0,
+        request_counts_failed: batch.request_counts?.failed ?? 0,
+      });
+
+      await requestDoc.save();
+      savedRequests.push(requestDoc);
+
+      const customIds = entries.map((entry) => entry.prompt.custom_id);
+      processedIds.push(...customIds);
+      await this.BatchPromptDatabase.updateMany({ custom_id: { $in: customIds } }, { request_id: batch.id });
+    }
+
+    return { ids: processedIds, requests: savedRequests };
   }
 
-  // Checking batch status
   async checkBatchStatus(batchId) {
     const batch = await this.BatchRequestDatabase.findOne({ id: batchId });
+    if (!batch) return null;
 
-    if (batch.provider === "OpenAI") {
-      const batch_current_status = await batch_status(batchId);
-      
-      batch.status = batch_current_status.status;
-      batch.output_file_id = batch_current_status.output_file_id ? batch_current_status.output_file_id : "null";
-      batch.error_file_id = batch_current_status.error_file_id ? batch_current_status.error_file_id : "null";
-      batch.completed_at = new Date((batch_current_status.completed_at ? batch_current_status.completed_at : batch_current_status.expires_at)*1000);
-      batch.request_counts_total = batch_current_status.request_counts.total;
-      batch.request_counts_completed = batch_current_status.request_counts.completed;
-      batch.request_counts_failed = batch_current_status.request_counts.failed;
-      await batch.save();
-    } else {
-      // Anthropic batch status
-      const batch_current_status = await anthropic_batch_status(batchId);
-      batch.status = batch_current_status.processing_status === "ended" ? "completed" : batch_current_status.processing_status;
-      batch.completed_at = new Date((batch_current_status.ended_at ? batch_current_status.ended_at : batch_current_status.expires_at));
-      batch.request_counts_completed = batch_current_status.request_counts.succeeded;
-      batch.request_counts_failed = batch_current_status.request_counts.errored + batch_current_status.request_counts.canceled + batch_current_status.request_counts.expired;
-      await batch.save();
+    const latestStatus = await retrieveBatchStatus(batchId);
+    if (!latestStatus) return batch;
+
+    batch.status = latestStatus.status ?? batch.status;
+    batch.output_file_id = latestStatus.output_file_id ?? batch.output_file_id ?? 'null';
+    batch.error_file_id = latestStatus.error_file_id ?? batch.error_file_id ?? 'null';
+
+    if (latestStatus.completed_at) {
+      batch.completed_at = new Date(latestStatus.completed_at * 1000);
+    } else if (latestStatus.expires_at) {
+      batch.completed_at = new Date(latestStatus.expires_at * 1000);
     }
 
-    return {id: batchId, status: batch.status};
+    if (latestStatus.request_counts) {
+      batch.request_counts_total = latestStatus.request_counts.total ?? batch.request_counts_total;
+      batch.request_counts_completed = latestStatus.request_counts.completed ?? batch.request_counts_completed;
+      batch.request_counts_failed = latestStatus.request_counts.failed ?? batch.request_counts_failed;
+    }
+
+    await batch.save();
+    return batch;
   }
 
   async processBatchResponses() {
-    // Check all batch requestes for requests with status "completed"
-    // Download output file
-    // Append to conversation database
-    // Delete processed requests from prompt database
-    // Update status of request to "DONE" and delete input/output files from API
-    const completed_requests = [];
-    const completed_prompts = [];
     const completedRequests = await this.BatchRequestDatabase.find({ status: 'completed' });
-    for (let i = 0; i < completedRequests.length; i++) {
-      if (completedRequests[i].provider === "OpenAI") {
-        const output_data = await download_file(completedRequests[i].output_file_id);
-        for (let j = 0; j < output_data.length; j++) {
-          const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
-          if (prompt_data) {
-            if (prompt_data.prompt === "@SUMMARY") {
-              // Update summary
-              await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].response.body.choices[0].message.content);
-              // Delete completed prompt
-              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-            } else {
-              // Check that conversation still exist
-              if (await this.conversationService.getConversationsById(prompt_data.conversation_id)) {
-                // Append to conversation
-                const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
-                const response_text = output_data[j].response.body.object === "response" ? output_data[j].response.body.output[output_data[j].response.body.output.length-1].content[0].text : output_data[j].response.body.choices[0].message.content;
-                const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, response_text, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
-                await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
-                // Flag for generating summary
-                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4.1-nano");
-              }
-              // Delete completed prompt
-              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-            }
-            completed_prompts.push(output_data[j].custom_id);
-          }
-        }
-        // Update status and delete files
-        completedRequests[i].status = "DONE";
-        await completedRequests[i].save();
-        await delete_file(completedRequests[i].input_file_id);
-        await delete_file(completedRequests[i].output_file_id);
-        completed_requests.push(completedRequests[i].id);
-      } else {
-        // Anthropic results
-        const output_data = await anthropic_batch_results(completedRequests[i].id);
-        for (let j = 0; j < output_data.length; j++) {
-          const prompt_data = await this.BatchPromptDatabase.findOne({custom_id: output_data[j].custom_id});
-          if (prompt_data) {
-            if (prompt_data.prompt === "@SUMMARY") {
-              // Update summary
-              await this.conversationService.updateSummary(prompt_data.conversation_id, output_data[j].content.text);
-              // Delete completed prompt
-              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-            } else {
-              // Check that conversation still exist
-              if (await this.conversationService.getConversationsById(prompt_data.conversation_id)) {
-                // Append to conversation
-                const {category, tags} = await this.conversationService.getCategoryTagsForConversationsById(prompt_data.conversation_id);
-                const msg_id = (await this.messageService.CreateCustomMessage(prompt_data.prompt, output_data[j].content.text, prompt_data.user_id, category, prompt_data.images, tags)).db_entry._id.toString();
-                await this.conversationService.appendMessageToConversation(prompt_data.conversation_id, msg_id, false);
-                // Flag for generating summary
-                await this.addPromptToBatch(prompt_data.user_id, "@SUMMARY", prompt_data.conversation_id, [], {title: prompt_data.title ? prompt_data.title : "(no title)"}, "gpt-4.1-nano");
-              }
-              // Delete completed prompt
-              await this.BatchPromptDatabase.deleteOne({custom_id: output_data[j].custom_id});
-            }
-            completed_prompts.push(output_data[j].custom_id);
-          }
-        }
-        // Update status and delete files
-        completedRequests[i].status = "DONE";
-        await completedRequests[i].save();
-        completed_requests.push(completedRequests[i].id);
-      }
+    if (!completedRequests.length) {
+      return { requests: [], prompts: [], conversations: [] };
     }
-    return {requests: completed_requests, prompts: completed_prompts};
+
+    const processedRequestIds = [];
+    const processedPromptIds = [];
+    const conversationUpdates = [];
+
+    for (const request of completedRequests) {
+      if (!request.output_file_id || request.output_file_id === 'null') continue;
+
+      const outputData = await downloadBatchOutput(request.output_file_id);
+      if (!Array.isArray(outputData)) continue;
+
+      for (const record of outputData) {
+        const prompt = await this.BatchPromptDatabase.findOne({ custom_id: record.custom_id });
+        if (!prompt) continue;
+
+        const responseBody = record?.response?.body;
+        if (!responseBody) {
+          logger.warn('Batch record missing response body', { custom_id: record.custom_id });
+          await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+          processedPromptIds.push(prompt.custom_id);
+          continue;
+        }
+
+        if (prompt.task_type === 'summary') {
+          const summary = extractSummaryText(responseBody);
+          if (summary) {
+            await this.conversationService.updateConversationDetails(prompt.conversation_id, { summary });
+          }
+          await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+          processedPromptIds.push(prompt.custom_id);
+          continue;
+        }
+
+        const conversation = await Conversation5Model.findById(prompt.conversation_id);
+        if (!conversation) {
+          await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+          processedPromptIds.push(prompt.custom_id);
+          continue;
+        }
+
+        if (prompt.message_id) {
+          conversation.messages = conversation.messages.filter((id) => id !== prompt.message_id);
+          await Chat5Model.deleteOne({ _id: prompt.message_id }).catch(() => {});
+        }
+
+        const convertedOutputs = await convertResponseBody(responseBody);
+        const newMessages = await this.messageService.processConvertedOutputs(conversation, convertedOutputs);
+
+        const savedMessages = [];
+        for (const msg of newMessages) {
+          if (msg && !msg.error && msg._id) {
+            conversation.messages.push(msg._id.toString());
+            savedMessages.push(msg);
+          }
+        }
+
+        conversation.updatedAt = new Date();
+        await conversation.save();
+
+        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+        processedPromptIds.push(prompt.custom_id);
+
+        if (savedMessages.length > 0) {
+          conversationUpdates.push({
+            conversationId: conversation._id.toString(),
+            messages: savedMessages.map((msg) => (typeof msg.toObject === 'function' ? msg.toObject() : msg)),
+            placeholderId: prompt.message_id,
+            members: Array.isArray(conversation.members) ? [...conversation.members] : [],
+            title: conversation.title,
+          });
+        }
+
+        await this.addPromptToBatch({
+          userId: prompt.user_id,
+          conversationId: prompt.conversation_id,
+          model: 'gpt-4.1-nano-2025-04-14',
+          title: prompt.title || conversation.title || '(no title)',
+          taskType: 'summary',
+        });
+      }
+
+      request.status = 'DONE';
+      await request.save();
+      await deleteBatchFile(request.input_file_id);
+      if (request.output_file_id && request.output_file_id !== 'null') {
+        await deleteBatchFile(request.output_file_id);
+      }
+      processedRequestIds.push(request.id);
+    }
+
+    return {
+      requests: processedRequestIds,
+      prompts: processedPromptIds,
+      conversations: conversationUpdates,
+    };
   }
 
   async deletePromptById(id) {
-    await this.BatchPromptDatabase.deleteOne({custom_id: id});
+    const prompt = await this.BatchPromptDatabase.findOne({ custom_id: id });
+    if (!prompt) return;
+
+    if (prompt.message_id) {
+      await Chat5Model.deleteOne({ _id: prompt.message_id }).catch(() => {});
+      const conversation = await Conversation5Model.findById(prompt.conversation_id);
+      if (conversation) {
+        conversation.messages = conversation.messages.filter((msgId) => msgId !== prompt.message_id);
+        conversation.updatedAt = new Date();
+        await conversation.save();
+      }
+    }
+
+    await this.BatchPromptDatabase.deleteOne({ custom_id: id });
+  }
+
+  async _loadConversationSnapshot(prompt) {
+    try {
+      const conversation = await Conversation5Model.findById(prompt.conversation_id);
+      if (!conversation) {
+        logger.warn('Conversation not found for batch prompt', {
+          conversation_id: prompt.conversation_id,
+          custom_id: prompt.custom_id,
+        });
+        return null;
+      }
+      const messages = await this.messageService.loadMessagesInNewFormat(conversation.messages, true);
+      return { conversation, messages };
+    } catch (error) {
+      logger.error('Failed to load conversation for batch prompt', {
+        error,
+        conversation_id: prompt.conversation_id,
+        custom_id: prompt.custom_id,
+      });
+      return null;
+    }
+  }
+
+  async _buildInputFromSnapshot({ prompt, conversation, messages, modelCard }) {
+    const supportsImages = Array.isArray(modelCard?.in_modalities) && modelCard.in_modalities.includes('image');
+    const contextPrompt = conversation.metadata?.contextPrompt || '';
+    const contextRole = modelCard?.context_type || 'none';
+
+    const input = [];
+    if (contextRole !== 'none' && contextPrompt.trim().length > 0) {
+      input.push({
+        role: contextRole,
+        content: [{ type: 'input_text', text: contextPrompt }],
+      });
+    }
+
+    for (const message of messages) {
+      if (prompt.message_id && message._id.toString() === prompt.message_id) break;
+      if (message.hideFromBot) continue;
+
+      const role = typeof message.user_id === 'string' && message.user_id.toLowerCase() === 'bot' ? 'assistant' : 'user';
+      const contentItems = await this._convertMessageToContent({ message, role, supportsImages });
+
+      if (!contentItems.length) continue;
+
+      const previous = input[input.length - 1];
+      if (previous && previous.role === role) {
+        previous.content.push(...contentItems);
+      } else {
+        input.push({ role, content: contentItems });
+      }
+    }
+
+    if (prompt.task_type === 'summary') {
+      input.push({
+        role: 'user',
+        content: [{ type: 'input_text', text: SUMMARY_PROMPT }],
+      });
+    }
+
+    return input;
+  }
+
+  async _convertMessageToContent({ message, role, supportsImages }) {
+    const items = [];
+    const content = message?.content || {};
+
+    switch (message.contentType) {
+      case 'text':
+        if (typeof content.text === 'string' && content.text.trim().length > 0) {
+          items.push({
+            type: role === 'user' ? 'input_text' : 'output_text',
+            text: content.text,
+          });
+        }
+        break;
+      case 'image':
+        if (role === 'user' && supportsImages && content.image) {
+          try {
+            const b64 = this.conversationService.loadImageToBase64(content.image);
+            items.push({
+              type: 'input_image',
+              image_url: `data:image/jpeg;base64,${b64}`,
+            });
+          } catch (error) {
+            logger.error('Failed to encode image for batch request', { error, image: content.image });
+          }
+          if (content.revisedPrompt) {
+            items.push({ type: 'input_text', text: content.revisedPrompt });
+          }
+        } else if (content.revisedPrompt) {
+          items.push({
+            type: role === 'user' ? 'input_text' : 'output_text',
+            text: `Image: ${content.revisedPrompt}`,
+          });
+        }
+        break;
+      case 'tool':
+        if (content.toolOutput) {
+          items.push({
+            type: role === 'user' ? 'input_text' : 'output_text',
+            text: content.toolOutput,
+          });
+        }
+        break;
+      case 'reasoning':
+        if (content.text) {
+          items.push({
+            type: role === 'user' ? 'input_text' : 'output_text',
+            text: content.text,
+          });
+        }
+        break;
+      case 'audio':
+        if (content.transcript) {
+          items.push({
+            type: role === 'user' ? 'input_text' : 'output_text',
+            text: content.transcript,
+          });
+        }
+        break;
+      default:
+        if (content.text) {
+          items.push({
+            type: role === 'user' ? 'input_text' : 'output_text',
+            text: content.text,
+          });
+        }
+        break;
+    }
+
+    return items;
   }
 }
 

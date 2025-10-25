@@ -777,10 +777,19 @@ class MessageService {
 
   // const messages = await this.messageService.processCompletedResponse(conversation, response_id, r.placeholder_id);
   async processCompletedResponse(conversation, response_id) {
-    const newAiMessages = [];
-    // TODO: Only support OpenAi at this stage
     const resp = await ai.fetchCompleted(response_id);
-    for (const m of resp) {
+    return this._persistConvertedOutputs(conversation, resp);
+  }
+
+  async processConvertedOutputs(conversation, outputs) {
+    return this._persistConvertedOutputs(conversation, outputs);
+  }
+
+  async _persistConvertedOutputs(conversation, outputs) {
+    const newAiMessages = [];
+    if (!Array.isArray(outputs)) return newAiMessages;
+
+    for (const m of outputs) {
       if (Object.hasOwn(m, 'error')) {
         if (m.error) newAiMessages.push(m);
       } else {

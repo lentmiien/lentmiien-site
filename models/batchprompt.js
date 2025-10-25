@@ -6,18 +6,17 @@ const BatchPrompt = new mongoose.Schema({
   conversation_id: { type: String, required: true, max: 100 },
   request_id: { type: String, required: true, max: 100 },
   user_id: { type: String, required: true, max: 100 },
-  prompt: { type: String, required: true },
+  message_id: { type: String, max: 100 },
   model: {
     type: String,
-    default: "gpt-4o"
+    default: 'gpt-4.1-2025-04-14'
   },
-  images: [
-    {
-      filename: { type: String, required: true },
-      use_flag: { type: String, required: true, enum: ['high quality', 'low quality', 'do not use'] },
-    }
-  ],
-  timestamp: {
+  task_type: {
+    type: String,
+    enum: ['response', 'summary'],
+    default: 'response',
+  },
+  created_at: {
     type: Date,
     default: Date.now,
   },

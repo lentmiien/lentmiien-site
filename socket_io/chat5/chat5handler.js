@@ -203,7 +203,13 @@ module.exports = async function registerChat5Handlers({
         const message = await messageService.getMessageById(conversation.messages[conversation.messages.length-1]);
         socket.emit('setID', socket.conversation_id);
         socket.emit('aiResponse', message);
-        await batchService.addPromptToBatch(userName, "@SUMMARY", socket.conversation_id, [], {title: socket.conversationTitle}, "gpt-4.1-nano");
+        await batchService.addPromptToBatch({
+          userId: userName,
+          conversationId: socket.conversation_id,
+          model: 'gpt-4.1-nano',
+          title: socket.conversationTitle,
+          taskType: 'summary',
+        });
       }
     } catch (error) {
       logger.error('Error processing data:', error);
