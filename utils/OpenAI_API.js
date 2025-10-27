@@ -217,27 +217,70 @@ const embedding = async (text, model) => {
 };
 
 const fetchCompleted = async (response_id) => {
+  const waitSchedule = [0, 30000, 300000];
+  const responses = [];
+
   try {
-    response = await openai.responses.retrieve(response_id);
-    // For debugging purposes, save a copy of response to temporary folder
-    const filename = `response-${Date.now()}-.json`;
-    const outputfile = path.resolve(`./tmp_data/${filename}`);
-    await fs.promises.writeFile(outputfile, JSON.stringify(response, null, 2));
-    // DEBUG_END
-    const output = [];
-    for (const d of response.output) {
-      const data = await convertOutput(d);
-      if (data) {
-        output.push(data);
+    for (let attempt = 0; attempt < waitSchedule.length; attempt++) {
+      const waitMs = waitSchedule[attempt];
+      if (waitMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+
+      const response = await openai.responses.retrieve(response_id);
+      responses.push(response);
+
+      const output = Array.isArray(response.output) ? response.output : [];
+      const stillInProgress = response.status === 'in_progress' && output.length === 0;
+
+      if (!stillInProgress) {
+        if (attempt > 0) {
+          logger.notice('OpenAI response completed after retry', {
+            responseId: response_id,
+            attempt: attempt + 1,
+            status: response.status,
+            outputLength: output.length,
+          });
+        }
+
+        const formattedOutput = [];
+        for (const d of output) {
+          const data = await convertOutput(d);
+          if (data) {
+            formattedOutput.push(data);
+          }
+        }
+        formattedOutput.push({ error: response.error });
+        return formattedOutput;
       }
     }
-    output.push({error:response.error});
-    return output;
+
+    const timestamp = Date.now();
+    const tmpDataDir = path.resolve('./tmp_data');
+    await fs.promises.mkdir(tmpDataDir, { recursive: true });
+
+    const savedFiles = [];
+    for (let i = 0; i < responses.length; i++) {
+      const filename = `response-${response_id}-${timestamp}-attempt-${i + 1}.json`;
+      const filePath = path.join(tmpDataDir, filename);
+      await fs.promises.writeFile(filePath, JSON.stringify(responses[i], null, 2));
+      savedFiles.push(filePath);
+    }
+
+    logger.debug('OpenAI response remained in progress after retries', {
+      responseId: response_id,
+      attempts: responses.length,
+      statuses: responses.map((resp) => resp.status),
+      outputLengths: responses.map((resp) => Array.isArray(resp.output) ? resp.output.length : null),
+      savedFiles,
+    });
+
+    return null;
   } catch (error) {
     logger.error(`Error while fetching completed response API: ${error}`);
     return null;
   }
-}
+};
 
 const uploadBatchFile = async (contents) => {
   try {
