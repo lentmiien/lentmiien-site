@@ -14,7 +14,7 @@ block content
               div= `User: ${d.user_id}, Model: ${d.model}`
               div= d.task_type === 'summary' ? 'summary' : 'response'
               if name === d.user_id
-                a.btn.btn-outline-primary(href=`/chat4/chat/${d.conversation_id}`) View chat
+                a.btn.btn-outline-primary(href=`/chat5/chat/${d.conversation_id}`) View chat
                 a.btn.btn-outline-danger(href=`/chat4/batch_prompt_delete/${d.custom_id}`) Delete
     .col
       h4 Requests (1 week)
