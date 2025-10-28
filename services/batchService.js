@@ -30,11 +30,6 @@ const reasoningModels = [
   'gpt-5-nano-2025-08-07',
 ];
 
-const TOOL_MAP = {
-  image_generation: { type: 'image_generation' },
-  web_search_preview: { type: 'web_search_preview' },
-};
-
 const SUMMARY_PROMPT = 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to read the entire conversation.';
 
 const modelCache = new Map();
@@ -65,17 +60,6 @@ function normalizeModelName(model) {
     return redirect_models[model];
   }
   return null;
-}
-
-function mapTools(toolNames) {
-  if (!Array.isArray(toolNames) || toolNames.length === 0) return [];
-  const mapped = [];
-  for (const tool of toolNames) {
-    if (TOOL_MAP[tool]) {
-      mapped.push(TOOL_MAP[tool]);
-    }
-  }
-  return mapped;
 }
 
 function buildTextSettings(conversation, modelName) {
@@ -235,10 +219,7 @@ class BatchService {
         input,
       };
 
-      const tools = mapTools(snapshot.conversation.metadata?.tools || []);
-      if (tools.length > 0) {
-        body.tools = tools;
-      }
+      // Tools are intentionally omitted because the OpenAI batches API does not support tool invocations.
 
       const textSettings = buildTextSettings(snapshot.conversation, normalizedModel);
       if (textSettings) {

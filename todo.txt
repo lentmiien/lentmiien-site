@@ -1,17 +1,1 @@
-For my `services/batchService.js` service class, I want to add support for chat5 conversations, the newer version after chat4 that I'm currently using. I really want to transition away from chat4, as chat5 already has backward compatibility to open and continue on chat4 conversations. I'll probably just remove support for Anthropic batch processing, as I really only use OpenAI models right now, and could add Anthropic back in the future if I want.
-
-In `models/batchprompt.js`, I'll probably have `conversation_id` reference a "conversation5" entry instead of "conversation4", switch from `prompt` to `message_id`, which should be the id of the "chat5" placeholder message, that just says something like "Pending batch response". I'll remove `images`, as this is handled by "conversation5", storing message ids of messages containing images.
-
-`models/batchrequest.js` can probably stay the same, I don't see anything that needs to change.
-
-My current batch service, mainly uses the chat completions endpoint in the OpenAI API, but I want to take this opportunity to switch to only use the responses endpoint.
-
-In "chat4" I store all messages as a prompt-response pairs, but for "chat5" I now store prompt texts, prompt images and responses as individual messages, and I also store image generation calls, web search calls, and reasoning texts as individual messages, so when generating the files to send to the batch API, I both need to parse the input message array correctly, and be sure to save all parts of the response. So, add the necessary batch API helper functions to `utils/OpenAI_API.js`, and make use of `services/conversationService.js` and `services/messageService.js` to properly save the data to the "chat5" databases.
-
-Note: `processBatchResponses()` is called automatically (from a webhook), when a batch is done in the API.
-
-Additionally, I'd like to add a scheduled call to `triggerBatchRequest()`, every day at 19:00, and just run the function if there are any pending requests.
-
-For the "chat5" UI, in `views/chat5_chat.pug`, next to the "Send & Response" and "Response" buttons, I want to add batch versions of the buttons, but only enable the buttons if a batch supported model has been selected, meaning that the model selected in the HTML element "#model", looking in the `chat_models` array, the `batch_use` value of the selected model has the value `true`. When sending a message to the batch processing, the basic functionality should be the same as "Send & Response" and "Response", but instead redirecting the request to the batch service, but still add the user message and a placeholder "response" to the UI, as is done with the current buttons.
-
-When actually starting the batch request processing, the placeholder message should be ignored, group consequtive user messages, and ignore messages that has the `hideFromBot` value set to true.
+The OpenAI batches API don't support tool usage, or at least not web search and image generation, so I need to avoid setting any tools in the requests in `services/batchService.js`. However, I don't plan to enforce that tools must be deleted from conversations before using the batch service, so just ignore any tools set, when processing requests in the batch service. Also, to make the user aware of the limitations, show a warning message in the UI (views/chat5_chat.pug) under or near the batch processing buttons that tools are unsuported by the batches API and will be ignored, but only display the warning if the user has selected one or more tools.

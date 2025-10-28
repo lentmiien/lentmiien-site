@@ -6,6 +6,7 @@ block content
   .chat5-header-actions.d-flex.gap-2.mb-3
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
   - let user = null
+  - const selectedTools = Array.isArray(conversation.metadata && conversation.metadata.tools) ? conversation.metadata.tools : []
   #conversationContainer.chat5-history
     each m in messages 
       if user != m.user_id 
@@ -67,6 +68,8 @@ block content
         button.btn.btn-success#respondOnly(type="button", onclick="Append(false, true)") Response
         button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)", disabled) Batch Send & Response
         button.btn.btn-outline-success#batchResponse(type="button", onclick="QueueBatch(false)", disabled) Batch Response
+      p#batchToolsWarning.chat5-batch-warning.text-warning.small(class={ 'd-none': !selectedTools.length })
+        | Tools are unsupported by the batches API; any selected tools will be ignored during batch processing.
       hr.chat5-divider
       label.chat5-input-label(for="audio") Append audio to conversation
       #audio.chat5-audio
@@ -97,8 +100,8 @@ block content
       textarea#context.form-control(name="context")= conversation.metadata.contextPrompt
       label.chat5-input-label(for="tools") Tools 
       select#tools.form-control(name="tools", multiple) 
-        option(value="image_generation", selected=conversation.metadata.tools.indexOf("image_generation")>=0) Generate Images
-        option(value="web_search_preview", selected=conversation.metadata.tools.indexOf("web_search_preview")>=0) Search Web
+        option(value="image_generation", selected=selectedTools.indexOf("image_generation") >= 0) Generate Images
+        option(value="web_search_preview", selected=selectedTools.indexOf("web_search_preview") >= 0) Search Web
       label.chat5-input-label(for="model") Model 
       select#model.form-control(name="model") 
         option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})
@@ -162,7 +165,7 @@ block content
             span= conversation.metadata.maxAudioMessages
           div 
             b tools: 
-            span= conversation.metadata.tools.join(", ")
+            span= selectedTools.join(", ")
           div 
             b reasoning: 
             span= conversation.metadata.reasoning
@@ -328,6 +331,21 @@ block content
             }
           });
         }
+        var toolsSelect = byId('tools');
+        var batchWarning = byId('batchToolsWarning');
+        function updateBatchWarning(){
+          if (!batchWarning) return;
+          var selectedCount = 0;
+          if (toolsSelect) {
+            var selectedList = toolsSelect.selectedOptions || toolsSelect.options || [];
+            selectedCount = Array.from(selectedList).filter(function(opt){ return opt.selected; }).length;
+          }
+          batchWarning.classList.toggle('d-none', selectedCount === 0);
+        }
+        if (toolsSelect) {
+          toolsSelect.addEventListener('change', updateBatchWarning);
+        }
+        updateBatchWarning();
       });
     })();
   script(src="/js/chat5_5.js", defer)
