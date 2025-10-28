@@ -134,9 +134,14 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
 
+const fsp = fs.promises;
 const LOGS_DIR = path.resolve(__dirname, '..', 'logs');
 const LOG_LEVELS = ['debug', 'notice', 'warning', 'error'];
 const MAX_LOG_ENTRIES = 1000;
+const HTML_DIRECTORY = path.resolve(__dirname, '..', 'public', 'html');
+const HTML_FILE_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const FEEDBACK_STATUSES = new Set(['success', 'error', 'info']);
+const htmlDateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
 function getLogFiles() {
   if (!fs.existsSync(LOGS_DIR)) {
@@ -321,6 +326,186 @@ exports.delete_log_file = (req, res) => {
   } catch (error) {
     logger.error('Failed to delete log file', { category: 'admin_logs', metadata: { error } });
     return res.status(500).render('error_page', { error: `Error deleting log file: ${error.message}` });
+  }
+};
+
+function sanitizeHtmlFileName(rawName) {
+  if (!rawName && rawName !== 0) {
+    return null;
+  }
+
+  const trimmed = String(rawName).trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const baseName = path.basename(trimmed);
+  if (!baseName || baseName.startsWith('.')) {
+    return null;
+  }
+
+  let normalized = baseName;
+  if (!normalized.toLowerCase().endsWith('.html')) {
+    normalized = `${normalized}.html`;
+  }
+
+  if (!HTML_FILE_NAME_PATTERN.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
+}
+
+async function ensureHtmlDirectory() {
+  await fsp.mkdir(HTML_DIRECTORY, { recursive: true });
+}
+
+function formatHtmlFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1).replace(/\.0$/, '')} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
+}
+
+async function listHtmlFiles() {
+  await ensureHtmlDirectory();
+  const entries = await fsp.readdir(HTML_DIRECTORY, { withFileTypes: true });
+  const htmlEntries = entries.filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.html'));
+
+  const files = await Promise.all(htmlEntries.map(async (entry) => {
+    const filePath = path.join(HTML_DIRECTORY, entry.name);
+    const stats = await fsp.stat(filePath);
+    const modifiedMs = stats.mtime.getTime();
+
+    return {
+      name: entry.name,
+      href: `/html/${entry.name}`,
+      size: formatHtmlFileSize(stats.size),
+      modified: htmlDateFormatter.format(stats.mtime),
+      modifiedMs,
+    };
+  }));
+
+  return files.sort((a, b) => {
+    if (b.modifiedMs !== a.modifiedMs) {
+      return b.modifiedMs - a.modifiedMs;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function redirectWithFeedback(res, status, message) {
+  const normalizedStatus = FEEDBACK_STATUSES.has(status) ? status : 'info';
+  const text = message ? String(message) : '';
+  const location = `/admin/html-pages?status=${encodeURIComponent(normalizedStatus)}${text ? `&message=${encodeURIComponent(text)}` : ''}`;
+  return res.redirect(location);
+}
+
+exports.html_pages = async (req, res) => {
+  try {
+    const files = await listHtmlFiles();
+    const statusParam = String(req.query.status || '').toLowerCase();
+    const tentativeStatus = FEEDBACK_STATUSES.has(statusParam) ? statusParam : null;
+    const messageParam = tentativeStatus ? String(req.query.message || '') : '';
+    const feedbackStatus = messageParam ? tentativeStatus : null;
+    const feedbackMessage = messageParam || null;
+
+    return res.render('admin_html_pages', {
+      files,
+      feedbackStatus,
+      feedbackMessage,
+    });
+  } catch (error) {
+    logger.error('Failed to load HTML content manager', { category: 'admin_html', metadata: { error: error.message } });
+    res.status(500);
+    return res.render('admin_html_pages', {
+      files: [],
+      feedbackStatus: 'error',
+      feedbackMessage: 'Unable to read the HTML content directory.',
+    });
+  }
+};
+
+exports.create_html_page_from_text = async (req, res) => {
+  const fileNameInput = req.body.fileName;
+  const htmlContent = typeof req.body.htmlContent === 'string' ? req.body.htmlContent : '';
+
+  const sanitizedName = sanitizeHtmlFileName(fileNameInput);
+  if (!sanitizedName) {
+    return redirectWithFeedback(res, 'error', 'Please provide a valid filename (letters, numbers, dot, dash, underscore).');
+  }
+
+  if (!htmlContent.trim()) {
+    return redirectWithFeedback(res, 'error', 'HTML content cannot be empty.');
+  }
+
+  try {
+    await ensureHtmlDirectory();
+    const filePath = path.join(HTML_DIRECTORY, sanitizedName);
+    await fsp.writeFile(filePath, htmlContent, 'utf8');
+    return redirectWithFeedback(res, 'success', `Saved ${sanitizedName}.`);
+  } catch (error) {
+    logger.error('Failed to save HTML content from textarea', { category: 'admin_html', metadata: { file: sanitizedName, error: error.message } });
+    return redirectWithFeedback(res, 'error', `Failed to save ${sanitizedName}: ${error.message}`);
+  }
+};
+
+exports.create_html_page_from_file = async (req, res) => {
+  if (!req.file) {
+    return redirectWithFeedback(res, 'error', 'Please select an HTML file to upload.');
+  }
+
+  const fallbackName = req.file.originalname ? path.basename(req.file.originalname) : '';
+  const providedName = req.body.uploadFileName || fallbackName;
+  const sanitizedName = sanitizeHtmlFileName(providedName);
+
+  if (!sanitizedName) {
+    return redirectWithFeedback(res, 'error', 'Please provide a valid filename (letters, numbers, dot, dash, underscore).');
+  }
+
+  if (!req.file.buffer || req.file.buffer.length === 0) {
+    return redirectWithFeedback(res, 'error', 'The uploaded file is empty.');
+  }
+
+  try {
+    await ensureHtmlDirectory();
+    const filePath = path.join(HTML_DIRECTORY, sanitizedName);
+    await fsp.writeFile(filePath, req.file.buffer.toString('utf8'), 'utf8');
+    return redirectWithFeedback(res, 'success', `Uploaded ${sanitizedName}.`);
+  } catch (error) {
+    logger.error('Failed to process uploaded HTML file', { category: 'admin_html', metadata: { file: sanitizedName, error: error.message } });
+    return redirectWithFeedback(res, 'error', `Failed to upload ${sanitizedName}: ${error.message}`);
+  }
+};
+
+exports.delete_html_page = async (req, res) => {
+  const sanitizedName = sanitizeHtmlFileName(req.body.file);
+  if (!sanitizedName) {
+    return redirectWithFeedback(res, 'error', 'Invalid filename supplied.');
+  }
+
+  const targetPath = path.join(HTML_DIRECTORY, sanitizedName);
+
+  try {
+    await ensureHtmlDirectory();
+    await fsp.unlink(targetPath);
+    return redirectWithFeedback(res, 'success', `Deleted ${sanitizedName}.`);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return redirectWithFeedback(res, 'error', `${sanitizedName} was not found.`);
+    }
+
+    logger.error('Failed to delete HTML file', { category: 'admin_html', metadata: { file: sanitizedName, error: error.message } });
+    return redirectWithFeedback(res, 'error', `Failed to delete ${sanitizedName}: ${error.message}`);
   }
 };
 

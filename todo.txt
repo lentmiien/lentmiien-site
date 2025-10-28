@@ -1,1 +1,6 @@
-The OpenAI batches API don't support tool usage, or at least not web search and image generation, so I need to avoid setting any tools in the requests in `services/batchService.js`. However, I don't plan to enforce that tools must be deleted from conversations before using the batch service, so just ignore any tools set, when processing requests in the batch service. Also, to make the user aware of the limitations, show a warning message in the UI (views/chat5_chat.pug) under or near the batch processing buttons that tools are unsuported by the batches API and will be ignored, but only display the warning if the user has selected one or more tools.
+I want to create an admin page for managing the content in the `public/html` folder. Create a new route(routes/admin.js)/controller(controllers/admincontroller.js) for a page that can do the following 3 things:
+- Admin user can input a filename, and an HTML page in as text in a textarea element, and upload to the server, that then create the file in the `public/html` folder
+- Admin user can input a filename, and select an HTML file, and upload to the server, that then create the file in the `public/html` folder
+- Admin user can view a list of all files in the `public/html` folder, and click to delete files that are no longer needed
+
+For the PUG template, please follow the coloring guidelines in `README-Colors.md`, create a simplistic modern style page, and don't put any JavaScript code inline in the template file.

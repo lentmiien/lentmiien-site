@@ -1,0 +1,53 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/admin-html.css')
+
+block content
+  section.html-admin
+    header.html-admin__header
+      h1.html-admin__title HTML Content Manager
+      p.html-admin__subtitle Create, upload, or remove HTML pages served from the `public/html` directory. Use the forms below to keep the static content up to date.
+    if feedbackStatus
+      div(class=`html-admin__alert html-admin__alert--${feedbackStatus}`, role='alert')
+        | #{feedbackMessage || ''}
+    .html-admin__grid
+      article.html-admin__card
+        h2.html-admin__card-title Create from text
+        p.html-admin__card-subtitle Compose HTML directly in the editor and publish it instantly.
+        form.html-admin__form(method='post', action='/admin/html-pages/upload-text')
+          label.html-admin__label(for='fileName') File name
+          input#fileName.html-admin__input(type='text', name='fileName', placeholder='landing-page.html', required, autocomplete='off')
+          label.html-admin__label(for='htmlContent') HTML content
+          textarea#htmlContent.html-admin__textarea(name='htmlContent', rows='14', required)
+          button.html-admin__button(type='submit') Save page
+      article.html-admin__card
+        h2.html-admin__card-title Upload existing file
+        p.html-admin__card-subtitle Upload a prepared HTML file from your device. Provide a filename to override the uploaded name.
+        form.html-admin__form(method='post', action='/admin/html-pages/upload-file', enctype='multipart/form-data')
+          label.html-admin__label(for='uploadFileName') File name
+          input#uploadFileName.html-admin__input(type='text', name='uploadFileName', placeholder='feature.html', autocomplete='off')
+          label.html-admin__label(for='htmlFile') HTML file
+          input#htmlFile.html-admin__file-input(type='file', name='html_file', accept='.html,text/html', required)
+          button.html-admin__button(type='submit') Upload file
+    section.html-admin__list
+      header.html-admin__list-header
+        h2.html-admin__list-title Existing pages
+        if files && files.length
+          span.html-admin__list-count #{files.length} total
+        else
+          span.html-admin__list-count No pages yet
+      if files && files.length
+        ul.html-admin__items
+          each page in files
+            li.html-admin__item
+              div.html-admin__item-info
+                a.html-admin__item-link(href=page.href, target='_blank', rel='noopener')= page.name
+                div.html-admin__item-meta
+                  span Size: #{page.size}
+                  span Updated: #{page.modified}
+              form.html-admin__item-action(method='post', action='/admin/html-pages/delete')
+                input(type='hidden', name='file', value=page.name)
+                button.html-admin__delete(type='submit') Delete
+      else
+        p.html-admin__empty No HTML pages found. Use either form above to publish new content.
