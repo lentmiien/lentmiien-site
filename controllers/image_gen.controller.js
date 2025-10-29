@@ -46,6 +46,37 @@ function errorJson(res, status, message, details) {
   return res.status(status).json({ error: message, details });
 }
 
+function normalizeInstanceId(raw) {
+  if (raw === null || raw === undefined) return null;
+  const str = String(raw).trim();
+  return str ? str : null;
+}
+
+function extractInstanceId(req) {
+  if (!req) return null;
+  // Accept both snake_case and camelCase for convenience
+  return normalizeInstanceId(
+    (req.body && (req.body.instance_id ?? req.body.instanceId)) ??
+    (req.query && (req.query.instance_id ?? req.query.instanceId))
+  );
+}
+
+function buildComfyUrl(pathname, { instanceId, query } = {}) {
+  const base = COMFY_API_BASE || '';
+  if (!base) throw new Error('COMFY_API_BASE is not configured');
+  const url = new URL(pathname, base.endsWith('/') ? base : `${base}/`);
+  if (instanceId) {
+    url.searchParams.set('instance_id', instanceId);
+  }
+  if (query && typeof query === 'object') {
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null) continue;
+      url.searchParams.set(key, value);
+    }
+  }
+  return url.toString();
+}
+
 function toSafeName(name) {
   const str = String(name || '').trim();
   if (!str) return null;
@@ -60,26 +91,28 @@ function getCacheConfig(bucketHint, mediaType) {
   return CACHE_CONFIG[CACHE_DEFAULT_BUCKET];
 }
 
-function buildCacheRecord(name, { bucket, mediaType } = {}) {
+function buildCacheRecord(name, { bucket, mediaType, instanceId } = {}) {
   const safeName = toSafeName(name);
   if (!safeName) return null;
   const cfg = getCacheConfig(bucket, mediaType);
   if (!cfg) return null;
-  const localPath = path.join(cfg.dir, safeName);
-  const url = `${cfg.prefix}/${encodeURIComponent(safeName)}`;
-  return { safeName, localPath, url, bucket: bucket || null };
+  const subDir = instanceId ? path.join(cfg.dir, instanceId) : cfg.dir;
+  const urlPrefix = instanceId ? `${cfg.prefix}/${encodeURIComponent(instanceId)}` : cfg.prefix;
+  const localPath = path.join(subDir, safeName);
+  const url = `${urlPrefix}/${encodeURIComponent(safeName)}`;
+  return { safeName, localPath, url, bucket: bucket || null, instanceId: instanceId || null };
 }
 
-async function writeCacheFile(name, buffer, { bucket, mediaType } = {}) {
-  const rec = buildCacheRecord(name, { bucket, mediaType });
+async function writeCacheFile(name, buffer, { bucket, mediaType, instanceId } = {}) {
+  const rec = buildCacheRecord(name, { bucket, mediaType, instanceId });
   if (!rec) return null;
   await fsp.mkdir(path.dirname(rec.localPath), { recursive: true });
   await fsp.writeFile(rec.localPath, buffer);
   return rec;
 }
 
-async function ensureCached(bucket, name, mediaType) {
-  const rec = buildCacheRecord(name, { bucket, mediaType });
+async function ensureCached(bucket, name, mediaType, instanceId) {
+  const rec = buildCacheRecord(name, { bucket, mediaType, instanceId });
   if (!rec) return null;
 
   try {
@@ -90,11 +123,13 @@ async function ensureCached(bucket, name, mediaType) {
   }
 
   const effectiveBucket = bucket || (mediaType === 'video' ? 'video' : CACHE_DEFAULT_BUCKET);
-  const key = `${effectiveBucket}:${rec.safeName}`;
+  const keyParts = [effectiveBucket, rec.safeName];
+  if (instanceId) keyParts.push(instanceId);
+  const key = keyParts.join(':');
   if (!inFlightDownloads.has(key)) {
     const promise = (async () => {
       try {
-        const remoteUrl = `${COMFY_API_BASE}/v1/files/${effectiveBucket}/${encodeURIComponent(name)}`;
+        const remoteUrl = buildComfyUrl(`/v1/files/${effectiveBucket}/${encodeURIComponent(name)}`, { instanceId });
         const r = await fetch(remoteUrl, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
         if (!r.ok) {
           const txt = await r.text().catch(() => '');
@@ -119,18 +154,23 @@ async function ensureCached(bucket, name, mediaType) {
   }
 }
 
-async function resolveCachedRecord(bucket, name) {
+async function resolveCachedRecord(bucket, name, instanceId) {
   const mediaType = detectMediaType(name);
-  const rec = await ensureCached(bucket, name, mediaType);
+  const rec = await ensureCached(bucket, name, mediaType, instanceId);
   if (rec) return rec;
-  const fallback = buildCacheRecord(name, { bucket, mediaType });
-  if (!fallback) return null;
-  try {
-    await fsp.access(fallback.localPath, fs.constants.R_OK);
-    return fallback;
-  } catch (_) {
-    return null;
+  const candidates = [];
+  candidates.push(buildCacheRecord(name, { bucket, mediaType, instanceId }));
+  if (instanceId) candidates.push(buildCacheRecord(name, { bucket, mediaType, instanceId: null }));
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      await fsp.access(candidate.localPath, fs.constants.R_OK);
+      return candidate;
+    } catch (_) {
+      continue;
+    }
   }
+  return null;
 }
 
 async function mapWithConcurrency(items, limit, iterator) {
@@ -173,7 +213,7 @@ function detectMimeType(mediaType, name) {
   return 'image/png';
 }
 
-function normalizeJobFiles(jobId, files) {
+function normalizeJobFiles(jobId, files, instanceId) {
   if (!Array.isArray(files)) return [];
   return files.map((entry, index) => {
     const base = typeof entry === 'string' ? { filename: entry } : Object.assign({}, entry);
@@ -181,12 +221,13 @@ function normalizeJobFiles(jobId, files) {
     const safeName = toSafeName(rawName) || `file_${index}`;
     const mediaType = base.media_type || detectMediaType(safeName);
     const bucket = base.bucket || (mediaType === 'video' ? 'video' : 'output');
-    const cacheCfg = getCacheConfig(bucket, mediaType);
-    const cachedUrl = cacheCfg ? `${cacheCfg.prefix}/${encodeURIComponent(safeName)}` : null;
+    const cacheRec = buildCacheRecord(safeName, { bucket, mediaType, instanceId });
+    const cachedUrl = cacheRec ? cacheRec.url : null;
     const query = new URLSearchParams();
     query.set('filename', safeName);
     if (bucket) query.set('bucket', bucket);
     if (mediaType) query.set('mediaType', mediaType);
+    if (instanceId) query.set('instance_id', instanceId);
     const localUrl = `/image_gen/api/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(index)}?${query.toString()}`;
     return Object.assign({}, base, {
       index,
@@ -195,7 +236,8 @@ function normalizeJobFiles(jobId, files) {
       media_type: mediaType,
       cached_url: cachedUrl,
       remote_url: base.download_url || base.url || base.path || null,
-      download_url: localUrl
+      download_url: localUrl,
+      instance_id: base.instance_id || instanceId || null
     });
   });
 }
@@ -409,7 +451,8 @@ async function seedBulkTestPrompts(jobDoc) {
           input_values: inputValues,
           negative_used: negativeUsed,
           variables: buildVariablesObject(job, label, placeholderValues, negativeUsed, inputValues),
-          status: 'Pending'
+          status: 'Pending',
+          instance_id: normalizeInstanceId(job.instance_id) || null
         });
       }
     }
@@ -475,9 +518,10 @@ function toObjectId(id) {
 let bulkWorkerRunning = false;
 let bulkWorkerPending = false;
 
-async function waitForComfyJob(jobId) {
+async function waitForComfyJob(jobId, instanceId) {
   for (let attempt = 0; attempt < BULK_JOB_POLL_LIMIT; attempt++) {
-    const r = await fetch(`${COMFY_API_BASE}/v1/jobs/${encodeURIComponent(jobId)}`, {
+    const url = buildComfyUrl(`/v1/jobs/${encodeURIComponent(jobId)}`, { instanceId });
+    const r = await fetch(url, {
       headers: apiHeaders()
     });
     if (!r.ok) {
@@ -494,7 +538,7 @@ async function waitForComfyJob(jobId) {
   throw new Error('upstream job timeout');
 }
 
-async function downloadComfyOutputs(jobId, files, fallbackPrefix) {
+async function downloadComfyOutputs(jobId, files, fallbackPrefix, instanceId) {
   const stored = [];
   const list = Array.isArray(files) ? files : [];
   for (let i = 0; i < list.length; i++) {
@@ -504,7 +548,9 @@ async function downloadComfyOutputs(jobId, files, fallbackPrefix) {
       : (meta?.filename || meta?.name || meta?.file || meta?.path || null);
     const fallback = `${fallbackPrefix}_${i}.png`;
     const safeName = toSafeName(original) || toSafeName(fallback) || `bulk_${jobId}_${i}.png`;
-    const url = `${COMFY_API_BASE}/v1/jobs/${encodeURIComponent(jobId)}/images/${i}`;
+    const mediaType = meta?.media_type || detectMediaType(original || fallback);
+    const bucket = meta?.bucket || (mediaType === 'video' ? 'video' : 'output');
+    const url = buildComfyUrl(`/v1/jobs/${encodeURIComponent(jobId)}/images/${i}`, { instanceId });
     const r = await fetch(url, {
       headers: apiHeaders(),
       signal: AbortSignal.timeout(BULK_DOWNLOAD_TIMEOUT_MS)
@@ -514,8 +560,14 @@ async function downloadComfyOutputs(jobId, files, fallbackPrefix) {
       throw new Error(`image download ${r.status} ${txt}`.trim());
     }
     const buf = Buffer.from(await r.arrayBuffer());
-    const rec = await writeCacheFile(safeName, buf);
-    stored.push(rec?.safeName || safeName);
+    const rec = await writeCacheFile(safeName, buf, { bucket, mediaType, instanceId });
+    stored.push({
+      safeName,
+      bucket,
+      mediaType,
+      instanceId: instanceId || null,
+      url: rec?.url || null
+    });
   }
   return stored;
 }
@@ -523,6 +575,8 @@ async function downloadComfyOutputs(jobId, files, fallbackPrefix) {
 async function processBulkPrompt(job, prompt) {
   try {
     const inputs = Object.assign({}, job.base_inputs || {});
+    delete inputs.instance_id;
+    delete inputs.instanceId;
     inputs.prompt = prompt.prompt_text;
     if (job.negative_prompt) {
       inputs.negative = prompt.negative_used ? job.negative_prompt : '';
@@ -537,10 +591,14 @@ async function processBulkPrompt(job, prompt) {
       }
     }
 
-    const queuedResp = await fetch(`${COMFY_API_BASE}/v1/generate`, {
+    const instanceId = normalizeInstanceId(prompt.instance_id ?? job.instance_id);
+    const payload = { workflow: job.workflow, inputs };
+    if (instanceId) payload.instance_id = instanceId;
+
+    const queuedResp = await fetch(buildComfyUrl('/v1/generate'), {
       method: 'POST',
       headers: apiHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ workflow: job.workflow, inputs })
+      body: JSON.stringify(payload)
     });
     if (!queuedResp.ok) {
       const txt = await queuedResp.text().catch(() => '');
@@ -552,15 +610,15 @@ async function processBulkPrompt(job, prompt) {
 
     await BulkTestPrompt.updateOne(
       { _id: prompt._id },
-      { $set: { comfy_job_id: comfyJobId } }
+      { $set: { comfy_job_id: comfyJobId, instance_id: instanceId || null } }
     );
 
-    const result = await waitForComfyJob(comfyJobId);
+    const result = await waitForComfyJob(comfyJobId, instanceId);
     if (result?.status !== 'completed') {
       const errMsg = result?.error || 'upstream generation failed';
       throw new Error(errMsg);
     }
-    const stored = await downloadComfyOutputs(comfyJobId, result.files, `bulk_${prompt._id}`);
+    const stored = await downloadComfyOutputs(comfyJobId, result.files, `bulk_${prompt._id}`, instanceId);
     const primary = stored[0] || null;
     await BulkTestPrompt.updateOne(
       { _id: prompt._id },
@@ -568,9 +626,10 @@ async function processBulkPrompt(job, prompt) {
         $set: {
           status: 'Completed',
           completed_at: new Date(),
-          filename: primary,
-          file_url: primary ? `/imgen/${encodeURIComponent(primary)}` : null,
-          comfy_error: null
+          filename: primary?.safeName || null,
+          file_url: primary?.url || null,
+          comfy_error: null,
+          instance_id: instanceId || null
         }
       }
     );
@@ -582,7 +641,8 @@ async function processBulkPrompt(job, prompt) {
         $set: {
           status: 'Canceled',
           comfy_error: String(err?.message || err),
-          completed_at: new Date()
+          completed_at: new Date(),
+          instance_id: normalizeInstanceId(prompt.instance_id ?? job.instance_id) || null
         }
       }
     );
@@ -724,6 +784,7 @@ exports.listBulkJobs = async (req, res) => {
       status: job.status,
       progress: job.progress || 0,
       workflow: job.workflow,
+      instance_id: job.instance_id || null,
       counters: Object.assign({
         total: 0,
         pending: 0,
@@ -750,6 +811,7 @@ exports.createBulkJob = async (req, res) => {
     const body = req.body || {};
     const name = String(body.name || '').trim();
     const workflow = String(body.workflow || '').trim();
+    const instanceId = normalizeInstanceId(body.instance_id ?? body.instanceId);
     if (!name) return errorJson(res, 400, 'name required');
     if (!workflow) return errorJson(res, 400, 'workflow required');
 
@@ -815,6 +877,8 @@ exports.createBulkJob = async (req, res) => {
       : {};
     delete baseInputs.prompt;
     delete baseInputs.negative;
+    delete baseInputs.instance_id;
+    delete baseInputs.instanceId;
 
     const jobData = {
       name,
@@ -825,6 +889,7 @@ exports.createBulkJob = async (req, res) => {
       image_inputs: imageInputs,
       negative_prompt: negativePrompt || null,
       base_inputs: baseInputs,
+      instance_id: instanceId || null,
       status: 'Created',
       counters: {
         total: 0,
@@ -853,6 +918,7 @@ exports.createBulkJob = async (req, res) => {
       total_prompts: totalPrompts,
       counters: refreshed?.counters || jobData.counters,
       status: refreshed?.status || job.status,
+      instance_id: job.instance_id || instanceId || null,
     });
   } catch (e) {
     logger.error('[createBulkJob] error', e);
@@ -891,7 +957,8 @@ exports.getBulkJob = async (req, res) => {
           completed: 0,
           canceled: 0
         }, job.counters || {}),
-        variables_available: computeAvailableVariables(job)
+        variables_available: computeAvailableVariables(job),
+        instance_id: job.instance_id || null
       }),
       score: {
         total: scoreTotal,
@@ -910,7 +977,7 @@ exports.updateBulkJobStatus = async (req, res) => {
     const jobId = toObjectId(req.params.id);
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const action = String(req.body?.action || '').trim().toLowerCase();
-    const allowed = ['start', 'pause', 'resume', 'cancel', 'redo_canceled'];
+    const allowed = ['start', 'pause', 'resume', 'cancel', 'redo_canceled', 'set_instance'];
     if (!allowed.includes(action)) return errorJson(res, 400, 'invalid action');
 
     const job = await BulkJob.findById(jobId);
@@ -918,6 +985,27 @@ exports.updateBulkJobStatus = async (req, res) => {
 
     const updates = { updated_at: new Date() };
     let shouldWake = false;
+    const requestBody = req.body || {};
+    const hasInstanceField = Object.prototype.hasOwnProperty.call(requestBody, 'instance_id')
+      || Object.prototype.hasOwnProperty.call(requestBody, 'instanceId');
+    const requestedInstance = hasInstanceField
+      ? normalizeInstanceId(requestBody.instance_id ?? requestBody.instanceId)
+      : undefined;
+
+    if (action === 'set_instance') {
+      if (!hasInstanceField) return errorJson(res, 400, 'instance_id required');
+      const newInstanceId = requestedInstance || null;
+      updates.instance_id = newInstanceId;
+      await BulkTestPrompt.updateMany(
+        { job: jobId, status: { $in: ['Pending', 'Paused'] } },
+        { $set: { instance_id: newInstanceId } }
+      );
+      await BulkJob.updateOne({ _id: jobId }, { $set: updates });
+      const refreshed = await refreshJobCounters(jobId);
+      if (job.status === 'Processing') wakeBulkWorker();
+      return res.json({ job: refreshed || (await BulkJob.findById(jobId).lean()) });
+    }
+
     if (action === 'start' || action === 'resume') {
       if (job.status === 'Completed') return errorJson(res, 409, 'job already completed');
       if (job.status === 'Canceled') return errorJson(res, 409, 'job canceled');
@@ -962,6 +1050,7 @@ exports.updateBulkJobStatus = async (req, res) => {
             comfy_job_id: null,
             filename: null,
             file_url: null,
+            instance_id: job.instance_id || null,
             score_total: 0,
             score_count: 0
           },
@@ -1026,6 +1115,7 @@ exports.listBulkTestPrompts = async (req, res) => {
       score_total: doc.score_total || 0,
       score_count: doc.score_count || 0,
       variables: toPlainVariables(doc.variables),
+      instance_id: doc.instance_id || null,
       created_at: doc.created_at,
       updated_at: doc.updated_at,
       started_at: doc.started_at,
@@ -1094,8 +1184,11 @@ exports.getBulkMatrix = async (req, res) => {
             const avg = (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0;
             const mediaType = detectMediaType(doc.filename);
             const bucket = mediaType === 'video' ? 'video' : 'output';
-            const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType }) : null;
-            const downloadUrl = doc.filename ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}` : null;
+            const instanceId = doc.instance_id || job.instance_id || null;
+            const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
+            const downloadUrl = doc.filename
+              ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
+              : null;
             return {
               id: String(doc._id),
               filename: doc.filename,
@@ -1103,6 +1196,7 @@ exports.getBulkMatrix = async (req, res) => {
               media_type: mediaType,
               download_url: downloadUrl,
               cached_url: cacheRec ? cacheRec.url : null,
+              instance_id: instanceId,
               score_average: avg,
               score_count: doc.score_count || 0,
               comfy_job_id: doc.comfy_job_id,
@@ -1249,8 +1343,11 @@ exports.listBulkGalleryImages = async (req, res) => {
     const items = selectedDocs.map((doc) => {
       const mediaType = detectMediaType(doc.filename);
       const bucket = mediaType === 'video' ? 'video' : 'output';
-      const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType }) : null;
-      const downloadUrl = doc.filename ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}` : null;
+      const instanceId = doc.instance_id || job.instance_id || null;
+      const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
+      const downloadUrl = doc.filename
+        ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
+        : null;
       const scoreTotal = Number(doc.score_total || 0);
       const scoreCount = Number(doc.score_count || 0);
       const scoreAverage = Number.isFinite(doc.score_average) ? Number(doc.score_average) : 0;
@@ -1260,6 +1357,7 @@ exports.listBulkGalleryImages = async (req, res) => {
         media_type: mediaType,
         cached_url: cacheRec ? cacheRec.url : null,
         download_url: downloadUrl,
+        instance_id: instanceId,
         score_total: scoreTotal,
         score_count: scoreCount,
         score_average: scoreAverage,
@@ -1277,6 +1375,7 @@ exports.listBulkGalleryImages = async (req, res) => {
       limit,
       total: totalMatches,
       returned: items.length,
+      instance_id: job.instance_id || null,
       items
     });
   } catch (e) {
@@ -1344,6 +1443,8 @@ exports.getBulkScorePair = async (req, res) => {
   try {
     const jobId = toObjectId(req.params.id);
     if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const job = await BulkJob.findById(jobId).lean();
+    if (!job) return errorJson(res, 404, 'bulk job not found');
     const docs = await BulkTestPrompt.aggregate([
       { $match: { job: jobId, status: 'Completed', filename: { $ne: null } } },
       { $sample: { size: 2 } }
@@ -1352,20 +1453,24 @@ exports.getBulkScorePair = async (req, res) => {
     const pair = docs.map((doc) => {
       const mediaType = detectMediaType(doc.filename);
       const bucket = mediaType === 'video' ? 'video' : 'output';
-      const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType }) : null;
-      const downloadUrl = doc.filename ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}` : null;
-      return {
-        id: String(doc._id),
-        filename: doc.filename,
-        file_url: doc.file_url,
-        media_type: mediaType,
-        download_url: downloadUrl,
-        cached_url: cacheRec ? cacheRec.url : null,
-        template_label: doc.template_label,
-        negative_used: doc.negative_used,
-        variables: toPlainVariables(doc.variables),
-        score_average: (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0,
-        score_count: doc.score_count || 0
+      const instanceId = doc.instance_id || job.instance_id || null;
+    const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
+    const downloadUrl = doc.filename
+      ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
+      : null;
+    return {
+      id: String(doc._id),
+      filename: doc.filename,
+      file_url: doc.file_url,
+      media_type: mediaType,
+      download_url: downloadUrl,
+      cached_url: cacheRec ? cacheRec.url : null,
+      instance_id: instanceId,
+      template_label: doc.template_label,
+      negative_used: doc.negative_used,
+      variables: toPlainVariables(doc.variables),
+      score_average: (doc.score_count || 0) > 0 ? doc.score_total / doc.score_count : 0,
+      score_count: doc.score_count || 0
       };
     });
     res.json({ pair });
@@ -1414,7 +1519,9 @@ exports.submitBulkScore = async (req, res) => {
 // Proxy: list workflows
 exports.getWorkflows = async (req, res) => {
   try {
-    const r = await fetch(`${COMFY_API_BASE}/v1/workflows`, { headers: apiHeaders() });
+    const instanceId = extractInstanceId(req);
+    const url = buildComfyUrl('/v1/workflows', { instanceId });
+    const r = await fetch(url, { headers: apiHeaders() });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
     res.json(await r.json());
   } catch (e) {
@@ -1426,14 +1533,24 @@ exports.getWorkflows = async (req, res) => {
 exports.generate = async (req, res) => {
   try {
     const body = req.body || {};
-    const { workflow, inputs } = body;
-    if (!workflow || !inputs) return errorJson(res, 400, 'workflow and inputs required');
+    const workflow = String(body.workflow || '').trim();
+    const rawInputs = body.inputs;
+    if (!workflow) return errorJson(res, 400, 'workflow required');
+    if (!rawInputs || typeof rawInputs !== 'object' || Array.isArray(rawInputs)) {
+      return errorJson(res, 400, 'inputs required');
+    }
+    const instanceId = extractInstanceId(req);
+    const inputs = Object.assign({}, rawInputs);
+    delete inputs.instance_id;
+    delete inputs.instanceId;
 
     // 1) Queue upstream job first
-    const r = await fetch(`${COMFY_API_BASE}/v1/generate`, {
+    const payload = { workflow, inputs };
+    if (instanceId) payload.instance_id = instanceId;
+    const r = await fetch(buildComfyUrl('/v1/generate'), {
       method: 'POST',
       headers: apiHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       // signal: AbortSignal.timeout(30000)
     });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
@@ -1455,6 +1572,10 @@ exports.generate = async (req, res) => {
       setTimeout(() => jobPromptMap.delete(queued.job_id), MAP_TTL_MS);
     }
 
+    if (instanceId && !queued.instance_id) {
+      queued.instance_id = instanceId;
+    }
+
     return res.json(queued);
   } catch (e) {
     return errorJson(res, 502, 'failed to queue generation', String(e.message || e));
@@ -1465,15 +1586,21 @@ exports.generate = async (req, res) => {
 exports.getJob = async (req, res) => {
   try {
     const jobId = encodeURIComponent(req.params.id);
-    const r = await fetch(`${COMFY_API_BASE}/v1/jobs/${jobId}`, {
+    const instanceHint = extractInstanceId(req);
+    const url = buildComfyUrl(`/v1/jobs/${jobId}`, { instanceId: instanceHint });
+    const r = await fetch(url, {
       headers: apiHeaders()
     });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
     const json = await r.json();
+    const instanceId = json?.instance_id || instanceHint || null;
     if (json && Array.isArray(json.files)) {
-      json.files = normalizeJobFiles(req.params.id, json.files);
+      json.files = normalizeJobFiles(req.params.id, json.files, instanceId);
     } else {
-      json.files = normalizeJobFiles(req.params.id, []);
+      json.files = normalizeJobFiles(req.params.id, [], instanceId);
+    }
+    if (instanceId && !json.instance_id) {
+      json.instance_id = instanceId;
     }
     res.json(json);
   } catch (e) {
@@ -1489,7 +1616,8 @@ exports.getJobFile = async (req, res) => {
     const bucket = (req.query?.bucket || '').trim() || null;
     const fileName = req.query?.filename;
     const mediaType = (req.query?.mediaType || '').trim() || detectMediaType(fileName);
-    const url = `${COMFY_API_BASE}/v1/jobs/${jobId}/files/${index}`;
+    const instanceId = normalizeInstanceId(req.query?.instance_id || req.query?.instanceId);
+    const url = buildComfyUrl(`/v1/jobs/${jobId}/files/${index}`, { instanceId });
     const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
@@ -1501,7 +1629,7 @@ exports.getJobFile = async (req, res) => {
     const buf = Buffer.from(ab);
     if (fileName) {
       try {
-        await writeCacheFile(fileName, buf, { bucket, mediaType });
+        await writeCacheFile(fileName, buf, { bucket, mediaType, instanceId });
       } catch (err) {
         logger.warn('[getJobFile] failed to persist cache', err);
       }
@@ -1525,7 +1653,9 @@ exports.listFiles = async (req, res) => {
   const bucket = req.params.bucket;
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
   try {
-    const r = await fetch(`${COMFY_API_BASE}/v1/files/${bucket}`, { headers: apiHeaders() });
+    const instanceId = extractInstanceId(req);
+    const url = buildComfyUrl(`/v1/files/${bucket}`, { instanceId });
+    const r = await fetch(url, { headers: apiHeaders() });
     if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
     const remoteJson = await r.json();
     const remoteFiles = Array.isArray(remoteJson?.files) ? remoteJson.files : [];
@@ -1544,17 +1674,19 @@ exports.listFiles = async (req, res) => {
         return { original, bucket, name: null, url: null, media_type: detectMediaType(original) };
       }
       const mediaType = detectMediaType(original);
-      const cacheRecord = await resolveCachedRecord(bucket, original);
+      const cacheRecord = await resolveCachedRecord(bucket, original, instanceId);
       return {
         original,
         name: safeName,
         bucket,
         media_type: mediaType,
-        url: cacheRecord ? cacheRecord.url : null
+        url: cacheRecord ? cacheRecord.url : null,
+        instance_id: instanceId || null
       };
     });
 
     const payload = Object.assign({}, remoteJson, {
+      instance_id: remoteJson?.instance_id || instanceId || null,
       files: names,
       cached: cachedEntries
     });
@@ -1570,7 +1702,8 @@ exports.getFile = async (req, res) => {
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
   const name = req.params.filename;
   try {
-    const cacheRecord = await resolveCachedRecord(bucket, name);
+    const instanceId = extractInstanceId(req);
+    const cacheRecord = await resolveCachedRecord(bucket, name, instanceId);
     if (cacheRecord && cacheRecord.localPath) {
       res.setHeader('Content-Disposition', `inline; filename="${name.replace(/"/g, '')}"`);
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -1583,7 +1716,7 @@ exports.getFile = async (req, res) => {
     }
 
     // Fallback to proxying directly if caching failed
-    const url = `${COMFY_API_BASE}/v1/files/${bucket}/${encodeURIComponent(name)}`;
+    const url = buildComfyUrl(`/v1/files/${bucket}/${encodeURIComponent(name)}`, { instanceId });
     const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
@@ -1598,7 +1731,7 @@ exports.getFile = async (req, res) => {
     res.setHeader('Cache-Control', 'private, max-age=86400');
     const buf = Buffer.from(ab);
     try {
-      await writeCacheFile(name, buf, { bucket, mediaType });
+      await writeCacheFile(name, buf, { bucket, mediaType, instanceId });
     } catch (err) {
       logger.warn('[getFile] failed to persist fallback cache', err);
     }
@@ -1619,6 +1752,7 @@ exports.promoteCachedFile = async (req, res) => {
   try {
     const bucket = (req.body?.bucket || 'output').trim();
     const filename = req.body?.filename;
+    const instanceId = normalizeInstanceId(req.body?.instance_id ?? req.body?.instanceId);
     if (!filename) return errorJson(res, 400, 'filename required');
     if (!['input', 'output'].includes(bucket)) return errorJson(res, 400, 'bucket must be input or output');
     const safeName = toSafeName(filename);
@@ -1628,7 +1762,7 @@ exports.promoteCachedFile = async (req, res) => {
       return errorJson(res, 400, 'only image files can be promoted to input');
     }
 
-    const cacheRecord = await resolveCachedRecord(bucket, filename);
+    const cacheRecord = await resolveCachedRecord(bucket, filename, instanceId);
     if (!cacheRecord || !cacheRecord.localPath) {
       return errorJson(res, 404, 'cached file not found');
     }
@@ -1638,8 +1772,9 @@ exports.promoteCachedFile = async (req, res) => {
     const fd = new FormData();
     const blob = new Blob([buf], { type: mime });
     fd.append('image', blob, safeName);
+    if (instanceId) fd.append('instance_id', instanceId);
 
-    const r = await fetch(`${COMFY_API_BASE}/v1/files/input`, {
+    const r = await fetch(buildComfyUrl('/v1/files/input'), {
       method: 'POST',
       headers: apiHeaders(),
       body: fd
@@ -1649,12 +1784,12 @@ exports.promoteCachedFile = async (req, res) => {
     const savedName = json?.filename || json?.file || safeName;
 
     try {
-      await writeCacheFile(savedName, buf, { bucket: 'input', mediaType: detectMediaType(savedName) });
+      await writeCacheFile(savedName, buf, { bucket: 'input', mediaType: detectMediaType(savedName), instanceId });
     } catch (err) {
       logger.warn('[promoteCachedFile] failed to persist cache', err);
     }
 
-    res.json({ ok: true, filename: savedName });
+    res.json({ ok: true, filename: savedName, instance_id: instanceId || json?.instance_id || null });
   } catch (e) {
     logger.error('[promoteCachedFile] error', e);
     return errorJson(res, 500, 'failed to promote cached file', String(e.message || e));
@@ -1667,12 +1802,14 @@ exports.uploadInput = async (req, res) => {
   const tmpPath = req.file.path;
   const fileName = req.file.originalname;
   try {
+    const instanceId = extractInstanceId(req);
     const buf = await fsp.readFile(tmpPath);
     // Node 18+: FormData & Blob available globally
     const fd = new FormData();
     const blob = new Blob([buf], { type: req.file.mimetype || 'application/octet-stream' });
     fd.append('image', blob, fileName);
-    const r = await fetch(`${COMFY_API_BASE}/v1/files/input`, {
+    if (instanceId) fd.append('instance_id', instanceId);
+    const r = await fetch(buildComfyUrl('/v1/files/input'), {
       method: 'POST',
       headers: apiHeaders(), // do not set Content-Type; fetch will set the boundary
       body: fd
@@ -1682,10 +1819,13 @@ exports.uploadInput = async (req, res) => {
     const savedName = json?.filename || json?.file || fileName;
     if (savedName) {
       try {
-        await writeCacheFile(savedName, buf, { bucket: 'input', mediaType: detectMediaType(savedName) });
+        await writeCacheFile(savedName, buf, { bucket: 'input', mediaType: detectMediaType(savedName), instanceId });
       } catch (err) {
         logger.warn('[uploadInput] failed to persist cache', err);
       }
+    }
+    if (instanceId && !json.instance_id) {
+      json.instance_id = instanceId;
     }
     res.json(json);
   } catch (e) {
@@ -1793,9 +1933,21 @@ exports.listPrompts = async (req, res) => {
 // Simple health pass-through
 exports.health = async (req, res) => {
   try {
-    const r = await fetch(`${COMFY_API_BASE}/health`);
-    res.status(r.ok ? 200 : 502).json({ ok: r.ok });
-  } catch {
-    res.status(502).json({ ok: false });
+    const r = await fetch(buildComfyUrl('/health'));
+    let payload = null;
+    try {
+      payload = await r.json();
+    } catch {
+      const text = await r.text().catch(() => '');
+      payload = { ok: r.ok, message: text };
+    }
+    if (typeof payload !== 'object' || payload === null) {
+      payload = { ok: r.ok };
+    } else if (typeof payload.ok === 'undefined') {
+      payload.ok = r.ok;
+    }
+    res.status(r.ok ? 200 : 502).json(payload);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: String(err?.message || err) });
   }
 };

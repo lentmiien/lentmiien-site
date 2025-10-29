@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const BulkJobSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   workflow: { type: String, required: true, trim: true },
+  instance_id: { type: String, default: null, trim: true },
   prompt_templates: [{
     label: { type: String, required: true, trim: true },
     template: { type: String, required: true, trim: true }

@@ -21,6 +21,7 @@ const BulkTestPromptSchema = new mongoose.Schema({
     default: 'Pending',
     index: true
   },
+  instance_id: { type: String, default: null, trim: true },
   comfy_job_id: { type: String, default: null },
   comfy_error: { type: String, default: null },
   filename: { type: String, default: null },
