@@ -178,6 +178,37 @@
   letter-spacing: 0.03em;
 }
 
+.html-admin__status {
+  margin-top: 8px;
+  margin-bottom: -8px;
+  border-radius: 12px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  background: rgba(27, 32, 38, 0.75);
+  color: var(--text-secondary);
+}
+
+.html-admin__status[hidden] {
+  display: none;
+}
+
+.html-admin__status[data-state='success'] {
+  border-color: rgba(23, 198, 150, 0.6);
+  color: var(--success);
+}
+
+.html-admin__status[data-state='error'] {
+  border-color: rgba(255, 77, 79, 0.6);
+  color: var(--danger);
+}
+
+.html-admin__status[data-state='info'] {
+  border-color: rgba(255, 194, 71, 0.6);
+  color: var(--accent);
+}
+
 .html-admin__items {
   list-style: none;
   padding: 0;
@@ -227,8 +258,16 @@
   letter-spacing: 0.02em;
 }
 
-.html-admin__item-action {
+.html-admin__item-actions {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.html-admin__item-action {
+  margin: 0;
 }
 
 .html-admin__delete {
@@ -242,6 +281,31 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.html-admin__secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.html-admin__secondary:hover,
+.html-admin__secondary:focus {
+  background: var(--accent-tint);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.html-admin__secondary:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 194, 71, 0.28);
 }
 
 .html-admin__delete:hover,
@@ -277,6 +341,10 @@
   .html-admin__delete {
     width: 100%;
     text-align: center;
+  }
+
+  .html-admin__secondary {
+    width: 100%;
   }
 
   .html-admin__item-action {
