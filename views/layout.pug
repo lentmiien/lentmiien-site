@@ -81,11 +81,12 @@ html(lang='en')
               a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Select head
               ul.dropdown-menu
                 li#head_list
-        if permissions && permissions.indexOf("chat4") >= 0
+        if permissions && permissions.indexOf("chat5") >= 0
           .navbar-column
-            a.type-1-link(href="/chat4", style="width:100%;") ChatGPT
-            a.type-2-link(href="/chat4/knowledgelist", style="width:100%;") Knowledge
-            a.type-2-link(href="/chat4/templates", style="width:100%;") Tempaltes
+            a.type-1-link(href="/chat5/top", style="width:100%;") ChatGPT
+            if permissions && permissions.indexOf("chat4") >= 0
+              a.type-2-link(href="/chat4/knowledgelist", style="width:100%;") Knowledge
+              a.type-2-link(href="/chat4/templates", style="width:100%;") Tempaltes
         if permissions && permissions.indexOf("accounting") >= 0
           .navbar-column
             a.type-1-link(href="/accounting", style="width:100%;") Budget
@@ -114,6 +115,7 @@ html(lang='en')
               a.type-1-link(href="/receipt", style="width:100%;") Upload receipt
               a.type-1-link(href="/product", style="width:100%;") Product details
               a.type-1-link(href="/chat5", style="width:100%;") Chat5
+              a.type-1-link(href="/chat5/top", style="width:100%;") Chat5 (new)
               a.type-1-link(href="/chat5/ai_model_cards", style="width:100%;") Manage AI Models
               a.type-1-link(href="/budget", style="width:100%;") Accounting (new)
               a.type-1-link(href="/budget/review", style="width:100%;") Accounting review
@@ -121,7 +123,6 @@ html(lang='en')
               a.type-1-link(href="/gallery", style="width:100%;") Gallery
               a.type-1-link(href="/payroll", style="width:100%;") Payroll
               a.type-1-link(href="/scheduleTask/calendar", style="width:100%;") Schedule
-              a.type-1-link(href="/chat5/top", style="width:100%;") Chat5 (new)
               a.type-1-link(href="/image_gen", style="width:100%;") ComfyIU
               a.type-1-link(href="/image_gen/bulk", style="width:100%;") ComfyIU bulk
               a.type-1-link(href="/sora", style="width:100%;") Sora
@@ -132,6 +133,7 @@ html(lang='en')
             a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
             a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
             a.type-2-link(href="/chat3", style="width:100%;") [OLD] ChatGPT v3
+            a.type-2-link(href="/chat4", style="width:100%;") [OLD] ChatGPT v4
             a.type-2-link(href="/chat3/manage_knowledge", style="width:100%;") [OLD] ChatGPT knowledge
             a.type-2-link(href="/gptdocument", style="width:100%;") [OLD] GPT document
             a.type-2-link(href="/mypage/speektome", style="width:100%;") [TEST] Speek to me

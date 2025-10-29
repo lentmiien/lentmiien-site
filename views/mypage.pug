@@ -28,10 +28,9 @@ block content
         +tile('/mypage/blogpost', '/i/blog.jpg', 'blogpost', 'Write blog')
         if permissions && permissions.indexOf("accounting") >= 0
           +tile('/accounting/add_transaction', '/i/budget.jpg', 'budget', 'Add transaction')
-        if permissions && permissions.indexOf("chat4") >= 0
-          +tile('/chat5', '/i/chat.jpg', 'chat', 'Chat')
+        if permissions && permissions.indexOf("chat5") >= 0
           +tile('/chat5/top', '/i/chat5.jpg', 'chat5', 'Chat 5')
-          +tile('/chat4/knowledgelist?category=Recipe', '/i/cookbook.jpg', 'cookbook', 'Cookbook')
+        if permissions && permissions.indexOf("chat4") >= 0
           +tile('/chat4/knowledgelist', '/i/knowledge.jpg', 'knowledge', 'Knowledge')
         if permissions && permissions.indexOf("cooking") >= 0
           +tile('/cooking/v2', '/i/calendar.jpg', 'cooking calendar', 'Cooking calendar')
