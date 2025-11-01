@@ -1517,6 +1517,17 @@ exports.submitBulkScore = async (req, res) => {
 };
 
 // Proxy: list workflows
+exports.listInstances = async (_req, res) => {
+  try {
+    const url = buildComfyUrl('/v1/instances');
+    const r = await fetch(url, { headers: apiHeaders() });
+    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
+    res.json(await r.json());
+  } catch (e) {
+    return errorJson(res, 502, 'failed to list instances', String(e.message || e));
+  }
+};
+
 exports.getWorkflows = async (req, res) => {
   try {
     const instanceId = extractInstanceId(req);

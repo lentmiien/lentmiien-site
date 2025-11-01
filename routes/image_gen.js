@@ -41,6 +41,7 @@ router.get('/bulk/:id', ctrl.renderBulkJob);
 
 // API proxy endpoints (browser talks to these; server talks to Comfy API)
 router.get('/api/health', ctrl.health);
+router.get('/api/instances', ctrl.listInstances);
 router.get('/api/workflows', ctrl.getWorkflows);
 router.post('/api/generate', ctrl.generate);
 router.get('/api/jobs/:id', ctrl.getJob);
