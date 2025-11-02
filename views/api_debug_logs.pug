@@ -1,0 +1,67 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/apiDebugLogs.css')
+
+block content
+  .api-debug-logs
+    section.api-debug-logs__header
+      h1 API Debug Database
+      p Dive into recent OpenAI interactions with quick filtering by source file and function.
+
+    form.api-debug-logs__filters(method='get')
+      .api-debug-logs__filter-grid
+        .api-debug-logs__field
+          label(for='filterFile') JavaScript file
+          select#filterFile(name='file')
+            option(value='') All files
+            each fileName in filters.jsFileNames
+              option(value=fileName selected=(filters.jsFileName === fileName))= fileName
+        .api-debug-logs__field
+          label(for='filterFunction') Function name
+          select#filterFunction(name='function')
+            option(value='') All functions
+            each functionName in filters.functionNames
+              option(value=functionName selected=(filters.functionName === functionName))= functionName
+      .api-debug-logs__actions
+        button.api-debug-logs__action(type='submit') Apply filters
+        if filters.jsFileName || filters.functionName
+          a.api-debug-logs__action.api-debug-logs__action--ghost(href='/admin/api-debug-logs') Clear filters
+
+    if logs && logs.length
+      .api-debug-logs__summary
+        span.api-debug-logs__count #{logs.length} #{logs.length === 1 ? 'entry' : 'entries'} shown
+        if limit
+          span.api-debug-logs__hint Showing most recent #{limit} matches.
+      .api-debug-logs__list
+        each log in logs
+          article.log-card
+            header.log-card__header
+              .log-card__meta
+                span.log-card__timestamp= log.formattedCreatedAt
+                span.log-card__file= log.jsFileName
+              span.log-card__function= log.functionName
+            span.log-card__url= log.requestUrl
+            .log-card__grid
+              section.log-card__section
+                h3.log-card__section-title Request
+                dl.log-card__details
+                  dt.log-card__label Headers
+                  dd
+                    pre.log-card__code= log.requestHeadersFormatted
+                  dt.log-card__label Body
+                  dd
+                    pre.log-card__code= log.requestBodyFormatted
+              section.log-card__section
+                h3.log-card__section-title Response
+                dl.log-card__details
+                  dt.log-card__label Headers
+                  dd
+                    pre.log-card__code= log.responseHeadersFormatted
+                  dt.log-card__label Body
+                  dd
+                    pre.log-card__code= log.responseBodyFormatted
+    else
+      .api-debug-logs__empty
+        h2 No log entries yet
+        p As soon as requests flow through the OpenAI utility, their raw payloads will be visible here. Try clearing filters to broaden the search.

@@ -1,4 +1,4 @@
-const { UseraccountModel, RoleModel, OpenAIUsage } = require('../database');
+const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog } = require('../database');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -654,6 +654,59 @@ exports.openai_usage = async (req, res) => {
     monthlyTimeline,
     monthlyCards,
     usageMetrics,
+  });
+};
+
+exports.api_debug_logs = async (req, res) => {
+  const { file: fileFilter = '', function: functionFilter = '' } = req.query || {};
+  const filter = {};
+  const LIMIT = 200;
+
+  if (fileFilter) {
+    filter.jsFileName = fileFilter;
+  }
+  if (functionFilter) {
+    filter.functionName = functionFilter;
+  }
+
+  const formatPayload = (payload) => {
+    if (payload === null || payload === undefined) {
+      return 'null';
+    }
+    try {
+      return JSON.stringify(payload, null, 2);
+    } catch (error) {
+      return `Unable to serialize payload: ${error.message}`;
+    }
+  };
+
+  const [logEntries, fileNames, functionNames] = await Promise.all([
+    ApiDebugLog.find(filter).sort({ createdAt: -1 }).limit(LIMIT).lean(),
+    ApiDebugLog.distinct('jsFileName'),
+    ApiDebugLog.distinct('functionName'),
+  ]);
+
+  fileNames.sort();
+  functionNames.sort();
+
+  const logs = logEntries.map((entry) => ({
+    ...entry,
+    formattedCreatedAt: entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'Unknown',
+    requestHeadersFormatted: formatPayload(entry.requestHeaders),
+    requestBodyFormatted: formatPayload(entry.requestBody),
+    responseHeadersFormatted: formatPayload(entry.responseHeaders),
+    responseBodyFormatted: formatPayload(entry.responseBody),
+  }));
+
+  res.render('api_debug_logs', {
+    logs,
+    limit: LIMIT,
+    filters: {
+      jsFileName: fileFilter,
+      functionName: functionFilter,
+      jsFileNames: fileNames,
+      functionNames,
+    },
   });
 };
 

@@ -146,6 +146,7 @@ const embedding = require('./models/embedding');
 const openaicalllog = require('./models/openaicalllog');
 const OpenAIUsage = require('./models/openai_usage');
 const SoraVideo = require('./models/sora_video');
+const ApiDebugLog = require('./models/api_debug_log');
 const mongoDB_url = process.env.MONGOOSE_URL;
 async function ClearTestDataFromDB() {
   await mongoose.connect(mongoDB_url);
@@ -177,6 +178,11 @@ async function ClearTestDataFromDB() {
   await batchprompt.deleteMany({ timestamp: { $lt: oneMonthAgo } });
   await embedding.deleteMany({});
   await openaicalllog.deleteMany({});
+  const fiveDaysAgo = new Date(Date.now() - (5 * 24 * 60 * 60 * 1000));
+  const { deletedCount: removedApiDebugEntries = 0 } = await ApiDebugLog.deleteMany({ createdAt: { $lt: fiveDaysAgo } });
+  if (removedApiDebugEntries > 0) {
+    logger.notice(`Deleted ${removedApiDebugEntries} API debug log entries older than 5 days.`);
+  }
 
   // Delete low-rated Sora videos and remove files
   const lowRatedVideos = await SoraVideo.find({ rating: 1, filename: { $nin: ['', null] } }).lean();

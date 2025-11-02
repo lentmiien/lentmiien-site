@@ -3,6 +3,87 @@ const path = require('path');
 const sharp = require('sharp');
 const { OpenAI } = require('openai');
 const logger = require('./logger');
+const ApiDebugLog = require('../models/api_debug_log');
+
+const JS_FILE_NAME = 'utils/OpenAI_API.js';
+
+const toSerializable = (payload) => {
+  if (payload === undefined || payload === null) {
+    return null;
+  }
+  if (payload instanceof Buffer) {
+    return {
+      type: 'Buffer',
+      encoding: 'base64',
+      data: payload.toString('base64'),
+    };
+  }
+  if (payload instanceof Error) {
+    return {
+      name: payload.name,
+      message: payload.message,
+      stack: payload.stack,
+    };
+  }
+  if (payload instanceof Date) {
+    return payload.toISOString();
+  }
+  if (Array.isArray(payload)) {
+    return payload.map((item) => toSerializable(item));
+  }
+  if (typeof payload === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(payload));
+    } catch (err) {
+      if (typeof payload.toString === 'function') {
+        return payload.toString();
+      }
+      return {
+        error: 'Failed to serialize payload',
+        message: err.message,
+      };
+    }
+  }
+  return payload;
+};
+
+const headersToObject = (headers) => {
+  if (!headers || typeof headers.forEach !== 'function') {
+    return null;
+  }
+  const result = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return Object.keys(result).length > 0 ? result : null;
+};
+
+const recordApiDebugLog = async ({
+  requestUrl,
+  requestHeaders = null,
+  requestBody = null,
+  responseHeaders = null,
+  responseBody = null,
+  functionName,
+}) => {
+  try {
+    await ApiDebugLog.create({
+      requestUrl,
+      requestHeaders: toSerializable(requestHeaders),
+      requestBody: toSerializable(requestBody),
+      responseHeaders: toSerializable(responseHeaders),
+      responseBody: toSerializable(responseBody),
+      jsFileName: JS_FILE_NAME,
+      functionName,
+    });
+  } catch (err) {
+    logger.error('Failed to save API debug log entry', {
+      error: err,
+      requestUrl,
+      functionName,
+    });
+  }
+};
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
 const VIDEO_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'video');
@@ -179,38 +260,69 @@ const chat = async (conversation, messages, model) => {
     }
   }
 
-  // Connect to API
-  try {
-    const inputParameters = {
-      model: model.api_model,
-      input: messageArray,
-      tools,
-      background: true,
-      // store: false,
-    };
-    if (conversation.metadata.outputFormat) {
-      inputParameters['text'] = {format:{type:conversation.metadata.outputFormat}};
-      if (model.api_model.indexOf("gpt-5") === 0 && conversation.metadata.verbosity) {
-        inputParameters['text']['verbosity'] = conversation.metadata.verbosity;
-      }
+  const inputParameters = {
+    model: model.api_model,
+    input: messageArray,
+    tools,
+    background: true,
+    // store: false,
+  };
+  if (conversation.metadata.outputFormat) {
+    inputParameters['text'] = { format: { type: conversation.metadata.outputFormat } };
+    if (model.api_model.indexOf("gpt-5") === 0 && conversation.metadata.verbosity) {
+      inputParameters['text']['verbosity'] = conversation.metadata.verbosity;
     }
-    if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) inputParameters["reasoning"] = {effort: conversation.metadata.reasoning, summary: "detailed"};
-    let response = await openai.responses.create(inputParameters);
+  }
+  if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) {
+    inputParameters["reasoning"] = { effort: conversation.metadata.reasoning, summary: "detailed" };
+  }
+
+  const requestUrl = 'openai.responses.create';
+
+  try {
+    const response = await openai.responses.create(inputParameters);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: inputParameters,
+      functionName: 'chat',
+      responseBody: response,
+    });
     return response.id;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: inputParameters,
+      functionName: 'chat',
+      responseBody: error,
+    });
     logger.error(`Error while calling ChatGPT API: ${error}`);
     return null;
   }
 };
 
 const embedding = async (text, model) => {
+  const requestUrl = 'openai.embeddings.create';
+  const requestBody = {
+    input: text,
+    model: model.api_model,
+  };
+
   try {
-    const response = await openai.embeddings.create({
-      input: text,
-      model: model.api_model,
+    const response = await openai.embeddings.create(requestBody);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody,
+      functionName: 'embedding',
+      responseBody: response,
     });
     return response;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody,
+      functionName: 'embedding',
+      responseBody: error,
+    });
     logger.error(`Error while calling Embedding API: ${error}`);
     return null;
   }
@@ -219,6 +331,7 @@ const embedding = async (text, model) => {
 const fetchCompleted = async (response_id) => {
   const waitSchedule = [0, 30000, 300000];
   const responses = [];
+  const retrieveUrl = `openai.responses.retrieve:${response_id}`;
 
   try {
     for (let attempt = 0; attempt < waitSchedule.length; attempt++) {
@@ -228,6 +341,12 @@ const fetchCompleted = async (response_id) => {
       }
 
       const response = await openai.responses.retrieve(response_id);
+      await recordApiDebugLog({
+        requestUrl: retrieveUrl,
+        requestBody: null,
+        functionName: 'fetchCompleted',
+        responseBody: response,
+      });
       responses.push(response);
 
       const output = Array.isArray(response.output) ? response.output : [];
@@ -277,69 +396,154 @@ const fetchCompleted = async (response_id) => {
 
     return null;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl: retrieveUrl,
+      requestBody: null,
+      functionName: 'fetchCompleted',
+      responseBody: error,
+    });
     logger.error(`Error while fetching completed response API: ${error}`);
     return null;
   }
 };
 
 const uploadBatchFile = async (contents) => {
+  const requestUrl = 'openai.files.create';
+  const fileName = `batch-${Date.now()}.jsonl`;
+  const logRequestBody = {
+    purpose: 'batch',
+    fileName,
+    contents,
+  };
+
   try {
     const buffer = Buffer.from(contents, 'utf-8');
-    const file = await openai.files.create({
-      file: await OpenAI.toFile(buffer, `batch-${Date.now()}.jsonl`, {
-        type: 'application/jsonl',
-      }),
+    const fileStream = await OpenAI.toFile(buffer, fileName, {
+      type: 'application/jsonl',
+    });
+    const payload = {
+      file: fileStream,
       purpose: 'batch',
+    };
+    const file = await openai.files.create(payload);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: logRequestBody,
+      functionName: 'uploadBatchFile',
+      responseBody: file,
     });
     return file;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: logRequestBody,
+      functionName: 'uploadBatchFile',
+      responseBody: error,
+    });
     logger.error('Failed to upload batch file to OpenAI', { error });
     return null;
   }
 };
 
 const startBatchJob = async ({ fileId, endpoint = '/v1/responses', completionWindow = '24h' }) => {
+  const requestUrl = 'openai.batches.create';
+  const requestBody = {
+    input_file_id: fileId,
+    endpoint,
+    completion_window: completionWindow,
+  };
+
   try {
-    const batch = await openai.batches.create({
-      input_file_id: fileId,
-      endpoint,
-      completion_window: completionWindow,
+    const batch = await openai.batches.create(requestBody);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody,
+      functionName: 'startBatchJob',
+      responseBody: batch,
     });
     return batch;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody,
+      functionName: 'startBatchJob',
+      responseBody: error,
+    });
     logger.error('Failed to start OpenAI batch job', { error });
     return null;
   }
 };
 
 const retrieveBatchStatus = async (batchId) => {
+  const requestUrl = `openai.batches.retrieve:${batchId}`;
   try {
-    return await openai.batches.retrieve(batchId);
+    const status = await openai.batches.retrieve(batchId);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'retrieveBatchStatus',
+      responseBody: status,
+    });
+    return status;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'retrieveBatchStatus',
+      responseBody: error,
+    });
     logger.error('Failed to retrieve OpenAI batch status', { error, batchId });
     return null;
   }
 };
 
 const downloadBatchOutput = async (fileId) => {
+  const requestUrl = `openai.files.content:${fileId}`;
   try {
     const response = await openai.files.content(fileId);
+    const responseHeaders = headersToObject(response.headers);
     const body = await response.text();
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'downloadBatchOutput',
+      responseHeaders,
+      responseBody: body,
+    });
     return body
       .split('\n')
       .filter((line) => line.trim().length > 0)
       .map((line) => JSON.parse(line));
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'downloadBatchOutput',
+      responseBody: error,
+    });
     logger.error('Failed to download OpenAI batch output file', { error, fileId });
     return null;
   }
 };
 
 const deleteBatchFile = async (fileId) => {
+  const requestUrl = `openai.files.delete:${fileId}`;
   try {
-    await openai.files.delete(fileId);
+    const response = await openai.files.delete(fileId);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'deleteBatchFile',
+      responseBody: response,
+    });
     return true;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'deleteBatchFile',
+      responseBody: error,
+    });
     logger.error('Failed to delete OpenAI batch file', { error, fileId });
     return false;
   }
@@ -364,6 +568,15 @@ const convertResponseBody = async (body) => {
 };
 
 const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
+  const requestUrl = 'openai.videos.create';
+  const logRequestBody = {
+    model,
+    prompt,
+    seconds,
+    size,
+    input_reference: null,
+  };
+
   try {
     const payload = {
       model,
@@ -374,6 +587,12 @@ const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
 
     if (inputImagePath) {
       const filename = path.basename(inputImagePath) || 'reference.jpg';
+      const fileBuffer = await fs.promises.readFile(inputImagePath);
+      logRequestBody.input_reference = {
+        filename,
+        encoding: 'base64',
+        data: fileBuffer.toString('base64'),
+      };
       const inputReference = await OpenAI.toFile(
         fs.createReadStream(inputImagePath),
         filename,
@@ -383,12 +602,24 @@ const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
     }
 
     const video = await openai.videos.create(payload);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: logRequestBody,
+      functionName: 'generateVideo',
+      responseBody: video,
+    });
     logger.debug('OpenAI generate video response', {
       data: video,
       hasReference: Boolean(payload.input_reference),
     });
     return video;
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: logRequestBody,
+      functionName: 'generateVideo',
+      responseBody: error,
+    });
     logger.error('Failed to create Sora video via OpenAI API', { error });
     throw error;
   }
@@ -398,8 +629,26 @@ const waitAndFetchVideo = async (video) => {
   let progress = video.progress ?? 0;
 
   while (video.status === 'in_progress' || video.status === 'queued') {
-    video = await openai.videos.retrieve(video.id);
-    progress = video.progress ?? 0;
+    try {
+      const retrieved = await openai.videos.retrieve(video.id);
+      await recordApiDebugLog({
+        requestUrl: `openai.videos.retrieve:${video.id}`,
+        requestBody: null,
+        functionName: 'waitAndFetchVideo',
+        responseBody: retrieved,
+      });
+      video = retrieved;
+      progress = video.progress ?? 0;
+    } catch (error) {
+      await recordApiDebugLog({
+        requestUrl: `openai.videos.retrieve:${video.id}`,
+        requestBody: null,
+        functionName: 'waitAndFetchVideo',
+        responseBody: error,
+      });
+      logger.error('Failed to poll OpenAI video status', { error, videoId: video.id });
+      throw error;
+    }
 
     // Display progress bar
     const barLength = 30;
@@ -419,26 +668,58 @@ const waitAndFetchVideo = async (video) => {
   }
 
   return await fetchVideo(video.id);
-}
+};
 
 const fetchVideo = async (video_id) => {
-  const content = await openai.videos.downloadContent(video_id);
+  const requestUrl = `openai.videos.downloadContent:${video_id}`;
+  try {
+    const content = await openai.videos.downloadContent(video_id);
+    const responseHeaders = headersToObject(content.headers);
 
-  const body = content.arrayBuffer();
-  const buffer = Buffer.from(await body);
+    const body = content.arrayBuffer();
+    const buffer = Buffer.from(await body);
 
-  const filename = `video_${Date.now()}.mp4`;
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'fetchVideo',
+      responseHeaders,
+      responseBody: {
+        videoId: video_id,
+        encoding: 'base64',
+        data: buffer.toString('base64'),
+      },
+    });
 
-  await fs.promises.mkdir(VIDEO_OUTPUT_DIR, { recursive: true });
-  const filepath = path.join(VIDEO_OUTPUT_DIR, filename);
-  await fs.promises.writeFile(filepath, buffer);
+    const filename = `video_${Date.now()}.mp4`;
 
-  return filename;
-}
+    await fs.promises.mkdir(VIDEO_OUTPUT_DIR, { recursive: true });
+    const filepath = path.join(VIDEO_OUTPUT_DIR, filename);
+    await fs.promises.writeFile(filepath, buffer);
+
+    return filename;
+  } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'fetchVideo',
+      responseBody: error,
+    });
+    logger.error('Failed to download OpenAI video content', { error, videoId: video_id });
+    throw error;
+  }
+};
 
 const checkVideoProgress = async (video_id) => {
+  const requestUrl = `openai.videos.retrieve:${video_id}`;
   try {
     const video = await openai.videos.retrieve(video_id);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'checkVideoProgress',
+      responseBody: video,
+    });
     const error = video.error ?? null;
     return {
       id: video.id,
@@ -449,10 +730,16 @@ const checkVideoProgress = async (video_id) => {
       error,
     };
   } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName: 'checkVideoProgress',
+      responseBody: error,
+    });
     logger.error('Failed to check video progress', { error });
     return null;
   }
-}
+};
 
 module.exports = {
   chat,

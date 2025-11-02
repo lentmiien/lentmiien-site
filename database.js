@@ -109,6 +109,8 @@ const BulkTestPrompt = require('./models/bulk_test_prompt');
 const CreditCard = require('./models/credit_card');
 const CreditCardMonthlyBalance = require('./models/credit_card_monthly_balance');
 const CreditCardTransaction = require('./models/credit_card_transaction');
+// API debug logs
+const ApiDebugLog = require('./models/api_debug_log');
 
 // Export models
 module.exports = {
@@ -172,4 +174,5 @@ module.exports = {
   CreditCard,
   CreditCardMonthlyBalance,
   CreditCardTransaction,
+  ApiDebugLog,
 };
