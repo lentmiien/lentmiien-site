@@ -37,6 +37,90 @@ module.exports = async function registerChat5_5Handlers({
     }
   }
 
+  const HISTORY_DEFAULT_DAYS = 30;
+  const HISTORY_DEFAULT_LIMIT = 100;
+  const HISTORY_MAX_LIMIT = 500;
+
+  function ensureDate(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === 'number') {
+      const asDate = new Date(value);
+      return Number.isNaN(asDate.getTime()) ? null : asDate;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const direct = new Date(trimmed);
+      if (!Number.isNaN(direct.getTime())) return direct;
+      const parts = trimmed.split('-').map(part => parseInt(part, 10));
+      if (parts.length === 3 && parts.every(part => !Number.isNaN(part))) {
+        const parsed = new Date(parts[0], parts[1] - 1, parts[2]);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+      }
+    }
+    return null;
+  }
+
+  function ensureISOString(value) {
+    const d = ensureDate(value);
+    return d ? d.toISOString() : null;
+  }
+
+  function formatAsYMD(value) {
+    const d = ensureDate(value);
+    if (!d) return null;
+    const year = d.getFullYear();
+    const month = `${d.getMonth() + 1}`.padStart(2, '0');
+    const day = `${d.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function clampLimit(value) {
+    if (value === null || value === undefined) return HISTORY_DEFAULT_LIMIT;
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return HISTORY_DEFAULT_LIMIT;
+    return Math.min(Math.floor(num), HISTORY_MAX_LIMIT);
+  }
+
+  function parseTagsValue(value) {
+    if (Array.isArray(value)) {
+      const cleaned = value.map(v => (typeof v === 'string' ? v.trim() : '')).filter(v => v.length > 0);
+      return [...new Set(cleaned)];
+    }
+    if (typeof value === 'string') {
+      const parts = value.split(',').map(part => part.trim()).filter(part => part.length > 0);
+      return [...new Set(parts)];
+    }
+    return [];
+  }
+
+  function computeCategoryOrder(conversations) {
+    const map = new Map();
+    for (const conv of conversations) {
+      const ts = typeof conv.updatedAtMs === 'number' ? conv.updatedAtMs : null;
+      if (ts === null) continue;
+      const category = conv.category && typeof conv.category === 'string' && conv.category.length > 0 ? conv.category : 'Uncategorized';
+      if (!map.has(category)) {
+        map.set(category, []);
+      }
+      const arr = map.get(category);
+      if (arr.length < 5) {
+        arr.push(ts);
+      }
+    }
+    const entries = [];
+    for (const [category, tsList] of map.entries()) {
+      if (!tsList.length) continue;
+      const avg = tsList.reduce((sum, ts) => sum + ts, 0) / tsList.length;
+      entries.push({ category, avg });
+    }
+    entries.sort((a, b) => b.avg - a.avg);
+    return entries.map(entry => entry.category);
+  }
+
   ///////////////////////////////////
   //----- Conversation rooms ------//
   // Join/Leave conversation room  //
@@ -50,6 +134,196 @@ module.exports = async function registerChat5_5Handlers({
   ////////////////////////////
   //----- Upload text ------//
   // Append to conversation //
+  socket.on('chat5-history-range', async (payload = {}, ack) => {
+    const request = (payload && typeof payload === 'object') ? payload : {};
+    const now = new Date();
+    let endDate = ensureDate(request.end) || now;
+    let startDate = ensureDate(request.start);
+    if (!startDate) {
+      startDate = new Date(endDate.getTime() - HISTORY_DEFAULT_DAYS * 24 * 60 * 60 * 1000);
+    }
+    if (startDate > endDate) {
+      const tmp = startDate;
+      startDate = endDate;
+      endDate = tmp;
+    }
+    const includeMessages = request.includeMessages === true;
+    const includeLegacy = request.includeLegacy !== false;
+    const matchIdsOnly = request.matchIdsOnly === true;
+    const limit = clampLimit(request.limit);
+    const conversationIds = Array.isArray(request.conversationIds)
+      ? request.conversationIds.map(id => (id ? id.toString() : '')).filter(id => id.length > 0)
+      : [];
+    const conversationIdSet = new Set(conversationIds);
+
+    try {
+      const newQuery = { members: userName };
+      if (conversationIds.length > 0) {
+        newQuery._id = { $in: conversationIds };
+      }
+      if (!matchIdsOnly) {
+        newQuery.updatedAt = { $gte: startDate, $lte: endDate };
+      }
+
+      const modernDocs = await Conversation5Model.find(newQuery).sort({ updatedAt: -1 }).exec();
+      const modernFormatted = [];
+      for (const doc of modernDocs) {
+        const raw = doc.toObject();
+        const updated = ensureDate(raw.updatedAt) || ensureDate(raw.createdAt) || new Date();
+        const createdAt = ensureISOString(raw.createdAt);
+        const metadata = raw.metadata ? JSON.parse(JSON.stringify(raw.metadata)) : {};
+        const tags = parseTagsValue(raw.tags);
+        const members = Array.isArray(raw.members) ? raw.members.map(m => (typeof m === 'string' ? m : '')).filter(m => m.length > 0) : [];
+        const messageIds = Array.isArray(raw.messages) ? raw.messages.map(id => id.toString()) : [];
+        const conversation = {
+          id: raw._id.toString(),
+          title: raw.title,
+          summary: raw.summary || '',
+          category: raw.category || null,
+          tags,
+          metadata,
+          members,
+          messageIds,
+          messageCount: messageIds.length,
+          updatedAt: updated.toISOString(),
+          updatedAtMs: updated.getTime(),
+          createdAt,
+          source: 'conversation5',
+        };
+        if (includeMessages && messageIds.length > 0) {
+          const messages = await messageService.loadMessagesInNewFormat(messageIds, true);
+          conversation.messages = messages.map((msg) => {
+            const timestamp = ensureDate(msg.timestamp);
+            return {
+              id: msg._id.toString(),
+              role: msg.user_id === 'bot' ? 'assistant' : 'user',
+              type: msg.contentType,
+              content: {
+                text: msg.content ? msg.content.text || null : null,
+                image: msg.content ? msg.content.image || null : null,
+                audio: msg.content ? msg.content.audio || null : null,
+                tts: msg.content ? msg.content.tts || null : null,
+                transcript: msg.content ? msg.content.transcript || null : null,
+                revisedPrompt: msg.content ? msg.content.revisedPrompt || null : null,
+                imageQuality: msg.content ? msg.content.imageQuality || null : null,
+                toolOutput: msg.content ? msg.content.toolOutput || null : null,
+              },
+              timestamp: timestamp ? timestamp.toISOString() : null,
+              timestampMs: timestamp ? timestamp.getTime() : null,
+              hideFromBot: !!msg.hideFromBot,
+            };
+          });
+        }
+        modernFormatted.push(conversation);
+      }
+
+      let legacyFormatted = [];
+      if (includeLegacy) {
+        const startStr = formatAsYMD(startDate);
+        const endStr = formatAsYMD(endDate);
+        let legacyEntries = await conversationService.getInRange(userName, startStr, endStr);
+        if (!Array.isArray(legacyEntries)) {
+          legacyEntries = [];
+        }
+        if (conversationIds.length > 0) {
+          legacyEntries = legacyEntries.filter(entry => conversationIdSet.has(entry._id.toString()));
+        }
+        legacyFormatted = legacyEntries.map((entry) => {
+          const updated = ensureDate(entry.updated_date) || new Date();
+          const tags = parseTagsValue(entry.tags);
+          const response = {
+            id: entry._id.toString(),
+            title: entry.title,
+            summary: entry.summary || '',
+            category: entry.category || null,
+            tags,
+            metadata: null,
+            members: [],
+            messageIds: [],
+            messageCount: Array.isArray(entry.messages) ? entry.messages.length : 0,
+            updatedAt: updated.toISOString(),
+            updatedAtMs: updated.getTime(),
+            createdAt: null,
+            source: 'conversation4',
+            legacy: true,
+          };
+          if (includeMessages && Array.isArray(entry.messages)) {
+            response.messages = entry.messages.map((msg, index) => ({
+              id: `${entry._id}-${index}`,
+              role: msg.role || 'user',
+              type: 'text',
+              content: {
+                text: msg.text || null,
+                html: msg.html || null,
+                images: Array.isArray(msg.images) ? msg.images : [],
+              },
+              timestamp: null,
+              timestampMs: null,
+              hideFromBot: false,
+            }));
+          }
+          return response;
+        });
+      }
+
+      const combinedAll = [...modernFormatted, ...legacyFormatted].sort((a, b) => {
+        const aTs = typeof a.updatedAtMs === 'number' ? a.updatedAtMs : 0;
+        const bTs = typeof b.updatedAtMs === 'number' ? b.updatedAtMs : 0;
+        return bTs - aTs;
+      });
+
+      const totalMatches = combinedAll.length;
+      const categories = computeCategoryOrder(combinedAll);
+      let trimmed = combinedAll;
+      let hasMore = false;
+      if (combinedAll.length > limit) {
+        trimmed = combinedAll.slice(0, limit);
+        hasMore = true;
+      }
+
+      const pendingConversationIds = await conversationService.fetchPending();
+      const responsePayload = {
+        ok: true,
+        conversations: trimmed,
+        meta: {
+          total: totalMatches,
+          hasMore,
+          limit,
+          nextCursor: hasMore && trimmed.length > 0 ? trimmed[trimmed.length - 1].updatedAt : null,
+          start: ensureISOString(startDate),
+          end: ensureISOString(endDate),
+          includeMessages,
+          includeLegacy,
+          matchIdsOnly,
+          pendingConversationIds,
+          categoryOrder: categories,
+          counts: {
+            modern: modernFormatted.length,
+            legacy: legacyFormatted.length,
+          },
+        },
+      };
+
+      if (typeof ack === 'function') {
+        ack(responsePayload);
+      } else {
+        socket.emit('chat5-history-range:result', responsePayload);
+      }
+    } catch (error) {
+      logger.error('chat5-history-range failed', error);
+      const errPayload = {
+        ok: false,
+        message: 'Failed to load conversation history.',
+        details: error.message,
+      };
+      if (typeof ack === 'function') {
+        ack(errPayload);
+      } else {
+        socket.emit('chat5-history-range:error', errPayload);
+      }
+    }
+  });
+
   socket.on('chat5-append', async (data) => {
     const {conversation_id, prompt, response, settings} = data;
     let id = conversation_id;

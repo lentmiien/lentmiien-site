@@ -1,6 +1,8 @@
-I want to create an admin page for managing the content in the `public/html` folder. Create a new route(routes/admin.js)/controller(controllers/admincontroller.js) for a page that can do the following 3 things:
-- Admin user can input a filename, and an HTML page in as text in a textarea element, and upload to the server, that then create the file in the `public/html` folder
-- Admin user can input a filename, and select an HTML file, and upload to the server, that then create the file in the `public/html` folder
-- Admin user can view a list of all files in the `public/html` folder, and click to delete files that are no longer needed
+I want to look at transition my "chat5_5" to a VUE app I have. The communication with the server is currently done through Socket.io in `socket_io/chat5_5/chat5_5handler.js`, so mostly I should just be able to design a UI in my VUE app that uses the same Socket.io interface, but I need a way of fetching my conversation history as well, currently done when loading the top page in the function `view_chat5_top` in the file `controllers/chat5controller.js`.
 
-For the PUG template, please follow the coloring guidelines in `README-Colors.md`, create a simplistic modern style page, and don't put any JavaScript code inline in the template file.
+So, I'm thinking of adding functions to the socket.io interface for loading conversation history from a given updated date interval. Please add this functionality to `socket_io/chat5_5/chat5_5handler.js`.
+
+Next, create a new file `socket_io/chat5_5/chat5_5_documentation.md`, that explain the socket.io interface in great details, for use to develop the UI interface in VUE. For reference, check my current implementation in `views/chat5_chat.pug` and give a rough overview of the current UI, not for creating a copy in VUE, but to serve as a starting point of designing an even better UI in VUE.
+For example, I want some way of hiding/collapsing messages in long conversations, and some way of always keeping the input text field nearby when scrolling through conversations, and easy/quick access to certain settings, etc. but these are points for the VUE development, so don't make any changes to the current implementation, other than adding functionality to the socket.io interface, for making it possible to transition.
+
+Now, prepare the socket.io interface for the transition, and create the documentation file.
