@@ -19,6 +19,14 @@ Once connected you have access to the events listed below. Most "get" style call
 
 ---
 
+### 1.1 Validation & Feedback Events
+
+- Each handler validates the incoming payload. If data is missing or malformed, the server emits `<event>:error` with `{ ok: false, message, details?, adjustments? }`. For ack-based calls the same payload is delivered through the acknowledgement callback.
+- When values are coerced or defaults applied, `<event>:adjustments` is emitted so the UI can show info/warning toasts (severity levels mirror the history endpoint).
+- Success responses for editor-style actions now include payloads: e.g. `chat5-editmessagearray-done` returns `{ ok, conversationId, length }`, `chat5-togglehidefrombot-done` returns `{ ok, messageId, state }`, and `chat5-edittext-done` returns `{ ok, messageId, type }`.
+
+---
+
 ### 2. Conversation History (`chat5-history-range`)
 
 **Purpose:** Fetch conversations updated inside an interval (optionally including messages) so a Vue client can build timelines, infinite scroll, etc.
@@ -91,7 +99,20 @@ socket.emit(
     "matchIdsOnly": false,
     "pendingConversationIds": ["6708c…"],   // pending AI responses
     "categoryOrder": ["Work", "Personal"],
-    "counts": { "modern": 12, "legacy": 6 }
+    "counts": { "modern": 12, "legacy": 6 },
+    "adjustments": [
+      { "field": "end", "message": "End date missing; using current time.", "severity": "info" },
+      { "field": "limit", "message": "Missing limit; using default (100).", "severity": "info" }
+    ],
+    "sanitizedRequest": {
+      "start": "2025-01-01T00:00:00.000Z",
+      "end": "2025-01-31T23:59:59.000Z",
+      "includeMessages": true,
+      "includeLegacy": true,
+      "matchIdsOnly": false,
+      "limit": 50,
+      "conversationIds": ["6708c…"]
+    }
   }
 }
 ```
@@ -108,6 +129,8 @@ socket.emit(
 
 **Notes**
 
+- `adjustments` reports every field that was missing or malformed and the severity (`info` = default fill, `warning` = corrected bad input).
+- `sanitizedRequest` echoes the exact values the server executed after validation.
 - Modern chats (`source: "conversation5"`) keep rich metadata, member lists, and per-message timestamps.
 - Legacy chats (`source: "conversation4"` and `legacy: true`) expose message transcripts only (`content.html` and `content.images`). They cannot currently bypass date filtering when `matchIdsOnly` is set.
 - `pendingConversationIds` mirrors `conversationService.fetchPending()` so the UI can flag conversations still waiting for tool/LLM completions.
@@ -132,9 +155,9 @@ socket.emit(
 | `chat5-generatesummary-done` | on | `{ summary }` | Sync summary text once available. |
 | `chat5-generatesummary-error` | on | `{ message }` | Show failure toasts if summarisation fails. |
 | `chat5-uploadImage` | emit | `{ conversation_id, files: [{ name, type, buffer }] }` | Stream chunked image uploads. Expect `chat5-messages` with the newly created image message. |
-| `chat5-editmessagearray-up` | emit | `{ conversation_id, newArray }` | Reorder message IDs (used by drag-and-drop editors). Ack: `chat5-editmessagearray-done`. |
-| `chat5-togglehidefrombot-up` | emit | `{ message_id, state }` | Flag messages to exclude/include in future prompts. Ack: `chat5-togglehidefrombot-done`. |
-| `chat5-edittext-up` | emit | `{ message_id, type, value }` | Inline message edits (text/tts/revisedPrompt/toolOutput). No ack. |
+| `chat5-editmessagearray-up` | emit | `{ conversation_id, newArray }` | Reorder message IDs (used by drag-and-drop editors). Ack: `chat5-editmessagearray-done` returns `{ ok, conversationId, length }`. |
+| `chat5-togglehidefrombot-up` | emit | `{ message_id, state }` | Flag messages to exclude/include in future prompts. Ack: `chat5-togglehidefrombot-done` returns `{ ok, messageId, state }`. |
+| `chat5-edittext-up` | emit | `{ message_id, type, value }` | Inline message edits (text/tts/revisedPrompt/toolOutput). Success emits `chat5-edittext-done`; watch `<event>:error` for validation failures. |
 | `chat5-batch` | emit | `{ conversation_id, prompt, settings }` | Queue batch generation. Expect `chat5-messages` updates and/or `chat5-batch-error`. |
 | `chat5-savetemplate` | emit + ack | `{ Title, Type, Category, TemplateText }` | Save a reusable template. Ack: `{ ok: true }` or `{ ok: false, message }`. |
 

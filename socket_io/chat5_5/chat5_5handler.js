@@ -28,8 +28,9 @@ module.exports = async function registerChat5_5Handlers({
   const roomForConversation = io.conversationRoom;
 
   function notifyMembers(user, members, event, payload, { excludeCurrentSocket = true } = {}) {
-    if (members.indexOf(user) === -1) members.push(user);
-    const rooms = members.map(roomForUser);
+    const list = Array.isArray(members) ? [...members] : [];
+    if (list.indexOf(user) === -1) list.push(user);
+    const rooms = list.map(roomForUser);
     if (excludeCurrentSocket) {
       socket.to(rooms).emit(event, payload);
     } else {
@@ -121,14 +122,250 @@ module.exports = async function registerChat5_5Handlers({
     return entries.map(entry => entry.category);
   }
 
+  function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function pushAdjustment(adjustments, field, message, severity = 'warning') {
+    adjustments.push({ field, message, severity });
+  }
+
+  function normalizeStringOption(value, fallback, field, adjustments, { allowEmpty = false } = {}) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length === 0 && !allowEmpty) {
+        pushAdjustment(adjustments, field, `Empty string provided; using default (${fallback || 'empty string'}).`, 'info');
+        return fallback;
+      }
+      return trimmed;
+    }
+    if (value === undefined) {
+      pushAdjustment(adjustments, field, `Missing value; using default (${fallback || 'empty string'}).`, 'info');
+      return fallback;
+    }
+    if (value === null) {
+      pushAdjustment(adjustments, field, `Null provided; using default (${fallback || 'empty string'}).`, 'warning');
+      return fallback;
+    }
+    pushAdjustment(adjustments, field, `Unsupported type "${typeof value}"; using default (${fallback || 'empty string'}).`, 'warning');
+    return fallback;
+  }
+
+  function normalizePositiveIntOption(value, fallback, field, adjustments) {
+    if (value === undefined || value === null || value === '') {
+      pushAdjustment(adjustments, field, `Missing value; using default (${fallback}).`, 'info');
+      return fallback;
+    }
+    const parsed = parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      pushAdjustment(adjustments, field, `Invalid number "${value}"; using default (${fallback}).`, 'warning');
+      return fallback;
+    }
+    return parsed;
+  }
+
+  function normalizeArrayOfStringsOption(value, field, adjustments) {
+    if (value === undefined) return [];
+    let list = [];
+    if (Array.isArray(value)) {
+      list = value;
+    } else if (typeof value === 'string') {
+      list = value.split(/[,\\s]+/);
+      pushAdjustment(adjustments, field, 'Converted string input to list by splitting on commas/whitespace.', 'info');
+    } else {
+      pushAdjustment(adjustments, field, `Unsupported type "${typeof value}"; defaulting to empty array.`, 'warning');
+      return [];
+    }
+    const cleaned = list
+      .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(entry => entry.length > 0);
+    if (cleaned.length < list.length) {
+      pushAdjustment(adjustments, field, 'Removed blank or invalid entries.', 'warning');
+    }
+    return [...new Set(cleaned)];
+  }
+
+  function respondWithError(baseEvent, message, { ack, details, adjustments } = {}) {
+    const payload = { ok: false, message };
+    if (details) payload.details = details;
+    if (adjustments && adjustments.length > 0) payload.adjustments = adjustments;
+    if (typeof ack === 'function') {
+      ack(payload);
+    } else if (baseEvent) {
+      socket.emit(`${baseEvent}:error`, payload);
+    } else {
+      socket.emit('chat5-error', payload);
+    }
+  }
+
+  function emitAdjustments(baseEvent, adjustments, extra = {}) {
+    if (!baseEvent || !Array.isArray(adjustments) || adjustments.length === 0) return;
+    socket.emit(`${baseEvent}:adjustments`, { adjustments, ...extra });
+  }
+
+  function sanitizeChatSettings(rawSettings, adjustments) {
+    let settings = rawSettings;
+    if (!isPlainObject(settings)) {
+      pushAdjustment(adjustments, 'settings', 'Settings missing or not an object; using defaults.', 'warning');
+      settings = {};
+    }
+    const maxMessages = normalizePositiveIntOption(settings.maxMessages, 999, 'settings.maxMessages', adjustments);
+    const contextPrompt = normalizeStringOption(settings.context, '', 'settings.context', adjustments, { allowEmpty: true });
+    const model = normalizeStringOption(settings.model, 'gpt-5-2025-08-07', 'settings.model', adjustments);
+    const reasoning = normalizeStringOption(settings.reasoning, 'medium', 'settings.reasoning', adjustments);
+    const verbosity = normalizeStringOption(settings.verbosity, 'medium', 'settings.verbosity', adjustments);
+    const outputFormat = normalizeStringOption(settings.outputFormat, 'text', 'settings.outputFormat', adjustments);
+    const title = normalizeStringOption(settings.title, 'NEW', 'settings.title', adjustments);
+    const category = normalizeStringOption(settings.category, 'Chat5', 'settings.category', adjustments);
+    let tags = normalizeArrayOfStringsOption(settings.tags, 'settings.tags', adjustments);
+    if (tags.length === 0) {
+      tags = ['chat5'];
+      pushAdjustment(adjustments, 'settings.tags', 'Tags missing; defaulted to ["chat5"].', 'info');
+    }
+    let members = normalizeArrayOfStringsOption(settings.members, 'settings.members', adjustments);
+    if (members.length === 0) {
+      pushAdjustment(adjustments, 'settings.members', 'Members missing; defaulted to requester.', 'info');
+    }
+    const tools = normalizeArrayOfStringsOption(settings.tools, 'settings.tools', adjustments);
+
+    return {
+      settingParams: {
+        contextPrompt,
+        model,
+        maxMessages,
+        maxAudioMessages: 3,
+        tools,
+        reasoning,
+        verbosity,
+        outputFormat,
+      },
+      conversationParams: {
+        title,
+        category,
+        tags,
+        members,
+      },
+    };
+  }
+
+  function normalizeBooleanOption(value, defaultValue, field, adjustments) {
+    if (value === undefined) {
+      pushAdjustment(adjustments, field, `Missing value; using default (${defaultValue}).`, 'info');
+      return defaultValue;
+    }
+    if (value === null) {
+      pushAdjustment(adjustments, field, `Null provided; using default (${defaultValue}).`, 'warning');
+      return defaultValue;
+    }
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+      if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+      pushAdjustment(adjustments, field, `Unrecognised string "${value}"; using default (${defaultValue}).`, 'warning');
+      return defaultValue;
+    }
+    if (typeof value === 'number') {
+      if (value === 1) return true;
+      if (value === 0) return false;
+    }
+    pushAdjustment(adjustments, field, `Unsupported value type "${typeof value}"; using default (${defaultValue}).`, 'warning');
+    return defaultValue;
+  }
+
+  function normalizeLimitOption(value, adjustments) {
+    if (value === undefined) {
+      pushAdjustment(adjustments, 'limit', `Missing limit; using default (${HISTORY_DEFAULT_LIMIT}).`, 'info');
+      return HISTORY_DEFAULT_LIMIT;
+    }
+    if (value === null || value === '') {
+      pushAdjustment(adjustments, 'limit', `Empty limit; using default (${HISTORY_DEFAULT_LIMIT}).`, 'warning');
+      return HISTORY_DEFAULT_LIMIT;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      pushAdjustment(adjustments, 'limit', `Invalid limit "${value}"; using default (${HISTORY_DEFAULT_LIMIT}).`, 'warning');
+      return HISTORY_DEFAULT_LIMIT;
+    }
+    if (numeric > HISTORY_MAX_LIMIT) {
+      pushAdjustment(adjustments, 'limit', `Limit ${numeric} exceeds max ${HISTORY_MAX_LIMIT}; capping value.`, 'warning');
+    }
+    return clampLimit(numeric);
+  }
+
+  function normalizeConversationIds(value, adjustments) {
+    if (value === undefined) {
+      pushAdjustment(adjustments, 'conversationIds', 'No conversationIds provided; using full search.', 'info');
+      return [];
+    }
+    let list = [];
+    if (Array.isArray(value)) {
+      list = value;
+    } else if (typeof value === 'string') {
+      list = value.split(/[,\\s]+/);
+      pushAdjustment(adjustments, 'conversationIds', 'Parsed conversationIds from string input.', 'info');
+    } else {
+      pushAdjustment(adjustments, 'conversationIds', `Unsupported conversationIds type "${typeof value}"; ignoring filter.`, 'warning');
+      return [];
+    }
+    const cleaned = [];
+    for (const entry of list) {
+      if (entry === null || entry === undefined) continue;
+      const trimmed = entry.toString().trim();
+      if (trimmed.length === 0) continue;
+      cleaned.push(trimmed);
+    }
+    if (cleaned.length === 0 && list.length > 0) {
+      pushAdjustment(adjustments, 'conversationIds', 'Conversation ID filter contained only empty values; ignoring filter.', 'warning');
+    }
+    if (cleaned.length < list.length) {
+      pushAdjustment(adjustments, 'conversationIds', 'Some conversation IDs were blank or invalid and have been removed.', 'warning');
+    }
+    return [...new Set(cleaned)];
+  }
+
   ///////////////////////////////////
   //----- Conversation rooms ------//
   // Join/Leave conversation room  //
-  socket.on('chat5-joinConversation', async (data) => {
-    socket.join(roomForConversation(data.conversationId));
+  socket.on('chat5-joinConversation', async (raw) => {
+    const eventName = 'chat5-joinConversation';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for joinConversation.');
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversationId, '', 'conversationId', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'Conversation ID is required to join.', { adjustments });
+        return;
+      }
+      socket.join(roomForConversation(conversationId));
+      emitAdjustments(eventName, adjustments, { conversationId });
+    } catch (error) {
+      logger.error('Failed to join conversation room', error);
+      respondWithError(eventName, 'Failed to join conversation.', { details: error.message, adjustments });
+    }
   });
-  socket.on('chat5-leaveConversation', async (data) => {
-    socket.leave(roomForConversation(data.conversationId));
+  socket.on('chat5-leaveConversation', async (raw) => {
+    const eventName = 'chat5-leaveConversation';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for leaveConversation.');
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversationId, '', 'conversationId', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'Conversation ID is required to leave.', { adjustments });
+        return;
+      }
+      socket.leave(roomForConversation(conversationId));
+      emitAdjustments(eventName, adjustments, { conversationId });
+    } catch (error) {
+      logger.error('Failed to leave conversation room', error);
+      respondWithError(eventName, 'Failed to leave conversation.', { details: error.message, adjustments });
+    }
   });
 
   ////////////////////////////
@@ -136,25 +373,42 @@ module.exports = async function registerChat5_5Handlers({
   // Append to conversation //
   socket.on('chat5-history-range', async (payload = {}, ack) => {
     const request = (payload && typeof payload === 'object') ? payload : {};
+    const adjustments = [];
     const now = new Date();
-    let endDate = ensureDate(request.end) || now;
+    let endDate = ensureDate(request.end);
+    if (!endDate) {
+      if (request.end !== undefined) {
+        pushAdjustment(adjustments, 'end', 'End date was invalid; using current time.', 'warning');
+      } else {
+        pushAdjustment(adjustments, 'end', 'End date missing; using current time.', 'info');
+      }
+      endDate = now;
+    }
     let startDate = ensureDate(request.start);
     if (!startDate) {
+      if (request.start !== undefined) {
+        pushAdjustment(adjustments, 'start', `Start date was invalid; using ${HISTORY_DEFAULT_DAYS}-day look-back window.`, 'warning');
+      } else {
+        pushAdjustment(adjustments, 'start', `Start date missing; using ${HISTORY_DEFAULT_DAYS}-day look-back window.`, 'info');
+      }
       startDate = new Date(endDate.getTime() - HISTORY_DEFAULT_DAYS * 24 * 60 * 60 * 1000);
     }
     if (startDate > endDate) {
       const tmp = startDate;
       startDate = endDate;
       endDate = tmp;
+      pushAdjustment(adjustments, 'start', 'Start date was after end date; values swapped.', 'warning');
     }
-    const includeMessages = request.includeMessages === true;
-    const includeLegacy = request.includeLegacy !== false;
-    const matchIdsOnly = request.matchIdsOnly === true;
-    const limit = clampLimit(request.limit);
-    const conversationIds = Array.isArray(request.conversationIds)
-      ? request.conversationIds.map(id => (id ? id.toString() : '')).filter(id => id.length > 0)
-      : [];
+    const includeMessages = normalizeBooleanOption(request.includeMessages, false, 'includeMessages', adjustments);
+    const includeLegacy = normalizeBooleanOption(request.includeLegacy, true, 'includeLegacy', adjustments);
+    const matchIdsOnly = normalizeBooleanOption(request.matchIdsOnly, false, 'matchIdsOnly', adjustments);
+    const limit = normalizeLimitOption(request.limit, adjustments);
+    const conversationIds = normalizeConversationIds(request.conversationIds, adjustments);
     const conversationIdSet = new Set(conversationIds);
+
+    if (matchIdsOnly && conversationIds.length === 0) {
+      pushAdjustment(adjustments, 'matchIdsOnly', 'matchIdsOnly requested but no conversationIds supplied; falling back to range search.', 'warning');
+    }
 
     try {
       const newQuery = { members: userName };
@@ -301,6 +555,16 @@ module.exports = async function registerChat5_5Handlers({
             modern: modernFormatted.length,
             legacy: legacyFormatted.length,
           },
+          adjustments,
+          sanitizedRequest: {
+            start: ensureISOString(startDate),
+            end: ensureISOString(endDate),
+            includeMessages,
+            includeLegacy,
+            matchIdsOnly,
+            limit,
+            conversationIds,
+          },
         },
       };
 
@@ -315,6 +579,7 @@ module.exports = async function registerChat5_5Handlers({
         ok: false,
         message: 'Failed to load conversation history.',
         details: error.message,
+        adjustments,
       };
       if (typeof ack === 'function') {
         ack(errPayload);
@@ -324,131 +589,139 @@ module.exports = async function registerChat5_5Handlers({
     }
   });
 
-  socket.on('chat5-append', async (data) => {
-    const {conversation_id, prompt, response, settings} = data;
-    let id = conversation_id;
-    const user_id = userName;
+  socket.on('chat5-append', async (raw) => {
+    const eventName = 'chat5-append';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for append.');
+        return;
+      }
 
-    const parsedMaxMessages = parseInt(settings.maxMessages, 10);
-    const effectiveMaxMessages = Number.isNaN(parsedMaxMessages) || parsedMaxMessages <= 0 ? 999 : parsedMaxMessages;
+      let conversationId = normalizeStringOption(raw.conversation_id, 'NEW', 'conversation_id', adjustments);
+      if (conversationId.toUpperCase() === 'NEW') {
+        if (conversationId !== 'NEW') {
+          pushAdjustment(adjustments, 'conversation_id', 'Normalised conversation ID to "NEW".', 'info');
+        }
+        conversationId = 'NEW';
+      }
 
-    const setting_params = {
-      contextPrompt: settings.context,
-      model: settings.model,
-      maxMessages: effectiveMaxMessages,
-      maxAudioMessages: 3,
-      tools: settings.tools,
-      reasoning: settings.reasoning,
-      verbosity: settings.verbosity,
-      outputFormat: "text",
-    };
-    const conv_params = {
-      title: settings.title,
-      category: settings.category,
-      tags: settings.tags,
-      members: settings.members,
-    };
+      let prompt = '';
+      if (raw.prompt === undefined || raw.prompt === null) {
+        prompt = '';
+      } else if (typeof raw.prompt === 'string') {
+        prompt = raw.prompt;
+      } else {
+        pushAdjustment(adjustments, 'prompt', 'Prompt must be a string; ignoring provided value.', 'warning');
+      }
+      const hasPrompt = prompt.trim().length > 0;
 
-    // If new conversation
-    if (id === "NEW") {
-      const c = await conversationService.createNewConversation(user_id, setting_params, conv_params);
-      id = c._id.toString();
-    }
+      const generateResponse = normalizeBooleanOption(raw.response, false, 'response', adjustments);
+      const { settingParams, conversationParams } = sanitizeChatSettings(raw.settings, adjustments);
+      conversationParams.members = [...new Set([...conversationParams.members, userName])];
 
-    const convRoom = roomForConversation(id);
-  
-    // Post to conversation
-    if (prompt) {
-      const { userMessage, aiMessages } = await conversationService.postToConversationNew({
-        conversationId: id,
-        userId: user_id,
-        messageContent: {
-          text: prompt,
-          image: null,
-          audio: null,
-          tts: null,
-          transcript: null,
-          revisedPrompt: null,
-          imageQuality: null,
-          toolOutput: null,
-        },
-        messageType: "text",
-        generateAI: response,
-        s: setting_params,
-        c: conv_params,
+      let createdNewConversation = false;
+      if (conversationId === 'NEW') {
+        const created = await conversationService.createNewConversation(userName, settingParams, conversationParams);
+        conversationId = created._id.toString();
+        createdNewConversation = true;
+      }
+
+      const convRoom = roomForConversation(conversationId);
+      const messageContent = hasPrompt ? {
+        text: prompt,
+        image: null,
+        audio: null,
+        tts: null,
+        transcript: null,
+        revisedPrompt: null,
+        imageQuality: null,
+        toolOutput: null,
+      } : null;
+
+      const { userMessage, aiMessages = [] } = await conversationService.postToConversationNew({
+        conversationId,
+        userId: userName,
+        messageContent,
+        messageType: hasPrompt ? "text" : null,
+        generateAI: generateResponse,
+        s: settingParams,
+        c: conversationParams,
       });
 
-      aiMessages.unshift(userMessage);
+      const outgoing = [];
+      if (userMessage) outgoing.push(userMessage);
+      if (Array.isArray(aiMessages) && aiMessages.length > 0) outgoing.push(...aiMessages);
 
-      if (conversation_id === "NEW") {
-        socket.emit('chat5-messages', {id, messages: aiMessages});
-      } else {
-        io.to(convRoom).emit('chat5-messages', { id, messages: aiMessages });
+      if (outgoing.length > 0) {
+        if (createdNewConversation) {
+          socket.emit('chat5-messages', { id: conversationId, messages: outgoing });
+        } else {
+          io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: outgoing });
+        }
       }
-      notifyMembers(user_id, settings.members, 'chat5-notice', { id, title: settings.title }, { excludeCurrentSocket: true });
-    } else {
-      const { aiMessages } = await conversationService.postToConversationNew({
-        conversationId: id,
-        userId: user_id,
-        messageContent: null,
-        messageType: null,
-        generateAI: response,
-        s: setting_params,
-        c: conv_params,
-      });
 
-      if (conversation_id === "NEW") {
-        socket.emit('chat5-messages', {id, messages: aiMessages});
-      } else {
-        io.to(convRoom).emit('chat5-messages', { id, messages: aiMessages });
+      notifyMembers(userName, conversationParams.members, 'chat5-notice', { id: conversationId, title: conversationParams.title }, { excludeCurrentSocket: true });
+
+      if (conversationParams.title === 'NEW') {
+        const title = await conversationService.generateTitle(conversationId);
+        io.to(convRoom).emit('chat5-generatetitle-done', { title });
       }
-      notifyMembers(user_id, settings.members, 'chat5-notice', { id, title: settings.title }, { excludeCurrentSocket: true });
-    }
 
-    // Generate a title if not yet set
-    if (settings.title === "NEW") {
-      const title = await conversationService.generateTitle(id);
-      io.to(convRoom).emit('chat5-generatetitle-done', {title});
+      emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation });
+    } catch (error) {
+      logger.error('Failed to append chat5 message', error);
+      respondWithError(eventName, 'Failed to append message to conversation.', { details: error.message, adjustments });
     }
   });
 
-  socket.on('chat5-batch', async (data) => {
-    const { conversation_id, prompt, includePrompt, settings } = data;
-    let id = conversation_id;
-    const user_id = userName;
-
-    const parsedMaxMessages = parseInt(settings.maxMessages, 10);
-    const effectiveMaxMessages = Number.isNaN(parsedMaxMessages) || parsedMaxMessages <= 0 ? 999 : parsedMaxMessages;
-
-    const setting_params = {
-      contextPrompt: settings.context,
-      model: settings.model,
-      maxMessages: effectiveMaxMessages,
-      maxAudioMessages: 3,
-      tools: settings.tools,
-      reasoning: settings.reasoning,
-      verbosity: settings.verbosity,
-      outputFormat: "text",
-    };
-    const conv_params = {
-      title: settings.title,
-      category: settings.category,
-      tags: settings.tags,
-      members: settings.members,
-    };
-
+  socket.on('chat5-batch', async (raw) => {
+    const eventName = 'chat5-batch';
+    const adjustments = [];
     try {
-      if (id === "NEW") {
-        const c = await conversationService.createNewConversation(user_id, setting_params, conv_params);
-        id = c._id.toString();
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for batch request.');
+        return;
       }
 
-      const convRoom = roomForConversation(id);
+      let conversationId = normalizeStringOption(raw.conversation_id, 'NEW', 'conversation_id', adjustments);
+      if (conversationId.toUpperCase() === 'NEW') {
+        if (conversationId !== 'NEW') {
+          pushAdjustment(adjustments, 'conversation_id', 'Normalised conversation ID to "NEW".', 'info');
+        }
+        conversationId = 'NEW';
+      }
+
+      const includePrompt = normalizeBooleanOption(raw.includePrompt, false, 'includePrompt', adjustments);
+      let prompt = '';
+      if (raw.prompt === undefined || raw.prompt === null) {
+        prompt = '';
+      } else if (typeof raw.prompt === 'string') {
+        prompt = raw.prompt;
+      } else {
+        pushAdjustment(adjustments, 'prompt', 'Prompt must be a string; ignoring provided value.', 'warning');
+      }
+      const hasPrompt = includePrompt && prompt.trim().length > 0;
+      if (includePrompt && !hasPrompt) {
+        pushAdjustment(adjustments, 'includePrompt', 'includePrompt requested but prompt missing; batch will run without prompt.', 'warning');
+      }
+
+      const { settingParams, conversationParams } = sanitizeChatSettings(raw.settings, adjustments);
+      conversationParams.members = [...new Set([...conversationParams.members, userName])];
+
+      let createdNewConversation = false;
+      if (conversationId === 'NEW') {
+        const created = await conversationService.createNewConversation(userName, settingParams, conversationParams);
+        conversationId = created._id.toString();
+        createdNewConversation = true;
+      }
+
+      const convRoom = roomForConversation(conversationId);
 
       const { userMessage } = await conversationService.postToConversationNew({
-        conversationId: id,
-        userId: user_id,
-        messageContent: includePrompt ? {
+        conversationId,
+        userId: userName,
+        messageContent: hasPrompt ? {
           text: prompt,
           image: null,
           audio: null,
@@ -458,15 +731,15 @@ module.exports = async function registerChat5_5Handlers({
           imageQuality: null,
           toolOutput: null,
         } : null,
-        messageType: includePrompt ? "text" : null,
+        messageType: hasPrompt ? "text" : null,
         generateAI: false,
-        s: setting_params,
-        c: conv_params,
+        s: settingParams,
+        c: conversationParams,
       });
 
-      const conversation = await Conversation5Model.findById(id);
+      const conversation = await Conversation5Model.findById(conversationId);
       if (!conversation) {
-        socket.emit('chat5-batch-error', { message: 'Conversation not found while queuing batch request.' });
+        respondWithError(eventName, 'Conversation not found while queuing batch request.', { adjustments });
         return;
       }
 
@@ -492,139 +765,294 @@ module.exports = async function registerChat5_5Handlers({
       await conversation.save();
 
       await batchService.addPromptToBatch({
-        userId: user_id,
-        conversationId: id,
+        userId: userName,
+        conversationId,
         messageId: placeholder._id.toString(),
-        model: settings.model,
-        title: settings.title,
+        model: settingParams.model,
+        title: conversationParams.title,
         taskType: 'response',
       });
 
       const packets = [];
-      if (userMessage) packets.unshift(userMessage);
+      if (userMessage) packets.push(userMessage);
       packets.push(placeholder);
 
-      if (conversation_id === "NEW") {
-        socket.emit('chat5-messages', { id, messages: packets });
+      if (createdNewConversation) {
+        socket.emit('chat5-messages', { id: conversationId, messages: packets });
       } else {
-        io.to(convRoom).emit('chat5-messages', { id, messages: packets });
+        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: packets });
       }
 
-      notifyMembers(user_id, settings.members, 'chat5-notice', { id, title: settings.title }, { excludeCurrentSocket: true });
+      notifyMembers(userName, conversationParams.members, 'chat5-notice', { id: conversationId, title: conversationParams.title }, { excludeCurrentSocket: true });
+      emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation });
     } catch (error) {
       logger.error('Failed to queue batch request', error);
-      socket.emit('chat5-batch-error', { message: 'Unable to queue batch request.' });
+      respondWithError(eventName, 'Unable to queue batch request.', { details: error.message });
     }
   });
 
   ////////////////////////////
   //----- Upload image -----//
   // Append to conversation //
-  socket.on('chat5-uploadImage', async (data) => {
-    const { conversation_id, name, buffer } = data; // 'buffer' is an ArrayBuffer
-    let id = conversation_id;
-    const user_id = userName;
-
-    if (!name || !buffer) {
-      socket.emit('chat5-uploadError', { message: 'Invalid file data.' });
-      return;
-    }
-
-    // If new conversation
-    if (id === "NEW") {
-      const c = await conversationService.createNewConversation(user_id);
-      id = c._id.toString();
-    }
-
-    const convRoom = roomForConversation(id);
-
-    // Pre-process and save to appropriate folder
-    const uniqueName = `${Date.now()}_${name}`;
-    const filePath = path.join(TEMP_DIR, uniqueName);
-
-    // Convert ArrayBuffer to Buffer
-    const fileBuffer = Buffer.from(buffer);
-
-    fs.writeFile(filePath, fileBuffer, async (err) => {
-      if (err) {
-        logger.error(`Error saving file ${name}:`, err);
-        // Delete created conversation if new, and an error occured
-        if (conversation_id === "NEW") {
-          await conversationService.deleteNewConversation(id);
-        }
-        socket.emit('chat5-uploadError', { message: `Failed to upload ${name}` });
-      } else {
-        logger.notice(`File saved: ${filePath}`);
-        const uploadFile = await ProcessUploadedImage(filePath);
-        // Post to conversation
-        const { userMessage } = await conversationService.postToConversationNew({
-          conversationId: id,
-          userId: user_id,
-          messageContent: {
-            text: null,
-            image: uploadFile,
-            audio: null,
-            tts: null,
-            transcript: null,
-            revisedPrompt: "Upload image",
-            imageQuality: "high",
-            toolOutput: null,
-          },
-          messageType: "image",
-          generateAI: false,
-        });
-
-        if (conversation_id === "NEW") {
-          socket.emit('chat5-messages', {id, messages: [userMessage]});
-        } else {
-          io.to(convRoom).emit('chat5-messages', { id, messages: [userMessage] });
-        }
-        notifyMembers(user_id, [], 'chat5-notice', { id, title: "New Image" }, { excludeCurrentSocket: true });
-      }
-    });
-  });
-
-  // Edit message arraay
-  socket.on('chat5-editmessagearray-up', async (data) => {
-    const { conversation_id, newArray } = data;
-    await conversationService.updateMessageArray(conversation_id, newArray);
-    socket.emit('chat5-editmessagearray-done');
-  });
-
-  // Toggle hide from bot
-  socket.on('chat5-togglehidefrombot-up', async (data) => {
-    const { message_id, state } = data;
-    await messageService.toggleHideFromBot({message_id, state});
-    socket.emit('chat5-togglehidefrombot-done');
-  });
-
-  // Edit text
-  socket.on('chat5-edittext-up', async (data) => {
-    await messageService.editTextNew(data);
-  });
-
-  // Generate title
-  socket.on('chat5-generatetitle-up', async (data) => {
-    const { conversation_id } = data;
-    const title = await conversationService.generateTitle(conversation_id);
-    const convRoom = roomForConversation(conversation_id);
-    io.to(convRoom).emit('chat5-generatetitle-done', {title});
-  });
-
-  // Update conversation settings
-  socket.on('chat5-updateConversation', async (data, ack) => {
-    const { conversation_id, updates } = data;
+  socket.on('chat5-uploadImage', async (raw) => {
+    const eventName = 'chat5-uploadImage';
+    const adjustments = [];
+    let createdNewConversation = false;
+    let conversationId = 'NEW';
+    let tempFilePath = null;
     try {
-      const conversation = await conversationService.updateConversationDetails(conversation_id, updates);
-      if (!conversation) {
-        const message = 'Conversation settings can only be updated for chat5 entries.';
-        if (typeof ack === 'function') ack({ ok: false, message });
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for uploadImage.');
         return;
       }
 
-      const convRoom = roomForConversation(conversation_id);
+      conversationId = normalizeStringOption(raw.conversation_id, 'NEW', 'conversation_id', adjustments);
+      if (conversationId.toUpperCase() === 'NEW') {
+        if (conversationId !== 'NEW') {
+          pushAdjustment(adjustments, 'conversation_id', 'Normalised conversation ID to "NEW".', 'info');
+        }
+        conversationId = 'NEW';
+      }
+
+      const fileName = normalizeStringOption(raw.name, '', 'name', adjustments);
+      if (!fileName) {
+        respondWithError(eventName, 'A file name is required for upload.', { adjustments });
+        return;
+      }
+
+      let fileBuffer = null;
+      const bufferInput = raw.buffer;
+      if (Buffer.isBuffer(bufferInput)) {
+        fileBuffer = bufferInput;
+      } else if (bufferInput instanceof ArrayBuffer) {
+        fileBuffer = Buffer.from(new Uint8Array(bufferInput));
+      } else if (ArrayBuffer.isView(bufferInput)) {
+        fileBuffer = Buffer.from(bufferInput.buffer, bufferInput.byteOffset, bufferInput.byteLength);
+      } else if (typeof bufferInput === 'string') {
+        try {
+          fileBuffer = Buffer.from(bufferInput, 'base64');
+          pushAdjustment(adjustments, 'buffer', 'Decoded base64 string into binary buffer.', 'info');
+        } catch (error) {
+          logger.error('Failed to decode base64 buffer', error);
+          respondWithError(eventName, 'Invalid base64 data for upload.', { adjustments });
+          return;
+        }
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        respondWithError(eventName, 'Invalid file data provided.', { adjustments });
+        return;
+      }
+
+      if (conversationId === 'NEW') {
+        const created = await conversationService.createNewConversation(userName);
+        conversationId = created._id.toString();
+        createdNewConversation = true;
+      }
+
+      const convRoom = roomForConversation(conversationId);
+      const uniqueName = `${Date.now()}_${fileName}`;
+      tempFilePath = path.join(TEMP_DIR, uniqueName);
+
+      await fs.promises.writeFile(tempFilePath, fileBuffer);
+      logger.notice(`File saved: ${tempFilePath}`);
+
+      const uploadFile = await ProcessUploadedImage(tempFilePath);
+      try {
+        await fs.promises.unlink(tempFilePath);
+      } catch (cleanupError) {
+        logger.warning('Failed to cleanup temp upload file', cleanupError);
+      }
+      const { userMessage } = await conversationService.postToConversationNew({
+        conversationId,
+        userId: userName,
+        messageContent: {
+          text: null,
+          image: uploadFile,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: "Upload image",
+          imageQuality: "high",
+          toolOutput: null,
+        },
+        messageType: "image",
+        generateAI: false,
+      });
+
+      if (createdNewConversation) {
+        socket.emit('chat5-messages', { id: conversationId, messages: [userMessage] });
+      } else {
+        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: [userMessage] });
+      }
+      notifyMembers(userName, [], 'chat5-notice', { id: conversationId, title: "New Image" }, { excludeCurrentSocket: true });
+      emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation, fileName });
+    } catch (error) {
+      logger.error('Failed to upload image in chat5', error);
+      if (tempFilePath) {
+        try {
+          await fs.promises.unlink(tempFilePath);
+        } catch (cleanupError) {
+          logger.warning('Failed to cleanup temp upload file after error', cleanupError);
+        }
+      }
+      if (createdNewConversation && conversationId !== 'NEW') {
+        try {
+          await conversationService.deleteNewConversation(conversationId);
+        } catch (cleanupError) {
+          logger.error('Failed to clean up conversation after upload error', cleanupError);
+        }
+      }
+      respondWithError(eventName, 'Failed to upload image.', { details: error.message, adjustments });
+    }
+  });
+
+  // Edit message arraay
+  socket.on('chat5-editmessagearray-up', async (raw) => {
+    const eventName = 'chat5-editmessagearray-up';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for editmessagearray.');
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversation_id, '', 'conversation_id', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'conversation_id is required.', { adjustments });
+        return;
+      }
+      if (!Array.isArray(raw.newArray)) {
+        respondWithError(eventName, 'newArray must be an array of message IDs.', { adjustments });
+        return;
+      }
+      const cleaned = raw.newArray.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(value => value.length > 0);
+      if (cleaned.length < raw.newArray.length) {
+        pushAdjustment(adjustments, 'newArray', 'Removed invalid or blank message IDs.', 'warning');
+      }
+      await conversationService.updateMessageArray(conversationId, cleaned);
+      socket.emit('chat5-editmessagearray-done', { ok: true, conversationId, length: cleaned.length });
+      emitAdjustments(eventName, adjustments, { conversationId });
+    } catch (error) {
+      logger.error('Failed to update message array', error);
+      respondWithError(eventName, 'Failed to update message ordering.', { details: error.message, adjustments });
+    }
+  });
+
+  // Toggle hide from bot
+  socket.on('chat5-togglehidefrombot-up', async (raw) => {
+    const eventName = 'chat5-togglehidefrombot-up';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for togglehidefrombot.');
+        return;
+      }
+      const messageId = normalizeStringOption(raw.message_id, '', 'message_id', adjustments);
+      if (!messageId) {
+        respondWithError(eventName, 'message_id is required.', { adjustments });
+        return;
+      }
+      const state = normalizeBooleanOption(raw.state, false, 'state', adjustments);
+      await messageService.toggleHideFromBot({ message_id: messageId, state });
+      socket.emit('chat5-togglehidefrombot-done', { ok: true, messageId, state });
+      emitAdjustments(eventName, adjustments, { messageId });
+    } catch (error) {
+      logger.error('Failed to toggle hideFromBot', error);
+      respondWithError(eventName, 'Failed to update hide-from-bot state.', { details: error.message, adjustments });
+    }
+  });
+
+  // Edit text
+  socket.on('chat5-edittext-up', async (raw) => {
+    const eventName = 'chat5-edittext-up';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for edittext.');
+        return;
+      }
+      const messageId = normalizeStringOption(raw.message_id, '', 'message_id', adjustments);
+      if (!messageId) {
+        respondWithError(eventName, 'message_id is required.', { adjustments });
+        return;
+      }
+      const allowedTypes = ['text', 'tts', 'transcript', 'revisedPrompt', 'toolOutput', 'html'];
+      const editType = normalizeStringOption(raw.type, '', 'type', adjustments);
+      if (!editType || !allowedTypes.includes(editType)) {
+        respondWithError(eventName, 'Unsupported edit type.', { adjustments });
+        return;
+      }
+      let value = '';
+      if (raw.value === undefined || raw.value === null) {
+        value = '';
+      } else if (typeof raw.value === 'string') {
+        value = raw.value;
+      } else {
+        pushAdjustment(adjustments, 'value', 'Coerced value to string.', 'warning');
+        value = String(raw.value);
+      }
+      await messageService.editTextNew({ message_id: messageId, type: editType, value });
+      socket.emit('chat5-edittext-done', { ok: true, messageId, type: editType });
+      emitAdjustments(eventName, adjustments, { messageId, type: editType });
+    } catch (error) {
+      logger.error('Failed to edit message text', error);
+      respondWithError(eventName, 'Failed to edit message text.', { details: error.message, adjustments });
+    }
+  });
+
+  // Generate title
+  socket.on('chat5-generatetitle-up', async (raw) => {
+    const eventName = 'chat5-generatetitle-up';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for generatetitle.');
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversation_id, '', 'conversation_id', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'conversation_id is required to generate a title.', { adjustments });
+        return;
+      }
+      const title = await conversationService.generateTitle(conversationId);
+      const convRoom = roomForConversation(conversationId);
+      io.to(convRoom).emit('chat5-generatetitle-done', { title });
+      emitAdjustments(eventName, adjustments, { conversationId });
+    } catch (error) {
+      logger.error('Failed to generate title', error);
+      respondWithError(eventName, 'Failed to generate title.', { details: error.message, adjustments });
+    }
+  });
+
+  // Update conversation settings
+  socket.on('chat5-updateConversation', async (raw, ack) => {
+    const eventName = 'chat5-updateConversation';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for updateConversation.', { ack });
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversation_id, '', 'conversation_id', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'conversation_id is required to update settings.', { ack, adjustments });
+        return;
+      }
+      if (!isPlainObject(raw.updates)) {
+        respondWithError(eventName, 'updates must be an object.', { ack, adjustments });
+        return;
+      }
+
+      const conversation = await conversationService.updateConversationDetails(conversationId, raw.updates);
+      if (!conversation) {
+        const message = 'Conversation settings can only be updated for chat5 entries.';
+        respondWithError(eventName, message, { ack, adjustments });
+        return;
+      }
+
+      const convRoom = roomForConversation(conversationId);
       const payload = {
-        conversationId: conversation_id,
+        conversationId,
         title: conversation.title,
         category: conversation.category,
         tags: conversation.tags,
@@ -635,19 +1063,31 @@ module.exports = async function registerChat5_5Handlers({
 
       io.to(convRoom).emit('chat5-conversation-settings-updated', payload);
       if (typeof ack === 'function') ack({ ok: true, conversation: payload });
+      emitAdjustments(eventName, adjustments, { conversationId });
     } catch (error) {
       logger.error('Failed to update chat5 conversation settings', error);
-      if (typeof ack === 'function') ack({ ok: false, message: 'Failed to update conversation settings.' });
+      respondWithError(eventName, 'Failed to update conversation settings.', { ack, details: error.message, adjustments });
     }
   });
 
   // Generate summary
-  socket.on('chat5-generatesummary-up', async (data) => {
-    const { conversation_id } = data;
+  socket.on('chat5-generatesummary-up', async (raw) => {
+    const eventName = 'chat5-generatesummary-up';
+    const adjustments = [];
     try {
-      const summary = await conversationService.generateSummaryNew(conversation_id);
-      const convRoom = roomForConversation(conversation_id);
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for generatesummary.');
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversation_id, '', 'conversation_id', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'conversation_id is required to generate a summary.', { adjustments });
+        return;
+      }
+      const summary = await conversationService.generateSummaryNew(conversationId);
+      const convRoom = roomForConversation(conversationId);
       io.to(convRoom).emit('chat5-generatesummary-done', { summary });
+      emitAdjustments(eventName, adjustments, { conversationId });
     } catch (error) {
       logger.error('Failed to generate chat5 conversation summary', error);
       socket.emit('chat5-generatesummary-error', { message: 'Unable to generate summary. Please try again later.' });
@@ -655,13 +1095,38 @@ module.exports = async function registerChat5_5Handlers({
   });
 
   // Save current content as a template (with ack)
-  socket.on('chat5-savetemplate', async (data, ack) => {
+  socket.on('chat5-savetemplate', async (raw, ack) => {
+    const eventName = 'chat5-savetemplate';
+    const adjustments = [];
     try {
-      await templateService.createTemplate(data.Title, data.Type, data.Category, data.TemplateText);
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for savetemplate.', { ack });
+        return;
+      }
+      const title = normalizeStringOption(raw.Title, '', 'Title', adjustments);
+      const type = normalizeStringOption(raw.Type, '', 'Type', adjustments);
+      const category = normalizeStringOption(raw.Category, '', 'Category', adjustments);
+      let templateText = '';
+      if (raw.TemplateText === undefined || raw.TemplateText === null) {
+        templateText = '';
+      } else if (typeof raw.TemplateText === 'string') {
+        templateText = raw.TemplateText;
+      } else {
+        pushAdjustment(adjustments, 'TemplateText', 'Coerced template text to string.', 'warning');
+        templateText = String(raw.TemplateText);
+      }
+
+      if (!title || !type || !category) {
+        respondWithError(eventName, 'Title, Type, and Category are required.', { ack, adjustments });
+        return;
+      }
+
+      await templateService.createTemplate(title, type, category, templateText);
       if (typeof ack === 'function') ack({ ok: true });
+      emitAdjustments(eventName, adjustments, { title, type, category });
     } catch (err) {
       logger.error('Failed to save template:', err);
-      if (typeof ack === 'function') ack({ ok: false, message: 'Failed to save template' });
+      respondWithError(eventName, 'Failed to save template.', { ack, details: err.message, adjustments });
     }
   });
 };
