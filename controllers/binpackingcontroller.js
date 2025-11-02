@@ -1,8 +1,76 @@
 const { z } = require('zod');
 const binPackingService = require('../services/binPackingService');
 const logger = require('../utils/logger');
+const ApiDebugLog = require('../models/api_debug_log');
 
 const ALGORITHMS = ['laff', 'plain', 'bruteforce'];
+const JS_FILE_NAME = 'controllers/binpackingcontroller.js';
+
+const toSerializable = (value) => {
+  if (value === undefined) {
+    return null;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack,
+    };
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toSerializable(item));
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (serializationError) {
+      if (typeof value.toString === 'function') {
+        return value.toString();
+      }
+      return {
+        error: 'Failed to serialize payload',
+        message: serializationError.message,
+      };
+    }
+  }
+  return value;
+};
+
+const recordApiDebugLog = async ({
+  requestUrl,
+  requestHeaders = null,
+  requestBody = null,
+  responseHeaders = null,
+  responseBody = null,
+  functionName,
+}) => {
+  try {
+    await ApiDebugLog.create({
+      requestUrl,
+      requestHeaders: toSerializable(requestHeaders),
+      requestBody: toSerializable(requestBody),
+      responseHeaders: toSerializable(responseHeaders),
+      responseBody: toSerializable(responseBody),
+      jsFileName: JS_FILE_NAME,
+      functionName,
+    });
+  } catch (logError) {
+    logger.error('Failed to record API debug log entry', {
+      category: 'api-debug',
+      metadata: {
+        requestUrl,
+        functionName,
+        message: logError.message,
+      },
+    });
+  }
+};
 
 const containerSchema = z.object({
   id: z.string().trim().min(1, 'Container ID is required'),
@@ -36,6 +104,9 @@ exports.index = (req, res) => {
 };
 
 exports.run = async (req, res) => {
+  const functionName = 'run';
+  const requestUrl = binPackingService.apiUrl || 'binPackingService.pack';
+  let apiPayload = null;
   try {
     const sanitizedBody = {
       algorithm: req.body?.algorithm || 'laff',
@@ -53,7 +124,7 @@ exports.run = async (req, res) => {
       });
     }
 
-    const apiPayload = {
+    apiPayload = {
       algorithm: parsed.algorithm,
       maxContainers: 0,
       minimizeContainers: true,
@@ -65,6 +136,15 @@ exports.run = async (req, res) => {
     };
 
     const apiResponse = await binPackingService.pack(apiPayload);
+
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: apiPayload,
+      responseHeaders: null,
+      responseBody: apiResponse,
+      functionName,
+    });
 
     res.json({
       success: Boolean(apiResponse?.success),
@@ -82,6 +162,17 @@ exports.run = async (req, res) => {
         success: false,
         message: 'Invalid bin packing request.',
         issues: error.flatten(),
+      });
+    }
+
+    if (apiPayload) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders: null,
+        requestBody: apiPayload,
+        responseHeaders: null,
+        responseBody: error,
+        functionName,
       });
     }
 
