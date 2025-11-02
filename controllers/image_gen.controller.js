@@ -4,6 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
+const ApiDebugLog = require('../models/api_debug_log');
 
 const { Prompt, BulkJob, BulkTestPrompt } = require('../database');
 
@@ -21,6 +22,7 @@ const CACHE_CONFIG = {
 const CACHE_DEFAULT_BUCKET = 'output';
 const CACHE_CONCURRENCY = 5;
 const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
+const JS_FILE_NAME = 'controllers/image_gen.controller.js';
 
 // Track in-flight downloads to avoid duplicate fetches
 const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
@@ -35,6 +37,80 @@ if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 for (const cfg of Object.values(CACHE_CONFIG)) {
   if (cfg && cfg.dir && !fs.existsSync(cfg.dir)) {
     fs.mkdirSync(cfg.dir, { recursive: true });
+  }
+}
+
+function toSerializable(payload) {
+  if (payload === undefined || payload === null) return null;
+  if (payload instanceof Buffer) {
+    return {
+      type: 'Buffer',
+      encoding: 'base64',
+      data: payload.toString('base64')
+    };
+  }
+  if (payload instanceof Error) {
+    return {
+      name: payload.name,
+      message: payload.message,
+      stack: payload.stack
+    };
+  }
+  if (payload instanceof Date) {
+    return payload.toISOString();
+  }
+  if (Array.isArray(payload)) {
+    return payload.map(item => toSerializable(item));
+  }
+  if (typeof payload === 'object') {
+    try {
+      return JSON.parse(JSON.stringify(payload));
+    } catch (err) {
+      if (typeof payload.toString === 'function') {
+        return payload.toString();
+      }
+      return {
+        error: 'Failed to serialize payload',
+        message: err.message
+      };
+    }
+  }
+  return payload;
+}
+
+function headersToObject(headers) {
+  if (!headers || typeof headers.forEach !== 'function') return null;
+  const result = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+async function recordApiDebugLog({
+  requestUrl,
+  requestHeaders = null,
+  requestBody = null,
+  responseHeaders = null,
+  responseBody = null,
+  functionName
+}) {
+  try {
+    await ApiDebugLog.create({
+      requestUrl,
+      requestHeaders: toSerializable(requestHeaders),
+      requestBody: toSerializable(requestBody),
+      responseHeaders: toSerializable(responseHeaders),
+      responseBody: toSerializable(responseBody),
+      jsFileName: JS_FILE_NAME,
+      functionName
+    });
+  } catch (logError) {
+    logger.error('[API debug] failed to record log', {
+      requestUrl,
+      functionName,
+      message: logError && logError.message ? logError.message : logError
+    });
   }
 }
 
@@ -129,16 +205,52 @@ async function ensureCached(bucket, name, mediaType, instanceId) {
   if (!inFlightDownloads.has(key)) {
     const promise = (async () => {
       try {
+        const functionName = 'ensureCached';
         const remoteUrl = buildComfyUrl(`/v1/files/${effectiveBucket}/${encodeURIComponent(name)}`, { instanceId });
-        const r = await fetch(remoteUrl, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
-        if (!r.ok) {
-          const txt = await r.text().catch(() => '');
-          throw new Error(`upstream ${r.status} ${txt}`.trim());
+        const requestHeaders = apiHeaders();
+        const fetchOptions = { headers: requestHeaders, signal: AbortSignal.timeout(DEFAULT_TIMEOUT) };
+        let logged = false;
+        try {
+          const r = await fetch(remoteUrl, fetchOptions);
+          const responseHeaders = headersToObject(r.headers);
+          if (!r.ok) {
+            const txt = await r.text().catch(() => '');
+            await recordApiDebugLog({
+              requestUrl: remoteUrl,
+              requestHeaders,
+              requestBody: null,
+              responseHeaders,
+              responseBody: { status: r.status, body: txt },
+              functionName
+            });
+            logged = true;
+            throw new Error(`upstream ${r.status} ${txt}`.trim());
+          }
+          const buf = Buffer.from(await r.arrayBuffer());
+          await recordApiDebugLog({
+            requestUrl: remoteUrl,
+            requestHeaders,
+            requestBody: null,
+            responseHeaders,
+            responseBody: buf,
+            functionName
+          });
+          await fsp.mkdir(path.dirname(rec.localPath), { recursive: true });
+          await fsp.writeFile(rec.localPath, buf);
+          return rec;
+        } catch (fetchError) {
+          if (!logged) {
+            await recordApiDebugLog({
+              requestUrl: remoteUrl,
+              requestHeaders,
+              requestBody: null,
+              responseHeaders: null,
+              responseBody: fetchError,
+              functionName
+            });
+          }
+          throw fetchError;
         }
-        const buf = Buffer.from(await r.arrayBuffer());
-        await fsp.mkdir(path.dirname(rec.localPath), { recursive: true });
-        await fsp.writeFile(rec.localPath, buf);
-        return rec;
       } finally {
         inFlightDownloads.delete(key);
       }
@@ -520,20 +632,54 @@ let bulkWorkerPending = false;
 
 async function waitForComfyJob(jobId, instanceId) {
   for (let attempt = 0; attempt < BULK_JOB_POLL_LIMIT; attempt++) {
+    const functionName = 'waitForComfyJob';
     const url = buildComfyUrl(`/v1/jobs/${encodeURIComponent(jobId)}`, { instanceId });
-    const r = await fetch(url, {
-      headers: apiHeaders()
-    });
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      throw new Error(`job status ${r.status} ${txt}`.trim());
+    const requestHeaders = apiHeaders();
+    const fetchOptions = { headers: requestHeaders };
+    let responseHeaders = null;
+    try {
+      const r = await fetch(url, fetchOptions);
+      responseHeaders = headersToObject(r.headers);
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        await recordApiDebugLog({
+          requestUrl: url,
+          requestHeaders,
+          requestBody: null,
+          responseHeaders,
+          responseBody: { status: r.status, body: txt, attempt },
+          functionName
+        });
+        logged = true;
+        throw new Error(`job status ${r.status} ${txt}`.trim());
+      }
+      const json = await r.json();
+      await recordApiDebugLog({
+        requestUrl: url,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { attempt, data: json },
+        functionName
+      });
+      const status = json?.status;
+      if (status === 'completed' || status === 'failed' || status === 'canceled') {
+        return json;
+      }
+      await delay(BULK_JOB_POLL_DELAY_MS);
+    } catch (err) {
+      if (!logged) {
+        await recordApiDebugLog({
+          requestUrl: url,
+          requestHeaders,
+          requestBody: null,
+          responseHeaders,
+          responseBody: err,
+          functionName
+        });
+      }
+      throw err;
     }
-    const json = await r.json();
-    const status = json?.status;
-    if (status === 'completed' || status === 'failed' || status === 'canceled') {
-      return json;
-    }
-    await delay(BULK_JOB_POLL_DELAY_MS);
   }
   throw new Error('upstream job timeout');
 }
@@ -551,23 +697,60 @@ async function downloadComfyOutputs(jobId, files, fallbackPrefix, instanceId) {
     const mediaType = meta?.media_type || detectMediaType(original || fallback);
     const bucket = meta?.bucket || (mediaType === 'video' ? 'video' : 'output');
     const url = buildComfyUrl(`/v1/jobs/${encodeURIComponent(jobId)}/images/${i}`, { instanceId });
-    const r = await fetch(url, {
-      headers: apiHeaders(),
+    const functionName = 'downloadComfyOutputs';
+    const requestHeaders = apiHeaders();
+    const fetchOptions = {
+      headers: requestHeaders,
       signal: AbortSignal.timeout(BULK_DOWNLOAD_TIMEOUT_MS)
-    });
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      throw new Error(`image download ${r.status} ${txt}`.trim());
+    };
+    let responseHeaders = null;
+    let logged = false;
+    try {
+      const r = await fetch(url, fetchOptions);
+      responseHeaders = headersToObject(r.headers);
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        await recordApiDebugLog({
+          requestUrl: url,
+          requestHeaders,
+          requestBody: null,
+          responseHeaders,
+          responseBody: { status: r.status, body: txt, imageIndex: i },
+          functionName
+        });
+        logged = true;
+        throw new Error(`image download ${r.status} ${txt}`.trim());
+      }
+      const buf = Buffer.from(await r.arrayBuffer());
+      await recordApiDebugLog({
+        requestUrl: url,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { imageIndex: i, mediaType, size: buf.length, data: buf },
+        functionName
+      });
+      const rec = await writeCacheFile(safeName, buf, { bucket, mediaType, instanceId });
+      stored.push({
+        safeName,
+        bucket,
+        mediaType,
+        instanceId: instanceId || null,
+        url: rec?.url || null
+      });
+    } catch (err) {
+      if (!logged) {
+        await recordApiDebugLog({
+          requestUrl: url,
+          requestHeaders,
+          requestBody: null,
+          responseHeaders,
+          responseBody: err,
+          functionName
+        });
+      }
+      throw err;
     }
-    const buf = Buffer.from(await r.arrayBuffer());
-    const rec = await writeCacheFile(safeName, buf, { bucket, mediaType, instanceId });
-    stored.push({
-      safeName,
-      bucket,
-      mediaType,
-      instanceId: instanceId || null,
-      url: rec?.url || null
-    });
   }
   return stored;
 }
@@ -595,16 +778,55 @@ async function processBulkPrompt(job, prompt) {
     const payload = { workflow: job.workflow, inputs };
     if (instanceId) payload.instance_id = instanceId;
 
-    const queuedResp = await fetch(buildComfyUrl('/v1/generate'), {
+    const functionName = 'processBulkPrompt';
+    const requestUrl = buildComfyUrl('/v1/generate');
+    const requestHeaders = apiHeaders({ 'Content-Type': 'application/json' });
+    const fetchOptions = {
       method: 'POST',
-      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+      headers: requestHeaders,
       body: JSON.stringify(payload)
+    };
+    let responseHeaders = null;
+    let logged = false;
+    const queuedResp = await fetch(requestUrl, fetchOptions).catch(async (err) => {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: payload,
+        responseHeaders: null,
+        responseBody: err,
+        functionName
+      });
+      throw err;
     });
+    responseHeaders = headersToObject(queuedResp.headers);
     if (!queuedResp.ok) {
       const txt = await queuedResp.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: payload,
+        responseHeaders,
+        responseBody: { status: queuedResp.status, body: txt },
+        functionName
+      });
       throw new Error(`queue failed ${queuedResp.status} ${txt}`.trim());
     }
-    const queued = await queuedResp.json().catch(() => null);
+    let queued = null;
+    let parsedText = null;
+    try {
+      queued = await queuedResp.json();
+    } catch (_) {
+      parsedText = await queuedResp.text().catch(() => '');
+    }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: payload,
+      responseHeaders,
+      responseBody: queued ?? parsedText,
+      functionName
+    });
     const comfyJobId = queued?.job_id;
     if (!comfyJobId) throw new Error('missing job id from ComfyUI');
 
@@ -1518,30 +1740,112 @@ exports.submitBulkScore = async (req, res) => {
 
 // Proxy: list workflows
 exports.listInstances = async (_req, res) => {
+  const functionName = 'listInstances';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
   try {
-    const url = buildComfyUrl('/v1/instances');
-    const r = await fetch(url, { headers: apiHeaders() });
-    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    res.json(await r.json());
+    requestUrl = buildComfyUrl('/v1/instances');
+    const fetchOptions = { headers: requestHeaders };
+    const r = await fetch(requestUrl, fetchOptions);
+    const responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt },
+        functionName
+      });
+      return errorJson(res, r.status, 'upstream error', txt);
+    }
+    let responseBody = null;
+    try {
+      responseBody = await r.json();
+    } catch (_) {
+      responseBody = await r.text().catch(() => '');
+    }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders,
+      responseBody,
+      functionName
+    });
+    res.json(responseBody);
   } catch (e) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders: null,
+      responseBody: e,
+      functionName
+    });
     return errorJson(res, 502, 'failed to list instances', String(e.message || e));
   }
 };
 
 exports.getWorkflows = async (req, res) => {
+  const functionName = 'getWorkflows';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
   try {
     const instanceId = extractInstanceId(req);
-    const url = buildComfyUrl('/v1/workflows', { instanceId });
-    const r = await fetch(url, { headers: apiHeaders() });
-    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    res.json(await r.json());
+    requestUrl = buildComfyUrl('/v1/workflows', { instanceId });
+    const r = await fetch(requestUrl, { headers: requestHeaders });
+    const responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt, instanceId },
+        functionName
+      });
+      return errorJson(res, r.status, 'upstream error', txt);
+    }
+    let responseBody = null;
+    try {
+      responseBody = await r.json();
+    } catch (_) {
+      responseBody = await r.text().catch(() => '');
+    }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders,
+      responseBody,
+      functionName
+    });
+    res.json(responseBody);
   } catch (e) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders: null,
+      responseBody: e,
+      functionName: 'getWorkflows'
+    });
     return errorJson(res, 502, 'failed to reach ComfyUI API', String(e.message || e));
   }
 };
 
 // Proxy: generate
 exports.generate = async (req, res) => {
+  const functionName = 'generate';
+  const requestHeaders = apiHeaders({ 'Content-Type': 'application/json' });
+  let requestUrl = null;
+  let responseHeaders = null;
+  let payload = null;
+  let queued = null;
+  let loggedError = false;
   try {
     const body = req.body || {};
     const workflow = String(body.workflow || '').trim();
@@ -1555,19 +1859,53 @@ exports.generate = async (req, res) => {
     delete inputs.instance_id;
     delete inputs.instanceId;
 
-    // 1) Queue upstream job first
-    const payload = { workflow, inputs };
+    payload = { workflow, inputs };
     if (instanceId) payload.instance_id = instanceId;
-    const r = await fetch(buildComfyUrl('/v1/generate'), {
-      method: 'POST',
-      headers: apiHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
-      // signal: AbortSignal.timeout(30000)
-    });
-    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    const queued = await r.json();
 
-    // 2) Record prompt uses (ignore empty negative) and map them to this job
+    requestUrl = buildComfyUrl('/v1/generate');
+    const r = await fetch(requestUrl, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify(payload)
+    });
+    responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: payload,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt, instanceId },
+        functionName
+      });
+      loggedError = true;
+      return errorJson(res, r.status, 'upstream error', txt);
+    }
+    try {
+      queued = await r.json();
+    } catch (parseError) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: payload,
+        responseHeaders,
+        responseBody: { parseError: parseError.message, body: txt, instanceId },
+        functionName
+      });
+      loggedError = true;
+      throw parseError;
+    }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: payload,
+      responseHeaders,
+      responseBody: queued,
+      functionName
+    });
+
     const posText = (inputs.prompt || '').trim();
     const negText = (inputs.negative || '').trim();
     const [posDoc, negDoc] = await Promise.all([
@@ -1589,21 +1927,62 @@ exports.generate = async (req, res) => {
 
     return res.json(queued);
   } catch (e) {
+    if (!loggedError) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: payload,
+        responseHeaders,
+        responseBody: e,
+        functionName
+      });
+    }
     return errorJson(res, 502, 'failed to queue generation', String(e.message || e));
   }
 };
 
 // Proxy: job status
 exports.getJob = async (req, res) => {
+  const functionName = 'getJob';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
+  let responseHeaders = null;
+  let loggedError = false;
   try {
     const jobId = encodeURIComponent(req.params.id);
     const instanceHint = extractInstanceId(req);
-    const url = buildComfyUrl(`/v1/jobs/${jobId}`, { instanceId: instanceHint });
-    const r = await fetch(url, {
-      headers: apiHeaders()
-    });
-    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    const json = await r.json();
+    requestUrl = buildComfyUrl(`/v1/jobs/${jobId}`, { instanceId: instanceHint });
+    const r = await fetch(requestUrl, { headers: requestHeaders });
+    responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt, jobId, instanceHint },
+        functionName
+      });
+      loggedError = true;
+      return errorJson(res, r.status, 'upstream error', txt);
+    }
+    let json = null;
+    try {
+      json = await r.json();
+    } catch (parseError) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { parseError: parseError.message, body: txt, jobId, instanceHint },
+        functionName
+      });
+      loggedError = true;
+      throw parseError;
+    }
     const instanceId = json?.instance_id || instanceHint || null;
     if (json && Array.isArray(json.files)) {
       json.files = normalizeJobFiles(req.params.id, json.files, instanceId);
@@ -1613,14 +1992,37 @@ exports.getJob = async (req, res) => {
     if (instanceId && !json.instance_id) {
       json.instance_id = instanceId;
     }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders,
+      responseBody: json,
+      functionName
+    });
     res.json(json);
   } catch (e) {
+    if (!loggedError) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: e,
+        functionName
+      });
+    }
     return errorJson(res, 502, 'failed to fetch job', String(e.message || e));
   }
 };
 
 // Proxy: stream job file (image or video)
 exports.getJobFile = async (req, res) => {
+  const functionName = 'getJobFile';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
+  let responseHeaders = null;
+  let loggedError = false;
   try {
     const jobId = encodeURIComponent(req.params.id);
     const index = encodeURIComponent(req.params.index);
@@ -1628,11 +2030,21 @@ exports.getJobFile = async (req, res) => {
     const fileName = req.query?.filename;
     const mediaType = (req.query?.mediaType || '').trim() || detectMediaType(fileName);
     const instanceId = normalizeInstanceId(req.query?.instance_id || req.query?.instanceId);
-    const url = buildComfyUrl(`/v1/jobs/${jobId}/files/${index}`, { instanceId });
-    const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
+    requestUrl = buildComfyUrl(`/v1/jobs/${jobId}/files/${index}`, { instanceId });
+    const r = await fetch(requestUrl, { headers: requestHeaders, signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
+    responseHeaders = headersToObject(r.headers);
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
       logger.error('[getJobFile] upstream', r.status, txt);
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt, jobId, index, bucket, instanceId },
+        functionName
+      });
+      loggedError = true;
       return errorJson(res, r.status, 'upstream error', txt);
     }
     const ct = r.headers.get('content-type') || detectMimeType(mediaType, fileName);
@@ -1645,6 +2057,14 @@ exports.getJobFile = async (req, res) => {
         logger.warn('[getJobFile] failed to persist cache', err);
       }
     }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders,
+      responseBody: { jobId, index, bucket, mediaType, instanceId, contentType: ct, size: buf.length, fileName, data: buf },
+      functionName
+    });
     res.setHeader('Content-Type', ct);
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
@@ -1652,6 +2072,16 @@ exports.getJobFile = async (req, res) => {
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
     logger.error('[getJobFile] error', e);
+    if (!loggedError) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: e,
+        functionName
+      });
+    }
     return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream file', String(e.message || e));
   }
 };
@@ -1663,12 +2093,45 @@ exports.getJobImage = exports.getJobFile;
 exports.listFiles = async (req, res) => {
   const bucket = req.params.bucket;
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
+  const functionName = 'listFiles';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
+  let responseHeaders = null;
+  let loggedError = false;
   try {
     const instanceId = extractInstanceId(req);
-    const url = buildComfyUrl(`/v1/files/${bucket}`, { instanceId });
-    const r = await fetch(url, { headers: apiHeaders() });
-    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    const remoteJson = await r.json();
+    requestUrl = buildComfyUrl(`/v1/files/${bucket}`, { instanceId });
+    const r = await fetch(requestUrl, { headers: requestHeaders });
+    responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt, bucket, instanceId },
+        functionName
+      });
+      loggedError = true;
+      return errorJson(res, r.status, 'upstream error', txt);
+    }
+    let remoteJson = null;
+    try {
+      remoteJson = await r.json();
+    } catch (parseError) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { parseError: parseError.message, body: txt, bucket, instanceId },
+        functionName
+      });
+      loggedError = true;
+      throw parseError;
+    }
     const remoteFiles = Array.isArray(remoteJson?.files) ? remoteJson.files : [];
 
     const names = remoteFiles.map(item => {
@@ -1701,8 +2164,26 @@ exports.listFiles = async (req, res) => {
       files: names,
       cached: cachedEntries
     });
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders,
+      responseBody: payload,
+      functionName
+    });
     res.json(payload);
   } catch (e) {
+    if (!loggedError) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: e,
+        functionName
+      });
+    }
     return errorJson(res, 502, 'failed to list files', String(e.message || e));
   }
 };
@@ -1712,6 +2193,11 @@ exports.getFile = async (req, res) => {
   const bucket = req.params.bucket;
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
   const name = req.params.filename;
+  const functionName = 'getFile';
+  let requestHeaders = null;
+  let requestUrl = null;
+  let responseHeaders = null;
+  let loggedError = false;
   try {
     const instanceId = extractInstanceId(req);
     const cacheRecord = await resolveCachedRecord(bucket, name, instanceId);
@@ -1727,11 +2213,22 @@ exports.getFile = async (req, res) => {
     }
 
     // Fallback to proxying directly if caching failed
-    const url = buildComfyUrl(`/v1/files/${bucket}/${encodeURIComponent(name)}`, { instanceId });
-    const r = await fetch(url, { headers: apiHeaders(), signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
+    requestHeaders = apiHeaders();
+    requestUrl = buildComfyUrl(`/v1/files/${bucket}/${encodeURIComponent(name)}`, { instanceId });
+    const r = await fetch(requestUrl, { headers: requestHeaders, signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
+    responseHeaders = headersToObject(r.headers);
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
       logger.error('[getFile] upstream', r.status, txt);
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt, bucket, name, instanceId },
+        functionName
+      });
+      loggedError = true;
       return errorJson(res, r.status, 'upstream error', txt);
     }
     const mediaType = detectMediaType(name);
@@ -1746,10 +2243,28 @@ exports.getFile = async (req, res) => {
     } catch (err) {
       logger.warn('[getFile] failed to persist fallback cache', err);
     }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders,
+      responseBody: { bucket, name, mediaType, instanceId, contentType: ct, size: buf.length, data: buf },
+      functionName
+    });
     res.end(buf);
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
     logger.error('[getFile] error', e);
+    if (!loggedError) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders: null,
+        responseBody: e,
+        functionName
+      });
+    }
     return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream file', String(e.message || e));
   }
 };
@@ -1760,6 +2275,12 @@ function guessImageMime(name) {
 
 // POST /image_gen/api/files/promote
 exports.promoteCachedFile = async (req, res) => {
+  const functionName = 'promoteCachedFile';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
+  let responseHeaders = null;
+  let loggedError = false;
+  let requestBodyLog = null;
   try {
     const bucket = (req.body?.bucket || 'output').trim();
     const filename = req.body?.filename;
@@ -1778,20 +2299,50 @@ exports.promoteCachedFile = async (req, res) => {
       return errorJson(res, 404, 'cached file not found');
     }
 
+    requestUrl = buildComfyUrl('/v1/files/input');
     const buf = await fsp.readFile(cacheRecord.localPath);
     const mime = guessImageMime(safeName);
     const fd = new FormData();
     const blob = new Blob([buf], { type: mime });
     fd.append('image', blob, safeName);
     if (instanceId) fd.append('instance_id', instanceId);
+    requestBodyLog = { bucket, filename: safeName, instanceId, mime, size: buf.length, data: buf };
 
-    const r = await fetch(buildComfyUrl('/v1/files/input'), {
+    const r = await fetch(requestUrl, {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: requestHeaders,
       body: fd
     });
-    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    const json = await r.json().catch(() => ({}));
+    responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: requestBodyLog,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt },
+        functionName
+      });
+      loggedError = true;
+      return errorJson(res, r.status, 'upstream error', txt);
+    }
+    let json = {};
+    try {
+      json = await r.json();
+    } catch (parseError) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: requestBodyLog,
+        responseHeaders,
+        responseBody: { parseError: parseError.message, body: txt },
+        functionName
+      });
+      loggedError = true;
+      throw parseError;
+    }
     const savedName = json?.filename || json?.file || safeName;
 
     try {
@@ -1800,9 +2351,28 @@ exports.promoteCachedFile = async (req, res) => {
       logger.warn('[promoteCachedFile] failed to persist cache', err);
     }
 
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: requestBodyLog,
+      responseHeaders,
+      responseBody: { ok: true, filename: savedName, instance_id: instanceId || json?.instance_id || null, raw: json },
+      functionName
+    });
+
     res.json({ ok: true, filename: savedName, instance_id: instanceId || json?.instance_id || null });
   } catch (e) {
     logger.error('[promoteCachedFile] error', e);
+    if (!loggedError) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: requestBodyLog,
+        responseHeaders,
+        responseBody: e,
+        functionName
+      });
+    }
     return errorJson(res, 500, 'failed to promote cached file', String(e.message || e));
   }
 };
@@ -1812,6 +2382,12 @@ exports.uploadInput = async (req, res) => {
   if (!req.file) return errorJson(res, 400, 'missing file "image"');
   const tmpPath = req.file.path;
   const fileName = req.file.originalname;
+  const functionName = 'uploadInput';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
+  let responseHeaders = null;
+  let loggedError = false;
+  let requestBodyLog = null;
   try {
     const instanceId = extractInstanceId(req);
     const buf = await fsp.readFile(tmpPath);
@@ -1820,13 +2396,49 @@ exports.uploadInput = async (req, res) => {
     const blob = new Blob([buf], { type: req.file.mimetype || 'application/octet-stream' });
     fd.append('image', blob, fileName);
     if (instanceId) fd.append('instance_id', instanceId);
-    const r = await fetch(buildComfyUrl('/v1/files/input'), {
+    requestBodyLog = {
+      fileName,
+      instanceId,
+      mime: req.file.mimetype || 'application/octet-stream',
+      size: buf.length,
+      data: buf
+    };
+    requestUrl = buildComfyUrl('/v1/files/input');
+    const r = await fetch(requestUrl, {
       method: 'POST',
-      headers: apiHeaders(), // do not set Content-Type; fetch will set the boundary
+      headers: requestHeaders, // do not set Content-Type; fetch will set the boundary
       body: fd
     });
-    if (!r.ok) return errorJson(res, r.status, 'upstream error', await r.text());
-    const json = await r.json().catch(() => ({}));
+    responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: requestBodyLog,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt },
+        functionName
+      });
+      loggedError = true;
+      return errorJson(res, r.status, 'upstream error', txt);
+    }
+    let json = {};
+    try {
+      json = await r.json();
+    } catch (parseError) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: requestBodyLog,
+        responseHeaders,
+        responseBody: { parseError: parseError.message, body: txt },
+        functionName
+      });
+      loggedError = true;
+      throw parseError;
+    }
     const savedName = json?.filename || json?.file || fileName;
     if (savedName) {
       try {
@@ -1838,8 +2450,26 @@ exports.uploadInput = async (req, res) => {
     if (instanceId && !json.instance_id) {
       json.instance_id = instanceId;
     }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: requestBodyLog,
+      responseHeaders,
+      responseBody: json,
+      functionName
+    });
     res.json(json);
   } catch (e) {
+    if (!loggedError) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: requestBodyLog,
+        responseHeaders,
+        responseBody: e,
+        functionName
+      });
+    }
     return errorJson(res, 502, 'failed to upload to ComfyUI API', String(e.message || e));
   } finally {
     // best-effort cleanup
@@ -1943,8 +2573,13 @@ exports.listPrompts = async (req, res) => {
 
 // Simple health pass-through
 exports.health = async (req, res) => {
+  const functionName = 'health';
+  let requestUrl = null;
+  let responseHeaders = null;
   try {
-    const r = await fetch(buildComfyUrl('/health'));
+    requestUrl = buildComfyUrl('/health');
+    const r = await fetch(requestUrl);
+    responseHeaders = headersToObject(r.headers);
     let payload = null;
     try {
       payload = await r.json();
@@ -1957,8 +2592,24 @@ exports.health = async (req, res) => {
     } else if (typeof payload.ok === 'undefined') {
       payload.ok = r.ok;
     }
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: null,
+      responseHeaders,
+      responseBody: payload,
+      functionName
+    });
     res.status(r.ok ? 200 : 502).json(payload);
   } catch (err) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: null,
+      responseHeaders,
+      responseBody: err,
+      functionName
+    });
     res.status(502).json({ ok: false, error: String(err?.message || err) });
   }
 };
