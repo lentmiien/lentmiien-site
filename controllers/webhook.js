@@ -177,7 +177,7 @@ exports.openai = async (req, res) => {
       const roomForConversation = io.conversationRoom;
       const convRoom = roomForConversation(conversation._id.toString());
       io.to(convRoom).emit('chat5-messages', { id: conversation._id.toString(), messages });
-      io.to(convRoom).emit('chat5_6-messages', { id: conversationId, messages: messages.map(toClientMessage) });
+      io.to(convRoom).emit('chat5_6-messages', { id: conversation._id.toString(), messages: messages.map(toClientMessage) });
       const rooms = conversation.members.map(roomForUser);
       io.to(rooms).emit('chat5-notice', { id: conversation._id.toString(), title: conversation.title });
     }
