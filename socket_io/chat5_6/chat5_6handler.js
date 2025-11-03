@@ -77,7 +77,8 @@ module.exports = async function registerChat5_6Handlers({
 }) {
   const {
     models: {
-      Conversation5Model
+      Conversation5Model,
+      AIModelCards
     },
     services: {
       messageService,
@@ -320,6 +321,44 @@ module.exports = async function registerChat5_6Handlers({
         ack({ ok: false, ...details });
       } else {
         emitError(eventName, 'Unable to update settings.', details);
+      }
+    }
+  });
+
+  socket.on('chat5_6-listModels', async (_, ack) => {
+    const eventName = 'chat5_6-listModels';
+    try {
+      const docs = await AIModelCards.find({
+        provider: 'OpenAI',
+        model_type: 'chat'
+      }).sort({ model_name: 1 }).lean();
+
+      const models = docs.map(doc => ({
+        id: doc._id.toString(),
+        name: doc.model_name,
+        apiModel: doc.api_model,
+        maxTokens: doc.max_tokens,
+        maxOutputTokens: doc.max_out_tokens,
+        batch: doc.batch_use,
+        inputCostPer1M: doc.input_1m_token_cost,
+        outputCostPer1M: doc.output_1m_token_cost,
+        inModalities: doc.in_modalities,
+        outModalities: doc.out_modalities,
+        contextType: doc.context_type,
+      }));
+
+      const payload = { models };
+      if (typeof ack === 'function') {
+        ack({ ok: true, ...payload });
+      } else {
+        socket.emit(eventName + ':done', payload);
+      }
+    } catch (error) {
+      logger.error(eventName + ' failed', error);
+      if (typeof ack === 'function') {
+        ack({ ok: false, message: error.message });
+      } else {
+        emitError(eventName, 'Unable to list models.', { details: error.message });
       }
     }
   });

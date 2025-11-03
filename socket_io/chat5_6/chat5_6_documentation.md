@@ -14,6 +14,7 @@ All payloads are JSON objects unless otherwise noted. Optional fields are marked
 | `chat5_6-createConversation` | Reuse empty chat5 convo for user or create a new one | `settings` (object, optional), `properties` (object, optional) |
 | `chat5_6-copyConversation` | Copy chat4/chat5 into a new chat5 conversation | `sourceConversationId` (string), `deepCopy` (bool, optional) |
 | `chat5_6-updateSettings` | Update metadata (model, context, etc.) and/or details (category, tags, members) | `conversationId` (string), `settings` (object optional), `details` (object optional) |
+| `chat5_6-listModels` | Retrieve OpenAI chat models from `ai_model_card` | — |
 | `chat5_6-appendMessage` | Append a user text message | `conversationId` (`'NEW'` creates), `text` (string) |
 | `chat5_6-appendImage` | Append user image; supports upload or existing filename | `conversationId`, `name` or `fileName`, `buffer` / `data` (optional) |
 | `chat5_6-requestAIResponse` | Ask configured model for an immediate response (creates placeholder) | `conversationId` |
