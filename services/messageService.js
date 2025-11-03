@@ -12,6 +12,27 @@ const logger = require('../utils/logger');
 
 const { AIModelCards, Chat5Model } = require('../database');
 
+function cloneDeepMessageContent(content) {
+  if (content === null || content === undefined) return content;
+  if (typeof global.structuredClone === 'function') {
+    return global.structuredClone(content);
+  }
+  if (Array.isArray(content)) {
+    return content.map(cloneDeepMessageContent);
+  }
+  if (content instanceof Date) {
+    return new Date(content.getTime());
+  }
+  if (typeof content === 'object') {
+    const output = {};
+    for (const [key, value] of Object.entries(content)) {
+      output[key] = cloneDeepMessageContent(value);
+    }
+    return output;
+  }
+  return content;
+}
+
 const Title = z.object({
   conversation_title: z.string(),
 });
@@ -682,6 +703,82 @@ class MessageService {
     const msg = new Chat5Model(message);
     await msg.save();
     return msg;
+  }
+
+  async cloneMessages({ messageIds }) {
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return { ids: [], messages: [] };
+    }
+
+    const normalized = messageIds.map(id => id.toString());
+    const originals = await Chat5Model.find({ _id: normalized });
+    const lookup = new Map();
+    for (const message of originals) {
+      lookup.set(message._id.toString(), message);
+    }
+
+    const clones = [];
+    const cloneIds = [];
+    for (const id of normalized) {
+      const original = lookup.get(id);
+      if (!original) {
+        logger.warning('cloneMessages: original message not found', { messageId: id });
+        continue;
+      }
+
+      const cloneContent = cloneDeepMessageContent(original.content);
+      const clone = new Chat5Model({
+        user_id: original.user_id,
+        category: original.category,
+        tags: Array.isArray(original.tags) ? [...original.tags] : [],
+        contentType: original.contentType,
+        content: cloneContent,
+        timestamp: original.timestamp ? new Date(original.timestamp) : new Date(),
+        hideFromBot: original.hideFromBot,
+      });
+      await clone.save();
+      clones.push(clone);
+      cloneIds.push(clone._id.toString());
+    }
+
+    return { ids: cloneIds, messages: clones };
+  }
+
+  async createMessagesFromSnapshots({ messages, category, tags }) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return { ids: [], messages: [] };
+    }
+
+    const clones = [];
+    const ids = [];
+
+    for (const snapshot of messages) {
+      if (!snapshot || typeof snapshot !== 'object') continue;
+
+      const payload = {
+        user_id: snapshot.user_id || 'user',
+        category: category || snapshot.category || 'Chat5',
+        tags: Array.isArray(snapshot.tags) && snapshot.tags.length > 0 ? [...snapshot.tags] : (Array.isArray(tags) ? [...tags] : []),
+        contentType: snapshot.contentType || 'text',
+        content: cloneDeepMessageContent(snapshot.content || {}),
+        timestamp: snapshot.timestamp ? new Date(snapshot.timestamp) : new Date(),
+        hideFromBot: !!snapshot.hideFromBot,
+      };
+
+      const msg = new Chat5Model(payload);
+      await msg.save();
+      clones.push(msg);
+      ids.push(msg._id.toString());
+    }
+
+    return { ids, messages: clones };
+  }
+
+  async deleteMessages(messageIds = []) {
+    if (!Array.isArray(messageIds) || messageIds.length === 0) return 0;
+    const normalized = messageIds.map(id => id.toString());
+    const result = await Chat5Model.deleteMany({ _id: normalized });
+    return result.deletedCount || 0;
   }
 
   async generateAIMessage({conversation}) {

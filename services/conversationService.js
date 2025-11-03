@@ -857,18 +857,169 @@ class ConversationService {
   // CHAT5
   // CHAT5
   async createNewConversation(userId, settings = DEFAULT_SETTINGS, conv_property = DEFAULT_PROPERTY) {
-    const members = conv_property.members;
-    if (members.indexOf(userId) === -1) members.push(userId);
+    const memberList = Array.isArray(conv_property.members) ? [...conv_property.members] : [];
+    if (memberList.indexOf(userId) === -1) memberList.push(userId);
+
+    const mergedSettings = {
+      ...DEFAULT_SETTINGS,
+      ...(settings || {}),
+    };
+
+    const tags = Array.isArray(conv_property.tags)
+      ? [...conv_property.tags]
+      : (typeof conv_property.tags === 'string' && conv_property.tags.length > 0
+        ? [conv_property.tags]
+        : [...DEFAULT_PROPERTY.tags]);
+
     const conv = new Conversation5Model({
-      title: conv_property.title,
-      category: conv_property.category,
-      tags: conv_property.tags,
-      metadata: settings,
-      members: members.filter(d => d.length > 0),
+      title: conv_property.title || DEFAULT_PROPERTY.title,
+      summary: conv_property.summary || '',
+      category: conv_property.category || DEFAULT_PROPERTY.category,
+      tags,
+      metadata: mergedSettings,
+      members: memberList.filter(d => typeof d === 'string' && d.length > 0),
       messages: []
     });
     await conv.save();
     return conv;
+  }
+
+  async findOrCreateEmptyConversation({ userId, settings = {}, properties = {} } = {}) {
+    const normalizedUser = String(userId);
+    let conversation = await Conversation5Model.findOne({
+      members: normalizedUser,
+      messages: { $size: 0 }
+    });
+
+    let shouldSave = false;
+    if (conversation) {
+      const metadataUpdates = Object.keys(settings || {});
+      if (metadataUpdates.length > 0) {
+        conversation.metadata = {
+          ...DEFAULT_SETTINGS,
+          ...(conversation.metadata || {}),
+          ...settings,
+        };
+        shouldSave = true;
+      }
+      const propertyUpdates = Object.keys(properties || {});
+      if (propertyUpdates.length > 0) {
+        if (properties.title && properties.title.trim().length > 0) {
+          conversation.title = properties.title.trim();
+          shouldSave = true;
+        }
+        if (properties.category && properties.category.trim().length > 0) {
+          conversation.category = properties.category.trim();
+          shouldSave = true;
+        }
+        if (Array.isArray(properties.tags)) {
+          const cleanedTags = [...new Set(properties.tags.filter(tag => typeof tag === 'string' && tag.trim().length > 0).map(tag => tag.trim()))];
+          if (cleanedTags.length > 0) {
+            conversation.tags = cleanedTags;
+            shouldSave = true;
+          }
+        }
+        if (Array.isArray(properties.members)) {
+          const members = [...new Set(properties.members.concat([normalizedUser]).filter(m => typeof m === 'string' && m.length > 0))];
+          conversation.members = members;
+          shouldSave = true;
+        }
+      }
+
+      if (!conversation.members.includes(normalizedUser)) {
+        conversation.members.push(normalizedUser);
+        shouldSave = true;
+      }
+
+      if (shouldSave) {
+        conversation.updatedAt = new Date();
+        await conversation.save();
+      }
+      return conversation;
+    }
+
+    const mergedProps = {
+      ...DEFAULT_PROPERTY,
+      ...(properties || {}),
+      members: Array.isArray(properties.members) ? [...properties.members] : [],
+    };
+
+    return this.createNewConversation(userId, { ...DEFAULT_SETTINGS, ...settings }, mergedProps);
+  }
+
+  async copyConversationToChat5({ sourceConversationId, userId, deepCopy = false }) {
+    const normalizedId = String(sourceConversationId);
+    let sourceConversation = await Conversation5Model.findById(normalizedId);
+    const normalizedUser = String(userId);
+
+    if (!sourceConversation) {
+      const legacyConversation = await this.conversationModel.findById(normalizedId);
+      if (!legacyConversation) {
+        throw new Error('Conversation not found');
+      }
+
+      const convertedConversation = this.convertOldConversation(legacyConversation);
+      const newMessageIds = await this.messageService.convertOldMessages(convertedConversation.messages);
+      const memberSet = new Set([...(convertedConversation.members || []), normalizedUser]);
+
+      const newConversation = new Conversation5Model({
+        title: convertedConversation.title,
+        summary: convertedConversation.summary,
+        category: convertedConversation.category,
+        tags: Array.isArray(convertedConversation.tags) ? [...convertedConversation.tags] : [],
+        metadata: convertedConversation.metadata,
+        members: [...memberSet].filter(Boolean),
+        messages: newMessageIds,
+      });
+
+      await newConversation.save();
+      const messages = await this.messageService.loadMessagesInNewFormat(newConversation.messages, true);
+      return { conversation: newConversation, messages, source: 'chat4', deepCopied: true };
+    }
+
+    const sourceMetadata = {
+      ...DEFAULT_SETTINGS,
+      ...(sourceConversation.metadata || {}),
+    };
+    const memberSet = new Set([...(sourceConversation.members || []), normalizedUser]);
+
+    let messageIds = [];
+    if (deepCopy) {
+      const { ids } = await this.messageService.cloneMessages({ messageIds: sourceConversation.messages });
+      messageIds = ids;
+    } else {
+      messageIds = [...sourceConversation.messages];
+    }
+
+    const newConversation = new Conversation5Model({
+      title: sourceConversation.title,
+      summary: sourceConversation.summary,
+      category: sourceConversation.category,
+      tags: Array.isArray(sourceConversation.tags) ? [...sourceConversation.tags] : [],
+      metadata: sourceMetadata,
+      members: [...memberSet].filter(Boolean),
+      messages: messageIds,
+    });
+
+    await newConversation.save();
+    const messages = await this.messageService.loadMessagesInNewFormat(newConversation.messages, true);
+    return { conversation: newConversation, messages, source: 'chat5', deepCopied: !!deepCopy };
+  }
+
+  async appendMessages(conversationId, messageIds = []) {
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return await Conversation5Model.findById(conversationId);
+    }
+
+    const conversation = await Conversation5Model.findById(conversationId);
+    if (!conversation) {
+      throw new Error('Conversation not found in chat5 database. Please convert or copy it before appending messages.');
+    }
+
+    conversation.messages.push(...messageIds.map(id => id.toString()));
+    conversation.updatedAt = new Date();
+    await conversation.save();
+    return conversation;
   }
 
   async loadConversation(conversationId) {
