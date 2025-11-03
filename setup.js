@@ -185,9 +185,9 @@ async function ClearTestDataFromDB() {
   }
 
   // Delete low-rated Sora videos and remove files
+  const videoDir = path.join(__dirname, 'public', 'video');
   const lowRatedVideos = await SoraVideo.find({ rating: 1, filename: { $nin: ['', null] } }).lean();
   if (lowRatedVideos.length > 0) {
-    const videoDir = path.join(__dirname, 'public', 'video');
     for (const video of lowRatedVideos) {
       const videoPath = path.join(videoDir, video.filename);
       try {
@@ -201,6 +201,30 @@ async function ClearTestDataFromDB() {
     }
     await SoraVideo.deleteMany({ _id: { $in: lowRatedVideos.map((video) => video._id) } });
     logger.notice(`Deleted ${lowRatedVideos.length} low-rated Sora videos from database.`);
+  }
+
+  // Remove stale, incomplete Sora generations older than 48 hours
+  const staleCutoff = new Date(Date.now() - (48 * 60 * 60 * 1000));
+  const staleVideos = await SoraVideo.find({
+    status: { $ne: 'completed' },
+    startedAt: { $lt: staleCutoff },
+  }).lean();
+  if (staleVideos.length > 0) {
+    for (const video of staleVideos) {
+      if (video.filename) {
+        const videoPath = path.join(videoDir, video.filename);
+        try {
+          await fs.promises.unlink(videoPath);
+          logger.notice(`Removed stale Sora video file: ${videoPath}`);
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            logger.warning(`Unable to remove stale Sora video file: ${videoPath}`, err);
+          }
+        }
+      }
+    }
+    await SoraVideo.deleteMany({ _id: { $in: staleVideos.map((video) => video._id) } });
+    logger.notice(`Deleted ${staleVideos.length} stale, incomplete Sora video records.`);
   }
 
   await mongoose.disconnect();
