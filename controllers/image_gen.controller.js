@@ -128,6 +128,30 @@ function normalizeInstanceId(raw) {
   return str ? str : null;
 }
 
+const BULK_INSTANCE_DEFAULT = '__default__';
+
+function toInstanceKey(instanceId) {
+  return normalizeInstanceId(instanceId) || BULK_INSTANCE_DEFAULT;
+}
+
+function fromInstanceKey(key) {
+  return key === BULK_INSTANCE_DEFAULT ? null : key;
+}
+
+function applyInstanceFilter(filter, instanceId) {
+  const normalized = normalizeInstanceId(instanceId);
+  if (!normalized) {
+    filter.$or = [
+      { instance_id: { $exists: false } },
+      { instance_id: null },
+      { instance_id: '' }
+    ];
+  } else {
+    filter.instance_id = normalized;
+  }
+  return filter;
+}
+
 function extractInstanceId(req) {
   if (!req) return null;
   // Accept both snake_case and camelCase for convenience
@@ -620,6 +644,31 @@ async function refreshJobCounters(jobId) {
   return Object.assign(job.toObject(), updates);
 }
 
+async function computeBulkInstanceQueues() {
+  const rows = await BulkTestPrompt.aggregate([
+    { $match: { status: { $in: ['Pending', 'Processing'] } } },
+    {
+      $group: {
+        _id: { instance: '$instance_id', status: '$status' },
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+  const map = new Map();
+  for (const row of rows) {
+    const instance = normalizeInstanceId(row?._id?.instance);
+    const key = toInstanceKey(instance);
+    const status = String(row?._id?.status || '').toLowerCase();
+    const entry = map.get(key) || { pending: 0, processing: 0, total: 0 };
+    const count = row?.count || 0;
+    if (status === 'pending') entry.pending += count;
+    if (status === 'processing') entry.processing += count;
+    entry.total += count;
+    map.set(key, entry);
+  }
+  return map;
+}
+
 function toObjectId(id) {
   if (!id) return null;
   if (id instanceof mongoose.Types.ObjectId) return id;
@@ -627,8 +676,11 @@ function toObjectId(id) {
   return null;
 }
 
-let bulkWorkerRunning = false;
-let bulkWorkerPending = false;
+const bulkWorkerState = {
+  scheduling: false,
+  running: new Map(),
+  reschedule: false
+};
 
 async function waitForComfyJob(jobId, instanceId) {
   for (let attempt = 0; attempt < BULK_JOB_POLL_LIMIT; attempt++) {
@@ -873,61 +925,129 @@ async function processBulkPrompt(job, prompt) {
   }
 }
 
-async function bulkWorkerTick() {
-  if (bulkWorkerRunning) return;
-  bulkWorkerRunning = true;
-  try {
-    const job = await BulkJob.findOne({ status: 'Processing' }).sort({ updated_at: 1 });
-    if (!job) return;
-    const now = new Date();
+async function claimPromptForInstance(instanceId) {
+  const jobs = await BulkJob.find(applyInstanceFilter({ status: 'Processing' }, instanceId)).sort({ updated_at: 1 });
+  if (!jobs.length) return null;
+  for (const job of jobs) {
     const prompt = await BulkTestPrompt.findOneAndUpdate(
       { job: job._id, status: 'Pending' },
-      { $set: { status: 'Processing', started_at: now } },
+      { $set: { status: 'Processing', started_at: new Date() } },
       { sort: { created_at: 1 }, new: true }
     );
     if (!prompt) {
       await refreshJobCounters(job._id);
-      return;
+      continue;
     }
-    const freshJob = await BulkJob.findById(job._id);
-    if (!freshJob || freshJob.status !== 'Processing') {
+    const jobInstance = normalizeInstanceId(job.instance_id);
+    const promptInstance = normalizeInstanceId(prompt.instance_id ?? jobInstance);
+    const workerInstance = normalizeInstanceId(instanceId);
+    if (!normalizeInstanceId(prompt.instance_id) && promptInstance) {
+      await BulkTestPrompt.updateOne(
+        { _id: prompt._id },
+        { $set: { instance_id: promptInstance } }
+      );
+      prompt.instance_id = promptInstance;
+    }
+    if (promptInstance !== workerInstance) {
+      await BulkTestPrompt.updateOne(
+        { _id: prompt._id },
+        {
+          $set: {
+            status: 'Pending',
+            instance_id: promptInstance || null
+          },
+          $unset: { started_at: 1 }
+        }
+      );
+      wakeBulkWorker();
+      continue;
+    }
+    if (job.status !== 'Processing') {
       await BulkTestPrompt.updateOne(
         { _id: prompt._id },
         { $set: { status: 'Pending' }, $unset: { started_at: 1 } }
       );
-      return;
+      await refreshJobCounters(job._id);
+      continue;
     }
-    if (!freshJob.started_at) {
+    if (!job.started_at) {
       await BulkJob.updateOne(
-        { _id: freshJob._id, started_at: { $exists: false } },
+        { _id: job._id, started_at: { $exists: false } },
         { $set: { started_at: new Date() } }
       );
     }
-    await processBulkPrompt(freshJob, prompt);
-  } catch (err) {
-    logger.error('[bulkWorkerTick] error', err);
-  } finally {
-    bulkWorkerRunning = false;
+    return { job, prompt };
   }
+  return null;
+}
+
+async function runInstanceWorker(instanceKey) {
+  if (bulkWorkerState.running.has(instanceKey)) return bulkWorkerState.running.get(instanceKey);
+  const worker = (async () => {
+    const instanceId = fromInstanceKey(instanceKey);
+    try {
+      while (true) {
+        const work = await claimPromptForInstance(instanceId);
+        if (!work) break;
+        if (work.skip) continue;
+        await processBulkPrompt(work.job, work.prompt);
+      }
+    } catch (err) {
+      logger.error(`[bulkWorker] instance ${instanceKey} error`, err);
+    } finally {
+      bulkWorkerState.running.delete(instanceKey);
+    }
+  })();
+  bulkWorkerState.running.set(instanceKey, worker);
+  return worker;
+}
+
+async function collectActiveInstanceKeys() {
+  const keys = new Set();
+  const jobInstances = await BulkJob.distinct('instance_id', { status: 'Processing' });
+  for (const id of jobInstances) keys.add(toInstanceKey(id));
+  const promptInstances = await BulkTestPrompt.distinct('instance_id', { status: { $in: ['Pending', 'Processing'] } });
+  for (const id of promptInstances) keys.add(toInstanceKey(id));
+  return keys;
+}
+
+function scheduleBulkWorkers() {
+  if (bulkWorkerState.scheduling) {
+    bulkWorkerState.reschedule = true;
+    return;
+  }
+  bulkWorkerState.scheduling = true;
+  bulkWorkerState.reschedule = false;
+  Promise.resolve().then(async () => {
+    try {
+      const instanceKeys = await collectActiveInstanceKeys();
+      for (const key of instanceKeys) {
+        if (!bulkWorkerState.running.has(key)) {
+          runInstanceWorker(key).catch((err) => {
+            logger.error(`[bulkWorker] runner ${key} error`, err);
+          });
+        }
+      }
+    } catch (err) {
+      logger.error('[bulkWorker] schedule error', err);
+    } finally {
+      bulkWorkerState.scheduling = false;
+      if (bulkWorkerState.reschedule) {
+        scheduleBulkWorkers();
+      }
+    }
+  });
 }
 
 function wakeBulkWorker() {
-  if (bulkWorkerRunning || bulkWorkerPending) return;
-  bulkWorkerPending = true;
-  setTimeout(() => {
-    bulkWorkerPending = false;
-    if (bulkWorkerRunning) return;
-    bulkWorkerTick().catch((err) => {
-      logger.error('[bulkWorker] wake error', err);
-    });
+  const timer = setTimeout(() => {
+    scheduleBulkWorkers();
   }, 25);
+  timer.unref?.();
 }
 
 setInterval(() => {
-  if (bulkWorkerRunning) return;
-  bulkWorkerTick().catch((err) => {
-    logger.error('[bulkWorker] loop error', err);
-  });
+  scheduleBulkWorkers();
 }, BULK_WORKER_INTERVAL_MS).unref?.();
 
 
@@ -1774,7 +1894,42 @@ exports.listInstances = async (_req, res) => {
       responseBody,
       functionName
     });
-    res.json(responseBody);
+    let payload = responseBody;
+    try {
+      const queueMap = await computeBulkInstanceQueues();
+      if (payload && typeof payload === 'object') {
+        const queueObject = {};
+        for (const [key, summary] of queueMap.entries()) {
+          queueObject[key] = summary;
+        }
+        payload = Object.assign({}, payload);
+        payload.bulk_queue = queueObject;
+        if (Array.isArray(payload.instances)) {
+          payload.instances = payload.instances.map((inst) => {
+            if (!inst || typeof inst !== 'object') return inst;
+            const normalizedId = normalizeInstanceId(inst.id);
+            const summary = queueMap.get(toInstanceKey(normalizedId)) || { pending: 0, processing: 0, total: 0 };
+            return Object.assign({}, inst, { bulk_queue: summary });
+          });
+        }
+        if (queueMap.has(BULK_INSTANCE_DEFAULT)) {
+          const hasDefault = Array.isArray(payload.instances) && payload.instances.some((inst) => normalizeInstanceId(inst?.id) === null);
+          if (!hasDefault) {
+            const summary = queueMap.get(BULK_INSTANCE_DEFAULT);
+            const list = Array.isArray(payload.instances) ? payload.instances.slice() : [];
+            list.push({
+              id: null,
+              name: 'Default',
+              bulk_queue: summary
+            });
+            payload.instances = list;
+          }
+        }
+      }
+    } catch (mergeErr) {
+      logger.error('[listInstances] queue merge error', mergeErr);
+    }
+    res.json(payload);
   } catch (e) {
     await recordApiDebugLog({
       requestUrl,

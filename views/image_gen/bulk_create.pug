@@ -23,6 +23,13 @@ block content
       .panel
         h2 Workflow & Base Inputs
         .row.g-3
+          .col-md-8
+            label.form-label(for="instanceSelect") Instance
+            select#instanceSelect.form-select(disabled required)
+            small#instanceSummary.text-soft Select an instance to load workflows.
+          .col-md-4.d-flex.align-items-end.justify-content-md-end
+            button#reloadInstancesBtn.btn.btn-outline-secondary.btn-sm(type="button") Reload instances
+        .row.g-3
           .col-md-6
             label.form-label(for="jobName") Job name
             input#jobName.form-control(type="text" placeholder="e.g. Lighting study 01" required)

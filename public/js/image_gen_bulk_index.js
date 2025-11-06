@@ -1,6 +1,7 @@
 // public/js/image_gen_bulk_index.js
 (function(){
   const jobListEl = document.getElementById('jobList');
+  const instanceQueuesEl = document.getElementById('instanceQueues');
   const refreshBtn = document.getElementById('refreshBtn');
   const refreshStatus = document.getElementById('refreshStatus');
   let refreshTimer = null;
@@ -31,6 +32,47 @@
   function formatPercent(progress) {
     const pct = Math.max(0, Math.min(1, Number(progress || 0)));
     return `${(pct * 100).toFixed(0)}%`;
+  }
+
+  function instanceLabel(inst) {
+    if (!inst || typeof inst !== 'object') return 'Default';
+    const id = inst.id;
+    const name = typeof inst.name === 'string' && inst.name.trim() ? inst.name.trim() : '';
+    const normalizedId = id === null || id === undefined ? '' : String(id).trim();
+    if (!name && !normalizedId) return 'Default';
+    if (name && normalizedId && name !== normalizedId) return `${name} (${normalizedId})`;
+    return name || normalizedId || 'Default';
+  }
+
+  function renderInstanceQueues(payload) {
+    if (!instanceQueuesEl) return;
+    const list = Array.isArray(payload?.instances) ? payload.instances : [];
+    instanceQueuesEl.innerHTML = '';
+    if (!list.length) {
+      instanceQueuesEl.innerHTML = '<div class="text-soft">No instances reported.</div>';
+      return;
+    }
+    const sorted = list.slice().sort((a, b) => instanceLabel(a).localeCompare(instanceLabel(b)));
+    sorted.forEach((inst) => {
+      const card = document.createElement('div');
+      card.className = 'instance-queue-card';
+      const title = document.createElement('h3');
+      title.textContent = instanceLabel(inst);
+      card.appendChild(title);
+      const queue = inst?.bulk_queue || {};
+      const pending = Math.max(0, Number(queue.pending || 0));
+      const processing = Math.max(0, Number(queue.processing || 0));
+      const total = Math.max(0, Number(queue.total || pending + processing));
+      const meta = document.createElement('div');
+      meta.className = 'instance-queue-meta';
+      meta.innerHTML = `
+        <div>Total queued: ${total}</div>
+        <div>Pending: ${pending}</div>
+        <div>Processing: ${processing}</div>
+      `;
+      card.appendChild(meta);
+      instanceQueuesEl.appendChild(card);
+    });
   }
 
   function counterLines(counters) {
@@ -174,12 +216,36 @@
   async function loadJobs() {
     try {
       refreshStatus.textContent = 'Loading…';
-      const data = await api('/api/bulk/jobs?limit=200');
-      renderJobs(data.items || []);
-      lastLoadedAt = new Date();
-      refreshStatus.textContent = `Last updated ${lastLoadedAt.toLocaleTimeString()}`;
+      if (instanceQueuesEl) {
+        instanceQueuesEl.innerHTML = '<div class="text-soft">Loading instance queues…</div>';
+      }
+      const [instancesResult, jobsResult] = await Promise.allSettled([
+        api('/api/instances'),
+        api('/api/bulk/jobs?limit=200')
+      ]);
+      if (instancesResult.status === 'fulfilled') {
+        renderInstanceQueues(instancesResult.value);
+      } else if (instanceQueuesEl) {
+        const message = instancesResult.reason?.message || instancesResult.reason || 'Unknown error';
+        instanceQueuesEl.innerHTML = `<div class="text-danger">Failed to load instance queues: ${message}</div>`;
+      }
+      if (jobsResult.status === 'fulfilled') {
+        renderJobs(jobsResult.value.items || []);
+      } else {
+        const message = jobsResult.reason?.message || jobsResult.reason || 'Unknown error';
+        jobListEl.innerHTML = `<div class="text-danger">Failed to load jobs: ${message}</div>`;
+      }
+      if (instancesResult.status === 'fulfilled' || jobsResult.status === 'fulfilled') {
+        lastLoadedAt = new Date();
+        refreshStatus.textContent = `Last updated ${lastLoadedAt.toLocaleTimeString()}`;
+      } else {
+        refreshStatus.textContent = 'Refresh failed';
+      }
     } catch (err) {
       jobListEl.innerHTML = `<div class="text-danger">Failed to load jobs: ${err.message}</div>`;
+      if (instanceQueuesEl) {
+        instanceQueuesEl.innerHTML = `<div class="text-danger">Failed to load instance queues: ${err.message}</div>`;
+      }
       refreshStatus.textContent = 'Refresh failed';
     }
   }

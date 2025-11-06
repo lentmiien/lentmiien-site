@@ -1,6 +1,9 @@
 // public/js/image_gen_bulk_create.js
 (function(){
   const jobForm = document.getElementById('jobForm');
+  const instanceSelect = document.getElementById('instanceSelect');
+  const instanceSummary = document.getElementById('instanceSummary');
+  const reloadInstancesBtn = document.getElementById('reloadInstancesBtn');
   const workflowSelect = document.getElementById('workflowSelect');
   const workflowInputs = document.getElementById('workflowInputs');
   const addTemplateBtn = document.getElementById('addTemplateBtn');
@@ -21,19 +24,121 @@
   const summaryImages = document.getElementById('summaryImages');
 
   const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
+  const DEFAULT_INSTANCE_KEY = '__default__';
 
   const state = {
+    instances: [],
+    instanceMap: new Map(),
+    currentInstanceId: null,
     workflows: [],
     workflowMap: new Map(),
     currentImageSpecs: []
   };
 
+  function toInstanceKey(value) {
+    const normalized = typeof value === 'string' ? value.trim() : value;
+    return normalized ? String(normalized) : DEFAULT_INSTANCE_KEY;
+  }
+
+  function isPlainObject(value) {
+    if (!value || typeof value !== 'object') return false;
+    if (value instanceof FormData) return false;
+    if (value instanceof URLSearchParams) return false;
+    if (typeof Blob !== 'undefined' && value instanceof Blob) return false;
+    if (typeof ArrayBuffer !== 'undefined') {
+      if (value instanceof ArrayBuffer) return false;
+      if (ArrayBuffer.isView && ArrayBuffer.isView(value)) return false;
+    }
+    return Object.getPrototypeOf(value) === Object.prototype;
+  }
+
+  function withInstanceParam(url, instanceId) {
+    if (!instanceId || !url) return url;
+    if (url.includes('instance_id=')) return url;
+    const hashIndex = url.indexOf('#');
+    let base = url;
+    let hash = '';
+    if (hashIndex >= 0) {
+      hash = base.slice(hashIndex);
+      base = base.slice(0, hashIndex);
+    }
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}instance_id=${encodeURIComponent(instanceId)}${hash}`;
+  }
+
+  function setInstanceSummary(text) {
+    if (instanceSummary) instanceSummary.textContent = text || '';
+  }
+
+  function describeInstance(inst) {
+    if (!inst) return '';
+    const parts = [];
+    const name = inst.name || inst.id;
+    if (name) parts.push(name);
+    if (inst.bulk_queue) {
+      const pending = Number(inst.bulk_queue.pending || 0);
+      const processing = Number(inst.bulk_queue.processing || 0);
+      const total = Number(inst.bulk_queue.total || pending + processing);
+      const queueParts = [];
+      queueParts.push(`pending ${pending}`);
+      if (processing) queueParts.push(`processing ${processing}`);
+      parts.push(`Bulk queue ${total} (${queueParts.join(', ')})`);
+    }
+    if (Array.isArray(inst.workflows)) {
+      const count = inst.workflows.length;
+      parts.push(`${count} workflow${count === 1 ? '' : 's'}`);
+    }
+    return parts.join(' • ');
+  }
+
+  function renderInstanceSummary() {
+    const key = state.currentInstanceId;
+    const inst = key ? state.instanceMap.get(key) : null;
+    setInstanceSummary(describeInstance(inst) || 'Select an instance to load workflows.');
+  }
+
   async function api(path, init = {}) {
     const opts = Object.assign({ headers: {} }, init);
-    if (opts.body && !(opts.body instanceof FormData)) {
+    const skipInstance = Boolean(opts.skipInstance);
+    if ('skipInstance' in opts) delete opts.skipInstance;
+
+    const method = (opts.method || 'GET').toUpperCase();
+    opts.method = method;
+
+    let url = `/image_gen${path}`;
+    const instanceId = state.currentInstanceId;
+
+    if (!skipInstance && instanceId) {
+      if (method === 'GET' || method === 'HEAD') {
+        url = withInstanceParam(url, instanceId);
+      } else if (opts.body instanceof FormData) {
+        if (!opts.body.has('instance_id')) opts.body.append('instance_id', instanceId);
+      } else if (isPlainObject(opts.body)) {
+        const payload = Object.assign({}, opts.body);
+        if (!payload.instance_id && !payload.instanceId) payload.instance_id = instanceId;
+        opts.body = JSON.stringify(payload);
+        opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
+      } else if (typeof opts.body === 'string' && opts.body.trim()) {
+        try {
+          const parsed = JSON.parse(opts.body);
+          if (parsed && typeof parsed === 'object' && !parsed.instance_id && !parsed.instanceId) {
+            parsed.instance_id = instanceId;
+          }
+          opts.body = JSON.stringify(parsed);
+          opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
+        } catch (_) {
+          url = withInstanceParam(url, instanceId);
+        }
+      } else {
+        opts.body = JSON.stringify({ instance_id: instanceId });
+        opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
+      }
+    } else if (isPlainObject(opts.body)) {
+      opts.body = JSON.stringify(opts.body);
       opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json';
     }
-    const resp = await fetch(`/image_gen${path}`, opts);
+
+    const resp = await fetch(url, opts);
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
       throw new Error(`${resp.status} ${resp.statusText} — ${text}`.trim());
@@ -43,17 +148,131 @@
     return resp;
   }
 
+  function populateInstanceOptions(list, options = {}) {
+    if (!instanceSelect) return;
+    const preserveSelection = Boolean(options.preserveSelection);
+    const previous = instanceSelect.value;
+    instanceSelect.innerHTML = '';
+    if (!Array.isArray(list) || !list.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No instances available';
+      opt.disabled = true;
+      opt.selected = true;
+      instanceSelect.appendChild(opt);
+      instanceSelect.disabled = true;
+      return;
+    }
+    const ids = [];
+    list.forEach((inst) => {
+      if (!inst || !inst.id) return;
+      const opt = document.createElement('option');
+      opt.value = inst.id;
+      opt.textContent = inst.name || inst.id;
+      instanceSelect.appendChild(opt);
+      ids.push(inst.id);
+    });
+    let desired = options.selectedId || null;
+    if (!desired && preserveSelection && previous && ids.includes(previous)) {
+      desired = previous;
+    }
+    if (!desired && state.currentInstanceId && ids.includes(state.currentInstanceId)) {
+      desired = state.currentInstanceId;
+    }
+    if (!desired && options.defaultId && ids.includes(options.defaultId)) {
+      desired = options.defaultId;
+    }
+    if (!desired) {
+      desired = ids[0] || '';
+    }
+    instanceSelect.value = desired || '';
+    instanceSelect.disabled = false;
+  }
+
+  function determineDefaultInstanceId(list, payload) {
+    if (!Array.isArray(list) || !list.length) return null;
+    const declared = typeof payload?.default_instance_id === 'string' ? payload.default_instance_id : null;
+    if (declared && list.some(inst => inst && inst.id === declared)) return declared;
+    const flagged = list.find(inst => inst && (inst.default === true || inst.is_default === true));
+    if (flagged && flagged.id) return flagged.id;
+    return list[0]?.id || null;
+  }
+
+  async function changeInstance(rawId, options = {}) {
+    const normalized = rawId ? String(rawId) : null;
+    if (state.currentInstanceId === normalized && !options.forceReload) {
+      renderInstanceSummary();
+      return;
+    }
+    state.currentInstanceId = normalized;
+    if (!options.skipPopulate && instanceSelect) {
+      instanceSelect.value = normalized || '';
+    }
+    renderInstanceSummary();
+    await loadWorkflows();
+  }
+
+  async function loadInstances(options = {}) {
+    if (instanceSelect) instanceSelect.disabled = true;
+    if (reloadInstancesBtn) reloadInstancesBtn.disabled = true;
+    setInstanceSummary('Loading instances…');
+    try {
+      const payload = await api('/api/instances', { skipInstance: true });
+      const list = Array.isArray(payload?.instances) ? payload.instances : [];
+      state.instances = list;
+      state.instanceMap = new Map(list.filter(inst => inst && inst.id).map(inst => [inst.id, inst]));
+      const defaultId = determineDefaultInstanceId(list, payload);
+      populateInstanceOptions(list, {
+        selectedId: options.preserveSelection ? state.currentInstanceId : defaultId,
+        preserveSelection: options.preserveSelection,
+        defaultId
+      });
+      const nextId = (() => {
+        if (options.preserveSelection && state.currentInstanceId && state.instanceMap.has(state.currentInstanceId)) {
+          return state.currentInstanceId;
+        }
+        if (instanceSelect && instanceSelect.value) return instanceSelect.value;
+        return defaultId;
+      })();
+      await changeInstance(nextId || null, { forceReload: true, skipPopulate: true });
+    } catch (err) {
+      state.instances = [];
+      state.instanceMap = new Map();
+      state.currentInstanceId = null;
+      populateInstanceOptions([]);
+      setInstanceSummary(err?.message ? `Failed to load instances: ${err.message}` : 'Failed to load instances.');
+      workflowSelect.disabled = true;
+      workflowInputs.innerHTML = '<div class="text-danger">Unable to load workflows without an instance.</div>';
+      throw err;
+    } finally {
+      if (instanceSelect) instanceSelect.disabled = !state.instances.length;
+      if (reloadInstancesBtn) reloadInstancesBtn.disabled = false;
+    }
+  }
+
   function renderWorkflowList() {
+    const previousValue = workflowSelect.value;
     workflowSelect.innerHTML = '';
-    state.workflows.forEach((wf, idx) => {
+    if (!state.workflows.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No workflows available';
+      opt.disabled = true;
+      opt.selected = true;
+      workflowSelect.appendChild(opt);
+      return;
+    }
+    state.workflows.forEach((wf) => {
       const opt = document.createElement('option');
       opt.value = wf.key;
       const labelParts = [wf.name || wf.key];
       if (wf.outputType) { labelParts.push('· ' + wf.outputType.toUpperCase()); }
       opt.textContent = labelParts.join(' ');
-      if (idx === 0) opt.selected = true;
       workflowSelect.appendChild(opt);
     });
+    const validKeys = new Set(state.workflows.map((wf) => wf.key));
+    const desired = validKeys.has(previousValue) ? previousValue : state.workflows[0].key;
+    workflowSelect.value = desired || '';
   }
 
   function createInputControl(spec) {
@@ -504,15 +723,32 @@
   }
 
   async function loadWorkflows() {
+    if (!state.currentInstanceId) {
+      state.workflows = [];
+      state.workflowMap = new Map();
+      renderWorkflowList();
+      state.currentImageSpecs = [];
+      workflowInputs.innerHTML = '<div class="text-soft">Select an instance to load workflows.</div>';
+      updateSummary();
+      workflowSelect.disabled = true;
+      return;
+    }
+    workflowSelect.disabled = true;
+    workflowInputs.innerHTML = '<div class="text-soft">Loading workflows…</div>';
     try {
-      workflowInputs.innerHTML = '<div class="text-soft">Loading workflows…</div>';
       const data = await api('/api/workflows');
       state.workflows = data.workflows || [];
       state.workflowMap = new Map(state.workflows.map(w => [w.key, w]));
       renderWorkflowList();
       renderWorkflowInputs();
+      updateSummary();
     } catch (err) {
+      state.workflows = [];
+      state.workflowMap = new Map();
+      renderWorkflowList();
       workflowInputs.innerHTML = `<div class="text-danger">Failed to load workflows: ${err.message}</div>`;
+    } finally {
+      workflowSelect.disabled = !state.workflows.length;
     }
   }
 
@@ -534,6 +770,7 @@
     evt.preventDefault();
     submitBtn.disabled = true;
     try {
+      if (!state.currentInstanceId) throw new Error('Select an instance before creating a job.');
       const name = document.getElementById('jobName').value.trim();
       if (!name) throw new Error('Job name is required.');
       if (!workflowSelect.value) throw new Error('Select a workflow.');
@@ -558,12 +795,13 @@
         placeholderValues,
         negativePrompt: negativePrompt.value,
         baseInputs,
-        imageInputs
+        imageInputs,
+        instance_id: state.currentInstanceId
       };
 
       const resp = await api('/api/bulk/jobs', {
         method: 'POST',
-        body: JSON.stringify(payload)
+        body: payload
       });
       if (resp?.id) {
         window.location.href = `/image_gen/bulk/${encodeURIComponent(resp.id)}`;
@@ -579,6 +817,18 @@
     }
   }
 
+  instanceSelect?.addEventListener('change', (e) => {
+    changeInstance(e.target.value || null).catch((err) => {
+      formStatus.textContent = err.message;
+      formStatus.className = 'text-danger';
+    });
+  });
+  reloadInstancesBtn?.addEventListener('click', () => {
+    loadInstances({ preserveSelection: true }).catch((err) => {
+      formStatus.textContent = err.message;
+      formStatus.className = 'text-danger';
+    });
+  });
   addTemplateBtn?.addEventListener('click', () => addTemplate());
   addPlaceholderBtn?.addEventListener('click', () => addPlaceholder());
   workflowSelect?.addEventListener('change', () => {
@@ -590,5 +840,9 @@
 
   // Initialize with one template by default
   addTemplate();
-  loadWorkflows();
+  renderInstanceSummary();
+  loadInstances().catch((err) => {
+    formStatus.textContent = err.message;
+    formStatus.className = 'text-danger';
+  });
 })();
