@@ -211,6 +211,12 @@ async function convertOutput (d) {
         hideFromBot: true,
       };
     case "web_search_call":
+      let search_details = [];
+      if (d.action) {
+        if (d.action.type) search_details.push(`type: ${d.action.type}`);
+        if (d.action.query) search_details.push(`query: ${d.action.query}`);
+      }
+      if (search_details.length === 0) search_details.push(`${d.type}: ${d.status}`);
       return {
         contentType: type,
         content: {
@@ -221,7 +227,7 @@ async function convertOutput (d) {
           transcript: null,
           revisedPrompt: null,
           imageQuality: null,
-          toolOutput: `${d.type}: ${d.status}`,
+          toolOutput: search_details.join(', '),
         },
         hideFromBot: true,
       };
@@ -229,10 +235,14 @@ async function convertOutput (d) {
       if (d.summary.length === 0) {
         return null;
       } else {
+        let summary_texts = [];
+        d.summary.forEach(d => {
+          if (d.type === "summary_text") summary_texts.push(d.text);
+        });
         return {
           contentType: type,
           content: {
-            text: d.summary[0].text,
+            text: summary_texts.join('\n\n'),
             image: null,
             audio: null,
             tts: null,
