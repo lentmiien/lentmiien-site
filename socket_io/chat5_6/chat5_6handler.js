@@ -748,13 +748,27 @@ module.exports = async function registerChat5_6Handlers({
       if (!messages) throw new Error('messages array is required.');
 
       await conversationService.updateMessageArray(conversationId, messages);
-      const payload = { conversationId, length: messages.length };
-      io.to(roomForConversation(conversationId)).emit('chat5_6-messageArrayUpdated', payload);
 
+      const fetchedMessages = await messageService.loadMessagesInNewFormat(messages, true);
+      const clientMessages = Array.isArray(fetchedMessages)
+        ? fetchedMessages.map(toClientMessage)
+        : [];
+      if (clientMessages.length !== messages.length) {
+        logger.warning('chat5_6-updateMessageArray: unable to load full message set after reorder', {
+          conversationId,
+          expected: messages.length,
+          fetched: clientMessages.length
+        });
+      }
+
+      const broadcastPayload = { conversationId, length: messages.length };
+      io.to(roomForConversation(conversationId)).emit('chat5_6-messageArrayUpdated', broadcastPayload);
+
+      const responsePayload = { ...broadcastPayload, messages: clientMessages };
       if (typeof ack === 'function') {
-        ack({ ok: true, ...payload });
+        ack({ ok: true, ...responsePayload });
       } else {
-        socket.emit(eventName + ':done', payload);
+        socket.emit(eventName + ':done', responsePayload);
       }
     } catch (error) {
       logger.error(eventName + ' failed', error);
