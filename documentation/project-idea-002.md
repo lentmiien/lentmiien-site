@@ -15,8 +15,8 @@ Enable users to drop a PDF and kick off a Chat5 conversation seeded with page im
 - `services/messageService.js`, `services/conversationService.js` – extend to accept image arrays when bootstraping conversations.
 - `socket_io/chat5_6` – add an event to create conversations from document batches.
 - `public/temp/` for temporary storage, move to `public/img/` for images used in conversation (must move here before using in chat).
-- `socket_io\chat5_6\chat5_6_documentation.md` - update with PDF pipeline.
-- Chat UI in separate project, will be implemented based on `socket_io\chat5_6\chat5_6_documentation.md`.
+- `socket_io/chat5_6/chat5_6_documentation.md` - update with PDF pipeline.
+- Chat UI in separate project, will be implemented based on `socket_io/chat5_6/chat5_6_documentation.md`.
 
 ## Implementation Notes
 1. **Conversion module** – Wrap Poppler logic in a promise-based utility that outputs metadata (page number, file path, preview URL). Add max-page limit via env var (e.g., `CHAT_PDF_MAX_PAGES`).
