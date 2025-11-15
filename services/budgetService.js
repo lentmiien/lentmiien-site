@@ -258,7 +258,7 @@ async function insertTransaction(body){
 /* helper list for selects / drop-downs */
 async function getReferenceLists(){
   const acc   = await AccountDBModel.find().select('_id name');
-  const cats  = await CategoryDBModel.find().select('_id title');
+  const cats  = await CategoryDBModel.find().select('_id title type');
   const types = await TransactionDBModel.distinct('type');
   const tags  = await TransactionDBModel.distinct('tags');
   return {accounts:acc, categories:cats, types, tags};

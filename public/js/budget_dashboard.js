@@ -65,28 +65,89 @@ async function DeleteTransaction(id, thisButtonElement) {
  
   loadCategories();
 
-  /*  populate the 4 selects and tag-datalist  */
+  const categoryTypeLookup = {};
+
+  /*  populate the selects and tag-datalist  */
 (async function fillReferenceLists(){
    const ref = await api('/budget/api/lists');
- 
-   function fill(id, data, textProp){
-      const sel=document.getElementById(id);
-      sel.innerHTML='<option value="">-- choose --</option>';
-      data.forEach(r=>{
+
+   function resetSelect(sel){
+      if (!sel) return;
+      sel.innerHTML = '<option value="">-- choose --</option>';
+   }
+
+   function appendExternalOption(sel){
+      if (!sel) return;
+      const opt = document.createElement('option');
+      opt.value = 'EXT';
+      opt.textContent = 'EXT (external)';
+      sel.appendChild(opt);
+   }
+
+   function fillAccounts(selectId){
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+      resetSelect(sel);
+      (ref.accounts || []).forEach(acc=>{
          const opt=document.createElement('option');
-         opt.value=r._id || r;                 // r is string for types
-         opt.textContent=r[textProp] || r;
+         opt.value=acc._id || acc.name;
+         opt.textContent=acc.name;
          sel.appendChild(opt);
       });
+      appendExternalOption(sel);
    }
-   fill('from', ref.accounts ,'name');
-   fill('to',   ref.accounts ,'name');
-   fill('cat',  ref.categories,'title');
-   fill('type', ref.types);
- 
+
+   fillAccounts('from');
+   fillAccounts('to');
+
+   const typeSel = document.getElementById('type');
+   resetSelect(typeSel);
+   (ref.types || []).forEach(type=>{
+      const opt=document.createElement('option');
+      opt.value=type;
+      opt.textContent=type;
+      typeSel.appendChild(opt);
+   });
+
+   const catSel = document.getElementById('cat');
+   if (catSel) {
+      resetSelect(catSel);
+      const grouped = {};
+      (ref.categories || []).forEach(cat=>{
+         const bucket = cat.type || 'Other';
+         categoryTypeLookup[cat._id] = bucket;
+         if (!grouped[bucket]) grouped[bucket] = [];
+         grouped[bucket].push(cat);
+      });
+      Object.keys(grouped).sort().forEach(type=>{
+         const groupEl = document.createElement('optgroup');
+         groupEl.label = type;
+         grouped[type].forEach(cat=>{
+            const opt=document.createElement('option');
+            opt.value=cat._id;
+            opt.textContent=cat.title;
+            opt.dataset.type = cat.type || '';
+            groupEl.appendChild(opt);
+         });
+         catSel.appendChild(groupEl);
+      });
+   }
+
+   if (catSel && typeSel) {
+      catSel.addEventListener('change', ()=>{
+         const selected = catSel.value;
+         const matchedType = categoryTypeLookup[selected];
+         if (matchedType) {
+            typeSel.value = matchedType;
+         } else {
+            typeSel.value = '';
+         }
+      });
+   }
+
    // tags datalist
    const dl=document.getElementById('tagList');
-   ref.tags.forEach(t=>{
+   (ref.tags || []).forEach(t=>{
       const o=document.createElement('option');
       o.value=t; dl.appendChild(o);
    });
