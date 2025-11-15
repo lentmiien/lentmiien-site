@@ -6,7 +6,7 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
 
 | Domain | Primary Routes | Key Controllers/Services | Core Tools |
 | --- | --- | --- | --- |
-| Chat & Knowledge Ops | `/chat5` | `controllers/chat5controller`, `services/{conversation,message,knowledge,template}Service` | Model switcher, knowledge browser, template library, batch runner, media attachments |
+| Chat & Knowledge Ops | `/chat5` | `controllers/chat5controller`, `services/{conversation,message,knowledge,template}Service` | Model switcher, knowledge browser, template library, batch runner, media attachments, PDF-to-chat intake |
 | Video Generation (Sora) | `/sora` | `controllers/soracontroller`, `utils/OpenAI_API`, `services/batchService` | Prompt composer, background poller, webhook reconciler, asset rating, Dropbox backup hooks |
 | Image Generation (ComfyUI) | `/image_gen` | `controllers/image_gencontroller`, `services/conversationService`, `utils/OpenAI_API` | Prompt collections, job queue viewer, cached gallery, metadata tagging |
 | Budget & Finance | `/budget`, `/budget/review/:year/:month` | `controllers/budget2controller`, `services/{budget,creditCard}Service` | Dashboard KPIs, transaction review queue, categorisation helpers, credit card importer |
@@ -26,6 +26,7 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
   - **Template Library:** Stores reusable prompts via `TemplateService`, including search and quick insert.
   - **Batch Runner:** Delegates long-running jobs to `BatchService` and streams updates over Socket.IO.
   - **Story Mode & Media Attachments:** Handles cover art, audio, and file uploads with `MessageService`.
+  - **Chat-with-PDF Pipeline:** Uses Poppler via `utils/pdf`, `POST /chat5/documents/pdf`, and the `chat5_6-importPdfPages` socket event to turn selected PDF pages into chat-ready image messages with optional auto-summary; previews live under `public/temp/pdf` until promoted to `public/img`.
   - **Audit-Friendly Editor:** Allows message edits while logging diffs for later review.
 - **Backing Components:** `controllers/chat5controller`, `services/{conversation,message,knowledge,template}Service`, `socket_io/chat5`.
 
@@ -96,7 +97,7 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
   - **Startup Orchestrator (`setup.js`):** Creates directories, compacts caches, fetches OpenAI usage, prunes logs, trims low-rated media.
   - **Batch Scheduler (`schedulers/batchTrigger.js`):** Dispatches queued OpenAI batch jobs.
   - **Dropbox Sync (`services/messageService`, `dropbox.js`):** Pushes generated media for off-site storage.
-  - **Cache & Temp Hygiene:** `setup.js` and utility scripts purge `tmp_data/`, `cache/`, and `public/temp/`.
+  - **Cache & Temp Hygiene:** `setup.js` purges `tmp_data/`, `cache/`, and trims `public/temp/pdf` jobs past `CHAT_PDF_MAX_AGE_HOURS` to keep Poppler previews light-weight.
   - **Environment Guardrails:** `.env` generated from `env_sample`, with warnings when required keys are missing.
 - **Backing Components:** `setup.js`, `schedulers/`, `services/{batch,message}Service`, `dropboxClient.js`, `utils/logger`.
 

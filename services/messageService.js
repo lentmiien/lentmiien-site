@@ -705,6 +705,34 @@ class MessageService {
     return msg;
   }
 
+  async createImageMessagesBatch({ userId, category, tags, images }) {
+    if (!Array.isArray(images) || images.length === 0) {
+      return [];
+    }
+    const created = [];
+    for (const image of images) {
+      const messageContent = {
+        text: image.text || null,
+        image: image.fileName,
+        audio: null,
+        tts: null,
+        transcript: null,
+        revisedPrompt: image.revisedPrompt || (image.pageNumber ? `PDF upload page ${image.pageNumber}` : 'PDF upload'),
+        imageQuality: image.imageQuality || 'high',
+        toolOutput: null,
+      };
+      const msg = await this.createMessageNew({
+        userId,
+        content: messageContent,
+        contentType: 'image',
+        category,
+        tags,
+      });
+      created.push(msg);
+    }
+    return created;
+  }
+
   async cloneMessages({ messageIds }) {
     if (!Array.isArray(messageIds) || messageIds.length === 0) {
       return { ids: [], messages: [] };

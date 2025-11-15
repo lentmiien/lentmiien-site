@@ -12,6 +12,24 @@ block content
         .panel-inner#converterPanelResults
           h1.converter-title Your JPGs are ready
           p.converter-subtitle Scroll through the converted pages and keep the next upload within reach.
+          if error
+            .converter-alert(role='alert')
+              strong Action needed.
+              span&attributes({ 'aria-live': 'polite' }) #{error}
+          if pdfJob
+            .converter-summary
+              p
+                strong File:
+                |  #{pdfJob.pdfName || 'Unknown'}
+              p
+                strong Converted pages:
+                |  #{pdfJob.convertedPages}
+                if pdfJob.totalPages
+                  |  / #{pdfJob.totalPages}
+              if pdfJob.truncated && pageLimit
+                p.converter-warning
+                  strong Page limit reached.
+                  |  Only the first #{pageLimit} pages were rendered for preview.
           form.converter-form(action="/mypage/convert_pdf_to_jpg", method="post", enctype="multipart/form-data")
             label.upload-dropzone(for="pdf")
               strong Upload another PDF
@@ -20,12 +38,57 @@ block content
             button.converter-submit(type="submit", data-submit-btn) Convert next PDF
           p.converter-note As soon as you select a file we start the conversion, keeping pages in their original order.
       .converter-content
+        if pdfJob
+          .info-card
+            h2 Conversion summary
+            ul
+              li
+                strong Job ID:
+                |  #{pdfJob.jobId}
+              li
+                strong Created:
+                |  #{pdfJob.createdAt}
+              if pdfJob.totalPages
+                li
+                  strong Total pages in PDF:
+                  |  #{pdfJob.totalPages}
+              if pageLimit
+                li
+                  strong Current page limit:
+                  |  #{pageLimit} pages
+              if pdfJob.truncated
+                li
+                  strong Note:
+                  |  Remaining pages stay unconverted to keep previews fast.
         if imageUrls && imageUrls.length
-          .page-gallery
-            each img, idx in imageUrls
-              .page-frame
-                span.page-label Page #{idx + 1}
-                img.page-image(src=img, alt='Converted PDF page ' + (idx + 1), data-viewer-src=img, data-viewer-label='Page ' + (idx + 1), tabindex='0', role='button')
+          form.pdf-chat-form(action='/mypage/pdf_to_chat', method='post')
+            if pdfJob
+              input(type='hidden', name='jobId', value=pdfJob.jobId)
+            else
+              p.converter-warning This preview is missing its job reference. Please reconvert your PDF before sending to Chat5.
+            - const selectedArray = Array.isArray(selectedPages) ? selectedPages : []
+            - const hasSelected = selectedArray.length > 0
+            - const selectedLookup = new Set(selectedArray)
+            .page-gallery
+              each img, idx in imageUrls
+                - const pageNumber = pdfJob && pdfJob.images && pdfJob.images[idx] ? pdfJob.images[idx].pageNumber : (idx + 1)
+                - const isChecked = !hasSelected || selectedLookup.has(pageNumber)
+                label.page-frame
+                  input.page-frame__checkbox(type='checkbox', name='pages', value=pageNumber, checked=isChecked)
+                  .page-frame__content
+                    span.page-label Page #{pageNumber}
+                    img.page-image(src=img, alt='Converted PDF page ' + pageNumber, data-viewer-src=img, data-viewer-label='Page ' + pageNumber, tabindex='0', role='button')
+                  .page-select
+                    span Use this page
+            .chat-hand-off
+              h3 Hand off to Chat5
+              p Select the pages to bring into Chat5 and add an optional opening message. A new conversation will be created instantly—no AI response yet.
+              label(for='pdfChatPrompt') Optional starting message
+              textarea#pdfChatPrompt(name='prompt', rows='3', placeholder='Summarise pages 1-3 and brainstorm follow-up questions...')= promptDraft || ''
+              if pdfJob
+                button.chat-hand-off__submit(type='submit') Start Chat5 conversation
+              else
+                button.chat-hand-off__submit(type='submit', disabled) Start Chat5 conversation
         else
           .empty-state
             strong No images to show yet

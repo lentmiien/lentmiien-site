@@ -12,13 +12,23 @@ block content
         .panel-inner#converterPanel
           h1.converter-title PDF to JPG converter
           p.converter-subtitle Turn any PDF into individual JPG pages with a clean, minimal gallery view.
+          if error
+            .converter-alert(role='alert')
+              strong Conversion failed.
+              span&attributes({ 'aria-live': 'polite' }) #{error}
           form.converter-form(action="/mypage/convert_pdf_to_jpg", method="post", enctype="multipart/form-data")
             label.upload-dropzone(for="pdf")
               strong Upload a PDF
               span Drag and drop or choose a file from your device
               input#pdf(type="file", name="pdf", accept=".pdf", required)
             button.converter-submit(type="submit", data-submit-btn) Convert PDF
-          p.converter-note Conversion starts automatically when you pick a file, and we keep every page in order.
+          p.converter-note
+            | Conversion starts automatically when you pick a file, and we keep every page in order.
+            if pageLimit
+              br
+              | Up to 
+              strong #{pageLimit} pages
+              |  per upload are supported for fast previews.
       .converter-content
         .info-card
           h2 What happens next

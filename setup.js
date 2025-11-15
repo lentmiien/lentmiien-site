@@ -53,8 +53,28 @@ function clearDirectory(directory) {
 }
 let TEMP_DIR = path.join(__dirname, 'tmp_data');
 clearDirectory(TEMP_DIR);
-TEMP_DIR = path.join(__dirname, 'public/temp');
-clearDirectory(TEMP_DIR);
+const PDF_JOB_DIR = path.join(__dirname, 'public', 'temp', 'pdf');
+const parsedPdfMaxAge = parseInt(process.env.CHAT_PDF_MAX_AGE_HOURS || '24', 10);
+const PDF_JOB_MAX_AGE_HOURS = Number.isNaN(parsedPdfMaxAge) ? 24 : parsedPdfMaxAge;
+async function pruneStalePdfJobs(directory, maxAgeHours) {
+  try {
+    await fs.promises.mkdir(directory, { recursive: true });
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    const cutoff = Date.now() - (maxAgeHours * 60 * 60 * 1000);
+    await Promise.all(entries.map(async (entry) => {
+      if (!entry.isDirectory()) return;
+      const jobDir = path.join(directory, entry.name);
+      const stats = await fs.promises.stat(jobDir);
+      if (stats.mtimeMs < cutoff) {
+        await fs.promises.rm(jobDir, { recursive: true, force: true });
+        logger.notice(`Removed stale PDF conversion job: ${jobDir}`);
+      }
+    }));
+  } catch (err) {
+    logger.warning('Unable to prune PDF conversion cache', err);
+  }
+}
+pruneStalePdfJobs(PDF_JOB_DIR, PDF_JOB_MAX_AGE_HOURS).catch(() => {});
 
 // Check for the existence of the .env file
 if (!fs.existsSync('.env')) {

@@ -1,13 +1,49 @@
 const fs = require('fs');
 const path = require('path');
-const { Poppler } = require('node-poppler');
 const logger = require('../utils/logger');
 const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
-const { ArticleModel } = require('../database');
+const { ArticleModel, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
 const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
 const { GetAnthropicModels } = require('../utils/anthropic');
 const ScheduleTaskService = require('../services/scheduleTaskService');
+const pdfUtils = require('../utils/pdf');
+const MessageService = require('../services/messageService');
+const ConversationService = require('../services/conversationService');
+const KnowledgeService = require('../services/knowledgeService');
+
+const messageService = new MessageService(Chat4Model, FileMetaModel);
+const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
+const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
+const fsp = fs.promises;
+
+function normalizePageSelection(input) {
+  if (input === undefined || input === null) return [];
+  const arr = Array.isArray(input) ? input : [input];
+  const cleaned = [];
+  arr.forEach((value) => {
+    const parsed = parseInt(value, 10);
+    if (!Number.isNaN(parsed) && parsed > 0 && cleaned.indexOf(parsed) === -1) {
+      cleaned.push(parsed);
+    }
+  });
+  return cleaned;
+}
+
+async function cleanupPromotedFiles(files = []) {
+  if (!Array.isArray(files) || files.length === 0) return;
+  await Promise.all(files.map(async (file) => {
+    if (!file || !file.fileName) return;
+    const absolute = path.join(__dirname, '../public/img', file.fileName);
+    try {
+      await fsp.unlink(absolute);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        logger.warning('Unable to remove promoted PDF image after failure', { file: file.fileName, error: error.message });
+      }
+    }
+  }));
+}
 
 exports.mypage = async (req, res) => {
   // Do something fun here, to show om mypage!
@@ -111,36 +147,144 @@ exports.showtome_post = async (req, res) => {
 };
 
 exports.pdf_to_jpg = (req, res) => {
-  // Display a page to upload a PDF file, to be converted to JPG images *1 image per page
-  res.render("pdf_to_jpg");
+  res.render("pdf_to_jpg", { pageLimit: pdfUtils.getPageLimit() });
 };
 
 exports.convert_pdf_to_jpg = async (req, res) => {
-  // Convert uploaded file to JPG images, and display to user
-  const filename = req.file.destination + req.file.filename;
-  const outputDir = path.resolve(__dirname, '../public/temp', req.file.filename);
-  const outputFile = path.join(outputDir, 'page');
-  fs.mkdirSync(outputDir, { recursive: true });
+  if (!req.file) {
+    return res.status(400).render('pdf_to_jpg', { pageLimit: pdfUtils.getPageLimit(), error: 'Please provide a PDF file.' });
+  }
 
-  const poppler = new Poppler();
+  const uploadedPath = path.resolve(req.file.path || path.join(req.file.destination, req.file.filename));
+  try {
+    const manifest = await pdfUtils.convertPdfToImages({
+      sourcePath: uploadedPath,
+      originalName: req.file.originalname,
+      owner: req.user ? req.user.name : null,
+    });
 
-  // Convert PDF to JPEG
-  const options = {
-    jpegFile: true,
-    singleFile: false,
-    firstPageToConvert: 1,
-    lastPageToConvert: 9999,
-  };
+    const imageUrls = manifest.images.map((img) => img.previewUrl);
+    res.render("pdf_to_jpg_output", {
+      imageUrls,
+      pdfJob: manifest,
+      pageLimit: pdfUtils.getPageLimit(),
+      error: null,
+      selectedPages: null,
+      promptDraft: '',
+    });
+  } catch (error) {
+    logger.error('Failed to convert PDF to JPG', { error: error.message });
+    res.status(500).render('pdf_to_jpg', {
+      pageLimit: pdfUtils.getPageLimit(),
+      error: 'Something went wrong while converting your PDF. Please try again.',
+    });
+  } finally {
+    fs.promises.unlink(uploadedPath).catch(() => {});
+  }
+};
 
-  await poppler.pdfToCairo(filename, outputFile, options);
+exports.pdf_to_chat = async (req, res) => {
+  const userId = req.user ? req.user.name : null;
+  if (!userId) {
+    return res.redirect('/login');
+  }
 
-  // List all converted images
-  const images = fs.readdirSync(outputDir);
+  const jobId = typeof req.body.jobId === 'string' ? req.body.jobId.trim() : '';
+  const selectedPages = normalizePageSelection(req.body.pages);
+  const promptDraft = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : '';
 
-  // Convert images to URLs
-  const imageUrls = images.map((image) => `/temp/${req.file.filename}/${image}`);
+  if (!jobId) {
+    return res.status(400).render('pdf_to_jpg', { pageLimit: pdfUtils.getPageLimit(), error: 'Missing PDF conversion job. Please upload your PDF again.' });
+  }
 
-  res.render("pdf_to_jpg_output", { imageUrls });
+  let manifest = null;
+  let promotedFiles = [];
+
+  if (selectedPages.length === 0) {
+    manifest = await pdfUtils.loadJobManifest(jobId);
+    const pageLimit = pdfUtils.getPageLimit();
+    const imageUrls = manifest && manifest.images ? manifest.images.map((img) => img.previewUrl) : [];
+    return res.status(400).render('pdf_to_jpg_output', {
+      imageUrls,
+      pdfJob: manifest,
+      pageLimit,
+      error: 'Select at least one page to continue.',
+      selectedPages,
+      promptDraft,
+    });
+  }
+
+  try {
+    const promotion = await pdfUtils.promoteJobPages(jobId, selectedPages, userId);
+    manifest = promotion.manifest;
+    promotedFiles = promotion.moved || [];
+    if (!promotedFiles.length) {
+      throw new Error('Select at least one page to continue.');
+    }
+
+    const baseTitle = manifest && manifest.pdfName ? manifest.pdfName.replace(/\.[^/.]+$/, '') : 'PDF Conversation';
+    const conversation = await conversationService.createNewConversation(userId, undefined, {
+      title: baseTitle,
+      category: 'Chat5',
+      tags: ['chat5', 'pdf'],
+      members: [userId],
+    });
+    const conversationId = conversation._id.toString();
+
+    const imageMessages = promotedFiles.map((entry) => ({
+      fileName: entry.fileName,
+      pageNumber: entry.pageNumber,
+      revisedPrompt: `PDF upload page ${entry.pageNumber}`,
+      imageQuality: 'high',
+    }));
+
+    await conversationService.postToConversationNew({
+      conversationId,
+      userId,
+      messageContent: imageMessages,
+      messageType: 'image',
+      generateAI: false,
+    });
+
+    if (promptDraft.length > 0) {
+      await conversationService.postToConversationNew({
+        conversationId,
+        userId,
+        messageContent: {
+          text: promptDraft,
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: null,
+        },
+        messageType: 'text',
+        generateAI: false,
+      });
+    }
+
+    await pdfUtils.deleteJob(jobId);
+    return res.redirect(`/chat5/chat/${conversationId}`);
+  } catch (error) {
+    await cleanupPromotedFiles(promotedFiles);
+    logger.error('Failed to seed PDF pages into Chat5', { error: error.message });
+    if (!manifest) {
+      manifest = await pdfUtils.loadJobManifest(jobId);
+    }
+    const pageLimit = pdfUtils.getPageLimit();
+    const imageUrls = manifest && manifest.images ? manifest.images.map((img) => img.previewUrl) : [];
+
+    return res.status(400).render('pdf_to_jpg_output', {
+      imageUrls,
+      pdfJob: manifest,
+      pageLimit,
+      error: error.message || 'Unable to create a conversation from this PDF.',
+      selectedPages,
+      promptDraft,
+    });
+  }
 };
 
 /***********

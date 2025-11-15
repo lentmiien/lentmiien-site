@@ -1097,11 +1097,43 @@ class ConversationService {
       conversation.members = members.filter(d => d.length > 0);
     }
 
-    // Add user message
+    // Add user message(s)
     let userMessage = null;
-    if (messageContent) {
-      userMessage = await this.messageService.createMessageNew({ userId, content: messageContent, contentType: messageType, category: conversation.category, tags: conversation.tags });
-      conversation.messages.push(userMessage._id.toString());
+    const userMessages = [];
+    const messageContentArray = Array.isArray(messageContent)
+      ? messageContent.filter(Boolean)
+      : (messageContent ? [messageContent] : []);
+    const messageTypeArray = Array.isArray(messageType) ? messageType : [messageType];
+
+    if (messageContentArray.length > 0) {
+      const allImages = messageTypeArray.every(type => type === 'image');
+      if (allImages && Array.isArray(messageContent)) {
+        const createdImages = await this.messageService.createImageMessagesBatch({
+          userId,
+          category: conversation.category,
+          tags: conversation.tags,
+          images: messageContentArray,
+        });
+        for (const msg of createdImages) {
+          conversation.messages.push(msg._id.toString());
+          userMessages.push(msg);
+        }
+      } else {
+        for (let i = 0; i < messageContentArray.length; i++) {
+          const content = messageContentArray[i];
+          const type = messageTypeArray[i] || messageTypeArray[0] || 'text';
+          const msg = await this.messageService.createMessageNew({
+            userId,
+            content,
+            contentType: type,
+            category: conversation.category,
+            tags: conversation.tags,
+          });
+          conversation.messages.push(msg._id.toString());
+          userMessages.push(msg);
+        }
+      }
+      userMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1] : null;
     }
 
     // Generate AI response
@@ -1126,7 +1158,7 @@ class ConversationService {
     conversation.updatedAt = new Date();
     await conversation.save();
 
-    return { conversation, userMessage, aiMessages };
+    return { conversation, userMessage, userMessages, aiMessages };
   }
 
   async updateSettings(conversationId, settingsUpdates) {

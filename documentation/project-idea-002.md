@@ -1,4 +1,5 @@
 # Project Idea 002 – Chat With PDFs Pipeline
+`codex resume 019a82b3-79e6-7932-85d5-ac5d05f3546b`
 
 ## Goal
 Enable users to drop a PDF and kick off a Chat5 conversation seeded with page images, respecting page-count limits and leveraging the existing PDF→image converter. The workflow should feel native: upload PDF, preview selected pages, start or append to a conversation with those images attached, and optionally auto-trigger an AI summary.

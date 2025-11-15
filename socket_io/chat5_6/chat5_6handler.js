@@ -1,7 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const pdfUtils = require('../../utils/pdf');
 const context = require('./chat5_6context');
 const logger = require('../../utils/logger');
+const fsp = fs.promises;
 
 function toPlain(doc) {
   if (!doc) return doc;
@@ -53,6 +55,92 @@ function normalizeBoolean(value, fallback = false) {
     return value !== 0;
   }
   return fallback;
+}
+
+function sanitizeStringArray(value) {
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') {
+    return sanitizeStringArray(value.split(','));
+  }
+  if (Array.isArray(value)) {
+    const cleaned = value
+      .map((item) => normalizeString(item))
+      .filter(Boolean);
+    return [...new Set(cleaned)];
+  }
+  return [];
+}
+
+function buildConversationDetails(rawDetails, userId, defaults = {}) {
+  if (!isPlainObject(rawDetails) && !defaults.title && !defaults.category && !defaults.tags && !defaults.members) {
+    return null;
+  }
+
+  const title = normalizeString(rawDetails && rawDetails.title, defaults.title || null);
+  const category = normalizeString(rawDetails && rawDetails.category, defaults.category || null);
+  const tags = sanitizeStringArray((rawDetails && rawDetails.tags) || defaults.tags);
+  const members = sanitizeStringArray((rawDetails && rawDetails.members) || defaults.members);
+
+  if (!title && !category && tags.length === 0 && members.length === 0 && !defaults.force) {
+    return null;
+  }
+
+  const ensuredMembers = members.length ? members : [];
+  if (userId && ensuredMembers.indexOf(userId) === -1) {
+    ensuredMembers.push(userId);
+  }
+
+  return {
+    title: title || defaults.title || 'NEW',
+    category: category || defaults.category || 'Chat5',
+    tags: tags.length ? tags : (defaults.tags || ['chat5']),
+    members: ensuredMembers,
+  };
+}
+
+function buildConversationSettings(rawSettings) {
+  if (!isPlainObject(rawSettings)) return null;
+  const settings = {};
+  if (typeof rawSettings.contextPrompt === 'string') {
+    settings.contextPrompt = rawSettings.contextPrompt;
+  }
+  if (typeof rawSettings.model === 'string' && rawSettings.model.trim().length > 0) {
+    settings.model = rawSettings.model.trim();
+  }
+  if (typeof rawSettings.reasoning === 'string' && rawSettings.reasoning.trim().length > 0) {
+    settings.reasoning = rawSettings.reasoning.trim();
+  }
+  if (typeof rawSettings.verbosity === 'string' && rawSettings.verbosity.trim().length > 0) {
+    settings.verbosity = rawSettings.verbosity.trim();
+  }
+  if (typeof rawSettings.outputFormat === 'string' && rawSettings.outputFormat.trim().length > 0) {
+    settings.outputFormat = rawSettings.outputFormat.trim();
+  }
+  if (typeof rawSettings.maxMessages !== 'undefined') {
+    const parsed = parseInt(rawSettings.maxMessages, 10);
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      settings.maxMessages = parsed;
+    }
+  }
+  if (typeof rawSettings.maxAudioMessages !== 'undefined') {
+    const parsed = parseInt(rawSettings.maxAudioMessages, 10);
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      settings.maxAudioMessages = parsed;
+    }
+  }
+  if (rawSettings.tools) {
+    settings.tools = sanitizeStringArray(rawSettings.tools);
+  }
+  return Object.keys(settings).length > 0 ? settings : null;
+}
+
+async function cleanupPromotedFiles(files = []) {
+  if (!Array.isArray(files) || files.length === 0) return;
+  await Promise.all(files.map(async (file) => {
+    if (!file || !file.fileName) return;
+    const targetPath = path.join(__dirname, '../../public', 'img', file.fileName);
+    await fsp.unlink(targetPath).catch(() => {});
+  }));
 }
 
 function cloneDeep(value) {
@@ -539,6 +627,146 @@ module.exports = async function registerChat5_6Handlers({
         ack({ ok: false, ...details });
       } else {
         emitError(eventName, 'Unable to append image.', details);
+      }
+    }
+  });
+
+  socket.on('chat5_6-importPdfPages', async (raw = {}, ack) => {
+    const eventName = 'chat5_6-importPdfPages';
+    const promotedFiles = [];
+    try {
+      if (!isPlainObject(raw)) throw new Error('Payload must be an object.');
+      const jobId = normalizeString(raw.jobId);
+      if (!jobId) throw new Error('jobId is required.');
+
+      let conversationId = normalizeString(raw.conversationId);
+      let created = false;
+
+      const pageNumbers = Array.isArray(raw.pages)
+        ? raw.pages
+          .map((value) => parseInt(value, 10))
+          .filter((value) => !Number.isNaN(value) && value > 0)
+        : [];
+
+      const { manifest, moved } = await pdfUtils.promoteJobPages(jobId, pageNumbers, userName);
+      if (!moved || moved.length === 0) {
+        throw new Error('No PDF pages available to import.');
+      }
+      promotedFiles.push(...moved);
+
+      if (!conversationId || conversationId.toUpperCase() === 'NEW') {
+        const conversation = await conversationService.createNewConversation(userName);
+        conversationId = conversation._id.toString();
+        created = true;
+      }
+
+      await ensureConversationRoom(conversationId);
+
+      const defaultTitle = manifest.pdfName ? manifest.pdfName.replace(/\.[^/.]+$/, '') : null;
+      const conversationDetails = buildConversationDetails(raw.conversation, userName, created ? { title: defaultTitle } : {});
+      const conversationSettings = buildConversationSettings(raw.settings);
+
+      const imageMessages = moved.map((entry) => ({
+        fileName: entry.fileName,
+        pageNumber: entry.pageNumber,
+        revisedPrompt: `PDF upload page ${entry.pageNumber}`,
+        imageQuality: 'high',
+      }));
+
+      const postResult = await conversationService.postToConversationNew({
+        conversationId,
+        userId: userName,
+        messageContent: imageMessages,
+        messageType: 'image',
+        s: conversationSettings,
+        c: conversationDetails,
+      });
+
+      const targetConversation = postResult.conversation;
+      const messagesToBroadcast = Array.isArray(postResult.userMessages) && postResult.userMessages.length > 0
+        ? postResult.userMessages
+        : (postResult.userMessage ? [postResult.userMessage] : []);
+
+      if (messagesToBroadcast.length > 0) {
+        await broadcastMessages(conversationId, messagesToBroadcast, { includeSelf: true });
+      }
+
+      let summaryInfo = null;
+      if (normalizeBoolean(raw.autoSummary, false)) {
+        const summaryPrompt = normalizeString(raw.summaryPrompt, 'Summarize the imported PDF pages.');
+        const summaryResult = await conversationService.postToConversationNew({
+          conversationId,
+          userId: userName,
+          messageContent: {
+            text: summaryPrompt,
+            image: null,
+            audio: null,
+            tts: null,
+            transcript: null,
+            revisedPrompt: null,
+            imageQuality: null,
+            toolOutput: null,
+          },
+          messageType: 'text',
+          generateAI: true,
+        });
+        const summaryMessages = [];
+        if (summaryResult.userMessage) summaryMessages.push(summaryResult.userMessage);
+        if (Array.isArray(summaryResult.aiMessages)) summaryMessages.push(...summaryResult.aiMessages);
+        if (summaryMessages.length > 0) {
+          await broadcastMessages(conversationId, summaryMessages, { includeSelf: true });
+        }
+        summaryInfo = {
+          requestMessageId: summaryResult.userMessage ? summaryResult.userMessage._id.toString() : null,
+          placeholderIds: Array.isArray(summaryResult.aiMessages)
+            ? summaryResult.aiMessages.map((msg) => msg._id.toString())
+            : [],
+        };
+      }
+
+      try {
+        await pdfUtils.deleteJob(jobId);
+      } catch (cleanupError) {
+        logger.warning('Unable to cleanup PDF job after import', cleanupError);
+      }
+
+      const payload = {
+        ok: true,
+        conversationId,
+        created,
+        importedPages: moved.length,
+        jobId,
+        files: moved,
+        pdf: {
+          name: manifest.pdfName,
+          totalPages: manifest.totalPages,
+          convertedPages: manifest.convertedPages,
+        },
+        summary: summaryInfo,
+      };
+
+      if (typeof ack === 'function') {
+        ack(payload);
+      } else {
+        socket.emit(eventName + ':done', payload);
+      }
+
+      if (targetConversation) {
+        notifyMembers(userName, targetConversation.members, 'chat5_6-notice', {
+          type: 'pdf-import',
+          conversationId,
+          title: targetConversation.title,
+          importedPages: moved.length,
+        });
+      }
+    } catch (error) {
+      await cleanupPromotedFiles(promotedFiles);
+      logger.error(eventName + ' failed', error);
+      const details = { message: error.message };
+      if (typeof ack === 'function') {
+        ack({ ok: false, ...details });
+      } else {
+        emitError(eventName, 'Unable to import PDF pages.', details);
       }
     }
   });

@@ -17,6 +17,7 @@ All payloads are JSON objects unless otherwise noted. Optional fields are marked
 | `chat5_6-listModels` | Retrieve OpenAI chat models from `ai_model_card` | — |
 | `chat5_6-appendMessage` | Append a user text message | `conversationId` (`'NEW'` creates), `text` (string) |
 | `chat5_6-appendImage` | Append user image; supports upload or existing filename | `conversationId`, `name` or `fileName`, `buffer` / `data` (optional) |
+| `chat5_6-importPdfPages` | Seed a conversation with cached PDF page images (optionally auto-summarise) | `jobId` (string), `conversationId` (`'NEW'` creates), `pages` (array optional), `autoSummary` (bool optional), `summaryPrompt` (string optional), `conversation`/`settings` overrides (objects optional) |
 | `chat5_6-requestAIResponse` | Ask configured model for an immediate response (creates placeholder) | `conversationId` |
 | `chat5_6-requestAIBatch` | Queue a batch response (placeholder + batch job) | `conversationId`, `prompt` (optional) |
 | `chat5_6-generateTitle` | Ask model for a title and persist | `conversationId` |
@@ -63,6 +64,16 @@ All template operations rely on the new `chat5_template` collection and the exte
 3. **Update Settings:** Use `chat5_6-updateSettings` to adjust metadata or membership independently of message flow.
 4. **Post Messages:** `chat5_6-appendMessage` / `chat5_6-appendImage` handle user payloads; AI requests are separated (`chat5_6-requestAIResponse` / `chat5_6-requestAIBatch`).
 5. **Template Actions:** Manage templates through the dedicated events; applying templates always clones message documents.
+
+## PDF → Chat Intake Workflow
+
+The Chat5 PDF pipeline reuses the Poppler stack in `utils/pdf` and keeps previews under `public/temp/pdf/<jobId>` until the user finalises the import. It consists of three touchpoints:
+
+1. **Upload & Convert (`POST /chat5/documents/pdf`):** Accepts a single PDF (`multipart/form-data`), enforces `CHAT_PDF_MAX_PAGES`, and returns a manifest with `jobId`, page thumbnails, and metadata. Temporary JPGs are addressable at `/temp/pdf/<jobId>/<page>.jpg`.
+2. **Review/Cancel (`GET|DELETE /chat5/documents/pdf/:jobId`):** Fetches the stored manifest or aborts the job entirely. Jobs are keyed per-user so they cannot be hijacked by other sessions.
+3. **Hand-Off (`chat5_6-importPdfPages`):** Moves selected pages into `public/img`, appends them as image messages (batch-aware via `conversationService.postToConversationNew`), optionally updates conversation metadata, and can auto-post a summary prompt that immediately requests an AI reply. Successful imports delete the temp job; failures roll back copied assets to avoid orphaned files.
+
+`setup.js` trims abandoned jobs older than `CHAT_PDF_MAX_AGE_HOURS` so `public/temp/pdf` stays lean even if users never complete the hand-off.
 
 ## Template Service Additions
 
