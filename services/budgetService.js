@@ -13,6 +13,66 @@ const TransactionDBModel = require('../models/transaction_db');
 const { Receipt, Payroll } = require('../database');
 const finance = require('../utils/finance');
 
+const EXPENSE_TYPE_LIST = ['expense'];
+const EXPENSE_TYPE_SET = new Set(EXPENSE_TYPE_LIST);
+
+const TYPE_PROJECTION_EXPR = {
+  $let: {
+    vars: {
+      normalizedType: {
+        $toLower: {
+          $ifNull: ['$type', ''],
+        },
+      },
+    },
+    in: {
+      $cond: [
+        { $ne: ['$$normalizedType', ''] },
+        '$$normalizedType',
+        {
+          $cond: [
+            { $eq: ['$from_account', 'EXT'] },
+            'income',
+            {
+              $cond: [
+                { $eq: ['$to_account', 'EXT'] },
+                'expense',
+                'saving',
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
+function normalizeTypeValue(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
+function inferTypeFromAccounts(doc = {}) {
+  const from = typeof doc.from_account === 'string' ? doc.from_account.trim() : '';
+  const to = typeof doc.to_account === 'string' ? doc.to_account.trim() : '';
+  if (from === 'EXT') return 'income';
+  if (to === 'EXT') return 'expense';
+  return 'saving';
+}
+
+function resolveTransactionType(doc = {}) {
+  const explicit = normalizeTypeValue(doc.type);
+  if (explicit) return explicit;
+  return normalizeTypeValue(inferTypeFromAccounts(doc));
+}
+
+function isExpenseType(valueOrDoc) {
+  const derived = typeof valueOrDoc === 'string'
+    ? normalizeTypeValue(valueOrDoc)
+    : resolveTransactionType(valueOrDoc);
+  return EXPENSE_TYPE_SET.has(derived);
+}
+
 const budgetService = {
   async getAccounts() {
     const accounts = [];
@@ -397,7 +457,9 @@ async function getSummary(options = {}) {
         amount: { $add: ['$amount', '$from_fee', '$to_fee'] },
         year: { $floor: { $divide: ['$date', 10000] } },
         month: { $floor: { $divide: [{ $mod: ['$date', 10000] }, 100] } },
+        typeLower: TYPE_PROJECTION_EXPR,
       } },
+      { $match: { typeLower: { $in: EXPENSE_TYPE_LIST } } },
       { $group: {
         _id: { year: '$year', month: '$month' },
         totalSpent: { $sum: '$amount' },
@@ -406,9 +468,15 @@ async function getSummary(options = {}) {
     ]),
     TransactionDBModel.aggregate([
       { $match: { date: { $gte: latestPeriod.range.start, $lt: latestPeriod.range.end } } },
+      { $project: {
+        amount: { $add: ['$amount', '$from_fee', '$to_fee'] },
+        categories: '$categories',
+        typeLower: TYPE_PROJECTION_EXPR,
+      } },
+      { $match: { typeLower: { $in: EXPENSE_TYPE_LIST } } },
       { $group: {
         _id: '$categories',
-        totalSpent: { $sum: { $add: ['$amount', '$from_fee', '$to_fee'] } },
+        totalSpent: { $sum: '$amount' },
         transactionCount: { $sum: 1 },
       } },
       { $sort: { totalSpent: -1 } },
@@ -528,7 +596,9 @@ async function getAnomalies(options = {}) {
     TransactionDBModel.find({ date: { $gte: earliest } }).lean(),
   ]);
 
-  if (!transactions.length) {
+  const expenseTransactions = transactions.filter((tx) => isExpenseType(tx));
+
+  if (!expenseTransactions.length) {
     return {
       categoryAlerts: [],
       highValue: [],
@@ -537,7 +607,7 @@ async function getAnomalies(options = {}) {
   }
 
   const categorySeries = new Map();
-  transactions.forEach((tx) => {
+  expenseTransactions.forEach((tx) => {
     const { label } = extractYearMonth(tx.date);
     if (!label) {
       return;
@@ -573,7 +643,7 @@ async function getAnomalies(options = {}) {
 
   categoryAlerts.sort((a, b) => b.deltaPercent - a.deltaPercent);
 
-  const highValue = transactions
+  const highValue = expenseTransactions
     .map((tx) => ({
       id: tx._id.toString(),
       amount: transactionTotal(tx),
