@@ -6,7 +6,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 
 - **Chat5 Studio:** Real-time chat workspace with Socket.IO, model switching (OpenAI, Anthropic, Google, Groq, LM Studio), knowledge injection, reusable templates, AI model cards, story mode playback, and audit-friendly message editing.
 - **Media Generation Pipeline:** Sora 2 Studio for OpenAI video jobs, background polling/webhooks, ComfyUI-powered image generation with caching, PDF-to-image conversion, and gallery ratings with Dropbox backups.
-- **Operations & Productivity Suite:** Budget v2 dashboards and APIs, receipt OCR, customs-ready product summaries, payroll builder, cooking calendar v2 with analytics, health tracker, quick notes, emergency stock, and a new schedule-task planner.
+- **Operations & Productivity Suite:** Unified accounting workspace (budgets, cards, analytics), receipt OCR, customs-ready product summaries, payroll builder, cooking calendar v2 with analytics, health tracker, quick notes, emergency stock, and a new schedule-task planner.
 - **Automation & Integrations:** Startup maintenance, OpenAI usage harvesting, Dropbox sync, GitHub repository mirroring, temporary file transfer tool, Mailgun notifications, and bearer-protected API access.
 - **Experimentation Sandbox:** Sensor dashboards (MPU6050, DHT22), markdown editor demos, browser games with Brotli assets, reference materials, and agent orchestration docs (`AGENTS.md`, `documentation/framework.md`).
 - **Documentation & Quality:** Centralized guides and prompt libraries in `documentation/`, plus Jest-backed service tests with coverage artifacts under `coverage/`.
@@ -40,6 +40,13 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `coverage/` | Generated Jest coverage reports (`npm test`). |
 | `cache/`, `tmp_data/`, `logs/` | Generated caches, ephemeral transfers, and rolling log files maintained by `setup.js`. |
 | `sample_data/`, `reference_material/` | Datasets and docs used by demos and knowledge ingestion. |
+
+### Accounting Workspace
+
+- Visit `/accounting` (or `/budget`) for the unified budgeting + credit card experience. Navigation links route to the same controller, and `/accounting/legacy` still exposes the pre-v2 screens.
+- The hero summarises cash on hand, current spend, credit utilisation, and active alerts.
+- Analytics cards render cash-flow trends, category breakdowns, and credit utilisation using the new `accounting_dashboard.js`.
+- The workspace section keeps legacy transaction ingestion tooling (category chart, autocomplete form, last-30-day rollups) while the credit card panel embeds the richer tracker with CSV import, confirmations, and utilisation metrics.
 
 ## Getting Started
 

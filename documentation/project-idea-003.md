@@ -1,4 +1,5 @@
 # Project Idea 003 – Unified Accounting Workspace
+`codex resume 019a8547-3d99-7f41-8fcb-9124e6803974`
 
 ## Goal
 Merge the existing budget dashboards and credit card views into a cohesive accounting hub that shares the modern styling from the credit card tool, while adding deeper analytics. The unified tool should let users ingest transactions, reconcile credit card spend, view cash-flow summaries, and surface anomaly alerts in one experience.
@@ -10,9 +11,9 @@ Merge the existing budget dashboards and credit card views into a cohesive accou
 - Introduce analytics panels (e.g., spend by category, month-over-month deltas, credit utilisation) leveraging existing services or new aggregation helpers.
 
 ## Key Code Touchpoints
-- `controllers/budget2controller.js`, `services/budgetService.js`.
+- `controllers/accountingController.js`, `services/budgetService.js`.
 - `services/creditCardService.js`, any credit-card-specific routes or views.
-- `routes/budget2.js` (or new `routes/accounting.js`) and associated middleware.
+- `routes/accounting.js` and associated middleware.
 - `views/budget_*` templates, shared partials, and static assets under `public/js/budget/*.js`.
 - Mongo models feeding budget/credit card data (`models/Budget*`).
 
@@ -26,3 +27,9 @@ Merge the existing budget dashboards and credit card views into a cohesive accou
 ## Dependencies / Follow-ups
 - Coordinate with Project Idea 005 (Health analytics) and Project Idea 011 (Master feed) to reuse analytics patterns and feed financial events into the unified audit trail.
 - Add Jest coverage for new service methods (tie into Project Idea 007).
+
+---
+
+**Implementation Notes (Nov 2025)**  
+- `/accounting` and `/budget` now share `controllers/accountingController.js` and render `views/accounting_dashboard.pug`.  
+- Legacy routes live under `/accounting/legacy` if the original budget UI is still needed.

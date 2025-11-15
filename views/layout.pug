@@ -90,9 +90,8 @@ html(lang='en')
               a.type-2-link(href="/chat4/templates", style="width:100%;") Tempaltes
         if permissions && permissions.indexOf("accounting") >= 0
           .navbar-column
-            a.type-1-link(href="/accounting", style="width:100%;") Budget
-            a.type-2-link(href="/accounting/add_transaction", style="width:100%;") Add transaction
-            a.type-2-link(href="/accounting/datatest", style="width:100%;") [TEST] Budget
+            a.type-1-link(href="/accounting", style="width:100%;") Accounting hub
+            a.type-2-link(href="/accounting/legacy", style="width:100%;") Legacy budget view
         if permissions && permissions.indexOf("cooking") >= 0
           .navbar-column
             a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
@@ -119,8 +118,8 @@ html(lang='en')
               a.type-1-link(href="/chat5/top", style="width:100%;") Chat5 (new)
               a.type-1-link(href="/chat5/ai_model_cards", style="width:100%;") Manage AI Models
               a.type-1-link(href="/budget", style="width:100%;") Accounting (new)
-              a.type-1-link(href="/budget/review", style="width:100%;") Accounting review
-              a.type-1-link(href="/budget/cards", style="width:100%;") Credit Card
+              a.type-1-link(href="/budget/review", style="width:100%;") Budget review
+              a.type-1-link(href="/budget/cards", style="width:100%;") Credit cards
               a.type-1-link(href="/gallery", style="width:100%;") Gallery
               a.type-1-link(href="/payroll", style="width:100%;") Payroll
               a.type-1-link(href="/scheduleTask/calendar", style="width:100%;") Schedule

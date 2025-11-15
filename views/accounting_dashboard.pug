@@ -1,0 +1,249 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/credit_cards.css')
+  link(rel='stylesheet', href='/css/accounting.css')
+
+block content
+  - const heroBalance = Number((budgetSummary && budgetSummary.totals && budgetSummary.totals.balance) || 0)
+  - const cashflowLabel = budgetSummary.cashflow && budgetSummary.cashflow.current ? budgetSummary.cashflow.current : 0
+  - const heroAlerts = (anomalies.budget?.categoryAlerts?.length || 0) + (anomalies.budget?.highValue?.length || 0) + (anomalies.credit?.alerts?.length || 0) + (anomalies.credit?.pendingConfirmations?.length || 0)
+  .accounting-app
+    .accounting-hero
+      .hero-text
+        h1 Unified Accounting Workspace
+        p.mb-0 Track budgets, reconcile cards, and surface anomalies without leaving the page.
+      .hero-metrics
+        .metric-card
+          span.metric-label Cash on hand
+          strong.metric-value(id='metricCashOnHand')= `${heroBalance.toLocaleString()} JPY`
+        .metric-card
+          span.metric-label Current month spend
+          strong.metric-value(id='metricMonthlySpend')= `${Math.round(cashflowLabel).toLocaleString()} JPY`
+        .metric-card
+          span.metric-label Credit utilisation
+          - const utilisation = creditSummary.headline && creditSummary.headline.utilisationPercent !== null ? creditSummary.headline.utilisationPercent : null
+          strong.metric-value(id='metricCreditUtilisation')= utilisation !== null ? `${utilisation.toFixed(1)}%` : ' -- '
+        .metric-card
+          span.metric-label Open alerts
+          strong.metric-value(id='metricAlertCount')= heroAlerts
+    .analytics-grid
+      .analytics-card
+        h3 Cash-flow trend
+        #accountingTrendChart
+        p.muted-text#trendMeta Based on the past #{budgetSummary.monthlyTrend.length} months of budget activity.
+      .analytics-card
+        h3 Spend by category
+        ul#topCategoriesList.list-unstyled
+        #topCategoriesChart
+      .analytics-card
+        h3 Credit utilisation trend
+        #creditUtilizationTrend
+        p.muted-text Latest card: #{creditSummary.headline && creditSummary.cards && creditSummary.cards.length ? (creditSummary.cards.find(c => c.id === creditSummary.activeCardId).name || creditSummary.cards[0].name) : 'n/a'}
+    section.accounting-card#budgetWorkspace
+      .section-header
+        h2 Budget workspace
+        p.mb-0 Quickly inspect balances, capture transactions, and review category trends.
+      .workspace-content
+        .workspace-main
+          h3 Account balances
+          table.table.table-striped.table-sm
+            thead
+              tr
+                th Account
+                th Last update
+                th Balance
+                th Change last month
+            tbody
+              - let totalBalance = 0
+              - let totalChange = 0
+              each account in data.accounts
+                - totalBalance += account.balance
+                - totalChange += account.change_last_month
+                tr
+                  td= account.name
+                  td= account.new_balance_date
+                  td= `${account.balance} JPY`
+                  td= `${account.change_last_month} JPY`
+              tr
+                td
+                  strong Total
+                td
+                td
+                  strong= `${totalBalance} JPY`
+                td
+                  strong= `${totalChange} JPY`
+          h3 Category overview (year over year)
+          select#categorySelect.form-select.mb-3
+            option(selected value='') -- choose category --
+          #chart.chart-placeholder
+          #modalBreakdown.modal.fade(style='z-index:1051;', tabindex='-1', aria-hidden='true')
+            .modal-dialog.modal-lg
+              .modal-content
+                .modal-header
+                  h5.modal-title Breakdown
+                  button.btn-close(type='button', data-bs-dismiss='modal', aria-label='Close')
+                .modal-body
+                  .row
+                    .col
+                      #piechart(style='height:240px')
+                    .col
+                      pre#legend
+                    .col
+                      pre#stats
+                .modal-footer
+                  button.btn.btn-secondary(type='button', data-bs-dismiss='modal') Close
+          h3.mt-4 Add new transaction
+          form#budgetTransactionForm
+            .row.g-3
+              .col-md-3
+                label.form-label(for='business') Business
+                input#business.form-control(type='text', name='transaction_business')
+              .col-md-2
+                label.form-label(for='amount') Amount
+                input#amount.form-control(type='number', step='any', name='amount')
+              .col-md-2
+                label.form-label(for='from') From Account
+                select#from.form-select(name='from_account')
+              .col-md-2
+                label.form-label(for='to') To Account
+                select#to.form-select(name='to_account')
+              .col-md-3
+                label.form-label(for='cat') Category
+                select#cat.form-select(name='categories')
+            .row.g-3.mt-1
+              .col-md-2
+                label.form-label(for='date') Date (yyyymmdd)
+                input#date.form-control(type='number', name='date', required)
+              .col-md-2
+                label.form-label(for='type') Type
+                select#type.form-select(name='type')
+              .col-md-3
+                label.form-label(for='tags') Tags
+                input#tags.form-control(type='text', name='tags', list='tagList')
+              .col-md-2
+                label.form-label(for='from_fee') From fee
+                input#from_fee.form-control(type='number', step='any', name='from_fee')
+              .col-md-2
+                label.form-label(for='to_fee') To fee
+                input#to_fee.form-control(type='number', step='any', name='to_fee')
+            button.btn.btn-primary.mt-3(type='submit') Save transaction
+          datalist#tagList
+        .workspace-side
+          h3 Last 30 days
+          .accounts-scroll
+            each account in data.accounts
+              details.account-panel(open=false)
+                summary
+                  span= account.name
+                  span.badge.badge-soft= `${account.last_30_days_transactions.length} tx`
+                table.table.table-sm
+                  thead
+                    tr
+                      th Date
+                      th Label
+                      th Amount
+                      th
+                  tbody
+                    each tx in account.last_30_days_transactions
+                      tr(class=tx.id)
+                        td= tx.date
+                        td
+                          span= tx.label
+                          if tx.hasReceipt
+                            | 
+                            a.btn.btn-link.btn-sm(href=`/receipt/view_receipt/${tx.receiptId}`, target='_blank') Receipt
+                          if tx.hasPay
+                            | 
+                            a.btn.btn-link.btn-sm(href=`/payroll/${tx.payId}`, target='_blank') Payroll
+                        td= tx.amount
+                        td
+                          button.btn.btn-outline-danger.btn-sm(type='button', onclick=`DeleteTransaction("${tx.id}", this)`) ✁E
+    section.accounting-card#creditWorkspace
+      .section-header
+        h2 Credit cards
+        p.mb-0 The modern card tracker now lives alongside budgets.
+      if cards && cards.length
+        include credit_cards_dashboard_inner
+      else
+        .credit-dashboard
+          h3.credit-dashboard__title Set up your first credit card
+          p.inline-feedback No cards configured yet. Add your first one below.
+          form#newCardForm(class='credit-actions')
+            input.form-control(type='text', name='name', placeholder='Card name', required, aria-label='Card name')
+            input.form-control(type='date', name='issuedDate', aria-label='Issued date')
+            input.form-control(type='number', name='creditLimit', step='1000', min='0', placeholder='Limit (optional)', aria-label='Credit limit')
+            button.btn.btn-primary(type='submit') Add card
+          p#cardFeedback.inline-feedback
+    section.accounting-card#alertWorkspace
+      .section-header
+        h2 Alerts & anomalies
+        p.mb-0 Surface outliers across budgets and cards.
+      .alerts-grid
+        .alert-panel
+          h3 Budget signals
+          ul#budgetAlertsList.list-unstyled
+            if anomalies.budget && anomalies.budget.categoryAlerts && anomalies.budget.categoryAlerts.length
+              each alert in anomalies.budget.categoryAlerts
+                li.alert-row
+                  strong= alert.category
+                  span= ` +${alert.deltaPercent.toFixed(1)}% vs avg`
+            else
+              li.alert-row.text-muted No category spikes detected.
+          h4.mt-3 High-value transactions
+          ul#budgetHighValue.list-unstyled
+            if anomalies.budget && anomalies.budget.highValue && anomalies.budget.highValue.length
+              each tx in anomalies.budget.highValue
+                li.alert-row
+                  strong= `${tx.business} (${tx.category})`
+                  span= `${tx.amount.toLocaleString()} JPY on ${tx.isoDate}`
+            else
+              li.alert-row.text-muted No outliers recorded.
+        .alert-panel
+          h3 Credit signals
+          ul#creditAlertsList.list-unstyled
+            if anomalies.credit && anomalies.credit.alerts && anomalies.credit.alerts.length
+              each alert in anomalies.credit.alerts
+                li.alert-row
+                  strong= alert.message
+            else
+              li.alert-row.text-muted Card usage looks normal.
+          h4.mt-3 Pending confirmations
+          ul#creditPendingList.list-unstyled
+            if anomalies.credit && anomalies.credit.pendingConfirmations && anomalies.credit.pendingConfirmations.length
+              each month in anomalies.credit.pendingConfirmations
+                li.alert-row
+                  strong= `${month.label}`
+                  span= `${month.usageTotal.toLocaleString()} JPY`
+            else
+              li.alert-row.text-muted All statements confirmed.
+
+block script
+  script(src='https://d3js.org/d3.v7.min.js')
+  script.
+    window.accountingState = {
+      budget: !{JSON.stringify(budgetSummary)},
+      credit: !{JSON.stringify(creditSummary)},
+      anomalies: !{JSON.stringify(anomalies)}
+    };
+  script.
+    window.creditCardPage = {
+      cards: !{JSON.stringify(cards || [])},
+      activeCardId: !{JSON.stringify(activeCardId || null)},
+      routes: {
+        overview: '/budget/cards/api/overview',
+        month: '/budget/cards/api/month',
+        transaction: '/budget/cards/api/transaction',
+        deleteTransaction: '/budget/cards/api/transaction',
+        confirm: '/budget/cards/api/month',
+        importCsv: '/budget/cards/api/import',
+        monthViewBase: '/budget/cards/month',
+        cards: '/budget/cards/api/cards',
+        createCard: '/budget/cards/api/card',
+        updateCard: '/budget/cards/api/card',
+      },
+    };
+  script(src='https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js')
+  script(src='/js/accounting_dashboard.js', defer)
+  script(src='/js/budget_dashboard.js', defer)
+  script(src='/js/credit_cards_dashboard.js', defer)

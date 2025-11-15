@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const CreditCard = require('../models/credit_card');
 const CreditCardTransaction = require('../models/credit_card_transaction');
 const CreditCardMonthlyBalance = require('../models/credit_card_monthly_balance');
+const finance = require('../utils/finance');
 
 const { Types: { ObjectId } } = mongoose;
 
@@ -894,6 +895,140 @@ const creditCardService = {
       processed: uniqueItems.length,
     };
   },
+};
+
+creditCardService.getSummary = async function getSummary(options = {}) {
+  const { cardId = null, months = 6 } = options;
+  const cards = await this.listCards({ includeStats: true });
+  if (!cards.length) {
+    return {
+      cards: [],
+      activeCardId: null,
+      overview: null,
+      monthlyTrend: [],
+      headline: null,
+    };
+  }
+  const preferredCard = cardId && cards.some((card) => card.id === cardId)
+    ? cardId
+    : cards[0].id;
+  const overview = await this.getOverview({ cardId: preferredCard, months });
+  const monthlyTrend = (overview.months || []).map((month) => ({
+    label: finance.monthKey(month.year, month.month),
+    usageTotal: month.usageTotal,
+    repaymentTotal: month.repaymentTotal,
+    netChange: month.netChange,
+    utilisationPercent: month.closingBalancePercent ?? null,
+  }));
+  const current = overview.currentMonth || null;
+  const previous = overview.previousMonth || null;
+
+  return {
+    cards,
+    activeCardId: preferredCard,
+    overview,
+    monthlyTrend,
+    headline: current
+      ? {
+        balance: overview.currentBalance,
+        usage: current.usageTotal,
+        repayment: current.repaymentTotal,
+        points: current.externalPoints,
+        utilisationPercent: current.closingBalancePercent ?? null,
+        usageDelta: previous ? current.usageTotal - previous.usageTotal : null,
+      }
+      : null,
+  };
+};
+
+creditCardService.getTransactions = async function getTransactions(options = {}) {
+  const {
+    cardId = null,
+    year = null,
+    month = null,
+    limit = 50,
+  } = options;
+
+  if (year && month) {
+    const details = await this.getMonthDetails({ cardId, year, month });
+    return {
+      card: details.card,
+      summary: details.summary,
+      transactions: details.transactions.slice(0, limit),
+      dailySeries: details.dailySeries,
+      comparison: details.comparison,
+      navigation: details.navigation,
+    };
+  }
+
+  const overview = await this.getOverview({ cardId, months: 2 });
+  return {
+    card: overview.card,
+    summary: overview.currentMonth,
+    transactions: (overview.currentMonthTransactions || []).slice(0, limit),
+  };
+};
+
+creditCardService.getAnomalies = async function getAnomalies(options = {}) {
+  const { cardId = null, months = 6 } = options;
+  try {
+    const summary = await this.getSummary({ cardId, months });
+    if (!summary.overview) {
+      return {
+        alerts: [],
+        pendingConfirmations: [],
+        monthlyTrend: [],
+      };
+    }
+    const overview = summary.overview;
+    const alerts = [];
+
+    if (overview.pendingConfirmations && overview.pendingConfirmations.length) {
+      alerts.push({
+        type: 'confirmation',
+        message: `${overview.pendingConfirmations.length} month(s) waiting for confirmation`,
+        count: overview.pendingConfirmations.length,
+      });
+    }
+
+    const current = overview.currentMonth || null;
+    if (current && Number.isFinite(current.closingBalancePercent) && current.closingBalancePercent >= 85) {
+      alerts.push({
+        type: 'utilisation',
+        message: 'Credit utilisation above 85%',
+        utilisationPercent: current.closingBalancePercent,
+      });
+    }
+
+    const trend = summary.monthlyTrend || [];
+    if (trend.length >= 3) {
+      const recent = trend.slice(-3);
+      const strictlyIncreasing = recent.every((entry, idx, arr) => {
+        if (idx === 0) return true;
+        const currentNet = Number(entry.netChange ?? 0);
+        const previousNet = Number(arr[idx - 1].netChange ?? 0);
+        return currentNet > previousNet;
+      });
+      if (strictlyIncreasing) {
+        alerts.push({
+          type: 'netChange',
+          message: 'Net balance increased three consecutive months',
+        });
+      }
+    }
+
+    return {
+      alerts,
+      pendingConfirmations: overview.pendingConfirmations || [],
+      monthlyTrend: trend,
+    };
+  } catch (error) {
+    return {
+      alerts: [{ type: 'info', message: error.message }],
+      pendingConfirmations: [],
+      monthlyTrend: [],
+    };
+  }
 };
 
 module.exports = creditCardService;

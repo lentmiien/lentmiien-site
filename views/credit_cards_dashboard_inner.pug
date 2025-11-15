@@ -1,0 +1,96 @@
+.credit-dashboard
+  .credit-dashboard__header
+    h3.credit-dashboard__title Credit Card Usage
+    .credit-dashboard__controls
+      select#cardSelect.credit-select.form-select(aria-label='Select credit card')
+        each card in cards
+          option(value=card.id, selected=card.id === activeCardId)= card.name
+      a#monthDetailsLink.subtle-btn(href='#') View month details
+      form#updateLimitForm.credit-limit-form
+        input#creditLimitInput.form-control(type='number', step='1000', min='0', placeholder='Credit limit (JPY)', aria-label='Update credit limit')
+        button.btn.btn-outline-primary(type='submit') Save limit
+  p#limitFeedback.inline-feedback
+  .metric-cards
+    .metric-card
+      span.metric-card__label Current balance
+      strong#currentBalance.metric-card__value --
+    .metric-card
+      span.metric-card__label Current month usage
+      strong#currentUsage.metric-card__value --
+    .metric-card
+      span.metric-card__label Current month repayments
+      strong#currentRepay.metric-card__value --
+    .metric-card
+      span.metric-card__label Points projected
+      strong#currentPoints.metric-card__value --
+  .chart-panel
+    h4 Last six months overview
+    #usageChart
+  .pending-confirmations.hidden#confirmationsContainer
+    h4.credit-section-title Pending monthly confirmations
+    p.inline-feedback Once the calculated balance matches your statement, press confirm to lock the values.
+    .pending-confirmations__list
+  .credit-section
+    h4.credit-section-title Current month transactions
+    form#newTransactionForm(hidden)
+    datalist#labelSuggestions
+    div#tableFeedback.inline-feedback
+    table.credit-table
+      thead
+        tr
+          th Date
+          th Label
+          th Amount
+          th External
+          th Multiplier (%)
+          th Added
+          th Actions
+      tbody#transactionsBody
+        tr.new-transaction-row
+          td
+            input#inputDate.form-control(type='date', form='newTransactionForm', required, aria-label='Transaction date')
+          td
+            input#inputLabel.form-control(type='text', list='labelSuggestions', placeholder='Description', form='newTransactionForm', required, aria-label='Label')
+          td
+            input#inputAmount.form-control(type='number', step='0.01', placeholder='0.00', form='newTransactionForm', required, aria-label='Amount')
+          td
+            label.form-chip
+              input#inputExternal(type='checkbox', form='newTransactionForm', aria-label='External transaction')
+              span External
+          td
+            input#inputMultiplier.form-control(type='number', step='0.1', min='0', value='1', form='newTransactionForm', aria-label='External multiplier')
+          td
+            span.badge-soft --
+          td
+            button#saveTransactionBtn.btn.btn-primary(type='submit', form='newTransactionForm') Save
+  .credit-section
+    h4.credit-section-title One-time CSV upload
+    - const csvEligibleCards = (cards || []).filter(card => !card.hasHistory)
+    - const csvDisabled = csvEligibleCards.length === 0
+    p#csvDisabledMessage.inline-feedback(class=csvDisabled ? '' : 'hidden')
+      | There are no cards without history. CSV import is only available for brand-new cards.
+    form#csvUploadForm.csv-upload(enctype='multipart/form-data')
+      .credit-actions
+        select#csvCardSelect.credit-select.form-select(name='cardId', required, disabled=csvDisabled, aria-label='Select card for CSV upload')
+          option(value='' disabled selected) Select card
+          each card in csvEligibleCards
+            option(value=card.id)= card.name
+        input.form-control(type='file', name='file', accept='.csv', required, disabled=csvDisabled)
+        label.form-chip
+          input#csvExternalDefault(type='checkbox', name='externalDefault', disabled=csvDisabled)
+          span External by default
+        input(type='number', step='0.1', min='0', name='externalMultiplierDefault', value='1', aria-label='Default multiplier', disabled=csvDisabled)
+        button.btn.btn-outline-secondary(type='submit', disabled=csvDisabled) Upload CSV
+    p.inline-feedback
+      | CSV columns:
+      code date,label,amount,is_external,external_multiplier
+      |  (include header row).
+    p#csvFeedback.inline-feedback
+  .credit-section
+    h4.credit-section-title Add another card
+    form#newCardForm(class='credit-actions')
+      input.form-control(type='text', name='name', placeholder='Card name', required, aria-label='Card name')
+      input.form-control(type='date', name='issuedDate', aria-label='Issued date')
+      input.form-control(type='number', name='creditLimit', step='1000', min='0', placeholder='Limit (optional)', aria-label='Credit limit')
+      button.btn.btn-outline-primary(type='submit') Add card
+    p#cardFeedback.inline-feedback

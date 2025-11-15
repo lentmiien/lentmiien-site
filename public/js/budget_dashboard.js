@@ -260,7 +260,7 @@ async function fetchDefaults(name){
   /* ────────────────────────────────────────────────────────────────
      5.  POST new transaction
      ────────────────────────────────────────────────────────────────*/
-  document.getElementById('newTransactionForm')
+  document.getElementById('budgetTransactionForm')
   .addEventListener('submit',async ev=>{
      ev.preventDefault();
      const formData = new FormData(ev.target);

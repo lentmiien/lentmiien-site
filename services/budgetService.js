@@ -11,6 +11,7 @@ const CategoryDBModel = require('../models/category_db');
 const TransactionDBModel = require('../models/transaction_db');
 
 const { Receipt, Payroll } = require('../database');
+const finance = require('../utils/finance');
 
 const budgetService = {
   async getAccounts() {
@@ -344,6 +345,254 @@ async function getTransactionsByPeriod(year, month) {
   };
 }
 
+async function buildCategoryLookup() {
+  const categories = await CategoryDBModel.find().select('_id title').lean();
+  return categories.reduce((acc, category) => {
+    acc[category._id.toString()] = category.title;
+    return acc;
+  }, {});
+}
+
+function categoryLabel(rawValue, categoryMap = {}) {
+  if (!rawValue) return 'Uncategorised';
+  const [categoryId, fallback] = rawValue.split('@');
+  if (categoryId && categoryMap[categoryId]) {
+    return categoryMap[categoryId];
+  }
+  if (fallback) return fallback;
+  return rawValue;
+}
+
+function extractYearMonth(dateInt) {
+  const normalized = Number.parseInt(dateInt, 10);
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    return { year: null, month: null, label: null };
+  }
+  const year = Math.floor(normalized / 10000);
+  const month = Math.floor((normalized % 10000) / 100);
+  if (!year || !month) {
+    return { year: null, month: null, label: null };
+  }
+  return { year, month, label: finance.monthKey(year, month) };
+}
+
+function transactionTotal(doc) {
+  return (doc.amount || 0) + (doc.from_fee || 0) + (doc.to_fee || 0);
+}
+
+async function getSummary(options = {}) {
+  const months = Math.max(1, Math.min(24, Number(options.months) || 6));
+  const categoryLimit = Math.max(3, Math.min(12, Number(options.categoryLimit) || 5));
+  const periods = finance.buildRecentPeriods(months);
+  const earliest = periods[0].range.start;
+  const latestPeriod = periods[periods.length - 1];
+  const latestRangeEnd = latestPeriod.range.end;
+
+  const [dashboardData, categoryMap, monthlyAgg, latestCategories] = await Promise.all([
+    budgetService.getDashboardData(),
+    buildCategoryLookup(),
+    TransactionDBModel.aggregate([
+      { $match: { date: { $gte: earliest, $lt: latestRangeEnd } } },
+      { $project: {
+        amount: { $add: ['$amount', '$from_fee', '$to_fee'] },
+        year: { $floor: { $divide: ['$date', 10000] } },
+        month: { $floor: { $divide: [{ $mod: ['$date', 10000] }, 100] } },
+      } },
+      { $group: {
+        _id: { year: '$year', month: '$month' },
+        totalSpent: { $sum: '$amount' },
+        transactionCount: { $sum: 1 },
+      } },
+    ]),
+    TransactionDBModel.aggregate([
+      { $match: { date: { $gte: latestPeriod.range.start, $lt: latestPeriod.range.end } } },
+      { $group: {
+        _id: '$categories',
+        totalSpent: { $sum: { $add: ['$amount', '$from_fee', '$to_fee'] } },
+        transactionCount: { $sum: 1 },
+      } },
+      { $sort: { totalSpent: -1 } },
+      { $limit: categoryLimit },
+    ]),
+  ]);
+
+  const monthlyMap = new Map();
+  monthlyAgg.forEach((row) => {
+    const label = finance.monthKey(row._id.year, row._id.month);
+    monthlyMap.set(label, {
+      total: row.totalSpent || 0,
+      transactionCount: row.transactionCount || 0,
+    });
+  });
+
+  const monthlyTrend = [];
+  periods.forEach((period) => {
+    const base = monthlyMap.get(period.label) || { total: 0, transactionCount: 0 };
+    const prev = monthlyTrend[monthlyTrend.length - 1] || null;
+    monthlyTrend.push({
+      label: period.label,
+      total: base.total,
+      transactionCount: base.transactionCount,
+      delta: prev ? finance.delta(base.total, prev.total) : null,
+      deltaPercent: prev ? finance.deltaPercent(base.total, prev.total) : null,
+    });
+  });
+
+  const accounts = (dashboardData && dashboardData.accounts) || [];
+  const totalBalance = accounts.reduce((sum, account) => sum + (account.balance || 0), 0);
+  const currentTrend = monthlyTrend[monthlyTrend.length - 1] || null;
+  const previousTrend = monthlyTrend.length > 1 ? monthlyTrend[monthlyTrend.length - 2] : null;
+
+  const categories = latestCategories.map((row) => ({
+    id: row._id,
+    label: categoryLabel(row._id, categoryMap),
+    total: row.totalSpent || 0,
+    transactionCount: row.transactionCount || 0,
+  }));
+
+  return {
+    accounts,
+    totals: {
+      balance: totalBalance,
+      accountCount: accounts.length,
+      periodLabel: latestPeriod.label,
+    },
+    monthlyTrend,
+    topCategories: categories,
+    cashflow: currentTrend
+      ? {
+        current: currentTrend.total,
+        previous: previousTrend ? previousTrend.total : null,
+        delta: previousTrend ? finance.delta(currentTrend.total, previousTrend.total) : null,
+        deltaPercent: previousTrend ? finance.deltaPercent(currentTrend.total, previousTrend.total) : null,
+      }
+      : null,
+  };
+}
+
+async function getTransactions(options = {}) {
+  const limit = Math.max(5, Math.min(200, Number(options.limit) || 20));
+  const periodInput = typeof options.period === 'string'
+    ? { period: options.period }
+    : options.period;
+  const period = periodInput ? finance.resolvePeriod(periodInput) : null;
+  const categoryMap = await buildCategoryLookup();
+
+  if (period) {
+    const periodData = await getTransactionsByPeriod(period.year, period.month);
+    return {
+      period,
+      summary: periodData.summary,
+      items: periodData.transactions.slice(0, limit).map((tx) => ({
+        ...tx,
+        categoryLabel: categoryLabel(tx.categories, categoryMap),
+      })),
+    };
+  }
+
+  const rows = await TransactionDBModel.find({})
+    .sort({ date: -1, transaction_business: 1 })
+    .limit(limit)
+    .lean();
+
+  const formatted = rows.map((row) => ({
+    id: row._id.toString(),
+    business: row.transaction_business,
+    amount: row.amount,
+    totalAmount: transactionTotal(row),
+    categoryLabel: categoryLabel(row.categories, categoryMap),
+    date: row.date,
+    isoDate: finance.intDateToISO(row.date),
+    fromAccount: row.from_account,
+    toAccount: row.to_account,
+  }));
+
+  return {
+    period: null,
+    summary: {
+      count: formatted.length,
+      totalAmount: formatted.reduce((sum, tx) => sum + (tx.totalAmount || 0), 0),
+    },
+    items: formatted,
+  };
+}
+
+async function getAnomalies(options = {}) {
+  const months = Math.max(2, Math.min(12, Number(options.months) || 3));
+  const highValueThreshold = Math.max(50000, Number(options.highValueThreshold) || 200000);
+  const periods = finance.buildRecentPeriods(months);
+  const earliest = periods[0].range.start;
+  const latestLabel = periods[periods.length - 1].label;
+  const [categoryMap, transactions] = await Promise.all([
+    buildCategoryLookup(),
+    TransactionDBModel.find({ date: { $gte: earliest } }).lean(),
+  ]);
+
+  if (!transactions.length) {
+    return {
+      categoryAlerts: [],
+      highValue: [],
+      latestPeriod: latestLabel,
+    };
+  }
+
+  const categorySeries = new Map();
+  transactions.forEach((tx) => {
+    const { label } = extractYearMonth(tx.date);
+    if (!label) {
+      return;
+    }
+    const categoryName = categoryLabel(tx.categories, categoryMap);
+    if (!categorySeries.has(categoryName)) {
+      categorySeries.set(categoryName, new Map());
+    }
+    const monthMap = categorySeries.get(categoryName);
+    monthMap.set(label, (monthMap.get(label) || 0) + transactionTotal(tx));
+  });
+
+  const categoryAlerts = [];
+  categorySeries.forEach((monthMap, label) => {
+    const current = monthMap.get(latestLabel) || 0;
+    const historical = periods.slice(0, -1)
+      .map((period) => monthMap.get(period.label) || 0)
+      .filter((value) => value > 0);
+    if (!historical.length) return;
+    const historicalAvg = historical.reduce((sum, value) => sum + value, 0) / historical.length;
+    if (historicalAvg === 0) return;
+    const increase = current - historicalAvg;
+    if (increase > 0 && current >= historicalAvg * 1.35 && increase > 10000) {
+      categoryAlerts.push({
+        category: label,
+        current,
+        average: historicalAvg,
+        delta: increase,
+        deltaPercent: (increase / historicalAvg) * 100,
+      });
+    }
+  });
+
+  categoryAlerts.sort((a, b) => b.deltaPercent - a.deltaPercent);
+
+  const highValue = transactions
+    .map((tx) => ({
+      id: tx._id.toString(),
+      amount: transactionTotal(tx),
+      business: tx.transaction_business,
+      category: categoryLabel(tx.categories, categoryMap),
+      date: tx.date,
+      isoDate: finance.intDateToISO(tx.date),
+    }))
+    .filter((tx) => tx.amount >= highValueThreshold)
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
+  return {
+    categoryAlerts,
+    highValue,
+    latestPeriod: latestLabel,
+  };
+}
+
  /* ── export */
 module.exports = {
   ...budgetService,                       // keep old public methods
@@ -354,4 +603,7 @@ module.exports = {
   insertTransaction,
   getReferenceLists,
   getTransactionsByPeriod,
+  getSummary,
+  getTransactions,
+  getAnomalies,
 };

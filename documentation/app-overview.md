@@ -9,7 +9,7 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
 | Chat & Knowledge Ops | `/chat5` | `controllers/chat5controller`, `services/{conversation,message,knowledge,template}Service` | Model switcher, knowledge browser, template library, batch runner, media attachments, PDF-to-chat intake |
 | Video Generation (Sora) | `/sora` | `controllers/soracontroller`, `utils/OpenAI_API`, `services/batchService` | Prompt composer, background poller, webhook reconciler, asset rating, Dropbox backup hooks |
 | Image Generation (ComfyUI) | `/image_gen` | `controllers/image_gencontroller`, `services/conversationService`, `utils/OpenAI_API` | Prompt collections, job queue viewer, cached gallery, metadata tagging |
-| Budget & Finance | `/budget`, `/budget/review/:year/:month` | `controllers/budget2controller`, `services/{budget,creditCard}Service` | Dashboard KPIs, transaction review queue, categorisation helpers, credit card importer |
+| Budget & Finance | `/accounting`, `/budget`, `/budget/review/:year/:month` | `controllers/accountingController`, `services/{budget,creditCard}Service` | Unified dashboard, transaction review queue, categorisation helpers, credit card importer |
 | Cooking & Household | `/cooking`, `/scheduleTask/calendar`, `/health` | `controllers/{cookingcontroller,scheduleTaskController,healthcontroller}`, `services/{cookingCalendar,scheduleTask,health}Service` | Meal planner, pantry analytics, task overlap detector, health logbook |
 | Document & Prompt Ops | `/gptdocument`, `/framework`, `/documentation` | `controllers/gptdocumentcontroller`, `documentation/` resources | Document knowledge base, prompt catalog, framework guides, color and testing handbooks |
 | Admin & Utilities | `/admin/*`, `/tmp-files`, `/yaml-viewer`, `/games` | `controllers/{admincontroller,tmpfilescontroller,yamlcontroller}`, `routes/yaml`, `services/githubService` | Role management, log viewer, temp file shuttle, Swagger UI, game hub, GitHub mirror |
@@ -58,7 +58,7 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
   - **Categorisation Helpers:** Auto-tags transactions and highlights anomalies.
   - **Credit Card Importer:** `CreditCardService` normalises bank exports for ingestion.
   - **Custom Reports:** APIs exposed under `/api/budget` for external tooling.
-- **Backing Components:** `controllers/budget2controller`, `services/{budget,creditCard}Service`, `models/Budget*`, `views/budget_*`.
+- **Backing Components:** `controllers/accountingController`, `services/{budget,creditCard}Service`, `models/Budget*`, `views/accounting_dashboard`, `views/budget_*`.
 
 ### Cooking, Health, and Scheduling
 - **Purpose:** Support household operations through meal planning, health tracking, and scheduling.
