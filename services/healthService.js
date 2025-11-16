@@ -51,14 +51,14 @@ class HealthService {
         // Update existing entry
         entry.basicData = basic;
         entry.medicalRecord = medical;
-        entry.diary = diary.split(',').map(item => item.trim()).filter(item => item.length > 0);
+        entry.diary = normalizeDiaryInput(diary);
       } else {
         // Create new entry
         entry = new this.HealthEntry({
           dateOfEntry: date,
           basicData: basic,
           medicalRecord: medical,
-          diary: diary.split(',').map(item => item.trim()).filter(item => item.length > 0)
+          diary: normalizeDiaryInput(diary)
         });
       }
   
@@ -97,6 +97,9 @@ class HealthService {
         if (entry) {
           // Determine if there are any changes to the entry
           let isUpdated = false;
+          if (!(entry[dbkey] instanceof Map)) {
+            entry[dbkey] = new Map(Object.entries(entry[dbkey] || {}));
+          }
           for (const [key, value] of Object.entries(dataToAppend)) {
             if (entry[dbkey].get(key) !== value) {
               entry[dbkey].set(key, value);
@@ -155,6 +158,16 @@ class HealthService {
 // Utility function to check if the date string matches the format YYYY-MM-DD
 const isValidDate = (dateStr) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
+};
+
+const normalizeDiaryInput = (input) => {
+  if (Array.isArray(input)) {
+    return input.map((item) => String(item).trim()).filter((item) => item.length > 0);
+  }
+  if (typeof input === 'string') {
+    return input.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
+  }
+  return [];
 };
 
 module.exports = HealthService;

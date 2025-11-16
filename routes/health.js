@@ -16,6 +16,8 @@ router.get('/health-entries/:date', controller.getHealthEntry);
 router.put('/health-entries/:date', controller.updateHealthEntry);
 // Get entries in date range (API)
 router.get('/health-entries', controller.getHealthEntries);
+// Get analytics for date range (API)
+router.get('/analytics', controller.getHealthAnalytics);
 // Delete one entry (API)
 router.delete('/health-entries/:date', controller.deleteHealthEntry);
 // Append id to diary (API)

@@ -1,16 +1,63 @@
-extends layout
+﻿extends layout
 
 block content
-  - const data = JSON.parse(JSON.stringify(entry))
   .row
     .col
-      h2 Health Tracker Edit, date: 
+      h2 Health Tracker Edit
+      p.text-muted
+        | Date:&nbsp;
         span#date #{entry.dateOfEntry}
-      input#new_entry(type="checkbox", name="new_entry", readonly, checked=!Object.keys(entry.basicData).length && !Object.keys(entry.medicalRecord).length && !entry.diary.length)
-      |  is new entry
+      .form-check.form-switch
+        input#new_entry.form-check-input(type="checkbox", name="new_entry", readonly, checked=entry.isNewEntry)
+        label.form-check-label(for="new_entry") is new entry
 
-  //- 'basicData' input section
-  .row.mt-3
+  .row.mt-4
+    .col-lg-6
+      h4 Metadata
+      .mb-3
+        label.form-label(for="measurementType") Measurement Type
+        input#measurementType.form-control(type="text", value=entry.measurementType)
+      .mb-3
+        label.form-label(for="measurementContext") Measurement Context
+        input#measurementContext.form-control(type="text", value=entry.measurementContext)
+      .mb-3
+        label.form-label(for="tags") Tags (comma separated)
+        input#tags.form-control(type="text", value=entry.tagsString)
+    .col-lg-6
+      h4 Notes
+      textarea#notes.form-control(rows="6")= entry.notes
+
+  if entry.analyticsSummary
+    .row.mt-4
+      .col
+        h5 Latest Insights
+        ul.list-group.mb-3
+          if entry.analyticsSummary.alerts && entry.analyticsSummary.alerts.length
+            each alert in entry.analyticsSummary.alerts
+              li.list-group-item
+                strong #{alert.metric} #{alert.type}
+                |  Value: #{alert.value} (threshold #{alert.threshold}) on #{alert.date}
+          else
+            li.list-group-item.text-muted No active alerts captured for this date.
+        if entry.analyticsSummary.insights && entry.analyticsSummary.insights.length
+          table.table.table-sm
+            thead
+              tr
+                th Metric
+                th Trend
+                th Rolling Avg
+                th Min
+                th Max
+            tbody
+              each insight in entry.analyticsSummary.insights
+                tr
+                  td= insight.metric
+                  td.text-capitalize= insight.trend || 'flat'
+                  td= insight.movingAverage || 'N/A'
+                  td= insight.min
+                  td= insight.max
+
+  .row.mt-5
     .col
       h4 Basic Data
       table#basicData.table
@@ -18,19 +65,17 @@ block content
           th Metric
           th Value
           th Action
-        each key in Object.keys(data.basicData)
+        each value, key in entry.basicData
           tr
             td
               input.form-control(name='metric', type='text', value=key)
             td
-              input.form-control(name='value', type='text', value=data.basicData[key])
+              input.form-control(name='value', type='text', value=value)
             td
               button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+      button.btn.btn-primary.mt-2(onclick="AddRow('basicData')") Add row
 
-      button.btn.btn-primary(onclick="AddRow('basicData')") Add row
-
-  //- 'medicalRecord' input section
-  .row.mt-3
+  .row.mt-4
     .col
       h4 Medical Record
       table#medicalRecord.table
@@ -38,24 +83,55 @@ block content
           th Metric
           th Value
           th Action
-        each key in Object.keys(data.medicalRecord)
+        each value, key in entry.medicalRecord
           tr
             td
               input.form-control(name='metric', type='text', value=key)
             td
-              input.form-control(name='value', type='text', value=data.medicalRecord[key])
+              input.form-control(name='value', type='text', value=value)
             td
               button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+      button.btn.btn-primary.mt-2(onclick="AddRow('medicalRecord')") Add row
 
-      button.btn.btn-primary(onclick="AddRow('medicalRecord')") Add row
+  .row.mt-4
+    .col
+      h4 Personalized Thresholds
+      p.text-muted.small Define min/max limits per metric to power alerts.
+      table#thresholds.table
+        tr
+          th Metric
+          th Min
+          th Max
+          th Action
+        if entry.thresholds.length
+          each threshold in entry.thresholds
+            tr
+              td
+                input.form-control(type='text', value=threshold.metric)
+              td
+                input.form-control(type='number', step='any', value=threshold.min)
+              td
+                input.form-control(type='number', step='any', value=threshold.max)
+              td
+                button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+        else
+          tr
+            td
+              input.form-control(type='text', placeholder='metric')
+            td
+              input.form-control(type='number', step='any', placeholder='min')
+            td
+              input.form-control(type='number', step='any', placeholder='max')
+            td
+              button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+      button.btn.btn-primary.mt-2(onclick="AddRow('thresholds')") Add threshold
 
-  //- 'diary' input section
-  .row.mt-3
+  .row.mt-4
     .col
       h4 Diary
       table#diary.table
         tr
-          th Chat3 entry ID
+          th Entry ID
           th Action
         each id in entry.diary
           tr
@@ -63,12 +139,12 @@ block content
               input.form-control(name='chat3Id', type='text', value=id)
             td
               button.btn.btn-danger(onclick="DeleteRow(this)") Delete
+      button.btn.btn-primary.mt-2(onclick="AddRow('diary')") Add row
 
-      button.btn.btn-primary(onclick="AddRow('diary')") Add row
-
-  //- "Update" button
-  .row.mt-3
+  .row.mt-5
     .col.text-center
-      button.btn.btn-success(onclick="SaveToDatabase()") Update
+      button.btn.btn-success.btn-lg(onclick="SaveToDatabase()") Save Entry
 
   script(src="/health_edit.js")
+
+
