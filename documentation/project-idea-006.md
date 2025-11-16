@@ -12,7 +12,6 @@ Increase the resilience of the startup pipeline by adding robust error handling,
 ## Key Code Touchpoints
 - `setup.js`.
 - `utils/logger.js`, `utils/` helper modules (create new `utils/startupChecks.js` for shared logic).
-- `services/batchService.js`, `services/messageService.js` (if they perform startup tasks invoked by `setup.js`).
 - `.env` validation utility (could reuse `dotenv` warnings).
 
 ## Implementation Notes
