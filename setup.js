@@ -3,162 +3,10 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const mongoose = require('mongoose');
 const logger = require('./utils/logger');
-
-// Function to ensure that a directory exists
-function ensureDirExists(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-    logger.notice(`Directory created: ${dirPath}`);
-  }
-}
-
-// Function to ensure that a file exists with given content
-function ensureFileExists(filePath, defaultContent) {
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, defaultContent);
-    logger.notice(`File created: ${filePath}`);
-  }
-}
-
-// The directories to ensure exist
-const dirsToCheck = ['tmp_data', 'cache', 'public/temp', 'public/video', 'github-repos', 'logs'];
-
-dirsToCheck.forEach(dir => ensureDirExists(dir));
-
-// Files and their default content to ensure exist
-const filesToCheck = [
-  { name: "chat3vdb.json", content: "[]" },
-  { name: "default_models.json", content: "{}" },
-  { name: "embedding.json", content: "[]" }
-];
-
-filesToCheck.forEach(file => ensureFileExists(path.join('cache', file.name), file.content));
-
-// Clear temporary folder
-function clearDirectory(directory) {
-  if (fs.existsSync(directory)) {
-      fs.readdirSync(directory).forEach((file) => {
-          const currentPath = path.join(directory, file);
-          if (fs.lstatSync(currentPath).isDirectory()) {
-              // Recurse if directory
-              clearDirectory(currentPath);
-              fs.rmdirSync(currentPath);
-          } else {
-              // Remove file
-              fs.unlinkSync(currentPath);
-          }
-      });
-  }
-}
-let TEMP_DIR = path.join(__dirname, 'tmp_data');
-clearDirectory(TEMP_DIR);
-const PDF_JOB_DIR = path.join(__dirname, 'public', 'temp', 'pdf');
-const parsedPdfMaxAge = parseInt(process.env.CHAT_PDF_MAX_AGE_HOURS || '24', 10);
-const PDF_JOB_MAX_AGE_HOURS = Number.isNaN(parsedPdfMaxAge) ? 24 : parsedPdfMaxAge;
-async function pruneStalePdfJobs(directory, maxAgeHours) {
-  try {
-    await fs.promises.mkdir(directory, { recursive: true });
-    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
-    const cutoff = Date.now() - (maxAgeHours * 60 * 60 * 1000);
-    await Promise.all(entries.map(async (entry) => {
-      if (!entry.isDirectory()) return;
-      const jobDir = path.join(directory, entry.name);
-      const stats = await fs.promises.stat(jobDir);
-      if (stats.mtimeMs < cutoff) {
-        await fs.promises.rm(jobDir, { recursive: true, force: true });
-        logger.notice(`Removed stale PDF conversion job: ${jobDir}`);
-      }
-    }));
-  } catch (err) {
-    logger.warning('Unable to prune PDF conversion cache', err);
-  }
-}
-pruneStalePdfJobs(PDF_JOB_DIR, PDF_JOB_MAX_AGE_HOURS).catch(() => {});
-
-// Check for the existence of the .env file
-if (!fs.existsSync('.env')) {
-  logger.warning('Warning: .env file does not exist. Some configurations might be missing.');
-}
-
-// Convert DALL-E images to JPG, if only PNG exist
-async function convertPngToJpgInFolder(folderPath) {
-  try {
-    // Read all files in the folder
-    const files = await fs.promises.readdir(folderPath);
-
-    // Loop through each file in the directory
-    for (const file of files) {
-      const ext = path.extname(file);
-      const baseName = path.basename(file, ext);
-
-      if (ext.toLowerCase() === '.png') {
-        // Check if JPG version exists
-        const jpgPath = path.join(folderPath, baseName + '.jpg');
-        try {
-          // Try accessing the JPG file, throw error if it doesn't exist
-          await fs.promises.access(jpgPath);
-        } catch {
-          // JPG does not exist, convert PNG to JPG
-          logger.notice(`Converting ${file} to JPG...`);
-          const pngPath = path.join(folderPath, file);
-          const pngBuffer = await fs.promises.readFile(pngPath);
-          const jpgBuffer = await sharp(pngBuffer).jpeg({ quality: 70 }).toBuffer();
-          await fs.promises.writeFile(jpgPath, jpgBuffer);
-          logger.notice(`Successfully converted ${file} to JPG.`);
-        }
-      }
-    }
-    logger.notice("Conversion process completed.");
-  } catch (err) {
-    logger.error('An error occurred:', err);
-  }
-}
-
-const folderPath = 'public/img';
-convertPngToJpgInFolder(folderPath);
-
-// Delete log files
-const LOG_RETENTION_DAYS = 7;
-const LOCAL_LOG_DIR = path.join(__dirname, 'logs');
-
-async function pruneOldLogs(directory, retentionDays) {
-  try {
-    await fs.promises.mkdir(directory, { recursive: true });
-    const entries = await fs.promises.readdir(directory);
-    const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
-    const now = Date.now();
-
-    await Promise.all(entries.map(async (entry) => {
-      const filePath = path.join(directory, entry);
-      try {
-        const stats = await fs.promises.stat(filePath);
-        if (!stats.isFile()) {
-          return;
-        }
-        if (!entry.toLowerCase().endsWith('.log')) {
-          return;
-        }
-        if ((now - stats.mtimeMs) > retentionMs) {
-          await fs.promises.unlink(filePath);
-          logger.notice(`Removed old log file: ${filePath}`);
-        }
-      } catch (err) {
-        logger.warning(`Unable to inspect log file: ${filePath}`, err);
-      }
-    }));
-  } catch (err) {
-    logger.error('Failed to prune local log files:', err);
-  }
-}
-
-pruneOldLogs(LOCAL_LOG_DIR, LOG_RETENTION_DAYS);
-
-// Fetch OpenAI usage
-const {fetchUsageSummaryForPeriod} = require('./usage');
-
-// Delete "test" data from chat database
-const mongoose = require("mongoose");
+const { runPreflightChecks, notifyStartupAlert } = require('./utils/startupChecks');
+const { fetchUsageSummaryForPeriod } = require('./usage');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
 const batchprompt = require('./models/batchprompt');
@@ -167,91 +15,469 @@ const openaicalllog = require('./models/openaicalllog');
 const OpenAIUsage = require('./models/openai_usage');
 const SoraVideo = require('./models/sora_video');
 const ApiDebugLog = require('./models/api_debug_log');
-const mongoDB_url = process.env.MONGOOSE_URL;
-async function ClearTestDataFromDB() {
-  await mongoose.connect(mongoDB_url);
 
-  // Delete test data
-  await Chat4Model.deleteMany({ category: "Test" });//Test
-  await Conversation4Model.deleteMany({ category: "Test" });//Test
+const ROOT_DIR = __dirname;
+const TEMP_DIR = path.join(ROOT_DIR, 'tmp_data');
+const PDF_JOB_DIR = path.join(ROOT_DIR, 'public', 'temp', 'pdf');
+const PNG_FOLDER = path.join(ROOT_DIR, 'public', 'img');
+const VIDEO_DIR = path.join(ROOT_DIR, 'public', 'video');
+const LOG_DIR = path.join(ROOT_DIR, 'logs');
+const DROPBOX_TOKEN_PATH = path.join(ROOT_DIR, 'tokens.json');
 
-  // Get and save OpenAI usage data from last 30 days
-  let currentMs = Date.now() - (1000*60*60*24*30);
-  for (let i = 0; i < 31; i++) {
-    const now = new Date(currentMs);
-    const ed = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const sd = new Date(ed.getTime() - (1000*60*60*24));
-    const d_str = `${sd.getFullYear()}-${sd.getMonth() > 8 ? (sd.getMonth()+1) : '0' + (sd.getMonth()+1)}-${sd.getDate() > 9 ? sd.getDate() : '0' + sd.getDate()}`;
-    const exists = await OpenAIUsage.find({entry_date: d_str});
-    if (exists.length === 0) {
-      // Only get and save new entries
-      const summary = await fetchUsageSummaryForPeriod(sd, ed);
-      await new OpenAIUsage(summary).save();
-      logger.notice("Data saved:", JSON.stringify(summary, null, 2));
-    }
-    currentMs += 1000*60*60*24;
-  }
+const PDF_JOB_MAX_AGE_HOURS = Number.parseInt(process.env.CHAT_PDF_MAX_AGE_HOURS || '24', 10) || 24;
+const LOG_RETENTION_DAYS = 7;
+const DROPBOX_REQUIRED_ENV = ['DROPBOX_CLIENT_ID', 'DROPBOX_CLIENT_SECRET', 'DROPBOX_REDIRECT_URI'];
 
-  // Delete old data
-  const oneMonthAgo = new Date();
-  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  await batchprompt.deleteMany({ timestamp: { $lt: oneMonthAgo } });
-  await embedding.deleteMany({});
-  await openaicalllog.deleteMany({});
-  const fiveDaysAgo = new Date(Date.now() - (5 * 24 * 60 * 60 * 1000));
-  const { deletedCount: removedApiDebugEntries = 0 } = await ApiDebugLog.deleteMany({ createdAt: { $lt: fiveDaysAgo } });
-  if (removedApiDebugEntries > 0) {
-    logger.notice(`Deleted ${removedApiDebugEntries} API debug log entries older than 5 days.`);
-  }
+const DIRECTORIES_TO_ENSURE = [
+  path.join(ROOT_DIR, 'tmp_data'),
+  path.join(ROOT_DIR, 'cache'),
+  path.join(ROOT_DIR, 'public', 'temp'),
+  path.join(ROOT_DIR, 'public', 'video'),
+  path.join(ROOT_DIR, 'github-repos'),
+  path.join(ROOT_DIR, 'logs'),
+];
 
-  // Delete low-rated Sora videos and remove files
-  const videoDir = path.join(__dirname, 'public', 'video');
-  const lowRatedVideos = await SoraVideo.find({ rating: 1, filename: { $nin: ['', null] } }).lean();
-  if (lowRatedVideos.length > 0) {
-    for (const video of lowRatedVideos) {
-      const videoPath = path.join(videoDir, video.filename);
-      try {
-        await fs.promises.unlink(videoPath);
-        logger.notice(`Removed low-rated video file: ${videoPath}`);
-      } catch (err) {
-        if (err.code !== 'ENOENT') {
-          logger.warning(`Unable to remove video file: ${videoPath}`, err);
-        }
-      }
-    }
-    await SoraVideo.deleteMany({ _id: { $in: lowRatedVideos.map((video) => video._id) } });
-    logger.notice(`Deleted ${lowRatedVideos.length} low-rated Sora videos from database.`);
-  }
+const CACHE_FILES_TO_ENSURE = [
+  { filePath: path.join(ROOT_DIR, 'cache', 'chat3vdb.json'), content: '[]' },
+  { filePath: path.join(ROOT_DIR, 'cache', 'default_models.json'), content: '{}' },
+  { filePath: path.join(ROOT_DIR, 'cache', 'embedding.json'), content: '[]' },
+];
 
-  // Remove stale, incomplete Sora generations older than 48 hours
-  const staleCutoff = new Date(Date.now() - (48 * 60 * 60 * 1000));
-  const staleVideos = await SoraVideo.find({
-    status: { $ne: 'completed' },
-    startedAt: { $lt: staleCutoff },
-  }).lean();
-  if (staleVideos.length > 0) {
-    for (const video of staleVideos) {
-      if (video.filename) {
-        const videoPath = path.join(videoDir, video.filename);
-        try {
-          await fs.promises.unlink(videoPath);
-          logger.notice(`Removed stale Sora video file: ${videoPath}`);
-        } catch (err) {
-          if (err.code !== 'ENOENT') {
-            logger.warning(`Unable to remove stale Sora video file: ${videoPath}`, err);
-          }
-        }
-      }
-    }
-    await SoraVideo.deleteMany({ _id: { $in: staleVideos.map((video) => video._id) } });
-    logger.notice(`Deleted ${staleVideos.length} stale, incomplete Sora video records.`);
-  }
+const sectionResults = [];
 
-  await mongoose.disconnect();
+function recordSection(name, status, metadata = {}) {
+  sectionResults.push({
+    name,
+    status,
+    ...metadata,
+  });
 }
-ClearTestDataFromDB();
 
-// Backup data, and download missing data
-const { backup, setup } = require('./dropbox');
-backup();
-setup();
+function buildSummary() {
+  const okSections = sectionResults.filter((entry) => entry.status === 'ok');
+  const warningSections = sectionResults.filter((entry) => entry.status === 'warning');
+  const failedSections = sectionResults.filter((entry) => entry.status === 'failed');
+  const failedCriticalSections = failedSections.filter((entry) => entry.critical);
+  return {
+    totalSections: sectionResults.length,
+    okCount: okSections.length,
+    warningCount: warningSections.length,
+    failedCount: failedSections.length,
+    failedCriticalCount: failedCriticalSections.length,
+    failedSections: failedSections.map((entry) => entry.name),
+    warningSections: warningSections.map((entry) => entry.name),
+    sections: sectionResults,
+  };
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function withRetry(operation, options = {}) {
+  const {
+    attempts = 3,
+    baseDelayMs = 500,
+    factor = 2,
+    label = 'operation',
+  } = options;
+  let attempt = 0;
+  let lastError;
+  while (attempt < attempts) {
+    attempt += 1;
+    try {
+      return await operation(attempt);
+    } catch (error) {
+      lastError = error;
+      const hasNextAttempt = attempt < attempts;
+      logger.warning(`${label} attempt ${attempt} failed`, {
+        category: 'startup:retry',
+        metadata: { error: error.message },
+      });
+      if (!hasNextAttempt) {
+        break;
+      }
+      const delayMs = baseDelayMs * Math.pow(factor, attempt - 1);
+      await delay(delayMs);
+    }
+  }
+  throw lastError;
+}
+
+async function runSection(name, fn, options = {}) {
+  const { critical = false, bailOnError = false } = options;
+  const start = Date.now();
+  try {
+    const data = await fn();
+    const normalized = data && typeof data === 'object' ? data : { value: data };
+    const status = normalized.skipped ? 'skipped' : 'ok';
+    recordSection(name, status, {
+      critical,
+      durationMs: Date.now() - start,
+      details: normalized,
+    });
+    logger.notice(`${name} completed with status ${status}`, {
+      category: 'startup:section',
+      metadata: { name, status },
+    });
+    return normalized;
+  } catch (error) {
+    const status = critical ? 'failed' : 'warning';
+    recordSection(name, status, {
+      critical,
+      durationMs: Date.now() - start,
+      error: error.message,
+    });
+    logger.error(`${name} failed`, {
+      category: 'startup:section',
+      metadata: { name, error: error.message },
+    });
+    if (bailOnError) {
+      throw error;
+    }
+    return null;
+  }
+}
+
+async function ensureDirectoriesAndFiles() {
+  const createdDirs = [];
+  DIRECTORIES_TO_ENSURE.forEach((dirPath) => {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+      createdDirs.push(dirPath);
+    }
+  });
+
+  const createdFiles = [];
+  CACHE_FILES_TO_ENSURE.forEach(({ filePath, content }) => {
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, content);
+      createdFiles.push(filePath);
+    }
+  });
+
+  if (!fs.existsSync(path.join(ROOT_DIR, '.env'))) {
+    logger.warning('.env file not found; using only environment variables', {
+      category: 'startup:env',
+    });
+  }
+
+  return { createdDirs, createdFiles };
+}
+
+async function resetDirectory(dirPath) {
+  await fs.promises.rm(dirPath, { recursive: true, force: true });
+  await fs.promises.mkdir(dirPath, { recursive: true });
+}
+
+async function pruneStalePdfJobs(directory, maxAgeHours) {
+  let removed = 0;
+  try {
+    await fs.promises.mkdir(directory, { recursive: true });
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    const cutoff = Date.now() - maxAgeHours * 60 * 60 * 1000;
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const jobDir = path.join(directory, entry.name);
+      const stats = await fs.promises.stat(jobDir);
+      if (stats.mtimeMs < cutoff) {
+        await fs.promises.rm(jobDir, { recursive: true, force: true });
+        removed += 1;
+        logger.notice(`Removed stale PDF conversion job: ${jobDir}`);
+      }
+    }
+  } catch (error) {
+    logger.warning('Unable to prune PDF conversion cache', error);
+  }
+  return removed;
+}
+
+async function cleanTempAndPdfCaches() {
+  await resetDirectory(TEMP_DIR);
+  const prunedJobs = await pruneStalePdfJobs(PDF_JOB_DIR, PDF_JOB_MAX_AGE_HOURS);
+  return { tempReset: true, prunedPdfJobs: prunedJobs };
+}
+
+async function convertPngAssets() {
+  if (!fs.existsSync(PNG_FOLDER)) {
+    return { skipped: true, reason: 'public/img directory missing' };
+  }
+  const files = await fs.promises.readdir(PNG_FOLDER);
+  let converted = 0;
+  for (const file of files) {
+    const ext = path.extname(file).toLowerCase();
+    if (ext !== '.png') {
+      continue;
+    }
+    const baseName = path.basename(file, ext);
+    const jpgPath = path.join(PNG_FOLDER, `${baseName}.jpg`);
+    const pngPath = path.join(PNG_FOLDER, file);
+    try {
+      await fs.promises.access(jpgPath);
+    } catch (_) {
+      try {
+        const pngBuffer = await fs.promises.readFile(pngPath);
+        const jpgBuffer = await sharp(pngBuffer).jpeg({ quality: 70 }).toBuffer();
+        await fs.promises.writeFile(jpgPath, jpgBuffer);
+        converted += 1;
+        logger.notice(`Converted ${file} to JPG.`);
+      } catch (error) {
+        logger.warning(`Failed to convert ${file}`, error);
+      }
+    }
+  }
+  return { converted };
+}
+
+async function pruneOldLogs() {
+  const retentionMs = LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  let removed = 0;
+  await fs.promises.mkdir(LOG_DIR, { recursive: true });
+  const entries = await fs.promises.readdir(LOG_DIR);
+  for (const entry of entries) {
+    if (!entry.toLowerCase().endsWith('.log')) {
+      continue;
+    }
+    const filePath = path.join(LOG_DIR, entry);
+    try {
+      const stats = await fs.promises.stat(filePath);
+      if (!stats.isFile()) {
+        continue;
+      }
+      if (Date.now() - stats.mtimeMs > retentionMs) {
+        await fs.promises.unlink(filePath);
+        removed += 1;
+        logger.notice(`Removed old log file: ${filePath}`);
+      }
+    } catch (error) {
+      logger.warning(`Unable to inspect log file: ${filePath}`, error);
+    }
+  }
+  return { removed };
+}
+
+async function removeVideoRecords(filter) {
+  const videos = await SoraVideo.find(filter).lean();
+  if (videos.length === 0) {
+    return 0;
+  }
+  for (const video of videos) {
+    if (!video.filename) {
+      continue;
+    }
+    const videoPath = path.join(VIDEO_DIR, video.filename);
+    try {
+      await fs.promises.unlink(videoPath);
+      logger.notice(`Removed video file: ${videoPath}`);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        logger.warning(`Unable to remove video file: ${videoPath}`, error);
+      }
+    }
+  }
+  await SoraVideo.deleteMany({ _id: { $in: videos.map((video) => video._id) } });
+  return videos.length;
+}
+
+async function performDatabaseMaintenance() {
+  const mongoUrl = process.env.MONGOOSE_URL;
+  if (!mongoUrl) {
+    return { skipped: true, reason: 'MONGOOSE_URL missing' };
+  }
+
+  const summary = {
+    deletedTestChats: 0,
+    deletedTestConversations: 0,
+    usageEntriesInserted: 0,
+    usageSyncSkipped: false,
+    batchPromptsRemoved: 0,
+    embeddingsCleared: false,
+    openaiCallLogsCleared: 0,
+    apiDebugPurged: 0,
+    lowRatedVideosRemoved: 0,
+    staleIncompleteVideosRemoved: 0,
+  };
+
+  await mongoose.connect(mongoUrl, {
+    serverSelectionTimeoutMS: 15000,
+    connectTimeoutMS: 15000,
+  });
+
+  try {
+    const { deletedCount: chatRemoved = 0 } = await Chat4Model.deleteMany({ category: 'Test' });
+    const { deletedCount: conversationRemoved = 0 } = await Conversation4Model.deleteMany({ category: 'Test' });
+    summary.deletedTestChats = chatRemoved;
+    summary.deletedTestConversations = conversationRemoved;
+
+    if (process.env.OPENAI_ADMIN_KEY) {
+      let currentMs = Date.now() - 1000 * 60 * 60 * 24 * 30;
+      for (let i = 0; i < 31; i += 1) {
+        const now = new Date(currentMs);
+        const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const startDate = new Date(endDate.getTime() - 1000 * 60 * 60 * 24);
+        const dateString = `${startDate.getFullYear()}-${startDate.getMonth() > 8 ? startDate.getMonth() + 1 : `0${startDate.getMonth() + 1}`}-${startDate.getDate() > 9 ? startDate.getDate() : `0${startDate.getDate()}`}`;
+        const existing = await OpenAIUsage.find({ entry_date: dateString });
+        if (existing.length === 0) {
+          const usageSummary = await withRetry(
+            async () => {
+              const summaryForDay = await fetchUsageSummaryForPeriod(startDate, endDate);
+              if (!summaryForDay) {
+                throw new Error('Usage summary unavailable');
+              }
+              return summaryForDay;
+            },
+            { attempts: 3, baseDelayMs: 750, label: `openai-usage-${dateString}` },
+          );
+          usageSummary.entry_date = dateString;
+          await new OpenAIUsage(usageSummary).save();
+          summary.usageEntriesInserted += 1;
+          logger.notice(`Saved OpenAI usage data for ${dateString}`);
+        }
+        currentMs += 1000 * 60 * 60 * 24;
+      }
+    } else {
+      summary.usageSyncSkipped = true;
+      logger.warning('Skipping OpenAI usage sync; OPENAI_ADMIN_KEY not configured', {
+        category: 'startup:db',
+      });
+    }
+
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const { deletedCount: promptsRemoved = 0 } = await batchprompt.deleteMany({ timestamp: { $lt: oneMonthAgo } });
+    summary.batchPromptsRemoved = promptsRemoved;
+
+    await embedding.deleteMany({});
+    summary.embeddingsCleared = true;
+
+    const { deletedCount: logsRemoved = 0 } = await openaicalllog.deleteMany({});
+    summary.openaiCallLogsCleared = logsRemoved;
+
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    const { deletedCount: apiDebugRemoved = 0 } = await ApiDebugLog.deleteMany({ createdAt: { $lt: fiveDaysAgo } });
+    summary.apiDebugPurged = apiDebugRemoved;
+
+    summary.lowRatedVideosRemoved = await removeVideoRecords({ rating: 1, filename: { $nin: ['', null] } });
+    const staleCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    summary.staleIncompleteVideosRemoved = await removeVideoRecords({
+      status: { $ne: 'completed' },
+      startedAt: { $lt: staleCutoff },
+    });
+
+    return summary;
+  } finally {
+    await mongoose.disconnect().catch(() => {});
+  }
+}
+
+function canRunDropboxOperations() {
+  const missingEnv = DROPBOX_REQUIRED_ENV.filter((key) => !process.env[key]);
+  if (missingEnv.length > 0) {
+    return { ok: false, reason: `Missing env vars: ${missingEnv.join(', ')}` };
+  }
+  if (!fs.existsSync(DROPBOX_TOKEN_PATH)) {
+    return { ok: false, reason: 'tokens.json not found' };
+  }
+  return { ok: true };
+}
+
+async function runDropboxPipelines() {
+  const readiness = canRunDropboxOperations();
+  if (!readiness.ok) {
+    return { skipped: true, reason: readiness.reason };
+  }
+
+  const { backup, setup } = require('./dropbox');
+  await withRetry(() => backup(), {
+    attempts: 2,
+    baseDelayMs: 1000,
+    label: 'dropbox-backup',
+  });
+  await withRetry(() => setup(), {
+    attempts: 2,
+    baseDelayMs: 1000,
+    label: 'dropbox-restore',
+  });
+  return { backup: 'ok', restore: 'ok' };
+}
+
+async function main() {
+  const preflight = await runPreflightChecks();
+  recordSection('Preflight checks', preflight.ok ? 'ok' : 'failed', {
+    critical: true,
+    details: preflight.results,
+  });
+
+  if (!preflight.ok) {
+    await notifyStartupAlert({
+      severity: 'critical',
+      subject: 'Startup preflight failed',
+      summary: preflight,
+      message: 'Preflight checks failed; aborting startup pipeline.',
+    });
+    logger.error('Preflight checks failed. Aborting setup.');
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    await runSection('Directory preparation', ensureDirectoriesAndFiles, { critical: true, bailOnError: true });
+    await runSection('Temp/cache cleanup', cleanTempAndPdfCaches);
+    await runSection('PNG asset conversion', convertPngAssets);
+    await runSection('Log pruning', pruneOldLogs);
+    await runSection('Database maintenance', performDatabaseMaintenance);
+    await runSection('Dropbox sync', runDropboxPipelines);
+  } catch (error) {
+    const summary = buildSummary();
+    await notifyStartupAlert({
+      severity: 'critical',
+      subject: 'Setup aborted due to critical failure',
+      message: error.message,
+      summary,
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const summary = buildSummary();
+  logger.notice('Startup diagnostics summary', {
+    category: 'startup:summary',
+    metadata: summary,
+  });
+
+  if (summary.failedCriticalCount > 0) {
+    await notifyStartupAlert({
+      severity: 'critical',
+      subject: 'Startup diagnostics: critical failures detected',
+      summary,
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  if (summary.failedCount > 0 || summary.warningCount > 0) {
+    await notifyStartupAlert({
+      severity: 'warning',
+      subject: 'Startup diagnostics reported warnings',
+      summary,
+    });
+  }
+}
+
+main().catch(async (error) => {
+  logger.error('setup.js encountered an unhandled exception', error);
+  try {
+    await notifyStartupAlert({
+      severity: 'critical',
+      subject: 'setup.js crashed',
+      message: error.message,
+    });
+  } catch (_) {
+    // ignore alert failures
+  }
+  process.exitCode = 1;
+});

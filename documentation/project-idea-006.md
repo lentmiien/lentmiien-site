@@ -1,4 +1,5 @@
 # Project Idea 006 – Harden `setup.js` and Startup Diagnostics
+`codex resume 019a8c85-c4e3-7400-a732-092a76f781d4`
 
 ## Goal
 Increase the resilience of the startup pipeline by adding robust error handling, diagnostics, and recovery paths to `setup.js`. The script should gracefully handle missing directories, transient network failures, and data cleanup issues, while emitting actionable logs.

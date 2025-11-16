@@ -109,6 +109,13 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `GITHUB_TOKEN` | GitHub PAT used by `GitHubService` to mirror repos under `github-repos/`. |
 | `DROPBOX_API_KEY`, `DROPBOX_CLIENT_ID`, `DROPBOX_CLIENT_SECRET`, `DROPBOX_REDIRECT_URI` | Dropbox credentials for image backups. |
 | `MAILGUN_API_KEY` | Optional Mailgun key for notifications in `MessageService`. |
+| `MAILGUN_DOMAIN` | Mailgun domain used for startup/crash alerts. |
+| `STARTUP_ALERT_EMAIL` | Comma-separated list of recipients for startup diagnostics emails (Mailgun). |
+| `STARTUP_ALERT_FROM` | Optional friendly from name for diagnostics emails. |
+| `STARTUP_SLACK_WEBHOOK_URL` | Incoming webhook for Slack/Teams alerts when diagnostics fail. |
+| `STARTUP_MIN_DISK_MB` | Minimum free disk (in MB) enforced during preflight (defaults to `200`). |
+| `STARTUP_REQUIRED_ENV_VARS` | Comma-separated overrides for the env vars validated during preflight. |
+| `STARTUP_SKIP_MONGO_CHECK` | Set to `true` to bypass the Mongo connectivity check (e.g., offline dev). |
 | `COMFY_API_BASE`, `COMFY_API_KEY` | ComfyUI REST endpoint + key for `/image_gen`. |
 | `GALLERY_PATH` | Filesystem path scanned by the gallery for image ratings/slideshows. |
 | `VUE_PATH` | Optional absolute path to a built Vue frontend served to authenticated users. |
@@ -117,6 +124,17 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `HIDE_GTAG` | Set to `YES` to suppress Google Analytics tags. |
 
 > Keep `.env` out of version control. `setup.js` warns if the file is missing.
+
+### Startup Diagnostics & Alerts
+
+`setup.js` now runs a structured diagnostics pipeline before `npm start` completes:
+
+- **Preflight** validates required env vars, disk space, and Mongo connectivity (configurable via `STARTUP_*` vars).
+- **Section runners** wrap each maintenance task (temp cleanup, PDF pruning, DB hygiene, Dropbox sync) with scoped logging, retries for network operations, and a final JSON summary logged under `startup:summary`.
+- **Alerting** optionally sends Slack webhook and/or Mailgun emails when diagnostics fail. Configure `STARTUP_SLACK_WEBHOOK_URL`, `STARTUP_ALERT_EMAIL`, `STARTUP_ALERT_FROM`, and `MAILGUN_DOMAIN` to receive notifications.
+- **Interpretation guide** lives in `documentation/startup-diagnostics.md` with troubleshooting steps and log categories.
+
+The summary object contains section-level timings and statuses (`ok`, `warning`, `failed`, `skipped`). Any critical failure stops the start command and emits an alert so you can fix the underlying issue before the server boots.
 
 ## npm Scripts
 
