@@ -31,7 +31,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `socket_io/` | Socket.IO bootstrap and chat event handlers. |
 | `views/` | Pug templates for dashboards, forms, modals, and media viewers. |
 | `public/` | Client assets including compiled JS, CSS, `imgen/` cache, `video/` output, and `temp/` uploads. |
-| `public/yaml/` | OpenAPI/Swagger specs exposed through `/yaml-viewer`. |
+| `public/yaml/` | OpenAPI specs served via `/yaml-viewer` (`core-api.v1.yaml`, `schedule-task.v1.yaml`, `chat5-pdf.v1.yaml`, `chat5-realtime.v1.yaml`, plus vendor references). |
 | `games/` | Standalone web games served via `express-static-gzip`. |
 | `github-repos/` | Local clone cache managed by `GitHubService`. |
 | `schedulers/` | Background triggers (e.g., batch queue helpers) invoked during startup flows. |
@@ -142,6 +142,7 @@ The summary object contains section-level timings and statuses (`ok`, `warning`,
 | --- | --- |
 | `npm start` | Runs `setup.js` (cache prep, cleanup, usage sync) and then launches `node app`. |
 | `npm test` | Executes the Jest suite (`tests/**/*.test.js`) and writes coverage to `coverage/`. |
+| `npm run lint:openapi` | Validates curated YAML specs with `@apidevtools/swagger-parser`. |
 | `npm run codex` | Launches the Codex CLI helper. |
 | `npm run codex-update` | Installs the latest `@openai/codex` globally. |
 | `npm run codex-todo` | Directs Codex to action tasks from `todo.txt`. |
@@ -156,7 +157,15 @@ The summary object contains section-level timings and statuses (`ok`, `warning`,
 - **Life & Finance Tooling:** Cooking calendar v2 tracks actuals versus planned meals, analytics, and recipe library usage. Budget v2 exposes dashboards plus JSON APIs for category analysis. Receipts and payroll controllers parse uploads into structured records. Product customs summaries use GPT-4.1 with Zod validation. The schedule task planner blocks overlapping presence events.
 - **Health Analytics & Alerts:** `/health` now layers moving averages, Chart.js trends, alert banners, and CSV exports on top of daily health logs. Each entry captures measurement metadata, tags, notes, and personalised thresholds that feed the `/health/analytics` API plus cached summaries in `cache/health_insights.json`.
 - **Admin & Utilities:** Admin module manages users/roles, views JSON log files (`logs/*.log`), and inspects OpenAI usage. `/tmp-files` offers a size-limited drop zone that cleans up automatically. `/games` lists bundled games served with gzip/Brotli.
-- **Documentation & OpenAPI:** `/yaml-viewer` renders stored OpenAPI specs through Swagger UI, and `documentation/` houses living architecture/testing/prompt guides that complement `AGENTS.md`.
+- **Documentation & OpenAPI:** `/yaml-viewer` now highlights domain badges, spec summaries, and copy‑ready cURL snippets for the curated `core-api`, `schedule-task`, `chat5-pdf`, and `chat5-realtime` OpenAPI files in `public/yaml/`; run `npm run lint:openapi` to validate them, and keep leveraging `documentation/` + `AGENTS.md` for the broader architecture/testing/prompt playbooks.
+
+### API Documentation Workflow
+
+- `public/yaml/core-api.v1.yaml` covers the `/api/*` endpoints (bin packing, health logs, chat exports, automation helpers) with shared schemas and sample payloads.
+- `public/yaml/schedule-task.v1.yaml` documents `/scheduleTask/api/*` (task CRUD, presence overlap detection, palette feed) so automations can mirror the UI without reverse-engineering controllers.
+- `public/yaml/chat5-pdf.v1.yaml` explains the PDF-to-image intake flow that precedes `chat5_6-importPdfPages`, while `public/yaml/chat5-realtime.v1.yaml` captures Socket.IO events via a custom `x-socketio` extension.
+- `/yaml-viewer` lists every spec with domain badges, highlights, and ready-to-run snippets; click “Open in Viewer” for Swagger UI or “View JSON” for the parsed document.
+- `npm run lint:openapi` (powered by `scripts/validate-openapi.js` and `@apidevtools/swagger-parser`) validates the curated specs before publishing or wiring them into CI.
 
 ## Data & File Management
 

@@ -1,0 +1,419 @@
+openapi: 3.1.0
+info:
+  title: Chat5 Realtime Socket API
+  version: '1.0.0'
+  summary: Socket.IO namespace `/chat5_6`
+  description: >
+    Bidirectional events that orchestrate Chat5 Studio v6. Connect via Socket.IO,
+    authenticate with the existing Express session, then emit the events documented below.
+servers:
+  - url: ws://localhost:3000/socket.io/?EIO=4&transport=websocket
+    description: Local Socket.IO endpoint (handshake occurs over HTTP before upgrade).
+tags:
+  - name: Chat5 Realtime
+paths:
+  /socket.io/:
+    get:
+      summary: Socket.IO handshake for Chat5 Studio
+      description: >
+        Use the default Socket.IO client to connect, then join `/chat5_6`. This OpenAPI record
+        documents the custom events via the `x-socketio` extension.
+      tags: [Chat5 Realtime]
+      responses:
+        '101':
+          description: Protocol upgraded to WebSocket.
+      x-socketio:
+        namespace: /chat5_6
+        clientToServer:
+          - name: chat5_6-joinConversation
+            summary: Join a conversation room
+            payload:
+              $ref: '#/components/schemas/JoinConversationRequest'
+          - name: chat5_6-leaveConversation
+            summary: Leave a room
+            payload:
+              $ref: '#/components/schemas/JoinConversationRequest'
+          - name: chat5_6-fetchConversation
+            summary: Fetch metadata + messages
+            payload:
+              $ref: '#/components/schemas/JoinConversationRequest'
+          - name: chat5_6-createConversation
+            summary: Reuse or create a new conversation shell
+            payload:
+              $ref: '#/components/schemas/CreateConversationRequest'
+          - name: chat5_6-copyConversation
+            summary: Clone an existing chat4/chat5 thread
+            payload:
+              $ref: '#/components/schemas/CopyConversationRequest'
+          - name: chat5_6-updateSettings
+            summary: Update metadata (settings/details)
+            payload:
+              $ref: '#/components/schemas/UpdateSettingsRequest'
+          - name: chat5_6-appendMessage
+            summary: Append a user text message
+            payload:
+              $ref: '#/components/schemas/AppendMessageRequest'
+          - name: chat5_6-appendImage
+            summary: Append a user image message
+            payload:
+              $ref: '#/components/schemas/AppendImageRequest'
+          - name: chat5_6-importPdfPages
+            summary: Convert cached PDF pages into messages
+            payload:
+              $ref: '#/components/schemas/ImportPdfPagesRequest'
+          - name: chat5_6-requestAIResponse
+            summary: Trigger immediate AI response
+            payload:
+              $ref: '#/components/schemas/ConversationScopedRequest'
+          - name: chat5_6-requestAIBatch
+            summary: Queue a batch request
+            payload:
+              $ref: '#/components/schemas/RequestBatchPayload'
+          - name: chat5_6-generateTitle
+            summary: Ask the model for a title
+            payload:
+              $ref: '#/components/schemas/ConversationScopedRequest'
+          - name: chat5_6-generateSummary
+            summary: Persist a summary via AI
+            payload:
+              $ref: '#/components/schemas/ConversationScopedRequest'
+          - name: chat5_6-updateMessageArray
+            summary: Reorder the stored messages
+            payload:
+              $ref: '#/components/schemas/UpdateMessageArrayRequest'
+          - name: chat5_6-toggleHideFromBot
+            summary: Toggle the `hideFromBot` flag
+            payload:
+              $ref: '#/components/schemas/ToggleHideRequest'
+          - name: chat5_6-editMessageText
+            summary: Edit stored prompt/response text
+            payload:
+              $ref: '#/components/schemas/EditMessageRequest'
+          - name: chat5_6-template-list
+            summary: List chat5 template IDs
+          - name: chat5_6-template-add
+            summary: Flag a conversation as template
+            payload:
+              $ref: '#/components/schemas/ConversationScopedRequest'
+          - name: chat5_6-template-remove
+            summary: Remove a template flag
+            payload:
+              $ref: '#/components/schemas/ConversationScopedRequest'
+          - name: chat5_6-template-fetch
+            summary: Fetch templates (optionally refresh cache)
+            payload:
+              $ref: '#/components/schemas/TemplateFetchRequest'
+          - name: chat5_6-template-refresh
+            summary: Refresh one or all templates
+            payload:
+              $ref: '#/components/schemas/TemplateRefreshRequest'
+          - name: chat5_6-template-apply
+            summary: Apply template data to a conversation
+            payload:
+              $ref: '#/components/schemas/TemplateApplyRequest'
+        serverToClient:
+          - name: chat5_6-error
+            summary: Namespaced error channel
+            payload:
+              $ref: '#/components/schemas/ErrorEvent'
+          - name: chat5_6-messages
+            summary: Broadcast with mutated message set
+            payload:
+              $ref: '#/components/schemas/MessagesEvent'
+          - name: chat5_6-conversationUpdated
+            summary: Conversation metadata changed
+            payload:
+              $ref: '#/components/schemas/ConversationEvent'
+          - name: chat5_6-titleGenerated
+            summary: AI generated a new title
+            payload:
+              $ref: '#/components/schemas/ConversationEvent'
+          - name: chat5_6-summaryGenerated
+            summary: AI summary ready
+            payload:
+              $ref: '#/components/schemas/ConversationEvent'
+          - name: chat5_6-template-cacheUpdated
+            summary: Template cache changed
+            payload:
+              $ref: '#/components/schemas/TemplateEvent'
+components:
+  schemas:
+    JoinConversationRequest:
+      type: object
+      required:
+        - conversationId
+      properties:
+        conversationId:
+          type: string
+    CreateConversationRequest:
+      type: object
+      properties:
+        settings:
+          $ref: '#/components/schemas/ConversationSettings'
+        properties:
+          $ref: '#/components/schemas/ConversationDetails'
+    CopyConversationRequest:
+      type: object
+      required:
+        - sourceConversationId
+      properties:
+        sourceConversationId:
+          type: string
+        deepCopy:
+          type: boolean
+          default: false
+    UpdateSettingsRequest:
+      type: object
+      required:
+        - conversationId
+      properties:
+        conversationId:
+          type: string
+        settings:
+          $ref: '#/components/schemas/ConversationSettings'
+        details:
+          $ref: '#/components/schemas/ConversationDetails'
+    ConversationSettings:
+      type: object
+      properties:
+        model:
+          type: string
+          example: gpt-4o-mini
+        contextPrompt:
+          type: string
+        maxMessages:
+          type: integer
+        tools:
+          type: array
+          items:
+            type: string
+        reasoning:
+          type: string
+          enum: [short, medium, long]
+        verbosity:
+          type: string
+          enum: [low, medium, high]
+        outputFormat:
+          type: string
+    ConversationDetails:
+      type: object
+      properties:
+        title:
+          type: string
+        category:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        members:
+          type: array
+          items:
+            type: string
+    AppendMessageRequest:
+      type: object
+      required:
+        - conversationId
+        - text
+      properties:
+        conversationId:
+          type: string
+        text:
+          type: string
+        attachments:
+          type: array
+          items:
+            type: string
+          description: IDs of assets already uploaded via REST endpoints.
+    AppendImageRequest:
+      type: object
+      required:
+        - conversationId
+        - name
+      properties:
+        conversationId:
+          type: string
+        name:
+          type: string
+          description: Display name for the image.
+        fileName:
+          type: string
+          description: Optional reference to an existing `public/img` asset.
+        data:
+          type: string
+          format: byte
+          description: Base64-encoded binary data (when uploading inline).
+    ImportPdfPagesRequest:
+      type: object
+      required:
+        - jobId
+      properties:
+        jobId:
+          type: string
+        conversationId:
+          type: string
+          description: Use `'NEW'` to spawn a fresh conversation.
+        pages:
+          type: array
+          items:
+            type: integer
+          description: Page numbers to import (defaults to all converted pages).
+        autoSummary:
+          type: boolean
+        summaryPrompt:
+          type: string
+        conversation:
+          $ref: '#/components/schemas/ConversationDetails'
+        settings:
+          $ref: '#/components/schemas/ConversationSettings'
+    ConversationScopedRequest:
+      type: object
+      required:
+        - conversationId
+      properties:
+        conversationId:
+          type: string
+    RequestBatchPayload:
+      allOf:
+        - $ref: '#/components/schemas/ConversationScopedRequest'
+        - type: object
+          properties:
+            prompt:
+              type: string
+    UpdateMessageArrayRequest:
+      type: object
+      required:
+        - conversationId
+        - messages
+      properties:
+        conversationId:
+          type: string
+        messages:
+          type: array
+          items:
+            type: string
+    ToggleHideRequest:
+      type: object
+      required:
+        - messageId
+      properties:
+        messageId:
+          type: string
+        state:
+          type: boolean
+          description: Defaults to toggling when omitted.
+    EditMessageRequest:
+      type: object
+      required:
+        - messageId
+        - type
+        - value
+      properties:
+        messageId:
+          type: string
+        type:
+          type: string
+          enum: [prompt, response]
+        value:
+          type: string
+    TemplateFetchRequest:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        refresh:
+          type: boolean
+    TemplateRefreshRequest:
+      type: object
+      properties:
+        conversationId:
+          type: string
+    TemplateApplyRequest:
+      type: object
+      required:
+        - templateId
+        - conversationId
+        - mode
+      properties:
+        templateId:
+          type: string
+        conversationId:
+          type: string
+        mode:
+          type: string
+          enum: [update, post, postOnly]
+        options:
+          $ref: '#/components/schemas/TemplateApplyOptions'
+    TemplateApplyOptions:
+      type: object
+      properties:
+        appendMessages:
+          type: boolean
+        applyContext:
+          type: boolean
+        applySettings:
+          type: boolean
+    ErrorEvent:
+      type: object
+      properties:
+        event:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    MessagesEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Conversation ID.
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
+    ConversationEvent:
+      type: object
+      properties:
+        conversationId:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+    ConversationMessage:
+      type: object
+      properties:
+        _id:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant, system]
+        prompt:
+          type: string
+        response:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+    TemplateEvent:
+      type: object
+      properties:
+        templateId:
+          type: string
+        status:
+          type: string
+x-yaml-viewer:
+  domain: Chat5 Realtime
+  highlights:
+    - Covers both conversation lifecycle events and template cache flows.
+    - Mirrors the authoritative `socket_io/chat5_6` handler for room join, AI requests, and PDF imports.
+    - Custom `x-socketio` extension keeps event payloads collocated with OpenAPI specs.
+  examples:
+    - label: Join + append message (pseudo-code)
+      snippet: |
+        const socket = io('/chat5_6');
+        socket.emit('chat5_6-joinConversation', { conversationId: 'abc123' });
+        socket.emit('chat5_6-appendMessage', { conversationId: 'abc123', text: 'Hello world' });

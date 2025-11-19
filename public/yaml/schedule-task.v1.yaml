@@ -1,0 +1,324 @@
+openapi: 3.1.0
+info:
+  title: Schedule Task API
+  version: '1.0.0'
+  summary: JSON contract for the `/scheduleTask` calendar and presence planner.
+  description: >
+    Automation-friendly wrappers around the Task/Palette models. Use these endpoints to sync
+    presence blocks, todo lists, and palette overrides with external planners.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Tasks
+    description: Todo/tobuy records rendered on the kanban and calendar views.
+  - name: Presence
+    description: Time-blocked presence entries (home, office, travel, etc.).
+security:
+  - sessionCookie: []
+paths:
+  /scheduleTask/api/tasks:
+    get:
+      summary: List tasks & presences in a window
+      tags: [Tasks]
+      parameters:
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+          description: Defaults to now if omitted.
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+          description: Defaults to 3 days after `from`.
+      responses:
+        '200':
+          description: Tasks grouped by type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TasksWindow'
+    post:
+      summary: Create a task or presence block
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreateRequest'
+      responses:
+        '201':
+          description: Entry created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  id:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Presence overlap conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictResponse'
+  /scheduleTask/api/tasks/{id}:
+    patch:
+      summary: Update a task or presence
+      tags: [Tasks]
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskPatch'
+      responses:
+        '200':
+          description: Entry updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '404':
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: Presence overlap conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictResponse'
+  /scheduleTask/api/tasks/{id}/done:
+    patch:
+      summary: Toggle a task's completion state
+      tags: [Tasks]
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                done:
+                  type: boolean
+                  description: Defaults to `true` when omitted.
+      responses:
+        '200':
+          description: New completion state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  done:
+                    type: boolean
+        '404':
+          description: Entry not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /scheduleTask/api/palette:
+    get:
+      summary: Fetch palette overrides
+      tags: [Presence]
+      responses:
+        '200':
+          description: Palette dictionary merged with defaults
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaletteResponse'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+  parameters:
+    TaskId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+      description: Mongo ObjectId of the Task document.
+  schemas:
+    Problem:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties: true
+    ConflictResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskSummary'
+    TaskSummary:
+      type: object
+      properties:
+        _id:
+          type: string
+        title:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+    TasksWindow:
+      type: object
+      properties:
+        presences:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+    Task:
+      type: object
+      properties:
+        _id:
+          type: string
+        userId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [presence, todo, tobuy]
+        location:
+          type: string
+        purpose:
+          type: string
+        start:
+          type: string
+          format: date-time
+          nullable: true
+        end:
+          type: string
+          format: date-time
+          nullable: true
+        done:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TaskCreateRequest:
+      type: object
+      required:
+        - title
+        - type
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [presence, todo, tobuy]
+        location:
+          type: string
+          description: Required when `type=presence`.
+        purpose:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        done:
+          type: boolean
+          default: false
+    TaskPatch:
+      type: object
+      description: Partial Task payload. `start` and `end` are rounded server-side when present.
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        location:
+          type: string
+        purpose:
+          type: string
+        start:
+          type: string
+          format: date-time
+        end:
+          type: string
+          format: date-time
+        done:
+          type: boolean
+    PaletteResponse:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/PaletteEntry'
+    PaletteEntry:
+      type: object
+      properties:
+        bgColor:
+          type: string
+          nullable: true
+          example: '#E8F5E9'
+        border:
+          type: string
+          nullable: true
+x-yaml-viewer:
+  domain: Schedule & Presence
+  highlights:
+    - 15-minute slot aware calendar feed used by `/scheduleTask`.
+    - Presence overlap protection with conflict payloads ready for UI surfacing.
+    - Palette endpoint merges defaults with Mongo overrides for consistent styling.
+  examples:
+    - label: Create a presence block
+      snippet: |
+        curl -b cookie.txt -H "Content-Type: application/json" \
+          -d '{"title":"Office","type":"presence","location":"office","purpose":"work","start":"2025-01-10T09:00:00Z","end":"2025-01-10T17:00:00Z"}' \
+          http://localhost:3000/scheduleTask/api/tasks
+    - label: Mark todo done
+      snippet: |
+        curl -b cookie.txt -X PATCH -H "Content-Type: application/json" \
+          -d '{"done":true}' \
+          http://localhost:3000/scheduleTask/api/tasks/6759fe2d78f4e8123c1a5d5a/done

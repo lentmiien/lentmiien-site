@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: Chat5 PDF Intake API
+  version: '1.0.0'
+  description: >
+    Upload, inspect, and delete PDF-to-image conversion jobs that ultimately feed the
+    `chat5_6-importPdfPages` socket event. All routes live under `/chat5/documents/pdf`.
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: Chat5 PDF
+security:
+  - sessionCookie: []
+paths:
+  /chat5/documents/pdf:
+    post:
+      summary: Upload a PDF for conversion
+      tags: [Chat5 PDF]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - pdf
+              properties:
+                pdf:
+                  type: string
+                  format: binary
+                  description: Single PDF file (enforced server-side).
+      responses:
+        '200':
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PdfResponse'
+        '400':
+          description: Missing or invalid PDF
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Conversion failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /chat5/documents/pdf/{jobId}:
+    get:
+      summary: Inspect a conversion job
+      tags: [Chat5 PDF]
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job manifest returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PdfResponse'
+        '403':
+          description: Job belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Delete a conversion job
+      tags: [Chat5 PDF]
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  jobId:
+                    type: string
+        '403':
+          description: Job belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+  parameters:
+    JobId:
+      in: path
+      name: jobId
+      required: true
+      schema:
+        type: string
+      description: Identifier assigned by `pdfUtils.convertPdfToImages`.
+  schemas:
+    PdfResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        job:
+          $ref: '#/components/schemas/Chat5PdfJob'
+    ErrorResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          default: false
+        message:
+          type: string
+    Chat5PdfJob:
+      type: object
+      properties:
+        jobId:
+          type: string
+        pdfName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        maxPages:
+          type: integer
+        totalPages:
+          type: integer
+        convertedPages:
+          type: integer
+        truncated:
+          type: boolean
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/Chat5PdfImage'
+    Chat5PdfImage:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+        fileName:
+          type: string
+        previewUrl:
+          type: string
+          format: uri
+        width:
+          type: integer
+        height:
+          type: integer
+        size:
+          type: integer
+          description: File size in bytes.
+x-yaml-viewer:
+  domain: Chat5 Intake
+  highlights:
+    - Sanitized response mirrors the manifest stored on disk for predictable automation.
+    - Ownership checks prevent crosstalk when multiple sessions import PDFs simultaneously.
+    - Job metadata feeds the `chat5_6-importPdfPages` socket event with width/height hints.
+  examples:
+    - label: Upload & preview
+      snippet: |
+        curl -b cookie.txt -F "pdf=@briefing.pdf" http://localhost:3000/chat5/documents/pdf
+        curl -b cookie.txt http://localhost:3000/chat5/documents/pdf/<jobId>

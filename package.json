@@ -8,6 +8,7 @@
     "start": "node app",
     "git_test": "node git_test",
     "test": "jest --coverage",
+    "lint:openapi": "node scripts/validate-openapi.js",
     "codex": "codex",
     "codex-update": "npm install -g @openai/codex@latest",
     "codex-todo": "codex \"In '/todo.txt', I've listed an update I want to do for this project, please check the '/todo.txt' and start coding the changes.\""
@@ -65,6 +66,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
     "jest": "^30.2.0"
   }
 }

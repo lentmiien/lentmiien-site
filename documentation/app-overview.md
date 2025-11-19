@@ -16,6 +16,13 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
 | Automation & Background Jobs | `npm start` (prestart), schedulers | `setup.js`, `schedulers/batchTrigger`, `services/batchService` | Cache priming, OpenAI usage harvesting, directory hygiene, scheduled batch kicks |
 | Testing & Quality | `npm test`, `/documentation/testing-guide.md` | `tests/unit/*.test.js`, `jest.config.js` | Jest service tests, coverage reports, manual scenario checklists |
 
+## API & Documentation Sources
+
+- **OpenAPI specs:** `public/yaml/core-api.v1.yaml` (all `/api/*` routes), `public/yaml/schedule-task.v1.yaml` (schedule task REST), `public/yaml/chat5-pdf.v1.yaml` (PDF ingestion), and `public/yaml/chat5-realtime.v1.yaml` (Socket.IO events via `x-socketio`) are the authoritative references for automation work.
+- **Viewer:** `/yaml-viewer` surfaces each spec with domain badges, highlights, and cURL snippets; click “Open in Viewer” to render Swagger UI or “View JSON” to GET `/yaml-viewer/spec/:filename`.
+- **Validation:** Run `npm run lint:openapi` (Node script `scripts/validate-openapi.js` using `@apidevtools/swagger-parser`) before shipping changes so the specs stay machine-parseable.
+- **Update process:** When you add or edit an Express route/Socket handler, extend the relevant YAML file first, run the lint script, then mention the change under “API Documentation” in the README or release notes so downstream agents know about the new contract.
+
 ## Functional Areas
 
 ### Chat5 Studio

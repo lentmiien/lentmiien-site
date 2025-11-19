@@ -15,8 +15,35 @@ block content
           each file in files
             article.yaml-card
               header.yaml-card__header
-                h2.yaml-card__title= file.displayName || file.name
-                span.yaml-card__meta #{file.sizeLabel} • Updated #{file.modifiedAtLabel}
+                if file.spec && file.spec.domain
+                  span.yaml-card__domain= file.spec.domain
+                h2.yaml-card__title= (file.spec && file.spec.title) || file.displayName || file.name
+                span.yaml-card__meta
+                  if file.spec && file.spec.version
+                    span.yaml-card__version v#{file.spec.version}
+                    |  • 
+                  | #{file.sizeLabel} • Updated #{file.modifiedAtLabel}
+              if file.spec && (file.spec.summary || file.spec.description)
+                p.yaml-card__description= file.spec.summary || file.spec.description
+              if file.spec && file.spec.tags && file.spec.tags.length
+                ul.yaml-card__tags
+                  each tag in file.spec.tags
+                    li.yaml-card__tag= tag
+              if file.spec && file.spec.highlights && file.spec.highlights.length
+                ul.yaml-card__highlights
+                  each highlight in file.spec.highlights
+                    li= highlight
+              if file.spec && file.spec.examples && file.spec.examples.length
+                section.yaml-card__examples
+                  each example in file.spec.examples
+                    article.yaml-card__example
+                      header
+                        strong= example.label
+                        if example.description
+                          p= example.description
+                      if example.snippet
+                        pre
+                          code= example.snippet
               section.yaml-card__filename
                 span.yaml-card__label File Name
                 span.yaml-card__value= file.name

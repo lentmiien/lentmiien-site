@@ -1,4 +1,5 @@
 # Project Idea 008 – Comprehensive API Swagger Docs
+`codex resume 019a9c6f-2188-7283-9c69-85b0e6bfd088`
 
 ## Goal
 Author and publish clear OpenAPI/Swagger documentation for the app’s HTTP and Socket endpoints, making `/yaml-viewer` a single source of truth for API consumers and future automation work.

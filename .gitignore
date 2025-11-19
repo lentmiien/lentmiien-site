@@ -10,7 +10,11 @@ public/img
 public/mp3
 public/imgen
 public/video
-public/yaml
+public/yaml/*
+!public/yaml/core-api.v1.yaml
+!public/yaml/schedule-task.v1.yaml
+!public/yaml/chat5-pdf.v1.yaml
+!public/yaml/chat5-realtime.v1.yaml
 public/html
 utils/batch_input.jsonl
 public/temp/

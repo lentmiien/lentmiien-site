@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 
 const YAML_DIRECTORY = path.join(__dirname, '..', 'public', 'yaml');
 const ALLOWED_EXTENSIONS = new Set(['.yaml', '.yml']);
+const METADATA_SIZE_LIMIT = 1.5 * 1024 * 1024; // 1.5 MB guardrail for spec parsing
 
 class SpecError extends Error {
   constructor(message, status = 500) {
@@ -50,11 +51,11 @@ function formatModified(date) {
   });
 }
 
-function buildFileMetadata(filename, stats) {
+function buildFileMetadata(filename, stats, metadata = null) {
   const displayName = filename.replace(/\.(ya?ml)$/i, '');
   const encodedName = encodeURIComponent(filename);
 
-  return {
+  const base = {
     name: filename,
     displayName,
     size: stats.size,
@@ -65,6 +66,73 @@ function buildFileMetadata(filename, stats) {
     rawPath: `/yaml/${encodedName}`,
     specPath: `/yaml-viewer/spec/${encodedName}`
   };
+  if (metadata) {
+    base.spec = metadata;
+  }
+  return base;
+}
+
+function normalizeExample(example) {
+  if (!example) {
+    return null;
+  }
+  if (typeof example === 'string') {
+    return { label: 'Example', snippet: example };
+  }
+  if (typeof example === 'object') {
+    const label = typeof example.label === 'string' ? example.label : 'Example';
+    const description = typeof example.description === 'string' ? example.description : null;
+    const snippet = typeof example.snippet === 'string' ? example.snippet : null;
+    if (!description && !snippet) {
+      return null;
+    }
+    return { label, description, snippet };
+  }
+  return null;
+}
+
+async function extractSpecMetadata(fullPath, size, filename) {
+  if (size > METADATA_SIZE_LIMIT) {
+    return null;
+  }
+  try {
+    const raw = await fsp.readFile(fullPath, 'utf8');
+    const spec = YAML.parse(raw);
+    if (!spec || typeof spec !== 'object') {
+      return null;
+    }
+
+    const info = spec.info || {};
+    const tags = Array.isArray(spec.tags)
+      ? spec.tags
+        .map((tag) => (typeof tag === 'string' ? tag : tag?.name))
+        .filter((tag) => typeof tag === 'string' && tag.trim().length > 0)
+      : [];
+    const viewerMeta = spec['x-yaml-viewer'] || spec['xYamlViewer'] || null;
+    const highlights = Array.isArray(viewerMeta?.highlights)
+      ? viewerMeta.highlights.filter((item) => typeof item === 'string' && item.trim().length > 0)
+      : [];
+    const examples = Array.isArray(viewerMeta?.examples)
+      ? viewerMeta.examples.map(normalizeExample).filter(Boolean)
+      : [];
+
+    return {
+      title: info.title || null,
+      version: info.version || null,
+      summary: info.summary || null,
+      description: typeof info.description === 'string' ? info.description : null,
+      tags,
+      domain: typeof viewerMeta?.domain === 'string' ? viewerMeta.domain : null,
+      highlights,
+      examples
+    };
+  } catch (error) {
+    logger.warning('Unable to parse spec metadata', {
+      category: 'yaml-viewer',
+      metadata: { error, filename }
+    });
+    return null;
+  }
 }
 
 async function listYamlFiles() {
@@ -80,7 +148,8 @@ async function listYamlFiles() {
       const fullPath = path.join(YAML_DIRECTORY, entry.name);
       try {
         const stats = await fsp.stat(fullPath);
-        files.push(buildFileMetadata(entry.name, stats));
+        const metadata = await extractSpecMetadata(fullPath, stats.size, entry.name);
+        files.push(buildFileMetadata(entry.name, stats, metadata));
       } catch (statError) {
         logger.warning('Failed to stat YAML specification', {
           category: 'yaml-viewer',
