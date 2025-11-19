@@ -1,4 +1,5 @@
 # Project Idea 007 – Test Coverage Expansion
+`codex resume 019a9b3f-46d4-7633-a173-164a563cce44`
 
 ## Goal
 Increase confidence in critical services by expanding the Jest suite, adding new unit/integration tests, and enforcing baseline coverage thresholds. Focus on areas with high complexity or upcoming refactors (chat templates, setup script, finance workflows).
