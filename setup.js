@@ -53,6 +53,11 @@ function recordSection(name, status, metadata = {}) {
   });
 }
 
+function resetSectionResults() {
+  sectionResults.length = 0;
+  return sectionResults;
+}
+
 function buildSummary() {
   const okSections = sectionResults.filter((entry) => entry.status === 'ok');
   const warningSections = sectionResults.filter((entry) => entry.status === 'warning');
@@ -406,6 +411,7 @@ async function runDropboxPipelines() {
 }
 
 async function main() {
+  resetSectionResults();
   const preflight = await runPreflightChecks();
   recordSection('Preflight checks', preflight.ok ? 'ok' : 'failed', {
     critical: true,
@@ -468,16 +474,35 @@ async function main() {
   }
 }
 
-main().catch(async (error) => {
-  logger.error('setup.js encountered an unhandled exception', error);
-  try {
-    await notifyStartupAlert({
-      severity: 'critical',
-      subject: 'setup.js crashed',
-      message: error.message,
-    });
-  } catch (_) {
-    // ignore alert failures
-  }
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch(async (error) => {
+    logger.error('setup.js encountered an unhandled exception', error);
+    try {
+      await notifyStartupAlert({
+        severity: 'critical',
+        subject: 'setup.js crashed',
+        message: error.message,
+      });
+    } catch (_) {
+      // ignore alert failures
+    }
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  buildSummary,
+  canRunDropboxOperations,
+  cleanTempAndPdfCaches,
+  convertPngAssets,
+  delay,
+  ensureDirectoriesAndFiles,
+  main,
+  performDatabaseMaintenance,
+  pruneOldLogs,
+  recordSection,
+  resetSectionResults,
+  runDropboxPipelines,
+  runSection,
+  withRetry,
+};

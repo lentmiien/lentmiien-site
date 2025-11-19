@@ -154,6 +154,18 @@ npm test
 
 To get a neat coverage summary and guarantee robust tested code.
 
+### Coverage Expectations & Reports
+
+- Coverage is collected for the critical files (`setup.js`, `services/templateService.js`, `services/budgetService.js`, `utils/startupChecks.js`). CI fails if any of them dip below their floor: global averages must stay ≥50% statements/lines/functions and ≥35% branches, while each target has its own guard (template/budget/startup checks at 70/70/80/50+, setup currently 35/35/40/25 while we continue to raise diagnostics coverage).
+- `npm test` already runs with coverage enabled; inspect the detailed HTML/LCOV output under `coverage/` or open the text summary in the console.
+- For a compact run while iterating on a single suite you can execute `npm test -- --coverage --coverageReporters=text-summary` to avoid generating the full HTML assets.
+
+### Targeted Suites
+
+- Run an individual service suite with `npm test -- tests/unit/templateService.test.js` or `npm test -- tests/unit/budgetService.test.js`.
+- Startup/diagnostic helpers (directory prep, retries, Dropbox readiness) live in `tests/unit/setup.test.js`. Execute `npm test -- tests/unit/setup.test.js` before editing `setup.js` so you immediately see regressions.
+- When debugging flakier logic, pair a targeted run with `--runInBand` to keep execution serial: `npm test -- tests/unit/setup.test.js --runInBand`.
+
 ---
 
 ## Browser-side Testing (user side):
