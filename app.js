@@ -209,6 +209,7 @@ const yamlRouter = require('./routes/yaml');
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
 app.use('/mydhlapi/test', dummyapiRouter);
+app.use('/webapi/servlet', dummyapiRouter);
 app.use('/blog', blogRouter);
 app.use('/cookingp', cookingPublicRouter);
 app.use('/yaml-viewer', yamlRouter);

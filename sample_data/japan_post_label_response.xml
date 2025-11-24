@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<EmsApiResultInfo>
+  <ResultCode>00</ResultCode>
+  <ResultText>Label generated successfully.</ResultText>
+  <functionCode>52</functionCode>
+  <TrackingNumber>EL012345678JP</TrackingNumber>
+  <DownLoadUrl>https://my.lentmiien.com/webapi/servlet/labels/EL012345678JP.pdf</DownLoadUrl>
+  <PostalRate>4250</PostalRate>
+  <InsuranceCost>120</InsuranceCost>
+</EmsApiResultInfo>

@@ -1,38 +1,17 @@
-In `socket_io/chat5_5/chat5_5handler.js`, I have the function `socket.on('chat5-append', async (raw) => {...});`, that does a lot of things. First, it creates a new conversation if the `conversationId` is 'NEW', then it appends a user message to the conversation, if a user message was provided, then it initiate an AI response, if an AI response was requested, and while doing this, it also updates the conversation settings, with the provided settings, or use default parameters if no settings were provided. Then it also generate an AI generated title for the conversation if the input title is 'NEW'. Also, in the background, the Conversation service (services/conversationService.js) and Message service (services/messageService.js), converts chat4 conversations to the chat5 format when needed.
+In the dummy controller (controllers/dummyapicontroller.js) and route (routes/dummyapi.js), please add 2 routes for returning Japan post sample data. One route is responding to a generate label request that return XML, and the other return the label pdf data. There is no need to validate the input data, just return a fixed response for all requests.
 
-This all is a bit messy and hard to maintain, so I'd like to start cleaning things up.
+Put sample response data in the folder `sample_data`, and use that for responding to all requests.
 
-To avoid breaking things, in the folder `socket_io`, lets create a new `chat5_6` folder, with the following 3 files:
-* chat5_6_documentation.md
-* chat5_6context.js
-* chat5_6handler.js
-(I have created the empty placeholder files)
+Expected response (XML, key fields)
+- ResultCode=00 on success
+- TrackingNumber: EMS tracking number assigned (e.g., EL012345678JP)
+- DownLoadUrl: HTTPS URL to the label PDF (valid 1 week) **Make this 'https://my.lentmiien.com/' followed by the fetch label part**
+- PostalRate: postage for the shipment
+- InsuranceCost: computed ancillary charge if declared/insurance value is provided
+Prepare a simple XML file in the sample data folder, following these guidelines.
 
-Note: I haven't though about versioning, but going forward, I think I want the first part 'chat5' to indicate the chat database version, and the end part '6' to represent the implementation version, so going from `chat5_5` to `chat5_6` means that I'm still using the same chat database, but the version has gone up from '5' to '6'. (I don't have any versions '1' - '4' as I wasn't thinking about this before)
+Also, could I make the URL "/webapi/servlet/WEBAPI" to point to this same router, maybe put the final part "/WEBAPI" in the router file, and put the fetch label under "/webapi/servlet" as well.
 
-Building on the same general format as `chat5_5`, but with events that does only one thing, or close to only one thing. I think I want the following events:
-* Create new conversations: Look if the user already has an empty conversation, in which case, return the conversation id and settings to the user, otherwise, create an empty conversation with default settings and return the conversation id and settings to the user
-* Copy conversation: Copy an existing chat4 or chat5 conversation to a new chat5 conversation, and return the new id and settings to the user (note: chat5 messages will use the same message ids/database entries, unless deep copy is selected, in which case message copies are generated and used) [Note: chat4 conversations should be opened in "read only" mode, with a copy button to convert to a new chat5 conversation]
-* Update settings: Find the conversation with the input id, and update the settings with the input settings
-* Append user message: Append the user message to the conversation with the input id
-* Append user image: Same as message but with an image instead (can upload images, or append existing images if only a filename is provided *but check that the image exist for existing images)
-* Request an AI response: Simply ask the AI model to generate a response and return a placeholder message
-* Request an AI batch response: Same as response, but put in batch que instead (process once per day at 19:00, at discounted prices)
-* Additional helper events, like generate a title or summary, update specific messages (if the user want to correct any existing messages, or hide/show to AI model), edit message array (if user needs to add/remove existing messages from a conversation)
-* Events like the existing join/leave conversation, and fetching history
+The purpose of these API routes are just to return a realistic response, so that I can test my app before switching to the real Japan Post API.
 
-Note: both 'AI response' and 'AI batch response' will return a placeholder response, something like "Processing the request", and when the response is ready, a webhook will receive the response, update the conversation, and emit a 'chat5-messages' so that users with the conversation open, can update the UI with the response.
-
-I want to rework a new template system, where I can designate conversations as templates. The only difference with a template conversation, is that it should show up in a list of templates that I can choose from, and after selecting a template, the user should have the following options:
-* Append template messages to open conversation (checkbox)
-* Set/Append template context to open conversation (checkbox)
-* Set template settings to open conversation (checkbox)
-* Update (Button): Update conversation based on selected options above
-* Post to conversation (Button): Same as update, but also request an AI response (most templates will be formatted for this option)
-* Post but don't update conversation (Button): Based on the selections above, request an AI response, but don't make any changes to the original conversation, except for appending the AI response when it's done (I expect this to be useful when for example I want to summarize a conversation in a specific format, but don't want to interrupt the conversation it self, so I can continue the conversation in the future, without need to worry about settings etc.)
-
-Important: Appended messages should create copies that are appended to the conversation, so that if the user chooses to edit any of the messages later, that won't affect the template.
-
-Lets call this new template system `chat5_template`, and add a database with conversation Ids, that have been set as templates. Then add support for this template system in `services/templateService.js`, but don't remove existing code, just add new code for the new template system. I want to be able to add/delete conversation Ids from the database, get a list of all current conversation Ids in the database (so user can check if the conversation they are opening is in the database, to show a "this is a template" flag in the UI), cache the conversations + messages, for quick retrieval, fetch (for using in the UI) and refresh (for updating cache) templates.
-
-Now, lets work on the updates. Add necessary methods to the conversation and message service where needed.
+Refer to the file "documentation/japanpost-api.md", for more details on what's expected from the Japan Post API.
