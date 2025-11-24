@@ -48,7 +48,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.json());
 
 // App health
-app.use('/health', (req, res) => res.json({status: "ok"}));
+app.use('/apphealth', (req, res) => res.json({status: "ok"}));
 
 // Passport setup
 app.use(passport.initialize());
