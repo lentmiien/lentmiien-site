@@ -15,6 +15,8 @@ const finance = require('../utils/finance');
 
 const EXPENSE_TYPE_LIST = ['expense'];
 const EXPENSE_TYPE_SET = new Set(EXPENSE_TYPE_LIST);
+const BILLS_CATEGORY_ID = '63a082ef4796a649f99264d2';
+const CREDIT_CARD_BUSINESS = 'Credit Card';
 
 const TYPE_PROJECTION_EXPR = {
   $let: {
@@ -413,13 +415,24 @@ async function buildCategoryLookup() {
   }, {});
 }
 
+function categoryIdFromRaw(rawValue) {
+  if (typeof rawValue !== 'string' || !rawValue) {
+    return rawValue;
+  }
+  const [categoryId] = rawValue.split('@');
+  return categoryId || rawValue;
+}
+
 function categoryLabel(rawValue, categoryMap = {}) {
   if (!rawValue) return 'Uncategorised';
-  const [categoryId, fallback] = rawValue.split('@');
+  const categoryId = categoryIdFromRaw(rawValue);
   if (categoryId && categoryMap[categoryId]) {
     return categoryMap[categoryId];
   }
-  if (fallback) return fallback;
+  if (typeof rawValue === 'string') {
+    const [, fallback] = rawValue.split('@');
+    if (fallback) return fallback;
+  }
   return rawValue;
 }
 
@@ -472,15 +485,53 @@ async function getSummary(options = {}) {
         amount: { $add: ['$amount', '$from_fee', '$to_fee'] },
         categories: '$categories',
         typeLower: TYPE_PROJECTION_EXPR,
+        transaction_business: '$transaction_business',
+        categoryId: {
+          $let: {
+            vars: { parts: { $split: ['$categories', '@'] } },
+            in: {
+              $cond: [
+                { $gt: [{ $size: '$$parts' }, 0] },
+                { $arrayElemAt: ['$$parts', 0] },
+                '$categories',
+              ],
+            },
+          },
+        },
       } },
       { $match: { typeLower: { $in: EXPENSE_TYPE_LIST } } },
-      { $group: {
-        _id: '$categories',
-        totalSpent: { $sum: '$amount' },
-        transactionCount: { $sum: 1 },
+      { $facet: {
+        categories: [
+          { $group: {
+            _id: '$categories',
+            totalSpent: { $sum: '$amount' },
+            transactionCount: { $sum: 1 },
+          } },
+          { $sort: { totalSpent: -1 } },
+          { $limit: categoryLimit },
+        ],
+        billsCategory: [
+          { $match: { categoryId: BILLS_CATEGORY_ID } },
+          { $group: {
+            _id: '$categories',
+            totalSpent: { $sum: '$amount' },
+            transactionCount: { $sum: 1 },
+          } },
+          { $sort: { totalSpent: -1 } },
+          { $limit: 1 },
+        ],
+        billsCreditCard: [
+          { $match: {
+            categoryId: BILLS_CATEGORY_ID,
+            transaction_business: CREDIT_CARD_BUSINESS,
+          } },
+          { $group: {
+            _id: null,
+            totalSpent: { $sum: '$amount' },
+            transactionCount: { $sum: 1 },
+          } },
+        ],
       } },
-      { $sort: { totalSpent: -1 } },
-      { $limit: categoryLimit },
     ]),
   ]);
 
@@ -511,12 +562,56 @@ async function getSummary(options = {}) {
   const currentTrend = monthlyTrend[monthlyTrend.length - 1] || null;
   const previousTrend = monthlyTrend.length > 1 ? monthlyTrend[monthlyTrend.length - 2] : null;
 
-  const categories = latestCategories.map((row) => ({
+  const categoryFacets = (latestCategories && latestCategories[0]) || {};
+  const categoryRows = categoryFacets.categories || [];
+  const billsCategoryRow = (categoryFacets.billsCategory || [])[0] || null;
+  const billsCreditCardRow = (categoryFacets.billsCreditCard || [])[0] || null;
+
+  const maxCategories = categoryLimit;
+  let categories = categoryRows.map((row) => ({
     id: row._id,
+    categoryId: categoryIdFromRaw(row._id),
     label: categoryLabel(row._id, categoryMap),
     total: row.totalSpent || 0,
     transactionCount: row.transactionCount || 0,
   }));
+
+  if (!categories.some((cat) => cat.categoryId === BILLS_CATEGORY_ID) && billsCategoryRow) {
+    categories.push({
+      id: billsCategoryRow._id,
+      categoryId: categoryIdFromRaw(billsCategoryRow._id),
+      label: categoryLabel(billsCategoryRow._id, categoryMap),
+      total: billsCategoryRow.totalSpent || 0,
+      transactionCount: billsCategoryRow.transactionCount || 0,
+    });
+  }
+
+  categories.sort((a, b) => b.total - a.total);
+
+  if (categories.length > maxCategories) {
+    const billsIndex = categories.findIndex((cat) => cat.categoryId === BILLS_CATEGORY_ID);
+    if (billsIndex >= maxCategories) {
+      const [billsEntry] = categories.splice(billsIndex, 1);
+      categories = categories.slice(0, Math.max(0, maxCategories - 1));
+      categories.push(billsEntry);
+    } else {
+      categories = categories.slice(0, maxCategories);
+    }
+  }
+
+  const billsCreditCardAmount = billsCreditCardRow ? (billsCreditCardRow.totalSpent || 0) : 0;
+  const billsCreditCardCount = billsCreditCardRow ? (billsCreditCardRow.transactionCount || 0) : 0;
+
+  if (billsCreditCardAmount > 0) {
+    const billsCategory = categories.find((cat) => cat.categoryId === BILLS_CATEGORY_ID);
+    if (billsCategory) {
+      billsCategory.creditCardPortion = {
+        amount: Math.min(billsCategory.total, billsCreditCardAmount),
+        transactionCount: billsCreditCardCount,
+        business: CREDIT_CARD_BUSINESS,
+      };
+    }
+  }
 
   return {
     accounts,

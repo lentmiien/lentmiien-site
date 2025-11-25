@@ -1,5 +1,5 @@
-In the database `models/transaction_db.js`, I previously inputted `categories` in the format `category1_id@xx|category2_id@yy`, where '|' separate multiple categories, and where 'xx' and 'yy' represent the percentage value of the transaction amount that belong to each category. However, recently I've simplified this to `categories` only include one category id. So, `categories` can no longer have multiple categories, and the "@xx"/"@yy" part should no longer be there.
-In my setup script (setup.js), please help me add code that help me clean up the database as following:
-1. if the current database entry is already in the new format, do nothing
-2. if the current database entry only has 1 category value, with "@100", delete the "@100" part and resave the entry
-3. if the current database entry has multiple categories, keep only the category value with the highest "@xx" value, remove the "@xx" part and resave the entry
+On the accounting dashboard (views/accounting_dashboard.pug), I have a "Spend by category" horizontal bar chart, where I'd like to make the following changes:
+1. Show the chunk of the "Bills" category (`_id: "63a082ef4796a649f99264d2"`), with `transaction_business` as "Credit Card" in a different color, as a stacked bar chart, as this is really a combination of other stuff, that really belongs to various categories
+2. Show a second horizontal bar chart, showing the credit card transactions by Label, for the current month (use the same color as above, to match up the colors)
+
+Note: The "Bills" - "Credit Card" group could have payments originating from the previous month, so there is no guarantee that this amount will match the total of the second bar chart, but that's fine, because that's just the way it is.
