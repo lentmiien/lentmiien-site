@@ -1,17 +1,6 @@
-In the dummy controller (controllers/dummyapicontroller.js) and route (routes/dummyapi.js), please add 2 routes for returning Japan post sample data. One route is responding to a generate label request that return XML, and the other return the label pdf data. There is no need to validate the input data, just return a fixed response for all requests.
+On the `views/payroll/dashboard.pug` page, I have a "Yearly totals" table. I'd like to add a row to this table, predicting my total income for the current year, or the next year if I already inputted the data for December the current year (no longer need to predict the current year).
+I guess the YEAR column could have something like `Prediction ${year}`, then calculate the predicted values for the rest of the columns. For the predictions, use the average increase from the last 12 months, and assume the same increase for the predicted months.
 
-Put sample response data in the folder `sample_data`, and use that for responding to all requests.
+Also, can we add a "Year summary page", that shows statistics for the selected year, breakdowns of the "支給" and "控除" contents, and a simple comparison with previous/next year, where data is available, and if "next year" doesn't have complete data (year hasn't ended yet), show the comparison between the months available in both the selected and the "next year".
 
-Expected response (XML, key fields)
-- ResultCode=00 on success
-- TrackingNumber: EMS tracking number assigned (e.g., EL012345678JP)
-- DownLoadUrl: HTTPS URL to the label PDF (valid 1 week) **Make this 'https://my.lentmiien.com/' followed by the fetch label part**
-- PostalRate: postage for the shipment
-- InsuranceCost: computed ancillary charge if declared/insurance value is provided
-Prepare a simple XML file in the sample data folder, following these guidelines.
-
-Also, could I make the URL "/webapi/servlet/WEBAPI" to point to this same router, maybe put the final part "/WEBAPI" in the router file, and put the fetch label under "/webapi/servlet" as well.
-
-The purpose of these API routes are just to return a realistic response, so that I can test my app before switching to the real Japan Post API.
-
-Refer to the file "documentation/japanpost-api.md", for more details on what's expected from the Japan Post API.
+I'd also like to have a page showing statistics and graphs for the "勤怠" values, like days worked/days off/remaining days off/working minutes/overtime minutes/etc. Lets show statistics and graphs for the last 5 years, although, I'm still missing 1 month of data for a full 5 years data set, so starting next month, the full 5 years period should be possible.

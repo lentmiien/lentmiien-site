@@ -1,0 +1,188 @@
+extends ../layout
+
+mixin comparisonTable(comp, selectedYear)
+  if comp
+    if comp.partial
+      span.badge.text-bg-warning.mb-2 Partial data
+    p.text-muted.small #{comp.monthsCompared} months compared - #{comp.rangeLabel}
+    .table-responsive
+      table.table.table-sm.align-middle
+        thead
+          tr
+            th Metric
+            th.text-end #{comp.year}
+            th.text-end #{selectedYear}
+            th.text-end Delta
+        tbody
+          tr
+            td Gross
+            td.text-end #{comp.gross.other.toLocaleString()}
+            td.text-end #{comp.gross.base.toLocaleString()}
+            td.text-end
+              span(class=comp.gross.diff >= 0 ? 'text-success' : 'text-danger')
+                | #{comp.gross.diff >= 0 ? '+' : ''}#{comp.gross.diff.toLocaleString()}
+              if comp.gross.pct != null
+                br
+                small.text-muted #{comp.gross.diff >= 0 ? '+' : ''}#{comp.gross.pct.toFixed(1)}%
+          tr
+            td Net
+            td.text-end #{comp.net.other.toLocaleString()}
+            td.text-end #{comp.net.base.toLocaleString()}
+            td.text-end
+              span(class=comp.net.diff >= 0 ? 'text-success' : 'text-danger')
+                | #{comp.net.diff >= 0 ? '+' : ''}#{comp.net.diff.toLocaleString()}
+              if comp.net.pct != null
+                br
+                small.text-muted #{comp.net.diff >= 0 ? '+' : ''}#{comp.net.pct.toFixed(1)}%
+
+block content
+  .payroll-year-summary
+    .d-flex.flex-wrap.justify-content-between.align-items-center.mb-3.gap-3
+      h1.mb-0 Year summary #{year}
+      if availableYears && availableYears.length
+        form.d-flex.flex-wrap.gap-2(method='get', action='/payroll/year')
+          select.form-select(name='year')
+            each y in availableYears
+              option(value=y selected=(y === year) ? true : false) #{y}
+          button.btn.btn-outline-primary(type='submit') Load year
+
+    if !hasData
+      .alert.alert-info.mb-0 No payroll data recorded for #{year} yet. Add a payslip and come back to see the yearly breakdown.
+    else
+      .row.g-3.mb-3
+        .col-md-4
+          .card.h-100
+            .card-body
+              small.text-uppercase.text-muted Gross total
+              h3.mb-0 #{stats.grossTotal.toLocaleString()}
+        .col-md-4
+          .card.h-100
+            .card-body
+              small.text-uppercase.text-muted Net total
+              h3.mb-0 #{stats.netTotal.toLocaleString()}
+        .col-md-4
+          .card.h-100
+            .card-body
+              small.text-uppercase.text-muted Deductions total
+              h3.mb-0 #{stats.deductionsTotal.toLocaleString()}
+
+      .row.g-3.mb-4
+        .col-md-4
+          .card.h-100
+            .card-body
+              small.text-uppercase.text-muted Avg net / recorded month
+              h4.mb-0 #{stats.avgNet.toLocaleString()}
+        .col-md-4
+          .card.h-100
+            .card-body
+              small.text-uppercase.text-muted Median net
+              h4.mb-0 #{stats.medianNet.toLocaleString()}
+        .col-md-4
+          .card.h-100
+            .card-body
+              small.text-uppercase.text-muted Months recorded
+              h4.mb-0 #{stats.monthsWithData} / 12
+
+      .row.g-3.mb-4
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Monthly highlights
+              if bestMonth
+                .mb-3
+                  small.text-muted.d-block Best month
+                  .d-flex.justify-content-between.align-items-baseline.gap-3.flex-wrap
+                    span.fw-semibold #{bestMonth.label}
+                    span.text-success #{bestMonth.net.toLocaleString()}
+              else
+                p.mb-0.text-muted No monthly data yet.
+              if worstMonth
+                small.text-muted.d-block Worst month
+                .d-flex.justify-content-between.align-items-baseline.gap-3.flex-wrap
+                  span.fw-semibold #{worstMonth.label}
+                  span.text-warning #{worstMonth.net.toLocaleString()}
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Monthly gross vs net
+              canvas#yearTrendChart(height='260')
+
+      .row.g-3.mb-4
+        if comparisons.prev
+          .col-lg-6
+            .card.h-100
+              .card-body
+                h3.card-title.mb-2 Compared with #{comparisons.prev.year}
+                +comparisonTable(comparisons.prev, year)
+        if comparisons.next
+          .col-lg-6
+            .card.h-100
+              .card-body
+                h3.card-title.mb-2 Compared with #{comparisons.next.year}
+                +comparisonTable(comparisons.next, year)
+
+      .row.g-4
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Earnings (支給) breakdown
+              if earningsBreakdown.length
+                .table-responsive
+                  table.table.table-sm.align-middle
+                    thead
+                      tr
+                        th Label
+                        th.text-end Amount
+                        th.text-end Share
+                    tbody
+                      each item in earningsBreakdown
+                        tr
+                          td #{item.label}
+                          td.text-end #{item.total.toLocaleString()}
+                          td.text-end #{item.percent.toFixed(1)}%
+              else
+                p.mb-0.text-muted No earnings detail was recorded for this year.
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Deductions (控除) breakdown
+              if deductionsBreakdown.length
+                .table-responsive
+                  table.table.table-sm.align-middle
+                    thead
+                      tr
+                        th Label
+                        th.text-end Amount
+                        th.text-end Share
+                    tbody
+                      each item in deductionsBreakdown
+                        tr
+                          td #{item.label}
+                          td.text-end #{item.total.toLocaleString()}
+                          td.text-end #{item.percent.toFixed(1)}%
+              else
+                p.mb-0.text-muted No deductions detail was recorded for this year.
+
+block script
+  if hasData
+    script(src='https://cdn.jsdelivr.net/npm/chart.js')
+    script.
+      (function(){
+        const payload = !{chartPayload};
+        const ctx = document.getElementById('yearTrendChart');
+        if (!ctx) return;
+        new Chart(ctx,{
+          type:'line',
+          data:{
+            labels:payload.labels,
+            datasets:[
+              { label:'Gross', data:payload.gross, borderColor:'#6c8ef5', backgroundColor:'transparent', spanGaps:true },
+              { label:'Net', data:payload.net, borderColor:'#4fc08d', backgroundColor:'transparent', spanGaps:true }
+            ]
+          },
+          options:{
+            responsive:true,
+            plugins:{ legend:{ position:'bottom' } }
+          }
+        });
+      })();

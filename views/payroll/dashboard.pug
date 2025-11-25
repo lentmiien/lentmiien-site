@@ -4,7 +4,9 @@ block content
   .payroll-dashboard-page
     .payroll-header.d-flex.flex-wrap.align-items-center.justify-content-between.mb-3.gap-2
       h1.mb-0 Payroll dashboard
-      a.btn.btn-outline-secondary(href='/payroll') ↁEBack to list
+      .d-flex.gap-2.flex-wrap
+        a.btn.btn-outline-primary(href='/payroll/attendance') Attendance stats
+        a.btn.btn-outline-secondary(href='/payroll') ↁEBack to list
 
     .card.payroll-chart-card.mb-4
       .card-body
@@ -25,8 +27,12 @@ block content
                 th.text-end Net YoY %
             tbody
               each r in yearSummary
-                tr
-                  td #{r.year}
+                tr(class=r.isPrediction ? 'table-warning text-dark' : '')
+                  td
+                    if !r.isPrediction
+                      a.fw-semibold(href=`/payroll/year/${r.year}`) #{r.label || r.year}
+                    else
+                      | #{r.label || r.year}
                   td.text-end #{r.gross.toLocaleString()}
                   td.text-end #{r.grossYoY != null ? r.grossYoY.toFixed(1)+'%' : '—'}
                   td.text-end #{r.net.toLocaleString()}

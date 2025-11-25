@@ -1,0 +1,153 @@
+extends ../layout
+
+block content
+  .attendance-stats-page
+    .d-flex.flex-wrap.justify-content-between.align-items-center.mb-3.gap-3
+      h1.mb-0 Attendance overview
+      span.text-muted #{yearRangeLabel}
+
+    if !hasData
+      .alert.alert-info.mb-0 No attendance data found yet. Add payroll records to unlock the 5-year overview.
+    else
+      .row.g-3.mb-4
+        .col-md-3
+          .card.h-100
+            .card-body
+              small.text-muted.text-uppercase Latest days worked (#{summary.latestYear})
+              h3.mb-1 #{summary.latestDaysWorked.toLocaleString()}
+              if summary.daysWorkedYoY != null
+                - const yoY = summary.daysWorkedYoY
+                span.badge(class=yoY >= 0 ? 'text-bg-success' : 'text-bg-danger')
+                  | #{yoY >= 0 ? '+' : ''}#{yoY.toLocaleString()} vs prev
+        .col-md-3
+          .card.h-100
+            .card-body
+              small.text-muted.text-uppercase Avg overtime hours (5y)
+              h3.mb-0 #{summary.avgOvertimeHours.toLocaleString()} h
+        .col-md-3
+          .card.h-100
+            .card-body
+              small.text-muted.text-uppercase Avg remaining leave days
+              h3.mb-0 #{summary.remainingLeaveDays.toLocaleString()}
+        .col-md-3
+          .card.h-100
+            .card-body
+              small.text-muted.text-uppercase Paid leave days taken (5y)
+              h3.mb-0 #{summary.paidLeaveDaysTotal.toLocaleString()}
+
+      p.text-muted.small.mb-4 Coverage: #{coverage.availableMonths} recorded months - #{coverage.missingMonths} months not yet captured in this 5-year window.
+
+      .row.g-3.mb-4
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Days worked / off / leave
+              canvas#attendanceDaysChart(height='260')
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Working vs overtime hours
+              canvas#attendanceTimeChart(height='260')
+
+      .row.g-3.mb-4
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Remaining leave days trend
+              canvas#attendanceRemainingChart(height='260')
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Yearly days summary
+              .table-responsive
+                table.table.table-sm.align-middle
+                  thead
+                    tr
+                      th Year
+                      th.text-end Months
+                      th.text-end Days worked
+                      th.text-end Days off
+                      th.text-end Paid leave
+                      th.text-end Absence
+                  tbody
+                    each row in yearRows
+                      tr
+                        td #{row.year}
+                        td.text-end #{row.monthsRecorded}
+                        td.text-end #{row.daysWorked.toLocaleString()}
+                        td.text-end #{row.daysOff.toLocaleString()}
+                        td.text-end #{row.paidLeaveDays.toLocaleString()}
+                        td.text-end #{row.absenceDays.toLocaleString()}
+
+      .row.g-3.mb-4
+        .col-lg-6
+          .card.h-100
+            .card-body
+              h3.card-title.mb-3 Yearly time summary
+              .table-responsive
+                table.table.table-sm.align-middle
+                  thead
+                    tr
+                      th Year
+                      th.text-end Working hrs
+                      th.text-end Overtime hrs
+                      th.text-end Late/Early hrs
+                      th.text-end Avg remaining leave days
+                  tbody
+                    each row in yearRows
+                      tr
+                        td #{row.year}
+                        td.text-end #{row.workingHours.toLocaleString()} h
+                        td.text-end #{row.overtimeHours.toLocaleString()} h
+                        td.text-end #{row.lateEarlyHours.toLocaleString()} h
+                        td.text-end #{row.remainingLeaveDays.toFixed(1)}
+
+block script
+  if hasData
+    script(src='https://cdn.jsdelivr.net/npm/chart.js')
+    script.
+      (function(){
+        const dayData = !{dayChartPayload};
+        const timeData = !{timeChartPayload};
+        const remainingData = !{remainingChartPayload};
+        const buildLine = (elId, config) => {
+          const ctx = document.getElementById(elId);
+          if (!ctx) return;
+          new Chart(ctx,{
+            type:'line',
+            data:config.data,
+            options:Object.assign({
+              responsive:true,
+              plugins:{ legend:{ position:'bottom' } },
+              spanGaps:true
+            },config.options||{})
+          });
+        };
+        buildLine('attendanceDaysChart',{
+          data:{
+            labels:dayData.labels,
+            datasets:dayData.datasets.map((ds,idx)=>Object.assign({},ds,{
+              borderColor:['#4fc08d','#6c8ef5','#f1b44c'][idx % 3],
+              backgroundColor:'transparent'
+            }))
+          }
+        });
+        buildLine('attendanceTimeChart',{
+          data:{
+            labels:timeData.labels,
+            datasets:[
+              { label:'Working hours', data:timeData.working, borderColor:'#6c8ef5', backgroundColor:'transparent' },
+              { label:'Overtime hours', data:timeData.overtime, borderColor:'#f56c6c', backgroundColor:'transparent' },
+              { label:'Late/Early hours', data:timeData.late, borderColor:'#f1b44c', backgroundColor:'transparent' }
+            ]
+          }
+        });
+        buildLine('attendanceRemainingChart',{
+          data:{
+            labels:remainingData.labels,
+            datasets:[
+              { label:'Average remaining leave days', data:remainingData.remainingDays, borderColor:'#4fc08d', backgroundColor:'transparent' }
+            ]
+          }
+        });
+      })();
