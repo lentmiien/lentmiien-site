@@ -1,6 +1,5 @@
-On the `views/payroll/dashboard.pug` page, I have a "Yearly totals" table. I'd like to add a row to this table, predicting my total income for the current year, or the next year if I already inputted the data for December the current year (no longer need to predict the current year).
-I guess the YEAR column could have something like `Prediction ${year}`, then calculate the predicted values for the rest of the columns. For the predictions, use the average increase from the last 12 months, and assume the same increase for the predicted months.
-
-Also, can we add a "Year summary page", that shows statistics for the selected year, breakdowns of the "支給" and "控除" contents, and a simple comparison with previous/next year, where data is available, and if "next year" doesn't have complete data (year hasn't ended yet), show the comparison between the months available in both the selected and the "next year".
-
-I'd also like to have a page showing statistics and graphs for the "勤怠" values, like days worked/days off/remaining days off/working minutes/overtime minutes/etc. Lets show statistics and graphs for the last 5 years, although, I'm still missing 1 month of data for a full 5 years data set, so starting next month, the full 5 years period should be possible.
+In the database `models/transaction_db.js`, I previously inputted `categories` in the format `category1_id@xx|category2_id@yy`, where '|' separate multiple categories, and where 'xx' and 'yy' represent the percentage value of the transaction amount that belong to each category. However, recently I've simplified this to `categories` only include one category id. So, `categories` can no longer have multiple categories, and the "@xx"/"@yy" part should no longer be there.
+In my setup script (setup.js), please help me add code that help me clean up the database as following:
+1. if the current database entry is already in the new format, do nothing
+2. if the current database entry only has 1 category value, with "@100", delete the "@100" part and resave the entry
+3. if the current database entry has multiple categories, keep only the category value with the highest "@xx" value, remove the "@xx" part and resave the entry

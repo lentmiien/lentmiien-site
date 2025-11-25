@@ -15,6 +15,7 @@ const openaicalllog = require('./models/openaicalllog');
 const OpenAIUsage = require('./models/openai_usage');
 const SoraVideo = require('./models/sora_video');
 const ApiDebugLog = require('./models/api_debug_log');
+const TransactionModel = require('./models/transaction_db');
 
 const ROOT_DIR = __dirname;
 const TEMP_DIR = path.join(ROOT_DIR, 'tmp_data');
@@ -288,6 +289,100 @@ async function removeVideoRecords(filter) {
   return videos.length;
 }
 
+function extractPrimaryCategory(categories) {
+  if (!categories || typeof categories !== 'string' || !categories.includes('@')) {
+    return null;
+  }
+  const segments = categories
+    .split('|')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => {
+      const [categoryId = '', percentString] = segment.split('@');
+      const trimmedId = categoryId.trim();
+      if (!trimmedId) {
+        return null;
+      }
+      const percentValue = Number.parseFloat(percentString);
+      return {
+        categoryId: trimmedId,
+        percent: Number.isFinite(percentValue) ? percentValue : null,
+      };
+    })
+    .filter(Boolean);
+  if (segments.length === 0) {
+    return null;
+  }
+  if (segments.length === 1) {
+    return { nextValue: segments[0].categoryId, reason: 'single' };
+  }
+  let chosen = segments[0];
+  for (const segment of segments.slice(1)) {
+    const currentPercent = segment.percent ?? -Infinity;
+    const chosenPercent = chosen.percent ?? -Infinity;
+    if (currentPercent > chosenPercent) {
+      chosen = segment;
+    }
+  }
+  return { nextValue: chosen.categoryId, reason: 'multiple' };
+}
+
+async function normalizeLegacyTransactionCategories() {
+  const legacyTransactions = await TransactionModel.find({ categories: /@/ }).select('_id categories').lean();
+  if (legacyTransactions.length === 0) {
+    return {
+      scanned: 0,
+      updated: 0,
+      singleNormalized: 0,
+      multiNormalized: 0,
+      skipped: 0,
+    };
+  }
+
+  let singleNormalized = 0;
+  let multiNormalized = 0;
+  let skipped = 0;
+  const operations = [];
+
+  for (const transaction of legacyTransactions) {
+    const normalized = extractPrimaryCategory(transaction.categories);
+    if (!normalized || !normalized.nextValue) {
+      skipped += 1;
+      continue;
+    }
+    if (normalized.reason === 'single') {
+      singleNormalized += 1;
+    } else if (normalized.reason === 'multiple') {
+      multiNormalized += 1;
+    }
+    operations.push({
+      updateOne: {
+        filter: { _id: transaction._id },
+        update: { $set: { categories: normalized.nextValue } },
+      },
+    });
+  }
+
+  if (operations.length > 0) {
+    await TransactionModel.bulkWrite(operations, { ordered: false });
+  }
+
+  const result = {
+    scanned: legacyTransactions.length,
+    updated: operations.length,
+    singleNormalized,
+    multiNormalized,
+    skipped,
+  };
+
+  logger.notice('Normalized legacy transaction categories', {
+    category: 'startup:db',
+    metadata: result,
+  });
+
+  return result;
+}
+
 async function performDatabaseMaintenance() {
   const mongoUrl = process.env.MONGOOSE_URL;
   if (!mongoUrl) {
@@ -305,6 +400,7 @@ async function performDatabaseMaintenance() {
     apiDebugPurged: 0,
     lowRatedVideosRemoved: 0,
     staleIncompleteVideosRemoved: 0,
+    transactionCategoryCleanup: null,
   };
 
   await mongoose.connect(mongoUrl, {
@@ -372,6 +468,7 @@ async function performDatabaseMaintenance() {
       status: { $ne: 'completed' },
       startedAt: { $lt: staleCutoff },
     });
+    summary.transactionCategoryCleanup = await normalizeLegacyTransactionCategories();
 
     return summary;
   } finally {
