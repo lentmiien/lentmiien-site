@@ -123,23 +123,38 @@ block script
             },config.options||{})
           });
         };
+        const palette = ['#4fc08d','#6c8ef5','#f1b44c','#f56c6c','#c084fc'];
         buildLine('attendanceDaysChart',{
           data:{
             labels:dayData.labels,
             datasets:dayData.datasets.map((ds,idx)=>Object.assign({},ds,{
-              borderColor:['#4fc08d','#6c8ef5','#f1b44c'][idx % 3],
-              backgroundColor:'transparent'
+              borderColor:palette[idx % palette.length],
+              backgroundColor:'transparent',
+              yAxisID: ds.label === 'Days worked' ? 'primaryDays' : 'secondaryDays',
+              tension:0.25
             }))
+          },
+          options:{
+            scales:{
+              primaryDays:{ type:'linear', position:'left', title:{ display:true, text:'Days worked' } },
+              secondaryDays:{ type:'linear', position:'right', grid:{ drawOnChartArea:false }, title:{ display:true, text:'Days off / leave' } }
+            }
           }
         });
         buildLine('attendanceTimeChart',{
           data:{
             labels:timeData.labels,
             datasets:[
-              { label:'Working hours', data:timeData.working, borderColor:'#6c8ef5', backgroundColor:'transparent' },
-              { label:'Overtime hours', data:timeData.overtime, borderColor:'#f56c6c', backgroundColor:'transparent' },
-              { label:'Late/Early hours', data:timeData.late, borderColor:'#f1b44c', backgroundColor:'transparent' }
+              { label:'Working hours', data:timeData.working, borderColor:'#6c8ef5', backgroundColor:'transparent', yAxisID:'primaryTime', tension:0.25 },
+              { label:'Overtime hours', data:timeData.overtime, borderColor:'#f56c6c', backgroundColor:'transparent', yAxisID:'secondaryTime', tension:0.25 },
+              { label:'Late/Early hours', data:timeData.late, borderColor:'#f1b44c', backgroundColor:'transparent', yAxisID:'secondaryTime', tension:0.25 }
             ]
+          },
+          options:{
+            scales:{
+              primaryTime:{ type:'linear', position:'left', title:{ display:true, text:'Working hours' } },
+              secondaryTime:{ type:'linear', position:'right', grid:{ drawOnChartArea:false }, title:{ display:true, text:'OT / Late hours' } }
+            }
           }
         });
         buildLine('attendanceRemainingChart',{

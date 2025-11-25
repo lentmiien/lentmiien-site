@@ -39,6 +39,23 @@ const MONTHS_IN_YEAR = 12;
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const sumYearArray = (arr = []) =>
   arr.reduce((sum, val) => sum + (val ?? 0), 0);
+const avgNonNull = (arr = []) => {
+  const values = arr.filter(v => v != null);
+  return values.length ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
+};
+const averageDiff = (current = [], previous = []) => {
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < MONTHS_IN_YEAR; i++) {
+    const cur = current[i];
+    const prev = previous[i];
+    if (cur != null && prev != null) {
+      sum += (cur - prev);
+      count++;
+    }
+  }
+  return count ? sum / count : 0;
+};
 const minutesToHours = (min = 0) => Number((min / 60).toFixed(1));
 
 function aggregateByMonth(rows = []) {
@@ -81,26 +98,6 @@ function buildYearMatrices(monthlySeries = []) {
   const yearsSorted = Array.from(yearGrossMap.keys()).sort((a, b) => a - b);
   return { yearGrossMap, yearNetMap, yearsSorted };
 }
-
-function averageMonthlyIncrease(series = [], field, sample = 12) {
-  const data = series.slice(-sample);
-  if (data.length < 2) return 0;
-
-  let totalDiff = 0;
-  for (let i = 1; i < data.length; i++) {
-    const prev = data[i - 1][field] ?? 0;
-    const curr = data[i][field] ?? 0;
-    totalDiff += (curr - prev);
-  }
-  return totalDiff / (data.length - 1);
-}
-
-const lastFilledIndex = (arr = []) => {
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i] != null) return i;
-  }
-  return -1;
-};
 
 function buildYearSummary(yearGrossMap, yearNetMap, yearsSorted) {
   const rows = yearsSorted.map(year => ({
@@ -167,24 +164,40 @@ function buildPredictionRow({ monthlySeries, yearGrossMap, yearNetMap, currentYe
   const grossTemplate = (yearGrossMap.get(predictionYear) || Array(MONTHS_IN_YEAR).fill(null)).slice();
   const netTemplate   = (yearNetMap.get(predictionYear)   || Array(MONTHS_IN_YEAR).fill(null)).slice();
 
-  const lastGrossIdx = lastFilledIndex(grossTemplate);
-  const lastNetIdx   = lastFilledIndex(netTemplate);
-  const startIdx     = Math.max(lastGrossIdx, lastNetIdx) + 1;
-  if (startIdx >= MONTHS_IN_YEAR) return null;
+  const baseYear = predictionYear - 1;
+  const baselineGross = (yearGrossMap.get(baseYear) || Array(MONTHS_IN_YEAR).fill(null)).slice();
+  const baselineNet   = (yearNetMap.get(baseYear)   || Array(MONTHS_IN_YEAR).fill(null)).slice();
+  const priorGross    = (yearGrossMap.get(baseYear - 1) || Array(MONTHS_IN_YEAR).fill(null)).slice();
+  const priorNet      = (yearNetMap.get(baseYear - 1)   || Array(MONTHS_IN_YEAR).fill(null)).slice();
 
-  const lastActual = monthlySeries[monthlySeries.length - 1] || { gross: 0, net: 0 };
-  let prevGross = lastGrossIdx >= 0 ? grossTemplate[lastGrossIdx] : lastActual.gross;
-  let prevNet   = lastNetIdx   >= 0 ? netTemplate[lastNetIdx]     : lastActual.net;
+  const deltaSourceGross = predictionYear === currentYear ? grossTemplate : baselineGross;
+  const deltaSourceNet   = predictionYear === currentYear ? netTemplate   : baselineNet;
+  const deltaBaseGross   = predictionYear === currentYear ? baselineGross : priorGross;
+  const deltaBaseNet     = predictionYear === currentYear ? baselineNet   : priorNet;
 
-  const avgGrossIncrease = averageMonthlyIncrease(monthlySeries, 'gross');
-  const avgNetIncrease   = averageMonthlyIncrease(monthlySeries, 'net');
+  const avgGrossDelta = averageDiff(deltaSourceGross, deltaBaseGross);
+  const avgNetDelta   = averageDiff(deltaSourceNet,   deltaBaseNet);
 
-  for (let monthIdx = startIdx; monthIdx < MONTHS_IN_YEAR; monthIdx++) {
-    prevGross = Math.max(0, Math.round((prevGross ?? 0) + avgGrossIncrease));
-    prevNet   = Math.max(0, Math.round((prevNet   ?? 0) + avgNetIncrease));
-    grossTemplate[monthIdx] = prevGross;
-    netTemplate[monthIdx]   = prevNet;
+  const fallbackGross = avgNonNull(baselineGross) || avgNonNull(deltaSourceGross) || 0;
+  const fallbackNet   = avgNonNull(baselineNet)   || avgNonNull(deltaSourceNet)   || 0;
+
+  let predictedAny = false;
+  for (let monthIdx = 0; monthIdx < MONTHS_IN_YEAR; monthIdx++) {
+    if (grossTemplate[monthIdx] == null) {
+      const baseVal = baselineGross[monthIdx];
+      const estimate = (baseVal != null ? baseVal : fallbackGross) + avgGrossDelta;
+      grossTemplate[monthIdx] = Math.max(0, Math.round(estimate));
+      predictedAny = true;
+    }
+    if (netTemplate[monthIdx] == null) {
+      const baseVal = baselineNet[monthIdx];
+      const estimate = (baseVal != null ? baseVal : fallbackNet) + avgNetDelta;
+      netTemplate[monthIdx] = Math.max(0, Math.round(estimate));
+      predictedAny = true;
+    }
   }
+
+  if (!predictedAny) return null;
 
   const gross = sumYearArray(grossTemplate);
   const net   = sumYearArray(netTemplate);
