@@ -1138,21 +1138,26 @@ class ConversationService {
 
     // Generate AI response
     let aiMessages = [];
-    if (generateAI) {
-      const {response_id, msg} = await this.messageService.generateAIMessage({conversation});
-      let placeholder_id = msg._id.toString();
-      conversation.messages.push(msg._id.toString());
-      aiMessages.push(msg);
+      if (generateAI) {
+        const {response_id, msg} = await this.messageService.generateAIMessage({conversation});
+        let placeholder_id = null;
+        if (msg) {
+          placeholder_id = msg._id.toString();
+          conversation.messages.push(placeholder_id);
+          aiMessages.push(msg);
+        }
 
-      // Save pending request
-      const pending_req = {
-        response_id,
-        conversation_id: conversation._id.toString(),
-        placeholder_id,
-      };
-      const pr = new PendingRequests(pending_req);
-      await pr.save();
-    }
+        if (response_id && placeholder_id) {
+          // Save pending request
+          const pending_req = {
+            response_id,
+            conversation_id: conversation._id.toString(),
+            placeholder_id,
+          };
+          const pr = new PendingRequests(pending_req);
+          await pr.save();
+        }
+      }
 
     // Save changes
     conversation.updatedAt = new Date();

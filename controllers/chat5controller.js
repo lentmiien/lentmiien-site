@@ -154,7 +154,7 @@ exports.view_chat5_top = async (req, res) => {
   // Load available OpenAI models
   const models = await AIModelCards.find();
   const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
-  chat_models = models.filter(d => (d.provider === "OpenAI" && availableOpenAI.indexOf(d.api_model) >= 0) && d.model_type === "chat");
+  chat_models = models.filter(d => ((d.provider === "OpenAI" && availableOpenAI.indexOf(d.api_model) >= 0) || d.provider === "Local") && d.model_type === "chat");
 
   // Get both new and old conversations, and sort from new to old
   const conversations = await conversationService.listUserConversations(user_id);
@@ -206,7 +206,7 @@ const DEFAULT_CONVERSATION = {
   messages: [],
   metadata: {
     contextPrompt: "",
-    model: "gpt-5-2025-08-07",
+    model: "gpt-5.1-2025-11-13",
     maxMessages: 999,
     maxAudioMessages: 3,
     tools: [],

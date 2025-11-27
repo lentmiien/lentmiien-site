@@ -7,6 +7,7 @@ const { groq, groq_vision } = require('../utils/groq');
 const { googleAI } = require('../utils/google');
 const lmstudio = require('../utils/lmstudio');
 const ai = require('../utils/OpenAI_API');
+const ollama = require('../utils/Ollama_API');
 const { z } = require('zod');
 const logger = require('../utils/logger');
 
@@ -812,10 +813,41 @@ class MessageService {
   async generateAIMessage({conversation}) {
     // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
     const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];
-    // TODO: Only support OpenAi at this stage
-    if (model.provider != "OpenAI") return null;
+    if (!model) {
+      throw new Error(`AI model card not found for api_model: ${conversation.metadata.model}`);
+    }
+
     const messages = await Chat5Model.find({_id: conversation.messages});
-    const response_id = await ai.chat(conversation, messages, model);
+
+    if (model.provider === "OpenAI") {
+      const response_id = await ai.chat(conversation, messages, model);
+
+      const message = {
+        user_id: "bot",
+        category: conversation.category,
+        tags: conversation.tags,
+        contentType: "text",
+        content: {
+          text: "Pending response",
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: null,
+        },
+        timestamp: new Date(),
+        hideFromBot: true,
+      };
+      const msg = new Chat5Model(message);
+      await msg.save();
+      return {response_id, msg};
+    }
+
+    // Non-OpenAI providers are handled via the local Ollama helper
+    const response = await ollama.chat(conversation, messages, model);
+    const assistantText = extractAssistantText(response) || '[No response produced]';
 
     const message = {
       user_id: "bot",
@@ -823,7 +855,7 @@ class MessageService {
       tags: conversation.tags,
       contentType: "text",
       content: {
-        text: "Pending response",
+        text: assistantText,
         image: null,
         audio: null,
         tts: null,
@@ -833,11 +865,11 @@ class MessageService {
         toolOutput: null,
       },
       timestamp: new Date(),
-      hideFromBot: true,
+      hideFromBot: false,
     };
     const msg = new Chat5Model(message);
     await msg.save();
-    return {response_id, msg};
+    return {response_id: null, msg};
   }
 
   async toggleHideFromBot({message_id, state}) {
@@ -976,3 +1008,39 @@ async function MailgunSend(message_content, title) {
 }
 
 module.exports = MessageService;
+
+function extractAssistantText(response) {
+  if (!response || !Array.isArray(response.choices)) return '';
+  const segments = [];
+  for (const choice of response.choices) {
+    if (!choice || !choice.message) continue;
+    const flattened = flattenAssistantContent(choice.message.content);
+    if (flattened.length > 0) {
+      segments.push(flattened);
+    }
+  }
+  return segments.join('\n\n').trim();
+}
+
+function flattenAssistantContent(content) {
+  if (!content) return '';
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => flattenAssistantContent(item))
+      .filter((item) => item && item.length > 0)
+      .join('\n\n')
+      .trim();
+  }
+  if (typeof content === 'object') {
+    if (typeof content.text === 'string') {
+      return content.text.trim();
+    }
+    if (typeof content.content === 'string') {
+      return content.content.trim();
+    }
+  }
+  return '';
+}
