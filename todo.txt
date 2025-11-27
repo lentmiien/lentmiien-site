@@ -1,5 +1,55 @@
-On the accounting dashboard (views/accounting_dashboard.pug), I have a "Spend by category" horizontal bar chart, where I'd like to make the following changes:
-1. Show the chunk of the "Bills" category (`_id: "63a082ef4796a649f99264d2"`), with `transaction_business` as "Credit Card" in a different color, as a stacked bar chart, as this is really a combination of other stuff, that really belongs to various categories
-2. Show a second horizontal bar chart, showing the credit card transactions by Label, for the current month (use the same color as above, to match up the colors)
+In the `utils` folder, add another LLM chat helper for a local ollama instance run at `192.168.0.20:11434`.
 
-Note: The "Bills" - "Credit Card" group could have payments originating from the previous month, so there is no guarantee that this amount will match the total of the second bar chart, but that's fine, because that's just the way it is.
+I mainly want 2 functions, one for loading a model list, of all available models at the ollama instance, and a `chat` function, similar to `chat` in `utils/OpenAI_API.js` but for the chat completions endpoint used by ollama. It should support text and image input, and receive the input in the same format as `chat` in `utils/OpenAI_API.js`.
+
+When calling the get list function, it should save the list locally in an array, as well as return to the user.
+
+When calling chat, if should verify that the model exist in the local array, before proceeding.
+
+This are a couple of simple code snippets, for how ollama can work:
+
+```
+from openai import OpenAI
+
+# Point the OpenAI client at your local Ollama
+client = OpenAI(
+    base_url="http://localhost:11434/v1/",
+    api_key="ollama",  # dummy, required by SDK but ignored by Ollama
+)
+
+def ask(model_name, user_message):
+    resp = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {"role": "user", "content": user_message}
+        ],
+    )
+    return resp.choices[0].message.content
+
+print(ask("cydonia-24b-q4_k_m", "Explain how you were fine-tuned."))
+print(ask("gpt-oss:20b", "Summarise Rust async/await in one paragraph."))
+print(ask("codegemma:7b", "Write a Python function to parse ini files."))
+```
+
+```
+resp = client.chat.completions.create(
+    model="gemma3:4b",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,..."  # your base64 image
+                    }
+                }
+            ]
+        }
+    ],
+)
+print(resp.choices[0].message.content)
+```
+
+But I need JavaScript code, that works with my input format.
