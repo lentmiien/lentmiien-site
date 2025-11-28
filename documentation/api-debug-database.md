@@ -23,7 +23,7 @@ Log entries are temporary by design. `setup.js` removes documents older than fiv
 
 ## Viewing logs
 
-An admin dashboard is available at `/admin/api-debug-logs`. The page offers filters for `jsFileName` and `functionName`, surfaces the most recent 200 entries, and renders headers/bodies exactly as they were stored so you can diff requests across time.
+An admin dashboard is available at `/admin/api-debug-logs`. The page offers filters for `jsFileName`, `functionName`, and a configurable time range (defaulting to the most recent hour), surfaces the most recent 200 entries, and renders headers/bodies exactly as they were stored so you can diff requests across time.
 
 ## Adding new logging
 

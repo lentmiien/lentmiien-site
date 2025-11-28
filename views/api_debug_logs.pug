@@ -12,6 +12,14 @@ block content
     form.api-debug-logs__filters(method='get')
       .api-debug-logs__filter-grid
         .api-debug-logs__field
+          label(for='filterTimeRange') Time range
+          select#filterTimeRange(name='timeRange')
+            each timeRangeOption in filters.timeRanges
+              option(
+                value=timeRangeOption.value
+                selected=(filters.timeRange === timeRangeOption.value)
+              )= timeRangeOption.label
+        .api-debug-logs__field
           label(for='filterFile') JavaScript file
           select#filterFile(name='file')
             option(value='') All files
@@ -25,12 +33,14 @@ block content
               option(value=functionName selected=(filters.functionName === functionName))= functionName
       .api-debug-logs__actions
         button.api-debug-logs__action(type='submit') Apply filters
-        if filters.jsFileName || filters.functionName
+        if filters.jsFileName || filters.functionName || (filters.timeRange && filters.timeRange !== filters.defaultTimeRange)
           a.api-debug-logs__action.api-debug-logs__action--ghost(href='/admin/api-debug-logs') Clear filters
 
     if logs && logs.length
       .api-debug-logs__summary
         span.api-debug-logs__count #{logs.length} #{logs.length === 1 ? 'entry' : 'entries'} shown
+        if filters.activeTimeRangeLabel
+          span.api-debug-logs__hint Time range: #{filters.activeTimeRangeLabel}
         if limit
           span.api-debug-logs__hint Showing most recent #{limit} matches.
       .api-debug-logs__list

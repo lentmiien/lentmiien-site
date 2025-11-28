@@ -142,6 +142,20 @@ const HTML_DIRECTORY = path.resolve(__dirname, '..', 'public', 'html');
 const HTML_FILE_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const FEEDBACK_STATUSES = new Set(['success', 'error', 'info']);
 const htmlDateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+const API_DEBUG_TIME_FILTERS = [
+  { value: '1h', label: 'Last hour', durationMs: 60 * 60 * 1000 },
+  { value: '6h', label: 'Last 6 hours', durationMs: 6 * 60 * 60 * 1000 },
+  { value: '12h', label: 'Last 12 hours', durationMs: 12 * 60 * 60 * 1000 },
+  { value: '24h', label: 'Last 24 hours', durationMs: 24 * 60 * 60 * 1000 },
+  { value: '3d', label: 'Last 3 days', durationMs: 3 * 24 * 60 * 60 * 1000 },
+  { value: '7d', label: 'Last 7 days', durationMs: 7 * 24 * 60 * 60 * 1000 },
+  { value: '30d', label: 'Last 30 days', durationMs: 30 * 24 * 60 * 60 * 1000 },
+  { value: 'all', label: 'All time', durationMs: null },
+];
+const apiDebugTimeFilterMap = API_DEBUG_TIME_FILTERS.reduce((acc, option) => {
+  acc[option.value] = option;
+  return acc;
+}, {});
 
 function getLogFiles() {
   if (!fs.existsSync(LOGS_DIR)) {
@@ -658,7 +672,13 @@ exports.openai_usage = async (req, res) => {
 };
 
 exports.api_debug_logs = async (req, res) => {
-  const { file: fileFilter = '', function: functionFilter = '' } = req.query || {};
+  const query = req.query || {};
+  const fileFilter = query.file || '';
+  const functionFilter = query.function || '';
+  const requestedTimeRange = query.timeRange;
+  const DEFAULT_TIME_RANGE = '1h';
+  const selectedTimeRange = apiDebugTimeFilterMap[requestedTimeRange] ? requestedTimeRange : DEFAULT_TIME_RANGE;
+  const selectedTimeRangeConfig = apiDebugTimeFilterMap[selectedTimeRange];
   const filter = {};
   const LIMIT = 200;
 
@@ -667,6 +687,11 @@ exports.api_debug_logs = async (req, res) => {
   }
   if (functionFilter) {
     filter.functionName = functionFilter;
+  }
+  if (selectedTimeRangeConfig.durationMs) {
+    filter.createdAt = {
+      $gte: new Date(Date.now() - selectedTimeRangeConfig.durationMs),
+    };
   }
 
   const formatPayload = (payload) => {
@@ -704,6 +729,10 @@ exports.api_debug_logs = async (req, res) => {
     filters: {
       jsFileName: fileFilter,
       functionName: functionFilter,
+      timeRange: selectedTimeRange,
+      defaultTimeRange: DEFAULT_TIME_RANGE,
+      activeTimeRangeLabel: selectedTimeRangeConfig.label,
+      timeRanges: API_DEBUG_TIME_FILTERS,
       jsFileNames: fileNames,
       functionNames,
     },
