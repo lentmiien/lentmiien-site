@@ -112,6 +112,64 @@ const tools_map = {
   web_search_preview: { type: "web_search_preview" },
 };
 
+const TOOL_LABELS = {
+  image_generation: 'image generation',
+  web_search_preview: 'web search preview',
+};
+
+function resolveContextPrompt(conversation) {
+  if (!conversation) return '';
+  const metadata = conversation.metadata || {};
+  const candidates = [
+    metadata.contextPrompt,
+    metadata.context_prompt,
+    conversation.contextPrompt,
+    conversation.context_prompt,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+  }
+  return '';
+}
+
+function formatToolList(toolLabels) {
+  if (toolLabels.length === 1) return toolLabels[0];
+  if (toolLabels.length === 2) return `${toolLabels[0]} and ${toolLabels[1]}`;
+  const last = toolLabels[toolLabels.length - 1];
+  return `${toolLabels.slice(0, -1).join(', ')}, and ${last}`;
+}
+
+function appendToolGuidance(prompt, tools = []) {
+  if (!Array.isArray(tools) || tools.length === 0) {
+    return typeof prompt === 'string' ? prompt : '';
+  }
+
+  const labels = tools
+    .map(tool => {
+      if (typeof tool !== 'string') return '';
+      return TOOL_LABELS[tool] || tool;
+    })
+    .map(label => label.trim())
+    .filter(label => label.length > 0);
+
+  if (labels.length === 0) {
+    return typeof prompt === 'string' ? prompt : '';
+  }
+
+  const uniqueLabels = Array.from(new Set(labels));
+  const joined = formatToolList(uniqueLabels);
+  const hint = `You can use ${joined} if needed.`;
+
+  const base = typeof prompt === 'string' ? prompt : '';
+  const normalizedBase = base.trimEnd();
+  return normalizedBase.length > 0 ? `${normalizedBase}\n\n${hint}` : hint;
+}
+
 function GenerateMessagesArray_Responses(context, messages, isImageModel) {
   const messageArray = [];
   if (context.type != "none" && context.prompt && context.prompt.length > 0) {
@@ -264,7 +322,13 @@ async function convertOutput (d) {
 }
 
 const chat = async (conversation, messages, model) => {
-  const messageArray = GenerateMessagesArray_Responses({type: model.context_type, prompt: conversation.metadata.context_prompt}, messages, model.in_modalities.indexOf("image") >= 0);
+  const resolvedContext = resolveContextPrompt(conversation);
+  const promptWithTools = appendToolGuidance(resolvedContext, conversation?.metadata?.tools);
+  const messageArray = GenerateMessagesArray_Responses(
+    {type: model.context_type, prompt: promptWithTools},
+    messages,
+    model.in_modalities.indexOf("image") >= 0
+  );
 
   const tools = [];
   if (conversation.metadata.tools && conversation.metadata.tools.length > 0) {
