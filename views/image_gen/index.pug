@@ -92,6 +92,12 @@ block content
               button#btnListVideo.btn.btn-outline-secondary(type="button") List video
               button#btnHideBrowse.btn.btn-outline-secondary(type="button") Hide
         .row.row-cols-2.row-cols-md-4.g-3.browse-grid#browseArea
+        .d-flex.align-items-center.justify-content-between.mt-2#browsePagination.d-none
+          small#browseSummary.text-muted
+          .d-flex.align-items-center.gap-2
+            button#browsePrev.btn.btn-outline-secondary.btn-sm(type="button") Prev
+            span#browsePageLabel.text-muted Page 1 of 1
+            button#browseNext.btn.btn-outline-secondary.btn-sm(type="button") Next
 
     // Jobs
     .card.mb-3

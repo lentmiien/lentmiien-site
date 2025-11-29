@@ -4,6 +4,12 @@
   const logEl = $('#log');
   const statusPill = $('#statusPill');
   const promptFilterInput = $('#promptFilter');
+  const browseArea = $('#browseArea');
+  const browsePagination = $('#browsePagination');
+  const browseSummary = $('#browseSummary');
+  const browsePageLabel = $('#browsePageLabel');
+  const browsePrevBtn = $('#browsePrev');
+  const browseNextBtn = $('#browseNext');
 
   const instanceSelect = $('#instanceSelect');
   const instanceMetaEl = $('#instanceMeta');
@@ -24,6 +30,13 @@
   const inputFilenameState = {
     names: [],
     fetchPromise: null
+  };
+  const BROWSE_PAGE_SIZE = 24;
+  const browseState = {
+    bucket: null,
+    items: [],
+    page: 1,
+    perPage: BROWSE_PAGE_SIZE
   };
 
   function detectMediaTypeFromName(name) {
@@ -945,8 +958,166 @@
   });
 
   // Browse
-  $('#btnListInput').addEventListener('click', ()=> list('input'));
-  $('#btnListOutput').addEventListener('click', ()=> list('output'));
+  function toggleBrowsePagination(visible) {
+    if (!browsePagination) return;
+    browsePagination.classList.toggle('d-none', !visible);
+  }
+
+  function setBrowseMessage(text, className = 'text-muted') {
+    if (!browseArea) return;
+    browseArea.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = className;
+    div.textContent = text;
+    browseArea.appendChild(div);
+  }
+
+  function showBrowseLoading(bucket) {
+    const label = bucket ? `${bucket}/` : 'files';
+    setBrowseMessage(`Loading ${label}…`);
+    toggleBrowsePagination(false);
+  }
+
+  function clearBrowseListing(message = '') {
+    browseState.bucket = null;
+    browseState.items = [];
+    browseState.page = 1;
+    if (message) {
+      setBrowseMessage(message);
+    } else if (browseArea) {
+      browseArea.innerHTML = '';
+    }
+    toggleBrowsePagination(false);
+  }
+
+  function buildBrowseCard(item, fallbackBucket) {
+    if (!item) return null;
+    const entry = Object.assign({}, item);
+    const bucket = entry.bucket || fallbackBucket || '';
+    const displayName = entry.name || entry.original || entry.filename || entry.file || '';
+    const originalName = entry.original || displayName || entry.name || entry.filename || entry.file || '';
+    const col = document.createElement('div');
+    col.className = 'col';
+    const card = document.createElement('div');
+    card.className = 'thumb';
+    if (bucket) card.classList.add(`thumb-${bucket}`);
+
+    const mediaType = (entry.media_type || detectMediaTypeFromName(displayName || originalName)).toLowerCase();
+    const fallbackSrc = originalName && bucket
+      ? `/image_gen/api/files/${bucket}/${encodeURIComponent(originalName)}`
+      : '';
+    const src = entry.url || (fallbackSrc ? withInstanceParam(fallbackSrc, entry.instance_id || currentInstanceId) : '');
+
+    let mediaEl;
+    if (mediaType === 'video') {
+      mediaEl = document.createElement('video');
+      mediaEl.controls = true;
+      mediaEl.preload = 'metadata';
+      mediaEl.playsInline = true;
+      mediaEl.muted = true;
+    } else {
+      mediaEl = document.createElement('img');
+      mediaEl.alt = displayName || originalName || 'preview';
+      mediaEl.loading = 'lazy';
+    }
+    mediaEl.classList.add('thumb-media');
+    if (src) {
+      mediaEl.src = src;
+    } else {
+      mediaEl.classList.add('thumb-media--empty');
+    }
+    card.appendChild(mediaEl);
+
+    const cap = document.createElement('div');
+    cap.className = 'muted mt-1';
+    const bucketLabel = bucket ? `${bucket}/ ` : '';
+    cap.textContent = `${bucketLabel}${displayName || originalName || '(unknown)'}`;
+    card.appendChild(cap);
+
+    if (bucket === 'input' && (displayName || originalName)) {
+      const useName = displayName || originalName;
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-outline-primary mt-2';
+      btn.textContent = 'Use for img2img';
+      btn.addEventListener('click', () => {
+        mergeInputFilename(useName);
+        setImageInputValue(useName);
+      });
+      card.appendChild(btn);
+    }
+
+    if (bucket === 'output' && (mediaType === 'image' || mediaType === 'gif') && (displayName || originalName)) {
+      const useName = displayName || originalName;
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-outline-success mt-2';
+      btn.textContent = 'Use for img2img';
+      btn.addEventListener('click', async () => {
+        try {
+          btn.disabled = true;
+          const resp = await api('/api/files/promote', {
+            method: 'POST',
+            body: JSON.stringify({ bucket: 'output', filename: originalName || useName })
+          });
+          const newName = resp.filename || useName;
+          mergeInputFilename(newName);
+          setImageInputValue(newName, { silent: true });
+          log(`Copied ${useName} to input as ${newName}.`, 'text-success');
+        } catch (err) {
+          log('Promote failed: ' + err.message, 'text-danger');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      card.appendChild(btn);
+    }
+
+    col.appendChild(card);
+    return col;
+  }
+
+  function renderBrowsePage(page = browseState.page) {
+    if (!browseArea) return;
+    const total = browseState.items.length;
+    const bucket = browseState.bucket || 'files';
+    if (!total) {
+      setBrowseMessage(`No files in ${bucket}/ yet.`);
+      toggleBrowsePagination(false);
+      return;
+    }
+    const perPage = browseState.perPage || BROWSE_PAGE_SIZE;
+    const totalPages = Math.max(1, Math.ceil(total / perPage));
+    const nextPage = Math.min(Math.max(1, page), totalPages);
+    browseState.page = nextPage;
+    const startIndex = (nextPage - 1) * perPage;
+    const pageItems = browseState.items.slice(startIndex, startIndex + perPage);
+
+    browseArea.innerHTML = '';
+    pageItems.forEach((item) => {
+      const col = buildBrowseCard(item, bucket);
+      if (col) browseArea.appendChild(col);
+    });
+
+    const endIndex = Math.min(startIndex + pageItems.length, total);
+    if (browseSummary) {
+      browseSummary.textContent = `Showing ${startIndex + 1}-${endIndex} of ${total} in ${bucket}/`;
+    }
+    if (browsePageLabel) {
+      browsePageLabel.textContent = `Page ${nextPage} of ${totalPages}`;
+    }
+    if (browsePrevBtn) browsePrevBtn.disabled = nextPage <= 1;
+    if (browseNextBtn) browseNextBtn.disabled = nextPage >= totalPages;
+    toggleBrowsePagination(true);
+  }
+
+  function setBrowseItems(bucket, items) {
+    browseState.bucket = bucket || null;
+    browseState.items = Array.isArray(items) ? items.slice() : [];
+    browseState.page = 1;
+    renderBrowsePage(1);
+  }
+
+  $('#btnListInput').addEventListener('click', () => list('input'));
+  $('#btnListOutput').addEventListener('click', () => list('output'));
   const listVideoBtn = $('#btnListVideo');
   if (listVideoBtn) {
     listVideoBtn.addEventListener('click', () => list('video'));
@@ -954,99 +1125,55 @@
   const hideBtn = $('#btnHideBrowse');
   if (hideBtn) {
     hideBtn.addEventListener('click', () => {
-      const area = $('#browseArea');
-      if (area) area.innerHTML = '';
+      clearBrowseListing();
       log('Cleared browse list.');
+    });
+  }
+  if (browsePrevBtn) {
+    browsePrevBtn.addEventListener('click', () => {
+      if (browseState.items.length) renderBrowsePage(browseState.page - 1);
+    });
+  }
+  if (browseNextBtn) {
+    browseNextBtn.addEventListener('click', () => {
+      if (browseState.items.length) renderBrowsePage(browseState.page + 1);
     });
   }
 
   async function list(bucket){
-    const area = $('#browseArea'); area.innerHTML = '';
+    if (!bucket) return;
     if (!currentInstanceId) {
+      clearBrowseListing('Select an instance first.');
       log('Select an instance first.', 'text-warning');
       return;
     }
+    showBrowseLoading(bucket);
     try{
       const j = await api(`/api/files/${bucket}`);
-      const items = (Array.isArray(j.cached) && j.cached.length)
+      const rawItems = (Array.isArray(j.cached) && j.cached.length)
         ? j.cached
-        : (Array.isArray(j.files) ? j.files.map(name => ({ name, original: name, bucket, url: null })) : []);
+        : (Array.isArray(j.files)
+          ? j.files.map(name => ({
+              name,
+              original: name,
+              bucket,
+              url: null,
+              instance_id: j.instance_id || currentInstanceId || null
+            }))
+          : []);
+      const items = rawItems.filter(Boolean);
 
       if (bucket === 'input') {
         const names = items.map(it => it.name || it.original).filter(Boolean);
         mergeInputFilenames(names);
       }
 
+      const sortedItems = items.slice().reverse();
+      setBrowseItems(bucket, sortedItems);
       log(`Listed ${items.length} file(s) in ${bucket}/.`);
-      for (const item of items) {
-        const displayName = item.name || item.original;
-        const originalName = item.original || displayName;
-        const col = document.createElement('div'); col.className = 'col';
-        const card = document.createElement('div'); card.className = `thumb thumb-${bucket}`;
-
-        const mediaType = item.media_type || detectMediaTypeFromName(displayName || originalName);
-        const fallbackSrc = originalName ? `/image_gen/api/files/${bucket}/${encodeURIComponent(originalName)}` : '';
-        const src = item.url || (fallbackSrc ? withInstanceParam(fallbackSrc, item.instance_id || currentInstanceId) : '');
-
-        let mediaEl;
-        if (mediaType === 'video') {
-          mediaEl = document.createElement('video');
-          mediaEl.controls = true;
-          mediaEl.preload = 'metadata';
-          mediaEl.playsInline = true;
-          mediaEl.muted = true;
-        } else {
-          mediaEl = document.createElement('img');
-          mediaEl.alt = displayName || originalName || 'preview';
-          mediaEl.loading = 'lazy';
-        }
-        mediaEl.classList.add('thumb-media');
-        if (src) {
-          mediaEl.src = src;
-        } else {
-          mediaEl.classList.add('thumb-media--empty');
-        }
-        card.appendChild(mediaEl);
-
-        const cap = document.createElement('div'); cap.className='muted mt-1'; cap.textContent = `${bucket}/ ${displayName || originalName || '(unknown)'}`;
-        card.appendChild(cap);
-
-        if (bucket === 'input' && (displayName || originalName)) {
-          const useName = displayName || originalName;
-          const btn = document.createElement('button'); btn.className='btn btn-sm btn-outline-primary mt-2'; btn.textContent='Use for img2img';
-          btn.addEventListener('click', ()=>{
-            mergeInputFilename(useName);
-            setImageInputValue(useName);
-          });
-          card.appendChild(btn);
-        }
-        if (bucket === 'output' && (mediaType === 'image' || mediaType === 'gif') && (displayName || originalName)) {
-          const useName = displayName || originalName;
-          const btn = document.createElement('button');
-          btn.className = 'btn btn-sm btn-outline-success mt-2';
-          btn.textContent = 'Use for img2img';
-          btn.addEventListener('click', async () => {
-            try{
-              btn.disabled = true;
-              const resp = await api('/api/files/promote', {
-                method: 'POST',
-                body: JSON.stringify({ bucket: 'output', filename: originalName || useName })
-              });
-              const newName = resp.filename || useName;
-              mergeInputFilename(newName);
-              setImageInputValue(newName, { silent: true });
-              log(`Copied ${useName} to input as ${newName}.`, 'text-success');
-            }catch(err){
-              log('Promote failed: ' + err.message, 'text-danger');
-            }finally{
-              btn.disabled = false;
-            }
-          });
-          card.appendChild(btn);
-        }
-        col.appendChild(card); area.appendChild(col);
-      }
     }catch(e){
+      setBrowseMessage(`Failed to load ${bucket}/ list.`, 'text-danger');
+      toggleBrowsePagination(false);
       log('List failed: ' + e.message, 'text-danger');
     }
   }
