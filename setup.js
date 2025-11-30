@@ -16,6 +16,7 @@ const OpenAIUsage = require('./models/openai_usage');
 const SoraVideo = require('./models/sora_video');
 const ApiDebugLog = require('./models/api_debug_log');
 const TransactionModel = require('./models/transaction_db');
+const HtmlPageRating = require('./models/html_page_rating');
 
 const ROOT_DIR = __dirname;
 const TEMP_DIR = path.join(ROOT_DIR, 'tmp_data');
@@ -23,6 +24,7 @@ const PDF_JOB_DIR = path.join(ROOT_DIR, 'public', 'temp', 'pdf');
 const PNG_FOLDER = path.join(ROOT_DIR, 'public', 'img');
 const VIDEO_DIR = path.join(ROOT_DIR, 'public', 'video');
 const LOG_DIR = path.join(ROOT_DIR, 'logs');
+const HTML_DIR = path.join(ROOT_DIR, 'public', 'html');
 const DROPBOX_TOKEN_PATH = path.join(ROOT_DIR, 'tokens.json');
 
 const PDF_JOB_MAX_AGE_HOURS = Number.parseInt(process.env.CHAT_PDF_MAX_AGE_HOURS || '24', 10) || 24;
@@ -200,6 +202,31 @@ async function pruneStalePdfJobs(directory, maxAgeHours) {
     logger.warning('Unable to prune PDF conversion cache', error);
   }
   return removed;
+}
+
+async function pruneMissingHtmlRatings() {
+  await fs.promises.mkdir(HTML_DIR, { recursive: true });
+  const entriesOnDisk = await fs.promises.readdir(HTML_DIR).catch(() => []);
+  const normalizedFiles = new Set(
+    entriesOnDisk
+      .filter((name) => typeof name === 'string' && name.toLowerCase().endsWith('.html'))
+      .map((name) => name.toLowerCase()),
+  );
+  const metadataEntries = await HtmlPageRating.find({}, { filename: 1 }).lean().exec();
+  const missing = metadataEntries
+    .filter((entry) => !entry.filename || !normalizedFiles.has(String(entry.filename).toLowerCase()))
+    .map((entry) => entry.filename)
+    .filter(Boolean);
+  if (!missing.length) {
+    return 0;
+  }
+  const { deletedCount = 0 } = await HtmlPageRating.deleteMany({ filename: { $in: missing } });
+  if (deletedCount > 0) {
+    logger.notice(`Removed ${deletedCount} stale HTML rating entr${deletedCount === 1 ? 'y' : 'ies'}.`, {
+      category: 'startup:html',
+    });
+  }
+  return deletedCount;
 }
 
 async function cleanTempAndPdfCaches() {
@@ -401,6 +428,7 @@ async function performDatabaseMaintenance() {
     lowRatedVideosRemoved: 0,
     staleIncompleteVideosRemoved: 0,
     transactionCategoryCleanup: null,
+    htmlRatingEntriesRemoved: 0,
   };
 
   await mongoose.connect(mongoUrl, {
@@ -469,6 +497,7 @@ async function performDatabaseMaintenance() {
       startedAt: { $lt: staleCutoff },
     });
     summary.transactionCategoryCleanup = await normalizeLegacyTransactionCategories();
+    summary.htmlRatingEntriesRemoved = await pruneMissingHtmlRatings();
 
     return summary;
   } finally {

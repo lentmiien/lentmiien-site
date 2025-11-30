@@ -17,7 +17,8 @@ const expressStaticGzip = require('express-static-gzip');
 const crypto = require('crypto');
 
 // Database models
-const { UseraccountModel, RoleModel } = require('./database');
+const { UseraccountModel, RoleModel, HtmlPageRating } = require('./database');
+const { HTML_RATING_CATEGORIES, computeAverageRating } = require('./utils/htmlRatings');
 
 // Initialize app and server
 const app = express();
@@ -139,12 +140,52 @@ app.use(async (req, res, next) => {
   res.locals.twitter_image = 'https://home.lentmiien.com/image.jpg';
   res.locals.twitter_image_alt = 'A fusion of Swedish and Japanese cultures set within a modern, technology-driven landscape. Picture a serene Japanese garden blending seamlessly into a snowy Swedish forest. In the foreground, a traditional Swedish wooden table filled with a mix of Japanese and Swedish dishes, expertly prepared and beautifully presented. Scattered among these dishes are subtle elements of technology, such as a futuristic AI interface and small, high-tech gadgets that enhance the dining experience. A harmonious blend of nature, technology, gastronomy, and cultural integration, capturing the essence of a balanced, innovative lifestyle.';
 
-  // Load HTML test content
   const htmlPaths = [];
-  fs.readdirSync(htmlDirectory).forEach(file => {
-    htmlPaths.push({path: `/html/${file}`, name: file.split(".")[0]})
-  });
-  res.locals["htmlPaths"] = htmlPaths;
+  try {
+    const ratingEntries = await HtmlPageRating.find({ isPublic: true }).lean().exec();
+    ratingEntries.forEach((entry) => {
+      const fileName = entry.filename;
+      if (!fileName) {
+        return;
+      }
+      const filePath = path.join(htmlDirectory, fileName);
+      if (!fs.existsSync(filePath)) {
+        return;
+      }
+      const displayName = fileName.replace(/\.html$/i, '');
+      const ratings = HTML_RATING_CATEGORIES.map((category) => {
+        const score = entry.ratings && Number.isFinite(entry.ratings[category.key])
+          ? entry.ratings[category.key]
+          : null;
+        return {
+          key: category.key,
+          label: category.label,
+          score,
+        };
+      });
+      htmlPaths.push({
+        path: `/html/${fileName}`,
+        name: displayName,
+        ratings,
+        averageRating: computeAverageRating(entry.ratings),
+        version: entry.version || 1,
+      });
+    });
+    htmlPaths.sort((a, b) => {
+      const aAvg = Number.isFinite(a.averageRating) ? a.averageRating : 0;
+      const bAvg = Number.isFinite(b.averageRating) ? b.averageRating : 0;
+      if (bAvg !== aAvg) {
+        return bAvg - aAvg;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  } catch (error) {
+    logger.warning('Unable to hydrate HTML samples list', {
+      category: 'layout',
+      metadata: { error: error.message },
+    });
+  }
+  res.locals.htmlPaths = htmlPaths;
 
   next();
 });

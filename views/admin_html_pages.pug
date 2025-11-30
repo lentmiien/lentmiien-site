@@ -4,6 +4,7 @@ block styles
   link(rel='stylesheet', href='/css/admin-html.css')
 
 block content
+  - const ratingScaleLabels = { 1: 'Bad', 2: 'Neutral', 3: 'Good', 4: 'Great', 5: 'Exceptional' };
   section.html-admin
     header.html-admin__header
       h1.html-admin__title HTML Content Manager
@@ -38,23 +39,68 @@ block content
           span.html-admin__list-count #{files.length} total
         else
           span.html-admin__list-count No pages yet
+      if ratingCategories && ratingCategories.length
+        p.html-admin__scale-hint Ratings use a 1 (bad) to 5 (exceptional) scale. Only public entries appear in the navigation panel.
       if files && files.length
         ul.html-admin__items
           each page in files
             li.html-admin__item
-              div.html-admin__item-info
-                a.html-admin__item-link(href=page.href, target='_blank', rel='noopener')= page.name
-                div.html-admin__item-meta
-                  span Size: #{page.size}
-                  span Updated: #{page.modified}
-              .html-admin__item-actions
-                button.html-admin__secondary(type='button', data-action='apply-filename', data-filename=page.name) Use filename
-                button.html-admin__secondary(type='button', data-action='load-html', data-filename=page.name, data-source=page.href) Load HTML
-                form.html-admin__item-action(method='post', action='/admin/html-pages/delete')
-                  input(type='hidden', name='file', value=page.name)
-                  button.html-admin__delete(type='submit') Delete
+              .html-admin__item-row
+                .html-admin__item-info
+                  a.html-admin__item-link(href=page.href, target='_blank', rel='noopener')= page.name
+                  div.html-admin__item-meta
+                    span Size: #{page.size}
+                    span Updated: #{page.modified}
+                .html-admin__item-actions
+                  button.html-admin__secondary(type='button', data-action='apply-filename', data-filename=page.name) Use filename
+                  button.html-admin__secondary(type='button', data-action='load-html', data-filename=page.name, data-source=page.href) Load HTML
+                  form.html-admin__item-action(method='post', action='/admin/html-pages/delete')
+                    input(type='hidden', name='file', value=page.name)
+                    button.html-admin__delete(type='submit') Delete
+              if ratingCategories && ratingCategories.length
+                - const existingRating = page.ratingEntry || {};
+                - const averageScore = typeof existingRating.averageRating === 'number' ? existingRating.averageRating.toFixed(2) : null;
+                form.html-admin__rating-form(method='post', action='/admin/html-pages/rating')
+                  input(type='hidden', name='filename', value=page.name)
+                  .html-admin__rating-header
+                    if averageScore
+                      span.html-admin__rating-pill Average: #{averageScore}
+                    else
+                      span.html-admin__rating-pill -- No ratings yet --
+                    span.html-admin__version-badge Version #{existingRating.version || 0}
+                    label.html-admin__visibility
+                      input(type='checkbox', name='isPublic', checked=existingRating.isPublic === true)
+                      span Make public
+                  .html-admin__rating-grid
+                    each category in ratingCategories
+                      - const ratingValue = (existingRating.ratings && Number.isFinite(existingRating.ratings[category.key])) ? existingRating.ratings[category.key] : null;
+                      label.html-admin__rating-field
+                        span.html-admin__rating-label= category.label
+                        select.html-admin__rating-select(name='rating_' + category.key)
+                          option(value='') Not rated
+                          each score in [1, 2, 3, 4, 5]
+                            option(
+                              value=score,
+                              selected=(ratingValue === score)
+                            ) #{score} - #{ratingScaleLabels[score]}
+                  label.html-admin__notes-label
+                    span Notes (admin only)
+                    textarea.html-admin__notes(name='notes', rows='2')= existingRating.notes || ''
+                  .html-admin__rating-actions
+                    button.html-admin__button(type='submit') Save rating
       else
         p.html-admin__empty No HTML pages found. Use either form above to publish new content.
+    if detachedRatings && detachedRatings.length
+      section.html-admin__detached
+        h3.html-admin__detached-title Missing files detected
+        p.html-admin__detached-copy These rating entries no longer have a matching HTML file. They will be removed automatically the next time the setup script runs.
+        ul.html-admin__detached-list
+          each entry in detachedRatings
+            li.html-admin__detached-item
+              strong= entry.filename
+              if typeof entry.averageRating === 'number'
+                span Avg #{entry.averageRating.toFixed(2)}
+              span Version #{entry.version || 0}
 
 block script
   script(src='/js/admin-html.js', defer)

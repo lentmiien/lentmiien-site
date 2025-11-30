@@ -75,6 +75,30 @@
   font-size: 16px;
 }
 
+.navbar-html-entry {
+  margin-bottom: 8px;
+}
+
+.navbar-html-rating {
+  display: block;
+  padding: 0 15px 8px;
+  color: #9a9a9a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.navbar-html-rating span + span {
+  margin-left: 4px;
+}
+
+.navbar-html-empty {
+  display: block;
+  padding: 0 15px 10px;
+  color: #8a8a8a;
+  font-size: 13px;
+  font-style: italic;
+}
+
 .navbar a:hover {
   background-color: #ddd;
   color: black;

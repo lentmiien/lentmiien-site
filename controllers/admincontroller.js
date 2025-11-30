@@ -1,4 +1,5 @@
-const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog } = require('../database');
+const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
+const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -417,6 +418,48 @@ async function listHtmlFiles() {
   });
 }
 
+function withAverageRating(entry) {
+  if (!entry) {
+    return null;
+  }
+  return {
+    ...entry,
+    averageRating: computeAverageRating(entry.ratings),
+  };
+}
+
+async function bumpHtmlPageVersion(fileName) {
+  if (!fileName) {
+    return;
+  }
+  try {
+    const existing = await HtmlPageRating.findOne({ filename: fileName }).exec();
+    if (!existing) {
+      await HtmlPageRating.create({ filename: fileName, version: 1 });
+      return;
+    }
+    const currentVersion = Number.isFinite(existing.version) ? existing.version : 0;
+    existing.version = Math.max(currentVersion + 1, 1);
+    await existing.save();
+  } catch (error) {
+    logger.warning('Unable to update HTML page metadata entry', {
+      category: 'admin_html',
+      metadata: { fileName, error: error.message },
+    });
+  }
+}
+
+function buildRatingUpdatePayload(body) {
+  const ratings = {};
+  HTML_RATING_CATEGORIES.forEach(({ key }) => {
+    const ratingValue = parseRatingValue(body[`rating_${key}`]);
+    ratings[key] = ratingValue;
+  });
+  const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 2000) : '';
+  const isPublic = body.isPublic === 'on' || body.isPublic === 'true';
+  return { ratings, notes, isPublic };
+}
+
 function redirectWithFeedback(res, status, message) {
   const normalizedStatus = FEEDBACK_STATUSES.has(status) ? status : 'info';
   const text = message ? String(message) : '';
@@ -426,7 +469,18 @@ function redirectWithFeedback(res, status, message) {
 
 exports.html_pages = async (req, res) => {
   try {
-    const files = await listHtmlFiles();
+    const [files, ratingDocs] = await Promise.all([
+      listHtmlFiles(),
+      HtmlPageRating.find({}).lean().exec(),
+    ]);
+    const ratingMap = new Map(ratingDocs.map((entry) => [entry.filename, withAverageRating(entry)]));
+    const filesWithRatings = files.map((file) => ({
+      ...file,
+      ratingEntry: ratingMap.get(file.name) || null,
+    }));
+    const detachedRatings = ratingDocs
+      .filter((entry) => !files.some((file) => file.name === entry.filename))
+      .map((entry) => withAverageRating(entry));
     const statusParam = String(req.query.status || '').toLowerCase();
     const tentativeStatus = FEEDBACK_STATUSES.has(statusParam) ? statusParam : null;
     const messageParam = tentativeStatus ? String(req.query.message || '') : '';
@@ -434,7 +488,9 @@ exports.html_pages = async (req, res) => {
     const feedbackMessage = messageParam || null;
 
     return res.render('admin_html_pages', {
-      files,
+      files: filesWithRatings,
+      detachedRatings,
+      ratingCategories: HTML_RATING_CATEGORIES,
       feedbackStatus,
       feedbackMessage,
     });
@@ -443,6 +499,8 @@ exports.html_pages = async (req, res) => {
     res.status(500);
     return res.render('admin_html_pages', {
       files: [],
+      detachedRatings: [],
+      ratingCategories: HTML_RATING_CATEGORIES,
       feedbackStatus: 'error',
       feedbackMessage: 'Unable to read the HTML content directory.',
     });
@@ -466,6 +524,7 @@ exports.create_html_page_from_text = async (req, res) => {
     await ensureHtmlDirectory();
     const filePath = path.join(HTML_DIRECTORY, sanitizedName);
     await fsp.writeFile(filePath, htmlContent, 'utf8');
+    await bumpHtmlPageVersion(sanitizedName);
     return redirectWithFeedback(res, 'success', `Saved ${sanitizedName}.`);
   } catch (error) {
     logger.error('Failed to save HTML content from textarea', { category: 'admin_html', metadata: { file: sanitizedName, error: error.message } });
@@ -494,6 +553,7 @@ exports.create_html_page_from_file = async (req, res) => {
     await ensureHtmlDirectory();
     const filePath = path.join(HTML_DIRECTORY, sanitizedName);
     await fsp.writeFile(filePath, req.file.buffer.toString('utf8'), 'utf8');
+    await bumpHtmlPageVersion(sanitizedName);
     return redirectWithFeedback(res, 'success', `Uploaded ${sanitizedName}.`);
   } catch (error) {
     logger.error('Failed to process uploaded HTML file', { category: 'admin_html', metadata: { file: sanitizedName, error: error.message } });
@@ -512,6 +572,14 @@ exports.delete_html_page = async (req, res) => {
   try {
     await ensureHtmlDirectory();
     await fsp.unlink(targetPath);
+    try {
+      await HtmlPageRating.deleteOne({ filename: sanitizedName });
+    } catch (metadataError) {
+      logger.warning('Failed to remove HTML rating entry after file delete', {
+        category: 'admin_html',
+        metadata: { file: sanitizedName, error: metadataError.message },
+      });
+    }
     return redirectWithFeedback(res, 'success', `Deleted ${sanitizedName}.`);
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -520,6 +588,34 @@ exports.delete_html_page = async (req, res) => {
 
     logger.error('Failed to delete HTML file', { category: 'admin_html', metadata: { file: sanitizedName, error: error.message } });
     return redirectWithFeedback(res, 'error', `Failed to delete ${sanitizedName}: ${error.message}`);
+  }
+};
+
+exports.update_html_page_rating = async (req, res) => {
+  const sanitizedName = sanitizeHtmlFileName(req.body.filename);
+  if (!sanitizedName) {
+    return redirectWithFeedback(res, 'error', 'Please select a valid entry to rate.');
+  }
+
+  const { ratings, notes, isPublic } = buildRatingUpdatePayload(req.body);
+  try {
+    await HtmlPageRating.findOneAndUpdate(
+      { filename: sanitizedName },
+      {
+        $set: {
+          filename: sanitizedName,
+          ratings,
+          notes,
+          isPublic,
+        },
+        $setOnInsert: { version: 1 },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    return redirectWithFeedback(res, 'success', `Saved rating details for ${sanitizedName}.`);
+  } catch (error) {
+    logger.error('Failed to update HTML rating entry', { category: 'admin_html', metadata: { file: sanitizedName, error: error.message } });
+    return redirectWithFeedback(res, 'error', `Unable to save rating for ${sanitizedName}.`);
   }
 };
 

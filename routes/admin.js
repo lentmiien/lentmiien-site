@@ -46,5 +46,6 @@ router.get('/html-pages', controller.html_pages);
 router.post('/html-pages/upload-text', controller.create_html_page_from_text);
 router.post('/html-pages/upload-file', handleHtmlUpload);
 router.post('/html-pages/delete', controller.delete_html_page);
+router.post('/html-pages/rating', controller.update_html_page_rating);
 
 module.exports = router;

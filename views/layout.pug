@@ -150,8 +150,24 @@ html(lang='en')
           a.type-1-link(href="/login", style="width:100%;") Log in
       .navbar-column
         h2 Sample/Demos
-        each l in htmlPaths
-          a.type-2-link(href=l.path, style="width:100%;", target="_blank")= l.name
+        if htmlPaths && htmlPaths.length
+          each l in htmlPaths
+            .navbar-html-entry
+              a.type-2-link(href=l.path, style="width:100%;", target="_blank")= l.name
+              - const avgDisplay = typeof l.averageRating === 'number' ? l.averageRating.toFixed(2) : null;
+              - const ratingParts = Array.isArray(l.ratings) ? l.ratings.filter(r => Number.isFinite(r.score)).map(r => `${r.label}: ${r.score}`) : [];
+              if avgDisplay || ratingParts.length
+                small.navbar-html-rating
+                  if avgDisplay
+                    span.navbar-html-rating-avg Avg #{avgDisplay}
+                    if l.version
+                      span.navbar-html-rating-version  | v#{l.version}
+                  if ratingParts.length
+                    if avgDisplay
+                      span.navbar-html-rating-sep  |
+                    span.navbar-html-rating-breakdown= ratingParts.join(' | ')
+        else
+          small.navbar-html-empty No public demos yet.
     .container-fluid
       block content
     div(style="height:50px;")

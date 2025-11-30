@@ -94,6 +94,8 @@ const OpenAIUsage = require('./models/openai_usage');
 const AIModelCards = require('./models/ai_model_card');
 // Gallery images
 const Images = require('./models/image');
+// HTML page ratings
+const HtmlPageRating = require('./models/html_page_rating');
 // Payroll
 const Payroll = require('./models/Payroll');
 // Schedule-Task
@@ -166,6 +168,7 @@ module.exports = {
   OpenAIUsage,
   AIModelCards,
   Images,
+  HtmlPageRating,
   Payroll,
   Task,
   Palette,
