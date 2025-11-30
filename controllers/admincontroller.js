@@ -1,5 +1,6 @@
 const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
+const databaseUsageService = require('../services/databaseUsageService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -157,6 +158,33 @@ const apiDebugTimeFilterMap = API_DEBUG_TIME_FILTERS.reduce((acc, option) => {
   acc[option.value] = option;
   return acc;
 }, {});
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+
+function formatBytes(value) {
+  if (typeof value !== 'number' || Number.isNaN(value) || value === 0) {
+    return '0 B';
+  }
+  const absolute = Math.abs(value);
+  const base = 1024;
+  const exponent = Math.min(Math.floor(Math.log(absolute) / Math.log(base)), BYTE_UNITS.length - 1);
+  const scaled = value / (base ** exponent);
+  const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  return `${scaled.toFixed(digits)} ${BYTE_UNITS[exponent]}`;
+}
+
+function formatNumber(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return '0';
+  }
+  return value.toLocaleString('en-US');
+}
+
+function calculatePercent(total, portion) {
+  if (!total || typeof total !== 'number' || typeof portion !== 'number') {
+    return 0;
+  }
+  return (portion / total) * 100;
+}
 
 function getLogFiles() {
   if (!fs.existsSync(LOGS_DIR)) {
@@ -833,5 +861,120 @@ exports.api_debug_logs = async (req, res) => {
       functionNames,
     },
   });
+};
+
+exports.database_usage = async (req, res) => {
+  try {
+    const usage = await databaseUsageService.fetchDatabaseUsage();
+    const { dbStats, collectionStats, generatedAt } = usage;
+    const validCollections = Array.isArray(collectionStats)
+      ? collectionStats.filter((collection) => !collection.error)
+      : [];
+    const totalStorageBytes = dbStats?.storageSizeBytes || 0;
+    const documentTotal = validCollections.reduce((sum, collection) => sum + (collection.count || 0), 0);
+    const sortedCollections = [...validCollections].sort(
+      (a, b) => (b.storageSizeBytes || 0) - (a.storageSizeBytes || 0),
+    );
+    const apiDebugCollectionName = ApiDebugLog?.collection?.collectionName;
+    const apiDebugCollection = sortedCollections.find(
+      (collection) => collection.name === apiDebugCollectionName,
+    ) || sortedCollections.find(
+      (collection) => collection.name && collection.name.includes('api_debug'),
+    );
+    const topCollections = sortedCollections.slice(0, 8).map((collection) => {
+      const percent = calculatePercent(totalStorageBytes, collection.storageSizeBytes || 0);
+      return {
+        name: collection.name,
+        documents: collection.count || 0,
+        documentsDisplay: formatNumber(collection.count || 0),
+        storageSizeDisplay: formatBytes(collection.storageSizeBytes || 0),
+        percent,
+        percentDisplay: `${percent.toFixed(1)}%`,
+      };
+    });
+    const collectionRows = sortedCollections.map((collection) => {
+      const percent = calculatePercent(totalStorageBytes, collection.storageSizeBytes || 0);
+      return {
+        name: collection.name,
+        documentsDisplay: formatNumber(collection.count || 0),
+        storageSizeDisplay: formatBytes(collection.storageSizeBytes || 0),
+        dataSizeDisplay: formatBytes(collection.sizeBytes || 0),
+        indexSizeDisplay: formatBytes(collection.totalIndexSizeBytes || 0),
+        avgObjSizeDisplay: collection.avgObjSizeBytes ? formatBytes(collection.avgObjSizeBytes) : '—',
+        percentDisplay: `${percent.toFixed(1)}%`,
+      };
+    });
+    const overviewCards = [
+      {
+        label: 'Storage Size',
+        value: formatBytes(dbStats?.storageSizeBytes || 0),
+        helper: 'Allocated bytes including padding',
+      },
+      {
+        label: 'Data Size',
+        value: formatBytes(dbStats?.dataSizeBytes || 0),
+        helper: 'Actual data stored in collections',
+      },
+      {
+        label: 'Index Size',
+        value: formatBytes(dbStats?.indexSizeBytes || 0),
+        helper: 'Combined size of all indexes',
+      },
+      {
+        label: 'Collections',
+        value: formatNumber(dbStats?.collections || validCollections.length),
+        helper: 'User-owned MongoDB collections',
+      },
+      {
+        label: 'Documents',
+        value: formatNumber(dbStats?.objects || documentTotal),
+        helper: 'Sum of documents across collections',
+      },
+    ];
+    const alerts = [];
+    const TOTAL_STORAGE_WARNING = 10 * 1024 * 1024 * 1024; // 10 GB
+    const API_DEBUG_WARNING = 500 * 1024 * 1024; // 500 MB
+
+    if (totalStorageBytes > TOTAL_STORAGE_WARNING) {
+      alerts.push({
+        level: 'warning',
+        message: `Database storage usage is ${formatBytes(totalStorageBytes)}, consider pruning collections.`,
+      });
+    }
+    if (apiDebugCollection && apiDebugCollection.storageSizeBytes > API_DEBUG_WARNING) {
+      const share = calculatePercent(totalStorageBytes, apiDebugCollection.storageSizeBytes || 0);
+      alerts.push({
+        level: 'info',
+        message: `${apiDebugCollection.name} is using ${formatBytes(apiDebugCollection.storageSizeBytes || 0)} (${share.toFixed(1)}% of DB).`,
+      });
+    }
+
+    res.render('database_usage', {
+      generatedAt,
+      generatedAtDisplay: (generatedAt || new Date()).toLocaleString(),
+      overviewCards,
+      topCollections,
+      collectionRows,
+      apiDebugCollection: apiDebugCollection
+        ? {
+            name: apiDebugCollection.name,
+            documentsDisplay: formatNumber(apiDebugCollection.count || 0),
+            storageSizeDisplay: formatBytes(apiDebugCollection.storageSizeBytes || 0),
+            dataSizeDisplay: formatBytes(apiDebugCollection.sizeBytes || 0),
+            indexSizeDisplay: formatBytes(apiDebugCollection.totalIndexSizeBytes || 0),
+            percentDisplay: `${calculatePercent(totalStorageBytes, apiDebugCollection.storageSizeBytes || 0).toFixed(1)}%`,
+          }
+        : null,
+      alerts,
+    });
+  } catch (error) {
+    logger.error('Failed to load database usage dashboard', {
+      category: 'admin_database_usage',
+      metadata: { error: error.message },
+    });
+    res.render('database_usage', {
+      loadError: 'Unable to load database statistics right now.',
+    });
+  }
 };
 

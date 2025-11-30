@@ -1,0 +1,108 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/databaseUsage.css')
+
+block content
+  .db-usage
+    header.db-usage__header
+      div
+        h1.db-usage__title Database Usage
+        p.db-usage__subtitle Track MongoDB storage, spot large collections, and keep `api_debug_logs` in check.
+      if generatedAtDisplay
+        p.db-usage__timestamp Last updated #{generatedAtDisplay}
+
+    if loadError
+      .db-usage__alert.db-usage__alert--error
+        span.db-usage__alert-label Error
+        span= loadError
+    else
+      if alerts && alerts.length
+        section.db-usage__section
+          header.db-usage__section-header
+            h2.db-usage__section-title Alerts
+            p.db-usage__section-copy Automatic heads-up based on simple thresholds.
+          ul.db-usage__alerts
+            each alert in alerts
+              li(class=`db-usage__alert db-usage__alert--${alert.level || 'info'}`)
+                span.db-usage__alert-label= alert.level === 'warning' ? 'Warning' : 'Notice'
+                span= alert.message
+
+      if overviewCards && overviewCards.length
+        section.db-usage__section
+          header.db-usage__section-header
+            h2.db-usage__section-title Overview
+            p.db-usage__section-copy Current footprint across the entire database.
+          .db-usage__cards
+            each card in overviewCards
+              article.db-usage__card
+                p.db-usage__card-label= card.label
+                p.db-usage__card-value= card.value
+                if card.helper
+                  p.db-usage__card-helper= card.helper
+
+      if apiDebugCollection
+        section.db-usage__section
+          header.db-usage__section-header
+            h2.db-usage__section-title API Debug Logs
+            p.db-usage__section-copy Monitor the collection that tends to grow the fastest.
+          article.db-usage__focus
+            div
+              h3.db-usage__focus-name= apiDebugCollection.name
+              p.db-usage__focus-meta
+                span db share:
+                strong #{apiDebugCollection.percentDisplay}
+            dl.db-usage__focus-stats
+              div
+                dt Documents
+                dd= apiDebugCollection.documentsDisplay
+              div
+                dt Storage size
+                dd= apiDebugCollection.storageSizeDisplay
+              div
+                dt Data size
+                dd= apiDebugCollection.dataSizeDisplay
+              div
+                dt Indexes
+                dd= apiDebugCollection.indexSizeDisplay
+
+      if topCollections && topCollections.length
+        section.db-usage__section
+          header.db-usage__section-header
+            h2.db-usage__section-title Top Collections by Storage
+            p.db-usage__section-copy Eight largest collections sorted by on-disk storage.
+          .db-usage__top-grid
+            each collection in topCollections
+              article.db-usage__top-card
+                header
+                  h3= collection.name
+                  span.db-usage__top-share= collection.percentDisplay
+                p.db-usage__top-size= collection.storageSizeDisplay
+                p.db-usage__top-count #{collection.documentsDisplay} docs
+
+      if collectionRows && collectionRows.length
+        section.db-usage__section
+          header.db-usage__section-header
+            h2.db-usage__section-title Collection Breakdown
+            p.db-usage__section-copy Full list sorted by storage size.
+          .db-usage__table-wrapper
+            table.db-usage__table
+              thead
+                tr
+                  th(scope='col') Collection
+                  th(scope='col') Documents
+                  th(scope='col') Storage
+                  th(scope='col') Data
+                  th(scope='col') Avg object
+                  th(scope='col') Indexes
+                  th(scope='col') DB share
+              tbody
+                each row in collectionRows
+                  tr
+                    td= row.name
+                    td= row.documentsDisplay
+                    td= row.storageSizeDisplay
+                    td= row.dataSizeDisplay
+                    td= row.avgObjSizeDisplay
+                    td= row.indexSizeDisplay
+                    td= row.percentDisplay

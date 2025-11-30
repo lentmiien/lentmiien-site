@@ -1,0 +1,266 @@
+.db-usage {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  color: #1a1a1a;
+}
+
+.db-usage__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.db-usage__title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+}
+
+.db-usage__subtitle {
+  margin: 0.4rem 0 0;
+  color: #555;
+}
+
+.db-usage__timestamp {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #6b7280;
+}
+
+.db-usage__section {
+  margin-top: 2rem;
+}
+
+.db-usage__section-header {
+  margin-bottom: 0.75rem;
+}
+
+.db-usage__section-title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.db-usage__section-copy {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+  font-size: 0.95rem;
+}
+
+.db-usage__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.db-usage__card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 1rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.db-usage__card-label {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.db-usage__card-value {
+  margin: 0.5rem 0 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.db-usage__card-helper {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.db-usage__alerts {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.db-usage__alert {
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+}
+
+.db-usage__alert-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+
+.db-usage__alert--error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.db-usage__alert--warning {
+  background: #fffbeb;
+  border-color: #fef3c7;
+  color: #92400e;
+}
+
+.db-usage__alert--info {
+  background: #ecfeff;
+  border-color: #bae6fd;
+  color: #0c4a6e;
+}
+
+.db-usage__focus {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: #f9fafb;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.db-usage__focus-name {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.db-usage__focus-meta {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+  font-size: 0.95rem;
+}
+
+.db-usage__focus-meta strong {
+  margin-left: 0.3rem;
+  font-size: 1rem;
+}
+
+.db-usage__focus-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.db-usage__focus-stats div {
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.75rem;
+  border: 1px solid #e5e7eb;
+}
+
+.db-usage__focus-stats dt {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.db-usage__focus-stats dd {
+  margin: 0.35rem 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.db-usage__top-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.db-usage__top-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.db-usage__top-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.db-usage__top-card h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.db-usage__top-share {
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.db-usage__top-size {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.db-usage__top-count {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.db-usage__table-wrapper {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.db-usage__table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+
+.db-usage__table th,
+.db-usage__table td {
+  padding: 0.85rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.db-usage__table th {
+  font-size: 0.8rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #f8fafc;
+}
+
+.db-usage__table tbody tr:hover {
+  background: #f8fafc;
+}
+
+@media (max-width: 768px) {
+  .db-usage__header {
+    flex-direction: column;
+  }
+}

@@ -40,6 +40,7 @@ router.get('/log_file/:file', controller.log_file);
 router.get('/delete_log_file/:file', controller.delete_log_file);
 
 router.get('/openai_usage', controller.openai_usage);
+router.get('/database_usage', controller.database_usage);
 router.get('/api-debug-logs', controller.api_debug_logs);
 
 router.get('/html-pages', controller.html_pages);
