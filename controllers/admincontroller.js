@@ -1,6 +1,7 @@
 const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
+const { formatBytes, formatNumber, formatPercent, calculatePercent } = require('../utils/metricsFormatter');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -158,32 +159,30 @@ const apiDebugTimeFilterMap = API_DEBUG_TIME_FILTERS.reduce((acc, option) => {
   acc[option.value] = option;
   return acc;
 }, {});
-const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+const DB_FEEDBACK_STATUSES = new Set(['success', 'error', 'info']);
+const DEFAULT_PRUNE_DAYS = 30;
+const MIN_PRUNE_DAYS = 1;
+const MAX_PRUNE_DAYS = 365;
 
-function formatBytes(value) {
-  if (typeof value !== 'number' || Number.isNaN(value) || value === 0) {
-    return '0 B';
-  }
-  const absolute = Math.abs(value);
-  const base = 1024;
-  const exponent = Math.min(Math.floor(Math.log(absolute) / Math.log(base)), BYTE_UNITS.length - 1);
-  const scaled = value / (base ** exponent);
-  const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
-  return `${scaled.toFixed(digits)} ${BYTE_UNITS[exponent]}`;
+function normalizeDbStatus(status) {
+  const normalized = String(status || '').toLowerCase();
+  return DB_FEEDBACK_STATUSES.has(normalized) ? normalized : null;
 }
 
-function formatNumber(value) {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    return '0';
-  }
-  return value.toLocaleString('en-US');
+function parseDatabaseUsageFeedback(query) {
+  const normalizedStatus = normalizeDbStatus(query.status);
+  const message = normalizedStatus ? String(query.message || '') : '';
+  return {
+    feedbackStatus: message ? normalizedStatus : null,
+    feedbackMessage: message || null,
+  };
 }
 
-function calculatePercent(total, portion) {
-  if (!total || typeof total !== 'number' || typeof portion !== 'number') {
-    return 0;
-  }
-  return (portion / total) * 100;
+function redirectDatabaseUsageWithFeedback(res, status, message) {
+  const normalizedStatus = normalizeDbStatus(status) || 'info';
+  const text = message ? String(message) : '';
+  const location = `/admin/database_usage?status=${encodeURIComponent(normalizedStatus)}${text ? `&message=${encodeURIComponent(text)}` : ''}`;
+  return res.redirect(location);
 }
 
 function getLogFiles() {
@@ -864,6 +863,10 @@ exports.api_debug_logs = async (req, res) => {
 };
 
 exports.database_usage = async (req, res) => {
+  const feedback = parseDatabaseUsageFeedback(req.query || {});
+  const pruneDefaults = {
+    maxAgeDays: DEFAULT_PRUNE_DAYS,
+  };
   try {
     const usage = await databaseUsageService.fetchDatabaseUsage();
     const { dbStats, collectionStats, generatedAt } = usage;
@@ -879,7 +882,7 @@ exports.database_usage = async (req, res) => {
     const apiDebugCollection = sortedCollections.find(
       (collection) => collection.name === apiDebugCollectionName,
     ) || sortedCollections.find(
-      (collection) => collection.name && collection.name.includes('api_debug'),
+      (collection) => typeof collection.name === 'string' && collection.name.includes('api_debug'),
     );
     const topCollections = sortedCollections.slice(0, 8).map((collection) => {
       const percent = calculatePercent(totalStorageBytes, collection.storageSizeBytes || 0);
@@ -889,7 +892,7 @@ exports.database_usage = async (req, res) => {
         documentsDisplay: formatNumber(collection.count || 0),
         storageSizeDisplay: formatBytes(collection.storageSizeBytes || 0),
         percent,
-        percentDisplay: `${percent.toFixed(1)}%`,
+        percentDisplay: formatPercent(percent),
       };
     });
     const collectionRows = sortedCollections.map((collection) => {
@@ -901,7 +904,7 @@ exports.database_usage = async (req, res) => {
         dataSizeDisplay: formatBytes(collection.sizeBytes || 0),
         indexSizeDisplay: formatBytes(collection.totalIndexSizeBytes || 0),
         avgObjSizeDisplay: collection.avgObjSizeBytes ? formatBytes(collection.avgObjSizeBytes) : '—',
-        percentDisplay: `${percent.toFixed(1)}%`,
+        percentDisplay: formatPercent(percent),
       };
     });
     const overviewCards = [
@@ -931,23 +934,28 @@ exports.database_usage = async (req, res) => {
         helper: 'Sum of documents across collections',
       },
     ];
-    const alerts = [];
-    const TOTAL_STORAGE_WARNING = 10 * 1024 * 1024 * 1024; // 10 GB
-    const API_DEBUG_WARNING = 500 * 1024 * 1024; // 500 MB
-
-    if (totalStorageBytes > TOTAL_STORAGE_WARNING) {
-      alerts.push({
-        level: 'warning',
-        message: `Database storage usage is ${formatBytes(totalStorageBytes)}, consider pruning collections.`,
-      });
-    }
-    if (apiDebugCollection && apiDebugCollection.storageSizeBytes > API_DEBUG_WARNING) {
-      const share = calculatePercent(totalStorageBytes, apiDebugCollection.storageSizeBytes || 0);
-      alerts.push({
-        level: 'info',
-        message: `${apiDebugCollection.name} is using ${formatBytes(apiDebugCollection.storageSizeBytes || 0)} (${share.toFixed(1)}% of DB).`,
-      });
-    }
+    const evaluatedAlerts = databaseUsageService.evaluateAlerts(usage, {
+      collectionHints: { apiDebugCollectionName },
+    });
+    const alerts = evaluatedAlerts.map((alert) => {
+      if (alert.type === 'totalStorage') {
+        return {
+          level: alert.level || 'warning',
+          message: `Database storage usage is ${formatBytes(alert.actualBytes)}, above the ${formatBytes(alert.thresholdBytes)} threshold.`,
+        };
+      }
+      if (alert.type === 'apiDebug') {
+        const share = calculatePercent(alert.totalStorageBytes || totalStorageBytes, alert.actualBytes || 0);
+        return {
+          level: alert.level || 'info',
+          message: `${alert.collectionName || 'api_debug_log'} is using ${formatBytes(alert.actualBytes || 0)} (${formatPercent(share)}) which exceeds the ${formatBytes(alert.thresholdBytes)} limit.`,
+        };
+      }
+      return {
+        level: alert.level || 'info',
+        message: 'Database alert triggered.',
+      };
+    });
 
     res.render('database_usage', {
       generatedAt,
@@ -962,10 +970,13 @@ exports.database_usage = async (req, res) => {
             storageSizeDisplay: formatBytes(apiDebugCollection.storageSizeBytes || 0),
             dataSizeDisplay: formatBytes(apiDebugCollection.sizeBytes || 0),
             indexSizeDisplay: formatBytes(apiDebugCollection.totalIndexSizeBytes || 0),
-            percentDisplay: `${calculatePercent(totalStorageBytes, apiDebugCollection.storageSizeBytes || 0).toFixed(1)}%`,
+            percentDisplay: formatPercent(calculatePercent(totalStorageBytes, apiDebugCollection.storageSizeBytes || 0)),
           }
         : null,
       alerts,
+      feedbackStatus: feedback.feedbackStatus,
+      feedbackMessage: feedback.feedbackMessage,
+      pruneDefaults,
     });
   } catch (error) {
     logger.error('Failed to load database usage dashboard', {
@@ -974,7 +985,50 @@ exports.database_usage = async (req, res) => {
     });
     res.render('database_usage', {
       loadError: 'Unable to load database statistics right now.',
+      feedbackStatus: feedback.feedbackStatus,
+      feedbackMessage: feedback.feedbackMessage,
+      pruneDefaults,
     });
+  }
+};
+
+exports.prune_api_debug_logs = async (req, res) => {
+  const rawDays = req.body?.maxAgeDays;
+  const days = Number.parseInt(rawDays, 10);
+  if (!Number.isFinite(days) || days < MIN_PRUNE_DAYS || days > MAX_PRUNE_DAYS) {
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'error',
+      `Enter a value between ${MIN_PRUNE_DAYS} and ${MAX_PRUNE_DAYS} days.`,
+    );
+  }
+
+  const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  try {
+    const result = await ApiDebugLog.deleteMany({ createdAt: { $lt: cutoffDate } });
+    logger.notice('API debug logs pruned by admin', {
+      category: 'admin_database_usage',
+      metadata: {
+        days,
+        cutoff: cutoffDate.toISOString(),
+        deletedCount: result.deletedCount,
+      },
+    });
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'success',
+      `Removed ${formatNumber(result.deletedCount || 0)} logs older than ${days} day(s).`,
+    );
+  } catch (error) {
+    logger.error('Failed to prune API debug logs', {
+      category: 'admin_database_usage',
+      metadata: { error: error.message },
+    });
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'error',
+      'Unable to prune API debug logs right now.',
+    );
   }
 };
 

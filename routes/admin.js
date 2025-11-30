@@ -42,6 +42,7 @@ router.get('/delete_log_file/:file', controller.delete_log_file);
 router.get('/openai_usage', controller.openai_usage);
 router.get('/database_usage', controller.database_usage);
 router.get('/api-debug-logs', controller.api_debug_logs);
+router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
 
 router.get('/html-pages', controller.html_pages);
 router.post('/html-pages/upload-text', controller.create_html_page_from_text);

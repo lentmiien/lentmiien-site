@@ -15,7 +15,7 @@ function assertConnectionReady() {
 
 async function getCollectionStats(db, collectionName) {
   try {
-    const stats = await db.collection(collectionName).stats();
+    const stats = await db.command({ collStats: collectionName, scale: 1 });
     return {
       name: collectionName,
       count: stats.count || 0,
@@ -65,6 +65,75 @@ async function fetchDatabaseUsage({ includeSystemCollections = false } = {}) {
   };
 }
 
+const DEFAULT_ALERT_THRESHOLDS = {
+  totalStorageBytes: 10 * 1024 * 1024 * 1024,
+  apiDebugBytes: 500 * 1024 * 1024,
+  apiDebugNamePattern: /api[_-]?debug/i,
+};
+
+function findCollectionMatch(collectionStats = [], targetName, fallbackPattern) {
+  if (!Array.isArray(collectionStats) || collectionStats.length === 0) {
+    return null;
+  }
+  if (targetName) {
+    const direct = collectionStats.find((collection) => collection.name === targetName);
+    if (direct) {
+      return direct;
+    }
+  }
+  if (fallbackPattern instanceof RegExp) {
+    return collectionStats.find((collection) => typeof collection.name === 'string' && fallbackPattern.test(collection.name));
+  }
+  return null;
+}
+
+function evaluateAlerts(usage, options = {}) {
+  if (!usage) {
+    return [];
+  }
+  const { thresholds = {}, collectionHints = {} } = options;
+  const config = {
+    ...DEFAULT_ALERT_THRESHOLDS,
+    ...thresholds,
+  };
+  const alerts = [];
+  const totalStorageBytes = usage.dbStats?.storageSizeBytes || 0;
+
+  if (config.totalStorageBytes && totalStorageBytes > config.totalStorageBytes) {
+    alerts.push({
+      type: 'totalStorage',
+      level: 'warning',
+      actualBytes: totalStorageBytes,
+      thresholdBytes: config.totalStorageBytes,
+    });
+  }
+
+  const collectionStats = Array.isArray(usage.collectionStats)
+    ? usage.collectionStats.filter((collection) => collection && !collection.error)
+    : [];
+  const apiDebugCollection = findCollectionMatch(
+    collectionStats,
+    collectionHints.apiDebugCollectionName,
+    config.apiDebugNamePattern,
+  );
+
+  if (apiDebugCollection && config.apiDebugBytes && (apiDebugCollection.storageSizeBytes || 0) > config.apiDebugBytes) {
+    alerts.push({
+      type: 'apiDebug',
+      level: 'info',
+      actualBytes: apiDebugCollection.storageSizeBytes || 0,
+      thresholdBytes: config.apiDebugBytes,
+      collectionName: apiDebugCollection.name,
+      documentCount: apiDebugCollection.count || 0,
+      totalStorageBytes,
+    });
+  }
+
+  return alerts;
+}
+
 module.exports = {
   fetchDatabaseUsage,
+  evaluateAlerts,
+  DEFAULT_ALERT_THRESHOLDS,
 };

@@ -136,6 +136,12 @@
   gap: 1rem;
 }
 
+.db-usage__focus--empty {
+  display: block;
+  color: #4b5563;
+  font-style: italic;
+}
+
 .db-usage__focus-name {
   margin: 0;
   font-size: 1.2rem;
@@ -165,6 +171,63 @@
   border-radius: 8px;
   padding: 0.75rem;
   border: 1px solid #e5e7eb;
+}
+
+.db-usage__prune-form {
+  margin-top: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 1rem;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.db-usage__prune-label {
+  font-size: 0.95rem;
+  color: #111827;
+  font-weight: 600;
+}
+
+.db-usage__prune-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.db-usage__prune-controls input[type='number'] {
+  width: 90px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.db-usage__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 1.25rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.db-usage__button:hover,
+.db-usage__button:focus {
+  background: #1d4ed8;
+}
+
+.db-usage__prune-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #4b5563;
 }
 
 .db-usage__focus-stats dt {
