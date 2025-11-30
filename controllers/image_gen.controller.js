@@ -925,15 +925,32 @@ async function processBulkPrompt(job, prompt) {
   }
 }
 
+async function claimRandomPendingPrompt(jobId) {
+  const jobObjectId = toObjectId(jobId);
+  if (!jobObjectId) return null;
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const [candidate] = await BulkTestPrompt.aggregate([
+      { $match: { job: jobObjectId, status: 'Pending' } },
+      { $sample: { size: 1 } },
+      { $project: { _id: 1 } }
+    ]);
+    if (!candidate) return null;
+    const prompt = await BulkTestPrompt.findOneAndUpdate(
+      { _id: candidate._id, status: 'Pending' },
+      { $set: { status: 'Processing', started_at: new Date() } },
+      { new: true }
+    );
+    if (prompt) return prompt;
+  }
+  return null;
+}
+
 async function claimPromptForInstance(instanceId) {
   const jobs = await BulkJob.find(applyInstanceFilter({ status: 'Processing' }, instanceId)).sort({ updated_at: 1 });
   if (!jobs.length) return null;
   for (const job of jobs) {
-    const prompt = await BulkTestPrompt.findOneAndUpdate(
-      { job: job._id, status: 'Pending' },
-      { $set: { status: 'Processing', started_at: new Date() } },
-      { sort: { created_at: 1 }, new: true }
-    );
+    const prompt = await claimRandomPendingPrompt(job._id);
     if (!prompt) {
       await refreshJobCounters(job._id);
       continue;
