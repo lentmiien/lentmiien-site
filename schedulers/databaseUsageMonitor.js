@@ -1,4 +1,5 @@
 const axios = require('axios');
+const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const { ApiDebugLog } = require('../database');
 const { fetchDatabaseUsage, evaluateAlerts } = require('../services/databaseUsageService');
@@ -69,7 +70,7 @@ function createSignature(alerts) {
   );
 }
 
-function scheduleDatabaseUsageMonitor() {
+function createMonitorRunner() {
   let lastSignature = null;
   const intervalMinutes = Number.parseInt(process.env.DB_USAGE_ALERT_INTERVAL_MINUTES || '', 10);
   const intervalMs = Number.isFinite(intervalMinutes) && intervalMinutes > 0
@@ -104,6 +105,23 @@ function scheduleDatabaseUsageMonitor() {
   runCheck().catch(() => {});
   const handle = setInterval(runCheck, intervalMs);
   handle.unref?.();
+}
+
+function scheduleDatabaseUsageMonitor() {
+  const startMonitor = () => {
+    logger.notice('Database usage monitor started', { intervalMinutes: Number.parseInt(process.env.DB_USAGE_ALERT_INTERVAL_MINUTES || '', 10) || DEFAULT_INTERVAL_MINUTES });
+    createMonitorRunner();
+  };
+
+  if (mongoose.connection.readyState === 1) {
+    startMonitor();
+    return;
+  }
+
+  logger.notice('Database usage monitor waiting for MongoDB connection');
+  mongoose.connection.once('connected', () => {
+    startMonitor();
+  });
 }
 
 module.exports = scheduleDatabaseUsageMonitor;
