@@ -11,6 +11,8 @@ module.exports = async function registerChat5_5Handlers({
   const {
     models: {
       Conversation5Model,
+      ChatPersonalityModel,
+      ChatResponseTypeModel,
     },
     services: {
       messageService,
@@ -672,6 +674,70 @@ module.exports = async function registerChat5_5Handlers({
     } catch (error) {
       logger.error('Failed to append chat5 message', error);
       respondWithError(eventName, 'Failed to append message to conversation.', { details: error.message, adjustments });
+    }
+  });
+
+  socket.on('chat5-draftprompt', async (raw, ack) => {
+    const eventName = 'chat5-draftprompt';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for draft prompt.', { ack });
+        return;
+      }
+
+      const conversationId = normalizeStringOption(raw.conversationId || raw.conversation_id, '', 'conversationId', adjustments);
+      if (!conversationId || conversationId === 'NEW') {
+        respondWithError(eventName, 'Drafting requires an existing conversation.', { ack, adjustments });
+        return;
+      }
+
+      const personalityId = normalizeStringOption(raw.personalityId, '', 'personalityId', adjustments);
+      const responseTypeId = normalizeStringOption(raw.responseTypeId, '', 'responseTypeId', adjustments);
+      if (!personalityId || !responseTypeId) {
+        respondWithError(eventName, 'Please select a personality and response type.', { ack, adjustments });
+        return;
+      }
+
+      const [personality, responseType] = await Promise.all([
+        ChatPersonalityModel.findById(personalityId),
+        ChatResponseTypeModel.findById(responseTypeId),
+      ]);
+
+      if (!personality) {
+        respondWithError(eventName, 'Selected personality was not found.', { ack, adjustments });
+        return;
+      }
+      if (!responseType) {
+        respondWithError(eventName, 'Selected response type was not found.', { ack, adjustments });
+        return;
+      }
+      if (personality.isActive === false) {
+        pushAdjustment(adjustments, 'personalityId', 'Selected personality is inactive.', 'warning');
+      }
+      if (responseType.isActive === false) {
+        pushAdjustment(adjustments, 'responseTypeId', 'Selected response type is inactive.', 'warning');
+      }
+
+      const notes = typeof raw.notes === 'string' ? raw.notes : '';
+
+      const prompt = await conversationService.draftPromptForConversation({
+        conversationId,
+        personality: { name: personality.name, instructions: personality.instructions },
+        responseType: { label: responseType.label, instructions: responseType.instructions },
+        notes,
+        userName,
+      });
+
+      if (typeof ack === 'function') {
+        ack({ ok: true, prompt });
+      } else {
+        socket.emit('chat5-draftprompt:result', { ok: true, prompt });
+      }
+      emitAdjustments(eventName, adjustments, { conversationId });
+    } catch (error) {
+      logger.error('Failed to generate draft prompt', { error: error.message, user: userName });
+      respondWithError(eventName, 'Unable to generate draft prompt.', { ack, details: error.message, adjustments });
     }
   });
 

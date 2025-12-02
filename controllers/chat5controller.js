@@ -1,10 +1,11 @@
 const marked = require('marked');
 const sanitizeHtml = require('sanitize-html');
 
-const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel } = require('../database');
+const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
+const logger = require('../utils/logger');
 
 // Instantiate the services
 const MessageService = require('../services/messageService');
@@ -15,6 +16,46 @@ const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
+
+function slugify(value, fallbackPrefix = 'preset') {
+  if (typeof value !== 'string') {
+    return `${fallbackPrefix}-${Date.now()}`;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized.length > 0 ? normalized : `${fallbackPrefix}-${Date.now()}`;
+}
+
+async function ensureUniqueSlug(Model, baseValue, fallbackPrefix) {
+  const base = (baseValue && baseValue.length > 0) ? baseValue : slugify('', fallbackPrefix);
+  let candidate = base;
+  let attempt = 1;
+  while (await Model.exists({ slug: candidate })) {
+    candidate = `${base}-${attempt++}`;
+  }
+  return candidate;
+}
+
+function parseSortOrder(value, fallback = 0) {
+  const parsed = parseInt(value, 10);
+  if (Number.isNaN(parsed)) return fallback;
+  return parsed;
+}
+
+function parseActiveFlag(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return ['true', '1', 'yes', 'on'].includes(normalized);
+  }
+  if (typeof value === 'number') {
+    return value === 1;
+  }
+  return false;
+}
 
 exports.index = async (req, res) => {
   // Load available OpenAI models
@@ -90,6 +131,116 @@ exports.add_model_card = async (req, res) => {
   }
 
   res.redirect('/chat5/ai_model_cards');
+};
+
+exports.viewDraftingPresets = async (req, res) => {
+  const [personalities, responseTypes] = await Promise.all([
+    ChatPersonalityModel.find().sort({ sortOrder: 1, name: 1 }).lean(),
+    ChatResponseTypeModel.find().sort({ sortOrder: 1, label: 1 }).lean(),
+  ]);
+  res.render('chat5_drafting_presets', { personalities, responseTypes });
+};
+
+exports.savePersonalityPreset = async (req, res) => {
+  try {
+    const { id, name, description, instructions } = req.body;
+    const sortOrder = parseSortOrder(req.body.sort_order);
+    const isActive = parseActiveFlag(req.body.is_active);
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    const trimmedInstructions = typeof instructions === 'string' ? instructions.trim() : '';
+    if (!trimmedName || !trimmedInstructions) {
+      return res.redirect('/chat5/drafting-presets?error=missing-fields');
+    }
+
+    if (id) {
+      const doc = await ChatPersonalityModel.findById(id);
+      if (!doc) {
+        return res.redirect('/chat5/drafting-presets?error=not-found');
+      }
+      doc.name = trimmedName;
+      doc.description = typeof description === 'string' ? description.trim() : '';
+      doc.instructions = trimmedInstructions;
+      doc.sortOrder = sortOrder;
+      doc.isActive = isActive;
+      await doc.save();
+    } else {
+      const baseSlug = slugify(trimmedName, 'personality');
+      const slug = await ensureUniqueSlug(ChatPersonalityModel, baseSlug, 'personality');
+      await ChatPersonalityModel.create({
+        name: trimmedName,
+        slug,
+        description: typeof description === 'string' ? description.trim() : '',
+        instructions: trimmedInstructions,
+        sortOrder,
+        isActive,
+      });
+    }
+    return res.redirect('/chat5/drafting-presets?success=personality');
+  } catch (error) {
+    logger.error('Failed to save chat personality', { error: error.message });
+    return res.redirect('/chat5/drafting-presets?error=server');
+  }
+};
+
+exports.deletePersonalityPreset = async (req, res) => {
+  try {
+    await ChatPersonalityModel.findByIdAndDelete(req.params.id);
+    return res.redirect('/chat5/drafting-presets?success=personality-deleted');
+  } catch (error) {
+    logger.error('Failed to delete chat personality', { error: error.message });
+    return res.redirect('/chat5/drafting-presets?error=server');
+  }
+};
+
+exports.saveResponseTypePreset = async (req, res) => {
+  try {
+    const { id, label, description, instructions } = req.body;
+    const sortOrder = parseSortOrder(req.body.sort_order);
+    const isActive = parseActiveFlag(req.body.is_active);
+    const trimmedLabel = typeof label === 'string' ? label.trim() : '';
+    const trimmedInstructions = typeof instructions === 'string' ? instructions.trim() : '';
+    if (!trimmedLabel || !trimmedInstructions) {
+      return res.redirect('/chat5/drafting-presets?error=missing-fields');
+    }
+
+    if (id) {
+      const doc = await ChatResponseTypeModel.findById(id);
+      if (!doc) {
+        return res.redirect('/chat5/drafting-presets?error=not-found');
+      }
+      doc.label = trimmedLabel;
+      doc.description = typeof description === 'string' ? description.trim() : '';
+      doc.instructions = trimmedInstructions;
+      doc.sortOrder = sortOrder;
+      doc.isActive = isActive;
+      await doc.save();
+    } else {
+      const baseSlug = slugify(trimmedLabel, 'response');
+      const slug = await ensureUniqueSlug(ChatResponseTypeModel, baseSlug, 'response');
+      await ChatResponseTypeModel.create({
+        label: trimmedLabel,
+        slug,
+        description: typeof description === 'string' ? description.trim() : '',
+        instructions: trimmedInstructions,
+        sortOrder,
+        isActive,
+      });
+    }
+    return res.redirect('/chat5/drafting-presets?success=response-type');
+  } catch (error) {
+    logger.error('Failed to save chat response type', { error: error.message });
+    return res.redirect('/chat5/drafting-presets?error=server');
+  }
+};
+
+exports.deleteResponseTypePreset = async (req, res) => {
+  try {
+    await ChatResponseTypeModel.findByIdAndDelete(req.params.id);
+    return res.redirect('/chat5/drafting-presets?success=response-type-deleted');
+  } catch (error) {
+    logger.error('Failed to delete chat response type', { error: error.message });
+    return res.redirect('/chat5/drafting-presets?error=server');
+  }
 };
 
 exports.story_mode = async (req, res) => {
@@ -279,12 +430,18 @@ exports.view_chat5 = async (req, res) => {
     }
   })
 
-  const templates = await templateService.getTemplates();
+  const [templates, personalities, responseTypes] = await Promise.all([
+    templateService.getTemplates(),
+    ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
+    ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
+  ]);
   res.render("chat5_chat", {
     conversation: conversation ? conversation : DEFAULT_CONVERSATION,
     messages,
     chat_models,
     templates,
+    personalities,
+    responseTypes,
     conversationSource
   });
 };
@@ -336,6 +493,10 @@ exports.post_chat5 = async (req, res) => {
     }
   })
 
-  const templates = await templateService.getTemplates();
-  res.render("chat5_chat", {conversation, messages, chat_models, templates});
+  const [templates, personalities, responseTypes] = await Promise.all([
+    templateService.getTemplates(),
+    ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
+    ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
+  ]);
+  res.render("chat5_chat", {conversation, messages, chat_models, templates, personalities, responseTypes});
 };

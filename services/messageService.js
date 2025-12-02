@@ -976,6 +976,71 @@ class MessageService {
     return {response_id: null, msg};
   }
 
+  async generateDraftResponseWithModel({
+    conversation,
+    messages = [],
+    contextPrompt = '',
+    appendedInstructions = '',
+    modelName = 'cydonia-24b-q4_k_m:latest',
+    userId = 'draft-tool',
+  }) {
+    if (!conversation) {
+      throw new Error('Conversation is required to generate a draft response.');
+    }
+
+    const normalizedContext = typeof contextPrompt === 'string' && contextPrompt.trim().length > 0
+      ? contextPrompt.trim()
+      : buildEffectiveContextPrompt(conversation);
+    const runtimeConversation = cloneConversationForAI(conversation, normalizedContext);
+
+    const runtimeMessages = Array.isArray(messages)
+      ? messages
+          .map((msg) => {
+            if (!msg) return null;
+            if (typeof msg.toObject === 'function') {
+              return msg.toObject({ depopulate: true });
+            }
+            try {
+              return JSON.parse(JSON.stringify(msg));
+            } catch (error) {
+              return null;
+            }
+          })
+          .filter(Boolean)
+      : [];
+
+    if (appendedInstructions && appendedInstructions.trim().length > 0) {
+      runtimeMessages.push({
+        user_id: userId || 'draft-tool',
+        category: conversation.category,
+        tags: conversation.tags,
+        contentType: 'text',
+        content: {
+          text: appendedInstructions.trim(),
+          image: null,
+          audio: null,
+          tts: null,
+          transcript: null,
+          revisedPrompt: null,
+          imageQuality: null,
+          toolOutput: null,
+        },
+        timestamp: new Date(),
+        hideFromBot: false,
+      });
+    }
+
+    const modelCard = await AIModelCards.findOne({ api_model: modelName }) || {
+      provider: 'Local',
+      api_model: modelName,
+      context_type: 'system',
+      in_modalities: ['text'],
+    };
+
+    const response = await ollama.chat(runtimeConversation, runtimeMessages, modelCard);
+    return extractAssistantText(response) || '';
+  }
+
   async toggleHideFromBot({message_id, state}) {
     let message = await Chat5Model.findById(message_id);
     message.hideFromBot = state;

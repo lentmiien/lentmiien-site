@@ -1166,6 +1166,73 @@ class ConversationService {
     return { conversation, userMessage, userMessages, aiMessages };
   }
 
+  async draftPromptForConversation({ conversationId, personality, responseType, notes = '', userName = 'draft-tool' }) {
+    if (!conversationId || conversationId === 'NEW') {
+      throw new Error('Drafting requires an existing conversation.');
+    }
+
+    const conversation = await Conversation5Model.findById(conversationId);
+    if (!conversation) {
+      throw new Error('Conversation not found.');
+    }
+
+    const messages = await this.messageService.loadMessagesInNewFormat(conversation.messages, true);
+
+    const personaInstructions = personality && typeof personality.instructions === 'string'
+      ? personality.instructions.trim()
+      : '';
+    const responseInstructions = responseType && typeof responseType.instructions === 'string'
+      ? responseType.instructions.trim()
+      : '';
+
+    if (!personaInstructions || !responseInstructions) {
+      throw new Error('Missing drafting instructions.');
+    }
+
+    const personaLabel = personality && personality.name ? personality.name : 'Selected personality';
+    const responseLabel = responseType && responseType.label ? responseType.label : 'Selected response type';
+    const sanitizedNotes = typeof notes === 'string' ? notes.trim() : '';
+    const additionalNote = sanitizedNotes.length > 0
+      ? sanitizedNotes.slice(0, 2000)
+      : '';
+
+    const generalGuidance = 'Write a complete draft reply that reflects the selected personality and fulfills the response goal. Use markdown when helpful, reference recent conversation details, and avoid mentioning these instructions.';
+
+    const contextPrompt = [
+      `Persona (${personaLabel}):`,
+      personaInstructions,
+      '',
+      `Response goal (${responseLabel}):`,
+      responseInstructions,
+      '',
+      'Drafting guidance:',
+      generalGuidance,
+    ].join('\n').trim();
+
+    const appendedInstructions = [
+      `Persona reminder (${personaLabel}):`,
+      personaInstructions,
+      '',
+      `Response goal reminder (${responseLabel}):`,
+      responseInstructions,
+      '',
+      generalGuidance,
+      additionalNote ? `Additional notes from ${userName}: ${additionalNote}` : null,
+      'Return only the drafted reply.',
+    ].filter(Boolean).join('\n');
+
+    const draftText = await this.messageService.generateDraftResponseWithModel({
+      conversation,
+      messages,
+      contextPrompt,
+      appendedInstructions,
+      modelName: 'cydonia-24b-q4_k_m:latest',
+      userId: userName,
+    });
+
+    return draftText;
+  }
+
   async updateSettings(conversationId, settingsUpdates) {
     let conversation = await Conversation5Model.findById(conversationId);
 

@@ -42,6 +42,8 @@ const Chat4KnowledgeModel = require('./models/chat4_knowledge');
 const Chat5Model = require('./models/chat5');
 const Conversation5Model = require('./models/conversation5');
 const Chat5TemplateModel = require('./models/chat5_template');
+const ChatPersonalityModel = require('./models/chat_personality');
+const ChatResponseTypeModel = require('./models/chat_response_type');
 const PendingRequests = require('./models/pending_requests');
 // GPT Document
 const DocumentModel = require('./models/document');
@@ -134,6 +136,8 @@ module.exports = {
   Chat5Model,
   Conversation5Model,
   Chat5TemplateModel,
+  ChatPersonalityModel,
+  ChatResponseTypeModel,
   PendingRequests,
   Chat4KnowledgeModel,
   DocumentModel,

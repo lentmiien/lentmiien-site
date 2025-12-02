@@ -1,0 +1,126 @@
+extends layout
+
+block content
+  h2 Chat5 Drafting Presets
+  p.text-muted Manage reusable personalities and response types that power the chat drafting assistant.
+  .row.g-4
+    .col-lg-6
+      h3.d-flex.align-items-center.gap-2
+        span Personalities
+        span.badge.bg-secondary #{personalities.length}
+      .card.mb-4
+        .card-body
+          h5.mb-3 Add personality
+          form(method="post", action="/chat5/drafting-presets/personality")
+            .mb-3
+              label.form-label(for="new_personality_name") Name
+              input#new_personality_name.form-control(type="text", name="name", required, placeholder="e.g. Calm reviewer")
+            .mb-3
+              label.form-label(for="new_personality_description") Description
+              input#new_personality_description.form-control(type="text", name="description", placeholder="Short summary (optional)")
+            .mb-3
+              label.form-label(for="new_personality_instructions") Instructions
+              textarea#new_personality_instructions.form-control(name="instructions", rows="5", required, placeholder="Full persona instructions")
+            .row
+              .col-md-6
+                label.form-label(for="new_personality_sort") Sort order
+                input#new_personality_sort.form-control(type="number", name="sort_order", value="0")
+              .col-md-6
+                .form-check.mt-4
+                  input#new_personality_active.form-check-input(type="checkbox", name="is_active", checked)
+                  label.form-check-label(for="new_personality_active") Active
+            button.btn.btn-primary.mt-3(type="submit") Save personality
+      if personalities.length
+        each persona in personalities
+          .card.mb-3
+            .card-body
+              h5.d-flex.align-items-center.justify-content-between
+                span= persona.name
+                small.text-muted #{persona.slug}
+              form(method="post", action="/chat5/drafting-presets/personality")
+                input(type="hidden", name="id", value=persona._id)
+                .mb-3
+                  label.form-label(for=`persona_name_${persona._id}`) Name
+                  input.form-control(id=`persona_name_${persona._id}`, type="text", name="name", value=persona.name, required)
+                .mb-3
+                  label.form-label(for=`persona_description_${persona._id}`) Description
+                  input.form-control(id=`persona_description_${persona._id}`, type="text", name="description", value=persona.description)
+                .mb-3
+                  label.form-label(for=`persona_instructions_${persona._id}`) Instructions
+                  textarea.form-control(id=`persona_instructions_${persona._id}`, name="instructions", rows="4")= persona.instructions
+                .row
+                  .col-md-6
+                    label.form-label(for=`persona_sort_${persona._id}`) Sort order
+                    input.form-control(id=`persona_sort_${persona._id}`, type="number", name="sort_order", value=persona.sortOrder || 0)
+                  .col-md-6
+                    .form-check.mt-4
+                      if persona.isActive
+                        input.form-check-input(type="checkbox", name="is_active", checked, id=`persona_active_${persona._id}`)
+                      else
+                        input.form-check-input(type="checkbox", name="is_active", id=`persona_active_${persona._id}`)
+                      label.form-check-label(for=`persona_active_${persona._id}`) Active
+                button.btn.btn-success.mt-3(type="submit") Update
+              form(method="post", action=`/chat5/drafting-presets/personality/${persona._id}/delete`, onsubmit="return confirm('Delete this personality?');")
+                button.btn.btn-outline-danger.btn-sm.mt-2(type="submit") Delete
+      else
+        p.text-muted No personalities stored yet.
+    .col-lg-6
+      h3.d-flex.align-items-center.gap-2
+        span Response types
+        span.badge.bg-secondary #{responseTypes.length}
+      .card.mb-4
+        .card-body
+          h5.mb-3 Add response type
+          form(method="post", action="/chat5/drafting-presets/response-type")
+            .mb-3
+              label.form-label(for="new_response_label") Label
+              input#new_response_label.form-control(type="text", name="label", required, placeholder="e.g. Ask for more detail")
+            .mb-3
+              label.form-label(for="new_response_description") Description
+              input#new_response_description.form-control(type="text", name="description", placeholder="Short summary (optional)")
+            .mb-3
+              label.form-label(for="new_response_instructions") Instructions
+              textarea#new_response_instructions.form-control(name="instructions", rows="5", required, placeholder="Guidance for this response type")
+            .row
+              .col-md-6
+                label.form-label(for="new_response_sort") Sort order
+                input#new_response_sort.form-control(type="number", name="sort_order", value="0")
+              .col-md-6
+                .form-check.mt-4
+                  input#new_response_active.form-check-input(type="checkbox", name="is_active", checked)
+                  label.form-check-label(for="new_response_active") Active
+            button.btn.btn-primary.mt-3(type="submit") Save response type
+      if responseTypes.length
+        each preset in responseTypes
+          .card.mb-3
+            .card-body
+              h5.d-flex.align-items-center.justify-content-between
+                span= preset.label
+                small.text-muted #{preset.slug}
+              form(method="post", action="/chat5/drafting-presets/response-type")
+                input(type="hidden", name="id", value=preset._id)
+                .mb-3
+                  label.form-label(for=`response_label_${preset._id}`) Label
+                  input.form-control(id=`response_label_${preset._id}`, type="text", name="label", value=preset.label, required)
+                .mb-3
+                  label.form-label(for=`response_description_${preset._id}`) Description
+                  input.form-control(id=`response_description_${preset._id}`, type="text", name="description", value=preset.description)
+                .mb-3
+                  label.form-label(for=`response_instructions_${preset._id}`) Instructions
+                  textarea.form-control(id=`response_instructions_${preset._id}`, name="instructions", rows="4")= preset.instructions
+                .row
+                  .col-md-6
+                    label.form-label(for=`response_sort_${preset._id}`) Sort order
+                    input.form-control(id=`response_sort_${preset._id}`, type="number", name="sort_order", value=preset.sortOrder || 0)
+                  .col-md-6
+                    .form-check.mt-4
+                      if preset.isActive
+                        input.form-check-input(type="checkbox", name="is_active", checked, id=`response_active_${preset._id}`)
+                      else
+                        input.form-check-input(type="checkbox", name="is_active", id=`response_active_${preset._id}`)
+                      label.form-check-label(for=`response_active_${preset._id}`) Active
+                button.btn.btn-success.mt-3(type="submit") Update
+              form(method="post", action=`/chat5/drafting-presets/response-type/${preset._id}/delete`, onsubmit="return confirm('Delete this response type?');")
+                button.btn.btn-outline-danger.btn-sm.mt-2(type="submit") Delete
+      else
+        p.text-muted No response types stored yet.

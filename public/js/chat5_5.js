@@ -14,6 +14,31 @@ const editor = new toastui.Editor({
 // Make accessible to inline scripts
 window.editor = editor;
 const chatModels = Array.isArray(window.chatModels) ? window.chatModels : [];
+const draftStorageKeys = {
+  personality: 'chat5DraftPersonalityId',
+  responseType: 'chat5DraftResponseTypeId',
+};
+
+function loadDraftPreference(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (error) {
+    console.warn('Unable to load draft preference', error);
+    return null;
+  }
+}
+
+function saveDraftPreference(key, value) {
+  try {
+    if (value) {
+      localStorage.setItem(key, value);
+    } else {
+      localStorage.removeItem(key);
+    }
+  } catch (error) {
+    console.warn('Unable to persist draft preference', error);
+  }
+}
 
 function copyTextToClipboard(text) {
   if (!text && text !== '') {
@@ -601,6 +626,95 @@ function SaveText() {
   myModal.hide();
 }
 
+function initializeDraftingTool() {
+  const personalitySelect = document.getElementById('draftPersonalitySelect');
+  const responseSelect = document.getElementById('draftResponseTypeSelect');
+  const notesInput = document.getElementById('draftNotes');
+  const draftButton = document.getElementById('draftPromptButton');
+  const conversationLabel = document.getElementById('id');
+
+  if (!personalitySelect || !responseSelect || !draftButton || !conversationLabel) {
+    return;
+  }
+
+  const restoreSelectValue = (selectEl, storedValue) => {
+    if (!selectEl || !storedValue) return;
+    const exists = Array.from(selectEl.options).some((option) => option.value === storedValue);
+    if (exists) {
+      selectEl.value = storedValue;
+    }
+  };
+
+  restoreSelectValue(personalitySelect, loadDraftPreference(draftStorageKeys.personality));
+  restoreSelectValue(responseSelect, loadDraftPreference(draftStorageKeys.responseType));
+
+  personalitySelect.addEventListener('change', (event) => {
+    saveDraftPreference(draftStorageKeys.personality, event.target.value || '');
+  });
+  responseSelect.addEventListener('change', (event) => {
+    saveDraftPreference(draftStorageKeys.responseType, event.target.value || '');
+  });
+
+  let draftInFlight = false;
+  const defaultButtonText = draftButton.textContent;
+
+  const setDraftButtonState = (busy) => {
+    draftButton.disabled = busy;
+    draftButton.textContent = busy ? 'Drafting...' : (defaultButtonText || 'Draft prompt');
+  };
+
+  draftButton.addEventListener('click', () => {
+    if (draftInFlight) return;
+
+    const conversationId = conversationLabel.innerHTML ? conversationLabel.innerHTML.trim() : '';
+    if (!conversationId || conversationId === 'NEW') {
+      alert('Please open an existing conversation before drafting a response.');
+      return;
+    }
+
+    const personalityId = personalitySelect.value;
+    const responseTypeId = responseSelect.value;
+    if (!personalityId || !responseTypeId) {
+      alert('Please select both a personality and a response type before drafting.');
+      return;
+    }
+
+    draftInFlight = true;
+    setDraftButtonState(true);
+    showLoadingPopup();
+
+    if (!socket || typeof socket.emit !== 'function') {
+      alert('Socket connection is not available.');
+      draftInFlight = false;
+      setDraftButtonState(false);
+      hideLoadingPopup();
+      return;
+    }
+
+    const payload = {
+      conversationId,
+      personalityId,
+      responseTypeId,
+      notes: notesInput ? notesInput.value.trim() : '',
+    };
+
+    socket.emit('chat5-draftprompt', payload, (resp) => {
+      draftInFlight = false;
+      setDraftButtonState(false);
+      hideLoadingPopup();
+      if (!resp || resp.ok !== true) {
+        const message = resp && resp.message ? resp.message : 'Unable to generate draft at this time.';
+        alert(message);
+        return;
+      }
+      const draftText = typeof resp.prompt === 'string' ? resp.prompt : '';
+      if (window.editor && typeof window.editor.setMarkdown === 'function') {
+        window.editor.setMarkdown(draftText);
+      }
+    });
+  });
+}
+
 socket.on('welcome', () => {
   if (document.getElementById("id").innerHTML != "NEW") {
     const conversation_id = document.getElementById("id").innerHTML;
@@ -622,4 +736,5 @@ document.addEventListener('DOMContentLoaded', () => {
   registerCodeCopyHandlers(container);
   enhanceTables(container);
 });
+document.addEventListener('DOMContentLoaded', initializeDraftingTool);
 

@@ -25,6 +25,11 @@ router.get('/', controller.index);
 // Manage model cards
 router.get('/ai_model_cards', controller.ai_model_cards);
 router.post('/add_model_card', controller.add_model_card);
+router.get('/drafting-presets', controller.viewDraftingPresets);
+router.post('/drafting-presets/personality', controller.savePersonalityPreset);
+router.post('/drafting-presets/personality/:id/delete', controller.deletePersonalityPreset);
+router.post('/drafting-presets/response-type', controller.saveResponseTypePreset);
+router.post('/drafting-presets/response-type/:id/delete', controller.deleteResponseTypePreset);
 router.get('/story_mode/:id', controller.story_mode);
 router.get('/edit_message/:id', controller.edit_message);
 router.post('/update_message/:id', upload.array('imgs'), controller.update_message);

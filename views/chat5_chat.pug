@@ -1,6 +1,8 @@
 extends layout
 
 block content
+  - const personaOptions = Array.isArray(personalities) ? personalities : [];
+  - const responseTypeOptions = Array.isArray(responseTypes) ? responseTypes : [];
   h2#conversation_title.chat5-title= conversation.title
   p#id.chat5-meta(data-source=conversationSource)= conversation._id
   .chat5-header-actions.d-flex.gap-2.mb-3
@@ -61,6 +63,27 @@ block content
             if t.Type === 'chat'
               option(value=t._id)= t.Category + ' - ' + t.Title
         button#messageTemplateSave.btn.btn-outline-primary.btn-sm(type="button" title="Save current message as template") Save as template
+      hr.chat5-divider
+      .chat5-draft-controls
+        .row.g-3
+          .col-lg-4
+            label.form-label.mb-1.chat5-input-label(for="draftPersonalitySelect") Personality
+            select#draftPersonalitySelect.form-select.form-select-sm
+              option(value="") -- Select personality --
+              each persona in personaOptions
+                option(value=persona._id, title=persona.description)= persona.name
+          .col-lg-4
+            label.form-label.mb-1.chat5-input-label(for="draftResponseTypeSelect") Response type
+            select#draftResponseTypeSelect.form-select.form-select-sm
+              option(value="") -- Select response type --
+              each rt in responseTypeOptions
+                option(value=rt._id, title=rt.description)= rt.label
+          .col-lg-4
+            label.form-label.mb-1.chat5-input-label(for="draftNotes") Prompt notes (optional)
+            textarea#draftNotes.form-control.form-control-sm(rows="2" placeholder="Add reminders or constraints")
+        .d-flex.flex-wrap.gap-2.align-items-center.mt-3
+          button#draftPromptButton.btn.btn-outline-info(type="button") Draft prompt
+          small.text-muted Drafts use the cydonia-24b-q4_k_m:latest Ollama model and only update the editor.
       #message.chat5-editor
       .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
         button.btn.btn-success(type="button", onclick="Append(true, false)") Append
