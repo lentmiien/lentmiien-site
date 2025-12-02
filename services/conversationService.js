@@ -1177,6 +1177,16 @@ class ConversationService {
     }
 
     const messages = await this.messageService.loadMessagesInNewFormat(conversation.messages, true);
+    const swappedMessages = messages.map((message) => {
+      if (!message) return message;
+      const base = typeof message.toObject === 'function'
+        ? message.toObject({ depopulate: true })
+        : JSON.parse(JSON.stringify(message));
+      base.user_id = message.user_id === 'bot'
+        ? (userName || 'draft-user')
+        : 'bot';
+      return base;
+    });
 
     const personaInstructions = personality && typeof personality.instructions === 'string'
       ? personality.instructions.trim()
@@ -1192,40 +1202,24 @@ class ConversationService {
     const personaLabel = personality && personality.name ? personality.name : 'Selected personality';
     const responseLabel = responseType && responseType.label ? responseType.label : 'Selected response type';
     const sanitizedNotes = typeof notes === 'string' ? notes.trim() : '';
-    const additionalNote = sanitizedNotes.length > 0
-      ? sanitizedNotes.slice(0, 2000)
-      : '';
+    const clippedNotes = sanitizedNotes.length > 0 ? sanitizedNotes.slice(0, 2000) : '';
 
-    const generalGuidance = 'Write a complete draft reply that reflects the selected personality and fulfills the response goal. Use markdown when helpful, reference recent conversation details, and avoid mentioning these instructions.';
+    const guidance = 'Respond naturally in this persona\'s voice, align with the response goal, reference recent conversation details when useful, and keep the message grounded and helpful.';
 
-    const contextPrompt = [
-      `Persona (${personaLabel}):`,
-      personaInstructions,
-      '',
-      `Response goal (${responseLabel}):`,
-      responseInstructions,
-      '',
-      'Drafting guidance:',
-      generalGuidance,
-    ].join('\n').trim();
+    const contextSections = [
+      `Persona (${personaLabel}):\n${personaInstructions}`,
+      `Response goal (${responseLabel}):\n${responseInstructions}`,
+      `Interaction guidance:\n${guidance}`,
+      clippedNotes ? `Additional notes from ${userName}:\n${clippedNotes}` : null,
+    ].filter(Boolean);
 
-    const appendedInstructions = [
-      `Persona reminder (${personaLabel}):`,
-      personaInstructions,
-      '',
-      `Response goal reminder (${responseLabel}):`,
-      responseInstructions,
-      '',
-      generalGuidance,
-      additionalNote ? `Additional notes from ${userName}: ${additionalNote}` : null,
-      'Return only the drafted reply.',
-    ].filter(Boolean).join('\n');
+    const contextPrompt = contextSections.join('\n\n');
 
     const draftText = await this.messageService.generateDraftResponseWithModel({
       conversation,
-      messages,
+      messages: swappedMessages,
       contextPrompt,
-      appendedInstructions,
+      appendedInstructions: '',
       modelName: 'cydonia-24b-q4_k_m:latest',
       userId: userName,
     });
