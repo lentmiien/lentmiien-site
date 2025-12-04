@@ -1,0 +1,236 @@
+extends layout
+
+block styles
+  style.
+    .ocr-page {
+      padding: 2rem 0 4rem;
+      color: #0f172a;
+    }
+    .ocr-page h1 {
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .ocr-lede {
+      max-width: 820px;
+      color: #475569;
+    }
+    .ocr-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      background: #f1f5f9;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    .ocr-status .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+    .ocr-status .status-dot.ok {
+      background: #22c55e;
+    }
+    .ocr-status .status-dot.warn {
+      background: #f97316;
+    }
+    .ocr-form-card,
+    .ocr-result-card {
+      background: #fff;
+      border-radius: 1rem;
+      border: 1px solid #e2e8f0;
+      padding: 1.5rem;
+      margin-top: 1.5rem;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+    }
+    .ocr-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    @media (max-width: 1100px) {
+      .ocr-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .image-stage {
+      position: relative;
+      border-radius: 1rem;
+      background: #0f172a;
+      padding: 1rem;
+      overflow: hidden;
+    }
+    .image-stage img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 0.75rem;
+      box-shadow: 0 12px 22px rgba(15, 23, 42, 0.4);
+    }
+    .box-layer {
+      position: absolute;
+      inset: 1rem;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .bounding-box {
+      position: absolute;
+      border: 2px solid rgba(59, 130, 246, 0.85);
+      background: rgba(59, 130, 246, 0.18);
+      border-radius: 0.35rem;
+      pointer-events: auto;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+    .bounding-box:hover {
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.18);
+      z-index: 5;
+    }
+    .bounding-box .box-label {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      transform: translateY(8px);
+      background: rgba(15, 23, 42, 0.95);
+      color: #f8fafc;
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.35rem;
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+      max-width: 280px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .bounding-box:hover .box-label {
+      opacity: 1;
+      transform: translateY(2px);
+    }
+    .ocr-text-panel .text-card {
+      background: #0f172a;
+      color: #f8fafc;
+      border-radius: 0.75rem;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .ocr-text-panel pre {
+      color: inherit;
+      margin: 0;
+      font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+    .segments-table {
+      margin-top: 1.5rem;
+    }
+    .segments-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .segments-table th,
+    .segments-table td {
+      padding: 0.75rem;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    .segments-table th {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+    }
+
+block content
+  .ocr-page
+    h1 OCR tool
+    p.ocr-lede Upload an image, optionally override the default prompt or token limit, and visualize the bounding boxes returned by the on-prem OCR model.
+    if health
+      .ocr-status
+        span.status-dot(class=health.status === 'ok' ? 'ok' : 'warn')
+        span Service: #{health.status || 'unknown'} • Model: #{health.model || 'n/a'}
+    else
+      .ocr-status
+        span.status-dot.warn
+        span Unable to reach OCR health endpoint. Results may be unavailable.
+
+    if error
+      .alert.alert-danger(role='alert')= error
+
+    .ocr-form-card
+      h2 Submit an image
+      form(action='/ocr', method='post', enctype='multipart/form-data')
+        .row.g-4
+          .col-md-4
+            label.form-label(for='image') Image file
+            input#image.form-control(type='file', name='image', accept='image/*', required)
+            small.form-text.text-muted Accepted formats: PNG, JPG, WebP, TIFF (max 25 MB).
+          .col-md-4
+            label.form-label(for='max_new_tokens') Max new tokens
+            input#max_new_tokens.form-control(type='number', min='1', max=tokenLimit, name='max_new_tokens', value=formValues.maxNewTokens)
+            small.form-text.text-muted Default: #{defaults.maxNewTokens}
+          .col-md-12
+            label.form-label(for='prompt') Prompt
+            textarea#prompt.form-control(name='prompt', rows='4')= formValues.prompt
+            small.form-text.text-muted Default: #{defaults.prompt}
+        .d-flex.justify-content-end.mt-4
+          button.btn.btn-primary.btn-lg(type='submit') Run OCR
+
+    if result
+      .ocr-result-card
+        .d-flex.flex-column.flex-md-row.justify-content-between.align-items-md-center.gap-3
+          .meta
+            h2 Results
+            p.mb-0.text-muted Model: #{result.model} • Segments: #{result.segmentsCount}
+          .small.text-muted Prompt used: #{result.promptUsed}
+        .ocr-grid
+          .ocr-visual
+            h3 Visual overlay
+            if result.imageDataUrl
+              .image-stage
+                img(src=result.imageDataUrl, alt='Uploaded image preview')
+                if result.overlayBoxes && result.overlayBoxes.length
+                  .box-layer
+                    each box in result.overlayBoxes
+                      .bounding-box(style=`left:${box.leftPercent}%;top:${box.topPercent}%;width:${box.widthPercent}%;height:${box.heightPercent}%;`)
+                        span.box-label= box.text
+                else
+                  p.text-muted.mt-3 No bounding boxes were returned.
+            else
+              p.text-muted Provide an image to view the overlay.
+          .ocr-text-panel
+            .text-card
+              h4 RAW output
+              if result.rawText
+                pre= result.rawText
+              else
+                pre.text-muted No raw text returned by the API.
+            .text-card
+              h4 Layout approximation
+              if result.layoutText
+                pre= result.layoutText
+              else
+                pre.text-muted Not enough data to estimate layout.
+
+        if result.overlayBoxes && result.overlayBoxes.length
+          .segments-table
+            h3 Bounding box breakdown
+            .table-responsive
+              table
+                thead
+                  tr
+                    th(scope='col') #
+                    th(scope='col') Text
+                    th(scope='col') Start (x,y)
+                    th(scope='col') End (x,y)
+                tbody
+                  each box, idx in result.overlayBoxes
+                    tr
+                      td #{idx + 1}
+                      td= box.text
+                      td #{box.startX}, #{box.startY}
+                      td #{box.endX}, #{box.endY}

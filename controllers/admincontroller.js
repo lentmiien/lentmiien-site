@@ -94,6 +94,7 @@ exports.manage_roles = async (req, res) => {
       "image_gen",
       "sora",
       "binpacking",
+      "ocr",
       "test",
       "archive",
     ]

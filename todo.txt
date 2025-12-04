@@ -1,5 +1,38 @@
-I need to do something about my API debug logger saving large data object to my database, quickly blowing up the database collections to many GB in size.
+I've added a new OCR API on my home network, at the URL `192.168.0.20:8000`, with the 2 endpoints `/health` and `/ocr`.
 
-First, I'm redeclaring the function `recordApiDebugLog` in multiple files, could we break this out to an utility function in the `utils` folder, then we'll make this function scan through the request and response bodies (if provided), and replace any large sized values with a short descriptive string. For example, if nested inside the request body, there is an image or two in BASE64 encoding, just replace the value (BASE64 encoded image) with a string saying something like "xxx bytes string", or if there is a data array with many thousands of entries, replace the array with a string saying something like "xxx elements data array", etc.
+GET `/health` returns a JSON object as following:
+```
+{
+  "status": "ok",
+  "model": "tencent/HunyuanOCR"
+}
+```
 
-Make the threshold values tunable at the top of the utility file, and also include some custom redaction settings, for example, if a certain Object path exist (if `data.data` exist), replace with a value (set `data.data = "Custom redact string"`), so that I can manually add redactions as necessary, for things that aren't triggered by any data threshold redactions.
+POST `/ocr` takes the following input in the body:
+```
+{
+  "file": string($binary),
+  "prompt": string | (string | null),
+  "max_new_tokens": integer
+}
+```
+
+"Detect and recognize text in the image, and output the text coordinates in a formatted manner." is a good default value for "prompt", and 2048 for "max_new_tokens".
+
+This is an example response:
+```
+{
+  "text": "いなはや(344,11),(808,38)横浜南本宿店(342,41),(662,56)神奈川県横浜市旭区南本宿町31-1(85,56),(865,70)Tel. 045-355-4661(294,71),(708,84)事業者名：株式会社いなげや(112,97),(790,112)登録番号：T2012801000159(110,112),(740,126)領 収 証(346,138),(660,153)毎度有離うございます(88,153),(598,167)営業時間9：30~21：30です。(88,167),(760,182)2024年 6月19日 (水) 17:56(112,194),(794,209)05 xコクソフタツヤフハ(165,209),(581,222)¥817(788,209),(894,221)値引(190,223),(298,236)20%(475,224),(556,236)-¥164(758,223),(894,236)02 xキサミアネキタ(162,237),(575,250)¥199(788,238),(894,250)03 xミナフレントハチミ(162,251),(581,264)¥1,499(733,252),(894,266)11 x1キメラクノウル(165,265),(529,278)¥199(788,266),(894,278)02 xフサトリトマ(162,279),(477,292)¥299(788,280),(894,292)10 xオンセンタマコサソコイ(169,293),(581,306)¥199(788,293),(894,305)03 xチユカソス(162,307),(452,319)¥429(788,307),(894,319)01 xカーナターク(162,320),(479,333)¥179(788,321),(894,333)08 xトウア ハナイロソウメン(162,334),(581,347)¥239(788,335),(894,347)11 x1キバタ-200(169,348),(506,361)¥399(788,348),(894,360)小計(112,362),(219,375)10点(375,362),(479,375)¥4,294(735,362),(894,375)(外税 8.0%対象額(140,375),(560,389)¥4,294)(735,376),(917,389)8.0% 消費税等(244,390),(583,403)¥343(785,390),(894,402)外税額計(112,404),(327,418)¥343(785,404),(894,417)税込小計(112,432),(327,446)¥4,637(735,432),(894,446)(税込 8.0%対象額(142,459),(560,473)¥4,637)(735,460),(915,473)8.0% 消費税等(244,474),(583,487)¥343(785,474),(894,486)税額計(112,487),(271,501)¥343(785,488),(894,500)「x」は軽減税率対象商品です(142,501),(815,515)合計(112,528),(223,541)¥4,637(581,528),(890,542)クヅツット(112,542),(269,555)-¥4,637(708,543),(894,556)現計(108,557),(223,570)¥0(788,557),(894,569)カード発行会社AEON(83,597),(502,611)会員番号***********9058(85,612),(610,626)I(844,613),(862,625)お取扱日(115,626),(317,639)2024-06-19 17:56:26(112,640),(608,652)伝票番号(112,653),(321,666)取引内容(502,653),(715,666)000030109(267,667),(504,679)お買上(738,667),(894,680)商品区分(112,681),(321,695)取扱区分(504,681),(712,694)0000(398,696),(504,707)一括(110)(658,694),(890,708)処理通番(112,709),(321,723)承認番号(500,709),(712,723)8997(396,724),(504,736)0722773(710,723),(894,736)振替金額(112,737),(321,751)¥4,637(735,737),(894,750)税·送料(110,751),(321,765)¥0(838,752),(894,764)合計額(112,765),(271,779)¥4,637(581,766),(894,780)A000000031010(85,780),(450,793)ALVISA DEBIT(85,794),(396,806)ATC157 30 IC(577,794),(919,806)端末番号(85,807),(294,821)63014-851-00376(525,808),(919,821)商品の返品·交換に関しては(144,823),(671,835)1週間以内にお願いします。(142,835),(633,846)生牌、冷蔵商品、一部商品は除きます。(140,846),(858,859)キヤツツヤ :セイサン6(106,875),(423,889)チェツカー :アキツツヤ(102,890),(421,903)R0176-#8997(102,904),(396,918)(M004294-P00063)(475,932),(894,947)0000210017689972406190(135,970),(894,983)",
+  "prompt": "Detect and recognize text in the image, and output the text coordinates in a formatted manner.",
+  "model": "tencent/HunyuanOCR"
+}
+```
+
+The "text" content is of the format:
+`TEXT(START_X,START_Y),(END_X,END_Y)`
+
+START_X,START_Y,END_X,END_Y are integer values between 0 and 999, (0,0) upper left corner, (999,999) lower right corner.
+
+Please add a new route/controller for a simple OCR tool, that let the user upload an image file, write prompt/max_new_tokens if they want to override the default values, then submit to the new API.
+
+When the response arrives, display the original image with an overlay of transparent bounding boxes for each extracted text piece, and display the content when hovering over the bounding box. Also, display the full extracted text next to the image, in 2 formats, RAW and only text, only text should have spaces and new lines inserted to roughly keep the layout of the text in the image.
