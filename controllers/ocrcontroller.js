@@ -204,7 +204,7 @@ exports.handleOcr = async (req, res) => {
       requestUrl,
       multipart,
       {
-        timeout: 60000,
+        timeout: 300000,
         headers: {
           ...multipart.getHeaders(),
           Accept: 'application/json',
