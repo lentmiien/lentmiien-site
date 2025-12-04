@@ -642,6 +642,64 @@ function computePendingAlignmentParts(parts, ratings) {
   };
 }
 
+function averageOrNull(total, count) {
+  const sum = Number(total || 0);
+  const denom = Number(count || 0);
+  if (!Number.isFinite(sum) || !Number.isFinite(denom) || denom <= 0) return null;
+  return sum / denom;
+}
+
+function annotatePerformance(entries, baselineScore, baselineDefect) {
+  return entries.map((entry) => {
+    const scoreAvg = averageOrNull(entry.score_total, entry.score_count);
+    const defectAvg = averageOrNull(entry.defect_sum, entry.defect_count);
+    const ratingAvg = averageOrNull(entry.rating_total, entry.prompts);
+    return Object.assign({}, entry, {
+      score_avg: scoreAvg,
+      defect_avg: defectAvg,
+      rating_avg: ratingAvg,
+      score_delta: typeof scoreAvg === 'number' && typeof baselineScore === 'number'
+        ? scoreAvg - baselineScore
+        : null,
+      defect_delta: typeof defectAvg === 'number' && typeof baselineDefect === 'number'
+        ? defectAvg - baselineDefect
+        : null
+    });
+  });
+}
+
+function hydrateImageResults(items, job) {
+  if (!Array.isArray(items) || !items.length) return [];
+  return items.map((doc) => {
+    const mediaType = detectMediaType(doc.filename);
+    const bucket = mediaType === 'video' ? 'video' : 'output';
+    const instanceId = doc.instance_id || job.instance_id || null;
+    const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
+    const downloadUrl = doc.filename
+      ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
+      : null;
+    const scoreAvg = typeof doc.score_average === 'number'
+      ? doc.score_average
+      : averageOrNull(doc.score_total, doc.score_count) || 0;
+    return {
+      id: String(doc._id),
+      filename: doc.filename,
+      media_type: mediaType,
+      cached_url: cacheRec ? cacheRec.url : null,
+      download_url: downloadUrl,
+      instance_id: instanceId,
+      template_label: doc.template_label,
+      placeholder_values: doc.placeholder_values || {},
+      input_values: doc.input_values || {},
+      negative_used: !!doc.negative_used,
+      score_average: scoreAvg,
+      score_count: doc.score_count || 0,
+      defect_rating: doc.defect_rating_value ?? null,
+      completed_at: doc.completed_at
+    };
+  });
+}
+
 function buildSlideshowPendingMatch(jobId) {
   return {
     job: jobId,
@@ -1249,6 +1307,13 @@ exports.renderBulkScoring = (req, res) => {
 exports.renderBulkSlideshow = (req, res) => {
   res.render('image_gen/bulk_slideshow', {
     title: 'ComfyUI  EBulk Rating Slideshow',
+    jobId: req.params.id,
+  });
+};
+
+exports.renderBulkAnalytics = (req, res) => {
+  res.render('image_gen/bulk_analytics', {
+    title: 'ComfyUI  EBulk Performance',
     jobId: req.params.id,
   });
 };
@@ -1935,6 +2000,391 @@ exports.submitBulkGalleryRating = async (req, res) => {
   } catch (e) {
     logger.error('[submitBulkGalleryRating] error', e);
     return errorJson(res, 500, 'failed to apply gallery rating', String(e.message || e));
+  }
+};
+
+exports.getBulkAnalytics = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const job = await BulkJob.findById(jobId).lean();
+    if (!job) return errorJson(res, 404, 'bulk job not found');
+
+    const match = { job: jobId, status: 'Completed', filename: { $ne: null } };
+    const analytics = await BulkTestPrompt.aggregate([
+      { $match: match },
+      {
+        $addFields: {
+          score_average: {
+            $cond: [
+              { $gt: ['$score_count', 0] },
+              { $divide: ['$score_total', '$score_count'] },
+              null
+            ]
+          },
+          alignment_count: {
+            $size: {
+              $filter: {
+                input: { $objectToArray: { $ifNull: ['$prompt_alignment_ratings', {}] } },
+                as: 'entry',
+                cond: { $gt: ['$$entry.v', null] }
+              }
+            }
+          },
+          defect_present: { $cond: [{ $ne: ['$defect_rating_value', null] }, 1, 0] }
+        }
+      },
+      {
+        $facet: {
+          overall: [
+            {
+              $group: {
+                _id: null,
+                total_prompts: { $sum: 1 },
+                scored_prompts: { $sum: { $cond: [{ $gt: ['$score_count', 0] }, 1, 0] } },
+                score_total: { $sum: '$score_total' },
+                score_count: { $sum: '$score_count' },
+                defect_rated: { $sum: '$defect_present' },
+                defect_total: { $sum: { $ifNull: ['$defect_rating_value', 0] } },
+                alignment_prompts: { $sum: { $cond: [{ $gt: ['$alignment_count', 0] }, 1, 0] } },
+                alignment_entries: { $sum: '$alignment_count' }
+              }
+            }
+          ],
+          defectBuckets: [
+            {
+              $group: {
+                _id: {
+                  $cond: [
+                    { $eq: ['$defect_rating_value', null] },
+                    'Unrated',
+                    { $toString: '$defect_rating_value' }
+                  ]
+                },
+                count: { $sum: 1 }
+              }
+            },
+            { $sort: { _id: 1 } }
+          ],
+          templatePerformance: [
+            {
+              $group: {
+                _id: '$template_label',
+                prompts: { $sum: 1 },
+                score_total: { $sum: '$score_total' },
+                score_count: { $sum: '$score_count' },
+                defect_sum: { $sum: { $ifNull: ['$defect_rating_value', 0] } },
+                defect_count: { $sum: '$defect_present' }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                category: { $literal: 'template' },
+                key: { $ifNull: ['$_id', 'Unlabeled template'] },
+                value: { $ifNull: ['$_id', 'Unlabeled template'] },
+                label: { $ifNull: ['$_id', 'Unlabeled template'] },
+                prompts: 1,
+                score_total: 1,
+                score_count: 1,
+                defect_sum: 1,
+                defect_count: 1
+              }
+            }
+          ],
+          negativePerformance: [
+            {
+              $group: {
+                _id: { $cond: [{ $eq: ['$negative_used', true] }, 'With negative', 'No negative'] },
+                prompts: { $sum: 1 },
+                score_total: { $sum: '$score_total' },
+                score_count: { $sum: '$score_count' },
+                defect_sum: { $sum: { $ifNull: ['$defect_rating_value', 0] } },
+                defect_count: { $sum: '$defect_present' }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                category: { $literal: 'negative' },
+                key: '$_id',
+                value: '$_id',
+                label: '$_id',
+                prompts: 1,
+                score_total: 1,
+                score_count: 1,
+                defect_sum: 1,
+                defect_count: 1
+              }
+            }
+          ],
+          placeholderPerformance: [
+            {
+              $project: {
+                pairs: { $objectToArray: { $ifNull: ['$placeholder_values', {}] } },
+                score_total: 1,
+                score_count: 1,
+                defect_rating_value: 1,
+                defect_present: 1
+              }
+            },
+            { $unwind: '$pairs' },
+            {
+              $group: {
+                _id: { key: '$pairs.k', value: '$pairs.v' },
+                prompts: { $sum: 1 },
+                score_total: { $sum: '$score_total' },
+                score_count: { $sum: '$score_count' },
+                defect_sum: { $sum: { $ifNull: ['$defect_rating_value', 0] } },
+                defect_count: { $sum: '$defect_present' }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                category: { $literal: 'placeholder' },
+                key: '$_id.key',
+                value: '$_id.value',
+                label: {
+                  $concat: [
+                    '$_id.key',
+                    ': ',
+                    { $ifNull: ['$_id.value', '(blank)'] }
+                  ]
+                },
+                prompts: 1,
+                score_total: 1,
+                score_count: 1,
+                defect_sum: 1,
+                defect_count: 1
+              }
+            },
+            { $sort: { prompts: -1 } },
+            { $limit: 200 }
+          ],
+          inputPerformance: [
+            {
+              $project: {
+                pairs: { $objectToArray: { $ifNull: ['$input_values', {}] } },
+                score_total: 1,
+                score_count: 1,
+                defect_rating_value: 1,
+                defect_present: 1
+              }
+            },
+            { $unwind: '$pairs' },
+            {
+              $group: {
+                _id: { key: '$pairs.k', value: '$pairs.v' },
+                prompts: { $sum: 1 },
+                score_total: { $sum: '$score_total' },
+                score_count: { $sum: '$score_count' },
+                defect_sum: { $sum: { $ifNull: ['$defect_rating_value', 0] } },
+                defect_count: { $sum: '$defect_present' }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                category: { $literal: 'input' },
+                key: '$_id.key',
+                value: '$_id.value',
+                label: {
+                  $concat: [
+                    'Input ',
+                    '$_id.key',
+                    ': ',
+                    { $ifNull: ['$_id.value', '(blank)'] }
+                  ]
+                },
+                prompts: 1,
+                score_total: 1,
+                score_count: 1,
+                defect_sum: 1,
+                defect_count: 1
+              }
+            },
+            { $sort: { prompts: -1 } },
+            { $limit: 100 }
+          ],
+          alignmentPerformance: [
+            {
+              $project: {
+                parts: {
+                  $map: {
+                    input: { $ifNull: ['$prompt_alignment_parts', []] },
+                    as: 'part',
+                    in: {
+                      key: '$$part.part_key',
+                      label: '$$part.label',
+                      rating: {
+                        $ifNull: [
+                          {
+                            $getField: {
+                              field: '$$part.part_key',
+                              input: { $ifNull: ['$prompt_alignment_ratings', {}] }
+                            }
+                          },
+                          null
+                        ]
+                      }
+                    }
+                  }
+                },
+                score_total: 1,
+                score_count: 1,
+                defect_rating_value: 1,
+                defect_present: 1
+              }
+            },
+            { $unwind: '$parts' },
+            { $match: { 'parts.rating': { $ne: null } } },
+            {
+              $group: {
+                _id: { key: '$parts.key', label: '$parts.label' },
+                prompts: { $sum: 1 },
+                rating_total: { $sum: '$parts.rating' },
+                score_total: { $sum: '$score_total' },
+                score_count: { $sum: '$score_count' },
+                defect_sum: { $sum: { $ifNull: ['$defect_rating_value', 0] } },
+                defect_count: { $sum: '$defect_present' }
+              }
+            },
+            {
+              $project: {
+                _id: 0,
+                category: { $literal: 'alignment' },
+                key: '$_id.key',
+                value: '$_id.key',
+                label: '$_id.label',
+                prompts: 1,
+                rating_total: 1,
+                score_total: 1,
+                score_count: 1,
+                defect_sum: 1,
+                defect_count: 1
+              }
+            }
+          ],
+          topImages: [
+            { $sort: { score_average: -1, defect_rating_value: 1, completed_at: -1, _id: 1 } },
+            { $limit: 30 },
+            {
+              $project: {
+                template_label: 1,
+                placeholder_values: 1,
+                input_values: 1,
+                negative_used: 1,
+                filename: 1,
+                instance_id: 1,
+                score_total: 1,
+                score_count: 1,
+                score_average: 1,
+                defect_rating_value: 1,
+                completed_at: 1
+              }
+            }
+          ],
+          lowDefectTop: [
+            { $match: { defect_rating_value: { $ne: null, $lte: 2 } } },
+            { $sort: { score_average: -1, completed_at: -1, _id: 1 } },
+            { $limit: 20 },
+            {
+              $project: {
+                template_label: 1,
+                placeholder_values: 1,
+                input_values: 1,
+                negative_used: 1,
+                filename: 1,
+                instance_id: 1,
+                score_total: 1,
+                score_count: 1,
+                score_average: 1,
+                defect_rating_value: 1,
+                completed_at: 1
+              }
+            }
+          ]
+        }
+      }
+    ]);
+
+    const analyticsDoc = Array.isArray(analytics) && analytics.length ? analytics[0] : {};
+    const overallDoc = Array.isArray(analyticsDoc.overall) && analyticsDoc.overall.length
+      ? analyticsDoc.overall[0]
+      : {};
+
+    const baselineScore = averageOrNull(overallDoc.score_total, overallDoc.score_count);
+    const baselineDefect = averageOrNull(overallDoc.defect_total, overallDoc.defect_rated);
+
+    const defectBuckets = (analyticsDoc.defectBuckets || []).map((entry) => ({
+      bucket: entry._id === 'Unrated' ? 'Unrated' : Number(entry._id),
+      label: entry._id === 'Unrated' ? 'Unrated' : `Defect ${entry._id}`,
+      count: entry.count || 0
+    }));
+
+    const templatePerformance = annotatePerformance(analyticsDoc.templatePerformance || [], baselineScore, baselineDefect);
+    const negativePerformance = annotatePerformance(analyticsDoc.negativePerformance || [], baselineScore, baselineDefect);
+    const placeholderPerformance = annotatePerformance(analyticsDoc.placeholderPerformance || [], baselineScore, baselineDefect);
+    const inputPerformance = annotatePerformance(analyticsDoc.inputPerformance || [], baselineScore, baselineDefect);
+    const alignmentPerformance = annotatePerformance(analyticsDoc.alignmentPerformance || [], baselineScore, baselineDefect);
+
+    const combinedElements = [
+      ...templatePerformance,
+      ...negativePerformance,
+      ...placeholderPerformance,
+      ...inputPerformance
+    ];
+    const bestElements = combinedElements
+      .filter((entry) => typeof entry.score_delta === 'number')
+      .sort((a, b) => b.score_delta - a.score_delta)
+      .slice(0, 8);
+    const riskyElements = combinedElements
+      .filter((entry) => typeof entry.score_delta === 'number')
+      .sort((a, b) => a.score_delta - b.score_delta)
+      .slice(0, 8);
+
+    let remainingSlots = 50;
+    const topImages = hydrateImageResults(analyticsDoc.topImages || [], job).slice(0, Math.min(remainingSlots, 30));
+    remainingSlots -= topImages.length;
+    const lowDefectImages = hydrateImageResults(analyticsDoc.lowDefectTop || [], job).slice(0, Math.min(remainingSlots, 20));
+
+    res.json({
+      job: {
+        id: String(job._id),
+        name: job.name,
+        workflow: job.workflow,
+        instance_id: job.instance_id || null,
+        counters: job.counters || {}
+      },
+      overall: {
+        total_prompts: overallDoc.total_prompts || 0,
+        scored_prompts: overallDoc.scored_prompts || 0,
+        avg_score: baselineScore,
+        avg_defect: baselineDefect,
+        score_votes: overallDoc.score_count || 0,
+        defect_rated: overallDoc.defect_rated || 0,
+        alignment_prompts: overallDoc.alignment_prompts || 0,
+        alignment_entries: overallDoc.alignment_entries || 0
+      },
+      defectBuckets,
+      performance: {
+        templates: templatePerformance,
+        negative: negativePerformance,
+        placeholders: placeholderPerformance,
+        inputs: inputPerformance
+      },
+      alignment: alignmentPerformance,
+      highlights: {
+        best: bestElements,
+        needs_attention: riskyElements
+      },
+      topImages,
+      lowDefectImages
+    });
+  } catch (e) {
+    logger.error('[getBulkAnalytics] error', e);
+    return errorJson(res, 500, 'failed to build analytics', String(e.message || e));
   }
 };
 

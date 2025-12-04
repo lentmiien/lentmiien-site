@@ -1,0 +1,160 @@
+//- views/image_gen/bulk_analytics.pug
+extends ../layout
+
+block styles
+  style.
+    .panel{background:var(--surface-1);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 20px 48px rgba(0,0,0,0.24)}
+    .panel h2{font-size:1.05rem;margin-bottom:1rem;color:var(--text)}
+    .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
+    .metric-card{padding:1rem;border:1px solid var(--divider);border-radius:.9rem;background:var(--surface-2)}
+    .metric-label{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)}
+    .metric-value{font-size:1.5rem;font-weight:700;color:var(--text)}
+    .metric-sub{font-size:.85rem;color:var(--text-secondary)}
+    .bar-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.5rem}
+    .bar-item{display:flex;align-items:center;gap:.75rem}
+    .bar-label{width:120px;font-size:.85rem;color:var(--text-secondary)}
+    .bar-track{flex:1;height:.65rem;border-radius:999px;background:var(--surface-2);overflow:hidden}
+    .bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--brand),var(--accent))}
+    .bar-value{font-size:.85rem;min-width:48px;text-align:right;color:var(--text)}
+    .perf-table{width:100%;border-collapse:collapse}
+    .perf-table th,.perf-table td{padding:.4rem .5rem;border-bottom:1px solid var(--divider);font-size:.88rem}
+    .perf-table th{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)}
+    .grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
+    .highlight-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:.4rem}
+    .highlight-item{display:flex;justify-content:space-between;gap:.75rem;padding:.4rem .5rem;border:1px solid var(--divider);border-radius:.75rem;background:var(--surface-2);font-size:.85rem}
+    .highlight-item span:first-child{font-weight:600}
+    .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem}
+    .image-card{border:1px solid var(--divider);border-radius:.9rem;overflow:hidden;background:var(--surface-2);display:flex;flex-direction:column}
+    .image-card figure{margin:0;background:var(--surface-1);display:flex;align-items:center;justify-content:center;min-height:180px}
+    .image-card img,.image-card video{width:100%;height:100%;object-fit:cover;max-height:280px}
+    .image-card video{object-fit:contain;background:var(--surface-1)}
+    .image-card .meta{padding:.75rem;font-size:.8rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:.25rem}
+    .tag{display:inline-flex;align-items:center;padding:.1rem .45rem;border-radius:999px;font-size:.7rem;border:1px solid var(--divider);text-transform:uppercase;letter-spacing:.08em}
+    .status-pill{display:inline-flex;align-items:center;padding:.3rem .65rem;border-radius:999px;border:1px solid var(--divider);font-size:.78rem;color:var(--text-secondary)}
+    .empty-note{font-size:.95rem;color:var(--text-muted)}
+
+block content
+  .container.py-4#analyticsRoot(data-job-id=jobId)
+    a.text-decoration-none.text-soft(href=`/image_gen/bulk/${jobId}`) ← Back to bulk job
+    .d-flex.flex-wrap.justify-content-between.align-items-center.mt-2.mb-3.gap-2
+      div
+        h1.h4.mb-1 Bulk job performance
+        span.status-pill#analyticsSummary Loading analytics…
+      .d-flex.gap-2.flex-wrap
+        a.btn.btn-outline-secondary.btn-sm(href=`/image_gen/bulk/${jobId}`) Job dashboard
+        a.btn.btn-outline-info.btn-sm(href=`/image_gen/bulk/${jobId}/slideshow`) Rate slideshow
+    .panel
+      h2 Overview
+      .metric-grid
+        .metric-card
+          div.metric-label Total completed
+          div.metric-value#metricTotal 0
+          div.metric-sub#metricTotalSub Waiting for data
+        .metric-card
+          div.metric-label Rated prompts
+          div.metric-value#metricRated 0
+          div.metric-sub#metricRatedSub -
+        .metric-card
+          div.metric-label Avg like score
+          div.metric-value#metricAvgScore 0.00
+          div.metric-sub#metricAvgScoreSub Based on 0 votes
+        .metric-card
+          div.metric-label Avg defect rating
+          div.metric-value#metricAvgDefect 0.0
+          div.metric-sub#metricAvgDefectSub Based on 0 reviews
+        .metric-card
+          div.metric-label Alignment ratings
+          div.metric-value#metricAlignment 0
+          div.metric-sub#metricAlignmentSub Parts rated
+    .panel
+      h2 Defect distribution
+      ul.bar-list#defectBucketList
+        li.bar-item.text-soft No data yet.
+    .panel
+      h2 Template & negative prompt performance
+      .grid-2
+        .table-responsive
+          table.perf-table
+            thead
+              tr
+                th(scope="col") Template
+                th(scope="col") Avg score
+                th(scope="col") Avg defect
+                th(scope="col") Samples
+            tbody#templateTable
+              tr
+                td(colspan="4") .text-soft Loading…
+        .table-responsive
+          table.perf-table
+            thead
+              tr
+                th(scope="col") Negative usage
+                th(scope="col") Avg score
+                th(scope="col") Avg defect
+                th(scope="col") Samples
+            tbody#negativeTable
+              tr
+                td(colspan="4") .text-soft Loading…
+    .panel
+      h2 Prompt element correlations
+      .grid-2
+        div
+          h3.h6.mb-2 Top positive signals
+          ul.highlight-list#highlightBest
+            li.highlight-item.text-soft Loading…
+        div
+          h3.h6.mb-2 Needs attention
+          ul.highlight-list#highlightRisk
+            li.highlight-item.text-soft Loading…
+      .grid-2.mt-3
+        .table-responsive
+          h3.h6 Placeholder values
+          table.perf-table
+            thead
+              tr
+                th(scope="col") Placeholder
+                th(scope="col") Δ Score
+                th(scope="col") Avg defect
+                th(scope="col") Samples
+            tbody#placeholderTable
+              tr
+                td(colspan="4") .text-soft Loading…
+        .table-responsive
+          h3.h6 Image inputs
+          table.perf-table
+            thead
+              tr
+                th(scope="col") Input
+                th(scope="col") Δ Score
+                th(scope="col") Avg defect
+                th(scope="col") Samples
+            tbody#inputTable
+              tr
+                td(colspan="4") .text-soft Loading…
+    .panel
+      h2 Prompt alignment quality
+      .table-responsive
+        table.perf-table
+          thead
+            tr
+              th(scope="col") Prompt part
+              th(scope="col") Avg follow rating
+              th(scope="col") Avg score
+              th(scope="col") Avg defect
+              th(scope="col") Samples
+          tbody#alignmentTable
+            tr
+              td(colspan="5") .text-soft Loading…
+    .panel
+      h2 Top images
+      p.text-soft.mb-2 Up to 50 images combined. Prioritized by like score and lower defects.
+      h3.h6.mb-2 Highest rated overall
+      #topImagesGrid.image-grid
+        .empty-note Loading…
+      h3.h6.mt-4.mb-2 Best low-defect picks
+      #lowDefectImagesGrid.image-grid
+        .empty-note Loading…
+    p.empty-note#analyticsEmpty(style="display:none") No completed prompts with ratings yet. Come back after scoring a few images.
+
+block script
+  script(src="/js/image_gen_bulk_analytics.js")

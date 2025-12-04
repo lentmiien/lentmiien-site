@@ -38,6 +38,7 @@ router.get('/bulk', ctrl.renderBulkLanding);
 router.get('/bulk/new', ctrl.renderBulkCreate);
 router.get('/bulk/:id/score', ctrl.renderBulkScoring);
 router.get('/bulk/:id/slideshow', ctrl.renderBulkSlideshow);
+router.get('/bulk/:id/analytics', ctrl.renderBulkAnalytics);
 router.get('/bulk/:id', ctrl.renderBulkJob);
 
 // API proxy endpoints (browser talks to these; server talks to Comfy API)
@@ -61,6 +62,7 @@ router.patch('/api/bulk/jobs/:id/status', ctrl.updateBulkJobStatus);
 router.get('/api/bulk/jobs/:id/prompts', ctrl.listBulkTestPrompts);
 router.get('/api/bulk/jobs/:id/matrix', ctrl.getBulkMatrix);
 router.get('/api/bulk/jobs/:id/gallery', ctrl.listBulkGalleryImages);
+router.get('/api/bulk/jobs/:id/analytics', ctrl.getBulkAnalytics);
 router.get('/api/bulk/jobs/:id/score-pair', ctrl.getBulkScorePair);
 router.post('/api/bulk/jobs/:id/score', ctrl.submitBulkScore);
 router.post('/api/bulk/jobs/:id/gallery/rate', ctrl.submitBulkGalleryRating);
