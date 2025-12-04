@@ -28,6 +28,21 @@ const BulkTestPromptSchema = new mongoose.Schema({
   file_url: { type: String, default: null },
   score_total: { type: Number, default: 0 },
   score_count: { type: Number, default: 0 },
+  defect_rating_value: { type: Number, min: 0, max: 5, default: null },
+  defect_rating_at: { type: Date },
+  defect_rating_by: { type: String, default: null, trim: true },
+  prompt_alignment_parts: [{
+    part_key: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    text: { type: String, default: '' },
+    index: { type: Number, default: 0 }
+  }],
+  prompt_alignment_ratings: {
+    type: Map,
+    of: Number,
+    default: {}
+  },
+  prompt_alignment_completed_at: { type: Date },
   created_at: { type: Date, default: Date.now },
   updated_at: { type: Date, default: Date.now },
   started_at: { type: Date },

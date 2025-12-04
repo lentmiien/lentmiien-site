@@ -542,6 +542,119 @@ function toPlainVariables(variables) {
   return {};
 }
 
+function toPlainRatings(ratings) {
+  if (!ratings) return {};
+  if (ratings instanceof Map) return Object.fromEntries(ratings.entries());
+  if (typeof ratings.toObject === 'function') return ratings.toObject();
+  if (typeof ratings === 'object') {
+    return Object.assign({}, ratings);
+  }
+  return {};
+}
+
+function normalizeTemplateBaseText(template) {
+  const text = String(template || '');
+  if (!text) return '';
+  const replaced = text.replace(/{{\s*([\w.-]+)\s*}}/g, (_match, key) => `[${key}]`);
+  return replaced.replace(/\s+/g, ' ').trim();
+}
+
+function orderedPlaceholderKeys(job, placeholderValues) {
+  const keys = [];
+  const seen = new Set();
+  const defs = Array.isArray(job?.placeholder_values) ? job.placeholder_values : [];
+  defs.forEach((entry) => {
+    const key = entry?.key;
+    if (!key) return;
+    if (!Object.prototype.hasOwnProperty.call(placeholderValues, key)) return;
+    if (seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  });
+  Object.keys(placeholderValues || {}).forEach((key) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  });
+  return keys;
+}
+
+function buildPromptAlignmentParts(job, promptDoc) {
+  if (!promptDoc) return [];
+  const placeholderValues = Object.assign({}, promptDoc.placeholder_values || {});
+  const templateEntry = Array.isArray(job?.prompt_templates)
+    ? job.prompt_templates[promptDoc.template_index]
+    : null;
+  const templateSource = templateEntry?.template || promptDoc.template_text || '';
+  const baseText = normalizeTemplateBaseText(templateSource) || String(promptDoc.prompt_text || '').trim();
+  const parts = [{
+    part_key: 'base',
+    label: 'Base prompt',
+    text: baseText,
+    index: 0
+  }];
+  let index = 1;
+  orderedPlaceholderKeys(job, placeholderValues).forEach((key) => {
+    parts.push({
+      part_key: `placeholder:${key}`,
+      label: `Placeholder: ${key}`,
+      text: String(placeholderValues[key] ?? ''),
+      index
+    });
+    index += 1;
+  });
+  if (promptDoc.negative_used && job?.negative_prompt) {
+    parts.push({
+      part_key: 'negative',
+      label: 'Negative prompt',
+      text: job.negative_prompt,
+      index
+    });
+  }
+  return parts;
+}
+
+async function ensurePromptAlignmentParts(promptDoc, job) {
+  const existing = Array.isArray(promptDoc?.prompt_alignment_parts)
+    ? promptDoc.prompt_alignment_parts
+    : [];
+  if (existing.length) return existing;
+  const parts = buildPromptAlignmentParts(job, promptDoc);
+  if (parts.length && promptDoc?._id) {
+    await BulkTestPrompt.updateOne({ _id: promptDoc._id }, { $set: { prompt_alignment_parts: parts } });
+  }
+  return parts;
+}
+
+function computePendingAlignmentParts(parts, ratings) {
+  const ratingMap = toPlainRatings(ratings);
+  const pending = [];
+  for (const part of parts) {
+    if (!part || !part.part_key) continue;
+    const value = ratingMap[part.part_key];
+    if (!Number.isFinite(value)) {
+      pending.push(part.part_key);
+    }
+  }
+  return {
+    pending,
+    completed: pending.length === 0
+  };
+}
+
+function buildSlideshowPendingMatch(jobId) {
+  return {
+    job: jobId,
+    status: 'Completed',
+    filename: { $ne: null },
+    $or: [
+      { defect_rating_value: { $exists: false } },
+      { defect_rating_value: null },
+      { prompt_alignment_completed_at: null }
+    ]
+  };
+}
+
 function parseGalleryFilters(raw) {
   if (!raw) return {};
   if (typeof raw === 'string') {
@@ -578,7 +691,7 @@ async function seedBulkTestPrompts(jobDoc) {
         const placeholderValues = Object.assign({}, placeholderCopy);
         const inputValues = Object.assign({}, inputCopy);
         const promptText = applyTemplateValues(tpl.template, placeholderValues);
-        docs.push({
+        const docPayload = {
           job: job._id,
           template_index: index,
           template_label: label,
@@ -589,7 +702,10 @@ async function seedBulkTestPrompts(jobDoc) {
           variables: buildVariablesObject(job, label, placeholderValues, negativeUsed, inputValues),
           status: 'Pending',
           instance_id: normalizeInstanceId(job.instance_id) || null
-        });
+        };
+        const alignmentSource = Object.assign({}, docPayload, { template_text: tpl.template });
+        docPayload.prompt_alignment_parts = buildPromptAlignmentParts(job, alignmentSource);
+        docs.push(docPayload);
       }
     }
   });
@@ -1130,6 +1246,13 @@ exports.renderBulkScoring = (req, res) => {
   });
 };
 
+exports.renderBulkSlideshow = (req, res) => {
+  res.render('image_gen/bulk_slideshow', {
+    title: 'ComfyUI  EBulk Rating Slideshow',
+    jobId: req.params.id,
+  });
+};
+
 exports.listBulkJobs = async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(200, Number(req.query.limit || 100)));
@@ -1458,28 +1581,38 @@ exports.listBulkTestPrompts = async (req, res) => {
       .sort({ created_at: 1 })
       .limit(limit)
       .lean();
-    const items = prompts.map((doc) => ({
-      id: String(doc._id),
-      status: doc.status,
-      template_index: doc.template_index,
-      template_label: doc.template_label,
-      prompt_text: doc.prompt_text,
-      placeholder_values: doc.placeholder_values || {},
-      input_values: doc.input_values || {},
-      negative_used: doc.negative_used,
-      filename: doc.filename,
-      file_url: doc.file_url,
-      comfy_job_id: doc.comfy_job_id,
-      comfy_error: doc.comfy_error,
-      score_total: doc.score_total || 0,
-      score_count: doc.score_count || 0,
-      variables: toPlainVariables(doc.variables),
-      instance_id: doc.instance_id || null,
-      created_at: doc.created_at,
-      updated_at: doc.updated_at,
-      started_at: doc.started_at,
-      completed_at: doc.completed_at
-    }));
+    const items = prompts.map((doc) => {
+      const alignmentParts = Array.isArray(doc.prompt_alignment_parts) ? doc.prompt_alignment_parts : [];
+      const alignmentStatus = computePendingAlignmentParts(alignmentParts, doc.prompt_alignment_ratings);
+      return {
+        id: String(doc._id),
+        status: doc.status,
+        template_index: doc.template_index,
+        template_label: doc.template_label,
+        prompt_text: doc.prompt_text,
+        placeholder_values: doc.placeholder_values || {},
+        input_values: doc.input_values || {},
+        negative_used: doc.negative_used,
+        filename: doc.filename,
+        file_url: doc.file_url,
+        comfy_job_id: doc.comfy_job_id,
+        comfy_error: doc.comfy_error,
+        score_total: doc.score_total || 0,
+        score_count: doc.score_count || 0,
+        variables: toPlainVariables(doc.variables),
+        defect_rating: Number.isFinite(doc.defect_rating_value) ? doc.defect_rating_value : null,
+        defect_rating_at: doc.defect_rating_at || null,
+        alignment_parts: alignmentParts,
+        alignment_ratings: toPlainRatings(doc.prompt_alignment_ratings),
+        alignment_completed_at: doc.prompt_alignment_completed_at || null,
+        alignment_pending_keys: alignmentStatus.pending,
+        instance_id: doc.instance_id || null,
+        created_at: doc.created_at,
+        updated_at: doc.updated_at,
+        started_at: doc.started_at,
+        completed_at: doc.completed_at
+      };
+    });
     res.json({ items });
   } catch (e) {
     logger.error('[listBulkTestPrompts] error', e);
@@ -1710,6 +1843,8 @@ exports.listBulkGalleryImages = async (req, res) => {
       const scoreTotal = Number(doc.score_total || 0);
       const scoreCount = Number(doc.score_count || 0);
       const scoreAverage = Number.isFinite(doc.score_average) ? Number(doc.score_average) : 0;
+      const alignmentParts = Array.isArray(doc.prompt_alignment_parts) ? doc.prompt_alignment_parts : [];
+      const alignmentStatus = computePendingAlignmentParts(alignmentParts, doc.prompt_alignment_ratings);
       return {
         id: String(doc._id),
         filename: doc.filename,
@@ -1720,6 +1855,11 @@ exports.listBulkGalleryImages = async (req, res) => {
         score_total: scoreTotal,
         score_count: scoreCount,
         score_average: scoreAverage,
+        defect_rating: Number.isFinite(doc.defect_rating_value) ? doc.defect_rating_value : null,
+        defect_rating_at: doc.defect_rating_at || null,
+        alignment_completed_at: doc.prompt_alignment_completed_at || null,
+        alignment_pending_keys: alignmentStatus.pending,
+        alignment_ratings: toPlainRatings(doc.prompt_alignment_ratings),
         template_label: doc.template_label,
         placeholder_values: doc.placeholder_values || {},
         input_values: doc.input_values || {},
@@ -1795,6 +1935,161 @@ exports.submitBulkGalleryRating = async (req, res) => {
   } catch (e) {
     logger.error('[submitBulkGalleryRating] error', e);
     return errorJson(res, 500, 'failed to apply gallery rating', String(e.message || e));
+  }
+};
+
+exports.getBulkSlideshowItem = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const job = await BulkJob.findById(jobId).lean();
+    if (!job) return errorJson(res, 404, 'bulk job not found');
+
+    const match = buildSlideshowPendingMatch(jobId);
+    const [result = {}] = await BulkTestPrompt.aggregate([
+      { $match: match },
+      {
+        $facet: {
+          total: [{ $count: 'value' }],
+          items: [{ $sample: { size: 1 } }]
+        }
+      }
+    ]);
+    const remaining = Array.isArray(result.total) && result.total.length
+      ? Number(result.total[0].value) || 0
+      : 0;
+    const doc = Array.isArray(result.items) && result.items.length
+      ? result.items[0]
+      : null;
+    const jobPayload = {
+      id: String(job._id),
+      name: job.name,
+      workflow: job.workflow,
+      negative_prompt: job.negative_prompt || null
+    };
+    if (!doc) {
+      return res.json({
+        remaining,
+        job: jobPayload,
+        item: null
+      });
+    }
+
+    const parts = await ensurePromptAlignmentParts(doc, job);
+    const alignmentStatus = computePendingAlignmentParts(parts, doc.prompt_alignment_ratings);
+    const mediaType = detectMediaType(doc.filename);
+    const bucket = mediaType === 'video' ? 'video' : 'output';
+    const instanceId = doc.instance_id || job.instance_id || null;
+    const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
+    const downloadUrl = doc.filename
+      ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
+      : null;
+
+    res.json({
+      remaining,
+      job: jobPayload,
+      item: {
+        id: String(doc._id),
+        template_label: doc.template_label,
+        template_index: doc.template_index,
+        prompt_text: doc.prompt_text,
+        placeholder_values: doc.placeholder_values || {},
+        input_values: doc.input_values || {},
+        negative_used: !!doc.negative_used,
+        filename: doc.filename,
+        media_type: mediaType,
+        cached_url: cacheRec ? cacheRec.url : null,
+        download_url: downloadUrl,
+        instance_id: instanceId,
+        score_total: doc.score_total || 0,
+        score_count: doc.score_count || 0,
+        defect_rating: Number.isFinite(doc.defect_rating_value) ? doc.defect_rating_value : null,
+        defect_rating_at: doc.defect_rating_at || null,
+        alignment_parts: parts,
+        alignment_ratings: toPlainRatings(doc.prompt_alignment_ratings),
+        alignment_completed_at: doc.prompt_alignment_completed_at || null,
+        alignment_pending_keys: alignmentStatus.pending,
+        created_at: doc.created_at,
+        completed_at: doc.completed_at
+      }
+    });
+  } catch (e) {
+    logger.error('[getBulkSlideshowItem] error', e);
+    return errorJson(res, 500, 'failed to load slideshow prompt', String(e.message || e));
+  }
+};
+
+exports.submitBulkSlideshowRating = async (req, res) => {
+  try {
+    const jobId = toObjectId(req.params.id);
+    if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const promptId = toObjectId(req.body?.prompt_id);
+    if (!promptId) return errorJson(res, 400, 'prompt_id required');
+
+    const defectRatingRaw = req.body?.defect_rating;
+    const defectRating = Number(defectRatingRaw);
+    if (!Number.isFinite(defectRating) || defectRating < 0 || defectRating > 5 || !Number.isInteger(defectRating)) {
+      return errorJson(res, 400, 'defect_rating must be an integer between 0 and 5');
+    }
+
+    const alignmentPayload = req.body?.alignment_ratings;
+    if (!alignmentPayload || typeof alignmentPayload !== 'object') {
+      return errorJson(res, 400, 'alignment_ratings must be provided');
+    }
+
+    const job = await BulkJob.findById(jobId).lean();
+    if (!job) return errorJson(res, 404, 'bulk job not found');
+
+    const prompt = await BulkTestPrompt.findOne({
+      _id: promptId,
+      job: jobId,
+      status: 'Completed',
+      filename: { $ne: null }
+    }).lean();
+    if (!prompt) return errorJson(res, 404, 'prompt not found for job');
+
+    const parts = await ensurePromptAlignmentParts(prompt, job);
+    if (!parts.length) {
+      return errorJson(res, 400, 'prompt is missing alignment parts');
+    }
+
+    const normalizedRatings = {};
+    for (const part of parts) {
+      if (!part?.part_key) continue;
+      const rawValue = alignmentPayload[part.part_key];
+      const rating = Number(rawValue);
+      if (!Number.isFinite(rating) || rating < 1 || rating > 5 || !Number.isInteger(rating)) {
+        return errorJson(res, 400, `rating for "${part.label}" must be an integer between 1 and 5`);
+      }
+      normalizedRatings[part.part_key] = rating;
+    }
+
+    const now = new Date();
+    const set = {
+      defect_rating_value: defectRating,
+      defect_rating_at: now,
+      defect_rating_by: 'slideshow',
+      prompt_alignment_ratings: normalizedRatings,
+      prompt_alignment_completed_at: now,
+      updated_at: now
+    };
+    if (!Array.isArray(prompt.prompt_alignment_parts) || !prompt.prompt_alignment_parts.length) {
+      set.prompt_alignment_parts = parts;
+    }
+
+    await BulkTestPrompt.updateOne({ _id: promptId }, { $set: set });
+
+    const match = buildSlideshowPendingMatch(jobId);
+    const remaining = await BulkTestPrompt.countDocuments(match);
+
+    res.json({
+      ok: true,
+      prompt_id: String(promptId),
+      remaining
+    });
+  } catch (e) {
+    logger.error('[submitBulkSlideshowRating] error', e);
+    return errorJson(res, 500, 'failed to save slideshow ratings', String(e.message || e));
   }
 };
 

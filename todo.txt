@@ -1,13 +1,24 @@
-At the `views/chat5_chat.pug`, I want to add a new tool for using AI to draft input prompts. In the end, I want the function to work roughly as following:
+In the bulk tool in `controllers/image_gen.controller.js`, I want to add 2 new image rating system, added to the `models/bulk_test_prompt.js` database. And also add a slideshow view for images with missing ratings (only the 2 new system).
 
-1. User open the chat they want to respond on, then they select a personality (prepared and saved to a new personality database), and select a response type (like "agree", "reject", "ask for more details", etc.), and optionally write some notes in the prompt field, and press a new "Draft prompt" button. (Put the new UI elements next to the template selector, after some divider element)
-2. The conversation id, together with the input data is sent to the server, where it go through the conversation and message services, to generate a draft prompt for the user. (Basically, the context message will be replaced with the personality text, response type and instructions for the AI to generate a draft response for the conversation, and the instructions will be repeated in a user message appended to the conversation, that also include the notes if provided, and the model should always use the `ollama` AI model "cydonia-24b-q4_k_m:latest" when drafting these responses, nothing should be saved to any database during this drafting workflow, and the generated response should simply be returned to the user and inserted in the prompt field)
-3. The user review the message, optionally edit the message, and append it to the conversation as a normal chat message (using existing functionality)
+Rating system 1:
+A simple 0-5 scale rating of defects in the image.
+* 0 has no defects (essentially a real photo, or image in the given style)
+* 1 has no apparent defects (the same as 0 but used for AI generated images)
+* 2 has minimal to almost no defects, not noticeable at a quick glance
+* 3 has some defects, nothing too severe, may look a bit odd, and easy to spot
+* 4 has clear defects, and the image isn't very useful
+* 5 has major defects, somewhat disturbing, and I don't want to look at the image again
 
-Please add this new tool to the chat interface, and also add a page for managing personalities and response types, and add 2 new databases for storing the data.
+Rating system 2:
+A "followed the prompt" rating system, ranging from 1-5, for each part of the prompt. Where 1 indicate that almost nothing from the prompt is in the image, to 5 indicating that everything from the prompt is in the image.
+* part 0 is everything except the placeholder values
+* part 1-n is each placeholder value
+* part n+1 is negative prompt (if used)
 
-While waiting for the draft to be generated, display the "Loading" overlay, as it can take a bit of time to get a response.
+In the new slide show UI, we could show an image, and the 2 new rating systems, with a simple input UI for quick ratings.
 
-Add new events to the socket.io instance, for this new tool.
+From rating system 1, I expect we can filter out bad images, by hiding 4-5 ratings, or even 2-3 for finding the best of the best, and from system 2, I expect to learn what kind of words and phrases that work well with the specific model used.
 
-Also, in the UI, lets cache the selected options in the browser, so that when the page is reloaded, or open a new chat, the most recently selected personality and response type is selected by default.
+Together with the existing rating system, of how good I think the images are and how well they compare to other images in the batch, I should be able to find my favorite great images from a combination of the existing system and the new system 1, and combining this with the new system 2, I should be able to find prompt elements for generating more great images to my liking.
+
+Please add these 2 new rating system to the bulk workflow, and add the slideshow page to actually rate the images.

@@ -37,6 +37,7 @@ router.get('/', ctrl.renderLanding);
 router.get('/bulk', ctrl.renderBulkLanding);
 router.get('/bulk/new', ctrl.renderBulkCreate);
 router.get('/bulk/:id/score', ctrl.renderBulkScoring);
+router.get('/bulk/:id/slideshow', ctrl.renderBulkSlideshow);
 router.get('/bulk/:id', ctrl.renderBulkJob);
 
 // API proxy endpoints (browser talks to these; server talks to Comfy API)
@@ -63,5 +64,7 @@ router.get('/api/bulk/jobs/:id/gallery', ctrl.listBulkGalleryImages);
 router.get('/api/bulk/jobs/:id/score-pair', ctrl.getBulkScorePair);
 router.post('/api/bulk/jobs/:id/score', ctrl.submitBulkScore);
 router.post('/api/bulk/jobs/:id/gallery/rate', ctrl.submitBulkGalleryRating);
+router.get('/api/bulk/jobs/:id/slideshow/next', ctrl.getBulkSlideshowItem);
+router.post('/api/bulk/jobs/:id/slideshow/rate', ctrl.submitBulkSlideshowRating);
 
 module.exports = router;

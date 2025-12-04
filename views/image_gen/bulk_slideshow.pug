@@ -1,0 +1,80 @@
+//- views/image_gen/bulk_slideshow.pug
+extends ../layout
+
+block styles
+  style.
+    .slideshow-panel{background:var(--surface-1);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 20px 48px rgba(0,0,0,0.24)}
+    .slideshow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem;margin-top:1rem}
+    .slideshow-media{background:var(--surface-2);border:1px solid var(--divider);border-radius:1rem;padding:1rem;display:flex;align-items:center;justify-content:center;min-height:320px}
+    .slideshow-media figure{margin:0;width:100%}
+    .slideshow-media img,.slideshow-media video{width:100%;border-radius:.75rem;border:1px solid var(--border);background:var(--surface-1);max-height:540px;object-fit:contain}
+    .slideshow-meta dl{margin-bottom:0}
+    .slideshow-meta dt{text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;color:var(--text-muted);margin-top:.75rem}
+    .slideshow-meta dd{margin:0;font-size:.9rem;color:var(--text)}
+    .slideshow-meta pre{white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--divider);border-radius:.75rem;padding:.75rem;font-size:.85rem}
+    .slideshow-meta ul{padding-left:1rem;margin-bottom:0}
+    .slideshow-meta li{font-size:.9rem}
+    .slideshow-form fieldset{border:1px solid var(--divider);border-radius:1rem;padding:1rem;margin-bottom:1rem;background:var(--surface-1)}
+    .slideshow-form legend{float:none;width:auto;font-size:.9rem;font-weight:600;padding:0 .25rem}
+    .rating-options,.alignment-controls{display:flex;flex-wrap:wrap;gap:.5rem}
+    .alignment-card{border:1px solid var(--divider);border-radius:.75rem;padding:.75rem;background:var(--surface-2);flex:1 1 260px}
+    .alignment-card__label{font-weight:600;font-size:.9rem;margin-bottom:.25rem}
+    .alignment-card__text{font-size:.85rem;color:var(--text-secondary);margin-bottom:.5rem;white-space:pre-wrap}
+    .alignment-card .btn-group{flex-wrap:wrap}
+    .status-pill{display:inline-flex;align-items:center;padding:.35rem .75rem;border-radius:999px;border:1px solid var(--divider);font-size:.75rem;color:var(--text-secondary)}
+    .slideshow-empty{font-size:1rem}
+
+block content
+  .container.py-4#slideshowRoot(data-job-id=jobId)
+    a.text-decoration-none.text-soft(href=`/image_gen/bulk/${jobId}`) ← Back to bulk job
+    .d-flex.flex-wrap.justify-content-between.align-items-center.mt-2.mb-3.gap-2
+      div
+        h1.h4.mb-1 Bulk rating slideshow
+        div.text-soft Provide the new ratings for finished prompts.
+      span.status-pill#slideshowRemaining Remaining: 0
+    .slideshow-panel
+      .d-flex.flex-wrap.justify-content-between.align-items-center.gap-2
+        div
+          h2.h5.mb-0#slideshowJobName Bulk job
+          small.text-soft#slideshowJobWorkflow Workflow -
+        span.text-soft#slideshowStatus Loading next image…
+      .slideshow-grid
+        .slideshow-media#slideshowMedia
+          .text-soft Waiting for the next prompt…
+        .slideshow-meta
+          dl
+            dt Template
+            dd#slideshowTemplate -
+            dt Prompt
+            dd
+              pre#slideshowPromptText -
+            dt Placeholder values
+            dd
+              ul#slideshowPlaceholderList
+                li.text-soft No placeholders for this image.
+            dt Image inputs
+            dd
+              ul#slideshowInputList
+                li.text-soft No image inputs for this image.
+            dt Negative prompt
+            dd#slideshowNegative -
+            dt Original file
+            dd
+              a#slideshowDownloadLink(target="_blank" rel="noopener noreferrer") Open cached file
+    form#slideshowRatingForm.slideshow-form
+      fieldset#defectRatingFieldset
+        legend Defect rating (0-5)
+        p.form-text.mb-2 0 = perfect photo, 5 = unusable / disturbing defects.
+        .rating-options#defectRatingOptions
+      fieldset#alignmentRatingFieldset
+        legend Prompt alignment (rate each part 1-5)
+        p.form-text.mb-2 1 = almost nothing from the prompt, 5 = completely followed.
+        .alignment-controls#alignmentControls
+      .d-flex.flex-wrap.gap-2.mt-2
+        button.btn.btn-primary(type="submit") Save ratings & load next
+        button#skipBtn.btn.btn-outline-secondary(type="button") Skip image
+    .text-danger.mt-2#slideshowError(style="display:none")
+    .text-soft.mt-2.slideshow-empty#slideshowEmpty(style="display:none") All completed prompts already have both ratings. Great job!
+
+block script
+  script(src="/js/image_gen_bulk_slideshow.js")
