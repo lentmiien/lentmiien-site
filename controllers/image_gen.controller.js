@@ -4,7 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
-const ApiDebugLog = require('../models/api_debug_log');
+const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const { Prompt, BulkJob, BulkTestPrompt } = require('../database');
 
@@ -23,6 +23,7 @@ const CACHE_DEFAULT_BUCKET = 'output';
 const CACHE_CONCURRENCY = 5;
 const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
 const JS_FILE_NAME = 'controllers/image_gen.controller.js';
+const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 
 // Track in-flight downloads to avoid duplicate fetches
 const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
@@ -40,44 +41,6 @@ for (const cfg of Object.values(CACHE_CONFIG)) {
   }
 }
 
-function toSerializable(payload) {
-  if (payload === undefined || payload === null) return null;
-  if (payload instanceof Buffer) {
-    return {
-      type: 'Buffer',
-      encoding: 'base64',
-      data: payload.toString('base64')
-    };
-  }
-  if (payload instanceof Error) {
-    return {
-      name: payload.name,
-      message: payload.message,
-      stack: payload.stack
-    };
-  }
-  if (payload instanceof Date) {
-    return payload.toISOString();
-  }
-  if (Array.isArray(payload)) {
-    return payload.map(item => toSerializable(item));
-  }
-  if (typeof payload === 'object') {
-    try {
-      return JSON.parse(JSON.stringify(payload));
-    } catch (err) {
-      if (typeof payload.toString === 'function') {
-        return payload.toString();
-      }
-      return {
-        error: 'Failed to serialize payload',
-        message: err.message
-      };
-    }
-  }
-  return payload;
-}
-
 function headersToObject(headers) {
   if (!headers || typeof headers.forEach !== 'function') return null;
   const result = {};
@@ -85,33 +48,6 @@ function headersToObject(headers) {
     result[key] = value;
   });
   return Object.keys(result).length > 0 ? result : null;
-}
-
-async function recordApiDebugLog({
-  requestUrl,
-  requestHeaders = null,
-  requestBody = null,
-  responseHeaders = null,
-  responseBody = null,
-  functionName
-}) {
-  try {
-    await ApiDebugLog.create({
-      requestUrl,
-      requestHeaders: toSerializable(requestHeaders),
-      requestBody: toSerializable(requestBody),
-      responseHeaders: toSerializable(responseHeaders),
-      responseBody: toSerializable(responseBody),
-      jsFileName: JS_FILE_NAME,
-      functionName
-    });
-  } catch (logError) {
-    logger.error('[API debug] failed to record log', {
-      requestUrl,
-      functionName,
-      message: logError && logError.message ? logError.message : logError
-    });
-  }
 }
 
 // Small helpers

@@ -3,49 +3,10 @@ const path = require('path');
 const sharp = require('sharp');
 const { OpenAI } = require('openai');
 const logger = require('./logger');
-const ApiDebugLog = require('../models/api_debug_log');
+const { createApiDebugLogger } = require('./apiDebugLogger');
 
 const JS_FILE_NAME = 'utils/OpenAI_API.js';
-
-const toSerializable = (payload) => {
-  if (payload === undefined || payload === null) {
-    return null;
-  }
-  if (payload instanceof Buffer) {
-    return {
-      type: 'Buffer',
-      encoding: 'base64',
-      data: payload.toString('base64'),
-    };
-  }
-  if (payload instanceof Error) {
-    return {
-      name: payload.name,
-      message: payload.message,
-      stack: payload.stack,
-    };
-  }
-  if (payload instanceof Date) {
-    return payload.toISOString();
-  }
-  if (Array.isArray(payload)) {
-    return payload.map((item) => toSerializable(item));
-  }
-  if (typeof payload === 'object') {
-    try {
-      return JSON.parse(JSON.stringify(payload));
-    } catch (err) {
-      if (typeof payload.toString === 'function') {
-        return payload.toString();
-      }
-      return {
-        error: 'Failed to serialize payload',
-        message: err.message,
-      };
-    }
-  }
-  return payload;
-};
+const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 
 const headersToObject = (headers) => {
   if (!headers || typeof headers.forEach !== 'function') {
@@ -56,33 +17,6 @@ const headersToObject = (headers) => {
     result[key] = value;
   });
   return Object.keys(result).length > 0 ? result : null;
-};
-
-const recordApiDebugLog = async ({
-  requestUrl,
-  requestHeaders = null,
-  requestBody = null,
-  responseHeaders = null,
-  responseBody = null,
-  functionName,
-}) => {
-  try {
-    await ApiDebugLog.create({
-      requestUrl,
-      requestHeaders: toSerializable(requestHeaders),
-      requestBody: toSerializable(requestBody),
-      responseHeaders: toSerializable(responseHeaders),
-      responseBody: toSerializable(responseBody),
-      jsFileName: JS_FILE_NAME,
-      functionName,
-    });
-  } catch (err) {
-    logger.error('Failed to save API debug log entry', {
-      error: err,
-      requestUrl,
-      functionName,
-    });
-  }
 };
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });

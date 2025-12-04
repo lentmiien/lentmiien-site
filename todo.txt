@@ -1,24 +1,5 @@
-In the bulk tool in `controllers/image_gen.controller.js`, I want to add 2 new image rating system, added to the `models/bulk_test_prompt.js` database. And also add a slideshow view for images with missing ratings (only the 2 new system).
+I need to do something about my API debug logger saving large data object to my database, quickly blowing up the database collections to many GB in size.
 
-Rating system 1:
-A simple 0-5 scale rating of defects in the image.
-* 0 has no defects (essentially a real photo, or image in the given style)
-* 1 has no apparent defects (the same as 0 but used for AI generated images)
-* 2 has minimal to almost no defects, not noticeable at a quick glance
-* 3 has some defects, nothing too severe, may look a bit odd, and easy to spot
-* 4 has clear defects, and the image isn't very useful
-* 5 has major defects, somewhat disturbing, and I don't want to look at the image again
+First, I'm redeclaring the function `recordApiDebugLog` in multiple files, could we break this out to an utility function in the `utils` folder, then we'll make this function scan through the request and response bodies (if provided), and replace any large sized values with a short descriptive string. For example, if nested inside the request body, there is an image or two in BASE64 encoding, just replace the value (BASE64 encoded image) with a string saying something like "xxx bytes string", or if there is a data array with many thousands of entries, replace the array with a string saying something like "xxx elements data array", etc.
 
-Rating system 2:
-A "followed the prompt" rating system, ranging from 1-5, for each part of the prompt. Where 1 indicate that almost nothing from the prompt is in the image, to 5 indicating that everything from the prompt is in the image.
-* part 0 is everything except the placeholder values
-* part 1-n is each placeholder value
-* part n+1 is negative prompt (if used)
-
-In the new slide show UI, we could show an image, and the 2 new rating systems, with a simple input UI for quick ratings.
-
-From rating system 1, I expect we can filter out bad images, by hiding 4-5 ratings, or even 2-3 for finding the best of the best, and from system 2, I expect to learn what kind of words and phrases that work well with the specific model used.
-
-Together with the existing rating system, of how good I think the images are and how well they compare to other images in the batch, I should be able to find my favorite great images from a combination of the existing system and the new system 1, and combining this with the new system 2, I should be able to find prompt elements for generating more great images to my liking.
-
-Please add these 2 new rating system to the bulk workflow, and add the slideshow page to actually rate the images.
+Make the threshold values tunable at the top of the utility file, and also include some custom redaction settings, for example, if a certain Object path exist (if `data.data` exist), replace with a value (set `data.data = "Custom redact string"`), so that I can manually add redactions as necessary, for things that aren't triggered by any data threshold redactions.
