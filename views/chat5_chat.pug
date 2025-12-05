@@ -7,40 +7,152 @@ block content
   p#id.chat5-meta(data-source=conversationSource)= conversation._id
   .chat5-header-actions.d-flex.gap-2.mb-3
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
-  - let user = null
   - const selectedTools = Array.isArray(conversation.metadata && conversation.metadata.tools) ? conversation.metadata.tools : []
+  - 
+    const toPositiveInt = (value, fallback = 25) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+    };
+  - 
+    const formatTimestamp = (value) => {
+      if (!value) return 'Unknown';
+      const dateValue = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(dateValue.getTime())) return String(value);
+      try {
+        return dateValue.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+      } catch (err) {
+        return dateValue.toISOString();
+      }
+    };
+  - const configuredMaxMessages = toPositiveInt(conversation && conversation.metadata && conversation.metadata.maxMessages, 25);
+  - const visibleLimit = Math.min(25, configuredMaxMessages);
+  - 
+    const totalNonHiddenMessages = Array.isArray(messages)
+      ? messages.reduce((acc, msg) => acc + (msg && msg.hideFromBot ? 0 : 1), 0)
+      : 0;
+  - const olderNonHiddenTarget = Math.max(0, totalNonHiddenMessages - visibleLimit);
+  - const olderChunks = [];
+  - let currentChunk = null;
+  - let currentChunkNonHidden = 0;
+  - let processedNonHidden = 0;
+  - const visibleMessages = [];
+  - 
+    if (Array.isArray(messages)) {
+      messages.forEach((msg) => {
+        const isHidden = !!(msg && msg.hideFromBot);
+        const isOlder = processedNonHidden < olderNonHiddenTarget;
+        if (isOlder) {
+          if (!currentChunk) {
+            currentChunk = { messages: [], nonHiddenCount: 0 };
+            currentChunkNonHidden = 0;
+            olderChunks.push(currentChunk);
+          }
+          currentChunk.messages.push(msg);
+          if (!isHidden) {
+            currentChunkNonHidden += 1;
+            currentChunk.nonHiddenCount = currentChunkNonHidden;
+          }
+        } else {
+          visibleMessages.push(msg);
+        }
+        if (!isHidden) {
+          processedNonHidden += 1;
+          if (isOlder && currentChunk && currentChunkNonHidden >= 25) {
+            currentChunk = null;
+            currentChunkNonHidden = 0;
+          }
+        }
+      });
+    }
+  mixin chat5RenderMessageCard(m, state)
+    - if (!m) return;
+    - const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT';
+    - const copyText = (m && m.content) ? (m.content.text || m.content.transcript || m.content.revisedPrompt || m.content.toolOutput || '') : '';
+    - const hasCopyText = typeof copyText === 'string' && copyText.trim().length > 0;
+    if !state.lastUser || state.lastUser !== m.user_id
+      hr.chat5-divider
+      div.userlabel.chat5-user-label(data-user=m.user_id)
+        b= m.user_id 
+      - state.lastUser = m.user_id
+    div(data-id=m._id, class={
+        'chat5-message': true,
+        'chat5-message--hidden': m.hideFromBot,
+        'chat5-message--bot': isBot
+      })
+      if isBot
+        img.chat5-avatar(src='/i/avatar.jpg', alt='Bot avatar')
+      if hasCopyText
+        button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copyText) Copy
+      .chat5-message-body
+        if m.contentType === "text"
+          span.chat5-message-text(id=`${m._id}textout`)!= m.content.html 
+        if m.contentType === "image"
+          img.chat5-message-image(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt)
+          p.chat5-image-caption
+            i= m.content.revisedPrompt
+        if m.contentType === "tool"
+          div.chat5-message-tool
+            i= m.content.toolOutput
+        if m.contentType === "reasoning"
+          div.chat5-message-reasoning
+            i!= m.content.html
+  mixin chat5RenderHiddenGroup(group, state)
+    - if (!group || !group.length) return;
+    - const firstHidden = group[0];
+    - const lastHidden = group[group.length - 1];
+    - const hiddenLabel = group.length === 1 ? '1 hidden message' : `${group.length} hidden messages`;
+    - const firstTime = formatTimestamp(firstHidden && firstHidden.timestamp);
+    - const lastTime = formatTimestamp(lastHidden && lastHidden.timestamp);
+    - const timeRange = firstTime === lastTime ? firstTime : `${firstTime} - ${lastTime}`;
+    details.chat5-hidden-group
+      summary.chat5-hidden-summary
+        span.chat5-hidden-summary-label= hiddenLabel
+        span.chat5-hidden-summary-time= timeRange
+      .chat5-hidden-body
+        each hiddenMsg in group
+          +chat5RenderMessageCard(hiddenMsg, state)
+  mixin chat5RenderMessageList(list, state)
+    - if (!Array.isArray(list) || !list.length) return;
+    - const renderState = state || { lastUser: null };
+    - let buffer = [];
+    each msg, idx in list
+      if msg && msg.hideFromBot
+        - buffer.push(msg);
+        - const nextMsg = list[idx + 1];
+        if !(nextMsg && nextMsg.hideFromBot)
+          +chat5RenderHiddenGroup(buffer, renderState)
+          - buffer = [];
+      else
+        if buffer.length
+          +chat5RenderHiddenGroup(buffer, renderState)
+          - buffer = [];
+        +chat5RenderMessageCard(msg, renderState)
+    if buffer.length
+      +chat5RenderHiddenGroup(buffer, renderState)
+  mixin chat5RenderHistoryChunk(chunk)
+    - if (!chunk || !Array.isArray(chunk.messages) || !chunk.messages.length) return;
+    - const chunkState = { lastUser: null };
+    - const firstMessage = chunk.messages[0];
+    - const lastMessage = chunk.messages[chunk.messages.length - 1];
+    - const rangeStart = formatTimestamp(firstMessage && firstMessage.timestamp);
+    - const rangeEnd = formatTimestamp(lastMessage && lastMessage.timestamp);
+    - const rangeLabel = rangeStart === rangeEnd ? rangeStart : `${rangeStart} - ${rangeEnd}`;
+    - const nonHiddenCount = chunk.nonHiddenCount || chunk.messages.reduce((acc, m) => acc + (m && m.hideFromBot ? 0 : 1), 0);
+    details.chat5-history-chunk
+      summary.chat5-history-chunk-summary
+        span.chat5-chunk-pill= `Show ${nonHiddenCount} older messages`
+        span.chat5-chunk-range= rangeLabel
+      .chat5-chunk-body
+        +chat5RenderMessageList(chunk.messages, chunkState)
   #conversationContainer.chat5-history
-    each m in messages 
-      if user != m.user_id 
-        hr.chat5-divider
-        div.userlabel.chat5-user-label(data-user=m.user_id)
-          b= m.user_id 
-        - user = m.user_id
-      - const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT'
-      - const copyText = (m && m.content) ? (m.content.text || m.content.transcript || m.content.revisedPrompt || m.content.toolOutput || '') : ''
-      - const hasCopyText = typeof copyText === 'string' && copyText.trim().length > 0
-      div(data-id=m._id, class={
-          'chat5-message': true,
-          'chat5-message--hidden': m.hideFromBot,
-          'chat5-message--bot': isBot
-        })
-        if isBot
-          img.chat5-avatar(src='/i/avatar.jpg', alt='Bot avatar')
-        if hasCopyText
-          button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copyText) Copy
-        .chat5-message-body
-          if m.contentType === "text"
-            span.chat5-message-text(id=`${m._id}textout`)!= m.content.html 
-          if m.contentType === "image"
-            img.chat5-message-image(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt)
-            p.chat5-image-caption
-              i= m.content.revisedPrompt
-          if m.contentType === "tool"
-            div.chat5-message-tool
-              i= m.content.toolOutput
-          if m.contentType === "reasoning"
-            div.chat5-message-reasoning
-              i!= m.content.html
+    if olderChunks.length
+      each chunk, chunkIdx in olderChunks
+        +chat5RenderHistoryChunk(chunk)
+    - const visibleState = { lastUser: null };
+    if visibleMessages.length
+      +chat5RenderMessageList(visibleMessages, visibleState)
+    else if !olderChunks.length
+      p.text-muted.mb-0 No messages yet.
   ul#pills-tab.nav.nav-pills.mb-3.chat5-tabs(role="tablist") 
     li.nav-item(role="presentation") 
       button#pills-chat-tab.nav-link.active(data-bs-toggle="pill" data-bs-target="#pills-chat" type="button" role="tab" aria-controls="pills-chat" aria-selected="true") Chat
