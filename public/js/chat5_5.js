@@ -738,3 +738,22 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 document.addEventListener('DOMContentLoaded', initializeDraftingTool);
 
+
+// Set action button
+const actionBtn = document.getElementById("actionBtn");
+let currentEvent = null;
+function setActionButton(text, func) {
+  actionBtn.innerText = text;
+  actionBtn.style.cursor = "pointer";
+  actionBtn.disabled = false;
+  if (currentEvent) {
+    actionBtn.removeEventListener("click", currentEvent)
+  }
+  actionBtn.addEventListener("click", func);
+  currentEvent = func;
+}
+setActionButton("Chat Top", Chat5Top);
+
+function Chat5Top() {
+  open("/chat5/top", "_self");
+}
