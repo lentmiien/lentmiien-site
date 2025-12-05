@@ -573,11 +573,13 @@ block content
 block script
   script.
     window.__INITIAL_JOBS__ = !{JSON.stringify(jobs || [])};
+    window.__INITIAL_JOBS_LAST_UPDATED__ = !{JSON.stringify(latestUpdatedAt || null)};
   script.
     (() => {
       const JOBS_ENDPOINT = '/ocr/jobs';
       const RECEIPT_ENDPOINT = '/receipt/upload_receipt';
-      const POLL_INTERVAL = 5000;
+      const FAST_POLL_MS = 5000;
+      const SLOW_POLL_MS = 10000;
       const state = {
         jobs: Array.isArray(window.__INITIAL_JOBS__) ? window.__INITIAL_JOBS__ : [],
         selectedJobId: null,
@@ -586,6 +588,10 @@ block script
         isForwarding: false,
         layoutEdits: {},
         isEditingLayout: false,
+        latestUpdatedAt: typeof window.__INITIAL_JOBS_LAST_UPDATED__ === 'string'
+          ? window.__INITIAL_JOBS_LAST_UPDATED__
+          : null,
+        isFetchingJobs: false,
       };
 
       const jobListEl = document.getElementById('ocrJobList');
@@ -611,6 +617,41 @@ block script
         } catch {
           return value;
         }
+      };
+
+      const coerceTimestamp = (value) => {
+        const time = new Date(value).getTime();
+        return Number.isFinite(time) ? time : null;
+      };
+
+      const deriveLatestUpdatedAt = (jobs = []) => {
+        const latest = jobs.reduce((max, job) => {
+          const candidates = [
+            job.lastUpdatedAt,
+            job.updatedAt,
+            job.completedAt,
+            job.startedAt,
+            job.createdAt,
+          ];
+
+          if (Array.isArray(job.files)) {
+            job.files.forEach((file) => {
+              candidates.push(
+                file.updatedAt,
+                file.completedAt,
+                file.startedAt,
+                file.createdAt,
+              );
+            });
+          }
+
+          const jobMax = candidates
+            .map(coerceTimestamp)
+            .filter((value) => value !== null)
+            .reduce((innerMax, value) => Math.max(innerMax, value), 0);
+          return Math.max(max, jobMax);
+        }, 0);
+        return latest ? new Date(latest).toISOString() : null;
       };
 
       const dataUrlToBlob = (dataUrl) => {
@@ -678,13 +719,34 @@ block script
         }
       };
 
-      const setJobs = (jobs, focusId) => {
+      const mergeJobs = (jobs, options = {}) => {
         if (!Array.isArray(jobs)) {
           return;
         }
-        state.jobs = applyLayoutOverrides(jobs);
-        if (focusId) {
-          state.selectedJobId = focusId;
+
+        const incoming = applyLayoutOverrides(jobs);
+        const jobIdOrder = Array.isArray(options.jobIds) && options.jobIds.length ? options.jobIds : null;
+        const existingMap = new Map(state.jobs.map((job) => [job.id, job]));
+        const incomingMap = new Map(incoming.map((job) => [job.id, job]));
+        const baseOrder = jobIdOrder
+          ? jobIdOrder
+          : [...new Set([...incoming.map((job) => job.id), ...state.jobs.map((job) => job.id)])];
+        const merged = baseOrder
+          .map((id) => incomingMap.get(id) || existingMap.get(id))
+          .filter(Boolean);
+
+        incoming.forEach((job) => {
+          if (!baseOrder.includes(job.id)) {
+            merged.unshift(job);
+          }
+        });
+
+        state.jobs = merged;
+        const latest = options.latestUpdatedAt || deriveLatestUpdatedAt(merged);
+        state.latestUpdatedAt = latest || null;
+
+        if (options.focusId) {
+          state.selectedJobId = options.focusId;
         } else if (!state.jobs.find((job) => job.id === state.selectedJobId)) {
           state.selectedJobId = state.jobs.length ? state.jobs[0].id : null;
         }
@@ -693,6 +755,8 @@ block script
           renderJobDetails();
         }
       };
+
+      const hasActiveJobs = () => state.jobs.some((job) => job.status === 'processing' || job.status === 'queued');
 
       const selectJob = (jobId) => {
         state.selectedJobId = jobId;
@@ -955,7 +1019,11 @@ block script
           if (!response.ok) {
             throw new Error(payload.error || 'Failed to queue OCR job.');
           }
-          setJobs(payload.jobs || [], payload.jobId);
+          mergeJobs(payload.jobs || [], {
+            focusId: payload.jobId,
+            jobIds: Array.isArray(payload.jobIds) ? payload.jobIds : undefined,
+            latestUpdatedAt: payload.latestUpdatedAt,
+          });
           setFeedback('Job queued successfully.', 'success');
           if (fileInput) fileInput.value = '';
         } catch (error) {
@@ -965,32 +1033,72 @@ block script
         }
       };
 
-      const fetchJobs = async () => {
-        if (state.isEditingLayout) {
-          return;
+      const buildJobsUrl = () => {
+        const params = new URLSearchParams();
+        if (state.latestUpdatedAt) {
+          params.set('updated_since', state.latestUpdatedAt);
         }
-        try {
-          const response = await fetch(JOBS_ENDPOINT);
-          if (!response.ok) return;
-          const payload = await response.json();
-          if (Array.isArray(payload.jobs)) {
-            setJobs(payload.jobs);
-          }
-        } catch (error) {
-          // Silent failure, polling will retry
-        }
+        const query = params.toString();
+        return query ? `${JOBS_ENDPOINT}?${query}` : JOBS_ENDPOINT;
       };
 
       const stopPolling = () => {
         if (state.pollTimer) {
-          clearInterval(state.pollTimer);
+          clearTimeout(state.pollTimer);
           state.pollTimer = null;
         }
       };
 
-      const startPolling = () => {
-        if (state.pollTimer) return;
-        state.pollTimer = setInterval(fetchJobs, POLL_INTERVAL);
+      const scheduleNextPoll = (preferFast = false) => {
+        stopPolling();
+        const interval = preferFast || hasActiveJobs() ? FAST_POLL_MS : SLOW_POLL_MS;
+        state.pollTimer = setTimeout(fetchJobs, interval);
+      };
+
+      const fetchJobs = async () => {
+        if (state.isEditingLayout) {
+          stopPolling();
+          return;
+        }
+        if (state.isFetchingJobs) {
+          return;
+        }
+
+        state.isFetchingJobs = true;
+        let hadUpdates = false;
+
+        try {
+          const response = await fetch(buildJobsUrl(), { headers: { Accept: 'application/json' } });
+          if (!response.ok) return;
+          if (response.status === 304) {
+            return;
+          }
+          const payload = await response.json();
+          const payloadJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+          const jobIds = Array.isArray(payload.jobIds) ? payload.jobIds : undefined;
+          const jobIdsChanged = Array.isArray(jobIds)
+            ? (jobIds.length !== state.jobs.length || jobIds.some((id, index) => state.jobs[index]?.id !== id))
+            : false;
+
+          hadUpdates = payloadJobs.length > 0 || jobIdsChanged;
+          if (payload.latestUpdatedAt) {
+            state.latestUpdatedAt = payload.latestUpdatedAt;
+          }
+          mergeJobs(payloadJobs, {
+            jobIds,
+            latestUpdatedAt: payload.latestUpdatedAt,
+          });
+        } catch (error) {
+          // Silent failure, polling will retry
+        } finally {
+          state.isFetchingJobs = false;
+          scheduleNextPoll(hadUpdates);
+        }
+      };
+
+      const startPolling = (preferFast = false) => {
+        if (state.isEditingLayout) return;
+        scheduleNextPoll(preferFast);
       };
 
       document.addEventListener('click', (event) => {
@@ -1033,7 +1141,6 @@ block script
         jobDetailsEl.addEventListener('focusout', (event) => {
           if (!event.target.closest('[data-layout-input]')) return;
           state.isEditingLayout = false;
-          startPolling();
           fetchJobs();
         });
       }
@@ -1042,10 +1149,13 @@ block script
         formEl.addEventListener('submit', handleFormSubmit);
       }
 
+      if (!state.latestUpdatedAt) {
+        state.latestUpdatedAt = deriveLatestUpdatedAt(state.jobs);
+      }
       if (state.jobs.length) {
         state.selectedJobId = state.jobs[0].id;
       }
       renderJobs();
       renderJobDetails();
-      startPolling();
+      startPolling(true);
     })();

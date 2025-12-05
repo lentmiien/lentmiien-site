@@ -1,11 +1,4 @@
-At the `views/ocr_tool.pug` page, when putting together the 'Layout text' output, I've noticed that the algorithm we are currently using is rather inaccurate, but when I look at the bounding boxes overlayed on the image, they are arranged so neatly, that I can't understand how the 'Layout text' output get to be that inaccurate. We should be able to do much better, with just a few simple rules.
+I've noticed that the `views/ocr_tool.pug` page is very slow. It seems like it re-download all the job data every 5 seconds, including the image data, which quickly grows to several tens of MB, and it never finished downloading all the data in 5 seconds, so the re-downloads build up, and slow down the page.
+Can we do some cashing of completed jobs on the user side, and maybe slow down the update interval to 10 seconds, or 5 seconds after last update complete?
 
-Rule 1: if the Y overlap of 2 text entries is less than half of the height of both entries, then the entries are on separate rows
-Rule 2: if on the same row, then the order (left to right) can be determined by ordering in increasing start X coordinates of the 2 entries (there can be more than 2 entries per row)
-Rule 3: when combining entries that are on the same row, just put a double space '  ' in-between the entries and combine the strings
-
-I'm mostly using nicely oriented images, so these rules should work well for my use case.
-
-Please update the algorithm for putting together the 'Layout text' output.
-
-codex resume 019aed5e-2b00-70e2-bc2d-f2ac7e59e6d4
+codex resume 019aedaa-ae1f-7cb2-a2b2-a58e3dd67110

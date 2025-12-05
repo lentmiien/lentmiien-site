@@ -19,6 +19,47 @@ let activeJobId = null;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const percentOfCanvas = (value) => clamp((value / MAX_COORD_VALUE) * 100, 0, 100);
+const coerceDate = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getJobLastUpdated = (job) => {
+  if (!job) return null;
+  const timestamps = [
+    job.updatedAt,
+    job.completedAt,
+    job.startedAt,
+    job.createdAt,
+  ];
+
+  job.files.forEach((file) => {
+    timestamps.push(
+      file.updatedAt,
+      file.completedAt,
+      file.startedAt,
+      file.createdAt,
+    );
+  });
+
+  const latest = timestamps
+    .map(coerceDate)
+    .filter(Boolean)
+    .reduce((max, date) => Math.max(max, date.getTime()), 0);
+
+  return latest ? new Date(latest) : null;
+};
+
+const getLatestUpdatedAt = () => {
+  if (!jobStore.length) {
+    return null;
+  }
+  const latest = jobStore.reduce((max, job) => {
+    const updated = getJobLastUpdated(job);
+    return Math.max(max, updated ? updated.getTime() : 0);
+  }, 0);
+  return latest ? new Date(latest) : null;
+};
 
 const buildViewState = (overrides = {}) => ({
   title: 'OCR Workspace',
@@ -34,6 +75,7 @@ const buildViewState = (overrides = {}) => ({
   error: overrides.error || null,
   health: overrides.health || null,
   jobs: overrides.jobs || [],
+  latestUpdatedAt: overrides.latestUpdatedAt || null,
 });
 
 const fetchHealth = async () => {
@@ -144,6 +186,7 @@ const sanitizeJob = (job) => ({
   startedAt: job.startedAt,
   completedAt: job.completedAt,
   updatedAt: job.updatedAt,
+  lastUpdatedAt: getJobLastUpdated(job),
   error: job.error,
   owner: job.owner,
   files: job.files.map((file) => {
@@ -269,6 +312,7 @@ const executeJob = async (job) => {
       });
     } finally {
       file.updatedAt = new Date();
+      job.updatedAt = new Date();
       file.buffer = null; // release memory once processed
     }
   }
@@ -405,11 +449,25 @@ exports.renderTool = async (_req, res) => {
   res.render('ocr_tool', buildViewState({
     health,
     jobs: getJobsSnapshot(),
+    latestUpdatedAt: getLatestUpdatedAt(),
   }));
 };
 
-exports.listJobs = (_req, res) => {
-  res.json({ jobs: getJobsSnapshot() });
+exports.listJobs = (req, res) => {
+  const updatedSince = coerceDate(req.query.updated_since);
+  const latestUpdatedAt = getLatestUpdatedAt();
+  const targetJobs = updatedSince
+    ? jobStore.filter((job) => {
+      const lastUpdated = getJobLastUpdated(job);
+      return lastUpdated && lastUpdated > updatedSince;
+    })
+    : jobStore;
+
+  res.json({
+    jobs: targetJobs.map(sanitizeJob),
+    latestUpdatedAt: latestUpdatedAt ? latestUpdatedAt.toISOString() : null,
+    jobIds: jobStore.map((job) => job.id),
+  });
 };
 
 exports.enqueueJob = (req, res) => {
@@ -438,5 +496,7 @@ exports.enqueueJob = (req, res) => {
   return res.status(202).json({
     jobs: getJobsSnapshot(),
     jobId: job.id,
+    latestUpdatedAt: getLatestUpdatedAt()?.toISOString() || null,
+    jobIds: jobStore.map((entry) => entry.id),
   });
 };
