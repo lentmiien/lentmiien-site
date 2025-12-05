@@ -1898,6 +1898,65 @@ label,
   max-width: 360px;
 }
 
+.chat5-input-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+@media (min-width: 992px) {
+  .chat5-input-tools {
+    flex-direction: row;
+    align-items: stretch;
+  }
+}
+
+.chat5-tool-card {
+  background: rgba(27, 32, 38, 0.45);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 0;
+}
+
+.chat5-template-controls.chat5-tool-card {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.chat5-draft-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat5-draft-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px;
+}
+
+.chat5-draft-field label {
+  font-size: 0.9rem;
+}
+
+.chat5-draft-field textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.chat5-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .chat5-editor {
   min-height: 260px;
   background: var(--surface-2);
