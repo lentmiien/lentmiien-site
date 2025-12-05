@@ -79,73 +79,47 @@ const buildLayoutText = (boxes) => {
     return '';
   }
 
-  const sorted = boxes.slice().sort((a, b) => {
-    const yDiff = Math.abs(a.startY - b.startY);
-    if (yDiff <= 16) {
-      return a.startX - b.startX;
-    }
-    return a.startY - b.startY;
-  });
-
-  const lines = [];
-  let currentLine = [];
-  let currentBaseline = null;
-  const LINE_THRESHOLD = 24;
-
-  sorted.forEach((box) => {
-    const midY = (box.startY + box.endY) / 2;
-    if (!currentLine.length) {
-      currentLine.push(box);
-      currentBaseline = midY;
-      return;
-    }
-    if (Math.abs(midY - currentBaseline) > LINE_THRESHOLD) {
-      lines.push(currentLine);
-      currentLine = [box];
-      currentBaseline = midY;
-    } else {
-      currentLine.push(box);
-      currentBaseline = (currentBaseline * (currentLine.length - 1) + midY) / currentLine.length;
-    }
-  });
-
-  if (currentLine.length) {
-    lines.push(currentLine);
-  }
-
-  const toLineText = (line) => {
-    const fragments = [];
-    let previousBox = null;
-    line.forEach((box) => {
-      const text = box.text.trim();
-      if (!text) {
-        return;
-      }
-      if (!previousBox) {
-        fragments.push(text);
-        previousBox = box;
-        return;
-      }
-
-      const gap = Math.max(0, box.startX - previousBox.endX);
-      let spacer = ' ';
-      if (gap >= 60) {
-        spacer = ' '.repeat(clamp(Math.round(gap / 30), 2, 12));
-      } else if (gap <= 6) {
-        spacer = '';
-      }
-
-      fragments.push(`${spacer}${text}`);
-      previousBox = box;
-    });
-
-    return fragments.join('').trim();
+  const height = (box) => Math.max(1, box.endY - box.startY);
+  const yOverlap = (a, b) => Math.max(0, Math.min(a.endY, b.endY) - Math.max(a.startY, b.startY));
+  const sharesRow = (a, b) => {
+    const overlap = yOverlap(a, b);
+    return overlap >= 0.5 * height(a) && overlap >= 0.5 * height(b);
   };
 
-  return lines
-    .map(toLineText)
-    .filter(Boolean)
-    .join('\n');
+  const normalized = boxes
+    .filter((box) => box && typeof box.text === 'string')
+    .map((box) => ({
+      ...box,
+      text: box.text.trim(),
+    }))
+    .filter((box) => box.text);
+
+  if (!normalized.length) {
+    return '';
+  }
+
+  const sorted = normalized
+    .sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
+
+  const rows = [];
+  sorted.forEach((box) => {
+    const targetRow = rows.find((row) => row.some((entry) => sharesRow(entry, box)));
+    if (targetRow) {
+      targetRow.push(box);
+    } else {
+      rows.push([box]);
+    }
+  });
+
+  const lines = rows
+    .map((row) => row
+      .sort((a, b) => a.startX - b.startX)
+      .map((box) => (box.text || '').trim())
+      .filter(Boolean)
+      .join('  '))
+    .filter(Boolean);
+
+  return lines.join('\n');
 };
 
 const enrichBoxesForOverlay = (boxes) => boxes.map((box, index) => {
