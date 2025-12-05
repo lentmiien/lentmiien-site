@@ -2,7 +2,7 @@
 const sharp = require('sharp');
 const logger = require('../utils/logger');
 
-const { Conversation5Model, PendingRequests } = require('../database');
+const { Conversation5Model, PendingRequests, Chat5Model } = require('../database');
 
 // Conversation5Model.metadata
 const DEFAULT_SETTINGS = {
@@ -1063,6 +1063,28 @@ class ConversationService {
     return conv;
   }
 
+  async ensureConversation5(conversationId) {
+    if (!conversationId) return { conversation: null, migrated: false };
+
+    let conversation = await Conversation5Model.findById(conversationId);
+    if (conversation) {
+      return { conversation, migrated: false };
+    }
+
+    const oldConversation = await this.conversationModel.findById(conversationId);
+    if (!oldConversation) {
+      return { conversation: null, migrated: false };
+    }
+
+    const converted = this.convertOldConversation(oldConversation);
+    converted._id = oldConversation._id;
+    converted.messages = await this.messageService.convertOldMessages(oldConversation.messages);
+    converted.updatedAt = new Date();
+    await converted.save();
+
+    return { conversation: converted, migrated: true };
+  }
+
   async postToConversationNew({conversationId, userId, messageContent, messageType, generateAI=false, s, c}) {
     let conversation = await Conversation5Model.findById(conversationId);
 
@@ -1306,6 +1328,78 @@ class ConversationService {
     let conversation = await Conversation5Model.findById(conversationId);
     conversation.messages = newArray;
     await conversation.save();
+  }
+
+  async hideLastVisibleMessage(conversationId) {
+    const { conversation } = await this.ensureConversation5(conversationId);
+    if (!conversation) throw new Error('Conversation not found in chat5 database');
+
+    const messageIds = Array.isArray(conversation.messages) ? conversation.messages : [];
+    for (let i = messageIds.length - 1; i >= 0; i--) {
+      const messageId = messageIds[i];
+      if (!messageId) continue;
+      const message = await Chat5Model.findById(messageId);
+      if (!message || message.hideFromBot) continue;
+
+      message.hideFromBot = true;
+      await message.save();
+
+      conversation.updatedAt = new Date();
+      await conversation.save();
+
+      return { conversation, message };
+    }
+
+    return { conversation, message: null };
+  }
+
+  async removeLastVisibleMessage(conversationId) {
+    const { conversation } = await this.ensureConversation5(conversationId);
+    if (!conversation) throw new Error('Conversation not found in chat5 database');
+
+    const messageIds = Array.isArray(conversation.messages) ? [...conversation.messages] : [];
+    if (messageIds.length === 0) {
+      return { conversation, removedIds: [] };
+    }
+
+    let lastVisibleIndex = -1;
+    let anchorIndex = -1;
+
+    for (let i = messageIds.length - 1; i >= 0; i--) {
+      const messageId = messageIds[i];
+      if (!messageId) continue;
+      const message = await Chat5Model.findById(messageId);
+      if (!message || message.hideFromBot) continue;
+
+      if (lastVisibleIndex === -1) {
+        lastVisibleIndex = i;
+      } else {
+        anchorIndex = i;
+        break;
+      }
+    }
+
+    if (lastVisibleIndex === -1) {
+      return { conversation, removedIds: [] };
+    }
+
+    const keepLength = anchorIndex >= 0 ? anchorIndex + 1 : 0;
+    const removedIds = messageIds.slice(keepLength).map((id) => (id ? id.toString() : id));
+
+    if (!removedIds.length) {
+      return { conversation, removedIds: [] };
+    }
+
+    conversation.messages = messageIds.slice(0, keepLength).map((id) => (id ? id.toString() : id));
+    conversation.updatedAt = new Date();
+    await conversation.save();
+
+    return {
+      conversation,
+      removedIds,
+      removedVisibleId: messageIds[lastVisibleIndex] ? messageIds[lastVisibleIndex].toString() : null,
+      anchorMessageId: anchorIndex >= 0 && messageIds[anchorIndex] ? messageIds[anchorIndex].toString() : null,
+    };
   }
 
   async generateTitle(conversationId) {

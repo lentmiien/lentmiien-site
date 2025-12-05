@@ -1,3 +1,10 @@
-In `views/chat5_chat.pug` there is a draft prompt tool with a small form for selecting personality, response type, and write some prompt notes (optional). The tool itself works as intended, but I want to make the input form more compact. At the same time, if we could make the template tool a bit more compact as well that would be great, and just push the 2 tools a bit closer together, as the tools are very similar in that they both put content in the input text area.
+When using the `views/chat5_chat.pug` page (chatting), it's quite often the case that I send a message to summarize an ongoing conversation, and I may continue the conversation after that, or I may simply regret a certain message I sent. In these cases, I have to open the "Raw" tab and either mark the messages as "Hide from bot", or remove the Message ids (if I don't want to keep the messages in the conversation). *Both of these actions only work after reloading the page, so it's a bit anoying.
+Since this is a rather common thing to do, I'd like to add 2 new buttons in the UI, "Hide last message" and "Remove last message".
 
-codex resume 019aec2e-951c-7582-b979-6b1ad02f2529
+"Hide last message" should find the last message in the conversation where `hideFromBot` is `false` and change this to `true`.
+
+"Remove last message" should find the second last message in the conversation where `hideFromBot` is `false` and remove all message ids after that, so in other word, remove the last visible message, and all hidden messages before that.
+
+There is no need to delete the messages from the message database, as I allow for users to manually append messages to other conversations, so the message could be used elsewhere.
+
+codex resume 019aecbc-7d10-7f32-909b-1bdc7b3b459b

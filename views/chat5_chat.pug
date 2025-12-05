@@ -203,6 +203,9 @@ block content
         button.btn.btn-success#respondOnly(type="button", onclick="Append(false, true)") Response
         button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)", disabled) Batch Send & Response
         button.btn.btn-outline-success#batchResponse(type="button", onclick="QueueBatch(false)", disabled) Batch Response
+      .chat5-history-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
+        button#hideLastMessageBtn.btn.btn-outline-warning(type="button", onclick="HideLastMessage()", title="Mark the most recent visible message as hidden") Hide last message
+        button#removeLastMessageBtn.btn.btn-outline-danger(type="button", onclick="RemoveLastMessage()", title="Remove the latest visible message and any trailing hidden messages") Remove last message
       p#batchToolsWarning.chat5-batch-warning.text-warning.small(class={ 'd-none': !selectedTools.length })
         | Tools are unsupported by the batches API; any selected tools will be ignored during batch processing.
       hr.chat5-divider
@@ -311,61 +314,62 @@ block content
             b outputFormat: 
             span= conversation.metadata.outputFormat
       each m, i in messages 
-        h3= `Message#${i}`
-        .row 
-          .col-3 
-            div 
-              b _id: 
-              span= m._id
-            div 
-              b user_id: 
-              span= m.user_id
-            div 
-              b category: 
-              span= m.category
-            div 
-              b tags: 
-              span= m.tags.join(", ")
-            div 
-              b contentType: 
-              span= m.contentType
-            div 
-              b Hide from bot: 
-              input(type="checkbox", data-id=m._id, checked=m.hideFromBot, onchange="ToggleHideFromBot(this)")
-          .col-9
-            h4 Content 
-            div 
-              b text: 
-                button.btn.btn-link(data-id=m._id, data-type="text", data-content=m.content.text, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}text`)= m.content.text
-            div 
-              b image: 
-                button.btn.btn-link(data-id=m._id, data-type="image", data-content=m.content.image, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}image`)= m.content.image
-            div 
-              b audio: 
-                button.btn.btn-link(data-id=m._id, data-type="audio", data-content=m.content.audio, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}audio`)= m.content.audio
-            div 
-              b tts: 
-                button.btn.btn-link(data-id=m._id, data-type="tts", data-content=m.content.tts, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}tts`)= m.content.tts
-            div 
-              b transcript: 
-                button.btn.btn-link(data-id=m._id, data-type="transcript", data-content=m.content.transcript, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}transcript`)= m.content.transcript
-            div 
-              b revisedPrompt: 
-                button.btn.btn-link(data-id=m._id, data-type="revisedPrompt", data-content=m.content.revisedPrompt, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}revisedPrompt`)= m.content.revisedPrompt
-            div 
-              b imageQuality: 
-                button.btn.btn-link(data-id=m._id, data-type="imageQuality", data-content=m.content.imageQuality, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}imageQuality`)= m.content.imageQuality
-            div 
-              b toolOutput: 
-                button.btn.btn-link(data-id=m._id, data-type="toolOutput", data-content=m.content.toolOutput, onclick=`EditText(this)`) Edit
-              pre(id=`${m._id}toolOutput`)= m.content.toolOutput
+        .chat5-raw-message(data-message-id=m._id)
+          h3= `Message#${i}`
+          .row 
+            .col-3 
+              div 
+                b _id: 
+                span= m._id
+              div 
+                b user_id: 
+                span= m.user_id
+              div 
+                b category: 
+                span= m.category
+              div 
+                b tags: 
+                span= m.tags.join(", ")
+              div 
+                b contentType: 
+                span= m.contentType
+              div 
+                b Hide from bot: 
+                input(type="checkbox", data-id=m._id, checked=m.hideFromBot, onchange="ToggleHideFromBot(this)")
+            .col-9
+              h4 Content 
+              div 
+                b text: 
+                  button.btn.btn-link(data-id=m._id, data-type="text", data-content=m.content.text, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}text`)= m.content.text
+              div 
+                b image: 
+                  button.btn.btn-link(data-id=m._id, data-type="image", data-content=m.content.image, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}image`)= m.content.image
+              div 
+                b audio: 
+                  button.btn.btn-link(data-id=m._id, data-type="audio", data-content=m.content.audio, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}audio`)= m.content.audio
+              div 
+                b tts: 
+                  button.btn.btn-link(data-id=m._id, data-type="tts", data-content=m.content.tts, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}tts`)= m.content.tts
+              div 
+                b transcript: 
+                  button.btn.btn-link(data-id=m._id, data-type="transcript", data-content=m.content.transcript, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}transcript`)= m.content.transcript
+              div 
+                b revisedPrompt: 
+                  button.btn.btn-link(data-id=m._id, data-type="revisedPrompt", data-content=m.content.revisedPrompt, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}revisedPrompt`)= m.content.revisedPrompt
+              div 
+                b imageQuality: 
+                  button.btn.btn-link(data-id=m._id, data-type="imageQuality", data-content=m.content.imageQuality, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}imageQuality`)= m.content.imageQuality
+              div 
+                b toolOutput: 
+                  button.btn.btn-link(data-id=m._id, data-type="toolOutput", data-content=m.content.toolOutput, onclick=`EditText(this)`) Edit
+                pre(id=`${m._id}toolOutput`)= m.content.toolOutput
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content

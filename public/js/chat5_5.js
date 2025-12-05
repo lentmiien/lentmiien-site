@@ -238,6 +238,24 @@ function setUpdateButtonState() {
   btn.disabled = idEl.dataset.source !== 'conversation5';
 }
 
+function getCurrentConversationId() {
+  const idEl = document.getElementById('id');
+  if (!idEl) return '';
+  return (idEl.innerHTML || '').trim();
+}
+
+function requireExistingConversation(actionLabel) {
+  const conversationId = getCurrentConversationId();
+  if (!conversationId || conversationId === 'NEW') {
+    const label = typeof actionLabel === 'string' && actionLabel.length
+      ? actionLabel
+      : 'perform this action';
+    alert(`Please open an existing conversation before trying to ${label}.`);
+    return null;
+  }
+  return conversationId;
+}
+
 function SwitchConversation(new_id) {
   if (document.getElementById("id").innerHTML === new_id) return;
 
@@ -271,6 +289,36 @@ function QueueBatch(includePrompt) {
   const settings = collectChatSettings();
   socket.emit('chat5-batch', { conversation_id, prompt, includePrompt, settings });
   if (includePrompt) editor.reset();
+}
+
+function HideLastMessage() {
+  const conversationId = requireExistingConversation('hide messages');
+  if (!conversationId) return;
+
+  showLoadingPopup();
+  socket.emit('chat5-hidelastmessage', { conversation_id: conversationId }, (resp) => {
+    hideLoadingPopup();
+    if (!resp || resp.ok !== true || !resp.messageId) {
+      alert(resp && resp.message ? resp.message : 'Unable to hide the last visible message.');
+      return;
+    }
+    markMessageHiddenInUI(resp.messageId);
+  });
+}
+
+function RemoveLastMessage() {
+  const conversationId = requireExistingConversation('remove messages');
+  if (!conversationId) return;
+
+  showLoadingPopup();
+  socket.emit('chat5-removelastmessage', { conversation_id: conversationId }, (resp) => {
+    hideLoadingPopup();
+    if (!resp || resp.ok !== true || !Array.isArray(resp.removedIds) || resp.removedIds.length === 0) {
+      alert(resp && resp.message ? resp.message : 'Unable to remove the last visible message.');
+      return;
+    }
+    removeMessagesFromUI(resp.removedIds);
+  });
 }
 
 function UpdateConversation() {
@@ -430,6 +478,24 @@ socket.on('chat5-messages', ({id, messages, placeholderId}) => {
   hideLoadingPopup();
 });
 
+socket.on('chat5-message-hidden', (payload) => {
+  const currentId = getCurrentConversationId();
+  if (!currentId || !payload || !payload.conversationId) return;
+  if (String(payload.conversationId) !== currentId) return;
+  if (payload.messageId) {
+    markMessageHiddenInUI(payload.messageId);
+  }
+});
+
+socket.on('chat5-messages-removed', (payload) => {
+  const currentId = getCurrentConversationId();
+  if (!currentId || !payload || !payload.conversationId) return;
+  if (String(payload.conversationId) !== currentId) return;
+  if (Array.isArray(payload.removedIds) && payload.removedIds.length > 0) {
+    removeMessagesFromUI(payload.removedIds);
+  }
+});
+
 socket.on('chat5-conversation-settings-updated', (data) => {
   const currentId = document.getElementById("id").innerHTML;
   if (currentId !== data.conversationId) return;
@@ -510,12 +576,50 @@ function AddMessageToUI(m) {
 
 function removeMessageFromUI(messageId) {
   if (!messageId) return;
-  const container = document.getElementById("conversationContainer");
-  if (!container) return;
-  const element = container.querySelector(`.chat5-message[data-id="${messageId}"]`);
-  if (element && element.parentNode) {
-    element.parentNode.removeChild(element);
+  const container = document.getElementById('conversationContainer');
+  if (container) {
+    const element = container.querySelector(`.chat5-message[data-id="${messageId}"]`);
+    if (element) {
+      const hiddenBody = element.closest('.chat5-hidden-body');
+      element.remove();
+      if (hiddenBody && hiddenBody.querySelectorAll('.chat5-message').length === 0) {
+        const hiddenGroup = hiddenBody.closest('.chat5-hidden-group');
+        if (hiddenGroup) {
+          hiddenGroup.remove();
+        }
+      }
+    }
   }
+  const rawEntry = document.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`);
+  if (rawEntry) {
+    rawEntry.remove();
+  }
+}
+
+function removeMessagesFromUI(messageIds) {
+  if (!Array.isArray(messageIds)) return;
+  messageIds.forEach((id) => removeMessageFromUI(id));
+}
+
+function setRawMessageHiddenState(messageId, hidden) {
+  const rawEntry = document.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`);
+  if (!rawEntry) return;
+  const checkbox = rawEntry.querySelector(`input[type="checkbox"][data-id="${messageId}"]`);
+  if (checkbox) {
+    checkbox.checked = !!hidden;
+  }
+}
+
+function markMessageHiddenInUI(messageId) {
+  if (!messageId) return;
+  const container = document.getElementById('conversationContainer');
+  if (container) {
+    const element = container.querySelector(`.chat5-message[data-id="${messageId}"]`);
+    if (element) {
+      element.classList.add('chat5-message--hidden');
+    }
+  }
+  setRawMessageHiddenState(messageId, true);
 }
 
 function message(m) {

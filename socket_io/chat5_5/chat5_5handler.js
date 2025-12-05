@@ -1028,6 +1028,75 @@ module.exports = async function registerChat5_5Handlers({
     }
   });
 
+  socket.on('chat5-hidelastmessage', async (raw = {}, ack) => {
+    const eventName = 'chat5-hidelastmessage';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for hidelastmessage.', { ack });
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversation_id, '', 'conversation_id', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'conversation_id is required.', { ack, adjustments });
+        return;
+      }
+      const result = await conversationService.hideLastVisibleMessage(conversationId);
+      if (!result || !result.message) {
+        respondWithError(eventName, 'No visible messages available to hide.', { ack, adjustments });
+        return;
+      }
+      const payload = {
+        ok: true,
+        conversationId,
+        messageId: result.message._id ? result.message._id.toString() : null,
+      };
+      const convRoom = roomForConversation(conversationId);
+      io.to(convRoom).emit('chat5-message-hidden', payload);
+      if (typeof ack === 'function') ack(payload);
+      emitAdjustments(eventName, adjustments, { conversationId });
+    } catch (error) {
+      logger.error('Failed to hide last message', error);
+      respondWithError(eventName, 'Failed to hide last message.', { ack, details: error.message, adjustments });
+    }
+  });
+
+  socket.on('chat5-removelastmessage', async (raw = {}, ack) => {
+    const eventName = 'chat5-removelastmessage';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for removelastmessage.', { ack });
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversation_id, '', 'conversation_id', adjustments);
+      if (!conversationId) {
+        respondWithError(eventName, 'conversation_id is required.', { ack, adjustments });
+        return;
+      }
+      const result = await conversationService.removeLastVisibleMessage(conversationId);
+      const removedIds = Array.isArray(result && result.removedIds)
+        ? result.removedIds.filter(Boolean).map((id) => id.toString())
+        : [];
+      if (!removedIds.length) {
+        respondWithError(eventName, 'No removable messages were found.', { ack, adjustments });
+        return;
+      }
+      const payload = {
+        ok: true,
+        conversationId,
+        removedIds,
+      };
+      const convRoom = roomForConversation(conversationId);
+      io.to(convRoom).emit('chat5-messages-removed', payload);
+      if (typeof ack === 'function') ack(payload);
+      emitAdjustments(eventName, adjustments, { conversationId });
+    } catch (error) {
+      logger.error('Failed to remove last message', error);
+      respondWithError(eventName, 'Failed to remove last message.', { ack, details: error.message, adjustments });
+    }
+  });
+
   // Edit text
   socket.on('chat5-edittext-up', async (raw) => {
     const eventName = 'chat5-edittext-up';
