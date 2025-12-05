@@ -26,6 +26,7 @@ block content
                 th Amount
                 th Method
                 th Business
+                th Layout text
                 th Actions
             tbody
               each d in receipts
@@ -37,6 +38,11 @@ block content
                     span.business-name= d.business_name
                     if d.business_address
                       span.business-line= d.business_address
+                  td(data-label='Layout text')
+                    if d.layout_text
+                      span.layout-snippet= d.layout_text.length > 120 ? d.layout_text.slice(0, 120) + '...' : d.layout_text
+                    else
+                      span.text-muted N/A
                   td.actions(data-label='Actions')
                     .action-buttons
                       a.btn.btn-primary(href=`/receipt/view_receipt/${d._id.toString()}`) View/Edit

@@ -938,6 +938,13 @@ code {
   margin-top: 0.25rem;
 }
 
+.history-table .layout-snippet {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
 .history-table .actions {
   text-align: right;
 }

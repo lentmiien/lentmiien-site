@@ -1,10 +1,13 @@
-When using the `views/chat5_chat.pug` page (chatting), it's quite often the case that I send a message to summarize an ongoing conversation, and I may continue the conversation after that, or I may simply regret a certain message I sent. In these cases, I have to open the "Raw" tab and either mark the messages as "Hide from bot", or remove the Message ids (if I don't want to keep the messages in the conversation). *Both of these actions only work after reloading the page, so it's a bit anoying.
-Since this is a rather common thing to do, I'd like to add 2 new buttons in the UI, "Hide last message" and "Remove last message".
+I want to connect the `controllers/ocrcontroller.js` and `controllers/receiptcontroller.js` in the following way:
 
-"Hide last message" should find the last message in the conversation where `hideFromBot` is `false` and change this to `true`.
+First, I want to make the 'Layout text' output editable in the OCR tool, for manually correcting any errors before proceeding to the next step.
 
-"Remove last message" should find the second last message in the conversation where `hideFromBot` is `false` and remove all message ids after that, so in other word, remove the last visible message, and all hidden messages before that.
+Once I've completed an OCR job of receipts, and possible corrected any OCR errors, I want to have a button for sending the receipts (all receipts in the OCR job) to the receipt controller. Normally the receipt controller only need the images (that are then resized and saved to the appropriate folder), but additionally I now want to include the OCR 'Layout text'. So in the receipt controller, and the receipt database, I want to add support for this additional text field. Also, when sending the receipt image and text instructions to the OpenAI API, I want to include the OCR text, for further improving the response accuracy.
 
-There is no need to delete the messages from the message database, as I allow for users to manually append messages to other conversations, so the message could be used elsewhere.
+Both the OCR tool and receipt tool can handle multiple image uploads, so my typical use case will be to upload 1 or more receipts to the OCR tool, then forward all the receipts to the receipt tool when the OCR is done, but this step is done manually, as I may need to correct the 'Layout text', and not all the OCR I do are receipts.
 
-codex resume 019aecbc-7d10-7f32-909b-1bdc7b3b459b
+If, in case, I were to upload any receipts directly to the receipt tool in the future (skip the OCR tool), then I want to leave the 'Layout text' in the receipt database empty.
+
+Make sure that 'Layout text' appear when previewing receipts, and can also be edited if necessary, as any other data in the receipt tool.
+
+codex resume 019aed16-dca2-7dd0-a0d5-ac7e5a9d561a

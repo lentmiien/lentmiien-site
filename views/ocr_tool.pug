@@ -432,6 +432,54 @@ block styles
       white-space: pre-wrap;
     }
 
+    .layout-textarea {
+      width: 100%;
+      min-height: 180px;
+      background: var(--ocr-surface-1);
+      border: 1px solid var(--ocr-border);
+      border-radius: 10px;
+      color: var(--ocr-text);
+      padding: 0.75rem;
+      font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+      resize: vertical;
+    }
+
+    .layout-textarea:focus {
+      outline: 2px solid var(--ocr-focus);
+      border-color: var(--ocr-focus);
+    }
+
+    .job-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .forward-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 0.85rem 1rem;
+      background: var(--ocr-accent);
+      color: #111418;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+
+    .forward-btn:hover:enabled {
+      background: var(--ocr-accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .forward-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+      background: var(--ocr-border);
+      color: var(--ocr-text-muted);
+    }
+
     #ocrFeedback {
       margin-top: 1rem;
       min-height: 1.5rem;
@@ -528,12 +576,16 @@ block script
   script.
     (() => {
       const JOBS_ENDPOINT = '/ocr/jobs';
+      const RECEIPT_ENDPOINT = '/receipt/upload_receipt';
       const POLL_INTERVAL = 5000;
       const state = {
         jobs: Array.isArray(window.__INITIAL_JOBS__) ? window.__INITIAL_JOBS__ : [],
         selectedJobId: null,
         isSubmitting: false,
         pollTimer: null,
+        isForwarding: false,
+        layoutEdits: {},
+        isEditingLayout: false,
       };
 
       const jobListEl = document.getElementById('ocrJobList');
@@ -553,12 +605,56 @@ block script
           .replace(/'/g, '&#039;');
 
       const formatDate = (value) => {
-        if (!value) return '—';
+        if (!value) return 'N/A';
         try {
           return new Date(value).toLocaleString();
         } catch {
           return value;
         }
+      };
+
+      const dataUrlToBlob = (dataUrl) => {
+        try {
+          const [meta, base64] = dataUrl.split(',');
+          const mimeMatch = meta.match(/data:(.*?);/);
+          const mimeType = mimeMatch && mimeMatch[1] ? mimeMatch[1] : 'application/octet-stream';
+          const binary = atob(base64);
+          const buffer = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            buffer[i] = binary.charCodeAt(i);
+          }
+          return new Blob([buffer], { type: mimeType });
+        } catch (error) {
+          console.error('Failed to convert data URL', error);
+          return null;
+        }
+      };
+
+      const applyLayoutOverrides = (jobs) => jobs.map((job) => ({
+        ...job,
+        files: job.files.map((file) => {
+          const override = state.layoutEdits[file.id];
+          if (override !== undefined && file.result) {
+            return { ...file, result: { ...file.result, layoutText: override } };
+          }
+          return file;
+        }),
+      }));
+
+      const upsertLayoutEdit = (jobId, fileId, value) => {
+        state.layoutEdits[fileId] = value;
+        state.jobs = state.jobs.map((job) => {
+          if (job.id !== jobId) return job;
+          return {
+            ...job,
+            files: job.files.map((file) => {
+              if (file.id !== fileId || !file.result) {
+                return file;
+              }
+              return { ...file, result: { ...file.result, layoutText: value } };
+            }),
+          };
+        });
       };
 
       const summarizeJob = (job) => {
@@ -586,14 +682,16 @@ block script
         if (!Array.isArray(jobs)) {
           return;
         }
-        state.jobs = jobs;
+        state.jobs = applyLayoutOverrides(jobs);
         if (focusId) {
           state.selectedJobId = focusId;
         } else if (!state.jobs.find((job) => job.id === state.selectedJobId)) {
           state.selectedJobId = state.jobs.length ? state.jobs[0].id : null;
         }
         renderJobs();
-        renderJobDetails();
+        if (!state.isEditingLayout) {
+          renderJobDetails();
+        }
       };
 
       const selectJob = (jobId) => {
@@ -654,6 +752,15 @@ block script
         }
 
         const summary = summarizeJob(job);
+        const hasSendable = job.files.some((file) => file.status === 'completed' && file.result && file.result.imageDataUrl);
+        const forwardHtml = `
+          <div class="job-actions">
+            <button type="button" class="forward-btn" data-send-job="${job.id}" ${hasSendable ? '' : 'disabled'}>
+              Send receipts to inbox
+            </button>
+            <p class="ocr-note">Layout text edits are forwarded with the receipts.</p>
+          </div>
+        `;
         const metaHtml = `
           <div class="job-meta-grid">
             <div class="meta-block">
@@ -691,7 +798,7 @@ block script
 
         const filesHtml = job.files.map((file, index) => renderFileCard(job, file, index + 1)).join('');
 
-        jobDetailsEl.innerHTML = metaHtml + promptHtml + jobErrorHtml + filesHtml;
+        jobDetailsEl.innerHTML = metaHtml + forwardHtml + promptHtml + jobErrorHtml + filesHtml;
       };
 
       const renderFileCard = (job, file, order) => {
@@ -734,14 +841,16 @@ block script
           `
           : '';
 
-        const layoutSection = file.result?.layoutText
+        const layoutValue = file.result?.layoutText || '';
+        const layoutSection = file.result
           ? `
             <div class="text-card">
               <div class="text-card-header">
                 <h5>Layout text</h5>
                 <button class="copy-btn" type="button" data-copy-source="${layoutId}">Copy</button>
               </div>
-              <pre id="${layoutId}">${escapeHtml(file.result.layoutText)}</pre>
+              <textarea id="${layoutId}" class="layout-textarea" data-layout-input="${file.id}" data-job-id="${job.id}" placeholder="Edit OCR layout text before sending to receipts.">${escapeHtml(layoutValue)}</textarea>
+              <p class="ocr-note">Edits are kept locally and forwarded with this image.</p>
             </div>
           `
           : '';
@@ -774,6 +883,60 @@ block script
         feedbackEl.innerHTML = `<span class="is-${tone}">${escapeHtml(message)}</span>`;
       };
 
+      const forwardJobToReceipts = async (jobId) => {
+        if (state.isForwarding) {
+          return;
+        }
+        const job = state.jobs.find((j) => j.id === jobId);
+        if (!job) {
+          setFeedback('Select a job to send to receipts.', 'error');
+          return;
+        }
+        const sendableFiles = job.files.filter((file) => file.status === 'completed' && file.result && file.result.imageDataUrl);
+        if (!sendableFiles.length) {
+          setFeedback('No completed OCR results to send.', 'error');
+          return;
+        }
+
+        const formData = new FormData();
+        let appended = 0;
+        sendableFiles.forEach((file, index) => {
+          const blob = dataUrlToBlob(file.result.imageDataUrl);
+          if (!blob) {
+            return;
+          }
+          appended += 1;
+          const filename = file.originalname || `ocr-receipt-${index + 1}.jpg`;
+          formData.append('imgs', blob, filename);
+          formData.append('layout_texts', file.result.layoutText || '');
+        });
+
+        if (!appended) {
+          setFeedback('Images are missing or invalid; nothing was sent.', 'error');
+          return;
+        }
+
+        state.isForwarding = true;
+        setFeedback(`Sending ${appended} ${appended === 1 ? 'receipt' : 'receipts'} to inbox…`, 'info');
+
+        try {
+          const response = await fetch(RECEIPT_ENDPOINT, {
+            method: 'POST',
+            body: formData,
+            headers: { Accept: 'application/json' },
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || 'Failed to send receipts.');
+          }
+          setFeedback(`Sent ${appended} ${appended === 1 ? 'receipt' : 'receipts'} to the inbox.`, 'success');
+        } catch (error) {
+          setFeedback(error.message || 'Failed to send receipts.', 'error');
+        } finally {
+          state.isForwarding = false;
+        }
+      };
+
       const handleFormSubmit = async (event) => {
         event.preventDefault();
         if (state.isSubmitting) return;
@@ -803,6 +966,9 @@ block script
       };
 
       const fetchJobs = async () => {
+        if (state.isEditingLayout) {
+          return;
+        }
         try {
           const response = await fetch(JOBS_ENDPOINT);
           if (!response.ok) return;
@@ -815,8 +981,16 @@ block script
         }
       };
 
+      const stopPolling = () => {
+        if (state.pollTimer) {
+          clearInterval(state.pollTimer);
+          state.pollTimer = null;
+        }
+      };
+
       const startPolling = () => {
-          state.pollTimer = setInterval(fetchJobs, POLL_INTERVAL);
+        if (state.pollTimer) return;
+        state.pollTimer = setInterval(fetchJobs, POLL_INTERVAL);
       };
 
       document.addEventListener('click', (event) => {
@@ -824,7 +998,7 @@ block script
         if (!target) return;
         const pre = document.getElementById(target.dataset.copySource);
         if (!pre) return;
-        const text = pre.textContent || '';
+        const text = typeof pre.value === 'string' ? pre.value : (pre.textContent || '');
         navigator.clipboard.writeText(text).then(() => {
           target.textContent = 'Copied';
           setTimeout(() => {
@@ -832,6 +1006,37 @@ block script
           }, 1500);
         });
       });
+
+      document.addEventListener('click', (event) => {
+        const sendButton = event.target.closest('[data-send-job]');
+        if (!sendButton || sendButton.disabled) return;
+        sendButton.disabled = true;
+        forwardJobToReceipts(sendButton.dataset.sendJob);
+      });
+
+      if (jobDetailsEl) {
+        jobDetailsEl.addEventListener('input', (event) => {
+          const target = event.target.closest('[data-layout-input]');
+          if (!target) return;
+          const fileId = target.dataset.layoutInput;
+          const jobId = target.dataset.jobId;
+          if (!fileId || !jobId) return;
+          upsertLayoutEdit(jobId, fileId, target.value);
+        });
+
+        jobDetailsEl.addEventListener('focusin', (event) => {
+          if (!event.target.closest('[data-layout-input]')) return;
+          state.isEditingLayout = true;
+          stopPolling();
+        });
+
+        jobDetailsEl.addEventListener('focusout', (event) => {
+          if (!event.target.closest('[data-layout-input]')) return;
+          state.isEditingLayout = false;
+          startPolling();
+          fetchJobs();
+        });
+      }
 
       if (formEl) {
         formEl.addEventListener('submit', handleFormSubmit);

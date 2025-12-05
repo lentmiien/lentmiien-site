@@ -6,6 +6,7 @@ const Receipt = new mongoose.Schema({
   method: { type: String, required: true },
   business_name: { type: String },
   business_address: { type: String },
+  layout_text: { type: String, default: '' },
   file: { type: String, required: true },
 });
 

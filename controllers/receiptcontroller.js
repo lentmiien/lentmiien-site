@@ -30,6 +30,28 @@ const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 
+const normalizeLayoutTexts = (input, count) => {
+  if (!count) return [];
+  const values = Array.isArray(input) ? input : (input ? [input] : []);
+  const normalized = [];
+  for (let i = 0; i < count; i++) {
+    const rawValue = typeof values[i] === 'string' ? values[i] : '';
+    normalized.push(rawValue);
+  }
+  return normalized;
+};
+
+const formatReceiptForJson = (receipt) => ({
+  id: receipt._id,
+  date: receipt.date,
+  amount: receipt.amount,
+  method: receipt.method,
+  business_name: receipt.business_name,
+  business_address: receipt.business_address,
+  layout_text: receipt.layout_text,
+  file: receipt.file,
+});
+
 exports.receipt = async (req, res) => {
   const start = new Date(Date.now() - (1000*60*60*24*30));
   const receipts = await Receipt.find({date: { $gte: start }}).sort('-date');
@@ -43,8 +65,17 @@ exports.upload_receipt = async (req, res) => {
 
   const added_array = [];
   const raw_data = [];
+  const layoutTexts = normalizeLayoutTexts(req.body.layout_texts, req.files?.length || 0);
+
+  if (!req.files || !req.files.length) {
+    if (req.accepts(['html', 'json']) === 'json') {
+      return res.status(400).json({ error: 'Please upload at least one receipt image.' });
+    }
+    return res.status(400).render('receipt', { receipts: added_array, raw_data, error: 'Please upload at least one receipt image.' });
+  }
 
   for (let i = 0; i < req.files.length; i++) {
+    const layout_text = (layoutTexts[i] || '').trim();
     const { new_filename, b64_img } = await conversationService.loadProcessNewImageToBase64(req.files[i].destination + req.files[i].filename);
     const response = await openai.chat.completions.create({
       model: "gpt-4.1",
@@ -58,7 +89,8 @@ exports.upload_receipt = async (req, res) => {
               detail: 'high'
             }
           },
-          { type: 'text', text: prompt }
+          { type: 'text', text: prompt },
+          ...(layout_text ? [{ type: 'text', text: `OCR layout text:\n${layout_text}` }] : []),
         ]},
       ],
       response_format: zodResponseFormat(ReciptDetails, "recipt_details"),
@@ -71,6 +103,7 @@ exports.upload_receipt = async (req, res) => {
       method: recipt_details.payment_method,
       business_name: recipt_details.business_info.name,
       business_address: recipt_details.business_info.address,
+      layout_text,
       file: new_filename,
     });
     await newReceipt.save();
@@ -83,9 +116,14 @@ exports.upload_receipt = async (req, res) => {
       business_info: {
         name: recipt_details.business_info.name,
         address: recipt_details.business_info.address,
-      }
+      },
+      layout_text,
     });
     added_array.push(newReceipt);
+  }
+
+  if (req.accepts(['html', 'json']) === 'json') {
+    return res.json({ receipts: added_array.map(formatReceiptForJson), raw_data });
   }
 
   res.render('receipt', {receipts: added_array, raw_data });
@@ -104,6 +142,7 @@ exports.correct_receipt = async (req, res) => {
   receipt.method = req.body.method;
   receipt.business_name = req.body.business_name;
   receipt.business_address = req.body.business_address;
+  receipt.layout_text = typeof req.body.layout_text === 'string' ? req.body.layout_text : '';
   await receipt.save();
 
   res.redirect('/receipt');

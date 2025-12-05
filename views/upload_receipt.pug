@@ -42,6 +42,9 @@ block content
               .form-field
                 label(for="business_address") Business address
                 input#business_address.form-control(type="text", name="business_address", value=receipt.business_address)
+              .form-field
+                label(for="layout_text") Layout text (OCR)
+                textarea#layout_text.form-control(name="layout_text", rows="6")= receipt.layout_text || ''
             .form-actions
               input.btn.btn-success(type="submit", value="Update receipt")
     if test_data
