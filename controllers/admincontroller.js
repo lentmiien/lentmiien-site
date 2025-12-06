@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
@@ -166,6 +167,8 @@ const DEFAULT_PRUNE_DAYS = 30;
 const MIN_PRUNE_DAYS = 1;
 const MAX_PRUNE_DAYS = 365;
 const TEMP_AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'temp');
+const JS_FILE_NAME = 'controllers/admincontroller.js';
+const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const TTS_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
 const TTS_KEYWORDS = {
   basicEmotions: [
@@ -1091,17 +1094,74 @@ async function generateTtsFile(text, referenceId) {
     payload.reference_id = referenceId;
   }
 
-  const response = await axios.post(`${TTS_API_BASE}/v1/tts`, payload, {
-    responseType: 'arraybuffer',
-    timeout: 60000,
+  const requestUrl = `${TTS_API_BASE}/v1/tts`;
+  const textPreview = text.replace(/\s+/g, ' ').slice(0, 120);
+
+  logger.notice('Submitting TTS request', {
+    category: 'admin_tts',
+    metadata: {
+      apiBase: TTS_API_BASE,
+      referenceId: referenceId || null,
+      textLength: text.length,
+      textPreview,
+    },
   });
 
-  await ensureTempAudioDirectory();
-  const fileName = `tts_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wav`;
-  const filePath = path.join(TEMP_AUDIO_DIR, fileName);
-  await fsp.writeFile(filePath, Buffer.from(response.data));
+  try {
+    const response = await axios.post(requestUrl, payload, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+    });
+    const buffer = Buffer.from(response.data);
 
-  return fileName;
+    await ensureTempAudioDirectory();
+    const fileName = `tts_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wav`;
+    const filePath = path.join(TEMP_AUDIO_DIR, fileName);
+    await fsp.writeFile(filePath, buffer);
+
+    await recordApiDebugLog({
+      functionName: 'generateTtsFile',
+      requestUrl,
+      requestBody: payload,
+      responseHeaders: response.headers || null,
+      responseBody: {
+        status: response.status,
+        statusText: response.statusText,
+        size: buffer.length,
+      },
+    });
+
+    logger.notice('TTS audio generated', {
+      category: 'admin_tts',
+      metadata: {
+        fileName,
+        size: buffer.length,
+        status: response.status,
+        referenceId: referenceId || null,
+      },
+    });
+
+    return fileName;
+  } catch (error) {
+    await recordApiDebugLog({
+      functionName: 'generateTtsFile',
+      requestUrl,
+      requestBody: payload,
+      responseHeaders: error?.response?.headers || null,
+      responseBody: error?.response?.data || error?.message || 'Unknown error',
+    });
+
+    logger.error('TTS request failed', {
+      category: 'admin_tts',
+      metadata: {
+        apiBase: TTS_API_BASE,
+        referenceId: referenceId || null,
+        status: error?.response?.status,
+        message: error?.message,
+      },
+    });
+    throw error;
+  }
 }
 
 exports.tts_test_page = (req, res) => renderTtsTestPage(res, { form: { text: '', referenceId: '' } });
@@ -1110,6 +1170,15 @@ exports.tts_test_generate = async (req, res) => {
   const text = (req.body.text || '').trim();
   const referenceId = (req.body.reference_id || '').trim();
   const form = { text, referenceId };
+
+  logger.debug('Admin TTS form submitted', {
+    category: 'admin_tts',
+    metadata: {
+      user: req.user?.name || 'unknown',
+      textLength: text.length,
+      referenceId: referenceId || null,
+    },
+  });
 
   if (!text) {
     res.status(400);
