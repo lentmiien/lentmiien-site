@@ -47,3 +47,23 @@ block content
       div.col-md-9.section-content
         p As I continue this multifaceted journey, I embrace the opportunities and challenges that come with straddling different worlds. My life is a testament to the beauty of balance—between the advanced and the traditional, the familiar and the novel. Through this personal website, I hope to share insights from my journey, explore the intersections of my passions, and connect with others who share similar interests.
         p Welcome to my world—let's explore the limitless possibilities together.
+  
+  script.
+    // Set action button
+    const actionBtn = document.getElementById("actionBtn");
+    let currentEvent = null;
+    function setActionButton(text, func) {
+      actionBtn.innerText = text;
+      actionBtn.style.cursor = "pointer";
+      actionBtn.disabled = false;
+      if (currentEvent) {
+        actionBtn.removeEventListener("click", currentEvent)
+      }
+      actionBtn.addEventListener("click", func);
+      currentEvent = func;
+    }
+    setActionButton("Login", LoginPage);
+
+    function LoginPage() {
+      open("/login", "_self");
+    }
