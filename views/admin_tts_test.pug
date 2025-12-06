@@ -1,0 +1,73 @@
+extends layout
+
+block content
+  .row
+    .col-lg-8
+      h1.mb-3 TTS API Test
+      p.text-muted.mb-4
+        | API base: 
+        code= apiBase
+        |  - generates audio and saves it to 
+        code public/temp
+        | .
+
+      if error
+        .alert.alert-danger(role="alert")= error
+      if result
+        .alert.alert-success(role="alert")
+          | Audio generated and saved as 
+          code= result.fileName
+          if result.referenceId
+            |  using reference 
+            code= result.referenceId
+            | .
+          else
+            |  with the default voice.
+          br
+          a(href=result.fileUrl, target="_blank") Open file in new tab
+
+      form.card.mb-4(method="post", action="/admin/tts-test")
+        .card-body
+          .mb-3
+            label.form-label(for="text") Text to synthesize
+            textarea#text.form-control(name="text", rows="4", required, placeholder="Add tone markers like (excited) to guide delivery")= form.text
+            small.form-text.text-muted Use the keyword list on the right to steer emotion and tone.
+          .mb-3
+            label.form-label(for="reference_id") reference_id (optional)
+            select#reference_id.form-select(name="reference_id")
+              option(value="", selected=!form.referenceId) Default (no reference id)
+              if form.referenceId
+                option(value=form.referenceId, selected)= form.referenceId
+            small.form-text.text-muted Preset reference voices will appear here once they are available.
+          button.btn.btn-primary(type="submit") Generate audio
+
+      if result
+        .card
+          .card-body
+            h5.mb-3 Preview
+            audio(controls, class="w-100 mb-2", src=result.fileUrl)
+            p.mb-0
+              | Saved to 
+              code public/temp/#{result.fileName}
+              | . Download or share directly via the link above.
+    .col-lg-4
+      .card
+        .card-body
+          h5.mb-3 Keyword cheatsheet
+          if keywords
+            h6.text-uppercase.fs-6.mb-2 Basic emotions
+            if keywords.basicEmotions && keywords.basicEmotions.length
+              each kw in keywords.basicEmotions
+                span.badge.text-bg-light.border.me-1.mb-1= kw
+            h6.text-uppercase.fs-6.mt-3.mb-2 Advanced emotions
+            if keywords.advancedEmotions && keywords.advancedEmotions.length
+              each kw in keywords.advancedEmotions
+                span.badge.text-bg-light.border.me-1.mb-1= kw
+            h6.text-uppercase.fs-6.mt-3.mb-2 Tone markers
+            if keywords.toneMarkers && keywords.toneMarkers.length
+              each kw in keywords.toneMarkers
+                span.badge.text-bg-light.border.me-1.mb-1= kw
+            h6.text-uppercase.fs-6.mt-3.mb-2 Special audio effects
+            if keywords.audioEffects && keywords.audioEffects.length
+              each kw in keywords.audioEffects
+                span.badge.text-bg-light.border.me-1.mb-1= kw

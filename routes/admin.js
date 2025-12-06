@@ -50,4 +50,7 @@ router.post('/html-pages/upload-file', handleHtmlUpload);
 router.post('/html-pages/delete', controller.delete_html_page);
 router.post('/html-pages/rating', controller.update_html_page_rating);
 
+router.get('/tts-test', controller.tts_test_page);
+router.post('/tts-test', controller.tts_test_generate);
+
 module.exports = router;

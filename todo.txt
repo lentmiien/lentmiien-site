@@ -1,10 +1,27 @@
-On the `views/receipt.pug` page, I display a list of uploaded receipts from the last 30 days, that each has an "Add to budget" button. This button broke when I moved my old budget routes to a "legacy" route, but that's fine, since I'd like to create a more useful page for adding transactions with receipts to my budget tracker. So in the receipt route/controller, I want to create a new page, displaying a form for adding a receipt entry to my budget tool, furthermore, I'd like to create a database collection with mapping data, for automatically map receipt details to pre-fill in input fields on this new page, for example, if the receipt has the business name or address, I could automatically map this to the business name in the input form, or if the receipt incudes the last 4 digits of my credit card, I could map this to the correct account/credit card in my budget tool, etc.
+Create a test page, in the admin route, that shows a page to the user for my new TTS API at "http://192.168.0.20:8080". The UI should show a text input box, and a reference_id select box, that can be empty for now (did not yet prepare any reference data). When the user submit the request, connect to the API to generate the audio, then save the audio file in `public/temp`, please refer to the python sample code in `documentation/test.py` for a simple example of how to send the request.
 
-So I need a database that can store one or more conditions, that map to one or more pre-filled values in the input form on the new page we are creating, then I need a route on the server for actually processing the input appropriately.
+When the audio is done, display a simple audio player, to the user, to play the generated audio.
 
-A receipt can map to a either a transaction entry in my budget tool, or a credit card transaction in my credit card tool, both requiring slightly different inputs, but I want to combine it into one form, and maybe disable/enable required inputs based selected accounts (sender/recipient). Each receipt will come with a transaction date, amount, transaction type (cash, credit card) and various metadata, including a OCR text of the receipt. The date and amount will be used as is, then I can write conditions based on the OCR text (key word exist conditions).
-When pressing the submit button, the server should route the data based on sender/recipient accounts.
+Also, in the UI, display this list of special keywords, for the user to know what they can use to modify emotions/tone/etc.:
 
-I guess we could open the input form in a new browser tab, and when we get the "ok" response, just close the tab, to automaticaly go back to the previous tab.
+**Basic emotions:**  
+(angry) (sad) (excited) (surprised) (satisfied) (delighted) 
+(scared) (worried) (upset) (nervous) (frustrated) (depressed)
+(empathetic) (embarrassed) (disgusted) (moved) (proud) (relaxed)
+(grateful) (confident) (interested) (curious) (confused) (joyful)
 
-codex resume 019af17c-647d-7291-ae69-b7d0e3c7d69e
+**Advanced emotions:**  
+(disdainful) (unhappy) (anxious) (hysterical) (indifferent) 
+(impatient) (guilty) (scornful) (panicked) (furious) (reluctant)
+(keen) (disapproving) (negative) (denying) (astonished) (serious)
+(sarcastic) (conciliative) (comforting) (sincere) (sneering)
+(hesitating) (yielding) (painful) (awkward) (amused)
+
+**Tone markers:**  
+(in a hurry tone) (shouting) (screaming) (whispering) (soft tone)
+
+**Special audio effects:**  
+(laughing) (chuckling) (sobbing) (crying loudly) (sighing) (panting)
+(groaning) (crowd laughing) (background laughter) (audience laughing)
+
+codex resume 019af457-6621-7af1-a7d3-77656aa14239

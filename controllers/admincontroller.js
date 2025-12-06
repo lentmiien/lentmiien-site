@@ -1,3 +1,4 @@
+const axios = require('axios');
 const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
@@ -164,6 +165,30 @@ const DB_FEEDBACK_STATUSES = new Set(['success', 'error', 'info']);
 const DEFAULT_PRUNE_DAYS = 30;
 const MIN_PRUNE_DAYS = 1;
 const MAX_PRUNE_DAYS = 365;
+const TEMP_AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'temp');
+const TTS_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
+const TTS_KEYWORDS = {
+  basicEmotions: [
+    '(angry)', '(sad)', '(excited)', '(surprised)', '(satisfied)', '(delighted)',
+    '(scared)', '(worried)', '(upset)', '(nervous)', '(frustrated)', '(depressed)',
+    '(empathetic)', '(embarrassed)', '(disgusted)', '(moved)', '(proud)', '(relaxed)',
+    '(grateful)', '(confident)', '(interested)', '(curious)', '(confused)', '(joyful)',
+  ],
+  advancedEmotions: [
+    '(disdainful)', '(unhappy)', '(anxious)', '(hysterical)', '(indifferent)',
+    '(impatient)', '(guilty)', '(scornful)', '(panicked)', '(furious)', '(reluctant)',
+    '(keen)', '(disapproving)', '(negative)', '(denying)', '(astonished)', '(serious)',
+    '(sarcastic)', '(conciliative)', '(comforting)', '(sincere)', '(sneering)',
+    '(hesitating)', '(yielding)', '(painful)', '(awkward)', '(amused)',
+  ],
+  toneMarkers: [
+    '(in a hurry tone)', '(shouting)', '(screaming)', '(whispering)', '(soft tone)',
+  ],
+  audioEffects: [
+    '(laughing)', '(chuckling)', '(sobbing)', '(crying loudly)', '(sighing)', '(panting)',
+    '(groaning)', '(crowd laughing)', '(background laughter)', '(audience laughing)',
+  ],
+};
 
 function normalizeDbStatus(status) {
   const normalized = String(status || '').toLowerCase();
@@ -1030,6 +1055,96 @@ exports.prune_api_debug_logs = async (req, res) => {
       'error',
       'Unable to prune API debug logs right now.',
     );
+  }
+};
+
+async function ensureTempAudioDirectory() {
+  await fsp.mkdir(TEMP_AUDIO_DIR, { recursive: true });
+}
+
+function renderTtsTestPage(res, { form, result = null, error = null }) {
+  const normalizedForm = {
+    text: typeof form?.text === 'string' ? form.text : '',
+    referenceId: typeof form?.referenceId === 'string' ? form.referenceId : '',
+  };
+
+  return res.render('admin_tts_test', {
+    form: normalizedForm,
+    result,
+    error,
+    keywords: TTS_KEYWORDS,
+    apiBase: TTS_API_BASE,
+  });
+}
+
+async function generateTtsFile(text, referenceId) {
+  const payload = {
+    text,
+    format: 'wav',
+    normalize: true,
+    streaming: false,
+    chunk_length: 200,
+    max_new_tokens: 1024,
+  };
+
+  if (referenceId) {
+    payload.reference_id = referenceId;
+  }
+
+  const response = await axios.post(`${TTS_API_BASE}/v1/tts`, payload, {
+    responseType: 'arraybuffer',
+    timeout: 60000,
+  });
+
+  await ensureTempAudioDirectory();
+  const fileName = `tts_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wav`;
+  const filePath = path.join(TEMP_AUDIO_DIR, fileName);
+  await fsp.writeFile(filePath, Buffer.from(response.data));
+
+  return fileName;
+}
+
+exports.tts_test_page = (req, res) => renderTtsTestPage(res, { form: { text: '', referenceId: '' } });
+
+exports.tts_test_generate = async (req, res) => {
+  const text = (req.body.text || '').trim();
+  const referenceId = (req.body.reference_id || '').trim();
+  const form = { text, referenceId };
+
+  if (!text) {
+    res.status(400);
+    return renderTtsTestPage(res, { form, error: 'Please enter some text to synthesize.' });
+  }
+
+  try {
+    const fileName = await generateTtsFile(text, referenceId);
+    const result = {
+      fileName,
+      fileUrl: `/temp/${fileName}`,
+      referenceId: referenceId || null,
+    };
+    return renderTtsTestPage(res, { form, result });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    let message = 'Unable to generate audio. Please try again.';
+
+    if (error?.response) {
+      const detail = typeof error.response.data === 'string' ? error.response.data.slice(0, 200) : '';
+      message = `TTS API returned ${error.response.status}. ${detail}`;
+    } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+      message = `Unable to reach the TTS API at ${TTS_API_BASE}.`;
+    }
+
+    logger.error('Failed to generate TTS audio', {
+      category: 'admin_tts',
+      metadata: {
+        error: error?.message,
+        status: error?.response?.status,
+        apiBase: TTS_API_BASE,
+      },
+    });
+    res.status(status);
+    return renderTtsTestPage(res, { form, error: message });
   }
 };
 
