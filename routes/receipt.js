@@ -20,6 +20,11 @@ const controller = require('../controllers/receiptcontroller');
 
 /* GET home page. */
 router.get('/', controller.receipt);
+router.get('/mappings', controller.mapping_rules_page);
+router.post('/mappings', controller.create_mapping_rule);
+router.post('/mappings/:id/delete', controller.delete_mapping_rule);
+router.get('/add-entry/:id', controller.receipt_entry_form);
+router.post('/add-entry/:id', controller.submit_receipt_entry);
 router.post('/upload_receipt', upload.array('imgs'), controller.upload_receipt);
 router.get('/view_receipt/:id', controller.view_receipt);
 router.post('/correct_receipt/:id', controller.correct_receipt);

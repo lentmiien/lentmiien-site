@@ -1,0 +1,181 @@
+extends layout
+
+block content
+  .receipt-entry-page
+    h1 Receipt mapping rules
+    p.page-intro Create or edit simple condition-based rules that prefill the receipt entry form for budget or credit card flows.
+
+    section.section-card
+      h2 Existing rules
+      if rules && rules.length
+        .table-responsive
+          table.table.table-sm.table-striped
+            thead
+              tr
+                th Name
+                th Target
+                th Priority
+                th Active
+                th Conditions
+                th Updated
+                th Actions
+            tbody
+              each rule in rules
+                tr
+                  td= rule.name
+                  td= rule.target === 'credit' ? 'Credit card' : 'Budget'
+                  td= rule.priority || 0
+                  td= rule.active ? 'Yes' : 'No'
+                  td
+                    if rule.conditions && rule.conditions.length
+                      ul.mb-0
+                        each c in rule.conditions
+                          li #{c.field} #{c.operator || 'icontains'} "#{c.value}"
+                    else
+                      span.text-muted None
+                  td= rule.updatedAt ? new Date(rule.updatedAt).toLocaleString() : '—'
+                  td
+                    form(action=`/receipt/mappings/${rule._id.toString()}/delete`, method="post", onsubmit="return confirm('Delete this rule?');")
+                      button.btn.btn-sm.btn-outline-danger(type="submit") Delete
+      else
+        p.text-muted No rules yet. Use the form below to create one.
+
+    section.section-card
+      h2 New rule
+      form#ruleForm.form(action="/receipt/mappings", method="post")
+        .form-grid
+          .form-field
+            label(for="name") Name
+            input#name.form-control(type="text", name="name", required)
+          .form-field
+            label(for="description") Description
+            input#description.form-control(type="text", name="description", placeholder="Optional short note")
+          .form-field
+            label(for="target") Target ledger
+            select#target.form-select(name="target")
+              option(value="budget") Budget
+              option(value="credit") Credit card
+          .form-field
+            label(for="priority") Priority
+            input#priority.form-control(type="number", name="priority", value="0")
+          .form-field
+            .form-check.mt-4
+              input#active.form-check-input(type="checkbox", name="active", value="true", checked)
+              label.form-check-label(for="active") Active
+
+        h3.mt-3 Conditions (all must match)
+        p.text-muted.small Provide one or more conditions; empty rows are ignored.
+        .mapping-conditions(data-container)
+          .condition-row
+            .form-grid
+              .form-field
+                label Field
+                select.form-select(name="condition_field")
+                  option(value="") Select
+                  option(value="business_name") business_name
+                  option(value="business_address") business_address
+                  option(value="layout_text") layout_text
+                  option(value="method") method
+                  option(value="amount") amount
+              .form-field
+                label Operator
+                select.form-select(name="condition_operator")
+                  option(value="icontains") icontains
+                  option(value="equals") equals
+                  option(value="not_contains") not_contains
+                  option(value="regex") regex
+              .form-field
+                label Value
+                input.form-control(type="text", name="condition_value", placeholder="Value to match")
+        button.btn.btn-outline-secondary.btn-sm.mt-2(type="button", data-add-condition) + Add condition
+
+        h3.mt-4 Budget prefill
+        .form-grid
+          .form-field
+            label(for="from_account_prefill") From account
+            input#from_account_prefill.form-control(type="text", name="from_account_prefill", placeholder="Account id or EXT")
+          .form-field
+            label(for="to_account_prefill") To account
+            input#to_account_prefill.form-control(type="text", name="to_account_prefill", placeholder="Account id or EXT")
+          .form-field
+            label(for="transaction_business_prefill") Business
+            input#transaction_business_prefill.form-control(type="text", name="transaction_business_prefill", placeholder="Business name")
+          .form-field
+            label(for="categories_prefill") Categories
+            input#categories_prefill.form-control(type="text", name="categories_prefill", placeholder="Category id(s)")
+          .form-field
+            label(for="tags_prefill") Tags
+            input#tags_prefill.form-control(type="text", name="tags_prefill", placeholder="Pipe separated tags")
+          .form-field
+            label(for="type_prefill") Type
+            input#type_prefill.form-control(type="text", name="type_prefill", placeholder="expense/income/saving")
+          .form-field
+            label(for="from_fee_prefill") From fee
+            input#from_fee_prefill.form-control(type="number", step="0.01", name="from_fee_prefill", value="0")
+          .form-field
+            label(for="to_fee_prefill") To fee
+            input#to_fee_prefill.form-control(type="number", step="0.01", name="to_fee_prefill", value="0")
+
+        h3.mt-4 Credit card prefill
+        .form-grid
+          .form-field
+            label(for="cardId_prefill") Card id
+            input#cardId_prefill.form-control(type="text", name="cardId_prefill", placeholder="credit_card _id")
+          .form-field
+            label(for="label_prefill") Label
+            input#label_prefill.form-control(type="text", name="label_prefill", placeholder="Statement label")
+          .form-field
+            .form-check.mt-4
+              input#external_prefill.form-check-input(type="checkbox", name="external_prefill", value="true")
+              label.form-check-label(for="external_prefill") External
+          .form-field
+            label(for="externalMultiplier_prefill") External multiplier (%)
+            input#externalMultiplier_prefill.form-control(type="number", step="0.1", min="0", name="externalMultiplier_prefill", value="1")
+
+        .form-actions
+          button.btn.btn-primary(type="submit") Save rule
+          a.btn.btn-outline-secondary(href="/receipt") Back to receipts
+
+block script
+  script.
+    (function () {
+      const container = document.querySelector('[data-container]');
+      const addBtn = document.querySelector('[data-add-condition]');
+      if (!container || !addBtn) return;
+      const createRow = function () {
+        const template = document.createElement('div');
+        template.className = 'condition-row';
+        template.innerHTML = `
+          <div class="form-grid">
+            <div class="form-field">
+              <label>Field</label>
+              <select class="form-select" name="condition_field">
+                <option value="">Select</option>
+                <option value="business_name">business_name</option>
+                <option value="business_address">business_address</option>
+                <option value="layout_text">layout_text</option>
+                <option value="method">method</option>
+                <option value="amount">amount</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Operator</label>
+              <select class="form-select" name="condition_operator">
+                <option value="icontains">icontains</option>
+                <option value="equals">equals</option>
+                <option value="not_contains">not_contains</option>
+                <option value="regex">regex</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Value</label>
+              <input class="form-control" type="text" name="condition_value" placeholder="Value to match">
+            </div>
+          </div>
+        `;
+        container.appendChild(template);
+      };
+      addBtn.addEventListener('click', function () {
+        createRow();
+      });
+    }());

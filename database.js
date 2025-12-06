@@ -88,6 +88,7 @@ const ESCategory = require('./models/es_category');
 const ESItem = require('./models/es_item');
 // Receipt
 const Receipt = require('./models/receipt');
+const ReceiptMappingRule = require('./models/receipt_mapping_rule');
 // Product Details
 const ProductDetails = require('./models/product_details');
 // OpenAI Usage
@@ -168,6 +169,7 @@ module.exports = {
   ESCategory,
   ESItem,
   Receipt,
+  ReceiptMappingRule,
   ProductDetails,
   OpenAIUsage,
   AIModelCards,

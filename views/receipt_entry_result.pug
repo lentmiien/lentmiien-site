@@ -1,0 +1,34 @@
+extends layout
+
+block content
+  .receipt-entry-page
+    if ok
+      h1 Entry saved
+      p.page-intro Your receipt has been recorded in the #{entryType === 'credit' ? 'credit card tracker' : 'budget ledger'}.
+      section.section-card
+        h2 What happens next
+        ul
+          li The tab will attempt to close automatically. If it stays open, use the buttons below.
+          li You can review the entry in the accounting hub at your convenience.
+        .form-actions
+          a.btn.btn-primary(href="/receipt") Back to receipt inbox
+          if entryType === 'credit'
+            a.btn.btn-outline-secondary(href="/budget/cards", target="_blank", rel="noopener") Open credit cards
+          else
+            a.btn.btn-outline-secondary(href="/budget", target="_blank", rel="noopener") Open accounting hub
+    else
+      h1 Could not save entry
+      p.page-intro= error || 'An unexpected error occurred while saving the entry.'
+      section.section-card
+        h2 Next steps
+        ul
+          li Double-check required fields, then try again.
+          li If the issue persists, return to the receipt inbox and retry.
+        .form-actions
+          a.btn.btn-primary(href="/receipt") Back to receipt inbox
+
+block script
+  if ok
+    script.
+      setTimeout(function () { window.close(); }, 900);
+      setTimeout(function () { window.location.href = '/receipt'; }, 1500);

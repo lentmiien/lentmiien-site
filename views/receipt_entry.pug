@@ -1,0 +1,290 @@
+extends layout
+
+block content
+  - const amountValue = typeof budgetPrefill !== 'undefined' && budgetPrefill && budgetPrefill.amount !== undefined ? budgetPrefill.amount : (creditPrefill && creditPrefill.amount !== undefined ? creditPrefill.amount : '');
+  - const budgetDateValue = budgetPrefill && budgetPrefill.date ? budgetPrefill.date : (receipt && receipt.date ? receipt.date.toISOString().split('T')[0] : '');
+  - const creditDateValue = creditPrefill && creditPrefill.transactionDate ? creditPrefill.transactionDate : budgetDateValue;
+  - const typeOptions = Array.isArray(types) && types.length ? types : ['income', 'expense', 'saving'];
+  .receipt-entry-page
+    h1 Add receipt to ledger
+    p.page-intro Turn this receipt into a budget or credit-card entry with your saved mapping rules.
+
+    section.section-card
+      h2 Receipt snapshot
+      .entry-meta-grid
+        .meta-chip
+          span.meta-label Amount
+          strong.meta-value= amountValue !== undefined && amountValue !== null ? amountValue : '—'
+        .meta-chip
+          span.meta-label Date
+          strong.meta-value= budgetDateValue || 'Unknown'
+        .meta-chip
+          span.meta-label Method
+          strong.meta-value= receipt.method || 'N/A'
+        .meta-chip
+          span.meta-label Business
+          strong.meta-value= receipt.business_name || 'N/A'
+      if receipt.business_address
+        p.text-muted.small.mb-2 #{receipt.business_address}
+      .snapshot-actions
+        a.btn.btn-outline-light.btn-sm(href=`/receipt/view_receipt/${receipt._id.toString()}`, target='_blank', rel='noopener') View receipt details
+        a.btn.btn-outline-secondary.btn-sm(href='/receipt') Back to inbox
+      if receipt.layout_text
+        details.layout-snippet-block
+          summary.text-muted.small OCR text preview
+          pre.layout-snippet= receipt.layout_text.length > 900 ? receipt.layout_text.slice(0, 900) + '…' : receipt.layout_text
+
+    section.section-card
+      h2 Smart mappings
+      if mappingMatches && mappingMatches.length
+        p.section-subtitle Apply a matched rule to auto-fill the form. Rules are sorted by priority, then recency.
+        .mapping-list
+          each rule in mappingMatches
+            - const isActive = appliedRuleId && appliedRuleId === rule.id;
+            button.mapping-pill(type="button", data-apply-mapping=rule.id, class=isActive ? 'is-active' : '', data-target=rule.target)
+              .pill-header
+                span.pill-name= rule.name
+                span.pill-target= rule.target === 'credit' ? 'Credit card' : 'Budget'
+              if rule.description
+                p.pill-description= rule.description
+              .pill-meta
+                span Priority #{rule.priority || 0}
+                if rule.conditions && rule.conditions.length
+                  span · #{rule.conditions.length} conditions matched
+        button.btn.btn-link.btn-sm.text-muted(type="button", data-reset-mapping) Reset to defaults
+        p.js-mapping-status.mapping-status
+      else
+        p.text-muted No mapping rules matched this receipt. Defaults are pre-filled from the receipt data.
+
+    section.section-card
+      h2 Create entry
+      p.section-subtitle Choose a destination ledger, confirm the pre-filled fields, and submit. The tab will close after a successful save.
+      form.js-receipt-entry-form(action=`/receipt/add-entry/${receipt._id.toString()}`, method="post")
+        input(type="hidden", name="entryType", value=entryMode || 'budget')
+        .form-grid
+          .form-field
+            label(for="amount") Amount
+            input#amount.form-control(type="number", step="0.01", name="amount", value=amountValue, required)
+          .form-field
+            label(for="transaction_business") Business
+            input#transaction_business.form-control(type="text", name="transaction_business", value=budgetPrefill && budgetPrefill.transaction_business ? budgetPrefill.transaction_business : (receipt.business_name || ''), placeholder="Store or vendor name", data-required-when="budget")
+        .entry-mode-toggle
+          button(type="button", data-mode-toggle="budget", class=entryMode === 'budget' ? 'is-active' : '') Budget transaction
+          button(type="button", data-mode-toggle="credit", class=entryMode === 'credit' ? 'is-active' : '') Credit card transaction
+
+        .ledger-form(data-section="budget")
+          h3 Budget details
+          .form-grid
+            .form-field
+              label(for="date") Transaction date
+              input#date.form-control(type="date", name="date", value=budgetDateValue, data-required-when="budget")
+            .form-field
+              label(for="type") Type
+              select#type.form-select(name="type", data-required-when="budget")
+                option(value="")
+                each t in typeOptions
+                  - const label = typeof t === 'string' ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+                  option(value=t, selected=budgetPrefill && budgetPrefill.type === t)= label
+            .form-field
+              label(for="from_account") From (payer)
+              select#from_account.form-select(name="from_account", data-required-when="budget")
+                option(value="") Select payer
+                option(value="EXT", selected=budgetPrefill && budgetPrefill.from_account === 'EXT') External (EXT)
+                each acc in accounts || []
+                  - const accId = acc._id ? acc._id.toString() : '';
+                  option(value=accId, selected=budgetPrefill && budgetPrefill.from_account === accId)= acc.name
+            .form-field
+              label(for="to_account") To (receiver)
+              select#to_account.form-select(name="to_account", data-required-when="budget")
+                option(value="") Select receiver
+                option(value="EXT", selected=budgetPrefill && budgetPrefill.to_account === 'EXT') External (EXT)
+                each acc in accounts || []
+                  - const accId2 = acc._id ? acc._id.toString() : '';
+                  option(value=accId2, selected=budgetPrefill && budgetPrefill.to_account === accId2)= acc.name
+            .form-field
+              label(for="categories") Categories
+              input#categories.form-control(type="text", name="categories", value=budgetPrefill && budgetPrefill.categories || '', placeholder="e.g. 63a... | 63b...", data-required-when="budget", list="category-list")
+              small.text-muted Select a category to insert it, or type your own mix.
+              select.form-select.form-select-sm.mt-1(onchange="if(this.value){document.getElementById('categories').value=this.value;}")
+                option(value="") Choose category to insert
+                each cat in categories || []
+                  - const catId = cat._id ? cat._id.toString() : '';
+                  option(value=catId)= cat.title
+            .form-field
+              label(for="tags") Tags
+              input#tags.form-control(type="text", name="tags", value=budgetPrefill && budgetPrefill.tags || '', placeholder="Optional tags, pipe-separated")
+            .form-field
+              label(for="from_fee") From fee
+              input#from_fee.form-control(type="number", step="0.01", name="from_fee", value=budgetPrefill && budgetPrefill.from_fee !== undefined ? budgetPrefill.from_fee : 0, data-required-when="budget")
+            .form-field
+              label(for="to_fee") To fee
+              input#to_fee.form-control(type="number", step="0.01", name="to_fee", value=budgetPrefill && budgetPrefill.to_fee !== undefined ? budgetPrefill.to_fee : 0, data-required-when="budget")
+
+        .ledger-form(data-section="credit")
+          h3 Credit card details
+          .form-grid
+            .form-field
+              label(for="transactionDate") Transaction date
+              input#transactionDate.form-control(type="date", name="transactionDate", value=creditDateValue, data-required-when="credit")
+            .form-field
+              label(for="cardId") Card
+              select#cardId.form-select(name="cardId", data-required-when="credit")
+                option(value="") Select a card
+                each card in creditCards || []
+                  - const cardValue = card.id ? card.id.toString() : (card._id ? card._id.toString() : '');
+                  option(value=cardValue, selected=creditPrefill && creditPrefill.cardId === cardValue)= card.name
+            .form-field
+              label(for="label") Description
+              input#label.form-control(type="text", name="label", value=creditPrefill && creditPrefill.label || (receipt.business_name || ''), placeholder="Statement label", data-required-when="credit")
+            .form-field
+              .form-check.mt-4
+                input#external.form-check-input(type="checkbox", name="external", value="true", checked=creditPrefill && creditPrefill.external)
+                label.form-check-label(for="external") External (earns points)
+            .form-field
+              label(for="externalMultiplier") External multiplier (%)
+              input#externalMultiplier.form-control(type="number", step="0.1", min="0", name="externalMultiplier", value=creditPrefill && creditPrefill.externalMultiplier !== undefined ? creditPrefill.externalMultiplier : 1, data-required-when="credit")
+
+        .form-actions
+          button.btn.btn-primary(type="submit") Save entry
+          a.btn.btn-outline-secondary(href="/receipt") Back
+          small.text-muted.ms-2 The tab will attempt to close itself after a successful save.
+
+  datalist#category-list
+    each cat in categories || []
+      - const catId = cat._id ? cat._id.toString() : '';
+      option(value=catId)= cat.title
+
+block script
+  script(type="application/json", id="mapping-data")= JSON.stringify(mappingMatches || [])
+  script(type="application/json", id="prefill-data")= JSON.stringify({ budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget' })
+  script.
+    (function () {
+      const parseJson = function (id, fallback) {
+        const el = document.getElementById(id);
+        if (!el) return fallback;
+        try {
+          return JSON.parse(el.textContent);
+        } catch (err) {
+          return fallback;
+        }
+      };
+      const mapping = parseJson('mapping-data', []);
+      const prefill = parseJson('prefill-data', { budgetPrefill: {}, creditPrefill: {}, entryMode: 'budget' });
+      const form = document.querySelector('.js-receipt-entry-form');
+      if (!form) return;
+
+      const entryTypeInput = form.querySelector('input[name="entryType"]');
+      const budgetSection = form.querySelector('[data-section="budget"]');
+      const creditSection = form.querySelector('[data-section="credit"]');
+      const budgetRequired = form.querySelectorAll('[data-required-when="budget"]');
+      const creditRequired = form.querySelectorAll('[data-required-when="credit"]');
+      const mappingStatus = document.querySelector('.js-mapping-status');
+
+      const toggleRequired = function (nodes, enabled) {
+        nodes.forEach(function (node) {
+          if (!node) return;
+          if (enabled) node.setAttribute('required', 'required');
+          else node.removeAttribute('required');
+          if (enabled) node.removeAttribute('disabled');
+          else node.setAttribute('disabled', 'disabled');
+        });
+      };
+
+      const setMode = function (mode) {
+        const normalized = mode === 'credit' ? 'credit' : 'budget';
+        entryTypeInput.value = normalized;
+        if (budgetSection) budgetSection.classList.toggle('is-hidden', normalized !== 'budget');
+        if (creditSection) creditSection.classList.toggle('is-hidden', normalized !== 'credit');
+        toggleRequired(budgetRequired, normalized === 'budget');
+        toggleRequired(creditRequired, normalized === 'credit');
+        document.querySelectorAll('[data-mode-toggle]').forEach(function (btn) {
+          btn.classList.toggle('is-active', btn.getAttribute('data-mode-toggle') === normalized);
+        });
+      };
+
+      const setValueIfPresent = function (selector, value) {
+        if (value === undefined || value === null || value === '') return;
+        const el = form.querySelector(selector);
+        if (el) {
+          el.removeAttribute('disabled');
+          el.value = value;
+        }
+      };
+
+      const applyBudgetPrefill = function (payload) {
+        if (!payload) return;
+        setValueIfPresent('input[name="date"]', payload.date);
+        setValueIfPresent('select[name="from_account"]', payload.from_account);
+        setValueIfPresent('select[name="to_account"]', payload.to_account);
+        setValueIfPresent('input[name="categories"]', payload.categories);
+        setValueIfPresent('input[name="tags"]', payload.tags);
+        setValueIfPresent('select[name="type"]', payload.type);
+        setValueIfPresent('input[name="from_fee"]', payload.from_fee);
+        setValueIfPresent('input[name="to_fee"]', payload.to_fee);
+        setValueIfPresent('input[name="transaction_business"]', payload.transaction_business);
+        setValueIfPresent('input[name="amount"]', payload.amount);
+      };
+
+      const applyCreditPrefill = function (payload) {
+        if (!payload) return;
+        setValueIfPresent('input[name="transactionDate"]', payload.transactionDate);
+        setValueIfPresent('select[name="cardId"]', payload.cardId);
+        setValueIfPresent('input[name="label"]', payload.label);
+        setValueIfPresent('input[name="externalMultiplier"]', payload.externalMultiplier);
+        setValueIfPresent('input[name="amount"]', payload.amount);
+        const external = form.querySelector('input[name="external"]');
+        if (external) external.checked = Boolean(payload.external);
+      };
+
+      const applyMapping = function (ruleId) {
+        const rule = mapping.find(function (m) { return m.id === ruleId; });
+        if (!rule) return;
+        if (rule.target === 'credit') {
+          applyCreditPrefill(rule.creditPrefill);
+        } else {
+          applyBudgetPrefill(rule.budgetPrefill);
+        }
+        setMode(rule.target);
+        document.querySelectorAll('[data-apply-mapping]').forEach(function (btn) {
+          btn.classList.toggle('is-active', btn.getAttribute('data-apply-mapping') === ruleId);
+        });
+        if (mappingStatus) mappingStatus.textContent = "Applied rule: " + rule.name;
+      };
+
+      document.querySelectorAll('[data-apply-mapping]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          applyMapping(btn.getAttribute('data-apply-mapping'));
+        });
+      });
+
+      const resetToDefaults = function () {
+        applyBudgetPrefill(prefill.budgetPrefill || {});
+        applyCreditPrefill(prefill.creditPrefill || {});
+        setMode(prefill.entryMode || 'budget');
+        document.querySelectorAll('[data-apply-mapping]').forEach(function (btn) {
+          btn.classList.toggle('is-active', false);
+        });
+        if (mappingStatus) mappingStatus.textContent = 'Reset to receipt defaults.';
+      };
+
+      const resetBtn = document.querySelector('[data-reset-mapping]');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', resetToDefaults);
+      }
+
+      document.querySelectorAll('[data-mode-toggle]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          setMode(btn.getAttribute('data-mode-toggle'));
+        });
+      });
+
+      // Apply initial state
+      applyBudgetPrefill(prefill.budgetPrefill || {});
+      applyCreditPrefill(prefill.creditPrefill || {});
+      setMode(prefill.entryMode || 'budget');
+
+      if (mappingStatus && mapping && mapping.length && prefill.entryMode) {
+        const applied = mapping.find(function (r) { return r.target === prefill.entryMode; });
+        if (applied) mappingStatus.textContent = "Using " + prefill.entryMode + " defaults.";
+      }
+    }());
