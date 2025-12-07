@@ -19,12 +19,14 @@ const ConversationService = require('../../services/conversationService');
 const TemplateService = require('../../services/templateService');
 const KnowledgeService = require('../../services/knowledgeService');
 const BatchService = require('../../services/batchService');
+const TtsService = require('../../services/ttsService');
 
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
+const ttsService = new TtsService();
 
 const TEMP_DIR = path.join(__dirname, '../../tmp_data');
 
@@ -64,7 +66,8 @@ module.exports = {
     knowledgeService,
     conversationService,
     templateService,
-    batchService
+    batchService,
+    ttsService
   },
   helpers: {
     ProcessUploadedImage

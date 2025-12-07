@@ -18,7 +18,8 @@ module.exports = async function registerChat5_5Handlers({
       messageService,
       conversationService,
       templateService,
-      batchService
+      batchService,
+      ttsService
     },
     helpers: {
       ProcessUploadedImage
@@ -248,6 +249,20 @@ module.exports = async function registerChat5_5Handlers({
         members,
       },
     };
+  }
+
+  function computeTtsMaxTokens(text, provided) {
+    const MAX_TOKENS = 8192;
+    const TOKENS_PER_500 = 1024;
+    if (Number.isFinite(provided) && provided > 0) {
+      return Math.max(1, Math.min(MAX_TOKENS, Math.round(provided)));
+    }
+    const length = typeof text === 'string' ? text.length : 0;
+    if (length <= 0) {
+      return TOKENS_PER_500;
+    }
+    const estimate = Math.round((length / 500) * TOKENS_PER_500);
+    return Math.max(1, Math.min(MAX_TOKENS, estimate || TOKENS_PER_500));
   }
 
   function normalizeBooleanOption(value, defaultValue, field, adjustments) {
@@ -674,6 +689,111 @@ module.exports = async function registerChat5_5Handlers({
     } catch (error) {
       logger.error('Failed to append chat5 message', error);
       respondWithError(eventName, 'Failed to append message to conversation.', { details: error.message, adjustments });
+    }
+  });
+
+  socket.on('chat5-tts', async (raw, ack) => {
+    const eventName = 'chat5-tts';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for TTS request.', { ack });
+        return;
+      }
+
+      let conversationId = normalizeStringOption(raw.conversation_id || raw.conversationId, 'NEW', 'conversation_id', adjustments);
+      if (!conversationId) {
+        conversationId = 'NEW';
+      }
+
+      const prompt = typeof raw.prompt === 'string' ? raw.prompt.trim() : '';
+      if (!prompt) {
+        respondWithError(eventName, 'Please provide text to synthesize.', { ack, adjustments });
+        return;
+      }
+      const referenceId = typeof raw.referenceId === 'string' ? raw.referenceId.trim() : '';
+      const providedTokens = Number.isFinite(raw.maxNewTokens) ? raw.maxNewTokens : Number.parseInt(raw.maxNewTokens, 10);
+      const maxNewTokens = computeTtsMaxTokens(prompt, providedTokens);
+
+      const { settingParams, conversationParams } = sanitizeChatSettings(raw.settings || {}, adjustments);
+      conversationParams.members = [...new Set([...conversationParams.members, userName])];
+
+      let createdNewConversation = false;
+      if (conversationId === 'NEW') {
+        const created = await conversationService.createNewConversation(userName, settingParams, conversationParams);
+        conversationId = created._id.toString();
+        createdNewConversation = true;
+      }
+
+      const conversation = await Conversation5Model.findById(conversationId);
+      if (!conversation) {
+        respondWithError(eventName, 'Conversation not found.', { ack, adjustments });
+        return;
+      }
+
+      if (!Array.isArray(conversation.members)) {
+        conversation.members = [];
+      }
+      if (conversation.members.indexOf(userName) === -1) {
+        conversation.members.push(userName);
+      }
+      conversation.metadata = {
+        ...conversation.metadata,
+        ...(settingParams || {}),
+      };
+
+      const { fileName, format } = await ttsService.synthesize({
+        text: prompt,
+        referenceId,
+        maxNewTokens,
+        format: 'mp3',
+      });
+
+      const messageContent = {
+        text: null,
+        image: null,
+        audio: null,
+        tts: fileName,
+        transcript: prompt,
+        revisedPrompt: null,
+        imageQuality: null,
+        toolOutput: null,
+      };
+
+      const msg = await messageService.createMessageNew({
+        userId: userName,
+        content: messageContent,
+        contentType: 'audio',
+        category: conversation.category,
+        tags: conversation.tags,
+        hideFromBot: true,
+      });
+      conversation.messages.push(msg._id.toString());
+      conversation.updatedAt = new Date();
+      await conversation.save();
+
+      const outgoing = [msg];
+      const convRoom = roomForConversation(conversationId);
+      if (createdNewConversation) {
+        socket.emit('chat5-messages', { id: conversationId, messages: outgoing });
+      } else {
+        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: outgoing });
+      }
+
+      emitAdjustments(eventName, adjustments, { conversationId, maxNewTokens });
+      if (typeof ack === 'function') {
+        ack({
+          ok: true,
+          conversationId,
+          messageId: msg._id.toString(),
+          fileName,
+          format,
+          maxNewTokens,
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to generate TTS message', error);
+      respondWithError(eventName, 'Failed to generate TTS audio.', { ack, details: error.message, adjustments });
     }
   });
 

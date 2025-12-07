@@ -792,7 +792,7 @@ class MessageService {
     return newIdsArray;
   }
 
-  async createMessageNew({ userId, content, contentType, category, tags }) {
+  async createMessageNew({ userId, content, contentType, category, tags, hideFromBot = false }) {
     // Save the input as a new message to database
     const message = {
       user_id: userId,
@@ -801,7 +801,7 @@ class MessageService {
       contentType,
       content,
       timestamp: new Date(),
-      hideFromBot: false,
+      hideFromBot: !!hideFromBot,
     };
     const msg = new Chat5Model(message);
     await msg.save();

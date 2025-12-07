@@ -18,6 +18,28 @@ const draftStorageKeys = {
   personality: 'chat5DraftPersonalityId',
   responseType: 'chat5DraftResponseTypeId',
 };
+const TTS_TOKENS_PER_500 = 1024;
+const TTS_MAX_TOKENS = 8192;
+const charCounterEl = document.getElementById('chat5CharCounter');
+
+function estimateTtsTokens(text) {
+  const length = typeof text === 'string' ? text.length : 0;
+  const estimate = Math.round((length / 500) * TTS_TOKENS_PER_500) || TTS_TOKENS_PER_500;
+  return Math.max(1, Math.min(TTS_MAX_TOKENS, estimate));
+}
+
+function updatePromptCharCounter() {
+  if (!charCounterEl) return;
+  const text = editor ? editor.getMarkdown() : '';
+  const length = typeof text === 'string' ? text.length : 0;
+  const tokens = estimateTtsTokens(text);
+  charCounterEl.textContent = `${length} chars · ~${tokens} tokens (1024 per 500 chars)`;
+}
+
+if (editor && typeof editor.on === 'function') {
+  editor.on('change', updatePromptCharCounter);
+  updatePromptCharCounter();
+}
 
 function loadDraftPreference(key) {
   try {
@@ -274,7 +296,29 @@ function Append(send, resp) {
   const prompt = editor.getMarkdown();
   const settings = collectChatSettings();
   socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp, settings});
-  if (send) editor.reset();
+  if (send) {
+    editor.reset();
+    updatePromptCharCounter();
+  }
+}
+
+function GenerateTTS() {
+  const conversation_id = document.getElementById("id").innerHTML;
+  const prompt = editor.getMarkdown();
+  if (!prompt || prompt.trim().length === 0) {
+    alert('Please enter text before requesting TTS.');
+    return;
+  }
+  const settings = collectChatSettings();
+  const referenceId = (document.getElementById('ttsReferenceId')?.value || '').trim();
+  const maxNewTokens = estimateTtsTokens(prompt);
+  showLoadingPopup();
+  socket.emit('chat5-tts', { conversation_id, prompt, referenceId, maxNewTokens, settings }, (resp) => {
+    hideLoadingPopup();
+    if (!resp || resp.ok !== true) {
+      alert(resp && resp.message ? resp.message : 'Unable to generate TTS audio.');
+    }
+  });
 }
 
 function QueueBatch(includePrompt) {
@@ -688,6 +732,26 @@ function message(m) {
     div.append(italics);
     body.append(div);
   }
+  if (m.contentType === "audio") {
+    const wrapper = document.createElement('div');
+    wrapper.classList.add('chat5-message-audio');
+    const fileName = (m.content && (m.content.audio || m.content.tts)) ? (m.content.audio || m.content.tts) : null;
+    if (fileName) {
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.classList.add('chat5-message-audio-player');
+      audio.src = `/mp3/${fileName}`;
+      wrapper.append(audio);
+    }
+    const transcript = m.content && (m.content.transcript || m.content.text);
+    if (transcript) {
+      const p = document.createElement('p');
+      p.classList.add('chat5-audio-transcript');
+      p.innerText = transcript;
+      wrapper.append(p);
+    }
+    body.append(wrapper);
+  }
 
   messageWrapper.appendChild(body);
   container.append(messageWrapper);
@@ -841,6 +905,13 @@ document.addEventListener('DOMContentLoaded', () => {
   enhanceTables(container);
 });
 document.addEventListener('DOMContentLoaded', initializeDraftingTool);
+document.addEventListener('DOMContentLoaded', () => {
+  const ttsBtn = document.getElementById('generateTtsBtn');
+  if (ttsBtn) {
+    ttsBtn.addEventListener('click', GenerateTTS);
+  }
+  updatePromptCharCounter();
+});
 
 
 // Set action button

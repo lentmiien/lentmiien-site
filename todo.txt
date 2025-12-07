@@ -1,27 +1,13 @@
-Create a test page, in the admin route, that shows a page to the user for my new TTS API at "http://192.168.0.20:8080". The UI should show a text input box, and a reference_id select box, that can be empty for now (did not yet prepare any reference data). When the user submit the request, connect to the API to generate the audio, then save the audio file in `public/temp`, please refer to the python sample code in `documentation/test.py` for a simple example of how to send the request.
+I'm satisfied with what I see so far, so next, I'd like to add this TTS tool to the `views/chat5_chat.pug` page. I want the tool to work as following:
 
-When the audio is done, display a simple audio player, to the user, to play the generated audio.
+If the user input some text in the prompt field, and press a new button "Generate TTS", then the text will be sent to the new TTS API, and a new message will be appended to the conversation, with the TTS prompt in `content.transcript`, and the filename in `content.tts`, also note that the file should now be saved in the folder 'public/mp3', to make it permanent, and use mp3 format for all generations. Also, let's make all TTS messages `hideFromBot === true`. Also display a character counter just below the prompt text field, and auto set the TTS max token to 1024 per 500 characters.
 
-Also, in the UI, display this list of special keywords, for the user to know what they can use to modify emotions/tone/etc.:
+Also update the UI rendering to display `contentType === "audio"` on the `views/chat5_chat.pug` page and when messages are added to the UI, with an audio player for `content.audio` or `content.tts`, whichever has a filename saved, and prepend the filename with the path 'mp3/', and display the `content.transcript` if available.
 
-**Basic emotions:**  
-(angry) (sad) (excited) (surprised) (satisfied) (delighted) 
-(scared) (worried) (upset) (nervous) (frustrated) (depressed)
-(empathetic) (embarrassed) (disgusted) (moved) (proud) (relaxed)
-(grateful) (confident) (interested) (curious) (confused) (joyful)
+Add some small popup modal in the UI, to show the user the available emotions/tone/effects tags, and a select box to choose `reference_id`, but I did not yet add any reference ids, so leave this empty for now.
 
-**Advanced emotions:**  
-(disdainful) (unhappy) (anxious) (hysterical) (indifferent) 
-(impatient) (guilty) (scornful) (panicked) (furious) (reluctant)
-(keen) (disapproving) (negative) (denying) (astonished) (serious)
-(sarcastic) (conciliative) (comforting) (sincere) (sneering)
-(hesitating) (yielding) (painful) (awkward) (amused)
+Display the loading overlay while waiting for the TTS to complete.
 
-**Tone markers:**  
-(in a hurry tone) (shouting) (screaming) (whispering) (soft tone)
-
-**Special audio effects:**  
-(laughing) (chuckling) (sobbing) (crying loudly) (sighing) (panting)
-(groaning) (crowd laughing) (background laughter) (audience laughing)
+Wrap the TTS API in a service class in the folder `services`, and integrate the service class in the conversation/message services to make this work.
 
 codex resume 019af457-6621-7af1-a7d3-77656aa14239

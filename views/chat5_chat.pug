@@ -90,6 +90,12 @@ block content
           img.chat5-message-image(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt)
           p.chat5-image-caption
             i= m.content.revisedPrompt
+        if m.contentType === "audio"
+          - const audioFile = m && m.content ? (m.content.audio || m.content.tts) : null;
+          if audioFile
+            audio.chat5-message-audio(controls, src=`/mp3/${audioFile}`)
+          if m.content && (m.content.transcript || m.content.text)
+            p.chat5-audio-transcript= m.content.transcript || m.content.text
         if m.contentType === "tool"
           div.chat5-message-tool
             i= m.content.toolOutput
@@ -193,19 +199,25 @@ block content
             .chat5-draft-field.chat5-draft-notes
               label.form-label.mb-1.chat5-input-label.small(for="draftNotes") Prompt notes (optional)
               textarea#draftNotes.form-control.form-control-sm(rows="2" placeholder="Add reminders or constraints")
-          .chat5-draft-actions
-            button#draftPromptButton.btn.btn-outline-info.btn-sm(type="button") Draft prompt
-            small.text-muted Drafts use the cydonia-24b-q4_k_m:latest Ollama model and only update the editor.
-      #message.chat5-editor
-      .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
-        button.btn.btn-success(type="button", onclick="Append(true, false)") Append
-        button.btn.btn-success#sendAndResponse(type="button", onclick="Append(true, true)") Send & Response
-        button.btn.btn-success#respondOnly(type="button", onclick="Append(false, true)") Response
-        button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)", disabled) Batch Send & Response
-        button.btn.btn-outline-success#batchResponse(type="button", onclick="QueueBatch(false)", disabled) Batch Response
-      .chat5-history-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
-        button#hideLastMessageBtn.btn.btn-outline-warning(type="button", onclick="HideLastMessage()", title="Mark the most recent visible message as hidden") Hide last message
-        button#removeLastMessageBtn.btn.btn-outline-danger(type="button", onclick="RemoveLastMessage()", title="Remove the latest visible message and any trailing hidden messages") Remove last message
+      .chat5-draft-actions
+        button#draftPromptButton.btn.btn-outline-info.btn-sm(type="button") Draft prompt
+        small.text-muted Drafts use the cydonia-24b-q4_k_m:latest Ollama model and only update the editor.
+    #message.chat5-editor
+      // Editor is initialized via JS
+    p#chat5CharCounter.small.text-muted.mt-1 0 chars · ~0 tokens (1024 per 500 chars)
+    .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
+      button.btn.btn-success(type="button", onclick="Append(true, false)") Append
+      button.btn.btn-success#sendAndResponse(type="button", onclick="Append(true, true)") Send & Response
+      button.btn.btn-success#respondOnly(type="button", onclick="Append(false, true)") Response
+      button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)", disabled) Batch Send & Response
+      button.btn.btn-outline-success#batchResponse(type="button", onclick="QueueBatch(false)", disabled) Batch Response
+    .chat5-tts-controls.d-flex.flex-wrap.gap-2.align-items-center.mb-3
+      button#generateTtsBtn.btn.btn-outline-primary(type="button") Generate TTS (mp3)
+      button.btn.btn-outline-secondary(type="button", data-bs-toggle="modal", data-bs-target="#ttsKeywordsModal") Emotions & tags
+      small.text-muted Tokens auto-set at ~1024 per 500 characters. Output is saved to public/mp3.
+    .chat5-history-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
+      button#hideLastMessageBtn.btn.btn-outline-warning(type="button", onclick="HideLastMessage()", title="Mark the most recent visible message as hidden") Hide last message
+      button#removeLastMessageBtn.btn.btn-outline-danger(type="button", onclick="RemoveLastMessage()", title="Remove the latest visible message and any trailing hidden messages") Remove last message
       p#batchToolsWarning.chat5-batch-warning.text-warning.small(class={ 'd-none': !selectedTools.length })
         | Tools are unsupported by the batches API; any selected tools will be ignored during batch processing.
       hr.chat5-divider
@@ -383,6 +395,30 @@ block content
         input#text_to_edit_id(type="hidden", name="text_to_edit_id")
         input#text_to_edit_type(type="hidden", name="text_to_edit_type")
         button.btn.btn-success(onclick="SaveText()") Save
+  #ttsKeywordsModal.modal.fade(tabindex="-1" aria-labelledby="ttsKeywordsModalLabel" aria-hidden="true")
+    .modal-dialog.modal-lg
+      .modal-content
+        .modal-header
+          h5#ttsKeywordsModalLabel.modal-title TTS emotion & tone tags
+          button.btn-close(type="button", data-bs-dismiss="modal", aria-label="Close")
+        .modal-body
+          p.small.text-muted Use these tags in your prompt to steer delivery. Output format is fixed to mp3 and saved under public/mp3/.
+          .mb-3
+            label.form-label(for="ttsReferenceId") reference_id (optional)
+            select#ttsReferenceId.form-select
+              option(value="") -- No reference id --
+          h6.mb-2 Basic emotions
+          p
+            | (angry) (sad) (excited) (surprised) (satisfied) (delighted) (scared) (worried) (upset) (nervous) (frustrated) (depressed) (empathetic) (embarrassed) (disgusted) (moved) (proud) (relaxed) (grateful) (confident) (interested) (curious) (confused) (joyful)
+          h6.mt-3.mb-2 Advanced emotions
+          p
+            | (disdainful) (unhappy) (anxious) (hysterical) (indifferent) (impatient) (guilty) (scornful) (panicked) (furious) (reluctant) (keen) (disapproving) (negative) (denying) (astonished) (serious) (sarcastic) (conciliative) (comforting) (sincere) (sneering) (hesitating) (yielding) (painful) (awkward) (amused)
+          h6.mt-3.mb-2 Tone markers
+          p
+            | (in a hurry tone) (shouting) (screaming) (whispering) (soft tone)
+          h6.mt-3.mb-2 Special audio effects
+          p
+            | (laughing) (chuckling) (sobbing) (crying loudly) (sighing) (panting) (groaning) (crowd laughing) (background laughter) (audience laughing)
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
   script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
