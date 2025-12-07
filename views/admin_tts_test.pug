@@ -13,6 +13,8 @@ block content
 
       if error
         .alert.alert-danger(role="alert")= error
+      if info
+        .alert.alert-info(role="alert")= info
       if result
         .alert.alert-success(role="alert")
           | Audio generated and saved as 
@@ -42,10 +44,40 @@ block content
           .mb-3
             label.form-label(for="max_new_tokens") max_new_tokens
             input#max_new_tokens.form-control(type="number", name="max_new_tokens", min="1", max="8192", step="1", value=form.maxNewTokens || 1024)
-            small.form-text.text-muted Defaults to 1024; increase for longer outputs.
+            small.form-text.text-muted Recommended ~#{recommendedMax} tokens (about #{recommendationNote}); defaults to #{form.maxNewTokens || 1024}.
           button.btn.btn-primary(type="submit") Generate audio
 
-      if result
+      if job
+        .card.mb-4
+          .card-body
+            h5.mb-3 Job status
+            p.mb-1
+              | Job ID: 
+              code= job.id
+            p.mb-2
+              strong Status: 
+              span#job-status= job.status
+            p.text-danger#job-error(class=job.error ? '' : 'd-none')= job.error
+            #job-result-container.mt-3
+              if job.result
+                h6.mb-3 Preview
+                audio#job-audio(controls, class="w-100 mb-2", src=job.result.fileUrl)
+                p.mb-0
+                  | Saved to 
+                  code#job-file-name= job.result.fileName
+                  | . 
+                  a#job-file-link(href=job.result.fileUrl, target="_blank") Open file in new tab
+              else
+                p#job-result-placeholder.text-muted.mb-0 Waiting for audio...
+                .d-none#job-result-preview
+                  h6.mb-3 Preview
+                  audio#job-audio(controls, class="w-100 mb-2")
+                  p.mb-0
+                    | Saved to 
+                    code#job-file-name
+                    | . 
+                    a#job-file-link(target="_blank") Open file in new tab
+      else if result
         .card
           .card-body
             h5.mb-3 Preview
@@ -75,3 +107,55 @@ block content
             if keywords.audioEffects && keywords.audioEffects.length
               each kw in keywords.audioEffects
                 span.badge.text-bg-light.border.me-1.mb-1= kw
+  if job && job.status !== 'completed' && job.status !== 'failed'
+    script.
+      (() => {
+        const jobId = '#{job.id}';
+        const statusEl = document.getElementById('job-status');
+        const errorEl = document.getElementById('job-error');
+        const placeholderEl = document.getElementById('job-result-placeholder');
+        const previewEl = document.getElementById('job-result-preview');
+        const audioEl = document.getElementById('job-audio');
+        const fileNameEl = document.getElementById('job-file-name');
+        const fileLink = document.getElementById('job-file-link');
+
+        async function poll() {
+          try {
+            const res = await fetch(`/admin/tts-test/status/${jobId}`);
+            if (res.status === 404) {
+              if (statusEl) statusEl.textContent = 'not_found';
+              if (errorEl) {
+                errorEl.textContent = 'Job not found or expired.';
+                errorEl.classList.remove('d-none');
+              }
+              clearInterval(timer);
+              return;
+            }
+            if (!res.ok) return;
+            const data = await res.json();
+            if (statusEl) statusEl.textContent = data.status || 'unknown';
+            if (data.error && errorEl) {
+              errorEl.textContent = data.error;
+              errorEl.classList.remove('d-none');
+            }
+            if (data.result && data.result.fileUrl && previewEl && audioEl) {
+              if (placeholderEl) placeholderEl.classList.add('d-none');
+              previewEl.classList.remove('d-none');
+              audioEl.src = data.result.fileUrl;
+              if (fileNameEl) fileNameEl.textContent = data.result.fileName || 'audio.wav';
+              if (fileLink) {
+                fileLink.href = data.result.fileUrl;
+                fileLink.textContent = 'Open file in new tab';
+              }
+            }
+            if (['completed', 'failed', 'not_found'].includes(data.status)) {
+              clearInterval(timer);
+            }
+          } catch (err) {
+            // transient errors ignored; next tick will retry
+          }
+        }
+
+        const timer = setInterval(poll, 2500);
+        poll();
+      })();

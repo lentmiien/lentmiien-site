@@ -1,4 +1,5 @@
 const axios = require('axios');
+const crypto = require('crypto');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
@@ -170,6 +171,12 @@ const TEMP_AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'temp');
 const JS_FILE_NAME = 'controllers/admincontroller.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const TTS_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
+const TOKENS_PER_500_CHARS = 1024;
+const MAX_NEW_TOKENS_DEFAULT = 1024;
+const MAX_NEW_TOKENS_MIN = 1;
+const MAX_NEW_TOKENS_MAX = 8192;
+const TTS_JOB_RETENTION_MS = 60 * 60 * 1000; // 1 hour
+const ttsJobs = new Map();
 const TTS_KEYWORDS = {
   basicEmotions: [
     '(angry)', '(sad)', '(excited)', '(surprised)', '(satisfied)', '(delighted)',
@@ -1065,17 +1072,46 @@ async function ensureTempAudioDirectory() {
   await fsp.mkdir(TEMP_AUDIO_DIR, { recursive: true });
 }
 
-function renderTtsTestPage(res, { form, result = null, error = null }) {
+function clampMaxNewTokens(value) {
+  const numeric = Math.round(Number(value) || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return MAX_NEW_TOKENS_DEFAULT;
+  }
+  return Math.max(MAX_NEW_TOKENS_MIN, Math.min(MAX_NEW_TOKENS_MAX, numeric));
+}
+
+function estimateMaxNewTokens(text) {
+  const length = typeof text === 'string' ? text.length : 0;
+  if (length <= 0) {
+    return MAX_NEW_TOKENS_DEFAULT;
+  }
+  const estimated = Math.round((length / 500) * TOKENS_PER_500_CHARS);
+  return clampMaxNewTokens(estimated || MAX_NEW_TOKENS_DEFAULT);
+}
+
+function normalizeMaxNewTokens(rawValue, text) {
+  const parsed = Number.parseInt(rawValue, 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return clampMaxNewTokens(parsed);
+  }
+  return estimateMaxNewTokens(text);
+}
+
+function renderTtsTestPage(res, { form, result = null, error = null, job = null, info = null, recommendedMax = MAX_NEW_TOKENS_DEFAULT }) {
   const normalizedForm = {
     text: typeof form?.text === 'string' ? form.text : '',
     referenceId: typeof form?.referenceId === 'string' ? form.referenceId : '',
-    maxNewTokens: Number.isFinite(form?.maxNewTokens) ? form.maxNewTokens : 1024,
+    maxNewTokens: Number.isFinite(form?.maxNewTokens) ? form.maxNewTokens : MAX_NEW_TOKENS_DEFAULT,
   };
 
   return res.render('admin_tts_test', {
     form: normalizedForm,
     result,
     error,
+    job,
+    info,
+    recommendedMax,
+    recommendationNote: `~${TOKENS_PER_500_CHARS} tokens per 500 characters`,
     keywords: TTS_KEYWORDS,
     apiBase: TTS_API_BASE,
   });
@@ -1168,13 +1204,113 @@ async function generateTtsFile(text, referenceId, maxNewTokens) {
   }
 }
 
-exports.tts_test_page = (req, res) => renderTtsTestPage(res, { form: { text: '', referenceId: '' } });
+function createJobId() {
+  if (crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `job_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function scheduleJobCleanup(jobId) {
+  setTimeout(() => {
+    ttsJobs.delete(jobId);
+  }, TTS_JOB_RETENTION_MS);
+}
+
+function startTtsJob({ text, referenceId, maxNewTokens, user }) {
+  const id = createJobId();
+  const job = {
+    id,
+    status: 'queued',
+    form: { text, referenceId, maxNewTokens },
+    result: null,
+    error: null,
+    createdAt: Date.now(),
+    user,
+  };
+  ttsJobs.set(id, job);
+  scheduleJobCleanup(id);
+
+  setImmediate(async () => {
+    job.status = 'processing';
+    logger.debug('TTS job started', {
+      category: 'admin_tts',
+      metadata: { jobId: id, referenceId: referenceId || null, maxNewTokens, user },
+    });
+    try {
+      const fileName = await generateTtsFile(text, referenceId, maxNewTokens);
+      job.result = {
+        fileName,
+        fileUrl: `/temp/${fileName}`,
+        referenceId: referenceId || null,
+        maxNewTokens,
+      };
+      job.status = 'completed';
+      logger.notice('TTS job completed', {
+        category: 'admin_tts',
+        metadata: {
+          jobId: id,
+          fileName,
+          referenceId: referenceId || null,
+          maxNewTokens,
+        },
+      });
+    } catch (err) {
+      job.status = 'failed';
+      job.error = err?.message || 'Failed to generate audio.';
+      logger.error('TTS job failed', {
+        category: 'admin_tts',
+        metadata: {
+          jobId: id,
+          referenceId: referenceId || null,
+          maxNewTokens,
+          error: err?.message,
+        },
+      });
+    }
+  });
+
+  return job;
+}
+
+exports.tts_test_page = (req, res) => {
+  const jobId = req.query?.jobId;
+  let job = null;
+  let result = null;
+  let error = null;
+  let info = null;
+
+  if (jobId) {
+    job = ttsJobs.get(jobId) || null;
+    if (!job) {
+      error = 'Requested job was not found. It may have expired.';
+    } else if (job.status === 'failed') {
+      error = job.error || 'Job failed.';
+    } else if (job.status === 'completed') {
+      result = job.result;
+    } else {
+      info = 'Job is in progress. This page will update automatically.';
+    }
+  }
+
+  const form = job?.form || { text: '', referenceId: '', maxNewTokens: MAX_NEW_TOKENS_DEFAULT };
+  const recommendedMax = estimateMaxNewTokens(form.text);
+
+  return renderTtsTestPage(res, {
+    form,
+    result,
+    error,
+    job,
+    info,
+    recommendedMax,
+  });
+};
 
 exports.tts_test_generate = async (req, res) => {
   const text = (req.body.text || '').trim();
   const referenceId = (req.body.reference_id || '').trim();
-  const requestedTokens = Number.parseInt(req.body.max_new_tokens, 10);
-  const maxNewTokens = Number.isFinite(requestedTokens) && requestedTokens > 0 ? Math.min(requestedTokens, 8192) : 1024;
+  const maxNewTokens = normalizeMaxNewTokens(req.body.max_new_tokens, text);
+  const recommendedMax = estimateMaxNewTokens(text);
   const form = { text, referenceId, maxNewTokens };
 
   logger.debug('Admin TTS form submitted', {
@@ -1189,17 +1325,24 @@ exports.tts_test_generate = async (req, res) => {
 
   if (!text) {
     res.status(400);
-    return renderTtsTestPage(res, { form, error: 'Please enter some text to synthesize.' });
+    return renderTtsTestPage(res, { form, error: 'Please enter some text to synthesize.', recommendedMax });
   }
 
   try {
-    const fileName = await generateTtsFile(text, referenceId, maxNewTokens);
-    const result = {
-      fileName,
-      fileUrl: `/temp/${fileName}`,
-      referenceId: referenceId || null,
-    };
-    return renderTtsTestPage(res, { form, result });
+    const job = startTtsJob({
+      text,
+      referenceId,
+      maxNewTokens,
+      user: req.user?.name || 'unknown',
+    });
+    const info = 'Job queued. The page will update once audio is ready.';
+    return renderTtsTestPage(res, {
+      form,
+      result: null,
+      job,
+      info,
+      recommendedMax,
+    });
   } catch (error) {
     const status = error?.response?.status || 502;
     let message = 'Unable to generate audio. Please try again.';
@@ -1220,7 +1363,22 @@ exports.tts_test_generate = async (req, res) => {
       },
     });
     res.status(status);
-    return renderTtsTestPage(res, { form, error: message });
+    return renderTtsTestPage(res, { form, error: message, recommendedMax });
   }
+};
+
+exports.tts_test_status = (req, res) => {
+  const jobId = req.params?.id;
+  const job = jobId ? ttsJobs.get(jobId) : null;
+
+  if (!job) {
+    return res.status(404).json({ status: 'not_found' });
+  }
+
+  return res.json({
+    status: job.status,
+    result: job.result,
+    error: job.error,
+  });
 };
 

@@ -52,5 +52,6 @@ router.post('/html-pages/rating', controller.update_html_page_rating);
 
 router.get('/tts-test', controller.tts_test_page);
 router.post('/tts-test', controller.tts_test_generate);
+router.get('/tts-test/status/:id', controller.tts_test_status);
 
 module.exports = router;
