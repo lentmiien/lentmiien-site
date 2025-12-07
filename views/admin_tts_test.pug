@@ -45,6 +45,12 @@ block content
             label.form-label(for="max_new_tokens") max_new_tokens
             input#max_new_tokens.form-control(type="number", name="max_new_tokens", min="1", max="8192", step="1", value=form.maxNewTokens || 1024)
             small.form-text.text-muted Recommended ~#{recommendedMax} tokens (about #{recommendationNote}); defaults to #{form.maxNewTokens || 1024}.
+          .mb-3
+            label.form-label(for="format") Output format
+            select#format.form-select(name="format")
+              - const formats = ['wav', 'pcm', 'mp3', 'opus'];
+              each fmt in formats
+                option(value=fmt, selected=form.format === fmt)= fmt
           button.btn.btn-primary(type="submit") Generate audio
 
       if job

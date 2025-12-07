@@ -1097,11 +1097,20 @@ function normalizeMaxNewTokens(rawValue, text) {
   return estimateMaxNewTokens(text);
 }
 
+function normalizeFormat(raw) {
+  const allowed = new Set(['wav', 'pcm', 'mp3', 'opus']);
+  if (allowed.has(raw)) {
+    return raw;
+  }
+  return 'wav';
+}
+
 function renderTtsTestPage(res, { form, result = null, error = null, job = null, info = null, recommendedMax = MAX_NEW_TOKENS_DEFAULT }) {
   const normalizedForm = {
     text: typeof form?.text === 'string' ? form.text : '',
     referenceId: typeof form?.referenceId === 'string' ? form.referenceId : '',
     maxNewTokens: Number.isFinite(form?.maxNewTokens) ? form.maxNewTokens : MAX_NEW_TOKENS_DEFAULT,
+    format: normalizeFormat(form?.format),
   };
 
   return res.render('admin_tts_test', {
@@ -1117,10 +1126,10 @@ function renderTtsTestPage(res, { form, result = null, error = null, job = null,
   });
 }
 
-async function generateTtsFile(text, referenceId, maxNewTokens) {
+async function generateTtsFile(text, referenceId, maxNewTokens, format) {
   const payload = {
     text,
-    format: 'wav',
+    format,
     normalize: true,
     streaming: false,
     chunk_length: 200,
@@ -1142,18 +1151,19 @@ async function generateTtsFile(text, referenceId, maxNewTokens) {
       textLength: text.length,
       textPreview,
       maxNewTokens,
+      format,
     },
   });
 
   try {
     const response = await axios.post(requestUrl, payload, {
       responseType: 'arraybuffer',
-      timeout: 60000,
+      timeout: 5 * 60 * 1000,
     });
     const buffer = Buffer.from(response.data);
 
     await ensureTempAudioDirectory();
-    const fileName = `tts_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.wav`;
+    const fileName = `tts_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${format}`;
     const filePath = path.join(TEMP_AUDIO_DIR, fileName);
     await fsp.writeFile(filePath, buffer);
 
@@ -1167,6 +1177,7 @@ async function generateTtsFile(text, referenceId, maxNewTokens) {
         statusText: response.statusText,
         size: buffer.length,
         maxNewTokens,
+        format,
       },
     });
 
@@ -1178,6 +1189,7 @@ async function generateTtsFile(text, referenceId, maxNewTokens) {
         status: response.status,
         referenceId: referenceId || null,
         maxNewTokens,
+        format,
       },
     });
 
@@ -1198,6 +1210,7 @@ async function generateTtsFile(text, referenceId, maxNewTokens) {
         referenceId: referenceId || null,
         status: error?.response?.status,
         message: error?.message,
+        format,
       },
     });
     throw error;
@@ -1217,12 +1230,12 @@ function scheduleJobCleanup(jobId) {
   }, TTS_JOB_RETENTION_MS);
 }
 
-function startTtsJob({ text, referenceId, maxNewTokens, user }) {
+function startTtsJob({ text, referenceId, maxNewTokens, format, user }) {
   const id = createJobId();
   const job = {
     id,
     status: 'queued',
-    form: { text, referenceId, maxNewTokens },
+    form: { text, referenceId, maxNewTokens, format },
     result: null,
     error: null,
     createdAt: Date.now(),
@@ -1235,15 +1248,16 @@ function startTtsJob({ text, referenceId, maxNewTokens, user }) {
     job.status = 'processing';
     logger.debug('TTS job started', {
       category: 'admin_tts',
-      metadata: { jobId: id, referenceId: referenceId || null, maxNewTokens, user },
+      metadata: { jobId: id, referenceId: referenceId || null, maxNewTokens, format, user },
     });
     try {
-      const fileName = await generateTtsFile(text, referenceId, maxNewTokens);
+      const fileName = await generateTtsFile(text, referenceId, maxNewTokens, format);
       job.result = {
         fileName,
         fileUrl: `/temp/${fileName}`,
         referenceId: referenceId || null,
         maxNewTokens,
+        format,
       };
       job.status = 'completed';
       logger.notice('TTS job completed', {
@@ -1253,6 +1267,7 @@ function startTtsJob({ text, referenceId, maxNewTokens, user }) {
           fileName,
           referenceId: referenceId || null,
           maxNewTokens,
+          format,
         },
       });
     } catch (err) {
@@ -1264,6 +1279,7 @@ function startTtsJob({ text, referenceId, maxNewTokens, user }) {
           jobId: id,
           referenceId: referenceId || null,
           maxNewTokens,
+          format,
           error: err?.message,
         },
       });
@@ -1293,7 +1309,7 @@ exports.tts_test_page = (req, res) => {
     }
   }
 
-  const form = job?.form || { text: '', referenceId: '', maxNewTokens: MAX_NEW_TOKENS_DEFAULT };
+  const form = job?.form || { text: '', referenceId: '', maxNewTokens: MAX_NEW_TOKENS_DEFAULT, format: 'wav' };
   const recommendedMax = estimateMaxNewTokens(form.text);
 
   return renderTtsTestPage(res, {
@@ -1311,7 +1327,8 @@ exports.tts_test_generate = async (req, res) => {
   const referenceId = (req.body.reference_id || '').trim();
   const maxNewTokens = normalizeMaxNewTokens(req.body.max_new_tokens, text);
   const recommendedMax = estimateMaxNewTokens(text);
-  const form = { text, referenceId, maxNewTokens };
+  const format = normalizeFormat(req.body.format);
+  const form = { text, referenceId, maxNewTokens, format };
 
   logger.debug('Admin TTS form submitted', {
     category: 'admin_tts',
@@ -1320,6 +1337,7 @@ exports.tts_test_generate = async (req, res) => {
       textLength: text.length,
       referenceId: referenceId || null,
       maxNewTokens,
+      format,
     },
   });
 
@@ -1333,6 +1351,7 @@ exports.tts_test_generate = async (req, res) => {
       text,
       referenceId,
       maxNewTokens,
+      format,
       user: req.user?.name || 'unknown',
     });
     const info = 'Job queued. The page will update once audio is ready.';
