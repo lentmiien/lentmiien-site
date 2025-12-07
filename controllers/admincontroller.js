@@ -1069,6 +1069,7 @@ function renderTtsTestPage(res, { form, result = null, error = null }) {
   const normalizedForm = {
     text: typeof form?.text === 'string' ? form.text : '',
     referenceId: typeof form?.referenceId === 'string' ? form.referenceId : '',
+    maxNewTokens: Number.isFinite(form?.maxNewTokens) ? form.maxNewTokens : 1024,
   };
 
   return res.render('admin_tts_test', {
@@ -1080,14 +1081,14 @@ function renderTtsTestPage(res, { form, result = null, error = null }) {
   });
 }
 
-async function generateTtsFile(text, referenceId) {
+async function generateTtsFile(text, referenceId, maxNewTokens) {
   const payload = {
     text,
     format: 'wav',
     normalize: true,
     streaming: false,
     chunk_length: 200,
-    max_new_tokens: 1024,
+    max_new_tokens: maxNewTokens,
   };
 
   if (referenceId) {
@@ -1104,6 +1105,7 @@ async function generateTtsFile(text, referenceId) {
       referenceId: referenceId || null,
       textLength: text.length,
       textPreview,
+      maxNewTokens,
     },
   });
 
@@ -1128,6 +1130,7 @@ async function generateTtsFile(text, referenceId) {
         status: response.status,
         statusText: response.statusText,
         size: buffer.length,
+        maxNewTokens,
       },
     });
 
@@ -1138,6 +1141,7 @@ async function generateTtsFile(text, referenceId) {
         size: buffer.length,
         status: response.status,
         referenceId: referenceId || null,
+        maxNewTokens,
       },
     });
 
@@ -1169,7 +1173,9 @@ exports.tts_test_page = (req, res) => renderTtsTestPage(res, { form: { text: '',
 exports.tts_test_generate = async (req, res) => {
   const text = (req.body.text || '').trim();
   const referenceId = (req.body.reference_id || '').trim();
-  const form = { text, referenceId };
+  const requestedTokens = Number.parseInt(req.body.max_new_tokens, 10);
+  const maxNewTokens = Number.isFinite(requestedTokens) && requestedTokens > 0 ? Math.min(requestedTokens, 8192) : 1024;
+  const form = { text, referenceId, maxNewTokens };
 
   logger.debug('Admin TTS form submitted', {
     category: 'admin_tts',
@@ -1177,6 +1183,7 @@ exports.tts_test_generate = async (req, res) => {
       user: req.user?.name || 'unknown',
       textLength: text.length,
       referenceId: referenceId || null,
+      maxNewTokens,
     },
   });
 
@@ -1186,7 +1193,7 @@ exports.tts_test_generate = async (req, res) => {
   }
 
   try {
-    const fileName = await generateTtsFile(text, referenceId);
+    const fileName = await generateTtsFile(text, referenceId, maxNewTokens);
     const result = {
       fileName,
       fileUrl: `/temp/${fileName}`,

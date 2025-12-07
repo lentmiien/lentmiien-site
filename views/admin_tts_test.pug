@@ -39,6 +39,10 @@ block content
               if form.referenceId
                 option(value=form.referenceId, selected)= form.referenceId
             small.form-text.text-muted Preset reference voices will appear here once they are available.
+          .mb-3
+            label.form-label(for="max_new_tokens") max_new_tokens
+            input#max_new_tokens.form-control(type="number", name="max_new_tokens", min="1", max="8192", step="1", value=form.maxNewTokens || 1024)
+            small.form-text.text-muted Defaults to 1024; increase for longer outputs.
           button.btn.btn-primary(type="submit") Generate audio
 
       if result
