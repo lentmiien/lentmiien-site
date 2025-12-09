@@ -14,6 +14,9 @@ const upload = multer({
 
 router.get('/', controller.renderTool);
 router.get('/jobs', controller.listJobs);
+router.get('/jobs/:jobId', controller.getJobDetails);
 router.post('/jobs', upload.array('images', MAX_FILES_PER_JOB), controller.enqueueJob);
+router.patch('/jobs/:jobId/files/:fileId', controller.updateFileResult);
+router.delete('/jobs/:jobId', controller.deleteJob);
 
 module.exports = router;

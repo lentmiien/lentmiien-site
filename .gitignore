@@ -8,6 +8,7 @@ github-repos
 .env
 public/img
 public/mp3
+public/ocr
 public/imgen
 public/video
 public/yaml/*

@@ -1,13 +1,11 @@
-I'm satisfied with what I see so far, so next, I'd like to add this TTS tool to the `views/chat5_chat.pug` page. I want the tool to work as following:
+For the OCR tool, `controllers/ocrcontroller.js`, I want to switch to saving jobs to a database instead. So add a new database for this, then update the controller and UI to work with this database.
 
-If the user input some text in the prompt field, and press a new button "Generate TTS", then the text will be sent to the new TTS API, and a new message will be appended to the conversation, with the TTS prompt in `content.transcript`, and the filename in `content.tts`, also note that the file should now be saved in the folder 'public/mp3', to make it permanent, and use mp3 format for all generations. Also, let's make all TTS messages `hideFromBot === true`. Also display a character counter just below the prompt text field, and auto set the TTS max token to 1024 per 500 characters.
+Use the full size uploaded image for the OCR job, but save a copy to the folder `public/ocr`, that will be used in the UI, or if forwarding the image somewhere else in the app, but resize this copy so that the longest side has a max length of 2048 pixels, keep the aspect ratio, and save as a JPG file with bit compression to keep the files relatively small, using the `sharp` library.
 
-Also update the UI rendering to display `contentType === "audio"` on the `views/chat5_chat.pug` page and when messages are added to the UI, with an audio player for `content.audio` or `content.tts`, whichever has a filename saved, and prepend the filename with the path 'mp3/', and display the `content.transcript` if available.
+In the UI, display a list of OCR jobs from the last 7 days, and the possibility to go back in time to check older jobs. When opening a job, keep a similar UI to what's currently shown, and allow for the user to manually edit the OCR texts, if edits are need, including removing unnecessary OCR text pieces, and save the changes to the database. Note: do not update the job date when editing an entry, so if I edit an entry from a month ago, it should not appear in the last 7 days list.
 
-Add some small popup modal in the UI, to show the user the available emotions/tone/effects tags, and a select box to choose `reference_id`, but I did not yet add any reference ids, so leave this empty for now.
+Also, in the UI, only load the database data, from the last 7 days, when loading the page (no images), then when the user select a job, add the `public/ocr` image to the UI with the OCR overlay, and textboxes, etc. similar to the current layout.
 
-Display the loading overlay while waiting for the TTS to complete.
+We'll keep the OCR database content indefinitely, but the user can manually delete entries if needed, when deleting an entry, also delete the image copy in `public/ocr`, this copy is only intended for the OCR tool, and if the image is used elsewhere, it should be copied to the appropriate location for that tool (and resized if necessary).
 
-Wrap the TTS API in a service class in the folder `services`, and integrate the service class in the conversation/message services to make this work.
-
-codex resume 019af457-6621-7af1-a7d3-77656aa14239
+codex resume 019b00cf-16e0-7ad1-bb97-430a893cd989

@@ -191,6 +191,47 @@ block styles
       box-shadow: 0 0 0 1px var(--ocr-brand);
     }
 
+    .job-list-footer {
+      margin-top: 0.75rem;
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .job-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+
+    .pill-button {
+      border: 1px solid var(--ocr-border);
+      background: transparent;
+      color: var(--ocr-text);
+      padding: 0.55rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .pill-button.is-ghost {
+      color: var(--ocr-text-secondary);
+    }
+
+    .pill-button.is-danger {
+      border-color: var(--ocr-danger);
+      color: var(--ocr-danger);
+    }
+
+    .pill-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
     .job-row .job-status-line {
       display: flex;
       align-items: center;
@@ -449,6 +490,82 @@ block styles
       border-color: var(--ocr-focus);
     }
 
+    .edit-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 0.5rem;
+    }
+
+    .save-edits-btn {
+      border: none;
+      background: var(--ocr-accent);
+      color: #111418;
+      padding: 0.6rem 0.95rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: opacity 0.2s ease;
+    }
+
+    .save-edits-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .restore-edits-btn {
+      border: 1px solid var(--ocr-border);
+      background: transparent;
+      color: var(--ocr-text-secondary);
+      padding: 0.6rem 0.95rem;
+      border-radius: 10px;
+      margin-left: 0.5rem;
+      cursor: pointer;
+    }
+
+    .segment-editor {
+      border: 1px solid var(--ocr-border);
+      background: var(--ocr-surface-2);
+      padding: 0.75rem;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .segment-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .segment-input input {
+      width: 100%;
+      background: var(--ocr-surface-3);
+      border: 1px solid var(--ocr-border);
+      border-radius: 8px;
+      padding: 0.5rem;
+      color: var(--ocr-text);
+    }
+
+    .segment-coords {
+      color: var(--ocr-text-muted);
+      font-size: 0.8rem;
+      margin-top: 0.25rem;
+    }
+
+    .segment-remove {
+      border: 1px solid var(--ocr-danger);
+      background: transparent;
+      color: var(--ocr-danger);
+      border-radius: 8px;
+      padding: 0.4rem 0.75rem;
+      cursor: pointer;
+    }
+
+    .segment-remove:hover {
+      background: rgba(255, 77, 79, 0.12);
+    }
+
     .job-actions {
       display: flex;
       flex-direction: column;
@@ -544,8 +661,9 @@ block content
           p.ocr-note Upload limit: #{process.env.OCR_JOB_MAX_FILES || 5} files · 25MB each
         .ocr-card
           .job-list-header
-            h2 Job queue
+            h2 Job history
             span#jobCount
+          p.ocr-note#jobRangeNote Showing the last 7 days of OCR jobs. Load older jobs to browse further back.
           #ocrJobList.job-rows
             if jobs && jobs.length
               each job in jobs
@@ -559,11 +677,16 @@ block content
             else
               .job-empty-state
                 span No jobs yet. Upload files to kick things off.
+          .job-list-footer
+            button#loadOlderJobs.pill-button.is-ghost(type='button') Load older jobs
       .ocr-right
         .ocr-card
           .job-details-header
             h2 Job details
             span.text-muted#jobStatusLabel
+          .job-toolbar
+            button#refreshJobBtn.pill-button.is-ghost(type='button') Refresh
+            button#deleteJobBtn.pill-button.is-danger(type='button') Delete entry
           #ocrJobDetails
             p.text-muted Select a job from the queue to view its status and results.
     #ocrFeedback(aria-live='polite')
@@ -574,6 +697,7 @@ block script
   script.
     window.__INITIAL_JOBS__ = !{JSON.stringify(jobs || [])};
     window.__INITIAL_JOBS_LAST_UPDATED__ = !{JSON.stringify(latestUpdatedAt || null)};
+    window.__INITIAL_HAS_OLDER__ = !{JSON.stringify(hasOlder || false)};
   script.
     (() => {
       const JOBS_ENDPOINT = '/ocr/jobs';
@@ -582,16 +706,22 @@ block script
       const SLOW_POLL_MS = 10000;
       const state = {
         jobs: Array.isArray(window.__INITIAL_JOBS__) ? window.__INITIAL_JOBS__ : [],
+        jobDetails: {},
         selectedJobId: null,
         isSubmitting: false,
         pollTimer: null,
         isForwarding: false,
-        layoutEdits: {},
         isEditingLayout: false,
         latestUpdatedAt: typeof window.__INITIAL_JOBS_LAST_UPDATED__ === 'string'
           ? window.__INITIAL_JOBS_LAST_UPDATED__
           : null,
         isFetchingJobs: false,
+        hasOlder: Boolean(window.__INITIAL_HAS_OLDER__),
+        oldestLoaded: null,
+        detailLoading: {},
+        savingEdits: {},
+        loadingOlder: false,
+        deletingJob: false,
       };
 
       const jobListEl = document.getElementById('ocrJobList');
@@ -601,6 +731,10 @@ block script
       const feedbackEl = document.getElementById('ocrFeedback');
       const formEl = document.getElementById('ocrForm');
       const fileInput = document.getElementById('images');
+      const loadOlderBtn = document.getElementById('loadOlderJobs');
+      const jobRangeNoteEl = document.getElementById('jobRangeNote');
+      const deleteJobBtn = document.getElementById('deleteJobBtn');
+      const refreshJobBtn = document.getElementById('refreshJobBtn');
 
       const escapeHtml = (str = '') =>
         String(str)
@@ -619,93 +753,6 @@ block script
         }
       };
 
-      const coerceTimestamp = (value) => {
-        const time = new Date(value).getTime();
-        return Number.isFinite(time) ? time : null;
-      };
-
-      const deriveLatestUpdatedAt = (jobs = []) => {
-        const latest = jobs.reduce((max, job) => {
-          const candidates = [
-            job.lastUpdatedAt,
-            job.updatedAt,
-            job.completedAt,
-            job.startedAt,
-            job.createdAt,
-          ];
-
-          if (Array.isArray(job.files)) {
-            job.files.forEach((file) => {
-              candidates.push(
-                file.updatedAt,
-                file.completedAt,
-                file.startedAt,
-                file.createdAt,
-              );
-            });
-          }
-
-          const jobMax = candidates
-            .map(coerceTimestamp)
-            .filter((value) => value !== null)
-            .reduce((innerMax, value) => Math.max(innerMax, value), 0);
-          return Math.max(max, jobMax);
-        }, 0);
-        return latest ? new Date(latest).toISOString() : null;
-      };
-
-      const dataUrlToBlob = (dataUrl) => {
-        try {
-          const [meta, base64] = dataUrl.split(',');
-          const mimeMatch = meta.match(/data:(.*?);/);
-          const mimeType = mimeMatch && mimeMatch[1] ? mimeMatch[1] : 'application/octet-stream';
-          const binary = atob(base64);
-          const buffer = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            buffer[i] = binary.charCodeAt(i);
-          }
-          return new Blob([buffer], { type: mimeType });
-        } catch (error) {
-          console.error('Failed to convert data URL', error);
-          return null;
-        }
-      };
-
-      const applyLayoutOverrides = (jobs) => jobs.map((job) => ({
-        ...job,
-        files: job.files.map((file) => {
-          const override = state.layoutEdits[file.id];
-          if (override !== undefined && file.result) {
-            return { ...file, result: { ...file.result, layoutText: override } };
-          }
-          return file;
-        }),
-      }));
-
-      const upsertLayoutEdit = (jobId, fileId, value) => {
-        state.layoutEdits[fileId] = value;
-        state.jobs = state.jobs.map((job) => {
-          if (job.id !== jobId) return job;
-          return {
-            ...job,
-            files: job.files.map((file) => {
-              if (file.id !== fileId || !file.result) {
-                return file;
-              }
-              return { ...file, result: { ...file.result, layoutText: value } };
-            }),
-          };
-        });
-      };
-
-      const summarizeJob = (job) => {
-        const total = job.files.length;
-        const completed = job.files.filter((f) => f.status === 'completed').length;
-        const failed = job.files.filter((f) => f.status === 'failed').length;
-        const processing = job.files.filter((f) => f.status === 'processing').length;
-        return { total, completed, failed, processing };
-      };
-
       const statusClass = (status) => {
         switch (status) {
           case 'completed':
@@ -719,49 +766,166 @@ block script
         }
       };
 
-      const mergeJobs = (jobs, options = {}) => {
-        if (!Array.isArray(jobs)) {
-          return;
+      const MAX_COORD_VALUE = 1000;
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+      const percentOfCanvas = (value) => clamp((value / MAX_COORD_VALUE) * 100, 0, 100);
+      const enrichBoxesForOverlay = (boxes = []) => boxes.map((box, index) => {
+        const width = clamp(box.endX - box.startX, 1, MAX_COORD_VALUE);
+        const height = clamp(box.endY - box.startY, 1, MAX_COORD_VALUE);
+        return {
+          ...box,
+          id: box.id || `${index}-${box.startX}-${box.startY}`,
+          leftPercent: percentOfCanvas(box.startX),
+          topPercent: percentOfCanvas(box.startY),
+          widthPercent: clamp((width / MAX_COORD_VALUE) * 100, 0.5, 100),
+          heightPercent: clamp((height / MAX_COORD_VALUE) * 100, 0.5, 100),
+        };
+      });
+
+      const parseSegmentsFromRawText = (rawText = '') => {
+        if (typeof rawText !== 'string' || !rawText.trim()) return [];
+        const pattern = /([\s\S]*?)\((\d{1,3}),(\d{1,3})\),\((\d{1,3}),(\d{1,3})\)/g;
+        const results = [];
+        let match;
+        while ((match = pattern.exec(rawText)) !== null) {
+          const text = (match[1] || '').trim();
+          if (!text) continue;
+          const coords = match.slice(2).map((v) => clamp(parseInt(v, 10) || 0, 0, MAX_COORD_VALUE));
+          results.push({
+            text,
+            startX: coords[0],
+            startY: coords[1],
+            endX: coords[2],
+            endY: coords[3],
+          });
         }
+        return enrichBoxesForOverlay(results);
+      };
 
-        const incoming = applyLayoutOverrides(jobs);
-        const jobIdOrder = Array.isArray(options.jobIds) && options.jobIds.length ? options.jobIds : null;
-        const existingMap = new Map(state.jobs.map((job) => [job.id, job]));
-        const incomingMap = new Map(incoming.map((job) => [job.id, job]));
-        const baseOrder = jobIdOrder
-          ? jobIdOrder
-          : [...new Set([...incoming.map((job) => job.id), ...state.jobs.map((job) => job.id)])];
-        const merged = baseOrder
-          .map((id) => incomingMap.get(id) || existingMap.get(id))
-          .filter(Boolean);
-
-        incoming.forEach((job) => {
-          if (!baseOrder.includes(job.id)) {
-            merged.unshift(job);
+      const computeLayoutTextFromSegments = (segments = []) => {
+        if (!Array.isArray(segments) || !segments.length) return '';
+        const height = (box) => Math.max(1, box.endY - box.startY);
+        const yOverlap = (a, b) => Math.max(0, Math.min(a.endY, b.endY) - Math.max(a.startY, b.startY));
+        const sharesRow = (a, b) => {
+          const overlap = yOverlap(a, b);
+          return overlap >= 0.5 * height(a) && overlap >= 0.5 * height(b);
+        };
+        const normalized = segments
+          .filter((box) => box && typeof box.text === 'string')
+          .map((box) => ({
+            ...box,
+            text: box.text.trim(),
+          }))
+          .filter((box) => box.text);
+        if (!normalized.length) return '';
+        const sorted = normalized.sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
+        const rows = [];
+        sorted.forEach((box) => {
+          const targetRow = rows.find((row) => row.some((entry) => sharesRow(entry, box)));
+          if (targetRow) {
+            targetRow.push(box);
+          } else {
+            rows.push([box]);
           }
         });
-
-        state.jobs = merged;
-        const latest = options.latestUpdatedAt || deriveLatestUpdatedAt(merged);
-        state.latestUpdatedAt = latest || null;
-
-        if (options.focusId) {
-          state.selectedJobId = options.focusId;
-        } else if (!state.jobs.find((job) => job.id === state.selectedJobId)) {
-          state.selectedJobId = state.jobs.length ? state.jobs[0].id : null;
-        }
-        renderJobs();
-        if (!state.isEditingLayout) {
-          renderJobDetails();
-        }
+        const lines = rows
+          .map((row) => row
+            .sort((a, b) => a.startX - b.startX)
+            .map((box) => (box.text || '').trim())
+            .filter(Boolean)
+            .join('  '))
+          .filter(Boolean);
+        return lines.join('\n');
       };
 
       const hasActiveJobs = () => state.jobs.some((job) => job.status === 'processing' || job.status === 'queued');
+
+      const setFeedback = (message, tone = 'info') => {
+        if (!feedbackEl) return;
+        if (!message) {
+          feedbackEl.innerHTML = '';
+          return;
+        }
+        feedbackEl.innerHTML = `<span class="is-${tone}">${escapeHtml(message)}</span>`;
+      };
+
+      const updateRangeNote = () => {
+        if (!jobRangeNoteEl) return;
+        jobRangeNoteEl.textContent = state.hasOlder
+          ? 'Showing the last 7 days. Load older jobs to browse history.'
+          : 'Showing available OCR jobs.';
+      };
+
+      const updateLoadOlderBtn = () => {
+        if (!loadOlderBtn) return;
+        if (!state.hasOlder) {
+          loadOlderBtn.disabled = true;
+          loadOlderBtn.textContent = 'No older jobs';
+          return;
+        }
+        loadOlderBtn.disabled = state.loadingOlder;
+        loadOlderBtn.textContent = state.loadingOlder ? 'Loading...' : 'Load older jobs';
+      };
+
+      const mergeJobSummaries = (jobs = []) => {
+        if (!Array.isArray(jobs) || !jobs.length) return;
+        const map = new Map(state.jobs.map((job) => [job.id, job]));
+        jobs.forEach((job) => {
+          if (job && job.id) {
+            const existing = map.get(job.id) || {};
+            map.set(job.id, { ...existing, ...job });
+          }
+        });
+        state.jobs = Array.from(map.values())
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        state.oldestLoaded = state.jobs.length ? state.jobs[state.jobs.length - 1].createdAt : null;
+        if (!state.selectedJobId && state.jobs.length) {
+          state.selectedJobId = state.jobs[0].id;
+        }
+        renderJobs();
+      };
+
+      const summarizeCounts = (job) => {
+        if (job.counts) return job.counts;
+        const files = Array.isArray(job.files) ? job.files : [];
+        const total = files.length;
+        const completed = files.filter((f) => f.status === 'completed').length;
+        const failed = files.filter((f) => f.status === 'failed').length;
+        const processing = files.filter((f) => f.status === 'processing').length;
+        return { total, completed, failed, processing };
+      };
+
+      const collectSegmentsFromDom = (fileId) => {
+        const rows = Array.from(jobDetailsEl?.querySelectorAll(`[data-segment-row="${fileId}"]`) || []);
+        return rows.map((row) => ({
+          text: row.querySelector('[data-segment-text]')?.value || '',
+          startX: Number(row.dataset.startx || 0),
+          startY: Number(row.dataset.starty || 0),
+          endX: Number(row.dataset.endx || 0),
+          endY: Number(row.dataset.endy || 0),
+        }));
+      };
+
+      const updateLayoutFromSegments = (jobId, fileId) => {
+        const layoutField = jobDetailsEl?.querySelector(`[data-layout-input="${fileId}"]`);
+        if (!layoutField) return;
+        const segments = collectSegmentsFromDom(fileId);
+        const layoutText = computeLayoutTextFromSegments(segments);
+        layoutField.value = layoutText;
+        const job = state.jobDetails[jobId];
+        if (job) {
+          const targetFile = job.files.find((f) => f.id === fileId);
+          if (targetFile && targetFile.result) {
+            targetFile.result.layoutText = layoutText;
+          }
+        }
+      };
 
       const selectJob = (jobId) => {
         state.selectedJobId = jobId;
         renderJobs();
         renderJobDetails();
+        ensureJobDetail(jobId);
       };
 
       const renderJobs = () => {
@@ -770,19 +934,22 @@ block script
         if (!state.jobs.length) {
           jobListEl.innerHTML = '<div class="job-empty-state">No jobs yet. Upload files to kick things off.</div>';
           if (jobCountEl) jobCountEl.textContent = '0 jobs';
+          updateRangeNote();
+          updateLoadOlderBtn();
           return;
         }
 
         const items = state.jobs.map((job) => {
-          const summary = summarizeJob(job);
+          const counts = summarizeCounts(job);
           const isActive = job.id === state.selectedJobId;
           const ownerLabel = job.owner && job.owner.name ? escapeHtml(job.owner.name) : 'You';
           const createdAt = formatDate(job.createdAt);
+          const failedLabel = counts.failed ? ` - ${counts.failed} failed` : '';
           return `
             <button type="button" class="job-row ${isActive ? 'is-active' : ''}" data-job-id="${job.id}">
               <div class="job-status-line">
                 <span class="status-badge ${statusClass(job.status)}">${escapeHtml(job.status)}</span>
-                <span>${summary.completed}/${summary.total} files${summary.failed ? ` · ${summary.failed} failed` : ''}</span>
+                <span>${counts.completed}/${counts.total} files${failedLabel}</span>
               </div>
               <div class="job-meta-line">
                 <span>${escapeHtml(createdAt)}</span>
@@ -799,24 +966,142 @@ block script
         if (jobCountEl) {
           jobCountEl.textContent = `${state.jobs.length} ${state.jobs.length === 1 ? 'job' : 'jobs'}`;
         }
+        updateRangeNote();
+        updateLoadOlderBtn();
+      };
+
+      const renderFileCard = (job, file, order) => {
+        const rawId = `raw-${file.id}`;
+        const layoutId = `layout-${file.id}`;
+        const counts = summarizeCounts(job);
+        const fileInfo = [
+          `Order ${order}/${counts.total || job.files.length}`,
+          `${(file.size / 1024).toFixed(1)} KB`,
+          file.mimetype || 'unknown type',
+        ].join(' | ');
+
+        const overlayHtml = file.result && file.result.overlayBoxes && file.result.overlayBoxes.length
+          ? file.result.overlayBoxes.map((box) => `
+                <div class="bounding-box" style="left:${box.leftPercent}%;top:${box.topPercent}%;width:${box.widthPercent}%;height:${box.heightPercent}%;">
+                  <span class="box-label">${escapeHtml(box.text)}</span>
+                </div>
+              `).join('')
+          : '';
+
+        const imageStage = file.result && file.result.imagePath
+          ? `
+            <div class="image-stage">
+              <img src="${file.result.imagePath}" alt="${escapeHtml(file.originalname)} preview" loading="lazy" />
+              <div class="box-layer">
+                ${overlayHtml || ''}
+              </div>
+            </div>
+          `
+          : '<p class="text-muted mb-0">Awaiting OCR output...</p>';
+
+        const rawTextSection = file.result?.rawText
+          ? `
+            <div class="text-card">
+              <div class="text-card-header">
+                <h5>Raw output</h5>
+                <button class="copy-btn" type="button" data-copy-source="${rawId}">Copy</button>
+              </div>
+              <pre id="${rawId}">${escapeHtml(file.result.rawText)}</pre>
+            </div>
+          `
+          : '';
+
+        const segmentsSection = file.result?.overlayBoxes
+          ? `
+            <div class="segment-editor" data-segment-list="${file.id}">
+              ${file.result.overlayBoxes.map((box) => `
+                <div class="segment-row" data-segment-row="${file.id}" data-startx="${box.startX}" data-starty="${box.startY}" data-endx="${box.endX}" data-endy="${box.endY}">
+                  <div class="segment-input">
+                    <input type="text" value="${escapeHtml(box.text)}" data-segment-text />
+                    <div class="segment-coords">(${box.startX}, ${box.startY}) -> (${box.endX}, ${box.endY})</div>
+                  </div>
+                  <button class="segment-remove" type="button" data-remove-segment="${box.id}" data-file-id="${file.id}">Remove</button>
+                </div>
+              `).join('')}
+            </div>
+          `
+          : '<p class="text-muted mb-0">No OCR segments available.</p>';
+
+        const layoutValue = file.result?.layoutText || '';
+        const layoutSection = file.result
+          ? `
+            <div class="text-card">
+              <div class="text-card-header">
+                <h5>Layout text</h5>
+                <button class="copy-btn" type="button" data-copy-source="${layoutId}">Copy</button>
+              </div>
+              <textarea id="${layoutId}" class="layout-textarea" data-layout-input="${file.id}" data-job-id="${job.id}" placeholder="Edit OCR layout text and save.">${escapeHtml(layoutValue)}</textarea>
+              <p class="ocr-note">Edits are saved to the database and won't change the original job date.</p>
+              <div class="edit-actions">
+                <button class="save-edits-btn" type="button" data-save-file="${file.id}" data-job-id="${job.id}">Save OCR edits</button>
+                <button class="restore-edits-btn" type="button" data-restore-file="${file.id}" data-job-id="${job.id}">Restore from raw output</button>
+              </div>
+              <div class="text-card-header mt-3">
+                <h5>Segments</h5>
+              </div>
+              ${segmentsSection}
+            </div>
+          `
+          : '';
+
+        const fileError = file.error
+          ? `<div class="file-error">${escapeHtml(file.error)}</div>`
+          : '';
+
+        return `
+          <section class="file-card">
+            <h4>
+              <span>${escapeHtml(file.originalname || 'Image')}</span>
+              <span class="status-badge ${statusClass(file.status)}">${escapeHtml(file.status)}</span>
+            </h4>
+            <div class="file-meta">${escapeHtml(fileInfo)}</div>
+            ${imageStage}
+            ${rawTextSection}
+            ${layoutSection}
+            ${fileError}
+          </section>
+        `;
       };
 
       const renderJobDetails = () => {
         if (!jobDetailsEl) return;
+        if (state.isEditingLayout) return;
 
-        const job = state.jobs.find((j) => j.id === state.selectedJobId);
-        if (!job) {
+        const summary = state.jobs.find((j) => j.id === state.selectedJobId);
+        const job = state.jobDetails[state.selectedJobId];
+        const isLoading = state.detailLoading[state.selectedJobId];
+
+        if (!state.selectedJobId) {
           jobDetailsEl.innerHTML = '<p class="text-muted mb-0">Select a job from the queue to inspect its files and results.</p>';
           if (statusLabelEl) statusLabelEl.textContent = '';
           return;
         }
 
-        if (statusLabelEl) {
-          statusLabelEl.textContent = `${job.status.toUpperCase()} · ${job.files.length} files`;
+        if (!job) {
+          jobDetailsEl.innerHTML = isLoading
+            ? '<p class="text-muted mb-0">Loading job...</p>'
+            : '<p class="text-muted mb-0">Loading job details...</p>';
+          if (!isLoading) {
+            ensureJobDetail(state.selectedJobId);
+          }
+          if (statusLabelEl && summary) {
+            const counts = summarizeCounts(summary);
+            statusLabelEl.textContent = `${summary.status.toUpperCase()} - ${counts.total} files`;
+          }
+          return;
         }
 
-        const summary = summarizeJob(job);
-        const hasSendable = job.files.some((file) => file.status === 'completed' && file.result && file.result.imageDataUrl);
+        const counts = summarizeCounts(job);
+        if (statusLabelEl) {
+          statusLabelEl.textContent = `${job.status.toUpperCase()} - ${counts.total} files`;
+        }
+
+        const hasSendable = job.files.some((file) => file.status === 'completed' && file.result && file.result.imagePath);
         const forwardHtml = `
           <div class="job-actions">
             <button type="button" class="forward-btn" data-send-job="${job.id}" ${hasSendable ? '' : 'disabled'}>
@@ -833,7 +1118,7 @@ block script
             </div>
             <div class="meta-block">
               <div class="meta-label">Files</div>
-              <div class="meta-value">${summary.completed}/${summary.total} done${summary.failed ? ` · ${summary.failed} failed` : ''}</div>
+              <div class="meta-value">${counts.completed}/${counts.total} done${counts.failed ? ` - ${counts.failed} failed` : ''}</div>
             </div>
             <div class="meta-block">
               <div class="meta-label">Created</div>
@@ -865,98 +1150,46 @@ block script
         jobDetailsEl.innerHTML = metaHtml + forwardHtml + promptHtml + jobErrorHtml + filesHtml;
       };
 
-      const renderFileCard = (job, file, order) => {
-        const rawId = `raw-${file.id}`;
-        const layoutId = `layout-${file.id}`;
-        const fileInfo = [
-          `Order ${order}/${job.files.length}`,
-          `${(file.size / 1024).toFixed(1)} KB`,
-          file.mimetype || 'unknown type',
-        ].join(' · ');
+      const ensureJobDetail = async (jobId, options = {}) => {
+        if (!jobId) return;
+        if (state.detailLoading[jobId]) return;
+        if (!options.refresh && state.jobDetails[jobId]) return;
 
-        const overlayHtml = file.result && file.result.overlayBoxes && file.result.overlayBoxes.length
-          ? file.result.overlayBoxes.map((box) => `
-                <div class="bounding-box" style="left:${box.leftPercent}%;top:${box.topPercent}%;width:${box.widthPercent}%;height:${box.heightPercent}%;">
-                  <span class="box-label">${escapeHtml(box.text)}</span>
-                </div>
-              `).join('')
-          : '';
+        state.detailLoading[jobId] = true;
+        renderJobDetails();
 
-        const imageStage = file.result
-          ? `
-            <div class="image-stage">
-              <img src="${file.result.imageDataUrl}" alt="${escapeHtml(file.originalname)} preview" loading="lazy" />
-              <div class="box-layer">
-                ${overlayHtml || ''}
-              </div>
-            </div>
-          `
-          : '<p class="text-muted mb-0">Awaiting OCR output…</p>';
-
-        const rawTextSection = file.result?.rawText
-          ? `
-            <div class="text-card">
-              <div class="text-card-header">
-                <h5>Raw output</h5>
-                <button class="copy-btn" type="button" data-copy-source="${rawId}">Copy</button>
-              </div>
-              <pre id="${rawId}">${escapeHtml(file.result.rawText)}</pre>
-            </div>
-          `
-          : '';
-
-        const layoutValue = file.result?.layoutText || '';
-        const layoutSection = file.result
-          ? `
-            <div class="text-card">
-              <div class="text-card-header">
-                <h5>Layout text</h5>
-                <button class="copy-btn" type="button" data-copy-source="${layoutId}">Copy</button>
-              </div>
-              <textarea id="${layoutId}" class="layout-textarea" data-layout-input="${file.id}" data-job-id="${job.id}" placeholder="Edit OCR layout text before sending to receipts.">${escapeHtml(layoutValue)}</textarea>
-              <p class="ocr-note">Edits are kept locally and forwarded with this image.</p>
-            </div>
-          `
-          : '';
-
-        const fileError = file.error
-          ? `<div class="file-error">${escapeHtml(file.error)}</div>`
-          : '';
-
-        return `
-          <section class="file-card">
-            <h4>
-              <span>${escapeHtml(file.originalname || 'Image')}</span>
-              <span class="status-badge ${statusClass(file.status)}">${escapeHtml(file.status)}</span>
-            </h4>
-            <div class="file-meta">${escapeHtml(fileInfo)}</div>
-            ${imageStage}
-            ${rawTextSection}
-            ${layoutSection}
-            ${fileError}
-          </section>
-        `;
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${jobId}`, { headers: { Accept: 'application/json' } });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || 'Failed to load job.');
+          }
+          state.jobDetails[jobId] = payload.job;
+          mergeJobSummaries([payload.job]);
+          renderJobDetails();
+        } catch (error) {
+          setFeedback(error.message || 'Failed to load job.', 'error');
+        } finally {
+          delete state.detailLoading[jobId];
+        }
       };
 
-      const setFeedback = (message, tone = 'info') => {
-        if (!feedbackEl) return;
-        if (!message) {
-          feedbackEl.innerHTML = '';
-          return;
-        }
-        feedbackEl.innerHTML = `<span class="is-${tone}">${escapeHtml(message)}</span>`;
+      const dataUrlFromPath = async (imagePath) => {
+        const response = await fetch(imagePath, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Unable to load OCR preview image.');
+        return response.blob();
       };
 
       const forwardJobToReceipts = async (jobId) => {
         if (state.isForwarding) {
           return;
         }
-        const job = state.jobs.find((j) => j.id === jobId);
+        const job = state.jobDetails[jobId];
         if (!job) {
           setFeedback('Select a job to send to receipts.', 'error');
           return;
         }
-        const sendableFiles = job.files.filter((file) => file.status === 'completed' && file.result && file.result.imageDataUrl);
+        const sendableFiles = job.files.filter((file) => file.status === 'completed' && file.result && file.result.imagePath);
         if (!sendableFiles.length) {
           setFeedback('No completed OCR results to send.', 'error');
           return;
@@ -964,16 +1197,18 @@ block script
 
         const formData = new FormData();
         let appended = 0;
-        sendableFiles.forEach((file, index) => {
-          const blob = dataUrlToBlob(file.result.imageDataUrl);
-          if (!blob) {
+        for (const file of sendableFiles) {
+          try {
+            const blob = await dataUrlFromPath(file.result.imagePath);
+            const filename = file.originalname || `ocr-receipt-${appended + 1}.jpg`;
+            formData.append('imgs', blob, filename);
+            formData.append('layout_texts', file.result.layoutText || '');
+            appended += 1;
+          } catch (error) {
+            setFeedback(error.message || 'Failed to prepare images.', 'error');
             return;
           }
-          appended += 1;
-          const filename = file.originalname || `ocr-receipt-${index + 1}.jpg`;
-          formData.append('imgs', blob, filename);
-          formData.append('layout_texts', file.result.layoutText || '');
-        });
+        }
 
         if (!appended) {
           setFeedback('Images are missing or invalid; nothing was sent.', 'error');
@@ -981,7 +1216,7 @@ block script
         }
 
         state.isForwarding = true;
-        setFeedback(`Sending ${appended} ${appended === 1 ? 'receipt' : 'receipts'} to inbox…`, 'info');
+        setFeedback(`Sending ${appended} ${appended === 1 ? 'receipt' : 'receipts'} to inbox...`, 'info');
 
         try {
           const response = await fetch(RECEIPT_ENDPOINT, {
@@ -1008,38 +1243,40 @@ block script
 
         const formData = new FormData(formEl);
         state.isSubmitting = true;
-        setFeedback('Queuing OCR job…', 'info');
+        setFeedback('Queuing OCR job...', 'info');
 
         try {
           const response = await fetch(formEl.action, {
             method: 'POST',
             body: formData,
+            headers: { Accept: 'application/json' },
           });
           const payload = await response.json();
           if (!response.ok) {
             throw new Error(payload.error || 'Failed to queue OCR job.');
           }
-          mergeJobs(payload.jobs || [], {
-            focusId: payload.jobId,
-            jobIds: Array.isArray(payload.jobIds) ? payload.jobIds : undefined,
-            latestUpdatedAt: payload.latestUpdatedAt,
-          });
+          if (payload.job) {
+            mergeJobSummaries([payload.job]);
+            state.jobDetails[payload.job.id] = payload.job;
+            state.selectedJobId = payload.job.id;
+            renderJobDetails();
+          }
           setFeedback('Job queued successfully.', 'success');
           if (fileInput) fileInput.value = '';
         } catch (error) {
           setFeedback(error.message || 'Failed to queue OCR job.', 'error');
         } finally {
           state.isSubmitting = false;
+          fetchJobs(true);
         }
       };
 
       const buildJobsUrl = () => {
-        const params = new URLSearchParams();
+        const params = new URLSearchParams({ scope: 'recent' });
         if (state.latestUpdatedAt) {
           params.set('updated_since', state.latestUpdatedAt);
         }
-        const query = params.toString();
-        return query ? `${JOBS_ENDPOINT}?${query}` : JOBS_ENDPOINT;
+        return `${JOBS_ENDPOINT}?${params.toString()}`;
       };
 
       const stopPolling = () => {
@@ -1055,7 +1292,7 @@ block script
         state.pollTimer = setTimeout(fetchJobs, interval);
       };
 
-      const fetchJobs = async () => {
+      const fetchJobs = async (preferFast = false) => {
         if (state.isEditingLayout) {
           stopPolling();
           return;
@@ -1070,35 +1307,133 @@ block script
         try {
           const response = await fetch(buildJobsUrl(), { headers: { Accept: 'application/json' } });
           if (!response.ok) return;
-          if (response.status === 304) {
-            return;
-          }
           const payload = await response.json();
           const payloadJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
-          const jobIds = Array.isArray(payload.jobIds) ? payload.jobIds : undefined;
-          const jobIdsChanged = Array.isArray(jobIds)
-            ? (jobIds.length !== state.jobs.length || jobIds.some((id, index) => state.jobs[index]?.id !== id))
-            : false;
-
-          hadUpdates = payloadJobs.length > 0 || jobIdsChanged;
+          hadUpdates = payloadJobs.length > 0;
           if (payload.latestUpdatedAt) {
             state.latestUpdatedAt = payload.latestUpdatedAt;
           }
-          mergeJobs(payloadJobs, {
-            jobIds,
-            latestUpdatedAt: payload.latestUpdatedAt,
-          });
-        } catch (error) {
+          if (typeof payload.hasOlder === 'boolean') {
+            state.hasOlder = payload.hasOlder;
+          }
+          mergeJobSummaries(payloadJobs);
+          const selectedSummary = state.jobs.find((job) => job.id === state.selectedJobId);
+          if (selectedSummary && selectedSummary.status !== 'completed') {
+            ensureJobDetail(selectedSummary.id, { refresh: true });
+          }
+        } catch {
           // Silent failure, polling will retry
         } finally {
           state.isFetchingJobs = false;
-          scheduleNextPoll(hadUpdates);
+          scheduleNextPoll(hadUpdates || preferFast);
         }
       };
 
       const startPolling = (preferFast = false) => {
         if (state.isEditingLayout) return;
         scheduleNextPoll(preferFast);
+      };
+
+      const loadOlderJobs = async () => {
+        if (state.loadingOlder || !state.hasOlder) {
+          return;
+        }
+        state.loadingOlder = true;
+        updateLoadOlderBtn();
+        setFeedback('Loading older jobs...', 'info');
+
+        try {
+          const before = state.oldestLoaded || new Date().toISOString();
+          const params = new URLSearchParams({ scope: 'all', before, limit: 30 });
+          const response = await fetch(`${JOBS_ENDPOINT}?${params.toString()}`, { headers: { Accept: 'application/json' } });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || 'Failed to load older jobs.');
+          }
+          if (Array.isArray(payload.jobs)) {
+            mergeJobSummaries(payload.jobs);
+          }
+          if (typeof payload.hasOlder === 'boolean') {
+            state.hasOlder = payload.hasOlder;
+          }
+          setFeedback('', 'info');
+        } catch (error) {
+          setFeedback(error.message || 'Failed to load older jobs.', 'error');
+        } finally {
+          state.loadingOlder = false;
+          updateLoadOlderBtn();
+        }
+      };
+
+      const saveOcrEdits = async (jobId, fileId, options = {}) => {
+        if (!jobId || !fileId || state.savingEdits[fileId]) return;
+        const layoutField = jobDetailsEl?.querySelector(`[data-layout-input="${fileId}"]`);
+        const segments = Array.isArray(options.segmentsOverride)
+          ? options.segmentsOverride
+          : collectSegmentsFromDom(fileId);
+        const layoutText = typeof options.layoutOverride === 'string'
+          ? options.layoutOverride
+          : computeLayoutTextFromSegments(segments);
+        if (layoutField) {
+          layoutField.value = layoutText;
+        }
+        state.savingEdits[fileId] = true;
+        setFeedback('Saving OCR edits...', 'info');
+
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${jobId}/files/${fileId}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({
+              layoutText,
+              overlayBoxes: segments,
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || 'Failed to save OCR edits.');
+          }
+          state.jobDetails[jobId] = payload.job;
+          mergeJobSummaries([payload.job]);
+          renderJobDetails();
+          setFeedback('Edits saved.', 'success');
+        } catch (error) {
+          setFeedback(error.message || 'Failed to save OCR edits.', 'error');
+        } finally {
+          delete state.savingEdits[fileId];
+        }
+      };
+
+      const deleteSelectedJob = async () => {
+        if (!state.selectedJobId || state.deletingJob) return;
+        const confirmed = window.confirm('Delete this OCR job and its preview image?');
+        if (!confirmed) return;
+
+        state.deletingJob = true;
+        if (deleteJobBtn) deleteJobBtn.disabled = true;
+        setFeedback('Deleting job...', 'info');
+
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${state.selectedJobId}`, { method: 'DELETE', headers: { Accept: 'application/json' } });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || 'Failed to delete job.');
+          }
+          state.jobs = state.jobs.filter((job) => job.id !== state.selectedJobId);
+          delete state.jobDetails[state.selectedJobId];
+          state.selectedJobId = state.jobs.length ? state.jobs[0].id : null;
+          renderJobs();
+          renderJobDetails();
+          setFeedback('Job deleted.', 'success');
+        } catch (error) {
+          setFeedback(error.message || 'Failed to delete job.', 'error');
+        } finally {
+          state.deletingJob = false;
+          if (deleteJobBtn) deleteJobBtn.disabled = false;
+        }
       };
 
       document.addEventListener('click', (event) => {
@@ -1117,31 +1452,83 @@ block script
 
       document.addEventListener('click', (event) => {
         const sendButton = event.target.closest('[data-send-job]');
-        if (!sendButton || sendButton.disabled) return;
-        sendButton.disabled = true;
-        forwardJobToReceipts(sendButton.dataset.sendJob);
+        if (sendButton && !sendButton.disabled) {
+          sendButton.disabled = true;
+          forwardJobToReceipts(sendButton.dataset.sendJob).finally(() => {
+            sendButton.disabled = false;
+          });
+        }
+      });
+
+      document.addEventListener('click', (event) => {
+        const saveBtn = event.target.closest('[data-save-file]');
+        if (saveBtn) {
+          saveOcrEdits(saveBtn.dataset.jobId, saveBtn.dataset.saveFile);
+        }
+      });
+
+      document.addEventListener('click', (event) => {
+        const removeBtn = event.target.closest('[data-remove-segment]');
+        if (!removeBtn) return;
+        const row = removeBtn.closest('[data-segment-row]');
+        if (row && row.parentElement) {
+          row.parentElement.removeChild(row);
+        }
+        if (state.selectedJobId && removeBtn.dataset.fileId) {
+          updateLayoutFromSegments(state.selectedJobId, removeBtn.dataset.fileId);
+        }
+      });
+
+      document.addEventListener('click', (event) => {
+        const refreshBtnClick = event.target.closest('#refreshJobBtn');
+        if (refreshBtnClick && state.selectedJobId) {
+          ensureJobDetail(state.selectedJobId, { refresh: true });
+        }
+      });
+
+      document.addEventListener('click', (event) => {
+        const restoreBtn = event.target.closest('[data-restore-file]');
+        if (!restoreBtn) return;
+        const jobId = restoreBtn.dataset.jobId;
+        const fileId = restoreBtn.dataset.restoreFile;
+        const job = state.jobDetails[jobId];
+        const file = job?.files.find((f) => f.id === fileId);
+        if (!job || !file || !file.result) return;
+        const parsedBoxes = parseSegmentsFromRawText(file.result.rawText || '');
+        const targetBoxes = parsedBoxes.length
+          ? parsedBoxes
+          : (Array.isArray(file.result.originalOverlayBoxes) ? file.result.originalOverlayBoxes : []);
+        const targetLayout = parsedBoxes.length
+          ? computeLayoutTextFromSegments(parsedBoxes)
+          : (file.result.originalLayoutText || file.result.layoutText || '');
+        file.result.overlayBoxes = targetBoxes;
+        file.result.layoutText = targetLayout;
+        renderJobDetails();
+        saveOcrEdits(jobId, fileId, { segmentsOverride: targetBoxes, layoutOverride: targetLayout });
+      });
+
+      document.addEventListener('input', (event) => {
+        const segmentInput = event.target.closest('[data-segment-text]');
+        if (segmentInput && state.selectedJobId) {
+          const row = segmentInput.closest('[data-segment-row]');
+          if (row) {
+            updateLayoutFromSegments(state.selectedJobId, row.dataset.segmentRow);
+          }
+        }
       });
 
       if (jobDetailsEl) {
-        jobDetailsEl.addEventListener('input', (event) => {
-          const target = event.target.closest('[data-layout-input]');
-          if (!target) return;
-          const fileId = target.dataset.layoutInput;
-          const jobId = target.dataset.jobId;
-          if (!fileId || !jobId) return;
-          upsertLayoutEdit(jobId, fileId, target.value);
-        });
-
         jobDetailsEl.addEventListener('focusin', (event) => {
-          if (!event.target.closest('[data-layout-input]')) return;
-          state.isEditingLayout = true;
-          stopPolling();
+          if (event.target.closest('[data-layout-input]') || event.target.closest('[data-segment-text]')) {
+            state.isEditingLayout = true;
+            stopPolling();
+          }
         });
-
         jobDetailsEl.addEventListener('focusout', (event) => {
-          if (!event.target.closest('[data-layout-input]')) return;
-          state.isEditingLayout = false;
-          fetchJobs();
+          if (event.target.closest('[data-layout-input]') || event.target.closest('[data-segment-text]')) {
+            state.isEditingLayout = false;
+            startPolling(true);
+          }
         });
       }
 
@@ -1149,13 +1536,23 @@ block script
         formEl.addEventListener('submit', handleFormSubmit);
       }
 
-      if (!state.latestUpdatedAt) {
-        state.latestUpdatedAt = deriveLatestUpdatedAt(state.jobs);
+      if (loadOlderBtn) {
+        loadOlderBtn.addEventListener('click', loadOlderJobs);
       }
+
+      if (deleteJobBtn) {
+        deleteJobBtn.addEventListener('click', deleteSelectedJob);
+      }
+
+      state.oldestLoaded = state.jobs.length ? state.jobs[state.jobs.length - 1].createdAt : null;
       if (state.jobs.length) {
         state.selectedJobId = state.jobs[0].id;
       }
       renderJobs();
       renderJobDetails();
+      if (state.selectedJobId) {
+        ensureJobDetail(state.selectedJobId);
+      }
       startPolling(true);
     })();
+
