@@ -1,11 +1,109 @@
-For the OCR tool, `controllers/ocrcontroller.js`, I want to switch to saving jobs to a database instead. So add a new database for this, then update the controller and UI to work with this database.
+I've added a new text to vector embedding API at the local network URL `192.168.0.20:8001`.
 
-Use the full size uploaded image for the OCR job, but save a copy to the folder `public/ocr`, that will be used in the UI, or if forwarding the image somewhere else in the app, but resize this copy so that the longest side has a max length of 2048 pixels, keep the aspect ratio, and save as a JPG file with bit compression to keep the files relatively small, using the `sharp` library.
+There are 2 endpoints at this URL:
 
-In the UI, display a list of OCR jobs from the last 7 days, and the possibility to go back in time to check older jobs. When opening a job, keep a similar UI to what's currently shown, and allow for the user to manually edit the OCR texts, if edits are need, including removing unnecessary OCR text pieces, and save the changes to the database. Note: do not update the job date when editing an entry, so if I edit an entry from a month ago, it should not appear in the last 7 days list.
+1. GET /health
+No input, returns a health status object in the following format:
+```
+{
+  "status": "ok",
+  "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+  "cuda": true,
+  "use_on_demand_gpu": true,
+  "model_max_tokens": 128
+}
 
-Also, in the UI, only load the database data, from the last 7 days, when loading the page (no images), then when the user select a job, add the `public/ocr` image to the UI with the OCR overlay, and textboxes, etc. similar to the current layout.
+```
 
-We'll keep the OCR database content indefinitely, but the user can manually delete entries if needed, when deleting an entry, also delete the image copy in `public/ocr`, this copy is only intended for the OCR tool, and if the image is used elsewhere, it should be copied to the appropriate location for that tool (and resized if necessary).
+2. POST /embed
+    - Headers: Content-Type: application/json
+    - Body: JSON, matches this schema:
+```
+interface EmbedRequest {
+  texts: string[];        // required, non-empty strings
+  auto_chunk?: boolean;   // default: true
+  max_tokens_per_chunk?: number | null;  // default: ~0.75 * model_max_tokens, e.g. 96 for mpnet
+  overlap_tokens?: number; // default: 32, must be >= 0
+}
+```
 
-codex resume 019b00cf-16e0-7ad1-bb97-430a893cd989
+That returns a response in the following format:
+```
+interface ChunkInfo {
+  text_index: number;  // index into original texts[]
+  chunk_index: number; // 0-based index of chunk within that text
+  start_token: number; // start token index in tokenizer space
+  end_token: number;   // end token index (exclusive)
+}
+
+interface EmbedResponse {
+  model: string;
+  dim: number;              // embedding dimensionality (768 for mpnet)
+  vectors: number[][];      // shape: [num_chunks, dim]
+  chunks: ChunkInfo[];      // same length as vectors
+}
+```
+
+Example response:
+```
+{
+  "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+  "dim": 768,
+  "vectors": [
+    [0.01, 0.02, ...],
+    [0.03, 0.04, ...],
+    [0.05, 0.06, ...]
+  ],
+  "chunks": [
+    { "text_index": 0, "chunk_index": 0, "start_token": 0,   "end_token": 96 },
+    { "text_index": 0, "chunk_index": 1, "start_token": 64,  "end_token": 160 },
+    { "text_index": 0, "chunk_index": 2, "start_token": 128, "end_token": 210 }
+  ]
+}
+```
+
+This is an example implementation:
+```
+// If you're on Node <18, install node-fetch and uncomment:
+// import fetch from 'node-fetch';
+
+const EMBED_API_BASE = process.env.EMBED_API_BASE || 'http://localhost:8001';
+
+async function embedTexts(texts, options = {}) {
+  const body = {
+    texts,
+    auto_chunk: options.autoChunk ?? true,
+  };
+
+  if (options.maxTokensPerChunk !== undefined) {
+    body.max_tokens_per_chunk = options.maxTokensPerChunk;
+  }
+  if (options.overlapTokens !== undefined) {
+    body.overlap_tokens = options.overlapTokens;
+  }
+
+  const res = await fetch(`${EMBED_API_BASE}/embed`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Embed API error: ${res.status} ${res.statusText} - ${text}`);
+  }
+
+  const data = await res.json();
+  return data; // { model, dim, vectors, chunks }
+}
+
+export { embedTexts };
+```
+
+Please implement a simple testing page on the admin route for this text embedding API, where the user can input a text in a `textarea`, generate embedding(s), and see the result.
+
+Please implement the embedding API in a service class in the `services` folder, as I'll be using it for a lot going forward.
+
+codex resume 019b01df-5849-79d0-b52e-821a4ae751ea

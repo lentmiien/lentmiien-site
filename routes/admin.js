@@ -44,6 +44,8 @@ router.get('/database_usage', controller.database_usage);
 router.get('/api-debug-logs', controller.api_debug_logs);
 router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
 
+router.get('/embedding-test', controller.embedding_test_page);
+router.post('/embedding-test', controller.embedding_test_generate);
 router.get('/html-pages', controller.html_pages);
 router.post('/html-pages/upload-text', controller.create_html_page_from_text);
 router.post('/html-pages/upload-file', handleHtmlUpload);

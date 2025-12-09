@@ -5,6 +5,7 @@ const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } 
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
 const { formatBytes, formatNumber, formatPercent, calculatePercent } = require('../utils/metricsFormatter');
+const EmbeddingApiService = require('../services/embeddingApiService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -170,6 +171,10 @@ const MAX_PRUNE_DAYS = 365;
 const TEMP_AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'temp');
 const JS_FILE_NAME = 'controllers/admincontroller.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+const embeddingApiService = new EmbeddingApiService();
+const EMBEDDING_TEST_MAX_TEXTS = 10;
+const EMBEDDING_DEFAULT_OVERLAP = 32;
+const EMBEDDING_SPLIT_MODES = ['single', 'lines'];
 const TTS_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
 const TOKENS_PER_500_CHARS = 1024;
 const MAX_NEW_TOKENS_DEFAULT = 1024;
@@ -1065,6 +1070,250 @@ exports.prune_api_debug_logs = async (req, res) => {
       'error',
       'Unable to prune API debug logs right now.',
     );
+  }
+};
+
+async function fetchEmbeddingHealth() {
+  try {
+    const health = await embeddingApiService.health();
+    return { health, healthError: null };
+  } catch (error) {
+    return {
+      health: null,
+      healthError: error?.message || 'Unable to reach the embedding API.',
+    };
+  }
+}
+
+function normalizeEmbeddingForm(form = {}) {
+  const maxTokensRaw = form?.maxTokensPerChunk;
+  const overlapRaw = form?.overlapTokens;
+  const maxTokensParsed = Number.parseInt(maxTokensRaw, 10);
+  const overlapParsed = Number.parseInt(overlapRaw, 10);
+
+  return {
+    text: typeof form?.text === 'string' ? form.text : '',
+    splitMode: EMBEDDING_SPLIT_MODES.includes(form?.splitMode) ? form.splitMode : 'single',
+    autoChunk: form?.autoChunk !== false,
+    maxTokensPerChunk: Number.isFinite(maxTokensParsed) && maxTokensParsed > 0 ? maxTokensParsed : (maxTokensRaw === null ? null : ''),
+    overlapTokens: Number.isFinite(overlapParsed) && overlapParsed >= 0
+      ? overlapParsed
+      : overlapRaw === '' ? '' : EMBEDDING_DEFAULT_OVERLAP,
+  };
+}
+
+function parseEmbeddingTexts(rawText, splitMode) {
+  const normalizedText = (rawText || '').replace(/\r\n/g, '\n');
+  if (splitMode === 'lines') {
+    return normalizedText.split('\n').map((t) => t.trim()).filter(Boolean);
+  }
+  const single = normalizedText.trim();
+  return single ? [single] : [];
+}
+
+function parsePositiveInt(raw, fieldLabel) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { value: undefined };
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { error: `${fieldLabel} must be a positive number or left blank.` };
+  }
+  return { value: parsed };
+}
+
+function parseNonNegativeInt(raw, fieldLabel) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { value: undefined };
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { error: `${fieldLabel} must be zero or a positive number.` };
+  }
+  return { value: parsed };
+}
+
+function renderEmbeddingTestPage(res, {
+  form,
+  result = null,
+  error = null,
+  info = null,
+  submittedTexts = [],
+  requestOptions = {},
+  health = null,
+  healthError = null,
+}) {
+  const normalizedForm = normalizeEmbeddingForm(form);
+  return res.render('admin_embedding_test', {
+    form: normalizedForm,
+    result,
+    error,
+    info,
+    submittedTexts,
+    requestOptions: {
+      autoChunk: requestOptions?.autoChunk !== false,
+      maxTokensPerChunk: requestOptions?.maxTokensPerChunk,
+      overlapTokens: requestOptions?.overlapTokens,
+    },
+    health,
+    healthError,
+    apiBase: embeddingApiService.baseUrl,
+    maxTexts: EMBEDDING_TEST_MAX_TEXTS,
+    defaultOverlap: EMBEDDING_DEFAULT_OVERLAP,
+  });
+}
+
+exports.embedding_test_page = async (req, res) => {
+  const form = {
+    text: '',
+    splitMode: 'single',
+    autoChunk: true,
+    maxTokensPerChunk: '',
+    overlapTokens: EMBEDDING_DEFAULT_OVERLAP,
+  };
+  const { health, healthError } = await fetchEmbeddingHealth();
+
+  return renderEmbeddingTestPage(res, {
+    form,
+    submittedTexts: [],
+    requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+    health,
+    healthError,
+  });
+};
+
+exports.embedding_test_generate = async (req, res) => {
+  const rawText = typeof req.body.text === 'string' ? req.body.text : '';
+  const splitMode = req.body.split_mode === 'lines' ? 'lines' : 'single';
+  const autoChunk = req.body.auto_chunk !== undefined;
+  const maxTokensInput = req.body.max_tokens_per_chunk;
+  const overlapTokensInput = req.body.overlap_tokens;
+  const form = {
+    text: rawText,
+    splitMode,
+    autoChunk,
+    maxTokensPerChunk: maxTokensInput,
+    overlapTokens: overlapTokensInput,
+  };
+
+  const parsedTexts = parseEmbeddingTexts(rawText, splitMode);
+  if (!parsedTexts.length) {
+    const { health, healthError } = await fetchEmbeddingHealth();
+    res.status(400);
+    return renderEmbeddingTestPage(res, {
+      form,
+      error: 'Please enter at least one non-empty text to embed.',
+      submittedTexts: [],
+      requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
+      health,
+      healthError,
+    });
+  }
+
+  if (parsedTexts.length > EMBEDDING_TEST_MAX_TEXTS) {
+    const { health, healthError } = await fetchEmbeddingHealth();
+    res.status(400);
+    return renderEmbeddingTestPage(res, {
+      form,
+      error: `Please limit requests to ${EMBEDDING_TEST_MAX_TEXTS} texts or fewer.`,
+      submittedTexts: parsedTexts,
+      requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
+      health,
+      healthError,
+    });
+  }
+
+  const maxTokensResult = parsePositiveInt(maxTokensInput, 'max_tokens_per_chunk');
+  if (maxTokensResult.error) {
+    const { health, healthError } = await fetchEmbeddingHealth();
+    res.status(400);
+    return renderEmbeddingTestPage(res, {
+      form,
+      error: maxTokensResult.error,
+      submittedTexts: parsedTexts,
+      requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
+      health,
+      healthError,
+    });
+  }
+
+  const overlapResult = parseNonNegativeInt(overlapTokensInput, 'overlap_tokens');
+  if (overlapResult.error) {
+    const { health, healthError } = await fetchEmbeddingHealth();
+    res.status(400);
+    return renderEmbeddingTestPage(res, {
+      form,
+      error: overlapResult.error,
+      submittedTexts: parsedTexts,
+      requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
+      health,
+      healthError,
+    });
+  }
+
+  const requestOptions = {
+    autoChunk,
+    maxTokensPerChunk: maxTokensResult.value,
+    overlapTokens: overlapResult.value,
+  };
+
+  try {
+    const embeddingResult = await embeddingApiService.embed(parsedTexts, requestOptions);
+    const { health, healthError } = await fetchEmbeddingHealth();
+
+    logger.notice('Admin embedding test completed', {
+      category: 'admin_embedding_test',
+      metadata: {
+        textCount: parsedTexts.length,
+        vectorCount: embeddingResult?.vectors?.length,
+        chunkCount: embeddingResult?.chunks?.length,
+        model: embeddingResult?.model,
+      },
+    });
+
+    const info = `Sent ${parsedTexts.length} text${parsedTexts.length === 1 ? '' : 's'} (${splitMode === 'lines' ? 'one per line' : 'single block'}).`;
+
+    return renderEmbeddingTestPage(res, {
+      form,
+      result: embeddingResult,
+      info,
+      submittedTexts: parsedTexts,
+      requestOptions,
+      health,
+      healthError,
+    });
+  } catch (error) {
+    const { health, healthError } = await fetchEmbeddingHealth();
+    const status = error?.status || 502;
+    let message = error?.message || 'Unable to reach the embedding API.';
+
+    if (error?.code === 'ETIMEOUT') {
+      message = `Embedding API request timed out after ${embeddingApiService.timeoutMs}ms.`;
+    } else if (error?.status) {
+      const detail = typeof error?.responseBody === 'string'
+        ? error.responseBody.slice(0, 200)
+        : '';
+      message = `Embedding API returned ${error.status}. ${detail}`.trim();
+    }
+
+    logger.error('Admin embedding test failed', {
+      category: 'admin_embedding_test',
+      metadata: {
+        status: error?.status,
+        code: error?.code,
+        message: error?.message,
+      },
+    });
+
+    res.status(status);
+    return renderEmbeddingTestPage(res, {
+      form,
+      error: message,
+      submittedTexts: parsedTexts,
+      requestOptions,
+      health,
+      healthError,
+    });
   }
 };
 

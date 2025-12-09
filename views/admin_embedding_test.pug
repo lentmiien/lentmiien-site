@@ -1,0 +1,138 @@
+extends layout
+
+block content
+  .row
+    .col-lg-8
+      h1.mb-3 Embedding API Test
+      p.text-muted.mb-4
+        | API base:
+        code.ms-1= apiBase
+        | . Send sample text(s) to the /embed endpoint (max #{maxTexts} per request).
+
+      if error
+        .alert.alert-danger(role="alert")= error
+      if info
+        .alert.alert-info(role="alert")= info
+
+      form.card.mb-4(method="post", action="/admin/embedding-test")
+        .card-body
+          .mb-3
+            label.form-label(for="text") Text
+            textarea#text.form-control(name="text", rows="5", required, placeholder="Enter text to embed")= form.text
+            small.form-text.text-muted Use split mode below to send multiple texts at once.
+          .mb-3
+            label.form-label.d-block(for="split_mode") Split mode
+            .d-flex.flex-wrap.align-items-center.gap-3
+              .form-check.form-check-inline
+                input#split_single.form-check-input(type="radio", name="split_mode", value="single", checked=form.splitMode !== 'lines')
+                label.form-check-label(for="split_single") Single block
+              .form-check.form-check-inline
+                input#split_lines.form-check-input(type="radio", name="split_mode", value="lines", checked=form.splitMode === 'lines')
+                label.form-check-label(for="split_lines") One text per line
+            small.form-text.text-muted Max #{maxTexts} texts per request.
+          .mb-3
+            .form-check.form-switch
+              input#auto_chunk.form-check-input(type="checkbox", name="auto_chunk", checked=form.autoChunk)
+              label.form-check-label(for="auto_chunk") auto_chunk (let the API chunk automatically)
+            small.form-text.text-muted Uncheck to send the raw text without auto chunking.
+          .row
+            .col-md-6.mb-3
+              label.form-label(for="max_tokens_per_chunk") max_tokens_per_chunk
+              input#max_tokens_per_chunk.form-control(type="number", name="max_tokens_per_chunk", min="1", step="1", value=form.maxTokensPerChunk === '' ? '' : form.maxTokensPerChunk)
+              small.form-text.text-muted Leave blank to use the API default.
+            .col-md-6.mb-3
+              label.form-label(for="overlap_tokens") overlap_tokens
+              input#overlap_tokens.form-control(type="number", name="overlap_tokens", min="0", step="1", value=form.overlapTokens === '' ? '' : form.overlapTokens)
+              small.form-text.text-muted Default #{defaultOverlap}; leave blank to use the API default.
+          button.btn.btn-primary(type="submit") Generate embeddings
+
+      if result
+        .card.mb-4
+          .card-body
+            h5.mb-3 Response
+            .d-flex.flex-wrap.gap-3.align-items-center.mb-2
+              span.badge.text-bg-success= result.model || 'unknown model'
+              span.badge.text-bg-light.text-secondary Dim #{result.dim || 'N/A'}
+              span.badge.text-bg-light.text-secondary= `${(result.vectors && result.vectors.length) || 0} vector(s)`
+              span.badge.text-bg-light.text-secondary= `${(result.chunks && result.chunks.length) || 0} chunk(s)`
+            if submittedTexts && submittedTexts.length
+              h6.mt-2.mb-2 Sent texts
+              ul.mb-3
+                each t, idx in submittedTexts
+                  if idx < 3
+                    li
+                      span.fw-semibold= `#${idx + 1} `
+                      | #{t.length > 200 ? `${t.slice(0, 200)}…` : t}
+                if submittedTexts.length > 3
+                  li.text-muted= `+${submittedTexts.length - 3} more`
+            if result.chunks && result.chunks.length
+              h6.mt-3.mb-2 Chunk details
+              table.table.table-sm
+                thead
+                  tr
+                    th #
+                    th text_index
+                    th chunk_index
+                    th tokens
+                    th length
+                tbody
+                  each chunk, idx in result.chunks
+                    tr
+                      td= idx + 1
+                      td= chunk.text_index
+                      td= chunk.chunk_index
+                      td= `${chunk.start_token} - ${chunk.end_token}`
+                      td= chunk.end_token - chunk.start_token
+            if result.vectors && result.vectors.length
+              - const firstVector = Array.isArray(result.vectors[0]) ? result.vectors[0] : [];
+              h6.mt-3.mb-1 First vector preview
+              p.text-muted.mb-1= `Showing first ${Math.min(firstVector.length, 12)} values from chunk 0`
+              code.d-block= JSON.stringify(firstVector.slice(0, 12))
+            details.mt-3
+              summary Raw response
+              pre.small= JSON.stringify(result, null, 2)
+      else
+        .card
+          .card-body
+            h6.mb-2 Response
+            p.text-muted.mb-0 Submit text above to see embeddings.
+    .col-lg-4
+      .card.mb-3
+        .card-body
+          h5.mb-2 API health
+          p.mb-1
+            strong Base:
+            code.ms-1= apiBase
+          if health
+            p.mb-2
+              strong Status:
+              if health.status && health.status.toLowerCase() === 'ok'
+                span.text-success.ms-1= health.status
+              else
+                span.text-warning.ms-1= health.status || 'unknown'
+            if health.model
+              p.mb-1
+                strong Model:
+                span.ms-1= health.model
+            if health.model_max_tokens
+              p.mb-1
+                strong model_max_tokens:
+                span.ms-1= health.model_max_tokens
+            p.mb-0.text-muted
+              | cuda: #{health.cuda ? 'true' : 'false'}, on-demand GPU: #{health.use_on_demand_gpu ? 'true' : 'false'}
+          else if healthError
+            .alert.alert-warning.mb-0(role="alert")= healthError
+          else
+            p.text-muted.mb-0 No health data yet.
+      .card
+        .card-body
+          h5.mb-2 Request options
+          p.mb-1
+            strong auto_chunk:
+            span.ms-1= requestOptions && requestOptions.autoChunk ? 'true' : 'false'
+          p.mb-1
+            strong max_tokens_per_chunk:
+            span.ms-1= requestOptions && requestOptions.maxTokensPerChunk !== undefined && requestOptions.maxTokensPerChunk !== null && requestOptions.maxTokensPerChunk !== '' ? requestOptions.maxTokensPerChunk : 'default'
+          p.mb-0
+            strong overlap_tokens:
+            span.ms-1= requestOptions && requestOptions.overlapTokens !== undefined && requestOptions.overlapTokens !== null && requestOptions.overlapTokens !== '' ? requestOptions.overlapTokens : 'default'
