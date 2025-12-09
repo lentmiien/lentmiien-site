@@ -1,10 +1,17 @@
 const logger = require('../utils/logger');
+const { VectorEmbedding } = require('../database');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.EMBED_API_BASE || 'http://192.168.0.20:8001';
 const DEFAULT_TIMEOUT_MS = 15000;
 const JS_FILE_NAME = 'services/embeddingApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+const APPROX_CHARS_PER_TOKEN = 4;
+const PREVIEW_MIN_LENGTH = 200;
+const PREVIEW_MAX_LENGTH = 500;
+const DEFAULT_PREVIEW_LENGTH = 400;
+const DEFAULT_TOP_K = 10;
+const MAX_TOP_K = 50;
 
 class EmbeddingApiService {
   constructor({ apiBase = DEFAULT_API_BASE, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -71,6 +78,134 @@ class EmbeddingApiService {
     return normalized;
   }
 
+  normalizeMetadataList(metadataInput, expectedLength) {
+    if (metadataInput === undefined || metadataInput === null) {
+      return null;
+    }
+
+    if (!Array.isArray(metadataInput)) {
+      throw new Error('metadata must be an array matching the texts input.');
+    }
+
+    if (metadataInput.length !== expectedLength) {
+      throw new Error(`metadata must have the same length as texts (${expectedLength}).`);
+    }
+
+    return metadataInput.map((entry, index) => this.normalizeMetadataEntry(entry, index));
+  }
+
+  normalizeMetadataEntry(entry, index) {
+    const toString = (value) => {
+      if (value === undefined || value === null) return '';
+      if (typeof value === 'string') return value.trim();
+      return String(value).trim();
+    };
+
+    const collectionName = toString(entry?.collectionName ?? entry?.collection ?? entry?.collection_name);
+    const documentId = toString(entry?.documentId ?? entry?.id ?? entry?.document_id);
+    const contentType = toString(entry?.contentType ?? entry?.content_type);
+    const parentCollection = toString(entry?.parentCollection ?? entry?.parent_collection ?? entry?.parentCollectionName);
+    const parentId = toString(entry?.parentId ?? entry?.parent_id);
+
+    if (!collectionName || !documentId || !contentType) {
+      throw new Error(`metadata entry #${index + 1} is missing collectionName, documentId, or contentType.`);
+    }
+
+    return {
+      collectionName,
+      documentId,
+      contentType,
+      parentCollection: parentCollection || null,
+      parentId: parentId || null,
+    };
+  }
+
+  normalizeChunkEntry(chunk, fallbackChunkIndex = 0) {
+    const toNumber = (value, defaultValue = 0) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : defaultValue;
+    };
+
+    const normalized = {
+      textIndex: toNumber(chunk?.text_index ?? chunk?.textIndex, 0),
+      chunkIndex: toNumber(chunk?.chunk_index ?? chunk?.chunkIndex ?? fallbackChunkIndex, fallbackChunkIndex),
+      startToken: toNumber(chunk?.start_token ?? chunk?.startToken, 0),
+      endToken: toNumber(chunk?.end_token ?? chunk?.endToken, 0),
+    };
+
+    if (normalized.textIndex < 0) normalized.textIndex = 0;
+    if (normalized.chunkIndex < 0) normalized.chunkIndex = 0;
+    if (normalized.startToken < 0) normalized.startToken = 0;
+    if (normalized.endToken < 0) normalized.endToken = 0;
+
+    return normalized;
+  }
+
+  normalizeTopK(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.min(parsed, MAX_TOP_K);
+    }
+    return DEFAULT_TOP_K;
+  }
+
+  buildPreviewText(fullText, chunk) {
+    const text = typeof fullText === 'string' ? fullText : String(fullText ?? '');
+    const normalized = text.replace(/\r\n/g, '\n');
+    if (!normalized.trim()) {
+      return '';
+    }
+
+    const targetLength = clampPreviewLength(DEFAULT_PREVIEW_LENGTH);
+    const startApprox = clampNumber(Math.floor((chunk?.startToken || 0) * APPROX_CHARS_PER_TOKEN), 0, normalized.length);
+    const endApprox = clampNumber(Math.ceil((chunk?.endToken || 0) * APPROX_CHARS_PER_TOKEN), startApprox, normalized.length);
+    const fallbackEnd = clampNumber(startApprox + targetLength, startApprox, normalized.length);
+    const sliceEnd = Math.max(endApprox, fallbackEnd);
+
+    const preview = normalized.slice(startApprox, Math.min(sliceEnd, startApprox + targetLength)).trim();
+    if (preview) {
+      return preview;
+    }
+
+    return normalized.slice(0, targetLength).trim();
+  }
+
+  buildSourceFilter(source) {
+    return {
+      'source.collectionName': source.collectionName,
+      'source.documentId': source.documentId,
+      'source.contentType': source.contentType,
+      'source.parentCollection': source.parentCollection ?? null,
+      'source.parentId': source.parentId ?? null,
+    };
+  }
+
+  async deleteEmbeddings(metadataInput) {
+    if (!metadataInput) {
+      return 0;
+    }
+
+    const metadataArray = Array.isArray(metadataInput) ? metadataInput : [metadataInput];
+    const normalized = metadataArray.map((entry, index) => this.normalizeMetadataEntry(entry, index));
+    let deletedCount = 0;
+
+    for (const meta of normalized) {
+      const filter = this.buildSourceFilter(meta);
+      const result = await VectorEmbedding.deleteMany(filter);
+      deletedCount += result?.deletedCount || 0;
+    }
+
+    logger.notice('Removed stored embeddings for source metadata', {
+      category: 'embedding_api',
+      metadata: {
+        sources: normalized.length,
+        deletedCount,
+      },
+    });
+
+    return deletedCount;
+  }
+
   async health() {
     const requestUrl = this.buildUrl('/health');
 
@@ -115,9 +250,10 @@ class EmbeddingApiService {
     }
   }
 
-  async embed(textsInput, options = {}) {
+  async embed(textsInput, options = {}, metadataInput = null) {
     const texts = this.normalizeTexts(textsInput);
     const normalizedOptions = this.normalizeOptions(options);
+    const metadataList = this.normalizeMetadataList(metadataInput, texts.length);
     const payload = {
       texts,
       auto_chunk: normalizedOptions.autoChunk,
@@ -162,6 +298,10 @@ class EmbeddingApiService {
         },
       });
 
+      if (metadataList) {
+        await this.persistEmbeddings(texts, metadataList, data);
+      }
+
       return data;
     } catch (error) {
       await recordApiDebugLog({
@@ -184,6 +324,140 @@ class EmbeddingApiService {
       });
       throw error;
     }
+  }
+
+  async persistEmbeddings(texts, metadataList, response) {
+    const vectors = Array.isArray(response?.vectors) ? response.vectors : [];
+    const chunks = Array.isArray(response?.chunks) ? response.chunks : [];
+    const dim = Number.isFinite(response?.dim) ? response.dim : null;
+    const model = response?.model || null;
+
+    if (!vectors.length) {
+      throw new Error('Embedding API did not return vectors to store.');
+    }
+
+    const now = new Date();
+    const documents = vectors.map((vector, index) => {
+      const numericVector = Array.isArray(vector) ? vector.map((value) => Number(value)) : [];
+      if (!numericVector.length || numericVector.some((value) => !Number.isFinite(value))) {
+        throw new Error(`Embedding vector at index ${index} is invalid or empty.`);
+      }
+
+      const chunk = this.normalizeChunkEntry(chunks[index] || { chunk_index: index }, index);
+      const textIndex = clampNumber(chunk.textIndex, 0, metadataList.length - 1);
+      const text = texts[textIndex] || '';
+      const previewText = this.buildPreviewText(text, chunk);
+
+      return {
+        source: metadataList[textIndex],
+        chunk: {
+          textIndex,
+          chunkIndex: chunk.chunkIndex,
+          startToken: chunk.startToken,
+          endToken: chunk.endToken,
+        },
+        previewText,
+        embedding: numericVector,
+        dim: Number.isFinite(dim) ? dim : numericVector.length,
+        model,
+        textLength: text.length,
+        createdAt: now,
+        updatedAt: now,
+      };
+    });
+
+    const grouped = documents.reduce((acc, doc) => {
+      const key = buildSourceKey(doc.source);
+      if (!acc.has(key)) {
+        acc.set(key, []);
+      }
+      acc.get(key).push(doc);
+      return acc;
+    }, new Map());
+
+    for (const docs of grouped.values()) {
+      const filter = this.buildSourceFilter(docs[0].source);
+      await VectorEmbedding.deleteMany(filter);
+      await VectorEmbedding.insertMany(docs, { ordered: true });
+    }
+
+    logger.notice('Persisted embedding vectors to database', {
+      category: 'embedding_api',
+      metadata: {
+        sourceCount: grouped.size,
+        vectorCount: documents.length,
+        model: model || 'unknown',
+      },
+    });
+
+    return documents;
+  }
+
+  async similaritySearch(queryText, options = {}) {
+    const texts = this.normalizeTexts(queryText);
+    if (texts.length !== 1) {
+      throw new Error('similaritySearch expects a single query string.');
+    }
+
+    const normalizedOptions = this.normalizeOptions(options);
+    const topK = this.normalizeTopK(options.topK);
+    const result = await this.embed(texts, normalizedOptions);
+    const vectors = Array.isArray(result?.vectors) ? result.vectors : [];
+
+    if (!vectors.length) {
+      throw new Error('Embedding API did not return a vector for the search query.');
+    }
+
+    const queryVector = averageVectors(vectors);
+    if (!queryVector.length || queryVector.some((value) => !Number.isFinite(value))) {
+      throw new Error('Search query embedding is invalid.');
+    }
+
+    const dim = Number.isFinite(result?.dim) ? result.dim : queryVector.length;
+    const candidates = await VectorEmbedding.find({ dim }, {
+      embedding: 1,
+      source: 1,
+      chunk: 1,
+      previewText: 1,
+      model: 1,
+      textLength: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }).lean();
+
+    const scored = candidates
+      .filter((doc) => Array.isArray(doc.embedding) && doc.embedding.length === queryVector.length)
+      .map((doc) => ({
+        id: doc._id?.toString?.() || String(doc._id),
+        similarity: cosineSimilarity(queryVector, doc.embedding),
+        source: doc.source,
+        chunk: doc.chunk,
+        previewText: doc.previewText || '',
+        dim: doc.dim,
+        model: doc.model || null,
+        textLength: doc.textLength || 0,
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+      }))
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, topK);
+
+    logger.notice('Embedding similarity search completed', {
+      category: 'embedding_api',
+      metadata: {
+        candidates: candidates.length,
+        returned: scored.length,
+        dim,
+        topK,
+      },
+    });
+
+    return {
+      dim,
+      model: result?.model || null,
+      topK,
+      results: scored,
+    };
   }
 
   async fetchJson(url, options = {}) {
@@ -225,6 +499,70 @@ class EmbeddingApiService {
       clearTimeout(timer);
     }
   }
+}
+
+function clampNumber(value, min, max) {
+  const numeric = Number.isFinite(value) ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return min;
+  }
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function clampPreviewLength(length) {
+  return clampNumber(length, PREVIEW_MIN_LENGTH, PREVIEW_MAX_LENGTH);
+}
+
+function cosineSimilarity(vecA, vecB) {
+  const dotProduct = vecA.reduce((acc, val, i) => acc + val * vecB[i], 0);
+  const magnitudeA = Math.sqrt(vecA.reduce((acc, val) => acc + val * val, 0));
+  const magnitudeB = Math.sqrt(vecB.reduce((acc, val) => acc + val * val, 0));
+  if (!magnitudeA || !magnitudeB) {
+    return 0;
+  }
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+
+function averageVectors(vectors) {
+  if (!Array.isArray(vectors) || vectors.length === 0) {
+    return [];
+  }
+  const first = vectors[0];
+  if (!Array.isArray(first) || !first.length) {
+    return [];
+  }
+  if (vectors.length === 1) {
+    return first;
+  }
+  const length = first.length;
+  const sums = new Array(length).fill(0);
+  let count = 0;
+
+  vectors.forEach((vec) => {
+    if (!Array.isArray(vec) || vec.length !== length) {
+      return;
+    }
+    vec.forEach((val, idx) => {
+      sums[idx] += Number(val) || 0;
+    });
+    count += 1;
+  });
+
+  if (!count) {
+    return [];
+  }
+
+  return sums.map((value) => value / count);
+}
+
+function buildSourceKey(source) {
+  return [
+    source.collectionName || '',
+    source.documentId || '',
+    source.contentType || '',
+    source.parentCollection || '',
+    source.parentId || '',
+  ].join('::');
 }
 
 function safeJsonParse(raw) {

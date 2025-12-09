@@ -6,6 +6,7 @@ const sharp = require('sharp');
 const { randomUUID } = require('crypto');
 const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
+const EmbeddingApiService = require('../services/embeddingApiService');
 const { OcrJob } = require('../database');
 
 const DEFAULT_PROMPT = 'Detect and recognize text in the image, and output the text coordinates in a formatted manner.';
@@ -19,6 +20,10 @@ const LIST_PAGE_SIZE = Number(process.env.OCR_JOB_PAGE_SIZE || 30);
 const OCR_PREVIEW_DIR = path.join(__dirname, '..', 'public', 'ocr');
 const MAX_PREVIEW_SIDE = 2048;
 const logApiDebug = createApiDebugLogger('controllers/ocrcontroller.js');
+const embeddingApiService = new EmbeddingApiService();
+const OCR_EMBED_CONTENT_TYPE = 'ocr_layout_text';
+const OCR_SOURCE_COLLECTION = 'ocr_job_files';
+const OCR_PARENT_COLLECTION = 'ocr_job';
 
 const jobQueue = [];
 let activeJobId = null;
@@ -153,6 +158,60 @@ const formatImagePath = (storedPath) => {
   if (!storedPath) return null;
   const normalized = storedPath.replace(/\\/g, '/');
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
+};
+
+const buildOcrEmbeddingMetadata = (job, file) => {
+  const documentId = (file?.id || file?._id?.toString?.() || '').trim();
+  const parentId = (job?.id || job?._id?.toString?.() || '').trim();
+
+  if (!documentId || !parentId) {
+    return null;
+  }
+
+  return {
+    collectionName: OCR_SOURCE_COLLECTION,
+    documentId,
+    contentType: OCR_EMBED_CONTENT_TYPE,
+    parentCollection: OCR_PARENT_COLLECTION,
+    parentId,
+  };
+};
+
+const syncOcrEmbedding = async (job, file, { silent = false } = {}) => {
+  const metadata = buildOcrEmbeddingMetadata(job, file);
+  const text = (file?.result?.layoutText || '').trim();
+
+  if (!metadata) {
+    logger.warning('Missing OCR metadata for embedding sync', {
+      category: 'ocr',
+      metadata: {
+        jobId: job?.id || job?._id,
+        fileId: file?.id,
+      },
+    });
+    return;
+  }
+
+  try {
+    if (!text) {
+      await embeddingApiService.deleteEmbeddings(metadata);
+      return;
+    }
+
+    await embeddingApiService.embed([text], {}, [metadata]);
+  } catch (error) {
+    logger.error('Failed to sync OCR embeddings', {
+      category: 'ocr',
+      metadata: {
+        jobId: job?.id || job?._id,
+        fileId: file?.id,
+        message: error?.message || error,
+      },
+    });
+    if (!silent) {
+      throw error;
+    }
+  }
 };
 
 const computeFileCounts = (job) => {
@@ -518,6 +577,7 @@ const executeJob = async (queueItem) => {
           segments: result.segmentsCount,
         },
       });
+      await syncOcrEmbedding(job, file, { silent: true });
     } catch (error) {
       file.status = 'failed';
       file.error = error.message || 'File failed to process.';
@@ -736,6 +796,8 @@ exports.updateFileResult = async (req, res) => {
     file.updatedAt = new Date();
     job.updatedAt = new Date();
     await job.save();
+
+    await syncOcrEmbedding(job, file);
 
     return res.json({ job: sanitizeJobDetail(job) });
   } catch (error) {

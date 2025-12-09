@@ -1,109 +1,15 @@
-I've added a new text to vector embedding API at the local network URL `192.168.0.20:8001`.
+I'd like to expand on `services/embeddingApiService.js`, and add a vector database. I want to use my MongoDB for the vector database. So I want to add a new collection for the vector database, extend the functionality of my embedding service class to manage this database, and create a similarity search function.
 
-There are 2 endpoints at this URL:
+Starting with the database, it should store source metadata, the chunk details, a preview string, and the embedding itself. For the source metadata, I expect to store the collection name of the collection where the source data is stored, the id of the entry in the database, a content type string, and for certain types of data also a parent collection name and parent id. For the chunk data, I expect to store the chunk index, start and end token index. For the preview string, I'd like to store the piece of string that's represented by the vector, but I don't get back the exact content from the API, so I'll either have to estimate the string based on the start/end token indices, or just use the first 200-500 character of the full text (not the chunks). Then lastly the vector embedding and dimension size.
 
-1. GET /health
-No input, returns a health status object in the following format:
-```
-{
-  "status": "ok",
-  "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-  "cuda": true,
-  "use_on_demand_gpu": true,
-  "model_max_tokens": 128
-}
+In the `async embed(textsInput, options = {})` function, I want to add an optional metadata input parameter, if empty, then the functionality should remain as it is now, but if metadata is provided (the source metadata), then after generating the embeddings, it should all be stored to the database, before returning the embeddings to the user. Important, the metadata is an array like textsInput, and they must have the same length, the same index in the arrays correspond with the same request.
 
-```
+Next, I want to add a new function for querying the database, that take a single input string, generate the embedding, and query the database for a list of the most similar results, that are then returned to the user, and the user refer to the source metadata to fetch the full data if needed.
 
-2. POST /embed
-    - Headers: Content-Type: application/json
-    - Body: JSON, matches this schema:
-```
-interface EmbedRequest {
-  texts: string[];        // required, non-empty strings
-  auto_chunk?: boolean;   // default: true
-  max_tokens_per_chunk?: number | null;  // default: ~0.75 * model_max_tokens, e.g. 96 for mpnet
-  overlap_tokens?: number; // default: 32, must be >= 0
-}
-```
+Also make sure that embeddings can be updated, if I edit the original text.
 
-That returns a response in the following format:
-```
-interface ChunkInfo {
-  text_index: number;  // index into original texts[]
-  chunk_index: number; // 0-based index of chunk within that text
-  start_token: number; // start token index in tokenizer space
-  end_token: number;   // end token index (exclusive)
-}
+As an initial step, lets add the vector embedding workflow to the OCR tool (controllers/ocrcontroller.js), where, when an OCR job for an image has completed and the `layoutText` is generated, then send this text to the embedding tool, and include the OCR job database details in the source metadata, and when the user update the `layoutText` in the UI, the embedding should be re-created (replace with new data). Note that an OCR job can include multiple images, so include both the job id and the file id in the source metadata, so that embeddings can uniquely identify the source file, and the OCR job.
 
-interface EmbedResponse {
-  model: string;
-  dim: number;              // embedding dimensionality (768 for mpnet)
-  vectors: number[][];      // shape: [num_chunks, dim]
-  chunks: ChunkInfo[];      // same length as vectors
-}
-```
+To test the embedding search functionality, just add a simple search form on the `views/admin_embedding_test.pug` page, and display the result list in the UI, with similarity scores, preview texts, source metadata and chunk details.
 
-Example response:
-```
-{
-  "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-  "dim": 768,
-  "vectors": [
-    [0.01, 0.02, ...],
-    [0.03, 0.04, ...],
-    [0.05, 0.06, ...]
-  ],
-  "chunks": [
-    { "text_index": 0, "chunk_index": 0, "start_token": 0,   "end_token": 96 },
-    { "text_index": 0, "chunk_index": 1, "start_token": 64,  "end_token": 160 },
-    { "text_index": 0, "chunk_index": 2, "start_token": 128, "end_token": 210 }
-  ]
-}
-```
-
-This is an example implementation:
-```
-// If you're on Node <18, install node-fetch and uncomment:
-// import fetch from 'node-fetch';
-
-const EMBED_API_BASE = process.env.EMBED_API_BASE || 'http://localhost:8001';
-
-async function embedTexts(texts, options = {}) {
-  const body = {
-    texts,
-    auto_chunk: options.autoChunk ?? true,
-  };
-
-  if (options.maxTokensPerChunk !== undefined) {
-    body.max_tokens_per_chunk = options.maxTokensPerChunk;
-  }
-  if (options.overlapTokens !== undefined) {
-    body.overlap_tokens = options.overlapTokens;
-  }
-
-  const res = await fetch(`${EMBED_API_BASE}/embed`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Embed API error: ${res.status} ${res.statusText} - ${text}`);
-  }
-
-  const data = await res.json();
-  return data; // { model, dim, vectors, chunks }
-}
-
-export { embedTexts };
-```
-
-Please implement a simple testing page on the admin route for this text embedding API, where the user can input a text in a `textarea`, generate embedding(s), and see the result.
-
-Please implement the embedding API in a service class in the `services` folder, as I'll be using it for a lot going forward.
-
-codex resume 019b01df-5849-79d0-b52e-821a4ae751ea
+codex resume 019b0397-7e90-7fc3-b3a6-33161e8929fb

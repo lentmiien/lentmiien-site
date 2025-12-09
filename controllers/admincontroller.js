@@ -175,6 +175,8 @@ const embeddingApiService = new EmbeddingApiService();
 const EMBEDDING_TEST_MAX_TEXTS = 10;
 const EMBEDDING_DEFAULT_OVERLAP = 32;
 const EMBEDDING_SPLIT_MODES = ['single', 'lines'];
+const EMBEDDING_SEARCH_DEFAULT_TOP_K = 10;
+const EMBEDDING_SEARCH_MAX_TOP_K = 50;
 const TTS_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
 const TOKENS_PER_500_CHARS = 1024;
 const MAX_NEW_TOKENS_DEFAULT = 1024;
@@ -1085,6 +1087,16 @@ async function fetchEmbeddingHealth() {
   }
 }
 
+function defaultEmbeddingForm() {
+  return {
+    text: '',
+    splitMode: 'single',
+    autoChunk: true,
+    maxTokensPerChunk: '',
+    overlapTokens: EMBEDDING_DEFAULT_OVERLAP,
+  };
+}
+
 function normalizeEmbeddingForm(form = {}) {
   const maxTokensRaw = form?.maxTokensPerChunk;
   const overlapRaw = form?.overlapTokens;
@@ -1099,6 +1111,27 @@ function normalizeEmbeddingForm(form = {}) {
     overlapTokens: Number.isFinite(overlapParsed) && overlapParsed >= 0
       ? overlapParsed
       : overlapRaw === '' ? '' : EMBEDDING_DEFAULT_OVERLAP,
+  };
+}
+
+function normalizeSearchForm(form = {}) {
+  const query = typeof form?.query === 'string'
+    ? form.query
+    : typeof form?.searchText === 'string'
+      ? form.searchText
+      : typeof form?.search_text === 'string'
+        ? form.search_text
+        : '';
+
+  const rawTopK = form?.topK ?? form?.top_k ?? form?.searchTopK ?? form?.search_top_k;
+  const parsedTopK = Number.parseInt(rawTopK, 10);
+  const topK = Number.isFinite(parsedTopK) && parsedTopK > 0
+    ? Math.min(parsedTopK, EMBEDDING_SEARCH_MAX_TOP_K)
+    : EMBEDDING_SEARCH_DEFAULT_TOP_K;
+
+  return {
+    query,
+    topK,
   };
 }
 
@@ -1142,8 +1175,10 @@ function renderEmbeddingTestPage(res, {
   requestOptions = {},
   health = null,
   healthError = null,
+  search = {},
 }) {
   const normalizedForm = normalizeEmbeddingForm(form);
+  const normalizedSearchForm = normalizeSearchForm(search?.form || search);
   return res.render('admin_embedding_test', {
     form: normalizedForm,
     result,
@@ -1160,17 +1195,18 @@ function renderEmbeddingTestPage(res, {
     apiBase: embeddingApiService.baseUrl,
     maxTexts: EMBEDDING_TEST_MAX_TEXTS,
     defaultOverlap: EMBEDDING_DEFAULT_OVERLAP,
+    searchForm: normalizedSearchForm,
+    searchResult: search?.result || null,
+    searchError: search?.error || null,
+    searchLimits: {
+      defaultTopK: EMBEDDING_SEARCH_DEFAULT_TOP_K,
+      maxTopK: EMBEDDING_SEARCH_MAX_TOP_K,
+    },
   });
 }
 
 exports.embedding_test_page = async (req, res) => {
-  const form = {
-    text: '',
-    splitMode: 'single',
-    autoChunk: true,
-    maxTokensPerChunk: '',
-    overlapTokens: EMBEDDING_DEFAULT_OVERLAP,
-  };
+  const form = defaultEmbeddingForm();
   const { health, healthError } = await fetchEmbeddingHealth();
 
   return renderEmbeddingTestPage(res, {
@@ -1313,6 +1349,74 @@ exports.embedding_test_generate = async (req, res) => {
       requestOptions,
       health,
       healthError,
+    });
+  }
+};
+
+exports.embedding_test_search = async (req, res) => {
+  const searchForm = normalizeSearchForm({
+    query: typeof req.body.search_text === 'string' ? req.body.search_text : req.body.query,
+    topK: req.body.top_k ?? req.body.topK,
+  });
+  searchForm.query = searchForm.query.trim();
+  const form = defaultEmbeddingForm();
+  const { health, healthError } = await fetchEmbeddingHealth();
+
+  if (!searchForm.query) {
+    res.status(400);
+    return renderEmbeddingTestPage(res, {
+      form,
+      submittedTexts: [],
+      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+      health,
+      healthError,
+      search: { form: searchForm, error: 'Please enter text to search stored embeddings.' },
+    });
+  }
+
+  try {
+    const result = await embeddingApiService.similaritySearch(searchForm.query, { topK: searchForm.topK });
+    logger.notice('Admin embedding similarity search completed', {
+      category: 'admin_embedding_test',
+      metadata: {
+        queryLength: searchForm.query.length,
+        topK: searchForm.topK,
+        returned: result?.results?.length || 0,
+      },
+    });
+    return renderEmbeddingTestPage(res, {
+      form,
+      submittedTexts: [],
+      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+      health,
+      healthError,
+      search: { form: searchForm, result },
+    });
+  } catch (error) {
+    const status = error?.status || 502;
+    let message = error?.message || 'Unable to search embeddings.';
+
+    if (error?.code === 'ETIMEOUT') {
+      message = `Embedding API request timed out after ${embeddingApiService.timeoutMs}ms.`;
+    }
+
+    logger.error('Admin embedding similarity search failed', {
+      category: 'admin_embedding_test',
+      metadata: {
+        status: error?.status,
+        code: error?.code,
+        message: error?.message,
+      },
+    });
+
+    res.status(status);
+    return renderEmbeddingTestPage(res, {
+      form,
+      submittedTexts: [],
+      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+      health,
+      healthError,
+      search: { form: searchForm, error: message },
     });
   }
 };

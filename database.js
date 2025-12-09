@@ -35,6 +35,7 @@ const Chat3KnowledgeTModel = require('./models/chat3_knowledge_t');
 const Chat3KnowledgeModel = require('./models/chat3_knowledge');
 const OpenaichatModel = require('./models/openai_chat');
 const EmbeddingModel = require('./models/embedding');
+const VectorEmbedding = require('./models/vector_embedding');
 const FileMetaModel = require('./models/file_meta');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
@@ -133,6 +134,7 @@ module.exports = {
   Chat3KnowledgeModel,
   OpenaichatModel,
   EmbeddingModel,
+  VectorEmbedding,
   FileMetaModel,
   Chat4Model,
   Conversation4Model,

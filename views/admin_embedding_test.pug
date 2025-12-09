@@ -96,6 +96,69 @@ block content
           .card-body
             h6.mb-2 Response
             p.text-muted.mb-0 Submit text above to see embeddings.
+      form.card.mb-4(method="post", action="/admin/embedding-test/search")
+        .card-body
+          h5.mb-3 Search stored embeddings
+          p.text-muted.small.mb-3 Search uses the latest stored vectors in MongoDB. Results show metadata to help you find the source record.
+          .mb-3
+            label.form-label(for="search_text") Query text
+            textarea#search_text.form-control(name="search_text", rows="3", required, placeholder="Enter text to search for similar embeddings")= searchForm && searchForm.query
+          .mb-3
+            label.form-label(for="top_k") Results to return
+            input#top_k.form-control(type="number", name="top_k", min="1", max=searchLimits && searchLimits.maxTopK ? searchLimits.maxTopK : 50, value=searchForm && searchForm.topK !== undefined ? searchForm.topK : (searchLimits && searchLimits.defaultTopK ? searchLimits.defaultTopK : 10))
+            small.form-text.text-muted= `Between 1 and ${(searchLimits && searchLimits.maxTopK) || 50} results`
+          button.btn.btn-secondary(type="submit") Search embeddings
+      if searchError
+        .alert.alert-danger(role="alert")= searchError
+      if searchResult
+        .card.mb-4
+          .card-body
+            h5.mb-3 Search results
+            .d-flex.flex-wrap.gap-3.align-items-center.mb-3
+              span.badge.text-bg-light.text-secondary= `${(searchResult.results && searchResult.results.length) || 0} match(es)`
+              span.badge.text-bg-light.text-secondary Dim #{searchResult.dim || 'unknown'}
+              if searchResult.model
+                span.badge.text-bg-light.text-secondary= searchResult.model
+            if searchResult.results && searchResult.results.length
+              each row, idx in searchResult.results
+                .border.rounded-3.p-3.mb-3
+                  .d-flex.justify-content-between.align-items-center.mb-2
+                    span.fw-semibold= `#${idx + 1}`
+                    span.badge.text-bg-primary= (row.similarity !== undefined && row.similarity !== null) ? row.similarity.toFixed(4) : '0.0000'
+                  - const previewText = row.previewText || '';
+                  p.mb-2= previewText ? (previewText.length > 360 ? `${previewText.slice(0, 360)}…` : previewText) : 'No preview available.'
+                  ul.list-unstyled.small.mb-0
+                    li
+                      strong Source:
+                      |  #{row.source && row.source.collectionName ? row.source.collectionName : 'n/a'} · #{row.source && row.source.documentId ? row.source.documentId : 'n/a'}
+                    if row.source && (row.source.parentCollection || row.source.parentId)
+                      li
+                        strong Parent:
+                        |  #{row.source.parentCollection || 'n/a'} · #{row.source.parentId || 'n/a'}
+                    li
+                      strong Content type:
+                      |  #{row.source && row.source.contentType ? row.source.contentType : 'n/a'}
+                    li
+                      strong Chunk:
+                      |  text #{row.chunk && row.chunk.textIndex !== undefined ? row.chunk.textIndex : 0}, chunk #{row.chunk && row.chunk.chunkIndex !== undefined ? row.chunk.chunkIndex : 0}, tokens #{row.chunk && row.chunk.startToken !== undefined ? row.chunk.startToken : 0} - #{row.chunk && row.chunk.endToken !== undefined ? row.chunk.endToken : 0}
+                    if row.dim
+                      li
+                        strong Dim:
+                        |  #{row.dim}
+                    if row.model || searchResult.model
+                      li
+                        strong Model:
+                        |  #{row.model || searchResult.model}
+                    li
+                      strong Updated:
+                      |  #{row.updatedAt ? new Date(row.updatedAt).toLocaleString() : 'n/a'}
+            else
+              p.text-muted.mb-0 No matches found yet. Run a search above.
+      else
+        .card
+          .card-body
+            h6.mb-2 Search results
+            p.text-muted.mb-0 Submit a query above to search stored embeddings.
     .col-lg-4
       .card.mb-3
         .card-body
