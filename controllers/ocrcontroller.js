@@ -137,7 +137,7 @@ const fetchHealth = async () => {
 };
 
 const buildViewState = (overrides = {}) => ({
-  title: 'OCR Workspace',
+  title: overrides.title || 'OCR Workspace',
   tokenLimit: MAX_ALLOWED_TOKENS,
   defaults: {
     prompt: DEFAULT_PROMPT,
@@ -152,6 +152,10 @@ const buildViewState = (overrides = {}) => ({
   jobs: overrides.jobs || [],
   latestUpdatedAt: overrides.latestUpdatedAt || null,
   hasOlder: Boolean(overrides.hasOlder),
+  selectedJobId: overrides.selectedJobId || null,
+  singleJobMode: Boolean(overrides.singleJobMode),
+  highlightFileId: overrides.highlightFileId || null,
+  initialJobDetail: overrides.initialJobDetail || null,
 });
 
 const formatImagePath = (storedPath) => {
@@ -671,6 +675,37 @@ exports.renderTool = async (_req, res) => {
     latestUpdatedAt: initial.latestUpdatedAt,
     hasOlder: initial.hasOlder,
   }));
+};
+
+exports.renderJobPage = async (req, res) => {
+  const { jobId } = req.params;
+  const highlightFileId = (req.params.fileId || req.query.fileId || '').trim();
+  try {
+    const job = await OcrJob.findById(jobId);
+    if (!job) {
+      return res.status(404).render('error_page', { error: 'Job not found.' });
+    }
+
+    const health = await fetchHealth();
+    const detail = sanitizeJobDetail(job);
+    const summary = sanitizeJobSummary(job);
+    const latestUpdatedAt = deriveLatestUpdatedAt([job]);
+
+    return res.render('ocr_tool', buildViewState({
+      health,
+      jobs: [summary],
+      latestUpdatedAt,
+      hasOlder: false,
+      selectedJobId: summary.id,
+      singleJobMode: true,
+      highlightFileId: highlightFileId || null,
+      initialJobDetail: detail,
+      title: 'OCR Job',
+    }));
+  } catch (error) {
+    logger.error('Failed to render OCR job page', { category: 'ocr', metadata: { jobId, message: error?.message || error } });
+    return res.status(500).render('error_page', { error: 'Unable to load OCR job.' });
+  }
 };
 
 exports.listJobs = async (req, res) => {

@@ -1,15 +1,3 @@
-I'd like to expand on `services/embeddingApiService.js`, and add a vector database. I want to use my MongoDB for the vector database. So I want to add a new collection for the vector database, extend the functionality of my embedding service class to manage this database, and create a similarity search function.
+For the OCR tool (controllers/ocrcontroller.js), create a page for displaying a single job, by receiving a job id in the URL, and displaying a page with only that job. The controls and edit capabilities should be the same as when displaying a job on the OCR tool top page (views/ocr_tool.pug), and make sure to update the embedding database if `layoutText` is edited. Also, optionally, the URL can also include a file id, if that's the case, highlight the specific file on the page.
 
-Starting with the database, it should store source metadata, the chunk details, a preview string, and the embedding itself. For the source metadata, I expect to store the collection name of the collection where the source data is stored, the id of the entry in the database, a content type string, and for certain types of data also a parent collection name and parent id. For the chunk data, I expect to store the chunk index, start and end token index. For the preview string, I'd like to store the piece of string that's represented by the vector, but I don't get back the exact content from the API, so I'll either have to estimate the string based on the start/end token indices, or just use the first 200-500 character of the full text (not the chunks). Then lastly the vector embedding and dimension size.
-
-In the `async embed(textsInput, options = {})` function, I want to add an optional metadata input parameter, if empty, then the functionality should remain as it is now, but if metadata is provided (the source metadata), then after generating the embeddings, it should all be stored to the database, before returning the embeddings to the user. Important, the metadata is an array like textsInput, and they must have the same length, the same index in the arrays correspond with the same request.
-
-Next, I want to add a new function for querying the database, that take a single input string, generate the embedding, and query the database for a list of the most similar results, that are then returned to the user, and the user refer to the source metadata to fetch the full data if needed.
-
-Also make sure that embeddings can be updated, if I edit the original text.
-
-As an initial step, lets add the vector embedding workflow to the OCR tool (controllers/ocrcontroller.js), where, when an OCR job for an image has completed and the `layoutText` is generated, then send this text to the embedding tool, and include the OCR job database details in the source metadata, and when the user update the `layoutText` in the UI, the embedding should be re-created (replace with new data). Note that an OCR job can include multiple images, so include both the job id and the file id in the source metadata, so that embeddings can uniquely identify the source file, and the OCR job.
-
-To test the embedding search functionality, just add a simple search form on the `views/admin_embedding_test.pug` page, and display the result list in the UI, with similarity scores, preview texts, source metadata and chunk details.
-
-codex resume 019b0397-7e90-7fc3-b3a6-33161e8929fb
+codex resume 019b0569-2f14-7483-8f9e-87fbcd6a4008
