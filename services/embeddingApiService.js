@@ -1,21 +1,30 @@
 const logger = require('../utils/logger');
-const { VectorEmbedding } = require('../database');
+const { VectorEmbedding, VectorEmbeddingHighQuality } = require('../database');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.EMBED_API_BASE || 'http://192.168.0.20:8001';
+const DEFAULT_HQ_API_BASE = process.env.EMBED_API_BASE_HQ || process.env.EMBED_HQ_API_BASE || 'http://192.168.0.20:8002';
 const DEFAULT_TIMEOUT_MS = 15000;
 const JS_FILE_NAME = 'services/embeddingApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const DEFAULT_TOP_K = 10;
 const MAX_TOP_K = 50;
+const SEARCH_MODES = {
+  DEFAULT: 'default',
+  HIGH_QUALITY: 'high_quality',
+  COMBINED: 'combined',
+};
+const DEFAULT_COMBINED_CANDIDATE_MULTIPLIER = 3;
+const MAX_COMBINED_CANDIDATES = 50;
 
 class EmbeddingApiService {
-  constructor({ apiBase = DEFAULT_API_BASE, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  constructor({ apiBase = DEFAULT_API_BASE, highQualityApiBase = DEFAULT_HQ_API_BASE, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     if (typeof fetch !== 'function') {
       throw new Error('Global fetch API is unavailable. Upgrade to Node 18+ or polyfill fetch.');
     }
 
     this.apiBase = typeof apiBase === 'string' ? apiBase.replace(/\/+$/, '') : DEFAULT_API_BASE;
+    this.highQualityApiBase = typeof highQualityApiBase === 'string' ? highQualityApiBase.replace(/\/+$/, '') : DEFAULT_HQ_API_BASE;
     this.timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
   }
 
@@ -23,10 +32,29 @@ class EmbeddingApiService {
     return this.apiBase;
   }
 
-  buildUrl(pathname = '') {
-    if (!pathname) return this.apiBase;
+  get highQualityBaseUrl() {
+    return this.highQualityApiBase;
+  }
+
+  buildUrl(pathname = '', apiBase = this.apiBase) {
+    const base = typeof apiBase === 'string' ? apiBase : this.apiBase;
+    if (!pathname) return base;
     if (pathname.startsWith('http')) return pathname;
-    return `${this.apiBase}${pathname.startsWith('/') ? '' : '/'}${pathname}`;
+    return `${base}${pathname.startsWith('/') ? '' : '/'}${pathname}`;
+  }
+
+  getApiBaseForMode(mode = SEARCH_MODES.DEFAULT) {
+    if (mode === SEARCH_MODES.HIGH_QUALITY) {
+      return this.highQualityApiBase;
+    }
+    return this.apiBase;
+  }
+
+  getModelForMode(mode = SEARCH_MODES.DEFAULT) {
+    if (mode === SEARCH_MODES.HIGH_QUALITY) {
+      return VectorEmbeddingHighQuality;
+    }
+    return VectorEmbedding;
   }
 
   normalizeTexts(input) {
@@ -160,18 +188,20 @@ class EmbeddingApiService {
     };
   }
 
-  async deleteEmbeddings(metadataInput) {
+  async deleteEmbeddings(metadataInput, { mode = SEARCH_MODES.DEFAULT } = {}) {
     if (!metadataInput) {
       return 0;
     }
 
+    const targetMode = normalizeSearchMode(mode);
+    const Model = this.getModelForMode(targetMode);
     const metadataArray = Array.isArray(metadataInput) ? metadataInput : [metadataInput];
     const normalized = metadataArray.map((entry, index) => this.normalizeMetadataEntry(entry, index));
     let deletedCount = 0;
 
     for (const meta of normalized) {
       const filter = this.buildSourceFilter(meta);
-      const result = await VectorEmbedding.deleteMany(filter);
+      const result = await Model.deleteMany(filter);
       deletedCount += result?.deletedCount || 0;
     }
 
@@ -180,14 +210,21 @@ class EmbeddingApiService {
       metadata: {
         sources: normalized.length,
         deletedCount,
+        mode: targetMode,
       },
     });
 
     return deletedCount;
   }
 
-  async health() {
-    const requestUrl = this.buildUrl('/health');
+  async deleteHighQualityEmbeddings(metadataInput) {
+    return this.deleteEmbeddings(metadataInput, { mode: SEARCH_MODES.HIGH_QUALITY });
+  }
+
+  async health({ mode = SEARCH_MODES.DEFAULT } = {}) {
+    const targetMode = normalizeSearchMode(mode);
+    const apiBase = this.getApiBaseForMode(targetMode);
+    const requestUrl = this.buildUrl('/health', apiBase);
 
     try {
       const { data, responseHeaders, status } = await this.fetchJson(requestUrl, { method: 'GET' });
@@ -201,7 +238,8 @@ class EmbeddingApiService {
       logger.notice('Embedding API health check succeeded', {
         category: 'embedding_api',
         metadata: {
-          apiBase: this.apiBase,
+          apiBase,
+          mode: targetMode,
           status,
           model: data?.model,
           cuda: data?.cuda,
@@ -209,7 +247,7 @@ class EmbeddingApiService {
         },
       });
 
-      return data;
+      return { ...data, apiBase, mode: targetMode };
     } catch (error) {
       await recordApiDebugLog({
         functionName: 'health',
@@ -221,7 +259,8 @@ class EmbeddingApiService {
       logger.error('Embedding API health check failed', {
         category: 'embedding_api',
         metadata: {
-          apiBase: this.apiBase,
+          apiBase,
+          mode: targetMode,
           message: error?.message,
           status: error?.status,
         },
@@ -230,10 +269,16 @@ class EmbeddingApiService {
     }
   }
 
-  async embed(textsInput, options = {}, metadataInput = null) {
+  async embedWithApi(textsInput, options = {}, metadataInput = null, {
+    apiBase = this.apiBase,
+    model = VectorEmbedding,
+    operationName = 'embed',
+    task = null,
+  } = {}) {
     const texts = this.normalizeTexts(textsInput);
     const normalizedOptions = this.normalizeOptions(options);
     const metadataList = this.normalizeMetadataList(metadataInput, texts.length);
+    const normalizedTask = normalizeTask(task);
     const payload = {
       texts,
       auto_chunk: normalizedOptions.autoChunk,
@@ -245,9 +290,13 @@ class EmbeddingApiService {
     if (normalizedOptions.overlapTokens !== undefined) {
       payload.overlap_tokens = normalizedOptions.overlapTokens;
     }
+    if (normalizedTask) {
+      payload.task = normalizedTask;
+    }
 
     const requestHeaders = { 'Content-Type': 'application/json' };
-    const requestUrl = this.buildUrl('/embed');
+    const requestUrl = this.buildUrl('/embed', apiBase);
+    const mode = model === VectorEmbeddingHighQuality ? SEARCH_MODES.HIGH_QUALITY : SEARCH_MODES.DEFAULT;
 
     try {
       const { data, responseHeaders, status } = await this.fetchJson(requestUrl, {
@@ -257,7 +306,7 @@ class EmbeddingApiService {
       });
 
       await recordApiDebugLog({
-        functionName: 'embed',
+        functionName: operationName,
         requestUrl,
         requestHeaders,
         requestBody: payload,
@@ -268,24 +317,26 @@ class EmbeddingApiService {
       logger.notice('Embedding API request completed', {
         category: 'embedding_api',
         metadata: {
-          apiBase: this.apiBase,
+          apiBase,
+          mode,
           textCount: texts.length,
           vectorCount: data?.vectors?.length,
           chunkCount: data?.chunks?.length,
           dim: data?.dim,
           model: data?.model,
           status,
+          task: normalizedTask || null,
         },
       });
 
       if (metadataList) {
-        await this.persistEmbeddings(texts, metadataList, data);
+        await this.persistEmbeddings(texts, metadataList, data, model);
       }
 
-      return data;
+      return { ...data, apiBase, mode };
     } catch (error) {
       await recordApiDebugLog({
-        functionName: 'embed',
+        functionName: operationName,
         requestUrl,
         requestHeaders,
         requestBody: payload,
@@ -296,21 +347,49 @@ class EmbeddingApiService {
       logger.error('Embedding API request failed', {
         category: 'embedding_api',
         metadata: {
-          apiBase: this.apiBase,
+          apiBase,
+          mode,
           textCount: texts.length,
           message: error?.message,
           status: error?.status,
+          task: normalizedTask || null,
         },
       });
       throw error;
     }
   }
 
-  async persistEmbeddings(texts, metadataList, response) {
+  async embed(textsInput, options = {}, metadataInput = null) {
+    const { task, ...rest } = options || {};
+    return this.embedWithApi(textsInput, rest, metadataInput, {
+      apiBase: this.apiBase,
+      model: VectorEmbedding,
+      operationName: 'embed',
+      task,
+    });
+  }
+
+  async embedHighQuality(textsInput, options = {}, metadataInput = null) {
+    const { task, ...rest } = options || {};
+    const resolvedTask = task || 'document';
+    return this.embedWithApi(textsInput, rest, metadataInput, {
+      apiBase: this.highQualityApiBase,
+      model: VectorEmbeddingHighQuality,
+      operationName: 'embedHighQuality',
+      task: resolvedTask,
+    });
+  }
+
+  async reembedHighQuality(textsInput, options = {}, metadataInput = null) {
+    return this.embedHighQuality(textsInput, options, metadataInput);
+  }
+
+  async persistEmbeddings(texts, metadataList, response, targetModel = VectorEmbedding) {
     const vectors = Array.isArray(response?.vectors) ? response.vectors : [];
     const chunks = Array.isArray(response?.chunks) ? response.chunks : [];
     const dim = Number.isFinite(response?.dim) ? response.dim : null;
     const model = response?.model || null;
+    const Model = targetModel || VectorEmbedding;
 
     if (!vectors.length) {
       throw new Error('Embedding API did not return vectors to store.');
@@ -357,8 +436,8 @@ class EmbeddingApiService {
 
     for (const docs of grouped.values()) {
       const filter = this.buildSourceFilter(docs[0].source);
-      await VectorEmbedding.deleteMany(filter);
-      await VectorEmbedding.insertMany(docs, { ordered: true });
+      await Model.deleteMany(filter);
+      await Model.insertMany(docs, { ordered: true });
     }
 
     logger.notice('Persisted embedding vectors to database', {
@@ -373,28 +452,32 @@ class EmbeddingApiService {
     return documents;
   }
 
-  async similaritySearch(queryText, options = {}) {
+  async similaritySearch(queryText, options = {}, searchOptions = {}) {
     const texts = this.normalizeTexts(queryText);
     if (texts.length !== 1) {
       throw new Error('similaritySearch expects a single query string.');
     }
 
     const normalizedOptions = this.normalizeOptions(options);
-    const topK = this.normalizeTopK(options.topK);
-    const result = await this.embed(texts, normalizedOptions);
-    const vectors = Array.isArray(result?.vectors) ? result.vectors : [];
+    const targetMode = normalizeSearchMode(searchOptions.mode || searchOptions.target);
+    const topK = this.normalizeTopK(options.topK ?? searchOptions.topK);
+    const apiBase = this.getApiBaseForMode(targetMode);
+    const Model = this.getModelForMode(targetMode);
+    const task = searchOptions.task || (targetMode === SEARCH_MODES.HIGH_QUALITY ? 'query' : null);
+    const result = await this.embedWithApi(texts, normalizedOptions, null, {
+      apiBase,
+      model: Model,
+      operationName: targetMode === SEARCH_MODES.HIGH_QUALITY ? 'similaritySearchHighQuality' : 'similaritySearch',
+      task,
+    });
+    const queryVector = extractQueryVector(result);
 
-    if (!vectors.length) {
-      throw new Error('Embedding API did not return a vector for the search query.');
-    }
-
-    const queryVector = averageVectors(vectors);
-    if (!queryVector.length || queryVector.some((value) => !Number.isFinite(value))) {
+    if (!isValidVector(queryVector)) {
       throw new Error('Search query embedding is invalid.');
     }
 
     const dim = Number.isFinite(result?.dim) ? result.dim : queryVector.length;
-    const candidates = await VectorEmbedding.find({ dim }, {
+    const candidates = await Model.find({ dim }, {
       embedding: 1,
       source: 1,
       chunk: 1,
@@ -406,7 +489,7 @@ class EmbeddingApiService {
     }).lean();
 
     const scored = candidates
-      .filter((doc) => Array.isArray(doc.embedding) && doc.embedding.length === queryVector.length)
+      .filter((doc) => isValidVector(doc.embedding, queryVector.length))
       .map((doc) => ({
         id: doc._id?.toString?.() || String(doc._id),
         similarity: cosineSimilarity(queryVector, doc.embedding),
@@ -429,6 +512,8 @@ class EmbeddingApiService {
         returned: scored.length,
         dim,
         topK,
+        mode: targetMode,
+        apiBase,
       },
     });
 
@@ -437,6 +522,136 @@ class EmbeddingApiService {
       model: result?.model || null,
       topK,
       results: scored,
+      mode: targetMode,
+      apiBase,
+    };
+  }
+
+  async similaritySearchHighQuality(queryText, options = {}) {
+    return this.similaritySearch(queryText, options, { mode: SEARCH_MODES.HIGH_QUALITY, task: 'query' });
+  }
+
+  async combinedSimilaritySearch(queryText, options = {}) {
+    const texts = this.normalizeTexts(queryText);
+    if (texts.length !== 1) {
+      throw new Error('combinedSimilaritySearch expects a single query string.');
+    }
+
+    const topK = this.normalizeTopK(options.topK);
+    const candidateMultiplier = normalizeCandidateMultiplier(options.candidateMultiplier);
+    const candidateLimit = normalizeCandidateLimit(options.candidateLimit);
+    const candidateCount = Math.min(
+      candidateLimit,
+      Math.max(topK, Math.round(topK * candidateMultiplier)),
+      MAX_COMBINED_CANDIDATES,
+    );
+
+    const baseSearch = await this.similaritySearch(texts[0], { ...options, topK: candidateCount });
+    const baseResults = Array.isArray(baseSearch?.results) ? baseSearch.results : [];
+    if (!baseResults.length) {
+      return {
+        dim: baseSearch?.dim || null,
+        model: baseSearch?.model || null,
+        topK,
+        results: [],
+        mode: SEARCH_MODES.COMBINED,
+        apiBase: this.highQualityApiBase,
+        rerankedFrom: baseSearch?.mode || SEARCH_MODES.DEFAULT,
+        baseCandidates: 0,
+      };
+    }
+
+    const candidatePayload = baseResults
+      .map((row, idx) => ({
+        text: ((row?.previewText || '').replace(/\r\n/g, '\n')).trim(),
+        index: idx,
+      }))
+      .filter((entry) => entry.text.length > 0);
+
+    if (!candidatePayload.length) {
+      return {
+        ...baseSearch,
+        mode: SEARCH_MODES.COMBINED,
+        apiBase: this.highQualityApiBase,
+        results: baseResults.slice(0, topK),
+        rerankedFrom: baseSearch?.mode || SEARCH_MODES.DEFAULT,
+        baseCandidates: baseResults.length,
+        reranked: false,
+      };
+    }
+
+    const candidateTexts = candidatePayload.map((entry) => entry.text);
+
+    const queryEmbed = await this.embedWithApi([texts[0]], { autoChunk: false }, null, {
+      apiBase: this.highQualityApiBase,
+      model: VectorEmbeddingHighQuality,
+      operationName: 'combinedSearchQuery',
+      task: 'query',
+    });
+    const queryVector = extractQueryVector(queryEmbed);
+    if (!isValidVector(queryVector)) {
+      throw new Error('High-quality embedding API did not return a valid vector for the query.');
+    }
+
+    const candidateEmbed = await this.embedWithApi(candidateTexts, { autoChunk: false }, null, {
+      apiBase: this.highQualityApiBase,
+      model: VectorEmbeddingHighQuality,
+      operationName: 'combinedSearchCandidates',
+      task: 'document',
+    });
+    const candidateVectors = mapVectorsToTextIndex(candidateEmbed, candidateTexts.length);
+
+    const reranked = candidatePayload
+      .map((entry, idx) => {
+        const vector = candidateVectors[idx];
+        if (!isValidVector(vector, queryVector.length)) {
+          return null;
+        }
+        const row = baseResults[entry.index];
+        return {
+          row,
+          hqSimilarity: cosineSimilarity(queryVector, vector),
+          baseSimilarity: Number.isFinite(row.similarity) ? row.similarity : 0,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.hqSimilarity - a.hqSimilarity);
+
+    const hasReranked = reranked.length > 0;
+    const finalResults = hasReranked
+      ? reranked.slice(0, topK).map((entry) => ({
+        ...entry.row,
+        similarity: entry.hqSimilarity,
+        rerank: {
+          baseSimilarity: entry.baseSimilarity,
+          from: baseSearch?.mode || SEARCH_MODES.DEFAULT,
+        },
+      }))
+      : baseResults.slice(0, topK);
+
+    logger.notice('Combined embedding search completed', {
+      category: 'embedding_api',
+      metadata: {
+        baseCandidates: baseResults.length,
+        rerankedCount: reranked.length,
+        returned: finalResults.length,
+        topK,
+        baseMode: baseSearch?.mode || SEARCH_MODES.DEFAULT,
+        rerankApiBase: this.highQualityApiBase,
+      },
+    });
+
+    return {
+      dim: queryVector.length,
+      model: queryEmbed?.model || candidateEmbed?.model || baseSearch?.model || null,
+      topK,
+      results: finalResults,
+      mode: SEARCH_MODES.COMBINED,
+      apiBase: this.highQualityApiBase,
+      rerankedFrom: baseSearch?.mode || SEARCH_MODES.DEFAULT,
+      baseModel: baseSearch?.model || null,
+      baseCandidates: baseResults.length,
+      reranked: hasReranked,
     };
   }
 
@@ -479,6 +694,103 @@ class EmbeddingApiService {
       clearTimeout(timer);
     }
   }
+}
+
+function normalizeSearchMode(mode) {
+  const value = typeof mode === 'string' ? mode.toLowerCase() : '';
+  if (value === SEARCH_MODES.HIGH_QUALITY) {
+    return SEARCH_MODES.HIGH_QUALITY;
+  }
+  if (value === SEARCH_MODES.COMBINED) {
+    return SEARCH_MODES.COMBINED;
+  }
+  return SEARCH_MODES.DEFAULT;
+}
+
+function normalizeTask(task) {
+  if (task === undefined || task === null) {
+    return null;
+  }
+  const value = String(task).toLowerCase();
+  if (value === 'document' || value === 'doc') {
+    return 'document';
+  }
+  if (value === 'query' || value === 'search') {
+    return 'query';
+  }
+  return null;
+}
+
+function normalizeCandidateMultiplier(value) {
+  const parsed = Number.parseFloat(value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(parsed, 5);
+  }
+  return DEFAULT_COMBINED_CANDIDATE_MULTIPLIER;
+}
+
+function normalizeCandidateLimit(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(parsed, MAX_COMBINED_CANDIDATES);
+  }
+  return MAX_COMBINED_CANDIDATES;
+}
+
+function extractQueryVector(response) {
+  const grouped = mapVectorsToTextIndex(response, 1);
+  if (grouped[0] && isValidVector(grouped[0])) {
+    return grouped[0];
+  }
+  const vectors = Array.isArray(response?.vectors) ? response.vectors : [];
+  const averaged = averageVectors(vectors);
+  return isValidVector(averaged) ? averaged : [];
+}
+
+function mapVectorsToTextIndex(response, expectedCount) {
+  const vectors = Array.isArray(response?.vectors) ? response.vectors : [];
+  const chunks = Array.isArray(response?.chunks) ? response.chunks : [];
+  const grouped = new Map();
+
+  vectors.forEach((vec, idx) => {
+    const chunk = chunks[idx] || {};
+    const textIndex = normalizeTextIndex(chunk.text_index ?? chunk.textIndex, idx);
+    if (!grouped.has(textIndex)) {
+      grouped.set(textIndex, []);
+    }
+    grouped.get(textIndex).push(vec);
+  });
+
+  const results = [];
+  for (let i = 0; i < expectedCount; i += 1) {
+    const entries = grouped.get(i);
+    if (!entries || !entries.length) {
+      results.push(null);
+      continue;
+    }
+    const averaged = averageVectors(entries);
+    results.push(isValidVector(averaged) ? averaged : null);
+  }
+
+  return results;
+}
+
+function normalizeTextIndex(raw, fallback = 0) {
+  const parsed = Number.parseInt(raw, 10);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return parsed;
+  }
+  return Math.max(0, fallback);
+}
+
+function isValidVector(vector, expectedLength = null) {
+  if (!Array.isArray(vector) || !vector.length) {
+    return false;
+  }
+  if (Number.isFinite(expectedLength) && expectedLength > 0 && vector.length !== expectedLength) {
+    return false;
+  }
+  return vector.every((value) => Number.isFinite(value));
 }
 
 function clampNumber(value, min, max) {

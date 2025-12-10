@@ -177,6 +177,16 @@ const EMBEDDING_DEFAULT_OVERLAP = 32;
 const EMBEDDING_SPLIT_MODES = ['single', 'lines'];
 const EMBEDDING_SEARCH_DEFAULT_TOP_K = 10;
 const EMBEDDING_SEARCH_MAX_TOP_K = 50;
+const EMBEDDING_SEARCH_TYPES = [
+  { value: 'default', label: 'Fast (default)' },
+  { value: 'high_quality', label: 'High-quality model' },
+  { value: 'combined', label: 'Combined (rerank with high-quality)' },
+];
+const EMBEDDING_SEARCH_TYPE_MAP = EMBEDDING_SEARCH_TYPES.reduce((acc, option) => {
+  acc[option.value] = option.label;
+  return acc;
+}, {});
+const EMBEDDING_DEFAULT_SEARCH_TYPE = EMBEDDING_SEARCH_TYPES[0].value;
 const TTS_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
 const TOKENS_PER_500_CHARS = 1024;
 const MAX_NEW_TOKENS_DEFAULT = 1024;
@@ -1114,6 +1124,14 @@ function normalizeEmbeddingForm(form = {}) {
   };
 }
 
+function normalizeSearchType(raw) {
+  const value = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (EMBEDDING_SEARCH_TYPE_MAP[value]) {
+    return value;
+  }
+  return EMBEDDING_DEFAULT_SEARCH_TYPE;
+}
+
 function normalizeSearchForm(form = {}) {
   const query = typeof form?.query === 'string'
     ? form.query
@@ -1128,10 +1146,12 @@ function normalizeSearchForm(form = {}) {
   const topK = Number.isFinite(parsedTopK) && parsedTopK > 0
     ? Math.min(parsedTopK, EMBEDDING_SEARCH_MAX_TOP_K)
     : EMBEDDING_SEARCH_DEFAULT_TOP_K;
+  const searchType = normalizeSearchType(form?.searchType ?? form?.search_type ?? form?.mode);
 
   return {
     query,
     topK,
+    searchType,
   };
 }
 
@@ -1179,6 +1199,12 @@ function renderEmbeddingTestPage(res, {
 }) {
   const normalizedForm = normalizeEmbeddingForm(form);
   const normalizedSearchForm = normalizeSearchForm(search?.form || search);
+  const searchResult = search?.result
+    ? {
+      ...search.result,
+      modeLabel: search?.result?.mode ? EMBEDDING_SEARCH_TYPE_MAP[search.result.mode] || search.result.mode : null,
+    }
+    : null;
   return res.render('admin_embedding_test', {
     form: normalizedForm,
     result,
@@ -1193,11 +1219,14 @@ function renderEmbeddingTestPage(res, {
     health,
     healthError,
     apiBase: embeddingApiService.baseUrl,
+    highQualityApiBase: embeddingApiService.highQualityBaseUrl,
     maxTexts: EMBEDDING_TEST_MAX_TEXTS,
     defaultOverlap: EMBEDDING_DEFAULT_OVERLAP,
     searchForm: normalizedSearchForm,
-    searchResult: search?.result || null,
+    searchResult,
     searchError: search?.error || null,
+    searchTypes: EMBEDDING_SEARCH_TYPES,
+    searchTypeLabels: EMBEDDING_SEARCH_TYPE_MAP,
     searchLimits: {
       defaultTopK: EMBEDDING_SEARCH_DEFAULT_TOP_K,
       maxTopK: EMBEDDING_SEARCH_MAX_TOP_K,
@@ -1357,6 +1386,7 @@ exports.embedding_test_search = async (req, res) => {
   const searchForm = normalizeSearchForm({
     query: typeof req.body.search_text === 'string' ? req.body.search_text : req.body.query,
     topK: req.body.top_k ?? req.body.topK,
+    searchType: req.body.search_type ?? req.body.searchType ?? req.body.search_mode,
   });
   searchForm.query = searchForm.query.trim();
   const form = defaultEmbeddingForm();
@@ -1375,13 +1405,22 @@ exports.embedding_test_search = async (req, res) => {
   }
 
   try {
-    const result = await embeddingApiService.similaritySearch(searchForm.query, { topK: searchForm.topK });
+    let result;
+    if (searchForm.searchType === 'high_quality') {
+      result = await embeddingApiService.similaritySearchHighQuality(searchForm.query, { topK: searchForm.topK });
+    } else if (searchForm.searchType === 'combined') {
+      result = await embeddingApiService.combinedSimilaritySearch(searchForm.query, { topK: searchForm.topK });
+    } else {
+      result = await embeddingApiService.similaritySearch(searchForm.query, { topK: searchForm.topK });
+    }
     logger.notice('Admin embedding similarity search completed', {
       category: 'admin_embedding_test',
       metadata: {
         queryLength: searchForm.query.length,
         topK: searchForm.topK,
         returned: result?.results?.length || 0,
+        searchType: searchForm.searchType,
+        mode: result?.mode || null,
       },
     });
     return renderEmbeddingTestPage(res, {
@@ -1406,6 +1445,7 @@ exports.embedding_test_search = async (req, res) => {
         status: error?.status,
         code: error?.code,
         message: error?.message,
+        searchType: searchForm.searchType,
       },
     });
 
@@ -1753,4 +1793,3 @@ exports.tts_test_status = (req, res) => {
     error: job.error,
   });
 };
-

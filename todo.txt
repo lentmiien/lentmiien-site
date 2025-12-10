@@ -1,26 +1,17 @@
-I've updated the embedding API to include the exact text strings that were used to generate the vector embedding in the response, so an example response no looks like this:
+I've added a second embedding API, at the local URL 'http://192.168.0.20:8002', this time a more capable and larger model, please add this as a second embedding API in `services/embeddingApiService.js`. I need both the APIs, the smaller for quicker performance for "everything data" that I track, and the larger for selected high quality data. So I need a second embedding database for use with this higher quality knowledge database.
 
-```
-{
-  "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-  "dim": 768,
-  "vectors": [
-    "[redacted array vectors.0: 768 elements]"
-  ],
-  "chunks": [
-    {
-      "text_index": 0,
-      "chunk_index": 0,
-      "start_token": 0,
-      "end_token": 1,
-      "text": "Test"
-    }
-  ]
-}
-```
+The database structure can be exactly the same as `models/vector_embedding.js`, or maybe we can use the same database with embedding model filtering.
 
-Note that in each chunk there is now a `text` field, this is the string that generated the specific vector embedding for the particular chunk.
+This new API will essentially have 2 use cases:
+1. Similar to existing API but for selected more high quality data, and better embedding performance
+2. Re-rank results from the smaller embedding model, by fetches all original data from the smaller embedding search, re-embed with larger embedding model, and return top re-ranked results
 
-Please update the embedding service class (services/embeddingApiService.js), to use this returned string for the `previewText` in the database. So remove the previous code for estimating the preview text, and replace with the text returned from the API.
+So I essentially need the embed and re-embed functions for the new API, and 2 new search functions, one for the new API, and one for the combined search.
 
-codex resume 019b05f0-bf8f-7fb3-a3cd-c9e3c2d9fa30
+Important, the API interface is nearly identical to the previous API, but with an additional input parameter at the `/embed` endpoint, `task` than can be either "document" or "query", with "document" as default when no value is provided. "document" used for normal embedding tasks, "query" used for embedding queries, for better performance.
+
+Responses from the new API is in exactly the same format as the small embedding model.
+
+At the page `views/admin_embedding_test.pug`, add a select box for selecting search type, for testing.
+
+codex resume 019b06d8-2f0b-7d40-9320-fd780a93b59d
