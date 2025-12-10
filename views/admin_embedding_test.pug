@@ -128,6 +128,9 @@ block content
                   - const previewText = row.previewText || '';
                   p.mb-2= previewText ? (previewText.length > 360 ? `${previewText.slice(0, 360)}…` : previewText) : 'No preview available.'
                   ul.list-unstyled.small.mb-0
+                    - const isOcrFile = row.source && row.source.collectionName === 'ocr_job_files';
+                    - const ocrJobId = row.source && (row.source.parentId || row.source.parent_id);
+                    - const ocrFileId = row.source && (row.source.documentId || row.source.document_id);
                     li
                       strong Source:
                       |  #{row.source && row.source.collectionName ? row.source.collectionName : 'n/a'} · #{row.source && row.source.documentId ? row.source.documentId : 'n/a'}
@@ -135,6 +138,12 @@ block content
                       li
                         strong Parent:
                         |  #{row.source.parentCollection || 'n/a'} · #{row.source.parentId || 'n/a'}
+                    if isOcrFile && ocrJobId
+                      - const ocrHref = ocrFileId ? `/ocr/jobs/${ocrJobId}/view/${ocrFileId}` : `/ocr/jobs/${ocrJobId}/view`;
+                      li
+                        strong OCR job:
+                        |  
+                        a(href=ocrHref, target="_blank", rel="noreferrer") View job page
                     li
                       strong Content type:
                       |  #{row.source && row.source.contentType ? row.source.contentType : 'n/a'}
