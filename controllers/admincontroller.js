@@ -1140,6 +1140,16 @@ function normalizeSearchForm(form = {}) {
       : typeof form?.search_text === 'string'
         ? form.search_text
         : '';
+  const startDate = typeof form?.startDate === 'string'
+    ? form.startDate
+    : typeof form?.start_date === 'string'
+      ? form.start_date
+      : '';
+  const endDate = typeof form?.endDate === 'string'
+    ? form.endDate
+    : typeof form?.end_date === 'string'
+      ? form.end_date
+      : '';
 
   const rawTopK = form?.topK ?? form?.top_k ?? form?.searchTopK ?? form?.search_top_k;
   const parsedTopK = Number.parseInt(rawTopK, 10);
@@ -1152,7 +1162,42 @@ function normalizeSearchForm(form = {}) {
     query,
     topK,
     searchType,
+    startDate,
+    endDate,
   };
+}
+
+function buildSearchDateRange(startRaw, endRaw) {
+  const parseDate = (value) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return 'invalid';
+    }
+    return parsed;
+  };
+
+  const start = parseDate(startRaw);
+  if (start === 'invalid') {
+    return { error: 'Invalid start date. Please use YYYY-MM-DD.' };
+  }
+  const end = parseDate(endRaw);
+  if (end === 'invalid') {
+    return { error: 'Invalid end date. Please use YYYY-MM-DD.' };
+  }
+
+  if (start) {
+    start.setUTCHours(0, 0, 0, 0);
+  }
+  if (end) {
+    end.setUTCHours(23, 59, 59, 999);
+  }
+
+  if (start && end && start > end) {
+    return { error: 'Start date must be before or equal to end date.' };
+  }
+
+  return { start, end };
 }
 
 function parseEmbeddingTexts(rawText, splitMode) {
@@ -1387,8 +1432,12 @@ exports.embedding_test_search = async (req, res) => {
     query: typeof req.body.search_text === 'string' ? req.body.search_text : req.body.query,
     topK: req.body.top_k ?? req.body.topK,
     searchType: req.body.search_type ?? req.body.searchType ?? req.body.search_mode,
+    startDate: req.body.start_date ?? req.body.startDate,
+    endDate: req.body.end_date ?? req.body.endDate,
   });
   searchForm.query = searchForm.query.trim();
+  searchForm.startDate = searchForm.startDate.trim();
+  searchForm.endDate = searchForm.endDate.trim();
   const form = defaultEmbeddingForm();
   const { health, healthError } = await fetchEmbeddingHealth();
 
@@ -1404,14 +1453,29 @@ exports.embedding_test_search = async (req, res) => {
     });
   }
 
+  const dateRange = buildSearchDateRange(searchForm.startDate, searchForm.endDate);
+  if (dateRange.error) {
+    res.status(400);
+    return renderEmbeddingTestPage(res, {
+      form,
+      submittedTexts: [],
+      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+      health,
+      healthError,
+      search: { form: searchForm, error: dateRange.error },
+    });
+  }
+
+  const searchOptions = { topK: searchForm.topK, dateRange };
+
   try {
     let result;
     if (searchForm.searchType === 'high_quality') {
-      result = await embeddingApiService.similaritySearchHighQuality(searchForm.query, { topK: searchForm.topK });
+      result = await embeddingApiService.similaritySearchHighQuality(searchForm.query, searchOptions);
     } else if (searchForm.searchType === 'combined') {
-      result = await embeddingApiService.combinedSimilaritySearch(searchForm.query, { topK: searchForm.topK });
+      result = await embeddingApiService.combinedSimilaritySearch(searchForm.query, searchOptions);
     } else {
-      result = await embeddingApiService.similaritySearch(searchForm.query, { topK: searchForm.topK });
+      result = await embeddingApiService.similaritySearch(searchForm.query, searchOptions);
     }
     logger.notice('Admin embedding similarity search completed', {
       category: 'admin_embedding_test',
@@ -1421,6 +1485,8 @@ exports.embedding_test_search = async (req, res) => {
         returned: result?.results?.length || 0,
         searchType: searchForm.searchType,
         mode: result?.mode || null,
+        updatedAfter: dateRange.start ? dateRange.start.toISOString() : null,
+        updatedBefore: dateRange.end ? dateRange.end.toISOString() : null,
       },
     });
     return renderEmbeddingTestPage(res, {

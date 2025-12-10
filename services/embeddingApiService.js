@@ -461,6 +461,10 @@ class EmbeddingApiService {
     const normalizedOptions = this.normalizeOptions(options);
     const targetMode = normalizeSearchMode(searchOptions.mode || searchOptions.target);
     const topK = this.normalizeTopK(options.topK ?? searchOptions.topK);
+    const dateRange = normalizeDateRangeOption(options.dateRange || searchOptions.dateRange || {
+      start: options.startDate ?? searchOptions.startDate,
+      end: options.endDate ?? searchOptions.endDate,
+    });
     const apiBase = this.getApiBaseForMode(targetMode);
     const Model = this.getModelForMode(targetMode);
     const task = searchOptions.task || (targetMode === SEARCH_MODES.HIGH_QUALITY ? 'query' : null);
@@ -477,7 +481,12 @@ class EmbeddingApiService {
     }
 
     const dim = Number.isFinite(result?.dim) ? result.dim : queryVector.length;
-    const candidates = await Model.find({ dim }, {
+    const filter = { dim };
+    const updatedAtFilter = buildUpdatedAtFilter(dateRange);
+    if (updatedAtFilter) {
+      filter.updatedAt = updatedAtFilter;
+    }
+    const candidates = await Model.find(filter, {
       embedding: 1,
       source: 1,
       chunk: 1,
@@ -500,20 +509,24 @@ class EmbeddingApiService {
         model: doc.model || null,
         textLength: doc.textLength || 0,
         createdAt: doc.createdAt,
-        updatedAt: doc.updatedAt,
-      }))
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, topK);
+      updatedAt: doc.updatedAt,
+    }))
+      .sort((a, b) => b.similarity - a.similarity);
+    const deduped = dedupeResultsByEntry(scored, topK);
 
     logger.notice('Embedding similarity search completed', {
       category: 'embedding_api',
       metadata: {
         candidates: candidates.length,
-        returned: scored.length,
+        scored: scored.length,
+        returned: deduped.length,
+        uniqueEntries: deduped.length,
         dim,
         topK,
         mode: targetMode,
         apiBase,
+        updatedAfter: dateRange.start ? dateRange.start.toISOString() : null,
+        updatedBefore: dateRange.end ? dateRange.end.toISOString() : null,
       },
     });
 
@@ -521,7 +534,7 @@ class EmbeddingApiService {
       dim,
       model: result?.model || null,
       topK,
-      results: scored,
+      results: deduped,
       mode: targetMode,
       apiBase,
     };
@@ -841,6 +854,65 @@ function averageVectors(vectors) {
   }
 
   return sums.map((value) => value / count);
+}
+
+function normalizeDateRangeOption(range) {
+  const normalizeSide = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = new Date(value.trim());
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return null;
+  };
+
+  const start = normalizeSide(range?.start ?? range?.startDate);
+  const end = normalizeSide(range?.end ?? range?.endDate);
+
+  if (start && end && start > end) {
+    return { start, end: null };
+  }
+
+  return { start, end };
+}
+
+function buildUpdatedAtFilter(dateRange) {
+  if (!dateRange || (!dateRange.start && !dateRange.end)) {
+    return null;
+  }
+  const filter = {};
+  if (dateRange.start instanceof Date && !Number.isNaN(dateRange.start.getTime())) {
+    filter.$gte = dateRange.start;
+  }
+  if (dateRange.end instanceof Date && !Number.isNaN(dateRange.end.getTime())) {
+    filter.$lte = dateRange.end;
+  }
+  return Object.keys(filter).length ? filter : null;
+}
+
+function dedupeResultsByEntry(rows, limit) {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+  const seen = new Set();
+  const unique = [];
+
+  for (const row of rows) {
+    const key = buildSourceKey(row?.source || {});
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(row);
+    if (limit && unique.length >= limit) {
+      break;
+    }
+  }
+
+  return limit ? unique.slice(0, limit) : unique;
 }
 
 function buildSourceKey(source) {

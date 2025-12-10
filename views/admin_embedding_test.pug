@@ -109,6 +109,15 @@ block content
               each option in searchTypes
                 option(value=option.value, selected=searchForm && searchForm.searchType === option.value)= option.label
             small.form-text.text-muted Choose which embedding store or strategy to use.
+          .row
+            .col-md-6.mb-3
+              label.form-label(for="start_date") Updated start date
+              input#start_date.form-control(type="date", name="start_date", value=searchForm && searchForm.startDate ? searchForm.startDate : '')
+              small.form-text.text-muted Inclusive; leave blank for no minimum.
+            .col-md-6.mb-3
+              label.form-label(for="end_date") Updated end date
+              input#end_date.form-control(type="date", name="end_date", value=searchForm && searchForm.endDate ? searchForm.endDate : '')
+              small.form-text.text-muted Inclusive; leave blank for no maximum.
           .mb-3
             label.form-label(for="top_k") Results to return
             input#top_k.form-control(type="number", name="top_k", min="1", max=searchLimits && searchLimits.maxTopK ? searchLimits.maxTopK : 50, value=searchForm && searchForm.topK !== undefined ? searchForm.topK : (searchLimits && searchLimits.defaultTopK ? searchLimits.defaultTopK : 10))
@@ -133,6 +142,9 @@ block content
                     span.badge.text-bg-light.text-secondary= searchResult.apiBase
                   if searchResult.reranked
                     span.badge.text-bg-warning.text-dark Reranked
+                  if searchForm && (searchForm.startDate || searchForm.endDate)
+                    span.badge.text-bg-light.text-secondary= `Updated ${searchForm.startDate || 'start'} -> ${searchForm.endDate || 'now'}`
+                p.text-muted.small.mt-n1.mb-3 Showing unique entries per source/parent; dates filter by updatedAt (UTC).
                 if searchResult.results && searchResult.results.length
                   each row, idx in searchResult.results
                     .border.rounded-3.p-3.mb-3
