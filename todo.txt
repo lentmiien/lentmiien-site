@@ -1,3 +1,26 @@
-For the OCR tool (controllers/ocrcontroller.js), create a page for displaying a single job, by receiving a job id in the URL, and displaying a page with only that job. The controls and edit capabilities should be the same as when displaying a job on the OCR tool top page (views/ocr_tool.pug), and make sure to update the embedding database if `layoutText` is edited. Also, optionally, the URL can also include a file id, if that's the case, highlight the specific file on the page.
+I've updated the embedding API to include the exact text strings that were used to generate the vector embedding in the response, so an example response no looks like this:
 
-codex resume 019b0569-2f14-7483-8f9e-87fbcd6a4008
+```
+{
+  "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+  "dim": 768,
+  "vectors": [
+    "[redacted array vectors.0: 768 elements]"
+  ],
+  "chunks": [
+    {
+      "text_index": 0,
+      "chunk_index": 0,
+      "start_token": 0,
+      "end_token": 1,
+      "text": "Test"
+    }
+  ]
+}
+```
+
+Note that in each chunk there is now a `text` field, this is the string that generated the specific vector embedding for the particular chunk.
+
+Please update the embedding service class (services/embeddingApiService.js), to use this returned string for the `previewText` in the database. So remove the previous code for estimating the preview text, and replace with the text returned from the API.
+
+codex resume 019b05f0-bf8f-7fb3-a3cd-c9e3c2d9fa30

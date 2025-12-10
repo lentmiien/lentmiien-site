@@ -6,10 +6,6 @@ const DEFAULT_API_BASE = process.env.EMBED_API_BASE || 'http://192.168.0.20:8001
 const DEFAULT_TIMEOUT_MS = 15000;
 const JS_FILE_NAME = 'services/embeddingApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
-const APPROX_CHARS_PER_TOKEN = 4;
-const PREVIEW_MIN_LENGTH = 200;
-const PREVIEW_MAX_LENGTH = 500;
-const DEFAULT_PREVIEW_LENGTH = 400;
 const DEFAULT_TOP_K = 10;
 const MAX_TOP_K = 50;
 
@@ -125,12 +121,17 @@ class EmbeddingApiService {
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : defaultValue;
     };
+    const toText = (value) => {
+      if (value === undefined || value === null) return '';
+      return typeof value === 'string' ? value : String(value);
+    };
 
     const normalized = {
       textIndex: toNumber(chunk?.text_index ?? chunk?.textIndex, 0),
       chunkIndex: toNumber(chunk?.chunk_index ?? chunk?.chunkIndex ?? fallbackChunkIndex, fallbackChunkIndex),
       startToken: toNumber(chunk?.start_token ?? chunk?.startToken, 0),
       endToken: toNumber(chunk?.end_token ?? chunk?.endToken, 0),
+      text: toText(chunk?.text),
     };
 
     if (normalized.textIndex < 0) normalized.textIndex = 0;
@@ -147,27 +148,6 @@ class EmbeddingApiService {
       return Math.min(parsed, MAX_TOP_K);
     }
     return DEFAULT_TOP_K;
-  }
-
-  buildPreviewText(fullText, chunk) {
-    const text = typeof fullText === 'string' ? fullText : String(fullText ?? '');
-    const normalized = text.replace(/\r\n/g, '\n');
-    if (!normalized.trim()) {
-      return '';
-    }
-
-    const targetLength = clampPreviewLength(DEFAULT_PREVIEW_LENGTH);
-    const startApprox = clampNumber(Math.floor((chunk?.startToken || 0) * APPROX_CHARS_PER_TOKEN), 0, normalized.length);
-    const endApprox = clampNumber(Math.ceil((chunk?.endToken || 0) * APPROX_CHARS_PER_TOKEN), startApprox, normalized.length);
-    const fallbackEnd = clampNumber(startApprox + targetLength, startApprox, normalized.length);
-    const sliceEnd = Math.max(endApprox, fallbackEnd);
-
-    const preview = normalized.slice(startApprox, Math.min(sliceEnd, startApprox + targetLength)).trim();
-    if (preview) {
-      return preview;
-    }
-
-    return normalized.slice(0, targetLength).trim();
   }
 
   buildSourceFilter(source) {
@@ -346,7 +326,7 @@ class EmbeddingApiService {
       const chunk = this.normalizeChunkEntry(chunks[index] || { chunk_index: index }, index);
       const textIndex = clampNumber(chunk.textIndex, 0, metadataList.length - 1);
       const text = texts[textIndex] || '';
-      const previewText = this.buildPreviewText(text, chunk);
+      const previewText = chunk.text || '';
 
       return {
         source: metadataList[textIndex],
@@ -507,10 +487,6 @@ function clampNumber(value, min, max) {
     return min;
   }
   return Math.min(max, Math.max(min, numeric));
-}
-
-function clampPreviewLength(length) {
-  return clampNumber(length, PREVIEW_MIN_LENGTH, PREVIEW_MAX_LENGTH);
 }
 
 function cosineSimilarity(vecA, vecB) {
