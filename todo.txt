@@ -1,17 +1,5 @@
-I've added a second embedding API, at the local URL 'http://192.168.0.20:8002', this time a more capable and larger model, please add this as a second embedding API in `services/embeddingApiService.js`. I need both the APIs, the smaller for quicker performance for "everything data" that I track, and the larger for selected high quality data. So I need a second embedding database for use with this higher quality knowledge database.
+In the OCR tool, on the `views/ocr_tool.pug` page, add a button for every OCR image in the displayed job, to add the layout text to the high quality embedding database, `embedHighQuality` in `services/embeddingApiService.js`, using the same metadata as the normal embedding. So I can choose exactly which data to save in the high quality database. If a job included 2+ images, I can choose to only embed 1 image to the high quality if I want.
 
-The database structure can be exactly the same as `models/vector_embedding.js`, or maybe we can use the same database with embedding model filtering.
+Note: the normal embedding should continue work as previously, with no changes.
 
-This new API will essentially have 2 use cases:
-1. Similar to existing API but for selected more high quality data, and better embedding performance
-2. Re-rank results from the smaller embedding model, by fetches all original data from the smaller embedding search, re-embed with larger embedding model, and return top re-ranked results
-
-So I essentially need the embed and re-embed functions for the new API, and 2 new search functions, one for the new API, and one for the combined search.
-
-Important, the API interface is nearly identical to the previous API, but with an additional input parameter at the `/embed` endpoint, `task` than can be either "document" or "query", with "document" as default when no value is provided. "document" used for normal embedding tasks, "query" used for embedding queries, for better performance.
-
-Responses from the new API is in exactly the same format as the small embedding model.
-
-At the page `views/admin_embedding_test.pug`, add a select box for selecting search type, for testing.
-
-codex resume 019b06d8-2f0b-7d40-9320-fd780a93b59d
+codex resume 019b0701-97ab-7580-a16e-907c41dd2f0a

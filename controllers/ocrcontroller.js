@@ -844,6 +844,52 @@ exports.updateFileResult = async (req, res) => {
   }
 };
 
+exports.embedFileHighQuality = async (req, res) => {
+  const { jobId, fileId } = req.params;
+
+  try {
+    const job = await OcrJob.findById(jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found.' });
+    }
+
+    const file = job.files.find((entry) => entry.id === fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found.' });
+    }
+
+    if (file.status !== 'completed' || !file.result) {
+      return res.status(400).json({ error: 'OCR result not ready for this file.' });
+    }
+
+    const metadata = buildOcrEmbeddingMetadata(job, file);
+    const layoutText = (file.result?.layoutText || '').trim();
+
+    if (!metadata || !layoutText) {
+      return res.status(400).json({ error: 'Layout text is empty; save edits before embedding.' });
+    }
+
+    await embeddingApiService.embedHighQuality([layoutText], {}, [metadata]);
+
+    logger.notice('Synced OCR layout to high-quality embeddings', {
+      category: 'ocr',
+      metadata: {
+        jobId: job.id || job._id,
+        fileId: file.id,
+        textLength: layoutText.length,
+      },
+    });
+
+    return res.json({ ok: true, jobId: job.id || job._id, fileId });
+  } catch (error) {
+    logger.error('Failed to sync OCR layout to high-quality embeddings', {
+      category: 'ocr',
+      metadata: { jobId, fileId, message: error?.message || error },
+    });
+    return res.status(500).json({ error: 'Failed to store high-quality embeddings.' });
+  }
+};
+
 exports.deleteJob = async (req, res) => {
   const { jobId } = req.params;
   try {

@@ -530,6 +530,40 @@ block styles
       cursor: pointer;
     }
 
+    .hq-embed-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-top: 0.75rem;
+    }
+
+    .hq-embed-btn {
+      border: 1px solid var(--ocr-accent);
+      background: transparent;
+      color: var(--ocr-accent);
+      padding: 0.6rem 0.95rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+
+    .hq-embed-btn:hover {
+      background: rgba(255, 194, 71, 0.15);
+      color: var(--ocr-text);
+      border-color: var(--ocr-accent-hover);
+    }
+
+    .hq-embed-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .hq-embed-note {
+      color: var(--ocr-text-muted);
+      font-size: 0.85rem;
+    }
+
     .segment-editor {
       border: 1px solid var(--ocr-border);
       background: var(--ocr-surface-2);
@@ -743,6 +777,7 @@ block script
         oldestLoaded: null,
         detailLoading: {},
         savingEdits: {},
+        embeddingHighQuality: {},
         loadingOlder: false,
         deletingJob: false,
         highlightFileId,
@@ -1075,6 +1110,12 @@ block script
               <div class="edit-actions">
                 <button class="save-edits-btn" type="button" data-save-file="${file.id}" data-job-id="${job.id}">Save OCR edits</button>
                 <button class="restore-edits-btn" type="button" data-restore-file="${file.id}" data-job-id="${job.id}">Restore from raw output</button>
+              </div>
+              <div class="hq-embed-actions">
+                <button class="hq-embed-btn" type="button" data-embed-hq="${file.id}" data-job-id="${job.id}" ${state.embeddingHighQuality[file.id] ? 'disabled' : ''}>
+                  ${state.embeddingHighQuality[file.id] ? 'Saving...' : 'Add to high-quality embeddings'}
+                </button>
+                <span class="hq-embed-note">Uses the saved layout text; normal embeddings stay as-is.</span>
               </div>
               <div class="text-card-header mt-3">
                 <h5>Segments</h5>
@@ -1465,6 +1506,42 @@ block script
         }
       };
 
+      const embedHighQualityForFile = async (jobId, fileId) => {
+        if (!jobId || !fileId || state.embeddingHighQuality[fileId]) return;
+        const job = state.jobDetails[jobId];
+        const file = job?.files?.find((entry) => entry.id === fileId);
+
+        if (!file || !file.result) {
+          setFeedback('OCR result not ready for this file.', 'error');
+          return;
+        }
+
+        const layoutText = (file.result.layoutText || '').trim();
+        if (!layoutText) {
+          setFeedback('Layout text is empty; save edits before embedding.', 'error');
+          return;
+        }
+
+        state.embeddingHighQuality[fileId] = true;
+        setFeedback('Saving to high-quality embeddings...', 'info');
+
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${jobId}/files/${fileId}/embed-high-quality`, {
+            method: 'POST',
+            headers: { Accept: 'application/json' },
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || 'Failed to store high-quality embeddings.');
+          }
+          setFeedback('Saved layout text to the high-quality embeddings.', 'success');
+        } catch (error) {
+          setFeedback(error.message || 'Failed to store high-quality embeddings.', 'error');
+        } finally {
+          delete state.embeddingHighQuality[fileId];
+        }
+      };
+
       const deleteSelectedJob = async () => {
         if (!state.selectedJobId || state.deletingJob) return;
         const confirmed = window.confirm('Delete this OCR job and its preview image?');
@@ -1523,6 +1600,20 @@ block script
         if (saveBtn) {
           saveOcrEdits(saveBtn.dataset.jobId, saveBtn.dataset.saveFile);
         }
+      });
+
+      document.addEventListener('click', (event) => {
+        const embedBtn = event.target.closest('[data-embed-hq]');
+        if (!embedBtn) return;
+        const jobId = embedBtn.dataset.jobId;
+        const fileId = embedBtn.dataset.embedHq;
+        const originalText = embedBtn.textContent;
+        embedBtn.disabled = true;
+        embedBtn.textContent = 'Saving...';
+        embedHighQualityForFile(jobId, fileId).finally(() => {
+          embedBtn.disabled = false;
+          embedBtn.textContent = originalText;
+        });
       });
 
       document.addEventListener('click', (event) => {
