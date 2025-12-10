@@ -145,6 +145,8 @@ block content
                         - const isOcrFile = row.source && row.source.collectionName === 'ocr_job_files';
                         - const ocrJobId = row.source && (row.source.parentId || row.source.parent_id);
                         - const ocrFileId = row.source && (row.source.documentId || row.source.document_id);
+                        - const isKnowledge = row.source && row.source.collectionName === 'knowledge';
+                        - const knowledgeId = row.source && (row.source.documentId || row.source.document_id);
                         li
                           strong Source:
                           |  #{row.source && row.source.collectionName ? row.source.collectionName : 'n/a'} · #{row.source && row.source.documentId ? row.source.documentId : 'n/a'}
@@ -158,6 +160,12 @@ block content
                             strong OCR job:
                             |  
                             a(href=ocrHref, target="_blank", rel="noreferrer") View job page
+                        if isKnowledge && knowledgeId
+                          - const knowledgeHref = `/chat4/viewknowledge/${knowledgeId}`;
+                          li
+                            strong Knowledge:
+                            |  
+                            a(href=knowledgeHref, target="_blank", rel="noreferrer") View knowledge
                         li
                           strong Content type:
                           |  #{row.source && row.source.contentType ? row.source.contentType : 'n/a'}

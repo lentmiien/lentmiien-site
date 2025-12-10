@@ -67,10 +67,18 @@ block content
                   if previewImages.length
                     .knowledge-preview-actions
                       button.knowledge-preview-btn(type='button', data-images=previewImages.join('|')) Preview
-                      if knowledge.images.length > previewImages.length
-                        span.preview-note + #{knowledge.images.length - previewImages.length} more
+                    if knowledge.images.length > previewImages.length
+                      span.preview-note + #{knowledge.images.length - previewImages.length} more
                     .knowledge-preview(hidden data-loaded='false')
                       span.preview-placeholder Select preview to load images
+
+  .knowledge-actions
+    .embed-actions__text
+      h3 Keep embeddings fresh
+      p Re-embed every knowledge entry (standard and high quality) to keep search results accurate.
+    .embed-actions__controls
+      button#embed_all_button.embed-actions__button(type='button', disabled=!knowledges || knowledges.length === 0) Re-embed all knowledge
+      span#embed_status.embed-status(role='status' aria-live='polite')
 
 block script
   script(src='/js/knowledge_list.js', defer)

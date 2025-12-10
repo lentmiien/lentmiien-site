@@ -1,4 +1,8 @@
 jest.mock('marked', () => ({ parse: jest.fn() }));
+jest.mock('../../services/embeddingApiService', () => jest.fn().mockImplementation(() => ({
+  embed: jest.fn(),
+  embedHighQuality: jest.fn(),
+})));
 
 const marked = require('marked');
 const KnowledgeService = require('../../services/knowledgeService');
@@ -12,6 +16,7 @@ const createQueryChain = (items) => {
 describe('KnowledgeService', () => {
   let knowledgeModel;
   let service;
+  let embeddingApiService;
 
   beforeEach(() => {
     marked.parse.mockReset();
@@ -28,7 +33,12 @@ describe('KnowledgeService', () => {
     knowledgeModel.find = jest.fn();
     knowledgeModel.deleteOne = jest.fn();
 
-    service = new KnowledgeService(knowledgeModel);
+    embeddingApiService = {
+      embed: jest.fn().mockResolvedValue({}),
+      embedHighQuality: jest.fn().mockResolvedValue({}),
+    };
+
+    service = new KnowledgeService(knowledgeModel, embeddingApiService);
   });
 
   test('getKnowledgesById defaults originType and parses markdown', async () => {
@@ -85,7 +95,15 @@ describe('KnowledgeService', () => {
 
   test('createKnowledge saves new record and returns id', async () => {
     const saveResult = {
-      _id: { toString: () => 'new-id' }
+      _id: { toString: () => 'new-id' },
+      title: 'Title',
+      originConversationId: 'conversation-1',
+      originType: 'chat6',
+      contentMarkdown: 'markdown',
+      category: 'category',
+      tags: ['tag'],
+      images: ['image'],
+      user_id: 'user-2',
     };
     const saveFn = jest.fn().mockResolvedValue(saveResult);
     knowledgeModel.mockImplementationOnce((doc) => ({
@@ -116,11 +134,29 @@ describe('KnowledgeService', () => {
     }));
     expect(saveFn).toHaveBeenCalledTimes(1);
     expect(id).toBe('new-id');
+    const expectedText = 'Title\n\nmarkdown\n\ncategory\n\ntag';
+    expect(embeddingApiService.embed).toHaveBeenCalledWith(
+      [expectedText],
+      {},
+      [expect.objectContaining({
+        collectionName: 'knowledge',
+        documentId: 'new-id',
+        contentType: 'knowledge_entry',
+        parentCollection: 'conversation',
+        parentId: 'conversation-1',
+      })],
+    );
+    expect(embeddingApiService.embedHighQuality).toHaveBeenCalledWith(
+      [expectedText],
+      {},
+      [expect.objectContaining({ documentId: 'new-id' })],
+    );
   });
 
   test('updateKnowledge mutates fields and saves entry', async () => {
     const save = jest.fn().mockResolvedValue();
     const doc = {
+      _id: 'k-123',
       title: 'Old Title',
       contentMarkdown: 'old',
       category: 'old',
@@ -148,6 +184,58 @@ describe('KnowledgeService', () => {
     expect(doc.updatedDate).toBeInstanceOf(Date);
     expect(save).toHaveBeenCalledTimes(1);
     expect(result).toBe('k-123');
+    const expectedText = 'New Title\n\nnew content\n\nnew category\n\ntag1';
+    expect(embeddingApiService.embed).toHaveBeenCalledWith(
+      [expectedText],
+      {},
+      [expect.objectContaining({ documentId: 'k-123' })],
+    );
+    expect(embeddingApiService.embedHighQuality).toHaveBeenCalledWith(
+      [expectedText],
+      {},
+      [expect.objectContaining({ documentId: 'k-123' })],
+    );
+  });
+
+  test('embedAllKnowledges embeds each entry and reports failures', async () => {
+    const docs = [
+      {
+        _id: 'id-1',
+        title: 'First',
+        contentMarkdown: 'body1',
+        category: 'cat',
+        tags: ['tag'],
+        originConversationId: 'conv-1',
+        user_id: 'user-1',
+      },
+      {
+        _id: 'id-2',
+        title: 'Second',
+        contentMarkdown: 'body2',
+        category: 'cat',
+        tags: [],
+        originConversationId: 'conv-2',
+        user_id: 'user-1',
+      },
+    ];
+    const chain = createQueryChain(docs);
+    knowledgeModel.find.mockReturnValue({ sort: chain.sort });
+    embeddingApiService.embedHighQuality
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('hq fail'));
+
+    const summary = await service.embedAllKnowledges('user-1');
+
+    expect(knowledgeModel.find).toHaveBeenCalledWith({ user_id: 'user-1' });
+    expect(summary.totalCount).toBe(2);
+    expect(summary.embeddedCount).toBe(1);
+    expect(summary.failed).toHaveLength(1);
+    expect(summary.failed[0]).toEqual(expect.objectContaining({
+      knowledgeId: 'id-2',
+      title: 'Second',
+    }));
+    expect(embeddingApiService.embed).toHaveBeenCalledTimes(2);
+    expect(embeddingApiService.embedHighQuality).toHaveBeenCalledTimes(2);
   });
 
   test('deleteKnovledgeById delegates to deleteOne', async () => {

@@ -1,4 +1,10 @@
 const marked = require('marked');
+const logger = require('../utils/logger');
+
+const KNOWLEDGE_COLLECTION = 'knowledge';
+const KNOWLEDGE_CONTENT_TYPE = 'knowledge_entry';
+const KNOWLEDGE_PARENT_COLLECTION = 'conversation';
+let EmbeddingApiService;
 
 // Knowledge service operations: managing knowledge (text pieces) entries
 
@@ -17,8 +23,55 @@ const marked = require('marked');
 */
 
 class KnowledgeService {
-  constructor(knowledgeModel) {
+  constructor(knowledgeModel, embeddingApiService = null) {
     this.knowledgeModel = knowledgeModel;
+    this.embeddingApiService = embeddingApiService;
+  }
+
+  getEmbeddingService() {
+    if (!this.embeddingApiService) {
+      if (!EmbeddingApiService) {
+        EmbeddingApiService = require('./embeddingApiService');
+      }
+      this.embeddingApiService = new EmbeddingApiService();
+    }
+    return this.embeddingApiService;
+  }
+
+  buildEmbeddingText(knowledge) {
+    const tags = Array.isArray(knowledge.tags) ? knowledge.tags.join(', ') : '';
+    const parts = [
+      knowledge.title,
+      knowledge.contentMarkdown,
+      knowledge.category,
+      tags || '',
+    ];
+    return parts.filter(Boolean).join('\n\n').trim();
+  }
+
+  buildEmbeddingMetadata(knowledge) {
+    const documentId = knowledge?._id?.toString?.() || knowledge?._id || '';
+    return {
+      collectionName: KNOWLEDGE_COLLECTION,
+      documentId,
+      contentType: KNOWLEDGE_CONTENT_TYPE,
+      parentCollection: KNOWLEDGE_PARENT_COLLECTION,
+      parentId: knowledge?.originConversationId || null,
+    };
+  }
+
+  async syncKnowledgeEmbeddings(knowledge) {
+    if (!knowledge) return;
+
+    const text = this.buildEmbeddingText(knowledge);
+    if (!text) {
+      throw new Error('Knowledge entry is missing text to embed.');
+    }
+
+    const metadata = this.buildEmbeddingMetadata(knowledge);
+    const embeddingService = this.getEmbeddingService();
+    await embeddingService.embed([text], {}, [metadata]);
+    await embeddingService.embedHighQuality([text], {}, [metadata]);
   }
 
   async getKnowledgesById(k_id) {
@@ -59,6 +112,17 @@ class KnowledgeService {
       user_id,
     };
     const entry = await new this.knowledgeModel(knowledge_entry).save();
+    await this.syncKnowledgeEmbeddings(entry).catch((error) => {
+      logger.error('Failed to embed knowledge entry after creation', {
+        category: 'knowledge',
+        metadata: {
+          knowledgeId: entry._id?.toString(),
+          title,
+          user_id,
+          message: error?.message || error,
+        },
+      });
+    });
     return entry._id.toString();
   }
 
@@ -74,11 +138,56 @@ class KnowledgeService {
     entry.images = images;
 
     await entry.save();
+    await this.syncKnowledgeEmbeddings(entry).catch((error) => {
+      logger.error('Failed to embed knowledge entry after update', {
+        category: 'knowledge',
+        metadata: {
+          knowledgeId: k_id,
+          title,
+          message: error?.message || error,
+        },
+      });
+    });
     return k_id;
   }
 
   async deleteKnovledgeById(id) {
     return await this.knowledgeModel.deleteOne({_id: id});
+  }
+
+  async embedAllKnowledges(user_id) {
+    const knowledges = await this.getKnowledgesByUser(user_id);
+    const summary = {
+      totalCount: knowledges.length,
+      embeddedCount: 0,
+      failed: [],
+    };
+
+    for (let i = 0; i < knowledges.length; i++) {
+      const knowledge = knowledges[i];
+      try {
+        await this.syncKnowledgeEmbeddings(knowledge);
+        summary.embeddedCount += 1;
+      } catch (error) {
+        const knowledgeId = knowledge?._id?.toString?.() || knowledge?._id || '';
+        summary.failed.push({
+          knowledgeId,
+          title: knowledge?.title || '',
+          message: error?.message || 'Embedding failed.',
+        });
+        logger.error('Failed to embed knowledge entry', {
+          category: 'knowledge',
+          metadata: {
+            knowledgeId,
+            title: knowledge?.title,
+            user_id: knowledge?.user_id,
+            message: error?.message || error,
+          },
+        });
+      }
+    }
+
+    return summary;
   }
 }
 

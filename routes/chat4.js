@@ -35,6 +35,7 @@ router.post('/generate_custom_message', controller.generate_custom_message);
 
 // Knowledge database
 router.get('/knowledgelist', controller.knowledgelist);
+router.post('/knowledge/embed-all', controller.embed_all_knowledge);
 router.get('/viewknowledge/:id', controller.viewknowledge);
 router.post('/saveknowledge', controller.saveknowledge);
 router.get('/createknowledgefromchat/:id', controller.createknowledgefromchat);

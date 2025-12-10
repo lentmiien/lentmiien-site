@@ -148,4 +148,49 @@
 
     applyFilters(state);
   });
+
+  const updateEmbedStatus = (element, message, variant) => {
+    if (!element) return;
+
+    element.textContent = message || '';
+    element.classList.remove('is-success', 'is-error', 'is-warning');
+    if (variant) {
+      element.classList.add(variant);
+    }
+  };
+
+  ready(() => {
+    const embedButton = document.getElementById('embed_all_button');
+    const embedStatus = document.getElementById('embed_status');
+
+    if (!embedButton) return;
+
+    embedButton.addEventListener('click', async () => {
+      if (embedButton.disabled) return;
+
+      embedButton.disabled = true;
+      embedButton.textContent = 'Embedding...';
+      updateEmbedStatus(embedStatus, 'Embedding all knowledge entries...', null);
+
+      try {
+        const response = await fetch('/chat4/knowledge/embed-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          const message = result && result.error ? result.error : 'Embedding request failed.';
+          throw new Error(message);
+        }
+
+        const total = result.totalCount ?? 0;
+        const embedded = result.embeddedCount ?? 0;
+        const failed = result.failedCount ?? 0;
+        const failureNote = failed ? ` (${failed} failed)` : '';
+        updateEmbedStatus(embedStatus, `Embedded ${embedded}/${total} entries${failureNote}.`, failed ? 'is-warning' : 'is-success');
+      } catch (error) {
+        updateEmbedStatus(embedStatus, error.message || 'Failed to embed knowledge entries.', 'is-error');
+      } finally {
+        embedButton.disabled = false;
+        embedButton.textContent = 'Re-embed all knowledge';
+      }
+    });
+  });
 })();

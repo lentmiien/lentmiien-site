@@ -1,5 +1,11 @@
-In the OCR tool, on the `views/ocr_tool.pug` page, add a button for every OCR image in the displayed job, to add the layout text to the high quality embedding database, `embedHighQuality` in `services/embeddingApiService.js`, using the same metadata as the normal embedding. So I can choose exactly which data to save in the high quality database. If a job included 2+ images, I can choose to only embed 1 image to the high quality if I want.
+On the `views/knowledge_list.pug` page, I want to add a button, at the bottom, for embedding/re-embedding all the content in the knowledge database.
 
-Note: the normal embedding should continue work as previously, with no changes.
+Use the embedding service class (services/embeddingApiService.js) and embed all entries with both `embed` and `embedHighQuality`, including metadata for the knowledge database.
 
-codex resume 019b0701-97ab-7580-a16e-907c41dd2f0a
+Please refer to the OCR tool (controllers/ocrcontroller.js), for how I to use the embedding service class.
+
+For each knowledge entry, concatinate the `title`, `contentMarkdown`, `category` and `tags`, into a single string, and pass that as the string to embed, for both normal and high quality embeddings. Embed each knowledge entry one by one.
+
+Going forward, whenever a new knowledge entry is created, or an existing is updated, embed/re-embed that entry every time there is a change, with both normal and high quality embedding. So also update existing logic to call the embedding class when something is saved to the knowledge database.
+
+codex resume 019b071e-8964-7100-9f25-161099b46f70

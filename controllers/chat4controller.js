@@ -7,6 +7,7 @@ const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const TemplateService = require('../services/templateService');
 const KnowledgeService = require('../services/knowledgeService');
+const EmbeddingApiService = require('../services/embeddingApiService');
 const AgentService = require('../services/agentService');
 const BatchService = require('../services/batchService');
 const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel, AgentModel, BatchPromptModel, BatchRequestModel } = require('../database');
@@ -14,7 +15,8 @@ const { whisper, GetOpenAIModels } = require('../utils/ChatGPT');
 
 // Instantiate the services
 const messageService = new MessageService(Chat4Model, FileMetaModel);
-const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
+const embeddingApiService = new EmbeddingApiService();
+const knowledgeService = new KnowledgeService(Chat4KnowledgeModel, embeddingApiService);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 const agentService = new AgentService(AgentModel, conversationService, messageService);
@@ -282,6 +284,27 @@ exports.knowledgelist = async (req, res) => {
   });
 
   res.render("knowledge_list", { knowledges, knowledge_categories, knowledge_tags });
+};
+
+exports.embed_all_knowledge = async (req, res) => {
+  const user_id = req.user.name;
+
+  try {
+    const summary = await knowledgeService.embedAllKnowledges(user_id);
+    res.json({
+      ok: true,
+      totalCount: summary.totalCount,
+      embeddedCount: summary.embeddedCount,
+      failedCount: summary.failed.length,
+      failed: summary.failed,
+    });
+  } catch (error) {
+    logger.error('Failed to embed knowledge entries', {
+      category: 'knowledge',
+      metadata: { user_id, message: error?.message || error },
+    });
+    res.status(500).json({ ok: false, error: 'Unable to embed knowledge entries right now.' });
+  }
 };
 
 async function getImageDimensions(imagePath) {
