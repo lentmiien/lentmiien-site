@@ -38,6 +38,9 @@ block content
             label.form-label(for="reference_id") reference_id (optional)
             select#reference_id.form-select(name="reference_id")
               option(value="", selected=!form.referenceId) Default (no reference id)
+              option(value="lennart_en") Lennart (English)
+              option(value="popok_en") Popok (English)
+              option(value="anny_en") Anny (English)
               if form.referenceId
                 option(value=form.referenceId, selected)= form.referenceId
             small.form-text.text-muted Preset reference voices will appear here once they are available.
