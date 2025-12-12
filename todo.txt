@@ -1,7 +1,7 @@
-In the embedding search tool that I'm currently testing, at the page `views/admin_embedding_test.pug`, I'd like to return at most 1 search hit per unique data entry, so if for example a certain knowledge entry has 2+ text chunks in the top N results, I only want to display the first (top) entry, and just leave place for other entries below, instead of consuming multiple spots.
+I've added a new local speech to text (ASR) API. The API is accessible on the local network, through the URL 'http://192.168.0.20:8010', and I've added an API documentation file at `documentation/asr.md`.
 
-If both the Source and Parent metadata are identical, then it's the same entry, but if either of the values differ, then count is as a unique entry.
+Using the documentation file, add a test page on the admin route (controllers/admincontroller.js), for testing the API. Create a simple UI page, with options to upload an audio file for transcription, or record audio directly in the browser for transcription, with an input form set to default values. Then display the response to the user.
 
-While we are at it, I'd also like to add a date filter to the search, it can default at "all time", but allow the user to specify a start and end date, that filter the updated date of the embedding database entry.
+No need to integrate with other tools at this stage.
 
-codex resume 019b089a-741f-7731-848a-694f77badc57
+codex resume 019b1067-b3bb-7a62-8cbc-51b9f9a11eff

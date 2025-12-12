@@ -1,4 +1,5 @@
 const axios = require('axios');
+const FormData = require('form-data');
 const crypto = require('crypto');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
@@ -187,6 +188,16 @@ const EMBEDDING_SEARCH_TYPE_MAP = EMBEDDING_SEARCH_TYPES.reduce((acc, option) =>
   return acc;
 }, {});
 const EMBEDDING_DEFAULT_SEARCH_TYPE = EMBEDDING_SEARCH_TYPES[0].value;
+const ASR_API_BASE = process.env.ASR_API_BASE || 'http://192.168.0.20:8010';
+const ASR_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
+const ASR_DEFAULT_FORM = Object.freeze({
+  language: 'auto',
+  task: 'transcribe',
+  vadFilter: true,
+  beamSize: 5,
+  temperature: 1.0,
+  wordTimestamps: false,
+});
 const TTS_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
 const TOKENS_PER_500_CHARS = 1024;
 const MAX_NEW_TOKENS_DEFAULT = 1024;
@@ -1524,6 +1535,195 @@ exports.embedding_test_search = async (req, res) => {
       healthError,
       search: { form: searchForm, error: message },
     });
+  }
+};
+
+function defaultAsrForm() {
+  return { ...ASR_DEFAULT_FORM };
+}
+
+function parseBooleanOption(raw, defaultValue = false) {
+  if (raw === undefined || raw === null || raw === '') {
+    return defaultValue;
+  }
+  if (typeof raw === 'boolean') {
+    return raw;
+  }
+  const normalized = String(raw).toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return defaultValue;
+}
+
+function normalizeAsrForm(body = {}) {
+  const defaults = defaultAsrForm();
+  const language = typeof body.language === 'string' && body.language.trim() ? body.language.trim() : defaults.language;
+  const task = body.task === 'translate' ? 'translate' : defaults.task;
+  const beamSizeRaw = Number.parseInt(body.beam_size ?? body.beamSize, 10);
+  const beamSize = Number.isFinite(beamSizeRaw) && beamSizeRaw > 0 ? beamSizeRaw : defaults.beamSize;
+  const temperatureRaw = Number.parseFloat(body.temperature ?? body.temp);
+  const temperature = Number.isFinite(temperatureRaw) ? temperatureRaw : defaults.temperature;
+  const vadFilter = parseBooleanOption(body.vad_filter ?? body.vadFilter, defaults.vadFilter);
+  const wordTimestamps = parseBooleanOption(body.word_timestamps ?? body.wordTimestamps, defaults.wordTimestamps);
+
+  return {
+    language,
+    task,
+    vadFilter,
+    beamSize,
+    temperature,
+    wordTimestamps,
+  };
+}
+
+function buildAsrRequestInfo(file, form) {
+  return {
+    fileName: file?.originalname || 'audio.webm',
+    fileSize: Number.isFinite(file?.size) ? file.size : 0,
+    mimeType: file?.mimetype || null,
+    options: normalizeAsrForm(form),
+  };
+}
+
+function requestWantsJson(req) {
+  const accept = String(req.headers?.accept || '').toLowerCase();
+  return accept.includes('application/json') || accept.includes('text/json') || req.xhr;
+}
+
+function renderAsrTestPage(res, { form, result = null, error = null, requestInfo = null }) {
+  const normalizedForm = normalizeAsrForm(form);
+  return res.render('admin_asr_test', {
+    apiBase: ASR_API_BASE,
+    form: normalizedForm,
+    result,
+    error,
+    requestInfo,
+  });
+}
+
+async function transcribeAudioWithAsrApi(file, form) {
+  const normalized = normalizeAsrForm(form);
+  const requestUrl = `${ASR_API_BASE}/transcribe`;
+  const fileName = file?.originalname || 'audio.webm';
+  const requestMetadata = {
+    fileName,
+    fileSize: Number.isFinite(file?.size) ? file.size : 0,
+    mimeType: file?.mimetype || null,
+    options: normalized,
+  };
+
+  const formData = new FormData();
+  formData.append('file', file.buffer, {
+    filename: fileName,
+    contentType: file?.mimetype || 'application/octet-stream',
+  });
+  formData.append('language', normalized.language);
+  formData.append('task', normalized.task);
+  formData.append('vad_filter', String(normalized.vadFilter));
+  formData.append('beam_size', String(normalized.beamSize));
+  formData.append('temperature', String(normalized.temperature));
+  formData.append('word_timestamps', String(normalized.wordTimestamps));
+
+  try {
+    const response = await axios.post(requestUrl, formData, {
+      headers: formData.getHeaders(),
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      timeout: ASR_REQUEST_TIMEOUT_MS,
+    });
+
+    await recordApiDebugLog({
+      functionName: 'asr_test_transcribe',
+      requestUrl,
+      requestBody: requestMetadata,
+      responseHeaders: response.headers || null,
+      responseBody: response.data,
+    });
+
+    return { data: response.data, request: requestMetadata };
+  } catch (error) {
+    await recordApiDebugLog({
+      functionName: 'asr_test_transcribe',
+      requestUrl,
+      requestBody: requestMetadata,
+      responseHeaders: error?.response?.headers || null,
+      responseBody: error?.response?.data || error?.message || 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+exports.asr_test_page = (req, res) => {
+  const form = req.asrForm || defaultAsrForm();
+  const error = req.asrError || null;
+  return renderAsrTestPage(res, { form, error });
+};
+
+exports.asr_test_transcribe = async (req, res) => {
+  const form = normalizeAsrForm(req.body || {});
+  const wantsJson = requestWantsJson(req);
+  const file = req.file;
+
+  if (!file || !file.buffer) {
+    const message = req.asrError || 'Please upload or record an audio file to transcribe.';
+    if (wantsJson) {
+      return res.status(400).json({ error: message });
+    }
+    res.status(400);
+    return renderAsrTestPage(res, { form, error: message });
+  }
+
+  try {
+    const { data, request } = await transcribeAudioWithAsrApi(file, form);
+
+    logger.notice('Admin ASR test completed', {
+      category: 'admin_asr',
+      metadata: {
+        fileName: request.fileName,
+        fileSize: request.fileSize,
+        mimeType: request.mimeType,
+        language: request.options.language,
+        task: request.options.task,
+      },
+    });
+
+    if (wantsJson) {
+      return res.json({ result: data, request });
+    }
+
+    return renderAsrTestPage(res, { form, result: data, requestInfo: request });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    let message = 'Unable to transcribe audio.';
+
+    if (error?.response) {
+      const detail = typeof error.response.data === 'string' ? error.response.data.slice(0, 200) : '';
+      message = `ASR API returned ${error.response.status}. ${detail}`.trim();
+    } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+      message = `Unable to reach the ASR API at ${ASR_API_BASE}.`;
+    } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
+      message = `ASR API request timed out after ${ASR_REQUEST_TIMEOUT_MS}ms.`;
+    }
+
+    logger.error('Admin ASR test failed', {
+      category: 'admin_asr',
+      metadata: {
+        error: error?.message,
+        status: error?.response?.status,
+        code: error?.code,
+      },
+    });
+
+    if (wantsJson) {
+      return res.status(status).json({ error: message });
+    }
+
+    res.status(status);
+    return renderAsrTestPage(res, { form, error: message, requestInfo: buildAsrRequestInfo(file, form) });
   }
 };
 

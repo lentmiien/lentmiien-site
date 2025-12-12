@@ -25,6 +25,31 @@ const handleHtmlUpload = (req, res, next) => {
   });
 };
 
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024,
+  },
+});
+
+const handleAsrUpload = (req, res, next) => {
+  audioUpload.single('file')(req, res, (err) => {
+    if (err) {
+      const wantsJson = String(req.headers?.accept || '').includes('application/json');
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? 'Audio file exceeds the 25MB limit.'
+        : 'Unable to process the uploaded audio.';
+      if (wantsJson) {
+        return res.status(400).json({ error: message });
+      }
+      req.asrError = message;
+      res.status(400);
+      return controller.asr_test_page(req, res, next);
+    }
+    return controller.asr_test_transcribe(req, res, next);
+  });
+};
+
 /* GET home page. */
 router.get('/', controller.manage_users);
 router.post('/set_type', controller.set_type);
@@ -52,6 +77,9 @@ router.post('/html-pages/upload-text', controller.create_html_page_from_text);
 router.post('/html-pages/upload-file', handleHtmlUpload);
 router.post('/html-pages/delete', controller.delete_html_page);
 router.post('/html-pages/rating', controller.update_html_page_rating);
+
+router.get('/asr-test', controller.asr_test_page);
+router.post('/asr-test', handleAsrUpload);
 
 router.get('/tts-test', controller.tts_test_page);
 router.post('/tts-test', controller.tts_test_generate);

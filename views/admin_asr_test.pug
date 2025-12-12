@@ -1,0 +1,325 @@
+extends layout
+
+block content
+  .row
+    .col-lg-8
+      h1.mb-3 ASR API Test
+      p.text-muted.mb-4
+        | Send audio to the local Whisper service at 
+        code= apiBase
+        |  (/transcribe). Defaults tuned for reliability: temperature 1.0, beam_size 5, VAD on.
+      if error
+        .alert.alert-danger(role="alert")= error
+      if result
+        .alert.alert-success(role="alert") Transcript ready. See the response panel below.
+
+      form#asr-upload-form.card.mb-4(method="post", action="/admin/asr-test", enctype="multipart/form-data")
+        .card-body
+          h5.mb-3 Upload and transcribe
+          .mb-3
+            label.form-label(for="asr-file") Audio file
+            input#asr-file.form-control(type="file", name="file", accept="audio/*", required)
+            small.form-text.text-muted Max 25MB. Supports mp3, wav, m4a, flac, ogg, webm, etc.
+          .row
+            .col-md-6.mb-3
+              label.form-label(for="asr-language") language
+              input#asr-language.form-control(type="text", name="language", value=form.language || 'auto', placeholder="auto")
+              small.form-text.text-muted Use auto or an ISO code (en, ja, sv, ...).
+            .col-md-6.mb-3
+              label.form-label(for="asr-task") task
+              select#asr-task.form-select(name="task")
+                option(value="transcribe", selected=form.task !== 'translate') transcribe
+                option(value="translate", selected=form.task === 'translate') translate
+          .row
+            .col-md-4.mb-3
+              label.form-label(for="asr-temperature") temperature
+              input#asr-temperature.form-control(type="number", step="0.1", name="temperature", value=form.temperature || 1)
+              small.form-text.text-muted Default 1.0 helps avoid repetitive endings.
+            .col-md-4.mb-3
+              label.form-label(for="asr-beam-size") beam_size
+              input#asr-beam-size.form-control(type="number", min="1", step="1", name="beam_size", value=form.beamSize || 5)
+              small.form-text.text-muted Default 5.
+            .col-md-4.mb-3
+              label.form-label(for="asr-vad") vad_filter
+              select#asr-vad.form-select(name="vad_filter")
+                option(value="true", selected=form.vadFilter !== false) true
+                option(value="false", selected=form.vadFilter === false) false
+              small.form-text.text-muted Turn off only if VAD trims very short clips.
+          .row
+            .col-md-6.mb-3
+              label.form-label(for="asr-word-ts") word_timestamps
+              select#asr-word-ts.form-select(name="word_timestamps")
+                option(value="false", selected=form.wordTimestamps !== true) false
+                option(value="true", selected=form.wordTimestamps === true) true
+              small.form-text.text-muted Enable to include per-word timestamps.
+            .col-md-6.mb-3.d-flex.align-items-end
+              button.btn.btn-primary(type="submit") Transcribe file
+
+      .card.mb-4
+        .card-body
+          h5.mb-3 Record in browser
+          p.text-muted.mb-2 Use your mic to capture audio and send it to the same /transcribe endpoint.
+          .d-flex.flex-wrap.gap-2.mb-3
+            button#asr-record-start.btn.btn-outline-primary(type="button") Start recording
+            button#asr-record-stop.btn.btn-outline-secondary(type="button", disabled) Stop
+            button#asr-record-send.btn.btn-success(type="button", disabled) Transcribe recording
+          p#asr-recording-status.text-muted.mb-2 Ready to record.
+          audio#asr-recording-preview.d-none.w-100.mb-2(controls)
+          .text-danger.small#asr-recording-error
+
+      .card#asr-response-card
+        .card-body
+          h5.mb-3 Response
+          p#asr-response-placeholder.text-muted(class=result ? 'd-none' : '') Submit an audio file or recording to see the transcript.
+          #asr-response-content(class=result ? '' : 'd-none')
+            p.small.text-muted#asr-request-meta
+              if requestInfo
+                - const sizeLabel = requestInfo.fileSize ? `${(requestInfo.fileSize / 1024 / 1024).toFixed(2).replace(/\.00$/, '')} MB` : '0 MB';
+                | #{requestInfo.fileName} (#{sizeLabel}) | task: #{requestInfo.options.task} | language: #{requestInfo.options.language} | vad_filter: #{requestInfo.options.vadFilter} | beam_size: #{requestInfo.options.beamSize} | temperature: #{requestInfo.options.temperature}
+              else
+                | Request details will appear after the first transcription.
+            .d-flex.flex-wrap.gap-2.mb-3
+              span.badge.text-bg-light.border
+                | language: 
+                span#asr-response-language= result && result.language ? result.language : 'n/a'
+              span.badge.text-bg-light.border
+                | duration: 
+                span#asr-response-duration= result && result.duration ? `${result.duration}s` : 'n/a'
+              span.badge.text-bg-light.border
+                | task: 
+                span#asr-response-task= requestInfo && requestInfo.options ? requestInfo.options.task : form.task
+              span.badge.text-bg-light.border
+                | vad_filter: 
+                span#asr-response-vad= requestInfo && requestInfo.options ? requestInfo.options.vadFilter : (form.vadFilter ? 'true' : 'false')
+            h6.mb-2 Transcript
+            textarea#asr-response-text.form-control(readonly, rows="6")= result && result.text ? result.text : ''
+            h6.mt-3.mb-2 Raw response
+            pre#asr-response-json.mb-0(style="max-height: 320px; overflow:auto")= result ? JSON.stringify(result, null, 2) : ''
+    .col-lg-4
+      .card.mb-4
+        .card-body
+          h5.mb-3 Recommended defaults
+          ul.mb-0
+            li temperature 1.0 (helps avoid repetition)
+            li beam_size 5
+            li vad_filter true (disable only for tiny clips)
+            li language auto unless you know the target language
+            li task transcribe (use translate to force English)
+      .card
+        .card-body
+          h5.mb-3 Tips
+          ul.mb-0
+            li Keep clips under 25MB for this tester.
+            li Word timestamps are off by default to keep responses small.
+            li The API also exposes /health and /diag for quick checks.
+
+  script.
+    (() => {
+      const responseCard = document.getElementById('asr-response-card');
+      const responsePlaceholder = document.getElementById('asr-response-placeholder');
+      const responseContent = document.getElementById('asr-response-content');
+      const responseText = document.getElementById('asr-response-text');
+      const responseJson = document.getElementById('asr-response-json');
+      const responseLanguage = document.getElementById('asr-response-language');
+      const responseDuration = document.getElementById('asr-response-duration');
+      const responseTask = document.getElementById('asr-response-task');
+      const responseVad = document.getElementById('asr-response-vad');
+      const requestMeta = document.getElementById('asr-request-meta');
+      const recordingStatus = document.getElementById('asr-recording-status');
+      const recordingError = document.getElementById('asr-recording-error');
+      const previewAudio = document.getElementById('asr-recording-preview');
+      const recordBtn = document.getElementById('asr-record-start');
+      const stopBtn = document.getElementById('asr-record-stop');
+      const sendBtn = document.getElementById('asr-record-send');
+      const languageInput = document.getElementById('asr-language');
+      const taskInput = document.getElementById('asr-task');
+      const tempInput = document.getElementById('asr-temperature');
+      const beamInput = document.getElementById('asr-beam-size');
+      const vadInput = document.getElementById('asr-vad');
+      const tsInput = document.getElementById('asr-word-ts');
+      let mediaRecorder = null;
+      let recordedChunks = [];
+      let recordedBlob = null;
+      let previewUrl = null;
+
+      function formatSize(bytes) {
+        const size = Number(bytes) || 0;
+        if (size <= 0) return '0 B';
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1).replace(/\.0$/, '')} KB`;
+        return `${(size / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
+      }
+
+      function setRecordingStatus(message, isError = false) {
+        if (recordingStatus) recordingStatus.textContent = message || '';
+        if (recordingError) recordingError.textContent = isError ? message : '';
+        if (!isError && recordingError) recordingError.textContent = '';
+      }
+
+      function renderResponse(result, request) {
+        if (!responseCard || !responsePlaceholder || !responseContent) return;
+        responsePlaceholder.classList.add('d-none');
+        responseContent.classList.remove('d-none');
+        if (responseText) responseText.value = result && result.text ? result.text : '';
+        if (responseLanguage) responseLanguage.textContent = (result && result.language) || 'n/a';
+        if (responseDuration) {
+          if (result && typeof result.duration === 'number') {
+            responseDuration.textContent = `${result.duration.toFixed(2)}s`;
+          } else if (result && result.duration) {
+            responseDuration.textContent = `${result.duration}s`;
+          } else {
+            responseDuration.textContent = 'n/a';
+          }
+        }
+        if (responseTask) responseTask.textContent = request?.options?.task || (taskInput ? taskInput.value : 'transcribe');
+        if (responseVad) responseVad.textContent = String(request?.options?.vadFilter ?? (vadInput ? vadInput.value : 'true'));
+        if (responseJson) {
+          try {
+            responseJson.textContent = JSON.stringify(result || {}, null, 2);
+          } catch (err) {
+            responseJson.textContent = '';
+          }
+        }
+        if (requestMeta) {
+          const fileLabel = request?.fileName || 'audio';
+          const sizeLabel = typeof request?.fileSize === 'number' ? formatSize(request.fileSize) : '';
+          const language = request?.options?.language || (languageInput ? languageInput.value : 'auto');
+          const task = request?.options?.task || (taskInput ? taskInput.value : 'transcribe');
+          const vad = request?.options?.vadFilter ?? (vadInput ? vadInput.value : 'true');
+          const beam = request?.options?.beamSize ?? (beamInput ? beamInput.value : '');
+          const temp = request?.options?.temperature ?? (tempInput ? tempInput.value : '');
+          const parts = [
+            `${fileLabel}${sizeLabel ? ` (${sizeLabel})` : ''}`,
+            `task: ${task}`,
+            `language: ${language}`,
+            `vad_filter: ${vad}`,
+            beam ? `beam_size: ${beam}` : null,
+            temp ? `temperature: ${temp}` : null,
+          ].filter(Boolean);
+          requestMeta.textContent = parts.join(' | ');
+        }
+      }
+
+      function collectOptions() {
+        return {
+          language: languageInput ? languageInput.value : '',
+          task: taskInput ? taskInput.value : '',
+          temperature: tempInput ? tempInput.value : '',
+          beam_size: beamInput ? beamInput.value : '',
+          vad_filter: vadInput ? vadInput.value : '',
+          word_timestamps: tsInput ? tsInput.value : '',
+        };
+      }
+
+      function buildFormData(blob) {
+        const fd = new FormData();
+        const options = collectOptions();
+        Object.entries(options).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            fd.append(key, value);
+          }
+        });
+        if (blob) {
+          fd.append('file', blob, 'recording.webm');
+        }
+        return fd;
+      }
+
+      async function submitRecording() {
+        if (!recordedBlob) {
+          setRecordingStatus('Record something first.', true);
+          return;
+        }
+        setRecordingStatus('Sending recording to ASR...');
+        sendBtn.disabled = true;
+        try {
+          const res = await fetch('/admin/asr-test', {
+            method: 'POST',
+            headers: { Accept: 'application/json' },
+            body: buildFormData(recordedBlob),
+          });
+          let payload = null;
+          try {
+            payload = await res.json();
+          } catch (err) {
+            payload = null;
+          }
+          if (!res.ok) {
+            throw new Error((payload && payload.error) || `Request failed (${res.status})`);
+          }
+          renderResponse(payload.result, payload.request);
+          setRecordingStatus('Transcript ready.');
+        } catch (err) {
+          setRecordingStatus(err?.message || 'Unable to transcribe recording.', true);
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+
+      function stopRecording() {
+        if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+          return;
+        }
+        mediaRecorder.stop();
+      }
+
+      function startRecording() {
+        if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setRecordingStatus('Recording is not supported in this browser.', true);
+          return;
+        }
+        sendBtn.disabled = true;
+        recordedBlob = null;
+        recordedChunks = [];
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = null;
+        }
+        if (previewAudio) {
+          previewAudio.classList.add('d-none');
+          previewAudio.removeAttribute('src');
+          if (typeof previewAudio.load === 'function') {
+            previewAudio.load();
+          }
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = (event) => {
+            if (event?.data && event.data.size > 0) {
+              recordedChunks.push(event.data);
+            }
+          };
+          mediaRecorder.onstop = () => {
+            if (recordedChunks.length) {
+              recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+              if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+              }
+              previewUrl = URL.createObjectURL(recordedBlob);
+              if (previewAudio) {
+                previewAudio.classList.remove('d-none');
+                previewAudio.src = previewUrl;
+              }
+              sendBtn.disabled = false;
+              setRecordingStatus('Recording ready. Click "Transcribe recording" to send.');
+            } else {
+              setRecordingStatus('No audio captured. Try again.', true);
+            }
+            stream.getTracks().forEach((track) => track.stop());
+            recordBtn.disabled = false;
+            stopBtn.disabled = true;
+          };
+          mediaRecorder.start();
+          setRecordingStatus('Recording... press Stop when finished.');
+          recordBtn.disabled = true;
+          stopBtn.disabled = false;
+          sendBtn.disabled = true;
+        }).catch((err) => {
+          setRecordingStatus(err?.message || 'Microphone permission was denied.', true);
+        });
+      }
+
+      if (recordBtn) recordBtn.addEventListener('click', startRecording);
+      if (stopBtn) stopBtn.addEventListener('click', stopRecording);
+      if (sendBtn) sendBtn.addEventListener('click', submitRecording);
+    })();
