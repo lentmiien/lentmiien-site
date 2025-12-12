@@ -266,6 +266,7 @@ block content
         option(value="low") Low 
         option(value="medium") Medium 
         option(value="high") High 
+        option(value="xhigh") Extra High *Only GPT 5.2
       label.chat5-input-label(for="verbosity") Verbosity 
       select#verbosity.form-control(name="verbosity") 
         option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})
