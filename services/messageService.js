@@ -1081,6 +1081,7 @@ class MessageService {
     };
     const msg = new Chat5Model(message);
     await msg.save();
+    await this.syncTextEmbedding({ message: msg, conversationId: conversation?._id });
     return {response_id: null, msg};
   }
 
