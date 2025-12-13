@@ -1,4 +1,7 @@
-On the `views/chat5_chat.pug` page, next to the 'Copy' button for each message, but only for "text" type messages, add an 'Embed HQ' button. You need to add a new socket.io event for this button to instruct the server to add the particular message to my high quality embedding database.
-In the `socket_io/chat5_5/chat5_5handler.js` handler, you can forward the embedding request to the message service class, create a new function there as well, that has access to the embedding service class, and be sure to input both the conversation id and message id, as both are needed in the embedding database metadata, message id is also needed for fetching the message data (text) to embed.
+On the `views/chat5_chat.pug` page, I want to add a voice input mode. It can be something like, user press the button, speak, then press the button again, then the audio is uploaded to the server, transcribed, returned to the user, and appended to the prompt input text field.
+Add the button near the input field, appropriate socket.io events in `socket_io/chat5_5/chat5_5handler.js`, and use the transcription API to extract the text from the audio.
 
-codex resume 019b1853-6370-7363-a963-303beb529c1d
+Please refer to the code in `controllers/asrcontroller.js`, for details on the transcription API, at URL 'http://192.168.0.20:8010'.
+Maybe you could mode the API code to a new service class in the 'services' folder, for easier reusing and maintaining the code, etc.
+
+codex resume 019b1863-8e2a-7550-97b5-8af87b85b90f

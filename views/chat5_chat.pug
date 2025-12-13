@@ -206,6 +206,9 @@ block content
       .chat5-draft-actions
         button#draftPromptButton.btn.btn-outline-info.btn-sm(type="button") Draft prompt
         small.text-muted Drafts use the cydonia-24b-q4_k_m:latest Ollama model and only update the editor.
+      .chat5-voice-controls.d-flex.flex-wrap.align-items-center.gap-2.mb-2
+        button#chat5VoiceButton.btn.btn-outline-primary.btn-sm(type="button") Start voice input
+        span#chat5VoiceStatus.small.text-muted Ready for voice input.
     #message.chat5-editor
       // Editor is initialized via JS
     p#chat5CharCounter.small.text-muted.mt-1 0 chars · ~0 tokens (1024 per 500 chars)

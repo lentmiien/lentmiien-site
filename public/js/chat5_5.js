@@ -2,6 +2,8 @@
 const socket = io();
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const VOICE_MAX_BYTES = 12 * 1024 * 1024;
+const VOICE_MAX_DURATION_MS = 120000;
 
 // Setup markdown editor
 const editor = new toastui.Editor({
@@ -21,6 +23,15 @@ const draftStorageKeys = {
 const TTS_TOKENS_PER_500 = 1024;
 const TTS_MAX_TOKENS = 8192;
 const charCounterEl = document.getElementById('chat5CharCounter');
+const voiceButton = document.getElementById('chat5VoiceButton');
+const voiceStatus = document.getElementById('chat5VoiceStatus');
+const voiceState = {
+  recorder: null,
+  stream: null,
+  chunks: [],
+  timeout: null,
+  busy: false,
+};
 
 function estimateTtsTokens(text) {
   const length = typeof text === 'string' ? text.length : 0;
@@ -377,6 +388,171 @@ function GenerateTTS() {
       alert(resp && resp.message ? resp.message : 'Unable to generate TTS audio.');
     }
   });
+}
+
+function setVoiceUi({ recording = false, busy = false, message } = {}) {
+  voiceState.busy = busy;
+  if (voiceButton) {
+    voiceButton.disabled = busy;
+    voiceButton.textContent = recording ? 'Stop & transcribe' : (busy ? 'Transcribing...' : 'Start voice input');
+    voiceButton.classList.toggle('btn-danger', recording);
+    voiceButton.classList.toggle('btn-outline-primary', !recording);
+  }
+  if (voiceStatus) {
+    voiceStatus.textContent = message || (recording ? 'Recording... click to stop.' : 'Ready for voice input.');
+  }
+}
+
+function resetVoiceState() {
+  if (voiceState.timeout) {
+    clearTimeout(voiceState.timeout);
+    voiceState.timeout = null;
+  }
+  if (voiceState.recorder) {
+    voiceState.recorder.ondataavailable = null;
+    voiceState.recorder.onstop = null;
+    voiceState.recorder.onerror = null;
+  }
+  voiceState.recorder = null;
+  voiceState.chunks = [];
+  voiceState.busy = false;
+  if (voiceState.stream) {
+    voiceState.stream.getTracks().forEach((track) => track.stop());
+    voiceState.stream = null;
+  }
+}
+
+function appendTranscriptToEditor(text) {
+  if (!editor || typeof editor.getMarkdown !== 'function' || typeof editor.setMarkdown !== 'function') return;
+  const current = editor.getMarkdown();
+  const prefix = current && !current.endsWith('\n') ? '\n' : '';
+  const next = current ? `${current}${prefix}${text}` : text;
+  editor.setMarkdown(next);
+  updatePromptCharCounter();
+}
+
+async function handleVoiceRecordingStopped() {
+  const mimeType = (voiceState.recorder && voiceState.recorder.mimeType) ? voiceState.recorder.mimeType : 'audio/webm';
+  const chunks = voiceState.chunks ? [...voiceState.chunks] : [];
+  resetVoiceState();
+
+  if (!chunks.length) {
+    setVoiceUi({ recording: false, busy: false, message: 'No audio captured. Try again.' });
+    return;
+  }
+
+  const blob = new Blob(chunks, { type: mimeType });
+  if (!blob || blob.size === 0) {
+    setVoiceUi({ recording: false, busy: false, message: 'No audio captured. Try again.' });
+    return;
+  }
+
+  if (blob.size > VOICE_MAX_BYTES) {
+    const sizeMb = (blob.size / (1024 * 1024)).toFixed(1);
+    const maxMb = (VOICE_MAX_BYTES / (1024 * 1024)).toFixed(1);
+    setVoiceUi({ recording: false, busy: false, message: `Clip too large (${sizeMb}MB). Max ${maxMb}MB.` });
+    return;
+  }
+
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    sendVoiceForTranscription(arrayBuffer, blob.type || mimeType);
+  } catch (error) {
+    console.error('Unable to read recorded audio', error);
+    setVoiceUi({ recording: false, busy: false, message: 'Unable to read recording.' });
+  }
+}
+
+function sendVoiceForTranscription(buffer, mimeType) {
+  if (!socket || typeof socket.emit !== 'function') {
+    setVoiceUi({ recording: false, busy: false, message: 'Socket unavailable.' });
+    return;
+  }
+  setVoiceUi({ recording: false, busy: true, message: 'Transcribing...' });
+  const conversation_id = getCurrentConversationId();
+  socket.emit('chat5-transcribe-audio', {
+    conversation_id,
+    buffer,
+    mimetype: mimeType || 'audio/webm',
+    name: `voice_${Date.now()}.webm`,
+  }, (resp) => {
+    setVoiceUi({ recording: false, busy: false, message: resp && resp.ok ? 'Transcript appended to editor.' : 'Transcription failed.' });
+    if (!resp || resp.ok !== true) {
+      alert(resp && resp.message ? resp.message : 'Unable to transcribe audio right now.');
+      return;
+    }
+    const transcript = typeof resp.text === 'string' ? resp.text.trim() : '';
+    if (!transcript) {
+      alert('No transcript returned from audio.');
+      return;
+    }
+    appendTranscriptToEditor(transcript);
+  });
+}
+
+async function startVoiceRecording() {
+  if (voiceState.busy) return;
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    alert('Voice input is not supported in this browser.');
+    return;
+  }
+  if (typeof MediaRecorder === 'undefined') {
+    alert('Voice input is not supported in this browser.');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const options = {};
+    if (typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/webm')) {
+      options.mimeType = 'audio/webm';
+    }
+    const recorder = Object.keys(options).length ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+    voiceState.stream = stream;
+    voiceState.recorder = recorder;
+    voiceState.chunks = [];
+
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        voiceState.chunks.push(event.data);
+      }
+    };
+    recorder.onerror = () => {
+      setVoiceUi({ recording: false, busy: false, message: 'Recording error. Try again.' });
+      resetVoiceState();
+    };
+    recorder.onstop = () => {
+      handleVoiceRecordingStopped();
+    };
+
+    recorder.start();
+    voiceState.timeout = setTimeout(() => {
+      if (voiceState.recorder && voiceState.recorder.state === 'recording') {
+        voiceState.recorder.stop();
+      }
+    }, VOICE_MAX_DURATION_MS);
+
+    setVoiceUi({ recording: true, busy: false, message: 'Recording... click to stop.' });
+  } catch (error) {
+    console.error('Unable to start voice input', error);
+    setVoiceUi({ recording: false, busy: false, message: 'Microphone access denied.' });
+    resetVoiceState();
+  }
+}
+
+function stopVoiceRecording() {
+  if (voiceState.recorder && voiceState.recorder.state === 'recording') {
+    voiceState.recorder.stop();
+    setVoiceUi({ recording: false, busy: true, message: 'Processing recording...' });
+  }
+}
+
+function toggleVoiceRecording() {
+  if (voiceState.busy) return;
+  if (voiceState.recorder && voiceState.recorder.state === 'recording') {
+    stopVoiceRecording();
+  } else {
+    startVoiceRecording();
+  }
 }
 
 function QueueBatch(includePrompt) {
@@ -980,6 +1156,11 @@ document.addEventListener('DOMContentLoaded', () => {
     ttsBtn.addEventListener('click', GenerateTTS);
   }
   updatePromptCharCounter();
+});
+document.addEventListener('DOMContentLoaded', () => {
+  if (voiceButton) {
+    voiceButton.addEventListener('click', toggleVoiceRecording);
+  }
 });
 
 

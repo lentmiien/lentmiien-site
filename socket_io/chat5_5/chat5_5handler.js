@@ -2,6 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const context = require('./chat5_5context');
 const logger = require('../../utils/logger');
+const AsrApiService = require('../../services/asrApiService');
+
+const asrApiService = new AsrApiService();
 
 module.exports = async function registerChat5_5Handlers({
   io,
@@ -44,6 +47,7 @@ module.exports = async function registerChat5_5Handlers({
   const HISTORY_DEFAULT_DAYS = 30;
   const HISTORY_DEFAULT_LIMIT = 100;
   const HISTORY_MAX_LIMIT = 500;
+  const VOICE_MAX_BYTES = 12 * 1024 * 1024;
 
   function ensureDate(value) {
     if (value === null || value === undefined || value === '') return null;
@@ -795,6 +799,94 @@ module.exports = async function registerChat5_5Handlers({
     } catch (error) {
       logger.error('Failed to generate TTS message', error);
       respondWithError(eventName, 'Failed to generate TTS audio.', { ack, details: error.message, adjustments });
+    }
+  });
+
+  socket.on('chat5-transcribe-audio', async (raw = {}, ack) => {
+    const eventName = 'chat5-transcribe-audio';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for audio transcription.', { ack });
+        return;
+      }
+
+      const conversationId = typeof raw.conversation_id === 'string' && raw.conversation_id.trim()
+        ? raw.conversation_id.trim()
+        : (typeof raw.conversationId === 'string' ? raw.conversationId.trim() : '');
+      const providedName = normalizeStringOption(raw.name, '', 'name', adjustments, { allowEmpty: true });
+      const fileName = providedName || `chat5_voice_${Date.now()}.webm`;
+      const mimeType = normalizeStringOption(raw.mimetype ?? raw.mimeType, 'audio/webm', 'mimetype', adjustments);
+
+      let fileBuffer = null;
+      const bufferInput = raw.buffer;
+      if (Buffer.isBuffer(bufferInput)) {
+        fileBuffer = bufferInput;
+      } else if (bufferInput instanceof ArrayBuffer) {
+        fileBuffer = Buffer.from(new Uint8Array(bufferInput));
+      } else if (ArrayBuffer.isView(bufferInput)) {
+        fileBuffer = Buffer.from(bufferInput.buffer, bufferInput.byteOffset, bufferInput.byteLength);
+      } else if (typeof bufferInput === 'string') {
+        try {
+          fileBuffer = Buffer.from(bufferInput, 'base64');
+          pushAdjustment(adjustments, 'buffer', 'Decoded base64 string into binary buffer.', 'info');
+        } catch (err) {
+          logger.error('Failed to decode base64 audio buffer', err);
+          respondWithError(eventName, 'Invalid base64 audio data.', { ack, adjustments });
+          return;
+        }
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        respondWithError(eventName, 'Audio data is required for transcription.', { ack, adjustments });
+        return;
+      }
+
+      if (fileBuffer.length > VOICE_MAX_BYTES) {
+        const sizeMb = (fileBuffer.length / (1024 * 1024)).toFixed(1);
+        const maxMb = (VOICE_MAX_BYTES / (1024 * 1024)).toFixed(1);
+        respondWithError(eventName, `Audio clip is too large (${sizeMb}MB). Max allowed is ${maxMb}MB.`, { ack, adjustments });
+        return;
+      }
+
+      const options = isPlainObject(raw.options) ? raw.options : {};
+      const { data, request } = await asrApiService.transcribeBuffer({
+        buffer: fileBuffer,
+        originalName: fileName,
+        mimetype: mimeType,
+        options,
+      });
+
+      const text = typeof data?.text === 'string' ? data.text.trim() : '';
+      const payload = {
+        ok: true,
+        text,
+        language: data?.language || null,
+        duration: typeof data?.duration === 'number' ? data.duration : null,
+        request,
+      };
+
+      logger.notice('Voice input transcribed for chat5', {
+        category: 'chat5_voice',
+        metadata: {
+          conversationId: conversationId || null,
+          fileName,
+          fileSize: fileBuffer.length,
+          language: payload.language,
+          duration: payload.duration,
+          textPreview: text ? text.slice(0, 120) : '',
+        },
+      });
+
+      if (typeof ack === 'function') {
+        ack(payload);
+      } else {
+        socket.emit('chat5-transcribe-audio:result', payload);
+      }
+      emitAdjustments(eventName, adjustments, { conversationId: conversationId || null });
+    } catch (error) {
+      logger.error('Failed to transcribe audio for chat5', error);
+      respondWithError(eventName, 'Unable to transcribe audio.', { ack, details: error.message, adjustments });
     }
   });
 

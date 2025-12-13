@@ -1,72 +1,23 @@
 const path = require('path');
 const fs = require('fs/promises');
-const axios = require('axios');
-const FormData = require('form-data');
 const { randomUUID } = require('crypto');
 const logger = require('../utils/logger');
-const { createApiDebugLogger } = require('../utils/apiDebugLogger');
+const AsrApiService = require('../services/asrApiService');
 const EmbeddingApiService = require('../services/embeddingApiService');
 const { AsrJob } = require('../database');
 
-const ASR_API_BASE = process.env.ASR_API_BASE || 'http://192.168.0.20:8010';
-const ASR_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
+const asrApiService = new AsrApiService();
 const AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'audio');
 const PAGE_SIZE = 10;
-const JS_FILE_NAME = 'controllers/asrcontroller.js';
-const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const embeddingApiService = new EmbeddingApiService();
+const ASR_REQUEST_TIMEOUT_MS = asrApiService.requestTimeoutMs;
 const ASR_EMBED_COLLECTION = 'asr_jobs';
 const ASR_EMBED_CONTENT_TYPE = 'asr_transcript';
 const ASR_EMBED_PARENT = 'asr';
 
-const ASR_DEFAULT_FORM = Object.freeze({
-  language: 'auto',
-  task: 'transcribe',
-  vadFilter: true,
-  beamSize: 5,
-  temperature: 1.0,
-  wordTimestamps: false,
-});
-
+const ASR_DEFAULT_FORM = Object.freeze(asrApiService.defaultForm());
 const defaultForm = () => ({ ...ASR_DEFAULT_FORM });
-
-function parseBooleanOption(raw, defaultValue = false) {
-  if (raw === undefined || raw === null || raw === '') {
-    return defaultValue;
-  }
-  if (typeof raw === 'boolean') {
-    return raw;
-  }
-  const normalized = String(raw).toLowerCase();
-  if (['true', '1', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['false', '0', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-  return defaultValue;
-}
-
-function normalizeAsrForm(body = {}) {
-  const defaults = defaultForm();
-  const language = typeof body.language === 'string' && body.language.trim() ? body.language.trim() : defaults.language;
-  const task = body.task === 'translate' ? 'translate' : defaults.task;
-  const beamSizeRaw = Number.parseInt(body.beam_size ?? body.beamSize, 10);
-  const beamSize = Number.isFinite(beamSizeRaw) && beamSizeRaw > 0 ? beamSizeRaw : defaults.beamSize;
-  const temperatureRaw = Number.parseFloat(body.temperature ?? body.temp);
-  const temperature = Number.isFinite(temperatureRaw) ? temperatureRaw : defaults.temperature;
-  const vadFilter = parseBooleanOption(body.vad_filter ?? body.vadFilter, defaults.vadFilter);
-  const wordTimestamps = parseBooleanOption(body.word_timestamps ?? body.wordTimestamps, defaults.wordTimestamps);
-
-  return {
-    language,
-    task,
-    vadFilter,
-    beamSize,
-    temperature,
-    wordTimestamps,
-  };
-}
+const normalizeAsrForm = (body = {}) => asrApiService.normalizeOptions(body);
 
 function requestWantsJson(req) {
   const accept = String(req.headers?.accept || '').toLowerCase();
@@ -184,55 +135,12 @@ async function queryJobs(pageRaw = 1) {
 }
 
 async function transcribeAudioWithAsrApi(file, form) {
-  const normalized = normalizeAsrForm(form);
-  const requestUrl = `${ASR_API_BASE}/transcribe`;
-  const fileName = file?.originalname || 'audio.webm';
-  const requestMetadata = {
-    fileName,
-    fileSize: Number.isFinite(file?.size) ? file.size : file?.buffer?.length || 0,
-    mimeType: file?.mimetype || null,
+  return asrApiService.transcribeBuffer({
+    buffer: file?.buffer,
+    originalName: file?.originalname,
+    mimetype: file?.mimetype,
     options: normalized,
-  };
-
-  const formData = new FormData();
-  formData.append('file', file.buffer, {
-    filename: fileName,
-    contentType: file?.mimetype || 'application/octet-stream',
   });
-  formData.append('language', normalized.language);
-  formData.append('task', normalized.task);
-  formData.append('vad_filter', String(normalized.vadFilter));
-  formData.append('beam_size', String(normalized.beamSize));
-  formData.append('temperature', String(normalized.temperature));
-  formData.append('word_timestamps', String(normalized.wordTimestamps));
-
-  try {
-    const response = await axios.post(requestUrl, formData, {
-      headers: formData.getHeaders(),
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      timeout: ASR_REQUEST_TIMEOUT_MS,
-    });
-
-    await recordApiDebugLog({
-      functionName: 'asr_transcribe',
-      requestUrl,
-      requestBody: requestMetadata,
-      responseHeaders: response.headers || null,
-      responseBody: response.data,
-    });
-
-    return { data: response.data, request: requestMetadata };
-  } catch (error) {
-    await recordApiDebugLog({
-      functionName: 'asr_transcribe',
-      requestUrl,
-      requestBody: requestMetadata,
-      responseHeaders: error?.response?.headers || null,
-      responseBody: error?.response?.data || error?.message || 'Unknown error',
-    });
-    throw error;
-  }
 }
 
 exports.renderTool = async (req, res) => {
@@ -425,7 +333,7 @@ exports.transcribe = async (req, res) => {
       const detail = typeof error.response.data === 'string' ? error.response.data.slice(0, 200) : '';
       message = `ASR API returned ${error.response.status}. ${detail}`.trim();
     } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-      message = `Unable to reach the ASR API at ${ASR_API_BASE}.`;
+      message = `Unable to reach the ASR API at ${asrApiService.apiBase}.`;
     } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
       status = 504;
       message = `ASR API request timed out after ${ASR_REQUEST_TIMEOUT_MS}ms.`;
