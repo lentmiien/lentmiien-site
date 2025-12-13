@@ -1,7 +1,17 @@
-I've added a new local speech to text (ASR) API. The API is accessible on the local network, through the URL 'http://192.168.0.20:8010', and I've added an API documentation file at `documentation/asr.md`.
+I want to add chat messages to my embedding database. In the file `services/messageService.js`, when I create or edit a chat message, also add the message to the embedding database, through the normal `embed` function in `services/embeddingApiService.js`, be sure to include appropriate database metadata in the function call, to persist the entry to the embedding database. (message id, and conversation id as parent)
 
-Using the documentation file, add a test page on the admin route (controllers/admincontroller.js), for testing the API. Create a simple UI page, with options to upload an audio file for transcription, or record audio directly in the browser for transcription, with an input form set to default values. Then display the response to the user.
+I create messages in the following functions, in the message service:
+- processCompletedResponse
+- createMessageNew
+- processConvertedOutputs
 
-No need to integrate with other tools at this stage.
+I edit messages in the following functions, in the message service:
+- editTextNew
 
-codex resume 019b1067-b3bb-7a62-8cbc-51b9f9a11eff
+Note: Ignore all other functions, as those are from older chat systems, that I don't need right now.
+
+I only want to save embeddings for messages with `contentType === "text"`.
+
+Look at `controllers/ocrcontroller.js` for example how to use the embedding class, I won't the high quality embedding for now, but I plan to add a button per message for manually adding selected messages to the high quality embedding database.
+
+codex resume 019b15af-c1c9-7471-89c6-96c4d12f9de3

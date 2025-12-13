@@ -767,6 +767,7 @@ module.exports = async function registerChat5_5Handlers({
         category: conversation.category,
         tags: conversation.tags,
         hideFromBot: true,
+        conversationId,
       });
       conversation.messages.push(msg._id.toString());
       conversation.updatedAt = new Date();
@@ -944,6 +945,7 @@ module.exports = async function registerChat5_5Handlers({
         },
         category: conversation.category,
         tags: conversation.tags,
+        conversationId,
       });
 
       conversation.messages.push(placeholder._id.toString());

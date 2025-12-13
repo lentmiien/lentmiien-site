@@ -11,7 +11,12 @@ const ollama = require('../utils/Ollama_API');
 const { z } = require('zod');
 const logger = require('../utils/logger');
 
-const { AIModelCards, Chat5Model } = require('../database');
+const { AIModelCards, Chat5Model, Conversation5Model } = require('../database');
+let EmbeddingApiService = null;
+
+const CHAT_EMBED_COLLECTION = 'chat_message';
+const CHAT_EMBED_CONTENT_TYPE = 'chat_message_text';
+const CHAT_PARENT_COLLECTION = 'conversation';
 
 const DEFAULT_CONTEXT_PROMPT = `You are **Miien**, an AI assistant represented by an anime-style adult catgirl avatar on Lennart's personal website.
 
@@ -142,9 +147,111 @@ const Title = z.object({
 
 // Message service operations: managing individual messages within a conversation
 class MessageService {
-  constructor(messageModel, fileMetaModel) {
+  constructor(messageModel, fileMetaModel, embeddingApiService = null) {
     this.messageModel = messageModel;
     this.fileMetaModel = fileMetaModel;
+    this.embeddingApiService = embeddingApiService;
+  }
+
+  getEmbeddingService() {
+    if (!this.embeddingApiService) {
+      if (!EmbeddingApiService) {
+        EmbeddingApiService = require('./embeddingApiService');
+      }
+      this.embeddingApiService = new EmbeddingApiService();
+    }
+    return this.embeddingApiService;
+  }
+
+  normalizeConversationId(conversation) {
+    if (!conversation) return null;
+    const candidate = conversation._id ?? conversation.id ?? conversation;
+    if (!candidate) return null;
+    if (typeof candidate === 'string') return candidate;
+    if (candidate && typeof candidate.toString === 'function') {
+      return candidate.toString();
+    }
+    return null;
+  }
+
+  buildMessageEmbeddingMetadata(messageId, conversationId) {
+    const documentId = typeof messageId === 'string'
+      ? messageId
+      : (messageId && typeof messageId.toString === 'function' ? messageId.toString() : '');
+    const parentId = this.normalizeConversationId(conversationId);
+
+    if (!documentId || !parentId) {
+      return null;
+    }
+
+    return {
+      collectionName: CHAT_EMBED_COLLECTION,
+      documentId,
+      contentType: CHAT_EMBED_CONTENT_TYPE,
+      parentCollection: CHAT_PARENT_COLLECTION,
+      parentId,
+    };
+  }
+
+  async findConversationIdForMessage(messageId) {
+    const normalizedId = typeof messageId === 'string'
+      ? messageId
+      : (messageId && typeof messageId.toString === 'function' ? messageId.toString() : null);
+
+    if (!normalizedId || !Conversation5Model || typeof Conversation5Model.findOne !== 'function') {
+      return null;
+    }
+    try {
+      const conversation = await Conversation5Model.findOne({ messages: normalizedId });
+      if (conversation && conversation._id) {
+        return this.normalizeConversationId(conversation);
+      }
+    } catch (error) {
+      logger.error('Failed to locate conversation for message embedding', {
+        category: 'chat_embedding',
+        metadata: {
+          messageId: normalizedId,
+          error: error?.message || error,
+        },
+      });
+    }
+    return null;
+  }
+
+  async syncTextEmbedding({ message, conversationId, textOverride = null }) {
+    if (!message || message.contentType !== 'text') {
+      return;
+    }
+
+    const text = typeof textOverride === 'string'
+      ? textOverride
+      : (message.content && typeof message.content.text === 'string' ? message.content.text : '');
+    const normalizedText = text ? text.trim() : '';
+    const messageId = message?._id?.toString?.() || message?._id || '';
+    const parentId = this.normalizeConversationId(conversationId) || await this.findConversationIdForMessage(messageId);
+    const metadata = this.buildMessageEmbeddingMetadata(messageId, parentId);
+
+    if (!metadata) {
+      return;
+    }
+
+    try {
+      const embeddingService = this.getEmbeddingService();
+      if (!normalizedText) {
+        await embeddingService.deleteEmbeddings(metadata);
+        return;
+      }
+      await embeddingService.embed([normalizedText], {}, [metadata]);
+    } catch (error) {
+      logger.error('Failed to sync chat message embeddings', {
+        category: 'chat_embedding',
+        metadata: {
+          messageId,
+          conversationId: parentId,
+          error: error?.message || error,
+        },
+      });
+    }
   }
 
   async getMessageById(id) {
@@ -792,7 +899,7 @@ class MessageService {
     return newIdsArray;
   }
 
-  async createMessageNew({ userId, content, contentType, category, tags, hideFromBot = false }) {
+  async createMessageNew({ userId, content, contentType, category, tags, hideFromBot = false, conversationId = null }) {
     // Save the input as a new message to database
     const message = {
       user_id: userId,
@@ -805,6 +912,7 @@ class MessageService {
     };
     const msg = new Chat5Model(message);
     await msg.save();
+    await this.syncTextEmbedding({ message: msg, conversationId });
     return msg;
   }
 
@@ -1047,10 +1155,11 @@ class MessageService {
     await message.save();
   }
 
-  async editTextNew({message_id, type, value}) {
+  async editTextNew({message_id, type, value, conversationId = null}) {
     let message = await Chat5Model.findById(message_id);
     message.content[type] = value;
     await message.save();
+    await this.syncTextEmbedding({ message, conversationId });
   }
 
   async GenerateTitle(message_ids) {
@@ -1130,6 +1239,7 @@ class MessageService {
         };
         const msg = new Chat5Model(message);
         await msg.save();
+        await this.syncTextEmbedding({ message: msg, conversationId: conversation });
         newAiMessages.push(msg);
       }
     }

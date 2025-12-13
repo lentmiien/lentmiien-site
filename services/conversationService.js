@@ -1150,6 +1150,7 @@ class ConversationService {
             contentType: type,
             category: conversation.category,
             tags: conversation.tags,
+            conversationId: conversation._id,
           });
           conversation.messages.push(msg._id.toString());
           userMessages.push(msg);

@@ -870,6 +870,7 @@ module.exports = async function registerChat5_6Handlers({
         },
         category: conversation.category,
         tags: conversation.tags,
+        conversationId,
       });
 
       conversation.messages.push(placeholder._id.toString());
