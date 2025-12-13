@@ -41,16 +41,20 @@ const normalizeLayoutTexts = (input, count) => {
   return normalized;
 };
 
-const formatReceiptForJson = (receipt) => ({
-  id: receipt._id,
-  date: receipt.date,
-  amount: receipt.amount,
-  method: receipt.method,
-  business_name: receipt.business_name,
-  business_address: receipt.business_address,
-  layout_text: receipt.layout_text,
-  file: receipt.file,
-});
+const formatReceiptForJson = (receipt) => {
+  const id = receipt && receipt._id ? receipt._id.toString() : '';
+  return {
+    id,
+    date: receipt.date,
+    amount: receipt.amount,
+    method: receipt.method,
+    business_name: receipt.business_name,
+    business_address: receipt.business_address,
+    layout_text: receipt.layout_text,
+    file: receipt.file,
+    view_url: id ? `/receipt/view_receipt/${id}` : null,
+  };
+};
 
 const sanitizeBudgetPrefill = (raw = {}) => {
   const num = (value, fallback = 0) => {

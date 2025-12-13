@@ -640,6 +640,46 @@ block styles
       color: var(--ocr-text-muted);
     }
 
+    .receipt-results {
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      border-radius: 12px;
+      border: 1px solid var(--ocr-border);
+      background: var(--ocr-surface-2);
+    }
+
+    .receipt-results h5 {
+      margin: 0 0 0.35rem;
+      font-weight: 600;
+    }
+
+    .receipt-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .receipt-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.45rem 0.85rem;
+      border-radius: 10px;
+      border: 1px solid var(--ocr-accent);
+      color: var(--ocr-accent);
+      background: rgba(255, 194, 71, 0.08);
+      text-decoration: none;
+      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+
+    .receipt-link:hover,
+    .receipt-link:focus-visible {
+      background: rgba(255, 194, 71, 0.16);
+      border-color: var(--ocr-accent-hover);
+      color: var(--ocr-text);
+      outline: none;
+    }
+
     #ocrFeedback {
       margin-top: 1rem;
       min-height: 1.5rem;
@@ -778,6 +818,7 @@ block script
         detailLoading: {},
         savingEdits: {},
         embeddingHighQuality: {},
+        receiptsByJob: {},
         loadingOlder: false,
         deletingJob: false,
         highlightFileId,
@@ -819,6 +860,37 @@ block script
         } catch {
           return value;
         }
+      };
+
+      const normalizeReceiptList = (receipts) => {
+        if (!Array.isArray(receipts)) return [];
+        return receipts
+          .map((receipt) => {
+            const id = typeof receipt.id === 'string'
+              ? receipt.id
+              : (receipt._id ? String(receipt._id) : '');
+            if (!id) return null;
+            const safeId = encodeURIComponent(id);
+            const viewUrl = typeof receipt.view_url === 'string' && receipt.view_url
+              ? receipt.view_url
+              : `/receipt/view_receipt/${safeId}`;
+            return {
+              id,
+              business_name: receipt.business_name || '',
+              amount: receipt.amount,
+              view_url: viewUrl,
+            };
+          })
+          .filter(Boolean);
+      };
+
+      const formatReceiptLabel = (receipt, index) => {
+        const parts = [];
+        if (receipt.business_name) parts.push(receipt.business_name);
+        if (receipt.amount !== undefined && receipt.amount !== null && receipt.amount !== '') {
+          parts.push(String(receipt.amount));
+        }
+        return parts.length ? parts.join(' · ') : `Receipt ${index + 1}`;
       };
 
       const statusClass = (status) => {
@@ -1180,6 +1252,23 @@ block script
           statusLabelEl.textContent = `${job.status.toUpperCase()} - ${counts.total} files`;
         }
 
+        const savedReceipts = Array.isArray(state.receiptsByJob[job.id])
+          ? state.receiptsByJob[job.id]
+          : [];
+        const receiptsHtml = savedReceipts.length
+          ? `
+            <div class="receipt-results" data-receipt-links="${job.id}">
+              <h5>Saved receipts</h5>
+              <div class="receipt-links">
+                ${savedReceipts.map((receipt, index) => {
+                  const href = receipt.view_url || `/receipt/view_receipt/${encodeURIComponent(receipt.id)}`;
+                  return `<a class="receipt-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">${escapeHtml(formatReceiptLabel(receipt, index))}</a>`;
+                }).join('')}
+              </div>
+            </div>
+          `
+          : '';
+
         const hasSendable = job.files.some((file) => file.status === 'completed' && file.result && file.result.imagePath);
         const forwardHtml = `
           <div class="job-actions">
@@ -1187,6 +1276,7 @@ block script
               Send receipts to inbox
             </button>
             <p class="ocr-note">Layout text edits are forwarded with the receipts.</p>
+            ${receiptsHtml}
           </div>
         `;
         const metaHtml = `
@@ -1319,7 +1409,15 @@ block script
           if (!response.ok) {
             throw new Error(payload.error || 'Failed to send receipts.');
           }
-          setFeedback(`Sent ${appended} ${appended === 1 ? 'receipt' : 'receipts'} to the inbox.`, 'success');
+          const receipts = normalizeReceiptList(payload.receipts);
+          if (jobId) {
+            state.receiptsByJob[jobId] = receipts;
+            renderJobDetails();
+          }
+          const savedDetails = receipts.length
+            ? ` Saved ${receipts.length} ${receipts.length === 1 ? 'receipt' : 'receipts'}.`
+            : '';
+          setFeedback(`Sent ${appended} ${appended === 1 ? 'receipt' : 'receipts'} to the inbox.${savedDetails}`, 'success');
         } catch (error) {
           setFeedback(error.message || 'Failed to send receipts.', 'error');
         } finally {
