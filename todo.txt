@@ -1,17 +1,8 @@
-I want to add chat messages to my embedding database. In the file `services/messageService.js`, when I create or edit a chat message, also add the message to the embedding database, through the normal `embed` function in `services/embeddingApiService.js`, be sure to include appropriate database metadata in the function call, to persist the entry to the embedding database. (message id, and conversation id as parent)
+The ASR that I've been testing in the admin route works well, so I'd like to transfer this to a regular tool on my website, in it's own route, and I'd like to add a database of transcript audio. So please move this page to a new route/controller in the app, available for all user with appropriate access permissions, just like any other tool on the page.
+We can still have 2 source options, upload file or record in browser, but save all uploaded audio files to the `public/audio` folder, do the transcription, and when done, save the filename, transcript text, and some metadata to a new ASR database. Furthermore, I want to add the transcription texts to my embedding database, through the embedding service class (services/embeddingApiService.js), refer to `controllers/ocrcontroller.js` for example how to use the embedding tool. Be sure to add the ASR database to the embedding metadata, and use the regular `embed` function, there is no need to use high quality embedding for this use case.
 
-I create messages in the following functions, in the message service:
-- processCompletedResponse
-- createMessageNew
-- processConvertedOutputs
+On the ASR page, add a list of the 10 latest ASR jobs from the database, with pagination for going back in time.
 
-I edit messages in the following functions, in the message service:
-- editTextNew
+When adding a new route with access privileges, be sure to also add the route identifier string to the `routes` array in `controllers/admincontroller.js`, so that it appear on the admin page for user access management.
 
-Note: Ignore all other functions, as those are from older chat systems, that I don't need right now.
-
-I only want to save embeddings for messages with `contentType === "text"`.
-
-Look at `controllers/ocrcontroller.js` for example how to use the embedding class, I won't the high quality embedding for now, but I plan to add a button per message for manually adding selected messages to the high quality embedding database.
-
-codex resume 019b15af-c1c9-7471-89c6-96c4d12f9de3
+codex resume 019b1834-73d2-7be3-81a7-bfbfec37aef2

@@ -35,6 +35,7 @@ const routes = [
   "sora",
   "binpacking",
   "ocr",
+  "asr",
   "test",
   "archive",
 ];

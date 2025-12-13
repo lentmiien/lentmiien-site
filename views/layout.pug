@@ -102,37 +102,39 @@ html(lang='en')
             a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
             a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
             a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
-          if permissions && permissions.indexOf("test") >= 0
-            .navbar-column
-              h2 Test stuff
-              if permissions && permissions.indexOf("box") >= 0
-                a.type-1-link(href="/box", style="width:100%;") Box packer
-              if permissions && permissions.indexOf("binpacking") >= 0
-                a.type-1-link(href="/binpacking", style="width:100%;") 3D Bin Packing
-              a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
-              if permissions && permissions.indexOf("quicknote") >= 0
-                a.type-1-link(href="/quicknote", style="width:100%;") Quick note
-              a.type-1-link(href="/electricity_usage", style="width:100%;") EL
-              a.type-1-link(href="/mpu6050", style="width:100%;") MPU6050
-              a.type-1-link(href="/dht22", style="width:100%;") DHT22
-              a.type-1-link(href="/mypage/github", style="width:100%;") GitHub (lentmiien)
-              a.type-1-link(href="/es/es_dashboard", style="width:100%;") Emergency Stock
-              a.type-1-link(href="/receipt", style="width:100%;") Upload receipt
-              a.type-1-link(href="/product", style="width:100%;") Product details
-              a.type-1-link(href="/chat5", style="width:100%;") Chat5
-              a.type-1-link(href="/chat5/top", style="width:100%;") Chat5 (new)
-              a.type-1-link(href="/chat5/ai_model_cards", style="width:100%;") Manage AI Models
-              a.type-1-link(href="/budget", style="width:100%;") Accounting (new)
-              a.type-1-link(href="/budget/review", style="width:100%;") Budget review
-              a.type-1-link(href="/budget/cards", style="width:100%;") Credit cards
-              a.type-1-link(href="/gallery", style="width:100%;") Gallery
-              a.type-1-link(href="/payroll", style="width:100%;") Payroll
-              a.type-1-link(href="/scheduleTask/calendar", style="width:100%;") Schedule
-              a.type-1-link(href="/image_gen", style="width:100%;") ComfyIU
-              a.type-1-link(href="/image_gen/bulk", style="width:100%;") ComfyIU bulk
-              a.type-1-link(href="/ocr", style="width:100%;") OCR tool
-              a.type-1-link(href="/sora", style="width:100%;") Sora
-              a.type-1-link(href="/diff", style="width:100%;") JSON diff
+        if permissions && permissions.indexOf("test") >= 0
+          .navbar-column
+            h2 Test stuff
+            if permissions && permissions.indexOf("box") >= 0
+              a.type-1-link(href="/box", style="width:100%;") Box packer
+            if permissions && permissions.indexOf("binpacking") >= 0
+              a.type-1-link(href="/binpacking", style="width:100%;") 3D Bin Packing
+            a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
+            if permissions && permissions.indexOf("quicknote") >= 0
+              a.type-1-link(href="/quicknote", style="width:100%;") Quick note
+            a.type-1-link(href="/electricity_usage", style="width:100%;") EL
+            a.type-1-link(href="/mpu6050", style="width:100%;") MPU6050
+            a.type-1-link(href="/dht22", style="width:100%;") DHT22
+            a.type-1-link(href="/mypage/github", style="width:100%;") GitHub (lentmiien)
+            a.type-1-link(href="/es/es_dashboard", style="width:100%;") Emergency Stock
+            a.type-1-link(href="/receipt", style="width:100%;") Upload receipt
+            a.type-1-link(href="/product", style="width:100%;") Product details
+            a.type-1-link(href="/chat5", style="width:100%;") Chat5
+            a.type-1-link(href="/chat5/top", style="width:100%;") Chat5 (new)
+            a.type-1-link(href="/chat5/ai_model_cards", style="width:100%;") Manage AI Models
+            a.type-1-link(href="/budget", style="width:100%;") Accounting (new)
+            a.type-1-link(href="/budget/review", style="width:100%;") Budget review
+            a.type-1-link(href="/budget/cards", style="width:100%;") Credit cards
+            a.type-1-link(href="/gallery", style="width:100%;") Gallery
+            a.type-1-link(href="/payroll", style="width:100%;") Payroll
+            a.type-1-link(href="/scheduleTask/calendar", style="width:100%;") Schedule
+            a.type-1-link(href="/image_gen", style="width:100%;") ComfyIU
+            a.type-1-link(href="/image_gen/bulk", style="width:100%;") ComfyIU bulk
+            a.type-1-link(href="/ocr", style="width:100%;") OCR tool
+            a.type-1-link(href="/sora", style="width:100%;") Sora
+            a.type-1-link(href="/diff", style="width:100%;") JSON diff
+            if permissions && permissions.indexOf("asr") >= 0
+              a.type-1-link(href="/asr", style="width:100%;") Audio transcription
         if permissions && permissions.indexOf("archive") >= 0
           .navbar-column
             h2 Archive

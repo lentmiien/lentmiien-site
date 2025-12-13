@@ -1,0 +1,592 @@
+extends layout
+
+block styles
+  style.
+    :root {
+      --asr-bg: #0c111a;
+      --asr-surface: #121926;
+      --asr-surface-2: #0f1724;
+      --asr-border: #1f2a3a;
+      --asr-text: #e6eef9;
+      --asr-muted: #8ca0c0;
+      --asr-accent: #f4a261;
+      --asr-accent-strong: #ff8f1f;
+      --asr-green: #2bd4a8;
+      --asr-red: #f47373;
+    }
+
+    .asr-page {
+      background: linear-gradient(135deg, rgba(18, 25, 38, 0.92), rgba(12, 17, 26, 0.9));
+      border-radius: 24px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 40px 120px rgba(0, 0, 0, 0.35);
+      color: var(--asr-text);
+    }
+
+    .asr-hero h1 {
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .asr-hero p {
+      color: var(--asr-muted);
+      max-width: 880px;
+    }
+
+    .asr-panel {
+      background: radial-gradient(circle at 10% 10%, rgba(244, 162, 97, 0.08), transparent 35%), var(--asr-surface);
+      border: 1px solid var(--asr-border);
+      border-radius: 16px;
+      padding: 1.25rem 1.5rem;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    }
+
+    .asr-panel + .asr-panel {
+      margin-top: 1rem;
+    }
+
+    .asr-panel h3 {
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+    }
+
+    .asr-label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--asr-muted);
+    }
+
+    .asr-panel input,
+    .asr-panel select,
+    .asr-panel textarea {
+      background: var(--asr-surface-2);
+      border: 1px solid var(--asr-border);
+      color: var(--asr-text);
+    }
+
+    .asr-panel input:focus,
+    .asr-panel select:focus,
+    .asr-panel textarea:focus {
+      border-color: var(--asr-accent);
+      box-shadow: 0 0 0 0.15rem rgba(244, 162, 97, 0.25);
+    }
+
+    .asr-job {
+      border: 1px solid var(--asr-border);
+      background: var(--asr-surface-2);
+      border-radius: 12px;
+      padding: 0.9rem 1rem;
+      margin-bottom: 0.75rem;
+      transition: border-color 0.2s ease, transform 0.15s ease;
+    }
+
+    .asr-job:hover {
+      border-color: var(--asr-accent);
+      transform: translateX(2px);
+    }
+
+    .asr-job .asr-transcript {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--asr-border);
+      border-radius: 10px;
+      padding: 0.5rem 0.75rem;
+      white-space: pre-wrap;
+      color: var(--asr-text);
+    }
+
+    .status-completed {
+      background: rgba(43, 212, 168, 0.2);
+      color: var(--asr-green);
+      border: 1px solid rgba(43, 212, 168, 0.3);
+    }
+
+    .status-failed {
+      background: rgba(244, 115, 115, 0.15);
+      color: var(--asr-red);
+      border: 1px solid rgba(244, 115, 115, 0.3);
+    }
+
+    .asr-pagination button {
+      min-width: 90px;
+    }
+
+    @media (max-width: 992px) {
+      .asr-page {
+        padding: 1.25rem;
+      }
+    }
+
+block content
+  .asr-page
+    .asr-hero.mb-4
+      h1.mb-2 Audio Transcription Workspace
+      p.mb-0 Capture audio from your mic or upload a file, send it to the ASR service, and keep transcripts searchable via embeddings.
+
+    if error
+      .alert.alert-danger(role="alert")= error
+
+    .row.g-4
+      .col-lg-7
+        .asr-panel
+          .d-flex.justify-content-between.align-items-center.mb-3
+            h3.mb-0 Upload audio
+            span.badge.rounded-pill.text-bg-dark.border.border-secondary Up to 25MB
+          form#asr-upload-form(method="post", action="/asr/transcribe", enctype="multipart/form-data")
+            input(type="hidden", name="source", value="upload")
+            .mb-3
+              label.asr-label(for="asr-file") Audio file
+              input#asr-file.form-control(type="file", name="file", accept="audio/*", required)
+              small.text-muted Accepts mp3, wav, m4a, flac, ogg, webm.
+            .row
+              .col-md-6.mb-3
+                label.asr-label(for="asr-language") Language
+                input#asr-language.form-control(type="text", name="language", value=form.language || 'auto', placeholder="auto")
+              .col-md-6.mb-3
+                label.asr-label(for="asr-task") Task
+                select#asr-task.form-select(name="task")
+                  option(value="transcribe", selected=form.task !== 'translate') Transcribe
+                  option(value="translate", selected=form.task === 'translate') Translate to English
+            .row
+              .col-md-4.mb-3
+                label.asr-label(for="asr-temperature") Temperature
+                input#asr-temperature.form-control(type="number", step="0.1", name="temperature", value=form.temperature || 1, min="0", max="2")
+              .col-md-4.mb-3
+                label.asr-label(for="asr-beam-size") Beam size
+                input#asr-beam-size.form-control(type="number", step="1", min="1", name="beam_size", value=form.beamSize || 5)
+              .col-md-4.mb-3
+                label.asr-label(for="asr-vad") Voice activity detection
+                .form-check.form-switch
+                  input#asr-vad.form-check-input(type="checkbox", name="vad_filter", checked=form.vadFilter !== false)
+                  label.form-check-label.text-muted(for="asr-vad") Keep VAD on for reliable trims
+            .d-flex.flex-wrap.gap-3.mb-3
+              .form-check
+                input#asr-word-ts.form-check-input(type="checkbox", name="word_timestamps", checked=form.wordTimestamps === true)
+                label.form-check-label.text-muted(for="asr-word-ts") Include word timestamps
+            button#asr-submit.btn.btn-primary(type="submit") Transcribe upload
+          .small.text-muted.mt-2#asr-status Ready.
+
+        .asr-panel
+          h3.mb-2 Record in browser
+          p.text-muted.mb-2 Capture speech directly, then send it with the same settings.
+          .d-flex.flex-wrap.gap-2.mb-2
+            button#asr-record-start.btn.btn-outline-primary(type="button") Start recording
+            button#asr-record-stop.btn.btn-outline-secondary(type="button", disabled) Stop
+            button#asr-record-send.btn.btn-success(type="button", disabled) Send recording
+          p#asr-recording-status.text-muted.mb-1 Ready to record.
+          .text-danger.small#asr-recording-error
+          audio#asr-record-preview.w-100.mt-2.d-none(controls)
+
+        .asr-panel
+          h3.mb-3 Latest transcript
+          .d-flex.flex-wrap.gap-2.mb-2
+            span.badge.rounded-pill.text-bg-dark.border
+              | Language: 
+              span#asr-result-language auto
+            span.badge.rounded-pill.text-bg-dark.border
+              | Model: 
+              span#asr-result-model unknown
+            span.badge.rounded-pill.text-bg-dark.border
+              | Duration: 
+              span#asr-result-duration n/a
+            span.badge.rounded-pill.text-bg-dark.border
+              | Embedding: 
+              span#asr-embed-status pending
+          p.text-muted.small.mb-2#asr-result-meta Provide audio to see details.
+          textarea#asr-result-text.form-control(style="min-height: 180px;", readonly, placeholder="Transcribed text will appear here.")
+          audio#asr-result-audio.w-100.mt-2.d-none(controls)
+
+      .col-lg-5
+        .asr-panel
+          .d-flex.justify-content-between.align-items-center.mb-3
+            h3.mb-0 Recent ASR jobs
+            span.text-muted.small#asr-page-label Page #{page || 1}
+          #asr-jobs-list
+            if jobs && jobs.length
+              each job in jobs
+                .asr-job(data-id=job.id)
+                  .d-flex.justify-content-between.align-items-center.mb-1
+                    span.fw-semibold= job.originalName || job.storedFileName
+                    span.badge.rounded-pill(class=`status-${job.status || 'completed'}`)= job.status || 'completed'
+                  .text-muted.small.mb-1
+                    | #{job.detectedLanguage || job.requestOptions.language || 'auto'} · #{job.task || 'transcribe'} · #{job.createdAt}
+                  p.mb-1= job.transcriptText && job.transcriptText.length ? job.transcriptText.slice(0, 180) + (job.transcriptText.length > 180 ? '…' : '') : 'No transcript stored yet.'
+            else
+              p.text-muted.mb-0 No ASR jobs yet.
+          .asr-pagination.d-flex.justify-content-between.align-items-center.mt-3
+            button#asr-prev.btn.btn-outline-secondary(type="button", data-target=(page ? page - 1 : 0), disabled=!(hasPrevPage)) Prev
+            span.small Page #{page || 1}
+            button#asr-next.btn.btn-outline-secondary(type="button", data-target=(page ? page + 1 : 2), disabled=!(hasNextPage)) Next
+
+  script.
+    (() => {
+      const state = {
+        jobs: !{JSON.stringify(jobs || [])},
+        page: !{JSON.stringify(page || 1)},
+        hasNextPage: !{JSON.stringify(Boolean(hasNextPage))},
+        hasPrevPage: !{JSON.stringify(Boolean(hasPrevPage))},
+        pageSize: !{JSON.stringify(pageSize || 10)},
+      };
+
+      const uploadForm = document.getElementById('asr-upload-form');
+      const uploadButton = document.getElementById('asr-submit');
+      const fileInput = document.getElementById('asr-file');
+      const statusEl = document.getElementById('asr-status');
+      const resultText = document.getElementById('asr-result-text');
+      const resultLanguage = document.getElementById('asr-result-language');
+      const resultModel = document.getElementById('asr-result-model');
+      const resultDuration = document.getElementById('asr-result-duration');
+      const resultMeta = document.getElementById('asr-result-meta');
+      const resultAudio = document.getElementById('asr-result-audio');
+      const embedStatus = document.getElementById('asr-embed-status');
+      const jobsList = document.getElementById('asr-jobs-list');
+      const prevBtn = document.getElementById('asr-prev');
+      const nextBtn = document.getElementById('asr-next');
+      const pageLabel = document.getElementById('asr-page-label');
+
+      const recordStart = document.getElementById('asr-record-start');
+      const recordStop = document.getElementById('asr-record-stop');
+      const recordSend = document.getElementById('asr-record-send');
+      const recordStatus = document.getElementById('asr-recording-status');
+      const recordError = document.getElementById('asr-recording-error');
+      const recordPreview = document.getElementById('asr-record-preview');
+
+      const languageInput = document.getElementById('asr-language');
+      const taskInput = document.getElementById('asr-task');
+      const tempInput = document.getElementById('asr-temperature');
+      const beamInput = document.getElementById('asr-beam-size');
+      const vadInput = document.getElementById('asr-vad');
+      const tsInput = document.getElementById('asr-word-ts');
+
+      let mediaRecorder = null;
+      let recordedChunks = [];
+      let recordedBlob = null;
+      let previewUrl = null;
+
+      const formatBytes = (bytes) => {
+        const size = Number(bytes) || 0;
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1).replace(/\.0$/, '')} KB`;
+        return `${(size / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
+      };
+
+      const setStatus = (message, tone = 'muted') => {
+        if (!statusEl) return;
+        statusEl.textContent = message || '';
+        statusEl.classList.remove('text-success', 'text-danger', 'text-muted');
+        if (tone === 'success') statusEl.classList.add('text-success');
+        else if (tone === 'danger') statusEl.classList.add('text-danger');
+        else statusEl.classList.add('text-muted');
+      };
+
+      const collectOptions = () => ({
+        language: languageInput ? languageInput.value : '',
+        task: taskInput ? taskInput.value : '',
+        temperature: tempInput ? tempInput.value : '',
+        beam_size: beamInput ? beamInput.value : '',
+        vad_filter: vadInput ? String(vadInput.checked) : '',
+        word_timestamps: tsInput ? String(tsInput.checked) : '',
+      });
+
+      const renderResult = (result, job) => {
+        if (!resultText) return;
+        resultText.value = result?.text || '';
+        if (resultLanguage) resultLanguage.textContent = result?.language || 'auto';
+        if (resultModel) resultModel.textContent = result?.model || 'unknown';
+        if (resultDuration) {
+          if (typeof result?.duration === 'number') {
+            resultDuration.textContent = `${result.duration.toFixed(2)}s`;
+          } else {
+            resultDuration.textContent = result?.duration ? `${result.duration}s` : 'n/a';
+          }
+        }
+        if (embedStatus) embedStatus.textContent = job?.embeddingStatus || 'pending';
+        if (resultMeta) {
+          const fileLabel = job?.originalName || job?.storedFileName || 'audio';
+          const sizeLabel = job ? formatBytes(job.sizeBytes) : '';
+          const created = job?.createdAt ? new Date(job.createdAt).toLocaleString() : '';
+          resultMeta.textContent = [fileLabel, sizeLabel, created].filter(Boolean).join(' · ');
+        }
+        if (resultAudio) {
+          if (job?.publicUrl) {
+            resultAudio.src = job.publicUrl;
+            resultAudio.classList.remove('d-none');
+          } else {
+            resultAudio.classList.add('d-none');
+            resultAudio.removeAttribute('src');
+          }
+        }
+      };
+
+      const createJobElement = (job) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'asr-job';
+        wrapper.dataset.id = job.id;
+
+        const header = document.createElement('div');
+        header.className = 'd-flex justify-content-between align-items-center mb-1';
+
+        const title = document.createElement('span');
+        title.className = 'fw-semibold';
+        title.textContent = job.originalName || job.storedFileName || 'audio';
+        header.appendChild(title);
+
+        const badge = document.createElement('span');
+        badge.className = `badge rounded-pill status-${job.status || 'completed'}`;
+        badge.textContent = job.status || 'completed';
+        header.appendChild(badge);
+        wrapper.appendChild(header);
+
+        const meta = document.createElement('div');
+        meta.className = 'text-muted small mb-1';
+        const lang = job.detectedLanguage || job.requestOptions?.language || 'auto';
+        const created = job.createdAt ? new Date(job.createdAt).toLocaleString() : '';
+        meta.textContent = `${lang} · ${job.task || 'transcribe'} · ${created}`;
+        wrapper.appendChild(meta);
+
+        const snippet = document.createElement('p');
+        snippet.className = 'mb-1';
+        const text = job.transcriptText || '';
+        snippet.textContent = text ? (text.length > 180 ? `${text.slice(0, 180)}…` : text) : 'No transcript stored yet.';
+        wrapper.appendChild(snippet);
+
+        if (job.publicUrl) {
+          const audio = document.createElement('audio');
+          audio.controls = true;
+          audio.className = 'w-100 mb-1';
+          audio.src = job.publicUrl;
+          wrapper.appendChild(audio);
+        }
+
+        if (text) {
+          const details = document.createElement('details');
+          const summary = document.createElement('summary');
+          summary.className = 'text-muted small';
+          summary.textContent = 'View transcript';
+          details.appendChild(summary);
+
+          const pre = document.createElement('pre');
+          pre.className = 'asr-transcript';
+          pre.textContent = text;
+          details.appendChild(pre);
+          wrapper.appendChild(details);
+        }
+
+        const footer = document.createElement('div');
+        footer.className = 'd-flex gap-2 flex-wrap small text-muted mt-1';
+        const embed = document.createElement('span');
+        embed.textContent = `Embedding: ${job.embeddingStatus || 'pending'}`;
+        footer.appendChild(embed);
+        if (job.embeddingError) {
+          const err = document.createElement('span');
+          err.className = 'text-danger';
+          err.textContent = job.embeddingError;
+          footer.appendChild(err);
+        }
+        const sizeLabel = document.createElement('span');
+        sizeLabel.textContent = formatBytes(job.sizeBytes);
+        footer.appendChild(sizeLabel);
+        wrapper.appendChild(footer);
+
+        return wrapper;
+      };
+
+      const renderJobs = () => {
+        if (!jobsList) return;
+        jobsList.innerHTML = '';
+        if (!state.jobs || !state.jobs.length) {
+          const empty = document.createElement('p');
+          empty.className = 'text-muted mb-0';
+          empty.textContent = 'No ASR jobs yet.';
+          jobsList.appendChild(empty);
+        } else {
+          state.jobs.forEach((job) => {
+            jobsList.appendChild(createJobElement(job));
+          });
+        }
+        if (pageLabel) {
+          pageLabel.textContent = `Page ${state.page || 1}`;
+        }
+        if (prevBtn) {
+          prevBtn.disabled = !state.hasPrevPage;
+          prevBtn.dataset.target = state.page > 1 ? state.page - 1 : 1;
+        }
+        if (nextBtn) {
+          nextBtn.disabled = !state.hasNextPage;
+          nextBtn.dataset.target = state.page + 1;
+        }
+      };
+
+      const prependJob = (job) => {
+        state.jobs = [job, ...(state.jobs || [])].slice(0, state.pageSize);
+        state.page = 1;
+        state.hasPrevPage = false;
+        state.hasNextPage = state.hasNextPage || (state.jobs.length === state.pageSize);
+        renderJobs();
+      };
+
+      const loadPage = async (targetPage) => {
+        const pageNum = Number(targetPage) || 1;
+        try {
+          const res = await fetch(`/asr/jobs?page=${pageNum}`);
+          const data = await res.json();
+          state.jobs = data.jobs || [];
+          state.page = data.page || pageNum;
+          state.hasNextPage = Boolean(data.hasNextPage);
+          state.hasPrevPage = Boolean(data.hasPrevPage);
+          renderJobs();
+        } catch (err) {
+          setStatus(err?.message || 'Unable to load jobs.', 'danger');
+        }
+      };
+
+      const sendFormData = async (formData) => {
+        const res = await fetch('/asr/transcribe', {
+          method: 'POST',
+          headers: { Accept: 'application/json' },
+          body: formData,
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.error || `Request failed (${res.status})`);
+        }
+        return payload;
+      };
+
+      const handleUploadSubmit = async (event) => {
+        event.preventDefault();
+        if (!fileInput || !fileInput.files.length) {
+          setStatus('Please choose an audio file.', 'danger');
+          return;
+        }
+        const formData = new FormData(uploadForm);
+        Object.entries(collectOptions()).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            formData.set(key, value);
+          }
+        });
+
+        setStatus('Sending audio to ASR...', 'muted');
+        if (uploadButton) uploadButton.disabled = true;
+        try {
+          const payload = await sendFormData(formData);
+          setStatus('Transcript ready.', 'success');
+          renderResult(payload.result, payload.job);
+          prependJob(payload.job);
+        } catch (err) {
+          setStatus(err?.message || 'Unable to transcribe audio.', 'danger');
+        } finally {
+          if (uploadButton) uploadButton.disabled = false;
+        }
+      };
+
+      const stopRecording = () => {
+        if (!mediaRecorder || mediaRecorder.state !== 'recording') {
+          return;
+        }
+        mediaRecorder.stop();
+      };
+
+      const startRecording = () => {
+        if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+          if (recordStatus) recordStatus.textContent = 'Recording is not supported in this browser.';
+          if (recordError) recordError.textContent = 'Recording is not supported in this browser.';
+          return;
+        }
+
+        recordedBlob = null;
+        recordedChunks = [];
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = null;
+        }
+        if (recordPreview) {
+          recordPreview.classList.add('d-none');
+          recordPreview.removeAttribute('src');
+        }
+        if (recordError) recordError.textContent = '';
+        if (recordStatus) recordStatus.textContent = 'Recording... press Stop when done.';
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder.ondataavailable = (event) => {
+            if (event?.data && event.data.size > 0) {
+              recordedChunks.push(event.data);
+            }
+          };
+          mediaRecorder.onstop = () => {
+            if (recordedChunks.length) {
+              recordedBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+              previewUrl = URL.createObjectURL(recordedBlob);
+              if (recordPreview) {
+                recordPreview.src = previewUrl;
+                recordPreview.classList.remove('d-none');
+              }
+              if (recordStatus) recordStatus.textContent = 'Recording ready. Click "Send recording".';
+              if (recordSend) recordSend.disabled = false;
+            } else {
+              if (recordStatus) recordStatus.textContent = 'No audio captured.';
+              if (recordError) recordError.textContent = 'No audio captured.';
+            }
+            stream.getTracks().forEach((track) => track.stop());
+            if (recordStart) recordStart.disabled = false;
+            if (recordStop) recordStop.disabled = true;
+          };
+          mediaRecorder.start();
+          if (recordStart) recordStart.disabled = true;
+          if (recordStop) recordStop.disabled = false;
+          if (recordSend) recordSend.disabled = true;
+        }).catch((err) => {
+          if (recordError) recordError.textContent = err?.message || 'Microphone permission denied.';
+          if (recordStatus) recordStatus.textContent = 'Unable to start recording.';
+        });
+      };
+
+      const submitRecording = async () => {
+        if (!recordedBlob) {
+          if (recordError) recordError.textContent = 'Record something first.';
+          return;
+        }
+        const fd = new FormData();
+        const options = collectOptions();
+        Object.entries(options).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            fd.append(key, value);
+          }
+        });
+        fd.append('source', 'recording');
+        fd.append('file', recordedBlob, 'recording.webm');
+
+        if (recordStatus) recordStatus.textContent = 'Sending recording...';
+        if (recordSend) recordSend.disabled = true;
+        try {
+          const payload = await sendFormData(fd);
+          setStatus('Transcript ready.', 'success');
+          if (recordStatus) recordStatus.textContent = 'Transcript ready.';
+          renderResult(payload.result, payload.job);
+          prependJob(payload.job);
+        } catch (err) {
+          if (recordError) recordError.textContent = err?.message || 'Unable to transcribe recording.';
+          if (recordStatus) recordStatus.textContent = 'Recording failed to send.';
+        } finally {
+          if (recordSend) recordSend.disabled = false;
+        }
+      };
+
+      if (uploadForm) uploadForm.addEventListener('submit', handleUploadSubmit);
+      if (prevBtn) prevBtn.addEventListener('click', () => {
+        const target = Number(prevBtn.dataset.target || 1);
+        if (target >= 1) loadPage(target);
+      });
+      if (nextBtn) nextBtn.addEventListener('click', () => {
+        const target = Number(nextBtn.dataset.target || 1);
+        loadPage(target);
+      });
+
+      if (recordStart) recordStart.addEventListener('click', startRecording);
+      if (recordStop) recordStop.addEventListener('click', stopRecording);
+      if (recordSend) recordSend.addEventListener('click', submitRecording);
+
+      renderJobs();
+    })();
