@@ -1219,6 +1219,31 @@ module.exports = async function registerChat5_5Handlers({
     }
   });
 
+  socket.on('chat5-embed-hq', async (raw = {}, ack) => {
+    const eventName = 'chat5-embed-hq';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for embedding request.', { ack });
+        return;
+      }
+      const conversationId = normalizeStringOption(raw.conversation_id, '', 'conversation_id', adjustments);
+      const messageId = normalizeStringOption(raw.message_id, '', 'message_id', adjustments);
+      if (!conversationId || !messageId) {
+        respondWithError(eventName, 'conversation_id and message_id are required.', { ack, adjustments });
+        return;
+      }
+
+      await messageService.embedMessageHighQuality({ conversationId, messageId });
+      const payload = { ok: true, conversationId, messageId };
+      if (typeof ack === 'function') ack(payload);
+      emitAdjustments(eventName, adjustments, { conversationId, messageId });
+    } catch (error) {
+      logger.error('Failed to embed chat5 message (high quality)', error);
+      respondWithError(eventName, 'Failed to embed message.', { ack, details: error.message, adjustments });
+    }
+  });
+
   // Edit text
   socket.on('chat5-edittext-up', async (raw) => {
     const eventName = 'chat5-edittext-up';

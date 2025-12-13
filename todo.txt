@@ -1,8 +1,4 @@
-The ASR that I've been testing in the admin route works well, so I'd like to transfer this to a regular tool on my website, in it's own route, and I'd like to add a database of transcript audio. So please move this page to a new route/controller in the app, available for all user with appropriate access permissions, just like any other tool on the page.
-We can still have 2 source options, upload file or record in browser, but save all uploaded audio files to the `public/audio` folder, do the transcription, and when done, save the filename, transcript text, and some metadata to a new ASR database. Furthermore, I want to add the transcription texts to my embedding database, through the embedding service class (services/embeddingApiService.js), refer to `controllers/ocrcontroller.js` for example how to use the embedding tool. Be sure to add the ASR database to the embedding metadata, and use the regular `embed` function, there is no need to use high quality embedding for this use case.
+On the `views/chat5_chat.pug` page, next to the 'Copy' button for each message, but only for "text" type messages, add an 'Embed HQ' button. You need to add a new socket.io event for this button to instruct the server to add the particular message to my high quality embedding database.
+In the `socket_io/chat5_5/chat5_5handler.js` handler, you can forward the embedding request to the message service class, create a new function there as well, that has access to the embedding service class, and be sure to input both the conversation id and message id, as both are needed in the embedding database metadata, message id is also needed for fetching the message data (text) to embed.
 
-On the ASR page, add a list of the 10 latest ASR jobs from the database, with pagination for going back in time.
-
-When adding a new route with access privileges, be sure to also add the route identifier string to the `routes` array in `controllers/admincontroller.js`, so that it appear on the admin page for user access management.
-
-codex resume 019b1834-73d2-7be3-81a7-bfbfec37aef2
+codex resume 019b1853-6370-7363-a963-303beb529c1d

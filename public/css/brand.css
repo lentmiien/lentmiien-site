@@ -1807,6 +1807,21 @@ label,
   position: relative;
 }
 
+.chat5-message-actions {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.chat5-message-actions .chat5-copy-button {
+  position: relative;
+  top: auto;
+  right: auto;
+}
+
 .chat5-copy-button {
   position: absolute;
   top: 8px;
@@ -1849,6 +1864,32 @@ label,
   font-size: 0.65rem;
   color: #ff6a1f;
   padding-top: 2px;
+}
+
+.chat5-embed-button {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 194, 71, 0.18);
+  color: rgba(255, 194, 71, 0.95);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+  opacity: 0.92;
+}
+
+.chat5-embed-button:hover,
+.chat5-embed-button:focus {
+  background: rgba(255, 194, 71, 0.28);
+  color: rgba(255, 194, 71, 1);
+  opacity: 1;
+  outline: none;
+}
+
+.chat5-embed-button[disabled] {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .chat5-message--hidden {

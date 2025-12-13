@@ -159,6 +159,64 @@ function initializeMessageCopyButtons(root) {
   buttons.forEach((btn) => bindMessageCopyButton(btn));
 }
 
+function bindEmbedButton(btn) {
+  if (!btn || btn.dataset.embedBound === 'true') return;
+  const messageId = btn.getAttribute('data-message-id') || '';
+  const presetConversationId = btn.getAttribute('data-conversation-id') || '';
+  if (!messageId) return;
+
+  const defaultLabel = btn.textContent || 'Embed HQ';
+  btn.dataset.embedBound = 'true';
+
+  btn.addEventListener('click', () => {
+    if (btn.dataset.embedBusy === 'true') return;
+    const conversationId = (btn.dataset.conversationId || presetConversationId || getCurrentConversationId() || '').trim();
+    if (!conversationId || conversationId === 'NEW') {
+      alert('Please open an existing conversation before embedding this message.');
+      return;
+    }
+
+    btn.dataset.embedBusy = 'true';
+    btn.disabled = true;
+    btn.textContent = 'Embedding...';
+    socket.emit('chat5-embed-hq', { conversation_id: conversationId, message_id: messageId }, (resp) => {
+      if (!resp || resp.ok !== true) {
+        btn.textContent = 'Retry';
+        btn.disabled = false;
+        delete btn.dataset.embedBusy;
+        alert(resp && resp.message ? resp.message : 'Unable to embed this message.');
+        return;
+      }
+      btn.textContent = 'Embedded';
+      setTimeout(() => {
+        btn.textContent = defaultLabel;
+        btn.disabled = false;
+        delete btn.dataset.embedBusy;
+      }, 1200);
+    });
+  });
+}
+
+function createEmbedButton({ conversationId, messageId }) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.classList.add('chat5-embed-button');
+  btn.setAttribute('aria-label', 'Embed message (high quality)');
+  if (messageId) btn.setAttribute('data-message-id', messageId);
+  if (conversationId) btn.setAttribute('data-conversation-id', conversationId);
+  btn.textContent = 'Embed HQ';
+  bindEmbedButton(btn);
+  return btn;
+}
+
+function initializeEmbedButtons(root) {
+  const scope = root || document;
+  if (!scope || typeof scope.querySelectorAll !== 'function') return;
+  const buttons = scope.querySelectorAll('.chat5-embed-button');
+  if (!buttons.length) return;
+  buttons.forEach((btn) => bindEmbedButton(btn));
+}
+
 function registerCodeCopyHandlers(root) {
   if (!root || typeof root.querySelectorAll !== 'function') return;
   const blocks = root.querySelectorAll('pre code');
@@ -691,10 +749,20 @@ function message(m) {
   const body = document.createElement('div');
   body.classList.add('chat5-message-body');
 
+  const actions = document.createElement('div');
+  actions.classList.add('chat5-message-actions');
+
   const copyText = resolveMessageCopySource(m);
   if (copyText) {
     const copyBtn = createMessageCopyButton(copyText);
-    messageWrapper.appendChild(copyBtn);
+    actions.appendChild(copyBtn);
+  }
+  if (m.contentType === "text" && m._id) {
+    const embedBtn = createEmbedButton({ conversationId: getCurrentConversationId(), messageId: m._id });
+    actions.appendChild(embedBtn);
+  }
+  if (actions.children.length > 0) {
+    messageWrapper.appendChild(actions);
   }
 
   if (m.contentType === "text") {
@@ -901,6 +969,7 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('conversationContainer');
   initializeMessageCopyButtons(container);
+  initializeEmbedButtons(container);
   registerCodeCopyHandlers(container);
   enhanceTables(container);
 });

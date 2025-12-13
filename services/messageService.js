@@ -254,6 +254,53 @@ class MessageService {
     }
   }
 
+  async embedMessageHighQuality({ conversationId, messageId, textOverride = null }) {
+    const normalizedConversationId = this.normalizeConversationId(conversationId);
+    const normalizedMessageId = typeof messageId === 'string'
+      ? messageId
+      : (messageId && typeof messageId.toString === 'function' ? messageId.toString() : '');
+
+    if (!normalizedConversationId || !normalizedMessageId) {
+      throw new Error('conversationId and messageId are required for high-quality embedding.');
+    }
+
+    const conversation = await Conversation5Model.findById(normalizedConversationId);
+    if (!conversation) {
+      throw new Error('Conversation not found for embedding.');
+    }
+    const messageInConversation = Array.isArray(conversation.messages)
+      ? conversation.messages.some((id) => id && id.toString() === normalizedMessageId)
+      : false;
+    if (!messageInConversation) {
+      throw new Error('Message is not part of the provided conversation.');
+    }
+
+    const message = await Chat5Model.findById(normalizedMessageId);
+    if (!message) {
+      throw new Error('Message not found for embedding.');
+    }
+    if (message.contentType !== 'text') {
+      throw new Error('Only text messages can be embedded.');
+    }
+
+    const text = typeof textOverride === 'string'
+      ? textOverride
+      : (message.content && typeof message.content.text === 'string' ? message.content.text : '');
+    const normalizedText = text ? text.trim() : '';
+    if (!normalizedText) {
+      throw new Error('Message does not contain text to embed.');
+    }
+
+    const metadata = this.buildMessageEmbeddingMetadata(normalizedMessageId, normalizedConversationId);
+    if (!metadata) {
+      throw new Error('Unable to build embedding metadata for this message.');
+    }
+
+    const embeddingService = this.getEmbeddingService();
+    await embeddingService.embedHighQuality([normalizedText], {}, [metadata]);
+    return { ok: true };
+  }
+
   async getMessageById(id) {
     const message = await this.messageModel.findOne({ _id: id });
     return message;

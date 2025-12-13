@@ -81,8 +81,12 @@ block content
       })
       if isBot
         img.chat5-avatar(src='/i/avatar.jpg', alt='Bot avatar')
-      if hasCopyText
-        button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copyText) Copy
+      if hasCopyText || m.contentType === "text"
+        .chat5-message-actions
+          if hasCopyText
+            button.chat5-copy-button(type='button', aria-label='Copy message text', data-copy-text=copyText) Copy
+          if m.contentType === "text"
+            button.chat5-embed-button(type='button', aria-label='Embed message (high quality)', data-message-id=m._id, data-conversation-id=conversation && conversation._id ? conversation._id.toString() : '') Embed HQ
       .chat5-message-body
         if m.contentType === "text"
           span.chat5-message-text(id=`${m._id}textout`)!= m.content.html 
