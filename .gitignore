@@ -6,6 +6,7 @@ reference_material
 cache
 github-repos
 .env
+public/audio
 public/img
 public/mp3
 public/ocr

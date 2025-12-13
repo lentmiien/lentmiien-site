@@ -10,6 +10,35 @@ const EmbeddingApiService = require('../services/embeddingApiService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
+const routes = [
+  "chat",
+  "chat2",
+  "chat3",
+  "chat4",
+  "chat5",
+  "openai",
+  "embedding",
+  "gptdocument",
+  "accounting",
+  "budget",
+  "cooking",
+  "health",
+  "box",
+  "quicknote",
+  "emergencystock",
+  "receipt",
+  "product",
+  "gallery",
+  "payroll",
+  "scheduletask",
+  "image_gen",
+  "sora",
+  "binpacking",
+  "ocr",
+  "test",
+  "archive",
+];
+
 exports.manage_users = async (req, res) => {
   const users = await UseraccountModel.find();
   res.render('manage_users', { users });
@@ -75,34 +104,7 @@ exports.manage_roles = async (req, res) => {
   const selection = {
     name_list: [],
     role_list: [],
-    routes: [
-      "chat",
-      "chat2",
-      "chat3",
-      "chat4",
-      "chat5",
-      "openai",
-      "embedding",
-      "gptdocument",
-      "accounting",
-      "budget",
-      "cooking",
-      "health",
-      "box",
-      "quicknote",
-      "emergencystock",
-      "receipt",
-      "product",
-      "gallery",
-      "payroll",
-      "scheduletask",
-      "image_gen",
-      "sora",
-      "binpacking",
-      "ocr",
-      "test",
-      "archive",
-    ]
+    routes
   };
   users.forEach(user => {
     if (selection.name_list.indexOf(user.name) === -1) selection.name_list.push(user.name);
