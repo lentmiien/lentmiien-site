@@ -27,7 +27,7 @@ block content
       .mypage-grid
         +tile('/mypage/blogpost', '/i/blog.jpg', 'blogpost', 'Write blog')
         if permissions && permissions.indexOf("accounting") >= 0
-          +tile('/accounting/add_transaction', '/i/budget.jpg', 'budget', 'Add transaction')
+          +tile('/accounting', '/i/budget.jpg', 'accounting', 'Accounting')
         if permissions && permissions.indexOf("chat5") >= 0
           +tile('/chat5/top', '/i/chat5.jpg', 'chat5', 'Chat 5')
         if permissions && permissions.indexOf("chat4") >= 0
@@ -37,8 +37,8 @@ block content
         +tile('/chat4/batch_status', '/i/batch.jpg', 'batch', 'Batch')
         +tile('/', '/i/vueapp.jpg', 'vue app', 'VUE app')
         +tile('/mypage/pdf_to_jpg', '/i/pdfconv.jpg', 'PDF to image converter', 'PDF to Image')
-        if permissions && permissions.indexOf("receipt") >= 0
-          +tile('/receipt', '/i/receipt.jpg', 'upload receipt', 'Upload receipt')
+        if permissions && permissions.indexOf("ocr") >= 0
+          +tile('/ocr', '/i/receipt.jpg', 'ocr tool', 'OCR tool')
         if permissions && permissions.indexOf("product") >= 0
           +tile('/product', '/i/product.jpg', 'Product details', 'Product details')
         if permissions && permissions.indexOf("gallery") >= 0
