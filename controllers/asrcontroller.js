@@ -116,7 +116,7 @@ function sanitizeJob(job) {
   };
 }
 
-async function queryJobs(pageRaw = 1) {
+async function queryJobs(pageRaw = 1, excludeId = null) {
   const page = Number.isFinite(parseInt(pageRaw, 10)) ? Math.max(1, parseInt(pageRaw, 10)) : 1;
   const skip = (page - 1) * PAGE_SIZE;
   const jobs = await AsrJob.find()
@@ -126,11 +126,13 @@ async function queryJobs(pageRaw = 1) {
     .lean();
   const hasNextPage = jobs.length > PAGE_SIZE;
   const slice = hasNextPage ? jobs.slice(0, PAGE_SIZE) : jobs;
+  const sanitized = slice.map(sanitizeJob);
+  const filtered = excludeId ? sanitized.filter((job) => job.id !== excludeId) : sanitized;
   return {
     page,
     hasNextPage,
     hasPrevPage: page > 1,
-    jobs: slice.map(sanitizeJob),
+    jobs: filtered,
   };
 }
 
@@ -144,16 +146,31 @@ async function transcribeAudioWithAsrApi(file, form) {
 }
 
 exports.renderTool = async (req, res) => {
+  const pinnedJobId = req.params?.jobId || req.query?.jobId || null;
   try {
     const { page } = req.query;
-    const list = await queryJobs(page);
+    let pinnedJob = null;
+    let pinnedError = null;
+
+    if (pinnedJobId) {
+      const found = await AsrJob.findById(pinnedJobId).lean();
+      if (found) {
+        pinnedJob = sanitizeJob(found);
+      } else {
+        pinnedError = 'ASR job not found.';
+      }
+    }
+
+    const list = await queryJobs(page, pinnedJob?.id);
     res.render('asr_tool', {
       form: defaultForm(),
       jobs: list.jobs,
+      pinnedJob,
       page: list.page,
       hasNextPage: list.hasNextPage,
       hasPrevPage: list.hasPrevPage,
       pageSize: PAGE_SIZE,
+      pinnedError,
     });
   } catch (error) {
     logger.error('Failed to render ASR tool', {
@@ -214,6 +231,8 @@ exports.transcribe = async (req, res) => {
       hasNextPage: list.hasNextPage,
       hasPrevPage: list.hasPrevPage,
       pageSize: PAGE_SIZE,
+      pinnedJob: null,
+      pinnedError: null,
       error: message,
     });
   }

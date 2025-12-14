@@ -161,6 +161,8 @@ block content
                         - const knowledgeId = row.source && (row.source.documentId || row.source.document_id);
                         - const isChat = row.source && row.source.collectionName === 'chat_message';
                         - const conversationId = row.source && (row.source.parentId || row.source.parent_id);
+                        - const isASR = row.source && row.source.collectionName === 'asr_jobs';
+                        - const asrId = row.source && (row.source.parentId || row.source.parent_id);
                         li
                           strong Source:
                           |  #{row.source && row.source.collectionName ? row.source.collectionName : 'n/a'} · #{row.source && row.source.documentId ? row.source.documentId : 'n/a'}
@@ -186,6 +188,12 @@ block content
                             strong Chat:
                             |  
                             a(href=chatHref, target="_blank", rel="noreferrer") View chat
+                        if isASR && asrId
+                          - const asrHref = `/asr/job/${asrId}`;
+                          li
+                            strong ASR job:
+                            |  
+                            a(href=asrHref, target="_blank", rel="noreferrer") View job
                         li
                           strong Content type:
                           |  #{row.source && row.source.contentType ? row.source.contentType : 'n/a'}

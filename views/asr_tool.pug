@@ -87,6 +87,35 @@ block styles
       transform: translateX(2px);
     }
 
+    .asr-job--pinned {
+      border-color: var(--asr-accent);
+      box-shadow: 0 0 0 1px rgba(244, 162, 97, 0.32);
+    }
+
+    .asr-job-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--asr-accent);
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 0.35rem;
+    }
+
+    .asr-job-label .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--asr-accent);
+      display: inline-block;
+      box-shadow: 0 0 0 4px rgba(244, 162, 97, 0.12);
+    }
+
+    #asr-pinned-job {
+      margin-bottom: 0.5rem;
+    }
+
     .asr-job .asr-transcript {
       background: rgba(255, 255, 255, 0.02);
       border: 1px solid var(--asr-border);
@@ -126,6 +155,8 @@ block content
 
     if error
       .alert.alert-danger(role="alert")= error
+    if pinnedError
+      .alert.alert-warning(role="alert")= pinnedError
 
     .row.g-4
       .col-lg-7
@@ -202,6 +233,33 @@ block content
           .d-flex.justify-content-between.align-items-center.mb-3
             h3.mb-0 Recent ASR jobs
             span.text-muted.small#asr-page-label Page #{page || 1}
+          if pinnedJob
+            .d-flex.align-items-center.gap-2.mb-2
+              span.badge.rounded-pill.text-bg-dark.border.border-secondary Linked job
+              span.text-muted.small This job is pinned from the URL.
+          #asr-pinned-job
+            if pinnedJob
+              .asr-job.asr-job--pinned(data-id=pinnedJob.id)
+                .asr-job-label
+                  span.dot
+                  span Linked job from URL
+                .d-flex.justify-content-between.align-items-center.mb-1
+                  span.fw-semibold= pinnedJob.originalName || pinnedJob.storedFileName
+                  span.badge.rounded-pill(class=`status-${pinnedJob.status || 'completed'}`)= pinnedJob.status || 'completed'
+                .text-muted.small.mb-1
+                  | #{pinnedJob.detectedLanguage || pinnedJob.requestOptions.language || 'auto'} · #{pinnedJob.task || 'transcribe'} · #{pinnedJob.createdAt}
+                p.mb-1= pinnedJob.transcriptText && pinnedJob.transcriptText.length ? pinnedJob.transcriptText.slice(0, 180) + (pinnedJob.transcriptText.length > 180 ? '…' : '') : 'No transcript stored yet.'
+                if pinnedJob.publicUrl
+                  audio.w-100.mb-1(controls, src=pinnedJob.publicUrl)
+                if pinnedJob.transcriptText
+                  details
+                    summary.text-muted.small View transcript
+                    pre.asr-transcript= pinnedJob.transcriptText
+                .d-flex.gap-2.flex-wrap.small.text-muted.mt-1
+                  span Embedding: #{pinnedJob.embeddingStatus || 'pending'}
+                  if pinnedJob.embeddingError
+                    span.text-danger= pinnedJob.embeddingError
+                  span= pinnedJob.sizeBytes ? ((pinnedJob.sizeBytes / 1024 / 1024).toFixed(2) + ' MB') : ''
           #asr-jobs-list
             if jobs && jobs.length
               each job in jobs
@@ -209,9 +267,11 @@ block content
                   .d-flex.justify-content-between.align-items-center.mb-1
                     span.fw-semibold= job.originalName || job.storedFileName
                     span.badge.rounded-pill(class=`status-${job.status || 'completed'}`)= job.status || 'completed'
-                  .text-muted.small.mb-1
-                    | #{job.detectedLanguage || job.requestOptions.language || 'auto'} · #{job.task || 'transcribe'} · #{job.createdAt}
-                  p.mb-1= job.transcriptText && job.transcriptText.length ? job.transcriptText.slice(0, 180) + (job.transcriptText.length > 180 ? '…' : '') : 'No transcript stored yet.'
+                .text-muted.small.mb-1
+                  | #{job.detectedLanguage || job.requestOptions.language || 'auto'} · #{job.task || 'transcribe'} · #{job.createdAt}
+                p.mb-1= job.transcriptText && job.transcriptText.length ? job.transcriptText.slice(0, 180) + (job.transcriptText.length > 180 ? '…' : '') : 'No transcript stored yet.'
+            else if pinnedJob
+              p.text-muted.mb-0 No other ASR jobs on this page.
             else
               p.text-muted.mb-0 No ASR jobs yet.
           .asr-pagination.d-flex.justify-content-between.align-items-center.mt-3
@@ -223,6 +283,7 @@ block content
     (() => {
       const state = {
         jobs: !{JSON.stringify(jobs || [])},
+        pinnedJob: !{JSON.stringify(pinnedJob || null)},
         page: !{JSON.stringify(page || 1)},
         hasNextPage: !{JSON.stringify(Boolean(hasNextPage))},
         hasPrevPage: !{JSON.stringify(Boolean(hasPrevPage))},
@@ -240,6 +301,7 @@ block content
       const resultMeta = document.getElementById('asr-result-meta');
       const resultAudio = document.getElementById('asr-result-audio');
       const embedStatus = document.getElementById('asr-embed-status');
+      const pinnedJobContainer = document.getElementById('asr-pinned-job');
       const jobsList = document.getElementById('asr-jobs-list');
       const prevBtn = document.getElementById('asr-prev');
       const nextBtn = document.getElementById('asr-next');
@@ -319,10 +381,27 @@ block content
         }
       };
 
-      const createJobElement = (job) => {
+      const createJobElement = (job, options = {}) => {
+        const isPinned = Boolean(options.pinned);
         const wrapper = document.createElement('div');
         wrapper.className = 'asr-job';
+        if (isPinned) wrapper.classList.add('asr-job--pinned');
         wrapper.dataset.id = job.id;
+
+        if (isPinned) {
+          const pinnedLabel = document.createElement('div');
+          pinnedLabel.className = 'asr-job-label';
+
+          const dot = document.createElement('span');
+          dot.className = 'dot';
+          pinnedLabel.appendChild(dot);
+
+          const labelText = document.createElement('span');
+          labelText.textContent = 'Linked job from URL';
+          pinnedLabel.appendChild(labelText);
+
+          wrapper.appendChild(pinnedLabel);
+        }
 
         const header = document.createElement('div');
         header.className = 'd-flex justify-content-between align-items-center mb-1';
@@ -392,16 +471,24 @@ block content
         return wrapper;
       };
 
+      const renderPinnedJob = () => {
+        if (!pinnedJobContainer) return;
+        pinnedJobContainer.innerHTML = '';
+        if (!state.pinnedJob) return;
+        pinnedJobContainer.appendChild(createJobElement(state.pinnedJob, { pinned: true }));
+      };
+
       const renderJobs = () => {
         if (!jobsList) return;
         jobsList.innerHTML = '';
-        if (!state.jobs || !state.jobs.length) {
+        const jobsToRender = (state.jobs || []).filter((job) => !state.pinnedJob || job.id !== state.pinnedJob.id);
+        if (!jobsToRender.length) {
           const empty = document.createElement('p');
           empty.className = 'text-muted mb-0';
-          empty.textContent = 'No ASR jobs yet.';
+          empty.textContent = state.pinnedJob ? 'No other ASR jobs on this page.' : 'No ASR jobs yet.';
           jobsList.appendChild(empty);
         } else {
-          state.jobs.forEach((job) => {
+          jobsToRender.forEach((job) => {
             jobsList.appendChild(createJobElement(job));
           });
         }
@@ -419,7 +506,13 @@ block content
       };
 
       const prependJob = (job) => {
-        state.jobs = [job, ...(state.jobs || [])].slice(0, state.pageSize);
+        if (state.pinnedJob && state.pinnedJob.id === job.id) {
+          state.pinnedJob = { ...state.pinnedJob, ...job };
+          renderPinnedJob();
+        }
+        const nextJobs = [job, ...(state.jobs || [])];
+        const filteredJobs = state.pinnedJob ? nextJobs.filter((item) => item.id !== state.pinnedJob.id) : nextJobs;
+        state.jobs = filteredJobs.slice(0, state.pageSize);
         state.page = 1;
         state.hasPrevPage = false;
         state.hasNextPage = state.hasNextPage || (state.jobs.length === state.pageSize);
@@ -431,7 +524,8 @@ block content
         try {
           const res = await fetch(`/asr/jobs?page=${pageNum}`);
           const data = await res.json();
-          state.jobs = data.jobs || [];
+          const jobs = data.jobs || [];
+          state.jobs = state.pinnedJob ? jobs.filter((job) => job.id !== state.pinnedJob.id) : jobs;
           state.page = data.page || pageNum;
           state.hasNextPage = Boolean(data.hasNextPage);
           state.hasPrevPage = Boolean(data.hasPrevPage);
@@ -588,5 +682,6 @@ block content
       if (recordStop) recordStop.addEventListener('click', stopRecording);
       if (recordSend) recordSend.addEventListener('click', submitRecording);
 
+      renderPinnedJob();
       renderJobs();
     })();

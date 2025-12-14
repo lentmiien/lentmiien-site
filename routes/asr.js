@@ -24,6 +24,7 @@ const handleAsrUpload = (req, res, next) => {
 };
 
 router.get('/', controller.renderTool);
+router.get('/job/:jobId', controller.renderTool);
 router.get('/jobs', controller.listJobs);
 router.get('/jobs/:jobId', controller.getJob);
 router.post('/transcribe', handleAsrUpload);
