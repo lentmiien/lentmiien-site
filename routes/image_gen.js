@@ -34,6 +34,7 @@ router.use('/api', express.json({ limit: '1mb' }));
 
 // Landing page
 router.get('/', ctrl.renderLanding);
+router.get('/good', ctrl.renderGoodGallery);
 router.get('/bulk', ctrl.renderBulkLanding);
 router.get('/bulk/new', ctrl.renderBulkCreate);
 router.get('/bulk/:id/score', ctrl.renderBulkScoring);
@@ -55,6 +56,7 @@ router.post('/api/files/input', upload.single('image'), ctrl.uploadInput);
 router.post('/api/files/promote', ctrl.promoteCachedFile);
 router.get('/api/prompts', ctrl.listPrompts);
 router.post('/api/rate', ctrl.rateJob);
+router.get('/api/good-images', ctrl.listGoodImages);
 router.get('/api/bulk/jobs', ctrl.listBulkJobs);
 router.post('/api/bulk/jobs', ctrl.createBulkJob);
 router.get('/api/bulk/jobs/:id', ctrl.getBulkJob);

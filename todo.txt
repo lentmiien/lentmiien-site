@@ -1,7 +1,8 @@
-On the `views/chat5_chat.pug` page, I want to add a voice input mode. It can be something like, user press the button, speak, then press the button again, then the audio is uploaded to the server, transcribed, returned to the user, and appended to the prompt input text field.
-Add the button near the input field, appropriate socket.io events in `socket_io/chat5_5/chat5_5handler.js`, and use the transcription API to extract the text from the audio.
+In my image generating tool, on the page `views/image_gen/index.pug`, I'd like to add the following new functionality:
+When rating a completed image, if giving the rating 4 or 5, I want to save a renamed (random uuid type name) copy of the image to the folder `public/img`, and also, I want to save the filename, prompt, model metadata, etc. to a new database collection for good quality images. Furthermore, I want to save the image prompt to my embedding database, with the database details in the metadata, using my embedding service class (services/embeddingApiService.js). Use the normal embedding function `embed` for rating 4 and 5, and for rank 5 do a second embedding with the high quality embedding function `embedHighQuality`.
 
-Please refer to the code in `controllers/asrcontroller.js`, for details on the transcription API, at URL 'http://192.168.0.20:8010'.
-Maybe you could mode the API code to a new service class in the 'services' folder, for easier reusing and maintaining the code, etc.
+Also create a small page under image_gen for previewing this new database, with a paginated view of images + metadata, and if the page is opened with a database id in the URL, pin that image at the top.
 
-codex resume 019b1863-8e2a-7550-97b5-8af87b85b90f
+Use `controllers/ocrcontroller.js` as reference for how to use the embedding tool.
+
+codex resume 019b1be0-cfef-7fe0-85be-41e35fd16545

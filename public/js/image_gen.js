@@ -904,28 +904,39 @@
     const cont = document.createElement('div');
     cont.id = 'ratingBar';
     cont.className = 'd-flex gap-2 align-items-center mt-3';
+    const ratingButtons = [
+      { label: 'Bad', value: 'bad', cls: 'btn-outline-secondary' },
+      { label: 'OK', value: 'ok', cls: 'btn-outline-primary' },
+      { label: 'Good', value: 'good', cls: 'btn-outline-success' },
+      { label: 'Great', value: 'great', cls: 'btn-success' }
+    ].map((entry) => `<button type="button" class="btn ${entry.cls}" data-rate="${entry.value}">${entry.label}</button>`).join('');
     cont.innerHTML = `
       <span class="text-muted">Rate this result:</span>
       <div class="btn-group" role="group" aria-label="Rating">
-        <button type="button" class="btn btn-outline-secondary" data-rate="bad">Bad</button>
-        <button type="button" class="btn btn-outline-primary" data-rate="ok">OK</button>
-        <button type="button" class="btn btn-outline-success" data-rate="good">Good</button>
-        <button type="button" class="btn btn-success" data-rate="great">Great</button>
+        ${ratingButtons}
       </div>
-      <span id="ratingMsg" class="text-muted"></span>
+      <a class="btn btn-link btn-sm ms-1" href="/image_gen/good" target="_blank" rel="noopener">View saved</a>
+      <span id="ratingMsg" class="text-muted ms-2"></span>
     `;
     const jobCard = document.getElementById("job_card_body") || document.body;
     jobCard.appendChild(cont);
     cont.querySelectorAll('button[data-rate]').forEach(btn=>{
       btn.addEventListener('click', async (e)=>{
         const rating = e.currentTarget.getAttribute('data-rate');
+        if (!rating) return;
         try{
           cont.querySelectorAll('button').forEach(b=>b.disabled=true);
           const resp = await api('/api/rate', { method:'POST', body: JSON.stringify({ job_id: jobId, rating }) });
-          $('#ratingMsg').textContent = 'Thanks!';
-          setTimeout(hideRatingBar, 1200);
+          const savedCount = Array.isArray(resp?.saved) ? resp.saved.length : 0;
+          const msgEl = cont.querySelector('#ratingMsg');
+          if (resp?.warnings?.length) {
+            resp.warnings.forEach((w) => log(w, 'text-warning'));
+          }
+          msgEl.textContent = savedCount ? `Saved ${savedCount} favorite${savedCount === 1 ? '' : 's'} — thanks!` : 'Thanks!';
+          setTimeout(hideRatingBar, 1500);
         }catch(err){
-          $('#ratingMsg').textContent = 'Rating failed';
+          const msgEl = cont.querySelector('#ratingMsg');
+          if (msgEl) msgEl.textContent = 'Rating failed';
           log('Rate failed: ' + err.message, 'text-danger');
           cont.querySelectorAll('button').forEach(b=>b.disabled=false);
         }

@@ -2,11 +2,13 @@
 const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
+const { randomUUID } = require('crypto');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
+const EmbeddingApiService = require('../services/embeddingApiService');
 
-const { Prompt, BulkJob, BulkTestPrompt } = require('../database');
+const { Prompt, BulkJob, BulkTestPrompt, GoodImage } = require('../database');
 
 // CHANGE THESE two lines to match your ComfyUI API box
 const COMFY_API_BASE = process.env.COMFY_API_BASE; // your personal ComfyUI API base
@@ -24,6 +26,11 @@ const CACHE_CONCURRENCY = 5;
 const IMAGE_INPUT_KEYS = ['image', 'image2', 'image3'];
 const JS_FILE_NAME = 'controllers/image_gen.controller.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+const GOOD_IMAGE_DIR = path.join(__dirname, '../public/img');
+const GOOD_IMAGE_COLLECTION = 'good_images';
+const GOOD_IMAGE_CONTENT_TYPE = 'image_prompt';
+const GOOD_IMAGE_PARENT_COLLECTION = 'image_gen_job';
+const embeddingApiService = new EmbeddingApiService();
 
 // Track in-flight downloads to avoid duplicate fetches
 const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
@@ -40,6 +47,7 @@ for (const cfg of Object.values(CACHE_CONFIG)) {
     fs.mkdirSync(cfg.dir, { recursive: true });
   }
 }
+if (!fs.existsSync(GOOD_IMAGE_DIR)) fs.mkdirSync(GOOD_IMAGE_DIR, { recursive: true });
 
 function headersToObject(headers) {
   if (!headers || typeof headers.forEach !== 'function') return null;
@@ -1207,10 +1215,284 @@ async function touchPromptUse({ type, workflow, text }) {
   return doc;
 }
 
+// Rating + job helpers
+const RATING_WEIGHT_BY_VALUE = {
+  1: 0,
+  2: 0.5,
+  3: 0.8,
+  4: 1
+};
+
+const RATING_PRESETS = {
+  bad: { value: 1, weight: 0, label: 'bad' },
+  ok: { value: 2, weight: 0.5, label: 'ok' },
+  good: { value: 3, weight: 0.8, label: 'good' },
+  great: { value: 4, weight: 1, label: 'great' }
+};
+
+function normalizeRatingInput(rawRating) {
+  if (rawRating === undefined || rawRating === null) return null;
+  const maybePreset = typeof rawRating === 'string' ? RATING_PRESETS[String(rawRating).toLowerCase()] : null;
+  if (maybePreset) {
+    return {
+      value: maybePreset.value,
+      weight: maybePreset.weight,
+      label: maybePreset.label
+    };
+  }
+  const numeric = Number(rawRating);
+  if (!Number.isFinite(numeric)) return null;
+  const value = Math.min(4, Math.max(1, Math.round(numeric)));
+  return {
+    value,
+    weight: RATING_WEIGHT_BY_VALUE[value] ?? ((value - 1) / 3),
+    label: Object.keys(RATING_PRESETS).find((key) => RATING_PRESETS[key].value === value) || String(value)
+  };
+}
+
+async function applyPromptRating(mapping, delta) {
+  if (!mapping || delta === undefined || delta === null) return;
+  const numericDelta = Number(delta);
+  if (!Number.isFinite(numericDelta)) return;
+  if (!mapping.posId && !mapping.negId) return;
+  const now = new Date();
+  const updates = [];
+  for (const id of [mapping.posId, mapping.negId]) {
+    if (!id) continue;
+    updates.push(
+      Prompt.updateOne(
+        { _id: id },
+        {
+          $inc: { total_score: numericDelta, rating_count: 1, unrated_uses: -1 },
+          $set: { last_used_at: now }
+        }
+      )
+    );
+  }
+  if (updates.length) {
+    await Promise.all(updates);
+  }
+}
+
+async function fetchJobDetail(jobId, instanceId) {
+  const functionName = 'fetchJobDetail';
+  const requestHeaders = apiHeaders();
+  let requestUrl = null;
+  let responseHeaders = null;
+  try {
+    const encoded = encodeURIComponent(jobId);
+    requestUrl = buildComfyUrl(`/v1/jobs/${encoded}`, { instanceId });
+    const r = await fetch(requestUrl, { headers: requestHeaders, signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
+    responseHeaders = headersToObject(r.headers);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { status: r.status, body: txt, jobId, instanceId },
+        functionName
+      });
+      throw new Error(txt || `upstream ${r.status}`);
+    }
+    let json = null;
+    try {
+      json = await r.json();
+    } catch (parseError) {
+      const txt = await r.text().catch(() => '');
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: null,
+        responseHeaders,
+        responseBody: { parseError: parseError.message, body: txt, jobId, instanceId },
+        functionName
+      });
+      throw parseError;
+    }
+    const effectiveInstance = json?.instance_id || instanceId || null;
+    const files = normalizeJobFiles(jobId, Array.isArray(json?.files) ? json.files : [], effectiveInstance);
+    const payload = Object.assign({}, json, { instance_id: effectiveInstance, files });
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders,
+      requestBody: null,
+      responseHeaders,
+      responseBody: payload,
+      functionName
+    });
+    return payload;
+  } catch (err) {
+    throw err;
+  }
+}
+
+function buildGoodImageEmbeddingMetadata(doc) {
+  const documentId = doc?._id?.toString?.();
+  if (!documentId) return null;
+  return {
+    collectionName: GOOD_IMAGE_COLLECTION,
+    documentId,
+    contentType: GOOD_IMAGE_CONTENT_TYPE,
+    parentCollection: GOOD_IMAGE_PARENT_COLLECTION,
+    parentId: doc.job_id || null
+  };
+}
+
+function toGoodImageView(doc, overrides = {}) {
+  if (!doc) return null;
+  const id = doc._id?.toString?.() || doc.id || null;
+  const filename = doc.filename || overrides.filename || null;
+  const publicUrl = filename ? `/img/${encodeURIComponent(filename)}` : null;
+  const created = doc.created_at || doc.createdAt || null;
+  const modelMetadata = doc.model_metadata || overrides.modelMetadata || null;
+  return {
+    id,
+    filename,
+    public_url: publicUrl,
+    original_filename: doc.original_filename || null,
+    job_id: doc.job_id || null,
+    instance_id: doc.instance_id || null,
+    workflow: doc.workflow || null,
+    prompt: overrides.prompt !== undefined ? overrides.prompt : (doc.prompt || null),
+    negative_prompt: overrides.negative !== undefined ? overrides.negative : (doc.negative_prompt || null),
+    rating_value: doc.rating_value || overrides.rating_value || null,
+    rating_label: doc.rating_label || overrides.rating_label || null,
+    bucket: doc.bucket || null,
+    file_index: doc.file_index ?? null,
+    media_type: doc.media_type || null,
+    model: doc.model || null,
+    model_metadata: modelMetadata,
+    cached_url: doc.cached_url || publicUrl,
+    download_url: doc.download_url || null,
+    variables: doc.variables || null,
+    embedding_status: doc.embedding_status || 'pending',
+    high_quality_embedding: Boolean(doc.high_quality_embedding),
+    created_at: created,
+    updated_at: doc.updated_at || doc.updatedAt || null
+  };
+}
+
+async function persistGoodImagesFromJob({ jobId, rating, instanceId, context }) {
+  const warnings = [];
+  const saved = [];
+  const ratingLabel = (rating?.label || '').toLowerCase();
+  const shouldPersist = ratingLabel === 'good' || ratingLabel === 'great';
+  if (!rating || !shouldPersist) {
+    return { saved, warnings };
+  }
+
+  const job = await fetchJobDetail(jobId, instanceId);
+  const effectiveInstanceId = job?.instance_id || instanceId || null;
+  const promptText = (context?.promptText || job?.prompt || job?.inputs?.prompt || '').trim();
+  const negativeText = (context?.negativeText || job?.inputs?.negative || '').trim();
+  const workflow = context?.workflow || job?.workflow || job?.name || null;
+  const model = job?.metadata?.model || job?.model || null;
+  const modelMetadata = job?.metadata || job?.meta || null;
+  const variables = job?.variables || job?.placeholder_values || null;
+
+  const files = Array.isArray(job?.files) ? job.files : [];
+  const imageFiles = files.filter((file) => {
+    const mt = (file?.media_type || '').toLowerCase();
+    return mt === 'image' || mt === 'gif';
+  });
+
+  if (!imageFiles.length) {
+    warnings.push('No completed image files found for this job.');
+    return { saved, warnings };
+  }
+
+  for (const file of imageFiles) {
+    try {
+      const bucket = file.bucket || 'output';
+      const cacheRec = await resolveCachedRecord(bucket, file.filename, effectiveInstanceId);
+      if (!cacheRec || !cacheRec.localPath) {
+        warnings.push(`Missing cached file for ${file.filename || '(unknown)'}.`);
+        continue;
+      }
+      const ext = path.extname(file.filename || '') || '.png';
+      const newName = `${randomUUID()}${ext}`;
+      const targetPath = path.join(GOOD_IMAGE_DIR, newName);
+      await fsp.mkdir(GOOD_IMAGE_DIR, { recursive: true });
+      await fsp.copyFile(cacheRec.localPath, targetPath);
+
+      const doc = await GoodImage.create({
+        filename: newName,
+        original_filename: file.filename || null,
+        job_id: jobId,
+        instance_id: effectiveInstanceId,
+        workflow,
+        prompt: promptText || null,
+        negative_prompt: negativeText || null,
+        rating_value: rating.value,
+        rating_label: rating.label,
+        bucket,
+        file_index: file.index,
+        media_type: file.media_type || detectMediaType(file.filename),
+        model,
+        model_metadata: modelMetadata || null,
+        cached_url: `/img/${encodeURIComponent(newName)}`,
+        download_url: file.download_url || null,
+        variables,
+        embedding_status: 'pending',
+        high_quality_embedding: ratingLabel === 'great'
+      });
+
+      const metadata = buildGoodImageEmbeddingMetadata(doc);
+      if (promptText && metadata) {
+        try {
+          await embeddingApiService.embed([promptText], {}, [metadata]);
+          if (ratingLabel === 'great') {
+            await embeddingApiService.embedHighQuality([promptText], {}, [metadata]);
+          }
+          await GoodImage.updateOne(
+            { _id: doc._id },
+            { embedding_status: 'completed', embedding_error: null, high_quality_embedding: ratingLabel === 'great' }
+          );
+        } catch (embedErr) {
+          const message = embedErr?.message || String(embedErr);
+          warnings.push(`Embedding failed for ${newName}: ${message}`);
+          await GoodImage.updateOne(
+            { _id: doc._id },
+            { embedding_status: 'failed', embedding_error: message }
+          );
+        }
+      } else {
+        warnings.push(`Prompt missing for ${newName}; embedding skipped.`);
+        await GoodImage.updateOne(
+          { _id: doc._id },
+          { embedding_status: 'failed', embedding_error: 'prompt missing' }
+        );
+      }
+
+      saved.push(toGoodImageView(doc, {
+        prompt: promptText,
+        negative: negativeText,
+        rating_value: rating.value,
+        rating_label: rating.label,
+        modelMetadata
+      }));
+    } catch (err) {
+      warnings.push(`Failed to save image for ${file.filename || '(unknown)'}: ${err?.message || err}`);
+    }
+  }
+
+  return { saved, warnings };
+}
+
 // Landing page
 exports.renderLanding = (req, res) => {
   res.render('image_gen/index', {
     title: 'ComfyUI – Image Generation',
+  });
+};
+
+exports.renderGoodGallery = (req, res) => {
+  const pinnedId = String(req.query.id || req.query.image || '').trim();
+  res.render('image_gen/good_gallery', {
+    title: 'Image Gen Picks',
+    pinnedId
   });
 };
 
@@ -2769,7 +3051,12 @@ exports.generate = async (req, res) => {
     if (queued?.job_id) {
       jobPromptMap.set(queued.job_id, {
         posId: posDoc ? posDoc._id : null,
-        negId: negDoc ? negDoc._id : null
+        negId: negDoc ? negDoc._id : null,
+        promptText: posText,
+        negativeText: negText,
+        workflow,
+        instanceId,
+        inputsSnapshot: inputs
       });
       setTimeout(() => jobPromptMap.delete(queued.job_id), MAP_TTL_MS);
     }
@@ -3334,45 +3621,91 @@ exports.uploadInput = async (req, res) => {
 exports.rateJob = async (req, res) => {
   try {
     const { job_id, rating } = req.body || {};
-    if (!job_id || !rating) return errorJson(res, 400, 'job_id and rating required');
+    if (!job_id) return errorJson(res, 400, 'job_id required');
+
+    const normalizedRating = normalizeRatingInput(rating);
+    if (!normalizedRating) return errorJson(res, 400, 'invalid rating');
 
     if (ratedJobs.has(job_id)) {
       return errorJson(res, 409, 'job already rated');
     }
     const mapping = jobPromptMap.get(job_id);
     if (!mapping) {
-      // Mapping may have expired (server restarted or TTL), you can decide to 404 or 410
       return errorJson(res, 410, 'rating window expired for this job');
     }
 
-    const weights = { bad: 0, ok: 0.5, good: 0.8, great: 1 };
-    const delta = weights[String(rating).toLowerCase()];
-    if (delta === undefined) return errorJson(res, 400, 'invalid rating');
+    let saved = [];
+    let warnings = [];
 
-    const now = new Date();
-    const updates = [];
-    for (const id of [mapping.posId, mapping.negId]) {
-      if (!id) continue;
-      updates.push(
-        Prompt.updateOne(
-          { _id: id },
-          {
-            $inc: { total_score: delta, rating_count: 1, unrated_uses: -1 },
-            $set: { last_used_at: now }
-          }
-        )
-      );
+    try {
+      const { saved: savedDocs, warnings: warnList } = await persistGoodImagesFromJob({
+        jobId: job_id,
+        rating: normalizedRating,
+        instanceId: mapping.instanceId || null,
+        context: mapping
+      });
+      saved = savedDocs || [];
+      warnings = warnList || [];
+    } catch (persistErr) {
+      logger.error('[rateJob] failed to persist rated images', persistErr);
+      warnings.push(persistErr?.message || String(persistErr));
     }
-    await Promise.all(updates);
+
+    await applyPromptRating(mapping, normalizedRating.weight);
 
     ratedJobs.add(job_id);
-    // cleanup later to keep memory tidy
     setTimeout(() => { ratedJobs.delete(job_id); jobPromptMap.delete(job_id); }, MAP_TTL_MS);
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, saved, warnings });
   } catch (e) {
     logger.error('[rateJob] error', e);
     return errorJson(res, 500, 'failed to record rating', String(e.message || e));
+  }
+};
+
+exports.listGoodImages = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 24));
+    const pinnedRaw = String(req.query.pinned_id || req.query.id || '').trim();
+    const pinnedId = pinnedRaw && mongoose.isValidObjectId(pinnedRaw) ? pinnedRaw : null;
+
+    const totalItems = await GoodImage.countDocuments({});
+    const totalPages = totalItems ? Math.max(1, Math.ceil(totalItems / limit)) : 1;
+    const currentPage = Math.min(page, totalPages);
+    const skip = Math.max(0, (currentPage - 1) * limit);
+
+    const docs = await GoodImage.find({})
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    let pinned = null;
+    if (pinnedId) {
+      pinned = await GoodImage.findById(pinnedId).lean();
+    }
+
+    const items = docs
+      .filter((doc) => !pinned || String(doc._id) !== String(pinned._id))
+      .map((doc) => toGoodImageView(doc));
+
+    const payload = {
+      items,
+      page: currentPage,
+      total_pages: totalPages,
+      total_items: totalItems,
+      limit
+    };
+
+    if (pinned) {
+      payload.pinned = toGoodImageView(pinned);
+    }
+
+    return res.json(payload);
+  } catch (e) {
+    logger.error('[listGoodImages] error', e);
+    return errorJson(res, 500, 'failed to load saved images', String(e.message || e));
   }
 };
 

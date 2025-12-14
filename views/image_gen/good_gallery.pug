@@ -1,0 +1,35 @@
+extends ../layout
+
+block styles
+  style.
+    .good-gallery .good-card{background:var(--surface-1);border:1px solid var(--border);border-radius:.85rem;padding:.75rem;box-shadow:0 14px 32px rgba(0,0,0,0.18);height:100%;display:flex;flex-direction:column}
+    .good-gallery .good-thumb{width:100%;border-radius:.65rem;border:1px solid var(--divider);background:var(--surface-2);object-fit:cover;max-height:240px}
+    .good-gallery .meta{color:var(--text-secondary);font-size:.9rem}
+    .good-gallery .prompt{white-space:pre-line;font-size:.95rem}
+    .good-gallery .pinned{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-tint)}
+
+block content
+  .container.py-3.good-gallery
+    .d-flex.align-items-center.mb-3
+      h1.h4.mb-0 Image Gen Picks
+      a.btn.btn-outline-secondary.btn-sm.ms-auto(href="/image_gen") Back to studio
+    .card
+      .card-body
+        .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2
+          .d-flex.align-items-center.gap-2
+            h2.h6.mb-0 Saved images
+            span.badge.bg-secondary.text-uppercase#goodTotal 0
+          .d-flex.align-items-center.gap-2
+            button#goodPrev.btn.btn-outline-secondary.btn-sm(type="button") Prev
+            span#goodPageLabel.text-muted Page 1 of 1
+            button#goodNext.btn.btn-outline-secondary.btn-sm(type="button") Next
+        #pinnedArea.mb-3
+        .row.row-cols-1.row-cols-sm-2.row-cols-md-3.row-cols-lg-4.g-3#goodGrid
+        .text-muted.mt-3#goodSummary
+
+block script
+  script.
+    window.goodImagePageConfig = {
+      pinnedId: !{JSON.stringify(pinnedId || null)}
+    };
+  script(src="/js/image_gen_good.js")

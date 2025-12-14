@@ -99,6 +99,7 @@ const OpenAIUsage = require('./models/openai_usage');
 const AIModelCards = require('./models/ai_model_card');
 // Gallery images
 const Images = require('./models/image');
+const GoodImage = require('./models/good_image');
 // HTML page ratings
 const HtmlPageRating = require('./models/html_page_rating');
 // Payroll
@@ -182,6 +183,7 @@ module.exports = {
   OpenAIUsage,
   AIModelCards,
   Images,
+  GoodImage,
   HtmlPageRating,
   Payroll,
   Task,
