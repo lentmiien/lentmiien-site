@@ -137,6 +137,7 @@ async function queryJobs(pageRaw = 1, excludeId = null) {
 }
 
 async function transcribeAudioWithAsrApi(file, form) {
+  const normalized = normalizeAsrForm(form);
   return asrApiService.transcribeBuffer({
     buffer: file?.buffer,
     originalName: file?.originalname,
