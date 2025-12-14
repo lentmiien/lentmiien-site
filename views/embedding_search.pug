@@ -1,0 +1,151 @@
+extends layout
+
+block content
+  .row
+    .col-lg-8
+      h1.mb-3 Embedding Search
+      p.text-muted.mb-4 Search stored embeddings and jump to the source entries. Defaults to the latest 50 matches.
+
+      if searchError
+        .alert.alert-danger(role='alert')= searchError
+
+      form.card.mb-4(method='post', action='/mypage/embedding-search')
+        .card-body
+          h5.mb-3 Search stored embeddings
+          .mb-3
+            label.form-label(for='search_text') Query text
+            textarea#search_text.form-control(name='search_text', rows='3', required, placeholder='Enter text to search stored embeddings')= searchForm && searchForm.query
+          .row
+            .col-md-6.mb-3
+              label.form-label(for='search_type') Search type
+              select#search_type.form-select(name='search_type')
+                each option in searchTypes
+                  option(value=option.value, selected=searchForm && searchForm.searchType === option.value)= option.label
+              small.form-text.text-muted Choose which embedding store or strategy to use.
+            .col-md-6.mb-3
+              label.form-label(for='top_k') Results to return
+              input#top_k.form-control(type='number', name='top_k', min='1', max=searchLimits && searchLimits.maxTopK ? searchLimits.maxTopK : 50, value=searchForm && searchForm.topK !== undefined ? searchForm.topK : (searchLimits && searchLimits.defaultTopK ? searchLimits.defaultTopK : 50))
+              small.form-text.text-muted Show up to 50 results at once.
+          .row
+            .col-md-6.mb-3
+              label.form-label(for='start_date') Updated start date
+              input#start_date.form-control(type='date', name='start_date', value=searchForm && searchForm.startDate ? searchForm.startDate : '')
+              small.form-text.text-muted Inclusive; leave blank for no minimum.
+            .col-md-6.mb-3
+              label.form-label(for='end_date') Updated end date
+              input#end_date.form-control(type='date', name='end_date', value=searchForm && searchForm.endDate ? searchForm.endDate : '')
+              small.form-text.text-muted Inclusive; leave blank for no maximum.
+          button.btn.btn-primary(type='submit') Search embeddings
+
+      if searchResult
+        .card.mb-4
+          .card-body
+            h5.mb-3 Search results
+            .d-flex.flex-wrap.gap-3.align-items-center.mb-3
+              span.badge.text-bg-light.text-secondary= `${(searchResult.results && searchResult.results.length) || 0} match(es)`
+              span.badge.text-bg-light.text-secondary Dim #{searchResult.dim || 'unknown'}
+              if searchResult.model
+                span.badge.text-bg-light.text-secondary= searchResult.model
+              if searchResult.modeLabel
+                span.badge.text-bg-info= searchResult.modeLabel
+              else if searchResult.mode
+                span.badge.text-bg-info= searchResult.mode
+              if searchResult.apiBase
+                span.badge.text-bg-light.text-secondary= searchResult.apiBase
+              if searchResult.reranked
+                span.badge.text-bg-warning.text-dark Reranked
+              if searchForm && (searchForm.startDate || searchForm.endDate)
+                span.badge.text-bg-light.text-secondary= `Updated ${searchForm.startDate || 'start'} -> ${searchForm.endDate || 'now'}`
+            p.text-muted.small.mt-n1.mb-3 Showing unique entries per source/parent.
+            if searchResult.results && searchResult.results.length
+              each row, idx in searchResult.results
+                .border.rounded-3.p-3.mb-3
+                  .d-flex.justify-content-between.align-items-center.mb-2
+                    span.fw-semibold= `#${idx + 1}`
+                    span.badge.text-bg-primary= (row.similarity !== undefined && row.similarity !== null) ? row.similarity.toFixed(4) : '0.0000'
+                  - const previewText = row.previewText || '';
+                  p.mb-2= previewText ? (previewText.length > 360 ? `${previewText.slice(0, 360)}…` : previewText) : 'No preview available.'
+                  ul.list-unstyled.small.mb-0
+                    - const isOcrFile = row.source && row.source.collectionName === 'ocr_job_files';
+                    - const ocrJobId = row.source && (row.source.parentId || row.source.parent_id);
+                    - const ocrFileId = row.source && (row.source.documentId || row.source.document_id);
+                    - const isKnowledge = row.source && row.source.collectionName === 'knowledge';
+                    - const knowledgeId = row.source && (row.source.documentId || row.source.document_id);
+                    - const isChat = row.source && row.source.collectionName === 'chat_message';
+                    - const conversationId = row.source && (row.source.parentId || row.source.parent_id);
+                    - const isASR = row.source && row.source.collectionName === 'asr_jobs';
+                    - const asrId = row.source && (row.source.parentId || row.source.parent_id);
+                    - const isImagePrompt = row.source && row.source.collectionName === 'good_images';
+                    - const imageId = row.source && (row.source.documentId || row.source.document_id);
+                    li
+                      strong Source:
+                      |  #{row.source && row.source.collectionName ? row.source.collectionName : 'n/a'} · #{row.source && row.source.documentId ? row.source.documentId : 'n/a'}
+                    if row.source && (row.source.parentCollection || row.source.parentId)
+                      li
+                        strong Parent:
+                        |  #{row.source.parentCollection || 'n/a'} · #{row.source.parentId || 'n/a'}
+                    if isOcrFile && ocrJobId
+                      - const ocrHref = ocrFileId ? `/ocr/jobs/${ocrJobId}/view/${ocrFileId}` : `/ocr/jobs/${ocrJobId}/view`;
+                      li
+                        strong OCR job:
+                        |  
+                        a(href=ocrHref, target='_blank', rel='noreferrer') View job page
+                    if isKnowledge && knowledgeId
+                      - const knowledgeHref = `/chat4/viewknowledge/${knowledgeId}`;
+                      li
+                        strong Knowledge:
+                        |  
+                        a(href=knowledgeHref, target='_blank', rel='noreferrer') View knowledge
+                    if isChat && conversationId
+                      - const chatHref = `/chat5/chat/${conversationId}`;
+                      li
+                        strong Chat:
+                        |  
+                        a(href=chatHref, target='_blank', rel='noreferrer') View chat
+                    if isASR && asrId
+                      - const asrHref = `/asr/job/${asrId}`;
+                      li
+                        strong ASR job:
+                        |  
+                        a(href=asrHref, target='_blank', rel='noreferrer') View job
+                    if isImagePrompt && imageId
+                      - const imageHref = `/image_gen/good?image=${imageId}`;
+                      li
+                        strong Image job:
+                        |  
+                        a(href=imageHref, target='_blank', rel='noreferrer') View job
+                    li
+                      strong Content type:
+                      |  #{row.source && row.source.contentType ? row.source.contentType : 'n/a'}
+                    li
+                      strong Chunk:
+                      |  text #{row.chunk && row.chunk.textIndex !== undefined ? row.chunk.textIndex : 0}, chunk #{row.chunk && row.chunk.chunkIndex !== undefined ? row.chunk.chunkIndex : 0}, tokens #{row.chunk && row.chunk.startToken !== undefined ? row.chunk.startToken : 0} - #{row.chunk && row.chunk.endToken !== undefined ? row.chunk.endToken : 0}
+                    if row.dim
+                      li
+                        strong Dim:
+                        |  #{row.dim}
+                    if row.model || searchResult.model
+                      li
+                        strong Model:
+                        |  #{row.model || searchResult.model}
+                    if row.rerank && row.rerank.baseSimilarity !== undefined
+                      - const baseScore = Number.isFinite(row.rerank.baseSimilarity) ? row.rerank.baseSimilarity.toFixed(4) : row.rerank.baseSimilarity;
+                      li
+                        strong Base similarity:
+                        |  #{baseScore}
+                    li
+                      strong Updated:
+                      |  #{row.updatedAt ? new Date(row.updatedAt).toLocaleString() : 'n/a'}
+            else
+              p.text-muted.mb-0 No matches found yet. Try a different query or search type.
+      else
+        .card
+          .card-body
+            h6.mb-2 Search results
+            p.text-muted.mb-0 Enter text above to search stored embeddings.
+    .col-lg-4
+      .card
+        .card-body
+          h5.mb-2 How this works
+          p.mb-2 Searches use stored vectors and return unique entries with links back to the original data (OCR files, chats, knowledge, ASR, images).
+          p.mb-0.text-muted Default limit is 50 results; adjust the fields to narrow by date or search mode.

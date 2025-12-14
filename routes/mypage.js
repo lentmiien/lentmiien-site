@@ -10,6 +10,9 @@ const controller = require('../controllers/mypagecontroller');
 /* GET home page. */
 router.get('/', controller.mypage);
 
+router.get('/embedding-search', controller.embedding_search_page);
+router.post('/embedding-search', controller.embedding_search);
+
 // Blogpost
 router.get('/blogpost', controller.blogpost);
 router.post('/post_blogpost', controller.post_blogpost);

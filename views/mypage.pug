@@ -22,6 +22,26 @@ block content
             span.badge.schedule-task-pill.schedule-task-pill--tobuy= t.title
         if noTasks
           span.badge.schedule-task-pill.schedule-task-pill--empty Show all tasks
+  .row.mb-4
+    .col
+      form.card.card-body(action="/mypage/embedding-search", method="get")
+        .d-flex.flex-column.flex-md-row.align-items-md-center.gap-3
+          .flex-grow-1.w-100
+            label.form-label(for="mypage_search_query") Search stored embeddings
+            input#mypage_search_query.form-control(type="text", name="query", placeholder="Search OCR, chat, knowledge, and more", required)
+            input(type="hidden", name="top_k", value="50")
+            small.form-text.text-muted Opens the embedding search page with up to 50 results.
+          .d-flex.flex-column.flex-md-row.align-items-md-center.gap-2
+            label.form-label.mb-0(for="mypage_search_type") Mode
+            select#mypage_search_type.form-select(name="search_type", style="min-width:180px;")
+              if embeddingSearchTypes && embeddingSearchTypes.length
+                each option in embeddingSearchTypes
+                  option(value=option.value, selected=(embeddingSearchDefaultType && embeddingSearchDefaultType === option.value))= option.label
+              else
+                option(value="default" selected) Fast (default)
+                option(value="high_quality") High-quality model
+                option(value="combined") Combined (rerank with high-quality)
+            button.btn.btn-primary(type="submit") Search
   .row 
     .col 
       .mypage-grid

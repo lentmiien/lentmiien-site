@@ -1,8 +1,7 @@
-In my image generating tool, on the page `views/image_gen/index.pug`, I'd like to add the following new functionality:
-When rating a completed image, if giving the rating 4 or 5, I want to save a renamed (random uuid type name) copy of the image to the folder `public/img`, and also, I want to save the filename, prompt, model metadata, etc. to a new database collection for good quality images. Furthermore, I want to save the image prompt to my embedding database, with the database details in the metadata, using my embedding service class (services/embeddingApiService.js). Use the normal embedding function `embed` for rating 4 and 5, and for rank 5 do a second embedding with the high quality embedding function `embedHighQuality`.
+I'm satisfied with the embedding testing page `views/admin_embedding_test.pug`, so now I wish to move this to a new route, for all logged in users to access, but only the search interface.
 
-Also create a small page under image_gen for previewing this new database, with a paginated view of images + metadata, and if the page is opened with a database id in the URL, pin that image at the top.
+So create the search page, display a search bar on the `views/mypage.pug` page, and when the user makes a search, do the search and show the search page with the search results.
 
-Use `controllers/ocrcontroller.js` as reference for how to use the embedding tool.
+Lets show 50 search results, and include the links to the original data, as we currently do on the test page.
 
-codex resume 019b1be0-cfef-7fe0-85be-41e35fd16545
+codex resume 019b1c32-5bf1-7570-a018-32fba914c855

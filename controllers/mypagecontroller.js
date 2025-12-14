@@ -8,6 +8,7 @@ const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
 const { GetAnthropicModels } = require('../utils/anthropic');
 const ScheduleTaskService = require('../services/scheduleTaskService');
 const pdfUtils = require('../utils/pdf');
+const EmbeddingApiService = require('../services/embeddingApiService');
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
@@ -15,7 +16,20 @@ const KnowledgeService = require('../services/knowledgeService');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
+const embeddingApiService = new EmbeddingApiService();
 const fsp = fs.promises;
+const EMBEDDING_SEARCH_TYPES = [
+  { value: 'default', label: 'Fast (default)' },
+  { value: 'high_quality', label: 'High-quality model' },
+  { value: 'combined', label: 'Combined (rerank with high-quality)' },
+];
+const EMBEDDING_SEARCH_TYPE_MAP = EMBEDDING_SEARCH_TYPES.reduce((acc, option) => {
+  acc[option.value] = option.label;
+  return acc;
+}, {});
+const EMBEDDING_DEFAULT_SEARCH_TYPE = EMBEDDING_SEARCH_TYPES[0].value;
+const EMBEDDING_SEARCH_DEFAULT_TOP_K = 50;
+const EMBEDDING_SEARCH_MAX_TOP_K = 50;
 
 function normalizePageSelection(input) {
   if (input === undefined || input === null) return [];
@@ -45,6 +59,171 @@ async function cleanupPromotedFiles(files = []) {
   }));
 }
 
+function normalizeSearchType(raw) {
+  const value = typeof raw === 'string' ? raw.toLowerCase() : '';
+  if (EMBEDDING_SEARCH_TYPE_MAP[value]) {
+    return value;
+  }
+  return EMBEDDING_DEFAULT_SEARCH_TYPE;
+}
+
+function normalizeSearchForm(form = {}) {
+  const query = typeof form?.query === 'string'
+    ? form.query
+    : typeof form?.search_text === 'string'
+      ? form.search_text
+      : typeof form?.searchText === 'string'
+        ? form.searchText
+        : '';
+  const startDate = typeof form?.startDate === 'string'
+    ? form.startDate
+    : typeof form?.start_date === 'string'
+      ? form.start_date
+      : '';
+  const endDate = typeof form?.endDate === 'string'
+    ? form.endDate
+    : typeof form?.end_date === 'string'
+      ? form.end_date
+      : '';
+  const rawTopK = form?.topK ?? form?.top_k ?? form?.searchTopK ?? form?.search_top_k;
+  const parsedTopK = Number.parseInt(rawTopK, 10);
+  const topK = Number.isFinite(parsedTopK) && parsedTopK > 0
+    ? Math.min(parsedTopK, EMBEDDING_SEARCH_MAX_TOP_K)
+    : EMBEDDING_SEARCH_DEFAULT_TOP_K;
+  const searchType = normalizeSearchType(form?.searchType ?? form?.search_type ?? form?.mode);
+
+  return {
+    query,
+    topK,
+    searchType,
+    startDate,
+    endDate,
+  };
+}
+
+function buildSearchDateRange(startRaw, endRaw) {
+  const parseDate = (value) => {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return 'invalid';
+    }
+    return parsed;
+  };
+
+  const start = parseDate(startRaw);
+  if (start === 'invalid') {
+    return { error: 'Invalid start date. Please use YYYY-MM-DD.' };
+  }
+  const end = parseDate(endRaw);
+  if (end === 'invalid') {
+    return { error: 'Invalid end date. Please use YYYY-MM-DD.' };
+  }
+
+  if (start) {
+    start.setUTCHours(0, 0, 0, 0);
+  }
+  if (end) {
+    end.setUTCHours(23, 59, 59, 999);
+  }
+
+  if (start && end && start > end) {
+    return { error: 'Start date must be before or equal to end date.' };
+  }
+
+  return { start, end };
+}
+
+function renderEmbeddingSearchPage(res, { searchForm, searchResult = null, searchError = null } = {}) {
+  const normalizedForm = normalizeSearchForm(searchForm);
+  const decoratedResult = searchResult
+    ? {
+        ...searchResult,
+        modeLabel: searchResult.mode ? EMBEDDING_SEARCH_TYPE_MAP[searchResult.mode] || searchResult.mode : null,
+      }
+    : null;
+
+  return res.render('embedding_search', {
+    searchForm: normalizedForm,
+    searchResult: decoratedResult,
+    searchError,
+    searchTypes: EMBEDDING_SEARCH_TYPES,
+    searchTypeLabels: EMBEDDING_SEARCH_TYPE_MAP,
+    searchLimits: {
+      defaultTopK: EMBEDDING_SEARCH_DEFAULT_TOP_K,
+      maxTopK: EMBEDDING_SEARCH_MAX_TOP_K,
+    },
+  });
+}
+
+async function handleEmbeddingSearch(req, res, formInput = {}, { requireQuery = false } = {}) {
+  const searchForm = normalizeSearchForm(formInput);
+  const query = (searchForm.query || '').trim();
+  searchForm.query = query;
+
+  if (!query) {
+    if (requireQuery) {
+      res.status(400);
+      return renderEmbeddingSearchPage(res, { searchForm, searchError: 'Please enter text to search stored embeddings.' });
+    }
+    return renderEmbeddingSearchPage(res, { searchForm });
+  }
+
+  const dateRange = buildSearchDateRange(searchForm.startDate, searchForm.endDate);
+  if (dateRange.error) {
+    res.status(400);
+    return renderEmbeddingSearchPage(res, { searchForm, searchError: dateRange.error });
+  }
+
+  const searchOptions = { topK: searchForm.topK, dateRange };
+
+  try {
+    let result;
+    if (searchForm.searchType === 'high_quality') {
+      result = await embeddingApiService.similaritySearchHighQuality(query, searchOptions);
+    } else if (searchForm.searchType === 'combined') {
+      result = await embeddingApiService.combinedSimilaritySearch(query, searchOptions);
+    } else {
+      result = await embeddingApiService.similaritySearch(query, searchOptions);
+    }
+
+    logger.notice('Embedding search completed', {
+      category: 'embedding_search',
+      metadata: {
+        queryLength: query.length,
+        topK: searchForm.topK,
+        returned: result?.results?.length || 0,
+        searchType: searchForm.searchType,
+        mode: result?.mode || null,
+        updatedAfter: dateRange.start ? dateRange.start.toISOString() : null,
+        updatedBefore: dateRange.end ? dateRange.end.toISOString() : null,
+      },
+    });
+
+    return renderEmbeddingSearchPage(res, { searchForm, searchResult: result });
+  } catch (error) {
+    const status = error?.status || 502;
+    let message = error?.message || 'Unable to search embeddings.';
+
+    if (error?.code === 'ETIMEOUT') {
+      message = `Embedding search timed out after ${embeddingApiService.timeoutMs}ms.`;
+    }
+
+    logger.error('Embedding search failed', {
+      category: 'embedding_search',
+      metadata: {
+        status: error?.status,
+        code: error?.code,
+        message: error?.message,
+        searchType: searchForm.searchType,
+      },
+    });
+
+    res.status(status);
+    return renderEmbeddingSearchPage(res, { searchForm, searchError: message });
+  }
+}
+
 exports.mypage = async (req, res) => {
   // Do something fun here, to show om mypage!
   const ts = Math.round((Date.now() - (1000 * 60 * 60 * 24 * 30)) / 1000);
@@ -59,8 +238,18 @@ exports.mypage = async (req, res) => {
   const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
   const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
 
-  res.render('mypage', {new_openai_models, new_anthropic_models, tasks: tasks.filter(t => !t.done && ((t.start && t.start < to) || !t.start))});
+  res.render('mypage', {
+    new_openai_models,
+    new_anthropic_models,
+    tasks: tasks.filter((t) => !t.done && ((t.start && t.start < to) || !t.start)),
+    embeddingSearchTypes: EMBEDDING_SEARCH_TYPES,
+    embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,
+  });
 };
+
+exports.embedding_search_page = async (req, res) => handleEmbeddingSearch(req, res, req.query || {}, { requireQuery: false });
+
+exports.embedding_search = async (req, res) => handleEmbeddingSearch(req, res, req.body || {}, { requireQuery: true });
 
 exports.blogpost = async (req, res) => {
   const form_data = {
