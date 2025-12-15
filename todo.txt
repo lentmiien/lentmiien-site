@@ -1,7 +1,2 @@
-I'm satisfied with the embedding testing page `views/admin_embedding_test.pug`, so now I wish to move this to a new route, for all logged in users to access, but only the search interface.
-
-So create the search page, display a search bar on the `views/mypage.pug` page, and when the user makes a search, do the search and show the search page with the search results.
-
-Lets show 50 search results, and include the links to the original data, as we currently do on the test page.
-
-codex resume 019b1c32-5bf1-7570-a018-32fba914c855
+In `services/embeddingApiService.js`, when doing the `similaritySearch`, I'd like to process entries of the source 'chat_message' as following:
+After ranking the original array on similarity, and removed all duplicate text chunks from the same entry, I'd like to combine all 'chat_message' that has the same 'conversation' id, to the highest ranked result, maybe we can put the preview texts and similarity scores in an 'alternative_sources' array, so the UI could display these texts if needed. Also, when removing the 'chat_message' from the same 'conversation', we can fill up the return array with the next ranked items, to reach the target number of search hits.

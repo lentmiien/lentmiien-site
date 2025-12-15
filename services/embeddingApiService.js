@@ -9,6 +9,7 @@ const JS_FILE_NAME = 'services/embeddingApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const DEFAULT_TOP_K = 10;
 const MAX_TOP_K = 50;
+const CHAT_MESSAGE_COLLECTION = 'chat_message';
 const SEARCH_MODES = {
   DEFAULT: 'default',
   HIGH_QUALITY: 'high_quality',
@@ -509,18 +510,25 @@ class EmbeddingApiService {
         model: doc.model || null,
         textLength: doc.textLength || 0,
         createdAt: doc.createdAt,
-      updatedAt: doc.updatedAt,
-    }))
+        updatedAt: doc.updatedAt,
+      }))
       .sort((a, b) => b.similarity - a.similarity);
-    const deduped = dedupeResultsByEntry(scored, topK);
+    const deduped = dedupeResultsByEntry(scored);
+    const {
+      results: combinedResults,
+      groupedConversations,
+      alternativeCount,
+    } = combineChatResultsByConversation(deduped, topK);
 
     logger.notice('Embedding similarity search completed', {
       category: 'embedding_api',
       metadata: {
         candidates: candidates.length,
         scored: scored.length,
-        returned: deduped.length,
+        returned: combinedResults.length,
         uniqueEntries: deduped.length,
+        chatConversations: groupedConversations,
+        alternativeSources: alternativeCount,
         dim,
         topK,
         mode: targetMode,
@@ -534,7 +542,7 @@ class EmbeddingApiService {
       dim,
       model: result?.model || null,
       topK,
-      results: deduped,
+      results: combinedResults,
       mode: targetMode,
       apiBase,
     };
@@ -923,6 +931,71 @@ function buildSourceKey(source) {
     source.parentCollection || '',
     source.parentId || '',
   ].join('::');
+}
+
+function extractConversationId(source) {
+  if (!source || source.collectionName !== CHAT_MESSAGE_COLLECTION) {
+    return null;
+  }
+  const conversationId = source.parentId ?? source.parent_id;
+  if (conversationId === undefined || conversationId === null) {
+    return null;
+  }
+  const normalized = String(conversationId).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function attachAlternativeSource(primary, alternativeRow) {
+  if (!primary) return;
+  if (!Array.isArray(primary.alternative_sources)) {
+    primary.alternative_sources = [];
+  }
+  primary.alternative_sources.push({
+    id: alternativeRow.id,
+    similarity: alternativeRow.similarity,
+    previewText: alternativeRow.previewText,
+    source: alternativeRow.source,
+    chunk: alternativeRow.chunk,
+    dim: alternativeRow.dim,
+    model: alternativeRow.model || null,
+    textLength: alternativeRow.textLength || 0,
+    createdAt: alternativeRow.createdAt,
+    updatedAt: alternativeRow.updatedAt,
+    rerank: alternativeRow.rerank || null,
+  });
+}
+
+function combineChatResultsByConversation(rows, topK) {
+  if (!Array.isArray(rows)) {
+    return { results: [], groupedConversations: 0, alternativeCount: 0 };
+  }
+  const maxResults = Number.isFinite(topK) && topK > 0 ? topK : DEFAULT_TOP_K;
+  const results = [];
+  const conversationLookup = new Map();
+  let alternativeCount = 0;
+
+  for (const row of rows) {
+    const conversationId = extractConversationId(row?.source);
+    if (conversationId && conversationLookup.has(conversationId)) {
+      attachAlternativeSource(conversationLookup.get(conversationId), row);
+      alternativeCount += 1;
+      continue;
+    }
+
+    if (results.length < maxResults) {
+      const entry = conversationId ? { ...row } : row;
+      results.push(entry);
+      if (conversationId) {
+        conversationLookup.set(conversationId, entry);
+      }
+    }
+  }
+
+  return {
+    results,
+    groupedConversations: conversationLookup.size,
+    alternativeCount,
+  };
 }
 
 function safeJsonParse(raw) {
