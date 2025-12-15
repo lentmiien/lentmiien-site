@@ -65,6 +65,22 @@ block content
                     span.badge.text-bg-primary= (row.similarity !== undefined && row.similarity !== null) ? row.similarity.toFixed(4) : '0.0000'
                   - const previewText = row.previewText || '';
                   p.mb-2= previewText ? (previewText.length > 360 ? `${previewText.slice(0, 360)}…` : previewText) : 'No preview available.'
+                  if row.alternative_sources && row.alternative_sources.length
+                    .bg-light.border.rounded-2.p-2.mt-2(data-alt-source-list='')
+                      .d-flex.justify-content-between.align-items-center.gap-2.mb-2
+                        span.small.fw-semibold Other messages in conversation (#{row.alternative_sources.length})
+                        .d-flex.align-items-center.gap-1
+                          button.btn.btn-outline-secondary.btn-sm(type='button', data-alt-source-prev='') <
+                          span.small.text-muted(data-alt-source-indicator='') 1 / #{row.alternative_sources.length}
+                          button.btn.btn-outline-secondary.btn-sm(type='button', data-alt-source-next='') >
+                      each alt, altIdx in row.alternative_sources
+                        - const altPreview = alt.previewText || '';
+                        - const altText = altPreview ? (altPreview.length > 240 ? `${altPreview.slice(0, 240)}…` : altPreview) : 'No preview available.';
+                        .small(data-alt-source-item='' style='display:none')
+                          .d-flex.justify-content-between.align-items-center.mb-1
+                            span.fw-semibold.text-secondary= `Alt #${altIdx + 1}`
+                            span.badge.text-bg-secondary= (alt.similarity !== undefined && alt.similarity !== null) ? alt.similarity.toFixed(4) : '0.0000'
+                          p.mb-1= altText
                   ul.list-unstyled.small.mb-0
                     - const isOcrFile = row.source && row.source.collectionName === 'ocr_job_files';
                     - const ocrJobId = row.source && (row.source.parentId || row.source.parent_id);
@@ -149,3 +165,49 @@ block content
           h5.mb-2 How this works
           p.mb-2 Searches use stored vectors and return unique entries with links back to the original data (OCR files, chats, knowledge, ASR, images).
           p.mb-0.text-muted Default limit is 50 results; adjust the fields to narrow by date or search mode.
+block script
+  script.
+    (() => {
+      function initAltCarousels() {
+        document.querySelectorAll('[data-alt-source-list]').forEach((container) => {
+          const items = Array.from(container.querySelectorAll('[data-alt-source-item]'));
+          if (!items.length) return;
+          let index = 0;
+          const indicator = container.querySelector('[data-alt-source-indicator]');
+          const prevBtn = container.querySelector('[data-alt-source-prev]');
+          const nextBtn = container.querySelector('[data-alt-source-next]');
+
+          const render = () => {
+            items.forEach((item, idx) => {
+              item.style.display = idx === index ? '' : 'none';
+            });
+            if (indicator) {
+              indicator.textContent = `${index + 1} / ${items.length}`;
+            }
+          };
+
+          if (prevBtn) {
+            prevBtn.addEventListener('click', (event) => {
+              event.preventDefault();
+              index = (index - 1 + items.length) % items.length;
+              render();
+            });
+          }
+          if (nextBtn) {
+            nextBtn.addEventListener('click', (event) => {
+              event.preventDefault();
+              index = (index + 1) % items.length;
+              render();
+            });
+          }
+
+          render();
+        });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAltCarousels);
+      } else {
+        initAltCarousels();
+      }
+    })();
