@@ -269,6 +269,7 @@ block content
       label.chat5-input-label(for="reasoning") Reasoning effort 
       select#reasoning.form-control(name="reasoning") 
         option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
+        option(value="none") None *Only GPT 5.2
         option(value="minimal") Minimal 
         option(value="low") Low 
         option(value="medium") Medium 
