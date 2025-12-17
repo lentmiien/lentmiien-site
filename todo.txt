@@ -1,8 +1,3 @@
-On the page `views/mypage.pug`, I displaying a list of "New OpenAI models (last 30 days)" and a list of "New Anthropic models (last 30 days)", but before reaching this point, I'd also like to load my internal list of models (models/ai_model_card.js), then compare if the models in the model lists I show on the page also exist in my database, and show some indication if the model exist or not.
+On the `views/chat5_chat.pug` page, I have a TTS function, that auto calculate tokens to 1024 per 500 character input. This works great for English, but isn't enough for Japanese, where I roughly need the double. I'm currently naming my reference ids with the 2 letter language code at the end, example 'lennart_en' for English, and 'lennart_jp' for Japanese, so can we use this to auto set double tokens for Japanese. Also, when not using a reference id, can we add a check box, for the user to manually select "double tokens (recommended for Japanese)"?
 
-For models that don't exist in my database, I'd like to make the model names link to the URL '/chat5/ai_model_cards', so that I can add the model to my database. Please also update the server endpoint so that it can accept optional query parameters for model and provider, and autofill the form on the page (views/ai_model_cards.pug) as following:
-* `model_name` is set to the model
-* `provider` is set to the provider ("OpenAI" or "Anthropic" for my 2 lists)
-* `api_model` is set to the model
-
-codex resume 019b2a69-b056-7a43-9860-aa5cbd08de76
+codex resume 019b2cb3-0a4e-7d01-82c3-b4caec82ea16

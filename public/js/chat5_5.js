@@ -20,9 +20,11 @@ const draftStorageKeys = {
   personality: 'chat5DraftPersonalityId',
   responseType: 'chat5DraftResponseTypeId',
 };
-const TTS_TOKENS_PER_500 = 1024;
+const TTS_BASE_TOKENS_PER_500 = 1024;
 const TTS_MAX_TOKENS = 8192;
 const charCounterEl = document.getElementById('chat5CharCounter');
+const ttsReferenceSelect = document.getElementById('ttsReferenceId');
+const ttsDoubleTokensCheckbox = document.getElementById('ttsDoubleTokens');
 const voiceButton = document.getElementById('chat5VoiceButton');
 const voiceStatus = document.getElementById('chat5VoiceStatus');
 const voiceState = {
@@ -33,9 +35,44 @@ const voiceState = {
   busy: false,
 };
 
-function estimateTtsTokens(text) {
+function getReferenceIdValue() {
+  return (ttsReferenceSelect?.value || '').trim();
+}
+
+function isJapaneseReferenceId(referenceId) {
+  if (!referenceId) return false;
+  const normalized = referenceId.trim().toLowerCase();
+  const langCode = normalized.slice(-2);
+  return langCode === 'jp';
+}
+
+function shouldDoubleTtsTokens(referenceId, manualDouble) {
+  if (isJapaneseReferenceId(referenceId)) return true;
+  return !referenceId && !!manualDouble;
+}
+
+function getTtsTokensPer500() {
+  const referenceId = getReferenceIdValue();
+  const manualDouble = ttsDoubleTokensCheckbox ? ttsDoubleTokensCheckbox.checked : false;
+  return shouldDoubleTtsTokens(referenceId, manualDouble)
+    ? TTS_BASE_TOKENS_PER_500 * 2
+    : TTS_BASE_TOKENS_PER_500;
+}
+
+function syncManualDoubleState() {
+  if (!ttsDoubleTokensCheckbox) return;
+  const referenceId = getReferenceIdValue();
+  const shouldDisable = !!referenceId;
+  ttsDoubleTokensCheckbox.disabled = shouldDisable;
+  if (shouldDisable) {
+    ttsDoubleTokensCheckbox.checked = false;
+  }
+}
+
+function estimateTtsTokens(text, tokensPer500 = getTtsTokensPer500()) {
   const length = typeof text === 'string' ? text.length : 0;
-  const estimate = Math.round((length / 500) * TTS_TOKENS_PER_500) || TTS_TOKENS_PER_500;
+  const per500 = tokensPer500 || TTS_BASE_TOKENS_PER_500;
+  const estimate = Math.round((length / 500) * per500) || per500;
   return Math.max(1, Math.min(TTS_MAX_TOKENS, estimate));
 }
 
@@ -43,8 +80,9 @@ function updatePromptCharCounter() {
   if (!charCounterEl) return;
   const text = editor ? editor.getMarkdown() : '';
   const length = typeof text === 'string' ? text.length : 0;
-  const tokens = estimateTtsTokens(text);
-  charCounterEl.textContent = `${length} chars · ~${tokens} tokens (1024 per 500 chars)`;
+  const tokensPer500 = getTtsTokensPer500();
+  const tokens = estimateTtsTokens(text, tokensPer500);
+  charCounterEl.textContent = `${length} chars · ~${tokens} tokens (${tokensPer500} per 500 chars)`;
 }
 
 if (editor && typeof editor.on === 'function') {
@@ -378,8 +416,9 @@ function GenerateTTS() {
     alert('Please enter text before requesting TTS.');
     return;
   }
+  syncManualDoubleState();
   const settings = collectChatSettings();
-  const referenceId = (document.getElementById('ttsReferenceId')?.value || '').trim();
+  const referenceId = getReferenceIdValue();
   const maxNewTokens = estimateTtsTokens(prompt);
   showLoadingPopup();
   socket.emit('chat5-tts', { conversation_id, prompt, referenceId, maxNewTokens, settings }, (resp) => {
@@ -1155,6 +1194,16 @@ document.addEventListener('DOMContentLoaded', () => {
   if (ttsBtn) {
     ttsBtn.addEventListener('click', GenerateTTS);
   }
+  if (ttsReferenceSelect) {
+    ttsReferenceSelect.addEventListener('change', () => {
+      syncManualDoubleState();
+      updatePromptCharCounter();
+    });
+  }
+  if (ttsDoubleTokensCheckbox) {
+    ttsDoubleTokensCheckbox.addEventListener('change', updatePromptCharCounter);
+  }
+  syncManualDoubleState();
   updatePromptCharCounter();
 });
 document.addEventListener('DOMContentLoaded', () => {
