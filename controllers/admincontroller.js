@@ -181,6 +181,9 @@ const EMBEDDING_DEFAULT_OVERLAP = 32;
 const EMBEDDING_SPLIT_MODES = ['single', 'lines'];
 const EMBEDDING_SEARCH_DEFAULT_TOP_K = 10;
 const EMBEDDING_SEARCH_MAX_TOP_K = 50;
+const EMBEDDING_RECENT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const EMBEDDING_RECENT_FETCH_LIMIT = 500;
+const EMBEDDING_CHUNK_SAMPLE_LIMIT = 5;
 const EMBEDDING_SEARCH_TYPES = [
   { value: 'default', label: 'Fast (default)' },
   { value: 'high_quality', label: 'High-quality model' },
@@ -1245,6 +1248,291 @@ function parseNonNegativeInt(raw, fieldLabel) {
   return { value: parsed };
 }
 
+function buildSourceKey(source = {}) {
+  return [
+    source.collectionName || '',
+    source.documentId || '',
+    source.contentType || '',
+    source.parentCollection || '',
+    source.parentId || '',
+  ].join('::');
+}
+
+function resolveStorageMode(mode) {
+  const normalized = normalizeSearchType(mode);
+  if (normalized === 'high_quality') {
+    return 'high_quality';
+  }
+  return 'default';
+}
+
+function normalizeDeleteSource(body = {}) {
+  const source = {
+    collectionName: typeof body.collectionName === 'string'
+      ? body.collectionName.trim()
+      : typeof body['source.collectionName'] === 'string'
+        ? body['source.collectionName'].trim()
+        : '',
+    documentId: typeof body.documentId === 'string'
+      ? body.documentId.trim()
+      : typeof body.document_id === 'string'
+        ? body.document_id.trim()
+        : '',
+    contentType: typeof body.contentType === 'string'
+      ? body.contentType.trim()
+      : typeof body.content_type === 'string'
+        ? body.content_type.trim()
+        : '',
+    parentCollection: typeof body.parentCollection === 'string'
+      ? body.parentCollection.trim()
+      : typeof body.parent_collection === 'string'
+        ? body.parent_collection.trim()
+        : '',
+    parentId: typeof body.parentId === 'string'
+      ? body.parentId.trim()
+      : typeof body.parent_id === 'string'
+        ? body.parent_id.trim()
+        : '',
+  };
+
+  if (!source.collectionName || !source.documentId || !source.contentType) {
+    return { error: 'Source, document, and content type are required to delete embeddings.' };
+  }
+
+  if (!source.parentCollection) {
+    source.parentCollection = null;
+  }
+  if (!source.parentId) {
+    source.parentId = null;
+  }
+
+  return { source };
+}
+
+function groupEmbeddingDocs(docs = [], { mode = EMBEDDING_DEFAULT_SEARCH_TYPE, chunkLimit = EMBEDDING_CHUNK_SAMPLE_LIMIT } = {}) {
+  const groups = new Map();
+  docs.forEach((doc) => {
+    const key = buildSourceKey(doc?.source || {});
+    if (!key) return;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        mode,
+        source: doc?.source || {},
+        chunkCount: 0,
+        chunks: [],
+        models: new Set(),
+        dim: doc?.dim || null,
+        textLength: 0,
+        latestCreatedAt: null,
+        latestUpdatedAt: null,
+        previewText: '',
+      });
+    }
+    const group = groups.get(key);
+    group.chunkCount += 1;
+    if (doc?.model) {
+      group.models.add(doc.model);
+    }
+    if (doc?.dim && !group.dim) {
+      group.dim = doc.dim;
+    }
+    group.textLength += doc?.textLength || 0;
+    if (!group.previewText && doc?.previewText) {
+      group.previewText = doc.previewText;
+    }
+
+    const createdAt = doc?.createdAt ? new Date(doc.createdAt) : null;
+    const updatedAt = doc?.updatedAt ? new Date(doc.updatedAt) : null;
+    if (!group.latestCreatedAt || (createdAt && createdAt > group.latestCreatedAt)) {
+      group.latestCreatedAt = createdAt;
+    }
+    if (!group.latestUpdatedAt || (updatedAt && updatedAt > group.latestUpdatedAt)) {
+      group.latestUpdatedAt = updatedAt;
+    }
+
+    if (group.chunks.length < chunkLimit) {
+      group.chunks.push({
+        chunkIndex: doc?.chunk?.chunkIndex ?? 0,
+        textIndex: doc?.chunk?.textIndex ?? 0,
+        startToken: doc?.chunk?.startToken ?? 0,
+        endToken: doc?.chunk?.endToken ?? 0,
+        previewText: (doc?.previewText || '').slice(0, 280),
+      });
+    }
+  });
+
+  return Array.from(groups.values())
+    .map((entry) => ({
+      ...entry,
+      models: Array.from(entry.models),
+      truncatedChunks: entry.chunkCount > entry.chunks.length,
+      latestTimestamp: entry.latestUpdatedAt || entry.latestCreatedAt,
+    }))
+    .sort((a, b) => {
+      const aTime = a.latestTimestamp ? a.latestTimestamp.getTime() : 0;
+      const bTime = b.latestTimestamp ? b.latestTimestamp.getTime() : 0;
+      return bTime - aTime;
+    });
+}
+
+async function loadRecentEmbeddings() {
+  const since = new Date(Date.now() - EMBEDDING_RECENT_LOOKBACK_MS);
+  const modes = ['default', 'high_quality'];
+  const result = {};
+
+  for (const mode of modes) {
+    try {
+      const recent = await embeddingApiService.fetchRecentEmbeddings({
+        mode,
+        since,
+        limit: EMBEDDING_RECENT_FETCH_LIMIT,
+      });
+      result[mode] = {
+        mode,
+        label: EMBEDDING_SEARCH_TYPE_MAP[mode] || mode,
+        groups: groupEmbeddingDocs(recent.docs, { mode }),
+        totalCount: recent.totalCount,
+        truncated: recent.truncated,
+        since,
+      };
+    } catch (error) {
+      logger.error('Failed to load recent embeddings', {
+        category: 'admin_embedding_test',
+        metadata: { mode, error: error?.message },
+      });
+      result[mode] = {
+        mode,
+        label: EMBEDDING_SEARCH_TYPE_MAP[mode] || mode,
+        groups: [],
+        totalCount: 0,
+        truncated: false,
+        since,
+        error: error?.message || 'Unable to load recent embeddings.',
+      };
+    }
+  }
+
+  return result;
+}
+
+async function performEmbeddingSearch(searchFormInput = {}) {
+  const searchForm = normalizeSearchForm(searchFormInput);
+  searchForm.query = searchForm.query.trim();
+  searchForm.startDate = searchForm.startDate.trim();
+  searchForm.endDate = searchForm.endDate.trim();
+
+  if (!searchForm.query) {
+    return { form: searchForm, searchForm, error: 'Please enter text to search stored embeddings.' };
+  }
+
+  const dateRange = buildSearchDateRange(searchForm.startDate, searchForm.endDate);
+  if (dateRange.error) {
+    return { form: searchForm, searchForm, error: dateRange.error };
+  }
+
+  const searchOptions = { topK: searchForm.topK, dateRange };
+
+  try {
+    let result;
+    if (searchForm.searchType === 'high_quality') {
+      result = await embeddingApiService.similaritySearchHighQuality(searchForm.query, searchOptions);
+    } else if (searchForm.searchType === 'combined') {
+      result = await embeddingApiService.combinedSimilaritySearch(searchForm.query, searchOptions);
+    } else {
+      result = await embeddingApiService.similaritySearch(searchForm.query, searchOptions);
+    }
+
+    logger.notice('Admin embedding similarity search completed', {
+      category: 'admin_embedding_test',
+      metadata: {
+        queryLength: searchForm.query.length,
+        topK: searchForm.topK,
+        returned: result?.results?.length || 0,
+        searchType: searchForm.searchType,
+        mode: result?.mode || null,
+        updatedAfter: dateRange.start ? dateRange.start.toISOString() : null,
+        updatedBefore: dateRange.end ? dateRange.end.toISOString() : null,
+      },
+    });
+
+    const storageMode = resolveStorageMode(result?.mode || searchForm.searchType);
+    const sources = Array.isArray(result?.results)
+      ? result.results
+        .map((row) => row?.source)
+        .filter((source) => source && source.collectionName && source.documentId && source.contentType)
+      : [];
+    let hydratedGroups = [];
+    if (sources.length) {
+      try {
+        const docs = await embeddingApiService.fetchEmbeddingsBySources(sources, { mode: storageMode });
+        hydratedGroups = groupEmbeddingDocs(docs, { mode: storageMode });
+      } catch (error) {
+        logger.error('Failed to hydrate embedding search results', {
+          category: 'admin_embedding_test',
+          metadata: { mode: storageMode, error: error?.message },
+        });
+      }
+    }
+    const hydratedLookup = new Map(hydratedGroups.map((entry) => [entry.key, entry]));
+    const groupedResults = Array.isArray(result?.results)
+      ? result.results.map((row) => {
+        const key = buildSourceKey(row?.source || {});
+        const baseGroup = hydratedLookup.get(key) || groupEmbeddingDocs([{
+          source: row?.source || {},
+          chunk: row?.chunk || {},
+          previewText: row?.previewText || '',
+          model: row?.model || result?.model || null,
+          createdAt: row?.createdAt || null,
+          updatedAt: row?.updatedAt || null,
+          textLength: row?.textLength || 0,
+          dim: row?.dim || result?.dim || null,
+        }], { mode: storageMode })[0] || null;
+
+        return {
+          ...baseGroup,
+          key,
+          similarity: Number.isFinite(row?.similarity) ? row.similarity : null,
+          rerank: row?.rerank || null,
+          previewText: row?.previewText || baseGroup?.chunks?.[0]?.previewText || '',
+          matchedChunk: row?.chunk || null,
+        };
+      })
+      : [];
+
+    return {
+      form: searchForm,
+      searchForm,
+      result,
+      groupedResults,
+      error: null,
+    };
+  } catch (error) {
+    let message = error?.message || 'Unable to search embeddings.';
+
+    if (error?.code === 'ETIMEOUT') {
+      message = `Embedding API request timed out after ${embeddingApiService.timeoutMs}ms.`;
+    }
+
+    logger.error('Admin embedding similarity search failed', {
+      category: 'admin_embedding_test',
+      metadata: {
+        status: error?.status,
+        code: error?.code,
+        message: error?.message,
+        searchType: searchForm.searchType,
+      },
+    });
+
+    return {
+      form: searchForm,
+      searchForm,
+      error: message,
+      status: error?.status || 502,
+    };
+  }
+}
+
 function renderEmbeddingTestPage(res, {
   form,
   result = null,
@@ -1255,6 +1543,8 @@ function renderEmbeddingTestPage(res, {
   health = null,
   healthError = null,
   search = {},
+  recentEmbeddings = null,
+  deleteFeedback = null,
 }) {
   const normalizedForm = normalizeEmbeddingForm(form);
   const normalizedSearchForm = normalizeSearchForm(search?.form || search);
@@ -1264,6 +1554,7 @@ function renderEmbeddingTestPage(res, {
       modeLabel: search?.result?.mode ? EMBEDDING_SEARCH_TYPE_MAP[search.result.mode] || search.result.mode : null,
     }
     : null;
+  const searchGroups = Array.isArray(search?.groupedResults) ? search.groupedResults : [];
   return res.render('admin_embedding_test', {
     form: normalizedForm,
     result,
@@ -1284,18 +1575,23 @@ function renderEmbeddingTestPage(res, {
     searchForm: normalizedSearchForm,
     searchResult,
     searchError: search?.error || null,
+    searchGroups,
     searchTypes: EMBEDDING_SEARCH_TYPES,
     searchTypeLabels: EMBEDDING_SEARCH_TYPE_MAP,
     searchLimits: {
       defaultTopK: EMBEDDING_SEARCH_DEFAULT_TOP_K,
       maxTopK: EMBEDDING_SEARCH_MAX_TOP_K,
     },
+    recentEmbeddings,
+    recentHours: EMBEDDING_RECENT_LOOKBACK_MS / (60 * 60 * 1000),
+    deleteFeedback,
   });
 }
 
 exports.embedding_test_page = async (req, res) => {
   const form = defaultEmbeddingForm();
   const { health, healthError } = await fetchEmbeddingHealth();
+  const recentEmbeddings = await loadRecentEmbeddings();
 
   return renderEmbeddingTestPage(res, {
     form,
@@ -1303,6 +1599,7 @@ exports.embedding_test_page = async (req, res) => {
     requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
     health,
     healthError,
+    recentEmbeddings,
   });
 };
 
@@ -1312,6 +1609,8 @@ exports.embedding_test_generate = async (req, res) => {
   const autoChunk = req.body.auto_chunk !== undefined;
   const maxTokensInput = req.body.max_tokens_per_chunk;
   const overlapTokensInput = req.body.overlap_tokens;
+  const { health, healthError } = await fetchEmbeddingHealth();
+  const recentEmbeddings = await loadRecentEmbeddings();
   const form = {
     text: rawText,
     splitMode,
@@ -1322,7 +1621,6 @@ exports.embedding_test_generate = async (req, res) => {
 
   const parsedTexts = parseEmbeddingTexts(rawText, splitMode);
   if (!parsedTexts.length) {
-    const { health, healthError } = await fetchEmbeddingHealth();
     res.status(400);
     return renderEmbeddingTestPage(res, {
       form,
@@ -1331,11 +1629,11 @@ exports.embedding_test_generate = async (req, res) => {
       requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
       health,
       healthError,
+      recentEmbeddings,
     });
   }
 
   if (parsedTexts.length > EMBEDDING_TEST_MAX_TEXTS) {
-    const { health, healthError } = await fetchEmbeddingHealth();
     res.status(400);
     return renderEmbeddingTestPage(res, {
       form,
@@ -1344,12 +1642,12 @@ exports.embedding_test_generate = async (req, res) => {
       requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
       health,
       healthError,
+      recentEmbeddings,
     });
   }
 
   const maxTokensResult = parsePositiveInt(maxTokensInput, 'max_tokens_per_chunk');
   if (maxTokensResult.error) {
-    const { health, healthError } = await fetchEmbeddingHealth();
     res.status(400);
     return renderEmbeddingTestPage(res, {
       form,
@@ -1358,12 +1656,12 @@ exports.embedding_test_generate = async (req, res) => {
       requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
       health,
       healthError,
+      recentEmbeddings,
     });
   }
 
   const overlapResult = parseNonNegativeInt(overlapTokensInput, 'overlap_tokens');
   if (overlapResult.error) {
-    const { health, healthError } = await fetchEmbeddingHealth();
     res.status(400);
     return renderEmbeddingTestPage(res, {
       form,
@@ -1372,6 +1670,7 @@ exports.embedding_test_generate = async (req, res) => {
       requestOptions: { autoChunk, maxTokensPerChunk: maxTokensInput, overlapTokens: overlapTokensInput },
       health,
       healthError,
+      recentEmbeddings,
     });
   }
 
@@ -1383,7 +1682,6 @@ exports.embedding_test_generate = async (req, res) => {
 
   try {
     const embeddingResult = await embeddingApiService.embed(parsedTexts, requestOptions);
-    const { health, healthError } = await fetchEmbeddingHealth();
 
     logger.notice('Admin embedding test completed', {
       category: 'admin_embedding_test',
@@ -1405,9 +1703,9 @@ exports.embedding_test_generate = async (req, res) => {
       requestOptions,
       health,
       healthError,
+      recentEmbeddings,
     });
   } catch (error) {
-    const { health, healthError } = await fetchEmbeddingHealth();
     const status = error?.status || 502;
     let message = error?.message || 'Unable to reach the embedding API.';
 
@@ -1437,25 +1735,57 @@ exports.embedding_test_generate = async (req, res) => {
       requestOptions,
       health,
       healthError,
+      recentEmbeddings,
     });
   }
 };
 
 exports.embedding_test_search = async (req, res) => {
-  const searchForm = normalizeSearchForm({
+  const form = defaultEmbeddingForm();
+  const searchAttempt = await performEmbeddingSearch({
     query: typeof req.body.search_text === 'string' ? req.body.search_text : req.body.query,
     topK: req.body.top_k ?? req.body.topK,
     searchType: req.body.search_type ?? req.body.searchType ?? req.body.search_mode,
     startDate: req.body.start_date ?? req.body.startDate,
     endDate: req.body.end_date ?? req.body.endDate,
   });
-  searchForm.query = searchForm.query.trim();
-  searchForm.startDate = searchForm.startDate.trim();
-  searchForm.endDate = searchForm.endDate.trim();
-  const form = defaultEmbeddingForm();
   const { health, healthError } = await fetchEmbeddingHealth();
+  const recentEmbeddings = await loadRecentEmbeddings();
 
-  if (!searchForm.query) {
+  if (searchAttempt.error) {
+    res.status(searchAttempt.status || 400);
+  }
+
+  return renderEmbeddingTestPage(res, {
+    form,
+    submittedTexts: [],
+    requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+    health,
+    healthError,
+    recentEmbeddings,
+    search: searchAttempt,
+  });
+};
+
+exports.embedding_test_delete = async (req, res) => {
+  const form = defaultEmbeddingForm();
+  const deleteMode = resolveStorageMode(req.body.mode || req.body.search_type || req.body.searchType);
+  const normalizedSource = normalizeDeleteSource(req.body || {});
+  const { health, healthError } = await fetchEmbeddingHealth();
+  const recentEmbeddings = await loadRecentEmbeddings();
+  let search = null;
+
+  if (req.body.search_text || req.body.query) {
+    search = await performEmbeddingSearch({
+      query: typeof req.body.search_text === 'string' ? req.body.search_text : req.body.query,
+      topK: req.body.top_k ?? req.body.topK,
+      searchType: req.body.search_type ?? req.body.searchType ?? req.body.search_mode,
+      startDate: req.body.start_date ?? req.body.startDate,
+      endDate: req.body.end_date ?? req.body.endDate,
+    });
+  }
+
+  if (normalizedSource.error) {
     res.status(400);
     return renderEmbeddingTestPage(res, {
       form,
@@ -1463,44 +1793,20 @@ exports.embedding_test_search = async (req, res) => {
       requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
       health,
       healthError,
-      search: { form: searchForm, error: 'Please enter text to search stored embeddings.' },
+      recentEmbeddings,
+      search,
+      deleteFeedback: { status: 'error', message: normalizedSource.error },
     });
   }
-
-  const dateRange = buildSearchDateRange(searchForm.startDate, searchForm.endDate);
-  if (dateRange.error) {
-    res.status(400);
-    return renderEmbeddingTestPage(res, {
-      form,
-      submittedTexts: [],
-      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
-      health,
-      healthError,
-      search: { form: searchForm, error: dateRange.error },
-    });
-  }
-
-  const searchOptions = { topK: searchForm.topK, dateRange };
 
   try {
-    let result;
-    if (searchForm.searchType === 'high_quality') {
-      result = await embeddingApiService.similaritySearchHighQuality(searchForm.query, searchOptions);
-    } else if (searchForm.searchType === 'combined') {
-      result = await embeddingApiService.combinedSimilaritySearch(searchForm.query, searchOptions);
-    } else {
-      result = await embeddingApiService.similaritySearch(searchForm.query, searchOptions);
-    }
-    logger.notice('Admin embedding similarity search completed', {
+    const deletedCount = await embeddingApiService.deleteEmbeddings(normalizedSource.source, { mode: deleteMode });
+    logger.notice('Admin deleted stored embeddings', {
       category: 'admin_embedding_test',
       metadata: {
-        queryLength: searchForm.query.length,
-        topK: searchForm.topK,
-        returned: result?.results?.length || 0,
-        searchType: searchForm.searchType,
-        mode: result?.mode || null,
-        updatedAfter: dateRange.start ? dateRange.start.toISOString() : null,
-        updatedBefore: dateRange.end ? dateRange.end.toISOString() : null,
+        deletedCount,
+        mode: deleteMode,
+        source: normalizedSource.source,
       },
     });
     return renderEmbeddingTestPage(res, {
@@ -1509,34 +1815,32 @@ exports.embedding_test_search = async (req, res) => {
       requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
       health,
       healthError,
-      search: { form: searchForm, result },
+      recentEmbeddings,
+      search,
+      deleteFeedback: {
+        status: 'success',
+        message: `Deleted ${formatNumber(deletedCount || 0)} embedding${deletedCount === 1 ? '' : 's'} for ${normalizedSource.source.collectionName}/${normalizedSource.source.documentId}.`,
+      },
     });
   } catch (error) {
-    const status = error?.status || 502;
-    let message = error?.message || 'Unable to search embeddings.';
-
-    if (error?.code === 'ETIMEOUT') {
-      message = `Embedding API request timed out after ${embeddingApiService.timeoutMs}ms.`;
-    }
-
-    logger.error('Admin embedding similarity search failed', {
+    logger.error('Failed to delete embeddings', {
       category: 'admin_embedding_test',
       metadata: {
-        status: error?.status,
-        code: error?.code,
+        mode: deleteMode,
+        source: normalizedSource.source,
         message: error?.message,
-        searchType: searchForm.searchType,
       },
     });
-
-    res.status(status);
+    res.status(error?.status || 500);
     return renderEmbeddingTestPage(res, {
       form,
       submittedTexts: [],
       requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
       health,
       healthError,
-      search: { form: searchForm, error: message },
+      recentEmbeddings,
+      search,
+      deleteFeedback: { status: 'error', message: error?.message || 'Unable to delete embeddings right now.' },
     });
   }
 };

@@ -17,6 +17,16 @@ const SEARCH_MODES = {
 };
 const DEFAULT_COMBINED_CANDIDATE_MULTIPLIER = 3;
 const MAX_COMBINED_CANDIDATES = 50;
+const EMBEDDING_SUMMARY_PROJECTION = {
+  source: 1,
+  chunk: 1,
+  previewText: 1,
+  model: 1,
+  dim: 1,
+  textLength: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
 
 class EmbeddingApiService {
   constructor({ apiBase = DEFAULT_API_BASE, highQualityApiBase = DEFAULT_HQ_API_BASE, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -673,6 +683,72 @@ class EmbeddingApiService {
       baseModel: baseSearch?.model || null,
       baseCandidates: baseResults.length,
       reranked: hasReranked,
+    };
+  }
+
+  async fetchEmbeddingsBySources(sourceList, { mode = SEARCH_MODES.DEFAULT, limit = null } = {}) {
+    if (!Array.isArray(sourceList) || !sourceList.length) {
+      return [];
+    }
+
+    const targetMode = normalizeSearchMode(mode);
+    const Model = this.getModelForMode(targetMode);
+    const normalizedSources = sourceList.map((entry, index) => this.normalizeMetadataEntry(entry, index));
+    const filter = { $or: normalizedSources.map((source) => this.buildSourceFilter(source)) };
+    const query = Model.find(filter, EMBEDDING_SUMMARY_PROJECTION).sort({
+      'chunk.textIndex': 1,
+      'chunk.chunkIndex': 1,
+      createdAt: -1,
+    });
+
+    if (Number.isFinite(limit) && limit > 0) {
+      query.limit(limit);
+    }
+
+    return query.lean();
+  }
+
+  async fetchRecentEmbeddings({ mode = SEARCH_MODES.DEFAULT, since = null, until = null, limit = null } = {}) {
+    const targetMode = normalizeSearchMode(mode);
+    const Model = this.getModelForMode(targetMode);
+    const createdAtFilter = {};
+
+    if (since instanceof Date && !Number.isNaN(since.getTime())) {
+      createdAtFilter.$gte = since;
+    }
+    if (until instanceof Date && !Number.isNaN(until.getTime())) {
+      createdAtFilter.$lte = until;
+    }
+
+    const filter = Object.keys(createdAtFilter).length ? { createdAt: createdAtFilter } : {};
+    const totalCount = await Model.countDocuments(filter);
+    const query = Model.find(filter, EMBEDDING_SUMMARY_PROJECTION).sort({ createdAt: -1 });
+
+    if (Number.isFinite(limit) && limit > 0) {
+      query.limit(limit);
+    }
+
+    const docs = await query.lean();
+    const truncated = Number.isFinite(limit) && limit > 0 && totalCount > docs.length;
+
+    logger.debug('Fetched recent embeddings', {
+      category: 'embedding_api',
+      metadata: {
+        mode: targetMode,
+        returned: docs.length,
+        totalCount,
+        truncated,
+        since: createdAtFilter.$gte ? createdAtFilter.$gte.toISOString() : null,
+        until: createdAtFilter.$lte ? createdAtFilter.$lte.toISOString() : null,
+        limit: Number.isFinite(limit) && limit > 0 ? limit : null,
+      },
+    });
+
+    return {
+      mode: targetMode,
+      docs,
+      totalCount,
+      truncated,
     };
   }
 

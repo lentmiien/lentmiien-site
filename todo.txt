@@ -1,3 +1,7 @@
-On the `views/chat5_chat.pug` page, I have a TTS function, that auto calculate tokens to 1024 per 500 character input. This works great for English, but isn't enough for Japanese, where I roughly need the double. I'm currently naming my reference ids with the 2 letter language code at the end, example 'lennart_en' for English, and 'lennart_jp' for Japanese, so can we use this to auto set double tokens for Japanese. Also, when not using a reference id, can we add a check box, for the user to manually select "double tokens (recommended for Japanese)"?
+Can we re-purpose the embedding test page (views/admin_embedding_test.pug), to an embedding management page?
 
-codex resume 019b2cb3-0a4e-7d01-82c3-b4caec82ea16
+I want to be able to search the embedding database as usual (normal and high quality), and maybe view a list of all embeddings generated the last 24 hours (normal and high quality), for manually deleting entries that I don't need, or mistakenly added. So on the search list, add a delete embedding function, and add a list of recently added embeddings, with delete functionality.
+
+Be sure to group embeddings that belong to the same data entry, text chunks that all belonging to the exact same 'Source' and 'Parent'.
+
+codex resume 019b2cc3-e5ae-7833-be0d-514f699b745c
