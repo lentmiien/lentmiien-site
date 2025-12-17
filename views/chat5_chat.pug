@@ -416,9 +416,12 @@ block content
             label.form-label(for="ttsReferenceId") reference_id (optional)
             select#ttsReferenceId.form-select
               option(value="") -- No reference id --
-              option(value="lennart_en") Lennart (English)
-              option(value="popok_en") Popok (English)
-              option(value="anny_en") Anny (English)
+              optgroup(label="English") 
+                option(value="lennart_en") Lennart
+                option(value="popok_en") Popok
+                option(value="anny_en") Anny
+              optgroup(label="Japanese") 
+                option(value="lennart_jp") Lennart
           h6.mb-2 Basic emotions
           p
             | (angry) (sad) (excited) (surprised) (satisfied) (delighted) (scared) (worried) (upset) (nervous) (frustrated) (depressed) (empathetic) (embarrassed) (disgusted) (moved) (proud) (relaxed) (grateful) (confident) (interested) (curious) (confused) (joyful)
