@@ -35,16 +35,16 @@ block content
       div *Replaces existing entry if 'Provider' and 'API Model' exactly matches an existing entry
       form(action="/chat5/add_model_card", method="post") 
         label(for="model_name") Model Name 
-        input#model_name.form-control(type="text", name="model_name", required)
+        input#model_name.form-control(type="text", name="model_name", required, value=(formDefaults && formDefaults.model_name ? formDefaults.model_name : ''))
         label(for="provider") Provider 
         select#provider.form-control(name="provider", required) 
-          option(value="OpenAI") OpenAI
-          option(value="Anthropic") Anthropic
-          option(value="Google") Google
-          option(value="Groq") Groq
-          option(value="Local") Local
+          option(value="OpenAI", selected=(formDefaults && formDefaults.provider === 'OpenAI')) OpenAI
+          option(value="Anthropic", selected=(formDefaults && formDefaults.provider === 'Anthropic')) Anthropic
+          option(value="Google", selected=(formDefaults && formDefaults.provider === 'Google')) Google
+          option(value="Groq", selected=(formDefaults && formDefaults.provider === 'Groq')) Groq
+          option(value="Local", selected=(formDefaults && formDefaults.provider === 'Local')) Local
         label(for="api_model") API Model 
-        input#api_model.form-control(type="text", name="api_model", required)
+        input#api_model.form-control(type="text", name="api_model", required, value=(formDefaults && formDefaults.api_model ? formDefaults.api_model : ''))
         label(for="input_1m_token_cost") Input token cost per 1m tokens in USD
         input#input_1m_token_cost.form-control(type="text", name="input_1m_token_cost", required)
         label(for="output_1m_token_cost") Output token cost per 1m tokens in USD

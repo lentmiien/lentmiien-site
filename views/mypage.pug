@@ -81,10 +81,24 @@ block content
       .col
         h3.mypage-section-title New OpenAI models (last 30 days)
         each m in new_openai_models
-          span.model-tag.model-tag--openai= `${m.model} (${(new Date(m.created*1000)).toDateString()})`
+          - const openaiCreatedDate = (new Date(m.created*1000)).toDateString()
+          span.model-tag.model-tag--openai
+            if m.existsInDb
+              span= `${m.model} (${openaiCreatedDate})`
+              span.model-tag__status(title="Already saved in AI model cards")= ' - saved'
+            else
+              a(href=m.manageUrl)= `${m.model} (${openaiCreatedDate})`
+              span.model-tag__status(title="Not saved in AI model cards - click to add")= ' - missing'
   if new_anthropic_models.length > 0
     .row 
       .col
         h3.mypage-section-title New Anthropic models (last 30 days)
         each m in new_anthropic_models
-          span.model-tag.model-tag--anthropic= `${m.model} (${(new Date(m.created*1000)).toDateString()})`
+          - const anthropicCreatedDate = (new Date(m.created*1000)).toDateString()
+          span.model-tag.model-tag--anthropic
+            if m.existsInDb
+              span= `${m.model} (${anthropicCreatedDate})`
+              span.model-tag__status(title="Already saved in AI model cards")= ' - saved'
+            else
+              a(href=m.manageUrl)= `${m.model} (${anthropicCreatedDate})`
+              span.model-tag__status(title="Not saved in AI model cards - click to add")= ' - missing'

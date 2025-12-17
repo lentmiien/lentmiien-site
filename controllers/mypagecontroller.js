@@ -3,7 +3,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
-const { ArticleModel, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel } = require('../database');
+const { ArticleModel, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, AIModelCards } = require('../database');
 const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
 const { GetAnthropicModels } = require('../utils/anthropic');
 const ScheduleTaskService = require('../services/scheduleTaskService');
@@ -232,6 +232,31 @@ exports.mypage = async (req, res) => {
   const Anthropic_models = GetAnthropicModels();
   const new_anthropic_models = Anthropic_models.filter(d => d.created > ts);
 
+  const modelCards = await AIModelCards.find({}, { provider: 1, api_model: 1 }).lean();
+  const knownModels = new Set();
+  modelCards.forEach((card) => {
+    if (card.provider && card.api_model) {
+      knownModels.add(`${card.provider.toLowerCase()}|${card.api_model.toLowerCase()}`);
+    }
+  });
+
+  const decorateNewModels = (list, provider) => list.map((model) => {
+    const modelName = typeof model.model === 'string' ? model.model : String(model.model || '');
+    const key = `${provider.toLowerCase()}|${modelName.toLowerCase()}`;
+    const existsInDb = knownModels.has(key);
+    const manageUrl = existsInDb ? null : `/chat5/ai_model_cards?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(modelName)}`;
+    return {
+      ...model,
+      model: modelName,
+      provider,
+      existsInDb,
+      manageUrl,
+    };
+  });
+
+  const decoratedOpenAIModels = decorateNewModels(new_openai_models, 'OpenAI');
+  const decoratedAnthropicModels = decorateNewModels(new_anthropic_models, 'Anthropic');
+
   const userId = req.user.name;
   const today = ScheduleTaskService.roundToSlot(new Date());
   const from = today;
@@ -239,8 +264,8 @@ exports.mypage = async (req, res) => {
   const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
 
   res.render('mypage', {
-    new_openai_models,
-    new_anthropic_models,
+    new_openai_models: decoratedOpenAIModels,
+    new_anthropic_models: decoratedAnthropicModels,
     tasks: tasks.filter((t) => !t.done && ((t.start && t.start < to) || !t.start)),
     embeddingSearchTypes: EMBEDDING_SEARCH_TYPES,
     embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,

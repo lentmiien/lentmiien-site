@@ -88,7 +88,24 @@ exports.ai_model_cards = async (req, res) => {
     if (a.model_name > b.model_name) return 1;
     return 0;
   });
-  res.render('ai_model_cards', {models});
+  const formDefaults = {
+    model_name: '',
+    provider: '',
+    api_model: '',
+  };
+  const allowedProviders = ['OpenAI', 'Anthropic', 'Google', 'Groq', 'Local'];
+  if (typeof req.query.model === 'string' && req.query.model.trim().length > 0) {
+    formDefaults.model_name = req.query.model.trim();
+    formDefaults.api_model = req.query.model.trim();
+  }
+  if (typeof req.query.provider === 'string') {
+    const provider = req.query.provider.trim();
+    const matchedProvider = allowedProviders.find((value) => value.toLowerCase() === provider.toLowerCase());
+    if (matchedProvider) {
+      formDefaults.provider = matchedProvider;
+    }
+  }
+  res.render('ai_model_cards', {models, formDefaults});
 };
 
 exports.add_model_card = async (req, res) => {
