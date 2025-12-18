@@ -46,8 +46,9 @@ const webhook = require('./routes/webhook');
 app.use('/webhook', webhook);
 
 // Body parsers
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(express.json());
+const DEFAULT_BODY_LIMIT = '5mb';
+app.use(bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT }));
+app.use(express.json({ limit: DEFAULT_BODY_LIMIT }));
 
 // App health
 app.use('/apphealth', (req, res) => res.json({status: "ok"}));
