@@ -16,6 +16,9 @@ router.post('/updateHealthEntry', controller.updateHealthEntry);
 router.post('/uploadHealthCsv', controller.uploadHealthCsv);
 router.post('/deleteHealthEntry', controller.deleteHealthEntry);
 
+/* Message inbox */
+router.post('/messages', controller.saveIncomingMessage);
+
 /* Chat */
 router.get('/getChatEntries', controller.getChatEntries);
 

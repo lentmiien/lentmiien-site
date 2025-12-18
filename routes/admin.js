@@ -4,6 +4,7 @@ const router = express.Router();
 
 // Require controller modules.
 const controller = require('../controllers/admincontroller');
+const messageInboxController = require('../controllers/messageInboxAdminController');
 
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
@@ -85,5 +86,17 @@ router.post('/asr-test', handleAsrUpload);
 router.get('/tts-test', controller.tts_test_page);
 router.post('/tts-test', controller.tts_test_generate);
 router.get('/tts-test/status/:id', controller.tts_test_status);
+
+/* Message inbox */
+router.get('/message-inbox', messageInboxController.renderMessageInbox);
+router.post('/message-inbox/update', messageInboxController.updateMessage);
+router.post('/message-inbox/delete', messageInboxController.deleteMessage);
+
+/* Message filters */
+router.get('/message-filters', messageInboxController.renderFilters);
+router.post('/message-filters/save', messageInboxController.saveFilter);
+router.post('/message-filters/delete', messageInboxController.deleteFilter);
+router.post('/message-filters/add-label', messageInboxController.addLabelRule);
+router.post('/message-filters/remove-label', messageInboxController.removeLabelRule);
 
 module.exports = router;

@@ -55,6 +55,41 @@ exports.deleteHealthEntry = async (req, res) => {
 };
 
 /*******************
+ * MESSAGE INBOX
+ */
+const { MessageInboxService } = require('../services/messageInboxService');
+const { MessageInboxEntry, MessageFilter } = require('../database');
+const messageInboxService = new MessageInboxService(MessageInboxEntry, MessageFilter);
+
+exports.saveIncomingMessage = async (req, res) => {
+  try {
+    const result = await messageInboxService.saveIncomingMessage(req.body || {});
+    if (result.status === 'ignored') {
+      return res.json({
+        status: 'ignored',
+        reason: result.reason,
+        id: result.message?._id,
+        messageId: result.message?.messageId,
+      });
+    }
+    const message = result.message;
+    return res.json({
+      status: 'saved',
+      id: message._id,
+      messageId: message.messageId,
+      retentionDeadlineDate: message.retentionDeadlineDate,
+      hasEmbedding: message.hasEmbedding,
+      hasHighQualityEmbedding: message.hasHighQualityEmbedding,
+      appliedRetentionDays: message.appliedRetentionDays,
+      appliedFilterId: message.appliedFilterId,
+      appliedLabelRules: message.appliedLabelRules,
+    });
+  } catch (error) {
+    return res.status(400).json({ status: 'error', message: error.message });
+  }
+};
+
+/*******************
  * CHAT
  */
 const MessageService = require('../services/messageService');

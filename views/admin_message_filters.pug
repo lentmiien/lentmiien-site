@@ -1,0 +1,91 @@
+extends layout
+
+block content
+  .d-flex.align-items-center.mb-3
+    h1.flex-grow-1.mb-0 Message filters
+    a.btn.btn-outline-secondary(href="/admin/message-inbox") View inbox
+
+  p.lead.text-muted.mb-3
+    | Filters start with the sender email address. Matching filters override the default retention
+    |  (#{defaultRetentionDays} days) and embedding flags, then optional label rules refine them.
+
+  if feedback
+    - const alertClass = feedback.status === 'error' ? 'alert-danger' : feedback.status === 'success' ? 'alert-success' : 'alert-info';
+    .alert(class=alertClass role="alert")= feedback.message
+
+  .card.mb-4
+    .card-header Add or update sender filter
+    .card-body
+      form(action="/admin/message-filters/save" method="post" class="row g-3 align-items-end")
+        .col-md-4
+          label.form-label(for="sender") Sender email
+          input.form-control(type="email" id="sender" name="sender" required placeholder="sender@example.com")
+        .col-md-2
+          label.form-label(for="retentionDays") Retention (days)
+          input.form-control(type="number" min="1" id="retentionDays" name="retentionDays" value=defaultRetentionDays)
+        .col-md-3
+          .form-check
+            input.form-check-input(type="checkbox" id="generateEmbedding" name="generateEmbedding")
+            label.form-check-label(for="generateEmbedding") Generate embedding
+          .form-check
+            input.form-check-input(type="checkbox" id="generateHighQualityEmbedding" name="generateHighQualityEmbedding")
+            label.form-check-label(for="generateHighQualityEmbedding") High-quality embedding
+        .col-md-3
+          button.btn.btn-primary(type="submit") Save filter
+      small.text-muted.mt-2.d-block Sender is case-insensitive and unique. Saving again updates the existing filter.
+
+  if !filters.length
+    .alert.alert-light.text-muted No filters defined yet. Default behavior is #{defaultRetentionDays} days retention with no embeddings.
+  else
+    each filter in filters
+      .card.mb-3
+        .card-header.d-flex.align-items-center.justify-content-between
+          .flex-grow-1
+            h5.mb-0= filter.sender
+            small.text-muted Base retention #{filter.retentionDays} days · Embedding: #{filter.generateEmbedding ? 'Yes' : 'No'} · High-quality: #{filter.generateHighQualityEmbedding ? 'Yes' : 'No'}
+          form(action="/admin/message-filters/delete" method="post" class="ms-3" onsubmit="return confirm('Delete this filter and its label rules?');")
+            input(type="hidden" name="filterId" value=filter._id)
+            button.btn.btn-outline-danger.btn-sm(type="submit") Delete
+        .card-body
+          h6 Add or update label rule
+          form(action="/admin/message-filters/add-label" method="post" class="row g-3 align-items-end mb-3")
+            input(type="hidden" name="filterId" value=filter._id)
+            .col-md-4
+              label.form-label(for=`label-${filter._id}`) Label value
+              input.form-control(type="text" id=`label-${filter._id}` name="label" required placeholder="e.g. important")
+            .col-md-2
+              label.form-label(for=`label-retention-${filter._id}`) Retention (days)
+              input.form-control(type="number" min="1" id=`label-retention-${filter._id}` name="retentionDays" placeholder=filter.retentionDays)
+              small.text-muted If empty, base retention is used.
+            .col-md-3
+              .form-check
+                input.form-check-input(type="checkbox" id=`label-embed-${filter._id}` name="labelGenerateEmbedding")
+                label.form-check-label(for=`label-embed-${filter._id}`) Generate embedding
+              .form-check
+                input.form-check-input(type="checkbox" id=`label-hq-${filter._id}` name="labelGenerateHighQualityEmbedding")
+                label.form-check-label(for=`label-hq-${filter._id}`) High-quality embedding
+            .col-md-3
+              button.btn.btn-outline-primary(type="submit") Save label rule
+          if filter.labelRules && filter.labelRules.length
+            table.table.table-sm
+              thead
+                tr
+                  th Label
+                  th Retention
+                  th Embedding
+                  th High-quality
+                  th Actions
+              tbody
+                each rule, idx in filter.labelRules
+                  tr
+                    td= rule.label
+                    td= rule.retentionDays ? `${rule.retentionDays} days` : `Base (${filter.retentionDays})`
+                    td= rule.generateEmbedding ? 'Yes' : 'No'
+                    td= rule.generateHighQualityEmbedding ? 'Yes' : 'No'
+                    td
+                      form(action="/admin/message-filters/remove-label" method="post" onsubmit="return confirm('Remove this label rule?');")
+                        input(type="hidden" name="filterId" value=filter._id)
+                        input(type="hidden" name="label" value=rule.label)
+                        button.btn.btn-outline-danger.btn-sm(type="submit") Remove
+          else
+            .text-muted No label rules yet.

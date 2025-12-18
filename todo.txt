@@ -1,7 +1,25 @@
-Can we re-purpose the embedding test page (views/admin_embedding_test.pug), to an embedding management page?
+In the API route (controllers/apicontroller.js), I want to add an endpoint for accepting and saving messages to a new message database, furthermore, I want to create a filtering process, for setting data retention time and embedding approach.
 
-I want to be able to search the embedding database as usual (normal and high quality), and maybe view a list of all embeddings generated the last 24 hours (normal and high quality), for manually deleting entries that I don't need, or mistakenly added. So on the search list, add a delete embedding function, and add a list of recently added embeddings, with delete functionality.
+The data fields that I want to receive and save are:
+* id: a unique message id, if a later message has the same id as an existing entry, ignore
+* threadId: an id that group messages together
+* labels: an array of labels
+* sizeEstimate: an estimated size of the message
+* html: message in HTML format
+* text: message in TEXT format
+* textAsHtml: message in HTML format (a best estimate conversion of text content to html)
+* subject: message subject
+* date: message date
+* from: sender email address
 
-Be sure to group embeddings that belong to the same data entry, text chunks that all belonging to the exact same 'Source' and 'Parent'.
+Other fields that I want to save internally are:
+* retentionDeadlineDate: save massage until at least this date
+* hasEmbedding: bool to indicate if embedding was generated (need to delete when message is deleted)
+* hasHighQualityEmbedding: bool to indicate if embedding was generated (need to delete when message is deleted)
+(optional other metadata)
 
-codex resume 019b2cc3-e5ae-7833-be0d-514f699b745c
+I also want another database for filtering. The default, if no filters catch a message should be 90 days retention with no embeddings. The basis for all filters should start with the `from` sender email address, which should override the retention deadline and the 2 embedding types. Furthermore, a filter can have sub-filters on the labels array (a value exist in the array), and if any of the sub filters trigger, the retention deadline and the 2 embedding types can be further modified. Important, the sub-filters should belong to a base filter (email address), so the same labels on 2 messages could mean something different if the `from` is different, or not apply if there is no filter for the current `from` field or the current `from` doesn't have a sub-filter for the current labels. Note: if multiple sub-filters are triggered, then use the longest retention deadline and use the embedding types that has at least one true value in any of the sub-filters.
+
+For now, create the receiver API endpoint (POST), a filter management page, and a page for display the database content, paginated with 25 messages per page, sorted from new to old, with manual override controls for retention deadline and the 2 embedding types, and a manual delete button. (I'll add the retention deadline cleanup later)
+
+codex resume 019b3125-0f3e-7a51-8d34-5c2c2cab74a3

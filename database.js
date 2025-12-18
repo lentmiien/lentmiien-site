@@ -124,6 +124,9 @@ const ApiDebugLog = require('./models/api_debug_log');
 const OcrJob = require('./models/ocr_job');
 // ASR jobs
 const AsrJob = require('./models/asr_job');
+// Message inbox
+const MessageInboxEntry = require('./models/message_inbox');
+const MessageFilter = require('./models/message_filter');
 
 // Export models
 module.exports = {
@@ -198,4 +201,6 @@ module.exports = {
   ApiDebugLog,
   OcrJob,
   AsrJob,
+  MessageInboxEntry,
+  MessageFilter,
 };

@@ -1,0 +1,81 @@
+extends layout
+
+block content
+  .d-flex.align-items-center.mb-3
+    h1.flex-grow-1.mb-0 Message inbox
+    a.btn.btn-outline-secondary(href="/admin/message-filters") Manage filters
+
+  p.lead.text-muted.mb-3
+    | Incoming messages are stored with a retention deadline and optional embeddings.
+    |  Records are shown newest first, 25 per page.
+
+  if feedback
+    - const alertClass = feedback.status === 'error' ? 'alert-danger' : feedback.status === 'success' ? 'alert-success' : 'alert-info';
+    .alert(class=alertClass role="alert")= feedback.message
+
+  .d-flex.align-items-center.justify-content-between.mb-3
+    span.text-muted Total messages: #{totalMessages}
+    .btn-group
+      if page > 1
+        a.btn.btn-outline-primary(href=`/admin/message-inbox?page=${page - 1}`) ← Prev
+      span.btn.btn-outline-secondary.disabled Page #{page} / #{totalPages}
+      if page < totalPages
+        a.btn.btn-outline-primary(href=`/admin/message-inbox?page=${page + 1}`) Next →
+
+  if messages.length === 0
+    .alert.alert-light.text-muted No messages stored yet.
+  else
+    each message in messages
+      .card.mb-3
+        .card-body
+          .d-flex.justify-content-between.align-items-start.flex-wrap
+            .flex-grow-1.pe-2
+              h5.card-title.mb-1= message.subject || '(No subject)'
+              small.text-muted
+                | From #{message.from} · Message ID #{message.messageId}
+                if message.threadId
+                  |  · Thread #{message.threadId}
+            .text-end
+              span.badge.bg-secondary #{message.formattedDate || 'Unknown date'}
+              if message.appliedRetentionDays
+                br
+                small.text-muted Applied #{message.appliedRetentionDays} days
+          if message.labels && message.labels.length
+            .mb-2
+              small.text-muted Labels:
+              each label, idx in message.labels
+                span.badge.bg-light.text-dark.ms-1(key=`${message._id}_label_${idx}`)= label
+          .d-flex.flex-wrap.gap-2.mb-3
+            span.badge(class=message.hasEmbedding ? 'bg-success' : 'bg-light text-muted')
+              | Default embedding: #{message.hasEmbedding ? 'Yes' : 'No'}
+            span.badge(class=message.hasHighQualityEmbedding ? 'bg-success' : 'bg-light text-muted')
+              | High-quality embedding: #{message.hasHighQualityEmbedding ? 'Yes' : 'No'}
+            if message.appliedLabelRules && message.appliedLabelRules.length
+              span.badge.bg-info.text-dark Label rules: #{message.appliedLabelRules.join(', ')}
+            if message.appliedFilterId
+              span.badge.bg-dark Filter applied
+          form(action="/admin/message-inbox/update" method="post" class="row g-2 align-items-end mb-2")
+            input(type="hidden" name="id" value=message._id)
+            .col-md-4
+              label.form-label(for=`retention-${message._id}`) Retention deadline
+              input.form-control(type="date" id=`retention-${message._id}` name="retentionDeadlineDate" value=message.retentionDateInput)
+            .col-md-3
+              .form-check
+                input.form-check-input(type="checkbox" id=`embed-${message._id}` name="hasEmbedding" checked=message.hasEmbedding)
+                label.form-check-label(for=`embed-${message._id}`) Generate embedding
+              .form-check
+                input.form-check-input(type="checkbox" id=`hqembed-${message._id}` name="hasHighQualityEmbedding" checked=message.hasHighQualityEmbedding)
+                label.form-check-label(for=`hqembed-${message._id}`) Generate high-quality embedding
+            .col-md-3
+              button.btn.btn-primary(type="submit") Save overrides
+          form(action="/admin/message-inbox/delete" method="post" onsubmit="return confirm('Delete this message?');")
+            input(type="hidden" name="id" value=message._id)
+            button.btn.btn-outline-danger.btn-sm(type="submit") Delete message
+
+  .d-flex.align-items-center.justify-content-between.mt-3
+    if page > 1
+      a.btn.btn-outline-primary(href=`/admin/message-inbox?page=${page - 1}`) ← Prev
+    else
+      span
+    if page < totalPages
+      a.btn.btn-outline-primary(href=`/admin/message-inbox?page=${page + 1}`) Next →
