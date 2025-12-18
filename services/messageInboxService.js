@@ -1,12 +1,28 @@
 const logger = require('../utils/logger');
 
+let EmbeddingApiService = null;
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 90;
+const MESSAGE_COLLECTION = 'message_inbox';
+const MESSAGE_CONTENT_TYPE = 'message';
+const THREAD_COLLECTION = 'message_thread';
 
 class MessageInboxService {
-  constructor(MessageModel, FilterModel) {
+  constructor(MessageModel, FilterModel, embeddingApiService = null) {
     this.MessageModel = MessageModel;
     this.FilterModel = FilterModel;
+    this.embeddingApiService = embeddingApiService || this.getEmbeddingApiService();
+  }
+
+  getEmbeddingApiService() {
+    if (!this.embeddingApiService) {
+      if (!EmbeddingApiService) {
+        EmbeddingApiService = require('./embeddingApiService');
+      }
+      this.embeddingApiService = new EmbeddingApiService();
+    }
+    return this.embeddingApiService;
   }
 
   normalizeEmail(value) {
@@ -63,6 +79,26 @@ class MessageInboxService {
 
   computeRetentionDate(baseDate, retentionDays) {
     return new Date(baseDate.getTime() + retentionDays * MS_PER_DAY);
+  }
+
+  buildSourceMetadata(message) {
+    return {
+      collectionName: MESSAGE_COLLECTION,
+      documentId: String(message._id),
+      contentType: MESSAGE_CONTENT_TYPE,
+      parentCollection: message.threadId ? THREAD_COLLECTION : null,
+      parentId: message.threadId || null,
+    };
+  }
+
+  getMessageText(message) {
+    const candidates = [
+      typeof message.text === 'string' ? message.text : '',
+      typeof message.textAsHtml === 'string' ? message.textAsHtml : '',
+      typeof message.html === 'string' ? message.html : '',
+      typeof message.subject === 'string' ? message.subject : '',
+    ];
+    return candidates.find((v) => v && v.trim().length > 0) || '';
   }
 
   async resolvePolicy(from, normalizedLabels = []) {
@@ -154,14 +190,19 @@ class MessageInboxService {
       throw error;
     }
 
+    await this.generateEmbeddingsForMessage(doc, {
+      generateDefault: !!policy.hasEmbedding,
+      generateHighQuality: !!policy.hasHighQualityEmbedding,
+    });
+
     logger.notice('Message saved', {
       category: 'message_inbox',
       metadata: {
         messageId,
         from: normalizedFrom,
         retentionDays: policy.retentionDays,
-        hasEmbedding: !!policy.hasEmbedding,
-        hasHighQualityEmbedding: !!policy.hasHighQualityEmbedding,
+        hasEmbedding: !!doc.hasEmbedding,
+        hasHighQualityEmbedding: !!doc.hasHighQualityEmbedding,
       },
     });
 
@@ -186,28 +227,58 @@ class MessageInboxService {
     if (!id) {
       throw new Error('Message id is required.');
     }
-    const updatePayload = {};
-    if (retentionDeadlineDate instanceof Date && !Number.isNaN(retentionDeadlineDate.getTime())) {
-      updatePayload.retentionDeadlineDate = retentionDeadlineDate;
-    }
-    if (hasEmbedding !== undefined) {
-      updatePayload.hasEmbedding = !!hasEmbedding;
-    }
-    if (hasHighQualityEmbedding !== undefined) {
-      updatePayload.hasHighQualityEmbedding = !!hasHighQualityEmbedding;
+    const message = await this.MessageModel.findById(id).exec();
+    if (!message) {
+      throw new Error('Message not found.');
     }
 
-    return this.MessageModel.findByIdAndUpdate(
-      id,
-      { $set: updatePayload },
-      { new: true },
-    ).exec();
+    const previous = {
+      hasEmbedding: message.hasEmbedding,
+      hasHighQualityEmbedding: message.hasHighQualityEmbedding,
+    };
+
+    if (retentionDeadlineDate instanceof Date && !Number.isNaN(retentionDeadlineDate.getTime())) {
+      message.retentionDeadlineDate = retentionDeadlineDate;
+    }
+    if (hasEmbedding !== undefined) {
+      message.hasEmbedding = !!hasEmbedding;
+    }
+    if (hasHighQualityEmbedding !== undefined) {
+      message.hasHighQualityEmbedding = !!hasHighQualityEmbedding;
+    }
+
+    await message.save();
+
+    if (previous.hasEmbedding && message.hasEmbedding === false) {
+      await this.deleteEmbeddingsForMessage(message, { deleteDefault: true, deleteHighQuality: false });
+    }
+    if (previous.hasHighQualityEmbedding && message.hasHighQualityEmbedding === false) {
+      await this.deleteEmbeddingsForMessage(message, { deleteDefault: false, deleteHighQuality: true });
+    }
+
+    const needsDefault = message.hasEmbedding && (!previous.hasEmbedding || hasEmbedding !== undefined);
+    const needsHighQuality = message.hasHighQualityEmbedding && (!previous.hasHighQualityEmbedding || hasHighQualityEmbedding !== undefined);
+
+    if (needsDefault || needsHighQuality) {
+      await this.generateEmbeddingsForMessage(message, {
+        generateDefault: needsDefault,
+        generateHighQuality: needsHighQuality,
+        force: true,
+      });
+    }
+
+    return message;
   }
 
   async deleteMessage(id) {
     if (!id) {
       throw new Error('Message id is required.');
     }
+    const message = await this.MessageModel.findById(id).exec();
+    if (!message) {
+      return;
+    }
+    await this.deleteEmbeddingsForMessage(message, { deleteDefault: true, deleteHighQuality: true });
     await this.MessageModel.deleteOne({ _id: id }).exec();
   }
 
@@ -288,6 +359,69 @@ class MessageInboxService {
     filter.labelRules = filter.labelRules.filter((rule) => rule.label !== normalizedLabel);
     await filter.save();
     return filter;
+  }
+
+  async generateEmbeddingsForMessage(message, { generateDefault = false, generateHighQuality = false, force = false } = {}) {
+    const text = this.getMessageText(message);
+    if (!text) {
+      return;
+    }
+    const metadata = [this.buildSourceMetadata(message)];
+    let changed = false;
+    const api = this.getEmbeddingApiService();
+
+    if (generateDefault) {
+      try {
+        await api.embed(text, { autoChunk: true }, metadata);
+        if (!message.hasEmbedding || force) {
+          message.hasEmbedding = true;
+          changed = true;
+        }
+      } catch (error) {
+        logger.error('Failed to generate default embedding for message', {
+          category: 'message_inbox',
+          metadata: { id: String(message._id), error: error.message },
+        });
+        if (message.hasEmbedding) {
+          message.hasEmbedding = false;
+          changed = true;
+        }
+      }
+    }
+
+    if (generateHighQuality) {
+      try {
+        await api.embedHighQuality(text, { autoChunk: true, task: 'document' }, metadata);
+        if (!message.hasHighQualityEmbedding || force) {
+          message.hasHighQualityEmbedding = true;
+          changed = true;
+        }
+      } catch (error) {
+        logger.error('Failed to generate high-quality embedding for message', {
+          category: 'message_inbox',
+          metadata: { id: String(message._id), error: error.message },
+        });
+        if (message.hasHighQualityEmbedding) {
+          message.hasHighQualityEmbedding = false;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      await message.save();
+    }
+  }
+
+  async deleteEmbeddingsForMessage(message, { deleteDefault = true, deleteHighQuality = true } = {}) {
+    const metadata = this.buildSourceMetadata(message);
+    const api = this.getEmbeddingApiService();
+    if (deleteDefault) {
+      await api.deleteEmbeddings(metadata, { mode: 'default' });
+    }
+    if (deleteHighQuality) {
+      await api.deleteEmbeddings(metadata, { mode: 'high_quality' });
+    }
   }
 }
 

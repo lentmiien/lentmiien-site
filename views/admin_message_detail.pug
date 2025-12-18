@@ -1,0 +1,65 @@
+extends layout
+
+block content
+  .d-flex.align-items-center.mb-3
+    h1.flex-grow-1.mb-0 Message details
+    a.btn.btn-outline-secondary(href="/admin/message-inbox") Back to inbox
+
+  if message.threadId
+    .mb-3
+      a.btn.btn-outline-primary(href=`/admin/message-thread/${encodeURIComponent(message.threadId)}`) View thread
+
+  .card.mb-3
+    .card-body
+      h5.mb-3= message.subject || '(No subject)'
+      dl.row.mb-0
+        dt.col-sm-3 From
+        dd.col-sm-9= message.from
+        dt.col-sm-3 Message ID
+        dd.col-sm-9= message.messageId
+        if message.threadId
+          dt.col-sm-3 Thread ID
+          dd.col-sm-9= message.threadId
+        dt.col-sm-3 Date
+        dd.col-sm-9= message.formattedDate || 'Unknown'
+        dt.col-sm-3 Retention deadline
+        dd.col-sm-9= message.retentionDateInput || 'Not set'
+        dt.col-sm-3 Embeddings
+        dd.col-sm-9
+          span.badge(class=message.hasEmbedding ? 'bg-success' : 'bg-light text-muted') Default: #{message.hasEmbedding ? 'Yes' : 'No'}
+          span.badge(class=message.hasHighQualityEmbedding ? 'bg-success ms-2' : 'bg-light text-muted ms-2') High-quality: #{message.hasHighQualityEmbedding ? 'Yes' : 'No'}
+        dt.col-sm-3 Labels
+        dd.col-sm-9
+          if message.labels && message.labels.length
+            each label, idx in message.labels
+              span.badge.bg-light.text-dark.ms-1(key=`detail_label_${idx}`)= label
+          else
+            span.text-muted None
+        dt.col-sm-3 Retention days (applied)
+        dd.col-sm-9= message.appliedRetentionDays || 'Default'
+        dt.col-sm-3 Applied label rules
+        dd.col-sm-9= message.appliedLabelRules && message.appliedLabelRules.length ? message.appliedLabelRules.join(', ') : 'None'
+        dt.col-sm-3 Size estimate
+        dd.col-sm-9= message.sizeEstimate ? `${message.sizeEstimate}` : 'Unknown'
+
+  .row.g-3
+    .col-md-6
+      .card
+        .card-header Text content
+        .card-body
+          if message.text
+            pre(style="white-space: pre-wrap; word-break: break-word;")= message.text
+          else
+            .text-muted No plain text content.
+    .col-md-6
+      .card
+        .card-header HTML content
+        .card-body
+          if message.html
+            .border.p-2.mb-2(style="min-height: 120px; overflow:auto;")!= message.html
+            small.text-muted.d-block Raw HTML below:
+            pre(style="white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow:auto;")= message.html
+          else if message.textAsHtml
+            .border.p-2.mb-2(style="min-height: 120px; overflow:auto;")!= message.textAsHtml
+          else
+            .text-muted No HTML content.

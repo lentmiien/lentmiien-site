@@ -77,6 +77,63 @@ exports.renderMessageInbox = async (req, res) => {
   }
 };
 
+async function findMessageByIdentifier(idOrMessageId) {
+  if (!idOrMessageId) return null;
+  const byMessageId = await MessageInboxEntry.findOne({ messageId: idOrMessageId }).lean().exec();
+  if (byMessageId) {
+    return byMessageId;
+  }
+  try {
+    return await MessageInboxEntry.findById(idOrMessageId).lean().exec();
+  } catch (error) {
+    return null;
+  }
+}
+
+exports.renderSingleMessage = async (req, res) => {
+  const identifier = req.params.messageId;
+  const message = await findMessageByIdentifier(identifier);
+  if (!message) {
+    res.status(404);
+    return res.render('error_page', { error: 'Message not found.' });
+  }
+
+  const viewModel = {
+    ...message,
+    _id: message._id ? String(message._id) : '',
+    retentionDateInput: formatDateInput(message.retentionDeadlineDate),
+    formattedDate: formatDateInput(message.date),
+  };
+
+  return res.render('admin_message_detail', { message: viewModel });
+};
+
+exports.renderThread = async (req, res) => {
+  const threadId = req.params.threadId;
+  if (!threadId) {
+    res.status(404);
+    return res.render('error_page', { error: 'Thread not found.' });
+  }
+  const messages = await MessageInboxEntry.find({ threadId })
+    .sort({ date: 1 })
+    .lean()
+    .exec();
+
+  if (!messages.length) {
+    res.status(404);
+    return res.render('error_page', { error: 'Thread not found.' });
+  }
+
+  const viewModel = messages.map((message) => ({
+    ...message,
+    _id: message._id ? String(message._id) : '',
+    retentionDateInput: formatDateInput(message.retentionDeadlineDate),
+    formattedDate: formatDateInput(message.date),
+  }));
+
+  return res.render('admin_message_thread', { threadId, messages: viewModel });
+};
+
 exports.updateMessage = async (req, res) => {
   const id = req.body.id;
   const retentionDateInput = req.body.retentionDeadlineDate;

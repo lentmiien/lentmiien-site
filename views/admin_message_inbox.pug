@@ -40,6 +40,10 @@ block content
               if message.appliedRetentionDays
                 br
                 small.text-muted Applied #{message.appliedRetentionDays} days
+              .mt-2
+                a.btn.btn-sm.btn-outline-primary(href=`/admin/message-inbox/${encodeURIComponent(message.messageId)}`) View message
+                if message.threadId
+                  a.btn.btn-sm.btn-outline-secondary.ms-2(href=`/admin/message-thread/${encodeURIComponent(message.threadId)}`) View thread
           if message.labels && message.labels.length
             .mb-2
               small.text-muted Labels:

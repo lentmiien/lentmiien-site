@@ -1,0 +1,31 @@
+extends layout
+
+block content
+  .d-flex.align-items-center.mb-3
+    h1.flex-grow-1.mb-0 Thread #{threadId}
+    a.btn.btn-outline-secondary(href="/admin/message-inbox") Back to inbox
+
+  if !messages.length
+    .alert.alert-light.text-muted No messages in this thread.
+  else
+    each message in messages
+      .card.mb-3
+        .card-body
+          .d-flex.justify-content-between.align-items-start.flex-wrap
+            .flex-grow-1
+              h5.card-title.mb-1= message.subject || '(No subject)'
+              small.text-muted From #{message.from} · Message #{message.messageId}
+            .text-end
+              span.badge.bg-secondary #{message.formattedDate || 'Unknown date'}
+              .mt-2
+                a.btn.btn-sm.btn-outline-primary(href=`/admin/message-inbox/${encodeURIComponent(message.messageId)}`) View message
+          if message.labels && message.labels.length
+            .mt-2
+              small.text-muted Labels:
+              each label, idx in message.labels
+                span.badge.bg-light.text-dark.ms-1(key=`thread_label_${message._id}_${idx}`)= label
+          .d-flex.flex-wrap.gap-2.mt-2
+            span.badge(class=message.hasEmbedding ? 'bg-success' : 'bg-light text-muted')
+              | Default embedding: #{message.hasEmbedding ? 'Yes' : 'No'}
+            span.badge(class=message.hasHighQualityEmbedding ? 'bg-success' : 'bg-light text-muted')
+              | High-quality embedding: #{message.hasHighQualityEmbedding ? 'Yes' : 'No'}

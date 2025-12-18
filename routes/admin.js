@@ -91,6 +91,7 @@ router.get('/tts-test/status/:id', controller.tts_test_status);
 router.get('/message-inbox', messageInboxController.renderMessageInbox);
 router.post('/message-inbox/update', messageInboxController.updateMessage);
 router.post('/message-inbox/delete', messageInboxController.deleteMessage);
+router.get('/message-inbox/:messageId', messageInboxController.renderSingleMessage);
 
 /* Message filters */
 router.get('/message-filters', messageInboxController.renderFilters);
@@ -98,5 +99,8 @@ router.post('/message-filters/save', messageInboxController.saveFilter);
 router.post('/message-filters/delete', messageInboxController.deleteFilter);
 router.post('/message-filters/add-label', messageInboxController.addLabelRule);
 router.post('/message-filters/remove-label', messageInboxController.removeLabelRule);
+
+/* Message thread */
+router.get('/message-thread/:threadId', messageInboxController.renderThread);
 
 module.exports = router;
