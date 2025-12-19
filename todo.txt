@@ -1,3 +1,5 @@
 In the app I have the route (routes/product_details.js) and controller (controllers/productdetailscontroller.js), that I'd like to expose in my API (controllers/apicontroller.js).
 
 Instead of uploading a CSV to the API, I'd just like to POST a JSON object (array), then I want to process the data exactly the same as before, and return the result in the API response.
+
+codex resume 019b34a7-6251-7c83-b87e-61eba94d00fa
