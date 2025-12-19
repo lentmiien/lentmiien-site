@@ -17,6 +17,9 @@ const SoraVideo = require('./models/sora_video');
 const ApiDebugLog = require('./models/api_debug_log');
 const TransactionModel = require('./models/transaction_db');
 const HtmlPageRating = require('./models/html_page_rating');
+const MessageInboxEntry = require('./models/message_inbox');
+const VectorEmbedding = require('./models/vector_embedding');
+const VectorEmbeddingHighQuality = require('./models/vector_embedding_high_quality');
 
 const ROOT_DIR = __dirname;
 const TEMP_DIR = path.join(ROOT_DIR, 'tmp_data');
@@ -30,6 +33,9 @@ const DROPBOX_TOKEN_PATH = path.join(ROOT_DIR, 'tokens.json');
 const PDF_JOB_MAX_AGE_HOURS = Number.parseInt(process.env.CHAT_PDF_MAX_AGE_HOURS || '24', 10) || 24;
 const LOG_RETENTION_DAYS = 7;
 const DROPBOX_REQUIRED_ENV = ['DROPBOX_CLIENT_ID', 'DROPBOX_CLIENT_SECRET', 'DROPBOX_REDIRECT_URI'];
+const MESSAGE_COLLECTION = 'message_inbox';
+const MESSAGE_CONTENT_TYPE = 'message';
+const THREAD_COLLECTION = 'message_thread';
 
 const DIRECTORIES_TO_ENSURE = [
   path.join(ROOT_DIR, 'tmp_data'),
@@ -410,6 +416,84 @@ async function normalizeLegacyTransactionCategories() {
   return result;
 }
 
+function buildMessageInboxSourceMetadata(message) {
+  const threadId = message?.threadId || null;
+  return {
+    collectionName: MESSAGE_COLLECTION,
+    documentId: String(message._id),
+    contentType: MESSAGE_CONTENT_TYPE,
+    parentCollection: threadId ? THREAD_COLLECTION : null,
+    parentId: threadId,
+  };
+}
+
+function buildEmbeddingSourceFilter(source) {
+  return {
+    'source.collectionName': source.collectionName,
+    'source.documentId': source.documentId,
+    'source.contentType': source.contentType,
+    'source.parentCollection': source.parentCollection ?? null,
+    'source.parentId': source.parentId ?? null,
+  };
+}
+
+async function pruneExpiredInboxMessages() {
+  const now = new Date();
+  const expiredMessages = await MessageInboxEntry.find({ retentionDeadlineDate: { $lt: now } })
+    .select('_id threadId hasEmbedding hasHighQualityEmbedding')
+    .lean()
+    .exec();
+
+  if (expiredMessages.length === 0) {
+    return {
+      removed: 0,
+      defaultEmbeddingsRemoved: 0,
+      highQualityEmbeddingsRemoved: 0,
+    };
+  }
+
+  const defaultFilters = [];
+  const highQualityFilters = [];
+
+  expiredMessages.forEach((message) => {
+    const source = buildMessageInboxSourceMetadata(message);
+    if (message.hasEmbedding) {
+      defaultFilters.push(buildEmbeddingSourceFilter(source));
+    }
+    if (message.hasHighQualityEmbedding) {
+      highQualityFilters.push(buildEmbeddingSourceFilter(source));
+    }
+  });
+
+  const defaultResultPromise = defaultFilters.length
+    ? VectorEmbedding.deleteMany({ $or: defaultFilters })
+    : Promise.resolve({ deletedCount: 0 });
+  const highQualityResultPromise = highQualityFilters.length
+    ? VectorEmbeddingHighQuality.deleteMany({ $or: highQualityFilters })
+    : Promise.resolve({ deletedCount: 0 });
+
+  const [defaultResult, highQualityResult] = await Promise.all([defaultResultPromise, highQualityResultPromise]);
+  const { deletedCount: messagesRemoved = 0 } = await MessageInboxEntry.deleteMany({
+    _id: { $in: expiredMessages.map((message) => message._id) },
+  });
+
+  if (messagesRemoved > 0) {
+    logger.notice(`Removed ${messagesRemoved} expired inbox message${messagesRemoved === 1 ? '' : 's'}.`, {
+      category: 'startup:message_inbox',
+      metadata: {
+        defaultEmbeddingsRemoved: defaultResult?.deletedCount || 0,
+        highQualityEmbeddingsRemoved: highQualityResult?.deletedCount || 0,
+      },
+    });
+  }
+
+  return {
+    removed: messagesRemoved,
+    defaultEmbeddingsRemoved: defaultResult?.deletedCount || 0,
+    highQualityEmbeddingsRemoved: highQualityResult?.deletedCount || 0,
+  };
+}
+
 async function performDatabaseMaintenance() {
   const mongoUrl = process.env.MONGOOSE_URL;
   if (!mongoUrl) {
@@ -429,6 +513,9 @@ async function performDatabaseMaintenance() {
     staleIncompleteVideosRemoved: 0,
     transactionCategoryCleanup: null,
     htmlRatingEntriesRemoved: 0,
+    expiredInboxMessagesRemoved: 0,
+    messageInboxDefaultEmbeddingsRemoved: 0,
+    messageInboxHighQualityEmbeddingsRemoved: 0,
   };
 
   await mongoose.connect(mongoUrl, {
@@ -498,6 +585,10 @@ async function performDatabaseMaintenance() {
     });
     summary.transactionCategoryCleanup = await normalizeLegacyTransactionCategories();
     summary.htmlRatingEntriesRemoved = await pruneMissingHtmlRatings();
+    const inboxCleanup = await pruneExpiredInboxMessages();
+    summary.expiredInboxMessagesRemoved = inboxCleanup.removed;
+    summary.messageInboxDefaultEmbeddingsRemoved = inboxCleanup.defaultEmbeddingsRemoved;
+    summary.messageInboxHighQualityEmbeddingsRemoved = inboxCleanup.highQualityEmbeddingsRemoved;
 
     return summary;
   } finally {
@@ -625,6 +716,7 @@ module.exports = {
   ensureDirectoriesAndFiles,
   main,
   performDatabaseMaintenance,
+  pruneExpiredInboxMessages,
   pruneOldLogs,
   recordSection,
   resetSectionResults,
