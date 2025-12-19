@@ -1,6 +1,7 @@
 // API for the VUE app
 
 const binpackingController = require('./binpackingcontroller');
+const productDetailsController = require('./productdetailscontroller');
 
 exports.root = async (req, res, next) => {
   // Do some initial checks and setups
@@ -12,6 +13,20 @@ exports.root = async (req, res, next) => {
  * BIN PACKING
  */
 exports.binPacking = (req, res) => binpackingController.run(req, res);
+exports.processProductDetails = async (req, res) => {
+  const rows = Array.isArray(req.body) ? req.body : req.body?.data;
+
+  if (!Array.isArray(rows)) {
+    return res.status(400).json({ status: 'error', message: 'Expected an array payload or an object with a `data` array' });
+  }
+
+  try {
+    const output = await productDetailsController.processProductData(rows, { responseStyle: 'json' });
+    res.json(output);
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 /*******************
  * HEALTH

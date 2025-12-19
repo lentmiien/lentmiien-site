@@ -10,6 +10,9 @@ router.all('*', controller.root);
 /* Bin packing */
 router.post('/binpacking', controller.binPacking);
 
+/* Product details */
+router.post('/productDetails', controller.processProductDetails);
+
 /* Health log */
 router.get('/getHealthEntries', controller.getHealthEntries);
 router.post('/updateHealthEntry', controller.updateHealthEntry);
