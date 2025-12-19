@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: Product Details API
+  version: '1.0.0'
+  summary: Process product customs details from JSON payloads.
+  description: >
+    Accepts product rows (previously uploaded as CSV) as JSON, enriches them with customs-ready
+    fields via the server-side model, stores them, and returns structured data so clients can format
+    the output themselves.
+servers:
+  - url: https://my.lentmiien.com
+    description: Production
+tags:
+  - name: ProductDetails
+    description: Customs enrichment for product rows.
+security:
+  - sessionCookie: []
+  - bearerAuth: []
+paths:
+  /api/productDetails:
+    post:
+      summary: Process product details rows
+      description: >
+        Ingests an array of product rows (or an object with a `data` array), generates customs
+        material/size/usage fields for new items, and returns the structured result. Existing items
+        reuse saved data to avoid duplicate model calls.
+      tags: [ProductDetails]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ProductRowsArray'
+                - $ref: '#/components/schemas/ProductRowsWrapper'
+            examples:
+              arrayPayload:
+                summary: Top-level array
+                value:
+                  - [ "SKU-1001", "Travel mug", "Stainless steel mug", "Capacity 350ml", "Double-wall", 1500 ]
+                  - [ "SKU-1002", "Notebook", "A5 ruled", "", "Hardcover, 200 pages", 900 ]
+              wrappedPayload:
+                summary: Object with data array
+                value:
+                  data:
+                    - [ "SKU-2001", "Desk lamp", "LED lamp with arm", "110V plug", "Metal shade", 3200 ]
+      responses:
+        '200':
+          description: Processed products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductDetailsResult'
+              examples:
+                structured:
+                  summary: Structured customs fields
+                  value:
+                    - product_code: SKU-1001
+                      name: Travel mug
+                      price: 1500
+                      material: Stainless steel
+                      size: 350ml capacity, fits standard cup holders
+                      usage: Drinking hot or cold beverages
+                      additional_notes: Hand wash recommended
+                legacy:
+                  summary: Legacy record without structured fields
+                  value:
+                    - product_code: SKU-0001
+                      name: Vintage entry
+                      price: 1200
+                      material: null
+                      size: null
+                      usage: null
+                      additional_notes: null
+                      ai_description: |
+                        ---
+                        - **Name:** Vintage entry
+                        - **Material:** Mixed
+                        - **Size:** Medium
+                        - **Usage:** General
+                        ---
+        '400':
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: connect.sid
+      description: Authenticated session cookie.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: >
+        Bearer token matching the `API_KEY` env var (`Authorization: Bearer <token>`). Only available
+        for /api routes.
+  schemas:
+    ProductRow:
+      type: array
+      minItems: 6
+      prefixItems:
+        - type: string
+          description: product_code
+        - type: string
+          description: name
+        - type: string
+          description: details/long name (defaults to name if empty)
+        - type: string
+          description: content block (e.g., composition list)
+        - type: string
+          description: free-form description
+        - type: number
+          description: price in JPY
+      items:
+        type: string
+      example: [ "SKU-1001", "Travel mug", "Stainless steel mug", "Capacity 350ml", "Double-wall", 1500 ]
+    ProductRowsArray:
+      type: array
+      description: Top-level array of product rows.
+      items:
+        $ref: '#/components/schemas/ProductRow'
+    ProductRowsWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProductRowsArray'
+    ProductDetailsResult:
+      type: object
+      required: [product_code]
+      properties:
+        product_code:
+          type: string
+        name:
+          type: string
+          description: Original name
+        price:
+          type: number
+          nullable: true
+          description: Copied from input row or existing record
+        material:
+          type: string
+          nullable: true
+        size:
+          type: string
+          nullable: true
+        usage:
+          type: string
+          nullable: true
+        additional_notes:
+          type: string
+          nullable: true
+        ai_description:
+          type: string
+          description: >
+            Present only for legacy records that lack structured fields; use as a fallback markdown
+            snippet.
+    Problem:
+      type: object
+      properties:
+        status:
+          type: integer
+        message:
+          type: string
+      example:
+        status: 400
+        message: "Invalid payload: expected a `data` array"

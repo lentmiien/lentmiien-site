@@ -17,6 +17,7 @@ public/yaml/*
 !public/yaml/schedule-task.v1.yaml
 !public/yaml/chat5-pdf.v1.yaml
 !public/yaml/chat5-realtime.v1.yaml
+!public/yaml/product-details.v1.yaml
 public/html
 utils/batch_input.jsonl
 public/temp/
