@@ -47,6 +47,8 @@ block content
                 textarea#layout_text.form-control(name="layout_text", rows="6")= receipt.layout_text || ''
             .form-actions
               input.btn.btn-success(type="submit", value="Update receipt")
+          a.btn.btn-secondary(href=`/receipt/add-entry/${receipt._id.toString()}`, target="_blank", rel="noopener") Add to ledger
+          a.btn.btn-danger(href=`/receipt/delete_receipt/${receipt._id.toString()}`) Delete
     if test_data
       section.section-card.debug-card
         h2 Debug data
