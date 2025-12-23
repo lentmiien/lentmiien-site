@@ -113,6 +113,11 @@ class MessageInboxService {
     const matchedLabelRules = [];
 
     if (filter && Array.isArray(filter.labelRules) && filter.labelRules.length && normalizedLabels.length) {
+      // Reset values to only apply label rules when existing
+      retentionDays = 0;
+      hasEmbedding = false;
+      hasHighQualityEmbedding = false;
+
       const labelSet = new Set(normalizedLabels);
       filter.labelRules.forEach((rule) => {
         const labelValue = typeof rule.label === 'string' ? rule.label.toLowerCase() : '';
