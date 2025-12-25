@@ -103,4 +103,9 @@ router.post('/message-filters/remove-label', messageInboxController.removeLabelR
 /* Message thread */
 router.get('/message-thread/:threadId', messageInboxController.renderThread);
 
+/* Agent5 */
+router.get('/agent5', controller.agent5_page);
+router.post('/agent5/create', controller.agent5_create_agent);
+router.post('/agent5/behavior', controller.agent5_save_behavior);
+
 module.exports = router;

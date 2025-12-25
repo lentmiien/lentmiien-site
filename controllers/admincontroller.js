@@ -2,11 +2,24 @@ const axios = require('axios');
 const FormData = require('form-data');
 const crypto = require('crypto');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
-const { UseraccountModel, RoleModel, OpenAIUsage, ApiDebugLog, HtmlPageRating } = require('../database');
+const {
+  UseraccountModel,
+  RoleModel,
+  OpenAIUsage,
+  ApiDebugLog,
+  HtmlPageRating,
+  Agent5Model,
+  Agent5ConversationBehavior,
+  Conversation5Model,
+  Chat5Model,
+  ChatPersonalityModel,
+  ChatResponseTypeModel,
+} = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
 const { formatBytes, formatNumber, formatPercent, calculatePercent } = require('../utils/metricsFormatter');
 const EmbeddingApiService = require('../services/embeddingApiService');
+const Agent5Service = require('../services/agent5Service');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -39,6 +52,33 @@ const routes = [
   "test",
   "archive",
 ];
+
+function parseCheckbox(value) {
+  return value === 'on' || value === 'true' || value === true || value === '1';
+}
+
+function parseAgentBehaviorForm(body) {
+  return {
+    maxMessagesPerDay: body.maxMessagesPerDay,
+    minCooldownMinutes: body.minCooldownMinutes,
+    triggers: {
+      always: parseCheckbox(body.trigger_always),
+      manual: parseCheckbox(body.trigger_manual),
+      minUserMessages: body.trigger_minUserMessages,
+      minAssistantMessages: body.trigger_minAssistantMessages,
+    },
+    postApproach: body.postApproach,
+    personalityId: body.personalityId,
+    responseTypeId: body.responseTypeId,
+  };
+}
+
+function parseFeedback(req) {
+  const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
+  const message = typeof req.query.message === 'string' ? req.query.message.trim() : '';
+  if (!status || !message) return null;
+  return { status, message };
+}
 
 exports.manage_users = async (req, res) => {
   const users = await UseraccountModel.find();
@@ -176,6 +216,14 @@ const TEMP_AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'temp');
 const JS_FILE_NAME = 'controllers/admincontroller.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const embeddingApiService = new EmbeddingApiService();
+const agent5Service = new Agent5Service({
+  agentModel: Agent5Model,
+  behaviorModel: Agent5ConversationBehavior,
+  conversationModel: Conversation5Model,
+  chatModel: Chat5Model,
+  personalityModel: ChatPersonalityModel,
+  responseTypeModel: ChatResponseTypeModel,
+});
 const EMBEDDING_TEST_MAX_TEXTS = 10;
 const EMBEDDING_DEFAULT_OVERLAP = 32;
 const EMBEDDING_SPLIT_MODES = ['single', 'lines'];
@@ -2365,4 +2413,92 @@ exports.tts_test_status = (req, res) => {
     result: job.result,
     error: job.error,
   });
+};
+
+exports.agent5_page = async (req, res) => {
+  try {
+    const [agentsRaw, behaviorsRaw, personalities, responseTypes] = await Promise.all([
+      Agent5Model.find().sort({ name: 1 }).lean(),
+      Agent5ConversationBehavior.find().sort({ updatedAt: -1 }).limit(50).lean(),
+      ChatPersonalityModel.find().sort({ name: 1 }).lean(),
+      ChatResponseTypeModel.find().sort({ label: 1 }).lean(),
+    ]);
+
+    const conversationIds = behaviorsRaw.map((b) => b.conversationId).filter(Boolean);
+    const conversations = conversationIds.length > 0
+      ? await Conversation5Model.find({ _id: { $in: conversationIds } }).select('title').lean()
+      : [];
+
+    const convMap = new Map(conversations.map((c) => [c._id.toString(), c.title]));
+    const agentMap = new Map(agentsRaw.map((a) => [a._id.toString(), a.name]));
+
+    const overrides = behaviorsRaw.map((b) => {
+      return {
+        ...b,
+        agentName: b.agentId ? (agentMap.get(b.agentId.toString()) || '') : '',
+        conversationTitle: b.conversationId ? (convMap.get(b.conversationId.toString()) || '') : '',
+      };
+    });
+
+    const feedback = parseFeedback(req);
+    const defaults = agent5Service.getDefaultBehaviorTemplate();
+
+    res.render('admin_agent5', {
+      agents: agentsRaw,
+      overrides,
+      personalities,
+      responseTypes,
+      feedback,
+      defaults,
+    });
+  } catch (error) {
+    logger.error('Failed to render agent5 admin page', {
+      category: 'agent5',
+      metadata: { error: error.message },
+    });
+    res.status(500).send('Unable to load agent5 admin page.');
+  }
+};
+
+exports.agent5_create_agent = async (req, res) => {
+  try {
+    const behavior = parseAgentBehaviorForm(req.body);
+    await agent5Service.createAgent({
+      name: req.body.name,
+      checkIntervalMinutes: req.body.checkIntervalMinutes,
+      behavior,
+      isActive: parseCheckbox(req.body.isActive),
+    });
+    const message = encodeURIComponent('Agent saved.');
+    return res.redirect(`/admin/agent5?status=success&message=${message}`);
+  } catch (error) {
+    logger.error('Failed to create agent5', {
+      category: 'agent5',
+      metadata: { error: error.message },
+    });
+    const message = encodeURIComponent(error.message || 'Unable to save agent.');
+    return res.redirect(`/admin/agent5?status=error&message=${message}`);
+  }
+};
+
+exports.agent5_save_behavior = async (req, res) => {
+  try {
+    const behavior = parseAgentBehaviorForm(req.body);
+    const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId.trim() : req.body.conversationId;
+    await agent5Service.saveConversationBehavior({
+      agentId: req.body.agentId,
+      conversationId,
+      behavior,
+      isActive: parseCheckbox(req.body.behaviorActive),
+    });
+    const message = encodeURIComponent('Conversation behavior saved.');
+    return res.redirect(`/admin/agent5?status=success&message=${message}`);
+  } catch (error) {
+    logger.error('Failed to save agent5 behavior', {
+      category: 'agent5',
+      metadata: { error: error.message },
+    });
+    const message = encodeURIComponent(error.message || 'Unable to save behavior.');
+    return res.redirect(`/admin/agent5?status=error&message=${message}`);
+  }
 };

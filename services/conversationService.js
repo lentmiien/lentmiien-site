@@ -1162,7 +1162,8 @@ class ConversationService {
     // Generate AI response
     let aiMessages = [];
       if (generateAI) {
-        const {response_id, msg} = await this.messageService.generateAIMessage({conversation});
+        const conversationForAI = this.normalizeMembersForAI(conversation);
+        const {response_id, msg} = await this.messageService.generateAIMessage({conversation: conversationForAI});
         let placeholder_id = null;
         if (msg) {
           placeholder_id = msg._id.toString();
@@ -1329,6 +1330,27 @@ class ConversationService {
     let conversation = await Conversation5Model.findById(conversationId);
     conversation.messages = newArray;
     await conversation.save();
+  }
+
+  normalizeMembersForAI(conversation) {
+    if (!conversation) return conversation;
+    const clone = typeof conversation.toObject === 'function'
+      ? conversation.toObject({ depopulate: true })
+      : JSON.parse(JSON.stringify(conversation));
+    const members = Array.isArray(clone.members) ? clone.members : [];
+    const seen = new Set();
+    const cleaned = [];
+    for (const member of members) {
+      if (typeof member !== 'string') continue;
+      const trimmed = member.trim();
+      if (trimmed.length === 0) continue;
+      const normalized = trimmed.startsWith('AGENT_') ? trimmed.slice(6) : trimmed;
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      cleaned.push(normalized);
+    }
+    clone.members = cleaned;
+    return clone;
   }
 
   async hideLastVisibleMessage(conversationId) {

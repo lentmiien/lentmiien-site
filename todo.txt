@@ -1,1 +1,33 @@
-The `models/message_inbox.js` database has a `retentionDeadlineDate` date field. In the `setup.js` script, delete all database entries that has expired. Also, if either or both of `hasEmbedding` and `hasHighQualityEmbedding` are `true`, then the corresponding embeddings should also be deleted, maybe it's easiest to do the deletion through the `services/embeddingApiService.js` service class.
+I want to start to design an "agent" system, that lives on top of "chat5". Since the "agent" database name is already occupied, lets call this new agent "agent5" to match "chat5".
+
+Basically, I want this agent to trigger on a set time interval, when it checks all chat5 conversations ("conversation5") where this agent is a member, and based on trigger conditions generate and post messages to the conversation.
+
+I do want to manage the agent's behavior per conversation basis, with a default behavior if no conversation specific behavior has been set. So, I plan to add 2 new databases.
+
+1. Agent database: Store the agents name, check interval and default behavior
+2. Agent conversation behavior database: Store conversation specific behavior
+
+*Agent names must be prepended with "AGENT_".
+
+The behavior should be represented as following:
+- Max messages per day: the maximum messages an agent can post to a conversation within a day
+- Min cooldown: the minimum time the agent must wait before posting another message to a conversation
+- Post triggers: any combination of the following
+    - Always: agent can post to the conversation as long as "Max messages per day" and "Min cooldown" are cleared
+    - Min X user messages: there must be at least X user messages since last agent message
+    - Min Y assistant messages: there must be at least X assistant messages since last agent message
+    - Manual: post if there is an `@agent_name` in any of the messages since the last agent message
+- Post approach: "append message" or "append and request assistant response"
+- Personality: an entry from the `models/chat_personality.js` database
+- Response type: an entry from the `models/chat_response_type.js` database
+
+When an agent find a conversation that clear all checks for the agent to post a message, the agent should generate a prompt similar to the 'chat5-draftprompt' socket.io event in `socket_io/chat5_5/chat5_5handler.js`, with `notes` as an empty string. When the prompt is returned, the agent should do something similar to the 'chat5-append' socket.io event in `socket_io/chat5_5/chat5_5handler.js`, send in the prompt and set `generateAI === true` if post approach is "append and request assistant response".
+There is no need to handle any responses, other than logging agent activities to the app logging, as messages are appended to the conversation automatically if using the same existing functions as the socket.io implementation.
+
+Create the background checker, that trigger the agent to check it's chats at the specified time interval, and post to conversations when appropriate. Also create a admin UI page for creating agents, and setting up conversation behaviors.
+
+Important, only check conversation that was updated within the last 24 hours, older conversations are considered as "stale", and only a human user making an update can bring back the conversation withing the 24 hours cut off window.
+
+In the conversation service, before passing a conversation to the message service for generating an AI response, go through the `members` array, and temporary remove "AGENT_" from all agent names, and next remove any duplicate names. So if for example I create a "AGENT_Lennart" and add the agent to a conversation I'm ("Lennart") in, I want it to look like there is only one member ("Lennart") in this conversation when the assistant AI is generating a response; but if the agent was named "AGENT_Steve" then there should be the 2 members "Lennart" and "Steve" in the conversation when generating the response. (This is important as I append a members list in the context before generating the response)
+
+codex resume 019b542a-4276-72f2-b1f7-42055f45ea3e

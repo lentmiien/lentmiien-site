@@ -1,0 +1,191 @@
+extends layout
+
+block content
+  h2 Agent5 Automation
+  if feedback
+    - const alertClass = feedback.status === 'success' ? 'alert-success' : (feedback.status === 'info' ? 'alert-info' : 'alert-danger');
+    .alert(class=alertClass)= feedback.message
+
+  h3.mt-4 Create agent
+  form(action="/admin/agent5/create", method="post", class="mb-4")
+    .row
+      .col-md-4
+        label.form-label(for="agentName") Agent name (prefixed with AGENT_)
+        input#agentName.form-control(type="text", name="name", required, placeholder="AGENT_Miien")
+      .col-md-4
+        label.form-label(for="checkIntervalMinutes") Check interval (minutes)
+        input#checkIntervalMinutes.form-control(type="number", name="checkIntervalMinutes", min="1", value="30")
+      .col-md-4
+        .form-check.mt-4
+          input#agentIsActive.form-check-input(type="checkbox", name="isActive", checked)
+          label.form-check-label(for="agentIsActive") Active
+    .row.mt-3
+      .col-md-3
+        label.form-label(for="maxMessagesPerDay") Max messages per day
+        input#maxMessagesPerDay.form-control(type="number", name="maxMessagesPerDay", min="0", value=defaults.maxMessagesPerDay)
+      .col-md-3
+        label.form-label(for="minCooldownMinutes") Min cooldown (minutes)
+        input#minCooldownMinutes.form-control(type="number", name="minCooldownMinutes", min="0", value=defaults.minCooldownMinutes)
+      .col-md-3
+        label.form-label(for="postApproach") Post approach
+        select#postApproach.form-select(name="postApproach")
+          option(value="append", selected=defaults.postApproach === 'append') Append message
+          option(value="append_and_request", selected=defaults.postApproach === 'append_and_request') Append + request assistant response
+      .col-md-3
+        label.form-label(for="personalityId") Personality
+        select#personalityId.form-select(name="personalityId", required)
+          each persona in personalities
+            option(value=persona._id)= persona.name
+    .row.mt-3
+      .col-md-6
+        label.form-label(for="responseTypeId") Response type
+        select#responseTypeId.form-select(name="responseTypeId", required)
+          each rt in responseTypes
+            option(value=rt._id)= rt.label
+      .col-md-6
+        label.form-label.mb-1 Triggers
+        .d-flex.flex-wrap.gap-3
+          .form-check
+            input#triggerAlways.form-check-input(type="checkbox", name="trigger_always", checked=defaults.triggers && defaults.triggers.always)
+            label.form-check-label(for="triggerAlways") Always (respect limits)
+          .form-check
+            input#triggerManual.form-check-input(type="checkbox", name="trigger_manual", checked=defaults.triggers && defaults.triggers.manual)
+            label.form-check-label(for="triggerManual") Manual mention (@AGENT_)
+        .row.mt-2
+          .col
+            label.form-label(for="triggerMinUserMessages") Min user messages
+            input#triggerMinUserMessages.form-control(type="number", name="trigger_minUserMessages", min="0", value=defaults.triggers ? defaults.triggers.minUserMessages : 0)
+          .col
+            label.form-label(for="triggerMinAssistantMessages") Min assistant messages
+            input#triggerMinAssistantMessages.form-control(type="number", name="trigger_minAssistantMessages", min="0", value=defaults.triggers ? defaults.triggers.minAssistantMessages : 0)
+    button.btn.btn-primary.mt-3(type="submit") Save agent
+
+  h3.mt-5 Conversation behavior override
+  form(action="/admin/agent5/behavior", method="post", class="mb-4")
+    .row
+      .col-md-3
+        label.form-label(for="behaviorAgentId") Agent
+        select#behaviorAgentId.form-select(name="agentId", required)
+          each agent in agents
+            option(value=agent._id)= agent.name
+      .col-md-5
+        label.form-label(for="conversationId") Conversation ID
+        input#conversationId.form-control(type="text", name="conversationId", placeholder="conversation5 id", required)
+      .col-md-2
+        .form-check.mt-4
+          input#behaviorActive.form-check-input(type="checkbox", name="behaviorActive", checked)
+          label.form-check-label(for="behaviorActive") Active
+    .row.mt-3
+      .col-md-3
+        label.form-label(for="overrideMaxMessagesPerDay") Max messages per day
+        input#overrideMaxMessagesPerDay.form-control(type="number", name="maxMessagesPerDay", min="0", value=defaults.maxMessagesPerDay)
+      .col-md-3
+        label.form-label(for="overrideMinCooldown") Min cooldown (minutes)
+        input#overrideMinCooldown.form-control(type="number", name="minCooldownMinutes", min="0", value=defaults.minCooldownMinutes)
+      .col-md-3
+        label.form-label(for="overrideApproach") Post approach
+        select#overrideApproach.form-select(name="postApproach")
+          option(value="append", selected=defaults.postApproach === 'append') Append message
+          option(value="append_and_request", selected=defaults.postApproach === 'append_and_request') Append + request assistant response
+      .col-md-3
+        label.form-label(for="overridePersonality") Personality
+        select#overridePersonality.form-select(name="personalityId", required)
+          each persona in personalities
+            option(value=persona._id)= persona.name
+    .row.mt-3
+      .col-md-6
+        label.form-label(for="overrideResponseType") Response type
+        select#overrideResponseType.form-select(name="responseTypeId", required)
+          each rt in responseTypes
+            option(value=rt._id)= rt.label
+      .col-md-6
+        label.form-label.mb-1 Triggers
+        .d-flex.flex-wrap.gap-3
+          .form-check
+            input#overrideTriggerAlways.form-check-input(type="checkbox", name="trigger_always", checked=defaults.triggers && defaults.triggers.always)
+            label.form-check-label(for="overrideTriggerAlways") Always (respect limits)
+          .form-check
+            input#overrideTriggerManual.form-check-input(type="checkbox", name="trigger_manual", checked=defaults.triggers && defaults.triggers.manual)
+            label.form-check-label(for="overrideTriggerManual") Manual mention (@AGENT_)
+        .row.mt-2
+          .col
+            label.form-label(for="overrideTriggerMinUserMessages") Min user messages
+            input#overrideTriggerMinUserMessages.form-control(type="number", name="trigger_minUserMessages", min="0", value=defaults.triggers ? defaults.triggers.minUserMessages : 0)
+          .col
+            label.form-label(for="overrideTriggerMinAssistantMessages") Min assistant messages
+            input#overrideTriggerMinAssistantMessages.form-control(type="number", name="trigger_minAssistantMessages", min="0", value=defaults.triggers ? defaults.triggers.minAssistantMessages : 0)
+    button.btn.btn-secondary.mt-3(type="submit") Save override
+
+  h3.mt-5 Existing agents
+  if !agents || agents.length === 0
+    p.text-muted No agents configured yet.
+  else
+    table.table.table-striped.table-sm
+      thead
+        tr
+          th Name
+          th Interval (min)
+          th Approach
+          th Limits
+          th Triggers
+          th Updated
+      tbody
+        each agent in agents
+          - const b = agent.defaultBehavior || {};
+          - const trig = b.triggers || {};
+          tr
+            td= agent.name
+            td= agent.checkIntervalMinutes
+            td= b.postApproach === 'append_and_request' ? 'Append + AI response' : 'Append only'
+            td= `${b.maxMessagesPerDay || 0}/day · ${b.minCooldownMinutes || 0}m cooldown`
+            td
+              if trig.always
+                span.badge.bg-primary.me-1 Always
+              if trig.manual
+                span.badge.bg-info.text-dark.me-1 Manual
+              if trig.minUserMessages && trig.minUserMessages > 0
+                span.badge.bg-secondary.me-1= `User ≥ ${trig.minUserMessages}`
+              if trig.minAssistantMessages && trig.minAssistantMessages > 0
+                span.badge.bg-secondary.me-1= `Assistant ≥ ${trig.minAssistantMessages}`
+              if (!trig.always && !trig.manual && (!trig.minUserMessages || trig.minUserMessages === 0) && (!trig.minAssistantMessages || trig.minAssistantMessages === 0))
+                span.text-muted.small No triggers set
+            td= agent.updatedAt ? new Date(agent.updatedAt).toLocaleString() : ''
+
+  h3.mt-5 Conversation behaviors
+  if !overrides || overrides.length === 0
+    p.text-muted No overrides saved.
+  else
+    table.table.table-striped.table-sm
+      thead
+        tr
+          th Agent
+          th Conversation
+          th Approach
+          th Limits
+          th Triggers
+          th Updated
+      tbody
+        each entry in overrides
+          - const b = entry.behavior || {};
+          - const trig = b.triggers || {};
+          tr
+            td= entry.agentName || (entry.agentId ? entry.agentId.toString() : '')
+            td
+              if entry.conversationId
+                a(href=`/chat5/chat/${entry.conversationId}`, target="_blank")= entry.conversationTitle || entry.conversationId.toString()
+              else
+                span.text-muted N/A
+            td= b.postApproach === 'append_and_request' ? 'Append + AI response' : 'Append only'
+            td= `${b.maxMessagesPerDay || 0}/day · ${b.minCooldownMinutes || 0}m cooldown`
+            td
+              if trig.always
+                span.badge.bg-primary.me-1 Always
+              if trig.manual
+                span.badge.bg-info.text-dark.me-1 Manual
+              if trig.minUserMessages && trig.minUserMessages > 0
+                span.badge.bg-secondary.me-1= `User ≥ ${trig.minUserMessages}`
+              if trig.minAssistantMessages && trig.minAssistantMessages > 0
+                span.badge.bg-secondary.me-1= `Assistant ≥ ${trig.minAssistantMessages}`
+              if (!trig.always && !trig.manual && (!trig.minUserMessages || trig.minUserMessages === 0) && (!trig.minAssistantMessages || trig.minAssistantMessages === 0))
+                span.text-muted.small No triggers set
+            td= entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : ''

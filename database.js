@@ -70,6 +70,8 @@ const CookingCalendarV2Model = require('./models/CookingCalendarV2');
 const HealthEntry = require('./models/healthentry');
 // Agents
 const AgentModel = require('./models/agent');
+const Agent5Model = require('./models/agent5');
+const Agent5ConversationBehavior = require('./models/agent5_conversation_behavior');
 // Batch
 const BatchPromptModel = require('./models/batchprompt');
 const BatchRequestModel = require('./models/batchrequest');
@@ -168,6 +170,8 @@ module.exports = {
   CookingCalendarV2Model,
   HealthEntry,
   AgentModel,
+  Agent5Model,
+  Agent5ConversationBehavior,
   BatchPromptModel,
   BatchRequestModel,
   LogModel,
