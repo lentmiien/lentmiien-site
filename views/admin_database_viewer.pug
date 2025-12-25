@@ -1,0 +1,37 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/databaseViewer.css')
+
+block content
+  .db-viewer
+    header.db-viewer__header
+      h1.db-viewer__title Database Viewer
+      p.db-viewer__subtitle Browse raw MongoDB documents, load the latest entries, and delete them when needed.
+    if loadError
+      .db-viewer__alert.db-viewer__alert--error= loadError
+    else if !collections || collections.length === 0
+      .db-viewer__empty
+        h2.db-viewer__empty-title No collections found
+        p.db-viewer__empty-text Ensure MongoDB is connected and collections exist, then reload this page.
+    else
+      section.db-viewer__controls
+        .db-viewer__field
+          label(for='dbViewerCollection') Collection
+          select#dbViewerCollection.db-viewer__select(name='collection')
+            each name in collections
+              option(value=name selected=(selectedCollection === name))= name
+        .db-viewer__field
+          label(for='dbViewerLimit') Max entries
+          input#dbViewerLimit.db-viewer__input(type='number', name='limit', min='1', max=maxLimit || 200, value=defaultLimit || 25)
+        button#dbViewerLoadBtn.db-viewer__button(type='button') Load latest
+      p.db-viewer__hint Entries are sorted by newest `_id` first. Buffers are encoded as `base64:<data>`.
+      .db-viewer__status#dbViewerStatus(hidden)
+      .db-viewer__results#dbViewerResults
+        .db-viewer__placeholder Select a collection and load entries to see raw documents here.
+
+block script
+  script.
+    const dbViewerConfig = JSON.stringify({ dataEndpoint: '/admin/database-viewer/data', deleteEndpoint: '/admin/database-viewer/delete', defaultLimit, maxLimit, selectedCollection });
+    window.databaseViewerConfig = !{dbViewerConfig};
+  script(src='/js/database_viewer.js', defer)

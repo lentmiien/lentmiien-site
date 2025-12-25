@@ -1,6 +1,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const {
   UseraccountModel,
@@ -209,6 +210,9 @@ const apiDebugTimeFilterMap = API_DEBUG_TIME_FILTERS.reduce((acc, option) => {
   return acc;
 }, {});
 const DB_FEEDBACK_STATUSES = new Set(['success', 'error', 'info']);
+const DB_VIEWER_DEFAULT_LIMIT = 25;
+const DB_VIEWER_MAX_LIMIT = 200;
+const DB_VIEWER_SYSTEM_PREFIX = 'system.';
 const DEFAULT_PRUNE_DAYS = 30;
 const MIN_PRUNE_DAYS = 1;
 const MAX_PRUNE_DAYS = 365;
@@ -301,6 +305,104 @@ function redirectDatabaseUsageWithFeedback(res, status, message) {
   const text = message ? String(message) : '';
   const location = `/admin/database_usage?status=${encodeURIComponent(normalizedStatus)}${text ? `&message=${encodeURIComponent(text)}` : ''}`;
   return res.redirect(location);
+}
+
+function assertMongoReady() {
+  if (mongoose.connection.readyState !== 1 || !mongoose.connection.db) {
+    throw new Error('MongoDB connection is not ready.');
+  }
+  return mongoose.connection.db;
+}
+
+async function listVisibleCollections() {
+  const db = assertMongoReady();
+  const collections = await db.listCollections({}, { nameOnly: true }).toArray();
+  return collections
+    .map((entry) => entry.name)
+    .filter((name) => typeof name === 'string' && !name.startsWith(DB_VIEWER_SYSTEM_PREFIX))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeDbViewerLimit(rawLimit) {
+  const parsed = Number.parseInt(rawLimit, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DB_VIEWER_DEFAULT_LIMIT;
+  }
+  if (parsed > DB_VIEWER_MAX_LIMIT) {
+    return DB_VIEWER_MAX_LIMIT;
+  }
+  return parsed;
+}
+
+function formatDocumentTimestamp(doc) {
+  if (doc?.createdAt) {
+    const created = new Date(doc.createdAt);
+    return Number.isNaN(created.getTime()) ? null : created.toISOString();
+  }
+  if (doc?._id?.getTimestamp) {
+    try {
+      return doc._id.getTimestamp().toISOString();
+    } catch (err) {
+      return null;
+    }
+  }
+  return null;
+}
+
+function toIsoStringOrNull(value) {
+  if (!value && value !== 0) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function serializeDocumentForViewer(doc) {
+  const replacer = (_, value) => {
+    if (Buffer.isBuffer(value)) {
+      return `base64:${value.toString('base64')}`;
+    }
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    return value;
+  };
+  let plain;
+  try {
+    plain = JSON.parse(JSON.stringify(doc, replacer));
+  } catch (error) {
+    logger.warning('Unable to serialize document for viewer', {
+      category: 'admin_database_viewer',
+      metadata: { error: error.message },
+    });
+    plain = { _id: doc?._id || null, error: 'Unable to serialize document', reason: error.message };
+  }
+  const id = plain && plain._id ? String(plain._id) : '';
+  const createdAt = formatDocumentTimestamp(doc) || toIsoStringOrNull(plain?.createdAt);
+  const updatedAt = toIsoStringOrNull(plain?.updatedAt);
+  return {
+    id,
+    createdAt,
+    updatedAt,
+    document: plain,
+  };
+}
+
+function buildDeleteFilter(rawId) {
+  if (typeof rawId !== 'string') {
+    return null;
+  }
+  const trimmed = rawId.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const filters = [{ _id: trimmed }];
+  if (mongoose.Types.ObjectId.isValid(trimmed)) {
+    filters.unshift({ _id: new mongoose.Types.ObjectId(trimmed) });
+  }
+
+  return filters.length === 1 ? filters[0] : { $or: filters };
 }
 
 function getLogFiles() {
@@ -978,6 +1080,107 @@ exports.api_debug_logs = async (req, res) => {
       functionNames,
     },
   });
+};
+
+exports.database_viewer_page = async (req, res) => {
+  try {
+    const collections = await listVisibleCollections();
+    const requestedCollection = typeof req.query.collection === 'string' ? req.query.collection : '';
+    const selectedCollection = collections.includes(requestedCollection) ? requestedCollection : (collections[0] || '');
+
+    res.render('admin_database_viewer', {
+      collections,
+      selectedCollection,
+      defaultLimit: DB_VIEWER_DEFAULT_LIMIT,
+      maxLimit: DB_VIEWER_MAX_LIMIT,
+    });
+  } catch (error) {
+    logger.error('Failed to load database viewer', {
+      category: 'admin_database_viewer',
+      metadata: { error: error.message },
+    });
+    res.status(500).render('admin_database_viewer', {
+      collections: [],
+      selectedCollection: '',
+      defaultLimit: DB_VIEWER_DEFAULT_LIMIT,
+      maxLimit: DB_VIEWER_MAX_LIMIT,
+      loadError: 'Unable to load database collections right now.',
+    });
+  }
+};
+
+exports.database_viewer_data = async (req, res) => {
+  try {
+    const availableCollections = await listVisibleCollections();
+    const collection = typeof req.query.collection === 'string' ? req.query.collection : '';
+    const limit = normalizeDbViewerLimit(req.query.limit);
+
+    if (!collection || !availableCollections.includes(collection)) {
+      return res.status(400).json({
+        error: 'Select a valid collection before loading entries.',
+        collections: availableCollections,
+      });
+    }
+
+    const db = assertMongoReady();
+    const documents = await db.collection(collection).find({}).sort({ _id: -1 }).limit(limit).toArray();
+    const entries = documents.map((doc) => serializeDocumentForViewer(doc));
+
+    return res.json({
+      collection,
+      limit,
+      count: entries.length,
+      entries,
+    });
+  } catch (error) {
+    const status = error.message && error.message.includes('not ready') ? 503 : 500;
+    logger.error('Failed to fetch database viewer data', {
+      category: 'admin_database_viewer',
+      metadata: { error: error.message },
+    });
+    return res.status(status).json({ error: 'Unable to load entries right now.' });
+  }
+};
+
+exports.database_viewer_delete = async (req, res) => {
+  try {
+    const availableCollections = await listVisibleCollections();
+    const collection = typeof req.body?.collection === 'string' ? req.body.collection.trim() : '';
+    const id = typeof req.body?.id === 'string' ? req.body.id : '';
+
+    if (!collection || !availableCollections.includes(collection)) {
+      return res.status(400).json({ error: 'Invalid collection.' });
+    }
+
+    const filter = buildDeleteFilter(id);
+    if (!filter) {
+      return res.status(400).json({ error: 'Document id is required.' });
+    }
+
+    const db = assertMongoReady();
+    const result = await db.collection(collection).deleteOne(filter);
+    logger.notice('Admin deleted a document from collection', {
+      category: 'admin_database_viewer',
+      metadata: {
+        collection,
+        id,
+        deletedCount: result.deletedCount || 0,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return res.json({
+      ok: true,
+      deletedCount: result.deletedCount || 0,
+    });
+  } catch (error) {
+    const status = error.message && error.message.includes('not ready') ? 503 : 500;
+    logger.error('Failed to delete document from database viewer', {
+      category: 'admin_database_viewer',
+      metadata: { error: error.message },
+    });
+    return res.status(status).json({ error: 'Unable to delete this entry right now.' });
+  }
 };
 
 exports.database_usage = async (req, res) => {
