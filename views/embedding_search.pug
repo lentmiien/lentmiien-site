@@ -93,6 +93,9 @@ block content
                     - const asrId = row.source && (row.source.parentId || row.source.parent_id);
                     - const isImagePrompt = row.source && row.source.collectionName === 'good_images';
                     - const imageId = row.source && (row.source.documentId || row.source.document_id);
+                    - const isMessage = row.source && row.source.collectionName === 'message_inbox';
+                    - const threadId = row.source && (row.source.parentId || row.source.parent_id);
+                    - const messageId = row.source && (row.source.documentId || row.source.document_id);
                     li
                       strong Source:
                       |  #{row.source && row.source.collectionName ? row.source.collectionName : 'n/a'} · #{row.source && row.source.documentId ? row.source.documentId : 'n/a'}
@@ -130,6 +133,15 @@ block content
                         strong Image job:
                         |  
                         a(href=imageHref, target='_blank', rel='noreferrer') View job
+                    if isMessage && messageId
+                      - const messageHref = `/admin/message-inbox/${messageId}`;
+                      - const threadHref = `/admin/message-thread/${threadId}`;
+                      li
+                        strong Message:
+                        |  
+                        a(href=messageHref, target='_blank', rel='noreferrer') View message
+                        |  
+                        a(href=threadHref, target='_blank', rel='noreferrer') View thread
                     li
                       strong Content type:
                       |  #{row.source && row.source.contentType ? row.source.contentType : 'n/a'}
