@@ -1,0 +1,90 @@
+extends layout
+
+block content
+  - const conversationId = conversation && conversation._id ? conversation._id.toString() : 'NEW';
+  - const conversationTitle = conversation && conversation.title ? conversation.title : 'NEW';
+  - const meta = conversation && conversation.metadata ? conversation.metadata : {};
+  - const initialMessages = Array.isArray(messages) ? messages : [];
+  h2.chat5-title Voice chat (chat5)
+  p#id.chat5-meta(data-source=conversationSource)= conversationId
+  .d-flex.flex-wrap.align-items-center.justify-content-between.gap-2.mb-3
+    div
+      h5.mb-0#conversationTitle= conversationTitle
+      small#voiceCurrentModel.text-muted Current model: #{meta.model || 'gpt-5.1-2025-11-13'}
+    .d-flex.flex-wrap.gap-2
+      a.btn.btn-outline-secondary.btn-sm(href=`/chat5/chat/${conversationId}`) Open full chat
+      button.btn.btn-outline-primary.btn-sm(type='button', data-bs-toggle='modal', data-bs-target='#voiceSettingsModal') Settings
+  .card.voice-chat-card
+    .card-body
+      p.text-muted.small.mb-2 Showing the last two visible messages (audio and hidden messages are omitted).
+      #voiceMessages.voice-messages
+        if initialMessages.length
+          each m in initialMessages
+            - const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT';
+            - const text = (m && m.content && (m.content.text || m.content.transcript || m.content.revisedPrompt || m.content.toolOutput)) || '';
+            - const trimmedText = typeof text === 'string' ? text.trim() : '';
+            if trimmedText && trimmedText.length
+              .voice-message(class=isBot ? 'voice-message--bot' : 'voice-message--user', data-id=m._id || '')
+                span.voice-message__role= isBot ? 'Bot' : (m.user_id || 'User')
+                p.voice-message__text= trimmedText
+            else
+              // Skip messages without displayable text
+        else
+          p.text-muted.mb-0 No visible messages yet.
+      .d-grid.gap-2.mt-3
+        button#voiceButton.btn.btn-primary.btn-lg(type='button') Start speaking
+      p#voiceStatus.small.text-muted.mt-2 Ready for voice input.
+      audio#voiceAudio.voice-audio-player.d-none(controls)
+
+  // Settings modal
+  #voiceSettingsModal.modal.fade(tabindex='-1' aria-labelledby='voiceSettingsLabel' aria-hidden='true')
+    .modal-dialog
+      .modal-content
+        .modal-header
+          h5.modal-title#voiceSettingsLabel Conversation settings
+          button.btn-close(type='button', data-bs-dismiss='modal', aria-label='Close')
+        .modal-body
+          .mb-3
+            label.form-label(for='voiceCategory') Category
+            input#voiceCategory.form-control(type='text', value=conversation.category || 'Chat5')
+          .mb-3
+            label.form-label(for='voiceTags') Tags
+            input#voiceTags.form-control(type='text', value=conversation.tags && conversation.tags.length ? conversation.tags.join(', ') : 'chat5')
+          .mb-3
+            label.form-label(for='voiceModel') Model
+            select#voiceModel.form-select
+              if meta.model
+                option(value=meta.model)= `Use current (${meta.model})`
+              each m in chat_models
+                option(value=m.api_model selected=(m.api_model === meta.model))= m.model_name
+          .mb-3
+            label.form-label(for='voiceReasoning') Reasoning effort
+            - const reasoningValue = meta.reasoning || 'medium';
+            select#voiceReasoning.form-select
+              option(value=reasoningValue)= `Use current (${reasoningValue})`
+              option(value='none') None
+              option(value='minimal') Minimal
+              option(value='low') Low
+              option(value='medium') Medium
+              option(value='high') High
+              option(value='xhigh') Extra high
+          .mb-0
+            label.form-label(for='voiceVerbosity') Verbosity
+            - const verbosityValue = meta.verbosity || 'medium';
+            select#voiceVerbosity.form-select
+              option(value=verbosityValue)= `Use current (${verbosityValue})`
+              option(value='low') Low
+              option(value='medium') Medium
+              option(value='high') High
+        .modal-footer
+          button.btn.btn-secondary(type='button', data-bs-dismiss='modal') Close
+          button#saveVoiceSettings.btn.btn-primary(type='button') Save settings
+
+block script
+  script(src='https://cdn.socket.io/4.0.0/socket.io.min.js', defer)
+  script.
+    window.voiceInitialMessages = !{JSON.stringify(initialMessages)};
+    window.voiceConversation = !{JSON.stringify(conversation)};
+    window.chatModels = !{JSON.stringify(chat_models)};
+    window.conversationSource = '!{conversationSource}';
+  script(src='/js/chat5_voice.js', defer)

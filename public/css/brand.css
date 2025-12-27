@@ -2396,3 +2396,53 @@ label,
 #recipeModal {
   z-index: 9999;
 }
+
+.voice-chat-card {
+  max-width: 820px;
+  margin: 0 auto;
+  background: #0f1115;
+  border: 1px solid #1c1f25;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.voice-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.voice-message {
+  background: #14171d;
+  border: 1px solid #1f242c;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+}
+
+.voice-message--bot {
+  border-color: #2e8bff;
+  box-shadow: 0 0 0 1px rgba(46, 139, 255, 0.15);
+}
+
+.voice-message--user {
+  border-color: #4b5563;
+}
+
+.voice-message__role {
+  display: block;
+  font-size: 0.82rem;
+  color: #9ca3af;
+  margin-bottom: 0.3rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.voice-message__text {
+  margin: 0;
+  color: #e5e7eb;
+  white-space: pre-wrap;
+}
+
+.voice-audio-player {
+  width: 100%;
+  margin-top: 0.75rem;
+}

@@ -57,6 +57,31 @@ function parseActiveFlag(value) {
   return false;
 }
 
+let chat_models = [];
+
+async function ensureChatModels() {
+  if (Array.isArray(chat_models) && chat_models.length > 0) return chat_models;
+  const models = await AIModelCards.find();
+  const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
+  chat_models = models.filter(d => (
+    (d.provider === 'OpenAI' && availableOpenAI.indexOf(d.api_model) >= 0) ||
+    d.provider === 'Local'
+  ) && d.model_type === 'chat');
+  return chat_models;
+}
+
+function extractVisibleText(message) {
+  if (!message || typeof message !== 'object' || !message.content) return '';
+  const { text, transcript, revisedPrompt, toolOutput } = message.content;
+  const candidates = [text, transcript, revisedPrompt, toolOutput];
+  for (const entry of candidates) {
+    if (typeof entry === 'string' && entry.trim().length > 0) {
+      return entry.trim();
+    }
+  }
+  return '';
+}
+
 exports.index = async (req, res) => {
   // Load available OpenAI models
   const models = await AIModelCards.find();
@@ -316,7 +341,6 @@ exports.update_message = async (req, res) => {
   res.redirect(`/chat5/edit_message/${messageId}`);
 };
 
-let chat_models = [];
 exports.view_chat5_top = async (req, res) => {
   const user_id = req.user.name;
   // Load available OpenAI models
@@ -460,6 +484,59 @@ exports.view_chat5 = async (req, res) => {
     personalities,
     responseTypes,
     conversationSource
+  });
+};
+
+exports.view_chat5_voice = async (req, res) => {
+  const id = req.params.id;
+
+  let conversation = undefined;
+  let messages = [];
+  let conversationSource = 'conversation5';
+
+  if (id === 'NEW') {
+    conversation = null;
+    conversationSource = 'unsaved';
+  } else {
+    const data = await conversationService.loadConversation(id);
+    conversation = data.conv;
+    messages = data.msg;
+    conversationSource = data.source || 'conversation5';
+  }
+
+  const formattedMessages = Array.isArray(messages) ? messages.map((m) => {
+    const msg = typeof m?.toObject === 'function' ? m.toObject({ depopulate: true }) : m;
+    if (msg && msg.content && msg.content.text && msg.content.text.length > 0) {
+      msg.content.html = renderMarkdownSafe(msg.content.text);
+    }
+    if (msg && msg._id && typeof msg._id !== 'string') {
+      msg._id = msg._id.toString();
+    }
+    return msg;
+  }) : [];
+
+  const visibleMessages = formattedMessages.filter((m) => m && !m.hideFromBot && m.contentType !== 'audio' && extractVisibleText(m).length > 0);
+  const recentMessages = visibleMessages.slice(-2);
+
+  const conversationPayload = conversation
+    ? (typeof conversation.toObject === 'function' ? conversation.toObject({ depopulate: true }) : conversation)
+    : { ...DEFAULT_CONVERSATION, metadata: { ...DEFAULT_CONVERSATION.metadata } };
+  if (conversationPayload._id && typeof conversationPayload._id !== 'string') {
+    conversationPayload._id = conversationPayload._id.toString();
+  }
+  if (!conversationPayload.metadata) {
+    conversationPayload.metadata = { ...DEFAULT_CONVERSATION.metadata };
+  } else {
+    conversationPayload.metadata = { ...DEFAULT_CONVERSATION.metadata, ...conversationPayload.metadata };
+  }
+
+  const models = await ensureChatModels();
+
+  res.render('chat5_voice', {
+    conversation: conversationPayload,
+    messages: recentMessages,
+    chat_models: models,
+    conversationSource,
   });
 };
 

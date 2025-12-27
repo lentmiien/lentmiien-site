@@ -7,6 +7,7 @@ block content
   p#id.chat5-meta(data-source=conversationSource)= conversation._id
   .chat5-header-actions.d-flex.gap-2.mb-3
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
+    a.btn.btn-outline-secondary(href=`/chat5/voice/${conversation._id.toString()}`) Open voice view
   - const selectedTools = Array.isArray(conversation.metadata && conversation.metadata.tools) ? conversation.metadata.tools : []
   - 
     const toPositiveInt = (value, fallback = 25) => {
