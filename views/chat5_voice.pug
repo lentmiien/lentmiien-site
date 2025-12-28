@@ -31,6 +31,19 @@ block content
               // Skip messages without displayable text
         else
           p.text-muted.mb-0 No visible messages yet.
+      .row.g-3.align-items-end.mt-3
+        .col-sm-7.col-md-6.col-lg-5
+          label.form-label(for='voiceReferenceId') Voice for responses
+          select#voiceReferenceId.form-select
+            optgroup(label='English')
+              option(value='lennart_en') Lennart (EN)
+              option(value='popok_en') Popok (EN)
+              option(value='anny_en' selected) Anny (EN)
+            optgroup(label='Japanese')
+              option(value='lennart_jp') Lennart (JP)
+              option(value='anny_jp') Anny (JP)
+        .col-sm-5.col-md-6.col-lg-7
+          p.small.text-muted.mb-0 Select any voice you like. Japanese voices are more compact, so extra tokens will be used automatically.
       .d-grid.gap-2.mt-3
         button#voiceButton.btn.btn-primary.btn-lg(type='button') Start speaking
       p#voiceStatus.small.text-muted.mt-2 Ready for voice input.

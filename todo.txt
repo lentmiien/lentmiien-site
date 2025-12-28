@@ -1,19 +1,16 @@
-I want to create a voice chat version of the `views/chat5_chat.pug` page. It should build upon the same "chat5" socket.io interface, and save conversation data to the same databases.
+I want to add a voice selector for the TTS function to the `views/chat5_voice.pug` page.
 
-I want a very simple UI and only show text outputs from the last 2 messages and a single button for speaking an input. So the user would press the button, speak an input prompt, then the app would automatically:
-1. Transcribe the audio
-2. Append a user message with the transcribed text
-3. Request for an AI response
-4. Create an output audio with the TTS (using 'anny_en' as voice)
-5. Play the response audio
-6. Await next user input, then start over from step 1
+These are the voices that I currently have:
+- lennart_en
+- popok_en
+- anny_en
+- lennart_jp
+- anny_jp
 
-Lets also add a simple settings modal, for the user to edit `category`, `tags`, `model`, `reasoning effort` and `verbosity` for the conversation, but use same default values as `views/chat5_chat.pug`.
+*"_en" means English, and "_jp" means Japanese, but any voice can be used for any language, it will just cause a bit of an accent, so a slightly lower quality.
 
-Other settings could be edited by opening the conversation in the original `views/chat5_chat.pug` page, and would be used if using the same socket.io implementation, but this is less important, as I don't to intend to use this a lot.
+Also, I think the `maxNewTokens` are automatically calculated as "2048 per 500 chars", this works quite well up to about 3000 tokens, going significantly above this, usually result on the audio being cut of before finishing the TTS, maybe there isn't enough tokens? for Japanese text, I roughly need double the tokens, as each Japanese character represent multiple ascii characters, making Japanese characters more compact. So could we nudge up the token count a bit for longer inputs, and double the tokens when a Japanese voice is selected.
 
-Important: when requesting a response, first a placeholder message will be returned to the user, if using an OpenAI model, this message can be ignored, awaiting the real response when ready, then when receiving the real response, generate the TTS. For non-OpenAI models, there is no placeholder response, as the responses is processed directly, not as a background task.
+*The user is responsible for choosing an English or Japanese voice, depending on what language they intend to speak.
 
-Since I could open chats from `views/chat5_chat.pug`, there is no guarantee that previous chats will have audio messages, so just ignore previous audio message, and only display the last 2 messages that are not set to "Hide from bot" in the UI, and just hide everything else.
-
-codex resume 019b5fd5-f4d7-72c0-9143-705145d25894
+codex resume 019b62d1-96e2-77f3-bead-c1b9d2e9789a

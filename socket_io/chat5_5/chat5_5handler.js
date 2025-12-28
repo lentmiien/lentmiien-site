@@ -255,18 +255,25 @@ module.exports = async function registerChat5_5Handlers({
     };
   }
 
-  function computeTtsMaxTokens(text, provided) {
+  function computeTtsMaxTokens(text, provided, referenceId) {
     const MAX_TOKENS = 8192;
     const TOKENS_PER_500 = 1024;
+    const LONG_PROMPT_THRESHOLD = 3000;
+    const LONG_PROMPT_BOOST = 1.2;
     if (Number.isFinite(provided) && provided > 0) {
       return Math.max(1, Math.min(MAX_TOKENS, Math.round(provided)));
     }
     const length = typeof text === 'string' ? text.length : 0;
+    const japaneseVoice = typeof referenceId === 'string' && referenceId.trim().toLowerCase().endsWith('_jp');
+    const per500 = japaneseVoice ? TOKENS_PER_500 * 2 : TOKENS_PER_500;
     if (length <= 0) {
-      return TOKENS_PER_500;
+      return Math.max(1, Math.min(MAX_TOKENS, per500));
     }
-    const estimate = Math.round((length / 500) * TOKENS_PER_500);
-    return Math.max(1, Math.min(MAX_TOKENS, estimate || TOKENS_PER_500));
+    let estimate = Math.round((length / 500) * per500) || per500;
+    if (estimate > LONG_PROMPT_THRESHOLD) {
+      estimate = Math.round(estimate * LONG_PROMPT_BOOST);
+    }
+    return Math.max(1, Math.min(MAX_TOKENS, estimate));
   }
 
   function normalizeBooleanOption(value, defaultValue, field, adjustments) {
@@ -717,7 +724,7 @@ module.exports = async function registerChat5_5Handlers({
       }
       const referenceId = typeof raw.referenceId === 'string' ? raw.referenceId.trim() : '';
       const providedTokens = Number.isFinite(raw.maxNewTokens) ? raw.maxNewTokens : Number.parseInt(raw.maxNewTokens, 10);
-      const maxNewTokens = computeTtsMaxTokens(prompt, providedTokens);
+      const maxNewTokens = computeTtsMaxTokens(prompt, providedTokens, referenceId);
 
       const { settingParams, conversationParams } = sanitizeChatSettings(raw.settings || {}, adjustments);
       conversationParams.members = [...new Set([...conversationParams.members, userName])];

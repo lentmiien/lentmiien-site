@@ -8,8 +8,16 @@ const DEFAULT_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'mp3');
 const MAX_NEW_TOKENS_MAX = 8192;
 const TOKENS_PER_500_CHARS = 1024;
+const LONG_PROMPT_TOKEN_THRESHOLD = 3000;
+const LONG_PROMPT_BOOST = 1.2;
 const JS_FILE_NAME = 'services/ttsService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+
+function isJapaneseReference(referenceId) {
+  if (!referenceId) return false;
+  const normalized = referenceId.toLowerCase().trim();
+  return normalized.endsWith('_jp');
+}
 
 class TtsService {
   constructor({ apiBase = DEFAULT_API_BASE, outputDir = DEFAULT_OUTPUT_DIR } = {}) {
@@ -29,11 +37,15 @@ class TtsService {
     return 'mp3';
   }
 
-  estimateMaxTokens(text) {
+  estimateMaxTokens(text, referenceId = '') {
     const length = typeof text === 'string' ? text.length : 0;
-    if (length <= 0) return TOKENS_PER_500_CHARS;
-    const estimated = Math.round((length / 500) * TOKENS_PER_500_CHARS);
-    if (!Number.isFinite(estimated) || estimated <= 0) return TOKENS_PER_500_CHARS;
+    const per500 = isJapaneseReference(referenceId) ? TOKENS_PER_500_CHARS * 2 : TOKENS_PER_500_CHARS;
+    if (length <= 0) return Math.min(MAX_NEW_TOKENS_MAX, per500);
+    let estimated = Math.round((length / 500) * per500) || per500;
+    if (!Number.isFinite(estimated) || estimated <= 0) return Math.min(MAX_NEW_TOKENS_MAX, per500);
+    if (estimated > LONG_PROMPT_TOKEN_THRESHOLD) {
+      estimated = Math.round(estimated * LONG_PROMPT_BOOST);
+    }
     return Math.max(1, Math.min(MAX_NEW_TOKENS_MAX, estimated));
   }
 
@@ -49,7 +61,7 @@ class TtsService {
     }
 
     const resolvedFormat = this.normalizeFormat(format || 'mp3');
-    const resolvedTokens = this.clampMaxTokens(maxNewTokens, this.estimateMaxTokens(text));
+    const resolvedTokens = this.clampMaxTokens(maxNewTokens, this.estimateMaxTokens(text, referenceId));
     const payload = {
       text,
       format: resolvedFormat,
