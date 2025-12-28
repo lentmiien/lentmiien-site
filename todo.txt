@@ -1,1 +1,4 @@
-My app logger (utils/logger.js) puts log messages in the console log. This is not very useful, and just fill up the console log, so can we remove the console logging from 'debug' and 'notice' messages, but keep for 'warning' and 'error' messages.
+On the `views/sora.pug` page, when a video has finished generating, the page is refreshed to show the new video in the "Video library", however, the refresh is always to fast, so the video is never ready to be shown in the library, so I always need to manually refresh the page one more time.
+Please fix the issue, so the video show up properly in the "Video library", after the generation has finished.
+
+019b6534-b968-7d41-a1b9-c6e695e88097

@@ -42,6 +42,11 @@
     activeVideoId: null,
   };
 
+  const STATUS_POLL_INTERVAL_MS = 5000;
+  const FINALIZING_POLL_INTERVAL_MS = 3000;
+  const FINALIZING_POLL_SLOW_INTERVAL_MS = 10000;
+  const FINALIZING_POLL_SLOW_THRESHOLD = 10;
+
   const dom = {
     form: document.getElementById('sora-generate-form'),
     prompt: document.getElementById('sora-prompt'),
@@ -369,13 +374,16 @@
     }
   }
 
-  function updateStatusFromVideo(video) {
+  function updateStatusFromVideo(video, options = {}) {
     const status = video.status || 'unknown';
     const progress = typeof video.progress === 'number' ? video.progress : 0;
+    const awaitingFile = Boolean(options.awaitingFile);
     let message = 'Processing your request...';
     let tone = 'info';
     if (status === 'completed') {
-      message = 'Video ready! Refreshing library.';
+      message = awaitingFile
+        ? 'Finalizing video and syncing to your library...'
+        : 'Video ready! Refreshing library.';
     } else if (status === 'failed') {
       message = video.errorMessage ? `Failed: ${video.errorMessage}` : 'Video generation failed.';
       tone = 'error';
@@ -393,7 +401,7 @@
     });
   }
 
-  async function pollVideoStatus(videoId) {
+  async function pollVideoStatus(videoId, finalizeAttempt = 0) {
     clearTimer();
     if (!videoId) return;
     state.activeVideoId = videoId;
@@ -409,19 +417,30 @@
       if (!video) {
         throw new Error('Malformed status response');
       }
-      updateStatusFromVideo(video);
-      if (video.status === 'completed') {
+      const awaitingFile = video.status === 'completed' && !video.fileUrl;
+      const readyForLibrary = video.status === 'completed' && Boolean(video.fileUrl);
+      updateStatusFromVideo(video, { awaitingFile });
+      if (readyForLibrary) {
         await loadVideos();
         await refreshCategories();
         setFormDisabled(false);
         setTimeout(() => setStatus({ visible: false }), 3500);
         return;
       }
+      if (awaitingFile) {
+        setFormDisabled(false);
+        const nextAttempt = finalizeAttempt + 1;
+        const delay = nextAttempt > FINALIZING_POLL_SLOW_THRESHOLD
+          ? FINALIZING_POLL_SLOW_INTERVAL_MS
+          : FINALIZING_POLL_INTERVAL_MS;
+        state.pollTimer = setTimeout(() => pollVideoStatus(videoId, nextAttempt), delay);
+        return;
+      }
       if (video.status === 'failed') {
         setFormDisabled(false);
         return;
       }
-      state.pollTimer = setTimeout(() => pollVideoStatus(videoId), 5000);
+      state.pollTimer = setTimeout(() => pollVideoStatus(videoId), STATUS_POLL_INTERVAL_MS);
     } catch (error) {
       console.warn('Status polling failed', error);
       setStatus({
