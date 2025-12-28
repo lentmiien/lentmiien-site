@@ -19,6 +19,11 @@ const MODEL_OPTIONS = {
     seconds: [4, 8, 12],
     sizes: ['720x1280', '1280x720', '1024x1792', '1792x1024'],
   },
+  'sora-2-2025-12-08': {
+    label: 'Sora 2 (Latest)',
+    seconds: [4, 8, 12],
+    sizes: ['720x1280', '1280x720'],
+  },
 };
 
 const RATING_DESCRIPTIONS = {
