@@ -1,16 +1,1 @@
-I want to add a voice selector for the TTS function to the `views/chat5_voice.pug` page.
-
-These are the voices that I currently have:
-- lennart_en
-- popok_en
-- anny_en
-- lennart_jp
-- anny_jp
-
-*"_en" means English, and "_jp" means Japanese, but any voice can be used for any language, it will just cause a bit of an accent, so a slightly lower quality.
-
-Also, I think the `maxNewTokens` are automatically calculated as "2048 per 500 chars", this works quite well up to about 3000 tokens, going significantly above this, usually result on the audio being cut of before finishing the TTS, maybe there isn't enough tokens? for Japanese text, I roughly need double the tokens, as each Japanese character represent multiple ascii characters, making Japanese characters more compact. So could we nudge up the token count a bit for longer inputs, and double the tokens when a Japanese voice is selected.
-
-*The user is responsible for choosing an English or Japanese voice, depending on what language they intend to speak.
-
-codex resume 019b62d1-96e2-77f3-bead-c1b9d2e9789a
+My app logger (utils/logger.js) puts log messages in the console log. This is not very useful, and just fill up the console log, so can we remove the console logging from 'debug' and 'notice' messages, but keep for 'warning' and 'error' messages.

@@ -118,6 +118,11 @@ function shouldLog(level) {
 
 function logToConsole(entry) {
   const { level, message, category, metadata } = entry;
+
+  if (level !== 'warning' && level !== 'error') {
+    return;
+  }
+
   const prefix = `[${entry.timestamp}] ${level.toUpperCase()}${category ? `(${category})` : ''}`;
   const args = [prefix, message];
 
@@ -132,15 +137,8 @@ function logToConsole(entry) {
     case 'warning':
       console.warn(...args);
       break;
-    case 'notice':
-      console.info(...args);
-      break;
     default:
-      if (console.debug) {
-        console.debug(...args);
-      } else {
-        console.log(...args);
-      }
+      console.log(...args);
   }
 }
 
