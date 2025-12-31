@@ -124,6 +124,7 @@ const CreditCardTransaction = require('./models/credit_card_transaction');
 const ApiDebugLog = require('./models/api_debug_log');
 // OCR jobs
 const OcrJob = require('./models/ocr_job');
+const OcrTtsJob = require('./models/ocr_tts_job');
 // ASR jobs
 const AsrJob = require('./models/asr_job');
 // Message inbox
@@ -204,6 +205,7 @@ module.exports = {
   CreditCardTransaction,
   ApiDebugLog,
   OcrJob,
+  OcrTtsJob,
   AsrJob,
   MessageInboxEntry,
   MessageFilter,

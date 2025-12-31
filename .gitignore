@@ -10,6 +10,7 @@ public/audio
 public/img
 public/mp3
 public/ocr
+public/ocr_tts
 public/imgen
 public/video
 public/yaml/*

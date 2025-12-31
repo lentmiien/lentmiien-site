@@ -1,0 +1,909 @@
+extends layout
+
+block styles
+  style.
+    :root {
+      --ocrtts-bg: radial-gradient(circle at 20% 20%, rgba(255, 140, 66, 0.08), transparent 40%), #0b0f18;
+      --ocrtts-surface: #121826;
+      --ocrtts-surface-2: #0d131f;
+      --ocrtts-border: #1e2a3b;
+      --ocrtts-text: #e7eefb;
+      --ocrtts-muted: #93a6c6;
+      --ocrtts-accent: #ff8c42;
+      --ocrtts-accent-2: #ffc857;
+      --ocrtts-success: #2bd4a8;
+      --ocrtts-danger: #ff5f6d;
+    }
+
+    .ocrtts-page {
+      background: var(--ocrtts-bg);
+      border-radius: 24px;
+      padding: 1.5rem;
+      margin: 1rem 0 3rem;
+      box-shadow: 0 40px 120px rgba(0, 0, 0, 0.35);
+      color: var(--ocrtts-text);
+    }
+
+    .ocrtts-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+
+    .ocrtts-header h1 {
+      margin: 0;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+
+    .ocrtts-header p {
+      color: var(--ocrtts-muted);
+      margin: 0.35rem 0 0;
+      max-width: 720px;
+    }
+
+    .ocrtts-grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+      gap: 1rem;
+    }
+
+    @media (max-width: 1100px) {
+      .ocrtts-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .ocrtts-panel {
+      background: linear-gradient(135deg, rgba(255, 140, 66, 0.06), transparent 70%), var(--ocrtts-surface);
+      border: 1px solid var(--ocrtts-border);
+      border-radius: 16px;
+      padding: 1rem 1.1rem;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    }
+
+    .ocrtts-panel + .ocrtts-panel {
+      margin-top: 0.9rem;
+    }
+
+    .ocrtts-panel h3 {
+      margin: 0 0 0.5rem;
+      font-weight: 600;
+    }
+
+    .ocrtts-form label {
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-size: 0.8rem;
+      color: var(--ocrtts-muted);
+      margin-bottom: 0.2rem;
+    }
+
+    .ocrtts-form input,
+    .ocrtts-form select,
+    .ocrtts-form textarea {
+      background: var(--ocrtts-surface-2);
+      border: 1px solid var(--ocrtts-border);
+      border-radius: 10px;
+      color: var(--ocrtts-text);
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+    }
+
+    .ocrtts-form textarea {
+      min-height: 160px;
+      resize: vertical;
+      font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+    }
+
+    .ocrtts-form button,
+    .ocrtts-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 0.65rem 0.95rem;
+      font-weight: 600;
+      color: #0c111a;
+      background: var(--ocrtts-accent);
+      transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    }
+
+    .ocrtts-btn.secondary {
+      background: transparent;
+      color: var(--ocrtts-text);
+      border: 1px solid var(--ocrtts-border);
+    }
+
+    .ocrtts-btn.danger {
+      background: var(--ocrtts-danger);
+      color: #0b0f18;
+    }
+
+    .ocrtts-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .ocrtts-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 40px rgba(255, 140, 66, 0.25);
+    }
+
+    .job-row {
+      border: 1px solid var(--ocrtts-border);
+      border-radius: 12px;
+      padding: 0.65rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      background: var(--ocrtts-surface-2);
+      cursor: pointer;
+      transition: border-color 0.15s ease, transform 0.1s ease;
+    }
+
+    .job-row:hover {
+      border-color: var(--ocrtts-accent);
+      transform: translateX(2px);
+    }
+
+    .job-row.is-active {
+      border-color: var(--ocrtts-accent);
+      box-shadow: 0 0 0 1px rgba(255, 140, 66, 0.3);
+    }
+
+    .job-meta {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      color: var(--ocrtts-muted);
+      font-size: 0.9rem;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      border: 1px solid var(--ocrtts-border);
+    }
+
+    .status-pill .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-pill.queued .dot { background: var(--ocrtts-muted); }
+    .status-pill.processing .dot { background: var(--ocrtts-accent-2); }
+    .status-pill.completed .dot { background: var(--ocrtts-success); }
+    .status-pill.failed .dot { background: var(--ocrtts-danger); }
+
+    .image-stage {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #05070d;
+      border: 1px solid var(--ocrtts-border);
+    }
+
+    .image-stage img {
+      width: 100%;
+      display: block;
+    }
+
+    .box-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .bounding-box {
+      position: absolute;
+      border: 2px solid rgba(255, 140, 66, 0.9);
+      background: rgba(255, 140, 66, 0.14);
+      border-radius: 8px;
+      pointer-events: auto;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .bounding-box:hover {
+      border-color: var(--ocrtts-accent-2);
+      background: rgba(255, 200, 87, 0.16);
+      z-index: 5;
+    }
+
+    .bounding-box .box-label {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      transform: translateY(6px);
+      background: rgba(18, 24, 38, 0.95);
+      color: var(--ocrtts-text);
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      max-width: 260px;
+      opacity: 0;
+      pointer-events: none;
+      white-space: pre-wrap;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .bounding-box:hover .box-label {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .audio-row {
+      border: 1px solid var(--ocrtts-border);
+      border-radius: 12px;
+      padding: 0.65rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .audio-row .meta {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .audio-row .meta strong {
+      font-size: 0.95rem;
+    }
+
+    .audio-row .meta span {
+      color: var(--ocrtts-muted);
+      font-size: 0.85rem;
+    }
+
+    .audio-actions {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      background: rgba(255, 140, 66, 0.15);
+      color: var(--ocrtts-accent);
+    }
+
+    #ocrttsFeedback {
+      margin-top: 0.75rem;
+      min-height: 1.5rem;
+      font-size: 0.95rem;
+    }
+
+    #ocrttsFeedback .msg {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 12px;
+    }
+
+    #ocrttsFeedback .info { background: rgba(255, 140, 66, 0.12); color: var(--ocrtts-accent); }
+    #ocrttsFeedback .success { background: rgba(43, 212, 168, 0.12); color: var(--ocrtts-success); }
+    #ocrttsFeedback .error { background: rgba(255, 95, 109, 0.14); color: var(--ocrtts-danger); }
+    #ocrttsFeedback .muted { color: var(--ocrtts-muted); }
+
+block content
+  .ocrtts-page
+    .ocrtts-header
+      div
+        h1 OCR → Voice Queue
+        p Build a background queue that reads every uploaded image aloud. OCR runs, text embeds, and the default voice is generated automatically.
+      .d-flex.gap-2.flex-wrap
+        button#ocrttsAutoplayToggle.ocrtts-btn(type="button") Auto play: ON
+        button#ocrttsResumeBtn.ocrtts-btn.secondary(type="button") Resume audio
+    .ocrtts-grid
+      .ocrtts-panel
+        h3 Upload & queue
+        form#ocrttsUploadForm.ocrtts-form(enctype="multipart/form-data")
+          label(for="ocrttsFile") Image
+          input#ocrttsFile(type="file", name="image", accept="image/*", required)
+          label(for="ocrttsSpace") Combine spacing
+          select#ocrttsSpace(name="space_count")
+            option(value="0") 0 spaces (default for Japanese)
+            option(value="1") 1 space
+          label(for="ocrttsGroup") Job group (optional)
+          input#ocrttsGroup(type="text", name="group", placeholder="ex. chapter-3")
+          small.text-muted Default voice: lennart_jp. Only one image per upload; jobs queue automatically.
+          br
+          button.mt-2(type="submit") Queue OCR → TTS
+      .ocrtts-panel
+        h3 Playback queue
+        p#ocrttsQueue.text-muted(style="margin-bottom:0.5rem;") Queue will appear here.
+        .d-flex.gap-2.flex-wrap
+          button#ocrttsPlayNext.ocrtts-btn.secondary(type="button") Play next now
+          button#ocrttsClearWait.ocrtts-btn.secondary(type="button") Skip waiting
+      .ocrtts-panel
+        h3 Jobs
+        label(for="ocrttsGroupFilter") Filter by group
+        select#ocrttsGroupFilter
+          option(value="") All groups
+        div#ocrttsJobs.job-list(style="margin-top:0.65rem; display: flex; flex-direction: column; gap: 0.5rem;")
+      .ocrtts-panel
+        h3 Job detail
+        #ocrttsDetail
+          p.text-muted Select a job to inspect OCR text, generate more audio, or edit spacing.
+    #ocrttsFeedback
+
+block script
+  script.
+    (() => {
+      const INITIAL_JOBS = !{JSON.stringify(jobs || [])};
+      const INITIAL_GROUPS = !{JSON.stringify(groups || [])};
+      const INITIAL_JOB_DETAIL = !{JSON.stringify(initialJobDetail || null)};
+      const SELECTED_JOB_ID = !{JSON.stringify(selectedJobId || null)};
+      const DEFAULTS = !{JSON.stringify(defaults || {})};
+      const JOBS_ENDPOINT = '/ocr-tts/jobs';
+      const ALLOW_SPACES = [0, 1];
+
+      const state = {
+        jobs: INITIAL_JOBS,
+        groups: INITIAL_GROUPS,
+        jobDetails: {},
+        selectedJobId: SELECTED_JOB_ID,
+        autoPlay: true,
+        waitingAudio: null,
+        currentAudio: null,
+        pollingTimer: null,
+        groupFilter: null,
+        defaults: DEFAULTS || { spaceCount: 0, voice: 'lennart_jp' },
+      };
+
+      if (INITIAL_JOB_DETAIL) {
+        state.jobDetails[INITIAL_JOB_DETAIL.id] = INITIAL_JOB_DETAIL;
+      }
+
+      const feedbackEl = document.getElementById('ocrttsFeedback');
+      const jobsEl = document.getElementById('ocrttsJobs');
+      const detailEl = document.getElementById('ocrttsDetail');
+      const queueEl = document.getElementById('ocrttsQueue');
+      const uploadForm = document.getElementById('ocrttsUploadForm');
+      const spaceSelect = document.getElementById('ocrttsSpace');
+      const groupFilterEl = document.getElementById('ocrttsGroupFilter');
+      const autoplayToggle = document.getElementById('ocrttsAutoplayToggle');
+      const resumeBtn = document.getElementById('ocrttsResumeBtn');
+      const playNextBtn = document.getElementById('ocrttsPlayNext');
+      const skipWaitBtn = document.getElementById('ocrttsClearWait');
+      const audioEl = new Audio();
+
+      audioEl.addEventListener('ended', handleAudioEnded);
+      audioEl.addEventListener('error', handleAudioError);
+
+      function escapeHtml(str) {
+        return String(str || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function setFeedback(message, type = 'info') {
+        if (!feedbackEl) return;
+        if (!message) {
+          feedbackEl.innerHTML = '<span class="muted msg">Ready.</span>';
+          return;
+        }
+        feedbackEl.innerHTML = `<span class="msg ${type}">${message}</span>`;
+      }
+
+      function formatDate(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        return date.toLocaleString();
+      }
+
+      function renderGroupFilter() {
+        if (!groupFilterEl) return;
+        const current = groupFilterEl.value;
+        const options = ['<option value="">All groups</option>'];
+        (state.groups || []).forEach((g) => {
+          const sel = current === g ? 'selected' : '';
+          options.push(`<option value="${g}" ${sel}>${g}</option>`);
+        });
+        groupFilterEl.innerHTML = options.join('');
+      }
+
+      function statusPill(status) {
+        const safe = (status || 'queued').toLowerCase();
+        return `<span class="status-pill ${safe}"><span class="dot"></span>${safe}</span>`;
+      }
+
+      function renderJobs() {
+        if (!jobsEl) return;
+        if (!state.jobs.length) {
+          jobsEl.innerHTML = '<p class="text-muted mb-0">No OCR → TTS jobs yet.</p>';
+          return;
+        }
+        const rows = state.jobs
+          .filter((job) => !state.groupFilter || job.group === state.groupFilter)
+          .map((job) => {
+          const active = state.selectedJobId === job.id ? 'is-active' : '';
+          const defaultAudio = job.defaultAudio;
+          const group = job.group ? `<span class="pill">Group: ${escapeHtml(job.group)}</span>` : '';
+          const audioSummary = defaultAudio
+            ? `<span class="pill">Voice ${escapeHtml(defaultAudio.voice || state.defaults.voice)} · ${escapeHtml(defaultAudio.status)}</span>`
+            : '';
+          return `<div class="job-row ${active}" data-select-job="${job.id}">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+                <strong>${escapeHtml(job.id)}</strong>
+                ${statusPill(job.status)}
+              </div>
+              <div class="job-meta">
+                ${formatDate(job.createdAt) ? `<span>Created ${formatDate(job.createdAt)}</span>` : ''}
+                ${job.completedAt ? `<span>Done ${formatDate(job.completedAt)}</span>` : ''}
+              </div>
+              <div class="job-meta">
+                ${group || ''}
+                ${audioSummary || ''}
+              </div>
+            </div>`;
+        });
+        jobsEl.innerHTML = rows.length ? rows.join('') : '<p class="text-muted mb-0">No jobs in this group.</p>';
+      }
+
+      function buildOverlay(boxes = []) {
+        if (!boxes.length) return '';
+        return boxes.map((box) => {
+          const styles = [
+            `left:${box.leftPercent}%`,
+            `top:${box.topPercent}%`,
+            `width:${box.widthPercent}%`,
+            `height:${box.heightPercent}%`,
+          ].join(';');
+          return `<div class="bounding-box" style="${styles}">
+              <div class="box-label">${escapeHtml(box.text || '')}</div>
+            </div>`;
+        }).join('');
+      }
+
+      function renderAudios(detail) {
+        if (!detail || !Array.isArray(detail.audios) || !detail.audios.length) {
+          return '<p class="text-muted mb-0">No audio yet. Generate a new voice to add another clip.</p>';
+        }
+        return detail.audios.map((audio) => {
+          const defaultTag = audio.isDefault ? '<span class="pill">Default</span>' : '';
+          const statusTag = `<span class="pill">${audio.status}</span>`;
+          const playBtn = audio.fileUrl && audio.status === 'completed'
+            ? `<button class="ocrtts-btn secondary" data-play-audio="${audio.fileUrl}" data-audio-job="${detail.id}" data-audio-id="${audio.id}" type="button">Play</button>`
+            : '';
+          const setDefaultBtn = audio.status === 'completed'
+            ? `<button class="ocrtts-btn secondary" data-set-default="${audio.id}" data-job-id="${detail.id}" type="button">Make default</button>`
+            : '';
+          return `<div class="audio-row" data-audio-row="${audio.id}">
+              <div class="meta">
+                <strong>${escapeHtml(audio.voice || 'voice')}</strong>
+                <span>${escapeHtml(audio.status)}${audio.autoPlayedAt ? ' · played' : ''}</span>
+                ${audio.error ? `<span style="color:var(--ocrtts-danger);">${escapeHtml(audio.error)}</span>` : ''}
+              </div>
+              <div class="audio-actions">
+                ${defaultTag}
+                ${statusTag}
+                ${playBtn}
+                ${setDefaultBtn}
+              </div>
+            </div>`;
+        }).join('');
+      }
+
+      function renderDetail() {
+        if (!detailEl) return;
+        const detail = state.selectedJobId ? state.jobDetails[state.selectedJobId] : null;
+        if (!state.selectedJobId) {
+          detailEl.innerHTML = '<p class="text-muted mb-0">Select a job to view OCR text and audio.</p>';
+          return;
+        }
+        if (!detail) {
+          detailEl.innerHTML = '<p class="text-muted mb-0">Loading job details...</p>';
+          return;
+        }
+        const img = detail.image?.previewPath
+          ? `<div class="image-stage"><img src="${detail.image.previewPath}" alt="Preview"><div class="box-layer">${buildOverlay(detail.ocr?.overlayBoxes || [])}</div></div>`
+          : '';
+        const spaceOptions = ALLOW_SPACES.map((value) => {
+          const sel = Number(detail.ocr?.spaceCount ?? state.defaults.spaceCount) === value ? 'selected' : '';
+          return `<option value="${value}" ${sel}>${value} space${value === 1 ? '' : 's'}</option>`;
+        }).join('');
+        const embedNoteRaw = detail.embeddingStatus === 'stored'
+          ? 'Stored in embeddings'
+          : detail.embeddingStatus === 'failed'
+            ? `Embedding failed: ${detail.embeddingError || 'Unknown error'}`
+            : 'Embedding pending';
+        const embedNote = escapeHtml(embedNoteRaw);
+        detailEl.innerHTML = `
+          <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+            ${statusPill(detail.status)}
+            ${detail.group ? `<span class="pill">Group ${escapeHtml(detail.group)}</span>` : ''}
+            <span class="pill">${embedNote}</span>
+            <span class="pill">Spacing: ${detail.ocr?.spaceCount ?? state.defaults.spaceCount}</span>
+          </div>
+          ${img}
+          <div class="mt-3">
+            <label class="ocrtts-form-label">OCR text</label>
+            <textarea id="ocrttsText" class="ocrtts-form" rows="6">${detail.ocr?.paragraphText || ''}</textarea>
+            <label class="ocrtts-form-label">OCR text</label>
+            <textarea id="ocrttsText" class="ocrtts-form" rows="6">${escapeHtml(detail.ocr?.paragraphText || '')}</textarea>
+            <div class="d-flex gap-2 flex-wrap mt-2">
+              <select id="ocrttsDetailSpace">${spaceOptions}</select>
+              <button id="ocrttsSaveText" class="ocrtts-btn secondary" type="button">Save edits</button>
+              <button id="ocrttsReflowText" class="ocrtts-btn secondary" type="button">Rebuild with spacing</button>
+              <button id="ocrttsEmbedHq" class="ocrtts-btn secondary" type="button">High-quality embed</button>
+            </div>
+          </div>
+          <hr style="border-color:var(--ocrtts-border);">
+          <div class="d-flex gap-2 flex-wrap align-items-end mb-2">
+            <div>
+              <label>Voice</label>
+              <input id="ocrttsVoice" type="text" value="${escapeHtml(state.defaults.voice || 'lennart_jp')}" />
+            </div>
+            <button id="ocrttsGenerateAudio" class="ocrtts-btn" type="button">Generate audio</button>
+          </div>
+          <div id="ocrttsAudioList">${renderAudios(detail)}</div>
+        `;
+      }
+
+      function updateJobFromDetail(detail) {
+        if (!detail) return;
+        const index = state.jobs.findIndex((job) => job.id === detail.id);
+        if (index !== -1) {
+          state.jobs[index] = {
+            ...state.jobs[index],
+            status: detail.status,
+            completedAt: detail.completedAt,
+            updatedAt: detail.updatedAt,
+            defaultAudio: detail.defaultAudio,
+            embeddingStatus: detail.embeddingStatus,
+            hqEmbeddingStatus: detail.hqEmbeddingStatus,
+            group: detail.group,
+          };
+        }
+        state.jobDetails[detail.id] = detail;
+      }
+
+      async function ensureJobDetail(jobId, { refresh = false } = {}) {
+        if (!jobId) return;
+        if (state.jobDetails[jobId] && !refresh) {
+          renderDetail();
+          return;
+        }
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${jobId}`);
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || 'Failed to load job.');
+          }
+          updateJobFromDetail(payload.job);
+          renderDetail();
+          renderJobs();
+        } catch (error) {
+          setFeedback(error.message || 'Failed to load job.', 'error');
+        }
+      }
+
+      function nextAudioInQueue() {
+        const filtered = state.jobs
+          .filter((job) => !state.groupFilter || job.group === state.groupFilter)
+          .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+        for (const job of filtered) {
+          const audio = job.defaultAudio;
+          if (!audio) continue;
+          if (audio.status !== 'completed') {
+            state.waitingAudio = { jobId: job.id, audioId: audio.id, status: audio.status };
+            return null;
+          }
+          if (!audio.autoPlayedAt && audio.fileUrl) {
+            state.waitingAudio = null;
+            return {
+              jobId: job.id,
+              audioId: audio.id,
+              url: audio.fileUrl,
+              voice: audio.voice,
+            };
+          }
+        }
+        state.waitingAudio = null;
+        return null;
+      }
+
+      async function playQueueIfReady() {
+        renderQueue();
+        if (!state.autoPlay || state.currentAudio) return;
+        const next = nextAudioInQueue();
+        if (!next) {
+          renderQueue();
+          return;
+        }
+        state.currentAudio = next;
+        audioEl.src = next.url;
+        try {
+          await audioEl.play();
+          setFeedback(`Playing job ${next.jobId} (${next.voice || 'voice'})`, 'info');
+        } catch (error) {
+          state.currentAudio = null;
+          setFeedback('Autoplay blocked. Click "Resume audio" to continue.', 'error');
+        }
+        renderQueue();
+      }
+
+      async function markAudioPlayed(jobId, audioId) {
+        try {
+          await fetch(`${JOBS_ENDPOINT}/${jobId}/audios/${audioId}/played`, { method: 'POST' });
+          await refreshJobs(true);
+        } catch {
+          // ignore
+        }
+      }
+
+      async function handleAudioEnded() {
+        if (state.currentAudio) {
+          await markAudioPlayed(state.currentAudio.jobId, state.currentAudio.audioId);
+        }
+        state.currentAudio = null;
+        playQueueIfReady();
+      }
+
+      function handleAudioError() {
+        setFeedback('Audio playback failed.', 'error');
+        state.currentAudio = null;
+        playQueueIfReady();
+      }
+
+      function renderQueue() {
+        if (!queueEl) return;
+        const waiting = state.waitingAudio
+          ? `Waiting for job ${state.waitingAudio.jobId} (${state.waitingAudio.status})`
+          : 'Waiting for next audio...';
+        const playing = state.currentAudio
+          ? `Now playing job ${state.currentAudio.jobId} (${state.currentAudio.voice || 'voice'})`
+          : waiting;
+        queueEl.textContent = playing;
+      }
+
+      async function refreshJobs(silent = false) {
+        const params = new URLSearchParams();
+        if (state.groupFilter) params.set('group', state.groupFilter);
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}?${params.toString()}`);
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Failed to load jobs.');
+          state.jobs = payload.jobs || [];
+          state.groups = payload.groups || state.groups;
+          renderGroupFilter();
+          renderJobs();
+          renderDetail();
+          if (!silent) setFeedback('Jobs updated.', 'info');
+          playQueueIfReady();
+        } catch (error) {
+          if (!silent) setFeedback(error.message || 'Failed to refresh jobs.', 'error');
+        }
+      }
+
+      function startPolling() {
+        stopPolling();
+        state.pollingTimer = setInterval(() => refreshJobs(true), 6000);
+      }
+
+      function stopPolling() {
+        if (state.pollingTimer) {
+          clearInterval(state.pollingTimer);
+          state.pollingTimer = null;
+        }
+      }
+
+      async function handleUpload(event) {
+        event.preventDefault();
+        const fileInput = document.getElementById('ocrttsFile');
+        if (!fileInput?.files?.length) {
+          setFeedback('Please choose an image file.', 'error');
+          return;
+        }
+        const form = new FormData(uploadForm);
+        setFeedback('Queuing OCR → TTS job...', 'info');
+        try {
+          const response = await fetch(JOBS_ENDPOINT, { method: 'POST', body: form });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Failed to queue job.');
+          state.jobs.unshift(payload.job);
+          state.selectedJobId = payload.job.id;
+          setFeedback('Job queued. OCR and TTS will run automatically.', 'success');
+          renderJobs();
+          ensureJobDetail(state.selectedJobId, { refresh: true });
+          playQueueIfReady();
+        } catch (error) {
+          setFeedback(error.message || 'Failed to queue job.', 'error');
+        }
+      }
+
+      async function saveText(rebuild = false) {
+        if (!state.selectedJobId) return;
+        const textArea = document.getElementById('ocrttsText');
+        const spaceInput = document.getElementById('ocrttsDetailSpace');
+        const body = new URLSearchParams();
+        body.set('space_count', spaceInput ? spaceInput.value : state.defaults.spaceCount);
+        if (textArea) {
+          body.set('text', textArea.value);
+        }
+        if (rebuild) body.set('rebuild_from_boxes', 'true');
+        setFeedback('Saving OCR text...', 'info');
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${state.selectedJobId}/text`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Failed to save text.');
+          updateJobFromDetail(payload.job);
+          renderDetail();
+          renderJobs();
+          setFeedback('Text saved and embeddings updated.', 'success');
+        } catch (error) {
+          setFeedback(error.message || 'Unable to save text.', 'error');
+        }
+      }
+
+      async function generateAudio() {
+        if (!state.selectedJobId) return;
+        const voiceInput = document.getElementById('ocrttsVoice');
+        const textArea = document.getElementById('ocrttsText');
+        const body = new URLSearchParams();
+        if (voiceInput?.value) body.set('voice', voiceInput.value);
+        if (textArea?.value) body.set('text', textArea.value);
+        body.set('set_default', 'true');
+        setFeedback('Generating audio...', 'info');
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${state.selectedJobId}/audios`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Failed to generate audio.');
+          updateJobFromDetail(payload.job);
+          renderDetail();
+          renderJobs();
+          setFeedback('Audio requested. It will appear once ready.', 'success');
+          playQueueIfReady();
+        } catch (error) {
+          setFeedback(error.message || 'Unable to generate audio.', 'error');
+        }
+      }
+
+      async function setDefaultAudio(audioId) {
+        if (!state.selectedJobId || !audioId) return;
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${state.selectedJobId}/audios/${audioId}/default`, { method: 'PATCH' });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Failed to update default audio.');
+          updateJobFromDetail(payload.job);
+          renderDetail();
+          renderJobs();
+          setFeedback('Default audio updated.', 'success');
+          playQueueIfReady();
+        } catch (error) {
+          setFeedback(error.message || 'Unable to update default audio.', 'error');
+        }
+      }
+
+      async function embedHighQuality() {
+        if (!state.selectedJobId) return;
+        setFeedback('Saving high-quality embedding...', 'info');
+        try {
+          const response = await fetch(`${JOBS_ENDPOINT}/${state.selectedJobId}/embed-high-quality`, { method: 'POST' });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Failed to store high-quality embedding.');
+          updateJobFromDetail(payload.job);
+          renderDetail();
+          renderJobs();
+          setFeedback('Stored high-quality embedding.', 'success');
+        } catch (error) {
+          setFeedback(error.message || 'Unable to store high-quality embedding.', 'error');
+        }
+      }
+
+      function handleJobClick(event) {
+        const row = event.target.closest('[data-select-job]');
+        if (!row) return;
+        const jobId = row.getAttribute('data-select-job');
+        state.selectedJobId = jobId;
+        renderJobs();
+        ensureJobDetail(jobId, { refresh: true });
+      }
+
+      function handleAudioAction(event) {
+        const playBtn = event.target.closest('[data-play-audio]');
+        if (playBtn) {
+          const url = playBtn.getAttribute('data-play-audio');
+          const jobId = playBtn.getAttribute('data-audio-job');
+          const audioId = playBtn.getAttribute('data-audio-id');
+          state.currentAudio = { jobId, audioId, url, voice: '' };
+          audioEl.src = url;
+          audioEl.play().catch(() => {
+            setFeedback('Unable to start playback.', 'error');
+            state.currentAudio = null;
+          });
+          return;
+        }
+        const defaultBtn = event.target.closest('[data-set-default]');
+        if (defaultBtn) {
+          const audioId = defaultBtn.getAttribute('data-set-default');
+          setDefaultAudio(audioId);
+        }
+      }
+
+      function toggleAutoplay() {
+        state.autoPlay = !state.autoPlay;
+        if (autoplayToggle) {
+          autoplayToggle.textContent = `Auto play: ${state.autoPlay ? 'ON' : 'OFF'}`;
+        }
+        if (state.autoPlay) {
+          playQueueIfReady();
+        }
+      }
+
+      function resumeAudio() {
+        if (audioEl.src) {
+          audioEl.play().catch(() => setFeedback('Playback blocked by browser.', 'error'));
+        } else {
+          playQueueIfReady();
+        }
+      }
+
+      function skipWaiting() {
+        state.waitingAudio = null;
+        playQueueIfReady();
+      }
+
+      function updateAutoplayLabel() {
+        if (autoplayToggle) {
+          autoplayToggle.textContent = `Auto play: ${state.autoPlay ? 'ON' : 'OFF'}`;
+        }
+      }
+
+      if (uploadForm) uploadForm.addEventListener('submit', handleUpload);
+      if (jobsEl) jobsEl.addEventListener('click', handleJobClick);
+      document.addEventListener('click', (event) => {
+        if (event.target.closest('#ocrttsSaveText')) saveText(false);
+        if (event.target.closest('#ocrttsReflowText')) saveText(true);
+        if (event.target.closest('#ocrttsGenerateAudio')) generateAudio();
+        if (event.target.closest('#ocrttsEmbedHq')) embedHighQuality();
+        handleAudioAction(event);
+      });
+      if (groupFilterEl) {
+        groupFilterEl.addEventListener('change', () => {
+          state.groupFilter = groupFilterEl.value || null;
+          refreshJobs(true);
+        });
+      }
+      if (autoplayToggle) autoplayToggle.addEventListener('click', toggleAutoplay);
+      if (resumeBtn) resumeBtn.addEventListener('click', resumeAudio);
+      if (playNextBtn) playNextBtn.addEventListener('click', playQueueIfReady);
+      if (skipWaitBtn) skipWaitBtn.addEventListener('click', skipWaiting);
+
+      renderGroupFilter();
+      renderJobs();
+      renderDetail();
+      updateAutoplayLabel();
+      playQueueIfReady();
+      startPolling();
+    })();

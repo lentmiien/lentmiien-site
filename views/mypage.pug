@@ -59,6 +59,7 @@ block content
         +tile('/mypage/pdf_to_jpg', '/i/pdfconv.jpg', 'PDF to image converter', 'PDF to Image')
         if permissions && permissions.indexOf("ocr") >= 0
           +tile('/ocr', '/i/receipt.jpg', 'ocr tool', 'OCR tool')
+          +tile('/ocr-tts', '/i/receipt.jpg', 'ocr → tts', 'OCR → TTS queue')
         if permissions && permissions.indexOf("product") >= 0
           +tile('/product', '/i/product.jpg', 'Product details', 'Product details')
         if permissions && permissions.indexOf("gallery") >= 0
