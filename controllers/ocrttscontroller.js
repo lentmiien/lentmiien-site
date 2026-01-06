@@ -449,7 +449,7 @@ const startTtsForAudio = async (jobId, audioId, text) => {
       text,
       referenceId: audio.voice,
       format: audio.format || 'mp3',
-      maxNewTokens: audio.maxNewTokens,
+      maxNewTokens: 0,// Auto calculate token
     });
     audio.status = 'completed';
     audio.error = null;
