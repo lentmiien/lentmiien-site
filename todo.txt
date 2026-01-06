@@ -1,23 +1,5 @@
-I want to create a new OCR -> TTS tool, where the user input an image with text and the app extract the text, and generate audio with TTS. Optionally, I also want a translation step, adding a LLM call, before another TTS generation. 
-So the user will upload an image, and the app will automatically do the OCR, the initial TTS call, and play the audio for the user. At this stage, the user can edit the OCR text content, if there were any errors, choose to do another TTS generation, possible with another voice, or also choose to translate the text to another language, and do the TTS on the translation.
-To begin with, create the OCR -> TTS part, with possibility to edit the OCR text and generate multiple audio files with different voices. Make sure that the upload to play audio part is fully automated. Basically, the user should only need to wait for the audio to play, after uploading a file.
+For the `views/ocr_tts_tool.pug` page, I want to have a function for replaying all the TTS generated audio in a job group. So add the audio to the playback queue, from old to new, then play the audios one by one.
 
-Refer to existing code for how the OCR and TTS works.
-Create a new database for this new tool.
+An example use would be if I scan the pages of a book and generate TTS for the pages, adding all the jobs to the same job group, then I could later replay the audio files as if reading the book, like an audio book.
 
-Make the default voice to "lennart_jp".
-
-For the OCR, I want to slightly change the output text algorithm as following: 
-1. Keep the same row detection, and combine entries on the same row 
-2. Add a select box above the image uploaded element for selecting either 0 or 1 space combine approach (0 as default, for Japanese text, which I expect to be the most common usage) 
-3. Combine row items with the selected number of spaces, then combine the rows from top to bottom, with the same number of spaces, to generate a long paragraph of all the text
-
-Allow the user to que work, and slow only 1 image per upload. So basically, the user can upload image after image, that are processed as a que, when job 1 is done, start job 2 automatically, and start playing audio 1, when audio 1 finished playing, auto play audio 2 if done, otherwise wait for audio 2 to be done, then play.
-
-If the user leaves the page, then continue the work in the background, and if the user returns, resume audio playback when the next audio is done, or start playback manually by the user. 
-
-If the user opens a job page, they can edit the OCR text, and generate additional TTS audios, but only one audio file can be selected as default when auto playing the que audio. 
-
-The OCR text should be saved to the standard text embedding database, using the text embedding service class, and the user should be able to manually generate high quality text embeddings, from the job page. 
-
-Also allow the user to specify job grouping, so the user can later filter on group, and auto play a que of completed work.
+session id: 019b9108-14c4-74f3-b2ec-c3c90b8c991b

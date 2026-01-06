@@ -332,6 +332,7 @@ block content
         .d-flex.gap-2.flex-wrap
           button#ocrttsPlayNext.ocrtts-btn.secondary(type="button") Play next now
           button#ocrttsClearWait.ocrtts-btn.secondary(type="button") Skip waiting
+          button#ocrttsReplayGroup.ocrtts-btn(type="button") Replay this group
       .ocrtts-panel
         h3 Jobs
         label(for="ocrttsGroupFilter") Filter by group
@@ -366,6 +367,8 @@ block script
         pollingTimer: null,
         groupFilter: null,
         defaults: DEFAULTS || { spaceCount: 0, voice: 'lennart_jp' },
+        replayQueue: [],
+        replayGroup: null,
       };
 
       if (INITIAL_JOB_DETAIL) {
@@ -383,6 +386,7 @@ block script
       const resumeBtn = document.getElementById('ocrttsResumeBtn');
       const playNextBtn = document.getElementById('ocrttsPlayNext');
       const skipWaitBtn = document.getElementById('ocrttsClearWait');
+      const replayGroupBtn = document.getElementById('ocrttsReplayGroup');
       const audioEl = new Audio();
 
       audioEl.addEventListener('ended', handleAudioEnded);
@@ -608,7 +612,12 @@ block script
           const audio = job.defaultAudio;
           if (!audio) continue;
           if (audio.status !== 'completed') {
-            state.waitingAudio = { jobId: job.id, audioId: audio.id, status: audio.status };
+            state.waitingAudio = {
+              jobId: job.id,
+              audioId: audio.id,
+              status: audio.status,
+              group: job.group || null,
+            };
             return null;
           }
           if (!audio.autoPlayedAt && audio.fileUrl) {
@@ -618,6 +627,7 @@ block script
               audioId: audio.id,
               url: audio.fileUrl,
               voice: audio.voice,
+              group: job.group || null,
             };
           }
         }
@@ -625,19 +635,39 @@ block script
         return null;
       }
 
-      async function playQueueIfReady() {
+      function nextAudioFromReplayQueue() {
+        if (state.replayQueue.length) {
+          state.waitingAudio = null;
+          return state.replayQueue.shift();
+        }
+        return null;
+      }
+
+      function getNextQueuedAudio() {
+        const replay = nextAudioFromReplayQueue();
+        if (replay) return replay;
+        return nextAudioInQueue();
+      }
+
+      async function playQueueIfReady(options = {}) {
+        const { allowInterrupt = false } = options;
         renderQueue();
-        if (!state.autoPlay || state.currentAudio) return;
-        const next = nextAudioInQueue();
+        if (!state.autoPlay) return;
+        if (state.currentAudio && !allowInterrupt) return;
+        const next = getNextQueuedAudio();
         if (!next) {
           renderQueue();
           return;
+        }
+        if (state.currentAudio && allowInterrupt) {
+          audioEl.pause();
         }
         state.currentAudio = next;
         audioEl.src = next.url;
         try {
           await audioEl.play();
-          setFeedback(`Playing job ${next.jobId} (${next.voice || 'voice'})`, 'info');
+          const groupNote = next.group ? ` · ${next.group}` : '';
+          setFeedback(`Playing job ${next.jobId}${groupNote} (${next.voice || 'voice'})`, 'info');
         } catch (error) {
           state.currentAudio = null;
           setFeedback('Autoplay blocked. Click "Resume audio" to continue.', 'error');
@@ -670,13 +700,29 @@ block script
 
       function renderQueue() {
         if (!queueEl) return;
-        const waiting = state.waitingAudio
-          ? `Waiting for job ${state.waitingAudio.jobId} (${state.waitingAudio.status})`
-          : 'Waiting for next audio...';
-        const playing = state.currentAudio
-          ? `Now playing job ${state.currentAudio.jobId} (${state.currentAudio.voice || 'voice'})`
-          : waiting;
-        queueEl.textContent = playing;
+        if (!state.replayQueue.length && (!state.currentAudio || state.currentAudio.group !== state.replayGroup)) {
+          state.replayGroup = null;
+        }
+        if (state.currentAudio) {
+          const groupNote = state.currentAudio.group ? ` · ${state.currentAudio.group}` : '';
+          const context = state.replayGroup && state.currentAudio.group === state.replayGroup
+            ? 'Replaying'
+            : 'Now playing';
+          queueEl.textContent = `${context} job ${state.currentAudio.jobId}${groupNote} (${state.currentAudio.voice || 'voice'})`;
+          return;
+        }
+        if (state.replayQueue.length) {
+          const groupNote = state.replayGroup ? ` from group ${state.replayGroup}` : '';
+          const count = state.replayQueue.length;
+          queueEl.textContent = `Replay queue ready (${count} audio${count === 1 ? '' : 's'}${groupNote}).`;
+          return;
+        }
+        if (state.waitingAudio) {
+          const groupNote = state.waitingAudio.group ? ` · ${state.waitingAudio.group}` : '';
+          queueEl.textContent = `Waiting for job ${state.waitingAudio.jobId}${groupNote} (${state.waitingAudio.status})`;
+          return;
+        }
+        queueEl.textContent = 'Waiting for next audio...';
       }
 
       async function refreshJobs(silent = false) {
@@ -874,6 +920,58 @@ block script
         playQueueIfReady();
       }
 
+      function resolveReplayGroup() {
+        if (state.groupFilter) return state.groupFilter;
+        const selectedDetail = state.selectedJobId ? state.jobDetails[state.selectedJobId] : null;
+        if (selectedDetail?.group) return selectedDetail.group;
+        const summary = state.jobs.find((job) => job.id === state.selectedJobId);
+        return summary?.group || null;
+      }
+
+      function prepareGroupReplayQueue() {
+        const group = resolveReplayGroup();
+        if (!group) {
+          setFeedback('Choose a group to replay using the filter or by selecting a job.', 'error');
+          return;
+        }
+        const jobsInGroup = (state.jobs || []).filter((job) => job.group === group);
+        if (!jobsInGroup.length) {
+          setFeedback('No jobs found for this group.', 'error');
+          return;
+        }
+        const queue = jobsInGroup
+          .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+          .map((job) => {
+            const audio = job.defaultAudio;
+            if (!audio || audio.status !== 'completed' || !audio.fileUrl) return null;
+            return {
+              jobId: job.id,
+              audioId: audio.id,
+              url: audio.fileUrl,
+              voice: audio.voice,
+              group: job.group || group,
+            };
+          })
+          .filter(Boolean);
+        if (!queue.length) {
+          setFeedback('No completed audio available in this group yet.', 'error');
+          return;
+        }
+        state.replayQueue = queue;
+        state.replayGroup = group;
+        state.waitingAudio = null;
+        if (state.currentAudio) {
+          audioEl.pause();
+          state.currentAudio = null;
+        }
+        state.autoPlay = true;
+        updateAutoplayLabel();
+        renderQueue();
+        const countLabel = `${queue.length} audio${queue.length === 1 ? '' : 's'}`;
+        setFeedback(`Replay queue prepared for group ${escapeHtml(group)} (${countLabel}).`, 'success');
+        playQueueIfReady({ allowInterrupt: true });
+      }
+
       function updateAutoplayLabel() {
         if (autoplayToggle) {
           autoplayToggle.textContent = `Auto play: ${state.autoPlay ? 'ON' : 'OFF'}`;
@@ -899,6 +997,7 @@ block script
       if (resumeBtn) resumeBtn.addEventListener('click', resumeAudio);
       if (playNextBtn) playNextBtn.addEventListener('click', playQueueIfReady);
       if (skipWaitBtn) skipWaitBtn.addEventListener('click', skipWaiting);
+      if (replayGroupBtn) replayGroupBtn.addEventListener('click', prepareGroupReplayQueue);
 
       renderGroupFilter();
       renderJobs();
