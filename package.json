@@ -68,5 +68,8 @@
   "devDependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
     "jest": "^30.2.0"
+  },
+  "volta": {
+    "node": "24.12.0"
   }
 }
