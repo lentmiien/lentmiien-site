@@ -1,5 +1,9 @@
-For the `views/ocr_tts_tool.pug` page, I want to have a function for replaying all the TTS generated audio in a job group. So add the audio to the playback queue, from old to new, then play the audios one by one.
+I've just added an AI gateway for my AI models. The gateway URL is `http://192.168.0.20:8080`.
 
-An example use would be if I scan the pages of a book and generate TTS for the pages, adding all the jobs to the same job group, then I could later replay the audio files as if reading the book, like an audio book.
+Now, for my Embedding service, I want to switch from directly accessing the APIs to instead go through the gateway.
 
-session id: 019b9108-14c4-74f3-b2ec-c3c90b8c991b
+The normal embedding URL therefore changes to `http://192.168.0.20:8080/embed/mpnet`, and the high quality embedding URL changes to `http://192.168.0.20:8080/embed/nomic`.
+
+Please update the `services/embeddingApiService.js` service class, to work with these new URLs, the payload stays the same.
+
+019b9dbd-eda2-7253-91f4-f3d36dde3c00

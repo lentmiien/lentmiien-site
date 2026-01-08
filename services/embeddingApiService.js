@@ -2,8 +2,10 @@ const logger = require('../utils/logger');
 const { VectorEmbedding, VectorEmbeddingHighQuality } = require('../database');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
-const DEFAULT_API_BASE = process.env.EMBED_API_BASE || 'http://192.168.0.20:8001';
-const DEFAULT_HQ_API_BASE = process.env.EMBED_API_BASE_HQ || process.env.EMBED_HQ_API_BASE || 'http://192.168.0.20:8002';
+const DEFAULT_API_BASE = process.env.EMBED_API_BASE || 'http://192.168.0.20:8080';
+const DEFAULT_HQ_API_BASE = process.env.EMBED_API_BASE_HQ || process.env.EMBED_HQ_API_BASE || DEFAULT_API_BASE;
+const DEFAULT_EMBED_PATH = '/embed/mpnet';
+const DEFAULT_HQ_EMBED_PATH = '/embed/nomic';
 const DEFAULT_TIMEOUT_MS = 15000;
 const JS_FILE_NAME = 'services/embeddingApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
@@ -29,22 +31,30 @@ const EMBEDDING_SUMMARY_PROJECTION = {
 };
 
 class EmbeddingApiService {
-  constructor({ apiBase = DEFAULT_API_BASE, highQualityApiBase = DEFAULT_HQ_API_BASE, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  constructor({
+    apiBase = DEFAULT_API_BASE,
+    highQualityApiBase = DEFAULT_HQ_API_BASE,
+    embedPath = DEFAULT_EMBED_PATH,
+    highQualityEmbedPath = DEFAULT_HQ_EMBED_PATH,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  } = {}) {
     if (typeof fetch !== 'function') {
       throw new Error('Global fetch API is unavailable. Upgrade to Node 18+ or polyfill fetch.');
     }
 
     this.apiBase = typeof apiBase === 'string' ? apiBase.replace(/\/+$/, '') : DEFAULT_API_BASE;
     this.highQualityApiBase = typeof highQualityApiBase === 'string' ? highQualityApiBase.replace(/\/+$/, '') : DEFAULT_HQ_API_BASE;
+    this.embedPath = normalizeEmbedPath(embedPath, DEFAULT_EMBED_PATH);
+    this.highQualityEmbedPath = normalizeEmbedPath(highQualityEmbedPath, DEFAULT_HQ_EMBED_PATH);
     this.timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
   }
 
   get baseUrl() {
-    return this.apiBase;
+    return this.buildEmbedRequestUrl(this.apiBase, VectorEmbedding);
   }
 
   get highQualityBaseUrl() {
-    return this.highQualityApiBase;
+    return this.buildEmbedRequestUrl(this.highQualityApiBase, VectorEmbeddingHighQuality);
   }
 
   buildUrl(pathname = '', apiBase = this.apiBase) {
@@ -52,6 +62,35 @@ class EmbeddingApiService {
     if (!pathname) return base;
     if (pathname.startsWith('http')) return pathname;
     return `${base}${pathname.startsWith('/') ? '' : '/'}${pathname}`;
+  }
+
+  getEmbedPathForModel(model = VectorEmbedding) {
+    return model === VectorEmbeddingHighQuality ? this.highQualityEmbedPath : this.embedPath;
+  }
+
+  buildEmbedRequestUrl(apiBase, model = VectorEmbedding) {
+    const base = typeof apiBase === 'string' ? apiBase.replace(/\/+$/, '') : this.apiBase;
+    const embedPath = this.getEmbedPathForModel(model);
+    const normalizedPath = normalizeEmbedPath(embedPath, model === VectorEmbeddingHighQuality ? DEFAULT_HQ_EMBED_PATH : DEFAULT_EMBED_PATH);
+    const lowerBase = typeof base === 'string' ? base.toLowerCase() : '';
+    const lowerPath = normalizedPath.toLowerCase();
+
+    if (lowerBase.endsWith(lowerPath)) {
+      return base;
+    }
+
+    if (lowerBase.endsWith('/embed') && lowerPath.startsWith('/embed/')) {
+      return `${base}${normalizedPath.slice('/embed'.length)}`;
+    }
+
+    return this.buildUrl(normalizedPath, base);
+  }
+
+  buildHealthUrl(apiBase, model = VectorEmbedding) {
+    const base = typeof apiBase === 'string' ? apiBase.replace(/\/+$/, '') : this.apiBase;
+    const embedPath = this.getEmbedPathForModel(model);
+    const baseWithoutEmbedPath = stripEmbedPath(base, embedPath);
+    return this.buildUrl('/health', baseWithoutEmbedPath);
   }
 
   getApiBaseForMode(mode = SEARCH_MODES.DEFAULT) {
@@ -235,7 +274,8 @@ class EmbeddingApiService {
   async health({ mode = SEARCH_MODES.DEFAULT } = {}) {
     const targetMode = normalizeSearchMode(mode);
     const apiBase = this.getApiBaseForMode(targetMode);
-    const requestUrl = this.buildUrl('/health', apiBase);
+    const Model = this.getModelForMode(targetMode);
+    const requestUrl = this.buildHealthUrl(apiBase, Model);
 
     try {
       const { data, responseHeaders, status } = await this.fetchJson(requestUrl, { method: 'GET' });
@@ -306,8 +346,8 @@ class EmbeddingApiService {
     }
 
     const requestHeaders = { 'Content-Type': 'application/json' };
-    const requestUrl = this.buildUrl('/embed', apiBase);
     const mode = model === VectorEmbeddingHighQuality ? SEARCH_MODES.HIGH_QUALITY : SEARCH_MODES.DEFAULT;
+    const requestUrl = this.buildEmbedRequestUrl(apiBase, model);
 
     try {
       const { data, responseHeaders, status } = await this.fetchJson(requestUrl, {
@@ -791,6 +831,36 @@ class EmbeddingApiService {
       clearTimeout(timer);
     }
   }
+}
+
+function normalizeEmbedPath(path, fallback) {
+  const value = typeof path === 'string' ? path.trim() : '';
+  if (!value) {
+    return fallback;
+  }
+  const withLeadingSlash = value.startsWith('/') ? value : `/${value}`;
+  const withoutTrailingSlash = withLeadingSlash.replace(/\/+$/, '');
+  return withoutTrailingSlash || fallback;
+}
+
+function stripEmbedPath(apiBase, embedPath) {
+  const base = typeof apiBase === 'string' ? apiBase.replace(/\/+$/, '') : '';
+  const normalizedPath = normalizeEmbedPath(embedPath, '');
+  if (!base || !normalizedPath) {
+    return base || apiBase;
+  }
+  const lowerBase = base.toLowerCase();
+  const lowerPath = normalizedPath.toLowerCase();
+
+  if (lowerBase.endsWith(lowerPath)) {
+    return base.slice(0, base.length - normalizedPath.length) || base;
+  }
+
+  if (lowerBase.endsWith('/embed') && lowerPath.startsWith('/embed/')) {
+    return base.slice(0, base.length - '/embed'.length) || base;
+  }
+
+  return base;
 }
 
 function normalizeSearchMode(mode) {
