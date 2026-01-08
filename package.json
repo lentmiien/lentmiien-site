@@ -11,7 +11,7 @@
     "lint:openapi": "node scripts/validate-openapi.js",
     "codex": "codex",
     "codex-update": "npm install -g @openai/codex@latest",
-    "codex-todo": "codex exec \"In '/todo.txt', I've listed an update I want to do for this project, please check the '/todo.txt' and start coding the changes.\""
+    "codex-todo": "codex exec --yolo --search \"In 'todo.txt', I've listed an update I want to do for this project, please check the 'todo.txt' and start coding the changes.\""
   },
   "repository": {
     "type": "git",
