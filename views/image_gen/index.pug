@@ -31,74 +31,40 @@ block content
       span#statusPill.pill idle
       a.btn.btn-outline-primary.btn-sm.ms-auto(href="/image_gen/good") Saved gallery
 
-    // Instances
+    // Gateway
     .card.mb-3
       .card-body
         .d-flex.justify-content-between.align-items-center.mb-2
-          h2.h6.mb-0 Instances
-          button#btnReloadInstances.btn.btn-outline-secondary.btn-sm(type="button") Refresh
-        .row.g-3.align-items-end
-          .col-md-6
-            label.form-label(for="instanceSelect") Select instance
-            select#instanceSelect.form-select
-          .col-md-6
-            small#instanceMeta.text-muted
-
-    // Settings (optional health)
-    .card.mb-3
-      .card-body
+          h2.h6.mb-0 Gateway
+          button#btnHealth.btn.btn-outline-secondary.btn-sm(type="button") Check health
         .d-flex.align-items-center.gap-2
-          button#btnHealth.btn.btn-outline-secondary.btn-sm(type="button") Health
           span#healthDot.badge.bg-secondary unknown
+          small#instanceMeta.text-muted
 
     // Workflows
     .card.mb-3
       .card-body
         .d-flex.justify-content-between.align-items-center.mb-2
           h2.h6.mb-0 Workflows
-          button#btnLoadWf.btn.btn-primary.btn-sm(type="button") Load
+          button#btnLoadWf.btn.btn-primary.btn-sm(type="button") Reload list
         .row.g-3.align-items-end
-          .col-md-6
+          .col-md-8
             label.form-label(for="wfSelect") Select workflow
             select#wfSelect.form-select
-          .col-md-6
+          .col-md-4
             small#wfCount.text-muted 0 loaded
-        .mt-2
-          small#wfDesc.text-muted
-        hr
-        form#genForm
-          .row.g-3#formArea
-          datalist#inputImageNames
-          .d-flex.gap-2.mt-3
-            button#btnPromptLib.btn.btn-outline-secondary(type="button") Prompt library…
-            button#btnGenerate.btn.btn-success(type="button") Generate
-
-    // Upload & browse
-    .card.mb-3
-      .card-body
-        h2.h6 Upload & Browse
-        .row.g-3
+        .mt-3
+          label.form-label(for="workflowJson") Edit workflow JSON
+          textarea#workflowJson.form-control(rows="12" spellcheck="false")
+        .row.g-3.mt-2
           .col-md-6
-            label.form-label(for="fileUp") Upload image to input/
-            input#fileUp.form-control(type="file" accept="image/*")
-            .d-flex.gap-2.mt-2
-              button#btnUpload.btn.btn-outline-primary(type="button") Upload
-              small#lastUpload.muted
+            label.form-label(for="promptText") Prompt text (for rating/embeddings, optional)
+            input#promptText.form-control(type="text" autocomplete="off" placeholder="Describe what you asked for…")
           .col-md-6
-            label.form-label Browse
-            small.text-muted.d-block.mb-2 Completed videos appear under the video bucket after rendering.
-            .browse-actions
-              button#btnListInput.btn.btn-outline-secondary(type="button") List input
-              button#btnListOutput.btn.btn-outline-secondary(type="button") List output
-              button#btnListVideo.btn.btn-outline-secondary(type="button") List video
-              button#btnHideBrowse.btn.btn-outline-secondary(type="button") Hide
-        .row.row-cols-2.row-cols-md-4.g-3.browse-grid#browseArea
-        .d-flex.align-items-center.justify-content-between.mt-2#browsePagination.d-none
-          small#browseSummary.text-muted
-          .d-flex.align-items-center.gap-2
-            button#browsePrev.btn.btn-outline-secondary.btn-sm(type="button") Prev
-            span#browsePageLabel.text-muted Page 1 of 1
-            button#browseNext.btn.btn-outline-secondary.btn-sm(type="button") Next
+            label.form-label(for="negativeText") Negative prompt (optional)
+            input#negativeText.form-control(type="text" autocomplete="off")
+        .d-flex.gap-2.mt-3
+          button#btnGenerate.btn.btn-success(type="button") Generate
 
     // Jobs
     .card.mb-3

@@ -7,11 +7,12 @@ const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const EmbeddingApiService = require('../services/embeddingApiService');
+const ComfyGatewayService = require('../services/comfyGatewayService');
 
 const { Prompt, BulkJob, BulkTestPrompt, GoodImage } = require('../database');
 
 // CHANGE THESE two lines to match your ComfyUI API box
-const COMFY_API_BASE = process.env.COMFY_API_BASE; // your personal ComfyUI API base
+const COMFY_API_BASE = process.env.COMFY_API_BASE || 'http://192.168.0.20:8080'; // your personal ComfyUI API base
 const COMFY_API_KEY  = process.env.COMFY_API_KEY;
 const DEFAULT_TIMEOUT = 15000;
 
@@ -31,6 +32,9 @@ const GOOD_IMAGE_COLLECTION = 'good_images';
 const GOOD_IMAGE_CONTENT_TYPE = 'image_prompt';
 const GOOD_IMAGE_PARENT_COLLECTION = 'image_gen_job';
 const embeddingApiService = new EmbeddingApiService();
+const comfyGatewayService = new ComfyGatewayService();
+const localJobStore = new Map(); // prompt_id -> job payload for quick lookups
+const BULK_FEATURE_DISABLED = true;
 
 // Track in-flight downloads to avoid duplicate fetches
 const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
@@ -39,6 +43,11 @@ const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
 const jobPromptMap = new Map(); // jobId -> { posId: ObjectId|null, negId: ObjectId|null }
 const ratedJobs = new Set();    // jobIds already rated (prevents double rating)
 const MAP_TTL_MS = 24 * 60 * 60 * 1000; // drop job mappings after 24h
+function rememberLocalJob(jobId, payload) {
+  if (!jobId || !payload) return;
+  localJobStore.set(jobId, payload);
+  setTimeout(() => localJobStore.delete(jobId), MAP_TTL_MS);
+}
 
 // Ensure tmp/cache dirs exist
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
@@ -503,6 +512,32 @@ function normalizeTemplateBaseText(template) {
   return replaced.replace(/\s+/g, ' ').trim();
 }
 
+function guessPromptTextFromWorkflow(prompt) {
+  if (!prompt || typeof prompt !== 'object') return null;
+  let found = null;
+  const walk = (value, keyHint = '') => {
+    if (found) return;
+    if (typeof value === 'string') {
+      if (!keyHint || /prompt|text/i.test(keyHint)) {
+        found = value;
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((entry) => walk(entry, keyHint));
+      return;
+    }
+    if (value && typeof value === 'object') {
+      for (const [k, v] of Object.entries(value)) {
+        walk(v, k);
+        if (found) break;
+      }
+    }
+  };
+  walk(prompt);
+  return found;
+}
+
 function orderedPlaceholderKeys(job, placeholderValues) {
   const keys = [];
   const seen = new Set();
@@ -807,6 +842,7 @@ async function waitForComfyJob(jobId, instanceId) {
     const requestHeaders = apiHeaders();
     const fetchOptions = { headers: requestHeaders };
     let responseHeaders = null;
+    let logged = false;
     try {
       const r = await fetch(url, fetchOptions);
       responseHeaders = headersToObject(r.headers);
@@ -1175,15 +1211,18 @@ function scheduleBulkWorkers() {
 }
 
 function wakeBulkWorker() {
+  if (BULK_FEATURE_DISABLED) return;
   const timer = setTimeout(() => {
     scheduleBulkWorkers();
   }, 25);
   timer.unref?.();
 }
 
-setInterval(() => {
-  scheduleBulkWorkers();
-}, BULK_WORKER_INTERVAL_MS).unref?.();
+if (!BULK_FEATURE_DISABLED) {
+  setInterval(() => {
+    scheduleBulkWorkers();
+  }, BULK_WORKER_INTERVAL_MS).unref?.();
+}
 
 
 // Helper to ensure an unrated use is recorded (create-or-increment)
@@ -1275,57 +1314,13 @@ async function applyPromptRating(mapping, delta) {
 }
 
 async function fetchJobDetail(jobId, instanceId) {
-  const functionName = 'fetchJobDetail';
-  const requestHeaders = apiHeaders();
-  let requestUrl = null;
-  let responseHeaders = null;
-  try {
-    const encoded = encodeURIComponent(jobId);
-    requestUrl = buildComfyUrl(`/v1/jobs/${encoded}`, { instanceId });
-    const r = await fetch(requestUrl, { headers: requestHeaders, signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
-    responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt, jobId, instanceId },
-        functionName
-      });
-      throw new Error(txt || `upstream ${r.status}`);
-    }
-    let json = null;
-    try {
-      json = await r.json();
-    } catch (parseError) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { parseError: parseError.message, body: txt, jobId, instanceId },
-        functionName
-      });
-      throw parseError;
-    }
-    const effectiveInstance = json?.instance_id || instanceId || null;
-    const files = normalizeJobFiles(jobId, Array.isArray(json?.files) ? json.files : [], effectiveInstance);
-    const payload = Object.assign({}, json, { instance_id: effectiveInstance, files });
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders,
-      responseBody: payload,
-      functionName
-    });
-    return payload;
-  } catch (err) {
-    throw err;
+  const local = localJobStore.get(jobId);
+  if (local) {
+    const effectiveInstance = local.instance_id || instanceId || null;
+    const files = normalizeJobFiles(jobId, Array.isArray(local.files) ? local.files : [], effectiveInstance);
+    return Object.assign({}, local, { instance_id: effectiveInstance, files });
   }
+  throw new Error('job not found');
 }
 
 function buildGoodImageEmbeddingMetadata(doc) {
@@ -1383,16 +1378,28 @@ async function persistGoodImagesFromJob({ jobId, rating, instanceId, context }) 
     return { saved, warnings };
   }
 
-  const job = await fetchJobDetail(jobId, instanceId);
-  const effectiveInstanceId = job?.instance_id || instanceId || null;
-  const promptText = (context?.promptText || job?.prompt || job?.inputs?.prompt || '').trim();
-  const negativeText = (context?.negativeText || job?.inputs?.negative || '').trim();
-  const workflow = context?.workflow || job?.workflow || job?.name || null;
+  let job = null;
+  try {
+    job = await fetchJobDetail(jobId, instanceId);
+  } catch (err) {
+    if (!context?.files) {
+      warnings.push(err?.message || 'Job details unavailable; saving from context only.');
+    }
+  }
+
+  const effectiveInstanceId = context?.instanceId || job?.instance_id || instanceId || null;
+  const promptText = (context?.promptText || job?.prompt || job?.inputs?.prompt || job?.prompt_text || '').trim();
+  const negativeText = (context?.negativeText || job?.inputs?.negative || job?.negative_prompt || job?.negative_text || '').trim();
+  const workflow = context?.workflow || job?.workflow || job?.workflow_id || job?.name || null;
   const model = job?.metadata?.model || job?.model || null;
   const modelMetadata = job?.metadata || job?.meta || null;
-  const variables = job?.variables || job?.placeholder_values || null;
+  const variables = context?.variables || job?.variables || job?.placeholder_values || null;
 
-  const files = Array.isArray(job?.files) ? job.files : [];
+  const files = Array.isArray(context?.files)
+    ? context.files
+    : Array.isArray(job?.files)
+      ? job.files
+      : [];
   const imageFiles = files.filter((file) => {
     const mt = (file?.media_type || '').toLowerCase();
     return mt === 'image' || mt === 'gif';
@@ -2840,389 +2847,207 @@ exports.submitBulkScore = async (req, res) => {
 
 // Proxy: list workflows
 exports.listInstances = async (_req, res) => {
-  const functionName = 'listInstances';
-  const requestHeaders = apiHeaders();
-  let requestUrl = null;
   try {
-    requestUrl = buildComfyUrl('/v1/instances');
-    const fetchOptions = { headers: requestHeaders };
-    const r = await fetch(requestUrl, fetchOptions);
-    const responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt },
-        functionName
-      });
-      return errorJson(res, r.status, 'upstream error', txt);
-    }
-    let responseBody = null;
-    try {
-      responseBody = await r.json();
-    } catch (_) {
-      responseBody = await r.text().catch(() => '');
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders,
-      responseBody,
-      functionName
+    const stats = await comfyGatewayService.getSystemStats();
+    const system = stats?.system || stats || {};
+    const devices = Array.isArray(stats?.devices) ? stats.devices : [];
+    return res.json({
+      instances: [
+        {
+          id: 'gateway',
+          name: 'AI Gateway',
+          devices
+        }
+      ],
+      system
     });
-    let payload = responseBody;
-    try {
-      const queueMap = await computeBulkInstanceQueues();
-      if (payload && typeof payload === 'object') {
-        const queueObject = {};
-        for (const [key, summary] of queueMap.entries()) {
-          queueObject[key] = summary;
-        }
-        payload = Object.assign({}, payload);
-        payload.bulk_queue = queueObject;
-        if (Array.isArray(payload.instances)) {
-          payload.instances = payload.instances.map((inst) => {
-            if (!inst || typeof inst !== 'object') return inst;
-            const normalizedId = normalizeInstanceId(inst.id);
-            const summary = queueMap.get(toInstanceKey(normalizedId)) || { pending: 0, processing: 0, total: 0 };
-            return Object.assign({}, inst, { bulk_queue: summary });
-          });
-        }
-        if (queueMap.has(BULK_INSTANCE_DEFAULT)) {
-          const hasDefault = Array.isArray(payload.instances) && payload.instances.some((inst) => normalizeInstanceId(inst?.id) === null);
-          if (!hasDefault) {
-            const summary = queueMap.get(BULK_INSTANCE_DEFAULT);
-            const list = Array.isArray(payload.instances) ? payload.instances.slice() : [];
-            list.push({
-              id: null,
-              name: 'Default',
-              bulk_queue: summary
-            });
-            payload.instances = list;
-          }
-        }
-      }
-    } catch (mergeErr) {
-      logger.error('[listInstances] queue merge error', mergeErr);
-    }
-    res.json(payload);
   } catch (e) {
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders: null,
-      responseBody: e,
-      functionName
-    });
+    logger.error('[listInstances] error', e);
     return errorJson(res, 502, 'failed to list instances', String(e.message || e));
   }
 };
 
 exports.getWorkflows = async (req, res) => {
-  const functionName = 'getWorkflows';
-  const requestHeaders = apiHeaders();
-  let requestUrl = null;
   try {
-    const instanceId = extractInstanceId(req);
-    requestUrl = buildComfyUrl('/v1/workflows', { instanceId });
-    const r = await fetch(requestUrl, { headers: requestHeaders });
-    const responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt, instanceId },
-        functionName
-      });
-      return errorJson(res, r.status, 'upstream error', txt);
-    }
-    let responseBody = null;
-    try {
-      responseBody = await r.json();
-    } catch (_) {
-      responseBody = await r.text().catch(() => '');
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders,
-      responseBody,
-      functionName
-    });
-    res.json(responseBody);
+    const resp = await comfyGatewayService.listWorkflows();
+    const workflows = Array.isArray(resp?.workflows)
+      ? resp.workflows
+          .map((wf) => {
+            const key = (wf && (wf.name || wf.filename || wf.id || wf.key || '')).trim?.() || '';
+            return key
+              ? {
+                  key,
+                  name: wf.name || key,
+                  bytes: wf.bytes,
+                  mtime: wf.mtime
+                }
+              : null;
+          })
+          .filter(Boolean)
+      : [];
+    return res.json({ workflows });
   } catch (e) {
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders: null,
-      responseBody: e,
-      functionName: 'getWorkflows'
-    });
-    return errorJson(res, 502, 'failed to reach ComfyUI API', String(e.message || e));
+    logger.error('[getWorkflows] error', e);
+    return errorJson(res, 502, 'failed to load workflows', String(e.message || e));
+  }
+};
+
+exports.getWorkflowDetail = async (req, res) => {
+  try {
+    const name = String(req.params.name || req.query.name || '').trim();
+    if (!name) return errorJson(res, 400, 'workflow name required');
+    const workflow = await comfyGatewayService.getWorkflow(name);
+    return res.json({ name, workflow });
+  } catch (e) {
+    logger.error('[getWorkflowDetail] error', e);
+    return errorJson(res, 502, 'failed to load workflow', String(e.message || e));
   }
 };
 
 // Proxy: generate
 exports.generate = async (req, res) => {
-  const functionName = 'generate';
-  const requestHeaders = apiHeaders({ 'Content-Type': 'application/json' });
-  let requestUrl = null;
-  let responseHeaders = null;
-  let payload = null;
-  let queued = null;
-  let loggedError = false;
   try {
     const body = req.body || {};
-    const workflow = String(body.workflow || '').trim();
-    const rawInputs = body.inputs;
-    if (!workflow) return errorJson(res, 400, 'workflow required');
-    if (!rawInputs || typeof rawInputs !== 'object' || Array.isArray(rawInputs)) {
-      return errorJson(res, 400, 'inputs required');
+    const workflow = String(body.workflow || body.workflow_id || body.workflowName || '').trim();
+    const rawPrompt = body.prompt ?? body.workflow_json ?? body.workflowJson;
+    let prompt = rawPrompt;
+    if (typeof rawPrompt === 'string') {
+      try {
+        prompt = JSON.parse(rawPrompt);
+      } catch (parseErr) {
+        return errorJson(res, 400, 'prompt must be valid JSON', parseErr.message);
+      }
     }
-    const instanceId = extractInstanceId(req);
-    const inputs = Object.assign({}, rawInputs);
-    delete inputs.instance_id;
-    delete inputs.instanceId;
-
-    payload = { workflow, inputs };
-    if (instanceId) payload.instance_id = instanceId;
-
-    requestUrl = buildComfyUrl('/v1/generate');
-    const r = await fetch(requestUrl, {
-      method: 'POST',
-      headers: requestHeaders,
-      body: JSON.stringify(payload)
-    });
-    responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: payload,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt, instanceId },
-        functionName
-      });
-      loggedError = true;
-      return errorJson(res, r.status, 'upstream error', txt);
+    if (!prompt || typeof prompt !== 'object' || Array.isArray(prompt)) {
+      return errorJson(res, 400, 'prompt JSON object is required');
     }
-    try {
-      queued = await r.json();
-    } catch (parseError) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: payload,
-        responseHeaders,
-        responseBody: { parseError: parseError.message, body: txt, instanceId },
-        functionName
-      });
-      loggedError = true;
-      throw parseError;
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: payload,
-      responseHeaders,
-      responseBody: queued,
-      functionName
-    });
 
-    const posText = (inputs.prompt || '').trim();
-    const negText = (inputs.negative || '').trim();
+    const promptText = typeof body.prompt_text === 'string' ? body.prompt_text.trim() : (guessPromptTextFromWorkflow(prompt) || null);
+    const negativeText = typeof body.negative_prompt === 'string' ? body.negative_prompt.trim() : '';
+
+    const queued = await comfyGatewayService.runPrompt(prompt, { wait: body.wait !== false });
+    const jobId = queued?.prompt_id || randomUUID();
+    const outputs = Array.isArray(queued?.outputs) ? queued.outputs : [];
+
+    const storedFiles = [];
+    for (let i = 0; i < outputs.length; i++) {
+      const output = outputs[i] || {};
+      try {
+        const { buffer } = await comfyGatewayService.fetchImage({
+          gateway_view_url: output.gateway_view_url,
+          filename: output.filename,
+          type: output.type,
+          subfolder: output.subfolder
+        });
+        const safeName = toSafeName(output.filename) || `${jobId}_${i}.png`;
+        const mediaType = detectMediaType(safeName);
+        const bucket = mediaType === 'video' ? 'video' : 'output';
+        const cacheRec = await writeCacheFile(safeName, buffer, { bucket, mediaType });
+        storedFiles.push({
+          index: i,
+          filename: cacheRec?.safeName || safeName,
+          bucket,
+          media_type: mediaType,
+          cached_url: cacheRec?.url || null,
+          download_url: cacheRec?.url || null,
+          gateway_view_url: output.gateway_view_url || null,
+          node_id: output.node_id || null,
+          type: output.type || null,
+          subfolder: output.subfolder || null
+        });
+      } catch (outputErr) {
+        logger.error('[generate] failed to fetch output', outputErr);
+      }
+    }
+
+    const workflowName = queued?.workflow_id || workflow || null;
+    const jobPayload = {
+      job_id: jobId,
+      workflow: workflowName,
+      status: 'completed',
+      files: storedFiles,
+      outputs,
+      prompt_text: promptText || null,
+      negative_text: negativeText || null,
+      created_at: new Date()
+    };
+
+    rememberLocalJob(jobId, jobPayload);
+
     const [posDoc, negDoc] = await Promise.all([
-      posText ? touchPromptUse({ type: 'positive', workflow, text: posText }) : null,
-      negText ? touchPromptUse({ type: 'negative', workflow, text: negText }) : null
+      promptText ? touchPromptUse({ type: 'positive', workflow: workflowName || 'default', text: promptText }) : null,
+      negativeText ? touchPromptUse({ type: 'negative', workflow: workflowName || 'default', text: negativeText }) : null
     ]);
 
-    if (queued?.job_id) {
-      jobPromptMap.set(queued.job_id, {
-        posId: posDoc ? posDoc._id : null,
-        negId: negDoc ? negDoc._id : null,
-        promptText: posText,
-        negativeText: negText,
-        workflow,
-        instanceId,
-        inputsSnapshot: inputs
-      });
-      setTimeout(() => jobPromptMap.delete(queued.job_id), MAP_TTL_MS);
-    }
+    jobPromptMap.set(jobId, {
+      posId: posDoc ? posDoc._id : null,
+      negId: negDoc ? negDoc._id : null,
+      promptText: promptText || null,
+      negativeText: negativeText || null,
+      workflow: workflowName || null,
+      instanceId: null,
+      inputsSnapshot: null,
+      files: storedFiles,
+      promptJson: prompt,
+      job: jobPayload
+    });
+    setTimeout(() => jobPromptMap.delete(jobId), MAP_TTL_MS);
 
-    if (instanceId && !queued.instance_id) {
-      queued.instance_id = instanceId;
-    }
-
-    return res.json(queued);
+    return res.json(jobPayload);
   } catch (e) {
-    if (!loggedError) {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: payload,
-        responseHeaders,
-        responseBody: e,
-        functionName
-      });
-    }
-    return errorJson(res, 502, 'failed to queue generation', String(e.message || e));
+    logger.error('[generate] error', e);
+    return errorJson(res, 502, 'failed to run workflow', String(e.message || e));
   }
 };
 
 // Proxy: job status
 exports.getJob = async (req, res) => {
-  const functionName = 'getJob';
-  const requestHeaders = apiHeaders();
-  let requestUrl = null;
-  let responseHeaders = null;
-  let loggedError = false;
   try {
-    const jobId = encodeURIComponent(req.params.id);
-    const instanceHint = extractInstanceId(req);
-    requestUrl = buildComfyUrl(`/v1/jobs/${jobId}`, { instanceId: instanceHint });
-    const r = await fetch(requestUrl, { headers: requestHeaders });
-    responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt, jobId, instanceHint },
-        functionName
-      });
-      loggedError = true;
-      return errorJson(res, r.status, 'upstream error', txt);
+    const jobId = String(req.params.id || '').trim();
+    if (!jobId) return errorJson(res, 400, 'job id required');
+    const local = localJobStore.get(jobId);
+    if (local) {
+      const files = normalizeJobFiles(jobId, local.files || [], local.instance_id || null);
+      return res.json(Object.assign({}, local, { files }));
     }
-    let json = null;
-    try {
-      json = await r.json();
-    } catch (parseError) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { parseError: parseError.message, body: txt, jobId, instanceHint },
-        functionName
-      });
-      loggedError = true;
-      throw parseError;
-    }
-    const instanceId = json?.instance_id || instanceHint || null;
-    if (json && Array.isArray(json.files)) {
-      json.files = normalizeJobFiles(req.params.id, json.files, instanceId);
-    } else {
-      json.files = normalizeJobFiles(req.params.id, [], instanceId);
-    }
-    if (instanceId && !json.instance_id) {
-      json.instance_id = instanceId;
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders,
-      responseBody: json,
-      functionName
-    });
-    res.json(json);
+    return errorJson(res, 404, 'job not found');
   } catch (e) {
-    if (!loggedError) {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: e,
-        functionName
-      });
-    }
+    logger.error('[getJob] error', e);
     return errorJson(res, 502, 'failed to fetch job', String(e.message || e));
   }
 };
 
 // Proxy: stream job file (image or video)
 exports.getJobFile = async (req, res) => {
-  const functionName = 'getJobFile';
-  const requestHeaders = apiHeaders();
-  let requestUrl = null;
-  let responseHeaders = null;
-  let loggedError = false;
   try {
-    const jobId = encodeURIComponent(req.params.id);
-    const index = encodeURIComponent(req.params.index);
-    const bucket = (req.query?.bucket || '').trim() || null;
-    const fileName = req.query?.filename;
-    const mediaType = (req.query?.mediaType || '').trim() || detectMediaType(fileName);
-    const instanceId = normalizeInstanceId(req.query?.instance_id || req.query?.instanceId);
-    requestUrl = buildComfyUrl(`/v1/jobs/${jobId}/files/${index}`, { instanceId });
-    const r = await fetch(requestUrl, { headers: requestHeaders, signal: AbortSignal.timeout(DEFAULT_TIMEOUT) });
-    responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      logger.error('[getJobFile] upstream', r.status, txt);
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt, jobId, index, bucket, instanceId },
-        functionName
-      });
-      loggedError = true;
-      return errorJson(res, r.status, 'upstream error', txt);
+    const jobId = String(req.params.id || '').trim();
+    const index = Number(req.params.index);
+    const job = localJobStore.get(jobId);
+    if (!job) return errorJson(res, 404, 'job not found');
+    const files = Array.isArray(job.files) ? job.files : [];
+    const fileMeta = files[index];
+    if (!fileMeta) return errorJson(res, 404, 'file not found for job');
+    const fileName = fileMeta.filename || fileMeta.name || `file_${index}`;
+    const bucket = fileMeta.bucket || 'output';
+    const mediaType = fileMeta.media_type || detectMediaType(fileName);
+    const cacheRecord = await resolveCachedRecord(bucket, fileName, fileMeta.instance_id || null);
+    if (!cacheRecord || !cacheRecord.localPath) {
+      return errorJson(res, 404, 'cached file not found');
     }
-    const ct = r.headers.get('content-type') || detectMimeType(mediaType, fileName);
-    const ab = await r.arrayBuffer();
-    const buf = Buffer.from(ab);
-    if (fileName) {
-      try {
-        await writeCacheFile(fileName, buf, { bucket, mediaType, instanceId });
-      } catch (err) {
-        logger.warn('[getJobFile] failed to persist cache', err);
-      }
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders,
-      responseBody: { jobId, index, bucket, mediaType, instanceId, contentType: ct, size: buf.length, fileName, data: buf },
-      functionName
-    });
+    const ct = detectMimeType(mediaType, fileName);
     res.setHeader('Content-Type', ct);
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
-    res.end(buf);
+    return res.sendFile(cacheRecord.localPath, (err) => {
+      if (err) {
+        logger.error('[getJobFile] failed to send cached file', err);
+        if (!res.headersSent) res.status(500).end();
+      }
+    });
   } catch (e) {
     const isTimeout = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
     logger.error('[getJobFile] error', e);
-    if (!loggedError) {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: e,
-        functionName
-      });
-    }
-    return errorJson(res, 502, isTimeout ? 'upstream timeout' : 'failed to stream file', String(e.message || e));
+    return errorJson(res, 502, isTimeout ? 'timeout' : 'failed to stream file', String(e.message || e));
   }
 };
 
@@ -3233,6 +3058,7 @@ exports.getJobImage = exports.getJobFile;
 exports.listFiles = async (req, res) => {
   const bucket = req.params.bucket;
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
+  return errorJson(res, 503, 'file browsing is temporarily disabled for the new gateway');
   const functionName = 'listFiles';
   const requestHeaders = apiHeaders();
   let requestUrl = null;
@@ -3332,6 +3158,7 @@ exports.listFiles = async (req, res) => {
 exports.getFile = async (req, res) => {
   const bucket = req.params.bucket;
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
+  return errorJson(res, 503, 'direct file proxying is temporarily disabled for the new gateway');
   const name = req.params.filename;
   const functionName = 'getFile';
   let requestHeaders = null;
@@ -3415,6 +3242,7 @@ function guessImageMime(name) {
 
 // POST /image_gen/api/files/promote
 exports.promoteCachedFile = async (req, res) => {
+  return errorJson(res, 503, 'promote is temporarily disabled for the new gateway');
   const functionName = 'promoteCachedFile';
   const requestHeaders = apiHeaders();
   let requestUrl = null;
@@ -3519,6 +3347,7 @@ exports.promoteCachedFile = async (req, res) => {
 
 // Upload to input/ (saves to tmp_data, forwards to Comfy API, then deletes temp)
 exports.uploadInput = async (req, res) => {
+  return errorJson(res, 503, 'file uploads are temporarily disabled for the new gateway');
   if (!req.file) return errorJson(res, 400, 'missing file "image"');
   const tmpPath = req.file.path;
   const fileName = req.file.originalname;
@@ -3759,43 +3588,11 @@ exports.listPrompts = async (req, res) => {
 
 // Simple health pass-through
 exports.health = async (req, res) => {
-  const functionName = 'health';
-  let requestUrl = null;
-  let responseHeaders = null;
   try {
-    requestUrl = buildComfyUrl('/health');
-    const r = await fetch(requestUrl);
-    responseHeaders = headersToObject(r.headers);
-    let payload = null;
-    try {
-      payload = await r.json();
-    } catch {
-      const text = await r.text().catch(() => '');
-      payload = { ok: r.ok, message: text };
-    }
-    if (typeof payload !== 'object' || payload === null) {
-      payload = { ok: r.ok };
-    } else if (typeof payload.ok === 'undefined') {
-      payload.ok = r.ok;
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders: null,
-      requestBody: null,
-      responseHeaders,
-      responseBody: payload,
-      functionName
-    });
-    res.status(r.ok ? 200 : 502).json(payload);
+    const stats = await comfyGatewayService.getSystemStats();
+    res.json(Object.assign({ ok: true }, stats));
   } catch (err) {
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders: null,
-      requestBody: null,
-      responseHeaders,
-      responseBody: err,
-      functionName
-    });
+    logger.error('[health] error', err);
     res.status(502).json({ ok: false, error: String(err?.message || err) });
   }
 };

@@ -1,79 +1,43 @@
-I've updated my ollama instance, and put it behind an AI Gateway, so in `utils/Ollama_API.js`, I need to update the helper functions in this file to work with the new format described below.
+For the `controllers/image_gen.controller.js`, I'd like to move the ComfyUI code to a new service class in the `services` folder. Furthermore, I've put the ComfyUI instance behind a AI Gateway, and the new base URL is `http://192.168.0.20:8080`.
 
-Base URL changes port to 8080, so the base URL becomes `http://192.168.0.20:8080`.
+At this URL, I have the following endpoints:
+1. GET `/comfy/workflows`: return a list of available workflows, example: `{"workflows":[{"name":"z_image_turbo_example.json","bytes":3143,"mtime":1767966502.0465078}]}`
+2. GET `/comfy/workflows/{name}`: download the JSON file for the particular workflow (needed for editing and sending generation requests)
+3. GET `/comfy/system_stats`: get instance stats, example `{"system": {"os": "linux", "ram_total": 134137917440, "ram_free": 97274589184, "comfyui_version": "0.8.2", "required_frontend_version": "1.36.13", "installed_templates_version": "0.7.69", "required_templates_version": "0.7.69", "python_version": "3.12.11 | packaged by conda-forge | (main, Jun  4 2025, 14:45:31) [GCC 13.3.0]", "pytorch_version": "2.6.0+git0568140", "embedded_python": false, "argv": ["main.py", "--listen", "0.0.0.0", "--port", "8188", "--enable-manager"]}, "devices": [{"name": "cuda:0 AMD Radeon AI PRO R9700 : native", "type": "cuda", "index": 0, "vram_total": 34208743424, "vram_free": 15198934528, "torch_vram_total": 15644753920, "torch_vram_free": 88954368}]}`
+4. GET `/comfy/view?filename={filename}`: fetching an output image by filename (optional additional query parameters `type` default to "output", `subfolder` default to "")
+5. POST `/comfy/run`: start a generation job, expecting payload to be of the format `{ "prompt": { ... }, "wait": true }`, where `prompt` is the workflow JSON object, with possible edited values, like a new prompt, and/or size, etc.
 
-## Endpoints:
-
-1. GET `llm/models`: Returns a JSON object with details on all the available models, currently return:
+The return value from `/comfy/run` (if `"wait": true`) is in the format:
 ```
-{"default_model":"cydonia:24b-q6","models":[{"id":"cydonia:24b-q6","installed":true,"display_name":"Cydonia 24B Q6_K","allow_images":false,"keep_alive":"5m","limits":{"max_context_tokens":16384,"max_output_tokens":1024,"max_prompt_chars":50000,"max_images":0,"max_image_bytes":0}},{"id":"gpt-oss:20b","installed":true,"display_name":"GPT-OSS 20B","allow_images":false,"keep_alive":"5m","limits":{"max_context_tokens":16384,"max_output_tokens":1024,"max_prompt_chars":50000,"max_images":0,"max_image_bytes":0}},{"id":"gemma3:12b","installed":true,"display_name":"Gemma 3 12B (vision)","allow_images":true,"keep_alive":"2m","limits":{"max_context_tokens":16384,"max_output_tokens":1024,"max_prompt_chars":50000,"max_images":1,"max_image_bytes":6000000}}],"ollama_tags":{"models":[{"name":"cydonia:24b-q6","model":"cydonia:24b-q6","modified_at":"2026-01-09T09:55:55.880810326Z","size":19345940248,"digest":"d5a32a140adde43a545041fb780779e1026fb73e0786257bdc4213703ed32219","details":{"parent_model":"","format":"gguf","family":"llama","families":["llama"],"parameter_size":"23.6B","quantization_level":"Q6_K"}},{"name":"gpt-oss:20b","model":"gpt-oss:20b","modified_at":"2026-01-09T09:20:23.389830062Z","size":13793441244,"digest":"17052f91a42e97930aa6e28a6c6c06a983e6a58dbb00434885a0cf5313e376f7","details":{"parent_model":"","format":"gguf","family":"gptoss","families":["gptoss"],"parameter_size":"20.9B","quantization_level":"MXFP4"}},{"name":"gemma3:12b","model":"gemma3:12b","modified_at":"2026-01-09T07:59:28.270270629Z","size":8149190253,"digest":"f4031aab637d1ffa37b42570452ae0e4fad0314754d17ded67322e4b95836f8a","details":{"parent_model":"","format":"gguf","family":"gemma3","families":["gemma3"],"parameter_size":"12.2B","quantization_level":"Q4_K_M"}}]}}
-```
-Access this endpoint and cache the available models, then when the user send a generation request, confirm that the model is in the cached list, before starting the generation, or if not in the list, try once to update the cache, and if still not in the list, reject the generation request, with a sensible error message/log.
-
-2. POST `/llm/chat`: For generating an AI response.
-Below are four example requests, using `curl`, so make sure that the data is formatted properly, then generate a response.
-
-#### 1) Cydonia
-```bash
-curl -sS -X POST http://192.168.0.20:8080/llm/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "cydonia:24b-q6",
-    "messages": [
-      {"role":"system","content":"You are helpful, concise, and a bit witty. Stay SFW."},
-      {"role":"user","content":"Write a short roleplay scene idea set in a cyberpunk library."}
-    ],
-    "max_tokens": 250,
-    "temperature": 0.8
-  }' | jq -r '.message.content'
+{
+  "prompt_id": "b0baf0a6-acde-...",
+  "queue_number": 17,
+  "workflow_id": "{name}",
+  "outputs": [
+    {
+      "node_id": "9",
+      "kind": "images",
+      "filename": "{filename}",
+      "subfolder": "",
+      "type": "output",
+      "gateway_view_url": "/comfy/view?filename={filename}&type=output&subfolder="
+    }
+  ]
+}
 ```
 
-#### 2) Gemma 3 12B
-```bash
-curl -sS -X POST http://192.168.0.20:8080/llm/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemma3:12b",
-    "messages": [
-      {"role":"user","content":"Give me 5 bullet points on good password hygiene."}
-    ],
-    "max_tokens": 200,
-    "temperature": 0.4
-  }' | jq -r '.message.content'
-```
+So use the `{gateway_view_url}` to fetch the output.
 
-#### 3) Gemma 3 12B (image)
-```bash
-IMG_B64="$(base64 -w 0 /path/to/image.png)"
-curl -sS -X POST http://192.168.0.20:8080/llm/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemma3:12b",
-    "messages": [
-      {
-        "role":"user",
-        "content":"Describe the image in one sentence.",
-        "images":["'"$IMG_B64"'"]
-      }
-    ],
-    "max_tokens": 120
-  }' | jq -r '.message.content'
-```
+Simply speaking, the UI workflow should be something like following:
+1. Access `/comfy/workflows` and display the option to the user
+2. Access `/comfy/workflows/{name}` and display an JSON editor to the user (to edit input parameters, can be a simple RAW JSON editor for now)
+3. Send user input to `/comfy/run`
+4. Fetch the output at `{gateway_view_url}`
 
-#### 4) GPT‑OSS 20B
-```bash
-curl -sS -X POST http://192.168.0.20:8080/llm/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-oss:20b",
-    "messages": [
-      {"role":"user","content":"Summarize the pros/cons of using queues in an AI microservice architecture."}
-    ],
-    "max_tokens": 300,
-    "temperature": 0.6
-  }' | jq -r '.message.content'
-```
+Then as currently done, save the output to a local folder, display the rating field, and save a copy of the image + embedding(s) according to user rating.
 
-Now update `utils/Ollama_API.js` to work with this new format.
+At this moment, I don't care about the "bulk" functionality, we could temporarily disable this function, while making sure that single image generations work, then re-introduce the bulk tools at some later time.
 
-session id: 019ba264-2aeb-7972-91b6-bc1a45f60621
+Now, please adjust the single image generation to work with this updated ComfyUI instance, behind a AI Gateway. By default, only use `"wait": true` for now.
+
+session id: 019ba32d-0415-7223-a656-1c70f447da86

@@ -6,6 +6,7 @@ const multer = require('multer');
 const ctrl = require('../controllers/image_gen.controller');
 
 const router = express.Router();
+const BULK_DISABLED = true;
 
 // Ensure tmp folder exists
 const TMP_DIR = path.join(__dirname, '../tmp_data');
@@ -35,17 +36,22 @@ router.use('/api', express.json({ limit: '1mb' }));
 // Landing page
 router.get('/', ctrl.renderLanding);
 router.get('/good', ctrl.renderGoodGallery);
-router.get('/bulk', ctrl.renderBulkLanding);
-router.get('/bulk/new', ctrl.renderBulkCreate);
-router.get('/bulk/:id/score', ctrl.renderBulkScoring);
-router.get('/bulk/:id/slideshow', ctrl.renderBulkSlideshow);
-router.get('/bulk/:id/analytics', ctrl.renderBulkAnalytics);
-router.get('/bulk/:id', ctrl.renderBulkJob);
+if (!BULK_DISABLED) {
+  router.get('/bulk', ctrl.renderBulkLanding);
+  router.get('/bulk/new', ctrl.renderBulkCreate);
+  router.get('/bulk/:id/score', ctrl.renderBulkScoring);
+  router.get('/bulk/:id/slideshow', ctrl.renderBulkSlideshow);
+  router.get('/bulk/:id/analytics', ctrl.renderBulkAnalytics);
+  router.get('/bulk/:id', ctrl.renderBulkJob);
+} else {
+  router.get('/bulk*', (_req, res) => res.status(503).send('Bulk image generation is temporarily disabled.'));
+}
 
 // API proxy endpoints (browser talks to these; server talks to Comfy API)
 router.get('/api/health', ctrl.health);
 router.get('/api/instances', ctrl.listInstances);
 router.get('/api/workflows', ctrl.getWorkflows);
+router.get('/api/workflows/:name', ctrl.getWorkflowDetail);
 router.post('/api/generate', ctrl.generate);
 router.get('/api/jobs/:id', ctrl.getJob);
 router.get('/api/jobs/:id/files/:index', ctrl.getJobFile);
@@ -57,18 +63,22 @@ router.post('/api/files/promote', ctrl.promoteCachedFile);
 router.get('/api/prompts', ctrl.listPrompts);
 router.post('/api/rate', ctrl.rateJob);
 router.get('/api/good-images', ctrl.listGoodImages);
-router.get('/api/bulk/jobs', ctrl.listBulkJobs);
-router.post('/api/bulk/jobs', ctrl.createBulkJob);
-router.get('/api/bulk/jobs/:id', ctrl.getBulkJob);
-router.patch('/api/bulk/jobs/:id/status', ctrl.updateBulkJobStatus);
-router.get('/api/bulk/jobs/:id/prompts', ctrl.listBulkTestPrompts);
-router.get('/api/bulk/jobs/:id/matrix', ctrl.getBulkMatrix);
-router.get('/api/bulk/jobs/:id/gallery', ctrl.listBulkGalleryImages);
-router.get('/api/bulk/jobs/:id/analytics', ctrl.getBulkAnalytics);
-router.get('/api/bulk/jobs/:id/score-pair', ctrl.getBulkScorePair);
-router.post('/api/bulk/jobs/:id/score', ctrl.submitBulkScore);
-router.post('/api/bulk/jobs/:id/gallery/rate', ctrl.submitBulkGalleryRating);
-router.get('/api/bulk/jobs/:id/slideshow/next', ctrl.getBulkSlideshowItem);
-router.post('/api/bulk/jobs/:id/slideshow/rate', ctrl.submitBulkSlideshowRating);
+if (!BULK_DISABLED) {
+  router.get('/api/bulk/jobs', ctrl.listBulkJobs);
+  router.post('/api/bulk/jobs', ctrl.createBulkJob);
+  router.get('/api/bulk/jobs/:id', ctrl.getBulkJob);
+  router.patch('/api/bulk/jobs/:id/status', ctrl.updateBulkJobStatus);
+  router.get('/api/bulk/jobs/:id/prompts', ctrl.listBulkTestPrompts);
+  router.get('/api/bulk/jobs/:id/matrix', ctrl.getBulkMatrix);
+  router.get('/api/bulk/jobs/:id/gallery', ctrl.listBulkGalleryImages);
+  router.get('/api/bulk/jobs/:id/analytics', ctrl.getBulkAnalytics);
+  router.get('/api/bulk/jobs/:id/score-pair', ctrl.getBulkScorePair);
+  router.post('/api/bulk/jobs/:id/score', ctrl.submitBulkScore);
+  router.post('/api/bulk/jobs/:id/gallery/rate', ctrl.submitBulkGalleryRating);
+  router.get('/api/bulk/jobs/:id/slideshow/next', ctrl.getBulkSlideshowItem);
+  router.post('/api/bulk/jobs/:id/slideshow/rate', ctrl.submitBulkSlideshowRating);
+} else {
+  router.use('/api/bulk', (_req, res) => res.status(503).json({ error: 'bulk generation temporarily disabled' }));
+}
 
 module.exports = router;
