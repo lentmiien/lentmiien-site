@@ -5,6 +5,8 @@ const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
+const TTS_GENERATE_PATH = '/tts/openaudio';
+const TTS_REFERENCE_LIST_PATH = '/tts/openaudio/references/list';
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'mp3');
 const MAX_NEW_TOKENS_MAX = 8192;
 const TOKENS_PER_500_CHARS = 1024;
@@ -21,8 +23,23 @@ function isJapaneseReference(referenceId) {
 
 class TtsService {
   constructor({ apiBase = DEFAULT_API_BASE, outputDir = DEFAULT_OUTPUT_DIR } = {}) {
-    this.apiBase = apiBase;
+    this.apiBase = (apiBase || DEFAULT_API_BASE).replace(/\/+$/, '');
     this.outputDir = outputDir;
+    this.referenceVoiceCache = {
+      referenceIds: [],
+      lastUpdated: null,
+      lastError: null,
+    };
+
+    this.updateVoiceCache().catch((error) => {
+      logger.warning('Failed to warm TTS voice cache (service)', {
+        category: 'tts_service',
+        metadata: {
+          apiBase: this.apiBase,
+          message: error?.message,
+        },
+      });
+    });
   }
 
   async ensureOutputDir() {
@@ -55,6 +72,69 @@ class TtsService {
     return Math.max(1, Math.min(MAX_NEW_TOKENS_MAX, numeric));
   }
 
+  async updateVoiceCache() {
+    const requestUrl = `${this.apiBase}${TTS_REFERENCE_LIST_PATH}`;
+    try {
+      const response = await axios.get(requestUrl, { timeout: 15_000 });
+      const ids = Array.isArray(response?.data?.reference_ids)
+        ? response.data.reference_ids
+          .filter((id) => typeof id === 'string')
+          .map((id) => id.trim())
+          .filter(Boolean)
+        : [];
+
+      this.referenceVoiceCache.referenceIds = ids;
+      this.referenceVoiceCache.lastUpdated = new Date();
+      this.referenceVoiceCache.lastError = null;
+
+      await recordApiDebugLog({
+        functionName: 'updateVoiceCache',
+        requestUrl,
+        requestBody: null,
+        responseHeaders: response.headers || null,
+        responseBody: response.data || null,
+      });
+
+      logger.notice('TTS voice cache updated (service)', {
+        category: 'tts_service',
+        metadata: {
+          count: ids.length,
+          apiBase: this.apiBase,
+        },
+      });
+
+      return ids;
+    } catch (error) {
+      this.referenceVoiceCache.lastError = error?.message || 'Unknown error';
+      await recordApiDebugLog({
+        functionName: 'updateVoiceCache',
+        requestUrl,
+        requestBody: null,
+        responseHeaders: error?.response?.headers || null,
+        responseBody: error?.response?.data || error?.message || 'Unknown error',
+      });
+
+      logger.error('Failed to update TTS voice cache (service)', {
+        category: 'tts_service',
+        metadata: {
+          apiBase: this.apiBase,
+          message: error?.message,
+          status: error?.response?.status,
+        },
+      });
+
+      return this.referenceVoiceCache.referenceIds;
+    }
+  }
+
+  getCachedVoiceIds() {
+    return {
+      referenceIds: [...this.referenceVoiceCache.referenceIds],
+      lastUpdated: this.referenceVoiceCache.lastUpdated,
+      lastError: this.referenceVoiceCache.lastError,
+    };
+  }
+
   async synthesize({ text, referenceId = '', maxNewTokens, format = 'mp3' }) {
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
       throw new Error('Text is required to synthesize TTS audio.');
@@ -75,7 +155,7 @@ class TtsService {
       payload.reference_id = referenceId;
     }
 
-    const requestUrl = `${this.apiBase}/v1/tts`;
+    const requestUrl = `${this.apiBase}${TTS_GENERATE_PATH}`;
     const textPreview = text.replace(/\s+/g, ' ').slice(0, 120);
 
     logger.notice('Submitting TTS request (service)', {

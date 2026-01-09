@@ -1,9 +1,16 @@
-I've just added an AI gateway for my AI models. The gateway URL is `http://192.168.0.20:8080`.
+The TTS URL has the following changes:
 
-Now, for my Embedding service, I want to switch from directly accessing the APIs to instead go through the gateway.
+* Base URL (unchanged): `http://192.168.0.20:8080`
+* Generate TTS audio: `/tts/openaudio`
+* Get list of available voice ids: `/tts/openaudio/references/list`
 
-The normal embedding URL therefore changes to `http://192.168.0.20:8080/embed/mpnet`, and the high quality embedding URL changes to `http://192.168.0.20:8080/embed/nomic`.
+Please update `services/ttsService.js` to use these new URLs.
 
-Please update the `services/embeddingApiService.js` service class, to work with these new URLs, the payload stays the same.
+For the available voice ids, call the endpoint at start up, and save to a variable in memory (cache), then create an update cache function, and get cached list function.
 
-019b9dbd-eda2-7253-91f4-f3d36dde3c00
+This is an example of a response from `/tts/openaudio/references/list`:
+```
+{"success":true,"reference_ids":["anny_en","anny_jp","lennart_en","lennart_jp","popok_en"],"message":"Found 5 reference voices"}
+```
+
+session id: 019ba06d-a5de-79c0-9263-707fa48fc43d
