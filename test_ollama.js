@@ -10,7 +10,7 @@ async function run() {
   }
 
   const primaryModel = models[0];
-  const modelName = primaryModel.name || primaryModel.model || primaryModel.modelName;
+  const modelName = primaryModel.id || primaryModel.name || primaryModel.model || primaryModel.modelName;
 
   if (!modelName) {
     console.error('Unable to determine model name from Ollama response:', primaryModel);

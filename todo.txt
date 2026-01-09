@@ -1,16 +1,79 @@
-The TTS URL has the following changes:
+I've updated my ollama instance, and put it behind an AI Gateway, so in `utils/Ollama_API.js`, I need to update the helper functions in this file to work with the new format described below.
 
-* Base URL (unchanged): `http://192.168.0.20:8080`
-* Generate TTS audio: `/tts/openaudio`
-* Get list of available voice ids: `/tts/openaudio/references/list`
+Base URL changes port to 8080, so the base URL becomes `http://192.168.0.20:8080`.
 
-Please update `services/ttsService.js` to use these new URLs.
+## Endpoints:
 
-For the available voice ids, call the endpoint at start up, and save to a variable in memory (cache), then create an update cache function, and get cached list function.
-
-This is an example of a response from `/tts/openaudio/references/list`:
+1. GET `llm/models`: Returns a JSON object with details on all the available models, currently return:
 ```
-{"success":true,"reference_ids":["anny_en","anny_jp","lennart_en","lennart_jp","popok_en"],"message":"Found 5 reference voices"}
+{"default_model":"cydonia:24b-q6","models":[{"id":"cydonia:24b-q6","installed":true,"display_name":"Cydonia 24B Q6_K","allow_images":false,"keep_alive":"5m","limits":{"max_context_tokens":16384,"max_output_tokens":1024,"max_prompt_chars":50000,"max_images":0,"max_image_bytes":0}},{"id":"gpt-oss:20b","installed":true,"display_name":"GPT-OSS 20B","allow_images":false,"keep_alive":"5m","limits":{"max_context_tokens":16384,"max_output_tokens":1024,"max_prompt_chars":50000,"max_images":0,"max_image_bytes":0}},{"id":"gemma3:12b","installed":true,"display_name":"Gemma 3 12B (vision)","allow_images":true,"keep_alive":"2m","limits":{"max_context_tokens":16384,"max_output_tokens":1024,"max_prompt_chars":50000,"max_images":1,"max_image_bytes":6000000}}],"ollama_tags":{"models":[{"name":"cydonia:24b-q6","model":"cydonia:24b-q6","modified_at":"2026-01-09T09:55:55.880810326Z","size":19345940248,"digest":"d5a32a140adde43a545041fb780779e1026fb73e0786257bdc4213703ed32219","details":{"parent_model":"","format":"gguf","family":"llama","families":["llama"],"parameter_size":"23.6B","quantization_level":"Q6_K"}},{"name":"gpt-oss:20b","model":"gpt-oss:20b","modified_at":"2026-01-09T09:20:23.389830062Z","size":13793441244,"digest":"17052f91a42e97930aa6e28a6c6c06a983e6a58dbb00434885a0cf5313e376f7","details":{"parent_model":"","format":"gguf","family":"gptoss","families":["gptoss"],"parameter_size":"20.9B","quantization_level":"MXFP4"}},{"name":"gemma3:12b","model":"gemma3:12b","modified_at":"2026-01-09T07:59:28.270270629Z","size":8149190253,"digest":"f4031aab637d1ffa37b42570452ae0e4fad0314754d17ded67322e4b95836f8a","details":{"parent_model":"","format":"gguf","family":"gemma3","families":["gemma3"],"parameter_size":"12.2B","quantization_level":"Q4_K_M"}}]}}
+```
+Access this endpoint and cache the available models, then when the user send a generation request, confirm that the model is in the cached list, before starting the generation, or if not in the list, try once to update the cache, and if still not in the list, reject the generation request, with a sensible error message/log.
+
+2. POST `/llm/chat`: For generating an AI response.
+Below are four example requests, using `curl`, so make sure that the data is formatted properly, then generate a response.
+
+#### 1) Cydonia
+```bash
+curl -sS -X POST http://192.168.0.20:8080/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "cydonia:24b-q6",
+    "messages": [
+      {"role":"system","content":"You are helpful, concise, and a bit witty. Stay SFW."},
+      {"role":"user","content":"Write a short roleplay scene idea set in a cyberpunk library."}
+    ],
+    "max_tokens": 250,
+    "temperature": 0.8
+  }' | jq -r '.message.content'
 ```
 
-session id: 019ba06d-a5de-79c0-9263-707fa48fc43d
+#### 2) Gemma 3 12B
+```bash
+curl -sS -X POST http://192.168.0.20:8080/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma3:12b",
+    "messages": [
+      {"role":"user","content":"Give me 5 bullet points on good password hygiene."}
+    ],
+    "max_tokens": 200,
+    "temperature": 0.4
+  }' | jq -r '.message.content'
+```
+
+#### 3) Gemma 3 12B (image)
+```bash
+IMG_B64="$(base64 -w 0 /path/to/image.png)"
+curl -sS -X POST http://192.168.0.20:8080/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma3:12b",
+    "messages": [
+      {
+        "role":"user",
+        "content":"Describe the image in one sentence.",
+        "images":["'"$IMG_B64"'"]
+      }
+    ],
+    "max_tokens": 120
+  }' | jq -r '.message.content'
+```
+
+#### 4) GPT‑OSS 20B
+```bash
+curl -sS -X POST http://192.168.0.20:8080/llm/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-oss:20b",
+    "messages": [
+      {"role":"user","content":"Summarize the pros/cons of using queues in an AI microservice architecture."}
+    ],
+    "max_tokens": 300,
+    "temperature": 0.6
+  }' | jq -r '.message.content'
+```
+
+Now update `utils/Ollama_API.js` to work with this new format.
+
+session id: 019ba264-2aeb-7972-91b6-bc1a45f60621
