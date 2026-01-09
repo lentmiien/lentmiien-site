@@ -1137,7 +1137,7 @@ class MessageService {
     messages = [],
     contextPrompt = '',
     appendedInstructions = '',
-    modelName = 'cydonia-24b-q4_k_m:latest',
+    modelName = 'cydonia:24b-q6',
     userId = 'draft-tool',
   }) {
     if (!conversation) {
