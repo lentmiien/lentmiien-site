@@ -173,7 +173,7 @@ class TtsService {
     try {
       const response = await axios.post(requestUrl, payload, {
         responseType: 'arraybuffer',
-        timeout: 5 * 60 * 1000,
+        timeout: 6 * 60 * 60 * 1000,
       });
       const buffer = Buffer.from(response.data);
 
