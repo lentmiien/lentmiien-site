@@ -61,7 +61,7 @@ const AI_GATEWAY_ENDPOINTS = {
   gpu: '/gpu',
   limits: '/limits',
   health: '/health',
-  logs: '/logs/tail?n=50',
+  logs: '/logs/tail?n=500',
 };
 const AI_GATEWAY_TIMEOUT_MS = 5000;
 
@@ -1085,6 +1085,43 @@ function parsePrometheusMetrics(rawText) {
   return { entries, byName };
 }
 
+function summarizeNumbers(values) {
+  const filtered = (values || []).filter((value) => typeof value === 'number' && !Number.isNaN(value));
+  if (!filtered.length) {
+    return null;
+  }
+  const sorted = [...filtered].sort((a, b) => a - b);
+  const percentile = (p) => {
+    if (!sorted.length) {
+      return null;
+    }
+    const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+    return sorted[index];
+  };
+  const sum = filtered.reduce((acc, value) => acc + value, 0);
+
+  return {
+    count: filtered.length,
+    average: sum / filtered.length,
+    median: percentile(50),
+    p95: percentile(95),
+    min: sorted[0],
+    max: sorted[sorted.length - 1],
+  };
+}
+
+function average(values) {
+  const stats = summarizeNumbers(values || []);
+  return stats ? stats.average : null;
+}
+
+function findBucket(buckets, value) {
+  if (!Array.isArray(buckets)) {
+    return null;
+  }
+  return buckets.find((bucket) => value <= bucket.max);
+}
+
 function pickMetricValue(metricsByName, metricName) {
   const entries = metricsByName[metricName];
   if (!entries || !entries.length) {
@@ -1194,10 +1231,10 @@ function buildGatewayGpuStats(metricsByName, gpuData, healthData) {
     freeDisplay: formatBytes(freeBytes || 0),
     busyDisplay: busyPercent !== null && busyPercent !== undefined
       ? `${busyPercent.toFixed(1)}%`
-      : '—',
+      : 'N/A',
     tempDisplay: tempC !== null && tempC !== undefined
-      ? `${tempC.toFixed(1)}°C`
-      : '—',
+      ? `${tempC.toFixed(1)} C`
+      : 'N/A',
   };
 }
 
@@ -1234,6 +1271,37 @@ function normalizeLogEntry(rawEntry) {
 
   const tsMs = asNumber(rawEntry.ts);
   const resolvedTsMs = tsMs !== null ? tsMs * 1000 : null;
+  const gpuBefore = rawEntry.gpu_before || rawEntry.gpuBefore;
+  const gpuAfter = rawEntry.gpu_after || rawEntry.gpuAfter;
+  const gpuBeforeUsedBytes = asNumber(gpuBefore?.vram_used_bytes);
+  const gpuAfterUsedBytes = asNumber(gpuAfter?.vram_used_bytes);
+  const gpuPeakUsedBytes = asNumber(rawEntry.gpu_peak_vram_used_bytes);
+  const gpuTotalBytes = asNumber(gpuBefore?.vram_total_bytes)
+    || asNumber(gpuAfter?.vram_total_bytes)
+    || asNumber(rawEntry.gpu_total_bytes);
+  const vramDeltaBytes = (() => {
+    if (gpuBeforeUsedBytes === null || gpuBeforeUsedBytes === undefined) {
+      return null;
+    }
+    const target = gpuPeakUsedBytes !== null && gpuPeakUsedBytes !== undefined
+      ? gpuPeakUsedBytes
+      : gpuAfterUsedBytes;
+    if (target === null || target === undefined) {
+      return null;
+    }
+    return Math.max(0, target - gpuBeforeUsedBytes);
+  })();
+  const scaleInfo = rawEntry.scale_info || {};
+  const newPixels = asNumber(scaleInfo.new_pixels);
+  const newW = asNumber(scaleInfo.new_w);
+  const newH = asNumber(scaleInfo.new_h);
+  const computedNewPixels = newPixels !== null
+    ? newPixels
+    : (newW !== null && newH !== null ? newW * newH : null);
+  const promptEvalCount = asNumber(rawEntry.ollama_stats?.prompt_eval_count || rawEntry.prompt_eval_count);
+  const evalCount = asNumber(rawEntry.ollama_stats?.eval_count || rawEntry.eval_count);
+  const promptTokPerSec = asNumber(rawEntry.ollama_stats?.prompt_tok_per_s || rawEntry.prompt_tok_per_s);
+  const genTokPerSec = asNumber(rawEntry.ollama_stats?.gen_tok_per_s || rawEntry.gen_tok_per_s || rawEntry.tokens_per_second);
 
   return {
     tsMs: resolvedTsMs,
@@ -1244,9 +1312,32 @@ function normalizeLogEntry(rawEntry) {
     queueWaitSec: asNumber(rawEntry.queue_wait_sec),
     backend: rawEntry.backend,
     model: rawEntry.model,
+    language: rawEntry.language,
     voiceId: rawEntry.voice_id,
     textChars: asNumber(rawEntry.text_chars),
+    audioDurationSec: asNumber(rawEntry.audio_duration_sec),
+    rtf: asNumber(rawEntry.rtf),
     responseBytes: asNumber(rawEntry.response_bytes || rawEntry.response_bytes_approx),
+    promptChars: asNumber(rawEntry.prompt_chars),
+    assistantChars: asNumber(rawEntry.ollama_stats?.assistant_chars || rawEntry.assistant_chars),
+    promptTokens: promptEvalCount,
+    genTokens: evalCount,
+    promptTokPerSec,
+    genTokPerSec,
+    inputBytes: asNumber(rawEntry.input_bytes),
+    sentBytes: asNumber(rawEntry.sent_bytes),
+    scaled: rawEntry.scaled,
+    pixelCount: computedNewPixels,
+    maxNewTokensReq: asNumber(rawEntry.max_new_tokens_req),
+    maxNewTokensSent: asNumber(rawEntry.max_new_tokens_sent),
+    outputCount: asNumber(rawEntry.output_count),
+    workflowId: rawEntry.workflow_id,
+    promptId: rawEntry.prompt_id,
+    gpuBeforeUsedBytes,
+    gpuAfterUsedBytes,
+    gpuPeakVramUsedBytes: gpuPeakUsedBytes,
+    gpuTotalBytes,
+    vramDeltaBytes,
   };
 }
 
@@ -1285,6 +1376,339 @@ function parseGatewayLogs(rawLogs) {
   }
 
   return entries.map(normalizeLogEntry).filter(Boolean).sort((a, b) => (a.tsMs || 0) - (b.tsMs || 0));
+}
+
+function buildTtsLogStats(entries) {
+  if (!entries.length) {
+    return null;
+  }
+
+  const buckets = [
+    { label: '<=200 chars', max: 200 },
+    { label: '201-800 chars', max: 800 },
+    { label: '801-2000 chars', max: 2000 },
+    { label: '2001-4000 chars', max: 4000 },
+    { label: '4001+ chars', max: Infinity },
+  ];
+  const backends = new Map();
+
+  entries.forEach((entry) => {
+    const backend = entry.backend || 'unknown';
+    if (!backends.has(backend)) {
+      backends.set(backend, {
+        backend,
+        entryCount: 0,
+        rtfValues: [],
+        textValues: [],
+        audioValues: [],
+        durationValues: [],
+        queueValues: [],
+        buckets: buckets.map((bucket) => ({ ...bucket, rtfValues: [], textValues: [] })),
+      });
+    }
+
+    const bucket = backends.get(backend);
+    bucket.entryCount += 1;
+    if (entry.rtf !== null && entry.rtf !== undefined) bucket.rtfValues.push(entry.rtf);
+    if (entry.textChars !== null && entry.textChars !== undefined) bucket.textValues.push(entry.textChars);
+    if (entry.audioDurationSec !== null && entry.audioDurationSec !== undefined) bucket.audioValues.push(entry.audioDurationSec);
+    if (entry.durationSec !== null && entry.durationSec !== undefined) bucket.durationValues.push(entry.durationSec);
+    if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) bucket.queueValues.push(entry.queueWaitSec);
+
+    if (entry.textChars !== null && entry.textChars !== undefined && entry.rtf !== null && entry.rtf !== undefined) {
+      const targetBucket = findBucket(bucket.buckets, entry.textChars);
+      if (targetBucket) {
+        targetBucket.rtfValues.push(entry.rtf);
+        targetBucket.textValues.push(entry.textChars);
+      }
+    }
+  });
+
+  const backendsList = Array.from(backends.values()).map((backend) => {
+    const rtfStats = summarizeNumbers(backend.rtfValues);
+    return {
+      backend: backend.backend,
+      count: backend.entryCount,
+      rtf: rtfStats,
+      avgTextChars: average(backend.textValues),
+      avgAudioSec: average(backend.audioValues),
+      avgDurationSec: average(backend.durationValues),
+      avgQueueSec: average(backend.queueValues),
+      buckets: backend.buckets.map((bucket) => {
+        const bucketStats = summarizeNumbers(bucket.rtfValues);
+        return {
+          label: bucket.label,
+          count: bucketStats?.count || 0,
+          averageRtf: bucketStats?.average || null,
+          medianRtf: bucketStats?.median || null,
+          avgTextChars: average(bucket.textValues),
+        };
+      }).filter((bucket) => bucket.count > 0),
+    };
+  }).sort((a, b) => (a.backend || '').localeCompare(b.backend || ''));
+
+  return { sampleCount: entries.length, backends: backendsList };
+}
+
+function buildLlmLogStats(entries) {
+  if (!entries.length) {
+    return null;
+  }
+
+  const tokenBuckets = [
+    { label: '<=256 tokens', max: 256 },
+    { label: '257-512 tokens', max: 512 },
+    { label: '513-1024 tokens', max: 1024 },
+    { label: '1025-2048 tokens', max: 2048 },
+    { label: '2049-4096 tokens', max: 4096 },
+    { label: '4097+ tokens', max: Infinity },
+  ];
+
+  const models = new Map();
+  const vramTopCandidates = [];
+
+  entries.forEach((entry) => {
+    const model = entry.model || 'unknown';
+    if (!models.has(model)) {
+      models.set(model, {
+        model,
+        entryCount: 0,
+        promptTokPerSecValues: [],
+        genTokPerSecValues: [],
+        promptTokens: [],
+        genTokens: [],
+        totalTokens: [],
+        durationValues: [],
+        queueValues: [],
+        vramDeltas: [],
+        buckets: tokenBuckets.map((bucket) => ({
+          ...bucket,
+          count: 0,
+          promptTokPerSecValues: [],
+          genTokPerSecValues: [],
+          vramDeltas: [],
+          totalTokens: [],
+        })),
+      });
+    }
+
+    const modelBucket = models.get(model);
+    modelBucket.entryCount += 1;
+    if (entry.promptTokPerSec !== null && entry.promptTokPerSec !== undefined) modelBucket.promptTokPerSecValues.push(entry.promptTokPerSec);
+    if (entry.genTokPerSec !== null && entry.genTokPerSec !== undefined) modelBucket.genTokPerSecValues.push(entry.genTokPerSec);
+    if (entry.promptTokens !== null && entry.promptTokens !== undefined) modelBucket.promptTokens.push(entry.promptTokens);
+    if (entry.genTokens !== null && entry.genTokens !== undefined) modelBucket.genTokens.push(entry.genTokens);
+    if (entry.durationSec !== null && entry.durationSec !== undefined) modelBucket.durationValues.push(entry.durationSec);
+    if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) modelBucket.queueValues.push(entry.queueWaitSec);
+    if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) modelBucket.vramDeltas.push(entry.vramDeltaBytes);
+
+    const hasTokenCounts = (entry.promptTokens !== null && entry.promptTokens !== undefined)
+      || (entry.genTokens !== null && entry.genTokens !== undefined);
+    const totalTokens = (entry.promptTokens || 0) + (entry.genTokens || 0);
+    if (hasTokenCounts) {
+      modelBucket.totalTokens.push(totalTokens);
+      const bucket = findBucket(modelBucket.buckets, totalTokens);
+      if (bucket) {
+        bucket.count += 1;
+        if (entry.promptTokPerSec !== null && entry.promptTokPerSec !== undefined) bucket.promptTokPerSecValues.push(entry.promptTokPerSec);
+        if (entry.genTokPerSec !== null && entry.genTokPerSec !== undefined) bucket.genTokPerSecValues.push(entry.genTokPerSec);
+        if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) bucket.vramDeltas.push(entry.vramDeltaBytes);
+        bucket.totalTokens.push(totalTokens);
+      }
+    }
+
+    if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) {
+      vramTopCandidates.push({
+        model,
+        vramDeltaBytes: entry.vramDeltaBytes,
+        promptTokens: entry.promptTokens,
+        genTokens: entry.genTokens,
+        totalTokens,
+        promptChars: entry.promptChars,
+        assistantChars: entry.assistantChars,
+        durationSec: entry.durationSec,
+      });
+    }
+  });
+
+  const modelSummaries = Array.from(models.values()).map((model) => {
+    const promptStats = summarizeNumbers(model.promptTokPerSecValues);
+    const genStats = summarizeNumbers(model.genTokPerSecValues);
+    const vramStats = summarizeNumbers(model.vramDeltas);
+    const totalTokenStats = summarizeNumbers(model.totalTokens);
+
+    return {
+      model: model.model,
+      count: model.entryCount,
+      promptTokPerSec: promptStats,
+      genTokPerSec: genStats,
+      avgPromptTokens: average(model.promptTokens),
+      avgGenTokens: average(model.genTokens),
+      avgTotalTokens: totalTokenStats?.average || null,
+      avgDurationSec: average(model.durationValues),
+      avgQueueSec: average(model.queueValues),
+      avgVramDeltaBytes: vramStats?.average || null,
+      avgVramDeltaDisplay: vramStats?.average !== null && vramStats?.average !== undefined ? formatBytes(vramStats.average) : 'N/A',
+      buckets: model.buckets.map((bucket) => {
+        const promptBucketStats = summarizeNumbers(bucket.promptTokPerSecValues);
+        const genBucketStats = summarizeNumbers(bucket.genTokPerSecValues);
+        return {
+          label: bucket.label,
+          count: bucket.count,
+          avgPromptTokPerSec: promptBucketStats?.average || null,
+          avgGenTokPerSec: genBucketStats?.average || null,
+          avgVramDeltaBytes: average(bucket.vramDeltas),
+          avgVramDeltaDisplay: average(bucket.vramDeltas) !== null ? formatBytes(average(bucket.vramDeltas)) : 'N/A',
+          avgTotalTokens: average(bucket.totalTokens),
+        };
+      }).filter((bucket) => bucket.count > 0),
+    };
+  }).sort((a, b) => (b.genTokPerSec?.average || 0) - (a.genTokPerSec?.average || 0));
+
+  const topVramDeltas = vramTopCandidates
+    .filter((entry) => entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined)
+    .sort((a, b) => b.vramDeltaBytes - a.vramDeltaBytes)
+    .slice(0, 5)
+    .map((entry) => ({
+      ...entry,
+      vramDeltaDisplay: formatBytes(entry.vramDeltaBytes),
+    }));
+
+  return {
+    sampleCount: entries.length,
+    models: modelSummaries,
+    topVramDeltas,
+  };
+}
+
+function buildOcrLogStats(entries) {
+  if (!entries.length) {
+    return null;
+  }
+
+  const pixelBuckets = [
+    { label: '<=0.5 MP', max: 500000 },
+    { label: '0.5-1.5 MP', max: 1500000 },
+    { label: '1.5-3 MP', max: 3000000 },
+    { label: '3+ MP', max: Infinity },
+  ];
+  const tokenBuckets = [
+    { label: '<=512 tokens', max: 512 },
+    { label: '513-1024 tokens', max: 1024 },
+    { label: '1025-2048 tokens', max: 2048 },
+    { label: '2049+ tokens', max: Infinity },
+  ];
+
+  const pixelBucketData = pixelBuckets.map((bucket) => ({ ...bucket, vramDeltas: [], pixelCounts: [], count: 0 }));
+  const tokenBucketData = tokenBuckets.map((bucket) => ({ ...bucket, vramDeltas: [], tokens: [], count: 0 }));
+  const vramDeltas = [];
+  const pixelCounts = [];
+  const maxTokens = [];
+  const durations = [];
+  const queueValues = [];
+
+  entries.forEach((entry) => {
+    if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) vramDeltas.push(entry.vramDeltaBytes);
+    if (entry.pixelCount !== null && entry.pixelCount !== undefined) pixelCounts.push(entry.pixelCount);
+    if (entry.maxNewTokensSent !== null && entry.maxNewTokensSent !== undefined) maxTokens.push(entry.maxNewTokensSent);
+    if (entry.durationSec !== null && entry.durationSec !== undefined) durations.push(entry.durationSec);
+    if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) queueValues.push(entry.queueWaitSec);
+
+    if (entry.pixelCount !== null && entry.pixelCount !== undefined && entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) {
+      const bucket = findBucket(pixelBucketData, entry.pixelCount);
+      if (bucket) {
+        bucket.count += 1;
+        bucket.vramDeltas.push(entry.vramDeltaBytes);
+        bucket.pixelCounts.push(entry.pixelCount);
+      }
+    }
+
+    if (entry.maxNewTokensSent !== null && entry.maxNewTokensSent !== undefined && entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) {
+      const bucket = findBucket(tokenBucketData, entry.maxNewTokensSent);
+      if (bucket) {
+        bucket.count += 1;
+        bucket.vramDeltas.push(entry.vramDeltaBytes);
+        bucket.tokens.push(entry.maxNewTokensSent);
+      }
+    }
+  });
+
+  const vramStats = summarizeNumbers(vramDeltas);
+  const pixelSummaries = pixelBucketData.filter((bucket) => bucket.count > 0).map((bucket) => ({
+    label: bucket.label,
+    count: bucket.count,
+    avgVramDeltaBytes: average(bucket.vramDeltas),
+    avgVramDeltaDisplay: average(bucket.vramDeltas) !== null ? formatBytes(average(bucket.vramDeltas)) : 'N/A',
+    avgPixels: average(bucket.pixelCounts),
+  }));
+  const tokenSummaries = tokenBucketData.filter((bucket) => bucket.count > 0).map((bucket) => ({
+    label: bucket.label,
+    count: bucket.count,
+    avgVramDeltaBytes: average(bucket.vramDeltas),
+    avgVramDeltaDisplay: average(bucket.vramDeltas) !== null ? formatBytes(average(bucket.vramDeltas)) : 'N/A',
+    avgMaxTokens: average(bucket.tokens),
+  }));
+
+  return {
+    sampleCount: entries.length,
+    avgVramDeltaBytes: vramStats?.average || null,
+    avgVramDeltaDisplay: vramStats?.average !== null && vramStats?.average !== undefined ? formatBytes(vramStats.average) : 'N/A',
+    maxVramDeltaBytes: vramStats?.max || null,
+    maxVramDeltaDisplay: vramStats?.max !== null && vramStats?.max !== undefined ? formatBytes(vramStats.max) : 'N/A',
+    avgPixelCount: average(pixelCounts),
+    avgMaxNewTokens: average(maxTokens),
+    avgDurationSec: average(durations),
+    avgQueueSec: average(queueValues),
+    pixelBuckets: pixelSummaries,
+    tokenBuckets: tokenSummaries,
+  };
+}
+
+function buildComfyLogStats(entries) {
+  if (!entries.length) {
+    return null;
+  }
+
+  const vramDeltas = [];
+  const durations = [];
+  const queueValues = [];
+  const outputCounts = [];
+
+  entries.forEach((entry) => {
+    if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) vramDeltas.push(entry.vramDeltaBytes);
+    if (entry.durationSec !== null && entry.durationSec !== undefined) durations.push(entry.durationSec);
+    if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) queueValues.push(entry.queueWaitSec);
+    if (entry.outputCount !== null && entry.outputCount !== undefined) outputCounts.push(entry.outputCount);
+  });
+
+  const vramStats = summarizeNumbers(vramDeltas);
+
+  return {
+    sampleCount: entries.length,
+    avgVramDeltaBytes: vramStats?.average || null,
+    avgVramDeltaDisplay: vramStats?.average !== null && vramStats?.average !== undefined ? formatBytes(vramStats.average) : 'N/A',
+    maxVramDeltaBytes: vramStats?.max || null,
+    maxVramDeltaDisplay: vramStats?.max !== null && vramStats?.max !== undefined ? formatBytes(vramStats.max) : 'N/A',
+    avgDurationSec: average(durations),
+    avgQueueSec: average(queueValues),
+    avgOutputCount: average(outputCounts),
+  };
+}
+
+function buildGatewayLogInsights(logEntries) {
+  const logs = Array.isArray(logEntries) ? logEntries : [];
+  const ttsEntries = logs.filter((entry) => entry.route === 'tts');
+  const llmEntries = logs.filter((entry) => (entry.route || '').startsWith('llm'));
+  const ocrEntries = logs.filter((entry) => entry.route === 'ocr');
+  const comfyEntries = logs.filter((entry) => entry.route === 'comfy_run');
+
+  return {
+    totalEntries: logs.length,
+    tts: buildTtsLogStats(ttsEntries),
+    llm: buildLlmLogStats(llmEntries),
+    ocr: buildOcrLogStats(ocrEntries),
+    comfy: buildComfyLogStats(comfyEntries),
+  };
 }
 
 function buildGpuTimeline(gpuData) {
@@ -1372,6 +1796,7 @@ function buildAiGatewayDashboard(rawData) {
   const gpu = buildGatewayGpuStats(metricsByName, rawData.gpu, rawData.health);
   const waiters = buildGatewayWaiterStats(metricsByName, rawData.health);
   const logs = parseGatewayLogs(rawData.logsRaw);
+  const logInsights = buildGatewayLogInsights(logs);
   const gpuTimeline = buildGpuTimeline(rawData.gpu);
   const limits = normalizeGatewayLimits(rawData.limits);
   const successRate = calculatePercent(requests.totals.total || 0, requests.totals.success || 0);
@@ -1442,6 +1867,7 @@ function buildAiGatewayDashboard(rawData) {
     limits,
     health,
     logs,
+    logInsights,
     errors: rawData.errors || {},
     chartData: {
       requests: requests.routes,
@@ -1704,7 +2130,7 @@ exports.database_usage = async (req, res) => {
         storageSizeDisplay: formatBytes(collection.storageSizeBytes || 0),
         dataSizeDisplay: formatBytes(collection.sizeBytes || 0),
         indexSizeDisplay: formatBytes(collection.totalIndexSizeBytes || 0),
-        avgObjSizeDisplay: collection.avgObjSizeBytes ? formatBytes(collection.avgObjSizeBytes) : '—',
+        avgObjSizeDisplay: collection.avgObjSizeBytes ? formatBytes(collection.avgObjSizeBytes) : 'N/A',
         percentDisplay: formatPercent(percent),
       };
     });

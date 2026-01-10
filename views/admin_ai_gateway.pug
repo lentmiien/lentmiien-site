@@ -6,6 +6,9 @@ block styles
 block content
   - const errorKeys = Object.keys(dashboard.errors || {}).filter((key) => dashboard.errors[key]);
   - const recentLogs = (dashboard.logs || []).slice(-10).reverse();
+  - const logInsights = dashboard.logInsights || {};
+  - const formatFixed = (value, digits = 2) => (typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(digits) : 'N/A');
+  - const formatNumber = (value) => (typeof value === 'number' && !Number.isNaN(value) ? value.toLocaleString('en-US') : 'N/A');
   .ai-gateway
     .ai-gateway__header
       .ai-gateway__heading
@@ -114,7 +117,7 @@ block content
       .panel
         .panel__header
           h2.panel__title Recent Logs
-          p.panel__subtitle Latest entries from /logs/tail?n=50.
+          p.panel__subtitle Latest entries from /logs/tail?n=500.
         if recentLogs && recentLogs.length
           .table-responsive
             table.table.table-dark.table-sm.mb-0
@@ -143,6 +146,184 @@ block content
                         span  · #{entry.voiceId}
         else
           p.text-muted.mb-0 No recent logs returned.
+      .panel
+        .panel__header
+          h2.panel__title TTS Real-Time Factor
+          p.panel__subtitle Backend rtf plus input-length trends from recent logs.
+        if logInsights.tts && logInsights.tts.backends && logInsights.tts.backends.length
+          .table-responsive
+            table.table.table-dark.table-sm.mb-2
+              thead
+                tr
+                  th Backend
+                  th Avg rtf
+                  th P95 rtf
+                  th Avg chars
+                  th Avg audio (s)
+                  th Samples
+              tbody
+                each backend in logInsights.tts.backends
+                  tr
+                    td= backend.backend
+                    td= formatFixed(backend.rtf && backend.rtf.average, 3)
+                    td= formatFixed(backend.rtf && backend.rtf.p95, 3)
+                    td= formatNumber(backend.avgTextChars)
+                    td= formatFixed(backend.avgAudioSec, 2)
+                    td= backend.count
+          if logInsights.tts.backends.some((backend) => backend.buckets && backend.buckets.length)
+            h5.mt-3.mb-2 RTF by input length
+            each backend in logInsights.tts.backends
+              if backend.buckets && backend.buckets.length
+                .mini-table
+                  .mini-table__title= backend.backend
+                  .table-responsive
+                    table.table.table-dark.table-sm.mb-2
+                      thead
+                        tr
+                          th Length bucket
+                          th Avg rtf
+                          th Median
+                          th Avg chars
+                          th Samples
+                      tbody
+                        each bucket in backend.buckets
+                          tr
+                            td= bucket.label
+                            td= formatFixed(bucket.averageRtf, 3)
+                            td= formatFixed(bucket.medianRtf, 3)
+                            td= formatNumber(bucket.avgTextChars)
+                            td= bucket.count
+        else
+          p.text-muted.mb-0 No TTS log entries yet.
+      .panel
+        .panel__header
+          h2.panel__title LLM Throughput & VRAM
+          p.panel__subtitle Model-level token/sec plus VRAM deltas per request.
+        if logInsights.llm && logInsights.llm.models && logInsights.llm.models.length
+          .table-responsive
+            table.table.table-dark.table-sm.mb-2
+              thead
+                tr
+                  th Model
+                  th Prompt tok/s
+                  th Gen tok/s
+                  th Avg total tokens
+                  th Avg VRAM delta
+                  th Samples
+              tbody
+                each model in logInsights.llm.models
+                  tr
+                    td= model.model
+                    td= formatFixed(model.promptTokPerSec && model.promptTokPerSec.average, 1)
+                    td= formatFixed(model.genTokPerSec && model.genTokPerSec.average, 1)
+                    td= formatNumber(model.avgTotalTokens)
+                    td= model.avgVramDeltaDisplay || 'N/A'
+                    td= model.count
+          if logInsights.llm.models.some((model) => model.buckets && model.buckets.length)
+            h5.mt-3.mb-2 Tokens vs throughput
+            each model in logInsights.llm.models
+              if model.buckets && model.buckets.length
+                .mini-table
+                  .mini-table__title= model.model
+                  .table-responsive
+                    table.table.table-dark.table-sm.mb-2
+                      thead
+                        tr
+                          th Token bucket
+                          th Prompt tok/s
+                          th Gen tok/s
+                          th Avg VRAM delta
+                          th Samples
+                      tbody
+                        each bucket in model.buckets
+                          tr
+                            td= bucket.label
+                            td= formatFixed(bucket.avgPromptTokPerSec, 1)
+                            td= formatFixed(bucket.avgGenTokPerSec, 1)
+                            td= bucket.avgVramDeltaDisplay
+                            td= bucket.count
+          if logInsights.llm.topVramDeltas && logInsights.llm.topVramDeltas.length
+            h5.mt-3.mb-2 Largest VRAM jumps
+            .table-responsive
+              table.table.table-dark.table-sm.mb-0
+                thead
+                  tr
+                    th Model
+                    th VRAM added
+                    th Total tokens
+                    th Prompt tokens
+                    th Gen tokens
+                    th Duration (s)
+                tbody
+                  each entry in logInsights.llm.topVramDeltas
+                    tr
+                      td= entry.model
+                      td= entry.vramDeltaDisplay
+                      td= formatNumber(entry.totalTokens)
+                      td= formatNumber(entry.promptTokens)
+                      td= formatNumber(entry.genTokens)
+                      td= formatFixed(entry.durationSec, 2)
+        else
+          p.text-muted.mb-0 No LLM log entries yet.
+      .panel
+        .panel__header
+          h2.panel__title OCR VRAM Usage
+          p.panel__subtitle VRAM change against pixels processed and max tokens.
+        if logInsights.ocr
+          ul.limits-list
+            li Avg VRAM delta: #{logInsights.ocr.avgVramDeltaDisplay || 'N/A'}
+            li Peak VRAM delta: #{logInsights.ocr.maxVramDeltaDisplay || 'N/A'}
+            li Avg pixels processed: #{formatNumber(logInsights.ocr.avgPixelCount)}
+            li Avg max new tokens: #{formatNumber(logInsights.ocr.avgMaxNewTokens)}
+          if logInsights.ocr.pixelBuckets && logInsights.ocr.pixelBuckets.length
+            h5.mt-3.mb-2 VRAM by pixel count
+            .table-responsive
+              table.table.table-dark.table-sm.mb-2
+                thead
+                  tr
+                    th Pixel bucket
+                    th Avg VRAM delta
+                    th Avg pixels
+                    th Samples
+                tbody
+                  each bucket in logInsights.ocr.pixelBuckets
+                    tr
+                      td= bucket.label
+                      td= bucket.avgVramDeltaDisplay
+                      td= formatNumber(bucket.avgPixels)
+                      td= bucket.count
+          if logInsights.ocr.tokenBuckets && logInsights.ocr.tokenBuckets.length
+            h5.mt-3.mb-0 VRAM by max new tokens
+            .table-responsive
+              table.table.table-dark.table-sm.mb-0
+                thead
+                  tr
+                    th Token bucket
+                    th Avg VRAM delta
+                    th Avg max tokens
+                    th Samples
+                tbody
+                  each bucket in logInsights.ocr.tokenBuckets
+                    tr
+                      td= bucket.label
+                      td= bucket.avgVramDeltaDisplay
+                      td= formatNumber(bucket.avgMaxTokens)
+                      td= bucket.count
+        else
+          p.text-muted.mb-0 No OCR log entries yet.
+      .panel
+        .panel__header
+          h2.panel__title ComfyUI VRAM Usage
+          p.panel__subtitle VRAM deltas for ComfyUI runs.
+        if logInsights.comfy
+          ul.limits-list
+            li Avg VRAM delta: #{logInsights.comfy.avgVramDeltaDisplay || 'N/A'}
+            li Peak VRAM delta: #{logInsights.comfy.maxVramDeltaDisplay || 'N/A'}
+            li Avg duration: #{formatFixed(logInsights.comfy.avgDurationSec, 2)} s
+            li Avg queue wait: #{formatFixed(logInsights.comfy.avgQueueSec, 2)} s
+            li Avg outputs: #{formatFixed(logInsights.comfy.avgOutputCount, 1)}
+        else
+          p.text-muted.mb-0 No ComfyUI log entries yet.
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
