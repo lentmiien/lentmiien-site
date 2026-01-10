@@ -19,10 +19,12 @@ const OverlayBoxSchema = new Schema({
 const FileResultSchema = new Schema({
   rawText: { type: String, default: '' },
   layoutText: { type: String, default: '' },
+  layoutDirection: { type: String, default: 'horizontal' },
   overlayBoxes: { type: [OverlayBoxSchema], default: [] },
   imagePath: { type: String, default: null },
   originalOverlayBoxes: { type: [OverlayBoxSchema], default: [] },
   originalLayoutText: { type: String, default: '' },
+  originalLayoutDirection: { type: String, default: null },
   model: { type: String, default: null },
   promptUsed: { type: String, default: null },
   segmentsCount: { type: Number, default: 0 },

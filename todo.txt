@@ -1,1 +1,4 @@
-DONE: AI Gateway dashboard expanded with log-based insights (TTS RTF by backend/length, LLM throughput/VRAM deltas, OCR and ComfyUI VRAM stats) and increased log fetch to 500 entries.
+On the `views/ocr_tool.pug` and `views/ocr_tts_tool.pug` pages, where I do OCR processing, I've realized that the "HunyuanOCR" that I'm using actually support vertical text, just as well as horizontal text. So I'd like to create an additional row detection algorithm, the same as horizontal, but for vertical text, and order the rows from right to left, in the final output, just as one would read standard Japanese text in this orientation. Also, I'd like the app to make a best guess if the text is horizontal or vertical, based on if the majority of the bounding boxes are longer in the horizontal or vertical direction, then auto apply the best guess text direction algorithm. But lets expose a button in the UI for the user to manually re-calculate based on a direction they select.
+I don't need handling of mixed directions, as that just complicate things.
+
+Now add the vertical row algorithm, and best guess direction algorithm, and update the existing tools.

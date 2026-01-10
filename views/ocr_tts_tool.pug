@@ -410,6 +410,40 @@ block script
           .replace(/'/g, '&#039;');
       }
 
+      const TEXT_DIRECTION = {
+        HORIZONTAL: 'horizontal',
+        VERTICAL: 'vertical',
+      };
+
+      const directionLabel = (value) => (value === TEXT_DIRECTION.VERTICAL
+        ? 'Vertical (right to left columns)'
+        : 'Horizontal (left to right rows)');
+
+      const normalizeDirection = (value, fallback = TEXT_DIRECTION.HORIZONTAL) => {
+        if (value === TEXT_DIRECTION.VERTICAL) return TEXT_DIRECTION.VERTICAL;
+        if (value === TEXT_DIRECTION.HORIZONTAL) return TEXT_DIRECTION.HORIZONTAL;
+        return fallback;
+      };
+
+      const guessDirection = (boxes = [], fallback = TEXT_DIRECTION.HORIZONTAL) => {
+        if (!Array.isArray(boxes) || !boxes.length) return fallback;
+        let horizontalCount = 0;
+        let verticalCount = 0;
+        boxes.forEach((box) => {
+          if (!box) return;
+          const width = Math.max(1, box.endX - box.startX);
+          const height = Math.max(1, box.endY - box.startY);
+          if (width > height) {
+            horizontalCount += 1;
+          } else if (height > width) {
+            verticalCount += 1;
+          }
+        });
+        if (verticalCount > horizontalCount) return TEXT_DIRECTION.VERTICAL;
+        if (horizontalCount > verticalCount) return TEXT_DIRECTION.HORIZONTAL;
+        return fallback;
+      };
+
       function buildVoiceSelect(selectedVoice) {
         const options = Array.isArray(state.voiceOptions) ? [...state.voiceOptions] : [];
         const fallback = selectedVoice || state.defaultVoiceId || state.defaults.voice || '';
@@ -575,6 +609,13 @@ block script
           const sel = Number(detail.ocr?.spaceCount ?? state.defaults.spaceCount) === value ? 'selected' : '';
           return `<option value="${value}" ${sel}>${value} space${value === 1 ? '' : 's'}</option>`;
         }).join('');
+        const directionValue = normalizeDirection(detail.ocr?.layoutDirection, 'horizontal');
+        const directionGuess = guessDirection(detail.ocr?.overlayBoxes || [], directionValue);
+        const directionOptions = `
+          <option value="auto">Auto (guess ${escapeHtml(directionLabel(directionGuess))})</option>
+          <option value="horizontal" ${directionValue === 'horizontal' ? 'selected' : ''}>Horizontal</option>
+          <option value="vertical" ${directionValue === 'vertical' ? 'selected' : ''}>Vertical (right to left)</option>
+        `;
         const embedNoteRaw = detail.embeddingStatus === 'stored'
           ? 'Stored in embeddings'
           : detail.embeddingStatus === 'failed'
@@ -588,15 +629,16 @@ block script
             ${detail.group ? `<span class="pill">Group ${escapeHtml(detail.group)}</span>` : ''}
             <span class="pill">${embedNote}</span>
             <span class="pill">Spacing: ${detail.ocr?.spaceCount ?? state.defaults.spaceCount}</span>
+            <span class="pill">Direction: ${escapeHtml(directionLabel(directionValue))}</span>
+            <span class="pill">Guess: ${escapeHtml(directionLabel(directionGuess))}</span>
           </div>
           ${img}
           <div class="mt-3">
             <label class="ocrtts-form-label">OCR text</label>
-            <textarea id="ocrttsText" class="ocrtts-form" rows="6">${detail.ocr?.paragraphText || ''}</textarea>
-            <label class="ocrtts-form-label">OCR text</label>
             <textarea id="ocrttsText" class="ocrtts-form" rows="6">${escapeHtml(detail.ocr?.paragraphText || '')}</textarea>
             <div class="d-flex gap-2 flex-wrap mt-2">
               <select id="ocrttsDetailSpace">${spaceOptions}</select>
+              <select id="ocrttsDirection">${directionOptions}</select>
               <button id="ocrttsSaveText" class="ocrtts-btn secondary" type="button">Save edits</button>
               <button id="ocrttsReflowText" class="ocrtts-btn secondary" type="button">Rebuild with spacing</button>
               <button id="ocrttsEmbedHq" class="ocrtts-btn secondary" type="button">High-quality embed</button>
@@ -832,8 +874,12 @@ block script
         if (!state.selectedJobId) return;
         const textArea = document.getElementById('ocrttsText');
         const spaceInput = document.getElementById('ocrttsDetailSpace');
+        const directionInput = document.getElementById('ocrttsDirection');
         const body = new URLSearchParams();
         body.set('space_count', spaceInput ? spaceInput.value : state.defaults.spaceCount);
+        if (directionInput?.value) {
+          body.set('direction', directionInput.value);
+        }
         if (textArea) {
           body.set('text', textArea.value);
         }

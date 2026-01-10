@@ -63,11 +63,41 @@ const parseOcrText = (rawText) => {
   return matches;
 };
 
-const buildLayoutText = (boxes) => {
-  if (!Array.isArray(boxes) || boxes.length === 0) {
-    return '';
-  }
+const TEXT_DIRECTION = {
+  HORIZONTAL: 'horizontal',
+  VERTICAL: 'vertical',
+};
 
+const normalizeDirection = (value, fallback = TEXT_DIRECTION.HORIZONTAL) => {
+  if (value === TEXT_DIRECTION.VERTICAL) return TEXT_DIRECTION.VERTICAL;
+  if (value === TEXT_DIRECTION.HORIZONTAL) return TEXT_DIRECTION.HORIZONTAL;
+  return fallback;
+};
+
+const guessDirection = (boxes, fallback = TEXT_DIRECTION.HORIZONTAL) => {
+  if (!Array.isArray(boxes) || !boxes.length) {
+    return fallback;
+  }
+  let horizontalCount = 0;
+  let verticalCount = 0;
+
+  boxes.forEach((box) => {
+    if (!box) return;
+    const width = Math.max(1, box.endX - box.startX);
+    const height = Math.max(1, box.endY - box.startY);
+    if (width > height) {
+      horizontalCount += 1;
+    } else if (height > width) {
+      verticalCount += 1;
+    }
+  });
+
+  if (verticalCount > horizontalCount) return TEXT_DIRECTION.VERTICAL;
+  if (horizontalCount > verticalCount) return TEXT_DIRECTION.HORIZONTAL;
+  return fallback;
+};
+
+const buildHorizontalRows = (boxes) => {
   const height = (box) => Math.max(1, box.endY - box.startY);
   const yOverlap = (a, b) => Math.max(0, Math.min(a.endY, b.endY) - Math.max(a.startY, b.startY));
   const sharesRow = (a, b) => {
@@ -75,21 +105,7 @@ const buildLayoutText = (boxes) => {
     return overlap >= 0.5 * height(a) && overlap >= 0.5 * height(b);
   };
 
-  const normalized = boxes
-    .filter((box) => box && typeof box.text === 'string')
-    .map((box) => ({
-      ...box,
-      text: box.text.trim(),
-    }))
-    .filter((box) => box.text);
-
-  if (!normalized.length) {
-    return '';
-  }
-
-  const sorted = normalized
-    .sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
-
+  const sorted = boxes.sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
   const rows = [];
   sorted.forEach((box) => {
     const targetRow = rows.find((row) => row.some((entry) => sharesRow(entry, box)));
@@ -100,15 +116,69 @@ const buildLayoutText = (boxes) => {
     }
   });
 
+  return rows.map((row) => row.sort((a, b) => a.startX - b.startX));
+};
+
+const buildVerticalColumns = (boxes) => {
+  const width = (box) => Math.max(1, box.endX - box.startX);
+  const xOverlap = (a, b) => Math.max(0, Math.min(a.endX, b.endX) - Math.max(a.startX, b.startX));
+  const sharesColumn = (a, b) => {
+    const overlap = xOverlap(a, b);
+    return overlap >= 0.5 * width(a) && overlap >= 0.5 * width(b);
+  };
+
+  const sorted = boxes.sort((a, b) => (b.startX - a.startX) || (a.startY - b.startY));
+  const columns = [];
+  sorted.forEach((box) => {
+    const targetColumn = columns.find((column) => column.some((entry) => sharesColumn(entry, box)));
+    if (targetColumn) {
+      targetColumn.push(box);
+    } else {
+      columns.push([box]);
+    }
+  });
+
+  return columns.map((column) => column.sort((a, b) => a.startY - b.startY));
+};
+
+const buildLayoutResult = (boxes, { direction = 'auto' } = {}) => {
+  if (!Array.isArray(boxes) || boxes.length === 0) {
+    const normalizedDirection = normalizeDirection(direction);
+    return { layoutText: '', layoutDirection: normalizedDirection };
+  }
+
+  const normalized = boxes
+    .filter((box) => box && typeof box.text === 'string')
+    .map((box) => ({
+      ...box,
+      text: box.text.trim(),
+    }))
+    .filter((box) => box.text);
+
+  if (!normalized.length) {
+    const normalizedDirection = normalizeDirection(direction);
+    return { layoutText: '', layoutDirection: normalizedDirection };
+  }
+
+  const resolvedDirection = direction === 'auto'
+    ? guessDirection(normalized, TEXT_DIRECTION.HORIZONTAL)
+    : normalizeDirection(direction, TEXT_DIRECTION.HORIZONTAL);
+
+  const rows = resolvedDirection === TEXT_DIRECTION.VERTICAL
+    ? buildVerticalColumns([...normalized])
+    : buildHorizontalRows([...normalized]);
+
   const lines = rows
     .map((row) => row
-      .sort((a, b) => a.startX - b.startX)
       .map((box) => (box.text || '').trim())
       .filter(Boolean)
       .join('  '))
     .filter(Boolean);
 
-  return lines.join('\n');
+  return {
+    layoutText: lines.join('\n'),
+    layoutDirection: resolvedDirection,
+  };
 };
 
 const enrichBoxesForOverlay = (boxes) => boxes.map((box, index) => {
@@ -275,6 +345,11 @@ const sanitizeJobDetail = (job) => {
         overlayBoxes: Array.isArray(file.result.overlayBoxes) ? file.result.overlayBoxes : [],
         originalOverlayBoxes: Array.isArray(file.result.originalOverlayBoxes) ? file.result.originalOverlayBoxes : [],
         originalLayoutText: file.result.originalLayoutText || file.result.layoutText,
+        layoutDirection: normalizeDirection(file.result.layoutDirection, TEXT_DIRECTION.HORIZONTAL),
+        originalLayoutDirection: normalizeDirection(
+          file.result.originalLayoutDirection,
+          file.result.layoutDirection || TEXT_DIRECTION.HORIZONTAL,
+        ),
         imagePath: formatImagePath(file.result.imagePath || file.previewPath),
         model: file.result.model,
         promptUsed: file.result.promptUsed,
@@ -464,15 +539,17 @@ const runFileOcr = async (job, file, payload) => {
 
     const rawText = typeof data?.text === 'string' ? data.text : '';
     const boxes = parseOcrText(rawText);
-    const layoutText = buildLayoutText(boxes);
+    const layoutResult = buildLayoutResult(boxes, { direction: 'auto' });
     const overlayBoxes = enrichBoxesForOverlay(boxes);
 
     return {
       rawText,
-      layoutText: layoutText || rawText,
+      layoutText: layoutResult.layoutText || rawText,
       overlayBoxes,
       originalOverlayBoxes: overlayBoxes,
-      originalLayoutText: layoutText || rawText,
+      originalLayoutText: layoutResult.layoutText || rawText,
+      layoutDirection: layoutResult.layoutDirection,
+      originalLayoutDirection: layoutResult.layoutDirection,
       model: data?.model || 'Unknown model',
       promptUsed: data?.prompt || job.prompt,
       segmentsCount: overlayBoxes.length,
@@ -787,7 +864,7 @@ exports.enqueueJob = async (req, res) => {
 
 exports.updateFileResult = async (req, res) => {
   const { jobId, fileId } = req.params;
-  const { layoutText, overlayBoxes } = req.body || {};
+  const { layoutText, overlayBoxes, layoutDirection } = req.body || {};
 
   try {
     const job = await OcrJob.findById(jobId);
@@ -816,17 +893,25 @@ exports.updateFileResult = async (req, res) => {
       .filter((box) => box.text);
 
     const enrichedBoxes = enrichBoxesForOverlay(normalizedBoxes);
+    const layoutComputation = buildLayoutResult(normalizedBoxes, {
+      direction: layoutDirection || 'auto',
+    });
     const nextLayoutText = typeof layoutText === 'string' && layoutText.trim()
       ? layoutText
-      : buildLayoutText(normalizedBoxes);
+      : layoutComputation.layoutText;
+    const nextLayoutDirection = normalizeDirection(layoutDirection, layoutComputation.layoutDirection);
 
     file.result.overlayBoxes = enrichedBoxes;
     file.result.layoutText = nextLayoutText;
+    file.result.layoutDirection = nextLayoutDirection;
     if (!Array.isArray(file.result.originalOverlayBoxes) || !file.result.originalOverlayBoxes.length) {
       file.result.originalOverlayBoxes = enrichedBoxes;
     }
     if (!file.result.originalLayoutText) {
       file.result.originalLayoutText = nextLayoutText;
+    }
+    if (!file.result.originalLayoutDirection) {
+      file.result.originalLayoutDirection = nextLayoutDirection;
     }
     file.updatedAt = new Date();
     job.updatedAt = new Date();

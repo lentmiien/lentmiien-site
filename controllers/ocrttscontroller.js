@@ -59,6 +59,82 @@ const formatPath = (storedPath) => {
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
 };
 
+const TEXT_DIRECTION = {
+  HORIZONTAL: 'horizontal',
+  VERTICAL: 'vertical',
+};
+
+const normalizeDirection = (value, fallback = TEXT_DIRECTION.HORIZONTAL) => {
+  if (value === TEXT_DIRECTION.VERTICAL) return TEXT_DIRECTION.VERTICAL;
+  if (value === TEXT_DIRECTION.HORIZONTAL) return TEXT_DIRECTION.HORIZONTAL;
+  return fallback;
+};
+
+const guessDirection = (boxes, fallback = TEXT_DIRECTION.HORIZONTAL) => {
+  if (!Array.isArray(boxes) || !boxes.length) return fallback;
+  let horizontalCount = 0;
+  let verticalCount = 0;
+
+  boxes.forEach((box) => {
+    if (!box) return;
+    const width = Math.max(1, box.endX - box.startX);
+    const height = Math.max(1, box.endY - box.startY);
+    if (width > height) {
+      horizontalCount += 1;
+    } else if (height > width) {
+      verticalCount += 1;
+    }
+  });
+
+  if (verticalCount > horizontalCount) return TEXT_DIRECTION.VERTICAL;
+  if (horizontalCount > verticalCount) return TEXT_DIRECTION.HORIZONTAL;
+  return fallback;
+};
+
+const buildHorizontalRows = (boxes) => {
+  const height = (box) => Math.max(1, box.endY - box.startY);
+  const yOverlap = (a, b) => Math.max(0, Math.min(a.endY, b.endY) - Math.max(a.startY, b.startY));
+  const sharesRow = (a, b) => {
+    const overlap = yOverlap(a, b);
+    return overlap >= 0.5 * height(a) && overlap >= 0.5 * height(b);
+  };
+
+  const sorted = boxes.sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
+  const rows = [];
+  sorted.forEach((box) => {
+    const targetRow = rows.find((row) => row.some((entry) => sharesRow(entry, box)));
+    if (targetRow) {
+      targetRow.push(box);
+    } else {
+      rows.push([box]);
+    }
+  });
+
+  return rows.map((row) => row.sort((a, b) => a.startX - b.startX));
+};
+
+const buildVerticalColumns = (boxes) => {
+  const width = (box) => Math.max(1, box.endX - box.startX);
+  const xOverlap = (a, b) => Math.max(0, Math.min(a.endX, b.endX) - Math.max(a.startX, b.startX));
+  const sharesColumn = (a, b) => {
+    const overlap = xOverlap(a, b);
+    return overlap >= 0.5 * width(a) && overlap >= 0.5 * width(b);
+  };
+
+  const sorted = boxes.sort((a, b) => (b.startX - a.startX) || (a.startY - b.startY));
+  const columns = [];
+  sorted.forEach((box) => {
+    const targetColumn = columns.find((column) => column.some((entry) => sharesColumn(entry, box)));
+    if (targetColumn) {
+      targetColumn.push(box);
+    } else {
+      columns.push([box]);
+    }
+  });
+
+  return columns.map((column) => column.sort((a, b) => a.startY - b.startY));
+};
+
 const buildEmbeddingMetadata = (job) => {
   const id = job?._id?.toString?.() || job?.id;
   if (!id) return null;
@@ -110,17 +186,16 @@ const enrichBoxesForOverlay = (boxes) => boxes.map((box, index) => {
   };
 });
 
-const buildTextsFromBoxes = (boxes, spaceCount = DEFAULT_COMBINE_SPACES) => {
+const buildTextsFromBoxes = (boxes, spaceCount = DEFAULT_COMBINE_SPACES, direction = 'auto') => {
   if (!Array.isArray(boxes) || boxes.length === 0) {
-    return { layoutText: '', paragraphText: '', rows: [] };
+    const normalizedDirection = normalizeDirection(direction);
+    return {
+      layoutText: '',
+      paragraphText: '',
+      rows: [],
+      layoutDirection: normalizedDirection,
+    };
   }
-
-  const height = (box) => Math.max(1, box.endY - box.startY);
-  const yOverlap = (a, b) => Math.max(0, Math.min(a.endY, b.endY) - Math.max(a.startY, b.startY));
-  const sharesRow = (a, b) => {
-    const overlap = yOverlap(a, b);
-    return overlap >= 0.5 * height(a) && overlap >= 0.5 * height(b);
-  };
 
   const normalized = boxes
     .filter((box) => box && typeof box.text === 'string')
@@ -131,26 +206,26 @@ const buildTextsFromBoxes = (boxes, spaceCount = DEFAULT_COMBINE_SPACES) => {
     .filter((box) => box.text);
 
   if (!normalized.length) {
-    return { layoutText: '', paragraphText: '', rows: [] };
+    const normalizedDirection = normalizeDirection(direction);
+    return {
+      layoutText: '',
+      paragraphText: '',
+      rows: [],
+      layoutDirection: normalizedDirection,
+    };
   }
 
-  const sorted = normalized
-    .sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
+  const resolvedDirection = direction === 'auto'
+    ? guessDirection(normalized, TEXT_DIRECTION.HORIZONTAL)
+    : normalizeDirection(direction, TEXT_DIRECTION.HORIZONTAL);
 
-  const rows = [];
-  sorted.forEach((box) => {
-    const targetRow = rows.find((row) => row.some((entry) => sharesRow(entry, box)));
-    if (targetRow) {
-      targetRow.push(box);
-    } else {
-      rows.push([box]);
-    }
-  });
+  const rowGroups = resolvedDirection === TEXT_DIRECTION.VERTICAL
+    ? buildVerticalColumns([...normalized])
+    : buildHorizontalRows([...normalized]);
 
   const joiner = ' '.repeat(spaceCount);
-  const rowTexts = rows
+  const rowTexts = rowGroups
     .map((row) => row
-      .sort((a, b) => a.startX - b.startX)
       .map((box) => (box.text || '').trim())
       .filter(Boolean)
       .join(joiner))
@@ -158,7 +233,12 @@ const buildTextsFromBoxes = (boxes, spaceCount = DEFAULT_COMBINE_SPACES) => {
 
   const layoutText = rowTexts.join('\n');
   const paragraphText = rowTexts.join(joiner);
-  return { layoutText, paragraphText, rows };
+  return {
+    layoutText,
+    paragraphText,
+    rows: rowGroups,
+    layoutDirection: resolvedDirection,
+  };
 };
 
 const sanitizeAudio = (audio) => {
@@ -218,6 +298,11 @@ const sanitizeJobDetail = (job) => {
       layoutText: job.ocr.layoutText,
       paragraphText: job.ocr.paragraphText,
       spaceCount: job.ocr.spaceCount ?? DEFAULT_COMBINE_SPACES,
+      layoutDirection: normalizeDirection(job.ocr.layoutDirection, TEXT_DIRECTION.HORIZONTAL),
+      originalLayoutDirection: normalizeDirection(
+        job.ocr.originalLayoutDirection,
+        job.ocr.layoutDirection || TEXT_DIRECTION.HORIZONTAL,
+      ),
       overlayBoxes: Array.isArray(job.ocr.overlayBoxes) ? job.ocr.overlayBoxes : [],
       originalOverlayBoxes: Array.isArray(job.ocr.originalOverlayBoxes) ? job.ocr.originalOverlayBoxes : [],
       originalLayoutText: job.ocr.originalLayoutText || '',
@@ -313,12 +398,14 @@ const runFileOcr = async (job, payload, spaceCount) => {
     const rawText = typeof data?.text === 'string' ? data.text : '';
     const boxes = parseOcrText(rawText);
     const overlayBoxes = enrichBoxesForOverlay(boxes);
-    const textResult = buildTextsFromBoxes(boxes, spaceCount);
+    const textResult = buildTextsFromBoxes(boxes, spaceCount, 'auto');
 
     return {
       rawText,
       layoutText: textResult.layoutText || rawText,
       paragraphText: textResult.paragraphText || rawText,
+      layoutDirection: textResult.layoutDirection,
+      originalLayoutDirection: textResult.layoutDirection,
       overlayBoxes,
       originalOverlayBoxes: overlayBoxes,
       originalLayoutText: textResult.layoutText || rawText,
@@ -756,6 +843,7 @@ exports.updateText = async (req, res) => {
   const spaceCount = normalizeSpaceCount(req.body?.space_count);
   const rebuildFromBoxes = String(req.body?.rebuild_from_boxes || '').toLowerCase() === 'true';
   const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+  const requestedDirection = req.body?.direction || req.body?.layout_direction || 'auto';
 
   try {
     const job = await OcrTtsJob.findById(jobId);
@@ -768,12 +856,23 @@ exports.updateText = async (req, res) => {
 
     job.ocr.spaceCount = spaceCount;
     if (rebuildFromBoxes && Array.isArray(job.ocr.originalOverlayBoxes) && job.ocr.originalOverlayBoxes.length) {
-      const rebuilt = buildTextsFromBoxes(job.ocr.originalOverlayBoxes, spaceCount);
+      const rebuilt = buildTextsFromBoxes(job.ocr.originalOverlayBoxes, spaceCount, requestedDirection);
       job.ocr.layoutText = rebuilt.layoutText;
       job.ocr.paragraphText = rebuilt.paragraphText;
+      job.ocr.layoutDirection = rebuilt.layoutDirection;
+      if (!job.ocr.originalLayoutDirection) {
+        job.ocr.originalLayoutDirection = rebuilt.layoutDirection;
+      }
     } else if (text) {
       job.ocr.layoutText = text;
       job.ocr.paragraphText = text;
+      job.ocr.layoutDirection = normalizeDirection(
+        requestedDirection,
+        job.ocr.layoutDirection || TEXT_DIRECTION.HORIZONTAL,
+      );
+    }
+    if (!job.ocr.originalLayoutDirection) {
+      job.ocr.originalLayoutDirection = job.ocr.layoutDirection || TEXT_DIRECTION.HORIZONTAL;
     }
     job.updatedAt = new Date();
     job.embeddingStatus = 'pending';

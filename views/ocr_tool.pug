@@ -499,6 +499,64 @@ block styles
       border-color: var(--ocr-focus);
     }
 
+    .direction-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0.5rem 0;
+    }
+
+    .direction-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.45rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--ocr-border);
+      background: var(--ocr-surface-2);
+      color: var(--ocr-text-secondary);
+      font-size: 0.85rem;
+    }
+
+    .direction-label .pill-strong {
+      color: var(--ocr-text);
+      font-weight: 600;
+    }
+
+    .direction-label.is-muted {
+      color: var(--ocr-text-muted);
+    }
+
+    .direction-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .direction-toggle {
+      border: 1px solid var(--ocr-border);
+      background: transparent;
+      color: var(--ocr-text);
+      padding: 0.4rem 0.75rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+    }
+
+    .direction-toggle:hover {
+      border-color: var(--ocr-accent);
+      color: var(--ocr-accent);
+      background: rgba(255, 194, 71, 0.08);
+    }
+
+    .direction-toggle.is-active {
+      border-color: var(--ocr-brand);
+      color: var(--ocr-brand);
+      background: rgba(255, 106, 31, 0.1);
+      box-shadow: 0 0 0 1px rgba(255, 106, 31, 0.15);
+    }
+
     .edit-actions {
       display: flex;
       justify-content: flex-end;
@@ -942,23 +1000,48 @@ block script
         return enrichBoxesForOverlay(results);
       };
 
-      const computeLayoutTextFromSegments = (segments = []) => {
-        if (!Array.isArray(segments) || !segments.length) return '';
+      const TEXT_DIRECTION = {
+        HORIZONTAL: 'horizontal',
+        VERTICAL: 'vertical',
+      };
+
+      const directionLabel = (value) => (value === TEXT_DIRECTION.VERTICAL
+        ? 'Vertical (right to left columns)'
+        : 'Horizontal (left to right rows)');
+
+      const normalizeDirection = (value, fallback = TEXT_DIRECTION.HORIZONTAL) => {
+        if (value === TEXT_DIRECTION.VERTICAL) return TEXT_DIRECTION.VERTICAL;
+        if (value === TEXT_DIRECTION.HORIZONTAL) return TEXT_DIRECTION.HORIZONTAL;
+        return fallback;
+      };
+
+      const guessDirection = (segments = [], fallback = TEXT_DIRECTION.HORIZONTAL) => {
+        if (!Array.isArray(segments) || !segments.length) return fallback;
+        let horizontalCount = 0;
+        let verticalCount = 0;
+        segments.forEach((box) => {
+          if (!box) return;
+          const width = Math.max(1, box.endX - box.startX);
+          const height = Math.max(1, box.endY - box.startY);
+          if (width > height) {
+            horizontalCount += 1;
+          } else if (height > width) {
+            verticalCount += 1;
+          }
+        });
+        if (verticalCount > horizontalCount) return TEXT_DIRECTION.VERTICAL;
+        if (horizontalCount > verticalCount) return TEXT_DIRECTION.HORIZONTAL;
+        return fallback;
+      };
+
+      const buildHorizontalRows = (segments = []) => {
         const height = (box) => Math.max(1, box.endY - box.startY);
         const yOverlap = (a, b) => Math.max(0, Math.min(a.endY, b.endY) - Math.max(a.startY, b.startY));
         const sharesRow = (a, b) => {
           const overlap = yOverlap(a, b);
           return overlap >= 0.5 * height(a) && overlap >= 0.5 * height(b);
         };
-        const normalized = segments
-          .filter((box) => box && typeof box.text === 'string')
-          .map((box) => ({
-            ...box,
-            text: box.text.trim(),
-          }))
-          .filter((box) => box.text);
-        if (!normalized.length) return '';
-        const sorted = normalized.sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
+        const sorted = segments.sort((a, b) => (a.startY - b.startY) || (a.startX - b.startX));
         const rows = [];
         sorted.forEach((box) => {
           const targetRow = rows.find((row) => row.some((entry) => sharesRow(entry, box)));
@@ -968,15 +1051,59 @@ block script
             rows.push([box]);
           }
         });
+        return rows.map((row) => row.sort((a, b) => a.startX - b.startX));
+      };
+
+      const buildVerticalColumns = (segments = []) => {
+        const width = (box) => Math.max(1, box.endX - box.startX);
+        const xOverlap = (a, b) => Math.max(0, Math.min(a.endX, b.endX) - Math.max(a.startX, b.startX));
+        const sharesColumn = (a, b) => {
+          const overlap = xOverlap(a, b);
+          return overlap >= 0.5 * width(a) && overlap >= 0.5 * width(b);
+        };
+        const sorted = segments.sort((a, b) => (b.startX - a.startX) || (a.startY - b.startY));
+        const columns = [];
+        sorted.forEach((box) => {
+          const targetColumn = columns.find((column) => column.some((entry) => sharesColumn(entry, box)));
+          if (targetColumn) {
+            targetColumn.push(box);
+          } else {
+            columns.push([box]);
+          }
+        });
+        return columns.map((column) => column.sort((a, b) => a.startY - b.startY));
+      };
+
+      const computeLayoutResult = (segments = [], direction = 'auto') => {
+        if (!Array.isArray(segments) || !segments.length) {
+          return { text: '', direction: normalizeDirection(direction) };
+        }
+        const normalized = segments
+          .filter((box) => box && typeof box.text === 'string')
+          .map((box) => ({
+            ...box,
+            text: box.text.trim(),
+          }))
+          .filter((box) => box.text);
+        if (!normalized.length) {
+          return { text: '', direction: normalizeDirection(direction) };
+        }
+        const resolvedDirection = direction === 'auto'
+          ? guessDirection(normalized, TEXT_DIRECTION.HORIZONTAL)
+          : normalizeDirection(direction, TEXT_DIRECTION.HORIZONTAL);
+        const rows = resolvedDirection === TEXT_DIRECTION.VERTICAL
+          ? buildVerticalColumns([...normalized])
+          : buildHorizontalRows([...normalized]);
         const lines = rows
           .map((row) => row
-            .sort((a, b) => a.startX - b.startX)
             .map((box) => (box.text || '').trim())
             .filter(Boolean)
             .join('  '))
           .filter(Boolean);
-        return lines.join('\n');
+        return { text: lines.join('\n'), direction: resolvedDirection, rows };
       };
+
+      const computeLayoutTextFromSegments = (segments = [], direction = 'auto') => computeLayoutResult(segments, direction).text;
 
       const hasActiveJobs = () => state.jobs.some((job) => job.status === 'processing' || job.status === 'queued');
 
@@ -1046,17 +1173,50 @@ block script
         }));
       };
 
+      const resolveDirectionForFile = (jobId, fileId, segments = []) => {
+        const layoutField = jobDetailsEl?.querySelector(`[data-layout-input="${fileId}"]`);
+        const guess = guessDirection(segments, TEXT_DIRECTION.HORIZONTAL);
+        if (layoutField?.dataset.layoutDirection) {
+          return normalizeDirection(layoutField.dataset.layoutDirection, guess);
+        }
+        const job = state.jobDetails[jobId];
+        const file = job?.files?.find((f) => f.id === fileId);
+        if (file?.result?.layoutDirection) {
+          return normalizeDirection(file.result.layoutDirection, guess);
+        }
+        return guess;
+      };
+
+      const updateDirectionControls = (fileId, direction, guess = direction) => {
+        const controls = jobDetailsEl?.querySelector(`[data-direction-controls="${fileId}"]`);
+        if (!controls) return;
+        controls.dataset.currentDirection = direction;
+        const currentLabel = controls.querySelector('[data-direction-current]');
+        const guessLabelEl = controls.querySelector('[data-direction-guess]');
+        if (currentLabel) currentLabel.textContent = directionLabel(direction);
+        if (guessLabelEl) guessLabelEl.textContent = directionLabel(guess);
+        controls.querySelectorAll('[data-apply-direction]').forEach((btn) => {
+          const targetDir = normalizeDirection(btn.dataset.applyDirection, direction);
+          const isActive = targetDir === direction && btn.dataset.applyDirection !== 'auto';
+          btn.classList.toggle('is-active', isActive);
+        });
+      };
+
       const updateLayoutFromSegments = (jobId, fileId) => {
         const layoutField = jobDetailsEl?.querySelector(`[data-layout-input="${fileId}"]`);
         if (!layoutField) return;
         const segments = collectSegmentsFromDom(fileId);
-        const layoutText = computeLayoutTextFromSegments(segments);
-        layoutField.value = layoutText;
+        const direction = resolveDirectionForFile(jobId, fileId, segments);
+        const layoutResult = computeLayoutResult(segments, direction);
+        layoutField.value = layoutResult.text;
+        layoutField.dataset.layoutDirection = layoutResult.direction;
+        updateDirectionControls(fileId, layoutResult.direction, guessDirection(segments, layoutResult.direction));
         const job = state.jobDetails[jobId];
         if (job) {
           const targetFile = job.files.find((f) => f.id === fileId);
           if (targetFile && targetFile.result) {
-            targetFile.result.layoutText = layoutText;
+            targetFile.result.layoutText = layoutResult.text;
+            targetFile.result.layoutDirection = layoutResult.direction;
           }
         }
       };
@@ -1116,6 +1276,25 @@ block script
         const rawId = `raw-${file.id}`;
         const layoutId = `layout-${file.id}`;
         const counts = summarizeCounts(job);
+        const direction = normalizeDirection(file?.result?.layoutDirection, TEXT_DIRECTION.HORIZONTAL);
+        const directionGuess = guessDirection(file?.result?.overlayBoxes || [], direction);
+        if (file?.result && !file.result.layoutDirection) {
+          file.result.layoutDirection = direction;
+        }
+        const directionControls = file.result
+          ? `
+            <div class="direction-controls" data-direction-controls="${file.id}" data-current-direction="${direction}">
+              <span class="direction-label">Direction: <span class="pill-strong" data-direction-current>${escapeHtml(directionLabel(direction))}</span></span>
+              <span class="direction-label is-muted">Guess: <span data-direction-guess>${escapeHtml(directionLabel(directionGuess))}</span></span>
+              <div class="direction-buttons">
+                <button class="direction-toggle ${direction === TEXT_DIRECTION.HORIZONTAL ? 'is-active' : ''}" type="button" data-apply-direction="horizontal" data-job-id="${job.id}" data-file-id="${file.id}">Horizontal</button>
+                <button class="direction-toggle ${direction === TEXT_DIRECTION.VERTICAL ? 'is-active' : ''}" type="button" data-apply-direction="vertical" data-job-id="${job.id}" data-file-id="${file.id}">Vertical (right to left)</button>
+                <button class="direction-toggle" type="button" data-apply-direction="auto" data-job-id="${job.id}" data-file-id="${file.id}">Auto guess</button>
+              </div>
+            </div>
+          `
+          : '';
+
         const fileInfo = [
           `Order ${order}/${counts.total || job.files.length}`,
           `${(file.size / 1024).toFixed(1)} KB`,
@@ -1177,7 +1356,8 @@ block script
                 <h5>Layout text</h5>
                 <button class="copy-btn" type="button" data-copy-source="${layoutId}">Copy</button>
               </div>
-              <textarea id="${layoutId}" class="layout-textarea" data-layout-input="${file.id}" data-job-id="${job.id}" placeholder="Edit OCR layout text and save.">${escapeHtml(layoutValue)}</textarea>
+              ${directionControls}
+              <textarea id="${layoutId}" class="layout-textarea" data-layout-input="${file.id}" data-job-id="${job.id}" data-layout-direction="${direction}" placeholder="Edit OCR layout text and save.">${escapeHtml(layoutValue)}</textarea>
               <p class="ocr-note">Edits are saved to the database and won't change the original job date.</p>
               <div class="edit-actions">
                 <button class="save-edits-btn" type="button" data-save-file="${file.id}" data-job-id="${job.id}">Save OCR edits</button>
@@ -1568,12 +1748,21 @@ block script
         const segments = Array.isArray(options.segmentsOverride)
           ? options.segmentsOverride
           : collectSegmentsFromDom(fileId);
+        const baseDirection = options.directionOverride
+          ? normalizeDirection(options.directionOverride, TEXT_DIRECTION.HORIZONTAL)
+          : resolveDirectionForFile(jobId, fileId, segments);
+        const layoutComputation = computeLayoutResult(segments, baseDirection);
         const layoutText = typeof options.layoutOverride === 'string'
           ? options.layoutOverride
-          : computeLayoutTextFromSegments(segments);
+          : layoutComputation.text;
+        const layoutDirection = options.directionOverride
+          ? normalizeDirection(options.directionOverride, layoutComputation.direction)
+          : layoutComputation.direction;
         if (layoutField) {
           layoutField.value = layoutText;
+          layoutField.dataset.layoutDirection = layoutDirection;
         }
+        updateDirectionControls(fileId, layoutDirection, guessDirection(segments, layoutDirection));
         state.savingEdits[fileId] = true;
         setFeedback('Saving OCR edits...', 'info');
 
@@ -1587,6 +1776,7 @@ block script
             body: JSON.stringify({
               layoutText,
               overlayBoxes: segments,
+              layoutDirection,
             }),
           });
           const payload = await response.json();
@@ -1715,6 +1905,34 @@ block script
       });
 
       document.addEventListener('click', (event) => {
+        const directionBtn = event.target.closest('[data-apply-direction]');
+        if (!directionBtn) return;
+        const jobId = directionBtn.dataset.jobId || state.selectedJobId;
+        const fileId = directionBtn.dataset.fileId;
+        if (!jobId || !fileId) return;
+        const direction = directionBtn.dataset.applyDirection || 'auto';
+        const segments = collectSegmentsFromDom(fileId);
+        const layoutResult = computeLayoutResult(segments, direction);
+        const layoutField = jobDetailsEl?.querySelector(`[data-layout-input="${fileId}"]`);
+        if (layoutField) {
+          layoutField.value = layoutResult.text;
+          layoutField.dataset.layoutDirection = layoutResult.direction;
+        }
+        updateDirectionControls(fileId, layoutResult.direction, guessDirection(segments, layoutResult.direction));
+        const job = state.jobDetails[jobId];
+        const file = job?.files?.find((entry) => entry.id === fileId);
+        if (file?.result) {
+          file.result.layoutText = layoutResult.text;
+          file.result.layoutDirection = layoutResult.direction;
+        }
+        saveOcrEdits(jobId, fileId, {
+          segmentsOverride: segments,
+          layoutOverride: layoutResult.text,
+          directionOverride: layoutResult.direction,
+        });
+      });
+
+      document.addEventListener('click', (event) => {
         const removeBtn = event.target.closest('[data-remove-segment]');
         if (!removeBtn) return;
         const row = removeBtn.closest('[data-segment-row]');
@@ -1745,13 +1963,23 @@ block script
         const targetBoxes = parsedBoxes.length
           ? parsedBoxes
           : (Array.isArray(file.result.originalOverlayBoxes) ? file.result.originalOverlayBoxes : []);
+        const baseDirection = file.result.originalLayoutDirection || file.result.layoutDirection || 'auto';
+        const layoutComputation = parsedBoxes.length
+          ? computeLayoutResult(parsedBoxes, baseDirection)
+          : computeLayoutResult(targetBoxes, baseDirection);
         const targetLayout = parsedBoxes.length
-          ? computeLayoutTextFromSegments(parsedBoxes)
-          : (file.result.originalLayoutText || file.result.layoutText || '');
+          ? layoutComputation.text
+          : (file.result.originalLayoutText || file.result.layoutText || layoutComputation.text);
+        const targetDirection = layoutComputation.direction;
         file.result.overlayBoxes = targetBoxes;
         file.result.layoutText = targetLayout;
+        file.result.layoutDirection = targetDirection;
         renderJobDetails();
-        saveOcrEdits(jobId, fileId, { segmentsOverride: targetBoxes, layoutOverride: targetLayout });
+        saveOcrEdits(jobId, fileId, {
+          segmentsOverride: targetBoxes,
+          layoutOverride: targetLayout,
+          directionOverride: targetDirection,
+        });
       });
 
       document.addEventListener('input', (event) => {
