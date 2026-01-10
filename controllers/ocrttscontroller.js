@@ -30,7 +30,7 @@ const logApiDebug = createApiDebugLogger('controllers/ocrttscontroller.js');
 const embeddingApiService = new EmbeddingApiService();
 const ttsService = new TtsService();
 
-const resolveDefaultVoiceId = () => ttsService.getDefaultVoiceId() || DEFAULT_TTS_VOICE;
+const resolveDefaultVoiceId = () => DEFAULT_TTS_VOICE;
 
 const jobQueue = [];
 let activeJobId = null;
