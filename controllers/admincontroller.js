@@ -55,6 +55,16 @@ const routes = [
   "archive",
 ];
 
+const AI_GATEWAY_BASE_URL = process.env.AI_GATEWAY_BASE_URL || 'http://192.168.0.20:8080';
+const AI_GATEWAY_ENDPOINTS = {
+  metrics: '/metrics',
+  gpu: '/gpu',
+  limits: '/limits',
+  health: '/health',
+  logs: '/logs/tail?n=50',
+};
+const AI_GATEWAY_TIMEOUT_MS = 5000;
+
 function parseCheckbox(value) {
   return value === 'on' || value === 'true' || value === true || value === '1';
 }
@@ -1009,6 +1019,478 @@ exports.openai_usage = async (req, res) => {
     monthlyTimeline,
     monthlyCards,
     usageMetrics,
+  });
+};
+
+function asNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function parseMetricLabels(labelBlock) {
+  const labels = {};
+  if (!labelBlock || !labelBlock.startsWith('{') || !labelBlock.endsWith('}')) {
+    return labels;
+  }
+
+  const content = labelBlock.slice(1, -1);
+  content.split(',').forEach((pair) => {
+    if (!pair) {
+      return;
+    }
+    const [rawKey, rawValue] = pair.split('=');
+    if (!rawKey || rawValue === undefined) {
+      return;
+    }
+    const key = rawKey.trim();
+    const value = rawValue.trim().replace(/^"/, '').replace(/"$/, '');
+    labels[key] = value;
+  });
+
+  return labels;
+}
+
+function parsePrometheusMetrics(rawText) {
+  const entries = [];
+  const byName = {};
+  const lines = String(rawText || '').split('\n');
+  const metricRegex = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)/;
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      return;
+    }
+
+    const match = metricRegex.exec(trimmed);
+    if (!match) {
+      return;
+    }
+
+    const name = match[1];
+    const labels = parseMetricLabels(match[2]);
+    const value = asNumber(match[3]);
+    if (value === null) {
+      return;
+    }
+
+    const entry = { name, labels, value };
+    entries.push(entry);
+    if (!byName[name]) {
+      byName[name] = [];
+    }
+    byName[name].push(entry);
+  });
+
+  return { entries, byName };
+}
+
+function pickMetricValue(metricsByName, metricName) {
+  const entries = metricsByName[metricName];
+  if (!entries || !entries.length) {
+    return null;
+  }
+  const match = entries.find((entry) => asNumber(entry.value) !== null);
+  if (!match) {
+    return null;
+  }
+  return asNumber(match.value);
+}
+
+function buildGatewayRequestStats(metricsByName) {
+  const entries = metricsByName.ai_gateway_requests_total || [];
+  const routes = new Map();
+  let total = 0;
+  let success = 0;
+  let errors = 0;
+
+  entries.forEach((entry) => {
+    const count = asNumber(entry.value) || 0;
+    const route = entry.labels?.route || 'unknown';
+    const status = entry.labels?.status || 'unknown';
+    total += count;
+    if (String(status).startsWith('2')) {
+      success += count;
+    } else {
+      errors += count;
+    }
+
+    if (!routes.has(route)) {
+      routes.set(route, { route, total: 0, statuses: {} });
+    }
+    const bucket = routes.get(route);
+    bucket.total += count;
+    bucket.statuses[status] = (bucket.statuses[status] || 0) + count;
+  });
+
+  const routeList = Array.from(routes.values()).sort((a, b) => b.total - a.total);
+  return { totals: { total, success, errors }, routes: routeList };
+}
+
+function buildGatewayDurationStats(metricsByName) {
+  const sums = metricsByName.ai_gateway_request_duration_seconds_sum || [];
+  const counts = metricsByName.ai_gateway_request_duration_seconds_count || [];
+  const sumMap = new Map();
+  const countMap = new Map();
+
+  sums.forEach((entry) => {
+    const route = entry.labels?.route || 'unknown';
+    const value = asNumber(entry.value) || 0;
+    sumMap.set(route, (sumMap.get(route) || 0) + value);
+  });
+
+  counts.forEach((entry) => {
+    const route = entry.labels?.route || 'unknown';
+    const value = asNumber(entry.value) || 0;
+    countMap.set(route, (countMap.get(route) || 0) + value);
+  });
+
+  const durations = [];
+  sumMap.forEach((sum, route) => {
+    const count = countMap.get(route) || 0;
+    if (count <= 0) {
+      return;
+    }
+    durations.push({
+      route,
+      averageSeconds: sum / count,
+      count,
+    });
+  });
+
+  return durations.sort((a, b) => b.averageSeconds - a.averageSeconds);
+}
+
+function buildGatewayGpuStats(metricsByName, gpuData, healthData) {
+  const healthGpu = healthData?.gpu || {};
+  const gpuNow = gpuData && typeof gpuData === 'object' ? (gpuData.now || gpuData) : {};
+  const totalBytes = pickMetricValue(metricsByName, 'ai_gateway_gpu_vram_total_bytes')
+    || asNumber(gpuNow.vram_total_bytes)
+    || asNumber(healthGpu.vram_total_bytes);
+  const usedBytes = pickMetricValue(metricsByName, 'ai_gateway_gpu_vram_used_bytes')
+    || asNumber(gpuNow.vram_used_bytes)
+    || asNumber(healthGpu.vram_used_bytes);
+  const freeBytes = pickMetricValue(metricsByName, 'ai_gateway_gpu_vram_free_bytes')
+    || asNumber(gpuNow.vram_free_bytes)
+    || asNumber(healthGpu.vram_free_bytes);
+  const busyPercent = pickMetricValue(metricsByName, 'ai_gateway_gpu_busy_percent')
+    || asNumber(gpuNow.gpu_busy_percent)
+    || asNumber(healthGpu.gpu_busy_percent);
+  const tempC = pickMetricValue(metricsByName, 'ai_gateway_gpu_temp_celsius')
+    || asNumber(gpuNow.temp_c)
+    || asNumber(healthGpu.temp_c);
+
+  const usedPercent = totalBytes ? calculatePercent(totalBytes, usedBytes || 0) : 0;
+
+  return {
+    totalBytes,
+    usedBytes,
+    freeBytes,
+    busyPercent,
+    tempC,
+    usedPercent,
+    totalDisplay: formatBytes(totalBytes || 0),
+    usedDisplay: formatBytes(usedBytes || 0),
+    freeDisplay: formatBytes(freeBytes || 0),
+    busyDisplay: busyPercent !== null && busyPercent !== undefined
+      ? `${busyPercent.toFixed(1)}%`
+      : '—',
+    tempDisplay: tempC !== null && tempC !== undefined
+      ? `${tempC.toFixed(1)}°C`
+      : '—',
+  };
+}
+
+function buildGatewayWaiterStats(metricsByName, healthData) {
+  const waiters = {
+    ocrWaiters: pickMetricValue(metricsByName, 'ai_gateway_ocr_waiters'),
+    ttsWaiters: pickMetricValue(metricsByName, 'ai_gateway_tts_waiters'),
+    llmWaiters: pickMetricValue(metricsByName, 'ai_gateway_llm_waiters'),
+    ocrActive: pickMetricValue(metricsByName, 'ai_gateway_ocr_active'),
+    ttsActive: pickMetricValue(metricsByName, 'ai_gateway_tts_active'),
+    llmActive: pickMetricValue(metricsByName, 'ai_gateway_llm_active'),
+  };
+
+  const applyFallback = (key, fallback) => {
+    if (waiters[key] === null || waiters[key] === undefined) {
+      const value = asNumber(fallback);
+      if (value !== null) {
+        waiters[key] = value;
+      }
+    }
+  };
+
+  applyFallback('ocrWaiters', healthData?.ocr_waiters);
+  applyFallback('ttsWaiters', healthData?.tts_waiters);
+  applyFallback('llmWaiters', healthData?.llm_waiters);
+
+  return waiters;
+}
+
+function normalizeLogEntry(rawEntry) {
+  if (!rawEntry || typeof rawEntry !== 'object') {
+    return null;
+  }
+
+  const tsMs = asNumber(rawEntry.ts);
+  const resolvedTsMs = tsMs !== null ? tsMs * 1000 : null;
+
+  return {
+    tsMs: resolvedTsMs,
+    isoTime: resolvedTsMs ? new Date(resolvedTsMs).toISOString() : null,
+    route: rawEntry.route || 'unknown',
+    statusCode: rawEntry.status_code || rawEntry.status,
+    durationSec: asNumber(rawEntry.duration_sec),
+    queueWaitSec: asNumber(rawEntry.queue_wait_sec),
+    backend: rawEntry.backend,
+    model: rawEntry.model,
+    voiceId: rawEntry.voice_id,
+    textChars: asNumber(rawEntry.text_chars),
+    responseBytes: asNumber(rawEntry.response_bytes || rawEntry.response_bytes_approx),
+  };
+}
+
+function parseGatewayLogs(rawLogs) {
+  if (!rawLogs) {
+    return [];
+  }
+
+  let entries = [];
+  if (Array.isArray(rawLogs)) {
+    entries = rawLogs;
+  } else if (typeof rawLogs === 'object') {
+    entries = [rawLogs];
+  } else {
+    const text = String(rawLogs || '').trim();
+    if (!text) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        entries = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        entries = [parsed];
+      }
+    } catch (error) {
+      const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+      entries = lines.map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch (parseError) {
+          return null;
+        }
+      }).filter(Boolean);
+    }
+  }
+
+  return entries.map(normalizeLogEntry).filter(Boolean).sort((a, b) => (a.tsMs || 0) - (b.tsMs || 0));
+}
+
+function buildGpuTimeline(gpuData) {
+  const tail = Array.isArray(gpuData?.tail) ? gpuData.tail : [];
+  const now = gpuData?.now && typeof gpuData.now === 'object' ? gpuData.now : null;
+  const points = tail.map((entry) => ({
+    tsMs: asNumber(entry.ts) ? asNumber(entry.ts) * 1000 : null,
+    busyPercent: asNumber(entry.gpu_busy_percent),
+    vramUsedBytes: asNumber(entry.vram_used_bytes),
+    tempC: asNumber(entry.temp_c),
+  })).filter((point) => point.tsMs !== null).sort((a, b) => a.tsMs - b.tsMs);
+
+  const latestSource = now || (tail.length ? tail[tail.length - 1] : null);
+  const latest = latestSource ? {
+    tsMs: latestSource.ts ? asNumber(latestSource.ts) * 1000 : Date.now(),
+    busyPercent: asNumber(latestSource.gpu_busy_percent),
+    vramUsedBytes: asNumber(latestSource.vram_used_bytes),
+    tempC: asNumber(latestSource.temp_c),
+  } : null;
+
+  return { points, latest };
+}
+
+function normalizeGatewayHealth(rawHealth) {
+  const upstreamEntries = [];
+  if (rawHealth?.upstreams && typeof rawHealth.upstreams === 'object') {
+    Object.entries(rawHealth.upstreams).forEach(([key, value]) => {
+      upstreamEntries.push({
+        key,
+        ok: Boolean(value?.ok),
+        statusCode: value?.status_code || value?.statusCode,
+        status: value?.json?.status || value?.status || '',
+        model: value?.json?.model || value?.json?.gpu_name || value?.json?.backend,
+        detail: value?.json?.error || value?.error || null,
+      });
+    });
+  }
+
+  return {
+    status: rawHealth?.status || 'unknown',
+    upstreams: upstreamEntries,
+    upstreamOk: upstreamEntries.filter((u) => u.ok).length,
+    upstreamTotal: upstreamEntries.length,
+    gpu: rawHealth?.gpu || null,
+  };
+}
+
+function normalizeGatewayLimits(rawLimits) {
+  if (!rawLimits || typeof rawLimits !== 'object') {
+    return null;
+  }
+
+  const ocrConfig = rawLimits.ocr || null;
+  const llmConfig = rawLimits.llm || {};
+  const models = Array.isArray(llmConfig.models) ? llmConfig.models : [];
+
+  return {
+    ocr: ocrConfig
+      ? {
+          ...ocrConfig,
+          maxUploadDisplay: formatBytes(ocrConfig.max_upload_bytes || 0),
+          maxPixelsDisplay: formatNumber(ocrConfig.max_pixels || 0),
+          maxEdgeDisplay: ocrConfig.max_long_edge ? `${formatNumber(ocrConfig.max_long_edge)} px` : null,
+          maxTokensDisplay: ocrConfig.max_new_tokens_cap ? formatNumber(ocrConfig.max_new_tokens_cap) : null,
+          concurrencyDisplay: ocrConfig.concurrency ? formatNumber(ocrConfig.concurrency) : null,
+        }
+      : null,
+    llm: {
+      defaultModel: llmConfig.default_model || llmConfig.defaultModel || '',
+      models: models.map((model) => ({
+        ...model,
+        maxContextDisplay: model.max_context_tokens ? formatNumber(model.max_context_tokens) : null,
+        maxOutputDisplay: model.max_output_tokens ? formatNumber(model.max_output_tokens) : null,
+      })),
+    },
+  };
+}
+
+function buildAiGatewayDashboard(rawData) {
+  const metricsParsed = parsePrometheusMetrics(rawData.metricsText || '');
+  const metricsByName = metricsParsed.byName || {};
+  const requests = buildGatewayRequestStats(metricsByName);
+  const durations = buildGatewayDurationStats(metricsByName);
+  const health = normalizeGatewayHealth(rawData.health);
+  const gpu = buildGatewayGpuStats(metricsByName, rawData.gpu, rawData.health);
+  const waiters = buildGatewayWaiterStats(metricsByName, rawData.health);
+  const logs = parseGatewayLogs(rawData.logsRaw);
+  const gpuTimeline = buildGpuTimeline(rawData.gpu);
+  const limits = normalizeGatewayLimits(rawData.limits);
+  const successRate = calculatePercent(requests.totals.total || 0, requests.totals.success || 0);
+  const errorRate = calculatePercent(requests.totals.total || 0, requests.totals.errors || 0);
+
+  const weightedAverageDuration = (() => {
+    const totalCount = durations.reduce((sum, entry) => sum + entry.count, 0);
+    if (!totalCount) {
+      return null;
+    }
+    const weightedTotal = durations.reduce((sum, entry) => sum + (entry.averageSeconds * entry.count), 0);
+    return weightedTotal / totalCount;
+  })();
+
+  const summaryCards = [
+    {
+      label: 'Gateway',
+      value: health.status === 'ok' ? 'Healthy' : (health.status || 'Unknown'),
+      helper: `${health.upstreamOk}/${health.upstreamTotal || 0} upstreams responding`,
+    },
+    {
+      label: 'Requests',
+      value: formatNumber(requests.totals.total),
+      helper: `${formatPercent(successRate)} success · ${formatPercent(errorRate)} error`,
+    },
+    {
+      label: 'GPU',
+      value: gpu.busyPercent !== null && gpu.busyPercent !== undefined
+        ? `${gpu.busyPercent.toFixed(1)}% busy`
+        : 'GPU idle',
+      helper: `${gpu.usedDisplay} / ${gpu.totalDisplay} VRAM`,
+    },
+  ];
+
+  const queueHelperParts = [];
+  if (waiters.ttsWaiters !== null && waiters.ttsWaiters !== undefined) queueHelperParts.push(`TTS waiters ${waiters.ttsWaiters}`);
+  if (waiters.ocrWaiters !== null && waiters.ocrWaiters !== undefined) queueHelperParts.push(`OCR waiters ${waiters.ocrWaiters}`);
+  if (waiters.llmWaiters !== null && waiters.llmWaiters !== undefined) queueHelperParts.push(`LLM waiters ${waiters.llmWaiters}`);
+
+  if (queueHelperParts.length || (waiters.ttsActive !== null || waiters.ocrActive !== null || waiters.llmActive !== null)) {
+    summaryCards.push({
+      label: 'Queues',
+      value: [
+        waiters.ttsActive !== null && waiters.ttsActive !== undefined ? `TTS ${waiters.ttsActive} active` : null,
+        waiters.ocrActive !== null && waiters.ocrActive !== undefined ? `OCR ${waiters.ocrActive} active` : null,
+        waiters.llmActive !== null && waiters.llmActive !== undefined ? `LLM ${waiters.llmActive} active` : null,
+      ].filter(Boolean).join(' · ') || 'No active slots',
+      helper: queueHelperParts.join(' · ') || 'Queue metrics unavailable',
+    });
+  } else if (weightedAverageDuration !== null) {
+    summaryCards.push({
+      label: 'Avg duration',
+      value: `${weightedAverageDuration.toFixed(2)}s`,
+      helper: durations[0]?.route
+        ? `${durations[0].route} slowest at ${durations[0].averageSeconds.toFixed(2)}s`
+        : 'Based on /metrics histogram',
+    });
+  }
+
+  return {
+    fetchedAt: new Date().toISOString(),
+    baseUrl: AI_GATEWAY_BASE_URL,
+    summaryCards,
+    requests,
+    durations,
+    gpu,
+    waiters,
+    limits,
+    health,
+    logs,
+    errors: rawData.errors || {},
+    chartData: {
+      requests: requests.routes,
+      durations,
+      gpuTimeline,
+      logs,
+    },
+  };
+}
+
+exports.ai_gateway_dashboard = async (req, res) => {
+  const endpoints = [
+    { key: 'metricsText', path: AI_GATEWAY_ENDPOINTS.metrics, responseType: 'text' },
+    { key: 'gpu', path: AI_GATEWAY_ENDPOINTS.gpu },
+    { key: 'limits', path: AI_GATEWAY_ENDPOINTS.limits },
+    { key: 'health', path: AI_GATEWAY_ENDPOINTS.health },
+    { key: 'logsRaw', path: AI_GATEWAY_ENDPOINTS.logs, responseType: 'text' },
+  ];
+
+  const rawData = { errors: {} };
+  const tasks = endpoints.map((endpoint) => axios.get(
+    `${AI_GATEWAY_BASE_URL}${endpoint.path}`,
+    {
+      timeout: AI_GATEWAY_TIMEOUT_MS,
+      responseType: endpoint.responseType || 'json',
+    },
+  ));
+
+  const results = await Promise.allSettled(tasks);
+  results.forEach((result, index) => {
+    const { key } = endpoints[index];
+    if (result.status === 'fulfilled') {
+      rawData[key] = result.value.data;
+    } else {
+      const message = result.reason?.response?.status
+        ? `${result.reason.response.status} ${result.reason.response.statusText || ''}`.trim()
+        : result.reason?.message || 'Request failed.';
+      rawData.errors[key] = message;
+      logger.warning('Failed to fetch AI gateway endpoint', {
+        category: 'ai_gateway',
+        metadata: { key, error: message },
+      });
+    }
+  });
+
+  const dashboard = buildAiGatewayDashboard(rawData);
+
+  return res.render('admin_ai_gateway', {
+    dashboard,
   });
 };
 

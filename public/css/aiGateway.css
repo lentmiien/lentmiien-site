@@ -1,0 +1,249 @@
+.ai-gateway {
+  padding: 1.5rem 0 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.ai-gateway__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.ai-gateway__heading h1 {
+  margin: 0 0 0.35rem;
+}
+
+.ai-gateway__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.meta-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.stat-card {
+  background: linear-gradient(145deg, rgba(255, 194, 71, 0.1), rgba(23, 26, 32, 0.6));
+  border: 1px solid rgba(255, 194, 71, 0.24);
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.35);
+}
+
+.stat-card__label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.stat-card__value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0.25rem 0;
+  color: var(--accent);
+}
+
+.stat-card__helper {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.ai-gateway__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.ai-gateway__details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 1rem;
+}
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.panel__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.panel__title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+
+.panel__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.chart-shell {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: 280px;
+  padding: 0.5rem;
+  position: relative;
+}
+
+.chart-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.chart-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.chart-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.health-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  background: var(--surface-2);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.28);
+}
+
+.health-card--ok {
+  border-color: rgba(59, 201, 137, 0.35);
+}
+
+.health-card--fail {
+  border-color: rgba(255, 99, 99, 0.35);
+}
+
+.health-card__title {
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.health-card__status {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.health-card__meta {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.health-card__detail {
+  margin-top: 0.35rem;
+  color: #ff8b7b;
+  font-size: 0.9rem;
+}
+
+.limits-title {
+  margin: 0.25rem 0;
+  font-weight: 700;
+}
+
+.limits-list {
+  padding-left: 1.1rem;
+  color: var(--text-secondary);
+}
+
+.models-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.model-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface-2);
+}
+
+.model-card__name {
+  font-weight: 700;
+}
+
+.model-card__meta {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.model-card__badge {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  background: rgba(255, 194, 71, 0.15);
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.model-card__badge--muted {
+  background: rgba(154, 163, 178, 0.15);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  .ai-gateway__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .chart-shell {
+    min-height: 240px;
+  }
+}
