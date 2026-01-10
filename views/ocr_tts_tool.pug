@@ -372,6 +372,7 @@ block script
         defaultVoiceId: TTS_VOICES?.defaultVoiceId || (DEFAULTS && DEFAULTS.voice) || null,
         replayQueue: [],
         replayGroup: null,
+        voiceDrafts: {},
       };
       if (!state.defaultVoiceId && state.defaults.voice) {
         state.defaultVoiceId = state.defaults.voice;
@@ -437,6 +438,14 @@ block script
           entries.push(`<option value="${escapeHtml(voice.voiceId)}" ${selected}>${escapeHtml(parts.join(' '))}</option>`);
         });
         return `<select id="ocrttsVoice" class="ocrtts-form">${entries.join('')}</select>`;
+      }
+
+      function resolveVoiceSelection(detail) {
+        const jobId = detail?.id || state.selectedJobId;
+        if (jobId && Object.prototype.hasOwnProperty.call(state.voiceDrafts, jobId)) {
+          return state.voiceDrafts[jobId];
+        }
+        return detail?.defaultAudio?.voice || state.defaultVoiceId || state.defaults.voice || '';
       }
 
       function setFeedback(message, type = 'info') {
@@ -572,6 +581,7 @@ block script
             ? `Embedding failed: ${detail.embeddingError || 'Unknown error'}`
             : 'Embedding pending';
         const embedNote = escapeHtml(embedNoteRaw);
+        const voiceSelection = resolveVoiceSelection(detail);
         detailEl.innerHTML = `
           <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
             ${statusPill(detail.status)}
@@ -596,7 +606,7 @@ block script
           <div class="d-flex gap-2 flex-wrap align-items-end mb-2">
             <div>
               <label>Voice</label>
-              ${buildVoiceSelect(detail.defaultAudio?.voice || state.defaults.voice)}
+              ${buildVoiceSelect(voiceSelection)}
             </div>
             <button id="ocrttsGenerateAudio" class="ocrtts-btn" type="button">Generate audio</button>
           </div>
@@ -935,6 +945,13 @@ block script
         }
       }
 
+      function handleVoiceChange(event) {
+        if (!state.selectedJobId) return;
+        const voiceSelect = event.target.closest('#ocrttsVoice');
+        if (!voiceSelect) return;
+        state.voiceDrafts[state.selectedJobId] = voiceSelect.value;
+      }
+
       function toggleAutoplay() {
         state.autoPlay = !state.autoPlay;
         if (autoplayToggle) {
@@ -1025,6 +1042,7 @@ block script
         if (event.target.closest('#ocrttsEmbedHq')) embedHighQuality();
         handleAudioAction(event);
       });
+      document.addEventListener('change', handleVoiceChange);
       if (groupFilterEl) {
         groupFilterEl.addEventListener('change', () => {
           state.groupFilter = groupFilterEl.value || null;
