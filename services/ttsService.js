@@ -5,39 +5,40 @@ const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.TTS_API_BASE || 'http://192.168.0.20:8080';
-const TTS_GENERATE_PATH = '/tts/openaudio';
-const TTS_REFERENCE_LIST_PATH = '/tts/openaudio/references/list';
+const TTS_GENERATE_PATH = '/tts';
+const TTS_VOICE_LIST_PATH = '/tts/voices';
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'mp3');
-const MAX_NEW_TOKENS_MAX = 8192;
-const TOKENS_PER_500_CHARS = 1024;
-const LONG_PROMPT_TOKEN_THRESHOLD = 3000;
-const LONG_PROMPT_BOOST = 1.2;
 const JS_FILE_NAME = 'services/ttsService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 
-function isJapaneseReference(referenceId) {
-  if (!referenceId) return false;
-  const normalized = referenceId.toLowerCase().trim();
-  return normalized.endsWith('_jp');
-}
+const CONTENT_TYPE_EXTENSION_MAP = {
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/vnd.wave': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/ogg': 'ogg',
+  'audio/opus': 'opus',
+  'audio/webm': 'webm',
+  'audio/flac': 'flac',
+};
 
 class TtsService {
   constructor({ apiBase = DEFAULT_API_BASE, outputDir = DEFAULT_OUTPUT_DIR } = {}) {
     this.apiBase = (apiBase || DEFAULT_API_BASE).replace(/\/+$/, '');
     this.outputDir = outputDir;
-    this.referenceVoiceCache = {
-      referenceIds: [],
+    this.voiceCache = {
+      voices: [],
+      defaultVoiceId: null,
       lastUpdated: null,
       lastError: null,
     };
 
-    this.updateVoiceCache().catch((error) => {
+    this.refreshVoiceCache().catch((error) => {
       logger.warning('Failed to warm TTS voice cache (service)', {
         category: 'tts_service',
-        metadata: {
-          apiBase: this.apiBase,
-          message: error?.message,
-        },
+        metadata: { apiBase: this.apiBase, message: error?.message },
       });
     });
   }
@@ -46,49 +47,52 @@ class TtsService {
     await fs.promises.mkdir(this.outputDir, { recursive: true });
   }
 
-  normalizeFormat(raw) {
-    const allowed = new Set(['wav', 'pcm', 'mp3', 'opus']);
-    if (allowed.has(raw)) {
-      return raw;
+  sanitizeVoiceList(rawList) {
+    if (!Array.isArray(rawList)) return [];
+    return rawList
+      .filter((entry) => entry && typeof entry.voice_id === 'string')
+      .map((entry) => ({
+        voiceId: entry.voice_id.trim(),
+        backend: typeof entry.backend === 'string' ? entry.backend.trim() : null,
+        displayName: typeof entry.display_name === 'string'
+          ? entry.display_name.trim()
+          : (typeof entry.displayName === 'string' ? entry.displayName.trim() : entry.voice_id.trim()),
+        language: typeof entry.language === 'string' ? entry.language.trim() : null,
+      }))
+      .filter((entry) => entry.voiceId.length > 0);
+  }
+
+  resolveFileExtension(preferredFormat, headers) {
+    const normalizedPreferred = typeof preferredFormat === 'string'
+      ? preferredFormat.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+      : '';
+    if (normalizedPreferred) {
+      return normalizedPreferred;
     }
-    return 'mp3';
-  }
-
-  estimateMaxTokens(text, referenceId = '') {
-    const length = typeof text === 'string' ? text.length : 0;
-    const per500 = isJapaneseReference(referenceId) ? TOKENS_PER_500_CHARS * 2 : TOKENS_PER_500_CHARS;
-    if (length <= 0) return Math.min(MAX_NEW_TOKENS_MAX, per500);
-    let estimated = Math.round((length / 500) * per500) || per500;
-    if (!Number.isFinite(estimated) || estimated <= 0) return Math.min(MAX_NEW_TOKENS_MAX, per500);
-    if (estimated > LONG_PROMPT_TOKEN_THRESHOLD) {
-      estimated = Math.round(estimated * LONG_PROMPT_BOOST);
+    const contentType = headers?.['content-type'] || headers?.['Content-Type'] || '';
+    const baseType = typeof contentType === 'string' ? contentType.split(';')[0].trim().toLowerCase() : '';
+    if (baseType && CONTENT_TYPE_EXTENSION_MAP[baseType]) {
+      return CONTENT_TYPE_EXTENSION_MAP[baseType];
     }
-    return Math.max(1, Math.min(MAX_NEW_TOKENS_MAX, estimated));
+    return 'wav';
   }
 
-  clampMaxTokens(value, fallback) {
-    const numeric = Number.parseInt(value, 10);
-    if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
-    return Math.max(1, Math.min(MAX_NEW_TOKENS_MAX, numeric));
-  }
-
-  async updateVoiceCache() {
-    const requestUrl = `${this.apiBase}${TTS_REFERENCE_LIST_PATH}`;
+  async refreshVoiceCache() {
+    const requestUrl = `${this.apiBase}${TTS_VOICE_LIST_PATH}`;
     try {
       const response = await axios.get(requestUrl, { timeout: 15_000 });
-      const ids = Array.isArray(response?.data?.reference_ids)
-        ? response.data.reference_ids
-          .filter((id) => typeof id === 'string')
-          .map((id) => id.trim())
-          .filter(Boolean)
-        : [];
+      const voices = this.sanitizeVoiceList(response?.data?.voices);
+      const defaultVoiceId = typeof response?.data?.default_voice === 'string'
+        ? response.data.default_voice.trim()
+        : null;
 
-      this.referenceVoiceCache.referenceIds = ids;
-      this.referenceVoiceCache.lastUpdated = new Date();
-      this.referenceVoiceCache.lastError = null;
+      this.voiceCache.voices = voices;
+      this.voiceCache.defaultVoiceId = defaultVoiceId || null;
+      this.voiceCache.lastUpdated = new Date();
+      this.voiceCache.lastError = null;
 
       await recordApiDebugLog({
-        functionName: 'updateVoiceCache',
+        functionName: 'refreshVoiceCache',
         requestUrl,
         requestBody: null,
         responseHeaders: response.headers || null,
@@ -97,17 +101,14 @@ class TtsService {
 
       logger.notice('TTS voice cache updated (service)', {
         category: 'tts_service',
-        metadata: {
-          count: ids.length,
-          apiBase: this.apiBase,
-        },
+        metadata: { count: voices.length, apiBase: this.apiBase, defaultVoiceId },
       });
 
-      return ids;
+      return this.getCachedVoices();
     } catch (error) {
-      this.referenceVoiceCache.lastError = error?.message || 'Unknown error';
+      this.voiceCache.lastError = error?.message || 'Unknown error';
       await recordApiDebugLog({
-        functionName: 'updateVoiceCache',
+        functionName: 'refreshVoiceCache',
         requestUrl,
         requestBody: null,
         responseHeaders: error?.response?.headers || null,
@@ -123,50 +124,74 @@ class TtsService {
         },
       });
 
-      return this.referenceVoiceCache.referenceIds;
+      return this.getCachedVoices();
     }
   }
 
-  getCachedVoiceIds() {
+  getCachedVoices() {
     return {
-      referenceIds: [...this.referenceVoiceCache.referenceIds],
-      lastUpdated: this.referenceVoiceCache.lastUpdated,
-      lastError: this.referenceVoiceCache.lastError,
+      voices: [...this.voiceCache.voices],
+      defaultVoiceId: this.voiceCache.defaultVoiceId || null,
+      lastUpdated: this.voiceCache.lastUpdated,
+      lastError: this.voiceCache.lastError,
     };
   }
 
-  async synthesize({ text, referenceId = '', maxNewTokens, format = 'mp3' }) {
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+  async getVoices({ forceRefresh = false } = {}) {
+    if (forceRefresh || this.voiceCache.voices.length === 0) {
+      await this.refreshVoiceCache();
+    }
+    return this.getCachedVoices();
+  }
+
+  getDefaultVoiceId() {
+    return this.voiceCache.defaultVoiceId || null;
+  }
+
+  async resolveVoiceId(requestedVoiceId = '') {
+    const normalized = typeof requestedVoiceId === 'string' ? requestedVoiceId.trim() : '';
+    const hasVoice = (id) => !!id && this.voiceCache.voices.some((entry) => entry.voiceId === id);
+
+    const primaryChoice = normalized || this.voiceCache.defaultVoiceId || null;
+    if (hasVoice(primaryChoice)) {
+      return { voiceId: primaryChoice, refreshed: false };
+    }
+
+    const refreshed = await this.refreshVoiceCache();
+    const secondaryChoice = normalized || refreshed.defaultVoiceId || null;
+    if (hasVoice(secondaryChoice)) {
+      return { voiceId: secondaryChoice, refreshed: true };
+    }
+
+    const error = new Error(normalized
+      ? `Unknown voice id "${normalized}". Refresh the voice list and try again.`
+      : 'No voice id available from the TTS service.');
+    error.code = 'VOICE_NOT_FOUND';
+    throw error;
+  }
+
+  async synthesize({ text, voiceId, format } = {}) {
+    const normalizedText = typeof text === 'string' ? text.trim() : '';
+    if (!normalizedText) {
       throw new Error('Text is required to synthesize TTS audio.');
     }
 
-    const resolvedFormat = this.normalizeFormat(format || 'mp3');
-    const resolvedTokens = this.clampMaxTokens(maxNewTokens, this.estimateMaxTokens(text, referenceId));
+    const { voiceId: resolvedVoiceId } = await this.resolveVoiceId(voiceId);
     const payload = {
-      text,
-      format: resolvedFormat,
-      normalize: true,
-      streaming: false,
-      chunk_length: 200,
-      max_new_tokens: resolvedTokens,
+      text: normalizedText,
+      voice_id: resolvedVoiceId,
     };
 
-    if (referenceId) {
-      payload.reference_id = referenceId;
-    }
-
     const requestUrl = `${this.apiBase}${TTS_GENERATE_PATH}`;
-    const textPreview = text.replace(/\s+/g, ' ').slice(0, 120);
+    const textPreview = normalizedText.replace(/\s+/g, ' ').slice(0, 120);
 
     logger.notice('Submitting TTS request (service)', {
       category: 'tts_service',
       metadata: {
         apiBase: this.apiBase,
-        referenceId: referenceId || null,
-        textLength: text.length,
+        voiceId: resolvedVoiceId,
+        textLength: normalizedText.length,
         textPreview,
-        maxNewTokens: resolvedTokens,
-        format: resolvedFormat,
       },
     });
 
@@ -178,6 +203,7 @@ class TtsService {
       const buffer = Buffer.from(response.data);
 
       await this.ensureOutputDir();
+      const resolvedFormat = this.resolveFileExtension(format, response.headers);
       const fileName = `tts_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${resolvedFormat}`;
       const filePath = path.join(this.outputDir, fileName);
       await fs.promises.writeFile(filePath, buffer);
@@ -192,6 +218,7 @@ class TtsService {
           statusText: response.statusText,
           size: buffer.length,
           format: resolvedFormat,
+          voiceId: resolvedVoiceId,
         },
       });
 
@@ -201,8 +228,8 @@ class TtsService {
           fileName,
           size: buffer.length,
           status: response.status,
-          referenceId: referenceId || null,
-          maxNewTokens: resolvedTokens,
+          voiceId: resolvedVoiceId,
+          contentType: response?.headers?.['content-type'] || null,
           format: resolvedFormat,
         },
       });
@@ -211,7 +238,8 @@ class TtsService {
         fileName,
         format: resolvedFormat,
         size: buffer.length,
-        maxNewTokens: resolvedTokens,
+        voiceId: resolvedVoiceId,
+        contentType: response?.headers?.['content-type'] || null,
       };
     } catch (error) {
       await recordApiDebugLog({
@@ -226,10 +254,10 @@ class TtsService {
         category: 'tts_service',
         metadata: {
           apiBase: this.apiBase,
-          referenceId: referenceId || null,
+          voiceId: voiceId || null,
           status: error?.response?.status,
           message: error?.message,
-          format: resolvedFormat,
+          format: format || null,
         },
       });
       throw error;

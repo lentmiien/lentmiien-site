@@ -19,9 +19,9 @@ block content
         .alert.alert-success(role="alert")
           | Audio generated and saved as 
           code= result.fileName
-          if result.referenceId
-            |  using reference 
-            code= result.referenceId
+          if result.voiceId
+            |  using voice 
+            code= result.voiceId
             | .
           else
             |  with the default voice.
@@ -35,29 +35,20 @@ block content
             textarea#text.form-control(name="text", rows="4", required, placeholder="Add tone markers like (excited) to guide delivery")= form.text
             small.form-text.text-muted Use the keyword list on the right to steer emotion and tone.
           .mb-3
-            label.form-label(for="reference_id") reference_id (optional)
-            select#reference_id.form-select(name="reference_id")
-              option(value="", selected=!form.referenceId) Default (no reference id)
-              optgroup(label="English") 
-                option(value="lennart_en") Lennart
-                option(value="popok_en") Popok
-                option(value="anny_en") Anny
-              optgroup(label="Japanese") 
-                option(value="lennart_jp") Lennart
-                option(value="anny_jp") Anny
-              if form.referenceId
-                option(value=form.referenceId, selected)= form.referenceId
-            small.form-text.text-muted Preset reference voices will appear here once they are available.
-          .mb-3
-            label.form-label(for="max_new_tokens") max_new_tokens
-            input#max_new_tokens.form-control(type="number", name="max_new_tokens", min="1", max="8192", step="1", value=form.maxNewTokens || 1024)
-            small.form-text.text-muted Recommended ~#{recommendedMax} tokens (about #{recommendationNote}); defaults to #{form.maxNewTokens || 1024}.
-          .mb-3
-            label.form-label(for="format") Output format
-            select#format.form-select(name="format")
-              - const formats = ['wav', 'pcm', 'mp3', 'opus'];
-              each fmt in formats
-                option(value=fmt, selected=form.format === fmt)= fmt
+            label.form-label(for="voice_id") Voice
+            if voices && voices.length
+              select#voice_id.form-select(name="voice_id")
+                option(value="", selected=!form.voiceId && defaultVoiceId) Default (#{defaultVoiceId || 'auto'})
+                each v in voices
+                  - const isSelected = form.voiceId === v.voiceId;
+                  option(value=v.voiceId, selected=isSelected)= `${v.displayName || v.voiceId} (${v.language || v.backend || 'voice'})`
+              small.form-text.text-muted Voices are fetched from #{apiBase}/tts/voices.
+            else
+              input#voice_id.form-control(type="text", name="voice_id", value=form.voiceId || defaultVoiceId || '', placeholder="voice id (e.g. piper_en)")
+              small.form-text.text-muted Unable to load voice list; enter a voice id manually.
+          p.text-muted.mb-3 Output is saved to 
+            code public/temp
+            |  using the format returned by the API (typically wav).
           button.btn.btn-primary(type="submit") Generate audio
 
       if job
@@ -99,6 +90,18 @@ block content
               | Saved to 
               code public/temp/#{result.fileName}
               | . Download or share directly via the link above.
+      if voices && voices.length
+        .card
+          .card-body
+            h5.mb-3 Available voices
+            ul.list-unstyled.mb-0
+              each v in voices
+                li.mb-1
+                  strong= v.displayName || v.voiceId
+                  |  — 
+                  code= v.voiceId
+                  if v.language || v.backend
+                    span.text-muted.ms-1= `(${[v.language, v.backend].filter(Boolean).join(', ')})`
     .col-lg-4
       .card
         .card-body

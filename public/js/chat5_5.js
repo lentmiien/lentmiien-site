@@ -20,11 +20,12 @@ const draftStorageKeys = {
   personality: 'chat5DraftPersonalityId',
   responseType: 'chat5DraftResponseTypeId',
 };
-const TTS_BASE_TOKENS_PER_500 = 1024;
-const TTS_MAX_TOKENS = 8192;
 const charCounterEl = document.getElementById('chat5CharCounter');
-const ttsReferenceSelect = document.getElementById('ttsReferenceId');
-const ttsDoubleTokensCheckbox = document.getElementById('ttsDoubleTokens');
+const ttsVoiceSelect = document.getElementById('ttsReferenceId');
+const ttsVoiceState = {
+  voices: Array.isArray(window.ttsVoices?.voices) ? window.ttsVoices.voices : [],
+  defaultVoiceId: window.ttsVoices?.defaultVoiceId || '',
+};
 const voiceButton = document.getElementById('chat5VoiceButton');
 const voiceStatus = document.getElementById('chat5VoiceStatus');
 const voiceState = {
@@ -35,60 +36,80 @@ const voiceState = {
   busy: false,
 };
 
-function getReferenceIdValue() {
-  return (ttsReferenceSelect?.value || '').trim();
+function getVoiceIdValue() {
+  const value = ttsVoiceSelect ? ttsVoiceSelect.value : '';
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (trimmed) return trimmed;
+  return ttsVoiceState.defaultVoiceId || '';
 }
 
-function isJapaneseReferenceId(referenceId) {
-  if (!referenceId) return false;
-  const normalized = referenceId.trim().toLowerCase();
-  const langCode = normalized.slice(-2);
-  return langCode === 'jp';
+function populateTtsVoiceOptions() {
+  if (!ttsVoiceSelect) return;
+  const current = ttsVoiceSelect.value;
+  ttsVoiceSelect.innerHTML = '';
+
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = ttsVoiceState.defaultVoiceId
+    ? `Default (${ttsVoiceState.defaultVoiceId})`
+    : 'Default voice';
+  defaultOption.selected = !current;
+  ttsVoiceSelect.appendChild(defaultOption);
+
+  const voices = Array.isArray(ttsVoiceState.voices) ? [...ttsVoiceState.voices] : [];
+  voices.sort((a, b) => {
+    const langA = (a.language || '').localeCompare(b.language || '');
+    if (langA !== 0) return langA;
+    const nameA = (a.displayName || a.voiceId || '').toLowerCase();
+    const nameB = (b.displayName || b.voiceId || '').toLowerCase();
+    if (nameA < nameB) return -1;
+    if (nameA > nameB) return 1;
+    return 0;
+  });
+  voices.forEach((voice) => {
+    const option = document.createElement('option');
+    option.value = voice.voiceId;
+    const parts = [];
+    if (voice.displayName) parts.push(voice.displayName);
+    parts.push(voice.voiceId);
+    if (voice.language) parts.push(`(${voice.language}${voice.backend ? `, ${voice.backend}` : ''})`);
+    option.textContent = parts.join(' ');
+    option.selected = current ? current === voice.voiceId : voice.voiceId === ttsVoiceState.defaultVoiceId;
+    ttsVoiceSelect.appendChild(option);
+  });
 }
 
-function shouldDoubleTtsTokens(referenceId, manualDouble) {
-  if (isJapaneseReferenceId(referenceId)) return true;
-  return !referenceId && !!manualDouble;
-}
-
-function getTtsTokensPer500() {
-  const referenceId = getReferenceIdValue();
-  const manualDouble = ttsDoubleTokensCheckbox ? ttsDoubleTokensCheckbox.checked : false;
-  return shouldDoubleTtsTokens(referenceId, manualDouble)
-    ? TTS_BASE_TOKENS_PER_500 * 2
-    : TTS_BASE_TOKENS_PER_500;
-}
-
-function syncManualDoubleState() {
-  if (!ttsDoubleTokensCheckbox) return;
-  const referenceId = getReferenceIdValue();
-  const shouldDisable = !!referenceId;
-  ttsDoubleTokensCheckbox.disabled = shouldDisable;
-  if (shouldDisable) {
-    ttsDoubleTokensCheckbox.checked = false;
-  }
-}
-
-function estimateTtsTokens(text, tokensPer500 = getTtsTokensPer500()) {
-  const length = typeof text === 'string' ? text.length : 0;
-  const per500 = tokensPer500 || TTS_BASE_TOKENS_PER_500;
-  const estimate = Math.round((length / 500) * per500) || per500;
-  return Math.max(1, Math.min(TTS_MAX_TOKENS, estimate));
+function refreshTtsVoiceOptions(refresh = false) {
+  return new Promise((resolve) => {
+    socket.emit('chat5-tts-voices', { refresh }, (resp) => {
+      if (resp && resp.ok) {
+        ttsVoiceState.voices = Array.isArray(resp.voices) ? resp.voices : [];
+        if (resp.defaultVoiceId) {
+          ttsVoiceState.defaultVoiceId = resp.defaultVoiceId;
+        }
+        populateTtsVoiceOptions();
+        updatePromptCharCounter();
+      }
+      resolve(ttsVoiceState);
+    });
+  });
 }
 
 function updatePromptCharCounter() {
   if (!charCounterEl) return;
   const text = editor ? editor.getMarkdown() : '';
   const length = typeof text === 'string' ? text.length : 0;
-  const tokensPer500 = getTtsTokensPer500();
-  const tokens = estimateTtsTokens(text, tokensPer500);
-  charCounterEl.textContent = `${length} chars · ~${tokens} tokens (${tokensPer500} per 500 chars)`;
+  const voiceId = getVoiceIdValue();
+  const voiceNote = voiceId ? ` · voice ${voiceId}` : '';
+  charCounterEl.textContent = `${length} chars${voiceNote}`;
 }
 
 if (editor && typeof editor.on === 'function') {
   editor.on('change', updatePromptCharCounter);
-  updatePromptCharCounter();
 }
+populateTtsVoiceOptions();
+refreshTtsVoiceOptions(!ttsVoiceState.voices.length);
+updatePromptCharCounter();
 
 function loadDraftPreference(key) {
   try {
@@ -416,12 +437,10 @@ function GenerateTTS() {
     alert('Please enter text before requesting TTS.');
     return;
   }
-  syncManualDoubleState();
   const settings = collectChatSettings();
-  const referenceId = getReferenceIdValue();
-  const maxNewTokens = estimateTtsTokens(prompt);
+  const voiceId = getVoiceIdValue();
   showLoadingPopup();
-  socket.emit('chat5-tts', { conversation_id, prompt, referenceId, maxNewTokens, settings }, (resp) => {
+  socket.emit('chat5-tts', { conversation_id, prompt, voiceId, settings }, (resp) => {
     hideLoadingPopup();
     if (!resp || resp.ok !== true) {
       alert(resp && resp.message ? resp.message : 'Unable to generate TTS audio.');
@@ -1194,16 +1213,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (ttsBtn) {
     ttsBtn.addEventListener('click', GenerateTTS);
   }
-  if (ttsReferenceSelect) {
-    ttsReferenceSelect.addEventListener('change', () => {
-      syncManualDoubleState();
-      updatePromptCharCounter();
-    });
+  if (ttsVoiceSelect) {
+    ttsVoiceSelect.addEventListener('change', updatePromptCharCounter);
   }
-  if (ttsDoubleTokensCheckbox) {
-    ttsDoubleTokensCheckbox.addEventListener('change', updatePromptCharCounter);
-  }
-  syncManualDoubleState();
   updatePromptCharCounter();
 });
 document.addEventListener('DOMContentLoaded', () => {

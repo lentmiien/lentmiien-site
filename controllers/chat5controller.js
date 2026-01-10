@@ -12,10 +12,12 @@ const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
 const TemplateService = require('../services/templateService');
+const TtsService = require('../services/ttsService');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
+const ttsService = new TtsService();
 
 function slugify(value, fallbackPrefix = 'preset') {
   if (typeof value !== 'string') {
@@ -68,6 +70,18 @@ async function ensureChatModels() {
     d.provider === 'Local'
   ) && d.model_type === 'chat');
   return chat_models;
+}
+
+async function loadTtsVoicesSafe() {
+  try {
+    return await ttsService.getVoices();
+  } catch (error) {
+    logger.warning('Unable to refresh TTS voices for chat5', {
+      category: 'chat5_tts',
+      metadata: { message: error?.message || error },
+    });
+    return ttsService.getCachedVoices();
+  }
 }
 
 function extractVisibleText(message) {
@@ -476,6 +490,7 @@ exports.view_chat5 = async (req, res) => {
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
   ]);
+  const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
     conversation: conversation ? conversation : DEFAULT_CONVERSATION,
     messages,
@@ -483,7 +498,8 @@ exports.view_chat5 = async (req, res) => {
     templates,
     personalities,
     responseTypes,
-    conversationSource
+    conversationSource,
+    ttsVoices,
   });
 };
 
@@ -531,12 +547,14 @@ exports.view_chat5_voice = async (req, res) => {
   }
 
   const models = await ensureChatModels();
+  const ttsVoices = await loadTtsVoicesSafe();
 
   res.render('chat5_voice', {
     conversation: conversationPayload,
     messages: recentMessages,
     chat_models: models,
     conversationSource,
+    ttsVoices,
   });
 };
 

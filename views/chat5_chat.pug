@@ -212,7 +212,7 @@ block content
         span#chat5VoiceStatus.small.text-muted Ready for voice input.
     #message.chat5-editor
       // Editor is initialized via JS
-    p#chat5CharCounter.small.text-muted.mt-1 0 chars · ~0 tokens (base 1024 per 500 chars)
+    p#chat5CharCounter.small.text-muted.mt-1 0 chars
     .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
       button.btn.btn-success(type="button", onclick="Append(true, false)") Append
       button.btn.btn-success#sendAndResponse(type="button", onclick="Append(true, true)") Send & Response
@@ -220,9 +220,9 @@ block content
       button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)", disabled) Batch Send & Response
       button.btn.btn-outline-success#batchResponse(type="button", onclick="QueueBatch(false)", disabled) Batch Response
     .chat5-tts-controls.d-flex.flex-wrap.gap-2.align-items-center.mb-3
-      button#generateTtsBtn.btn.btn-outline-primary(type="button") Generate TTS (mp3)
+      button#generateTtsBtn.btn.btn-outline-primary(type="button") Generate TTS audio
       button.btn.btn-outline-secondary(type="button", data-bs-toggle="modal", data-bs-target="#ttsKeywordsModal") Emotions & tags
-      small.text-muted Tokens auto-set at ~1024 per 500 characters; Japanese references auto double. Manual double is available when no reference is selected. Output is saved to public/mp3.
+      small.text-muted Pick a voice in the tags modal and generate speech. Output is saved to public/mp3.
     .chat5-history-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
       button#hideLastMessageBtn.btn.btn-outline-warning(type="button", onclick="HideLastMessage()", title="Mark the most recent visible message as hidden") Hide last message
       button#removeLastMessageBtn.btn.btn-outline-danger(type="button", onclick="RemoveLastMessage()", title="Remove the latest visible message and any trailing hidden messages") Remove last message
@@ -412,21 +412,19 @@ block content
           h5#ttsKeywordsModalLabel.modal-title TTS emotion & tone tags
           button.btn-close(type="button", data-bs-dismiss="modal", aria-label="Close")
         .modal-body
-          p.small.text-muted Use these tags in your prompt to steer delivery. Output format is fixed to mp3 and saved under public/mp3/.
+          p.small.text-muted Use these tags in your prompt to steer delivery. Audio is saved under public/mp3/ using the format returned by the TTS service.
           .mb-3
-            label.form-label(for="ttsReferenceId") reference_id (optional)
+            label.form-label(for="ttsReferenceId") Voice
+            - const voiceOptions = Array.isArray(ttsVoices?.voices) ? ttsVoices.voices : [];
+            - const defaultVoiceId = ttsVoices?.defaultVoiceId || '';
             select#ttsReferenceId.form-select
-              option(value="") -- No reference id --
-              optgroup(label="English") 
-                option(value="lennart_en") Lennart
-                option(value="popok_en") Popok
-                option(value="anny_en") Anny
-              optgroup(label="Japanese") 
-                option(value="lennart_jp") Lennart
-                option(value="anny_jp") Anny
-            .form-check.mt-2
-              input#ttsDoubleTokens.form-check-input(type="checkbox")
-              label.form-check-label(for="ttsDoubleTokens") Double tokens (recommended for Japanese when no reference id)
+              option(value="", selected=!defaultVoiceId) Default (#{defaultVoiceId || 'auto'})
+              if voiceOptions.length
+                each voice in voiceOptions
+                  option(value=voice.voiceId, selected=voice.voiceId === defaultVoiceId)= `${voice.displayName || voice.voiceId} (${voice.language || voice.backend || 'voice'})`
+              else
+                option(value="", disabled) No voices available (using API default)
+            small.text-muted Voices loaded from the TTS service. OpenAudio clone voices are slower; prefer piper or voicevox for speed.
           h6.mb-2 Basic emotions
           p
             | (angry) (sad) (excited) (surprised) (satisfied) (delighted) (scared) (worried) (upset) (nervous) (frustrated) (depressed) (empathetic) (embarrassed) (disgusted) (moved) (proud) (relaxed) (grateful) (confident) (interested) (curious) (confused) (joyful)
@@ -446,6 +444,7 @@ block content
   script.
     window.chatTemplates = !{JSON.stringify(templates)};
     window.chatModels = !{JSON.stringify(chat_models)};
+    window.ttsVoices = !{JSON.stringify(ttsVoices || {})};
   // Wire template selectors to inputs
   script.
     (function(){

@@ -323,7 +323,7 @@ block content
             option(value="1") 1 space
           label(for="ocrttsGroup") Job group (optional)
           input#ocrttsGroup(type="text", name="group", placeholder="ex. chapter-3")
-          small.text-muted Default voice: lennart_jp. Only one image per upload; jobs queue automatically.
+          small.text-muted Default voice: #{defaults.voice || 'unknown'}. Only one image per upload; jobs queue automatically.
           br
           button.mt-2(type="submit") Queue OCR → TTS
       .ocrtts-panel
@@ -353,6 +353,7 @@ block script
       const INITIAL_JOB_DETAIL = !{JSON.stringify(initialJobDetail || null)};
       const SELECTED_JOB_ID = !{JSON.stringify(selectedJobId || null)};
       const DEFAULTS = !{JSON.stringify(defaults || {})};
+      const TTS_VOICES = !{JSON.stringify(ttsVoices || {})};
       const JOBS_ENDPOINT = '/ocr-tts/jobs';
       const ALLOW_SPACES = [0, 1];
 
@@ -367,9 +368,16 @@ block script
         pollingTimer: null,
         groupFilter: null,
         defaults: DEFAULTS || { spaceCount: 0, voice: 'lennart_jp' },
+        voiceOptions: Array.isArray(TTS_VOICES?.voices) ? TTS_VOICES.voices : [],
+        defaultVoiceId: TTS_VOICES?.defaultVoiceId || (DEFAULTS && DEFAULTS.voice) || null,
         replayQueue: [],
         replayGroup: null,
       };
+      if (!state.defaultVoiceId && state.defaults.voice) {
+        state.defaultVoiceId = state.defaults.voice;
+      } else if (state.defaultVoiceId && !state.defaults.voice) {
+        state.defaults.voice = state.defaultVoiceId;
+      }
 
       if (INITIAL_JOB_DETAIL) {
         state.jobDetails[INITIAL_JOB_DETAIL.id] = INITIAL_JOB_DETAIL;
@@ -399,6 +407,36 @@ block script
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;')
           .replace(/'/g, '&#039;');
+      }
+
+      function buildVoiceSelect(selectedVoice) {
+        const options = Array.isArray(state.voiceOptions) ? [...state.voiceOptions] : [];
+        const fallback = selectedVoice || state.defaultVoiceId || state.defaults.voice || '';
+        const defaultLabel = state.defaultVoiceId
+          ? `Default (${state.defaultVoiceId})`
+          : 'Default voice';
+        const entries = [
+          `<option value="" ${fallback ? '' : 'selected'}>${escapeHtml(defaultLabel)}</option>`,
+        ];
+        options.sort((a, b) => {
+          const langA = (a.language || '').localeCompare(b.language || '');
+          if (langA !== 0) return langA;
+          const nameA = (a.displayName || a.voiceId || '').toLowerCase();
+          const nameB = (b.displayName || b.voiceId || '').toLowerCase();
+          if (nameA < nameB) return -1;
+          if (nameA > nameB) return 1;
+          return 0;
+        }).forEach((voice) => {
+          const selected = voice.voiceId === fallback ? 'selected' : '';
+          const parts = [];
+          if (voice.displayName) parts.push(voice.displayName);
+          parts.push(voice.voiceId);
+          if (voice.language || voice.backend) {
+            parts.push(`(${[voice.language, voice.backend].filter(Boolean).join(', ')})`);
+          }
+          entries.push(`<option value="${escapeHtml(voice.voiceId)}" ${selected}>${escapeHtml(parts.join(' '))}</option>`);
+        });
+        return `<select id="ocrttsVoice" class="ocrtts-form">${entries.join('')}</select>`;
       }
 
       function setFeedback(message, type = 'info') {
@@ -558,7 +596,7 @@ block script
           <div class="d-flex gap-2 flex-wrap align-items-end mb-2">
             <div>
               <label>Voice</label>
-              <input id="ocrttsVoice" type="text" value="${escapeHtml(state.defaults.voice || 'lennart_jp')}" />
+              ${buildVoiceSelect(detail.defaultAudio?.voice || state.defaults.voice)}
             </div>
             <button id="ocrttsGenerateAudio" class="ocrtts-btn" type="button">Generate audio</button>
           </div>

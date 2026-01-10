@@ -1,11 +1,6 @@
 /* global io */
 const VOICE_MAX_BYTES = 12 * 1024 * 1024;
 const VOICE_MAX_DURATION_MS = 120000;
-const DEFAULT_TTS_REFERENCE_ID = 'anny_en';
-const TTS_BASE_TOKENS_PER_500 = 1024;
-const TTS_MAX_TOKENS = 8192;
-const TTS_LONG_PROMPT_TOKEN_THRESHOLD = 3000;
-const TTS_LONG_PROMPT_BOOST = 1.2;
 
 const socket = io();
 
@@ -50,6 +45,10 @@ const conversationTitleEl = document.getElementById('conversationTitle');
 const modelLabel = document.getElementById('voiceCurrentModel');
 const audioPlayer = document.getElementById('voiceAudio');
 const voiceReferenceSelect = document.getElementById('voiceReferenceId');
+const ttsVoiceState = {
+  voices: Array.isArray(window.ttsVoices?.voices) ? window.ttsVoices.voices : [],
+  defaultVoiceId: window.ttsVoices?.defaultVoiceId || '',
+};
 
 function setStatus(text) {
   if (voiceStatus) {
@@ -82,31 +81,68 @@ function parseTags(value) {
   return value.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
 }
 
-function getSelectedReferenceId() {
+function getSelectedVoiceId() {
   const value = voiceReferenceSelect ? voiceReferenceSelect.value : '';
   const trimmed = typeof value === 'string' ? value.trim() : '';
-  return trimmed || DEFAULT_TTS_REFERENCE_ID;
+  if (trimmed) return trimmed;
+  return ttsVoiceState.defaultVoiceId || '';
 }
 
-function isJapaneseVoice(referenceId) {
-  if (!referenceId) return false;
-  const normalized = referenceId.trim().toLowerCase();
-  return normalized.endsWith('_jp');
-}
-
-function getTokensPer500(referenceId) {
-  const base = TTS_BASE_TOKENS_PER_500;
-  return isJapaneseVoice(referenceId) ? base * 2 : base;
-}
-
-function estimateTtsTokens(text, referenceId) {
-  const per500 = getTokensPer500(referenceId);
-  const length = typeof text === 'string' ? text.length : 0;
-  let estimate = Math.round((length / 500) * per500) || per500;
-  if (estimate > TTS_LONG_PROMPT_TOKEN_THRESHOLD) {
-    estimate = Math.round(estimate * TTS_LONG_PROMPT_BOOST);
+function populateVoiceOptions() {
+  if (!voiceReferenceSelect) return;
+  if (voiceReferenceSelect.tagName !== 'SELECT') {
+    if (!voiceReferenceSelect.value && ttsVoiceState.defaultVoiceId) {
+      voiceReferenceSelect.value = ttsVoiceState.defaultVoiceId;
+    }
+    return;
   }
-  return Math.max(1, Math.min(TTS_MAX_TOKENS, estimate));
+  const current = voiceReferenceSelect.value;
+  voiceReferenceSelect.innerHTML = '';
+
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = ttsVoiceState.defaultVoiceId
+    ? `Default (${ttsVoiceState.defaultVoiceId})`
+    : 'Default voice';
+  defaultOption.selected = !current;
+  voiceReferenceSelect.appendChild(defaultOption);
+
+  const voices = Array.isArray(ttsVoiceState.voices) ? [...ttsVoiceState.voices] : [];
+  voices.sort((a, b) => {
+    const langA = (a.language || '').localeCompare(b.language || '');
+    if (langA !== 0) return langA;
+    const nameA = (a.displayName || a.voiceId || '').toLowerCase();
+    const nameB = (b.displayName || b.voiceId || '').toLowerCase();
+    if (nameA < nameB) return -1;
+    if (nameA > nameB) return 1;
+    return 0;
+  });
+  voices.forEach((voice) => {
+    const option = document.createElement('option');
+    option.value = voice.voiceId;
+    const parts = [];
+    if (voice.displayName) parts.push(voice.displayName);
+    parts.push(voice.voiceId);
+    if (voice.language) parts.push(`(${voice.language}${voice.backend ? `, ${voice.backend}` : ''})`);
+    option.textContent = parts.join(' ');
+    option.selected = current ? current === voice.voiceId : voice.voiceId === ttsVoiceState.defaultVoiceId;
+    voiceReferenceSelect.appendChild(option);
+  });
+}
+
+function refreshTtsVoices(refresh = false) {
+  return new Promise((resolve) => {
+    socket.emit('chat5-tts-voices', { refresh }, (resp) => {
+      if (resp && resp.ok) {
+        ttsVoiceState.voices = Array.isArray(resp.voices) ? resp.voices : [];
+        if (resp.defaultVoiceId) {
+          ttsVoiceState.defaultVoiceId = resp.defaultVoiceId;
+        }
+        populateVoiceOptions();
+      }
+      resolve(ttsVoiceState);
+    });
+  });
 }
 
 function getMessageText(msg) {
@@ -309,14 +345,12 @@ function generateTtsForMessage(msg) {
       resolve();
       return;
     }
-    const referenceId = getSelectedReferenceId();
-    const maxNewTokens = estimateTtsTokens(prompt, referenceId);
+    const voiceId = getSelectedVoiceId();
     setStatus('Generating audio response...');
     socket.emit('chat5-tts', {
       conversation_id: state.conversationId || 'NEW',
       prompt,
-      referenceId,
-      maxNewTokens,
+      voiceId,
       settings: buildSettingsPayload(),
     }, async (resp) => {
       if (!resp || resp.ok !== true) {
@@ -640,8 +674,8 @@ function hydrateSettingsFromConversation(conv) {
 function hydrateVoiceSelection() {
   if (!voiceReferenceSelect) return;
   const current = typeof voiceReferenceSelect.value === 'string' ? voiceReferenceSelect.value.trim() : '';
-  if (!current) {
-    voiceReferenceSelect.value = DEFAULT_TTS_REFERENCE_ID;
+  if (!current && ttsVoiceState.defaultVoiceId) {
+    voiceReferenceSelect.value = ttsVoiceState.defaultVoiceId;
   }
 }
 
@@ -650,9 +684,12 @@ function initFromWindow() {
   const initialMessages = Array.isArray(window.voiceInitialMessages) ? window.voiceInitialMessages : [];
   const models = Array.isArray(window.chatModels) ? window.chatModels : [];
   state.chatModels = models;
+  populateVoiceOptions();
+  const voiceRefresh = !ttsVoiceState.voices.length ? refreshTtsVoices(true) : Promise.resolve();
   hydrateSettingsFromConversation(initialConversation);
   state.conversationId = conversationIdEl ? conversationIdEl.textContent.trim() : '';
   state.conversationSource = conversationIdEl ? (conversationIdEl.dataset.source || '') : '';
+  voiceRefresh.then(hydrateVoiceSelection);
   initialMessages.forEach((msg) => {
     const msgId = normalizeId(msg._id);
     if (msgId) {

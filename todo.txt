@@ -1,43 +1,29 @@
-For the `controllers/image_gen.controller.js`, I'd like to move the ComfyUI code to a new service class in the `services` folder. Furthermore, I've put the ComfyUI instance behind a AI Gateway, and the new base URL is `http://192.168.0.20:8080`.
+I've added more voices and simplified the TTS API, so please update the TTS service class (services/ttsService.js) to handle the following new API interface:
 
-At this URL, I have the following endpoints:
-1. GET `/comfy/workflows`: return a list of available workflows, example: `{"workflows":[{"name":"z_image_turbo_example.json","bytes":3143,"mtime":1767966502.0465078}]}`
-2. GET `/comfy/workflows/{name}`: download the JSON file for the particular workflow (needed for editing and sending generation requests)
-3. GET `/comfy/system_stats`: get instance stats, example `{"system": {"os": "linux", "ram_total": 134137917440, "ram_free": 97274589184, "comfyui_version": "0.8.2", "required_frontend_version": "1.36.13", "installed_templates_version": "0.7.69", "required_templates_version": "0.7.69", "python_version": "3.12.11 | packaged by conda-forge | (main, Jun  4 2025, 14:45:31) [GCC 13.3.0]", "pytorch_version": "2.6.0+git0568140", "embedded_python": false, "argv": ["main.py", "--listen", "0.0.0.0", "--port", "8188", "--enable-manager"]}, "devices": [{"name": "cuda:0 AMD Radeon AI PRO R9700 : native", "type": "cuda", "index": 0, "vram_total": 34208743424, "vram_free": 15198934528, "torch_vram_total": 15644753920, "torch_vram_free": 88954368}]}`
-4. GET `/comfy/view?filename={filename}`: fetching an output image by filename (optional additional query parameters `type` default to "output", `subfolder` default to "")
-5. POST `/comfy/run`: start a generation job, expecting payload to be of the format `{ "prompt": { ... }, "wait": true }`, where `prompt` is the workflow JSON object, with possible edited values, like a new prompt, and/or size, etc.
+Base URL "http://192.168.0.20:8080" stays the same.
 
-The return value from `/comfy/run` (if `"wait": true`) is in the format:
+## Endpoints
+
+1. GET `/tts/voices`: return a list of all available voices, currently return:
 ```
-{
-  "prompt_id": "b0baf0a6-acde-...",
-  "queue_number": 17,
-  "workflow_id": "{name}",
-  "outputs": [
-    {
-      "node_id": "9",
-      "kind": "images",
-      "filename": "{filename}",
-      "subfolder": "",
-      "type": "output",
-      "gateway_view_url": "/comfy/view?filename={filename}&type=output&subfolder="
-    }
-  ]
-}
+{"default_voice":"piper_en","voices":[{"voice_id":"piper_en","backend":"wyoming_piper","display_name":"Piper English (en_US-lessac-medium)","language":"en"},{"voice_id":"piper_sv","backend":"wyoming_piper","display_name":"Piper Swedish (sv_SE-nst-medium)","language":"sv"},{"voice_id":"ja_shikoku_metan_normal","backend":"voicevox","display_name":"Shikoku Metan Normal","language":"ja"},{"voice_id":"ja_shikoku_metan_amaama","backend":"voicevox","display_name":"Shikoku Metan AmaAma","language":"ja"},{"voice_id":"ja_shikoku_metan_tsuntsun","backend":"voicevox","display_name":"Shikoku Metan Tsuntsun","language":"ja"},{"voice_id":"ja_shikoku_metan_sexy","backend":"voicevox","display_name":"Shikoku Metan Sexy","language":"ja"},{"voice_id":"ja_shikoku_metan_sasayaki","backend":"voicevox","display_name":"Shikoku Metan Sasayaki","language":"ja"},{"voice_id":"ja_shikoku_metan_hisohiso","backend":"voicevox","display_name":"Shikoku Metan Hisohiso","language":"ja"},{"voice_id":"ja_zundamon_sexy","backend":"voicevox","display_name":"Zundamon Sexy","language":"ja"},{"voice_id":"ja_kyushu_sora_sexy","backend":"voicevox","display_name":"Kyushu Sora Sexy","language":"ja"},{"voice_id":"anny_en","backend":"openaudio","display_name":"OpenAudio (anny_en clone)","language":"en"},{"voice_id":"anny_jp","backend":"openaudio","display_name":"OpenAudio (anny_jp clone)","language":"ja"},{"voice_id":"lennart_en","backend":"openaudio","display_name":"OpenAudio (lennart_en clone)","language":"en"},{"voice_id":"lennart_jp","backend":"openaudio","display_name":"OpenAudio (lennart_jp clone)","language":"ja"},{"voice_id":"popok_en","backend":"openaudio","display_name":"OpenAudio (popok_en clone)","language":"en"},{"voice_id":"openaudio_default","backend":"openaudio","display_name":"OpenAudio (no reference)","language":"en"}]}
 ```
 
-So use the `{gateway_view_url}` to fetch the output.
+2. POST `/tts`: Generate a TTS audio file, based on `voice_id` and input `text`, no additional parameters are needed or used (other necessary data is generated inside the API)
+Example `curl` request:
+```
+curl -X POST http://192.168.0.20:8080/tts \
+  -H "Content-Type: application/json" \
+  -d '{"voice_id":"piper_en","text":"Hello. This is the fast English TTS voice."}' \
+  --output out_en.wav
+```
 
-Simply speaking, the UI workflow should be something like following:
-1. Access `/comfy/workflows` and display the option to the user
-2. Access `/comfy/workflows/{name}` and display an JSON editor to the user (to edit input parameters, can be a simple RAW JSON editor for now)
-3. Send user input to `/comfy/run`
-4. Fetch the output at `{gateway_view_url}`
+So, simplify the service class, based on this updated API interface.
 
-Then as currently done, save the output to a local folder, display the rating field, and save a copy of the image + embedding(s) according to user rating.
+Note: `openaudio` voice cloning is very slow, but support custom set up voices, `wyoming_piper` or `voicevox` is recommended for most daily use.
 
-At this moment, I don't care about the "bulk" functionality, we could temporarily disable this function, while making sure that single image generations work, then re-introduce the bulk tools at some later time.
+The service class should have a way of fetching and caching a list of the available voices, return to user when requested for, and generate TTS audio. If generate is called with an unknown voice id, try to re-cache the voice list once and check again, if the voice still doesn't exist, return a meaningful error.
 
-Now, please adjust the single image generation to work with this updated ComfyUI instance, behind a AI Gateway. By default, only use `"wait": true` for now.
+I'll also need to update any tools using the TTS, to fetch the voice list, and simplify generation requests to only include the voice id and input text.
 
-session id: 019ba32d-0415-7223-a656-1c70f447da86
+session id: 019ba62e-05cb-7933-a189-4c5afbdd0a14

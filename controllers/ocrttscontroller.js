@@ -23,12 +23,14 @@ const OCR_EMBED_CONTENT_TYPE = 'ocr_tts_text';
 const OCR_PARENT_COLLECTION = 'ocr_tts';
 const DEFAULT_COMBINE_SPACES = 0;
 const ALLOWED_SPACE_VALUES = [0, 1];
-const DEFAULT_TTS_VOICE = 'lennart_jp';
+const DEFAULT_TTS_VOICE = 'ja_shikoku_metan_normal';
 const JOB_LIST_LIMIT = 50;
 
 const logApiDebug = createApiDebugLogger('controllers/ocrttscontroller.js');
 const embeddingApiService = new EmbeddingApiService();
 const ttsService = new TtsService();
+
+const resolveDefaultVoiceId = () => ttsService.getDefaultVoiceId() || DEFAULT_TTS_VOICE;
 
 const jobQueue = [];
 let activeJobId = null;
@@ -408,15 +410,16 @@ const setDefaultAudioFlag = (job, audioId) => {
 };
 
 const addAudioEntry = (job, {
-  voice = DEFAULT_TTS_VOICE,
-  format = 'mp3',
+  voice = resolveDefaultVoiceId(),
+  format = 'wav',
   setDefault = false,
 } = {}) => {
   const id = `${job.id || job._id}-audio-${randomUUID()}`;
+  const fallbackVoice = resolveDefaultVoiceId();
   const entry = {
     id,
-    voice: (voice || DEFAULT_TTS_VOICE).trim() || DEFAULT_TTS_VOICE,
-    format: (format || 'mp3').trim() || 'mp3',
+    voice: (voice || fallbackVoice).trim() || fallbackVoice,
+    format: (format || 'wav').trim() || 'wav',
     status: 'queued',
     createdAt: new Date(),
     isDefault: Boolean(setDefault),
@@ -445,18 +448,20 @@ const startTtsForAudio = async (jobId, audioId, text) => {
   await job.save();
 
   try {
+    const targetFormat = 'wav';
     const result = await ttsService.synthesize({
       text,
-      referenceId: audio.voice,
-      format: audio.format || 'mp3',
-      maxNewTokens: 0,// Auto calculate token
+      voiceId: audio.voice,
+      format: targetFormat,
     });
     audio.status = 'completed';
     audio.error = null;
+    audio.voice = result.voiceId || audio.voice;
+    audio.format = targetFormat;
     audio.fileName = result.fileName;
     audio.filePath = path.posix.join('mp3', result.fileName);
     audio.sizeBytes = result.size;
-    audio.maxNewTokens = result.maxNewTokens;
+    audio.maxNewTokens = null;
     audio.completedAt = new Date();
 
     logger.notice('TTS audio generated for OCR-TTS job', {
@@ -488,7 +493,7 @@ const ensureDefaultAudioForJob = (job, text) => {
   if (hasDefault) {
     return job.audios.find((audio) => audio.isDefault);
   }
-  const entry = addAudioEntry(job, { setDefault: true, voice: DEFAULT_TTS_VOICE });
+  const entry = addAudioEntry(job, { setDefault: true, voice: resolveDefaultVoiceId() });
   return entry;
 };
 
@@ -619,6 +624,17 @@ exports.renderTool = async (req, res) => {
         initialDetail = sanitizeJobDetail(job);
       }
     }
+    let voiceData = null;
+    try {
+      voiceData = await ttsService.getVoices();
+    } catch (err) {
+      voiceData = ttsService.getCachedVoices();
+      logger.warning('Unable to refresh TTS voice list for OCR-TTS tool', {
+        category: 'ocr_tts',
+        metadata: { message: err?.message || err },
+      });
+    }
+    const defaultVoice = voiceData?.defaultVoiceId || DEFAULT_TTS_VOICE;
 
     res.render('ocr_tts_tool', {
       title: 'OCR to TTS',
@@ -626,9 +642,10 @@ exports.renderTool = async (req, res) => {
       groups: initial.groups,
       selectedJobId,
       initialJobDetail: initialDetail,
+      ttsVoices: voiceData,
       defaults: {
         spaceCount: DEFAULT_COMBINE_SPACES,
-        voice: DEFAULT_TTS_VOICE,
+        voice: defaultVoice,
       },
     });
   } catch (error) {
@@ -779,8 +796,9 @@ exports.updateText = async (req, res) => {
 
 exports.createAudio = async (req, res) => {
   const { jobId } = req.params;
-  const voice = (req.body?.voice || DEFAULT_TTS_VOICE).trim() || DEFAULT_TTS_VOICE;
-  const format = (req.body?.format || 'mp3').trim() || 'mp3';
+  const fallbackVoice = resolveDefaultVoiceId();
+  const voice = (req.body?.voice || fallbackVoice).trim() || fallbackVoice;
+  const format = (req.body?.format || 'wav').trim() || 'wav';
   const setDefault = String(req.body?.set_default || '').toLowerCase() === 'true';
   const providedText = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
   const text = providedText || null;

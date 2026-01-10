@@ -255,27 +255,6 @@ module.exports = async function registerChat5_5Handlers({
     };
   }
 
-  function computeTtsMaxTokens(text, provided, referenceId) {
-    const MAX_TOKENS = 8192;
-    const TOKENS_PER_500 = 1024;
-    const LONG_PROMPT_THRESHOLD = 3000;
-    const LONG_PROMPT_BOOST = 1.2;
-    if (Number.isFinite(provided) && provided > 0) {
-      return Math.max(1, Math.min(MAX_TOKENS, Math.round(provided)));
-    }
-    const length = typeof text === 'string' ? text.length : 0;
-    const japaneseVoice = typeof referenceId === 'string' && referenceId.trim().toLowerCase().endsWith('_jp');
-    const per500 = japaneseVoice ? TOKENS_PER_500 * 2 : TOKENS_PER_500;
-    if (length <= 0) {
-      return Math.max(1, Math.min(MAX_TOKENS, per500));
-    }
-    let estimate = Math.round((length / 500) * per500) || per500;
-    if (estimate > LONG_PROMPT_THRESHOLD) {
-      estimate = Math.round(estimate * LONG_PROMPT_BOOST);
-    }
-    return Math.max(1, Math.min(MAX_TOKENS, estimate));
-  }
-
   function normalizeBooleanOption(value, defaultValue, field, adjustments) {
     if (value === undefined) {
       pushAdjustment(adjustments, field, `Missing value; using default (${defaultValue}).`, 'info');
@@ -703,6 +682,34 @@ module.exports = async function registerChat5_5Handlers({
     }
   });
 
+  socket.on('chat5-tts-voices', async (raw = {}, ack) => {
+    const eventName = 'chat5-tts-voices';
+    try {
+      const refresh = Boolean(raw?.refresh);
+      const { voices, defaultVoiceId, lastUpdated, lastError } = await ttsService.getVoices({ forceRefresh: refresh });
+      const payload = {
+        ok: true,
+        voices,
+        defaultVoiceId,
+        lastUpdated,
+        lastError: lastError || null,
+      };
+      if (typeof ack === 'function') {
+        ack(payload);
+      } else {
+        socket.emit(`${eventName}:result`, payload);
+      }
+    } catch (error) {
+      logger.error('Failed to load TTS voices', error);
+      const message = error?.message || 'Unable to load TTS voices.';
+      if (typeof ack === 'function') {
+        ack({ ok: false, message });
+      } else {
+        socket.emit(`${eventName}:error`, { ok: false, message });
+      }
+    }
+  });
+
   socket.on('chat5-tts', async (raw, ack) => {
     const eventName = 'chat5-tts';
     const adjustments = [];
@@ -722,9 +729,7 @@ module.exports = async function registerChat5_5Handlers({
         respondWithError(eventName, 'Please provide text to synthesize.', { ack, adjustments });
         return;
       }
-      const referenceId = typeof raw.referenceId === 'string' ? raw.referenceId.trim() : '';
-      const providedTokens = Number.isFinite(raw.maxNewTokens) ? raw.maxNewTokens : Number.parseInt(raw.maxNewTokens, 10);
-      const maxNewTokens = computeTtsMaxTokens(prompt, providedTokens, referenceId);
+      const voiceId = normalizeStringOption(raw.voiceId ?? raw.voice_id, '', 'voice_id', adjustments);
 
       const { settingParams, conversationParams } = sanitizeChatSettings(raw.settings || {}, adjustments);
       conversationParams.members = [...new Set([...conversationParams.members, userName])];
@@ -755,9 +760,8 @@ module.exports = async function registerChat5_5Handlers({
 
       const { fileName, format } = await ttsService.synthesize({
         text: prompt,
-        referenceId,
-        maxNewTokens,
-        format: 'mp3',
+        voiceId,
+        format: 'wav',
       });
 
       const messageContent = {
@@ -792,7 +796,7 @@ module.exports = async function registerChat5_5Handlers({
         io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: outgoing });
       }
 
-      emitAdjustments(eventName, adjustments, { conversationId, maxNewTokens });
+      emitAdjustments(eventName, adjustments, { conversationId, voiceId: voiceId || null });
       if (typeof ack === 'function') {
         ack({
           ok: true,
@@ -800,7 +804,7 @@ module.exports = async function registerChat5_5Handlers({
           messageId: msg._id.toString(),
           fileName,
           format,
-          maxNewTokens,
+          voiceId: voiceId || null,
         });
       }
     } catch (error) {
