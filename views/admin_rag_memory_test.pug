@@ -1,0 +1,107 @@
+extends layout
+
+block content
+  .row
+    .col-xl-8
+      h1.mb-3 RAG Memory Recall
+      p.text-muted.mb-4 Run a high-quality embedding recall against stored data types (knowledge, chats, OCR, ASR, images, inbox) and inspect the hydrated results.
+
+      if error
+        .alert.alert-danger(role='alert')= error
+
+      form.card.mb-4(method='post', action='/admin/rag-memory')
+        .card-body
+          h5.mb-3 Recall memory
+          .mb-3
+            label.form-label(for='prompt') Prompt
+            textarea#prompt.form-control(name='prompt', rows='4', required, placeholder='Enter the text to search stored embeddings')= form && form.prompt
+          .mb-3
+            label.form-label(for='tier') Tier
+            select#tier.form-select(name='tier')
+              each option in tierOptions
+                - const limits = option && option.limits;
+                option(value=option.value, selected=form && form.tier === option.value)= limits ? `${option.label}` : option.label
+            small.form-text.text-muted Choose how many matches to hydrate and the character limits to apply.
+          button.btn.btn-primary(type='submit') Recall
+
+      if result
+        .card.mb-4
+          .card-body
+            h5.mb-3 Recall results
+            .d-flex.flex-wrap.gap-2.mb-3
+              span.badge.text-bg-light.text-secondary= `${(result.results && result.results.length) || 0} match(es)`
+              if result.tier
+                span.badge.text-bg-info= `Tier: ${result.tier}`
+              if result.limits
+                span.badge.text-bg-light.text-secondary= `per entry ${result.limits.perEntryChars || 0}, total ${result.limits.totalChars || 0}`
+              if result.searchMeta && result.searchMeta.topK
+                span.badge.text-bg-light.text-secondary= `topK ${result.searchMeta.topK}`
+              if result.searchMeta && result.searchMeta.model
+                span.badge.text-bg-light.text-secondary= result.searchMeta.model
+              if result.searchMeta && result.searchMeta.mode
+                span.badge.text-bg-info= result.searchMeta.mode
+              if result.searchMeta && result.searchMeta.apiBase
+                span.badge.text-bg-light.text-secondary= result.searchMeta.apiBase
+              if result.totalCharacters !== undefined
+                span.badge.text-bg-light.text-secondary= `${result.totalCharacters} chars returned`
+            if result.results && result.results.length
+              each entry, idx in result.results
+                .border.rounded-3.p-3.mb-3
+                  .d-flex.justify-content-between.align-items-center.mb-2
+                    .d-flex.align-items-center.gap-2.flex-wrap
+                      span.fw-semibold= `#${idx + 1} · ${entry.type || (entry.source && entry.source.collectionName) || 'entry'}`
+                      if entry.similarity !== null && entry.similarity !== undefined
+                        span.badge.text-bg-primary= Number(entry.similarity).toFixed(4)
+                      if entry.truncated
+                        span.badge.text-bg-warning.text-dark Truncated
+                      if entry.missing
+                        span.badge.text-bg-secondary Missing text
+                    .d-flex.gap-2.flex-wrap
+                      if entry.textLength !== undefined
+                        span.badge.text-bg-light.text-secondary= `${entry.textLength}/${entry.originalLength || entry.textLength} chars`
+                  if entry.title
+                    p.mb-1.fw-semibold= entry.title
+                  if entry.preview
+                    p.small.text-muted.mb-2= entry.preview.length > 220 ? `${entry.preview.slice(0, 220)}…` : entry.preview
+                  if entry.source
+                    ul.list-unstyled.small.mb-2
+                      li
+                        strong Source:
+                        |  #{entry.source.collectionName || 'n/a'} · #{entry.source.documentId || 'n/a'}
+                      if entry.source.parentCollection || entry.source.parentId
+                        li
+                          strong Parent:
+                          |  #{entry.source.parentCollection || 'n/a'} · #{entry.source.parentId || 'n/a'}
+                      li
+                        strong Content type:
+                        |  #{entry.source.contentType || 'n/a'}
+                  .d-flex.gap-3.flex-wrap.small.mb-2
+                    if entry.sourceUrl
+                      a(href=entry.sourceUrl, target='_blank', rel='noreferrer') Open source
+                    if entry.secondaryUrl
+                      a(href=entry.secondaryUrl, target='_blank', rel='noreferrer') Related thread
+                    if entry.updatedAt || entry.createdAt
+                      span.text-muted= `Updated ${entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : (entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'n/a')}`
+                  h6.small.mb-1 Text
+                  pre.mb-0.p-3.bg-light.border.rounded(style='white-space: pre-wrap; max-height: 280px; overflow: auto;')= entry.text && entry.text.length ? entry.text : '[empty]'
+            else
+              p.text-muted.mb-0 No matches found for this prompt and tier.
+      else
+        .card
+          .card-body
+            h6.mb-2 Recall results
+            p.text-muted.mb-0 Submit a prompt above to fetch hydrated matches.
+    .col-xl-4
+      .card
+        .card-body
+          h5.mb-3 Tier limits
+          if tierOptions && tierOptions.length
+            ul.list-unstyled.mb-0
+              each option in tierOptions
+                - const limits = option && option.limits;
+                li.mb-2
+                  strong= option.label
+                  if limits
+                    div.small.text-muted= `Top ${limits.topK || 0}, per entry ${limits.perEntryChars || 0} chars, total ${limits.totalChars || 0} chars`
+          else
+            p.text-muted.mb-0 No tier configuration available.

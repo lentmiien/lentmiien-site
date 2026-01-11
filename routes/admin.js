@@ -78,6 +78,8 @@ router.get('/embedding-test', controller.embedding_test_page);
 router.post('/embedding-test', controller.embedding_test_generate);
 router.post('/embedding-test/search', controller.embedding_test_search);
 router.post('/embedding-test/delete', controller.embedding_test_delete);
+router.get('/rag-memory', controller.rag_memory_page);
+router.post('/rag-memory', controller.rag_memory_recall);
 router.get('/html-pages', controller.html_pages);
 router.post('/html-pages/upload-text', controller.create_html_page_from_text);
 router.post('/html-pages/upload-file', handleHtmlUpload);

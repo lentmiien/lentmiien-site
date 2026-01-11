@@ -22,6 +22,7 @@ const { formatBytes, formatNumber, formatPercent, calculatePercent } = require('
 const EmbeddingApiService = require('../services/embeddingApiService');
 const Agent5Service = require('../services/agent5Service');
 const TtsService = require('../services/ttsService');
+const RagMemoryService = require('../services/ragMemoryService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -239,6 +240,7 @@ const agent5Service = new Agent5Service({
   personalityModel: ChatPersonalityModel,
   responseTypeModel: ChatResponseTypeModel,
 });
+const ragMemoryService = new RagMemoryService();
 const EMBEDDING_TEST_MAX_TEXTS = 10;
 const EMBEDDING_DEFAULT_OVERLAP = 32;
 const EMBEDDING_SPLIT_MODES = ['single', 'lines'];
@@ -257,6 +259,20 @@ const EMBEDDING_SEARCH_TYPE_MAP = EMBEDDING_SEARCH_TYPES.reduce((acc, option) =>
   return acc;
 }, {});
 const EMBEDDING_DEFAULT_SEARCH_TYPE = EMBEDDING_SEARCH_TYPES[0].value;
+const RAG_MEMORY_TIERS = RagMemoryService.TIERS || {};
+const RAG_MEMORY_TIER_ORDER = ['none', 'minimal', 'medium'];
+const RAG_MEMORY_TIER_OPTIONS = RAG_MEMORY_TIER_ORDER
+  .filter((tier) => RAG_MEMORY_TIERS[tier])
+  .map((tier) => ({
+    value: tier,
+    label: tier === 'none'
+      ? 'None (no recall)'
+      : (tier === 'minimal' ? 'Minimal (top 3, 12k chars)' : 'Medium (top 7, 30k chars)'),
+    limits: RAG_MEMORY_TIERS[tier],
+  }));
+const RAG_MEMORY_DEFAULT_TIER = RAG_MEMORY_TIER_OPTIONS.find((option) => option.value === 'minimal')
+  ? 'minimal'
+  : (RAG_MEMORY_TIER_OPTIONS[0]?.value || 'minimal');
 const ASR_API_BASE = process.env.ASR_API_BASE || 'http://192.168.0.20:8010';
 const ASR_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 const ASR_DEFAULT_FORM = Object.freeze({
@@ -2999,6 +3015,76 @@ exports.embedding_test_delete = async (req, res) => {
       search,
       deleteFeedback: { status: 'error', message: error?.message || 'Unable to delete embeddings right now.' },
     });
+  }
+};
+
+const defaultRagMemoryForm = () => ({
+  prompt: '',
+  tier: RAG_MEMORY_DEFAULT_TIER,
+});
+
+function normalizeRagMemoryForm(body = {}) {
+  const prompt = typeof body.prompt === 'string'
+    ? body.prompt
+    : (typeof body.query === 'string' ? body.query : '');
+  const tierInput = typeof body.tier === 'string'
+    ? body.tier
+    : (typeof body.memory_tier === 'string' ? body.memory_tier : '');
+  const normalizedTier = RAG_MEMORY_TIERS[tierInput?.toLowerCase?.()]
+    ? tierInput.toLowerCase()
+    : RAG_MEMORY_DEFAULT_TIER;
+  return {
+    prompt: (prompt || '').trim(),
+    tier: normalizedTier,
+  };
+}
+
+function renderRagMemoryPage(res, { form, result = null, error = null }) {
+  const normalizedForm = normalizeRagMemoryForm(form);
+  return res.render('admin_rag_memory_test', {
+    form: normalizedForm,
+    result,
+    error,
+    tierOptions: RAG_MEMORY_TIER_OPTIONS,
+  });
+}
+
+exports.rag_memory_page = (req, res) => {
+  return renderRagMemoryPage(res, { form: defaultRagMemoryForm() });
+};
+
+exports.rag_memory_recall = async (req, res) => {
+  const form = normalizeRagMemoryForm(req.body || {});
+
+  if (!form.prompt) {
+    res.status(400);
+    return renderRagMemoryPage(res, { form, error: 'Please enter a prompt to recall memory.' });
+  }
+
+  try {
+    const recallResult = await ragMemoryService.recall(form.prompt, form.tier);
+
+    logger.notice('Admin rag memory recall completed', {
+      category: 'rag_memory',
+      metadata: {
+        promptLength: form.prompt.length,
+        tier: form.tier,
+        results: recallResult?.results?.length || 0,
+        totalCharacters: recallResult?.totalCharacters || 0,
+      },
+    });
+
+    return renderRagMemoryPage(res, { form, result: recallResult });
+  } catch (error) {
+    logger.error('Admin rag memory recall failed', {
+      category: 'rag_memory',
+      metadata: {
+        tier: form.tier,
+        message: error?.message,
+      },
+    });
+    res.status(error?.status || 500);
+    return renderRagMemoryPage(res, { form, error: error?.message || 'Unable to run recall right now.' });
   }
 };
 
