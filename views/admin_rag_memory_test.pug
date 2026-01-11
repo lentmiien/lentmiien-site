@@ -29,21 +29,21 @@ block content
           .card-body
             h5.mb-3 Recall results
             .d-flex.flex-wrap.gap-2.mb-3
-              span.badge.text-bg-light.text-secondary= `${(result.results && result.results.length) || 0} match(es)`
+              span.badge.text-bg-dark.text-secondary= `${(result.results && result.results.length) || 0} match(es)`
               if result.tier
                 span.badge.text-bg-info= `Tier: ${result.tier}`
               if result.limits
-                span.badge.text-bg-light.text-secondary= `per entry ${result.limits.perEntryChars || 0}, total ${result.limits.totalChars || 0}`
+                span.badge.text-bg-dark.text-secondary= `per entry ${result.limits.perEntryChars || 0}, total ${result.limits.totalChars || 0}`
               if result.searchMeta && result.searchMeta.topK
-                span.badge.text-bg-light.text-secondary= `topK ${result.searchMeta.topK}`
+                span.badge.text-bg-dark.text-secondary= `topK ${result.searchMeta.topK}`
               if result.searchMeta && result.searchMeta.model
-                span.badge.text-bg-light.text-secondary= result.searchMeta.model
+                span.badge.text-bg-dark.text-secondary= result.searchMeta.model
               if result.searchMeta && result.searchMeta.mode
                 span.badge.text-bg-info= result.searchMeta.mode
               if result.searchMeta && result.searchMeta.apiBase
-                span.badge.text-bg-light.text-secondary= result.searchMeta.apiBase
+                span.badge.text-bg-dark.text-secondary= result.searchMeta.apiBase
               if result.totalCharacters !== undefined
-                span.badge.text-bg-light.text-secondary= `${result.totalCharacters} chars returned`
+                span.badge.text-bg-dark.text-secondary= `${result.totalCharacters} chars returned`
             if result.results && result.results.length
               each entry, idx in result.results
                 .border.rounded-3.p-3.mb-3
@@ -58,7 +58,7 @@ block content
                         span.badge.text-bg-secondary Missing text
                     .d-flex.gap-2.flex-wrap
                       if entry.textLength !== undefined
-                        span.badge.text-bg-light.text-secondary= `${entry.textLength}/${entry.originalLength || entry.textLength} chars`
+                        span.badge.text-bg-dark.text-secondary= `${entry.textLength}/${entry.originalLength || entry.textLength} chars`
                   if entry.title
                     p.mb-1.fw-semibold= entry.title
                   if entry.preview
@@ -83,7 +83,7 @@ block content
                     if entry.updatedAt || entry.createdAt
                       span.text-muted= `Updated ${entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : (entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'n/a')}`
                   h6.small.mb-1 Text
-                  pre.mb-0.p-3.bg-light.border.rounded(style='white-space: pre-wrap; max-height: 280px; overflow: auto;')= entry.text && entry.text.length ? entry.text : '[empty]'
+                  pre.mb-0.p-3.bg-dark.border.rounded(style='white-space: pre-wrap; max-height: 280px; overflow: auto;')= entry.text && entry.text.length ? entry.text : '[empty]'
             else
               p.text-muted.mb-0 No matches found for this prompt and tier.
       else
