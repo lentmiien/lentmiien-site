@@ -23,6 +23,10 @@ block styles
     .browse-grid{margin-top:.75rem}
     .browse-actions button{min-width:0}
     #promptModal{z-index:99999;}
+    .workflow-field{border:1px solid var(--divider);background:var(--surface-2);border-radius:.75rem;padding:.75rem}
+    .workflow-field__title{font-weight:700;letter-spacing:.01em}
+    .workflow-field__meta{color:var(--text-muted);font-size:.85rem}
+    #workflowJson{font-family:'JetBrains Mono','Fira Code',monospace;font-size:.85rem}
 
 block content
   .container.py-3.imgen-page
@@ -46,7 +50,9 @@ block content
       .card-body
         .d-flex.justify-content-between.align-items-center.mb-2
           h2.h6.mb-0 Workflows
-          button#btnLoadWf.btn.btn-primary.btn-sm(type="button") Reload list
+          .d-flex.gap-2
+            button#btnViewJson.btn.btn-outline-secondary.btn-sm(type="button" data-bs-toggle="modal" data-bs-target="#jsonModal") View JSON
+            button#btnLoadWf.btn.btn-primary.btn-sm(type="button") Reload list
         .row.g-3.align-items-end
           .col-md-8
             label.form-label(for="wfSelect") Select workflow
@@ -54,12 +60,21 @@ block content
           .col-md-4
             small#wfCount.text-muted 0 loaded
         .mt-3
-          label.form-label(for="workflowJson") Edit workflow JSON
-          textarea#workflowJson.form-control(rows="12" spellcheck="false")
-        .row.g-3.mt-2
+          label.form-label(for="nodeFieldSelect") Customize workflow inputs
+          select#nodeFieldSelect.form-select(disabled aria-describedby="fieldHelp")
+          small#fieldHelp.text-muted Select a node + value to expose an input; only fields with values are listed.
+        .row.g-2.mt-2
+          .col-md-8
+            .form-check.mb-0
+              input#fieldAsPrompt.form-check-input(type="checkbox")
+              label.form-check-label(for="fieldAsPrompt") Use as prompt (textarea; used for rating/embeddings)
+          .col-md-4.text-md-end
+            button#btnMakeEditable.btn.btn-outline-primary(type="button") Make editable
+        #editableFields.mt-3
+        .row.g-3.mt-3
           .col-md-6
-            label.form-label(for="promptText") Prompt text (for rating/embeddings, optional)
-            input#promptText.form-control(type="text" autocomplete="off" placeholder="Describe what you asked for…")
+            label.form-label(for="promptText") Prompt (rating/embeddings)
+            textarea#promptText.form-control(rows="2" readonly placeholder="Select a prompt field above")
           .col-md-6
             label.form-label(for="negativeText") Negative prompt (optional)
             input#negativeText.form-control(type="text" autocomplete="off")
@@ -106,6 +121,17 @@ block content
               input#promptFilter.form-control.form-control-sm(type='search' placeholder='Filter prompts...' autocomplete='off')
             // List
             .list-group#promptList(style='max-height: 420px; overflow:auto;')
+          .modal-footer
+            button.btn.btn-secondary(type='button' data-bs-dismiss='modal') Close
+
+    #jsonModal.modal.fade(tabindex='-1' aria-hidden='true')
+      .modal-dialog.modal-xl
+        .modal-content
+          .modal-header
+            h5.modal-title Workflow JSON (read-only)
+            button.btn-close(type='button' data-bs-dismiss='modal' aria-label='Close')
+          .modal-body
+            textarea#workflowJson.form-control.monospace(rows='18' spellcheck='false' readonly)
           .modal-footer
             button.btn.btn-secondary(type='button' data-bs-dismiss='modal') Close
 

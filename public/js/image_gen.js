@@ -8,6 +8,11 @@
   const wfJsonArea = $('#workflowJson');
   const promptTextInput = $('#promptText');
   const negativeTextInput = $('#negativeText');
+  const nodeFieldSelect = $('#nodeFieldSelect');
+  const fieldAsPromptToggle = $('#fieldAsPrompt');
+  const editableFieldsContainer = $('#editableFields');
+  const btnMakeEditable = $('#btnMakeEditable');
+  const btnViewJson = $('#btnViewJson');
   const jobIdInput = $('#jobId');
   const jobStatusEl = $('#jobStatus');
   const resultsEl = $('#results');
@@ -15,6 +20,14 @@
   const instanceMetaEl = $('#instanceMeta');
   let ratingBarVisible = false;
   let currentJobId = null;
+  let currentWorkflowName = null;
+  let originalWorkflow = null;
+  const availableFields = new Map();
+  const editableFields = new Map();
+  if (wfJsonArea) wfJsonArea.readOnly = true;
+  if (promptTextInput) {
+    promptTextInput.readOnly = true;
+  }
 
   function setStatus(text) {
     if (statusPill) statusPill.textContent = text;
@@ -45,6 +58,353 @@
     const ct = resp.headers.get('content-type') || '';
     if (ct.includes('application/json')) return resp.json();
     return resp;
+  }
+
+  function cloneWorkflow(obj) {
+    if (obj === null || obj === undefined) return null;
+    try {
+      return typeof structuredClone === 'function' ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+    } catch (_) {
+      return JSON.parse(JSON.stringify(obj));
+    }
+  }
+
+  function workflowStorageKey() {
+    const name = currentWorkflowName ? String(currentWorkflowName).trim() : '';
+    return name ? `imageGenWorkflowUi:${name}` : null;
+  }
+
+  function isEditablePrimitive(value) {
+    const t = typeof value;
+    if (value === null || value === undefined) return false;
+    if (t === 'string' || t === 'number' || t === 'boolean') return true;
+    return false;
+  }
+
+  function getNodeLabel(node, fallback) {
+    return (
+      node?.title ||
+      node?._meta?.title ||
+      node?.label ||
+      node?.name ||
+      node?.type ||
+      node?.class_type ||
+      (fallback ? `Node ${fallback}` : 'Node')
+    );
+  }
+
+  function collectNodeRefs(workflow) {
+    const refs = [];
+    if (!workflow || typeof workflow !== 'object') return refs;
+
+    if (Array.isArray(workflow.nodes)) {
+      workflow.nodes.forEach((node, idx) => {
+        if (!node || typeof node !== 'object' || !node.inputs || typeof node.inputs !== 'object') return;
+        const nodeId = String(node.id ?? node._id ?? idx);
+        refs.push({
+          node,
+          nodeId,
+          nodeLabel: getNodeLabel(node, nodeId),
+          mode: 'array',
+          key: nodeId
+        });
+      });
+    }
+
+    Object.entries(workflow).forEach(([key, node]) => {
+      if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+      if (!node.inputs || typeof node.inputs !== 'object') return;
+      const nodeId = String(node.id ?? node._id ?? key);
+      refs.push({
+        node,
+        nodeId,
+        nodeLabel: getNodeLabel(node, nodeId),
+        mode: 'map',
+        key
+      });
+    });
+
+    return refs;
+  }
+
+  function renderNodeFieldSelect() {
+    if (!nodeFieldSelect) return;
+    nodeFieldSelect.innerHTML = '';
+    if (!availableFields.size) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No editable fields found in workflow';
+      nodeFieldSelect.appendChild(opt);
+      nodeFieldSelect.disabled = true;
+      if (btnMakeEditable) btnMakeEditable.disabled = true;
+      if (fieldAsPromptToggle) fieldAsPromptToggle.disabled = true;
+      return;
+    }
+
+    const grouped = new Map();
+    availableFields.forEach((field) => {
+      const label = field.nodeLabel || `Node ${field.nodeId}`;
+      if (!grouped.has(label)) grouped.set(label, []);
+      grouped.get(label).push(field);
+    });
+
+    Array.from(grouped.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .forEach(([groupLabel, fields]) => {
+        const optGroup = document.createElement('optgroup');
+        optGroup.label = groupLabel;
+        fields
+          .sort((a, b) => a.field.localeCompare(b.field))
+          .forEach((field) => {
+            const opt = document.createElement('option');
+            opt.value = field.key;
+            opt.textContent = `${field.field} (${String(field.defaultValue)})`;
+            optGroup.appendChild(opt);
+          });
+        nodeFieldSelect.appendChild(optGroup);
+      });
+
+    nodeFieldSelect.disabled = false;
+    if (btnMakeEditable) btnMakeEditable.disabled = false;
+    if (fieldAsPromptToggle) fieldAsPromptToggle.disabled = false;
+    if (!nodeFieldSelect.value) nodeFieldSelect.selectedIndex = 0;
+  }
+
+  function enforceSinglePrompt() {
+    let promptSeen = false;
+    editableFields.forEach((field) => {
+      if (field.controlType === 'prompt') {
+        if (promptSeen) field.controlType = 'text';
+        promptSeen = true;
+      }
+    });
+  }
+
+  function buildFieldValue(field) {
+    if (!field) return null;
+    if (field.controlType === 'number') {
+      if (field.value === '' || field.value === undefined || field.value === null) {
+        return Number(field.defaultValue) || 0;
+      }
+      const num = Number(field.value);
+      return Number.isFinite(num) ? num : Number(field.defaultValue) || 0;
+    }
+    const raw = field.value !== undefined ? field.value : field.defaultValue;
+    return String(raw ?? '');
+  }
+
+  function findNodeForField(workflow, loc = {}) {
+    if (!workflow || typeof workflow !== 'object') return null;
+    if (loc.mode === 'map' && loc.key && workflow[loc.key]) return workflow[loc.key];
+
+    if (Array.isArray(workflow.nodes)) {
+      const match = workflow.nodes.find((node) => String(node.id ?? node._id ?? node.name) === loc.nodeId);
+      if (match) return match;
+    }
+
+    if (loc.mode === 'map' && loc.nodeId && workflow[loc.nodeId]) {
+      return workflow[loc.nodeId];
+    }
+
+    const ref = collectNodeRefs(workflow).find(
+      (entry) => entry.nodeId === loc.nodeId || entry.key === loc.key || entry.nodeLabel === loc.nodeLabel
+    );
+    return ref ? ref.node : null;
+  }
+
+  function applyFieldOverrides(workflow) {
+    if (!workflow || typeof workflow !== 'object') return workflow;
+    editableFields.forEach((field) => {
+      const node = findNodeForField(workflow, field.loc);
+      if (!node || !node.inputs || typeof node.inputs !== 'object') return;
+      node.inputs[field.field] = buildFieldValue(field);
+    });
+    return workflow;
+  }
+
+  function renderEditableFields() {
+    if (!editableFieldsContainer) return;
+    editableFieldsContainer.innerHTML = '';
+    if (!editableFields.size) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'text-muted';
+      placeholder.textContent = 'No custom inputs yet. Pick a node + field, then click Make editable.';
+      editableFieldsContainer.appendChild(placeholder);
+      return;
+    }
+
+    editableFields.forEach((field) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'workflow-field mb-2';
+
+      const header = document.createElement('div');
+      header.className = 'd-flex justify-content-between align-items-start';
+      const title = document.createElement('div');
+      title.innerHTML = `
+        <div class="workflow-field__title">${field.field}</div>
+        <div class="workflow-field__meta">${field.nodeLabel}</div>
+      `;
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn btn-sm btn-outline-danger';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => {
+        editableFields.delete(field.key);
+        saveUiState();
+        renderEditableFields();
+        refreshPromptPreview();
+        updateJsonViewer();
+      });
+
+      header.appendChild(title);
+      header.appendChild(removeBtn);
+      wrapper.appendChild(header);
+
+      const controlRow = document.createElement('div');
+      controlRow.className = 'd-flex flex-wrap gap-2 align-items-center mt-2';
+      const typeSelect = document.createElement('select');
+      typeSelect.className = 'form-select form-select-sm';
+      [
+        { value: 'text', label: 'Text input' },
+        { value: 'number', label: 'Number input' },
+        { value: 'prompt', label: 'Prompt (textarea)' }
+      ].forEach((opt) => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        typeSelect.appendChild(option);
+      });
+      typeSelect.value = field.controlType || 'text';
+      typeSelect.addEventListener('change', (e) => {
+        setFieldControlType(field.key, e.target.value);
+      });
+      controlRow.appendChild(typeSelect);
+      wrapper.appendChild(controlRow);
+
+      const inputWrap = document.createElement('div');
+      inputWrap.className = 'mt-2';
+      const valueInput =
+        field.controlType === 'prompt'
+          ? document.createElement('textarea')
+          : document.createElement('input');
+      if (field.controlType === 'prompt') {
+        valueInput.rows = 3;
+      } else {
+        valueInput.type = field.controlType === 'number' ? 'number' : 'text';
+      }
+      valueInput.className = 'form-control';
+      valueInput.value = field.value !== undefined ? field.value : field.defaultValue ?? '';
+      valueInput.addEventListener('input', (e) => {
+        updateFieldValue(field.key, e.target.value);
+      });
+      inputWrap.appendChild(valueInput);
+      wrapper.appendChild(inputWrap);
+
+      editableFieldsContainer.appendChild(wrapper);
+    });
+  }
+
+  function refreshPromptPreview() {
+    if (!promptTextInput) return;
+    const promptField = Array.from(editableFields.values()).find((f) => f.controlType === 'prompt');
+    const value = promptField ? String(promptField.value ?? promptField.defaultValue ?? '') : '';
+    promptTextInput.value = value;
+  }
+
+  function saveUiState() {
+    const storageKey = workflowStorageKey();
+    if (!storageKey || typeof localStorage === 'undefined') return;
+    const payload = {
+      fields: Array.from(editableFields.values()).map((field) => ({
+        key: field.key,
+        nodeId: field.nodeId,
+        field: field.field,
+        controlType: field.controlType,
+        value: field.value
+      }))
+    };
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch (err) {
+      log('Unable to save UI state locally: ' + err.message, 'text-warning');
+    }
+  }
+
+  function loadSavedUiState() {
+    editableFields.clear();
+    const storageKey = workflowStorageKey();
+    if (!storageKey || typeof localStorage === 'undefined') {
+      renderEditableFields();
+      refreshPromptPreview();
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        renderEditableFields();
+        refreshPromptPreview();
+        return;
+      }
+      const payload = JSON.parse(raw);
+      const fields = Array.isArray(payload?.fields) ? payload.fields : [];
+      fields.forEach((saved) => {
+        const descriptor = availableFields.get(saved.key || `${saved.nodeId}::${saved.field}`);
+        if (!descriptor) return;
+        const controlType =
+          saved.controlType === 'prompt'
+            ? 'prompt'
+            : saved.controlType === 'number'
+            ? 'number'
+            : descriptor.controlType;
+        editableFields.set(descriptor.key, Object.assign({}, descriptor, { controlType, value: saved.value }));
+      });
+      enforceSinglePrompt();
+      renderEditableFields();
+      refreshPromptPreview();
+    } catch (err) {
+      log('Failed to load saved UI state: ' + err.message, 'text-warning');
+      renderEditableFields();
+      refreshPromptPreview();
+    }
+  }
+
+  function clearWorkflowUiState() {
+    availableFields.clear();
+    editableFields.clear();
+    renderNodeFieldSelect();
+    renderEditableFields();
+    if (fieldAsPromptToggle) fieldAsPromptToggle.checked = false;
+    if (wfJsonArea) wfJsonArea.value = '';
+    if (promptTextInput) promptTextInput.value = '';
+  }
+
+  function buildAvailableFields(workflow) {
+    availableFields.clear();
+    const refs = collectNodeRefs(workflow);
+    refs.forEach((ref) => {
+      if (!ref.node || !ref.node.inputs || typeof ref.node.inputs !== 'object') return;
+      Object.entries(ref.node.inputs).forEach(([field, value]) => {
+        if (!isEditablePrimitive(value)) return;
+        const key = `${ref.nodeId}::${field}`;
+        if (availableFields.has(key)) return;
+        availableFields.set(key, {
+          key,
+          nodeId: ref.nodeId,
+          nodeLabel: ref.nodeLabel,
+          field,
+          defaultValue: value,
+          value,
+          controlType: typeof value === 'number' ? 'number' : 'text',
+          loc: {
+            mode: ref.mode,
+            key: ref.key,
+            nodeId: ref.nodeId,
+            nodeLabel: ref.nodeLabel
+          }
+        });
+      });
+    });
+    renderNodeFieldSelect();
   }
 
   function detectMediaTypeFromName(name) {
@@ -106,11 +466,17 @@
   }
 
   async function loadWorkflowJson(name, options = {}) {
-    if (!name || !wfJsonArea) return;
+    if (!name) return;
+    currentWorkflowName = name;
+    originalWorkflow = null;
+    clearWorkflowUiState();
     try {
       const resp = await api(`/api/workflows/${encodeURIComponent(name)}`);
       const wf = resp?.workflow || resp;
-      wfJsonArea.value = JSON.stringify(wf, null, 2);
+      originalWorkflow = wf;
+      buildAvailableFields(wf);
+      loadSavedUiState();
+      updateJsonViewer();
       if (!options.quiet) log(`Loaded workflow ${name}`);
     } catch (err) {
       log('Load workflow failed: ' + err.message, 'text-danger');
@@ -128,6 +494,8 @@
       if (wfCount) wfCount.textContent = `${list.length} loaded`;
       if (!list.length) {
         wfSelect.disabled = true;
+        clearWorkflowUiState();
+        updateJsonViewer();
         setStatus('idle');
         clearResults('No workflows available.');
         return;
@@ -154,6 +522,9 @@
   }
 
   function parseWorkflowJson() {
+    if (originalWorkflow) {
+      return cloneWorkflow(originalWorkflow);
+    }
     if (!wfJsonArea) return null;
     const text = wfJsonArea.value.trim();
     if (!text) {
@@ -166,6 +537,76 @@
       log('Workflow JSON invalid: ' + err.message, 'text-danger');
       return null;
     }
+  }
+
+  function buildWorkflowPayload() {
+    const base = parseWorkflowJson();
+    if (!base) return null;
+    const payload = cloneWorkflow(base);
+    return applyFieldOverrides(payload);
+  }
+
+  function updateJsonViewer() {
+    if (!wfJsonArea) return;
+    const payload = buildWorkflowPayload();
+    wfJsonArea.value = payload ? JSON.stringify(payload, null, 2) : '';
+  }
+
+  function setFieldControlType(key, type) {
+    const field = editableFields.get(key);
+    if (!field) return;
+    const nextType = type === 'number' ? 'number' : type === 'prompt' ? 'prompt' : 'text';
+    field.controlType = nextType;
+    if (nextType === 'prompt') {
+      editableFields.forEach((entry, entryKey) => {
+        if (entryKey !== key && entry.controlType === 'prompt') entry.controlType = 'text';
+      });
+    }
+    saveUiState();
+    renderEditableFields();
+    refreshPromptPreview();
+    updateJsonViewer();
+  }
+
+  function updateFieldValue(key, value) {
+    const field = editableFields.get(key);
+    if (!field) return;
+    field.value = value;
+    saveUiState();
+    refreshPromptPreview();
+    updateJsonViewer();
+  }
+
+  function makeSelectedFieldEditable() {
+    if (!nodeFieldSelect) return;
+    const selectedKey = nodeFieldSelect.value;
+    if (!selectedKey) {
+      log('Select a node field first.', 'text-warning');
+      return;
+    }
+    const descriptor = availableFields.get(selectedKey);
+    if (!descriptor) {
+      log('Field not available in this workflow.', 'text-warning');
+      return;
+    }
+    if (editableFields.has(descriptor.key)) {
+      log('Field already editable.', 'text-muted');
+      return;
+    }
+    const controlType = fieldAsPromptToggle && fieldAsPromptToggle.checked ? 'prompt' : descriptor.controlType;
+    editableFields.set(descriptor.key, Object.assign({}, descriptor, { controlType }));
+    if (fieldAsPromptToggle) fieldAsPromptToggle.checked = false;
+    enforceSinglePrompt();
+    saveUiState();
+    renderEditableFields();
+    refreshPromptPreview();
+    updateJsonViewer();
+  }
+
+  function getPromptFieldValue() {
+    const promptField = Array.from(editableFields.values()).find((f) => f.controlType === 'prompt');
+    if (promptField) return String(promptField.value ?? promptField.defaultValue ?? '');
+    return promptTextInput ? promptTextInput.value.trim() : '';
   }
 
   function hideRatingBar() {
@@ -303,9 +744,9 @@
       log('Select a workflow first.', 'text-warning');
       return;
     }
-    const promptJson = parseWorkflowJson();
+    const promptJson = buildWorkflowPayload();
     if (!promptJson) return;
-    const promptText = promptTextInput ? promptTextInput.value.trim() : '';
+    const promptText = getPromptFieldValue();
     const negativeText = negativeTextInput ? negativeTextInput.value.trim() : '';
     hideRatingBar();
     clearResults('Waiting for gateway…');
@@ -361,6 +802,8 @@
   if (wfSelect) {
     wfSelect.addEventListener('change', (e) => loadWorkflowJson(e.target.value));
   }
+  if (btnMakeEditable) btnMakeEditable.addEventListener('click', makeSelectedFieldEditable);
+  if (btnViewJson) btnViewJson.addEventListener('click', updateJsonViewer);
   const btnGenerate = $('#btnGenerate');
   if (btnGenerate) btnGenerate.addEventListener('click', generate);
   const btnPoll = $('#btnPoll');
@@ -368,6 +811,8 @@
   const btnHealth = $('#btnHealth');
   if (btnHealth) btnHealth.addEventListener('click', checkHealth);
 
+  renderNodeFieldSelect();
+  renderEditableFields();
   setStatus('idle');
   loadWorkflows();
   checkHealth();

@@ -1,25 +1,7 @@
-I want to create a new service class `RagMemoryService`, that builds on top of the embedding service class (services/embeddingApiService.js), to create a tool that can create a structured output from an input, that will later be used as a simple memory function for my chat interface.
-
-I want to create this new functionality in 2 stages to begin with, first I want to create the RagMemoryService and make it use the embedding service and fetch full text data, and just test it as it is, and in the second stage, I want to link it up to my chat interface.
-
-Importantly, I only want RagMemoryService to use the high quality embedding, for more high quality/important content.
-
-So, RagMemoryService should have some sort of "Recall" function, that takes 2 inputs, `prompt` and `tier`. Prompt is the text to use to query the embedding database, and tier is for determining preprocessing and how much data to return. I won't be adding any preprocessing right now, but plan to do it in the future, for the amount of data, these are my initial limitations:
-* `none`: return no data (normally I wouldn't even call the function, but create for completeness)
-* `minimal`: return full text of best 3 matches (max 12,000 total characters, and max 8,000 characters per entry, cut off entries that exceed the limit)
-* `medium`: return full text of best 7 matches (max 30,000 total characters, and max 12,000 characters per entry, cut off entries that exceed the limit)
-
-I expect to just use the `similaritySearchHighQuality` function as it is from the embedding class, and when I get back the search results, I'll fetch the original texts from the original databases, create a structured response based on `tier`, and return to the user. For the first stage, I just want to create a simple test page on the admin route, to display what I get returned, and just make sure that RagMemoryService works the way I expect.
-
-The embedding search can return the following types of data:
-* OCR job -> data is in the `models/ocr_job.js` database, use `files[id].result.layoutText` as the full text (source has the file id, parent has the job id)
-* Knowledge -> data is in the `models/chat4_knowledge.js` database, use `title` + `contentMarkdown` as the full text (source has the knowledge id, ignore parent id)
-* Chat -> data is in the `models/chat5.js` database, use `content.text` as the full text (source has the message id, ignore parent id)
-* ASR job -> data is in the `models/asr_job.js` database, use `transcriptText` as the full text (source has the asr job id, ignore parent id)
-* Image job -> data is in the `models/good_image.js` database, use `prompt` as the full text (source has the good images id, ignore parent id)
-* Message -> data is in the `models/message_inbox.js` database, use `subject` + `text` or `textAsHtml` or `html` as the full text (source has the message id, ignore parent id)
-Besides full texts, also return source URLs (refer to `views/embedding_search.pug` for how to generate the URLs), created or updated date, similarity score, and a truncated flag (true = truncated/not full text, false = full text).
-
-For the high quality embedding database, "Knowledge" will be the most common response type.
-
-Now, create the RagMemoryService service class, and a simple test page on the admin route.
+On the `views/image_gen/index.pug` page, I currently show a "Edit workflow JSON", for directly edit the workflow JSON before sending of to ComfyUI to generate the output. I'd like to change this as following:
+* Keep the JSON editor, but turn into a viewer only, and maybe hide behind a popup ("View JSON")
+* Add a customizable UI
+    * Show a select box that list all nodes, and sub data labels (that has a value)
+    * User select a node + label, click make editable, to reveal an input field in the UI (can be set as string or number, and one UI element can optionally be specified as "prompt" [make text area instead of input], input default values are set to the values in the original JSON file) *Use the "prompt" UI element for rating/embeddings
+    * The users choices are saved to the browser local storage, for the selected workflow, so when the same workflow is selected again, the same UI inputs are shown
+* When pressing generate, the app replaces the values in the JSON object with the values in the UI inputs, and send updated JSON to the server
