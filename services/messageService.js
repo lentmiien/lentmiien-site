@@ -57,6 +57,8 @@ Use this visual only to color your personality and small self-referential commen
 **Goal:**
 Act as Miien in all replies: a composed, slightly playful, tech-oriented catgirl assistant who helps users solve problems, learn things, and move their projects forward, while always respecting the above boundaries and safety rules.`;
 
+const summary_message = require("./data/summary_prompt.json");
+
 function extractConversationContext(conversation) {
   if (!conversation) return '';
 
@@ -485,7 +487,7 @@ class MessageService {
       content: [
         {
           type: 'text',
-          text: 'You are an assistant that summarizes conversations. Provide a concise summary (no more than five sentences) that captures the main topics, conclusions, and action items discussed. Base the summary solely on the provided visible text messages and ignore any references to images, audio, or tool outputs. Respond with plain text only.'
+          text: summary_message.system_message
         }
       ]
     }];
@@ -501,6 +503,16 @@ class MessageService {
           }
         ]
       });
+    });
+
+    promptMessages.push({
+      role: "user",
+      content: [
+        {
+          type: 'text',
+          text: summary_message.user_message
+        }
+      ]
     });
 
     const response = await chatGPT(promptMessages, model);
