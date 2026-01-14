@@ -9,6 +9,7 @@ block content
   - const logInsights = dashboard.logInsights || {};
   - const formatFixed = (value, digits = 2) => (typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(digits) : 'N/A');
   - const formatNumber = (value) => (typeof value === 'number' && !Number.isNaN(value) ? value.toLocaleString('en-US') : 'N/A');
+  - const formatPercent = (value, digits = 1) => (typeof value === 'number' && !Number.isNaN(value) ? `${(value * 100).toFixed(digits)}%` : 'N/A');
   .ai-gateway
     .ai-gateway__header
       .ai-gateway__heading
@@ -275,6 +276,27 @@ block content
             li Peak VRAM delta: #{logInsights.ocr.maxVramDeltaDisplay || 'N/A'}
             li Avg pixels processed: #{formatNumber(logInsights.ocr.avgPixelCount)}
             li Avg max new tokens: #{formatNumber(logInsights.ocr.avgMaxNewTokens)}
+            if typeof logInsights.ocr.avgImageMegapixels === 'number'
+              li Avg image size: #{formatFixed(logInsights.ocr.avgImageMegapixels, 3)} MP
+            if typeof logInsights.ocr.avgObservedBytesPerPixel === 'number'
+              li Observed bytes/pixel: #{formatNumber(logInsights.ocr.avgObservedBytesPerPixel)}
+            if typeof logInsights.ocr.avgEstimatedMaxInputMp === 'number'
+              li Est. max input capacity: #{formatFixed(logInsights.ocr.avgEstimatedMaxInputMp, 2)} MP
+            if typeof logInsights.ocr.avgMinFreeVramMib === 'number'
+              li Avg min free VRAM: #{formatFixed(logInsights.ocr.avgMinFreeVramMib, 0)} MiB
+          if typeof logInsights.ocr.avgDurationSec === 'number' || typeof logInsights.ocr.avgQueueSec === 'number' || typeof logInsights.ocr.avgUpstreamDurationSec === 'number' || typeof logInsights.ocr.upstreamSuccessRate === 'number' || typeof logInsights.ocr.avgFetchDurationSec === 'number'
+            h5.mt-3.mb-2 Latency & upstream
+            ul.limits-list
+              if typeof logInsights.ocr.avgDurationSec === 'number'
+                li Avg duration: #{formatFixed(logInsights.ocr.avgDurationSec, 2)} s
+              if typeof logInsights.ocr.avgUpstreamDurationSec === 'number'
+                li Upstream duration: #{formatFixed(logInsights.ocr.avgUpstreamDurationSec, 2)} s
+              if typeof logInsights.ocr.avgQueueSec === 'number'
+                li Avg queue wait: #{formatFixed(logInsights.ocr.avgQueueSec, 3)} s
+              if typeof logInsights.ocr.avgFetchDurationSec === 'number'
+                li Job summary fetch: #{formatFixed(logInsights.ocr.avgFetchDurationSec, 3)} s
+              if typeof logInsights.ocr.upstreamSuccessRate === 'number'
+                li Upstream success: #{formatPercent(logInsights.ocr.upstreamSuccessRate)}
           if logInsights.ocr.pixelBuckets && logInsights.ocr.pixelBuckets.length
             h5.mt-3.mb-2 VRAM by pixel count
             .table-responsive
@@ -309,6 +331,21 @@ block content
                       td= bucket.avgVramDeltaDisplay
                       td= formatNumber(bucket.avgMaxTokens)
                       td= bucket.count
+          if logInsights.ocr.timings && logInsights.ocr.timings.length
+            h5.mt-3.mb-2 OCR pipeline timings
+            .table-responsive
+              table.table.table-dark.table-sm.mb-0
+                thead
+                  tr
+                    th Stage
+                    th Avg (s)
+                    th P95 (s)
+                tbody
+                  each timing in logInsights.ocr.timings
+                    tr
+                      td= timing.label
+                      td= formatFixed(timing.average, 3)
+                      td= formatFixed(timing.p95, 3)
         else
           p.text-muted.mb-0 No OCR log entries yet.
       .panel

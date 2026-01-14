@@ -1311,13 +1311,49 @@ function normalizeLogEntry(rawEntry) {
   const newPixels = asNumber(scaleInfo.new_pixels);
   const newW = asNumber(scaleInfo.new_w);
   const newH = asNumber(scaleInfo.new_h);
-  const computedNewPixels = newPixels !== null
-    ? newPixels
-    : (newW !== null && newH !== null ? newW * newH : null);
+  const origPixels = asNumber(scaleInfo.orig_pixels);
+  const origW = asNumber(scaleInfo.orig_w);
+  const origH = asNumber(scaleInfo.orig_h);
+  const hunyuanSummary = rawEntry.hunyuanocr_stats_summary || rawEntry.hunyuan_stats_summary;
+  const hunyuanPixels = asNumber(hunyuanSummary?.image_pixels?.pixels);
+  const hunyuanMegapixels = asNumber(hunyuanSummary?.image_pixels?.megapixels);
+  const computedNewPixels = (() => {
+    if (newPixels !== null && newPixels !== undefined) return newPixels;
+    if (newW !== null && newH !== null) return newW * newH;
+    if (origPixels !== null && origPixels !== undefined) return origPixels;
+    if (origW !== null && origH !== null) return origW * origH;
+    if (hunyuanPixels !== null && hunyuanPixels !== undefined) return hunyuanPixels;
+    return null;
+  })();
+  const pixelMegapixels = hunyuanMegapixels !== null && hunyuanMegapixels !== undefined
+    ? hunyuanMegapixels
+    : (computedNewPixels !== null && computedNewPixels !== undefined ? computedNewPixels / 1000000 : null);
   const promptEvalCount = asNumber(rawEntry.ollama_stats?.prompt_eval_count || rawEntry.prompt_eval_count);
   const evalCount = asNumber(rawEntry.ollama_stats?.eval_count || rawEntry.eval_count);
   const promptTokPerSec = asNumber(rawEntry.ollama_stats?.prompt_tok_per_s || rawEntry.prompt_tok_per_s);
   const genTokPerSec = asNumber(rawEntry.ollama_stats?.gen_tok_per_s || rawEntry.gen_tok_per_s || rawEntry.tokens_per_second);
+  const upstreamStatusCode = asNumber(rawEntry.upstream_status_code || rawEntry.upstreamStatusCode);
+  const upstreamDurationSec = asNumber(rawEntry.upstream_duration_sec || rawEntry.upstreamDurationSec);
+  const hunyuanEstimate = hunyuanSummary?.estimate || {};
+  const observedBytesPerPixel = asNumber(hunyuanEstimate.observed_bytes_per_pixel);
+  const estimatedMaxInputPixels = asNumber(hunyuanEstimate.estimated_max_input_pixels_based_on_free_vram);
+  const estimatedMaxInputMp = asNumber(hunyuanEstimate.estimated_max_input_megapixels_based_on_free_vram);
+  const baselineFreeMib = asNumber(hunyuanEstimate.baseline_free_mib);
+  const minFreeVramMib = asNumber(hunyuanSummary?.gpu?.memory_monitor?.min_free_mib);
+  const maxUsedVramMib = asNumber(hunyuanSummary?.gpu?.memory_monitor?.max_used_mib);
+  const hunyuanTimings = {};
+  if (hunyuanSummary?.timings_s && typeof hunyuanSummary.timings_s === 'object') {
+    Object.entries(hunyuanSummary.timings_s).forEach(([key, value]) => {
+      const numeric = asNumber(value);
+      if (numeric !== null && numeric !== undefined) {
+        hunyuanTimings[key] = numeric;
+      }
+    });
+  }
+  const hunyuanFetchDurationSec = asNumber(rawEntry.hunyuanocr_stats_fetch?.duration_sec);
+  const hunyuanFileSizeBytes = asNumber(hunyuanSummary?.request?.file_size_bytes);
+  const hunyuanMaxNewTokens = asNumber(hunyuanSummary?.request?.max_new_tokens);
+  const responseBytes = asNumber(rawEntry.response_bytes || rawEntry.responseBytes);
 
   return {
     tsMs: resolvedTsMs,
@@ -1326,6 +1362,8 @@ function normalizeLogEntry(rawEntry) {
     statusCode: rawEntry.status_code || rawEntry.status,
     durationSec: asNumber(rawEntry.duration_sec),
     queueWaitSec: asNumber(rawEntry.queue_wait_sec),
+    upstreamStatusCode,
+    upstreamDurationSec,
     backend: rawEntry.backend,
     model: rawEntry.model,
     language: rawEntry.language,
@@ -1342,10 +1380,22 @@ function normalizeLogEntry(rawEntry) {
     genTokPerSec,
     inputBytes: asNumber(rawEntry.input_bytes),
     sentBytes: asNumber(rawEntry.sent_bytes),
+    responseBytes,
     scaled: rawEntry.scaled,
     pixelCount: computedNewPixels,
+    imageMegapixels: pixelMegapixels,
     maxNewTokensReq: asNumber(rawEntry.max_new_tokens_req),
     maxNewTokensSent: asNumber(rawEntry.max_new_tokens_sent),
+    hunyuanObservedBytesPerPixel: observedBytesPerPixel,
+    hunyuanEstimatedMaxInputPixels: estimatedMaxInputPixels,
+    hunyuanEstimatedMaxInputMp: estimatedMaxInputMp,
+    hunyuanBaselineFreeMib: baselineFreeMib,
+    hunyuanMinFreeVramMib: minFreeVramMib,
+    hunyuanMaxUsedVramMib: maxUsedVramMib,
+    hunyuanTimings: Object.keys(hunyuanTimings).length ? hunyuanTimings : null,
+    hunyuanFetchDurationSec,
+    hunyuanFileSizeBytes,
+    hunyuanMaxNewTokens,
     outputCount: asNumber(rawEntry.output_count),
     workflowId: rawEntry.workflow_id,
     promptId: rawEntry.prompt_id,
@@ -1602,6 +1652,17 @@ function buildOcrLogStats(entries) {
     return null;
   }
 
+  const stageOrder = ['read_image', 'preprocess', 'model_to_gpu', 'inputs_to_device', 'generate', 'decode', 'model_to_cpu', 'total'];
+  const stageLabels = {
+    read_image: 'Read image',
+    preprocess: 'Preprocess',
+    model_to_gpu: 'Model to GPU',
+    inputs_to_device: 'Inputs to device',
+    generate: 'Generate',
+    decode: 'Decode',
+    model_to_cpu: 'Model to CPU',
+    total: 'Total pipeline',
+  };
   const pixelBuckets = [
     { label: '<=0.5 MP', max: 500000 },
     { label: '0.5-1.5 MP', max: 1500000 },
@@ -1619,16 +1680,69 @@ function buildOcrLogStats(entries) {
   const tokenBucketData = tokenBuckets.map((bucket) => ({ ...bucket, vramDeltas: [], tokens: [], count: 0 }));
   const vramDeltas = [];
   const pixelCounts = [];
+  const megapixels = [];
   const maxTokens = [];
   const durations = [];
   const queueValues = [];
+  const upstreamDurations = [];
+  const upstreamStatuses = [];
+  const observedBytesPerPixelValues = [];
+  const estimatedMaxMpValues = [];
+  const minFreeVramValues = [];
+  const fetchDurations = [];
+  const responseBytes = [];
+  const fileSizes = [];
+  const timingValues = new Map();
 
   entries.forEach((entry) => {
     if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) vramDeltas.push(entry.vramDeltaBytes);
-    if (entry.pixelCount !== null && entry.pixelCount !== undefined) pixelCounts.push(entry.pixelCount);
-    if (entry.maxNewTokensSent !== null && entry.maxNewTokensSent !== undefined) maxTokens.push(entry.maxNewTokensSent);
+    if (entry.pixelCount !== null && entry.pixelCount !== undefined) {
+      pixelCounts.push(entry.pixelCount);
+      if (entry.imageMegapixels === null || entry.imageMegapixels === undefined) {
+        megapixels.push(entry.pixelCount / 1000000);
+      }
+    }
+    if (entry.imageMegapixels !== null && entry.imageMegapixels !== undefined) megapixels.push(entry.imageMegapixels);
+    const maxTokensValue = entry.maxNewTokensSent !== null && entry.maxNewTokensSent !== undefined
+      ? entry.maxNewTokensSent
+      : entry.hunyuanMaxNewTokens;
+    if (maxTokensValue !== null && maxTokensValue !== undefined) maxTokens.push(maxTokensValue);
     if (entry.durationSec !== null && entry.durationSec !== undefined) durations.push(entry.durationSec);
     if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) queueValues.push(entry.queueWaitSec);
+    if (entry.upstreamDurationSec !== null && entry.upstreamDurationSec !== undefined) upstreamDurations.push(entry.upstreamDurationSec);
+    if (entry.upstreamStatusCode !== null && entry.upstreamStatusCode !== undefined) upstreamStatuses.push(entry.upstreamStatusCode);
+    if (entry.hunyuanObservedBytesPerPixel !== null && entry.hunyuanObservedBytesPerPixel !== undefined) {
+      observedBytesPerPixelValues.push(entry.hunyuanObservedBytesPerPixel);
+    }
+    if (entry.hunyuanEstimatedMaxInputMp !== null && entry.hunyuanEstimatedMaxInputMp !== undefined) {
+      estimatedMaxMpValues.push(entry.hunyuanEstimatedMaxInputMp);
+    } else if (entry.hunyuanEstimatedMaxInputPixels !== null && entry.hunyuanEstimatedMaxInputPixels !== undefined) {
+      estimatedMaxMpValues.push(entry.hunyuanEstimatedMaxInputPixels / 1000000);
+    }
+    if (entry.hunyuanMinFreeVramMib !== null && entry.hunyuanMinFreeVramMib !== undefined) {
+      minFreeVramValues.push(entry.hunyuanMinFreeVramMib);
+    }
+    if (entry.hunyuanFetchDurationSec !== null && entry.hunyuanFetchDurationSec !== undefined) {
+      fetchDurations.push(entry.hunyuanFetchDurationSec);
+    }
+    if (entry.responseBytes !== null && entry.responseBytes !== undefined) {
+      responseBytes.push(entry.responseBytes);
+    }
+    if (entry.hunyuanFileSizeBytes !== null && entry.hunyuanFileSizeBytes !== undefined) {
+      fileSizes.push(entry.hunyuanFileSizeBytes);
+    }
+
+    if (entry.hunyuanTimings && typeof entry.hunyuanTimings === 'object') {
+      Object.entries(entry.hunyuanTimings).forEach(([stage, value]) => {
+        if (value === null || value === undefined) {
+          return;
+        }
+        if (!timingValues.has(stage)) {
+          timingValues.set(stage, []);
+        }
+        timingValues.get(stage).push(value);
+      });
+    }
 
     if (entry.pixelCount !== null && entry.pixelCount !== undefined && entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) {
       const bucket = findBucket(pixelBucketData, entry.pixelCount);
@@ -1639,17 +1753,28 @@ function buildOcrLogStats(entries) {
       }
     }
 
-    if (entry.maxNewTokensSent !== null && entry.maxNewTokensSent !== undefined && entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) {
-      const bucket = findBucket(tokenBucketData, entry.maxNewTokensSent);
+    if (maxTokensValue !== null && maxTokensValue !== undefined && entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) {
+      const bucket = findBucket(tokenBucketData, maxTokensValue);
       if (bucket) {
         bucket.count += 1;
         bucket.vramDeltas.push(entry.vramDeltaBytes);
-        bucket.tokens.push(entry.maxNewTokensSent);
+        bucket.tokens.push(maxTokensValue);
       }
     }
   });
 
   const vramStats = summarizeNumbers(vramDeltas);
+  const upstreamDurationStats = summarizeNumbers(upstreamDurations);
+  const observedBytesPerPixelStats = summarizeNumbers(observedBytesPerPixelValues);
+  const estimatedMaxMpStats = summarizeNumbers(estimatedMaxMpValues);
+  const minFreeVramStats = summarizeNumbers(minFreeVramValues);
+  const fetchDurationStats = summarizeNumbers(fetchDurations);
+  const responseBytesStats = summarizeNumbers(responseBytes);
+  const fileSizeStats = summarizeNumbers(fileSizes);
+  const megapixelStats = summarizeNumbers(megapixels);
+  const upstreamSuccessRate = upstreamStatuses.length
+    ? upstreamStatuses.filter((code) => code >= 200 && code < 300).length / upstreamStatuses.length
+    : null;
   const pixelSummaries = pixelBucketData.filter((bucket) => bucket.count > 0).map((bucket) => ({
     label: bucket.label,
     count: bucket.count,
@@ -1664,6 +1789,24 @@ function buildOcrLogStats(entries) {
     avgVramDeltaDisplay: average(bucket.vramDeltas) !== null ? formatBytes(average(bucket.vramDeltas)) : 'N/A',
     avgMaxTokens: average(bucket.tokens),
   }));
+  const timingSummaries = Array.from(timingValues.entries()).map(([stage, values]) => {
+    const stats = summarizeNumbers(values);
+    return {
+      stage,
+      label: stageLabels[stage] || stage,
+      average: stats?.average || null,
+      p95: stats?.p95 || null,
+    };
+  }).sort((a, b) => {
+    const aIndex = stageOrder.indexOf(a.stage);
+    const bIndex = stageOrder.indexOf(b.stage);
+    const aRank = aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex;
+    const bRank = bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex;
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+    return (a.label || '').localeCompare(b.label || '');
+  });
 
   return {
     sampleCount: entries.length,
@@ -1672,11 +1815,21 @@ function buildOcrLogStats(entries) {
     maxVramDeltaBytes: vramStats?.max || null,
     maxVramDeltaDisplay: vramStats?.max !== null && vramStats?.max !== undefined ? formatBytes(vramStats.max) : 'N/A',
     avgPixelCount: average(pixelCounts),
+    avgImageMegapixels: megapixelStats?.average || null,
     avgMaxNewTokens: average(maxTokens),
     avgDurationSec: average(durations),
     avgQueueSec: average(queueValues),
+    avgUpstreamDurationSec: upstreamDurationStats?.average || null,
+    upstreamSuccessRate,
+    avgObservedBytesPerPixel: observedBytesPerPixelStats?.average || null,
+    avgEstimatedMaxInputMp: estimatedMaxMpStats?.average || null,
+    avgMinFreeVramMib: minFreeVramStats?.average || null,
+    avgResponseBytes: responseBytesStats?.average || null,
+    avgFileSizeBytes: fileSizeStats?.average || null,
+    avgFetchDurationSec: fetchDurationStats?.average || null,
     pixelBuckets: pixelSummaries,
     tokenBuckets: tokenSummaries,
+    timings: timingSummaries,
   };
 }
 
