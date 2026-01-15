@@ -44,9 +44,12 @@ const jobPromptMap = new Map(); // jobId -> { posId: ObjectId|null, negId: Objec
 const ratedJobs = new Set();    // jobIds already rated (prevents double rating)
 const MAP_TTL_MS = 24 * 60 * 60 * 1000; // drop job mappings after 24h
 function rememberLocalJob(jobId, payload) {
-  if (!jobId || !payload) return;
-  localJobStore.set(jobId, payload);
+  if (!jobId || !payload) return null;
+  const current = localJobStore.get(jobId);
+  const next = current ? Object.assign({}, current, payload) : payload;
+  localJobStore.set(jobId, next);
   setTimeout(() => localJobStore.delete(jobId), MAP_TTL_MS);
+  return next;
 }
 
 // Ensure tmp/cache dirs exist
@@ -310,25 +313,111 @@ function normalizeJobFiles(jobId, files, instanceId) {
     const safeName = toSafeName(rawName) || `file_${index}`;
     const mediaType = base.media_type || detectMediaType(safeName);
     const bucket = base.bucket || (mediaType === 'video' ? 'video' : 'output');
-    const cacheRec = buildCacheRecord(safeName, { bucket, mediaType, instanceId });
-    const cachedUrl = cacheRec ? cacheRec.url : null;
+    const allowLocal = base.cached !== false;
+    const cacheRec = allowLocal ? buildCacheRecord(safeName, { bucket, mediaType, instanceId }) : null;
+    const cachedUrl = base.cached_url || (cacheRec ? cacheRec.url : null);
     const query = new URLSearchParams();
     query.set('filename', safeName);
     if (bucket) query.set('bucket', bucket);
     if (mediaType) query.set('mediaType', mediaType);
     if (instanceId) query.set('instance_id', instanceId);
-    const localUrl = `/image_gen/api/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(index)}?${query.toString()}`;
+    const localUrl = allowLocal
+      ? `/image_gen/api/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(index)}?${query.toString()}`
+      : null;
+    const downloadUrl = base.download_url || localUrl;
+    const remoteUrl = base.gateway_view_url || base.download_url || base.url || base.path || null;
     return Object.assign({}, base, {
       index,
       filename: safeName,
       bucket,
       media_type: mediaType,
       cached_url: cachedUrl,
-      remote_url: base.download_url || base.url || base.path || null,
-      download_url: localUrl,
+      gateway_view_url: base.gateway_view_url || null,
+      remote_url: remoteUrl,
+      download_url: downloadUrl,
       instance_id: base.instance_id || instanceId || null
     });
   });
+}
+
+async function getLocalCacheRecord(name, { bucket, mediaType, instanceId } = {}) {
+  const rec = buildCacheRecord(name, { bucket, mediaType, instanceId });
+  if (!rec) return null;
+  try {
+    await fsp.access(rec.localPath, fs.constants.R_OK);
+    return rec;
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeGatewayStatus(raw, jobId, workflowHint) {
+  const outputs = Array.isArray(raw?.outputs) ? raw.outputs : [];
+  const workflowId = typeof raw?.workflow_id === 'string' ? raw.workflow_id.trim() : '';
+  return {
+    job_id: raw?.prompt_id || jobId,
+    prompt_id: raw?.prompt_id || jobId,
+    status: raw?.status || 'pending',
+    workflow: workflowId || workflowHint || null,
+    queue_number: raw?.queue_number ?? null,
+    queue_wait_sec: raw?.queue_wait_sec ?? null,
+    submitted_at: raw?.submitted_at ?? null,
+    completed_at: raw?.completed_at ?? null,
+    outputs
+  };
+}
+
+function normalizeJobStatus(status) {
+  return String(status || '').trim().toLowerCase();
+}
+
+function isCompletedStatus(status) {
+  const normalized = normalizeJobStatus(status);
+  return normalized === 'completed' || normalized === 'complete' || normalized === 'done';
+}
+
+async function cacheGatewayOutputs(jobId, outputs, instanceId) {
+  if (!Array.isArray(outputs) || !outputs.length) return [];
+  const items = await mapWithConcurrency(outputs, CACHE_CONCURRENCY, async (output, index) => {
+    const rawName = output?.filename || output?.name || output?.file || `output_${index}.png`;
+    const safeName = toSafeName(rawName) || `${jobId}_${index}.png`;
+    const mediaType = detectMediaType(safeName);
+    const bucket = mediaType === 'video' ? 'video' : 'output';
+    let cacheRec = await getLocalCacheRecord(safeName, { bucket, mediaType, instanceId });
+    let cached = Boolean(cacheRec);
+    if (!cacheRec) {
+      try {
+        const { buffer } = await comfyGatewayService.fetchImage({
+          gateway_view_url: output?.gateway_view_url || null,
+          filename: output?.filename || safeName,
+          type: output?.type || null,
+          subfolder: output?.subfolder || null
+        });
+        cacheRec = await writeCacheFile(safeName, buffer, { bucket, mediaType, instanceId });
+        cached = Boolean(cacheRec);
+      } catch (outputErr) {
+        logger.error('[cacheGatewayOutputs] failed to fetch output', outputErr);
+        cached = false;
+      }
+    }
+    const gatewayUrl = output?.gateway_view_url || null;
+    return {
+      index,
+      filename: safeName,
+      bucket,
+      media_type: mediaType,
+      cached,
+      cached_url: cacheRec?.url || null,
+      download_url: cacheRec?.url || gatewayUrl,
+      gateway_view_url: gatewayUrl,
+      node_id: output?.node_id || null,
+      type: output?.type || null,
+      subfolder: output?.subfolder || null,
+      kind: output?.kind || null,
+      instance_id: instanceId || null
+    };
+  });
+  return items.filter(Boolean);
 }
 
 const BULK_PROMPT_STATUSES = Object.freeze(['Pending', 'Processing', 'Paused', 'Completed', 'Canceled']);
@@ -1315,12 +1404,33 @@ async function applyPromptRating(mapping, delta) {
 
 async function fetchJobDetail(jobId, instanceId) {
   const local = localJobStore.get(jobId);
-  if (local) {
+  const localStatus = normalizeJobStatus(local?.status);
+  const hasFiles = Array.isArray(local?.files) && local.files.length > 0;
+  if (local && isCompletedStatus(localStatus) && hasFiles) {
     const effectiveInstance = local.instance_id || instanceId || null;
     const files = normalizeJobFiles(jobId, Array.isArray(local.files) ? local.files : [], effectiveInstance);
     return Object.assign({}, local, { instance_id: effectiveInstance, files });
   }
-  throw new Error('job not found');
+
+  let updated = null;
+  try {
+    const status = await comfyGatewayService.getStatus(jobId);
+    const normalized = normalizeGatewayStatus(status, jobId, local?.workflow || null);
+    if (isCompletedStatus(normalized.status) && normalized.outputs.length) {
+      const files = await cacheGatewayOutputs(jobId, normalized.outputs, instanceId);
+      if (files.length) normalized.files = files;
+      const mapping = jobPromptMap.get(jobId);
+      if (mapping && files.length) mapping.files = files;
+    }
+    updated = rememberLocalJob(jobId, normalized);
+  } catch (err) {
+    if (!local) throw err;
+    updated = local;
+  }
+
+  const effectiveInstance = updated.instance_id || instanceId || null;
+  const files = normalizeJobFiles(jobId, Array.isArray(updated.files) ? updated.files : [], effectiveInstance);
+  return Object.assign({}, updated, { instance_id: effectiveInstance, files });
 }
 
 function buildGoodImageEmbeddingMetadata(doc) {
@@ -2925,46 +3035,27 @@ exports.generate = async (req, res) => {
     const promptText = typeof body.prompt_text === 'string' ? body.prompt_text.trim() : (guessPromptTextFromWorkflow(prompt) || null);
     const negativeText = typeof body.negative_prompt === 'string' ? body.negative_prompt.trim() : '';
 
-    const queued = await comfyGatewayService.runPrompt(prompt, { wait: body.wait !== false });
+    const timeoutSec = body.timeout_sec ?? body.timeoutSec;
+    const queued = await comfyGatewayService.submitPrompt(prompt, { timeoutSec });
     const jobId = queued?.prompt_id || randomUUID();
     const outputs = Array.isArray(queued?.outputs) ? queued.outputs : [];
+    const workflowId = typeof queued?.workflow_id === 'string' ? queued.workflow_id.trim() : '';
+    const workflowName = workflowId || workflow || null;
+    const status = queued?.status || 'pending';
 
-    const storedFiles = [];
-    for (let i = 0; i < outputs.length; i++) {
-      const output = outputs[i] || {};
-      try {
-        const { buffer } = await comfyGatewayService.fetchImage({
-          gateway_view_url: output.gateway_view_url,
-          filename: output.filename,
-          type: output.type,
-          subfolder: output.subfolder
-        });
-        const safeName = toSafeName(output.filename) || `${jobId}_${i}.png`;
-        const mediaType = detectMediaType(safeName);
-        const bucket = mediaType === 'video' ? 'video' : 'output';
-        const cacheRec = await writeCacheFile(safeName, buffer, { bucket, mediaType });
-        storedFiles.push({
-          index: i,
-          filename: cacheRec?.safeName || safeName,
-          bucket,
-          media_type: mediaType,
-          cached_url: cacheRec?.url || null,
-          download_url: cacheRec?.url || null,
-          gateway_view_url: output.gateway_view_url || null,
-          node_id: output.node_id || null,
-          type: output.type || null,
-          subfolder: output.subfolder || null
-        });
-      } catch (outputErr) {
-        logger.error('[generate] failed to fetch output', outputErr);
-      }
+    let storedFiles = [];
+    if (isCompletedStatus(status) && outputs.length) {
+      storedFiles = await cacheGatewayOutputs(jobId, outputs, null);
     }
-
-    const workflowName = queued?.workflow_id || workflow || null;
     const jobPayload = {
       job_id: jobId,
       workflow: workflowName,
-      status: 'completed',
+      status,
+      queue_number: queued?.queue_number ?? null,
+      queue_wait_sec: queued?.queue_wait_sec ?? null,
+      status_url: queued?.status_url || null,
+      submitted_at: queued?.submitted_at ?? null,
+      completed_at: queued?.completed_at ?? null,
       files: storedFiles,
       outputs,
       prompt_text: promptText || null,
@@ -2996,7 +3087,8 @@ exports.generate = async (req, res) => {
     return res.json(jobPayload);
   } catch (e) {
     logger.error('[generate] error', e);
-    return errorJson(res, 502, 'failed to run workflow', String(e.message || e));
+    const status = e?.status || 502;
+    return errorJson(res, status, 'failed to submit workflow', String(e.message || e));
   }
 };
 
@@ -3005,15 +3097,13 @@ exports.getJob = async (req, res) => {
   try {
     const jobId = String(req.params.id || '').trim();
     if (!jobId) return errorJson(res, 400, 'job id required');
-    const local = localJobStore.get(jobId);
-    if (local) {
-      const files = normalizeJobFiles(jobId, local.files || [], local.instance_id || null);
-      return res.json(Object.assign({}, local, { files }));
-    }
-    return errorJson(res, 404, 'job not found');
+    const instanceId = extractInstanceId(req);
+    const job = await fetchJobDetail(jobId, instanceId);
+    return res.json(job);
   } catch (e) {
     logger.error('[getJob] error', e);
-    return errorJson(res, 502, 'failed to fetch job', String(e.message || e));
+    const status = e?.status || (e?.message === 'job not found' ? 404 : 502);
+    return errorJson(res, status, 'failed to fetch job', String(e.message || e));
   }
 };
 

@@ -79,7 +79,7 @@ block content
             label.form-label(for="negativeText") Negative prompt (optional)
             input#negativeText.form-control(type="text" autocomplete="off")
         .d-flex.gap-2.mt-3
-          button#btnGenerate.btn.btn-success(type="button") Generate
+          button#btnGenerate.btn.btn-success(type="button") Submit job
 
     // Jobs
     .card.mb-3
@@ -91,8 +91,10 @@ block content
             input#jobId.form-control(type="text" readonly)
           .col-md-6
             .d-flex.align-items-center.gap-2
-              button#btnPoll.btn.btn-outline-secondary(type="button") Poll
+              button#btnPoll.btn.btn-outline-secondary(type="button") Poll status
               span#jobStatus.badge.bg-secondary -
+        .mt-2
+          small#jobMeta.text-muted
         .row.row-cols-2.row-cols-md-3.g-3.mt-2#results
 
     // Log

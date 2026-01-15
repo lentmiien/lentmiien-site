@@ -15,11 +15,14 @@
   const btnViewJson = $('#btnViewJson');
   const jobIdInput = $('#jobId');
   const jobStatusEl = $('#jobStatus');
+  const jobMetaEl = $('#jobMeta');
   const resultsEl = $('#results');
   const healthDot = $('#healthDot');
   const instanceMetaEl = $('#instanceMeta');
   let ratingBarVisible = false;
   let currentJobId = null;
+  let pollTimer = null;
+  let pollJobId = null;
   let currentWorkflowName = null;
   let originalWorkflow = null;
   const availableFields = new Map();
@@ -58,6 +61,128 @@
     const ct = resp.headers.get('content-type') || '';
     if (ct.includes('application/json')) return resp.json();
     return resp;
+  }
+
+  function normalizeStatus(status) {
+    return String(status || '').trim().toLowerCase();
+  }
+
+  function isTerminalStatus(status) {
+    const normalized = normalizeStatus(status);
+    return ['completed', 'complete', 'done', 'failed', 'error', 'timeout', 'canceled'].includes(normalized);
+  }
+
+  function isSuccessStatus(status) {
+    const normalized = normalizeStatus(status);
+    return ['completed', 'complete', 'done'].includes(normalized);
+  }
+
+  function setJobStatus(status) {
+    if (!jobStatusEl) return;
+    const normalized = normalizeStatus(status);
+    let cls = 'bg-secondary';
+    if (isSuccessStatus(normalized)) cls = 'bg-success';
+    else if (['failed', 'error'].includes(normalized)) cls = 'bg-danger';
+    else if (['timeout', 'canceled'].includes(normalized)) cls = 'bg-warning';
+    else if (['running', 'processing'].includes(normalized)) cls = 'bg-info';
+    jobStatusEl.className = `badge ${cls}`;
+    jobStatusEl.textContent = status || '-';
+  }
+
+  function formatTimestamp(value) {
+    if (value === null || value === undefined || value === '') return '';
+    let ts = value;
+    if (typeof value === 'string') {
+      const num = Number(value);
+      if (Number.isFinite(num)) ts = num;
+    }
+    if (typeof ts === 'number') {
+      const ms = ts > 1e12 ? ts : ts * 1000;
+      return new Date(ms).toLocaleString();
+    }
+    const parsed = new Date(ts);
+    return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
+  }
+
+  function updateJobMeta(job) {
+    if (!jobMetaEl) return;
+    const parts = [];
+    if (job?.queue_number !== null && job?.queue_number !== undefined && job?.queue_number !== '') {
+      parts.push(`Queue #${job.queue_number}`);
+    }
+    if (job?.queue_wait_sec !== null && job?.queue_wait_sec !== undefined && job?.queue_wait_sec !== '') {
+      const wait = Number(job.queue_wait_sec);
+      const waitText = Number.isFinite(wait) ? `${wait.toFixed(2)}s` : String(job.queue_wait_sec);
+      parts.push(`Wait ${waitText}`);
+    }
+    const submitted = formatTimestamp(job?.submitted_at);
+    if (submitted) parts.push(`Submitted ${submitted}`);
+    const completed = formatTimestamp(job?.completed_at);
+    if (completed) parts.push(`Completed ${completed}`);
+    jobMetaEl.textContent = parts.join(' | ');
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+    pollJobId = null;
+  }
+
+  async function handleJobUpdate(job, { fromPoll = false } = {}) {
+    if (!job) return false;
+    const jobId = job.job_id || job.prompt_id || currentJobId;
+    if (jobId) {
+      currentJobId = jobId;
+      if (jobIdInput) jobIdInput.value = jobId;
+    }
+    setJobStatus(job.status || '-');
+    updateJobMeta(job);
+
+    const files = Array.isArray(job.files) ? job.files : [];
+    if (files.length) {
+      await showResults(jobId, files);
+    } else if (!fromPoll && job?.status) {
+      clearResults('No outputs yet.');
+    }
+
+    if (isTerminalStatus(job?.status)) {
+      stopPolling();
+      if (isSuccessStatus(job?.status)) {
+        setStatus('completed');
+        if (jobId) showRatingBar(jobId);
+      } else {
+        setStatus('error');
+      }
+      return true;
+    }
+
+    setStatus(normalizeStatus(job?.status) || 'running');
+    return false;
+  }
+
+  async function pollJob(jobId, { repeat = true } = {}) {
+    if (!jobId) return;
+    pollJobId = jobId;
+    try {
+      const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+      if (pollJobId !== jobId) return;
+      const done = await handleJobUpdate(job, { fromPoll: true });
+      if (!done && repeat && pollJobId === jobId) {
+        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), 3000);
+      }
+    } catch (err) {
+      log('Poll failed: ' + err.message, 'text-danger');
+      if (repeat && pollJobId === jobId) {
+        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), 4500);
+      }
+    }
+  }
+
+  function startPolling(jobId) {
+    stopPolling();
+    pollJob(jobId, { repeat: true });
   }
 
   function cloneWorkflow(obj) {
@@ -673,7 +798,7 @@
       const filename = file?.filename || file?.name || file?.file || 'output';
       const mediaType = (file?.media_type || detectMediaTypeFromName(filename)).toLowerCase();
       const bucket = file?.bucket || (mediaType === 'video' ? 'video' : 'output');
-      const src = file?.cached_url || file?.download_url || file?.gateway_view_url || '';
+      const src = file?.cached_url || file?.gateway_view_url || file?.download_url || '';
 
       const col = document.createElement('div');
       col.className = 'col';
@@ -716,7 +841,7 @@
       meta.textContent = bucketLabel ? `${bucketLabel}/` : '';
       actionRow.appendChild(meta);
 
-      const downloadHref = src;
+      const downloadHref = file?.download_url || file?.cached_url || file?.gateway_view_url || '';
       if (downloadHref) {
         const dl = document.createElement('a');
         dl.href = downloadHref;
@@ -749,8 +874,9 @@
     const promptText = getPromptFieldValue();
     const negativeText = negativeTextInput ? negativeTextInput.value.trim() : '';
     hideRatingBar();
-    clearResults('Waiting for gateway…');
-    setStatus('running');
+    stopPolling();
+    clearResults('Submitting job...');
+    setStatus('submitting');
     const btn = $('#btnGenerate');
     if (btn) btn.disabled = true;
     try {
@@ -760,20 +886,20 @@
           workflow,
           prompt: promptJson,
           prompt_text: promptText,
-          negative_prompt: negativeText,
-          wait: true
+          negative_prompt: negativeText
         })
       });
       currentJobId = resp.job_id || resp.prompt_id || null;
       if (jobIdInput) jobIdInput.value = currentJobId || '';
-      if (jobStatusEl) jobStatusEl.textContent = resp.status || 'completed';
-      await showResults(currentJobId, resp.files);
-      if (currentJobId) showRatingBar(currentJobId);
-      setStatus('completed');
-      log(`Generated job ${currentJobId || '(inline)'}.`, 'text-success');
+      await handleJobUpdate(resp);
+      if (currentJobId && !isTerminalStatus(resp?.status)) {
+        clearResults('Queued - waiting for outputs...');
+        startPolling(currentJobId);
+      }
+      log(`Submitted job ${currentJobId || '(queued)'}.`, 'text-success');
     } catch (err) {
       setStatus('error');
-      log('Generate failed: ' + err.message, 'text-danger');
+      log('Submit failed: ' + err.message, 'text-danger');
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -785,16 +911,10 @@
       log('Enter a job id first.', 'text-warning');
       return;
     }
-    try {
-      const j = await api(`/api/jobs/${encodeURIComponent(id)}`);
-      currentJobId = id;
-      if (jobStatusEl) jobStatusEl.textContent = j.status || '-';
-      await showResults(id, j.files);
-      showRatingBar(id);
-      log(`Loaded job ${id}.`);
-    } catch (err) {
-      log('Load job failed: ' + err.message, 'text-danger');
-    }
+    currentJobId = id;
+    clearResults('Loading job status...');
+    startPolling(id);
+    log(`Polling job ${id}.`);
   }
 
   const btnLoad = $('#btnLoadWf');

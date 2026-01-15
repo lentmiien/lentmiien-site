@@ -52,7 +52,9 @@ router.get('/api/health', ctrl.health);
 router.get('/api/instances', ctrl.listInstances);
 router.get('/api/workflows', ctrl.getWorkflows);
 router.get('/api/workflows/:name', ctrl.getWorkflowDetail);
+// Submit a prompt job (async)
 router.post('/api/generate', ctrl.generate);
+router.post('/api/submit', ctrl.generate);
 router.get('/api/jobs/:id', ctrl.getJob);
 router.get('/api/jobs/:id/files/:index', ctrl.getJobFile);
 router.get('/api/jobs/:id/images/:index', ctrl.getJobImage); // legacy alias

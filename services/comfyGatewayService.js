@@ -69,7 +69,10 @@ class ComfyGatewayService {
       });
       if (!r.ok) {
         const errorMsg = (responseBody && responseBody.error) || (typeof responseBody === 'string' ? responseBody : '') || `upstream ${r.status}`;
-        throw new Error(errorMsg);
+        const err = new Error(errorMsg);
+        err.status = r.status;
+        err.response = responseBody;
+        throw err;
       }
       return responseBody;
     } catch (err) {
@@ -114,6 +117,33 @@ class ComfyGatewayService {
       },
       { functionName: 'runPrompt', requestBody: body }
     );
+  }
+
+  async submitPrompt(prompt, { timeoutSec } = {}) {
+    if (!prompt || typeof prompt !== 'object' || Array.isArray(prompt)) {
+      throw new Error('prompt JSON object is required');
+    }
+    const body = { prompt };
+    const numericTimeout = Number(timeoutSec);
+    if (Number.isFinite(numericTimeout) && numericTimeout > 0) {
+      body.timeout_sec = numericTimeout;
+    }
+    return this.fetchJson(
+      '/comfy/submit',
+      {
+        method: 'POST',
+        headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+      },
+      { functionName: 'submitPrompt', requestBody: body }
+    );
+  }
+
+  async getStatus(promptId) {
+    const id = String(promptId || '').trim();
+    if (!id) throw new Error('prompt_id is required');
+    const encoded = encodeURIComponent(id);
+    return this.fetchJson(`/comfy/status/${encoded}`, {}, { functionName: 'getStatus', requestBody: { prompt_id: id } });
   }
 
   normalizeGatewayViewUrl(url) {
