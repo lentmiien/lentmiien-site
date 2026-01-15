@@ -27,6 +27,9 @@
   let originalWorkflow = null;
   const availableFields = new Map();
   const editableFields = new Map();
+  const STATUS_POLL_INTERVAL_MS = 2500;
+  const STATUS_POLL_ERROR_INTERVAL_MS = 4500;
+  const JOB_STORAGE_KEY = 'imageGenActiveJobId';
   if (wfJsonArea) wfJsonArea.readOnly = true;
   if (promptTextInput) {
     promptTextInput.readOnly = true;
@@ -130,6 +133,36 @@
     pollJobId = null;
   }
 
+  function getStoredJobId() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      return localStorage.getItem(JOB_STORAGE_KEY);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function storeJobId(jobId) {
+    if (!jobId || typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(JOB_STORAGE_KEY, jobId);
+    } catch (err) {
+      log('Unable to store job id: ' + err.message, 'text-warning');
+    }
+  }
+
+  function clearStoredJobId(jobId) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const stored = localStorage.getItem(JOB_STORAGE_KEY);
+      if (!jobId || !stored || stored === jobId) {
+        localStorage.removeItem(JOB_STORAGE_KEY);
+      }
+    } catch (err) {
+      log('Unable to clear stored job id: ' + err.message, 'text-warning');
+    }
+  }
+
   async function handleJobUpdate(job, { fromPoll = false } = {}) {
     if (!job) return false;
     const jobId = job.job_id || job.prompt_id || currentJobId;
@@ -141,13 +174,26 @@
     updateJobMeta(job);
 
     const files = Array.isArray(job.files) ? job.files : [];
+    const awaitingFiles = isSuccessStatus(job?.status) && files.length === 0;
     if (files.length) {
       await showResults(jobId, files);
     } else if (!fromPoll && job?.status) {
-      clearResults('No outputs yet.');
+      if (awaitingFiles) {
+        clearResults('Finalizing outputs...');
+      } else {
+        clearResults('No outputs yet.');
+      }
     }
 
-    if (isTerminalStatus(job?.status)) {
+    if (jobId) {
+      if (isTerminalStatus(job?.status) && !awaitingFiles) {
+        clearStoredJobId(jobId);
+      } else {
+        storeJobId(jobId);
+      }
+    }
+
+    if (isTerminalStatus(job?.status) && !awaitingFiles) {
       stopPolling();
       if (isSuccessStatus(job?.status)) {
         setStatus('completed');
@@ -158,7 +204,11 @@
       return true;
     }
 
-    setStatus(normalizeStatus(job?.status) || 'running');
+    if (awaitingFiles) {
+      setStatus('finalizing');
+    } else {
+      setStatus(normalizeStatus(job?.status) || 'running');
+    }
     return false;
   }
 
@@ -170,19 +220,33 @@
       if (pollJobId !== jobId) return;
       const done = await handleJobUpdate(job, { fromPoll: true });
       if (!done && repeat && pollJobId === jobId) {
-        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), 3000);
+        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), STATUS_POLL_INTERVAL_MS);
       }
     } catch (err) {
       log('Poll failed: ' + err.message, 'text-danger');
       if (repeat && pollJobId === jobId) {
-        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), 4500);
+        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), STATUS_POLL_ERROR_INTERVAL_MS);
       }
     }
   }
 
   function startPolling(jobId) {
+    if (!jobId) return;
     stopPolling();
+    storeJobId(jobId);
     pollJob(jobId, { repeat: true });
+  }
+
+  function resumeStoredPolling() {
+    if (pollJobId) return;
+    const stored = getStoredJobId();
+    const current = currentJobId || (jobIdInput ? jobIdInput.value.trim() : '');
+    const jobId = current || stored;
+    if (!jobId) return;
+    currentJobId = jobId;
+    if (jobIdInput && !jobIdInput.value) jobIdInput.value = jobId;
+    startPolling(jobId);
+    log(`Resuming polling for job ${jobId}.`);
   }
 
   function cloneWorkflow(obj) {
@@ -891,9 +955,12 @@
       });
       currentJobId = resp.job_id || resp.prompt_id || null;
       if (jobIdInput) jobIdInput.value = currentJobId || '';
-      await handleJobUpdate(resp);
-      if (currentJobId && !isTerminalStatus(resp?.status)) {
-        clearResults('Queued - waiting for outputs...');
+      const done = await handleJobUpdate(resp);
+      if (currentJobId && !done) {
+        const hasFiles = Array.isArray(resp?.files) && resp.files.length > 0;
+        if (!hasFiles && !isSuccessStatus(resp?.status)) {
+          clearResults('Queued - waiting for outputs...');
+        }
         startPolling(currentJobId);
       }
       log(`Submitted job ${currentJobId || '(queued)'}.`, 'text-success');
@@ -936,4 +1003,5 @@
   setStatus('idle');
   loadWorkflows();
   checkHealth();
+  resumeStoredPolling();
 })(); 
