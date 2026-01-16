@@ -7,6 +7,7 @@ block content
   - const errorKeys = Object.keys(dashboard.errors || {}).filter((key) => dashboard.errors[key]);
   - const recentLogs = (dashboard.logs || []).slice(-10).reverse();
   - const logInsights = dashboard.logInsights || {};
+  - const autoStop = dashboard.autoStop || null;
   - const formatFixed = (value, digits = 2) => (typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(digits) : 'N/A');
   - const formatNumber = (value) => (typeof value === 'number' && !Number.isNaN(value) ? value.toLocaleString('en-US') : 'N/A');
   - const formatPercent = (value, digits = 1) => (typeof value === 'number' && !Number.isNaN(value) ? `${(value * 100).toFixed(digits)}%` : 'N/A');
@@ -74,6 +75,32 @@ block content
                   .health-card__detail= upstream.detail
         else
           p.text-muted.mb-0 No upstream data available.
+      .panel
+        .panel__header
+          h2.panel__title Auto-stop Policy
+          p.panel__subtitle ComfyUI auto-stop settings from /comfy/auto_stop.
+        if autoStop
+          .auto-stop
+            .auto-stop__summary
+              span.auto-stop__label Auto-stop
+              span#autoStopStatus.auto-stop__badge(class=autoStop.enabled ? 'auto-stop__badge--on' : 'auto-stop__badge--off')= autoStop.enabledDisplay || 'Unknown'
+            .auto-stop__switch
+              .form-check.form-switch
+                input#autoStopToggle.form-check-input(type='checkbox', checked=autoStop.enabled === true)
+                label.form-check-label(for='autoStopToggle') Enable auto-stop
+              span#autoStopFeedback.auto-stop__feedback.text-muted
+            ul.limits-list.auto-stop__list
+              li
+                span Idle timeout
+                span#autoStopTimeout.auto-stop__value= autoStop.idleTimeoutDisplay || 'N/A'
+              li
+                span Docker
+                span#autoStopDocker.auto-stop__value= autoStop.dockerAvailableDisplay || 'Unknown'
+              li
+                span Container state
+                span#autoStopContainer.auto-stop__value= autoStop.containerStateDisplay || 'Unknown'
+        else
+          p.text-muted.mb-0 Auto-stop status unavailable.
       .panel
         .panel__header
           h2.panel__title Limits
@@ -364,5 +391,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='aiGatewayData') !{JSON.stringify({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu })}
+  script(type='application/json', id='aiGatewayData') !{JSON.stringify({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop })}
   script(src='/js/aiGateway.js', defer)

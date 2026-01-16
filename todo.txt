@@ -1,2 +1,21 @@
-On the page `views/admin_ai_gateway.pug`, there is a "Largest VRAM jumps" table in the "LLM Throughput & VRAM" section. This table works great for showing the max VRAM usage for the 'cydonia:24b-q6' model that I use, but no other models show up because the models are smaller. Please change this to show the top 5 VRAM usage for each model.
-The "Largest VRAM jumps" table shows very useful information, so I really want to know the same data for all local LLM models I use.
+In my AI Gateway, I've added 2 new routes:
+
+1. GET `/comfy/auto_stop`: Check current settings, returns:  
+```
+{
+  "enabled": true,
+  "idle_timeout_sec": 300.0,
+  "docker_available": true,
+  "container_state": "exited"
+}
+```
+
+2. POST `/comfy/auto_stop`: Enable/Disable auto-stop policy  
+The POST endpoint takes the following input (example):
+```
+{
+  "enabled": false
+}
+```
+
+Please wire up these endpoints to the `views/admin_ai_gateway.pug` page, to show the current status and add a toggle switch to enable/disable the auto-stop policy; also add additional functionality in the admin route (routes/admin.js) / controller (controllers/admincontroller.js) to support the new functionality.

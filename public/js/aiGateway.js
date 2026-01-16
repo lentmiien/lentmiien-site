@@ -17,6 +17,7 @@
   const durations = Array.isArray(chartData.durations) ? chartData.durations : [];
   const gpuTimeline = chartData.gpuTimeline || {};
   const gpu = payload.gpu || {};
+  const autoStop = payload.autoStop || null;
 
   const asNumber = (value) => {
     const num = Number(value);
@@ -351,6 +352,79 @@
     container.appendChild(legend);
   };
 
+  const initAutoStopControls = () => {
+    const toggle = document.getElementById('autoStopToggle');
+    if (!toggle) {
+      return;
+    }
+
+    const statusEl = document.getElementById('autoStopStatus');
+    const timeoutEl = document.getElementById('autoStopTimeout');
+    const dockerEl = document.getElementById('autoStopDocker');
+    const containerEl = document.getElementById('autoStopContainer');
+    const feedbackEl = document.getElementById('autoStopFeedback');
+
+    const setFeedback = (message, isError) => {
+      if (!feedbackEl) return;
+      feedbackEl.textContent = message || '';
+      feedbackEl.classList.toggle('auto-stop__feedback--error', Boolean(isError));
+    };
+
+    const updateAutoStopUI = (state) => {
+      if (!state) return;
+      const enabled = state.enabled === true;
+      if (statusEl) {
+        statusEl.textContent = state.enabledDisplay || (enabled ? 'Enabled' : 'Disabled');
+        statusEl.classList.toggle('auto-stop__badge--on', enabled);
+        statusEl.classList.toggle('auto-stop__badge--off', !enabled);
+      }
+      if (timeoutEl) {
+        timeoutEl.textContent = state.idleTimeoutDisplay || (
+          Number.isFinite(state.idleTimeoutSec) ? `${state.idleTimeoutSec}s` : 'N/A'
+        );
+      }
+      if (dockerEl) {
+        dockerEl.textContent = state.dockerAvailableDisplay || (
+          state.dockerAvailable === true
+            ? 'Available'
+            : (state.dockerAvailable === false ? 'Unavailable' : 'Unknown')
+        );
+      }
+      if (containerEl) {
+        containerEl.textContent = state.containerStateDisplay || state.containerState || 'Unknown';
+      }
+      toggle.checked = enabled;
+    };
+
+    updateAutoStopUI(autoStop);
+
+    toggle.addEventListener('change', async () => {
+      const enabled = toggle.checked;
+      toggle.disabled = true;
+      setFeedback('Saving...', false);
+
+      try {
+        const response = await fetch('/admin/ai-gateway/auto-stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Request failed (${response.status})`);
+        }
+        updateAutoStopUI(data.autoStop || { enabled });
+        setFeedback('Saved.', false);
+        window.setTimeout(() => setFeedback('', false), 2000);
+      } catch (error) {
+        toggle.checked = !enabled;
+        setFeedback(error.message || 'Update failed.', true);
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+  };
+
   renderRequestVolumeChart();
   resizeCallbacks.push(renderRequestVolumeChart);
 
@@ -359,4 +433,6 @@
 
   renderGpuTimelineChart();
   resizeCallbacks.push(renderGpuTimelineChart);
+
+  initAutoStopControls();
 })();

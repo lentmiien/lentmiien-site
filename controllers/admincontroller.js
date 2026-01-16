@@ -63,6 +63,7 @@ const AI_GATEWAY_ENDPOINTS = {
   limits: '/limits',
   health: '/health',
   logs: '/logs/tail?n=500',
+  autoStop: '/comfy/auto_stop',
 };
 const AI_GATEWAY_TIMEOUT_MS = 5000;
 
@@ -1936,6 +1937,43 @@ function normalizeGatewayHealth(rawHealth) {
   };
 }
 
+function normalizeGatewayAutoStop(rawAutoStop) {
+  if (!rawAutoStop || typeof rawAutoStop !== 'object') {
+    return null;
+  }
+
+  const normalizeBool = (value) => {
+    if (value === true || value === 'true' || value === 1 || value === '1') return true;
+    if (value === false || value === 'false' || value === 0 || value === '0') return false;
+    return null;
+  };
+
+  const enabled = normalizeBool(rawAutoStop.enabled);
+  const idleTimeoutSec = asNumber(rawAutoStop.idle_timeout_sec ?? rawAutoStop.idleTimeoutSec);
+  const dockerAvailable = normalizeBool(rawAutoStop.docker_available ?? rawAutoStop.dockerAvailable);
+  const containerStateRaw = typeof rawAutoStop.container_state === 'string'
+    ? rawAutoStop.container_state
+    : (typeof rawAutoStop.containerState === 'string' ? rawAutoStop.containerState : '');
+  const containerState = containerStateRaw || null;
+  const containerStateLabel = containerState
+    ? containerState.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+    : 'Unknown';
+  const idleTimeoutDisplay = idleTimeoutSec !== null
+    ? `${idleTimeoutSec.toFixed(idleTimeoutSec % 1 === 0 ? 0 : 1)} s`
+    : 'N/A';
+
+  return {
+    enabled,
+    enabledDisplay: enabled === null ? 'Unknown' : (enabled ? 'Enabled' : 'Disabled'),
+    idleTimeoutSec,
+    idleTimeoutDisplay,
+    dockerAvailable,
+    dockerAvailableDisplay: dockerAvailable === null ? 'Unknown' : (dockerAvailable ? 'Available' : 'Unavailable'),
+    containerState,
+    containerStateDisplay: containerStateLabel,
+  };
+}
+
 function normalizeGatewayLimits(rawLimits) {
   if (!rawLimits || typeof rawLimits !== 'object') {
     return null;
@@ -1979,6 +2017,7 @@ function buildAiGatewayDashboard(rawData) {
   const logInsights = buildGatewayLogInsights(logs);
   const gpuTimeline = buildGpuTimeline(rawData.gpu);
   const limits = normalizeGatewayLimits(rawData.limits);
+  const autoStop = normalizeGatewayAutoStop(rawData.autoStop);
   const successRate = calculatePercent(requests.totals.total || 0, requests.totals.success || 0);
   const errorRate = calculatePercent(requests.totals.total || 0, requests.totals.errors || 0);
 
@@ -2045,6 +2084,7 @@ function buildAiGatewayDashboard(rawData) {
     gpu,
     waiters,
     limits,
+    autoStop,
     health,
     logs,
     logInsights,
@@ -2064,6 +2104,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     { key: 'gpu', path: AI_GATEWAY_ENDPOINTS.gpu },
     { key: 'limits', path: AI_GATEWAY_ENDPOINTS.limits },
     { key: 'health', path: AI_GATEWAY_ENDPOINTS.health },
+    { key: 'autoStop', path: AI_GATEWAY_ENDPOINTS.autoStop },
     { key: 'logsRaw', path: AI_GATEWAY_ENDPOINTS.logs, responseType: 'text' },
   ];
 
@@ -2098,6 +2139,58 @@ exports.ai_gateway_dashboard = async (req, res) => {
   return res.render('admin_ai_gateway', {
     dashboard,
   });
+};
+
+exports.ai_gateway_auto_stop_update = async (req, res) => {
+  try {
+    if (!req.body || typeof req.body.enabled === 'undefined') {
+      return res.status(400).json({ error: 'Enabled flag is required.' });
+    }
+
+    const enabled = parseCheckbox(req.body.enabled);
+    const response = await axios.post(
+      `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.autoStop}`,
+      { enabled },
+      { timeout: AI_GATEWAY_TIMEOUT_MS },
+    );
+
+    logger.notice('Updated AI gateway auto-stop policy', {
+      category: 'ai_gateway',
+      metadata: {
+        enabled,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return res.json({
+      ok: true,
+      autoStop: normalizeGatewayAutoStop(response.data),
+    });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    let message = 'Unable to update auto-stop policy.';
+
+    if (error?.response?.data) {
+      if (typeof error.response.data === 'string') {
+        message = error.response.data;
+      } else if (typeof error.response.data.error === 'string') {
+        message = error.response.data.error;
+      } else if (typeof error.response.data.message === 'string') {
+        message = error.response.data.message;
+      }
+    } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+      message = `Unable to reach the AI Gateway at ${AI_GATEWAY_BASE_URL}.`;
+    } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
+      message = `AI Gateway request timed out after ${AI_GATEWAY_TIMEOUT_MS}ms.`;
+    }
+
+    logger.warning('Failed to update AI gateway auto-stop policy', {
+      category: 'ai_gateway',
+      metadata: { error: message, status },
+    });
+
+    return res.status(status).json({ ok: false, error: message });
+  }
 };
 
 exports.api_debug_logs = async (req, res) => {
