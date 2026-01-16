@@ -1,7 +1,2 @@
-Please help me to update imgen to work with the updated API specifications in `documentation/comfyui-new-api-documentation.md`.
-
-Note: Keep bulk processing unavailable for now.
-
-Update router (routes/image_gen.js) and controller (controllers/image_gen.controller.js) code, as well as user page (views/image_gen/index.pug) as necessary, to create a job, then poll for status updates until done.
-
-While the `/comfy/submit` endpoint can take a "workflow_id" or a "prompt", only implement the "prompt" solution; the prompt is the workflow JSON object. ("workflow_id" will generate the same image every time, same input data every time, so not useful for me)
+On the page `views/admin_ai_gateway.pug`, there is a "Largest VRAM jumps" table in the "LLM Throughput & VRAM" section. This table works great for showing the max VRAM usage for the 'cydonia:24b-q6' model that I use, but no other models show up because the models are smaller. Please change this to show the top 5 VRAM usage for each model.
+The "Largest VRAM jumps" table shows very useful information, so I really want to know the same data for all local LLM models I use.

@@ -1597,6 +1597,14 @@ function buildLlmLogStats(entries) {
     }
   });
 
+  const vramTopByModel = new Map();
+  vramTopCandidates.forEach((entry) => {
+    if (!vramTopByModel.has(entry.model)) {
+      vramTopByModel.set(entry.model, []);
+    }
+    vramTopByModel.get(entry.model).push(entry);
+  });
+
   const modelSummaries = Array.from(models.values()).map((model) => {
     const promptStats = summarizeNumbers(model.promptTokPerSecValues);
     const genStats = summarizeNumbers(model.genTokPerSecValues);
@@ -1631,14 +1639,17 @@ function buildLlmLogStats(entries) {
     };
   }).sort((a, b) => (b.genTokPerSec?.average || 0) - (a.genTokPerSec?.average || 0));
 
-  const topVramDeltas = vramTopCandidates
-    .filter((entry) => entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined)
-    .sort((a, b) => b.vramDeltaBytes - a.vramDeltaBytes)
-    .slice(0, 5)
-    .map((entry) => ({
-      ...entry,
-      vramDeltaDisplay: formatBytes(entry.vramDeltaBytes),
-    }));
+  const topVramDeltas = modelSummaries.flatMap((model) => {
+    const entries = vramTopByModel.get(model.model) || [];
+    return entries
+      .slice()
+      .sort((a, b) => b.vramDeltaBytes - a.vramDeltaBytes)
+      .slice(0, 5)
+      .map((entry) => ({
+        ...entry,
+        vramDeltaDisplay: formatBytes(entry.vramDeltaBytes),
+      }));
+  });
 
   return {
     sampleCount: entries.length,
