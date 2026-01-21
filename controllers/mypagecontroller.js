@@ -12,6 +12,7 @@ const EmbeddingApiService = require('../services/embeddingApiService');
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
+const myLifeLogService = require('../services/myLifeLogService');
 
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
@@ -262,6 +263,7 @@ exports.mypage = async (req, res) => {
   const from = today;
   const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
   const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
+  const lifeLogSuggestions = myLifeLogService.getLabelSuggestions(new Date());
 
   res.render('mypage', {
     new_openai_models: decoratedOpenAIModels,
@@ -269,6 +271,7 @@ exports.mypage = async (req, res) => {
     tasks: tasks.filter((t) => !t.done && ((t.start && t.start < to) || !t.start)),
     embeddingSearchTypes: EMBEDDING_SEARCH_TYPES,
     embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,
+    lifeLogSuggestions,
   });
 };
 

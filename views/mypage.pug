@@ -7,6 +7,219 @@ mixin tile(href, src, alt, label)
         img.mypage-img(src=src, alt=alt)
         span.img-card__label= label
 
+block styles
+  link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap")
+  style.
+    :root {
+      --life-log-ink: #1f1a16;
+      --life-log-muted: #6c5c4d;
+      --life-log-accent: #d05c33;
+      --life-log-accent-2: #2f8f83;
+      --life-log-surface: #fff8f0;
+      --life-log-surface-strong: #f6efe6;
+      --life-log-border: #e4d8cc;
+      --life-log-chip: #fff1e3;
+    }
+
+    .life-log-shell {
+      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+      background: radial-gradient(circle at top right, rgba(47, 143, 131, 0.12), transparent 40%),
+        radial-gradient(circle at 20% 10%, rgba(208, 92, 51, 0.12), transparent 45%),
+        linear-gradient(135deg, #fff8f0 0%, #f3e8da 100%);
+      border: 1px solid var(--life-log-border);
+      border-radius: 20px;
+      padding: 1.5rem;
+      box-shadow: 0 24px 60px rgba(31, 26, 22, 0.08);
+      color: var(--life-log-ink);
+      animation: life-log-shell-in 0.5s ease both;
+    }
+
+    .life-log-header h2 {
+      margin-bottom: 0.2rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .life-log-header p {
+      margin-bottom: 0;
+      color: var(--life-log-muted);
+      max-width: 720px;
+    }
+
+    .life-log-panel {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--life-log-border);
+      border-radius: 16px;
+      padding: 1.25rem;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+    }
+
+    .life-log-panel + .life-log-panel {
+      margin-top: 1rem;
+    }
+
+    .life-log-label {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--life-log-muted);
+      font-weight: 600;
+    }
+
+    .life-log-input,
+    .life-log-panel textarea,
+    .life-log-panel select {
+      border-radius: 10px;
+      border: 1px solid var(--life-log-border);
+      padding: 0.55rem 0.7rem;
+      font-size: 0.95rem;
+      background: #fff;
+      width: 100%;
+    }
+
+    .life-log-input:focus,
+    .life-log-panel textarea:focus,
+    .life-log-panel select:focus {
+      border-color: var(--life-log-accent);
+      box-shadow: 0 0 0 0.15rem rgba(208, 92, 51, 0.15);
+    }
+
+    .life-log-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .life-log-chip {
+      border: 1px solid var(--life-log-border);
+      background: var(--life-log-chip);
+      color: var(--life-log-ink);
+      padding: 0.3rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .life-log-chip:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 14px rgba(31, 26, 22, 0.12);
+    }
+
+    .life-log-actions .btn {
+      border-radius: 999px;
+      font-weight: 600;
+    }
+
+    .life-log-visual {
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid var(--life-log-border);
+      padding: 1rem;
+    }
+
+    .life-log-visual-canvas {
+      position: relative;
+      width: 100%;
+      max-width: 420px;
+      aspect-ratio: 7 / 4;
+      margin: 0 auto;
+      background: #f1e6d8;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--life-log-border);
+    }
+
+    .life-log-visual-canvas img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: contrast(1.05) saturate(0.95);
+      user-select: none;
+      pointer-events: none;
+    }
+
+    .life-log-visual-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .life-log-visual-overlay .point {
+      position: absolute;
+      border-radius: 50%;
+      border-style: solid;
+      transform: translate(-50%, -50%);
+      box-sizing: border-box;
+    }
+
+    .life-log-visual-overlay .point.selected {
+      box-shadow: 0 0 0 2px rgba(208, 92, 51, 0.35);
+    }
+
+    .life-log-point-list {
+      border: 1px solid var(--life-log-border);
+      border-radius: 12px;
+      max-height: 180px;
+      overflow: auto;
+      background: #fffdfa;
+    }
+
+    .life-log-point-list .point-item,
+    .life-log-point-list .point-item-add {
+      padding: 0.45rem 0.75rem;
+      display: flex;
+      gap: 0.5rem;
+      cursor: pointer;
+      border-bottom: 1px solid var(--life-log-border);
+      font-size: 0.88rem;
+    }
+
+    .life-log-point-list .point-item:last-child {
+      border-bottom: none;
+    }
+
+    .life-log-point-list .point-item.selected,
+    .life-log-point-list .point-item-add.selected {
+      background: #f8eadd;
+    }
+
+    .life-log-point-list .point-item-add {
+      font-weight: 600;
+      color: var(--life-log-accent-2);
+    }
+
+    .cat-dot {
+      width: 1rem;
+      height: 1rem;
+      border-radius: 50%;
+      border: 2px solid #0003;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .life-log-status {
+      font-size: 0.85rem;
+      color: var(--life-log-muted);
+    }
+
+    @media (max-width: 992px) {
+      .life-log-shell {
+        padding: 1rem;
+      }
+    }
+
+    @keyframes life-log-shell-in {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
 block content
   .row 
     a(href='/scheduleTask/upcoming')
@@ -42,9 +255,110 @@ block content
                 option(value="high_quality") High-quality model
                 option(value="combined") Combined (rerank with high-quality)
             button.btn.btn-primary(type="submit") Search
+  .row.mb-4
+    .col
+      .life-log-shell
+        - const lifeLog = lifeLogSuggestions || {};
+        - const lifeLogLabels = lifeLog.all || [];
+        .d-flex.flex-column.flex-lg-row.justify-content-between.gap-3.align-items-start.life-log-header.mb-3
+          div
+            h2.mb-1 My Life Log
+            p.mb-0 Quick entries, diary notes, and body-map visual logs. View the timeline anytime.
+          a.btn.btn-outline-dark.btn-sm.mt-1(href="/mypage/life_log") View timeline
+        .row.g-4
+          .col-lg-5
+            .life-log-panel
+              form#life-log-form
+                .d-flex.flex-column.gap-3
+                  .d-flex.flex-column
+                    span.life-log-label Type
+                    select#life-log-type.life-log-input(name="type")
+                      option(value="basic") Basic
+                      option(value="medical") Medical
+                      option(value="diary") Diary
+                  .d-flex.flex-column
+                    span.life-log-label Label
+                    input#life-log-label.life-log-input(type="text", name="label", list="life-log-labels", placeholder="e.g. Vitamin C, Mood, Work")
+                    datalist#life-log-labels
+                      each label in lifeLogLabels
+                        option(value=label)
+                  .d-flex.flex-column#life-log-value-row
+                    span.life-log-label Value
+                    input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")
+                  .d-flex.flex-column#life-log-text-row(style="display:none;")
+                    span.life-log-label Diary text
+                    textarea#life-log-text.life-log-input(rows="5", placeholder="Add a short note...")
+                    .d-flex.flex-column.gap-2.mt-2
+                      label.life-log-label(for="life-log-audio") Transcribe audio
+                      input#life-log-audio.form-control(type="file", accept="audio/*")
+                      button#life-log-transcribe.btn.btn-outline-secondary.btn-sm(type="button") Transcribe audio
+                      button#life-log-format.btn.btn-outline-dark.btn-sm(type="button") Polish text with AI
+                  .d-flex.flex-column
+                    span.life-log-label Timestamp
+                    input#life-log-timestamp.life-log-input(type="datetime-local", name="timestamp")
+                  .life-log-actions.d-flex.flex-wrap.gap-2
+                    button#life-log-save.btn.btn-dark(type="submit") Save entry
+                  .life-log-status#life-log-status Ready.
+              if lifeLog.top && lifeLog.top.length
+                .mt-4
+                  .life-log-label.mb-2 Top labels
+                  .life-log-chips
+                    each label in lifeLog.top
+                      button.life-log-chip(type="button", data-label=label)= label
+              if lifeLog.timeOfDay && lifeLog.timeOfDay.length
+                .mt-3
+                  .life-log-label.mb-2 Suggested for now
+                  .life-log-chips
+                    each label in lifeLog.timeOfDay
+                      button.life-log-chip(type="button", data-label=label)= label
+              if lifeLog.recent && lifeLog.recent.length
+                .mt-3
+                  .life-log-label.mb-2 Recently used
+                  .life-log-chips
+                    each label in lifeLog.recent
+                      button.life-log-chip(type="button", data-label=label)= label
+          .col-lg-7
+            .life-log-panel
+              .d-flex.justify-content-between.align-items-start.mb-3
+                div
+                  h4.mb-1 Visual log
+                  p.text-muted.mb-0 Tap the body map to place points for pain or discomfort.
+                span.life-log-label Visual log entry
+              .life-log-visual
+                #llv-img-wrap.life-log-visual-canvas
+                  img#llv-img(src="/i/img_select.jpg", alt="Body map", draggable="false")
+                  #llv-points-overlay.life-log-visual-overlay
+                  #llv-img-hitbox(style="position:absolute;inset:0;z-index:5;cursor:crosshair;")
+                .row.mt-3.g-3
+                  .col-md-6
+                    .d-flex.flex-column.gap-2
+                      label.life-log-label(for="llv-radius") Point radius
+                      input#llv-radius.form-range(type="range", min="2", max="28", value="8")
+                      div#llv-radius-val.life-log-status 8 px
+                  .col-md-6
+                    .d-flex.flex-column.gap-2
+                      label.life-log-label(for="llv-opacity") Intensity
+                      input#llv-opacity.form-range(type="range", min="25", max="100", value="80")
+                      div#llv-opacity-val.life-log-status 80%
+                .row.mt-3.g-3
+                  .col-md-6
+                    .d-flex.flex-column.gap-2
+                      label.life-log-label(for="llv-category") Category
+                      select#llv-category.form-select
+                  .col-md-6
+                    .d-flex.flex-column.gap-2
+                      label.life-log-label(for="llv-timestamp") Timestamp
+                      input#llv-timestamp.form-control(type="datetime-local")
+                #llv-point-list.life-log-point-list.mt-3
+                .d-flex.flex-wrap.gap-2.mt-3
+                  button#llv-save.btn.btn-dark(type="button") Save visual log
+                  button#llv-clear.btn.btn-outline-secondary(type="button") Clear
+                  button#llv-delete.btn.btn-outline-danger(type="button" disabled) Delete point
+                .life-log-status.mt-2#llv-status Ready.
   .row 
     .col 
       .mypage-grid
+        +tile('/mypage/life_log', '/i/health.jpg', 'life log', 'My Life Log')
         +tile('/mypage/blogpost', '/i/blog.jpg', 'blogpost', 'Write blog')
         if permissions && permissions.indexOf("accounting") >= 0
           +tile('/accounting', '/i/budget.jpg', 'accounting', 'Accounting')
@@ -103,3 +417,6 @@ block content
             else
               a(href=m.manageUrl)= `${m.model} (${anthropicCreatedDate})`
               span.model-tag__status(title="Not saved in AI model cards - click to add")= ' - missing'
+
+block script
+  script(src="/js/my_life_log.js")

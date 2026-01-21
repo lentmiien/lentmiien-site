@@ -205,16 +205,69 @@ btnDelete.addEventListener('click', function() {
     }
   }
 });
-function apiSave(dateStr, points) {
-  localStorage.setItem('point-editor:'+dateStr, JSON.stringify(points||[]));
-  return Promise.resolve({ok:true});
+async function apiSave(dateStr, points) {
+  const payload = {
+    type: 'visual_log',
+    label: 'body_map',
+    timestamp: dateStr ? new Date(`${dateStr}T12:00:00`).toISOString() : undefined,
+    v_log_data: JSON.stringify({
+      version: 1,
+      image: '/i/img_select.jpg',
+      canvas: { width: imgWrap.offsetWidth || 350, height: imgWrap.offsetHeight || 200 },
+      points: points || [],
+    }),
+  };
+
+  try {
+    const resp = await fetch('/mypage/life_log/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!resp.ok || resp.redirected || !contentType.includes('application/json')) {
+      throw new Error('Unable to save visual log entry.');
+    }
+    return { ok: true, source: 'api' };
+  } catch (error) {
+    localStorage.setItem('point-editor:' + dateStr, JSON.stringify(points || []));
+    return { ok: true, source: 'local' };
+  }
 }
-function apiLoad(dateStr) {
+
+async function apiLoad(dateStr) {
   let pts = [];
   try {
-    pts = JSON.parse(localStorage.getItem('point-editor:'+dateStr) || '[]');
-  } catch(e) {}
-  return Promise.resolve({ok:true, points:pts});
+    const start = new Date(`${dateStr}T00:00:00`);
+    const end = new Date(`${dateStr}T23:59:59`);
+    const params = new URLSearchParams({
+      type: 'visual_log',
+      start: start.toISOString(),
+      end: end.toISOString(),
+      limit: '1',
+    });
+    const resp = await fetch(`/mypage/life_log/entries?${params.toString()}`, {
+      headers: { 'Accept': 'application/json' },
+    });
+    const contentType = resp.headers.get('content-type') || '';
+    if (!resp.ok || resp.redirected || !contentType.includes('application/json')) {
+      throw new Error('Unable to load visual log entry.');
+    }
+    const data = await resp.json();
+    const entry = Array.isArray(data.entries) ? data.entries[0] : null;
+    if (entry && entry.v_log_data) {
+      const parsed = JSON.parse(entry.v_log_data);
+      pts = parsed.points || [];
+      return { ok: true, points: pts, source: 'api' };
+    }
+  } catch (error) {
+    try {
+      pts = JSON.parse(localStorage.getItem('point-editor:' + dateStr) || '[]');
+    } catch (e) {
+      pts = [];
+    }
+  }
+  return { ok: true, points: pts, source: 'local' };
 }
 function loadFromAPI() {
   if(state.isLoading) return;
@@ -232,7 +285,11 @@ function saveToAPI() {
   let dateKey = dateInput.value;
   if(!dateKey) { alert("Pick a date to save."); return; }
   apiSave(dateKey, state.points).then(resp=>{
-    alert("Saved!");
+    if (resp.source === 'local') {
+      alert("Saved locally (login required for database).");
+    } else {
+      alert("Saved!");
+    }
   });
 }
 function clearAllPoints() {

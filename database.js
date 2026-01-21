@@ -68,6 +68,7 @@ const CookingCalendarModel = require('./models/CookingCalendar');
 const CookingCalendarV2Model = require('./models/CookingCalendarV2');
 // Health log
 const HealthEntry = require('./models/healthentry');
+const MyLifeLogEntry = require('./models/my_life_log_entry');
 // Agents
 const AgentModel = require('./models/agent');
 const Agent5Model = require('./models/agent5');
@@ -170,6 +171,7 @@ module.exports = {
   CookingCalendarModel,
   CookingCalendarV2Model,
   HealthEntry,
+  MyLifeLogEntry,
   AgentModel,
   Agent5Model,
   Agent5ConversationBehavior,

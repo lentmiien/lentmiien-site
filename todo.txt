@@ -1,21 +1,59 @@
-In my AI Gateway, I've added 2 new routes:
+I currently have a health log database, in 'models/healthentry.js', where I store 1 entry per day, essentially with 2 `Map` objects (key-value pairs) `basicData` and `medicalRecord`. I also have a `diary`, but I've almost never used it, and a couple of other unused or calculated values.
 
-1. GET `/comfy/auto_stop`: Check current settings, returns:  
+Now, I want to transition this functionality to a new tool, with a new database, structured differently, but can do the same things as the old database and more.
+
+First, I no longer wish to store content as "daily" entries, but instead as but instead as single key-value pairs with a date-time value.
+
+So currently I might have the following entry:
 ```
 {
-  "enabled": true,
-  "idle_timeout_sec": 300.0,
-  "docker_available": true,
-  "container_state": "exited"
+  "_id": "696ebcbe2b23cb2de36583b4",
+  "dateOfEntry": "2026-01-20",
+  "basicData": {
+    "W Vitamin l": "1",
+    "W Vitamin r": "1",
+    "SIXPAD 20 Hz": "11",
+    "self_p": "1",
+    "SIXPAD 4 Hz": "12",
+    "eye_drop_steriods_l": "1",
+    "eye_drop_steriods_r": "1"
+  },
+  "medicalRecord": {},
+  "diary": [],
+  "tags": [],
+  "analyticsSummary": {
+    "insights": [],
+    "alerts": []
+  },
+  "createdAt": "2026-01-19T23:22:38.757Z",
+  "updatedAt": "2026-01-20T13:48:44.345Z",
+  "__v": 0
 }
 ```
 
-2. POST `/comfy/auto_stop`: Enable/Disable auto-stop policy  
-The POST endpoint takes the following input (example):
+I'd like to transform this to something like (array of database entries):
 ```
 {
-  "enabled": false
+  "_id": [unique ID],
+  "type": ["basic" or "medical" or "diary" or "visual_log"],
+  "label": [the "W Vitamin l", "W Vitamin r", "SIXPAD 20 Hz", "self_p", "SIXPAD 4 Hz", "eye_drop_steriods_l", "eye_drop_steriods_r" from the example],
+  "value": [value corresponding to the label],
+  "text": [markdown text for "diary" entries],
+  "v_log_data": [visual log data as a string],
+  "timestamp": [created or user provided timestamp]
 }
 ```
 
-Please wire up these endpoints to the `views/admin_ai_gateway.pug` page, to show the current status and add a toggle switch to enable/disable the auto-stop policy; also add additional functionality in the admin route (routes/admin.js) / controller (controllers/admincontroller.js) to support the new functionality.
+I can still get a day of entries by searching for a "timestamp" range for a day, and by transition from "date" to "timestamp", I get a more detailed timeline. Also, I wasn't using the diary part much in the past, but I want to increase this going forward, and switch from a pure health diary, to a "my life log", so I can add small diary entries throughout the day, health entries that I track throughout the day, and later look back for a detailed timeline of everything I'm tracking.
+
+To make this tool work, and not being to overwhelming to input data, I'll also need to work on a smart UI, with quick access to often used labels and auto-complete for all labels to make label selection easy and accurate, and I may also track the time of the day to sort common labels at the time of entry at the top, etc. and for the diary, I'll likely use a combination of text/voice input, with a AI back-end that just format the text nicely (I already have AI capabilities for speech recognition and LLM, that I just need to link up).
+
+The first thing I want to do is to set up the new database, add a simple but smart input form on the 'views/mypage.pug' page, and add a page for viewing the database content, first a simple view page, with a nicely designed timeline for a selected time interval and label filtering, and later I can add back statistics and analytics. Lets display the timeline vertically, with newer content at the top, and lets show a barely visible delete button for each entry in case I need to delete any wrongly entered content.
+
+I also want to link up the functionality from my test page 'views/img_select.pug', to this new database, as the "visual_log". This is an image of a human body, with the possibility of placing points of various size, opacity, and color (color based on category), for logging pain/not feeling well data points, point location = place where I feel unwell, size = roughly unwell area, opacity = strength of unwell, category = type of unwell. So I also need this input on the "mypage", and every entry will be saved with a timestamp as all other "my life log" entries. For the simple view page, lets just display the same image on the timeline with the overlay dots where there is an entry, we can later add more complex views like displaying all the dots from a given time interval in a single image, or animate an image over time, etc., when we have more data.
+
+Make "my life log" backward compatible, for reading the old database, and just put all content at the middle of each day. On the back-end, add a service class for "my life log", that caches all unique labels at startup, and enable various data fetching methods, etc.
+
+The page 'views/asr_tool.pug' shows an example of how to do speech recognition. For LLM usage, I'll use the 'utils/Ollama_API.js' utility with the `gpt-oss:20b` LLM model, so I need to create a system prompt with instructions for this use case, etc.
+
+Now, code up the first version of this new tool; it should have a working input form on the "mypage", and a basic view page, so I can start using the tool. Later I'll fine-tune the tool, and create analytics, etc.

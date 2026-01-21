@@ -6,6 +6,7 @@ const upload = multer({ dest: './tmp_data/' });
 
 // Require controller modules.
 const controller = require('../controllers/mypagecontroller');
+const lifeLogController = require('../controllers/mylifelogcontroller');
 
 /* GET home page. */
 router.get('/', controller.mypage);
@@ -34,5 +35,12 @@ router.get('/github', controller.github);
 router.get('/getfolder', controller.getfolder);
 router.get('/updatefolder', controller.updatefolder);
 router.get('/getfile', controller.getfile);
+
+// My life log
+router.get('/life_log', lifeLogController.life_log_page);
+router.get('/life_log/entries', lifeLogController.life_log_entries);
+router.post('/life_log/entry', lifeLogController.life_log_add_entry);
+router.delete('/life_log/entry/:id', lifeLogController.life_log_delete_entry);
+router.post('/life_log/format', lifeLogController.life_log_format);
 
 module.exports = router;
