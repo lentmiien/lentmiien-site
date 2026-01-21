@@ -79,8 +79,8 @@ function renderOverlayPoints() {
     el.style.top = (pt.y * h + pt.radius - 1) + 'px';
     el.style.width = (pt.radius * 2) + 'px';
     el.style.height = (pt.radius * 2) + 'px';
-    el.style.marginLeft = (-pt.radius) + 'px';
-    el.style.marginTop = (-pt.radius) + 'px';
+    // el.style.marginLeft = (-pt.radius) + 'px';
+    // el.style.marginTop = (-pt.radius) + 'px';
     el.style.background = cat.color;
     el.style.opacity = pt.opacity / 100;
     el.style.borderColor = pt.opacity>=75?'#fff':cat.border;

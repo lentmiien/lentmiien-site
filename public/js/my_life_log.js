@@ -238,8 +238,8 @@
         const radius = Math.max(2, (pt.radius || 8) * scale);
         el.style.width = `${radius * 2}px`;
         el.style.height = `${radius * 2}px`;
-        el.style.marginLeft = `${-radius}px`;
-        el.style.marginTop = `${-radius}px`;
+        // el.style.marginLeft = `${-radius}px`;
+        // el.style.marginTop = `${-radius}px`;
         el.style.background = cat.color;
         el.style.opacity = (pt.opacity || 80) / 100;
         el.style.borderColor = (pt.opacity || 80) >= 75 ? '#fff' : cat.border;
