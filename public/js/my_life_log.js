@@ -213,6 +213,15 @@
       renderOverlayPoints();
     };
 
+    const lifeLogDetails = document.getElementById('life-log-details');
+    if (lifeLogDetails) {
+      lifeLogDetails.addEventListener('toggle', () => {
+        if (lifeLogDetails.open) {
+          setTimeout(updateCanvasSize, 0);
+        }
+      });
+    }
+
     const getRelativeCoords = (evt, element) => {
       const rect = element.getBoundingClientRect();
       const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;

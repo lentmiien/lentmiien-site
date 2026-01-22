@@ -34,6 +34,87 @@ block styles
       animation: life-log-shell-in 0.5s ease both;
     }
 
+    .life-log-details {
+      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+    }
+
+    .life-log-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      width: 100%;
+      padding: 0.85rem 1.1rem;
+      border: 1px solid var(--life-log-border);
+      border-radius: 18px;
+      background: linear-gradient(120deg, #fff8f0 0%, #f7ede1 60%, #eef6f4 100%);
+      color: var(--life-log-ink);
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+      box-shadow: 0 14px 28px rgba(31, 26, 22, 0.08);
+      font-weight: 600;
+    }
+
+    .life-log-toggle::-webkit-details-marker {
+      display: none;
+    }
+
+    .life-log-toggle::marker {
+      content: '';
+    }
+
+    .life-log-toggle-title {
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+    }
+
+    .life-log-toggle-hint {
+      font-size: 0.85rem;
+      color: var(--life-log-muted);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .life-log-toggle-hint::before {
+      content: 'Expand';
+    }
+
+    .life-log-details[open] .life-log-toggle-hint::before {
+      content: 'Collapse';
+    }
+
+    .life-log-toggle::after {
+      content: '+';
+      border: 1px solid var(--life-log-border);
+      border-radius: 999px;
+      width: 1.6rem;
+      height: 1.6rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      color: var(--life-log-accent);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .life-log-details[open] .life-log-toggle::after {
+      content: '-';
+    }
+
+    .life-log-details[open] .life-log-toggle {
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      border-bottom: none;
+    }
+
+    .life-log-details[open] .life-log-shell {
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
+      border-top: none;
+    }
+
     .life-log-header h2 {
       margin-bottom: 0.2rem;
       font-weight: 600;
@@ -257,104 +338,108 @@ block content
             button.btn.btn-primary(type="submit") Search
   .row.mb-4
     .col
-      .life-log-shell
-        - const lifeLog = lifeLogSuggestions || {};
-        - const lifeLogLabels = lifeLog.all || [];
-        .d-flex.flex-column.flex-lg-row.justify-content-between.gap-3.align-items-start.life-log-header.mb-3
-          div
-            h2.mb-1 My Life Log
-            p.mb-0 Quick entries, diary notes, and body-map visual logs. View the timeline anytime.
-          a.btn.btn-outline-dark.btn-sm.mt-1(href="/mypage/life_log") View timeline
-        .row.g-4
-          .col-lg-5
-            .life-log-panel
-              form#life-log-form
-                .d-flex.flex-column.gap-3
-                  .d-flex.flex-column
-                    span.life-log-label Type
-                    select#life-log-type.life-log-input(name="type")
-                      option(value="basic") Basic
-                      option(value="medical") Medical
-                      option(value="diary") Diary
-                  .d-flex.flex-column
-                    span.life-log-label Label
-                    input#life-log-label.life-log-input(type="text", name="label", list="life-log-labels", placeholder="e.g. Vitamin C, Mood, Work")
-                    datalist#life-log-labels
-                      each label in lifeLogLabels
-                        option(value=label)
-                  .d-flex.flex-column#life-log-value-row
-                    span.life-log-label Value
-                    input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")
-                  .d-flex.flex-column#life-log-text-row(style="display:none;")
-                    span.life-log-label Diary text
-                    textarea#life-log-text.life-log-input(rows="5", placeholder="Add a short note...")
-                    .d-flex.flex-column.gap-2.mt-2
-                      label.life-log-label(for="life-log-audio") Transcribe audio
-                      input#life-log-audio.form-control(type="file", accept="audio/*")
-                      button#life-log-transcribe.btn.btn-outline-secondary.btn-sm(type="button") Transcribe audio
-                      button#life-log-format.btn.btn-outline-dark.btn-sm(type="button") Polish text with AI
-                  .d-flex.flex-column
-                    span.life-log-label Timestamp
-                    input#life-log-timestamp.life-log-input(type="datetime-local", name="timestamp")
-                  .life-log-actions.d-flex.flex-wrap.gap-2
-                    button#life-log-save.btn.btn-dark(type="submit") Save entry
-                  .life-log-status#life-log-status Ready.
-              if lifeLog.top && lifeLog.top.length
-                .mt-4
-                  .life-log-label.mb-2 Top labels
-                  .life-log-chips
-                    each label in lifeLog.top
-                      button.life-log-chip(type="button", data-label=label)= label
-              if lifeLog.timeOfDay && lifeLog.timeOfDay.length
-                .mt-3
-                  .life-log-label.mb-2 Suggested for now
-                  .life-log-chips
-                    each label in lifeLog.timeOfDay
-                      button.life-log-chip(type="button", data-label=label)= label
-              if lifeLog.recent && lifeLog.recent.length
-                .mt-3
-                  .life-log-label.mb-2 Recently used
-                  .life-log-chips
-                    each label in lifeLog.recent
-                      button.life-log-chip(type="button", data-label=label)= label
-          .col-lg-7
-            .life-log-panel
-              .d-flex.justify-content-between.align-items-start.mb-3
-                div
-                  h4.mb-1 Visual log
-                  p.text-muted.mb-0 Tap the body map to place points for pain or discomfort.
-                span.life-log-label Visual log entry
-              .life-log-visual
-                #llv-img-wrap.life-log-visual-canvas
-                  img#llv-img(src="/i/img_select.jpg", alt="Body map", draggable="false")
-                  #llv-points-overlay.life-log-visual-overlay
-                  #llv-img-hitbox(style="position:absolute;inset:0;z-index:5;cursor:crosshair;")
-                .row.mt-3.g-3
-                  .col-md-6
-                    .d-flex.flex-column.gap-2
-                      label.life-log-label(for="llv-radius") Point radius
-                      input#llv-radius.form-range(type="range", min="2", max="28", value="8")
-                      div#llv-radius-val.life-log-status 8 px
-                  .col-md-6
-                    .d-flex.flex-column.gap-2
-                      label.life-log-label(for="llv-opacity") Intensity
-                      input#llv-opacity.form-range(type="range", min="25", max="100", value="80")
-                      div#llv-opacity-val.life-log-status 80%
-                .row.mt-3.g-3
-                  .col-md-6
-                    .d-flex.flex-column.gap-2
-                      label.life-log-label(for="llv-category") Category
-                      select#llv-category.form-select
-                  .col-md-6
-                    .d-flex.flex-column.gap-2
-                      label.life-log-label(for="llv-timestamp") Timestamp
-                      input#llv-timestamp.form-control(type="datetime-local")
-                #llv-point-list.life-log-point-list.mt-3
-                .d-flex.flex-wrap.gap-2.mt-3
-                  button#llv-save.btn.btn-dark(type="button") Save visual log
-                  button#llv-clear.btn.btn-outline-secondary(type="button") Clear
-                  button#llv-delete.btn.btn-outline-danger(type="button" disabled) Delete point
-                .life-log-status.mt-2#llv-status Ready.
+      details#life-log-details.life-log-details
+        summary.life-log-toggle
+          span.life-log-toggle-title My Life Log
+          span.life-log-toggle-hint
+        .life-log-shell
+          - const lifeLog = lifeLogSuggestions || {};
+          - const lifeLogLabels = lifeLog.all || [];
+          .d-flex.flex-column.flex-lg-row.justify-content-between.gap-3.align-items-start.life-log-header.mb-3
+            div
+              h2.mb-1 My Life Log
+              p.mb-0 Quick entries, diary notes, and body-map visual logs. View the timeline anytime.
+            a.btn.btn-outline-dark.btn-sm.mt-1(href="/mypage/life_log") View timeline
+          .row.g-4
+            .col-lg-5
+              .life-log-panel
+                form#life-log-form
+                  .d-flex.flex-column.gap-3
+                    .d-flex.flex-column
+                      span.life-log-label Type
+                      select#life-log-type.life-log-input(name="type")
+                        option(value="basic") Basic
+                        option(value="medical") Medical
+                        option(value="diary") Diary
+                    .d-flex.flex-column
+                      span.life-log-label Label
+                      input#life-log-label.life-log-input(type="text", name="label", list="life-log-labels", placeholder="e.g. Vitamin C, Mood, Work")
+                      datalist#life-log-labels
+                        each label in lifeLogLabels
+                          option(value=label)
+                    .d-flex.flex-column#life-log-value-row
+                      span.life-log-label Value
+                      input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")
+                    .d-flex.flex-column#life-log-text-row(style="display:none;")
+                      span.life-log-label Diary text
+                      textarea#life-log-text.life-log-input(rows="5", placeholder="Add a short note...")
+                      .d-flex.flex-column.gap-2.mt-2
+                        label.life-log-label(for="life-log-audio") Transcribe audio
+                        input#life-log-audio.form-control(type="file", accept="audio/*")
+                        button#life-log-transcribe.btn.btn-outline-secondary.btn-sm(type="button") Transcribe audio
+                        button#life-log-format.btn.btn-outline-dark.btn-sm(type="button") Polish text with AI
+                    .d-flex.flex-column
+                      span.life-log-label Timestamp
+                      input#life-log-timestamp.life-log-input(type="datetime-local", name="timestamp")
+                    .life-log-actions.d-flex.flex-wrap.gap-2
+                      button#life-log-save.btn.btn-dark(type="submit") Save entry
+                    .life-log-status#life-log-status Ready.
+                if lifeLog.top && lifeLog.top.length
+                  .mt-4
+                    .life-log-label.mb-2 Top labels
+                    .life-log-chips
+                      each label in lifeLog.top
+                        button.life-log-chip(type="button", data-label=label)= label
+                if lifeLog.timeOfDay && lifeLog.timeOfDay.length
+                  .mt-3
+                    .life-log-label.mb-2 Suggested for now
+                    .life-log-chips
+                      each label in lifeLog.timeOfDay
+                        button.life-log-chip(type="button", data-label=label)= label
+                if lifeLog.recent && lifeLog.recent.length
+                  .mt-3
+                    .life-log-label.mb-2 Recently used
+                    .life-log-chips
+                      each label in lifeLog.recent
+                        button.life-log-chip(type="button", data-label=label)= label
+            .col-lg-7
+              .life-log-panel
+                .d-flex.justify-content-between.align-items-start.mb-3
+                  div
+                    h4.mb-1 Visual log
+                    p.text-muted.mb-0 Tap the body map to place points for pain or discomfort.
+                  span.life-log-label Visual log entry
+                .life-log-visual
+                  #llv-img-wrap.life-log-visual-canvas
+                    img#llv-img(src="/i/img_select.jpg", alt="Body map", draggable="false")
+                    #llv-points-overlay.life-log-visual-overlay
+                    #llv-img-hitbox(style="position:absolute;inset:0;z-index:5;cursor:crosshair;")
+                  .row.mt-3.g-3
+                    .col-md-6
+                      .d-flex.flex-column.gap-2
+                        label.life-log-label(for="llv-radius") Point radius
+                        input#llv-radius.form-range(type="range", min="2", max="28", value="8")
+                        div#llv-radius-val.life-log-status 8 px
+                    .col-md-6
+                      .d-flex.flex-column.gap-2
+                        label.life-log-label(for="llv-opacity") Intensity
+                        input#llv-opacity.form-range(type="range", min="25", max="100", value="80")
+                        div#llv-opacity-val.life-log-status 80%
+                  .row.mt-3.g-3
+                    .col-md-6
+                      .d-flex.flex-column.gap-2
+                        label.life-log-label(for="llv-category") Category
+                        select#llv-category.form-select
+                    .col-md-6
+                      .d-flex.flex-column.gap-2
+                        label.life-log-label(for="llv-timestamp") Timestamp
+                        input#llv-timestamp.form-control(type="datetime-local")
+                  #llv-point-list.life-log-point-list.mt-3
+                  .d-flex.flex-wrap.gap-2.mt-3
+                    button#llv-save.btn.btn-dark(type="button") Save visual log
+                    button#llv-clear.btn.btn-outline-secondary(type="button") Clear
+                    button#llv-delete.btn.btn-outline-danger(type="button" disabled) Delete point
+                  .life-log-status.mt-2#llv-status Ready.
   .row 
     .col 
       .mypage-grid
