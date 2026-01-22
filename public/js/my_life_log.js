@@ -159,11 +159,11 @@
   };
 
   const CATEGORIES = [
-    { key: 'a', label: 'Category A', color: '#FFD700', border: '#866F10' },
-    { key: 'b', label: 'Category B', color: '#FF4B60', border: '#7E262F' },
-    { key: 'c', label: 'Category C', color: '#1E90FF', border: '#164075' },
-    { key: 'd', label: 'Category D', color: '#B455FF', border: '#5B277D' },
-    { key: 'e', label: 'Category E', color: '#FFEC80', border: '#BCAA43' },
+    { key:'a', label:'Sting / Burn (skin-level)', color:'#FFD700', border:'#866F10'},
+    { key:'b', label:'Aching / Tender (deep sore)', color:'#FF4B60', border:'#7E262F'},
+    { key:'c', label:'Tight / Stiff (movement-related)', color:'#1E90FF', border:'#164075'},
+    { key:'d', label:'Head Pressure / Throb', color:'#B455FF', border:'#5B277D'},
+    { key:'e', label:'Queasy / Off (stomach + whole-body unwell)', color:'#FFEC80', border:'#BCAA43'}
   ];
 
   const getCategory = (key) => CATEGORIES.find((cat) => cat.key === key) || CATEGORIES[0];
