@@ -175,7 +175,21 @@
     return `${year}-${month}`;
   };
 
-  const buildSeries = (points, keyFn) => {
+  const timeFromDateKey = (key) => {
+    const parts = String(key || '').split('-').map((part) => Number(part));
+    if (parts.length < 3 || parts.some((part) => Number.isNaN(part))) return null;
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  };
+
+  const timeFromMonthKey = (key) => {
+    const parts = String(key || '').split('-').map((part) => Number(part));
+    if (parts.length < 2 || parts.some((part) => Number.isNaN(part))) return null;
+    const date = new Date(parts[0], parts[1] - 1, 1);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  };
+
+  const buildSeries = (points, keyFn, keyToTime) => {
     const map = new Map();
     points.forEach((point) => {
       const key = keyFn(point.timestamp);
@@ -189,6 +203,7 @@
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([key, payload]) => ({
         key,
+        time: keyToTime ? keyToTime(key) : null,
         value: payload.count ? payload.total / payload.count : 0,
       }));
   };
@@ -250,12 +265,18 @@
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
     const values = series.map((item) => item.value);
+    const timeValues = series
+      .map((item) => item.time)
+      .filter((item) => Number.isFinite(item));
     let minValue = Math.min(...values);
     let maxValue = Math.max(...values);
     if (minValue === maxValue) {
       minValue -= 1;
       maxValue += 1;
     }
+    const useTimeScale = timeValues.length === series.length;
+    const minTime = useTimeScale ? Math.min(...timeValues) : null;
+    const maxTime = useTimeScale ? Math.max(...timeValues) : null;
 
     ctx.strokeStyle = dividerColor;
     ctx.lineWidth = 1;
@@ -277,9 +298,14 @@
     ctx.lineWidth = 2;
     ctx.beginPath();
     series.forEach((item, idx) => {
-      const x = series.length === 1
-        ? padding.left + chartWidth / 2
-        : padding.left + (chartWidth / (series.length - 1)) * idx;
+      let x = padding.left + chartWidth / 2;
+      if (series.length > 1) {
+        if (useTimeScale && maxTime !== minTime) {
+          x = padding.left + ((item.time - minTime) / (maxTime - minTime)) * chartWidth;
+        } else {
+          x = padding.left + (chartWidth / (series.length - 1)) * idx;
+        }
+      }
       const yRatio = (item.value - minValue) / (maxValue - minValue);
       const y = padding.top + chartHeight - yRatio * chartHeight;
       if (idx === 0) {
@@ -292,9 +318,14 @@
 
     ctx.fillStyle = options.color || brandColor;
     series.forEach((item, idx) => {
-      const x = series.length === 1
-        ? padding.left + chartWidth / 2
-        : padding.left + (chartWidth / (series.length - 1)) * idx;
+      let x = padding.left + chartWidth / 2;
+      if (series.length > 1) {
+        if (useTimeScale && maxTime !== minTime) {
+          x = padding.left + ((item.time - minTime) / (maxTime - minTime)) * chartWidth;
+        } else {
+          x = padding.left + (chartWidth / (series.length - 1)) * idx;
+        }
+      }
       const yRatio = (item.value - minValue) / (maxValue - minValue);
       const y = padding.top + chartHeight - yRatio * chartHeight;
       ctx.beginPath();
@@ -317,6 +348,20 @@
     if (className) el.className = className;
     if (text !== undefined) el.textContent = text;
     return el;
+  };
+
+  let chartRenderRaf = null;
+  const scheduleChartRender = () => {
+    if (chartRenderRaf) return;
+    chartRenderRaf = requestAnimationFrame(() => {
+      chartRenderRaf = null;
+      document.querySelectorAll('.life-log-analytics-chart').forEach((canvas) => {
+        const series = canvas._lifeLogSeries || [];
+        const color = canvas._lifeLogColor;
+        const height = canvas._lifeLogHeight || 160;
+        renderLineChart(canvas, series, { color, height });
+      });
+    });
   };
 
   const clearContainer = (container) => {
@@ -413,8 +458,8 @@
       const trendValue = computeTrend(group.entries);
       const trendText = createElement('div', 'life-log-analytics-card-trend', formatTrend(trendValue));
 
-      const dailySeries = buildSeries(group.entries, toLocalDateKey);
-      const monthlySeries = buildSeries(group.entries, toLocalMonthKey);
+      const dailySeries = buildSeries(group.entries, toLocalDateKey, timeFromDateKey);
+      const monthlySeries = buildSeries(group.entries, toLocalMonthKey, timeFromMonthKey);
       const dailyWrap = createElement('div', 'life-log-analytics-chart-block');
       const dailyLabel = createElement('div', 'life-log-analytics-chart-label', 'Daily average');
       const dailyCanvas = createElement('canvas', 'life-log-analytics-chart');
@@ -434,9 +479,14 @@
       card.appendChild(monthlyWrap);
       numericContainer.appendChild(card);
 
-      renderLineChart(dailyCanvas, dailySeries, { color: brandColor });
-      renderLineChart(monthlyCanvas, monthlySeries, { color: accentColor });
+      dailyCanvas._lifeLogSeries = dailySeries;
+      dailyCanvas._lifeLogColor = brandColor;
+      dailyCanvas._lifeLogHeight = 160;
+      monthlyCanvas._lifeLogSeries = monthlySeries;
+      monthlyCanvas._lifeLogColor = accentColor;
+      monthlyCanvas._lifeLogHeight = 160;
     });
+    scheduleChartRender();
   };
 
   const renderNonNumeric = (items) => {
@@ -643,6 +693,7 @@
     renderNonNumeric(result.nonNumeric);
     renderDiary(result.diaries);
     renderVisual(result.visuals);
+    scheduleChartRender();
   };
 
   const runAnalytics = async () => {
@@ -770,10 +821,12 @@
 
   window.addEventListener('resize', () => {
     if (analyticsState.data) {
-      renderAnalyticsResults(analyticsState.data);
-    }
-    if (!visualState.isPlaying && visualState.points.length) {
-      renderVisualAll();
+      scheduleChartRender();
+      if (visualState.isPlaying) {
+        renderVisualAnimated(visualState.playTime);
+      } else if (visualState.points.length) {
+        renderVisualAll();
+      }
     }
   });
 
