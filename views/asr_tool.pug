@@ -171,10 +171,16 @@ block content
               input#asr-file.form-control(type="file", name="file", accept="audio/*", required)
               small.text-muted Accepts mp3, wav, m4a, flac, ogg, webm.
             .row
-              .col-md-6.mb-3
+              .col-md-4.mb-3
+                label.asr-label(for="asr-model") Model
+                select#asr-model.form-select(name="model")
+                  option(value="whisper-api", selected=(!form.model || form.model === 'whisper-api')) whisper-api
+                  option(value="vibevoice-asr", selected=form.model === 'vibevoice-asr') vibevoice-asr
+                small.text-muted Vibevoice supports speaker labels.
+              .col-md-4.mb-3
                 label.asr-label(for="asr-language") Language
                 input#asr-language.form-control(type="text", name="language", value=form.language || 'auto', placeholder="auto")
-              .col-md-6.mb-3
+              .col-md-4.mb-3
                 label.asr-label(for="asr-task") Task
                 select#asr-task.form-select(name="task")
                   option(value="transcribe", selected=form.task !== 'translate') Transcribe
@@ -195,6 +201,22 @@ block content
               .form-check
                 input#asr-word-ts.form-check-input(type="checkbox", name="word_timestamps", checked=form.wordTimestamps === true)
                 label.form-check-label.text-muted(for="asr-word-ts") Include word timestamps
+            p.asr-label.mb-1 VibeVoice options (optional)
+            p.text-muted.small.mb-2 Applies to vibevoice-asr. Leave blank for gateway defaults.
+            .row
+              .col-md-6.mb-3
+                label.asr-label(for="asr-sampling-rate") Sampling rate
+                input#asr-sampling-rate.form-control(type="number", step="1", min="1", name="sampling_rate", value=form.samplingRate || '', placeholder="16000")
+              .col-md-6.mb-3
+                label.asr-label(for="asr-max-new-tokens") Max new tokens
+                input#asr-max-new-tokens.form-control(type="number", step="1", min="1", name="max_new_tokens", value=form.maxNewTokens || '', placeholder="1024")
+            .row
+              .col-md-6.mb-3
+                label.asr-label(for="asr-hotwords") Hotwords
+                input#asr-hotwords.form-control(type="text", name="hotwords", value=form.hotwords || '', placeholder="comma-separated")
+              .col-md-6.mb-3
+                label.asr-label(for="asr-context") Context
+                textarea#asr-context.form-control(name="context", rows="2", placeholder="Optional prompt")= form.context || ''
             button#asr-submit.btn.btn-primary(type="submit") Transcribe upload
           .small.text-muted.mt-2#asr-status Ready.
 
@@ -314,12 +336,17 @@ block content
       const recordError = document.getElementById('asr-recording-error');
       const recordPreview = document.getElementById('asr-record-preview');
 
+      const modelInput = document.getElementById('asr-model');
       const languageInput = document.getElementById('asr-language');
       const taskInput = document.getElementById('asr-task');
       const tempInput = document.getElementById('asr-temperature');
       const beamInput = document.getElementById('asr-beam-size');
       const vadInput = document.getElementById('asr-vad');
       const tsInput = document.getElementById('asr-word-ts');
+      const samplingRateInput = document.getElementById('asr-sampling-rate');
+      const maxNewTokensInput = document.getElementById('asr-max-new-tokens');
+      const hotwordsInput = document.getElementById('asr-hotwords');
+      const contextInput = document.getElementById('asr-context');
 
       let mediaRecorder = null;
       let recordedChunks = [];
@@ -343,12 +370,17 @@ block content
       };
 
       const collectOptions = () => ({
+        model: modelInput ? modelInput.value : '',
         language: languageInput ? languageInput.value : '',
         task: taskInput ? taskInput.value : '',
         temperature: tempInput ? tempInput.value : '',
         beam_size: beamInput ? beamInput.value : '',
         vad_filter: vadInput ? String(vadInput.checked) : '',
         word_timestamps: tsInput ? String(tsInput.checked) : '',
+        sampling_rate: samplingRateInput ? samplingRateInput.value : '',
+        max_new_tokens: maxNewTokensInput ? maxNewTokensInput.value : '',
+        hotwords: hotwordsInput ? hotwordsInput.value : '',
+        context: contextInput ? contextInput.value : '',
       });
 
       const renderResult = (result, job) => {
@@ -558,6 +590,8 @@ block content
         Object.entries(collectOptions()).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '') {
             formData.set(key, value);
+          } else {
+            formData.delete(key);
           }
         });
 

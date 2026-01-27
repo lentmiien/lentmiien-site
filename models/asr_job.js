@@ -4,12 +4,17 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const RequestOptionsSchema = new Schema({
+  model: { type: String, default: 'whisper-api' },
   language: { type: String, default: null },
   task: { type: String, default: 'transcribe' },
   vadFilter: { type: Boolean, default: true },
   beamSize: { type: Number, default: 5 },
   temperature: { type: Number, default: 1.0 },
   wordTimestamps: { type: Boolean, default: false },
+  samplingRate: { type: Number, default: null },
+  maxNewTokens: { type: Number, default: null },
+  hotwords: { type: String, default: null },
+  context: { type: String, default: null },
 }, { _id: false });
 
 const OwnerSchema = new Schema({

@@ -9,6 +9,7 @@ const JS_FILE_NAME = 'services/asrApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 
 const ASR_DEFAULT_OPTIONS = Object.freeze({
+  model: 'whisper-api',
   language: 'auto',
   task: 'transcribe',
   vadFilter: true,
@@ -36,6 +37,8 @@ function parseBooleanOption(raw, defaultValue = false) {
 
 function normalizeOptions(body = {}) {
   const defaults = { ...ASR_DEFAULT_OPTIONS };
+  const modelRaw = typeof body.model === 'string' ? body.model.trim() : '';
+  const model = modelRaw === 'vibevoice-asr' ? 'vibevoice-asr' : defaults.model;
   const language = typeof body.language === 'string' && body.language.trim()
     ? body.language.trim()
     : defaults.language;
@@ -46,8 +49,15 @@ function normalizeOptions(body = {}) {
   const temperature = Number.isFinite(temperatureRaw) ? temperatureRaw : defaults.temperature;
   const vadFilter = parseBooleanOption(body.vad_filter ?? body.vadFilter, defaults.vadFilter);
   const wordTimestamps = parseBooleanOption(body.word_timestamps ?? body.wordTimestamps, defaults.wordTimestamps);
+  const samplingRateRaw = Number.parseInt(body.sampling_rate ?? body.samplingRate, 10);
+  const samplingRate = Number.isFinite(samplingRateRaw) && samplingRateRaw > 0 ? samplingRateRaw : null;
+  const maxNewTokensRaw = Number.parseInt(body.max_new_tokens ?? body.maxNewTokens, 10);
+  const maxNewTokens = Number.isFinite(maxNewTokensRaw) && maxNewTokensRaw > 0 ? maxNewTokensRaw : null;
+  const hotwords = typeof body.hotwords === 'string' ? body.hotwords.trim() : '';
+  const context = typeof body.context === 'string' ? body.context.trim() : '';
 
-  return {
+  const options = {
+    model,
     language,
     task,
     vadFilter,
@@ -55,6 +65,21 @@ function normalizeOptions(body = {}) {
     temperature,
     wordTimestamps,
   };
+
+  if (samplingRate !== null) {
+    options.samplingRate = samplingRate;
+  }
+  if (maxNewTokens !== null) {
+    options.maxNewTokens = maxNewTokens;
+  }
+  if (hotwords) {
+    options.hotwords = hotwords;
+  }
+  if (context) {
+    options.context = context;
+  }
+
+  return options;
 }
 
 class AsrApiService {
@@ -99,12 +124,23 @@ class AsrApiService {
       filename: requestMetadata.fileName,
       contentType: requestMetadata.mimeType || 'application/octet-stream',
     });
-    formData.append('language', normalized.language);
-    formData.append('task', normalized.task);
-    formData.append('vad_filter', String(normalized.vadFilter));
-    formData.append('beam_size', String(normalized.beamSize));
-    formData.append('temperature', String(normalized.temperature));
-    formData.append('word_timestamps', String(normalized.wordTimestamps));
+    const appendIfPresent = (key, value) => {
+      if (value === undefined || value === null || value === '') {
+        return;
+      }
+      formData.append(key, String(value));
+    };
+    appendIfPresent('model', normalized.model);
+    appendIfPresent('language', normalized.language);
+    appendIfPresent('task', normalized.task);
+    appendIfPresent('vad_filter', normalized.vadFilter);
+    appendIfPresent('beam_size', normalized.beamSize);
+    appendIfPresent('temperature', normalized.temperature);
+    appendIfPresent('word_timestamps', normalized.wordTimestamps);
+    appendIfPresent('sampling_rate', normalized.samplingRate);
+    appendIfPresent('max_new_tokens', normalized.maxNewTokens);
+    appendIfPresent('hotwords', normalized.hotwords);
+    appendIfPresent('context', normalized.context);
 
     logger.notice('Submitting ASR transcription (service)', {
       category: 'asr_service',
@@ -115,6 +151,7 @@ class AsrApiService {
         mimeType: requestMetadata.mimeType,
         task: normalized.task,
         language: normalized.language,
+        model: normalized.model,
       },
     });
 
