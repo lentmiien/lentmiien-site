@@ -30,6 +30,13 @@
   max-width: 720px;
 }
 
+.life-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .life-log-filter {
   background: rgba(23, 26, 32, 0.85);
   border: 1px solid var(--log-border);
@@ -100,6 +107,189 @@
   background: var(--log-accent);
   color: var(--text-inverse);
   border-color: transparent;
+}
+
+.life-log-modal .modal-content {
+  background: var(--log-surface);
+  color: var(--log-ink);
+  border: 1px solid var(--log-border);
+  border-radius: 20px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.life-log-modal .modal-header {
+  border-bottom: 1px solid var(--log-line);
+}
+
+.life-log-modal .modal-footer {
+  border-top: 1px solid var(--log-line);
+}
+
+.life-log-modal .btn-close {
+  filter: invert(1);
+}
+
+.life-log-analytics-form label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--log-muted);
+  font-weight: 600;
+}
+
+.life-log-analytics-form input,
+.life-log-analytics-form select {
+  border-radius: 10px;
+  border: 1px solid var(--log-border);
+  padding: 0.45rem 0.65rem;
+  font-size: 0.9rem;
+  background: var(--log-surface-2);
+  color: var(--log-ink);
+}
+
+.life-log-analytics-form .form-check-input {
+  background-color: var(--log-surface-2);
+  border-color: var(--log-border);
+}
+
+.life-log-analytics-form .form-check-input:checked {
+  background-color: var(--log-accent);
+  border-color: var(--log-accent);
+}
+
+.life-log-analytics-status--error {
+  color: #ff8b8b;
+}
+
+.life-log-analytics-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.life-log-analytics-title {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: var(--log-muted);
+  margin-bottom: 0.75rem;
+}
+
+.life-log-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.life-log-analytics-card {
+  background: var(--log-surface-2);
+  border: 1px solid var(--log-border);
+  border-radius: 16px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.life-log-analytics-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.life-log-analytics-card-title {
+  font-weight: 600;
+}
+
+.life-log-analytics-card-meta,
+.life-log-analytics-card-types,
+.life-log-analytics-card-trend {
+  color: var(--log-muted);
+  font-size: 0.85rem;
+}
+
+.life-log-analytics-chart-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.life-log-analytics-chart-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--log-muted);
+}
+
+.life-log-analytics-chart {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--log-border);
+  background: var(--log-surface-2);
+}
+
+.life-log-analytics-list-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.life-log-analytics-item {
+  border: 1px solid var(--log-border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: var(--log-surface-2);
+}
+
+.life-log-analytics-item-meta {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--log-muted);
+  margin-bottom: 0.35rem;
+}
+
+.life-log-analytics-item-value {
+  font-size: 0.95rem;
+}
+
+.life-log-analytics-item-text {
+  font-size: 0.9rem;
+  color: var(--log-ink);
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.life-log-visual-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.life-log-visual-stage {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--log-border);
+  background: var(--log-surface-2);
+}
+
+.life-log-visual-stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.life-log-visual-stage canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.life-log-visual-caption {
+  margin-top: 0.5rem;
 }
 
 .life-log-layout-controls {
