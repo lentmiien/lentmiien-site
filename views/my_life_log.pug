@@ -1,230 +1,7 @@
 extends layout
 
 block styles
-  link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap")
-  style.
-    :root {
-      --log-ink: #1e1915;
-      --log-muted: #6d5a4a;
-      --log-accent: #c65d2b;
-      --log-accent-2: #0b6e4f;
-      --log-surface: #fffaf3;
-      --log-surface-2: #f5ede1;
-      --log-border: #e2d4c4;
-      --log-line: #d9c8b5;
-    }
-
-    .life-log-page {
-      font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
-      color: var(--log-ink);
-      background: radial-gradient(circle at 12% 8%, rgba(198, 93, 43, 0.12), transparent 45%),
-        radial-gradient(circle at 80% 0%, rgba(11, 110, 79, 0.1), transparent 40%),
-        linear-gradient(160deg, #fffaf3 0%, #f3e8d9 100%);
-      border-radius: 24px;
-      padding: 2rem;
-      margin-bottom: 2rem;
-      border: 1px solid var(--log-border);
-      box-shadow: 0 28px 70px rgba(30, 25, 21, 0.1);
-      animation: life-log-page-in 0.5s ease both;
-    }
-
-    .life-log-hero h1 {
-      font-weight: 600;
-      letter-spacing: -0.02em;
-    }
-
-    .life-log-hero p {
-      color: var(--log-muted);
-      max-width: 720px;
-    }
-
-    .life-log-filter {
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid var(--log-border);
-      border-radius: 16px;
-      padding: 1rem 1.25rem;
-      margin-top: 1.5rem;
-    }
-
-    .life-log-filter label {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--log-muted);
-      font-weight: 600;
-    }
-
-    .life-log-filter input,
-    .life-log-filter select {
-      border-radius: 10px;
-      border: 1px solid var(--log-border);
-      padding: 0.45rem 0.65rem;
-      font-size: 0.9rem;
-    }
-
-    .life-log-timeline {
-      position: relative;
-      margin-top: 2rem;
-      padding-left: 2rem;
-    }
-
-    .life-log-timeline::before {
-      content: '';
-      position: absolute;
-      left: 0.6rem;
-      top: 0;
-      bottom: 0;
-      width: 2px;
-      background: linear-gradient(180deg, transparent 0%, var(--log-line) 10%, var(--log-line) 90%, transparent 100%);
-    }
-
-    .life-log-item {
-      position: relative;
-      padding-bottom: 1.5rem;
-      animation: life-log-rise 0.4s ease both;
-      animation-delay: calc(var(--delay, 0) * 0.05s);
-    }
-
-    .life-log-dot {
-      position: absolute;
-      left: 0.15rem;
-      top: 1.2rem;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--log-accent-2);
-      box-shadow: 0 0 0 4px rgba(11, 110, 79, 0.15);
-    }
-
-    .life-log-card {
-      background: var(--log-surface);
-      border: 1px solid var(--log-border);
-      border-radius: 16px;
-      padding: 1rem 1.25rem;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
-    }
-
-    .life-log-meta {
-      display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 0.6rem;
-    }
-
-    .life-log-type {
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--log-accent);
-      font-weight: 600;
-    }
-
-    .life-log-time {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 0.85rem;
-      color: var(--log-muted);
-    }
-
-    .life-log-legacy {
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--log-muted);
-      border: 1px solid var(--log-border);
-      padding: 0.1rem 0.4rem;
-      border-radius: 999px;
-    }
-
-    .life-log-delete {
-      border: none;
-      background: transparent;
-      color: var(--log-muted);
-      opacity: 0.2;
-      font-size: 1.2rem;
-      margin-left: auto;
-    }
-
-    .life-log-card:hover .life-log-delete {
-      opacity: 0.6;
-    }
-
-    .life-log-label {
-      font-weight: 600;
-      margin-bottom: 0.35rem;
-    }
-
-    .life-log-value {
-      font-size: 1.05rem;
-    }
-
-    .life-log-text {
-      white-space: pre-wrap;
-      font-size: 0.95rem;
-      color: var(--log-ink);
-    }
-
-    .visual-log-view {
-      position: relative;
-      width: 100%;
-      max-width: 380px;
-      margin-top: 0.8rem;
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid var(--log-border);
-      background: var(--log-surface-2);
-    }
-
-    .visual-log-view img {
-      width: 100%;
-      display: block;
-    }
-
-    .visual-log-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-    }
-
-    .visual-log-overlay .point {
-      position: absolute;
-      border-radius: 50%;
-      border-style: solid;
-      transform: translate(-50%, -50%);
-      box-sizing: border-box;
-    }
-
-    @keyframes life-log-page-in {
-      from {
-        opacity: 0;
-        transform: translateY(14px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes life-log-rise {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @media (max-width: 992px) {
-      .life-log-page {
-        padding: 1.25rem;
-      }
-      .life-log-timeline {
-        padding-left: 1.5rem;
-      }
-    }
+  link(rel="stylesheet", href="/css/my_life_log.css")
 
 block content
   .life-log-page
@@ -266,28 +43,63 @@ block content
         button.btn.btn-dark(type="submit") Apply filters
 
     if entries && entries.length
-      .life-log-timeline
-        each entry, idx in entries
-          .life-log-item(data-entry-id=entry.id, data-legacy=entry.isLegacy, style=`--delay:${idx}`)
-            .life-log-dot
-            .life-log-card
-              .life-log-meta
-                span.life-log-type= entry.typeLabel
-                span.life-log-time= entry.displayTimestamp
-                if entry.isLegacy
-                  span.life-log-legacy Legacy
-                if !entry.isLegacy
-                  button.life-log-delete(type="button", title="Delete entry") &times;
-              if entry.label
-                .life-log-label= entry.label
-              if entry.type === 'basic' || entry.type === 'medical'
-                .life-log-value= entry.value
-              if entry.type === 'diary'
-                pre.life-log-text= entry.text
-              if entry.type === 'visual_log'
-                .visual-log-view(data-vlog=entry.v_log_data)
-                  img(src="/i/img_select.jpg", alt="Visual log entry")
-                  .visual-log-overlay
+      .life-log-layout-controls
+        span.life-log-layout-label View
+        .life-log-layout-toggle
+          button.life-log-layout-btn.is-active(type="button", data-life-log-layout="timeline", aria-pressed="true") Timeline
+          button.life-log-layout-btn(type="button", data-life-log-layout="summary", aria-pressed="false") Daily summary
+      .life-log-views(data-layout="timeline")
+        .life-log-view.life-log-view--timeline
+          .life-log-timeline
+            each entry, idx in entries
+              .life-log-item.life-log-entry(data-entry-id=entry.id, data-legacy=entry.isLegacy, style=`--delay:${idx}`)
+                .life-log-dot
+                .life-log-card
+                  .life-log-meta
+                    span.life-log-type= entry.typeLabel
+                    span.life-log-time= entry.displayTimestamp
+                    if entry.isLegacy
+                      span.life-log-legacy Legacy
+                    if !entry.isLegacy
+                      button.life-log-delete(type="button", title="Delete entry") &times;
+                  if entry.label
+                    .life-log-label= entry.label
+                  if entry.type === 'basic' || entry.type === 'medical'
+                    .life-log-value= entry.value
+                  if entry.type === 'diary'
+                    pre.life-log-text= entry.text
+                  if entry.type === 'visual_log'
+                    .visual-log-view(data-vlog=entry.v_log_data)
+                      img(src="/i/img_select.jpg", alt="Visual log entry")
+                      .visual-log-overlay
+        .life-log-view.life-log-view--summary
+          .life-log-summary
+            each day in dailySummary
+              .life-log-day
+                .life-log-day-header
+                  h2.life-log-day-title= day.displayDate
+                .life-log-day-groups
+                  each group in day.groups
+                    .life-log-day-group
+                      .life-log-day-label= group.label
+                      ul.life-log-day-items
+                        each entry in group.entries
+                          li.life-log-day-item.life-log-entry(data-entry-id=entry.id, data-legacy=entry.isLegacy)
+                            .life-log-day-item-header
+                              span.life-log-day-time= entry.displayTime
+                              span.life-log-day-type= entry.typeLabel
+                              if entry.isLegacy
+                                span.life-log-legacy Legacy
+                              if !entry.isLegacy
+                                button.life-log-delete(type="button", title="Delete entry") &times;
+                            if entry.type === 'basic' || entry.type === 'medical'
+                              .life-log-day-value= entry.value
+                            if entry.type === 'diary'
+                              pre.life-log-text.life-log-day-text= entry.text
+                            if entry.type === 'visual_log'
+                              .visual-log-view(data-vlog=entry.v_log_data)
+                                img(src="/i/img_select.jpg", alt="Visual log entry")
+                                .visual-log-overlay
     else
       p.mt-4.text-muted No life log entries found for this range.
 

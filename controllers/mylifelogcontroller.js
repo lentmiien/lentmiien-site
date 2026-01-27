@@ -36,6 +36,16 @@ const formatDisplayTimestamp = (date) => {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 };
 
+const formatDisplayDate = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+};
+
+const formatDisplayTime = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+};
+
 const parseDateTimeInput = (value, { isEnd = false } = {}) => {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -111,8 +121,50 @@ const normalizeEntry = (entry) => ({
   v_log_data: entry.v_log_data || '',
   timestamp: entry.timestamp,
   displayTimestamp: formatDisplayTimestamp(entry.timestamp),
+  displayDate: formatDisplayDate(entry.timestamp),
+  displayTime: formatDisplayTime(entry.timestamp),
   isLegacy: entry.isLegacy === true,
 });
+
+const buildDailySummary = (entries) => {
+  const days = new Map();
+
+  entries.forEach((entry) => {
+    const dayKey = formatDisplayDate(entry.timestamp);
+    if (!dayKey) return;
+
+    let day = days.get(dayKey);
+    if (!day) {
+      day = {
+        key: dayKey,
+        displayDate: dayKey,
+        groups: new Map(),
+      };
+      days.set(dayKey, day);
+    }
+
+    const label = entry.label ? entry.label.trim() : '';
+    const groupLabel = label || entry.typeLabel || entry.type;
+    const groupKey = label ? label.toLowerCase() : `type:${entry.type}`;
+
+    let group = day.groups.get(groupKey);
+    if (!group) {
+      group = {
+        key: groupKey,
+        label: groupLabel,
+        entries: [],
+      };
+      day.groups.set(groupKey, group);
+    }
+    group.entries.push(entry);
+  });
+
+  return Array.from(days.values()).map((day) => ({
+    key: day.key,
+    displayDate: day.displayDate,
+    groups: Array.from(day.groups.values()),
+  }));
+};
 
 exports.life_log_page = async (req, res) => {
   const now = new Date();
@@ -136,9 +188,12 @@ exports.life_log_page = async (req, res) => {
       includeLegacy,
     });
     const suggestions = myLifeLogService.getLabelSuggestions(now);
+    const normalizedEntries = entries.map(normalizeEntry);
+    const dailySummary = buildDailySummary(normalizedEntries);
 
     res.render('my_life_log', {
-      entries: entries.map(normalizeEntry),
+      entries: normalizedEntries,
+      dailySummary,
       filters: {
         start: formatDateTimeInput(start),
         end: formatDateTimeInput(end),

@@ -54,11 +54,71 @@
     visualLogs.forEach(renderVisualLog);
   });
 
+  const layoutContainer = document.querySelector('.life-log-views');
+  const layoutButtons = Array.from(document.querySelectorAll('[data-life-log-layout]'));
+  const layoutStorageKey = 'lifeLogLayout';
+
+  const setLayout = (layout) => {
+    if (!layoutContainer) return;
+    const nextLayout = layout === 'summary' ? 'summary' : 'timeline';
+    layoutContainer.dataset.layout = nextLayout;
+    layoutButtons.forEach((button) => {
+      const isActive = button.getAttribute('data-life-log-layout') === nextLayout;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+    try {
+      localStorage.setItem(layoutStorageKey, nextLayout);
+    } catch (error) {
+      // Ignore storage failures (privacy mode, etc.).
+    }
+    requestAnimationFrame(() => {
+      visualLogs.forEach(renderVisualLog);
+    });
+  };
+
+  if (layoutContainer && layoutButtons.length) {
+    let initialLayout = layoutContainer.dataset.layout || 'timeline';
+    try {
+      const storedLayout = localStorage.getItem(layoutStorageKey);
+      if (storedLayout) {
+        initialLayout = storedLayout;
+      }
+    } catch (error) {
+      // Ignore storage failures (privacy mode, etc.).
+    }
+    setLayout(initialLayout);
+    layoutButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        setLayout(button.getAttribute('data-life-log-layout'));
+      });
+    });
+  }
+
+  const getEntryNodes = (entryId) => {
+    if (!entryId) return [];
+    const safeId = window.CSS && window.CSS.escape ? window.CSS.escape(entryId) : entryId;
+    return document.querySelectorAll(`[data-entry-id=\"${safeId}\"]`);
+  };
+
+  const cleanupSummary = () => {
+    document.querySelectorAll('.life-log-day-group').forEach((group) => {
+      if (!group.querySelector('.life-log-entry')) {
+        group.remove();
+      }
+    });
+    document.querySelectorAll('.life-log-day').forEach((day) => {
+      if (!day.querySelector('.life-log-entry')) {
+        day.remove();
+      }
+    });
+  };
+
   document.querySelectorAll('.life-log-delete').forEach((button) => {
     button.addEventListener('click', async () => {
-      const item = button.closest('.life-log-item');
-      if (!item) return;
-      const entryId = item.getAttribute('data-entry-id');
+      const entry = button.closest('.life-log-entry');
+      if (!entry) return;
+      const entryId = entry.getAttribute('data-entry-id');
       if (!entryId) return;
       const confirmDelete = window.confirm('Delete this entry?');
       if (!confirmDelete) return;
@@ -73,7 +133,8 @@
         if (!resp.ok) {
           throw new Error(data?.error || 'Unable to delete entry.');
         }
-        item.remove();
+        getEntryNodes(entryId).forEach((node) => node.remove());
+        cleanupSummary();
       } catch (error) {
         button.disabled = false;
         window.alert(error.message || 'Unable to delete entry.');
