@@ -167,14 +167,6 @@
     return `${year}-${month}-${day}`;
   };
 
-  const toLocalMonthKey = (value) => {
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
-  };
-
   const timeFromDateKey = (key) => {
     const parts = String(key || '').split('-').map((part) => Number(part));
     if (parts.length < 3 || parts.some((part) => Number.isNaN(part))) return null;
@@ -189,7 +181,7 @@
     return Number.isNaN(date.getTime()) ? null : date.getTime();
   };
 
-  const buildSeries = (points, keyFn, keyToTime) => {
+  const buildSeries = (points, keyFn, keyToTime, mode = 'average') => {
     const map = new Map();
     points.forEach((point) => {
       const key = keyFn(point.timestamp);
@@ -204,6 +196,27 @@
       .map(([key, payload]) => ({
         key,
         time: keyToTime ? keyToTime(key) : null,
+        value: mode === 'total'
+          ? payload.total
+          : (payload.count ? payload.total / payload.count : 0),
+      }));
+  };
+
+  const buildMonthlyAverageFromDaily = (dailySeries) => {
+    const map = new Map();
+    dailySeries.forEach((item) => {
+      const key = typeof item.key === 'string' ? item.key.slice(0, 7) : '';
+      if (!key) return;
+      const current = map.get(key) || { total: 0, count: 0 };
+      current.total += item.value;
+      current.count += 1;
+      map.set(key, current);
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, payload]) => ({
+        key,
+        time: timeFromMonthKey(key),
         value: payload.count ? payload.total / payload.count : 0,
       }));
   };
@@ -458,10 +471,10 @@
       const trendValue = computeTrend(group.entries);
       const trendText = createElement('div', 'life-log-analytics-card-trend', formatTrend(trendValue));
 
-      const dailySeries = buildSeries(group.entries, toLocalDateKey, timeFromDateKey);
-      const monthlySeries = buildSeries(group.entries, toLocalMonthKey, timeFromMonthKey);
+      const dailySeries = buildSeries(group.entries, toLocalDateKey, timeFromDateKey, 'total');
+      const monthlySeries = buildMonthlyAverageFromDaily(dailySeries);
       const dailyWrap = createElement('div', 'life-log-analytics-chart-block');
-      const dailyLabel = createElement('div', 'life-log-analytics-chart-label', 'Daily average');
+      const dailyLabel = createElement('div', 'life-log-analytics-chart-label', 'Daily totals');
       const dailyCanvas = createElement('canvas', 'life-log-analytics-chart');
       dailyWrap.appendChild(dailyLabel);
       dailyWrap.appendChild(dailyCanvas);
