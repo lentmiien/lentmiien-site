@@ -216,6 +216,49 @@ exports.life_log_page = async (req, res) => {
   }
 };
 
+exports.life_log_analytics_page = async (req, res) => {
+  const now = new Date();
+  const defaultStart = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+  const rawStart = req.query?.start;
+  const rawEnd = req.query?.end;
+  const start = parseDateTimeInput(rawStart) || defaultStart;
+  const end = parseDateTimeInput(rawEnd, { isEnd: true }) || now;
+  const basicLabels = parseCsv(req.query?.basic_labels);
+  const medicalLabels = parseCsv(req.query?.medical_labels);
+  const types = parseCsv(req.query?.types || req.query?.type);
+  const includeLegacy = req.query?.include_legacy === undefined
+    ? true
+    : parseBoolean(req.query?.include_legacy);
+  const analyticsAutoRun = parseBoolean(req.query?.auto);
+
+  try {
+    const suggestions = myLifeLogService.getLabelSuggestions(now);
+
+    res.render('my_life_log_analytics', {
+      filters: {
+        start: formatDateTimeInput(start),
+        end: formatDateTimeInput(end),
+        basicLabels,
+        medicalLabels,
+        types,
+        includeLegacy,
+      },
+      analyticsAutoRun,
+      labelOptions: suggestions.all,
+      typeOptions: LIFE_LOG_TYPES.map((type) => ({
+        value: type,
+        label: TYPE_LABELS[type] || type,
+      })),
+    });
+  } catch (error) {
+    logger.error('Failed to render life log analytics page', {
+      category: 'life_log',
+      metadata: { message: error?.message || error },
+    });
+    res.status(500).render('error_page', { error: 'Unable to load life log analytics right now.' });
+  }
+};
+
 exports.life_log_entries = async (req, res) => {
   const start = parseDateTimeInput(req.query?.start);
   const end = parseDateTimeInput(req.query?.end, { isEnd: true });

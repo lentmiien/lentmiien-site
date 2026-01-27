@@ -101,6 +101,8 @@
   const numericContainer = document.querySelector('[data-analytics-numeric]');
   const nonNumericContainer = document.querySelector('[data-analytics-non-numeric]');
   const diaryContainer = document.querySelector('[data-analytics-diary]');
+  const basicLabelsSelect = document.getElementById('life-log-analytics-basic-labels');
+  const medicalLabelsSelect = document.getElementById('life-log-analytics-medical-labels');
   const visualPanel = document.querySelector('[data-analytics-panel="visual"]');
   const visualStatus = document.querySelector('[data-visual-status]');
   const visualImage = document.getElementById('lifeLogVisualImage');
@@ -142,9 +144,8 @@
     analyticsStatus.classList.toggle('life-log-analytics-status--error', isError);
   };
 
-  const parseCsvInput = (value) => String(value || '')
-    .split(',')
-    .map((item) => item.trim())
+  const getSelectValues = (select) => Array.from(select?.selectedOptions || [])
+    .map((option) => option.value)
     .filter(Boolean);
 
   const parseNumericValue = (value) => {
@@ -644,12 +645,10 @@
     renderVisual(result.visuals);
   };
 
-  const handleAnalyticsSubmit = async (event) => {
-    event.preventDefault();
+  const runAnalytics = async () => {
     if (!analyticsForm) return;
     const startInput = document.getElementById('life-log-analytics-start');
     const endInput = document.getElementById('life-log-analytics-end');
-    const labelsInput = document.getElementById('life-log-analytics-labels');
     const includeLegacyInput = document.getElementById('life-log-analytics-legacy');
     const typeInputs = Array.from(document.querySelectorAll('[data-analytics-type]'));
     const selectedTypes = typeInputs
@@ -657,7 +656,8 @@
       .map((input) => input.getAttribute('data-analytics-type'));
     const availableTypes = typeInputs.map((input) => input.getAttribute('data-analytics-type'));
     const types = selectedTypes.length ? selectedTypes : availableTypes;
-    const labels = parseCsvInput(labelsInput?.value);
+    const basicLabels = getSelectValues(basicLabelsSelect);
+    const medicalLabels = getSelectValues(medicalLabelsSelect);
     const includeLegacy = includeLegacyInput ? includeLegacyInput.checked : true;
     const start = startInput ? startInput.value : '';
     const end = endInput ? endInput.value : '';
@@ -672,37 +672,39 @@
     setPanelVisibility(analyticsPanels.visual, false);
 
     try {
-      const hasLabelFilter = labels.length > 0;
-      const needsLabelFiltered = types.filter((type) => type === 'basic' || type === 'medical');
-      const needsLabelFree = types.filter((type) => type === 'diary' || type === 'visual_log');
       const requests = [];
-      if (hasLabelFilter) {
-        if (needsLabelFiltered.length) {
-          requests.push(fetchEntries({
-            start,
-            end,
-            labels,
-            types: needsLabelFiltered,
-            includeLegacy,
-          }));
-        }
-        if (needsLabelFree.length) {
-          requests.push(fetchEntries({
-            start,
-            end,
-            labels: [],
-            types: needsLabelFree,
-            includeLegacy,
-          }));
-        }
-      } else {
+      if (types.includes('basic')) {
+        requests.push(fetchEntries({
+          start,
+          end,
+          labels: basicLabels,
+          types: ['basic'],
+          includeLegacy,
+        }));
+      }
+      if (types.includes('medical')) {
+        requests.push(fetchEntries({
+          start,
+          end,
+          labels: medicalLabels,
+          types: ['medical'],
+          includeLegacy,
+        }));
+      }
+      const otherTypes = types.filter((type) => type === 'diary' || type === 'visual_log');
+      if (otherTypes.length) {
         requests.push(fetchEntries({
           start,
           end,
           labels: [],
-          types,
+          types: otherTypes,
           includeLegacy,
         }));
+      }
+
+      if (!requests.length) {
+        setAnalyticsStatus('Select at least one entry type.', true);
+        return;
       }
 
       const entries = mergeEntries(await Promise.all(requests));
@@ -722,8 +724,20 @@
     }
   };
 
+  const handleAnalyticsSubmit = (event) => {
+    event.preventDefault();
+    runAnalytics();
+  };
+
   if (analyticsForm) {
-    analyticsForm.addEventListener('submit', handleAnalyticsSubmit);
+    const analyticsMode = analyticsForm.dataset.analyticsMode || 'inline';
+    if (analyticsMode === 'inline') {
+      analyticsForm.addEventListener('submit', handleAnalyticsSubmit);
+      const autoRun = analyticsForm.dataset.analyticsAuto === 'true' || analyticsForm.dataset.analyticsAuto === '1';
+      if (autoRun) {
+        runAnalytics();
+      }
+    }
   }
 
   if (analyticsModal) {

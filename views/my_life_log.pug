@@ -112,18 +112,23 @@ block content
           h5#lifeLogAnalyticsLabel.modal-title Life log analytics
           button.btn-close(type='button', data-bs-dismiss='modal', aria-label='Close')
         .modal-body
-          form#lifeLogAnalyticsForm.life-log-analytics-form
+          - const analyticsLabelDefaults = filters.labels ? filters.labels.split(',').map((item) => item.trim()).filter(Boolean) : [];
+          form#lifeLogAnalyticsForm.life-log-analytics-form(data-analytics-mode="external", method="get", action="/mypage/life_log/analytics", target="_blank")
+            input(type="hidden", name="auto", value="1")
             .row.g-3
               .col-md-4
                 label(for="life-log-analytics-start") Start
-                input#life-log-analytics-start.form-control(type="datetime-local", value=filters.start)
+                input#life-log-analytics-start.form-control(type="datetime-local", name="start", value=filters.start)
               .col-md-4
                 label(for="life-log-analytics-end") End
-                input#life-log-analytics-end.form-control(type="datetime-local", value=filters.end)
+                input#life-log-analytics-end.form-control(type="datetime-local", name="end", value=filters.end)
               .col-md-4
-                label(for="life-log-analytics-labels") Labels
-                input#life-log-analytics-labels.form-control(type="text", placeholder="comma-separated or blank for all", value=filters.labels, list="life-log-labels")
-                small.form-text.text-muted Labels apply to basic/medical entries.
+                label(for="life-log-analytics-basic-labels") Basic labels
+                select#life-log-analytics-basic-labels.form-select.life-log-analytics-select(name="basic_labels", multiple)
+                  each label in labelOptions
+                    - const isSelected = analyticsLabelDefaults.includes(label);
+                    option(value=label, selected=isSelected)= label
+                small.form-text.text-muted Blank = all basic labels.
             .row.g-3.mt-1
               .col-md-8
                 label Entry types
@@ -131,36 +136,25 @@ block content
                   each option in typeOptions
                     - const isDefaultAnalytics = option.value === 'basic' || option.value === 'medical';
                     label.form-check-label
-                      input.form-check-input(type="checkbox", data-analytics-type=option.value, checked=isDefaultAnalytics)
+                      input.form-check-input(type="checkbox", name="types", value=option.value, data-analytics-type=option.value, checked=isDefaultAnalytics)
                       | #{option.label}
+              .col-md-4
+                label(for="life-log-analytics-medical-labels") Medical labels
+                select#life-log-analytics-medical-labels.form-select.life-log-analytics-select(name="medical_labels", multiple)
+                  each label in labelOptions
+                    - const isSelected = analyticsLabelDefaults.includes(label);
+                    option(value=label, selected=isSelected)= label
+                small.form-text.text-muted Blank = all medical labels.
+            .row.g-3.mt-1
               .col-md-4
                 label Include legacy data
                 .form-check.form-switch.mt-2
-                  input#life-log-analytics-legacy.form-check-input(type="checkbox", checked=filters.includeLegacy)
+                  input(type="hidden", name="include_legacy", value="false")
+                  input#life-log-analytics-legacy.form-check-input(type="checkbox", name="include_legacy", value="true", checked=filters.includeLegacy)
                   span.form-check-label Include legacy health logs
-            .d-flex.justify-content-end.mt-3
-              button.btn.btn-primary(type="submit") Run analytics
-          .life-log-analytics-status.text-muted.mt-3(data-analytics-status) Select options and run analytics.
-          .life-log-analytics-results.mt-4
-            .life-log-analytics-panel(data-analytics-panel="numeric")
-              h6.life-log-analytics-title Numeric trends
-              .life-log-analytics-grid(data-analytics-numeric)
-            .life-log-analytics-panel(data-analytics-panel="non-numeric")
-              h6.life-log-analytics-title Non-numeric values
-              .life-log-analytics-list(data-analytics-non-numeric)
-            .life-log-analytics-panel(data-analytics-panel="diary")
-              h6.life-log-analytics-title Diary entries
-              .life-log-analytics-list(data-analytics-diary)
-            .life-log-analytics-panel(data-analytics-panel="visual")
-              h6.life-log-analytics-title Visual log overlay
-              .life-log-visual-controls
-                button.btn.btn-outline-secondary.btn-sm(type="button", data-visual-action="play") Play
-                button.btn.btn-outline-secondary.btn-sm(type="button", data-visual-action="pause") Pause
-                button.btn.btn-outline-secondary.btn-sm(type="button", data-visual-action="restart") Restart
-              .life-log-visual-stage
-                img#lifeLogVisualImage(src="/i/img_select.jpg", alt="Visual log overlay")
-                canvas#lifeLogVisualCanvas
-              .life-log-visual-caption.text-muted(data-visual-status)
+              .col-md-8.d-flex.align-items-end.justify-content-end
+                button.btn.btn-primary(type="submit") Run analytics
+          .life-log-analytics-note.text-muted.mt-3 Analytics results open in a new tab.
 
 block script
   script(src="/js/my_life_log_view.js")

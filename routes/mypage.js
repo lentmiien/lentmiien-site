@@ -38,6 +38,7 @@ router.get('/getfile', controller.getfile);
 
 // My life log
 router.get('/life_log', lifeLogController.life_log_page);
+router.get('/life_log/analytics', lifeLogController.life_log_analytics_page);
 router.get('/life_log/entries', lifeLogController.life_log_entries);
 router.post('/life_log/entry', lifeLogController.life_log_add_entry);
 router.delete('/life_log/entry/:id', lifeLogController.life_log_delete_entry);
