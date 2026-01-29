@@ -1,15 +1,16 @@
 (function () {
   const dataElement = document.getElementById('aiGatewayData');
-  if (!dataElement) {
-    return;
-  }
 
-  let payload;
-  try {
-    payload = JSON.parse(dataElement.textContent || '{}');
-  } catch (error) {
-    console.error('Failed to parse AI gateway payload.', error);
-    return;
+  let payload = {};
+  if (!dataElement) {
+    console.warn('AI gateway payload element missing; rendering with defaults.');
+  } else {
+    try {
+      payload = JSON.parse(dataElement.textContent || '{}');
+    } catch (error) {
+      console.error('Failed to parse AI gateway payload.', error);
+      payload = {};
+    }
   }
 
   const chartData = payload.chartData || {};
@@ -550,14 +551,25 @@
     });
   };
 
-  renderRequestVolumeChart();
-  resizeCallbacks.push(renderRequestVolumeChart);
+  const safeRender = (fn, label) => () => {
+    try {
+      fn();
+    } catch (error) {
+      console.error(`Failed to render ${label}.`, error);
+    }
+  };
 
-  renderDurationChart();
-  resizeCallbacks.push(renderDurationChart);
+  const safeRequestChart = safeRender(renderRequestVolumeChart, 'request volume chart');
+  safeRequestChart();
+  resizeCallbacks.push(safeRequestChart);
 
-  renderGpuTimelineChart();
-  resizeCallbacks.push(renderGpuTimelineChart);
+  const safeDurationChart = safeRender(renderDurationChart, 'duration chart');
+  safeDurationChart();
+  resizeCallbacks.push(safeDurationChart);
+
+  const safeGpuChart = safeRender(renderGpuTimelineChart, 'GPU timeline chart');
+  safeGpuChart();
+  resizeCallbacks.push(safeGpuChart);
 
   initAutoStopControls();
   initMonitorControls();

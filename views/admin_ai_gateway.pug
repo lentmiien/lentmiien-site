@@ -10,7 +10,6 @@ block content
   - const autoStop = dashboard.autoStop || null;
   - const checkpoints = Array.isArray(dashboard.checkpoints) ? dashboard.checkpoints : [];
   - const checkpointNames = Array.from(new Set(checkpoints.map((entry) => entry.checkpoint).filter((name) => name && name !== 'Unknown'))).sort();
-  - const tensorboardUrl = dashboard.baseUrl ? `${dashboard.baseUrl.replace(/\/$/, '')}/tensorboard` : '/tensorboard';
   - const formatFixed = (value, digits = 2) => (typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(digits) : 'N/A');
   - const formatNumber = (value) => (typeof value === 'number' && !Number.isNaN(value) ? value.toLocaleString('en-US') : 'N/A');
   - const formatPercent = (value, digits = 1) => (typeof value === 'number' && !Number.isNaN(value) ? `${(value * 100).toFixed(digits)}%` : 'N/A');
@@ -22,7 +21,6 @@ block content
       .ai-gateway__meta
         span.meta-chip Base URL: #{dashboard.baseUrl}
         span.meta-chip Fetched: #{new Date(dashboard.fetchedAt || Date.now()).toLocaleString()}
-        a.btn.btn-outline-light.btn-sm(href=tensorboardUrl, target='_blank', rel='noopener noreferrer') TensorBoard
         a.btn.btn-outline-light.btn-sm(href='/admin/ai-gateway') Refresh
 
     if errorKeys.length
