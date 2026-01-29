@@ -68,6 +68,7 @@ router.get('/delete_log_file/:file', controller.delete_log_file);
 router.get('/openai_usage', controller.openai_usage);
 router.get('/ai-gateway', controller.ai_gateway_dashboard);
 router.post('/ai-gateway/auto-stop', controller.ai_gateway_auto_stop_update);
+router.post('/ai-gateway/monitor', controller.ai_gateway_monitor_update);
 router.get('/database_usage', controller.database_usage);
 router.get('/database-viewer', controller.database_viewer_page);
 router.get('/database-viewer/data', controller.database_viewer_data);

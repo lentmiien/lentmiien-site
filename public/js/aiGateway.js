@@ -425,6 +425,131 @@
     });
   };
 
+  const initMonitorControls = () => {
+    const form = document.getElementById('monitorForm');
+    if (!form) {
+      return;
+    }
+
+    const select = document.getElementById('monitorFolderSelect');
+    const input = document.getElementById('monitorFolderInput');
+    const applyButton = document.getElementById('monitorApply');
+    const stopButton = document.getElementById('monitorStop');
+    const feedbackEl = document.getElementById('monitorFeedback');
+    const currentEl = document.getElementById('monitorCurrent');
+    const statusEl = document.getElementById('monitorStatus');
+    const updatedEl = document.getElementById('monitorUpdated');
+
+    const setFeedback = (message, isError) => {
+      if (!feedbackEl) return;
+      feedbackEl.textContent = message || '';
+      feedbackEl.classList.toggle('monitor-controls__feedback--error', Boolean(isError));
+    };
+
+    const setButtonsDisabled = (disabled) => {
+      if (applyButton) applyButton.disabled = disabled;
+      if (stopButton) stopButton.disabled = disabled;
+    };
+
+    const formatEpoch = (value) => {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return null;
+      const ms = num > 1e11 ? num : num * 1000;
+      return new Date(ms).toLocaleString();
+    };
+
+    const updateMonitorUI = (monitor, fallbackSelection) => {
+      const selection = monitor?.selected || fallbackSelection || 'None';
+      if (currentEl) {
+        currentEl.textContent = selection || 'None';
+      }
+      if (statusEl) {
+        statusEl.textContent = monitor ? (monitor.monitoring ? 'Active' : 'Stopped') : 'Unknown';
+      }
+      let timeDisplay = monitor?.lastStatus?.timeDisplay;
+      if (!timeDisplay) {
+        const rawTime = monitor?.lastStatus?.time ?? monitor?.last_status?.time;
+        timeDisplay = rawTime ? formatEpoch(rawTime) : null;
+      }
+      if (updatedEl) {
+        updatedEl.textContent = timeDisplay || '—';
+      }
+    };
+
+    const resolveFolder = () => {
+      const inputValue = input ? input.value.trim() : '';
+      if (inputValue) return inputValue;
+      const selectValue = select ? select.value.trim() : '';
+      return selectValue || null;
+    };
+
+    if (select && input) {
+      select.addEventListener('change', () => {
+        if (select.value) {
+          input.value = '';
+        }
+      });
+      input.addEventListener('input', () => {
+        if (input.value.trim()) {
+          select.value = '';
+        }
+      });
+    }
+
+    const submitMonitorUpdate = async (folder) => {
+      setButtonsDisabled(true);
+      setFeedback('Saving...', false);
+
+      try {
+        const response = await fetch('/admin/ai-gateway/monitor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Request failed (${response.status})`);
+        }
+        updateMonitorUI(data.monitor, folder);
+        setFeedback(folder ? `Monitoring ${folder}.` : 'Monitoring stopped.', false);
+        window.setTimeout(() => setFeedback('', false), 2000);
+      } catch (error) {
+        setFeedback(error.message || 'Update failed.', true);
+      } finally {
+        setButtonsDisabled(false);
+      }
+    };
+
+    if (applyButton) {
+      applyButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        const folder = resolveFolder();
+        if (!folder) {
+          setFeedback('Select or enter a folder first.', true);
+          return;
+        }
+        submitMonitorUpdate(folder);
+      });
+    }
+
+    if (stopButton) {
+      stopButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        submitMonitorUpdate(null);
+      });
+    }
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const folder = resolveFolder();
+      if (!folder) {
+        setFeedback('Select or enter a folder first.', true);
+        return;
+      }
+      submitMonitorUpdate(folder);
+    });
+  };
+
   renderRequestVolumeChart();
   resizeCallbacks.push(renderRequestVolumeChart);
 
@@ -435,4 +560,5 @@
   resizeCallbacks.push(renderGpuTimelineChart);
 
   initAutoStopControls();
+  initMonitorControls();
 })();

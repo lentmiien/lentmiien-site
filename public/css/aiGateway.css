@@ -266,6 +266,55 @@
   font-weight: 600;
 }
 
+.checkpoint-table th,
+.checkpoint-table td {
+  vertical-align: middle;
+}
+
+.checkpoint-row--error {
+  background: rgba(255, 120, 120, 0.08);
+}
+
+.checkpoint-error {
+  color: #ff8b7b;
+}
+
+.monitor-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.monitor-controls__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.monitor-controls__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.monitor-controls__feedback {
+  min-height: 1.2rem;
+  font-size: 0.9rem;
+}
+
+.monitor-controls__feedback--error {
+  color: #ff8b7b;
+}
+
+.monitor-controls__status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  color: var(--text-secondary);
+}
+
 .limits-title {
   margin: 0.25rem 0;
   font-weight: 700;

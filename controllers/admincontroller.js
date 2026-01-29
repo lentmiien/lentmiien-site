@@ -64,6 +64,8 @@ const AI_GATEWAY_ENDPOINTS = {
   health: '/health',
   logs: '/logs/tail?n=500',
   autoStop: '/comfy/auto_stop',
+  checkpoints: '/lentmiienlm/checkpoints',
+  monitor: '/lentmiienlm/monitor',
 };
 const AI_GATEWAY_TIMEOUT_MS = 5000;
 
@@ -1974,6 +1976,85 @@ function normalizeGatewayAutoStop(rawAutoStop) {
   };
 }
 
+function formatGatewayEpochTime(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null;
+  }
+  const ms = value > 1e11 ? value : value * 1000;
+  return new Date(ms).toLocaleString();
+}
+
+function normalizeGatewayCheckpoints(rawCheckpoints) {
+  if (!Array.isArray(rawCheckpoints)) {
+    return [];
+  }
+
+  return rawCheckpoints.map((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return {
+        checkpoint: 'Unknown',
+        state: 'Unknown',
+        time: null,
+        timeDisplay: 'N/A',
+        globalStep: null,
+        globalStepDisplay: 'N/A',
+        error: 'Invalid checkpoint entry.',
+      };
+    }
+
+    const checkpoint = typeof entry.checkpoint === 'string' && entry.checkpoint.trim()
+      ? entry.checkpoint.trim()
+      : 'Unknown';
+    const state = typeof entry.state === 'string' ? entry.state : 'Unknown';
+    const time = asNumber(entry.time);
+    const timeDisplay = time !== null ? formatGatewayEpochTime(time) : 'N/A';
+    const globalStep = asNumber(entry.global_step ?? entry.globalStep);
+    const globalStepDisplay = globalStep !== null ? formatNumber(globalStep) : 'N/A';
+    const error = typeof entry.error === 'string' ? entry.error : null;
+
+    return {
+      checkpoint,
+      state,
+      time,
+      timeDisplay,
+      globalStep,
+      globalStepDisplay,
+      error,
+    };
+  });
+}
+
+function normalizeGatewayMonitor(rawMonitor) {
+  if (!rawMonitor || typeof rawMonitor !== 'object') {
+    return null;
+  }
+
+  const selected = typeof rawMonitor.selected === 'string' ? rawMonitor.selected : null;
+  const lastStatus = rawMonitor.last_status && typeof rawMonitor.last_status === 'object'
+    ? rawMonitor.last_status
+    : null;
+  const lastStatusTime = asNumber(lastStatus?.time);
+  const lastStatusDisplay = lastStatusTime !== null ? formatGatewayEpochTime(lastStatusTime) : null;
+  const lastStatusStep = asNumber(lastStatus?.global_step ?? lastStatus?.globalStep);
+
+  return {
+    selected,
+    monitoring: rawMonitor.monitoring === true,
+    lastStatus: lastStatus
+      ? {
+          state: typeof lastStatus.state === 'string' ? lastStatus.state : null,
+          time: lastStatusTime,
+          timeDisplay: lastStatusDisplay,
+          globalStep: lastStatusStep,
+          globalStepDisplay: lastStatusStep !== null ? formatNumber(lastStatusStep) : null,
+        }
+      : null,
+    lastError: typeof rawMonitor.last_error === 'string' ? rawMonitor.last_error : null,
+    cooldownRemainingSec: asNumber(rawMonitor.cooldown_remaining_sec),
+    trainingPausedByGateway: rawMonitor.training_paused_by_gateway === true,
+  };
+}
+
 function normalizeGatewayLimits(rawLimits) {
   if (!rawLimits || typeof rawLimits !== 'object') {
     return null;
@@ -2018,6 +2099,7 @@ function buildAiGatewayDashboard(rawData) {
   const gpuTimeline = buildGpuTimeline(rawData.gpu);
   const limits = normalizeGatewayLimits(rawData.limits);
   const autoStop = normalizeGatewayAutoStop(rawData.autoStop);
+  const checkpoints = normalizeGatewayCheckpoints(rawData.checkpoints);
   const successRate = calculatePercent(requests.totals.total || 0, requests.totals.success || 0);
   const errorRate = calculatePercent(requests.totals.total || 0, requests.totals.errors || 0);
 
@@ -2085,6 +2167,7 @@ function buildAiGatewayDashboard(rawData) {
     waiters,
     limits,
     autoStop,
+    checkpoints,
     health,
     logs,
     logInsights,
@@ -2105,6 +2188,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     { key: 'limits', path: AI_GATEWAY_ENDPOINTS.limits },
     { key: 'health', path: AI_GATEWAY_ENDPOINTS.health },
     { key: 'autoStop', path: AI_GATEWAY_ENDPOINTS.autoStop },
+    { key: 'checkpoints', path: AI_GATEWAY_ENDPOINTS.checkpoints },
     { key: 'logsRaw', path: AI_GATEWAY_ENDPOINTS.logs, responseType: 'text' },
   ];
 
@@ -2185,6 +2269,72 @@ exports.ai_gateway_auto_stop_update = async (req, res) => {
     }
 
     logger.warning('Failed to update AI gateway auto-stop policy', {
+      category: 'ai_gateway',
+      metadata: { error: message, status },
+    });
+
+    return res.status(status).json({ ok: false, error: message });
+  }
+};
+
+exports.ai_gateway_monitor_update = async (req, res) => {
+  try {
+    if (!req.body || typeof req.body.folder === 'undefined') {
+      return res.status(400).json({ error: 'Folder is required (string or null).' });
+    }
+
+    let folder = req.body.folder;
+    if (typeof folder === 'string') {
+      folder = folder.trim();
+      if (!folder) {
+        folder = null;
+      }
+    } else if (folder !== null) {
+      return res.status(400).json({ error: 'Folder must be a string or null.' });
+    }
+
+    const headers = {};
+    if (process.env.LLM_ADMIN_TOKEN) {
+      headers['X-Admin-Token'] = process.env.LLM_ADMIN_TOKEN;
+    }
+
+    const response = await axios.post(
+      `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.monitor}`,
+      { folder },
+      { timeout: AI_GATEWAY_TIMEOUT_MS, headers },
+    );
+
+    logger.notice('Updated AI gateway training monitor', {
+      category: 'ai_gateway',
+      metadata: {
+        folder: folder || null,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return res.json({
+      ok: true,
+      monitor: normalizeGatewayMonitor(response.data),
+    });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    let message = 'Unable to update training monitor.';
+
+    if (error?.response?.data) {
+      if (typeof error.response.data === 'string') {
+        message = error.response.data;
+      } else if (typeof error.response.data.error === 'string') {
+        message = error.response.data.error;
+      } else if (typeof error.response.data.message === 'string') {
+        message = error.response.data.message;
+      }
+    } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+      message = `Unable to reach the AI Gateway at ${AI_GATEWAY_BASE_URL}.`;
+    } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
+      message = `AI Gateway request timed out after ${AI_GATEWAY_TIMEOUT_MS}ms.`;
+    }
+
+    logger.warning('Failed to update AI gateway training monitor', {
       category: 'ai_gateway',
       metadata: { error: message, status },
     });

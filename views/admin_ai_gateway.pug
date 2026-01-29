@@ -8,6 +8,9 @@ block content
   - const recentLogs = (dashboard.logs || []).slice(-10).reverse();
   - const logInsights = dashboard.logInsights || {};
   - const autoStop = dashboard.autoStop || null;
+  - const checkpoints = Array.isArray(dashboard.checkpoints) ? dashboard.checkpoints : [];
+  - const checkpointNames = Array.from(new Set(checkpoints.map((entry) => entry.checkpoint).filter((name) => name && name !== 'Unknown'))).sort();
+  - const tensorboardUrl = dashboard.baseUrl ? `${dashboard.baseUrl.replace(/\/$/, '')}/tensorboard` : '/tensorboard';
   - const formatFixed = (value, digits = 2) => (typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(digits) : 'N/A');
   - const formatNumber = (value) => (typeof value === 'number' && !Number.isNaN(value) ? value.toLocaleString('en-US') : 'N/A');
   - const formatPercent = (value, digits = 1) => (typeof value === 'number' && !Number.isNaN(value) ? `${(value * 100).toFixed(digits)}%` : 'N/A');
@@ -19,6 +22,7 @@ block content
       .ai-gateway__meta
         span.meta-chip Base URL: #{dashboard.baseUrl}
         span.meta-chip Fetched: #{new Date(dashboard.fetchedAt || Date.now()).toLocaleString()}
+        a.btn.btn-outline-light.btn-sm(href=tensorboardUrl, target='_blank', rel='noopener noreferrer') TensorBoard
         a.btn.btn-outline-light.btn-sm(href='/admin/ai-gateway') Refresh
 
     if errorKeys.length
@@ -101,6 +105,58 @@ block content
                 span#autoStopContainer.auto-stop__value= autoStop.containerStateDisplay || 'Unknown'
         else
           p.text-muted.mb-0 Auto-stop status unavailable.
+      .panel
+        .panel__header
+          h2.panel__title Lentmiien LM
+          p.panel__subtitle TensorBoard access, checkpoints, and training monitor control.
+        if checkpoints && checkpoints.length
+          h4.limits-title Checkpoints
+          .table-responsive
+            table.table.table-dark.table-sm.mb-0.checkpoint-table
+              thead
+                tr
+                  th Checkpoint
+                  th State
+                  th Global step
+                  th Last update
+                  th Note
+              tbody
+                each entry in checkpoints
+                  tr(class=entry.error ? 'checkpoint-row--error' : '')
+                    td= entry.checkpoint || 'Unknown'
+                    td= entry.error ? 'Error' : (entry.state || 'Unknown')
+                    td= entry.error ? '—' : (entry.globalStepDisplay || 'N/A')
+                    td= entry.error ? '—' : (entry.timeDisplay || 'N/A')
+                    td
+                      if entry.error
+                        span.checkpoint-error= entry.error
+                      else
+                        span.text-muted status.json
+        else
+          p.text-muted.mb-0 No checkpoints discovered yet.
+        h4.limits-title.mt-3 Training monitor
+        form#monitorForm.monitor-controls
+          .monitor-controls__row
+            label.form-label(for='monitorFolderSelect') Pick a checkpoint folder
+            select#monitorFolderSelect.form-select
+              option(value='') Select checkpoint
+              each name in checkpointNames
+                option(value=name)= name
+          .monitor-controls__row
+            label.form-label(for='monitorFolderInput') Or enter a custom folder
+            input#monitorFolderInput.form-control(type='text', placeholder='checkpoint folder name')
+          .monitor-controls__actions
+            button#monitorApply.btn.btn-primary(type='button') Set monitor
+            button#monitorStop.btn.btn-outline-danger(type='button') Stop monitoring
+            span#monitorFeedback.monitor-controls__feedback.text-muted
+          .monitor-controls__status
+            span.text-muted Current selection:
+            strong#monitorCurrent Unknown
+            span.text-muted Status:
+            strong#monitorStatus Unknown
+            span.text-muted Last update:
+            strong#monitorUpdated —
+          p.text-muted.mb-0 Monitor status updates after you set it (no GET /lentmiienlm/monitor).
       .panel
         .panel__header
           h2.panel__title Limits
