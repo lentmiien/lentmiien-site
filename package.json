@@ -12,7 +12,7 @@
     "codex": "codex",
     "codex-update": "npm install -g @openai/codex@latest",
     "codex-todo": "codex exec --yolo \"In 'todo.txt', I've listed an update I want to do for this project, please check the 'todo.txt' and start coding the changes.\"",
-    "codex-commit": "codex exec \"Please help me draft a git commit message for the pending changes.\""
+    "codex-commit": "codex exec --yolo \"Create a git commit for all the pending changes.\""
   },
   "repository": {
     "type": "git",
