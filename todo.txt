@@ -1,1 +1,52 @@
-On the page 'views/asr_tool.pug', add a model selector, than can have the values "whisper-api" or "vibevoice-asr". The selected model should be included in the API request to my AI Gateway, which is handled in the service class 'services/asrApiService.js'. "whisper-api" should be the default option, and be used if the user hasn't provided a model, "vibevoice-asr" is the new model. The new model has the additional capability of naming speakers, so works well for multi-speaker audio. The new model also has the additional/optional parameters `sampling_rate`, `max_new_tokens`, `hotwords`, `context`, so please add input fields for these parameters as well, but it doesn't use any of the existing "whisper-api" parameters, but all parameters can be sent to the gateway server, the gateway server uses the valid parameters for the selected model, but don't include empty values, to select server default values.
+I want to add a page showing exchange rates, that I'm going to store in a new database.
+
+The base currency will be Japanese Yen (JPY), and initially I plan to store exchange rates for:
+* USD
+* EUR
+* GBP
+* CHF
+* CAD
+* AUD
+* SEK
+* CNY
+* NZD
+* SGD
+* HKD
+* KRW
+(I may very well add more currencies in the future, so keep that in mind when designing the database and pages for showing the data)
+
+The exchange rates will come in through API calls from an external app, so we need to add a route for accepting a JSON object with the exchange rates, and store to the database.
+
+Then lets add a dashboard for viewing stored exchange rates as graphs.
+
+## Input API route:
+In the controller 'controllers/apicontroller.js', add the new API route for accepting incoming exchange rates at the bottom, and link up the endpoint in the route file 'routes/api.js'.
+
+Example input:
+```
+{
+  "amount": 1,
+  "base": "JPY",
+  "date": "2026-01-30",
+  "rates": {
+    "AUD": 0.00926,
+    "CAD": 0.00878,
+    "CHF": 0.00499,
+    "CNY": 0.04512,
+    "EUR": 0.00545,
+    "GBP": 0.00472,
+    "HKD": 0.05069,
+    "KRW": 9.3658,
+    "NZD": 0.01071,
+    "SEK": 0.0573,
+    "SGD": 0.00823,
+    "USD": 0.00649
+  }
+}
+```
+
+Then lets add the exchange rate dashboard to the public index route(routes/index.js)/controller(controllers/indexcontroller.js), as there is no sensitive data or secrets with exchange rates.
+
+Use coloring styling from `public/css/brand.css`, which is already included when `extends layout` (views/layout.pug) in the PUG template.
+
+Create a modern, slightly futuristic looking dashboard page, with minimal distractions, making the exchange rate graphs stand out on the page. You can also add some glow effects, and a minimal date range selector, for the user to select a daterange to view, and allow for 3 view modes: "daily (raw data)", "weekly average", "monthly average", or any combination of the 3.

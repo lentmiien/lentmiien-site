@@ -7,6 +7,8 @@ const controller = require('../controllers/indexcontroller');
 /* GET home page. */
 router.get('/', controller.index);
 router.get('/login', controller.login);
+router.get('/exchange-rates', controller.exchange_rates);
+router.get('/exchange-rates/data', controller.exchange_rates_data);
 
 /****************************/
 // TEST TEST TEST TEST TEST //

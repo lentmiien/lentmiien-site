@@ -136,6 +136,7 @@ exports.getChatEntries = async (req, res) => {
  * EXTERNAL
  */
 const ScheduleTaskService = require('../services/scheduleTaskService');
+const { ExchangeRate } = require('../database');
 
 exports.testConnect = async (req, res) => {
   res.json({status: "OK"});
@@ -162,5 +163,69 @@ exports.setTask = async (req, res) => {
     res.json({status: "OK", doc});
   } catch(err) {
     res.json({status: "Failed", doc: null});
+  }
+};
+
+/*******************
+ * EXCHANGE RATES
+ */
+const isValidDateKey = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+exports.updateExchangeRates = async (req, res) => {
+  const payload = req.body || {};
+  const date = payload.date;
+  const base = typeof payload.base === 'string' ? payload.base.trim().toUpperCase() : 'JPY';
+  const amount = payload.amount === undefined ? 1 : Number(payload.amount);
+  const ratesInput = payload.rates && typeof payload.rates === 'object' && !Array.isArray(payload.rates)
+    ? payload.rates
+    : null;
+
+  if (!isValidDateKey(date)) {
+    return res.status(400).json({ status: 'error', message: 'Invalid or missing date. Expected YYYY-MM-DD.' });
+  }
+  if (!/^[A-Z]{3}$/.test(base)) {
+    return res.status(400).json({ status: 'error', message: 'Invalid base currency. Expected ISO code like JPY.' });
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({ status: 'error', message: 'Invalid amount. Expected a positive number.' });
+  }
+  if (!ratesInput) {
+    return res.status(400).json({ status: 'error', message: 'Missing rates object.' });
+  }
+
+  const rates = {};
+  Object.entries(ratesInput).forEach(([code, value]) => {
+    const currency = String(code || '').trim().toUpperCase();
+    const rate = Number(value);
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      return;
+    }
+    if (!Number.isFinite(rate)) {
+      return;
+    }
+    rates[currency] = rate;
+  });
+
+  const currencyCount = Object.keys(rates).length;
+  if (currencyCount === 0) {
+    return res.status(400).json({ status: 'error', message: 'No valid currency rates provided.' });
+  }
+
+  try {
+    const record = await ExchangeRate.findOneAndUpdate(
+      { base, date },
+      { $set: { base, date, amount, rates } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    return res.json({
+      status: 'saved',
+      id: record._id,
+      base,
+      date,
+      amount,
+      rateCount: currencyCount,
+    });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error.message });
   }
 };

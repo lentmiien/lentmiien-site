@@ -30,4 +30,7 @@ router.get('/testConnect', controller.testConnect);
 router.get('/fetchFeedback', controller.fetchFeedback);
 router.post('/setTask', controller.setTask);
 
+/* Exchange rates */
+router.post('/exchangeRates', controller.updateExchangeRates);
+
 module.exports = router;

@@ -1,0 +1,58 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap')
+  link(rel='stylesheet', href='/css/exchange_rates.css')
+
+block content
+  - const baseLabel = exchangeRatesConfig && exchangeRatesConfig.base ? exchangeRatesConfig.base : 'JPY'
+  .exchange-dashboard
+    .exchange-hero
+      .hero-text
+        h1 Exchange Rate Observatory
+        p Monitor #{baseLabel}-based FX snapshots across daily, weekly, and monthly lenses.
+        .hero-tags
+          span.tag-pill Live cache
+          span.tag-pill Base: #{baseLabel}
+          span.tag-pill Multi-currency
+      .hero-panel
+        .panel-chip
+          span.label Tracking window
+          strong#rangeLabel --
+        .panel-chip
+          span.label View modes
+          strong#modeLabel Daily + Weekly
+        .panel-chip
+          span.label Active series
+          strong#seriesLabel --
+    if errorMessage
+      .exchange-alert= errorMessage
+    .exchange-controls
+      .control-block
+        label.control-label(for='startDate') Start date
+        input#startDate(type='date' aria-label='Start date')
+      .control-block
+        label.control-label(for='endDate') End date
+        input#endDate(type='date' aria-label='End date')
+      button#applyRange.btn-apply(type='button') Apply range
+      .control-divider
+      .mode-switches
+        label.mode-toggle
+          input#modeDaily(type='checkbox' checked)
+          span Daily (raw)
+        label.mode-toggle
+          input#modeWeekly(type='checkbox' checked)
+          span Weekly avg
+        label.mode-toggle
+          input#modeMonthly(type='checkbox')
+          span Monthly avg
+    .exchange-grid
+      #currencyGrid
+    .exchange-footer
+      p Data is stored as JPY-based rates and normalized for charting. Missing days are left blank.
+
+block script
+  script(src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js')
+  script.
+    window.exchangeRatesConfig = !{JSON.stringify(exchangeRatesConfig || {})};
+  script(src='/js/exchange_rates.js')
