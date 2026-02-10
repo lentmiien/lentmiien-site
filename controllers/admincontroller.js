@@ -4114,6 +4114,9 @@ function buildMusicGeneratePayload(form) {
   if (form.instrumental) {
     payload.instrumental = true;
   }
+  if (form.loadLlm === true) {
+    payload.thinking = true;
+  }
   if (typeof form.bpm === 'number') {
     payload.bpm = form.bpm;
   }
