@@ -351,8 +351,8 @@ const MUSIC_DEFAULT_FORM = Object.freeze({
   vocalLanguage: 'unknown',
   durationSec: 0,
   timeoutSec: MUSIC_DEFAULT_TIMEOUT_SEC,
-  loadLlm: null,
-  llmBackend: '',
+  loadLlm: true,
+  llmBackend: 'vllm',
 });
 const MUSIC_JOB_RETENTION_MS = 60 * 60 * 1000;
 const musicJobs = new Map();
