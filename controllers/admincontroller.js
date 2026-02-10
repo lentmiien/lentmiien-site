@@ -322,6 +322,7 @@ const MUSIC_DEFAULT_TIMEOUT_SEC = 7200;
 const MUSIC_MIN_TIMEOUT_SEC = 60;
 const MUSIC_MAX_TIMEOUT_SEC = 14400;
 const MUSIC_TIMEOUT_BUFFER_MS = 30 * 1000;
+const MUSIC_OUTPUT_TIMEOUT_MS = 10 * 60 * 1000;
 const MUSIC_OUTPUTS_DEFAULT_LIMIT = 20;
 const MUSIC_OUTPUTS_MAX_LIMIT = 200;
 const MUSIC_DEFAULT_FORM = Object.freeze({
@@ -330,6 +331,8 @@ const MUSIC_DEFAULT_FORM = Object.freeze({
   loadLlm: null,
   llmBackend: '',
 });
+const MUSIC_JOB_RETENTION_MS = 60 * 60 * 1000;
+const musicJobs = new Map();
 
 function normalizeDbStatus(status) {
   const normalized = String(status || '').toLowerCase();
@@ -4008,17 +4011,6 @@ function buildMusicRequestUrl(endpoint) {
   }
 }
 
-function resolveMusicGatewayUrl(path) {
-  if (!path) {
-    return null;
-  }
-  try {
-    return new URL(path, MUSIC_API_BASE).toString();
-  } catch (error) {
-    return path;
-  }
-}
-
 function buildMusicGeneratePayload(form) {
   const payload = {
     caption: form.caption,
@@ -4051,14 +4043,14 @@ function buildMusicOutputsResponse(data) {
     limit: data.limit ?? null,
     pages: data.pages ?? null,
     items: items.map((item) => {
-      const viewPath = item.view_url || (item.path ? `${MUSIC_OUTPUT_ENDPOINT}?path=${encodeURIComponent(item.path)}` : null);
+      const viewPath = item.path ? `/admin/music-test/output?path=${encodeURIComponent(item.path)}` : null;
       return {
         name: item.name || item.path || 'output',
         path: item.path || null,
         sizeBytes: item.size_bytes ?? null,
         sizeLabel: typeof item.size_bytes === 'number' ? formatBytes(item.size_bytes) : null,
         modifiedLabel: item.modified_ts ? new Date(item.modified_ts * 1000).toLocaleString('en-US') : null,
-        viewUrl: viewPath ? resolveMusicGatewayUrl(viewPath) : null,
+        viewUrl: viewPath,
       };
     }),
   };
@@ -4147,6 +4139,124 @@ async function fetchMusicStatus() {
   return results;
 }
 
+function buildMusicErrorMessage(error, timeoutMs) {
+  let message = 'Unable to generate music.';
+
+  if (error?.response) {
+    const detail = typeof error.response.data === 'string' ? error.response.data.slice(0, 200) : '';
+    message = `Music gateway returned ${error.response.status}. ${detail}`.trim();
+    if (error.response.status === 429) {
+      message = 'Music gateway is busy (429). Another GPU-heavy job is running.';
+    }
+  } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+    message = `Unable to reach the gateway at ${MUSIC_API_BASE}.`;
+  } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
+    message = `Music request timed out after ${timeoutMs}ms.`;
+  }
+
+  return message;
+}
+
+function scheduleMusicJobCleanup(jobId) {
+  setTimeout(() => {
+    musicJobs.delete(jobId);
+  }, MUSIC_JOB_RETENTION_MS);
+}
+
+function startMusicJob({ form, requestPayload, user }) {
+  const id = createJobId();
+  const timeoutMs = (form.timeoutSec * 1000) + MUSIC_TIMEOUT_BUFFER_MS;
+  const job = {
+    id,
+    status: 'queued',
+    form,
+    requestPayload,
+    result: null,
+    outputs: null,
+    outputsError: null,
+    error: null,
+    createdAt: Date.now(),
+    user,
+  };
+
+  musicJobs.set(id, job);
+  scheduleMusicJobCleanup(id);
+
+  setImmediate(async () => {
+    job.status = 'processing';
+    logger.debug('Music generation job started', {
+      category: 'admin_music',
+      metadata: {
+        jobId: id,
+        captionLength: form.caption.length,
+        user,
+      },
+    });
+
+    try {
+      const requestUrl = buildMusicRequestUrl(MUSIC_GENERATE_ENDPOINT);
+      const response = await axios.post(requestUrl, requestPayload, { timeout: timeoutMs });
+      await recordApiDebugLog({
+        functionName: 'music_test_generate',
+        requestUrl,
+        requestBody: requestPayload,
+        responseHeaders: response.headers || null,
+        responseBody: response.data,
+      });
+
+      job.result = response.data;
+      job.status = 'completed';
+
+      if (job.result?.job_id) {
+        try {
+          const outputsQuery = {
+            jobId: job.result.job_id,
+            page: 1,
+            limit: MUSIC_OUTPUTS_DEFAULT_LIMIT,
+          };
+          job.outputs = await fetchMusicOutputs(outputsQuery);
+        } catch (error) {
+          const statusCode = error?.response?.status;
+          job.outputsError = statusCode
+            ? `Outputs request failed with ${statusCode}.`
+            : (error?.message || 'Unable to fetch outputs for this job.');
+        }
+      }
+
+      logger.notice('Admin music generation completed', {
+        category: 'admin_music',
+        metadata: {
+          jobId: job.result?.job_id || null,
+          captionLength: form.caption.length,
+          hasOutputs: Boolean(job.outputs && job.outputs.items && job.outputs.items.length),
+        },
+      });
+    } catch (error) {
+      await recordApiDebugLog({
+        functionName: 'music_test_generate',
+        requestUrl: buildMusicRequestUrl(MUSIC_GENERATE_ENDPOINT),
+        requestBody: requestPayload,
+        responseHeaders: error?.response?.headers || null,
+        responseBody: error?.response?.data || error?.message || 'Unknown error',
+      });
+
+      job.status = 'failed';
+      job.error = buildMusicErrorMessage(error, timeoutMs);
+
+      logger.error('Admin music generation failed', {
+        category: 'admin_music',
+        metadata: {
+          error: error?.message,
+          status: error?.response?.status,
+          code: error?.code,
+        },
+      });
+    }
+  });
+
+  return job;
+}
+
 function renderMusicTestPage(res, {
   form,
   error = null,
@@ -4158,6 +4268,8 @@ function renderMusicTestPage(res, {
   status = null,
   statusError = null,
   info = null,
+  job = null,
+  jobError = null,
 }) {
   const normalizedForm = normalizeMusicForm(form);
   const normalizedOutputsQuery = outputsQuery || { jobId: '', page: 1, limit: MUSIC_OUTPUTS_DEFAULT_LIMIT };
@@ -4173,6 +4285,8 @@ function renderMusicTestPage(res, {
     status,
     statusError,
     info,
+    job,
+    jobError,
     limits: {
       minTimeout: MUSIC_MIN_TIMEOUT_SEC,
       maxTimeout: MUSIC_MAX_TIMEOUT_SEC,
@@ -4183,13 +4297,18 @@ function renderMusicTestPage(res, {
 
 exports.music_test_page = async (req, res) => {
   const form = defaultMusicForm();
-  const outputsQuery = normalizeMusicOutputsQuery(req.query || {});
-  const wantsOutputs = shouldFetchMusicOutputs(req.query || {});
+  let outputsQuery = normalizeMusicOutputsQuery(req.query || {});
+  let wantsOutputs = shouldFetchMusicOutputs(req.query || {});
   const wantsStatus = parseCheckbox(req.query?.check);
+  const jobId = typeof req.query?.jobId === 'string' ? req.query.jobId.trim() : '';
+  const job = jobId ? musicJobs.get(jobId) || null : null;
+  let jobError = null;
   let outputs = null;
   let outputsError = null;
   let status = null;
   let statusError = null;
+  let result = null;
+  let requestPayload = null;
 
   if (wantsStatus) {
     const statusResult = await fetchMusicStatus();
@@ -4197,9 +4316,35 @@ exports.music_test_page = async (req, res) => {
     statusError = statusResult.error;
   }
 
+  if (jobId && !job) {
+    jobError = 'Requested job was not found. It may have expired.';
+  }
+
+  if (job) {
+    result = job.result;
+    requestPayload = job.requestPayload;
+    if (job.status === 'failed') {
+      jobError = job.error || 'Job failed.';
+    }
+    if (!wantsOutputs && job.status === 'completed' && job.result?.job_id) {
+      outputsQuery = {
+        jobId: job.result.job_id,
+        page: 1,
+        limit: MUSIC_OUTPUTS_DEFAULT_LIMIT,
+      };
+      wantsOutputs = true;
+    }
+    if (job.outputs) {
+      outputs = job.outputs;
+    }
+    if (job.outputsError) {
+      outputsError = job.outputsError;
+    }
+  }
+
   if (wantsOutputs) {
     try {
-      outputs = await fetchMusicOutputs(outputsQuery);
+      outputs = outputs || await fetchMusicOutputs(outputsQuery);
     } catch (error) {
       const statusCode = error?.response?.status;
       if (statusCode) {
@@ -4214,11 +4359,15 @@ exports.music_test_page = async (req, res) => {
 
   return renderMusicTestPage(res, {
     form,
+    result,
+    requestPayload,
     outputs,
     outputsError,
     outputsQuery,
     status,
     statusError,
+    job,
+    jobError,
   });
 };
 
@@ -4235,97 +4384,74 @@ exports.music_test_generate = async (req, res) => {
     });
   }
 
-  const requestUrl = buildMusicRequestUrl(MUSIC_GENERATE_ENDPOINT);
-  const timeoutMs = (form.timeoutSec * 1000) + MUSIC_TIMEOUT_BUFFER_MS;
+  const job = startMusicJob({
+    form,
+    requestPayload,
+    user: req.user?.name || 'unknown',
+  });
+
+  return renderMusicTestPage(res, {
+    form,
+    requestPayload,
+    info: 'Job queued. This page will refresh when the output is ready.',
+    job,
+  });
+};
+
+exports.music_test_status = (req, res) => {
+  const jobId = req.params?.id;
+  const job = jobId ? musicJobs.get(jobId) : null;
+
+  if (!job) {
+    return res.status(404).json({ status: 'not_found' });
+  }
+
+  return res.json({
+    status: job.status,
+    result: job.result,
+    outputs: job.outputs,
+    outputsError: job.outputsError,
+    error: job.error,
+  });
+};
+
+exports.music_test_output = async (req, res) => {
+  const pathParam = typeof req.query?.path === 'string' ? req.query.path.trim() : '';
+  if (!pathParam) {
+    return res.status(400).send('Missing output path.');
+  }
+
+  const requestUrl = buildMusicRequestUrl(MUSIC_OUTPUT_ENDPOINT);
 
   try {
-    const response = await axios.post(requestUrl, requestPayload, { timeout: timeoutMs });
-    await recordApiDebugLog({
-      functionName: 'music_test_generate',
-      requestUrl,
-      requestBody: requestPayload,
-      responseHeaders: response.headers || null,
-      responseBody: response.data,
+    const response = await axios.get(requestUrl, {
+      params: { path: pathParam },
+      responseType: 'stream',
+      timeout: MUSIC_OUTPUT_TIMEOUT_MS,
     });
 
-    const result = response.data;
-    let outputs = null;
-    let outputsError = null;
-    let outputsQuery = null;
-
-    if (result?.job_id) {
-      outputsQuery = {
-        jobId: result.job_id,
-        page: 1,
-        limit: MUSIC_OUTPUTS_DEFAULT_LIMIT,
-      };
-      try {
-        outputs = await fetchMusicOutputs(outputsQuery);
-      } catch (error) {
-        const statusCode = error?.response?.status;
-        outputsError = statusCode
-          ? `Outputs request failed with ${statusCode}.`
-          : (error?.message || 'Unable to fetch outputs for this job.');
-      }
+    res.status(response.status);
+    if (response.headers?.['content-type']) {
+      res.setHeader('Content-Type', response.headers['content-type']);
+    }
+    if (response.headers?.['content-length']) {
+      res.setHeader('Content-Length', response.headers['content-length']);
+    }
+    if (response.headers?.['content-disposition']) {
+      res.setHeader('Content-Disposition', response.headers['content-disposition']);
     }
 
-    logger.notice('Admin music generation completed', {
-      category: 'admin_music',
-      metadata: {
-        jobId: result?.job_id || null,
-        captionLength: form.caption.length,
-        hasOutputs: Boolean(outputs && outputs.items && outputs.items.length),
-      },
-    });
-
-    return renderMusicTestPage(res, {
-      form,
-      result,
-      requestPayload,
-      outputs,
-      outputsError,
-      outputsQuery,
-      info: result?.job_id ? 'Generation completed. Outputs listed below.' : null,
-    });
+    return response.data.pipe(res);
   } catch (error) {
-    await recordApiDebugLog({
-      functionName: 'music_test_generate',
-      requestUrl,
-      requestBody: requestPayload,
-      responseHeaders: error?.response?.headers || null,
-      responseBody: error?.response?.data || error?.message || 'Unknown error',
-    });
-
     const statusCode = error?.response?.status || 502;
-    let message = 'Unable to generate music.';
-
-    if (error?.response) {
-      const detail = typeof error.response.data === 'string' ? error.response.data.slice(0, 200) : '';
-      message = `Music gateway returned ${error.response.status}. ${detail}`.trim();
-      if (error.response.status === 429) {
-        message = 'Music gateway is busy (429). Another GPU-heavy job is running.';
-      }
-    } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-      message = `Unable to reach the gateway at ${MUSIC_API_BASE}.`;
-    } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
-      message = `Music request timed out after ${timeoutMs}ms.`;
-    }
-
-    logger.error('Admin music generation failed', {
-      category: 'admin_music',
-      metadata: {
-        error: error?.message,
-        status: error?.response?.status,
-        code: error?.code,
-      },
-    });
-
     res.status(statusCode);
-    return renderMusicTestPage(res, {
-      form,
-      requestPayload,
-      error: message,
-    });
+    if (error?.response?.data) {
+      return res.send('Unable to fetch output from gateway.');
+    }
+    if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+      return res.send(`Unable to reach the gateway at ${MUSIC_API_BASE}.`);
+    }
+    return res.send('Unable to fetch output from gateway.');
   }
 };
 

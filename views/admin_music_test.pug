@@ -13,6 +13,8 @@ block content
         .alert.alert-danger(role="alert")= error
       if info
         .alert.alert-info(role="alert")= info
+      if jobError
+        .alert.alert-warning(role="alert")= jobError
 
       form.card.mb-4(method="post", action="/admin/music-test")
         .card-body
@@ -37,6 +39,27 @@ block content
               input#llm_backend.form-control(type="text", name="llm_backend", value=form.llmBackend || '', placeholder="vllm")
               small.form-text.text-muted Passed to /load when provided.
           button.btn.btn-primary(type="submit") Generate
+
+      if job
+        .card.mb-4
+          .card-body
+            h5.mb-3 Job status
+            p.mb-1
+              | Job ID: 
+              code= job.id
+            p.mb-2
+              strong Status: 
+              span#music-job-status= job.status
+            if job.error
+              p#music-job-error.text-danger.mb-2= job.error
+            else
+              p#music-job-error.text-danger.mb-2.d-none
+            if job.status === 'completed'
+              p.text-muted.mb-0 Job completed. Results are shown below.
+            else if job.status === 'failed'
+              p.text-muted.mb-0 Job failed. See the error above.
+            else
+              p.text-muted.mb-0 This page will refresh when the job completes.
 
       if requestPayload
         .card.mb-4
@@ -132,4 +155,45 @@ block content
           ul.mb-0
             li The gateway auto-loads/unloads the model for each /generate call.
             li A 429 response means another GPU-heavy job is running.
-            li Output files are served directly by the gateway.
+            li Output files are proxied through this server to avoid direct gateway access.
+
+  if job && job.status !== 'completed' && job.status !== 'failed'
+    script.
+      (() => {
+        const jobId = '#{job.id}';
+        const statusEl = document.getElementById('music-job-status');
+        const errorEl = document.getElementById('music-job-error');
+
+        async function poll() {
+          try {
+            const res = await fetch(`/admin/music-test/status/${jobId}`);
+            if (res.status === 404) {
+              if (statusEl) statusEl.textContent = 'not_found';
+              if (errorEl) {
+                errorEl.textContent = 'Job not found or expired.';
+                errorEl.classList.remove('d-none');
+              }
+              clearInterval(timer);
+              return;
+            }
+            if (!res.ok) return;
+            const data = await res.json();
+            if (statusEl) statusEl.textContent = data.status || 'unknown';
+            if (data.error && errorEl) {
+              errorEl.textContent = data.error;
+              errorEl.classList.remove('d-none');
+            }
+            if (data.status === 'completed') {
+              clearInterval(timer);
+              window.location.href = `/admin/music-test?jobId=${jobId}`;
+            } else if (data.status === 'failed' || data.status === 'not_found') {
+              clearInterval(timer);
+            }
+          } catch (err) {
+            // ignore transient errors
+          }
+        }
+
+        const timer = setInterval(poll, 3000);
+        poll();
+      })();
