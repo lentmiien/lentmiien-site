@@ -21,7 +21,30 @@ block content
           h5.mb-3 Generate music
           .mb-3
             label.form-label(for="caption") Caption / prompt
-            textarea#caption.form-control(name="caption", rows="3", required, placeholder="Ambient techno with soft pads")= form.caption
+            textarea#caption.form-control(name="caption", rows="3", required, maxlength=limits.maxCaption, placeholder="Ambient techno with soft pads")= form.caption
+            small.form-text.text-muted Maximum #{limits.maxCaption} characters.
+          .mb-3
+            label.form-label(for="lyrics") Lyrics (optional)
+            textarea#lyrics.form-control(name="lyrics", rows="4", maxlength=limits.maxLyrics, placeholder="Add lyrics or leave empty")= form.lyrics
+            small.form-text.text-muted Maximum #{limits.maxLyrics} characters.
+          .form-check.mb-3
+            input#instrumental.form-check-input(type="checkbox", name="instrumental", checked=form.instrumental)
+            label.form-check-label(for="instrumental") Instrumental (no vocals)
+          .row
+            .col-md-4.mb-3
+              label.form-label(for="bpm") bpm (optional)
+              input#bpm.form-control(type="number", name="bpm", min=limits.bpmMin, max=limits.bpmMax, value=form.bpm !== null && form.bpm !== undefined ? form.bpm : '')
+              small.form-text.text-muted Range #{limits.bpmMin}-#{limits.bpmMax}. Leave empty for auto.
+            .col-md-4.mb-3
+              label.form-label(for="vocal_language") vocal_language
+              select#vocal_language.form-select(name="vocal_language")
+                each code in vocalLanguages
+                  option(value=code, selected=form.vocalLanguage === code)= code
+              small.form-text.text-muted Select \"unknown\" to let the model decide.
+            .col-md-4.mb-3
+              label.form-label(for="duration") duration (seconds)
+              input#duration.form-control(type="number", name="duration", min="-1", max=limits.durationMax, value=form.durationSec !== null && form.durationSec !== undefined ? form.durationSec : 0)
+              small.form-text.text-muted 10-#{limits.durationMax} recommended. 0 or negative for auto.
           .row
             .col-md-4.mb-3
               label.form-label(for="timeout_sec") timeout_sec

@@ -325,8 +325,31 @@ const MUSIC_TIMEOUT_BUFFER_MS = 30 * 1000;
 const MUSIC_OUTPUT_TIMEOUT_MS = 10 * 60 * 1000;
 const MUSIC_OUTPUTS_DEFAULT_LIMIT = 20;
 const MUSIC_OUTPUTS_MAX_LIMIT = 200;
+const MUSIC_CAPTION_MAX_LENGTH = 512;
+const MUSIC_LYRICS_MAX_LENGTH = 4096;
+const MUSIC_BPM_MIN = 30;
+const MUSIC_BPM_MAX = 300;
+const MUSIC_DURATION_MIN = 10;
+const MUSIC_DURATION_MAX = 600;
+const MUSIC_VOCAL_LANGUAGES = [
+  'unknown',
+  'en',
+  'ja',
+  'es',
+  'fr',
+  'de',
+  'it',
+  'pt',
+  'ko',
+  'zh',
+];
 const MUSIC_DEFAULT_FORM = Object.freeze({
   caption: 'Ambient techno with soft pads',
+  lyrics: '',
+  instrumental: false,
+  bpm: null,
+  vocalLanguage: 'unknown',
+  durationSec: 0,
   timeoutSec: MUSIC_DEFAULT_TIMEOUT_SEC,
   loadLlm: null,
   llmBackend: '',
@@ -3962,8 +3985,72 @@ function normalizeMusicTimeout(raw) {
   return parsed;
 }
 
+function normalizeMusicText(raw, maxLength) {
+  if (typeof raw !== 'string') {
+    return '';
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > maxLength) {
+    return trimmed.slice(0, maxLength);
+  }
+  return trimmed;
+}
+
+function normalizeMusicBpm(raw) {
+  if (raw === undefined || raw === null || raw === '') {
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  if (parsed < MUSIC_BPM_MIN) {
+    return MUSIC_BPM_MIN;
+  }
+  if (parsed > MUSIC_BPM_MAX) {
+    return MUSIC_BPM_MAX;
+  }
+  return parsed;
+}
+
+function normalizeMusicDuration(raw) {
+  if (raw === undefined || raw === null || raw === '') {
+    return 0;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  if (parsed <= 0) {
+    return 0;
+  }
+  if (parsed < MUSIC_DURATION_MIN) {
+    return MUSIC_DURATION_MIN;
+  }
+  if (parsed > MUSIC_DURATION_MAX) {
+    return MUSIC_DURATION_MAX;
+  }
+  return parsed;
+}
+
+function normalizeMusicVocalLanguage(raw) {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) {
+    return 'unknown';
+  }
+  if (MUSIC_VOCAL_LANGUAGES.includes(value)) {
+    return value;
+  }
+  return 'unknown';
+}
+
 function normalizeMusicForm(body = {}) {
-  const caption = typeof body.caption === 'string' ? body.caption.trim() : '';
+  const caption = normalizeMusicText(body.caption, MUSIC_CAPTION_MAX_LENGTH);
+  const lyrics = normalizeMusicText(body.lyrics, MUSIC_LYRICS_MAX_LENGTH);
+  const instrumental = parseCheckbox(body.instrumental);
+  const bpm = normalizeMusicBpm(body.bpm);
+  const vocalLanguage = normalizeMusicVocalLanguage(body.vocal_language ?? body.vocalLanguage);
+  const durationSec = normalizeMusicDuration(body.duration ?? body.duration_sec ?? body.durationSec);
   const timeoutSec = normalizeMusicTimeout(body.timeout_sec ?? body.timeoutSec);
   const loadLlm = parseOptionalBoolean(body.load_llm ?? body.loadLlm);
   const llmBackendRaw = typeof body.llm_backend === 'string'
@@ -3973,6 +4060,11 @@ function normalizeMusicForm(body = {}) {
 
   return {
     caption,
+    lyrics,
+    instrumental,
+    bpm,
+    vocalLanguage,
+    durationSec,
     timeoutSec,
     loadLlm,
     llmBackend,
@@ -4016,6 +4108,21 @@ function buildMusicGeneratePayload(form) {
     caption: form.caption,
     timeout_sec: form.timeoutSec,
   };
+  if (form.lyrics) {
+    payload.lyrics = form.lyrics;
+  }
+  if (form.instrumental) {
+    payload.instrumental = true;
+  }
+  if (typeof form.bpm === 'number') {
+    payload.bpm = form.bpm;
+  }
+  if (form.vocalLanguage) {
+    payload.vocal_language = form.vocalLanguage;
+  }
+  if (typeof form.durationSec === 'number') {
+    payload.duration = form.durationSec;
+  }
   const load = {};
   if (form.loadLlm !== null) {
     load.load_llm = form.loadLlm;
@@ -4287,10 +4394,17 @@ function renderMusicTestPage(res, {
     info,
     job,
     jobError,
+    vocalLanguages: MUSIC_VOCAL_LANGUAGES,
     limits: {
       minTimeout: MUSIC_MIN_TIMEOUT_SEC,
       maxTimeout: MUSIC_MAX_TIMEOUT_SEC,
       maxOutputs: MUSIC_OUTPUTS_MAX_LIMIT,
+      maxCaption: MUSIC_CAPTION_MAX_LENGTH,
+      maxLyrics: MUSIC_LYRICS_MAX_LENGTH,
+      bpmMin: MUSIC_BPM_MIN,
+      bpmMax: MUSIC_BPM_MAX,
+      durationMin: MUSIC_DURATION_MIN,
+      durationMax: MUSIC_DURATION_MAX,
     },
   });
 }
