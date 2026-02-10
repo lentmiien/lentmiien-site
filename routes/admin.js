@@ -94,6 +94,8 @@ router.post('/asr-test', handleAsrUpload);
 router.get('/tts-test', controller.tts_test_page);
 router.post('/tts-test', controller.tts_test_generate);
 router.get('/tts-test/status/:id', controller.tts_test_status);
+router.get('/music-test', controller.music_test_page);
+router.post('/music-test', controller.music_test_generate);
 
 /* Message inbox */
 router.get('/message-inbox', messageInboxController.renderMessageInbox);

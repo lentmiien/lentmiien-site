@@ -1,0 +1,135 @@
+extends layout
+
+block content
+  .row
+    .col-lg-8
+      h1.mb-3 Music Generator Test
+      p.text-muted.mb-4
+        | Gateway base: 
+        code= apiBase
+        |  (endpoint /music/acestep15/generate). The gateway auto-loads and unloads the model for each request.
+
+      if error
+        .alert.alert-danger(role="alert")= error
+      if info
+        .alert.alert-info(role="alert")= info
+
+      form.card.mb-4(method="post", action="/admin/music-test")
+        .card-body
+          h5.mb-3 Generate music
+          .mb-3
+            label.form-label(for="caption") Caption / prompt
+            textarea#caption.form-control(name="caption", rows="3", required, placeholder="Ambient techno with soft pads")= form.caption
+          .row
+            .col-md-4.mb-3
+              label.form-label(for="timeout_sec") timeout_sec
+              input#timeout_sec.form-control(type="number", name="timeout_sec", min=limits.minTimeout, max=limits.maxTimeout, value=form.timeoutSec)
+              small.form-text.text-muted Gateway timeout in seconds.
+            .col-md-4.mb-3
+              label.form-label(for="load_llm") load_llm (optional)
+              select#load_llm.form-select(name="load_llm")
+                option(value="", selected=form.loadLlm === null || form.loadLlm === undefined) omit
+                option(value="true", selected=form.loadLlm === true) true
+                option(value="false", selected=form.loadLlm === false) false
+              small.form-text.text-muted Only include to override load settings.
+            .col-md-4.mb-3
+              label.form-label(for="llm_backend") llm_backend (optional)
+              input#llm_backend.form-control(type="text", name="llm_backend", value=form.llmBackend || '', placeholder="vllm")
+              small.form-text.text-muted Passed to /load when provided.
+          button.btn.btn-primary(type="submit") Generate
+
+      if requestPayload
+        .card.mb-4
+          .card-body
+            h5.mb-3 Request payload
+            pre.mb-0(style="max-height: 240px; overflow:auto")= JSON.stringify(requestPayload, null, 2)
+
+      if result
+        .card.mb-4
+          .card-body
+            h5.mb-3 Gateway response
+            .d-flex.flex-wrap.gap-2.mb-3
+              if result.ok
+                span.badge.text-bg-success ok
+              if result.job_id
+                span.badge.text-bg-primary= `job_id: ${result.job_id}`
+              if outputs && outputs.total !== null && outputs.total !== undefined
+                span.badge.text-bg-light.text-secondary= `${outputs.total} file(s)`
+            if result.gateway_outputs_url
+              p.mb-1
+                | Outputs endpoint:
+                code= result.gateway_outputs_url
+            if result.gateway_output_url
+              p.mb-3
+                | Output base:
+                code= result.gateway_output_url
+            h6.mb-2 Raw response
+            pre.mb-0(style="max-height: 260px; overflow:auto")= JSON.stringify(result, null, 2)
+
+      if outputs
+        .card.mb-4
+          .card-body
+            h5.mb-3 Outputs
+            if outputs.items && outputs.items.length
+              each item in outputs.items
+                .border.rounded-3.p-3.mb-3
+                  .d-flex.justify-content-between.align-items-center.mb-2
+                    span.fw-semibold= item.name
+                    if item.sizeLabel
+                      span.text-muted= item.sizeLabel
+                  if item.modifiedLabel
+                    p.text-muted.small.mb-2= `Modified: ${item.modifiedLabel}`
+                  if item.viewUrl
+                    audio(controls, preload="none", class="w-100 mb-2", src=item.viewUrl)
+                    a(href=item.viewUrl, target="_blank", rel="noreferrer") Open file in new tab
+                  else
+                    p.text-muted.mb-0 No view URL available for this item.
+            else
+              p.text-muted.mb-0 No output files returned yet.
+            if outputs.pages
+              p.text-muted.small.mb-0= `Page ${outputs.page || 1} of ${outputs.pages} (limit ${outputs.limit || limits.maxOutputs}).`
+      else if outputsError
+        .alert.alert-warning(role="alert")= outputsError
+    .col-lg-4
+      .card.mb-4
+        .card-body
+          h5.mb-3 Gateway status
+          if statusError
+            .alert.alert-warning(role="alert")= statusError
+          if status && (status.health || status.state)
+            if status.health
+              h6.mb-2 Health
+              pre.small.mb-2(style="max-height: 160px; overflow:auto")= JSON.stringify(status.health, null, 2)
+            if status.state
+              h6.mb-2 State
+              pre.small.mb-0(style="max-height: 160px; overflow:auto")= JSON.stringify(status.state, null, 2)
+          else
+            p.text-muted.mb-2 Status not checked yet.
+          form(method="get", action="/admin/music-test")
+            input(type="hidden", name="check", value="1")
+            button.btn.btn-outline-primary(type="submit") Check health/state
+
+      .card.mb-4
+        .card-body
+          h5.mb-3 Browse outputs
+          form(method="get", action="/admin/music-test")
+            input(type="hidden", name="fetch", value="1")
+            .mb-3
+              label.form-label(for="job_id") job_id (optional)
+              input#job_id.form-control(type="text", name="job_id", value=outputsQuery && outputsQuery.jobId ? outputsQuery.jobId : '', placeholder="job-123")
+            .row
+              .col-6.mb-3
+                label.form-label(for="page") page
+                input#page.form-control(type="number", name="page", min="1", value=outputsQuery && outputsQuery.page ? outputsQuery.page : 1)
+              .col-6.mb-3
+                label.form-label(for="limit") limit
+                input#limit.form-control(type="number", name="limit", min="1", max=limits.maxOutputs, value=outputsQuery && outputsQuery.limit ? outputsQuery.limit : 20)
+            button.btn.btn-outline-secondary(type="submit") Fetch outputs
+
+      .card
+        .card-body
+          h5.mb-3 Notes
+          ul.mb-0
+            li The gateway auto-loads/unloads the model for each /generate call.
+            li A 429 response means another GPU-heavy job is running.
+            li Output files are served directly by the gateway.
