@@ -1,52 +1,15 @@
-I want to add a page showing exchange rates, that I'm going to store in a new database.
+The 'views/admin_music_test.pug' page that I added is working really great. Next, I'd like to bring this function as a regular tool on my page, with it's own route (routes) and controller (controllers), and build an AI music library.
 
-The base currency will be Japanese Yen (JPY), and initially I plan to store exchange rates for:
-* USD
-* EUR
-* GBP
-* CHF
-* CAD
-* AUD
-* SEK
-* CNY
-* NZD
-* SGD
-* HKD
-* KRW
-(I may very well add more currencies in the future, so keep that in mind when designing the database and pages for showing the data)
+So, adding a database for saving music generation metadata, with my preference ratings for each generation, and the new user page (on it's own route).
 
-The exchange rates will come in through API calls from an external app, so we need to add a route for accepting a JSON object with the exchange rates, and store to the database.
+What I want this page to be able to do is:
+* Generate a music audio file (similar to the current admin page)
+* Allow me to rate the music (newly generated and playback from music library)
+* Infinity player (play random music files from my library on an infinite loop, with option to specify "above xx rating", and a toggle for allowing unrated music to be included)
+* AI assisted prompting, using `utils/OpenAI_API.js`, I want to prompt the OpenAI `gpt-5.2-2025-12-11` model to generate a "caption", "lyrics", "vocal_language" and "duration (seconds)", returned as structured output, sent to the music generator (with other values set to current default values), as input to the AI prompt, I also want to input 2-3 random examples from my highest rated previous generations, and instructions to generate a similar but different music prompt for a new generation
+* Lets rate music from 0-5, where 0 is garbage (delete from music library), 1 is bad but keep, 2 is OK, 3 is good, 4 is great, 5 is awesome
+* In music library, lets save last played time stamp, and when randomly playing (Infinity player), do a weighted random that favour higher rated music, and not recenetly played, and if "allowing unrated music" is enabled, those music should also have higher priority
+* When playing the "Infinity player", do new generations in the background, adding to the music library when done, so the music can be randomly selected when the next music is played
+* When not playing the "Infinity player", auto-play newly generated music audios when done
 
-Then lets add a dashboard for viewing stored exchange rates as graphs.
-
-## Input API route:
-In the controller 'controllers/apicontroller.js', add the new API route for accepting incoming exchange rates at the bottom, and link up the endpoint in the route file 'routes/api.js'.
-
-Example input:
-```
-{
-  "amount": 1,
-  "base": "JPY",
-  "date": "2026-01-30",
-  "rates": {
-    "AUD": 0.00926,
-    "CAD": 0.00878,
-    "CHF": 0.00499,
-    "CNY": 0.04512,
-    "EUR": 0.00545,
-    "GBP": 0.00472,
-    "HKD": 0.05069,
-    "KRW": 9.3658,
-    "NZD": 0.01071,
-    "SEK": 0.0573,
-    "SGD": 0.00823,
-    "USD": 0.00649
-  }
-}
-```
-
-Then lets add the exchange rate dashboard to the public index route(routes/index.js)/controller(controllers/indexcontroller.js), as there is no sensitive data or secrets with exchange rates.
-
-Use coloring styling from `public/css/brand.css`, which is already included when `extends layout` (views/layout.pug) in the PUG template.
-
-Create a modern, slightly futuristic looking dashboard page, with minimal distractions, making the exchange rate graphs stand out on the page. You can also add some glow effects, and a minimal date range selector, for the user to select a daterange to view, and allow for 3 view modes: "daily (raw data)", "weekly average", "monthly average", or any combination of the 3.
+Now create this new tool!

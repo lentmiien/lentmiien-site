@@ -109,6 +109,9 @@ html(lang='en')
             a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
             a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
             a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
+        if permissions && permissions.indexOf("music") >= 0
+          .navbar-column
+            a.type-1-link(href="/music", style="width:100%;") Music library
         if permissions && permissions.indexOf("test") >= 0
           .navbar-column
             h2 Test stuff

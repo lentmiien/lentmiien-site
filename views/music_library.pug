@@ -1,0 +1,151 @@
+extends layout
+
+block content
+  - const ratingLabels = { 0: 'Delete', 1: 'Bad', 2: 'OK', 3: 'Good', 4: 'Great', 5: 'Awesome' };
+  .row
+    .col-lg-8
+      h1.mb-3 AI Music Library
+      p.text-muted.mb-4
+        | Gateway base: 
+        code= apiBase
+        |  (endpoint /music/acestep15/generate).
+
+      #music-feedback.alert.d-none(role="alert")
+
+      form#music-generate-form.card.mb-4(method="post", action="/music/generate")
+        .card-body
+          h5.mb-3 Generate music
+          .mb-3
+            label.form-label(for="caption") Caption / prompt
+            textarea#caption.form-control(name="caption", rows="3", required, maxlength=limits.maxCaption, placeholder="Ambient techno with soft pads")= form.caption
+            small.form-text.text-muted Maximum #{limits.maxCaption} characters.
+          .mb-3
+            label.form-label(for="lyrics") Lyrics (optional)
+            textarea#lyrics.form-control(name="lyrics", rows="4", maxlength=limits.maxLyrics, placeholder="Add lyrics or leave empty")= form.lyrics
+            small.form-text.text-muted Maximum #{limits.maxLyrics} characters.
+          .form-check.mb-3
+            input#instrumental.form-check-input(type="checkbox", name="instrumental", checked=form.instrumental)
+            label.form-check-label(for="instrumental") Instrumental (no vocals)
+          .row
+            .col-md-4.mb-3
+              label.form-label(for="bpm") bpm (optional)
+              input#bpm.form-control(type="number", name="bpm", min=limits.bpmMin, max=limits.bpmMax, value=form.bpm !== null && form.bpm !== undefined ? form.bpm : '')
+              small.form-text.text-muted Range #{limits.bpmMin}-#{limits.bpmMax}. Leave empty for auto.
+            .col-md-4.mb-3
+              label.form-label(for="vocal_language") vocal_language
+              select#vocal_language.form-select(name="vocal_language")
+                each code in vocalLanguages
+                  option(value=code, selected=form.vocalLanguage === code)= code
+              small.form-text.text-muted Select "unknown" to let the model decide.
+            .col-md-4.mb-3
+              label.form-label(for="duration") duration (seconds)
+              input#duration.form-control(type="number", name="duration", min="-1", max=limits.durationMax, value=form.durationSec !== null && form.durationSec !== undefined ? form.durationSec : 0)
+              small.form-text.text-muted 10-#{limits.durationMax} recommended. 0 or negative for auto.
+          .row
+            .col-md-4.mb-3
+              label.form-label(for="timeout_sec") timeout_sec
+              input#timeout_sec.form-control(type="number", name="timeout_sec", min=limits.minTimeout, max=limits.maxTimeout, value=form.timeoutSec)
+              small.form-text.text-muted Gateway timeout in seconds.
+            .col-md-4.mb-3
+              label.form-label(for="load_llm") load_llm (optional)
+              select#load_llm.form-select(name="load_llm")
+                option(value="", selected=form.loadLlm === null || form.loadLlm === undefined) omit
+                option(value="true", selected=form.loadLlm === true) true
+                option(value="false", selected=form.loadLlm === false) false
+              small.form-text.text-muted Only include to override load settings.
+            .col-md-4.mb-3
+              label.form-label(for="llm_backend") llm_backend (optional)
+              input#llm_backend.form-control(type="text", name="llm_backend", value=form.llmBackend || '', placeholder="vllm")
+              small.form-text.text-muted Passed to /load when provided.
+          button.btn.btn-primary(type="submit") Generate
+
+      form#music-ai-form.card.mb-4(method="post", action="/music/generate-ai")
+        .card-body
+          h5.mb-3 AI assisted prompt
+          .mb-3
+            label.form-label(for="ai-direction") Direction (optional)
+            textarea#ai-direction.form-control(name="direction", rows="3", placeholder="e.g., dreamy synthwave with soft female vocals")
+            small.form-text.text-muted Uses your top-rated examples as reference.
+          button.btn.btn-outline-primary(type="submit") Generate with AI
+
+      #music-job-card.card.mb-4
+        .card-body
+          h5.mb-3 Generation status
+          p.mb-2
+            strong Status:
+            span#music-job-status.ms-2.text-muted Idle
+          p#music-job-error.text-danger.mb-2.d-none
+          p#music-job-info.text-muted.mb-0
+
+      #music-now-playing-card.card.mb-4
+        .card-body
+          h5.mb-3 Now playing
+          p#music-now-title.text-muted.mb-2 No track selected yet.
+          audio#music-now-audio.w-100.mb-3(controls)
+          .d-flex.flex-wrap.align-items-center.gap-2
+            select#music-now-rating.form-select.w-auto
+              option(value="") Set rating...
+              each label, value in ratingLabels
+                option(value=value)= `${value} - ${label}`
+            button#music-now-rate-btn.btn.btn-outline-secondary(type="button") Save rating
+          small#music-now-meta.text-muted.d-block.mt-2
+
+      #music-library-card.card
+        .card-body
+          h5.mb-3 Music library
+          #music-library-list
+            if library && library.length
+              each entry in library
+                - const durationLabel = entry.durationSec ? `${entry.durationSec}s` : 'auto'
+                - const lastPlayedLabel = entry.lastPlayedAt ? new Date(entry.lastPlayedAt).toLocaleString('en-US') : 'Never'
+                - const ratingLabel = Number.isFinite(entry.rating) ? `${entry.rating} - ${ratingLabels[entry.rating]}` : 'Unrated'
+                .border.rounded-3.p-3.mb-3.music-library-entry(data-id=entry.id, data-view-url=entry.viewUrl)
+                  .d-flex.justify-content-between.align-items-start.mb-2
+                    .me-3
+                      strong= entry.caption || entry.outputName
+                      if entry.promptSource === 'ai'
+                        span.badge.text-bg-light.text-secondary.ms-2 AI
+                    span.badge.text-bg-secondary= ratingLabel
+                  if entry.viewUrl
+                    audio(controls, preload="none", class="w-100 mb-2", src=entry.viewUrl)
+                  p.text-muted.small.mb-2= `Duration: ${durationLabel} · Vocal: ${entry.vocalLanguage || 'unknown'} · Last played: ${lastPlayedLabel}`
+                  .d-flex.flex-wrap.align-items-center.gap-2
+                    select.form-select.form-select-sm.w-auto(data-rating-select=entry.id)
+                      option(value="") Set rating...
+                      each label, value in ratingLabels
+                        option(value=value, selected=Number.isFinite(entry.rating) && entry.rating === Number(value))= `${value} - ${label}`
+                    if entry.outputSizeLabel
+                      span.text-muted.small= entry.outputSizeLabel
+            else
+              p#music-library-empty.text-muted.mb-0 No music saved yet.
+
+    .col-lg-4
+      .card.mb-4
+        .card-body
+          h5.mb-3 Infinity player
+          .form-check.form-switch.mb-3
+            input#infinity-toggle.form-check-input(type="checkbox")
+            label.form-check-label(for="infinity-toggle") Play infinite random mix
+          .mb-3
+            label.form-label(for="infinity-min-rating") Minimum rating
+            select#infinity-min-rating.form-select
+              each label, value in ratingLabels
+                option(value=value, selected=defaults && defaults.minRating === Number(value))= `${value} - ${label}`
+          .form-check.mb-3
+            input#infinity-include-unrated.form-check-input(type="checkbox", checked=defaults && defaults.includeUnrated)
+            label.form-check-label(for="infinity-include-unrated") Include unrated tracks
+          button#infinity-next-btn.btn.btn-outline-secondary(type="button") Play next random track
+          p#infinity-status.text-muted.small.mt-3.mb-0 Infinity player idle.
+      .card
+        .card-body
+          h5.mb-3 Tips
+          ul.mb-0
+            li Rating 0 deletes the track from the library.
+            li When infinity mode is on, new AI generations are queued in the background.
+            li Autoplay may be blocked by your browser; click play if needed.
+
+  script(type="application/json", id="music-library-data")!= JSON.stringify(library || [])
+  script(type="application/json", id="music-defaults")!= JSON.stringify(defaults || {})
+
+block script
+  script(src="/js/music_library.js", defer)

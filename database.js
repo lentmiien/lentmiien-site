@@ -107,6 +107,8 @@ const Images = require('./models/image');
 const GoodImage = require('./models/good_image');
 // HTML page ratings
 const HtmlPageRating = require('./models/html_page_rating');
+// Music generation library
+const MusicGeneration = require('./models/music_generation');
 // Payroll
 const Payroll = require('./models/Payroll');
 // Schedule-Task
@@ -198,6 +200,7 @@ module.exports = {
   Images,
   GoodImage,
   HtmlPageRating,
+  MusicGeneration,
   Payroll,
   Task,
   Palette,

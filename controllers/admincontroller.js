@@ -48,6 +48,7 @@ const routes = [
   "payroll",
   "scheduletask",
   "image_gen",
+  "music",
   "sora",
   "binpacking",
   "ocr",

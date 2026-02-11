@@ -257,6 +257,98 @@ async function convertOutput (d) {
   }
 }
 
+function parseStructuredCandidate(candidate) {
+  if (!candidate) return null;
+  if (typeof candidate === 'object') return candidate;
+  if (typeof candidate !== 'string') return null;
+  try {
+    return JSON.parse(candidate);
+  } catch (error) {
+    return null;
+  }
+}
+
+function extractStructuredOutput(response) {
+  if (!response) return null;
+  if (response.output_text) {
+    const parsed = parseStructuredCandidate(response.output_text);
+    if (parsed) return parsed;
+  }
+  if (Array.isArray(response.output)) {
+    for (const item of response.output) {
+      if (item?.type !== 'message' || !Array.isArray(item.content)) continue;
+      for (const part of item.content) {
+        if (part?.type === 'output_json' && part.json) {
+          return parseStructuredCandidate(part.json) || part.json;
+        }
+        if (part?.type === 'output_text' && part.text) {
+          const parsed = parseStructuredCandidate(part.text);
+          if (parsed) return parsed;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+const generateStructuredOutput = async ({ model, prompt, schema, schemaName, system, temperature, maxOutputTokens }) => {
+  const input = [];
+  if (system) {
+    input.push({
+      role: 'system',
+      content: [{ type: 'input_text', text: system }],
+    });
+  }
+  input.push({
+    role: 'user',
+    content: [{ type: 'input_text', text: prompt }],
+  });
+
+  const requestBody = {
+    model,
+    input,
+    text: {
+      format: {
+        type: 'json_schema',
+        json_schema: {
+          name: schemaName || 'structured_output',
+          schema,
+          strict: true,
+        },
+      },
+    },
+  };
+
+  if (typeof temperature === 'number') {
+    requestBody.temperature = temperature;
+  }
+  if (typeof maxOutputTokens === 'number') {
+    requestBody.max_output_tokens = maxOutputTokens;
+  }
+
+  const requestUrl = 'openai.responses.create';
+
+  try {
+    const response = await openai.responses.create(requestBody);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody,
+      functionName: 'generateStructuredOutput',
+      responseBody: response,
+    });
+    return extractStructuredOutput(response);
+  } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody,
+      functionName: 'generateStructuredOutput',
+      responseBody: error,
+    });
+    logger.error('Error while generating structured OpenAI output', { error });
+    return null;
+  }
+};
+
 const chat = async (conversation, messages, model) => {
   const resolvedContext = resolveContextPrompt(conversation);
   const promptWithTools = appendToolGuidance(resolvedContext, conversation?.metadata?.tools);
@@ -768,4 +860,5 @@ module.exports = {
   waitAndFetchVideo,
   fetchVideo,
   checkVideoProgress,
+  generateStructuredOutput,
 }
