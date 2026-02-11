@@ -309,9 +309,10 @@ const generateStructuredOutput = async ({ model, prompt, schema, schemaName, sys
     input,
     text: {
       format: {
+        type: 'json_schema',
         name: schemaName || 'structured_output',
-        strict: true,
         schema,
+        strict: true,
       },
     },
   };
