@@ -50,6 +50,7 @@ const MUSIC_DEFAULT_FORM = Object.freeze({
   llmBackend: 'vllm',
 });
 const MUSIC_JOB_RETENTION_MS = 60 * 60 * 1000;
+const MUSIC_BACKGROUND_UNPLAYED_LIMIT = 2;
 const musicJobs = new Map();
 
 function parseCheckbox(value) {
@@ -490,6 +491,29 @@ function normalizeMinRating(raw) {
   return parsed;
 }
 
+async function countUnplayedTracks() {
+  return MusicGeneration.countDocuments({
+    $or: [
+      { lastPlayedAt: { $exists: false } },
+      { lastPlayedAt: null },
+    ],
+  });
+}
+
+async function shouldSkipBackgroundGeneration(req) {
+  const isBackground = parseCheckbox(req.body?.background);
+  if (!isBackground) {
+    return { skip: false, unplayedCount: null };
+  }
+
+  const unplayedCount = await countUnplayedTracks();
+  if (unplayedCount >= MUSIC_BACKGROUND_UNPLAYED_LIMIT) {
+    return { skip: true, unplayedCount };
+  }
+
+  return { skip: false, unplayedCount };
+}
+
 function computeWeightedRandom(candidates, { includeUnrated }) {
   if (!candidates.length) return null;
   const now = Date.now();
@@ -602,6 +626,23 @@ exports.music_page = async (req, res) => {
 };
 
 exports.music_generate = async (req, res) => {
+  try {
+    const backgroundGate = await shouldSkipBackgroundGeneration(req);
+    if (backgroundGate.skip) {
+      return res.json({
+        ok: true,
+        skipped: true,
+        reason: `Background generation paused: ${backgroundGate.unplayedCount} unplayed tracks in library.`,
+        unplayedCount: backgroundGate.unplayedCount,
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to check background generation gate', {
+      category: 'music_library',
+      metadata: { error: error.message },
+    });
+  }
+
   const form = normalizeMusicForm(req.body || {});
   const requestPayload = buildMusicGeneratePayload(form);
 
@@ -622,6 +663,16 @@ exports.music_generate = async (req, res) => {
 exports.music_generate_ai = async (req, res) => {
   const directionRaw = typeof req.body?.direction === 'string' ? req.body.direction.trim() : '';
   try {
+    const backgroundGate = await shouldSkipBackgroundGeneration(req);
+    if (backgroundGate.skip) {
+      return res.json({
+        ok: true,
+        skipped: true,
+        reason: `Background generation paused: ${backgroundGate.unplayedCount} unplayed tracks in library.`,
+        unplayedCount: backgroundGate.unplayedCount,
+      });
+    }
+
     const examples = await sampleTopRatedExamples();
     const prompt = buildAiPrompt({ direction: directionRaw, examples });
     const schema = {

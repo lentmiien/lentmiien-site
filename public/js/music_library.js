@@ -241,6 +241,11 @@
   async function playTrack(track, { autoplay = false } = {}) {
     updateNowPlaying(track);
     if (!track || !nowAudioEl) return;
+    const sourceUrl = track.viewUrl || '';
+    if (sourceUrl) {
+      nowAudioEl.src = sourceUrl;
+      nowAudioEl.load();
+    }
     if (autoplay) {
       try {
         await nowAudioEl.play();
@@ -413,8 +418,11 @@
     }
   }
 
-  async function submitForm(form, url, { kind, showStatus }) {
+  async function submitForm(form, url, { kind, showStatus, background = false } = {}) {
     const formData = new FormData(form);
+    if (background) {
+      formData.set('background', '1');
+    }
     const body = new URLSearchParams(formData);
     const response = await fetch(url, {
       method: 'POST',
@@ -423,6 +431,15 @@
     const data = await readJsonResponse(response);
     if (!response.ok) {
       throw new Error(data.error || 'Request failed.');
+    }
+    if (data.skipped) {
+      if (background && data.reason) {
+        updateInfinityStatus(data.reason);
+      }
+      if (showStatus && data.reason) {
+        setJobStatus('idle', '', data.reason);
+      }
+      return null;
     }
     if (data.ai && kind !== 'background') {
       applyAiToForm(data.ai);
@@ -436,6 +453,7 @@
       }
       startPolling(data.job.id, { showStatus, kind });
     }
+    return data;
   }
 
   function applyAiToForm(ai) {
@@ -458,10 +476,16 @@
     if (now - state.lastBackgroundStart < 15000) return;
     state.lastBackgroundStart = now;
     if (!aiForm) return;
-    submitForm(aiForm, aiForm.action, { kind: 'background', showStatus: false }).catch((error) => {
-      state.backgroundJobId = null;
-      updateInfinityStatus(error.message || 'Background generation failed.');
-    });
+    submitForm(aiForm, aiForm.action, { kind: 'background', showStatus: false, background: true })
+      .then((data) => {
+        if (!data || data.skipped) {
+          state.backgroundJobId = null;
+        }
+      })
+      .catch((error) => {
+        state.backgroundJobId = null;
+        updateInfinityStatus(error.message || 'Background generation failed.');
+      });
   }
 
   function handleLibraryRatingChange(event) {
@@ -507,6 +531,13 @@
 
     if (libraryListEl) {
       libraryListEl.addEventListener('change', handleLibraryRatingChange);
+      libraryListEl.addEventListener('play', (event) => {
+        const target = event.target;
+        if (!target || target.tagName !== 'AUDIO') return;
+        const entry = target.closest('.music-library-entry');
+        const id = entry ? entry.dataset.id : null;
+        if (id) markPlayed(id);
+      }, true);
     }
 
     if (nowRatingBtn) {
