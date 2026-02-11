@@ -255,11 +255,12 @@
     }
   }
 
-  async function markPlayed(id) {
+  async function markPlayed(id, { updateUi = false } = {}) {
     if (!id) return;
     try {
       const response = await fetch(`/music/library/${id}/played`, { method: 'POST' });
       if (!response.ok) return;
+      if (!updateUi) return;
       const data = await readJsonResponse(response);
       if (data.item) {
         upsertLibraryItem(data.item);
@@ -536,7 +537,7 @@
         if (!target || target.tagName !== 'AUDIO') return;
         const entry = target.closest('.music-library-entry');
         const id = entry ? entry.dataset.id : null;
-        if (id) markPlayed(id);
+        if (id) markPlayed(id, { updateUi: false });
       }, true);
     }
 
@@ -547,7 +548,7 @@
     if (nowAudioEl) {
       nowAudioEl.addEventListener('play', () => {
         if (state.currentTrack && state.currentTrack.id) {
-          markPlayed(state.currentTrack.id);
+          markPlayed(state.currentTrack.id, { updateUi: false });
         }
       });
       nowAudioEl.addEventListener('ended', () => {
