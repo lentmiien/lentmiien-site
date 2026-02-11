@@ -170,13 +170,30 @@
     return wrapper;
   }
 
-  function upsertLibraryItem(item, { prepend = false } = {}) {
+  function upsertLibraryItem(item, { prepend = false, preserveAudio = false } = {}) {
     if (!item || !item.id) return;
     state.libraryMap.set(item.id, item);
     const existing = libraryListEl ? libraryListEl.querySelector(`[data-id="${item.id}"]`) : null;
     const entryEl = renderLibraryEntry(item);
     if (existing && existing.parentNode) {
-      existing.parentNode.replaceChild(entryEl, existing);
+      if (preserveAudio) {
+        const audioEl = existing.querySelector('audio');
+        const isPlaying = audioEl && !audioEl.paused && !audioEl.ended;
+        if (isPlaying) {
+          const ratingBadge = existing.querySelector('.badge.text-bg-secondary');
+          if (ratingBadge) {
+            ratingBadge.textContent = ratingLabel(item.rating);
+          }
+          const ratingSelect = existing.querySelector(`[data-rating-select="${item.id}"]`);
+          if (ratingSelect) {
+            ratingSelect.value = Number.isFinite(item.rating) ? String(item.rating) : '';
+          }
+        } else {
+          existing.parentNode.replaceChild(entryEl, existing);
+        }
+      } else {
+        existing.parentNode.replaceChild(entryEl, existing);
+      }
     } else if (libraryListEl) {
       const emptyEl = document.getElementById('music-library-empty');
       if (emptyEl) emptyEl.remove();
@@ -213,7 +230,7 @@
     }
   }
 
-  function updateNowPlaying(track) {
+  function updateNowPlaying(track, { preservePlayback = false } = {}) {
     if (!track) {
       state.currentTrack = null;
       if (nowTitleEl) nowTitleEl.textContent = 'No track selected yet.';
@@ -223,10 +240,13 @@
       return;
     }
 
+    const sameTrack = state.currentTrack && state.currentTrack.id === track.id;
     state.currentTrack = track;
     if (nowTitleEl) nowTitleEl.textContent = track.caption || track.outputName || 'Untitled track';
     if (nowAudioEl) {
-      nowAudioEl.src = track.viewUrl || '';
+      if (!preservePlayback || !sameTrack || !nowAudioEl.getAttribute('src')) {
+        nowAudioEl.src = track.viewUrl || '';
+      }
       nowAudioEl.dataset.trackId = track.id || '';
     }
     if (nowRatingSelect) {
@@ -273,7 +293,7 @@
     }
   }
 
-  async function applyRating(id, rating) {
+  async function applyRating(id, rating, { preserveAudio = false } = {}) {
     if (!id) return;
     try {
       const response = await fetch(`/music/library/${id}/rating`, {
@@ -296,9 +316,9 @@
         return;
       }
       if (data.item) {
-        upsertLibraryItem(data.item);
+        upsertLibraryItem(data.item, { preserveAudio });
         if (state.currentTrack && state.currentTrack.id === data.item.id) {
-          updateNowPlaying(data.item);
+          updateNowPlaying(data.item, { preservePlayback: true });
         }
       }
     } catch (error) {
@@ -497,7 +517,7 @@
     if (!ratingRaw) return;
     const rating = Number.parseInt(ratingRaw, 10);
     if (!Number.isFinite(rating)) return;
-    applyRating(id, rating);
+    applyRating(id, rating, { preserveAudio: true });
   }
 
   function handleNowRatingSave() {
@@ -506,7 +526,7 @@
     if (!ratingRaw) return;
     const rating = Number.parseInt(ratingRaw, 10);
     if (!Number.isFinite(rating)) return;
-    applyRating(state.currentTrack.id, rating);
+    applyRating(state.currentTrack.id, rating, { preserveAudio: true });
   }
 
   function attachEventListeners() {
