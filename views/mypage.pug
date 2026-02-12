@@ -472,6 +472,8 @@ block content
         if permissions && permissions.indexOf("image_gen") >= 0
           +tile('/image_gen', '/i/img_gen.jpg', 'Generate and edit images', 'Image Gen')
           +tile('/image_gen/bulk', '/i/img_gen_bulk.jpg', 'Generate and edit images in batches', 'Image Gen bulk')
+        if permissions && permissions.indexOf("music") >= 0
+          +tile('/music', '/i/music.jpg', 'AI music library', 'Music')
         if permissions && permissions.indexOf("sora") >= 0
           +tile('/sora', '/i/vid_gen.jpg', 'Generate and edit short videos', 'Video Gen')
         if permissions && permissions.indexOf("budget") >= 0
