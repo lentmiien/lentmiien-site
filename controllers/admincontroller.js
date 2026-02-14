@@ -53,6 +53,7 @@ const routes = [
   "binpacking",
   "ocr",
   "asr",
+  "shoppinglist",
   "test",
   "archive",
 ];

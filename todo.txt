@@ -1,15 +1,19 @@
-The 'views/admin_music_test.pug' page that I added is working really great. Next, I'd like to bring this function as a regular tool on my page, with it's own route (routes) and controller (controllers), and build an AI music library.
+I want to create a unified shopping list page, that gather data from 3 sources.
 
-So, adding a database for saving music generation metadata, with my preference ratings for each generation, and the new user page (on it's own route).
+## Source 1: To Buy tasks
+Entries from the `models/scheduleTask/Task.js` database, that has `type == "tobuy"` and `done == false` and `start` is either null or a date `<= today`.
 
-What I want this page to be able to do is:
-* Generate a music audio file (similar to the current admin page)
-* Allow me to rate the music (newly generated and playback from music library)
-* Infinity player (play random music files from my library on an infinite loop, with option to specify "above xx rating", and a toggle for allowing unrated music to be included)
-* AI assisted prompting, using `utils/OpenAI_API.js`, I want to prompt the OpenAI `gpt-5.2-2025-12-11` model to generate a "caption", "lyrics", "vocal_language" and "duration (seconds)", returned as structured output, sent to the music generator (with other values set to current default values), as input to the AI prompt, I also want to input 2-3 random examples from my highest rated previous generations, and instructions to generate a similar but different music prompt for a new generation
-* Lets rate music from 0-5, where 0 is garbage (delete from music library), 1 is bad but keep, 2 is OK, 3 is good, 4 is great, 5 is awesome
-* In music library, lets save last played time stamp, and when randomly playing (Infinity player), do a weighted random that favour higher rated music, and not recenetly played, and if "allowing unrated music" is enabled, those music should also have higher priority
-* When playing the "Infinity player", do new generations in the background, adding to the music library when done, so the music can be randomly selected when the next music is played
-* When not playing the "Infinity player", auto-play newly generated music audios when done
+## Source 2: Emergency stock
+Go through all the categories in the `models/es_category.js` database, then subtract entries from the `models/es_item.js` database, and any categories with remaining `recommendedStock` should be displayed on the page.
+Important note: `es_item` entries has an expiration date `rotateDate`, so if this date has passed, don't count that item. 
 
-Now create this new tool!
+## Source 3: Cooking calendar
+Show all entries from the `models/CookingCalendarV2.js` database where `date` is today or a future date (within 1 week)
+Important note: make sure to fetch the `models/chat4_knowledge.js` database entries referenced to from the cooking database and display the `title` and `contentMarkdown` in the UI, the `contentMarkdown` include the ingredients list needed for the shopping list.
+
+This page don't need to modify any database content, but I want the following interactivity (using browser local storage):
+- When opening the page for the first time of the day, clear previous local storage, and set up local storage for this day
+- When opening the page for the 2nd+ time of the day, review the sources to add any new content, and delete sources that was removed/completed
+- Any added content should be marked as "not done" initially, then the user can click on the entries to toggle "done"/"not done" (in local storage only)
+
+Now, add a new route/controller, and necessary pages, CSS/JavaScript in the `public` folder, following the color scheme outlined in `documentation/README-Colors.md`.

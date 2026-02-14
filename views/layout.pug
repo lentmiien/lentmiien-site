@@ -146,6 +146,8 @@ html(lang='en')
             a.type-1-link(href="/diff", style="width:100%;") JSON diff
             if permissions && permissions.indexOf("asr") >= 0
               a.type-1-link(href="/asr", style="width:100%;") Audio transcription
+            if permissions && permissions.indexOf("shoppinglist") >= 0
+              a.type-1-link(href="/shopping-list", style="width:100%;") Shopping list
         if permissions && permissions.indexOf("archive") >= 0
           .navbar-column
             h2 Archive

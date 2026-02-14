@@ -1,0 +1,64 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap')
+  link(rel='stylesheet', href='/css/shopping_list.css')
+
+block content
+  .shopping-list-page
+    header.shopping-header
+      .shopping-title
+        p.shopping-eyebrow Unified shopping list
+        h1 Pantry Runboard
+        p.shopping-subtitle Three sources, one place to track what needs to hit the cart.
+      .shopping-meta
+        .shopping-badge
+          span.shopping-badge__label Today
+          span.shopping-badge__value= shoppingData.meta.today
+        .shopping-badge
+          span.shopping-badge__label Items
+          span#shoppingTotalCount.shopping-badge__value 0
+
+    .shopping-summary
+      .summary-card
+        span.summary-label Remaining
+        span#shoppingRemainingCount.summary-value 0
+      .summary-card
+        span.summary-label Done
+        span#shoppingDoneCount.summary-value 0
+      .summary-card
+        span.summary-label Updated
+        span#shoppingUpdatedAt.summary-value --
+      .summary-card
+        span.summary-label Window
+        span.summary-value= shoppingData.meta.rangeDays + ' days'
+
+    .shopping-grid
+      section.shopping-section
+        header.shopping-section__header
+          h2 To Buy Tasks
+          span#tobuyCount.shopping-count 0
+        .shopping-section__body#tobuyList
+          .shopping-empty Nothing queued right now.
+
+      section.shopping-section
+        header.shopping-section__header
+          h2 Emergency Stock
+          span#emergencyCount.shopping-count 0
+        .shopping-section__body#emergencyList
+          .shopping-empty Stock levels are healthy.
+
+      section.shopping-section.shopping-section--wide
+        header.shopping-section__header
+          h2 Cooking Calendar
+          span#cookingCount.shopping-count 0
+        .shopping-section__body#cookingList
+          .shopping-empty No upcoming recipes in the next week.
+
+    .shopping-footer
+      p Items are stored locally for the day. Tap entries to toggle done.
+
+block script
+  script.
+    window.SHOPPING_LIST_DATA = !{JSON.stringify(shoppingData)};
+  script(src='/js/shopping_list.js', defer)

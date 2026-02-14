@@ -253,6 +253,7 @@ const soraRouter = require('./routes/sora');
 const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
+const shoppingListRouter = require('./routes/shopping_list');
 
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
@@ -284,6 +285,7 @@ app.use('/product', isAuthenticated, authorize("product"), productRouter);
 app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
 app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);
+app.use('/shopping-list', isAuthenticated, authorize("shoppinglist"), shoppingListRouter);
 app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
 app.use('/music', isAuthenticated, authorize("music"), musicRouter);
 app.use('/ocr', isAuthenticated, authorize("ocr"), ocrRouter);
