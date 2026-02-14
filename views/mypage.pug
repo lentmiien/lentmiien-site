@@ -478,6 +478,8 @@ block content
           +tile('/sora', '/i/vid_gen.jpg', 'Generate and edit short videos', 'Video Gen')
         if permissions && permissions.indexOf("budget") >= 0
           +tile('/budget/cards', '/i/credit.jpg', 'Credit Card usage', 'Credit Card')
+        if permissions && permissions.indexOf("shoppinglist") >= 0
+          +tile('/shopping-list', '/i/shopping.jpg', 'Shopping list', 'Shopping list')
   if new_openai_models.length > 0
     .row 
       .col
