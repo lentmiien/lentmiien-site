@@ -26,7 +26,7 @@ router.post('/messages', controller.saveIncomingMessage);
 router.get('/getChatEntries', controller.getChatEntries);
 router.post('/chat5/sendResponse', controller.chat5SendResponse);
 router.post('/chat5/batchSendResponse', controller.chat5BatchSendResponse);
-router.post('/chat5/fetchLastMessage', controller.fetchLastMessage);
+router.get('/chat5/fetchLastMessage', controller.fetchLastMessage);
 
 /* External */
 router.get('/testConnect', controller.testConnect);
