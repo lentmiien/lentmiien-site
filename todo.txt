@@ -1,19 +1,7 @@
-I want to create a unified shopping list page, that gather data from 3 sources.
+In my API route (routes/api.js), I'd like to add 2 posting routes, that does the same things as the 2 buttons "Send & Response" and "Batch Send & Response" on the `views/chat5_chat.pug` page. The UI that will be using the API will have a `textarea` for input text and a conversation ID selector, so it won't handle any settings parameters, or creating new conversations, and is only a stripped down/simplified post to chat tool.
 
-## Source 1: To Buy tasks
-Entries from the `models/scheduleTask/Task.js` database, that has `type == "tobuy"` and `done == false` and `start` is either null or a date `<= today`.
+"Send & Response" should be something similar to the 'chat5-append' socket.io event in `socket_io/chat5_5/chat5_5handler.js`, but a bit simplified as it'll only ever post to existing conversations, and don't need edit any settings; `generateAI` should be `true`. (use settings from existing conversation if needed)
 
-## Source 2: Emergency stock
-Go through all the categories in the `models/es_category.js` database, then subtract entries from the `models/es_item.js` database, and any categories with remaining `recommendedStock` should be displayed on the page.
-Important note: `es_item` entries has an expiration date `rotateDate`, so if this date has passed, don't count that item. 
+Similarly "Batch Send & Response" should be something similar to the 'chat5-batch' socket.io event in `socket_io/chat5_5/chat5_5handler.js`.
 
-## Source 3: Cooking calendar
-Show all entries from the `models/CookingCalendarV2.js` database where `date` is today or a future date (within 1 week)
-Important note: make sure to fetch the `models/chat4_knowledge.js` database entries referenced to from the cooking database and display the `title` and `contentMarkdown` in the UI, the `contentMarkdown` include the ingredients list needed for the shopping list.
-
-This page don't need to modify any database content, but I want the following interactivity (using browser local storage):
-- When opening the page for the first time of the day, clear previous local storage, and set up local storage for this day
-- When opening the page for the 2nd+ time of the day, review the sources to add any new content, and delete sources that was removed/completed
-- Any added content should be marked as "not done" initially, then the user can click on the entries to toggle "done"/"not done" (in local storage only)
-
-Now, add a new route/controller, and necessary pages, CSS/JavaScript in the `public` folder, following the color scheme outlined in `documentation/README-Colors.md`.
+The API, for both endpoints, only need to acknowledge receipt of the request, and maybe respond with an error if the user did not provide any input text, or the conversation didn't exist.

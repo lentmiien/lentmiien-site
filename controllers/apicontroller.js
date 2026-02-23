@@ -132,6 +132,132 @@ exports.getChatEntries = async (req, res) => {
   res.json(entries);
 };
 
+const getChat5ConversationId = (body) => {
+  if (!body || typeof body !== 'object') return '';
+  if (typeof body.conversation_id === 'string') return body.conversation_id.trim();
+  if (typeof body.conversationId === 'string') return body.conversationId.trim();
+  return '';
+};
+
+const getChat5Prompt = (body) => {
+  if (!body || typeof body !== 'object') return '';
+  if (typeof body.prompt === 'string') return body.prompt;
+  if (typeof body.text === 'string') return body.text;
+  if (typeof body.message === 'string') return body.message;
+  return '';
+};
+
+const buildChat5TextContent = (text) => ({
+  text,
+  image: null,
+  audio: null,
+  tts: null,
+  transcript: null,
+  revisedPrompt: null,
+  imageQuality: null,
+  toolOutput: null,
+});
+
+exports.chat5SendResponse = async (req, res) => {
+  const userId = req.user && req.user.name ? req.user.name : (req.query && req.query.name ? req.query.name : null);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Unauthorized.' });
+  }
+
+  const conversationId = getChat5ConversationId(req.body);
+  if (!conversationId || conversationId === 'NEW') {
+    return res.status(400).json({ status: 'error', message: 'Missing conversation ID.' });
+  }
+
+  const promptRaw = getChat5Prompt(req.body);
+  if (!promptRaw || promptRaw.trim().length === 0) {
+    return res.status(400).json({ status: 'error', message: 'Please provide input text.' });
+  }
+
+  try {
+    const { conversation } = await conversationService.postToConversationNew({
+      conversationId,
+      userId,
+      messageContent: buildChat5TextContent(promptRaw),
+      messageType: 'text',
+      generateAI: true,
+    });
+
+    return res.json({ status: 'ok', conversationId: conversation._id.toString() });
+  } catch (error) {
+    if (error && error.message === 'Conversation not found') {
+      return res.status(404).json({ status: 'error', message: 'Conversation not found.' });
+    }
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+exports.chat5BatchSendResponse = async (req, res) => {
+  const userId = req.user && req.user.name ? req.user.name : (req.query && req.query.name ? req.query.name : null);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Unauthorized.' });
+  }
+
+  const conversationId = getChat5ConversationId(req.body);
+  if (!conversationId || conversationId === 'NEW') {
+    return res.status(400).json({ status: 'error', message: 'Missing conversation ID.' });
+  }
+
+  const promptRaw = getChat5Prompt(req.body);
+  if (!promptRaw || promptRaw.trim().length === 0) {
+    return res.status(400).json({ status: 'error', message: 'Please provide input text.' });
+  }
+
+  try {
+    const { conversation } = await conversationService.postToConversationNew({
+      conversationId,
+      userId,
+      messageContent: buildChat5TextContent(promptRaw),
+      messageType: 'text',
+      generateAI: false,
+    });
+
+    const placeholder = await messageService.createMessageNew({
+      userId: 'bot',
+      contentType: 'text',
+      content: buildChat5TextContent('Pending batch response'),
+      category: conversation.category,
+      tags: conversation.tags,
+      conversationId: conversation._id,
+    });
+
+    conversation.messages.push(placeholder._id.toString());
+    conversation.updatedAt = new Date();
+    await conversation.save();
+
+    await batchService.addPromptToBatch({
+      userId,
+      conversationId: conversation._id.toString(),
+      messageId: placeholder._id.toString(),
+      model: conversation.metadata?.model,
+      title: conversation.title,
+      taskType: 'response',
+    });
+
+    return res.json({ status: 'ok', conversationId: conversation._id.toString() });
+  } catch (error) {
+    if (error && error.message === 'Conversation not found') {
+      return res.status(404).json({ status: 'error', message: 'Conversation not found.' });
+    }
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
+exports.fetchLastMessage = async (req, res) => {
+  const conversationId = req.query && req.query.id ? req.query.id : null;
+  if (!conversationId) {
+    return res.status(400).json({ status: 'error', message: 'Missing conversation ID.' });
+  }
+
+  const {conv, msg} = await conversationService.loadConversation(conversationId);
+  res.json({message: msg[msg.length-1].content.text});
+}
+
 /*******************
  * EXTERNAL
  */
