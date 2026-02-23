@@ -1,7 +1,15 @@
-In my API route (routes/api.js), I'd like to add 2 posting routes, that does the same things as the 2 buttons "Send & Response" and "Batch Send & Response" on the `views/chat5_chat.pug` page. The UI that will be using the API will have a `textarea` for input text and a conversation ID selector, so it won't handle any settings parameters, or creating new conversations, and is only a stripped down/simplified post to chat tool.
+I have the page `views/cooking_statistics.pug` showing some basic statistics of recipies in my cookbook.
 
-"Send & Response" should be something similar to the 'chat5-append' socket.io event in `socket_io/chat5_5/chat5_5handler.js`, but a bit simplified as it'll only ever post to existing conversations, and don't need edit any settings; `generateAI` should be `true`. (use settings from existing conversation if needed)
+I'd like to create a page that shows a "recommended to cook next" list, importantly:
+1. I want to hide all "Cooked last 10 days" entries from this list
+2. Anything cooked over 1 month ago, or never cooked ("Not recorded"), should be prioritized
+3. Entries with higher "Total" numbers, should have a slightly higher priority (reach max priority at 25 entries)
+4. There should be a randomize button, and the list should be randomized when page is opened, based on the above priorities
 
-Similarly "Batch Send & Response" should be something similar to the 'chat5-batch' socket.io event in `socket_io/chat5_5/chat5_5handler.js`.
+So, when opening the page, or pressing the randomize button, I should see a list with more higher priority cookbook entries at the top, but still randomized for some variation.
 
-The API, for both endpoints, only need to acknowledge receipt of the request, and maybe respond with an error if the user did not provide any input text, or the conversation didn't exist.
+The priority should feel something like, things that I haven't cooked in a while, and "good" recipies (with many occurrences), should appear more near the top.
+
+Also show some basic statistics for each entry, that I can use as guidance when deciding on what to cook next.
+
+Create the new page, and link to the page from the `views/cooking_index.pug` page, by adding a link button near the "View statistics" button.

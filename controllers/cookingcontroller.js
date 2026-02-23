@@ -192,6 +192,16 @@ exports.cooking_statistics_v2 = async (req, res) => {
   }
 };
 
+exports.cooking_recommendations_v2 = async (req, res) => {
+  try {
+    const stats = await cookingCalendarService.getStatistics();
+    res.render('cooking_recommendations', { stats });
+  } catch (error) {
+    logger.error('Failed to load cooking recommendations (v2)', { category: 'cooking-calendar', metadata: { error: error.message } });
+    res.status(500).send('Unable to load cooking recommendations.');
+  }
+};
+
 // ----- Helper functions -----
 function compareByTitle(a, b) {
   if (a.title < b.title) return -1;

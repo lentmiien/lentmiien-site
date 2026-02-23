@@ -17,5 +17,6 @@ router.post('/v2/api/entries', controller.createEntryV2);
 router.delete('/v2/api/entries/:date/:entryId', controller.deleteEntryV2);
 router.get('/v2/api/statistics', controller.statisticsDataV2);
 router.get('/v2/statistics', controller.cooking_statistics_v2);
+router.get('/v2/recommendations', controller.cooking_recommendations_v2);
 
 module.exports = router;

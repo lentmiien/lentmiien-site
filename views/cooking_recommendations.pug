@@ -1,0 +1,27 @@
+extends layout
+
+block content
+  .cooking-recommendations-page
+    .d-flex.flex-wrap.align-items-center.justify-content-between.mb-3.gap-3
+      .d-flex.flex-column.gap-1
+        h2.mb-0 Recommended to cook next
+        p.text-muted.mb-0 Weighted by time since last cooked and total usage. Recipes cooked in the last 10 days are hidden.
+      .d-flex.gap-2.flex-wrap
+        button#randomizeRecommendations.btn.btn-primary(type='button') Randomize
+        a.btn.btn-outline-secondary(href='/cooking/v2') Back to calendar
+        a.btn.btn-outline-secondary(href='/cooking/v2/statistics') View statistics
+
+    .recommendation-summary.d-flex.flex-wrap.gap-3.align-items-center
+      span#recommendationCount.badge.bg-secondary 0 shown
+      span#hiddenCount.badge.bg-secondary 0 hidden
+      span.text-muted.small Items cooked 30+ days ago or never cooked are boosted. Total counts add a small boost up to 25 cooks.
+
+    #recommendationList.recommendation-list
+      .recommendation-empty.text-muted Loading recommendations...
+
+block script
+  script.
+    window.COOKING_RECOMMENDATIONS = {
+      stats: !{JSON.stringify(stats || [])}
+    };
+  script(src='/cooking_recommendations.js', defer)
