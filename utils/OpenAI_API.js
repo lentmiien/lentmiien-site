@@ -73,6 +73,12 @@ function resolveContextPrompt(conversation) {
   return '';
 }
 
+function resolveMaxMessagesLimit(conversation) {
+  const raw = conversation?.metadata?.maxMessages;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function formatToolList(toolLabels) {
   if (toolLabels.length === 1) return toolLabels[0];
   if (toolLabels.length === 2) return `${toolLabels[0]} and ${toolLabels[1]}`;
@@ -113,6 +119,10 @@ function GenerateMessagesArray_Responses(context, messages, isImageModel) {
       role: context.type,
       content: [{ type: 'input_text', text: context.prompt }],
     });
+  }
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return messageArray;
   }
 
   // Messages
@@ -350,9 +360,16 @@ const generateStructuredOutput = async ({ model, prompt, schema, schemaName, sys
 const chat = async (conversation, messages, model) => {
   const resolvedContext = resolveContextPrompt(conversation);
   const promptWithTools = appendToolGuidance(resolvedContext, conversation?.metadata?.tools);
+  const visibleMessages = Array.isArray(messages)
+    ? messages.filter((message) => message && !message.hideFromBot)
+    : [];
+  const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
+  const limitedMessages = maxMessagesLimit
+    ? visibleMessages.slice(-maxMessagesLimit)
+    : visibleMessages;
   const messageArray = GenerateMessagesArray_Responses(
     {type: model.context_type, prompt: promptWithTools},
-    messages,
+    limitedMessages,
     model.in_modalities.indexOf("image") >= 0
   );
 
