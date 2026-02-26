@@ -222,6 +222,12 @@ const buildChatCompletionMessages = (contextPrompt, messages, allowImages) => {
   return formatted;
 };
 
+const resolveMaxMessagesLimit = (conversation) => {
+  const raw = conversation?.metadata?.maxMessages;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
 const sanitizeMessagesForLogging = (messages) => {
   if (!Array.isArray(messages)) return messages;
   return messages.map((message) => {
@@ -339,9 +345,16 @@ const chat = async (conversation, messages, model) => {
   const supportsImages = model.allow_images === true
     || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'));
   const contextPrompt = resolveContextPrompt(conversation);
+  const visibleMessages = Array.isArray(messages)
+    ? messages.filter((message) => message && !message.hideFromBot)
+    : [];
+  const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
+  const limitedMessages = maxMessagesLimit
+    ? visibleMessages.slice(-maxMessagesLimit)
+    : visibleMessages;
   const messageArray = buildChatCompletionMessages(
     contextPrompt,
-    Array.isArray(messages) ? messages : [],
+    limitedMessages,
     supportsImages,
   );
 
