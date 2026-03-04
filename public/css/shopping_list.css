@@ -387,6 +387,12 @@
   background: rgba(14, 15, 19, 0.66);
 }
 
+.shopping-ingredient-row--optional {
+  border-style: dashed;
+  border-color: rgba(255, 194, 71, 0.45);
+  background: rgba(255, 194, 71, 0.08);
+}
+
 .shopping-ingredient-row__checkbox {
   margin-top: 2px;
 }
@@ -422,6 +428,28 @@
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--text-muted);
+}
+
+.shopping-cookbook-variant {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--divider);
+  background: rgba(14, 15, 19, 0.6);
+}
+
+.shopping-cookbook-variant__title {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.shopping-cookbook-variant__details {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
 }
 
 .shopping-footer {

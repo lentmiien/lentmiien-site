@@ -147,8 +147,12 @@ exports.shopping_list = async (req, res) => {
             : [],
           optionalVariants: Array.isArray(cookbook.suggestions)
             ? cookbook.suggestions
-              .map((variant) => (variant && variant.label ? String(variant.label).trim() : ''))
-              .filter(Boolean)
+              .map((variant, index) => ({
+                id: `${entry.id}-variant-${index}`,
+                label: variant && variant.label ? String(variant.label).trim() : '',
+                details: variant && variant.details ? String(variant.details).trim() : '',
+              }))
+              .filter((variant) => variant.label || variant.details)
             : [],
         };
       }

@@ -88,7 +88,7 @@
             title: entry.title || 'Recipe',
             basePortions: parsePositiveNumber(entry.portions),
             ingredients: normalizeCookbookIngredients(entry.ingredients),
-            optionalVariants: new Set(),
+            optionalVariants: new Map(),
             categories: new Set(),
             dates: new Set(),
             count: 0,
@@ -114,11 +114,13 @@
           group.ingredients = normalizeCookbookIngredients(entry.ingredients);
         }
         if (Array.isArray(entry.optionalVariants)) {
-          entry.optionalVariants.forEach((variant) => {
-            const label = String(variant || '').trim();
-            if (label) {
-              group.optionalVariants.add(label);
+          entry.optionalVariants.forEach((variant, variantIndex) => {
+            const normalizedVariant = normalizeOptionalVariant(variant, `Optional variant ${variantIndex + 1}`);
+            if (!normalizedVariant) {
+              return;
             }
+            const variantKey = `${normalizedVariant.label}::${normalizedVariant.details}`;
+            group.optionalVariants.set(variantKey, normalizedVariant);
           });
         }
         return;
@@ -142,6 +144,12 @@
       const defaultPortions = basePortions
         ? basePortions * Math.max(group.count, 1)
         : Math.max(group.count, 1);
+      const sortedOptionalVariants = Array.from(group.optionalVariants.values()).sort((a, b) => {
+        if (a.label !== b.label) {
+          return a.label.localeCompare(b.label);
+        }
+        return a.details.localeCompare(b.details);
+      });
 
       const metaLabel = dateList.length <= 1
         ? `Date: ${dateList[0] || 'Unknown'}`
@@ -156,7 +164,11 @@
         basePortions,
         defaultPortions,
         ingredients: Array.isArray(group.ingredients) ? group.ingredients : [],
-        optionalVariants: Array.from(group.optionalVariants).sort(),
+        optionalVariants: sortedOptionalVariants,
+        checklist: buildCookbookChecklistItems(
+          Array.isArray(group.ingredients) ? group.ingredients : [],
+          sortedOptionalVariants
+        ),
         sortDate: group.sortDate,
       };
     });
@@ -187,6 +199,90 @@
       unit: String(ingredient?.unit || ''),
       amountInGram: Number.isFinite(ingredient?.amountInGram) ? ingredient.amountInGram : null,
     }));
+  }
+
+  function normalizeOptionalVariant(rawVariant, fallbackLabel) {
+    if (!rawVariant || typeof rawVariant !== 'object') {
+      const label = String(rawVariant || '').trim();
+      if (!label) {
+        return null;
+      }
+      return {
+        label,
+        details: '',
+      };
+    }
+
+    const label = String(rawVariant.label || '').trim() || fallbackLabel;
+    const details = String(rawVariant.details || '').trim();
+    if (!label && !details) {
+      return null;
+    }
+
+    return {
+      label: label || fallbackLabel,
+      details,
+    };
+  }
+
+  function buildCookbookChecklistItems(ingredients, optionalVariants) {
+    const checklist = [];
+
+    ingredients.forEach((ingredient) => {
+      checklist.push({
+        key: `base:${ingredient.index}`,
+        label: ingredient.label,
+        amount: ingredient.amount,
+        unit: ingredient.unit,
+        amountInGram: ingredient.amountInGram,
+        required: true,
+        optional: false,
+        variantLabel: '',
+      });
+    });
+
+    (optionalVariants || []).forEach((variant, variantIndex) => {
+      const lines = extractOptionalChecklistLines(variant.details);
+      lines.forEach((line, lineIndex) => {
+        checklist.push({
+          key: `optional:${variantIndex}:${lineIndex}:${toChecklistKey(line)}`,
+          label: line,
+          amount: null,
+          unit: '',
+          amountInGram: null,
+          required: false,
+          optional: true,
+          variantLabel: variant.label || 'Optional',
+        });
+      });
+    });
+
+    return checklist;
+  }
+
+  function extractOptionalChecklistLines(details) {
+    if (!details || typeof details !== 'string') {
+      return [];
+    }
+
+    const lines = details
+      .split('\n')
+      .map((line) => line.trim())
+      .map((line) => line.replace(/^[-*+]\s+/, ''))
+      .map((line) => line.replace(/^\d+[.)]\s+/, ''))
+      .map((line) => line.replace(/^\[\s*\]\s*/i, ''))
+      .map((line) => line.replace(/^\[[xX]\]\s*/i, ''))
+      .filter(Boolean);
+
+    return lines;
+  }
+
+  function toChecklistKey(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'item';
   }
 
   function loadState() {
@@ -252,8 +348,8 @@
     const portions = parsePositiveNumber(existing.portions) || item.defaultPortions;
     const checked = {};
 
-    item.ingredients.forEach((ingredient) => {
-      checked[ingredient.index] = Boolean(existing.checked && existing.checked[ingredient.index]);
+    item.checklist.forEach((entry) => {
+      checked[entry.key] = Boolean(existing.checked && existing.checked[entry.key]);
     });
 
     state.cookbookGroups[item.groupKey] = {
@@ -458,35 +554,35 @@
     portionsWrap.appendChild(portionsLabel);
     content.appendChild(portionsWrap);
 
-    if (item.ingredients.length) {
+    if (item.checklist.length) {
       const list = document.createElement('ul');
       list.className = 'shopping-ingredient-list';
 
-      item.ingredients.forEach((ingredient) => {
+      item.checklist.forEach((checkItem) => {
         const li = document.createElement('li');
         li.className = 'shopping-ingredient-list__item';
 
         const rowLabel = document.createElement('label');
-        rowLabel.className = 'shopping-ingredient-row';
+        rowLabel.className = `shopping-ingredient-row${checkItem.optional ? ' shopping-ingredient-row--optional' : ''}`;
 
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'shopping-ingredient-row__checkbox';
         checkbox.dataset.action = 'ingredient-toggle';
         checkbox.dataset.groupKey = item.groupKey;
-        checkbox.dataset.ingredientIndex = String(ingredient.index);
-        checkbox.checked = Boolean(groupState.checked[ingredient.index]);
+        checkbox.dataset.ingredientKey = checkItem.key;
+        checkbox.checked = Boolean(groupState.checked[checkItem.key]);
 
         const textWrap = document.createElement('span');
         textWrap.className = 'shopping-ingredient-row__text';
 
         const titleText = document.createElement('span');
         titleText.className = 'shopping-ingredient-row__title';
-        titleText.textContent = ingredient.label;
+        titleText.textContent = checkItem.label;
 
         const amountText = document.createElement('span');
         amountText.className = 'shopping-ingredient-row__amount';
-        amountText.textContent = formatIngredientAmount(ingredient, scale);
+        amountText.textContent = formatChecklistAmount(checkItem, scale);
 
         textWrap.appendChild(titleText);
         textWrap.appendChild(amountText);
@@ -515,15 +611,22 @@
       variantsLabel.textContent = 'Optional';
       variantsBlock.appendChild(variantsLabel);
 
-      const variantsMeta = document.createElement('div');
-      variantsMeta.className = 'shopping-item__meta';
       item.optionalVariants.forEach((variant) => {
-        const chip = document.createElement('span');
-        chip.className = 'shopping-chip';
-        chip.textContent = variant;
-        variantsMeta.appendChild(chip);
+        const variantEntry = document.createElement('article');
+        variantEntry.className = 'shopping-cookbook-variant';
+
+        const variantTitle = document.createElement('p');
+        variantTitle.className = 'shopping-cookbook-variant__title';
+        variantTitle.textContent = variant.label || 'Optional variant';
+        variantEntry.appendChild(variantTitle);
+
+        const variantDetails = document.createElement('div');
+        variantDetails.className = 'shopping-cookbook-variant__details';
+        variantDetails.textContent = variant.details || 'No details provided.';
+        variantEntry.appendChild(variantDetails);
+
+        variantsBlock.appendChild(variantEntry);
       });
-      variantsBlock.appendChild(variantsMeta);
       content.appendChild(variantsBlock);
     }
 
@@ -576,9 +679,9 @@
     const ingredientCheckbox = event.target.closest('input[data-action="ingredient-toggle"]');
     if (ingredientCheckbox) {
       const groupKey = ingredientCheckbox.dataset.groupKey;
-      const ingredientIndex = Number.parseInt(ingredientCheckbox.dataset.ingredientIndex, 10);
-      if (groupKey && Number.isFinite(ingredientIndex)) {
-        updateCookbookIngredient(groupKey, ingredientIndex, ingredientCheckbox.checked);
+      const ingredientKey = String(ingredientCheckbox.dataset.ingredientKey || '').trim();
+      if (groupKey && ingredientKey) {
+        updateCookbookIngredient(groupKey, ingredientKey, ingredientCheckbox.checked);
       }
       return;
     }
@@ -592,12 +695,12 @@
     }
   }
 
-  function updateCookbookIngredient(groupKey, ingredientIndex, checked) {
+  function updateCookbookIngredient(groupKey, ingredientKey, checked) {
     const groupState = state.cookbookGroups[groupKey];
     if (!groupState || !groupState.checked) {
       return;
     }
-    groupState.checked[ingredientIndex] = Boolean(checked);
+    groupState.checked[ingredientKey] = Boolean(checked);
     saveState(state);
     renderCookingSection(sources.cooking.items);
     updateCounts();
@@ -675,10 +778,11 @@
 
   function isCookbookGroupDone(item, groupState = null) {
     const localState = groupState || state.cookbookGroups[item.groupKey];
-    if (!item.ingredients.length || !localState || !localState.checked) {
+    const requiredChecklist = item.checklist.filter((entry) => entry.required);
+    if (!requiredChecklist.length || !localState || !localState.checked) {
       return false;
     }
-    return item.ingredients.every(ingredient => Boolean(localState.checked[ingredient.index]));
+    return requiredChecklist.every(entry => Boolean(localState.checked[entry.key]));
   }
 
   function renderUpdatedAt() {
@@ -697,12 +801,16 @@
     }
   }
 
-  function formatIngredientAmount(ingredient, scale) {
-    const amountValue = Number.isFinite(ingredient.amount) ? ingredient.amount * scale : null;
-    const gramValue = Number.isFinite(ingredient.amountInGram) ? ingredient.amountInGram * scale : null;
+  function formatChecklistAmount(checkItem, scale) {
+    if (checkItem.optional) {
+      return checkItem.variantLabel ? `Optional (${checkItem.variantLabel})` : 'Optional';
+    }
+
+    const amountValue = Number.isFinite(checkItem.amount) ? checkItem.amount * scale : null;
+    const gramValue = Number.isFinite(checkItem.amountInGram) ? checkItem.amountInGram * scale : null;
 
     const amountText = amountValue !== null
-      ? `${formatAmount(amountValue)}${ingredient.unit ? ` ${ingredient.unit}` : ''}`
+      ? `${formatAmount(amountValue)}${checkItem.unit ? ` ${checkItem.unit}` : ''}`
       : '';
     const gramText = gramValue !== null ? `${formatAmount(gramValue)} g` : '';
 
