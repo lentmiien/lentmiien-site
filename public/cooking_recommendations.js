@@ -71,6 +71,7 @@
     return {
       recipeId: item.recipeId,
       title: item.title,
+      viewPath: item.viewPath || (item.recipeId ? `/chat4/viewknowledge/${item.recipeId}` : ''),
       usage,
       lastCookedDate,
       daysSince,
@@ -110,7 +111,7 @@
       <div class="recommendation-card">
         <div class="d-flex justify-content-between align-items-start gap-3">
           <div>
-            <h5 class="mb-1"><a href="/chat4/viewknowledge/${entry.recipeId}">${escapeHtml(entry.title)}</a></h5>
+            <h5 class="mb-1">${entry.viewPath ? `<a href="${escapeHtml(entry.viewPath)}">${escapeHtml(entry.title)}</a>` : escapeHtml(entry.title)}</h5>
             <div class="recommendation-meta">Last cooked: ${escapeHtml(lastCookedText)}</div>
             <div class="recommendation-meta">${escapeHtml(statsLine)}</div>
           </div>

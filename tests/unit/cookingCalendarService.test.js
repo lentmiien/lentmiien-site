@@ -22,6 +22,7 @@ const createAggregate = (result) => ({
 describe('CookingCalendarService', () => {
   let CookingCalendarModel;
   let CookingCalendarV2Model;
+  let CookbookRecipeModel;
   let Chat4KnowledgeModel;
   let service;
 
@@ -37,12 +38,22 @@ describe('CookingCalendarService', () => {
       findOneAndUpdate: jest.fn()
     };
 
+    CookbookRecipeModel = {
+      find: jest.fn(),
+      findOne: jest.fn()
+    };
+
     Chat4KnowledgeModel = {
       find: jest.fn(),
       findOne: jest.fn()
     };
 
-    service = new CookingCalendarService({ CookingCalendarModel, CookingCalendarV2Model, Chat4KnowledgeModel });
+    service = new CookingCalendarService({
+      CookingCalendarModel,
+      CookingCalendarV2Model,
+      Chat4KnowledgeModel,
+      CookbookRecipeModel
+    });
   });
 
   afterEach(() => {
@@ -98,38 +109,63 @@ describe('CookingCalendarService', () => {
     });
   });
 
-  test('getRecipeLibraryWithUsage merges recipe info with usage map', async () => {
-    const recipeDocs = [
-      { _id: { toString: () => 'id1' }, title: 'Apple Pie', images: ['img1'] },
-      { _id: { toString: () => 'id2' }, title: 'Bread', images: null }
+  test('getRecipeLibraryWithUsage prefers cookbook entries and removes transitioned legacy duplicates', async () => {
+    const cookbookId = new Types.ObjectId().toString();
+    const transitionedKnowledgeId = new Types.ObjectId().toString();
+    const fallbackKnowledgeId = new Types.ObjectId().toString();
+
+    const cookbookDocs = [
+      {
+        _id: { toString: () => cookbookId },
+        title: 'Apple Pie',
+        images: ['img1'],
+        originKnowledgeId: transitionedKnowledgeId
+      }
     ];
+    const recipeDocs = [
+      { _id: { toString: () => transitionedKnowledgeId }, title: 'Apple Pie (legacy)', images: ['old'] },
+      { _id: { toString: () => fallbackKnowledgeId }, title: 'Bread', images: null }
+    ];
+
+    CookbookRecipeModel.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(cookbookDocs)
+    });
     Chat4KnowledgeModel.find.mockReturnValue(createLeanChain(recipeDocs));
+
     const usageMap = new Map([
-      ['id1', { totalCount: 2, lastCookedDate: new Date('2024-03-01T00:00:00Z') }]
+      [cookbookId, { totalCount: 2, countLast90Days: 1, lastCookedDate: new Date('2024-03-01T00:00:00Z') }],
+      [transitionedKnowledgeId, { totalCount: 1, countLast90Days: 1, lastCookedDate: new Date('2024-03-03T00:00:00Z') }]
     ]);
     const usageSpy = jest.spyOn(service, 'buildUsageMap').mockResolvedValue(usageMap);
 
     const result = await service.getRecipeLibraryWithUsage();
 
+    expect(CookbookRecipeModel.find).toHaveBeenCalledWith({});
     expect(Chat4KnowledgeModel.find).toHaveBeenCalledWith({ category: 'Recipe' });
     expect(usageSpy).toHaveBeenCalledTimes(1);
     expect(result).toEqual([
       {
-        id: 'id1',
+        id: cookbookId,
         title: 'Apple Pie',
         images: ['img1'],
+        source: 'cookbook',
+        originKnowledgeId: transitionedKnowledgeId,
+        viewPath: `/cooking/cookbook/${cookbookId}`,
         usage: {
-          totalCount: 2,
-          countLast90Days: 0,
+          totalCount: 3,
+          countLast90Days: 2,
           countPrev90Days: 0,
           existInLast10Days: false,
-          lastCookedDate: '2024-03-01'
+          lastCookedDate: '2024-03-03'
         }
       },
       {
-        id: 'id2',
+        id: fallbackKnowledgeId,
         title: 'Bread',
         images: [],
+        source: 'knowledge',
+        originKnowledgeId: null,
+        viewPath: `/chat4/viewknowledge/${fallbackKnowledgeId}`,
         usage: {
           totalCount: 0,
           countLast90Days: 0,
@@ -193,6 +229,9 @@ describe('CookingCalendarService', () => {
 
   test('getCalendarRange returns normalized day data', async () => {
     const recipeId = new Types.ObjectId();
+    CookbookRecipeModel.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([])
+    });
     CookingCalendarV2Model.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([
         {
@@ -228,7 +267,13 @@ describe('CookingCalendarService', () => {
       recipeId: recipeId.toString(),
       category: 'Lunch',
       addedAt: '2024-05-01T12:00:00.000Z',
-      recipe: { id: recipeId.toString(), title: 'Soup', image: 'img' },
+      recipe: {
+        id: recipeId.toString(),
+        title: 'Soup',
+        image: 'img',
+        source: 'knowledge',
+        viewPath: `/chat4/viewknowledge/${recipeId.toString()}`
+      },
       usage: {
         totalCount: 1,
         countLast90Days: 0,
@@ -240,14 +285,18 @@ describe('CookingCalendarService', () => {
   });
 
   test('addEntry returns warning when recently cooked and not forced', async () => {
+    const recipeId = new Types.ObjectId().toString();
+    CookbookRecipeModel.findOne
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(null) })
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(null) });
     Chat4KnowledgeModel.findOne.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ _id: 'id1', title: 'Dish', images: [] })
+      lean: jest.fn().mockResolvedValue({ _id: recipeId, title: 'Dish', images: [] })
     });
     jest.spyOn(service, 'getLastCookedDate').mockResolvedValue('2024-05-05');
 
     const result = await service.addEntry({
       date: '2024-05-08',
-      recipeId: new Types.ObjectId().toString(),
+      recipeId,
       category: 'Lunch'
     });
 
@@ -258,15 +307,20 @@ describe('CookingCalendarService', () => {
     });
   });
 
-  test('addEntry creates entry when forced or no recent cooking', async () => {
-    const recipeId = new Types.ObjectId().toString();
-    Chat4KnowledgeModel.findOne.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: { toString: () => recipeId },
-        title: 'Dish',
-        images: ['img']
-      })
-    });
+  test('addEntry stores cookbook id when selected legacy knowledge has a transitioned cookbook recipe', async () => {
+    const cookbookId = new Types.ObjectId().toString();
+    const legacyKnowledgeId = new Types.ObjectId().toString();
+    CookbookRecipeModel.findOne
+      .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(null) })
+      .mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue({
+          _id: { toString: () => cookbookId },
+          title: 'Dish',
+          images: ['img'],
+          originKnowledgeId: legacyKnowledgeId
+        })
+      });
+
     jest.spyOn(service, 'getLastCookedDate').mockResolvedValue(null);
 
     const leanResult = { entries: [] };
@@ -276,19 +330,22 @@ describe('CookingCalendarService', () => {
 
     const result = await service.addEntry({
       date: '2024-05-20',
-      recipeId,
+      recipeId: legacyKnowledgeId,
       category: 'dinner',
       force: true
     });
 
     expect(result.status).toBe('created');
-    expect(result.entry.recipeId).toBe(recipeId);
+    expect(result.entry.recipeId).toBe(cookbookId);
     expect(result.entry.category).toBe('Dinner');
     expect(result.entry.recipe).toEqual({
-      id: recipeId,
+      id: cookbookId,
       title: 'Dish',
-      image: 'img'
+      image: 'img',
+      source: 'cookbook',
+      viewPath: `/cooking/cookbook/${cookbookId}`
     });
+    expect(CookingCalendarV2Model.findOneAndUpdate).toHaveBeenCalled();
   });
 
   test('removeEntry validates inputs and returns removal stats', async () => {
@@ -317,5 +374,65 @@ describe('CookingCalendarService', () => {
 
     expect(result).toBe('2024-04-01');
     await expect(service.getLastCookedDate('not-an-id')).rejects.toThrow('Invalid recipe id.');
+  });
+
+  test('getStatistics joins cookbook and legacy usage for transitioned recipes', async () => {
+    const cookbookId = new Types.ObjectId().toString();
+    const legacyKnowledgeId = new Types.ObjectId().toString();
+    const standaloneKnowledgeId = new Types.ObjectId().toString();
+
+    CookbookRecipeModel.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        {
+          _id: { toString: () => cookbookId },
+          title: 'Curry',
+          images: [],
+          originKnowledgeId: legacyKnowledgeId
+        }
+      ])
+    });
+    Chat4KnowledgeModel.find.mockReturnValue(createLeanChain([
+      { _id: { toString: () => legacyKnowledgeId }, title: 'Curry (legacy)', images: [] },
+      { _id: { toString: () => standaloneKnowledgeId }, title: 'Toast', images: [] }
+    ]));
+    jest.spyOn(service, 'buildUsageMap').mockResolvedValue(new Map([
+      [cookbookId, { totalCount: 1, countLast90Days: 1 }],
+      [legacyKnowledgeId, { totalCount: 2, countLast90Days: 2 }],
+      [standaloneKnowledgeId, { totalCount: 1, countLast90Days: 1 }]
+    ]));
+
+    const stats = await service.getStatistics();
+    const curry = stats.find((item) => item.recipeId === cookbookId);
+    const toast = stats.find((item) => item.recipeId === standaloneKnowledgeId);
+
+    expect(stats).toHaveLength(2);
+    expect(curry).toEqual({
+      recipeId: cookbookId,
+      title: 'Curry',
+      source: 'cookbook',
+      originKnowledgeId: legacyKnowledgeId,
+      viewPath: `/cooking/cookbook/${cookbookId}`,
+      usage: {
+        totalCount: 3,
+        countLast90Days: 3,
+        countPrev90Days: 0,
+        existInLast10Days: false,
+        lastCookedDate: null
+      }
+    });
+    expect(toast).toEqual({
+      recipeId: standaloneKnowledgeId,
+      title: 'Toast',
+      source: 'knowledge',
+      originKnowledgeId: null,
+      viewPath: `/chat4/viewknowledge/${standaloneKnowledgeId}`,
+      usage: {
+        totalCount: 1,
+        countLast90Days: 1,
+        countPrev90Days: 0,
+        existInLast10Days: false,
+        lastCookedDate: null
+      }
+    });
   });
 });

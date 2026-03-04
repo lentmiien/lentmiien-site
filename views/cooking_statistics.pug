@@ -23,9 +23,10 @@ block content
           tbody
             each item in stats
               - const usage = item.usage || {}
+              - const recipePath = item.viewPath || `/chat4/viewknowledge/${item.recipeId}`;
               tr(class=usage.existInLast10Days ? 'table-warning' : '')
                 td
-                  a(href=`/chat4/viewknowledge/${item.recipeId}`)= item.title
+                  a(href=recipePath)= item.title
                 td= usage.lastCookedDate || 'Not recorded'
                 td
                   if usage.existInLast10Days

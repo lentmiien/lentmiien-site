@@ -76,6 +76,9 @@ class KnowledgeService {
 
   async getKnowledgesById(k_id) {
     const knowledge = await this.knowledgeModel.findById(k_id);
+    if (!knowledge) {
+      return null;
+    }
     // Backward compatibility: default to chat4 if not set
     if (!knowledge.originType) knowledge.originType = 'chat4';
     knowledge.contentHTML = marked.parse(knowledge.contentMarkdown);

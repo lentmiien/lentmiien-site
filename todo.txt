@@ -1,33 +1,8 @@
-Currently I manage a "cookbook" as knowledge entries in my `models/chat4_knowledge.js` database, with the category set to "Recipe", and I use this storage format in other tools. However, I'd like to transition this data to a dedicated cookbook database, as well as format the recipes in a more structured format, instead of just Markdown text as I do now, for example, I'd like to store the ingredient list as an array of objects, something like:
-```
-{
-  ingredient_label: "Water",
-  amount: 100,
-  amount_unit: "ml",
-  amount_in_gram: 100
-}
-```
-*The "amount_in_gram" is optional, but helpful for certain types of ingredients, and if "amount_unit" is "gram", then "amount_in_gram" isn't needed.
+On the pages `views/cooking_index.pug`, `views/cooking_recommendations.pug` and `views/cooking_statistics.pug`, I want to add the database `models/cookbook_recipe.js` as a source of recipes.
+Importantly, when appending cookbook recipes, I also want to filter out any existing knowledge entries with the `_id` matching `originKnowledgeId` from the added cookbook recipe, as these are transitioned duplicates. But for statistics purposes, join duplicate cookbook/knowledge entries.
 
-Also, I'd like to add a few parameters, like:
-* `portions`: approximate portion number for the amount of ingredients
-* `calories`: approximate calorie count per portion
-* `nutrition`: an array of major nutritional content of the food, per portion; example `{label:"vitamin C",amount:"high|medium|low"}`, where "high" roughly means that I'll easily reach recommended intake, "medium" means that I should try to add another "medium" or a few "low" to reach recommended intake, "low" means that I need several more sources to reach recommended intake, and not in the list means that the amount is neglectable
-* `instructions`: just as with the ingredients, I want to make this an array of Markdown text strings, example `{label:"Peal and cut vegetables",details:"Peal potato and carrot, then cut in roughly **1 cm** cubes."}`
-* `suggestions`: an array of suggested changes to try with the recipe, example `{label:"Spicy variant","details":"Add **1-2 tsp red chili powder** to the pot when boiling the vegetables."}`, each variant should only have 1 entry in the `suggestions` array, with all the details explained in the `details`
-* `rating`: a rating object, that can hold various ratings and comments, but only content I want, for example `{my_overall_rating:4,easy_to_cook:5,son_likes:2,comment:"Son didn't like, but very easy to make. 'Spicy variant' is great!",variants:[{label:"Spicy variant",my_overall_rating:5}]}`; I probably want to normalize what rating labels that are allowed, but other than that, I'll only add/update the numbers as I see fit, the `variants` ratings can have all the same rating types and comment as the original recipe; variant rating label must match the suggestion label
-* `food_category`: type of food, I want to replace the category with a food category and cooking category
-* `cooking_category`: type of cooking method
-* `cooking_time`: a rough estimate for the cooking time, in minutes
-* `title`, `originConversationId`, `originType`, `tags`, `images`: I'll keep these from the current database
-* `originKnowledgeId`: I want to add this, so I can link back to old data when I transition other tools, should be `null` for new entries with no existing knowledge entry
+For context, I'm in the process to transition from `models/chat4_knowledge.js` to `models/cookbook_recipe.js`, so cookbook entries should be prioritized when existing, otherwise fall back to knowledge entries.
 
-Please help me set up this new database, then add a route/controller for managing the content of my cookbook:
-* A landing page for viewing the content, with filtering/sorting capabilities
-* A page for adding a new entry, optionally with a knowledge id, to display the knowledge entry side-by-side with the input form
-* A page for editing an entry
-* A page for viewing a single entry (used when cooking the food), with a rating/comment form; when selecting a variant, display the variant description highly visible, and redirect the rating to rate the variant
+So, going forward, if I choose a recipe with a cookbook entry, the new cookbook entry should be used, if no cookbook entry exist, fall back to the knowledge entry, and if I review older saved recipes, that now have a cookbook entry, redirect to the cookbook entry.
 
-There is no need to transition any other tools at this time, that are using the old knowledge "cookbook" database. On the landing page, show a list at the bottom, that display all knowledge "cookbook" entries, that have not yet been transitioned to the new database, and clicking an entry will display the add new entry page, with the knowledge entry.
-
-Now, implement this new functionality in my app.
+Please update the pages, and back end code to work with the new cookbook database.

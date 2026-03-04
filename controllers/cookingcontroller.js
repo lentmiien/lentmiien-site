@@ -1,5 +1,10 @@
 
-const { CookingCalendarModel, CookingCalendarV2Model, Chat4KnowledgeModel } = require('../database');
+const {
+  CookingCalendarModel,
+  CookingCalendarV2Model,
+  Chat4KnowledgeModel,
+  CookbookRecipeModel,
+} = require('../database');
 const CookingCalendarService = require('../services/cookingCalendarService');
 const logger = require('../utils/logger');
 
@@ -7,6 +12,7 @@ const cookingCalendarService = new CookingCalendarService({
   CookingCalendarModel,
   CookingCalendarV2Model,
   Chat4KnowledgeModel,
+  CookbookRecipeModel,
 });
 
 // ----- Legacy v1 routes -----

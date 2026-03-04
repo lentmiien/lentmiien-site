@@ -10,7 +10,18 @@ const KnowledgeService = require('../services/knowledgeService');
 const EmbeddingApiService = require('../services/embeddingApiService');
 const AgentService = require('../services/agentService');
 const BatchService = require('../services/batchService');
-const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, Chat3TemplateModel, FileMetaModel, ArticleModel, AgentModel, BatchPromptModel, BatchRequestModel } = require('../database');
+const {
+  Chat4Model,
+  Conversation4Model,
+  Chat4KnowledgeModel,
+  CookbookRecipeModel,
+  Chat3TemplateModel,
+  FileMetaModel,
+  ArticleModel,
+  AgentModel,
+  BatchPromptModel,
+  BatchRequestModel,
+} = require('../database');
 const { whisper, GetOpenAIModels } = require('../utils/ChatGPT');
 
 // Instantiate the services
@@ -319,8 +330,21 @@ async function getImageDimensions(imagePath) {
 
 exports.viewknowledge = async (req, res) => {
   const knowledge_id = req.params.id;
+  const user_id = req.user.name;
+
+  // Recipe knowledge entries that already transitioned to cookbook should open the cookbook page.
+  const transitionedRecipe = await CookbookRecipeModel
+    .findOne({ user_id, originKnowledgeId: knowledge_id })
+    .select({ _id: 1 })
+    .lean();
+  if (transitionedRecipe && transitionedRecipe._id) {
+    return res.redirect(`/cooking/cookbook/${transitionedRecipe._id.toString()}`);
+  }
 
   const knowledge = await knowledgeService.getKnowledgesById(knowledge_id);
+  if (!knowledge) {
+    return res.status(404).render('error_page', { error: `Knowledge entry [${knowledge_id}] was not found.` });
+  }
 
   // Update og/twitter title meta tags
   res.locals.og_title = `Lennart's Website - ${knowledge.title}`;
@@ -331,7 +355,7 @@ exports.viewknowledge = async (req, res) => {
     const size = await getImageDimensions(`./public/img/${filename}`);
     if (size) {
       // Get file meta data
-      const metadata = await FileMetaModel.find({filename});
+      const metadata = await FileMetaModel.find({ filename });
       res.locals.og_image = `https://home.lentmiien.com/img/${filename}`;
       res.locals.og_image_width = size.width.toString();
       res.locals.og_image_height = size.height.toString();

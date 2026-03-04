@@ -7,10 +7,11 @@ const DAYS_WARNING_WINDOW = 10;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 class CookingCalendarService {
-  constructor({ CookingCalendarModel, CookingCalendarV2Model, Chat4KnowledgeModel }) {
+  constructor({ CookingCalendarModel, CookingCalendarV2Model, Chat4KnowledgeModel, CookbookRecipeModel = null }) {
     this.CookingCalendarModel = CookingCalendarModel;
     this.CookingCalendarV2Model = CookingCalendarV2Model;
     this.Chat4KnowledgeModel = Chat4KnowledgeModel;
+    this.CookbookRecipeModel = CookbookRecipeModel;
     this.categories = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Snack', 'Drink', 'Side', 'Other'];
   }
 
@@ -85,6 +86,20 @@ class CookingCalendarService {
     };
   }
 
+  mergeUsage(existingUsage, nextUsage) {
+    const existing = existingUsage || this.emptyUsage();
+    const payload = nextUsage || this.emptyUsage();
+    return {
+      totalCount: (existing.totalCount || 0) + (payload.totalCount || 0),
+      countLast90Days: (existing.countLast90Days || 0) + (payload.countLast90Days || 0),
+      countPrev90Days: (existing.countPrev90Days || 0) + (payload.countPrev90Days || 0),
+      existInLast10Days: Boolean(existing.existInLast10Days || payload.existInLast10Days),
+      lastCookedDate: existing.lastCookedDate && payload.lastCookedDate
+        ? (existing.lastCookedDate > payload.lastCookedDate ? existing.lastCookedDate : payload.lastCookedDate)
+        : (existing.lastCookedDate || payload.lastCookedDate || null),
+    };
+  }
+
   serializeUsage(usage) {
     if (!usage) {
       usage = this.emptyUsage();
@@ -102,21 +117,183 @@ class CookingCalendarService {
     return [...this.categories];
   }
 
+  normalizeObjectIdStrings(values, options = {}) {
+    const throwOnInvalid = options.throwOnInvalid !== false;
+    const errorMessage = options.errorMessage || 'Invalid recipe id.';
+    const input = Array.isArray(values) ? values : [values];
+    const ids = [];
+    const seen = new Set();
+
+    input.forEach((value) => {
+      if (value === null || value === undefined) {
+        return;
+      }
+      const normalized = String(value).trim();
+      if (!normalized) {
+        return;
+      }
+      if (!isValidObjectId(normalized)) {
+        if (throwOnInvalid) {
+          throw new Error(errorMessage);
+        }
+        return;
+      }
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        ids.push(normalized);
+      }
+    });
+
+    return ids;
+  }
+
+  toKnowledgeRecipeRecord(knowledge) {
+    const id = knowledge && knowledge._id ? knowledge._id.toString() : '';
+    if (!id) return null;
+    return {
+      id,
+      title: knowledge.title || '',
+      images: Array.isArray(knowledge.images) ? knowledge.images : [],
+      source: 'knowledge',
+      originKnowledgeId: null,
+      aliasIds: [id],
+      viewPath: `/chat4/viewknowledge/${id}`,
+    };
+  }
+
+  toCookbookRecipeRecord(recipe) {
+    const id = recipe && recipe._id ? recipe._id.toString() : '';
+    if (!id) return null;
+
+    const originKnowledgeId = recipe.originKnowledgeId ? String(recipe.originKnowledgeId).trim() : '';
+    const aliasIds = this.normalizeObjectIdStrings(
+      [id, originKnowledgeId],
+      { throwOnInvalid: false }
+    );
+
+    return {
+      id,
+      title: recipe.title || '',
+      images: Array.isArray(recipe.images) ? recipe.images : [],
+      source: 'cookbook',
+      originKnowledgeId: originKnowledgeId || null,
+      aliasIds,
+      viewPath: `/cooking/cookbook/${id}`,
+    };
+  }
+
+  toPublicRecipe(recipeRecord, usageMap) {
+    const mergedUsage = this.buildMergedUsageForRecipe(recipeRecord, usageMap);
+    return {
+      id: recipeRecord.id,
+      title: recipeRecord.title,
+      images: recipeRecord.images,
+      source: recipeRecord.source,
+      originKnowledgeId: recipeRecord.originKnowledgeId,
+      viewPath: recipeRecord.viewPath,
+      usage: this.serializeUsage(mergedUsage),
+    };
+  }
+
+  buildMergedUsageForRecipe(recipeRecord, usageMap) {
+    const aliasIds = this.normalizeObjectIdStrings(recipeRecord.aliasIds || recipeRecord.id, { throwOnInvalid: false });
+    return aliasIds.reduce(
+      (acc, id) => this.mergeUsage(acc, usageMap.get(id)),
+      this.emptyUsage()
+    );
+  }
+
+  async getUnifiedRecipeLibrary() {
+    const cookbookQuery = this.CookbookRecipeModel
+      ? this.CookbookRecipeModel.find({})
+      : null;
+
+    const [cookbookRecipes, knowledgeRecipes] = await Promise.all([
+      cookbookQuery ? cookbookQuery.lean() : [],
+      this.Chat4KnowledgeModel.find({ category: 'Recipe' }).lean(),
+    ]);
+
+    const recipes = [];
+    const recipeById = new Map();
+    const recipeByAnyId = new Map();
+    const transitionedKnowledgeIds = new Set();
+
+    cookbookRecipes.forEach((cookbook) => {
+      const record = this.toCookbookRecipeRecord(cookbook);
+      if (!record) return;
+
+      recipes.push(record);
+      recipeById.set(record.id, record);
+      recipeByAnyId.set(record.id, record);
+      if (record.originKnowledgeId) {
+        transitionedKnowledgeIds.add(record.originKnowledgeId);
+        recipeByAnyId.set(record.originKnowledgeId, record);
+      }
+    });
+
+    knowledgeRecipes.forEach((knowledge) => {
+      const record = this.toKnowledgeRecipeRecord(knowledge);
+      if (!record) return;
+      if (transitionedKnowledgeIds.has(record.id)) {
+        return;
+      }
+      recipes.push(record);
+      recipeById.set(record.id, record);
+      if (!recipeByAnyId.has(record.id)) {
+        recipeByAnyId.set(record.id, record);
+      }
+    });
+
+    recipes.sort((a, b) => {
+      const titleA = String(a.title || '').toLowerCase();
+      const titleB = String(b.title || '').toLowerCase();
+      if (titleA < titleB) return -1;
+      if (titleA > titleB) return 1;
+      return 0;
+    });
+
+    return {
+      recipes,
+      recipeById,
+      recipeByAnyId,
+    };
+  }
+
+  async resolveCanonicalRecipe(recipeId) {
+    if (!isValidObjectId(recipeId)) {
+      return null;
+    }
+
+    if (this.CookbookRecipeModel) {
+      const cookbookById = await this.CookbookRecipeModel.findOne({ _id: recipeId }).lean();
+      if (cookbookById) {
+        return this.toCookbookRecipeRecord(cookbookById);
+      }
+
+      const cookbookByOrigin = await this.CookbookRecipeModel
+        .findOne({ originKnowledgeId: recipeId })
+        .lean();
+      if (cookbookByOrigin) {
+        return this.toCookbookRecipeRecord(cookbookByOrigin);
+      }
+    }
+
+    const knowledge = await this.Chat4KnowledgeModel
+      .findOne({ _id: recipeId, category: 'Recipe' })
+      .lean();
+    if (!knowledge) {
+      return null;
+    }
+    return this.toKnowledgeRecipeRecord(knowledge);
+  }
+
   async getRecipeLibraryWithUsage() {
-    const [recipes, usageMap] = await Promise.all([
-      this.Chat4KnowledgeModel.find({ category: 'Recipe' }).sort({ title: 1 }).lean(),
+    const [library, usageMap] = await Promise.all([
+      this.getUnifiedRecipeLibrary(),
       this.buildUsageMap(),
     ]);
 
-    return recipes.map(recipe => {
-      const key = recipe._id.toString();
-      return {
-        id: key,
-        title: recipe.title,
-        images: Array.isArray(recipe.images) ? recipe.images : [],
-        usage: this.serializeUsage(usageMap.get(key)),
-      };
-    });
+    return library.recipes.map(recipe => this.toPublicRecipe(recipe, usageMap));
   }
 
   async buildUsageMap() {
@@ -250,20 +427,11 @@ class CookingCalendarService {
     ]);
 
     const usageMap = new Map();
-
     const upsert = (id, payload) => {
+      if (!id) return;
       const key = id.toString();
       const existing = usageMap.get(key) || this.emptyUsage();
-      const next = {
-        totalCount: (existing.totalCount || 0) + (payload.totalCount || 0),
-        countLast90Days: (existing.countLast90Days || 0) + (payload.countLast90Days || 0),
-        countPrev90Days: (existing.countPrev90Days || 0) + (payload.countPrev90Days || 0),
-        existInLast10Days: Boolean(existing.existInLast10Days || payload.existInLast10Days),
-        lastCookedDate: existing.lastCookedDate && payload.lastCookedDate
-          ? (existing.lastCookedDate > payload.lastCookedDate ? existing.lastCookedDate : payload.lastCookedDate)
-          : (existing.lastCookedDate || payload.lastCookedDate || null),
-      };
-      usageMap.set(key, next);
+      usageMap.set(key, this.mergeUsage(existing, payload));
     };
 
     oldUsage.forEach(item => upsert(item._id, item));
@@ -278,34 +446,19 @@ class CookingCalendarService {
     }
 
     const range = this.createDateRange(startDate, endDate);
-    const docs = await this.CookingCalendarV2Model.find({
-      date: { $gte: startDate, $lte: endDate },
-    }).lean();
-
-    const recipeIds = new Set();
-    docs.forEach(doc => {
-      (doc.entries || []).forEach(entry => {
-        if (entry.recipeId) {
-          recipeIds.add(entry.recipeId.toString());
-        }
-      });
-    });
-
-    const [knowledge, usageMap] = await Promise.all([
-      recipeIds.size > 0
-        ? this.Chat4KnowledgeModel.find({ _id: { $in: Array.from(recipeIds, id => new Types.ObjectId(id)) } }).lean()
-        : [],
+    const [docs, library, usageMap] = await Promise.all([
+      this.CookingCalendarV2Model.find({
+        date: { $gte: startDate, $lte: endDate },
+      }).lean(),
+      this.getUnifiedRecipeLibrary(),
       this.buildUsageMap(),
     ]);
-
-    const knowledgeMap = new Map(knowledge.map(k => [k._id.toString(), k]));
 
     const base = range.map(date => ({
       date,
       weekday: this.getWeekdayName(date),
       entries: [],
     }));
-
     const dayMap = new Map(base.map(entry => [entry.date, entry]));
 
     docs.forEach(doc => {
@@ -327,18 +480,23 @@ class CookingCalendarService {
       });
 
       sortedEntries.forEach(entry => {
-        const key = entry.recipeId ? entry.recipeId.toString() : null;
-        const knowledgeEntry = key ? knowledgeMap.get(key) : null;
-        const usage = key ? this.serializeUsage(usageMap.get(key)) : this.serializeUsage();
+        const storedRecipeId = entry.recipeId ? entry.recipeId.toString() : null;
+        const canonicalRecipe = storedRecipeId ? library.recipeByAnyId.get(storedRecipeId) : null;
+        const usage = canonicalRecipe
+          ? this.serializeUsage(this.buildMergedUsageForRecipe(canonicalRecipe, usageMap))
+          : this.serializeUsage(storedRecipeId ? usageMap.get(storedRecipeId) : null);
+
         day.entries.push({
           entryId: entry._id.toString(),
-          recipeId: key,
+          recipeId: storedRecipeId,
           category: entry.category,
           addedAt: entry.addedAt ? new Date(entry.addedAt).toISOString() : null,
-          recipe: knowledgeEntry ? {
-            id: key,
-            title: knowledgeEntry.title,
-            image: Array.isArray(knowledgeEntry.images) && knowledgeEntry.images.length > 0 ? knowledgeEntry.images[0] : null,
+          recipe: canonicalRecipe ? {
+            id: canonicalRecipe.id,
+            title: canonicalRecipe.title,
+            image: Array.isArray(canonicalRecipe.images) && canonicalRecipe.images.length > 0 ? canonicalRecipe.images[0] : null,
+            source: canonicalRecipe.source,
+            viewPath: canonicalRecipe.viewPath,
           } : null,
           usage,
         });
@@ -352,17 +510,21 @@ class CookingCalendarService {
     };
   }
 
-  async getLastCookedDate(recipeId, beforeDate) {
-    if (!isValidObjectId(recipeId)) {
+  async getLastCookedDate(recipeId, beforeDate, additionalRecipeIds = []) {
+    const allRecipeIds = this.normalizeObjectIdStrings(
+      [recipeId, ...(Array.isArray(additionalRecipeIds) ? additionalRecipeIds : [additionalRecipeIds])],
+      { throwOnInvalid: true, errorMessage: 'Invalid recipe id.' }
+    );
+    if (allRecipeIds.length === 0) {
       throw new Error('Invalid recipe id.');
     }
-    const recipeObjectId = new Types.ObjectId(recipeId);
 
     if (beforeDate && !this.isValidDate(beforeDate)) {
       throw new Error('Invalid date format for lookup. Expected YYYY-MM-DD.');
     }
 
-    const v2Filter = { 'entries.recipeId': recipeObjectId };
+    const recipeObjectIds = allRecipeIds.map(id => new Types.ObjectId(id));
+    const v2Filter = { 'entries.recipeId': { $in: recipeObjectIds } };
     if (beforeDate) {
       v2Filter.date = { $lt: beforeDate };
     }
@@ -370,19 +532,18 @@ class CookingCalendarService {
     const [recentV2] = await this.CookingCalendarV2Model.aggregate([
       { $match: v2Filter },
       { $unwind: '$entries' },
-      { $match: { 'entries.recipeId': recipeObjectId } },
+      { $match: { 'entries.recipeId': { $in: recipeObjectIds } } },
       { $sort: { date: -1 } },
       { $limit: 1 },
       { $project: { date: 1 } },
     ]).exec();
 
     const v2Date = recentV2 ? recentV2.date : null;
-
     const v1Filter = {
       $or: [
-        { lunchToCook: recipeId },
-        { dinnerToCook: recipeId },
-        { dessertToCook: recipeId },
+        { lunchToCook: { $in: allRecipeIds } },
+        { dinnerToCook: { $in: allRecipeIds } },
+        { dessertToCook: { $in: allRecipeIds } },
       ],
     };
     if (beforeDate) {
@@ -406,32 +567,32 @@ class CookingCalendarService {
       throw new Error('Invalid recipe id provided.');
     }
 
-    const [recipe, lastCookedBefore] = await Promise.all([
-      this.Chat4KnowledgeModel.findOne({ _id: recipeId }).lean(),
-      this.getLastCookedDate(recipeId, date),
-    ]);
-
+    const recipe = await this.resolveCanonicalRecipe(recipeId);
     if (!recipe) {
       throw new Error('Recipe not found.');
     }
 
-    let warning = null;
+    const aliasIds = recipe.aliasIds.filter(id => id !== recipe.id);
+    const lastCookedBefore = await this.getLastCookedDate(recipe.id, date, aliasIds);
+
     if (lastCookedBefore) {
       const lastCookedDate = this.parseDate(lastCookedBefore);
       const targetDate = this.parseDate(date);
       const diffDays = Math.floor((targetDate.getTime() - lastCookedDate.getTime()) / MS_PER_DAY);
       if (diffDays >= 0 && diffDays < DAYS_WARNING_WINDOW && !force) {
-        warning = {
-          lastCookedDate: lastCookedBefore,
-          daysSince: diffDays,
+        return {
+          status: 'warning',
+          warning: {
+            lastCookedDate: lastCookedBefore,
+            daysSince: diffDays,
+          },
         };
-        return { status: 'warning', warning };
       }
     }
 
     const entry = {
       _id: new Types.ObjectId(),
-      recipeId: new Types.ObjectId(recipeId),
+      recipeId: new Types.ObjectId(recipe.id),
       category: this.normalizeCategory(category),
       addedAt: new Date(),
     };
@@ -455,13 +616,15 @@ class CookingCalendarService {
       status: 'created',
       entry: {
         entryId: entry._id.toString(),
-        recipeId: recipeId.toString(),
+        recipeId: recipe.id,
         category: entry.category,
         addedAt: entry.addedAt.toISOString(),
         recipe: {
-          id: recipe._id.toString(),
+          id: recipe.id,
           title: recipe.title,
           image: Array.isArray(recipe.images) && recipe.images.length > 0 ? recipe.images[0] : null,
+          source: recipe.source,
+          viewPath: recipe.viewPath,
         },
       },
     };
@@ -492,17 +655,19 @@ class CookingCalendarService {
   }
 
   async getStatistics() {
-    const [recipes, usageMap] = await Promise.all([
-      this.Chat4KnowledgeModel.find({ category: 'Recipe' }).lean(),
+    const [library, usageMap] = await Promise.all([
+      this.getUnifiedRecipeLibrary(),
       this.buildUsageMap(),
     ]);
 
-    const rows = recipes.map(recipe => {
-      const key = recipe._id.toString();
-      const usage = this.serializeUsage(usageMap.get(key));
+    const rows = library.recipes.map((recipe) => {
+      const usage = this.serializeUsage(this.buildMergedUsageForRecipe(recipe, usageMap));
       return {
-        recipeId: key,
+        recipeId: recipe.id,
         title: recipe.title,
+        source: recipe.source,
+        originKnowledgeId: recipe.originKnowledgeId,
+        viewPath: recipe.viewPath,
         usage,
       };
     });

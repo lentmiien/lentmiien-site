@@ -225,6 +225,7 @@
 
   function renderEntryItem(entry, dayDate) {
     const recipeId = entry.recipe?.id ? entry.recipe.id : '';
+    const recipeHref = entry.recipe?.viewPath || (recipeId ? `/chat4/viewknowledge/${recipeId}` : '');
     const recipeTitle = entry.recipe?.title ? escapeHtml(entry.recipe.title) : 'Unknown recipe';
     // const badge = entry.usage?.existInLast10Days ? '<span class="badge bg-warning text-dark ms-2">Cooked recently</span>' : '';
     const lastCookedText = entry.usage?.lastCookedDate
@@ -240,7 +241,7 @@
         <div class="d-flex align-items-center gap-3 flex-grow-1">
           ${imageMarkup}
           <div>
-            <div class="fw-semibold"><a href="/chat4/viewknowledge/${recipeId}" target="_blank">${recipeTitle}</a></div>
+            <div class="fw-semibold">${recipeHref ? `<a href="${escapeHtml(recipeHref)}" target="_blank">${recipeTitle}</a>` : recipeTitle}</div>
             <div class="entry-meta">Category: ${escapeHtml(entry.category)}</div>
             <div class="entry-meta">${lastCookedText} | ${countsText}</div>
           </div>
