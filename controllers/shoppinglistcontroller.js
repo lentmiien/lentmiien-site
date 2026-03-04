@@ -1,4 +1,11 @@
-const { Task, ESCategory, ESItem, CookingCalendarV2Model, Chat4KnowledgeModel } = require('../database');
+const {
+  Task,
+  ESCategory,
+  ESItem,
+  CookingCalendarV2Model,
+  Chat4KnowledgeModel,
+  CookbookRecipeModel,
+} = require('../database');
 const logger = require('../utils/logger');
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -95,23 +102,64 @@ exports.shopping_list = async (req, res) => {
     });
 
     let knowledgeLookup = {};
+    let cookbookLookup = {};
     if (recipeIds.size > 0) {
-      const knowledge = await Chat4KnowledgeModel.find({
-        _id: { $in: Array.from(recipeIds) },
-      }).lean();
+      const [knowledge, cookbook] = await Promise.all([
+        Chat4KnowledgeModel.find({
+          _id: { $in: Array.from(recipeIds) },
+        }).lean(),
+        CookbookRecipeModel.find({
+          _id: { $in: Array.from(recipeIds) },
+        }).lean(),
+      ]);
+
       knowledgeLookup = knowledge.reduce((acc, item) => {
+        acc[item._id.toString()] = item;
+        return acc;
+      }, {});
+
+      cookbookLookup = cookbook.reduce((acc, item) => {
         acc[item._id.toString()] = item;
         return acc;
       }, {});
     }
 
     const cookingEntries = calendarEntries.map(entry => {
+      const cookbook = entry.recipeId ? cookbookLookup[entry.recipeId] : null;
+      if (cookbook) {
+        return {
+          id: entry.id,
+          date: entry.date,
+          category: entry.category,
+          recipeId: entry.recipeId,
+          source: 'cookbook',
+          title: cookbook.title || 'Unknown recipe',
+          contentMarkdown: '',
+          portions: Number.isFinite(cookbook.portions) ? cookbook.portions : null,
+          ingredients: Array.isArray(cookbook.ingredients)
+            ? cookbook.ingredients.map((ingredient, index) => ({
+              id: `${entry.id}-ingredient-${index}`,
+              label: ingredient.ingredient_label || `Ingredient ${index + 1}`,
+              amount: Number.isFinite(ingredient.amount) ? ingredient.amount : null,
+              unit: ingredient.amount_unit || '',
+              amountInGram: Number.isFinite(ingredient.amount_in_gram) ? ingredient.amount_in_gram : null,
+            }))
+            : [],
+          optionalVariants: Array.isArray(cookbook.suggestions)
+            ? cookbook.suggestions
+              .map((variant) => (variant && variant.label ? String(variant.label).trim() : ''))
+              .filter(Boolean)
+            : [],
+        };
+      }
+
       const knowledge = entry.recipeId ? knowledgeLookup[entry.recipeId] : null;
       return {
         id: entry.id,
         date: entry.date,
         category: entry.category,
         recipeId: entry.recipeId,
+        source: 'knowledge',
         title: knowledge ? knowledge.title : 'Unknown recipe',
         contentMarkdown: knowledge ? knowledge.contentMarkdown : '',
       };

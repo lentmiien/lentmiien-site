@@ -27,15 +27,21 @@
   const updatedAtEl = document.getElementById('shoppingUpdatedAt');
 
   const sources = buildSources(data);
-  const allItems = Object.values(sources).flatMap(source => source.items);
 
   let state = loadState();
   if (!state || state.date !== todayLabel) {
     localStorage.removeItem(STORAGE_KEY);
-    state = { date: todayLabel, items: {} };
+    state = { date: todayLabel, items: {}, cookbookGroups: {} };
   }
 
-  syncState(state, allItems);
+  if (!state.items || typeof state.items !== 'object') {
+    state.items = {};
+  }
+  if (!state.cookbookGroups || typeof state.cookbookGroups !== 'object') {
+    state.cookbookGroups = {};
+  }
+
+  syncState(state, sources);
   saveState(state);
 
   renderAll();
@@ -43,6 +49,7 @@
 
   function buildSources(payload) {
     const tobuy = (payload.toBuyTasks || []).map(task => ({
+      kind: 'basic',
       key: `tobuy:${task.id}`,
       title: task.title || 'Untitled task',
       description: task.description || '',
@@ -55,6 +62,7 @@
       const current = formatAmount(item.currentStock);
       const recommended = formatAmount(item.recommendedStock);
       return {
+        kind: 'basic',
         key: `emergency:${item.id}`,
         title: item.name || 'Unlabeled category',
         description: `Need ${remaining} ${item.unit}`,
@@ -63,19 +71,122 @@
       };
     });
 
-    const cooking = (payload.cookingEntries || []).map(entry => ({
-      key: `cooking:${entry.id}`,
-      title: entry.title || 'Recipe',
-      description: entry.category ? `Category: ${entry.category}` : 'Category: Other',
-      meta: [`Date: ${entry.date}`],
-      details: entry.contentMarkdown || 'No recipe notes available.',
-    }));
+    const cookbookGroups = new Map();
+    const legacyCooking = [];
+
+    (payload.cookingEntries || []).forEach((entry) => {
+      if (entry && entry.source === 'cookbook') {
+        const recipeKey = String(entry.recipeId || entry.id || '').trim();
+        if (!recipeKey) {
+          return;
+        }
+
+        let group = cookbookGroups.get(recipeKey);
+        if (!group) {
+          group = {
+            recipeKey,
+            title: entry.title || 'Recipe',
+            basePortions: parsePositiveNumber(entry.portions),
+            ingredients: normalizeCookbookIngredients(entry.ingredients),
+            optionalVariants: new Set(),
+            categories: new Set(),
+            dates: new Set(),
+            count: 0,
+            sortDate: entry.date || '',
+          };
+          cookbookGroups.set(recipeKey, group);
+        }
+
+        group.count += 1;
+        if (entry.category) {
+          group.categories.add(entry.category);
+        }
+        if (entry.date) {
+          group.dates.add(entry.date);
+          if (!group.sortDate || entry.date < group.sortDate) {
+            group.sortDate = entry.date;
+          }
+        }
+        if (!group.basePortions) {
+          group.basePortions = parsePositiveNumber(entry.portions);
+        }
+        if ((!group.ingredients || group.ingredients.length === 0) && Array.isArray(entry.ingredients)) {
+          group.ingredients = normalizeCookbookIngredients(entry.ingredients);
+        }
+        if (Array.isArray(entry.optionalVariants)) {
+          entry.optionalVariants.forEach((variant) => {
+            const label = String(variant || '').trim();
+            if (label) {
+              group.optionalVariants.add(label);
+            }
+          });
+        }
+        return;
+      }
+
+      legacyCooking.push({
+        kind: 'legacy',
+        key: `cooking:${entry.id}`,
+        title: entry.title || 'Recipe',
+        description: entry.category ? `Category: ${entry.category}` : 'Category: Other',
+        meta: [`Date: ${entry.date}`],
+        details: entry.contentMarkdown || 'No recipe notes available.',
+        sortDate: entry.date || '',
+      });
+    });
+
+    const groupedCookbook = Array.from(cookbookGroups.values()).map((group) => {
+      const categoryList = Array.from(group.categories).filter(Boolean).sort();
+      const dateList = Array.from(group.dates).filter(Boolean).sort();
+      const basePortions = group.basePortions;
+      const defaultPortions = basePortions
+        ? basePortions * Math.max(group.count, 1)
+        : Math.max(group.count, 1);
+
+      const metaLabel = dateList.length <= 1
+        ? `Date: ${dateList[0] || 'Unknown'}`
+        : `Dates: ${dateList.join(', ')}`;
+
+      return {
+        kind: 'cookbook',
+        groupKey: `cookbook:${group.recipeKey}`,
+        title: group.title,
+        description: categoryList.length ? `Category: ${categoryList.join(', ')}` : 'Category: Other',
+        meta: [metaLabel],
+        basePortions,
+        defaultPortions,
+        ingredients: Array.isArray(group.ingredients) ? group.ingredients : [],
+        optionalVariants: Array.from(group.optionalVariants).sort(),
+        sortDate: group.sortDate,
+      };
+    });
+
+    const cooking = [...groupedCookbook, ...legacyCooking].sort((a, b) => {
+      if (a.sortDate !== b.sortDate) {
+        return String(a.sortDate).localeCompare(String(b.sortDate));
+      }
+      return String(a.title || '').localeCompare(String(b.title || ''));
+    });
 
     return {
       tobuy: { label: 'To Buy Tasks', items: tobuy },
       emergency: { label: 'Emergency Stock', items: emergency },
       cooking: { label: 'Cooking Calendar', items: cooking },
     };
+  }
+
+  function normalizeCookbookIngredients(rawIngredients) {
+    if (!Array.isArray(rawIngredients)) {
+      return [];
+    }
+
+    return rawIngredients.map((ingredient, index) => ({
+      index,
+      label: String(ingredient?.label || `Ingredient ${index + 1}`),
+      amount: Number.isFinite(ingredient?.amount) ? ingredient.amount : null,
+      unit: String(ingredient?.unit || ''),
+      amountInGram: Number.isFinite(ingredient?.amountInGram) ? ingredient.amountInGram : null,
+    }));
   }
 
   function loadState() {
@@ -94,15 +205,28 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
   }
 
-  function syncState(nextState, items) {
-    const currentKeys = new Set(items.map(item => item.key));
-    Object.keys(nextState.items).forEach(key => {
-      if (!currentKeys.has(key)) {
+  function syncState(nextState, sourceData) {
+    const cardItems = [];
+    const cookbookItems = [];
+
+    Object.values(sourceData).forEach((source) => {
+      (source.items || []).forEach((item) => {
+        if (item.kind === 'cookbook') {
+          cookbookItems.push(item);
+        } else {
+          cardItems.push(item);
+        }
+      });
+    });
+
+    const currentCardKeys = new Set(cardItems.map(item => item.key));
+    Object.keys(nextState.items).forEach((key) => {
+      if (!currentCardKeys.has(key)) {
         delete nextState.items[key];
       }
     });
 
-    items.forEach(item => {
+    cardItems.forEach((item) => {
       if (!nextState.items[item.key]) {
         nextState.items[item.key] = {
           done: false,
@@ -110,12 +234,40 @@
         };
       }
     });
+
+    const currentCookbookKeys = new Set(cookbookItems.map(item => item.groupKey));
+    Object.keys(nextState.cookbookGroups).forEach((groupKey) => {
+      if (!currentCookbookKeys.has(groupKey)) {
+        delete nextState.cookbookGroups[groupKey];
+      }
+    });
+
+    cookbookItems.forEach((item) => {
+      ensureCookbookGroupState(item);
+    });
+  }
+
+  function ensureCookbookGroupState(item) {
+    const existing = state.cookbookGroups[item.groupKey] || {};
+    const portions = parsePositiveNumber(existing.portions) || item.defaultPortions;
+    const checked = {};
+
+    item.ingredients.forEach((ingredient) => {
+      checked[ingredient.index] = Boolean(existing.checked && existing.checked[ingredient.index]);
+    });
+
+    state.cookbookGroups[item.groupKey] = {
+      portions,
+      checked,
+    };
+
+    return state.cookbookGroups[item.groupKey];
   }
 
   function renderAll() {
     renderSection('tobuy', sources.tobuy.items);
     renderSection('emergency', sources.emergency.items);
-    renderSection('cooking', sources.cooking.items);
+    renderCookingSection(sources.cooking.items);
     updateCounts();
     renderUpdatedAt();
   }
@@ -132,86 +284,262 @@
       empty.className = 'shopping-empty';
       empty.textContent = sourceKey === 'tobuy'
         ? 'Nothing queued right now.'
-        : sourceKey === 'emergency'
-          ? 'Stock levels are healthy.'
-          : 'No upcoming recipes in the next week.';
+        : 'Stock levels are healthy.';
       container.appendChild(empty);
       return;
     }
 
     const fragment = document.createDocumentFragment();
     items.forEach((item, index) => {
-      const card = document.createElement('article');
-      card.className = 'shopping-item';
-      card.dataset.key = item.key;
-      card.dataset.done = state.items[item.key]?.done ? 'true' : 'false';
-      card.tabIndex = 0;
-      card.setAttribute('role', 'button');
-      card.setAttribute('aria-pressed', state.items[item.key]?.done ? 'true' : 'false');
-      card.style.setProperty('--item-delay', `${Math.min(index * 0.05, 0.4)}s`);
-
-      const marker = document.createElement('div');
-      marker.className = 'shopping-item__marker';
-
-      const content = document.createElement('div');
-
-      const header = document.createElement('div');
-      header.className = 'shopping-item__header';
-
-      const title = document.createElement('h3');
-      title.className = 'shopping-item__title';
-      title.textContent = item.title;
-
-      const status = document.createElement('span');
-      status.className = 'shopping-item__status';
-      status.textContent = state.items[item.key]?.done ? 'Done' : 'Not done';
-
-      header.appendChild(title);
-      header.appendChild(status);
-
-      content.appendChild(header);
-
-      if (item.description) {
-        const desc = document.createElement('p');
-        desc.className = 'shopping-item__description';
-        desc.textContent = item.description;
-        content.appendChild(desc);
-      }
-
-      if (Array.isArray(item.meta) && item.meta.length) {
-        const meta = document.createElement('div');
-        meta.className = 'shopping-item__meta';
-        item.meta.forEach(text => {
-          const chip = document.createElement('span');
-          chip.className = 'shopping-chip';
-          chip.textContent = text;
-          meta.appendChild(chip);
-        });
-        content.appendChild(meta);
-      }
-
-      if (item.details) {
-        const details = document.createElement('div');
-        details.className = 'shopping-item__details';
-        details.setAttribute('data-no-toggle', 'true');
-        details.textContent = item.details;
-        content.appendChild(details);
-      }
-
-      card.appendChild(marker);
-      card.appendChild(content);
-      fragment.appendChild(card);
+      fragment.appendChild(createCardElement(item, index));
     });
 
     container.appendChild(fragment);
   }
 
+  function renderCookingSection(items) {
+    const container = listEls.cooking;
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = '';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'shopping-empty';
+      empty.textContent = 'No upcoming recipes in the next week.';
+      container.appendChild(empty);
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    items.forEach((item, index) => {
+      if (item.kind === 'cookbook') {
+        fragment.appendChild(createCookbookGroupElement(item, index));
+      } else {
+        fragment.appendChild(createCardElement(item, index));
+      }
+    });
+
+    container.appendChild(fragment);
+  }
+
+  function createCardElement(item, index) {
+    const card = document.createElement('article');
+    card.className = 'shopping-item';
+    card.dataset.key = item.key;
+    card.dataset.done = state.items[item.key]?.done ? 'true' : 'false';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-pressed', state.items[item.key]?.done ? 'true' : 'false');
+    card.style.setProperty('--item-delay', `${Math.min(index * 0.05, 0.4)}s`);
+
+    const marker = document.createElement('div');
+    marker.className = 'shopping-item__marker';
+
+    const content = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.className = 'shopping-item__header';
+
+    const title = document.createElement('h3');
+    title.className = 'shopping-item__title';
+    title.textContent = item.title;
+
+    const status = document.createElement('span');
+    status.className = 'shopping-item__status';
+    status.textContent = state.items[item.key]?.done ? 'Done' : 'Not done';
+
+    header.appendChild(title);
+    header.appendChild(status);
+    content.appendChild(header);
+
+    if (item.description) {
+      const desc = document.createElement('p');
+      desc.className = 'shopping-item__description';
+      desc.textContent = item.description;
+      content.appendChild(desc);
+    }
+
+    if (Array.isArray(item.meta) && item.meta.length) {
+      const meta = document.createElement('div');
+      meta.className = 'shopping-item__meta';
+      item.meta.forEach((text) => {
+        const chip = document.createElement('span');
+        chip.className = 'shopping-chip';
+        chip.textContent = text;
+        meta.appendChild(chip);
+      });
+      content.appendChild(meta);
+    }
+
+    if (item.details) {
+      const details = document.createElement('div');
+      details.className = 'shopping-item__details';
+      details.setAttribute('data-no-toggle', 'true');
+      details.textContent = item.details;
+      content.appendChild(details);
+    }
+
+    card.appendChild(marker);
+    card.appendChild(content);
+    return card;
+  }
+
+  function createCookbookGroupElement(item, index) {
+    const groupState = ensureCookbookGroupState(item);
+    const portions = parsePositiveNumber(groupState.portions) || item.defaultPortions;
+    const basePortions = item.basePortions || item.defaultPortions;
+    const scale = basePortions > 0 ? portions / basePortions : 1;
+    const done = isCookbookGroupDone(item, groupState);
+
+    const card = document.createElement('article');
+    card.className = 'shopping-cookbook-group';
+    card.dataset.groupKey = item.groupKey;
+    card.dataset.done = done ? 'true' : 'false';
+    card.style.setProperty('--item-delay', `${Math.min(index * 0.05, 0.4)}s`);
+
+    const marker = document.createElement('div');
+    marker.className = 'shopping-cookbook-group__marker';
+
+    const content = document.createElement('div');
+
+    const header = document.createElement('div');
+    header.className = 'shopping-item__header';
+
+    const title = document.createElement('h3');
+    title.className = 'shopping-item__title';
+    title.textContent = item.title;
+
+    const status = document.createElement('span');
+    status.className = 'shopping-item__status';
+    status.textContent = done ? 'Done' : 'Not done';
+
+    header.appendChild(title);
+    header.appendChild(status);
+    content.appendChild(header);
+
+    if (item.description) {
+      const desc = document.createElement('p');
+      desc.className = 'shopping-item__description';
+      desc.textContent = item.description;
+      content.appendChild(desc);
+    }
+
+    if (Array.isArray(item.meta) && item.meta.length) {
+      const meta = document.createElement('div');
+      meta.className = 'shopping-item__meta';
+      item.meta.forEach((text) => {
+        const chip = document.createElement('span');
+        chip.className = 'shopping-chip';
+        chip.textContent = text;
+        meta.appendChild(chip);
+      });
+      content.appendChild(meta);
+    }
+
+    const portionsWrap = document.createElement('div');
+    portionsWrap.className = 'shopping-cookbook-portions';
+
+    const portionsLabel = document.createElement('label');
+    portionsLabel.className = 'shopping-cookbook-portions__label';
+    portionsLabel.textContent = 'Number of portions';
+
+    const portionsInput = document.createElement('input');
+    portionsInput.className = 'shopping-cookbook-portions__input';
+    portionsInput.type = 'number';
+    portionsInput.min = '0.1';
+    portionsInput.step = '0.5';
+    portionsInput.value = formatInputNumber(portions);
+    portionsInput.dataset.action = 'portion-input';
+    portionsInput.dataset.groupKey = item.groupKey;
+
+    portionsLabel.appendChild(portionsInput);
+    portionsWrap.appendChild(portionsLabel);
+    content.appendChild(portionsWrap);
+
+    if (item.ingredients.length) {
+      const list = document.createElement('ul');
+      list.className = 'shopping-ingredient-list';
+
+      item.ingredients.forEach((ingredient) => {
+        const li = document.createElement('li');
+        li.className = 'shopping-ingredient-list__item';
+
+        const rowLabel = document.createElement('label');
+        rowLabel.className = 'shopping-ingredient-row';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'shopping-ingredient-row__checkbox';
+        checkbox.dataset.action = 'ingredient-toggle';
+        checkbox.dataset.groupKey = item.groupKey;
+        checkbox.dataset.ingredientIndex = String(ingredient.index);
+        checkbox.checked = Boolean(groupState.checked[ingredient.index]);
+
+        const textWrap = document.createElement('span');
+        textWrap.className = 'shopping-ingredient-row__text';
+
+        const titleText = document.createElement('span');
+        titleText.className = 'shopping-ingredient-row__title';
+        titleText.textContent = ingredient.label;
+
+        const amountText = document.createElement('span');
+        amountText.className = 'shopping-ingredient-row__amount';
+        amountText.textContent = formatIngredientAmount(ingredient, scale);
+
+        textWrap.appendChild(titleText);
+        textWrap.appendChild(amountText);
+
+        rowLabel.appendChild(checkbox);
+        rowLabel.appendChild(textWrap);
+
+        li.appendChild(rowLabel);
+        list.appendChild(li);
+      });
+
+      content.appendChild(list);
+    } else {
+      const noIngredients = document.createElement('div');
+      noIngredients.className = 'shopping-item__details';
+      noIngredients.textContent = 'No ingredients available for this cookbook entry.';
+      content.appendChild(noIngredients);
+    }
+
+    if (item.optionalVariants.length) {
+      const variantsBlock = document.createElement('div');
+      variantsBlock.className = 'shopping-cookbook-variants';
+
+      const variantsLabel = document.createElement('p');
+      variantsLabel.className = 'shopping-cookbook-variants__label';
+      variantsLabel.textContent = 'Optional';
+      variantsBlock.appendChild(variantsLabel);
+
+      const variantsMeta = document.createElement('div');
+      variantsMeta.className = 'shopping-item__meta';
+      item.optionalVariants.forEach((variant) => {
+        const chip = document.createElement('span');
+        chip.className = 'shopping-chip';
+        chip.textContent = variant;
+        variantsMeta.appendChild(chip);
+      });
+      variantsBlock.appendChild(variantsMeta);
+      content.appendChild(variantsBlock);
+    }
+
+    card.appendChild(marker);
+    card.appendChild(content);
+
+    return card;
+  }
+
   function bindInteractions() {
-    Object.values(listEls).forEach(container => {
+    Object.values(listEls).forEach((container) => {
       if (!container) {
         return;
       }
-      container.addEventListener('click', event => {
+
+      container.addEventListener('click', (event) => {
         const card = event.target.closest('.shopping-item');
         if (!card || !container.contains(card)) {
           return;
@@ -226,7 +554,7 @@
         toggleItem(card);
       });
 
-      container.addEventListener('keydown', event => {
+      container.addEventListener('keydown', (event) => {
         if (event.key !== 'Enter' && event.key !== ' ') {
           return;
         }
@@ -238,6 +566,59 @@
         toggleItem(card);
       });
     });
+
+    if (listEls.cooking) {
+      listEls.cooking.addEventListener('change', handleCookingInteraction);
+    }
+  }
+
+  function handleCookingInteraction(event) {
+    const ingredientCheckbox = event.target.closest('input[data-action="ingredient-toggle"]');
+    if (ingredientCheckbox) {
+      const groupKey = ingredientCheckbox.dataset.groupKey;
+      const ingredientIndex = Number.parseInt(ingredientCheckbox.dataset.ingredientIndex, 10);
+      if (groupKey && Number.isFinite(ingredientIndex)) {
+        updateCookbookIngredient(groupKey, ingredientIndex, ingredientCheckbox.checked);
+      }
+      return;
+    }
+
+    const portionsInput = event.target.closest('input[data-action="portion-input"]');
+    if (portionsInput) {
+      const groupKey = portionsInput.dataset.groupKey;
+      if (groupKey) {
+        updateCookbookPortions(groupKey, portionsInput.value);
+      }
+    }
+  }
+
+  function updateCookbookIngredient(groupKey, ingredientIndex, checked) {
+    const groupState = state.cookbookGroups[groupKey];
+    if (!groupState || !groupState.checked) {
+      return;
+    }
+    groupState.checked[ingredientIndex] = Boolean(checked);
+    saveState(state);
+    renderCookingSection(sources.cooking.items);
+    updateCounts();
+  }
+
+  function updateCookbookPortions(groupKey, rawValue) {
+    const parsed = parsePositiveNumber(rawValue);
+    if (!parsed) {
+      renderCookingSection(sources.cooking.items);
+      return;
+    }
+
+    const groupState = state.cookbookGroups[groupKey];
+    if (!groupState) {
+      return;
+    }
+
+    groupState.portions = parsed;
+    saveState(state);
+    renderCookingSection(sources.cooking.items);
+    updateCounts();
   }
 
   function toggleItem(card) {
@@ -263,7 +644,7 @@
 
     Object.entries(sources).forEach(([key, source]) => {
       const items = source.items || [];
-      const doneCount = items.filter(item => state.items[item.key]?.done).length;
+      const doneCount = items.filter(item => isItemDone(item)).length;
       const totalCount = items.length;
       if (countEls[key]) {
         countEls[key].textContent = `${doneCount}/${totalCount}`;
@@ -284,6 +665,22 @@
     }
   }
 
+  function isItemDone(item) {
+    if (item.kind === 'cookbook') {
+      const groupState = state.cookbookGroups[item.groupKey];
+      return isCookbookGroupDone(item, groupState);
+    }
+    return Boolean(state.items[item.key]?.done);
+  }
+
+  function isCookbookGroupDone(item, groupState = null) {
+    const localState = groupState || state.cookbookGroups[item.groupKey];
+    if (!item.ingredients.length || !localState || !localState.checked) {
+      return false;
+    }
+    return item.ingredients.every(ingredient => Boolean(localState.checked[ingredient.index]));
+  }
+
   function renderUpdatedAt() {
     if (!updatedAtEl) {
       return;
@@ -300,6 +697,43 @@
     }
   }
 
+  function formatIngredientAmount(ingredient, scale) {
+    const amountValue = Number.isFinite(ingredient.amount) ? ingredient.amount * scale : null;
+    const gramValue = Number.isFinite(ingredient.amountInGram) ? ingredient.amountInGram * scale : null;
+
+    const amountText = amountValue !== null
+      ? `${formatAmount(amountValue)}${ingredient.unit ? ` ${ingredient.unit}` : ''}`
+      : '';
+    const gramText = gramValue !== null ? `${formatAmount(gramValue)} g` : '';
+
+    if (amountText && gramText) {
+      return `${amountText} (${gramText})`;
+    }
+    if (amountText) {
+      return amountText;
+    }
+    if (gramText) {
+      return gramText;
+    }
+    return 'amount not specified';
+  }
+
+  function parsePositiveNumber(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) {
+      return null;
+    }
+    return number;
+  }
+
+  function formatInputNumber(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      return '1';
+    }
+    return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(1);
+  }
+
   function formatShortDate(value) {
     try {
       const date = new Date(value);
@@ -313,9 +747,13 @@
     if (value === null || value === undefined) {
       return '0';
     }
-    if (Number.isInteger(value)) {
-      return String(value);
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return '0';
     }
-    return Number(value).toFixed(1);
+    if (Number.isInteger(numeric)) {
+      return String(numeric);
+    }
+    return numeric.toFixed(1);
   }
 })();
