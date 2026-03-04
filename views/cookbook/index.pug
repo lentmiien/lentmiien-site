@@ -65,7 +65,7 @@ block content
               .card-body
                 .d-flex.justify-content-between.align-items-start.gap-2
                   h5.mb-0
-                    a.link-dark.text-decoration-none(href=`/cooking/cookbook/${recipe._id.toString()}`)= recipe.title
+                    a.recipe-title-link.text-decoration-none(href=`/cooking/cookbook/${recipe._id.toString()}`)= recipe.title
                   small.text-muted= formatDate(recipe.updatedDate)
                 .text-muted.small
                   if recipe.food_category

@@ -14,6 +14,15 @@
   gap: 0.75rem;
 }
 
+.cookbook-page .recipe-card .recipe-title-link {
+  color: #f3f4f6;
+}
+
+.cookbook-page .recipe-card .recipe-title-link:hover,
+.cookbook-page .recipe-card .recipe-title-link:focus {
+  color: #bfdbfe;
+}
+
 .cookbook-page .recipe-card .recipe-tags {
   display: flex;
   flex-wrap: wrap;
@@ -88,6 +97,7 @@
   padding: 0.2rem 0.7rem;
   font-size: 0.85rem;
   background: #f3f4f6;
+  color: #111827;
 }
 
 .cookbook-view-page .nutrition-badge.high {
@@ -100,6 +110,22 @@
 
 .cookbook-view-page .nutrition-badge.low {
   background: #fee2e2;
+}
+
+.cookbook-view-page .ingredients-table {
+  color: #f3f4f6;
+  border-color: rgba(255, 255, 255, 0.15);
+  margin-bottom: 0;
+}
+
+.cookbook-view-page .ingredients-table > :not(caption) > * > * {
+  background-color: #1f2937;
+  color: #f3f4f6;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.cookbook-view-page .ingredients-table > thead > tr > th {
+  background-color: #111827;
 }
 
 #customRatingLabelWrap.hidden {
