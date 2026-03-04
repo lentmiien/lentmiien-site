@@ -1,0 +1,107 @@
+.cookbook-page .card,
+.cookbook-form-page .card,
+.cookbook-view-page .card {
+  border-radius: 0.85rem;
+}
+
+.cookbook-page .recipe-card {
+  height: 100%;
+}
+
+.cookbook-page .recipe-card .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cookbook-page .recipe-card .recipe-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.cookbook-page .pending-knowledge-list .list-group-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.cookbook-form-page textarea.code-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  min-height: 13rem;
+}
+
+.cookbook-form-page .source-knowledge-content {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.cookbook-form-page .source-knowledge-content img,
+.cookbook-view-page .recipe-images img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.cookbook-view-page .variant-banner {
+  border: 2px solid #ffc107;
+}
+
+.cookbook-view-page .variant-list .card {
+  border-width: 1px;
+}
+
+.cookbook-view-page .variant-list .card.active-variant {
+  border-width: 2px;
+  border-color: #fd7e14;
+  box-shadow: 0 0.5rem 1.2rem rgba(253, 126, 20, 0.15);
+}
+
+.cookbook-view-page .rating-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem 0.75rem;
+}
+
+.cookbook-view-page .rating-grid dt {
+  font-weight: 600;
+}
+
+.cookbook-view-page .rating-grid dd {
+  margin: 0;
+}
+
+.cookbook-view-page .nutrition-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cookbook-view-page .nutrition-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.85rem;
+  background: #f3f4f6;
+}
+
+.cookbook-view-page .nutrition-badge.high {
+  background: #d1fae5;
+}
+
+.cookbook-view-page .nutrition-badge.medium {
+  background: #fef3c7;
+}
+
+.cookbook-view-page .nutrition-badge.low {
+  background: #fee2e2;
+}
+
+#customRatingLabelWrap.hidden {
+  display: none;
+}

@@ -1,0 +1,106 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/cookbook.css')
+
+block content
+  - const formatDate = (value) => {
+  -   if (!value) return '';
+  -   try {
+  -     return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  -   } catch (error) {
+  -     return '';
+  -   }
+  - };
+  .cookbook-page
+    .d-flex.flex-wrap.align-items-center.justify-content-between.gap-2.mb-3
+      h2.mb-0 Cookbook
+      .d-flex.flex-wrap.gap-2
+        a.btn.btn-outline-secondary(href='/cooking') Cooking calendar
+        a.btn.btn-primary(href='/cooking/cookbook/new') Add recipe
+
+    .card.shadow-sm.mb-4
+      .card-body
+        form.row.g-3.align-items-end(method='get', action='/cooking/cookbook')
+          .col-12.col-md-6.col-lg-4
+            label.form-label(for='q') Search
+            input#q.form-control(type='search', name='q', value=filters.q, placeholder='Title, category, tag')
+          .col-6.col-lg-2
+            label.form-label(for='foodCategory') Food category
+            select#foodCategory.form-select(name='foodCategory')
+              option(value='') All
+              each option in availableFoodCategories
+                option(value=option selected=filters.foodCategory === option)= option
+          .col-6.col-lg-2
+            label.form-label(for='cookingCategory') Cooking category
+            select#cookingCategory.form-select(name='cookingCategory')
+              option(value='') All
+              each option in availableCookingCategories
+                option(value=option selected=filters.cookingCategory === option)= option
+          .col-6.col-lg-2
+            label.form-label(for='tag') Tag
+            select#tag.form-select(name='tag')
+              option(value='') All
+              each option in availableTags
+                option(value=option selected=filters.tag === option)= option
+          .col-6.col-lg-2
+            label.form-label(for='sort') Sort
+            select#sort.form-select(name='sort')
+              each option in sortOptions
+                option(value=option.value selected=filters.sort === option.value)= option.label
+          .col-12.d-flex.flex-wrap.gap-2
+            button.btn.btn-primary(type='submit') Apply filters
+            if hasActiveFilters
+              a.btn.btn-outline-secondary(href='/cooking/cookbook') Clear
+
+    if recipes.length === 0
+      .card.shadow-sm.mb-4
+        .card-body
+          p.mb-0 No cookbook entries match your current filters.
+    else
+      .row.g-3.mb-4
+        each recipe in recipes
+          .col-12.col-md-6.col-xl-4
+            .card.recipe-card.shadow-sm
+              .card-body
+                .d-flex.justify-content-between.align-items-start.gap-2
+                  h5.mb-0
+                    a.link-dark.text-decoration-none(href=`/cooking/cookbook/${recipe._id.toString()}`)= recipe.title
+                  small.text-muted= formatDate(recipe.updatedDate)
+                .text-muted.small
+                  if recipe.food_category
+                    div Food: #{recipe.food_category}
+                  if recipe.cooking_category
+                    div Cooking: #{recipe.cooking_category}
+                  if Number.isFinite(recipe.cooking_time)
+                    div Time: #{recipe.cooking_time} min
+                  if Number.isFinite(recipe.calories)
+                    div Calories: #{recipe.calories} / portion
+                  if Number.isFinite(recipe.portions)
+                    div Portions: ~#{recipe.portions}
+                if recipe.tags && recipe.tags.length
+                  .recipe-tags
+                    each tag in recipe.tags
+                      span.badge.text-bg-light= tag
+                .d-flex.flex-wrap.gap-2.mt-auto
+                  a.btn.btn-sm.btn-primary(href=`/cooking/cookbook/${recipe._id.toString()}`) View
+                  a.btn.btn-sm.btn-outline-secondary(href=`/cooking/cookbook/${recipe._id.toString()}/edit`) Edit
+                  if recipe.originKnowledgeId
+                    a.btn.btn-sm.btn-outline-info(href=`/chat4/viewknowledge/${recipe.originKnowledgeId}`) Legacy
+
+    .card.shadow-sm
+      .card-body
+        h4.mb-3 Legacy recipe knowledge not yet transitioned
+        if pendingKnowledge.length === 0
+          p.mb-0 All recipe knowledge entries have been linked to at least one cookbook entry.
+        else
+          .list-group.pending-knowledge-list
+            each knowledge in pendingKnowledge
+              .list-group-item
+                .flex-grow-1
+                  div.fw-semibold= knowledge.title
+                  .small.text-muted
+                    span Updated #{formatDate(knowledge.updatedDate)}
+                    if knowledge.tags && knowledge.tags.length
+                      span  | Tags: #{knowledge.tags.join(', ')}
+                a.btn.btn-sm.btn-outline-primary(href=`/cooking/cookbook/new?knowledgeId=${knowledge._id.toString()}`) Create from this

@@ -1,0 +1,135 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/cookbook.css')
+
+block content
+  .cookbook-form-page
+    .d-flex.flex-wrap.align-items-center.justify-content-between.gap-2.mb-3
+      h2.mb-0 #{mode === 'edit' ? 'Edit cookbook entry' : 'Add cookbook entry'}
+      .d-flex.flex-wrap.gap-2
+        a.btn.btn-outline-secondary(href='/cooking/cookbook') Back to list
+        if recipeId
+          a.btn.btn-outline-primary(href=`/cooking/cookbook/${recipeId}`) View recipe
+
+    if errors && errors.length
+      .alert.alert-danger
+        h6.mb-2 Unable to save entry
+        ul.mb-0
+          each error in errors
+            li= error
+
+    .row.g-3
+      .col-12.col-xl-8
+        .card.shadow-sm
+          .card-body
+            form(method='post', action=actionPath)
+              .row.g-3
+                .col-12
+                  label.form-label(for='title') Title
+                  input#title.form-control(type='text', name='title', value=formState.title, required)
+                .col-12.col-md-6
+                  label.form-label(for='food_category') Food category
+                  input#food_category.form-control(type='text', name='food_category', value=formState.food_category, placeholder='Soup, Stir-fry, Pasta...')
+                .col-12.col-md-6
+                  label.form-label(for='cooking_category') Cooking category
+                  input#cooking_category.form-control(type='text', name='cooking_category', value=formState.cooking_category, placeholder='Boil, Bake, Pan-fry...')
+                .col-12.col-md-4
+                  label.form-label(for='cooking_time') Cooking time (minutes)
+                  input#cooking_time.form-control(type='number', min='0', step='1', name='cooking_time', value=formState.cooking_time)
+                .col-12.col-md-4
+                  label.form-label(for='portions') Portions
+                  input#portions.form-control(type='number', min='0', step='1', name='portions', value=formState.portions)
+                .col-12.col-md-4
+                  label.form-label(for='calories') Calories per portion
+                  input#calories.form-control(type='number', min='0', step='1', name='calories', value=formState.calories)
+                .col-12.col-md-6
+                  label.form-label(for='originConversationId') originConversationId
+                  input#originConversationId.form-control(type='text', name='originConversationId', value=formState.originConversationId)
+                .col-12.col-md-6
+                  label.form-label(for='originType') originType
+                  select#originType.form-select(name='originType')
+                    option(value='chat4' selected=formState.originType === 'chat4') chat4
+                    option(value='chat5' selected=formState.originType === 'chat5') chat5
+                .col-12
+                  label.form-label(for='originKnowledgeId') originKnowledgeId (optional)
+                  input#originKnowledgeId.form-control(type='text', name='originKnowledgeId', value=formState.originKnowledgeId, placeholder='Legacy knowledge id')
+                .col-12
+                  label.form-label(for='tagsText') Tags (comma separated)
+                  input#tagsText.form-control(type='text', name='tagsText', value=formState.tagsText, placeholder='weekday, kid-friendly, spicy')
+                .col-12
+                  label.form-label(for='imagesText') Images (comma separated filenames)
+                  input#imagesText.form-control(type='text', name='imagesText', value=formState.imagesText, placeholder='image-1.png,image-2.jpg')
+                .col-12
+                  label.form-label(for='ingredientsJson') Ingredients (JSON array)
+                  textarea#ingredientsJson.form-control.code-editor(name='ingredientsJson')= formState.ingredientsJson
+                .col-12
+                  label.form-label(for='nutritionJson') Nutrition (JSON array, amount: high|medium|low)
+                  textarea#nutritionJson.form-control.code-editor(name='nutritionJson')= formState.nutritionJson
+                .col-12
+                  label.form-label(for='instructionsJson') Instructions (JSON array)
+                  textarea#instructionsJson.form-control.code-editor(name='instructionsJson')= formState.instructionsJson
+                .col-12
+                  label.form-label(for='suggestionsJson') Suggestions/Variants (JSON array)
+                  textarea#suggestionsJson.form-control.code-editor(name='suggestionsJson')= formState.suggestionsJson
+                .col-12.d-flex.flex-wrap.gap-2
+                  button.btn.btn-primary(type='submit')= submitLabel
+                  a.btn.btn-outline-secondary(href='/cooking/cookbook') Cancel
+      .col-12.col-xl-4
+        if sourceKnowledge
+          .card.shadow-sm.mb-3
+            .card-body
+              .d-flex.justify-content-between.align-items-start.gap-2.mb-2
+                h5.mb-0 Legacy recipe source
+                button#copyLegacyKnowledge.btn.btn-sm.btn-outline-secondary(type='button') Copy markdown
+              textarea#legacyMarkdownSource.d-none= sourceKnowledge.contentMarkdown
+              p.small.text-muted.mb-2
+                span ID: #{sourceKnowledge._id}
+                br
+                span Updated: #{sourceKnowledge.updatedDateDisplay}
+              p.mb-2
+                strong= sourceKnowledge.title
+              if sourceKnowledge.tags && sourceKnowledge.tags.length
+                p.small.text-muted.mb-2 Tags: #{sourceKnowledge.tags.join(', ')}
+              if sourceKnowledge.images && sourceKnowledge.images.length
+                .mb-2
+                  each img in sourceKnowledge.images
+                    img(src=`/img/${img}`, alt='legacy image')
+              .source-knowledge-content
+                .small.text-muted.mb-2 Markdown preview
+                div!= sourceKnowledge.contentHTML
+              .mt-3
+                a.btn.btn-sm.btn-outline-primary(href=`/chat4/viewknowledge/${sourceKnowledge._id}`) Open legacy entry
+        .card.shadow-sm
+          .card-body
+            h5 JSON format examples
+            pre.small.mb-3.
+              [
+                {
+                  "ingredient_label": "Water",
+                  "amount": 500,
+                  "amount_unit": "ml",
+                  "amount_in_gram": 500
+                }
+              ]
+            pre.small.mb-3.
+              [
+                { "label": "Vitamin C", "amount": "high" }
+              ]
+            pre.small.mb-3.
+              [
+                {
+                  "label": "Peel and cut vegetables",
+                  "details": "Peel potato and carrot, then cut into **1 cm** cubes."
+                }
+              ]
+            pre.small.mb-0.
+              [
+                {
+                  "label": "Spicy variant",
+                  "details": "Add **1-2 tsp red chili powder** while boiling."
+                }
+              ]
+
+block script
+  script(src='/js/cookbook_form.js', defer)

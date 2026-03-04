@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const controller = require('../controllers/cookingcontroller');
+const cookbookController = require('../controllers/cookbookcontroller');
 
 // Legacy v1 routes
 router.get('/', controller.index);
@@ -18,5 +19,14 @@ router.delete('/v2/api/entries/:date/:entryId', controller.deleteEntryV2);
 router.get('/v2/api/statistics', controller.statisticsDataV2);
 router.get('/v2/statistics', controller.cooking_statistics_v2);
 router.get('/v2/recommendations', controller.cooking_recommendations_v2);
+
+// Cookbook routes
+router.get('/cookbook', cookbookController.index);
+router.get('/cookbook/new', cookbookController.newForm);
+router.post('/cookbook/new', cookbookController.create);
+router.get('/cookbook/:id/edit', cookbookController.editForm);
+router.post('/cookbook/:id/edit', cookbookController.update);
+router.post('/cookbook/:id/rating', cookbookController.updateRating);
+router.get('/cookbook/:id', cookbookController.view);
 
 module.exports = router;

@@ -1,0 +1,202 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/cookbook.css')
+
+block content
+  - const formatDate = (value) => {
+  -   if (!value) return '';
+  -   try {
+  -     return new Date(value).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  -   } catch (error) {
+  -     return '';
+  -   }
+  - };
+  .cookbook-view-page
+    .d-flex.flex-wrap.align-items-center.justify-content-between.gap-2.mb-3
+      h2.mb-0= recipe.title
+      .d-flex.flex-wrap.gap-2
+        a.btn.btn-outline-secondary(href='/cooking/cookbook') Back to list
+        a.btn.btn-outline-primary(href=`/cooking/cookbook/${recipe._id.toString()}/edit`) Edit
+        if recipe.originKnowledgeId
+          a.btn.btn-outline-info(href=`/chat4/viewknowledge/${recipe.originKnowledgeId}`) Legacy entry
+
+    if status === 'saved'
+      .alert.alert-success.mb-3 Rating saved.
+    else if status === 'error'
+      .alert.alert-danger.mb-3= statusMessage || 'Unable to save rating.'
+
+    if selectedVariant
+      .alert.alert-warning.variant-banner.mb-3
+        h4.mb-2 Cooking with variant: #{selectedVariant.label}
+        div!= selectedVariant.detailsHTML
+        .mt-2
+          a.btn.btn-sm.btn-outline-dark(href=`/cooking/cookbook/${recipe._id.toString()}`) Clear variant
+
+    .row.g-3
+      .col-12.col-lg-8
+        .card.shadow-sm.mb-3
+          .card-body
+            .row.g-3
+              .col-12.col-md-6
+                .small.text-muted Updated #{formatDate(recipe.updatedDate)}
+                if Number.isFinite(recipe.portions)
+                  .small.text-muted Portions: ~#{recipe.portions}
+                if Number.isFinite(recipe.calories)
+                  .small.text-muted Calories: #{recipe.calories} / portion
+              .col-12.col-md-6
+                if recipe.food_category
+                  .small.text-muted Food category: #{recipe.food_category}
+                if recipe.cooking_category
+                  .small.text-muted Cooking category: #{recipe.cooking_category}
+                if Number.isFinite(recipe.cooking_time)
+                  .small.text-muted Cooking time: #{recipe.cooking_time} min
+              if recipe.tags && recipe.tags.length
+                .col-12
+                  .d-flex.flex-wrap.gap-2
+                    each tag in recipe.tags
+                      span.badge.text-bg-light= tag
+
+        if recipe.images && recipe.images.length
+          .card.shadow-sm.mb-3
+            .card-body.recipe-images
+              h5.mb-3 Images
+              each img in recipe.images
+                img(src=`/img/${img}`, alt=`${recipe.title} image`)
+
+        .card.shadow-sm.mb-3
+          .card-body
+            h5.mb-3 Ingredients
+            if recipe.ingredients && recipe.ingredients.length
+              .table-responsive
+                table.table.table-sm.align-middle.mb-0
+                  thead
+                    tr
+                      th Ingredient
+                      th Amount
+                      th Unit
+                      th Gram (optional)
+                  tbody
+                    each item in recipe.ingredients
+                      tr
+                        td= item.ingredient_label
+                        td= Number.isFinite(item.amount) ? item.amount : '-'
+                        td= item.amount_unit || '-'
+                        td= Number.isFinite(item.amount_in_gram) ? item.amount_in_gram : '-'
+            else
+              p.mb-0.text-muted No ingredients added yet.
+
+        .card.shadow-sm.mb-3
+          .card-body
+            h5.mb-3 Instructions
+            if instructions && instructions.length
+              ol.mb-0
+                each step in instructions
+                  li.mb-3
+                    .fw-semibold.mb-1= step.label
+                    div!= step.detailsHTML
+            else
+              p.mb-0.text-muted No instructions added yet.
+
+        .card.shadow-sm.mb-3
+          .card-body
+            h5.mb-3 Suggestions / Variants
+            if suggestions && suggestions.length
+              .variant-list.d-grid.gap-3
+                each suggestion in suggestions
+                  - const isActive = selectedVariant && selectedVariant.label === suggestion.label;
+                  article.card(class=isActive ? 'active-variant' : '')
+                    .card-body
+                      .d-flex.flex-wrap.justify-content-between.align-items-start.gap-2
+                        h6.mb-0= suggestion.label
+                        a.btn.btn-sm.btn-outline-warning(href=`/cooking/cookbook/${recipe._id.toString()}?variant=${encodeURIComponent(suggestion.label)}`) Cook this variant
+                      .mt-2
+                        div!= suggestion.detailsHTML
+            else
+              p.mb-0.text-muted No variants configured.
+
+        .card.shadow-sm
+          .card-body
+            h5.mb-3 Nutrition per portion
+            if recipe.nutrition && recipe.nutrition.length
+              .nutrition-badges
+                each n in recipe.nutrition
+                  span.nutrition-badge(class=n.amount)
+                    strong= n.label
+                    span= n.amount
+            else
+              p.mb-0.text-muted No nutrition markers added.
+
+      .col-12.col-lg-4
+        .card.shadow-sm.mb-3
+          .card-body
+            h5.mb-3 Rating summary
+            if topLevelRatingRows && topLevelRatingRows.length
+              dl.rating-grid
+                each row in topLevelRatingRows
+                  dt= row.key
+                  dd= row.value
+            else
+              p.text-muted.mb-2 No base ratings yet.
+            if topLevelComment
+              p.mb-0
+                strong Comment:
+                br
+                | #{topLevelComment}
+
+            if variantRatingRows && variantRatingRows.length
+              hr
+              h6 Variant ratings
+              each vr in variantRatingRows
+                .mb-3
+                  .fw-semibold= vr.label
+                  if vr.ratings.length
+                    ul.mb-1
+                      each r in vr.ratings
+                        li #{r.key}: #{r.value}
+                  else
+                    p.text-muted.small.mb-1 No numeric ratings yet.
+                  if vr.comment
+                    p.small.mb-0= vr.comment
+
+        .card.shadow-sm#rating
+          .card-body
+            h5.mb-3= selectedVariantLabel ? 'Rate variant: ' + selectedVariantLabel : 'Rate this recipe'
+            form(method='post', action=`/cooking/cookbook/${recipe._id.toString()}/rating`)
+              if selectedVariantLabel
+                input(type='hidden', name='variant_label', value=selectedVariantLabel)
+              .mb-3
+                label.form-label(for='rating_label') Rating label
+                select#rating_label.form-select(name='rating_label')
+                  option(value='') Comment only
+                  each label in ratingLabelOptions
+                    option(value=label)= label
+                  option(value='__custom__') Custom label
+              .mb-3#customRatingLabelWrap.hidden
+                label.form-label(for='rating_label_custom') Custom rating label
+                input#rating_label_custom.form-control(type='text', name='rating_label_custom', placeholder='example: wife_likes')
+              .mb-3
+                label.form-label(for='rating_value') Rating value (0-5)
+                select#rating_value.form-select(name='rating_value')
+                  option(value='') Select value
+                  option(value='0') 0
+                  option(value='1') 1
+                  option(value='2') 2
+                  option(value='3') 3
+                  option(value='4') 4
+                  option(value='5') 5
+              .mb-3
+                label.form-label(for='rating_comment') Comment
+                textarea#rating_comment.form-control(name='rating_comment', rows='4', placeholder='Add notes from this cook session...')
+              button.btn.btn-primary(type='submit') Save rating
+
+        if sourceKnowledge
+          .card.shadow-sm.mt-3
+            .card-body
+              h6.mb-2 Source knowledge
+              p.small.mb-2
+                strong= sourceKnowledge.title
+              a.btn.btn-sm.btn-outline-info(href=`/chat4/viewknowledge/${sourceKnowledge._id.toString()}`) Open legacy recipe
+
+block script
+  script(src='/js/cookbook_view.js', defer)

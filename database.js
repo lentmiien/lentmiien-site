@@ -41,6 +41,7 @@ const FileMetaModel = require('./models/file_meta');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
 const Chat4KnowledgeModel = require('./models/chat4_knowledge');
+const CookbookRecipeModel = require('./models/cookbook_recipe');
 const Chat5Model = require('./models/chat5');
 const Conversation5Model = require('./models/conversation5');
 const Chat5TemplateModel = require('./models/chat5_template');
@@ -161,6 +162,7 @@ module.exports = {
   ChatResponseTypeModel,
   PendingRequests,
   Chat4KnowledgeModel,
+  CookbookRecipeModel,
   DocumentModel,
   TextnodeModel,
   AccountModel,
