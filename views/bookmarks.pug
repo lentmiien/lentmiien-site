@@ -1,0 +1,59 @@
+extends layout
+
+block content
+  .container.py-4
+    h1.mb-2 Bookmarks
+    p.text-muted.mb-4 Save personal links with an importance score. Higher scores show first in the navbar.
+
+    if successMessage
+      .alert.alert-success(role='alert')= successMessage
+    if errorMessage
+      .alert.alert-danger(role='alert')= errorMessage
+
+    .row.g-4
+      .col-lg-4
+        .card.shadow-sm
+          .card-body
+            h2.h5.mb-3 Add bookmark
+            form(method='post', action='/bookmarks/add')
+              input(type='hidden', name='returnTo', value='/bookmarks')
+              .mb-3
+                label.form-label(for='bookmarkTitle') Title
+                input#bookmarkTitle.form-control(type='text', name='title', placeholder='Useful page', maxlength='160')
+              .mb-3
+                label.form-label(for='bookmarkUrl') URL
+                input#bookmarkUrl.form-control(type='text', name='url', placeholder='https://example.com', required)
+              .mb-3
+                label.form-label(for='bookmarkImportance') Importance (1-5)
+                input#bookmarkImportance.form-control(type='number', name='importance', min='1', max='5', step='1', value='3')
+              button.btn.btn-primary(type='submit') Save bookmark
+      .col-lg-8
+        if bookmarks && bookmarks.length
+          each bookmark in bookmarks
+            .card.shadow-sm.mb-3
+              .card-body
+                .d-flex.justify-content-between.align-items-center.mb-2
+                  a(href=bookmark.url, target='_blank', rel='noopener noreferrer') Open current URL
+                  span.badge.text-bg-secondary Importance #{bookmark.importance || 1}
+                form(method='post', action=`/bookmarks/${bookmark._id}/update`)
+                  input(type='hidden', name='returnTo', value='/bookmarks')
+                  .row.g-2.align-items-end
+                    .col-md-4
+                      label.form-label(for=`title-${bookmark._id}`) Title
+                      input.form-control(id=`title-${bookmark._id}`, type='text', name='title', maxlength='160', value=bookmark.title, required)
+                    .col-md-6
+                      label.form-label(for=`url-${bookmark._id}`) URL
+                      input.form-control(id=`url-${bookmark._id}`, type='text', name='url', value=bookmark.url, required)
+                    .col-md-2
+                      label.form-label(for=`importance-${bookmark._id}`) Importance
+                      input.form-control(id=`importance-${bookmark._id}`, type='number', name='importance', min='1', max='5', step='1', value=bookmark.importance || 3)
+                  .d-flex.justify-content-between.align-items-center.mt-3
+                    button.btn.btn-primary(type='submit') Save changes
+                    button.btn.btn-outline-danger(
+                      type='submit',
+                      formaction=`/bookmarks/${bookmark._id}/delete`,
+                      formmethod='post',
+                      onclick='return confirm("Delete this bookmark?");'
+                    ) Delete
+        else
+          .alert.alert-info.mb-0 No bookmarks saved yet.

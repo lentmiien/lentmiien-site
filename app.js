@@ -17,7 +17,7 @@ const expressStaticGzip = require('express-static-gzip');
 const crypto = require('crypto');
 
 // Database models
-const { UseraccountModel, RoleModel, HtmlPageRating } = require('./database');
+const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
 const { HTML_RATING_CATEGORIES, computeAverageRating } = require('./utils/htmlRatings');
 
 // Initialize app and server
@@ -105,6 +105,7 @@ const htmlDirectory = path.join(__dirname, 'public', 'html');
 // Middleware to set res.locals
 app.use(async (req, res, next) => {
   res.locals.loggedIn = req.isAuthenticated();
+  res.locals.currentPath = req.originalUrl || '/';
   if (res.locals.loggedIn) {
     res.locals.name = req.user.name;
     res.locals.admin = req.user.type_user === 'admin';
@@ -126,6 +127,34 @@ app.use(async (req, res, next) => {
     });
   }
   res.locals.permissions = permissions;
+
+  // Load bookmark links
+  const bookmarks = [];
+  if (req.isAuthenticated()) {
+    try {
+      const bookmarkEntries = await BookmarkModel.find({ user: req.user.name })
+        .sort({ importance: -1, updatedAt: -1, title: 1 })
+        .select({ title: 1, url: 1, importance: 1 })
+        .lean()
+        .exec();
+      bookmarkEntries.forEach((entry) => {
+        if (!entry || !entry.title || !entry.url) {
+          return;
+        }
+        bookmarks.push({
+          title: entry.title,
+          url: entry.url,
+          importance: Number.isFinite(entry.importance) ? entry.importance : 0,
+        });
+      });
+    } catch (error) {
+      logger.warning('Unable to hydrate bookmark list', {
+        category: 'layout',
+        metadata: { error: error.message },
+      });
+    }
+  }
+  res.locals.bookmarks = bookmarks;
 
   // Set social media tags
   res.locals.og_title = 'Lennart\'s Website';
@@ -254,6 +283,7 @@ const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
 const shoppingListRouter = require('./routes/shopping_list');
+const bookmarkRouter = require('./routes/bookmarks');
 
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
@@ -286,6 +316,7 @@ app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
 app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);
 app.use('/shopping-list', isAuthenticated, authorize("shoppinglist"), shoppingListRouter);
+app.use('/bookmarks', isAuthenticated, bookmarkRouter);
 app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
 app.use('/music', isAuthenticated, authorize("music"), musicRouter);
 app.use('/ocr', isAuthenticated, authorize("ocr"), ocrRouter);

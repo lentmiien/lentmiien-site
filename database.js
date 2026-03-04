@@ -85,6 +85,8 @@ const SummaryModel = require('./models/summary');
 // Quick note
 const LocationModel = require('./models/location');
 const QuicknoteModel = require('./models/quicknote');
+// Bookmarks
+const BookmarkModel = require('./models/bookmark');
 // MPU6050
 const AggregatedDataModel = require('./models/aggregated_data');
 const DetailedDataModel = require('./models/detailed_data');
@@ -188,6 +190,7 @@ module.exports = {
   SummaryModel,
   LocationModel,
   QuicknoteModel,
+  BookmarkModel,
   AggregatedDataModel,
   DetailedDataModel,
   Dht22AggregatedData,

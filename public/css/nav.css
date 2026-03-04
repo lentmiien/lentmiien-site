@@ -99,6 +99,14 @@
   font-style: italic;
 }
 
+.navbar-bookmark-form {
+  padding: 0 15px 10px;
+}
+
+.navbar-bookmark-form .form-control {
+  border-radius: 6px;
+}
+
 .navbar a:hover {
   background-color: #ddd;
   color: black;
