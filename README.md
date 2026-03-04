@@ -6,7 +6,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 
 - **Chat5 Studio:** Real-time chat workspace with Socket.IO, model switching (OpenAI, Anthropic, Google, Groq, LM Studio), knowledge injection, reusable templates, AI model cards, story mode playback, and audit-friendly message editing.
 - **Media Generation Pipeline:** Sora 2 Studio for OpenAI video jobs, background polling/webhooks, ComfyUI-powered image generation with caching, PDF-to-image conversion, and gallery ratings with Dropbox backups.
-- **Operations & Productivity Suite:** Unified accounting workspace (budgets, cards, analytics), receipt OCR, customs-ready product summaries, payroll builder, cooking calendar v2 with analytics, health tracker, quick notes, emergency stock, and a new schedule-task planner.
+- **Operations & Productivity Suite:** Unified accounting workspace (budgets, cards, analytics), receipt OCR, customs-ready product summaries, payroll builder, cooking calendar v2 with cookbook-first recipe handling, a dedicated cookbook module, unified shopping list, health tracker, quick notes, emergency stock, and a schedule-task planner.
 - **Automation & Integrations:** Startup maintenance, OpenAI usage harvesting, Dropbox sync, GitHub repository mirroring, temporary file transfer tool, Mailgun notifications, and bearer-protected API access.
 - **Experimentation Sandbox:** Sensor dashboards (MPU6050, DHT22), markdown editor demos, browser games with Brotli assets, reference materials, and agent orchestration docs (`AGENTS.md`, `documentation/framework.md`).
 - **Documentation & Quality:** Centralized guides and prompt libraries in `documentation/`, plus Jest-backed service tests with coverage artifacts under `coverage/`.
@@ -25,21 +25,21 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | --- | --- |
 | `app.js` | Express entry point, auth wiring, route registration, game hosting. |
 | `routes/` | HTTP routers that enforce auth and forward requests to controllers. |
-| `controllers/` | Feature-specific request handlers (Chat5, cooking, budget, Sora, image generation, admin, etc.). |
+| `controllers/` | Feature-specific request handlers (Chat5, cooking + cookbook, shopping list, budget, Sora, image generation, admin, etc.). |
 | `services/` | Domain services for chat, messaging, cooking calendars, budgets, scheduling, GitHub sync, and more. |
-| `models/` | Mongoose schemas (chat history, AI cards, payroll, receipts, schedule tasks, Sora videos, prompts). |
+| `models/` | Mongoose schemas (chat history, AI cards, payroll, receipts, schedule tasks, cookbook recipes, Sora videos, prompts). |
 | `socket_io/` | Socket.IO bootstrap and chat event handlers. |
 | `views/` | Pug templates for dashboards, forms, modals, and media viewers. |
 | `public/` | Client assets including compiled JS, CSS, `imgen/` cache, `video/` output, and `temp/` uploads. |
-| `public/yaml/` | OpenAPI specs served via `/yaml-viewer` (`core-api.v1.yaml`, `schedule-task.v1.yaml`, `chat5-pdf.v1.yaml`, `chat5-realtime.v1.yaml`, plus vendor references). |
+| `public/yaml/` | OpenAPI specs served via `/yaml-viewer` (`core-api.v1.yaml`, `schedule-task.v1.yaml`, `chat5-pdf.v1.yaml`, `chat5-realtime.v1.yaml`, `product-details.v1.yaml`). |
 | `games/` | Standalone web games served via `express-static-gzip`. |
 | `github-repos/` | Local clone cache managed by `GitHubService`. |
-| `schedulers/` | Background triggers (e.g., batch queue helpers) invoked during startup flows. |
-| `tests/` | Jest unit tests (see `tests/unit`) covering service-layer contracts. |
+| `schedulers/` | Background triggers (batch automation, DB usage checks, Agent5 runner) started at app boot. |
+| `tests/` | Jest tests (`tests/unit` plus startup diagnostics coverage in `tests/startupChecks.test.js`). |
 | `documentation/` | Architecture notes, testing guide, prompt catalog, and color reference used alongside `AGENTS.md`. |
 | `coverage/` | Generated Jest coverage reports (`npm test`). |
 | `cache/`, `tmp_data/`, `logs/` | Generated caches, ephemeral transfers, and rolling log files maintained by `setup.js`. |
-| `sample_data/`, `reference_material/` | Datasets and docs used by demos and knowledge ingestion. |
+| `sample_data/` | Sample datasets used by demos and import/testing flows. |
 
 ### Accounting Workspace
 
@@ -79,7 +79,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
    ```bash
    npm start
    ```
-5. Visit `http://localhost:3000` (or your chosen `PORT`). Authenticated features require a Mongo user entry; create one manually or via the admin tools after logging in.
+5. Visit `http://localhost:8080` (or your chosen `PORT`). Authenticated features require a Mongo user entry; create one manually or via the admin tools after logging in.
 
 ### Useful Local Routes
 
@@ -87,7 +87,10 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 - `/sora` - Sora 2 Studio dashboard with job filters, polling, and ratings.
 - `/image_gen` - ComfyUI job queue, cached output browser, prompt library.
 - `/budget` - Budget v2 dashboard, transaction review, analytics APIs.
-- `/cooking` - Cooking calendar v2, recipe usage stats, request queue.
+- `/cooking` - Legacy cooking calendar (v1) view and edit flow.
+- `/cooking/v2` - Cooking calendar v2 with recipe usage stats, recommendations, and cookbook-first selection.
+- `/cooking/cookbook` - Cookbook management UI (list, create, edit, per-recipe ratings, optional variants).
+- `/shopping-list` - Unified shopping checklist combining to-buy tasks, emergency stock gaps, and upcoming recipe ingredients.
 - `/scheduleTask/calendar` - Task & presence planner with overlap detection.
 - `/tmp-files` - Authenticated temporary file shuttle (admin only).
 - `/admin/manage_users` & `/admin/manage_roles` - User/role management and log viewer.
@@ -117,6 +120,10 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `STARTUP_REQUIRED_ENV_VARS` | Comma-separated overrides for the env vars validated during preflight. |
 | `STARTUP_SKIP_MONGO_CHECK` | Set to `true` to bypass the Mongo connectivity check (e.g., offline dev). |
 | `COMFY_API_BASE`, `COMFY_API_KEY` | ComfyUI REST endpoint + key for `/image_gen`. |
+| `CHAT_PDF_MAX_PAGES` | Maximum pages accepted by Chat5 PDF conversion/import. |
+| `CHAT_PDF_MAX_AGE_HOURS` | Retention window (hours) before stale PDF conversion jobs are cleaned up. |
+| `EMBED_API_BASE` | Base URL for the standard embedding API backend. |
+| `EMBED_API_BASE_HQ` (`EMBED_HQ_API_BASE`) | Optional high-quality embedding backend URL (falls back to `EMBED_API_BASE`). |
 | `GALLERY_PATH` | Filesystem path scanned by the gallery for image ratings/slideshows. |
 | `VUE_PATH` | Optional absolute path to a built Vue frontend served to authenticated users. |
 | `API_KEY` | Bearer token required for `/api` automation routes. |
@@ -146,6 +153,7 @@ The summary object contains section-level timings and statuses (`ok`, `warning`,
 | `npm run codex` | Launches the Codex CLI helper. |
 | `npm run codex-update` | Installs the latest `@openai/codex` globally. |
 | `npm run codex-todo` | Directs Codex to action tasks from `todo.txt`. |
+| `npm run codex-commit` | Runs Codex in commit mode to create a commit for pending changes. |
 
 > `npm run git_test` expects a local `git_test.js` (ignored by git) for ad-hoc GitHub automation experiments.
 
@@ -154,18 +162,19 @@ The summary object contains section-level timings and statuses (`ok`, `warning`,
 - **Chat5 & Knowledge Ops:** Multi-conversation management, knowledge tagging, template injection, AI model card catalog, story mode audio/cover builder, batch processing via `BatchService`, webhook-driven streaming into Socket.IO rooms, and conversation editing with media uploads.
 - **Batch & Repository Automation:** `batchService` queues OpenAI batch jobs, while `GitHubService` mirrors repos under `github-repos/` for offline browsing with folder trees and file previews.
 - **Media Workflows:** `/sora` orchestrates Sora 2/2 Pro jobs with background polling, webhook reconciliation, rating filters, and video caching under `public/video`. `/image_gen` manages ComfyUI prompt libraries, caching of bucket assets, and image ratings. Dropbox helpers back up generated assets automatically.
-- **Life & Finance Tooling:** Cooking calendar v2 tracks actuals versus planned meals, analytics, and recipe library usage. Budget v2 exposes dashboards plus JSON APIs for category analysis. Receipts and payroll controllers parse uploads into structured records. Product customs summaries use GPT-4.1 with Zod validation. The schedule task planner blocks overlapping presence events.
+- **Life & Finance Tooling:** Cooking calendar v2 tracks actuals versus planned meals, analytics, and recipe library usage, now prioritising cookbook records when available. The cookbook module adds structured recipe storage, variant notes, and per-recipe ratings. `/shopping-list` unifies to-buy tasks, emergency stock deficits, and cookbook/knowledge-derived ingredients for upcoming meals. Budget v2 exposes dashboards plus JSON APIs for category analysis. Receipts and payroll controllers parse uploads into structured records. Product customs summaries use GPT-4.1 with Zod validation. The schedule task planner blocks overlapping presence events.
 - **Health Analytics & Alerts:** `/health` now layers moving averages, Chart.js trends, alert banners, and CSV exports on top of daily health logs. Each entry captures measurement metadata, tags, notes, and personalised thresholds that feed the `/health/analytics` API plus cached summaries in `cache/health_insights.json`.
 - **Admin & Utilities:** Admin module manages users/roles, views JSON log files (`logs/*.log`), and inspects OpenAI usage. `/tmp-files` offers a size-limited drop zone that cleans up automatically. `/games` lists bundled games served with gzip/Brotli.
-- **Documentation & OpenAPI:** `/yaml-viewer` now highlights domain badges, spec summaries, and copy‑ready cURL snippets for the curated `core-api`, `schedule-task`, `chat5-pdf`, and `chat5-realtime` OpenAPI files in `public/yaml/`; run `npm run lint:openapi` to validate them, and keep leveraging `documentation/` + `AGENTS.md` for the broader architecture/testing/prompt playbooks.
+- **Documentation & OpenAPI:** `/yaml-viewer` now highlights domain badges, spec summaries, and copy-ready cURL snippets for `core-api`, `schedule-task`, `chat5-pdf`, `chat5-realtime`, and `product-details` specs in `public/yaml/`; run `npm run lint:openapi` to validate the default curated set, and keep leveraging `documentation/` + `AGENTS.md` for the broader architecture/testing/prompt playbooks.
 
 ### API Documentation Workflow
 
 - `public/yaml/core-api.v1.yaml` covers the `/api/*` endpoints (bin packing, health logs, chat exports, automation helpers) with shared schemas and sample payloads.
 - `public/yaml/schedule-task.v1.yaml` documents `/scheduleTask/api/*` (task CRUD, presence overlap detection, palette feed) so automations can mirror the UI without reverse-engineering controllers.
 - `public/yaml/chat5-pdf.v1.yaml` explains the PDF-to-image intake flow that precedes `chat5_6-importPdfPages`, while `public/yaml/chat5-realtime.v1.yaml` captures Socket.IO events via a custom `x-socketio` extension.
+- `public/yaml/product-details.v1.yaml` documents customs/product summary endpoints used by the product details workflow.
 - `/yaml-viewer` lists every spec with domain badges, highlights, and ready-to-run snippets; click “Open in Viewer” for Swagger UI or “View JSON” for the parsed document.
-- `npm run lint:openapi` (powered by `scripts/validate-openapi.js` and `@apidevtools/swagger-parser`) validates the curated specs before publishing or wiring them into CI.
+- `npm run lint:openapi` (powered by `scripts/validate-openapi.js` and `@apidevtools/swagger-parser`) validates the curated default set; pass filenames to include additional specs such as `product-details.v1.yaml`.
 
 ## Data & File Management
 
@@ -173,12 +182,12 @@ The summary object contains section-level timings and statuses (`ok`, `warning`,
 - `tmp_data/` is purged on every startup; use `/tmp-files` for transient transfers.
 - `cache/` stores JSON caches (`chat3vdb.json`, `default_models.json`, embeddings).
 - `logs/` retains seven days of structured logs (JSON-per-line). Older files are pruned automatically.
-- `sample_data/` and `reference_material/` contain datasets used in demos and ingestion flows.
+- `sample_data/` contains datasets used in demos and ingestion flows.
 - `coverage/` is produced by Jest runs; open `coverage/lcov-report/index.html` after `npm test` for an HTML report.
 
 ## Testing & Verification
 
-- Jest is configured via `jest.config.js` to target service-layer units under `tests/unit`. Run `npm test` to execute the suite and generate coverage inside `coverage/`.
+- Jest is configured via `jest.config.js` to target `tests/**/*.test.js` (service-layer units plus startup diagnostics tests). Run `npm test` to execute the suite and generate coverage inside `coverage/`.
 - Use `npm test -- --watch` for iterative development; HTML coverage lives at `coverage/lcov-report/index.html`.
 - `documentation/testing-guide.md` outlines additional manual scenarios (Sora, ComfyUI, Dropbox). When running those flows, monitor `logs/` for notices/errors emitted by `utils/logger`.
 - Keep Mongo indexes aligned with new models and confirm external integrations with sandbox credentials before enabling them in production.
