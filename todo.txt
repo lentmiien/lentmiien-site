@@ -1,8 +1,9 @@
-On the pages `views/cooking_index.pug`, `views/cooking_recommendations.pug` and `views/cooking_statistics.pug`, I want to add the database `models/cookbook_recipe.js` as a source of recipes.
-Importantly, when appending cookbook recipes, I also want to filter out any existing knowledge entries with the `_id` matching `originKnowledgeId` from the added cookbook recipe, as these are transitioned duplicates. But for statistics purposes, join duplicate cookbook/knowledge entries.
+On the page `views/cookbook/form.pug`, if I'm generating or editing an entry from a "Legacy recipe source", I want a button for AI drafting the new entry. For this functionality I want to use the `generateStructuredOutput` function from `utils/OpenAI_API.js`, and input `title` + `contentMarkdown` from the knowledge entry, to fill in the "Food category", "Cooking category", "Cooking time (minutes)", "Portions", "Calories per portion", "Ingredients (JSON array)", "Nutrition (JSON array, amount: high|medium|low)", "Instructions (JSON array)" and "Suggestions/Variants (JSON array)" in the UI, then the user review and save the entry.
 
-For context, I'm in the process to transition from `models/chat4_knowledge.js` to `models/cookbook_recipe.js`, so cookbook entries should be prioritized when existing, otherwise fall back to knowledge entries.
+Please create and add a "Draft with AI" button in the UI, and create an endpoint on the server side, to call the OpenAI API, and return the structured output to the user, where the input form is populated accordingly.
 
-So, going forward, if I choose a recipe with a cookbook entry, the new cookbook entry should be used, if no cookbook entry exist, fall back to the knowledge entry, and if I review older saved recipes, that now have a cookbook entry, redirect to the cookbook entry.
+I want to use the `gpt-5.2-2025-12-11` model in the API.
 
-Please update the pages, and back end code to work with the new cookbook database.
+Create the structured output with template prompt/context message, and the output structure object suitable for my use case. For the "Calories per portion", I do want to include what's commonly eaten together with the recipe, so for example my "meat sauce" recipe should add spaghetti to the calories, and other recipes commonly add rice, but udon/ramen for example don't need anything extra, bake this into the prompt to ask for calories for a full meal.
+
+Now create and add this new functionality.

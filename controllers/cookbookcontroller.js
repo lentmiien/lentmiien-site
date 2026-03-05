@@ -1,10 +1,12 @@
 const marked = require('marked');
 
 const { CookbookRecipeModel, Chat4KnowledgeModel } = require('../database');
+const { generateStructuredOutput } = require('../utils/OpenAI_API');
 const logger = require('../utils/logger');
 
 const DEFAULT_SORT = 'updated_desc';
 const NUTRITION_LEVELS = ['high', 'medium', 'low'];
+const COOKBOOK_DRAFT_MODEL = 'gpt-5.2-2025-12-11';
 const DEFAULT_RATING_LABELS = [
   'my_overall_rating',
   'easy_to_cook',
@@ -22,6 +24,90 @@ const SORT_OPTIONS = [
   { value: 'cooking_time_asc', label: 'Cooking time (short-long)' },
   { value: 'cooking_time_desc', label: 'Cooking time (long-short)' },
 ];
+const COOKBOOK_DRAFT_SYSTEM_PROMPT = [
+  'You convert a legacy recipe note into structured cookbook data.',
+  'Infer missing details conservatively and keep values realistic for home cooking.',
+  'Use the same language as the source recipe whenever practical.',
+  'For calories, estimate calories per portion for a full meal as commonly eaten.',
+  'Include staple sides when they are typically eaten with the recipe.',
+  'Example: include spaghetti with meat sauce; include rice for dishes commonly served with rice.',
+  'Do not add extra staples for noodle dishes where noodles are already part of the dish (udon, ramen, soba, pasta dishes).',
+  'Use integers for cooking_time, portions, and calories.',
+  'Nutrition amount must be exactly one of: high, medium, low.',
+  'Use empty arrays when information is unavailable.',
+].join('\n');
+const COOKBOOK_DRAFT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    food_category: { type: 'string' },
+    cooking_category: { type: 'string' },
+    cooking_time: { type: 'integer', minimum: 0 },
+    portions: { type: 'integer', minimum: 0 },
+    calories: { type: 'integer', minimum: 0 },
+    ingredients: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          ingredient_label: { type: 'string' },
+          amount: { type: 'number', minimum: 0 },
+          amount_unit: { type: 'string' },
+          amount_in_gram: { type: 'number', minimum: 0 },
+        },
+        required: ['ingredient_label'],
+      },
+    },
+    nutrition: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          label: { type: 'string' },
+          amount: { type: 'string', enum: NUTRITION_LEVELS },
+        },
+        required: ['label', 'amount'],
+      },
+    },
+    instructions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          label: { type: 'string' },
+          details: { type: 'string' },
+        },
+        required: ['label', 'details'],
+      },
+    },
+    suggestions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          label: { type: 'string' },
+          details: { type: 'string' },
+        },
+        required: ['label', 'details'],
+      },
+    },
+  },
+  required: [
+    'food_category',
+    'cooking_category',
+    'cooking_time',
+    'portions',
+    'calories',
+    'ingredients',
+    'nutrition',
+    'instructions',
+    'suggestions',
+  ],
+};
 
 function toDisplayDate(value) {
   if (!value) return '';
@@ -427,6 +513,99 @@ async function loadKnowledgeById(userId, knowledgeId) {
   }
 }
 
+function buildCookbookDraftPrompt(knowledge) {
+  const title = String(knowledge?.title || '').trim();
+  const contentMarkdown = String(knowledge?.contentMarkdown || '').trim();
+  return [
+    'Create a cookbook draft from the legacy recipe source below.',
+    '',
+    `<legacy_recipe_title>${title}</legacy_recipe_title>`,
+    '<legacy_recipe_markdown>',
+    contentMarkdown,
+    '</legacy_recipe_markdown>',
+  ].join('\n');
+}
+
+function normalizeDraftNumber(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.round(value));
+}
+
+function normalizeDraftIngredients(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const ingredientLabel = String(item.ingredient_label || '').trim();
+      if (!ingredientLabel) return null;
+
+      const entry = { ingredient_label: ingredientLabel };
+      if (Number.isFinite(item.amount) && item.amount >= 0) {
+        entry.amount = item.amount;
+      }
+
+      const amountUnit = String(item.amount_unit || '').trim();
+      if (amountUnit) {
+        entry.amount_unit = amountUnit;
+      }
+
+      if (
+        Number.isFinite(item.amount_in_gram)
+        && item.amount_in_gram >= 0
+        && amountUnit.toLowerCase() !== 'gram'
+      ) {
+        entry.amount_in_gram = item.amount_in_gram;
+      }
+
+      return entry;
+    })
+    .filter(Boolean);
+}
+
+function normalizeDraftNutrition(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const label = String(item.label || '').trim();
+      const amount = String(item.amount || '').trim().toLowerCase();
+      if (!label || !NUTRITION_LEVELS.includes(amount)) return null;
+      return { label, amount };
+    })
+    .filter(Boolean);
+}
+
+function normalizeDraftDetails(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+      const label = String(item.label || '').trim();
+      const details = String(item.details || '').trim();
+      if (!label || !details) return null;
+      return { label, details };
+    })
+    .filter(Boolean);
+}
+
+function normalizeCookbookDraft(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+
+  return {
+    food_category: String(raw.food_category || '').trim(),
+    cooking_category: String(raw.cooking_category || '').trim(),
+    cooking_time: normalizeDraftNumber(raw.cooking_time),
+    portions: normalizeDraftNumber(raw.portions),
+    calories: normalizeDraftNumber(raw.calories),
+    ingredients: normalizeDraftIngredients(raw.ingredients),
+    nutrition: normalizeDraftNutrition(raw.nutrition),
+    instructions: normalizeDraftDetails(raw.instructions),
+    suggestions: normalizeDraftDetails(raw.suggestions),
+  };
+}
+
 function getTopLevelRatingRows(ratingObject) {
   return Object.keys(ratingObject)
     .filter((key) => key !== 'comment' && key !== 'variants' && Number.isFinite(ratingObject[key]))
@@ -490,6 +669,46 @@ function buildViewUrl(recipeId, options = {}) {
   const query = params.toString();
   return `/cooking/cookbook/${recipeId}${query ? `?${query}` : ''}#rating`;
 }
+
+exports.aiDraft = async (req, res) => {
+  const userId = req.user.name;
+  const originKnowledgeId = typeof req.body?.originKnowledgeId === 'string'
+    ? req.body.originKnowledgeId.trim()
+    : '';
+
+  if (!originKnowledgeId) {
+    return res.status(400).json({ error: 'originKnowledgeId is required.' });
+  }
+
+  try {
+    const sourceKnowledge = await loadKnowledgeById(userId, originKnowledgeId);
+    if (!sourceKnowledge) {
+      return res.status(404).json({ error: `Recipe knowledge [${originKnowledgeId}] was not found.` });
+    }
+
+    const aiRaw = await generateStructuredOutput({
+      model: COOKBOOK_DRAFT_MODEL,
+      prompt: buildCookbookDraftPrompt(sourceKnowledge),
+      schema: COOKBOOK_DRAFT_SCHEMA,
+      schemaName: 'cookbook_recipe_draft',
+      system: COOKBOOK_DRAFT_SYSTEM_PROMPT,
+      temperature: 0.2,
+    });
+
+    const draft = normalizeCookbookDraft(aiRaw);
+    if (!draft) {
+      return res.status(502).json({ error: 'AI drafting failed. Please try again.' });
+    }
+
+    return res.json({ ok: true, draft });
+  } catch (error) {
+    logger.error('Failed to draft cookbook entry with AI', {
+      category: 'cookbook',
+      metadata: { userId, originKnowledgeId, message: error.message },
+    });
+    return res.status(500).json({ error: 'Unable to draft cookbook entry with AI.' });
+  }
+};
 
 exports.index = async (req, res) => {
   const userId = req.user.name;

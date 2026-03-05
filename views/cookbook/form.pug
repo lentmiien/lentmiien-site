@@ -81,7 +81,14 @@ block content
             .card-body
               .d-flex.justify-content-between.align-items-start.gap-2.mb-2
                 h5.mb-0 Legacy recipe source
-                button#copyLegacyKnowledge.btn.btn-sm.btn-outline-secondary(type='button') Copy markdown
+                .d-flex.flex-wrap.gap-2
+                  button#draftLegacyKnowledge.btn.btn-sm.btn-warning(
+                    type='button'
+                    data-origin-knowledge-id=sourceKnowledge._id
+                    data-draft-endpoint='/cooking/cookbook/ai-draft'
+                  ) Draft with AI
+                  button#copyLegacyKnowledge.btn.btn-sm.btn-outline-secondary(type='button') Copy markdown
+              p#legacyDraftStatus.small.text-muted.mb-2
               textarea#legacyMarkdownSource.d-none= sourceKnowledge.contentMarkdown
               p.small.text-muted.mb-2
                 span ID: #{sourceKnowledge._id}

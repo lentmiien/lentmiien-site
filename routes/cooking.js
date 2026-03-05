@@ -24,6 +24,7 @@ router.get('/v2/recommendations', controller.cooking_recommendations_v2);
 router.get('/cookbook', cookbookController.index);
 router.get('/cookbook/new', cookbookController.newForm);
 router.post('/cookbook/new', cookbookController.create);
+router.post('/cookbook/ai-draft', cookbookController.aiDraft);
 router.get('/cookbook/:id/edit', cookbookController.editForm);
 router.post('/cookbook/:id/edit', cookbookController.update);
 router.post('/cookbook/:id/rating', cookbookController.updateRating);
