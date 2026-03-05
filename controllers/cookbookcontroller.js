@@ -52,11 +52,11 @@ const COOKBOOK_DRAFT_SCHEMA = {
         additionalProperties: false,
         properties: {
           ingredient_label: { type: 'string' },
-          amount: { type: 'number', minimum: 0 },
-          amount_unit: { type: 'string' },
-          amount_in_gram: { type: 'number', minimum: 0 },
+          amount: { type: ['number', 'null'], minimum: 0 },
+          amount_unit: { type: ['string', 'null'] },
+          amount_in_gram: { type: ['number', 'null'], minimum: 0 },
         },
-        required: ['ingredient_label'],
+        required: ['ingredient_label', 'amount', 'amount_unit', 'amount_in_gram'],
       },
     },
     nutrition: {
