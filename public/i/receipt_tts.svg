@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">OCR to TTS tile illustration</title>
+  <desc id="desc">Receipt scanned by OCR and converted to speech output.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141920"/>
+      <stop offset="100%" stop-color="#232832"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F3DBBA"/>
+      <stop offset="100%" stop-color="#E0BE8A"/>
+    </linearGradient>
+    <linearGradient id="speaker" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="546" cy="70" r="92" fill="#FF6A1F" fill-opacity="0.14"/>
+  <circle cx="96" cy="336" r="106" fill="#FFC247" fill-opacity="0.1"/>
+
+  <path d="M142 54h226v282l-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10V54z" fill="url(#paper)"/>
+  <rect x="170" y="92" width="170" height="12" rx="6" fill="#9C6A32"/>
+  <rect x="170" y="118" width="148" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.72"/>
+  <rect x="170" y="150" width="76" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <rect x="264" y="150" width="76" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <rect x="170" y="176" width="92" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <rect x="276" y="176" width="64" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <path d="M170 212h170" stroke="#9C6A32" stroke-width="4" stroke-dasharray="4 6"/>
+  <rect x="170" y="230" width="104" height="10" rx="5" fill="#FF6A1F" fill-opacity="0.75"/>
+  <rect x="282" y="230" width="58" height="10" rx="5" fill="#FF6A1F" fill-opacity="0.55"/>
+
+  <path d="M382 194h72" stroke="#FFC247" stroke-width="8" stroke-linecap="round" stroke-dasharray="8 12"/>
+  <path d="M446 178l24 16-24 16" fill="none" stroke="#FFC247" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g transform="translate(474 192)">
+    <rect x="-64" y="-50" width="128" height="100" rx="22" fill="#2A313B" stroke="#FFC247" stroke-opacity="0.38" stroke-width="2"/>
+    <path d="M-34 8h20l24 18V-26L-14 -8h-20z" fill="url(#speaker)"/>
+    <path d="M22 -20c16 8 16 32 0 40" fill="none" stroke="#FFC247" stroke-width="6" stroke-linecap="round"/>
+    <path d="M36 -30c24 14 24 46 0 60" fill="none" stroke="#FFC247" stroke-width="6" stroke-linecap="round"/>
+    <path d="M-48 -32h40" stroke="#2F8F83" stroke-width="8" stroke-linecap="round"/>
+    <path d="M-48 -12h28" stroke="#2F8F83" stroke-width="8" stroke-linecap="round"/>
+    <path d="M-48 8h34" stroke="#2F8F83" stroke-width="8" stroke-linecap="round"/>
+  </g>
+</svg>
