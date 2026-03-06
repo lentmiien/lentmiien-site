@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Budget tile illustration</title>
+  <desc id="desc">A wallet and coin icon representing accounting and budgeting.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="walletGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bgGrad)"/>
+  <circle cx="88" cy="84" r="84" fill="#FFC247" fill-opacity="0.11"/>
+  <circle cx="520" cy="320" r="116" fill="#FF6A1F" fill-opacity="0.1"/>
+
+  <rect x="122" y="132" width="396" height="188" rx="30" fill="url(#walletGrad)"/>
+  <rect x="140" y="150" width="360" height="154" rx="22" fill="#1B2026" stroke="#FFC247" stroke-opacity="0.42" stroke-width="2"/>
+  <rect x="318" y="184" width="210" height="84" rx="16" fill="#232730" stroke="#FFC247" stroke-opacity="0.35" stroke-width="2"/>
+  <circle cx="356" cy="226" r="11" fill="#FFC247"/>
+
+  <circle cx="214" cy="194" r="40" fill="#FFB84E"/>
+  <circle cx="214" cy="194" r="28" fill="#E4A034"/>
+  <path d="M204 194h20M214 184v20" stroke="#1B2026" stroke-width="6" stroke-linecap="round"/>
+
+  <rect x="184" y="246" width="126" height="12" rx="6" fill="#FFC247" fill-opacity="0.78"/>
+  <rect x="184" y="266" width="100" height="10" rx="5" fill="#FFC247" fill-opacity="0.58"/>
+</svg>

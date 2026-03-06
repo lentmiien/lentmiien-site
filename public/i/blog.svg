@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Blog tile illustration</title>
+  <desc id="desc">A notebook page and pencil icon representing blog writing.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="paperGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F8DFC0"/>
+      <stop offset="100%" stop-color="#E9C48A"/>
+    </linearGradient>
+    <linearGradient id="penGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bgGrad)"/>
+  <circle cx="560" cy="62" r="76" fill="#FF6A1F" fill-opacity="0.14"/>
+  <circle cx="116" cy="330" r="110" fill="#FFC247" fill-opacity="0.1"/>
+
+  <rect x="160" y="60" width="280" height="288" rx="22" fill="#FF6A1F" fill-opacity="0.2"/>
+  <rect x="178" y="76" width="244" height="256" rx="16" fill="url(#paperGrad)" stroke="#FFC247" stroke-opacity="0.45" stroke-width="2"/>
+
+  <rect x="208" y="118" width="184" height="12" rx="6" fill="#946534"/>
+  <rect x="208" y="146" width="166" height="10" rx="5" fill="#946534" fill-opacity="0.84"/>
+  <rect x="208" y="170" width="178" height="10" rx="5" fill="#946534" fill-opacity="0.78"/>
+  <rect x="208" y="194" width="140" height="10" rx="5" fill="#946534" fill-opacity="0.72"/>
+  <rect x="208" y="248" width="120" height="10" rx="5" fill="#946534" fill-opacity="0.72"/>
+
+  <g transform="translate(318 212) rotate(-29)">
+    <rect x="0" y="0" width="186" height="30" rx="10" fill="url(#penGrad)"/>
+    <rect x="152" y="0" width="34" height="30" rx="8" fill="#FFC247"/>
+    <path d="M-22 15l22-15v30z" fill="#E9C48A"/>
+    <path d="M-30 15l8-7v14z" fill="#1B2026"/>
+  </g>
+</svg>

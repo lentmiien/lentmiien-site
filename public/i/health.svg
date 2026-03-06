@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Health tile illustration</title>
+  <desc id="desc">A medical style icon with cross, heart and pulse line.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bgGrad)"/>
+  <circle cx="88" cy="72" r="78" fill="#FFC247" fill-opacity="0.13"/>
+  <circle cx="540" cy="328" r="104" fill="#FF6A1F" fill-opacity="0.12"/>
+
+  <rect x="152" y="76" width="336" height="248" rx="28" fill="url(#cardGrad)"/>
+  <rect x="170" y="94" width="300" height="212" rx="20" fill="#1B2026" stroke="#FFC247" stroke-opacity="0.42" stroke-width="2"/>
+
+  <rect x="270" y="132" width="100" height="22" rx="11" fill="#FFC247"/>
+  <rect x="309" y="93" width="22" height="100" rx="11" fill="#FFC247"/>
+
+  <path d="M208 236h46l22-28 27 46 27-37 17 19h86" fill="none" stroke="#FFB84E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M225 176c0-20 16-36 36-36 14 0 27 8 33 20 6-12 19-20 33-20 20 0 36 16 36 36 0 37-37 56-69 82-32-26-69-45-69-82z" fill="#FF6A1F" fill-opacity="0.45" stroke="#FFC247" stroke-width="3"/>
+</svg>

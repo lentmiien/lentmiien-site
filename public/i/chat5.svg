@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Chat 5 tile illustration</title>
+  <desc id="desc">Layered chat bubbles with a small five badge.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="bubbleGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bgGrad)"/>
+  <circle cx="540" cy="82" r="86" fill="#FF6A1F" fill-opacity="0.14"/>
+  <circle cx="96" cy="332" r="108" fill="#FFC247" fill-opacity="0.09"/>
+
+  <g transform="translate(140 94)">
+    <rect x="0" y="18" width="246" height="146" rx="24" fill="#2A2F38" stroke="#FFC247" stroke-opacity="0.25" stroke-width="2"/>
+    <path d="M42 164l-2 34 42-34z" fill="#2A2F38"/>
+    <rect x="38" y="58" width="160" height="11" rx="5.5" fill="#FFC247" fill-opacity="0.8"/>
+    <rect x="38" y="82" width="144" height="10" rx="5" fill="#FFC247" fill-opacity="0.62"/>
+    <rect x="38" y="104" width="124" height="10" rx="5" fill="#FFC247" fill-opacity="0.48"/>
+  </g>
+
+  <g transform="translate(246 134)">
+    <rect x="0" y="0" width="256" height="156" rx="26" fill="url(#bubbleGrad)"/>
+    <rect x="14" y="14" width="228" height="128" rx="20" fill="#1B2026" stroke="#FFC247" stroke-opacity="0.42" stroke-width="2"/>
+    <path d="M198 142l42 34-2-34z" fill="#1B2026"/>
+    <rect x="42" y="48" width="170" height="12" rx="6" fill="#FFB84E"/>
+    <rect x="42" y="74" width="148" height="10" rx="5" fill="#FFB84E" fill-opacity="0.8"/>
+    <rect x="42" y="96" width="126" height="10" rx="5" fill="#FFB84E" fill-opacity="0.62"/>
+  </g>
+
+  <g transform="translate(474 60)">
+    <circle cx="0" cy="0" r="34" fill="#FFC247"/>
+    <text x="0" y="12" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="38" font-weight="700" fill="#1B2026">5</text>
+  </g>
+</svg>

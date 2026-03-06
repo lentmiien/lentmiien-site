@@ -443,20 +443,19 @@ block content
   .row 
     .col 
       .mypage-grid
-        +tile('/mypage/life_log', '/i/health.jpg', 'life log', 'My Life Log')
-        +tile('/mypage/blogpost', '/i/blog.jpg', 'blogpost', 'Write blog')
+        +tile('/mypage/life_log', '/i/health.svg', 'life log', 'My Life Log')
+        +tile('/mypage/blogpost', '/i/blog.svg', 'blogpost', 'Write blog')
         if permissions && permissions.indexOf("accounting") >= 0
-          +tile('/accounting', '/i/budget.jpg', 'accounting', 'Accounting')
+          +tile('/accounting', '/i/budget.svg', 'accounting', 'Accounting')
         if permissions && permissions.indexOf("chat5") >= 0
-          +tile('/chat5/top', '/i/chat5.jpg', 'chat5', 'Chat 5')
+          +tile('/chat5/top', '/i/chat5.svg', 'chat5', 'Chat 5')
         if permissions && permissions.indexOf("chat4") >= 0
           +tile('/chat4/knowledgelist', '/i/knowledge.jpg', 'knowledge', 'Knowledge')
         if permissions && permissions.indexOf("cooking") >= 0
           +tile('/cooking/v2', '/i/calendar.jpg', 'cooking calendar', 'Cooking calendar')
           +tile('/cooking/cookbook', '/i/cookbook.svg', 'cookbook', 'Cookbook')
         +tile('/chat4/batch_status', '/i/batch.jpg', 'batch', 'Batch')
-        +tile('/', '/i/vueapp.jpg', 'vue app', 'VUE app')
-        +tile('/mypage/pdf_to_jpg', '/i/pdfconv.jpg', 'PDF to image converter', 'PDF to Image')
+        +tile('/mypage/pdf_to_jpg', '/i/pdfconv.svg', 'PDF to image converter', 'PDF to Image')
         if permissions && permissions.indexOf("ocr") >= 0
           +tile('/ocr', '/i/receipt.jpg', 'ocr tool', 'OCR tool')
           +tile('/ocr-tts', '/i/receipt.jpg', 'ocr → tts', 'OCR → TTS queue')

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">PDF to image tile illustration</title>
+  <desc id="desc">A PDF document converting into an image frame.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="pdfGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bgGrad)"/>
+  <circle cx="112" cy="70" r="86" fill="#FFC247" fill-opacity="0.12"/>
+  <circle cx="544" cy="336" r="112" fill="#FF6A1F" fill-opacity="0.1"/>
+
+  <g transform="translate(108 74)">
+    <rect x="0" y="0" width="192" height="252" rx="18" fill="url(#pdfGrad)"/>
+    <path d="M154 0h38v40h-38z" fill="#FFC247"/>
+    <rect x="18" y="18" width="156" height="216" rx="12" fill="#1B2026" stroke="#FFC247" stroke-opacity="0.4" stroke-width="2"/>
+    <rect x="42" y="72" width="108" height="44" rx="10" fill="#FFB84E"/>
+    <text x="96" y="101" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="22" font-weight="700" fill="#1B2026">PDF</text>
+    <rect x="42" y="132" width="108" height="10" rx="5" fill="#FFC247" fill-opacity="0.78"/>
+    <rect x="42" y="152" width="92" height="10" rx="5" fill="#FFC247" fill-opacity="0.58"/>
+  </g>
+
+  <g transform="translate(312 172)">
+    <path d="M0 26h96" stroke="#FFC247" stroke-width="14" stroke-linecap="round"/>
+    <path d="M70 0l34 26-34 26" fill="none" stroke="#FFC247" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(422 92)">
+    <rect x="0" y="0" width="132" height="216" rx="16" fill="#232730" stroke="#FFC247" stroke-opacity="0.45" stroke-width="2"/>
+    <rect x="14" y="14" width="104" height="188" rx="12" fill="#1B2026"/>
+    <rect x="24" y="24" width="84" height="72" rx="8" fill="#FF6A1F" fill-opacity="0.24"/>
+    <path d="M28 88l20-24 18 18 16-14 22 20" fill="none" stroke="#FFB84E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="88" cy="46" r="8" fill="#FFC247"/>
+    <rect x="24" y="114" width="84" height="10" rx="5" fill="#FFC247" fill-opacity="0.62"/>
+    <rect x="24" y="132" width="68" height="10" rx="5" fill="#FFC247" fill-opacity="0.45"/>
+  </g>
+</svg>
