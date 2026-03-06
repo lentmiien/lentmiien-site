@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Cookbook tile illustration</title>
+  <desc id="desc">Stylized cookbook icon with warm accent colors on a dark background.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="bookGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+    <linearGradient id="sheetGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F8DFC0"/>
+      <stop offset="100%" stop-color="#E9C48A"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bgGrad)"/>
+  <circle cx="560" cy="72" r="84" fill="#FF6A1F" fill-opacity="0.14"/>
+  <circle cx="92" cy="342" r="100" fill="#FFC247" fill-opacity="0.12"/>
+
+  <rect x="148" y="82" width="344" height="236" rx="22" fill="url(#bookGrad)"/>
+  <rect x="162" y="95" width="316" height="210" rx="16" fill="#232730" stroke="#FFC247" stroke-opacity="0.38" stroke-width="2"/>
+  <rect x="175" y="108" width="86" height="184" rx="8" fill="#171A20" fill-opacity="0.55"/>
+  <rect x="268" y="108" width="196" height="184" rx="10" fill="url(#sheetGrad)"/>
+
+  <path d="M287 146h160" stroke="#8F5B28" stroke-width="8" stroke-linecap="round"/>
+  <path d="M287 178h134" stroke="#8F5B28" stroke-width="8" stroke-linecap="round" opacity="0.84"/>
+  <path d="M287 210h148" stroke="#8F5B28" stroke-width="8" stroke-linecap="round" opacity="0.76"/>
+  <path d="M287 242h118" stroke="#8F5B28" stroke-width="8" stroke-linecap="round" opacity="0.68"/>
+
+  <circle cx="220" cy="142" r="20" fill="#FFC247"/>
+  <circle cx="220" cy="142" r="10" fill="#171A20"/>
+  <rect x="204" y="174" width="32" height="94" rx="16" fill="#FFC247"/>
+
+  <path d="M196 320h254" stroke="#FFC247" stroke-width="6" stroke-linecap="round" opacity="0.45"/>
+</svg>
