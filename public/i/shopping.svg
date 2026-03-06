@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Shopping list tile illustration</title>
+  <desc id="desc">Cart, checklist, and grocery items.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161B23"/>
+      <stop offset="100%" stop-color="#222A35"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <g transform="translate(90 78)">
+    <rect x="0" y="0" width="180" height="236" rx="16" fill="#F3D9B5"/>
+    <rect x="22" y="36" width="128" height="10" rx="5" fill="#9D6B34"/>
+    <rect x="22" y="66" width="108" height="8" rx="4" fill="#9D6B34" fill-opacity="0.72"/>
+    <rect x="22" y="94" width="108" height="8" rx="4" fill="#9D6B34" fill-opacity="0.72"/>
+    <rect x="22" y="122" width="108" height="8" rx="4" fill="#9D6B34" fill-opacity="0.72"/>
+    <path d="M140 62l8 8 16-16M140 90l8 8 16-16M140 118l8 8 16-16" fill="none" stroke="#FF6A1F" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(248 138)">
+    <path d="M0 0h248l-22 108H38z" fill="#2A323E" stroke="#FFC247" stroke-opacity="0.4" stroke-width="3"/>
+    <path d="M0 0l-22-54h-38" fill="none" stroke="#FFC247" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="78" cy="126" r="18" fill="#FF6A1F"/>
+    <circle cx="194" cy="126" r="18" fill="#FF6A1F"/>
+
+    <rect x="50" y="34" width="34" height="52" rx="8" fill="#2F8F83"/>
+    <circle cx="108" cy="54" r="20" fill="#FFC247"/>
+    <rect x="140" y="30" width="46" height="56" rx="8" fill="#FFB84E"/>
+  </g>
+</svg>

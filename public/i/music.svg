@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Music tile illustration</title>
+  <desc id="desc">Vinyl record, note and wave bars.</desc>
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#202734"/>
+      <stop offset="100%" stop-color="#12161C"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <g transform="translate(138 66)">
+    <circle cx="166" cy="138" r="116" fill="#2A313D" stroke="#FFC247" stroke-opacity="0.45" stroke-width="3"/>
+    <circle cx="166" cy="138" r="84" fill="none" stroke="#FF6A1F" stroke-width="10" stroke-opacity="0.62"/>
+    <circle cx="166" cy="138" r="52" fill="none" stroke="#FFC247" stroke-width="6" stroke-opacity="0.5"/>
+    <circle cx="166" cy="138" r="18" fill="#FFC247"/>
+    <circle cx="166" cy="138" r="8" fill="#1B2026"/>
+  </g>
+
+  <g transform="translate(430 82)">
+    <path d="M0 0v126c0 20-18 36-40 36-20 0-36-13-36-30 0-18 16-30 36-30 9 0 18 2 24 6V36l86-20v126c0 20-18 36-40 36-20 0-36-13-36-30 0-18 16-30 36-30 10 0 18 2 24 6V0z" fill="#FF6A1F"/>
+  </g>
+
+  <g transform="translate(94 312)" fill="#2F8F83">
+    <rect x="0" y="-18" width="26" height="36" rx="6"/>
+    <rect x="36" y="-28" width="26" height="56" rx="6"/>
+    <rect x="72" y="-12" width="26" height="24" rx="6"/>
+    <rect x="108" y="-36" width="26" height="72" rx="6"/>
+    <rect x="144" y="-20" width="26" height="40" rx="6"/>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Product tile illustration</title>
+  <desc id="desc">A product box and tag in an isometric style.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#151A21"/>
+      <stop offset="100%" stop-color="#1F252F"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <g transform="translate(130 68)">
+    <polygon points="190,0 332,64 190,128 48,64" fill="#FF7C3B"/>
+    <polygon points="48,64 190,128 190,268 48,204" fill="#D9581A"/>
+    <polygon points="190,128 332,64 332,204 190,268" fill="#B94E1A"/>
+    <polygon points="190,0 190,128 332,64" fill="#FFC247" fill-opacity="0.28"/>
+
+    <rect x="170" y="92" width="40" height="96" rx="8" fill="#FFC247" fill-opacity="0.55"/>
+    <circle cx="236" cy="166" r="18" fill="#1B2026"/>
+    <circle cx="236" cy="166" r="10" fill="#FFC247"/>
+  </g>
+
+  <g transform="translate(406 226)">
+    <path d="M0 0h90l34 30-34 30H0l-34-30z" fill="#2A313B" stroke="#FFC247" stroke-opacity="0.4" stroke-width="2"/>
+    <circle cx="14" cy="30" r="6" fill="#FFC247"/>
+    <rect x="28" y="24" width="44" height="12" rx="6" fill="#FF6A1F"/>
+  </g>
+</svg>

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Knowledge tile illustration</title>
+  <desc id="desc">Connected knowledge cards with linking lines.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#12161C"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#D9581A"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="540" cy="70" r="90" fill="#FFC247" fill-opacity="0.12"/>
+  <circle cx="90" cy="325" r="98" fill="#FF6A1F" fill-opacity="0.10"/>
+
+  <path d="M182 120L320 86L456 136L450 256L304 304L172 250Z" fill="none" stroke="#FFC247" stroke-opacity="0.45" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="182" cy="120" r="10" fill="#FFC247"/>
+  <circle cx="320" cy="86" r="10" fill="#FFC247"/>
+  <circle cx="456" cy="136" r="10" fill="#FFC247"/>
+  <circle cx="450" cy="256" r="10" fill="#FFC247"/>
+  <circle cx="304" cy="304" r="10" fill="#FFC247"/>
+  <circle cx="172" cy="250" r="10" fill="#FFC247"/>
+
+  <g transform="translate(220 118)">
+    <rect x="0" y="0" width="128" height="86" rx="12" fill="url(#card)"/>
+    <rect x="8" y="8" width="112" height="70" rx="9" fill="#1B2026"/>
+    <rect x="24" y="26" width="80" height="8" rx="4" fill="#FFC247"/>
+    <rect x="24" y="42" width="62" height="7" rx="3.5" fill="#FFC247" fill-opacity="0.65"/>
+  </g>
+
+  <g transform="translate(340 188)">
+    <rect x="0" y="0" width="118" height="78" rx="12" fill="#2A3038" stroke="#FFC247" stroke-opacity="0.35" stroke-width="2"/>
+    <circle cx="24" cy="26" r="7" fill="#FF7C3B"/>
+    <rect x="38" y="22" width="56" height="8" rx="4" fill="#FFB84E"/>
+    <rect x="20" y="42" width="78" height="7" rx="3.5" fill="#FFB84E" fill-opacity="0.6"/>
+    <rect x="20" y="56" width="64" height="7" rx="3.5" fill="#FFB84E" fill-opacity="0.45"/>
+  </g>
+</svg>

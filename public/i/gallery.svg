@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Gallery tile illustration</title>
+  <desc id="desc">Layered photo frames with simple landscapes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161B23"/>
+      <stop offset="100%" stop-color="#232934"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="98" cy="74" r="82" fill="#FFC247" fill-opacity="0.1"/>
+
+  <g transform="translate(170 78) rotate(-8)">
+    <rect x="0" y="0" width="240" height="274" rx="14" fill="#F2D6AF"/>
+    <rect x="16" y="16" width="208" height="194" rx="10" fill="#1F2530"/>
+    <path d="M26 174l44-56 34 36 28-24 52 44" fill="none" stroke="#FFB84E" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="178" cy="62" r="18" fill="#FFC247"/>
+    <rect x="46" y="226" width="148" height="12" rx="6" fill="#9D6C35"/>
+  </g>
+
+  <g transform="translate(272 104) rotate(7)">
+    <rect x="0" y="0" width="220" height="250" rx="14" fill="#E06224"/>
+    <rect x="14" y="14" width="192" height="178" rx="10" fill="#1B2026"/>
+    <path d="M28 164l34-42 30 24 26-28 40 46" fill="none" stroke="#2F8F83" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="156" cy="56" r="14" fill="#FFC247"/>
+    <rect x="38" y="206" width="118" height="10" rx="5" fill="#FFC247" fill-opacity="0.7"/>
+  </g>
+</svg>

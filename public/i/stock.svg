@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Emergency stock tile illustration</title>
+  <desc id="desc">Pantry shelves with cans and boxes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161B23"/>
+      <stop offset="100%" stop-color="#212834"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <rect x="110" y="88" width="420" height="242" rx="18" fill="#2A313D" stroke="#FFC247" stroke-opacity="0.32" stroke-width="3"/>
+  <rect x="132" y="136" width="376" height="10" rx="5" fill="#FFC247" fill-opacity="0.45"/>
+  <rect x="132" y="214" width="376" height="10" rx="5" fill="#FFC247" fill-opacity="0.45"/>
+
+  <g transform="translate(158 102)">
+    <rect x="0" y="0" width="54" height="34" rx="6" fill="#FF6A1F"/>
+    <circle cx="92" cy="17" r="17" fill="#FFC247"/>
+    <rect x="132" y="0" width="68" height="34" rx="6" fill="#2F8F83"/>
+    <rect x="220" y="4" width="64" height="30" rx="6" fill="#FFB84E"/>
+  </g>
+
+  <g transform="translate(154 176)">
+    <circle cx="20" cy="20" r="20" fill="#FFB84E"/>
+    <rect x="58" y="0" width="76" height="40" rx="8" fill="#FF6A1F"/>
+    <circle cx="176" cy="20" r="20" fill="#2F8F83"/>
+    <rect x="214" y="0" width="96" height="40" rx="8" fill="#FFC247"/>
+  </g>
+
+  <g transform="translate(148 250)">
+    <rect x="0" y="0" width="120" height="52" rx="10" fill="#E05F1C"/>
+    <rect x="136" y="0" width="80" height="52" rx="10" fill="#FFC247"/>
+    <rect x="228" y="0" width="130" height="52" rx="10" fill="#2F8F83"/>
+  </g>
+</svg>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Image generation tile illustration</title>
+  <desc id="desc">Picture frame with magic wand and sparkles.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141A22"/>
+      <stop offset="100%" stop-color="#1F2733"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="100%" stop-color="#FF6A1F"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <rect x="110" y="84" width="316" height="228" rx="18" fill="#252D38" stroke="#FFC247" stroke-opacity="0.4" stroke-width="3"/>
+  <rect x="126" y="100" width="284" height="160" rx="12" fill="#1B2026"/>
+  <path d="M136 240l58-70 44 44 34-30 66 56" fill="none" stroke="#2F8F83" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="340" cy="138" r="16" fill="#FFC247"/>
+
+  <g transform="translate(386 154) rotate(-26)">
+    <rect x="0" y="0" width="172" height="18" rx="9" fill="#FF6A1F"/>
+    <rect x="130" y="0" width="42" height="18" rx="9" fill="#FFC247"/>
+    <rect x="12" y="-12" width="20" height="42" rx="8" fill="#2F8F83"/>
+  </g>
+
+  <g fill="url(#spark)">
+    <path d="M506 92l8 18 18 8-18 8-8 18-8-18-18-8 18-8z"/>
+    <path d="M456 66l5 11 11 5-11 5-5 11-5-11-11-5 11-5z"/>
+    <path d="M544 162l4 9 9 4-9 4-4 9-4-9-9-4 9-4z"/>
+  </g>
+</svg>

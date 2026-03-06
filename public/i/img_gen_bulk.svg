@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Bulk image generation tile illustration</title>
+  <desc id="desc">Grid of generated images with batch arrows.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#151B23"/>
+      <stop offset="100%" stop-color="#212936"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <g transform="translate(108 82)">
+    <rect x="0" y="0" width="140" height="96" rx="12" fill="#2A313D"/>
+    <rect x="156" y="0" width="140" height="96" rx="12" fill="#2A313D"/>
+    <rect x="312" y="0" width="140" height="96" rx="12" fill="#2A313D"/>
+    <rect x="0" y="112" width="140" height="96" rx="12" fill="#2A313D"/>
+    <rect x="156" y="112" width="140" height="96" rx="12" fill="#2A313D"/>
+    <rect x="312" y="112" width="140" height="96" rx="12" fill="#2A313D"/>
+
+    <g stroke="#FFC247" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 84l26-30 20 18 16-14 28 26"/>
+      <path d="M170 84l24-26 20 16 18-20 30 30"/>
+      <path d="M326 84l20-18 18 12 20-24 34 30"/>
+      <path d="M14 196l20-24 20 16 16-14 28 22"/>
+      <path d="M170 196l20-20 18 14 18-18 34 24"/>
+      <path d="M326 196l20-22 20 14 20-18 30 26"/>
+    </g>
+
+    <g fill="#FF6A1F">
+      <circle cx="54" cy="28" r="8"/>
+      <circle cx="210" cy="28" r="8"/>
+      <circle cx="366" cy="28" r="8"/>
+      <circle cx="54" cy="140" r="8"/>
+      <circle cx="210" cy="140" r="8"/>
+      <circle cx="366" cy="140" r="8"/>
+    </g>
+  </g>
+
+  <path d="M84 54H540" stroke="#FFB84E" stroke-width="8" stroke-linecap="round" stroke-dasharray="10 14"/>
+  <path d="M506 34l34 20-34 20" fill="none" stroke="#FFB84E" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

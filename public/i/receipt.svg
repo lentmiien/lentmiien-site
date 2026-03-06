@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Receipt tile illustration</title>
+  <desc id="desc">Receipt sheet with magnifying glass for OCR scanning.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141920"/>
+      <stop offset="100%" stop-color="#232832"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F3DBBA"/>
+      <stop offset="100%" stop-color="#E0BE8A"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="538" cy="72" r="92" fill="#FF6A1F" fill-opacity="0.14"/>
+
+  <path d="M188 52h214v284l-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10-14 10-14-10V52z" fill="url(#paper)"/>
+  <rect x="216" y="90" width="158" height="12" rx="6" fill="#9C6A32"/>
+  <rect x="216" y="116" width="138" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.72"/>
+  <rect x="216" y="148" width="72" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <rect x="306" y="148" width="68" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <rect x="216" y="174" width="88" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <rect x="322" y="174" width="52" height="9" rx="4.5" fill="#9C6A32" fill-opacity="0.6"/>
+  <path d="M216 210h158" stroke="#9C6A32" stroke-width="4" stroke-dasharray="4 6"/>
+  <rect x="216" y="230" width="96" height="10" rx="5" fill="#FF6A1F" fill-opacity="0.75"/>
+  <rect x="320" y="230" width="54" height="10" rx="5" fill="#FF6A1F" fill-opacity="0.55"/>
+
+  <g transform="translate(404 214)">
+    <circle cx="0" cy="0" r="54" fill="none" stroke="#FFC247" stroke-width="12"/>
+    <circle cx="0" cy="0" r="34" fill="none" stroke="#2F8F83" stroke-width="8" stroke-dasharray="12 8"/>
+    <rect x="36" y="36" width="62" height="14" rx="7" transform="rotate(42 36 36)" fill="#FFC247"/>
+  </g>
+</svg>

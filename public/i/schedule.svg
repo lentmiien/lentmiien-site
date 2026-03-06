@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Schedule tile illustration</title>
+  <desc id="desc">Clock and timeline markers.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#131921"/>
+      <stop offset="100%" stop-color="#202833"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+
+  <g transform="translate(186 58)">
+    <circle cx="128" cy="128" r="102" fill="#1D2430" stroke="#FFC247" stroke-width="8"/>
+    <circle cx="128" cy="128" r="78" fill="none" stroke="#FF6A1F" stroke-opacity="0.55" stroke-width="4" stroke-dasharray="6 10"/>
+    <path d="M128 128V82M128 128L168 148" stroke="#FFC247" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="128" cy="128" r="10" fill="#FF6A1F"/>
+  </g>
+
+  <path d="M88 326H552" stroke="#2A323E" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="146" cy="326" r="14" fill="#FFC247"/>
+  <circle cx="254" cy="326" r="14" fill="#FF6A1F"/>
+  <circle cx="362" cy="326" r="14" fill="#2F8F83"/>
+  <circle cx="470" cy="326" r="14" fill="#FFC247"/>
+
+  <path d="M146 326C220 296 260 350 362 322C406 310 436 314 470 326" fill="none" stroke="#FFB84E" stroke-width="6" stroke-linecap="round"/>
+</svg>

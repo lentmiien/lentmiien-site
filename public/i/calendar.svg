@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Calendar tile illustration</title>
+  <desc id="desc">Desk calendar with highlighted events.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161A21"/>
+      <stop offset="100%" stop-color="#222831"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <path d="M60 326C170 250 278 370 394 312C480 269 538 284 600 340L600 400L60 400Z" fill="#FF6A1F" fill-opacity="0.15"/>
+
+  <rect x="146" y="74" width="348" height="252" rx="24" fill="#F1D0A1"/>
+  <rect x="146" y="74" width="348" height="72" rx="24" fill="#E05F1C"/>
+  <rect x="176" y="58" width="20" height="36" rx="10" fill="#FFC247"/>
+  <rect x="444" y="58" width="20" height="36" rx="10" fill="#FFC247"/>
+
+  <g fill="#9A6A34">
+    <rect x="188" y="172" width="56" height="36" rx="8"/>
+    <rect x="258" y="172" width="56" height="36" rx="8"/>
+    <rect x="328" y="172" width="56" height="36" rx="8"/>
+    <rect x="398" y="172" width="56" height="36" rx="8"/>
+    <rect x="188" y="220" width="56" height="36" rx="8"/>
+    <rect x="258" y="220" width="56" height="36" rx="8"/>
+    <rect x="398" y="220" width="56" height="36" rx="8"/>
+  </g>
+
+  <rect x="328" y="220" width="56" height="36" rx="8" fill="#FF6A1F"/>
+  <circle cx="356" cy="238" r="10" fill="#FFC247"/>
+
+  <g fill="#1B2026" fill-opacity="0.78">
+    <rect x="188" y="122" width="16" height="8" rx="4"/>
+    <rect x="258" y="122" width="16" height="8" rx="4"/>
+    <rect x="328" y="122" width="16" height="8" rx="4"/>
+    <rect x="398" y="122" width="16" height="8" rx="4"/>
+  </g>
+</svg>

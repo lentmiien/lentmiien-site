@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Credit card tile illustration</title>
+  <desc id="desc">Stylized payment card with chip and contactless lines.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141A21"/>
+      <stop offset="100%" stop-color="#202833"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#D95719"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="86" cy="76" r="78" fill="#FFC247" fill-opacity="0.12"/>
+
+  <g transform="translate(96 88)">
+    <rect x="0" y="0" width="448" height="224" rx="24" fill="url(#card)"/>
+    <rect x="0" y="44" width="448" height="42" fill="#1B2026" fill-opacity="0.66"/>
+    <rect x="34" y="116" width="74" height="56" rx="8" fill="#FFC247"/>
+    <path d="M50 116v56M72 116v56M34 134h74M34 154h74" stroke="#B2762E" stroke-width="3"/>
+
+    <rect x="136" y="138" width="166" height="12" rx="6" fill="#FFC247" fill-opacity="0.82"/>
+    <rect x="136" y="160" width="132" height="10" rx="5" fill="#FFC247" fill-opacity="0.58"/>
+
+    <path d="M346 154c16-8 16-26 0-34" fill="none" stroke="#FFC247" stroke-width="5" stroke-linecap="round"/>
+    <path d="M362 160c24-12 24-38 0-50" fill="none" stroke="#FFC247" stroke-width="5" stroke-linecap="round"/>
+    <path d="M378 166c32-16 32-50 0-66" fill="none" stroke="#FFC247" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>
