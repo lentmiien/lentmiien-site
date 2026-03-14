@@ -1,8 +1,7 @@
 extends layout
 
-- const historySuffix = returnHistory && returnHistory !== 'last30' ? `?history=${encodeURIComponent(returnHistory)}` : '';
-
 block content
+  - const historySuffix = returnHistory && returnHistory !== 'last30' ? `?history=${encodeURIComponent(returnHistory)}` : '';
   .receipt-edit-page
     h1 Receipt workspace
     p.page-intro Upload additional records, compare the source image, and fine-tune the stored details without leaving the page.
