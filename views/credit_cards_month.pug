@@ -61,6 +61,22 @@ block content
         .comparison-card#comparisonBlock
           h4.credit-section-title Comparison vs previous month
           .comparison-card__body
+      .credit-section.month-transactions
+        h3.credit-section-title Transactions
+        p.inline-feedback All transactions recorded for the selected month.
+        .month-transactions__table
+          table.credit-table
+            thead
+              tr
+                th Date
+                th Label
+                th Amount
+                th External
+                th Multiplier (%)
+                th Added
+            tbody#monthTransactionsBody
+              tr
+                td.inline-feedback(colspan='6') Loading transactions...
     .month-bottom-bar
       a#backToDashboard.btn.btn-outline-primary(href="/budget/cards") Back to dashboard
       span.inline-feedback#updatedAtInfo

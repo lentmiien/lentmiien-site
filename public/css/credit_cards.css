@@ -423,6 +423,19 @@
   color: var(--credit-negative);
 }
 
+.month-transactions {
+  grid-column: 1 / -1;
+  border-radius: 20px;
+  background: var(--credit-surface);
+  border: 1px solid var(--credit-border);
+  box-shadow: var(--credit-shadow);
+  padding: 24px;
+}
+
+.month-transactions__table {
+  overflow-x: auto;
+}
+
 .month-bottom-bar {
   display: flex;
   justify-content: space-between;

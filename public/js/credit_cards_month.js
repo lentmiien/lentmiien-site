@@ -39,6 +39,7 @@
     summaryPeakDate: document.getElementById('summaryPeakDate'),
     comparisonBlock: document.getElementById('comparisonBlock'),
     comparisonBody: document.querySelector('#comparisonBlock .comparison-card__body'),
+    transactionsBody: document.getElementById('monthTransactionsBody'),
     updatedAtInfo: document.getElementById('updatedAtInfo'),
     backToDashboard: document.getElementById('backToDashboard'),
   };
@@ -122,6 +123,7 @@
 
     renderRunningChart(data.dailySeries || []);
     renderComparison(data.comparison);
+    renderTransactions(data.transactions || []);
 
     if (elements.updatedAtInfo) {
       if (summary.confirmed && summary.confirmedAt) {
@@ -134,6 +136,50 @@
       }
     }
   }
+
+  function renderTransactions(transactions) {
+    if (!elements.transactionsBody) return;
+
+    const monthTransactions = Array.isArray(transactions)
+      ? transactions.slice().sort((left, right) => {
+        const transactionDateDiff = getTimeValue(right.transactionDate) - getTimeValue(left.transactionDate);
+        if (transactionDateDiff !== 0) return transactionDateDiff;
+        return getTimeValue(right.createdAt) - getTimeValue(left.createdAt);
+      })
+      : [];
+
+    elements.transactionsBody.innerHTML = '';
+
+    if (monthTransactions.length === 0) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.innerHTML = '<td colspan="6" class="inline-feedback">No transactions recorded for this month.</td>';
+      elements.transactionsBody.appendChild(emptyRow);
+      return;
+    }
+
+    monthTransactions.forEach((tx) => {
+      const row = document.createElement('tr');
+      const amountClass = tx.amount >= 0 ? 'credit-table__amount--positive' : 'credit-table__amount--negative';
+      const externalBadge = tx.external
+        ? '<span class="credit-table__external">External</span>'
+        : '–';
+      const multiplier = tx.external ? formatNumber(tx.externalMultiplier || 0) : '0';
+      const createdLabel = tx.createdAt
+        ? new Date(tx.createdAt).toLocaleString()
+        : '–';
+
+      row.innerHTML = `
+        <td>${formatDate(tx.transactionDate)}</td>
+        <td>${escapeHtml(tx.label || '')}</td>
+        <td class="credit-table__amount ${amountClass}">${formatCurrency(tx.amount)}</td>
+        <td>${externalBadge}</td>
+        <td>${multiplier}</td>
+        <td>${createdLabel}</td>
+      `;
+      elements.transactionsBody.appendChild(row);
+    });
+  }
+
   function renderRunningChart(series) {
     if (!elements.runningChart) return;
     const svg = d3.select(elements.runningChart);
@@ -339,6 +385,28 @@
   function formatNumber(value) {
     if (value === null || value === undefined || Number.isNaN(Number(value))) return '--';
     return Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  }
+
+  function formatDate(value) {
+    if (!value) return '--';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '--';
+    return date.toISOString().slice(0, 10);
+  }
+
+  function getTimeValue(value) {
+    const time = Date.parse(value);
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function escapeHtml(value) {
+    return value.replace(/[&<>"']/g, (match) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[match]));
   }
 
   async function fetchJson(url, options = {}) {

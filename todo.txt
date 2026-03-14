@@ -1,7 +1,3 @@
-On the page `views/receipt.pug` I show a "History" list of the most recent receipts.
+On the page `views/credit_cards_month.pug`, I'd like to add a list of all transactions for the selected month at the bottom of the page.
 
-Now I'd like to add controls to show previous months as well, so add a select box for the history list, that default to show last 30 days, but also have choices for showing receipts from previous months, up to 3 years back in time.
-
-So, if for example I choose "December 2025" from the select box, the page should fetch the receipts from that month, and refresh the list to show those receipts, insted of what's currently shown.
-
-Now update the page and the backend to support this new functionality.
+Please update the page to show this list.
