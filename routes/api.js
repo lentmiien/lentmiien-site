@@ -3,6 +3,7 @@ const router = express.Router();
 
 // Require controller modules.
 const controller = require('../controllers/apicontroller');
+const apiRecordController = require('../controllers/apiRecordController');
 
 /* GET home page. */
 router.all('*', controller.root);
@@ -32,6 +33,11 @@ router.get('/chat5/fetchLastMessage', controller.fetchLastMessage);
 router.get('/testConnect', controller.testConnect);
 router.get('/fetchFeedback', controller.fetchFeedback);
 router.post('/setTask', controller.setTask);
+
+/* Records */
+router.get('/records', apiRecordController.requireApiRecordUser, apiRecordController.fetchRecords);
+router.post('/records', apiRecordController.requireApiRecordUser, apiRecordController.upsertRecords);
+router.delete('/records/:id', apiRecordController.requireApiRecordUser, apiRecordController.deleteRecord);
 
 /* Exchange rates */
 router.post('/exchangeRates', controller.updateExchangeRates);

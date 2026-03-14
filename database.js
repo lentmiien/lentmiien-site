@@ -130,6 +130,8 @@ const CreditCardMonthlyBalance = require('./models/credit_card_monthly_balance')
 const CreditCardTransaction = require('./models/credit_card_transaction');
 // API debug logs
 const ApiDebugLog = require('./models/api_debug_log');
+// API records
+const ApiRecordModel = require('./models/api_record');
 // OCR jobs
 const OcrJob = require('./models/ocr_job');
 const OcrTtsJob = require('./models/ocr_tts_job');
@@ -217,6 +219,7 @@ module.exports = {
   CreditCardMonthlyBalance,
   CreditCardTransaction,
   ApiDebugLog,
+  ApiRecordModel,
   OcrJob,
   OcrTtsJob,
   AsrJob,

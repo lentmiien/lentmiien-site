@@ -1,3 +1,48 @@
-On the page `views/credit_cards_month.pug`, I'd like to add a list of all transactions for the selected month at the bottom of the page.
+In the API, I want to add a couple of new routes for managing a new database. I want routes for creating/editing database entries, fetching data based on queries, and possible deleting entries, but deleting is usually only for removing input errors. Furthermore, I want to support 2 user tiers, one that can only access and edit regular data, and one that can also edit encrypted data.
 
-Please update the page to show this list.
+This is the database format I have in mind for the new database:
+```
+{
+  id: string,
+  order: number,
+  customer: string,
+  tracking: string,
+  title: string,
+  comment: string,
+  next_deadline: date,
+  completed: boolean,
+
+  fields: {
+    [fieldId: string]: any
+  },
+
+  encryptedFields: {
+    [fieldId: string]: {
+      v: 1,
+      alg: 'aes-256-gcm',
+      kid: string,
+      iv: string,
+      tag: string,
+      ct: string
+    }
+  },
+
+  rev: number,
+  createdAt: date,
+  updatedAt: date
+}
+```
+
+So user tier 1, can access everything but `encryptedFields`, and user tier 2 can access everything.
+
+`fields` and `encryptedFields` can hold as many key-value pairs as needed.
+
+In the create/update endpoint, I want to allow batch uploading, and for entries with `id` set to `null`, that means create a new entry (and get the id from the new entry), while a provided `id` means update that entry, and when updating entries, the API should only update the values provided, and keep values that were not provided, this is also true for content in the `fields` and `encryptedFields` objects, only update/append provided values and keep the rest, but if a provided `fields` or `encryptedFields` value is set to `null` then delete that key-value pair from the database. Also, I want the user to be able to provide `createdAt` and `updatedAt` dates, for filling in historic data, during normal use the user should not provide these values, and the current time should be used instead, as appropriate. When updating values, require that the user provide their `rev` value, and only update if the `rev` value matches the database value, otherwise return an error message, and add +1 to `rev` after each update.
+
+For fetching data, allow user to query on created/updated/deadline dates, completed flag, title as the main filter options, and order/customer for certain scenarios. Also, don't return `encryptedFields` to user tier 1 requests.
+
+The API already require an API key, so lets also add a requirement for a user id with each request, that must be one of 2 predetermined values for Tier 1 and Tier 2, if user id mismatches both values just return an error message.
+
+The `encryptedFields` values are encrypted on the user side, so just save the values as they are received.
+
+Now, set up the new API routes, the database, and the user id placeholder values (I'll put this in the .env when done).

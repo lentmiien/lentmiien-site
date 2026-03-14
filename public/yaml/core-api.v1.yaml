@@ -6,7 +6,9 @@ info:
   description: |
     This document captures the REST endpoints mounted under `/api`. They back the Vue tools,
     health log dashboards, and automation agents that seed Chat5 conversations and schedule tasks.
-    All routes require an authenticated session cookie (`connect.sid`) unless otherwise noted.
+    Most routes require an authenticated session cookie (`connect.sid`) unless otherwise noted.
+    The `/api/records` endpoints also support bearer API-key access together with an allowed
+    `x-user-id` tier header.
 servers:
   - url: http://localhost:3000
     description: Local development
@@ -21,6 +23,8 @@ tags:
     description: Chat transcript exports for downstream tooling.
   - name: Automation
     description: Utility endpoints for schedule/task automation.
+  - name: Records
+    description: Tiered record storage with partial updates and encrypted field redaction.
 security:
   - sessionCookie: []
 paths:
@@ -241,6 +245,177 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SetTaskResponse'
+  /api/records:
+    get:
+      summary: Query API records
+      description: >
+        Returns records filtered by title, completion state, created/updated ranges,
+        deadline range, and optional order/customer matches. Tier 1 callers never receive
+        `encryptedFields` in the response body.
+      tags: [Records]
+      security:
+        - bearerApiKey: []
+          apiRecordUserIdHeader: []
+      parameters:
+        - in: query
+          name: title
+          schema:
+            type: string
+          description: Case-insensitive substring match on `title`.
+        - in: query
+          name: customer
+          schema:
+            type: string
+          description: Case-insensitive substring match on `customer`.
+        - in: query
+          name: order
+          schema:
+            type: number
+          description: Exact `order` value.
+        - in: query
+          name: completed
+          schema:
+            type: boolean
+          description: Exact completion flag.
+        - in: query
+          name: createdAtFrom
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: createdAtTo
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: updatedAtFrom
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: updatedAtTo
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: deadlineFrom
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: deadlineTo
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Matching records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiRecord'
+        '400':
+          description: Invalid filter payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+    post:
+      summary: Batch create or update API records
+      description: >
+        Accepts either a single entry object, an array of entry objects, or a wrapper object
+        with an `entries` or `data` array. Items with `id: null` create new records; items with
+        an `id` update the existing record and require a matching `rev`.
+      tags: [Records]
+      security:
+        - bearerApiKey: []
+          apiRecordUserIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ApiRecordWrite'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/ApiRecordWrite'
+                - $ref: '#/components/schemas/ApiRecordBatchEnvelope'
+      responses:
+        '200':
+          description: All rows succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiRecordUpsertResponse'
+        '207':
+          description: Mixed success and failure inside the batch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiRecordUpsertResponse'
+        '400':
+          description: Invalid payload or all rows rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+  /api/records/{id}:
+    delete:
+      summary: Delete a record by id
+      description: >
+        Removes a record. Tier 1 callers can only delete records that do not contain
+        `encryptedFields`.
+      tags: [Records]
+      security:
+        - bearerApiKey: []
+          apiRecordUserIdHeader: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Record deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      deleted:
+                        $ref: '#/components/schemas/ApiRecord'
+        '403':
+          description: Tier does not allow deleting encrypted content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
 components:
   securitySchemes:
     sessionCookie:
@@ -248,6 +423,16 @@ components:
       in: cookie
       name: connect.sid
       description: Obtained after signing in via `/login`.
+    bearerApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: "Send `Authorization: Bearer <API_KEY>`."
+    apiRecordUserIdHeader:
+      type: apiKey
+      in: header
+      name: x-user-id
+      description: "Must match either `API_TIER1_USER_ID` or `API_TIER2_USER_ID`."
   schemas:
     ProblemResponse:
       type: object
@@ -530,12 +715,177 @@ components:
         doc:
           type: object
           description: Newly created `Task` document when available.
+    EncryptedFieldEnvelope:
+      type: object
+      required: [v, alg, kid, iv, tag, ct]
+      properties:
+        v:
+          type: integer
+          minimum: 1
+        alg:
+          type: string
+        kid:
+          type: string
+        iv:
+          type: string
+        tag:
+          type: string
+        ct:
+          type: string
+    ApiRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        order:
+          type: number
+          nullable: true
+        customer:
+          type: string
+          nullable: true
+        tracking:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        next_deadline:
+          type: string
+          format: date-time
+          nullable: true
+        completed:
+          type: boolean
+        fields:
+          type: object
+          additionalProperties: true
+        encryptedFields:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/EncryptedFieldEnvelope'
+        rev:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ApiRecordWrite:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+          description: Use `null` or omit to create a new record.
+        order:
+          type: number
+          nullable: true
+        customer:
+          type: string
+          nullable: true
+        tracking:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        next_deadline:
+          type: string
+          format: date-time
+          nullable: true
+        completed:
+          type: boolean
+        fields:
+          type: object
+          description: Partial map update. Setting a key to `null` removes it during updates.
+          additionalProperties: true
+        encryptedFields:
+          type: object
+          description: Partial encrypted map update. Tier 1 callers may not send this.
+          additionalProperties:
+            anyOf:
+              - $ref: '#/components/schemas/EncryptedFieldEnvelope'
+              - type: 'null'
+        rev:
+          type: integer
+          minimum: 0
+          description: Required when updating an existing record.
+        createdAt:
+          type: string
+          format: date-time
+          description: Optional backfill timestamp.
+        updatedAt:
+          type: string
+          format: date-time
+          description: Optional backfill timestamp.
+    ApiRecordBatchEnvelope:
+      type: object
+      properties:
+        userId:
+          type: string
+          description: Optional request-scoped fallback when the header is omitted.
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiRecordWrite'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiRecordWrite'
+    ApiRecordBatchResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        index:
+          type: integer
+        status:
+          type: string
+          enum: [created, updated, error]
+        id:
+          type: string
+          nullable: true
+        entry:
+          $ref: '#/components/schemas/ApiRecord'
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ApiRecordUpsertResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        summary:
+          type: object
+          properties:
+            created:
+              type: integer
+            updated:
+              type: integer
+            failed:
+              type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiRecordBatchResult'
 x-yaml-viewer:
   domain: Core API
   highlights:
     - Health metrics ingestion & diary exports for the analytics notebooks.
     - Bin packing helper shared with the Vue dashboard and CLI runners.
     - Automation-friendly task creator used by calendar agents.
+    - Tiered `/api/records` storage with encrypted field redaction for Tier 1 callers.
   examples:
     - label: Fetch health entries
       description: Pull a 7-day window to hydrate local notebooks.
