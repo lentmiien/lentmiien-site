@@ -1,9 +1,7 @@
-On the page `views/cookbook/form.pug`, if I'm generating or editing an entry from a "Legacy recipe source", I want a button for AI drafting the new entry. For this functionality I want to use the `generateStructuredOutput` function from `utils/OpenAI_API.js`, and input `title` + `contentMarkdown` from the knowledge entry, to fill in the "Food category", "Cooking category", "Cooking time (minutes)", "Portions", "Calories per portion", "Ingredients (JSON array)", "Nutrition (JSON array, amount: high|medium|low)", "Instructions (JSON array)" and "Suggestions/Variants (JSON array)" in the UI, then the user review and save the entry.
+On the page `views/receipt.pug` I show a "History" list of the most recent receipts.
 
-Please create and add a "Draft with AI" button in the UI, and create an endpoint on the server side, to call the OpenAI API, and return the structured output to the user, where the input form is populated accordingly.
+Now I'd like to add controls to show previous months as well, so add a select box for the history list, that default to show last 30 days, but also have choices for showing receipts from previous months, up to 3 years back in time.
 
-I want to use the `gpt-5.2-2025-12-11` model in the API.
+So, if for example I choose "December 2025" from the select box, the page should fetch the receipts from that month, and refresh the list to show those receipts, insted of what's currently shown.
 
-Create the structured output with template prompt/context message, and the output structure object suitable for my use case. For the "Calories per portion", I do want to include what's commonly eaten together with the recipe, so for example my "meat sauce" recipe should add spaghetti to the calories, and other recipes commonly add rice, but udon/ramen for example don't need anything extra, bake this into the prompt to ask for calories for a full meal.
-
-Now create and add this new functionality.
+Now update the page and the backend to support this new functionality.

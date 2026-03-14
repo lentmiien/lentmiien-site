@@ -1,5 +1,7 @@
 extends layout
 
+- const historySuffix = returnHistory && returnHistory !== 'last30' ? `?history=${encodeURIComponent(returnHistory)}` : '';
+
 block content
   .receipt-edit-page
     h1 Receipt workspace
@@ -25,7 +27,8 @@ block content
             img.receipt-image(src=`/img/${receipt.file}`, alt="Receipt preview")
             figcaption Zoom with your browser to inspect the fine print.
         .view-panel(data-panel="form")
-          form.receipt-form(action=`/receipt/correct_receipt/${receipt._id.toString()}`, method="post")
+          form.receipt-form(action=`/receipt/correct_receipt/${receipt._id.toString()}${historySuffix}`, method="post")
+            input(type='hidden', name='history', value=returnHistory || 'last30')
             .form-grid
               .form-field
                 label(for="date") Date
@@ -48,7 +51,7 @@ block content
             .form-actions
               input.btn.btn-success(type="submit", value="Update receipt")
           a.btn.btn-secondary(href=`/receipt/add-entry/${receipt._id.toString()}`, target="_blank", rel="noopener") Add to ledger
-          a.btn.btn-danger(href=`/receipt/delete_receipt/${receipt._id.toString()}`) Delete
+          a.btn.btn-danger(href=`/receipt/delete_receipt/${receipt._id.toString()}${historySuffix}`) Delete
     if test_data
       section.section-card.debug-card
         h2 Debug data

@@ -4,53 +4,31 @@ block content
   .receipt-page
     h1 Receipt Inbox
     p.page-intro Collect, review, and act on purchase receipts in one minimal workspace.
+    if error
+      .alert.alert-danger(role='alert')= error
     p
-      a.btn.btn-outline-secondary.btn-sm(href="/receipt/mappings") Manage mapping rules
+      a.btn.btn-outline-secondary.btn-sm(href='/receipt/mappings') Manage mapping rules
     section.section-card.upload-card
       h2 Upload a receipt
       p.section-subtitle Supported formats: JPEG, PNG, WebP, AVIF, GIF, SVG, TIFF.
-      form(action="/receipt/upload_receipt", method="post", enctype="multipart/form-data")
-        label(for="imgs") Select receipt image files
+      form(action='/receipt/upload_receipt', method='post', enctype='multipart/form-data')
+        label(for='imgs') Select receipt image files
         .input-group
-          input#imgs.form-control(type="file", name="imgs", multiple)
-          input.btn.btn-primary(type="submit", value="Upload")
+          input#imgs.form-control(type='file', name='imgs', multiple)
+          input.btn.btn-primary(type='submit', value='Upload')
     section.section-card.history-card
-      .history-header
-        h2 History
-        if receipts && receipts.length
-          span.history-count= receipts.length === 1 ? '1 receipt' : receipts.length + ' receipts'
-      if receipts && receipts.length
-        .table-responsive
-          table.history-table
-            thead
-              tr
-                th Date
-                th Amount
-                th Method
-                th Business
-                th Layout text
-                th Actions
-            tbody
-              each d in receipts
-                tr
-                  td(data-label='Date')= d.date.toJSON().split('T')[0]
-                  td.amount-cell(data-label='Amount')= d.amount
-                  td(data-label='Method')= d.method
-                  td(data-label='Business')
-                    span.business-name= d.business_name
-                    if d.business_address
-                      span.business-line= d.business_address
-                  td(data-label='Layout text')
-                    if d.layout_text
-                      span.layout-snippet= d.layout_text.length > 120 ? d.layout_text.slice(0, 120) + '...' : d.layout_text
-                    else
-                      span.text-muted N/A
-                  td.actions(data-label='Actions')
-                    .action-buttons
-                      a.btn.btn-primary(href=`/receipt/view_receipt/${d._id.toString()}`) View/Edit
-                      a.btn.btn-secondary(href=`/receipt/add-entry/${d._id.toString()}`, target="_blank", rel="noopener") Add to ledger
-                      a.btn.btn-danger(href=`/receipt/delete_receipt/${d._id.toString()}`) Delete
-      else
-        .history-empty
-          h3 Nothing here yet
-          p Upload a receipt to start building your archive.
+      .history-controls
+        .history-title-group
+          h2 History
+          include includes/receipt_history_summary
+        form#receipt-history-filter-form.history-filter-form(action='/receipt', method='get', data-partial-url='/receipt/history')
+          label(for='receipt-history-filter') Show
+          select#receipt-history-filter.form-select(name='history')
+            each option in historyOptions
+              option(value=option.value, selected=option.value === selectedHistory)= option.label
+          noscript
+            button.btn.btn-secondary(type='submit') Apply
+      include includes/receipt_history_content
+
+block script
+  script(src='/js/receipt.js', defer)

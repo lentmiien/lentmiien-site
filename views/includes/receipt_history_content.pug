@@ -1,0 +1,37 @@
+- const historySuffix = selectedHistory && selectedHistory !== 'last30' ? `?history=${encodeURIComponent(selectedHistory)}` : '';
+#receipt-history-content.history-content(aria-live='polite')
+  if receipts && receipts.length
+    .table-responsive
+      table.history-table
+        thead
+          tr
+            th Date
+            th Amount
+            th Method
+            th Business
+            th Layout text
+            th Actions
+        tbody
+          each d in receipts
+            tr
+              td(data-label='Date')= d.date.toJSON().split('T')[0]
+              td.amount-cell(data-label='Amount')= d.amount
+              td(data-label='Method')= d.method
+              td(data-label='Business')
+                span.business-name= d.business_name
+                if d.business_address
+                  span.business-line= d.business_address
+              td(data-label='Layout text')
+                if d.layout_text
+                  span.layout-snippet= d.layout_text.length > 120 ? d.layout_text.slice(0, 120) + '...' : d.layout_text
+                else
+                  span.text-muted N/A
+              td.actions(data-label='Actions')
+                .action-buttons
+                  a.btn.btn-primary(href=`/receipt/view_receipt/${d._id.toString()}${historySuffix}`) View/Edit
+                  a.btn.btn-secondary(href=`/receipt/add-entry/${d._id.toString()}`, target='_blank', rel='noopener') Add to ledger
+                  a.btn.btn-danger(href=`/receipt/delete_receipt/${d._id.toString()}${historySuffix}`) Delete
+  else
+    .history-empty
+      h3 Nothing here yet
+      p= historyEmptyMessage || 'Upload a receipt to start building your archive.'

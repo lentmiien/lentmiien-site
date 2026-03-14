@@ -23,6 +23,12 @@ const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
 const BudgetService = require('../services/budgetService');
 const CreditCardService = require('../services/creditCardService');
+const {
+  DEFAULT_HISTORY_VALUE,
+  getReceiptHistoryConfig,
+  resolveReceiptHistorySelection,
+  buildReceiptHistoryReturnUrl,
+} = require('../utils/receiptHistory');
 const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, Receipt, ReceiptMappingRule } = require('../database');
 
 // Instantiate the services
@@ -274,10 +280,33 @@ const parseCreditPrefillFromBody = (body) => sanitizeCreditPrefill({
   externalMultiplier: body.externalMultiplier_prefill,
 });
 
-exports.receipt = async (req, res) => {
-  const start = new Date(Date.now() - (1000*60*60*24*30));
-  const receipts = await Receipt.find({date: { $gte: start }}).sort('-date');
-  res.render('receipt', {receipts});
+const fetchReceiptHistoryState = async (requestedHistory) => {
+  const historyState = getReceiptHistoryConfig(requestedHistory);
+  const receipts = await Receipt.find(historyState.query).sort('-date');
+  return {
+    ...historyState,
+    receipts,
+  };
+};
+
+exports.receipt = async (req, res, next) => {
+  try {
+    const historyState = await fetchReceiptHistoryState(req.query.history);
+    res.render('receipt', historyState);
+  } catch (error) {
+    if (typeof next === 'function') return next(error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.receipt_history = async (req, res, next) => {
+  try {
+    const historyState = await fetchReceiptHistoryState(req.query.history);
+    res.render('receipt_history_partial', historyState);
+  } catch (error) {
+    if (typeof next === 'function') return next(error);
+    res.status(500).send('Unable to load receipt history.');
+  }
 };
 
 exports.mapping_rules_page = async (req, res, next) => {
@@ -384,12 +413,18 @@ exports.upload_receipt = async (req, res) => {
   const added_array = [];
   const raw_data = [];
   const layoutTexts = normalizeLayoutTexts(req.body.layout_texts, req.files?.length || 0);
+  const defaultHistoryState = getReceiptHistoryConfig(DEFAULT_HISTORY_VALUE);
 
   if (!req.files || !req.files.length) {
     if (req.accepts(['html', 'json']) === 'json') {
       return res.status(400).json({ error: 'Please upload at least one receipt image.' });
     }
-    return res.status(400).render('receipt', { receipts: added_array, raw_data, error: 'Please upload at least one receipt image.' });
+    return res.status(400).render('receipt', {
+      ...defaultHistoryState,
+      receipts: added_array,
+      raw_data,
+      error: 'Please upload at least one receipt image.',
+    });
   }
 
   for (let i = 0; i < req.files.length; i++) {
@@ -444,7 +479,11 @@ exports.upload_receipt = async (req, res) => {
     return res.json({ receipts: added_array.map(formatReceiptForJson), raw_data });
   }
 
-  res.render('receipt', {receipts: added_array, raw_data });
+  res.render('receipt', {
+    ...defaultHistoryState,
+    receipts: added_array,
+    raw_data,
+  });
 };
 
 exports.submit_receipt_entry = async (req, res, next) => {
@@ -484,8 +523,9 @@ exports.submit_receipt_entry = async (req, res, next) => {
 
 exports.view_receipt = async (req, res) => {
   const receipt = await Receipt.findById(req.params.id);
-  res.render("upload_receipt", {receipt});
-}
+  const returnHistory = resolveReceiptHistorySelection(req.query.history);
+  res.render('upload_receipt', { receipt, returnHistory });
+};
 
 exports.correct_receipt = async (req, res) => {
   const receipt = await Receipt.findById(req.params.id);
@@ -498,13 +538,13 @@ exports.correct_receipt = async (req, res) => {
   receipt.layout_text = typeof req.body.layout_text === 'string' ? req.body.layout_text : '';
   await receipt.save();
 
-  res.redirect('/receipt');
-}
+  res.redirect(buildReceiptHistoryReturnUrl(req.query.history || req.body.history));
+};
 
 exports.delete_receipt = async (req, res) => {
   await Receipt.findByIdAndDelete(req.params.id);
-  res.redirect('/receipt');
-}
+  res.redirect(buildReceiptHistoryReturnUrl(req.query.history));
+};
 
 const buildBudgetPayload = (body, receipt) => {
   const fromAccount = typeof body.from_account === 'string' ? body.from_account.trim() : '';

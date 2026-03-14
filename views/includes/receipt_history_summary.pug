@@ -1,0 +1,5 @@
+- const receiptCount = Array.isArray(receipts) ? receipts.length : 0;
+#receipt-history-summary.history-summary(role='status', aria-live='polite')
+  span.history-count= receiptCount === 1 ? '1 receipt' : `${receiptCount} receipts`
+  if historyLabel
+    span.history-period= historyLabel

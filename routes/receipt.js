@@ -20,6 +20,7 @@ const controller = require('../controllers/receiptcontroller');
 
 /* GET home page. */
 router.get('/', controller.receipt);
+router.get('/history', controller.receipt_history);
 router.get('/mappings', controller.mapping_rules_page);
 router.post('/mappings', controller.create_mapping_rule);
 router.post('/mappings/:id/delete', controller.delete_mapping_rule);
