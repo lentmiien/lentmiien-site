@@ -1,0 +1,421 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/admin-learning.css")
+
+block content
+  .container.py-4.learning-admin
+    .d-flex.flex-column.flex-lg-row.justify-content-between.align-items-lg-center.gap-3.mb-4
+      div
+        h1.mb-1 Learning Lab CMS
+        p.text-muted.mb-0 Manage topics, subtopics, and reusable learning templates.
+      .d-flex.flex-wrap.gap-2
+        a.btn.btn-outline-primary(href="/learning") Open learner home
+        if selectedSubtopicPreviewPath
+          a.btn.btn-primary(href=selectedSubtopicPreviewPath target="_blank" rel="noopener") Preview selected lesson
+
+    if successMessage
+      .alert.alert-success(role="alert")= successMessage
+    if errorMessage
+      .alert.alert-danger(role="alert")= errorMessage
+
+    .row.g-4
+      .col-lg-4
+        .card.shadow-sm
+          .card-body
+            h2.h5.mb-3 Content tree
+            if topicsTree && topicsTree.length
+              each topic in topicsTree
+                .learning-admin-tree__topic
+                  .learning-admin-tree__row
+                    div
+                      strong= topic.title
+                      span.badge.text-bg-light.ms-2= topic.status
+                    .learning-admin-tree__actions
+                      a.btn.btn-sm.btn-outline-secondary(href=`/admin/learning?topicId=${topic._id}`) Edit
+                      a.btn.btn-sm.btn-outline-primary(href=topic.previewPath target="_blank" rel="noopener") Preview
+                  if topic.subtopics && topic.subtopics.length
+                    each subtopic in topic.subtopics
+                      .learning-admin-tree__subtopic
+                        .learning-admin-tree__row
+                          div
+                            span.learning-admin-tree__title= subtopic.title
+                            span.badge.text-bg-light.ms-2= subtopic.status
+                          .learning-admin-tree__actions
+                            a.btn.btn-sm.btn-outline-secondary(href=`/admin/learning?topicId=${topic._id}&subtopicId=${subtopic._id}`) Edit
+                            a.btn.btn-sm.btn-outline-primary(href=subtopic.previewPath target="_blank" rel="noopener") Preview
+                        if subtopic.items && subtopic.items.length
+                          each item in subtopic.items
+                            .learning-admin-tree__item
+                              .learning-admin-tree__row
+                                div
+                                  span.learning-admin-tree__title= item.title
+                                  span.badge.text-bg-secondary.ms-2= item.templateType
+                                .learning-admin-tree__actions
+                                  a.btn.btn-sm.btn-outline-secondary(href=`/admin/learning?topicId=${topic._id}&subtopicId=${subtopic._id}&itemId=${item._id}`) Edit
+            else
+              p.text-muted.mb-0 No learning content yet.
+
+      .col-lg-8
+        .row.g-4
+          .col-12
+            .card.shadow-sm
+              .card-body
+                .d-flex.justify-content-between.align-items-center.mb-3
+                  h2.h5.mb-0 Topic
+                  if selectedTopic.stableId
+                    code= selectedTopic.stableId
+                form(method="post", action="/admin/learning/topics/save")
+                  input(type="hidden" name="topicId" value=selectedTopic._id)
+                  .row.g-3
+                    .col-md-6
+                      label.form-label(for="topic-title") Title
+                      input#topic-title.form-control(type="text" name="title" value=selectedTopic.title required)
+                    .col-md-3
+                      label.form-label(for="topic-short-label") Short label
+                      input#topic-short-label.form-control(type="text" name="shortLabel" value=selectedTopic.shortLabel)
+                    .col-md-3
+                      label.form-label(for="topic-status") Status
+                      select#topic-status.form-select(name="status")
+                        option(value="draft" selected=selectedTopic.status === 'draft') Draft
+                        option(value="published" selected=selectedTopic.status === 'published') Published
+                    .col-md-8
+                      label.form-label(for="topic-slug") Slug
+                      input#topic-slug.form-control(type="text" name="slug" value=selectedTopic.slug)
+                    .col-md-4
+                      label.form-label(for="topic-order") Order
+                      input#topic-order.form-control(type="number" min="0" name="order" value=selectedTopic.order)
+                    .col-12
+                      label.form-label(for="topic-description") Description
+                      textarea#topic-description.form-control(name="description" rows="2")= selectedTopic.description
+                    .col-md-6
+                      label.form-label Accent color
+                      input.form-control(type="text" name="topicAccentColor" value=selectedTopic.topicAccentColor placeholder="#ffb703")
+                    .col-md-6
+                      label.form-label Soft accent color
+                      input.form-control(type="text" name="topicAccentColorSoft" value=selectedTopic.topicAccentColorSoft placeholder="#ffd166")
+                    .col-md-6
+                      label.form-label Background start
+                      input.form-control(type="text" name="topicBackgroundStart" value=selectedTopic.topicBackgroundStart placeholder="#081225")
+                    .col-md-6
+                      label.form-label Background end
+                      input.form-control(type="text" name="topicBackgroundEnd" value=selectedTopic.topicBackgroundEnd placeholder="#0b2a42")
+                    .col-md-6
+                      label.form-label Glow color
+                      input.form-control(type="text" name="topicGlowColor" value=selectedTopic.topicGlowColor placeholder="rgba(56,189,248,0.25)")
+                    .col-md-6
+                      label.form-label Background image URL
+                      input.form-control(type="text" name="topicBackgroundImageUrl" value=selectedTopic.topicBackgroundImageUrl)
+                    .col-md-4
+                      label.form-label Pattern
+                      select.form-select(name="topicPattern")
+                        each option in patternOptions
+                          option(value=option.value selected=selectedTopic.topicPattern === option.value)= option.label
+                    .col-md-4
+                      label.form-label Icon art kind
+                      select.form-select(name="topicIconArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedTopic.topicIconArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Icon art value
+                      input.form-control(type="text" name="topicIconArtValue" value=selectedTopic.topicIconArtValue)
+                    .col-md-4
+                      label.form-label Mascot art kind
+                      select.form-select(name="topicMascotArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedTopic.topicMascotArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Mascot art value
+                      input.form-control(type="text" name="topicMascotArtValue" value=selectedTopic.topicMascotArtValue)
+                    .col-md-4
+                      label.form-label Badge art kind
+                      select.form-select(name="topicBadgeArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedTopic.topicBadgeArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Badge art value
+                      input.form-control(type="text" name="topicBadgeArtValue" value=selectedTopic.topicBadgeArtValue)
+                    .col-md-4
+                      label.form-label Reward label
+                      input.form-control(type="text" name="topicRewardLabel" value=selectedTopic.topicRewardLabel)
+                    .col-md-4
+                      label.form-label Reward art kind
+                      select.form-select(name="topicRewardArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedTopic.topicRewardArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Reward art value
+                      input.form-control(type="text" name="topicRewardArtValue" value=selectedTopic.topicRewardArtValue)
+                    .col-12
+                      label.form-label Reward description
+                      textarea.form-control(name="topicRewardDescription" rows="2")= selectedTopic.topicRewardDescription
+                  .d-flex.flex-wrap.gap-2.mt-3
+                    button.btn.btn-primary(type="submit") Save topic
+                if selectedTopic._id
+                  form.mt-3(method="post" action="/admin/learning/topics/delete")
+                    input(type="hidden" name="topicId" value=selectedTopic._id)
+                    button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this topic and all nested content?") Delete topic
+
+          .col-12
+            .card.shadow-sm
+              .card-body
+                .d-flex.justify-content-between.align-items-center.mb-3
+                  h2.h5.mb-0 Subtopic
+                  if selectedSubtopic.stableId
+                    code= selectedSubtopic.stableId
+                form(method="post", action="/admin/learning/subtopics/save")
+                  input(type="hidden" name="subtopicId" value=selectedSubtopic._id)
+                  .row.g-3
+                    .col-md-6
+                      label.form-label(for="subtopic-topic") Topic
+                      select#subtopic-topic.form-select(name="topicId" required)
+                        option(value="") Select topic
+                        each topic in topicOptions
+                          option(value=topic.value selected=selectedSubtopic.topicId === topic.value)= topic.label
+                    .col-md-3
+                      label.form-label(for="subtopic-status") Status
+                      select#subtopic-status.form-select(name="status")
+                        option(value="draft" selected=selectedSubtopic.status === 'draft') Draft
+                        option(value="published" selected=selectedSubtopic.status === 'published') Published
+                    .col-md-3
+                      label.form-label(for="subtopic-order") Order
+                      input#subtopic-order.form-control(type="number" min="0" name="order" value=selectedSubtopic.order)
+                    .col-md-8
+                      label.form-label(for="subtopic-title") Title
+                      input#subtopic-title.form-control(type="text" name="title" value=selectedSubtopic.title required)
+                    .col-md-4
+                      label.form-label(for="subtopic-slug") Slug
+                      input#subtopic-slug.form-control(type="text" name="slug" value=selectedSubtopic.slug)
+                    .col-md-4
+                      label.form-label Estimated minutes
+                      input.form-control(type="number" min="1" name="estimatedMinutes" value=selectedSubtopic.estimatedMinutes)
+                    .col-12
+                      label.form-label(for="subtopic-description") Description
+                      textarea#subtopic-description.form-control(name="description" rows="2")= selectedSubtopic.description
+                    .col-md-6
+                      label.form-label Accent color
+                      input.form-control(type="text" name="subtopicAccentColor" value=selectedSubtopic.subtopicAccentColor)
+                    .col-md-6
+                      label.form-label Soft accent color
+                      input.form-control(type="text" name="subtopicAccentColorSoft" value=selectedSubtopic.subtopicAccentColorSoft)
+                    .col-md-6
+                      label.form-label Background start
+                      input.form-control(type="text" name="subtopicBackgroundStart" value=selectedSubtopic.subtopicBackgroundStart)
+                    .col-md-6
+                      label.form-label Background end
+                      input.form-control(type="text" name="subtopicBackgroundEnd" value=selectedSubtopic.subtopicBackgroundEnd)
+                    .col-md-6
+                      label.form-label Glow color
+                      input.form-control(type="text" name="subtopicGlowColor" value=selectedSubtopic.subtopicGlowColor)
+                    .col-md-6
+                      label.form-label Background image URL
+                      input.form-control(type="text" name="subtopicBackgroundImageUrl" value=selectedSubtopic.subtopicBackgroundImageUrl)
+                    .col-md-4
+                      label.form-label Pattern
+                      select.form-select(name="subtopicPattern")
+                        each option in patternOptions
+                          option(value=option.value selected=selectedSubtopic.subtopicPattern === option.value)= option.label
+                    .col-md-4
+                      label.form-label Icon art kind
+                      select.form-select(name="subtopicIconArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedSubtopic.subtopicIconArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Icon art value
+                      input.form-control(type="text" name="subtopicIconArtValue" value=selectedSubtopic.subtopicIconArtValue)
+                    .col-md-4
+                      label.form-label Mascot art kind
+                      select.form-select(name="subtopicMascotArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedSubtopic.subtopicMascotArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Mascot art value
+                      input.form-control(type="text" name="subtopicMascotArtValue" value=selectedSubtopic.subtopicMascotArtValue)
+                    .col-md-4
+                      label.form-label Badge art kind
+                      select.form-select(name="subtopicBadgeArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedSubtopic.subtopicBadgeArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Badge art value
+                      input.form-control(type="text" name="subtopicBadgeArtValue" value=selectedSubtopic.subtopicBadgeArtValue)
+                    .col-md-4
+                      label.form-label Reward label
+                      input.form-control(type="text" name="subtopicRewardLabel" value=selectedSubtopic.subtopicRewardLabel)
+                    .col-md-4
+                      label.form-label Reward art kind
+                      select.form-select(name="subtopicRewardArtKind")
+                        each option in artKindOptions
+                          option(value=option.value selected=selectedSubtopic.subtopicRewardArtKind === option.value)= option.label
+                    .col-md-4
+                      label.form-label Reward art value
+                      input.form-control(type="text" name="subtopicRewardArtValue" value=selectedSubtopic.subtopicRewardArtValue)
+                    .col-12
+                      label.form-label Reward description
+                      textarea.form-control(name="subtopicRewardDescription" rows="2")= selectedSubtopic.subtopicRewardDescription
+                  .d-flex.flex-wrap.gap-2.mt-3
+                    button.btn.btn-primary(type="submit") Save subtopic
+                if selectedSubtopic._id
+                  form.mt-3(method="post" action="/admin/learning/subtopics/delete")
+                    input(type="hidden" name="topicId" value=selectedSubtopic.topicId)
+                    input(type="hidden" name="subtopicId" value=selectedSubtopic._id)
+                    button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this subtopic and its lessons?") Delete subtopic
+
+          .col-12
+            .card.shadow-sm
+              .card-body
+                .d-flex.justify-content-between.align-items-center.mb-3
+                  h2.h5.mb-0 Item
+                  if selectedItem.stableId
+                    code= selectedItem.stableId
+                form(method="post" action="/admin/learning/items/save")
+                  input(type="hidden" name="itemId" value=selectedItem._id)
+                  .row.g-3
+                    .col-md-6
+                      label.form-label(for="item-subtopic") Subtopic
+                      select#item-subtopic.form-select(name="subtopicId" required)
+                        option(value="") Select subtopic
+                        each subtopic in subtopicOptions
+                          option(value=subtopic.value selected=selectedItem.subtopicId === subtopic.value)= subtopic.label
+                    .col-md-3
+                      label.form-label(for="item-status") Status
+                      select#item-status.form-select(name="status")
+                        option(value="draft" selected=selectedItem.status === 'draft') Draft
+                        option(value="published" selected=selectedItem.status === 'published') Published
+                    .col-md-3
+                      label.form-label(for="item-order") Order
+                      input#item-order.form-control(type="number" min="0" name="order" value=selectedItem.order)
+                    .col-md-6
+                      label.form-label(for="item-title") Title
+                      input#item-title.form-control(type="text" name="title" value=selectedItem.title required)
+                    .col-md-3
+                      label.form-label(for="templateTypeSelect") Template
+                      select#templateTypeSelect.form-select(name="templateType")
+                        each template in templateOptions
+                          option(value=template.value selected=selectedItem.templateType === template.value)= template.label
+                    .col-md-3
+                      label.form-label(for="learningPointsInput") Stars
+                      input#learningPointsInput.form-control(type="number" min="0" max="10" name="points" value=selectedItem.points)
+                    .col-12
+                      label.form-label(for="item-prompt") Prompt
+                      textarea#item-prompt.form-control(name="prompt" rows="2")= selectedItem.prompt
+                    .col-12
+                      label.form-label(for="item-helper") Helper text
+                      textarea#item-helper.form-control(name="helperText" rows="2")= selectedItem.helperText
+                    .col-12
+                      label.form-label(for="item-blurb") Card blurb
+                      textarea#item-blurb.form-control(name="blurb" rows="2")= selectedItem.blurb
+
+                    .col-12(data-template-section="scene")
+                      .admin-template-box
+                        h3.h6 Scene settings
+                        .row.g-3
+                          .col-md-4
+                            label.form-label Scene type
+                            select.form-select(name="sceneType")
+                              each scene in sceneOptions
+                                option(value=scene.value selected=selectedItem.sceneType === scene.value)= scene.label
+                          .col-md-4
+                            label.form-label Slot count
+                            input.form-control(type="number" min="2" max="6" name="sceneSlotCount" value=selectedItem.sceneSlotCount)
+                          .col-md-4
+                            label.form-label Pieces CSV
+                            input.form-control(type="text" name="scenePieces" value=selectedItem.scenePieces placeholder="H, H, O")
+                          .col-12
+                            label.form-label Body text
+                            textarea.form-control(name="sceneBodyText" rows="2")= selectedItem.sceneBodyText
+                          .col-md-6
+                            label.form-label Hint text
+                            textarea.form-control(name="sceneHintText" rows="2")= selectedItem.sceneHintText
+                          .col-md-6
+                            label.form-label Example text
+                            textarea.form-control(name="sceneExampleText" rows="2")= selectedItem.sceneExampleText
+
+                    .col-12(data-template-section="single_choice")
+                      .admin-template-box
+                        h3.h6 Single-choice options
+                        - const choiceOptions = selectedItem.choiceOptions || []
+                        each opt, index in choiceOptions
+                          .row.g-3.mb-2
+                            .col-md-2
+                              label.form-label= `Key ${index + 1}`
+                              input.form-control(type="text" name=`choiceOption${index + 1}Key` value=opt.key)
+                            .col-md-4
+                              label.form-label= `Label ${index + 1}`
+                              input.form-control(type="text" name=`choiceOption${index + 1}Label` value=opt.label)
+                            .col-md-3
+                              label.form-label Art kind
+                              select.form-select(name=`choiceOption${index + 1}ArtKind`)
+                                each option in artKindOptions
+                                  option(value=option.value selected=opt.artKind === option.value)= option.label
+                            .col-md-3
+                              label.form-label Art value
+                              input.form-control(type="text" name=`choiceOption${index + 1}ArtValue` value=opt.artValue)
+                        .row.g-3
+                          .col-md-4
+                            label.form-label Correct option key
+                            input.form-control(type="text" name="correctOptionKey" value=selectedItem.correctOptionKey)
+
+                    .col-12(data-template-section="count_target")
+                      .admin-template-box
+                        h3.h6 Counting settings
+                        .row.g-3
+                          .col-md-4
+                            label.form-label Target count
+                            input.form-control(type="number" min="0" max="30" name="targetCount" value=selectedItem.targetCount)
+                          .col-md-4
+                            label.form-label Max count
+                            input.form-control(type="number" min="1" max="40" name="maxCount" value=selectedItem.maxCount)
+                          .col-md-4
+                            label.form-label Counter label
+                            input.form-control(type="text" name="counterLabel" value=selectedItem.counterLabel)
+
+                    .col-12(data-template-section="builder_sequence")
+                      .admin-template-box
+                        h3.h6 Builder settings
+                        .row.g-3
+                          .col-md-4
+                            label.form-label Slot count
+                            input.form-control(type="number" min="2" max="6" name="builderSlotCount" value=selectedItem.builderSlotCount)
+                          .col-md-8
+                            label.form-label Pieces CSV
+                            input.form-control(type="text" name="builderPieces" value=selectedItem.builderPieces placeholder="H, H, O")
+                          .col-12
+                            label.form-label Target sequence CSV
+                            input.form-control(type="text" name="builderTargetSequence" value=selectedItem.builderTargetSequence placeholder="H, O, H")
+
+                    .col-12(data-template-section="state_change")
+                      .admin-template-box
+                        h3.h6 State-change settings
+                        .row.g-3
+                          .col-md-4
+                            label.form-label Start state
+                            select.form-select(name="startState")
+                              each option in stateOptions
+                                option(value=option.value selected=selectedItem.startState === option.value)= option.label
+                          .col-md-4
+                            label.form-label Target state
+                            select.form-select(name="targetState")
+                              each option in stateOptions
+                                option(value=option.value selected=selectedItem.targetState === option.value)= option.label
+                          .col-md-4.d-flex.align-items-end
+                            .form-check.mb-2
+                              input.form-check-input(type="checkbox" name="showCoolButton" id="show-cool-button" checked=selectedItem.showCoolButton)
+                              label.form-check-label(for="show-cool-button") Show cool button
+
+                    .col-md-6
+                      label.form-label Good feedback
+                      textarea.form-control(name="goodFeedback" rows="2")= selectedItem.goodFeedback
+                    .col-md-6
+                      label.form-label Bad feedback
+                      textarea.form-control(name="badFeedback" rows="2")= selectedItem.badFeedback
+                  .d-flex.flex-wrap.gap-2.mt-3
+                    button.btn.btn-primary(type="submit") Save item
+                if selectedItem._id
+                  form.mt-3(method="post" action="/admin/learning/items/delete")
+                    input(type="hidden" name="subtopicId" value=selectedItem.subtopicId)
+                    input(type="hidden" name="itemId" value=selectedItem._id)
+                    button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this item?") Delete item
+
+block script
+  script(src="/js/admin_learning.js", defer)

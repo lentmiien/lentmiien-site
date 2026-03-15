@@ -1,0 +1,19 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/learning.css")
+
+block content
+  .learning-backdrop(style=themeStyle)
+  .learning-page(style=themeStyle)
+    #learning-confetti(aria-hidden="true")
+    #learning-app
+      .panel
+        .panelHead
+          .panelTitle Loading lesson...
+          .panelBlurb Getting everything ready.
+    #learning-sr.sr-only(aria-live="polite")
+    script(type="application/json", id="learning-bootstrap")!= learningBootstrapJson
+
+block script
+  script(src="/js/learning-player.js", defer)

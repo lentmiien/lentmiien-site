@@ -1,0 +1,64 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/learning.css")
+
+block content
+  .learning-backdrop(style=topic.themeStyle)
+  .learning-page(style=topic.themeStyle)
+    .topbar
+      a.chip(href=previewMode ? '/learning?preview=1' : '/learning') ← All Topics
+      .brand
+        .logo
+          span.learning-icon-text= topic.iconText
+        div
+          .title= topic.title
+          .subtitle= topic.description
+      .topActions
+        if topic.continuePath
+          a.chip(href=topic.continuePath)= topic.actionLabel
+        if admin
+          a.chip(href=`/admin/learning?topicId=${topic._id}`) Edit Topic
+        if previewMode
+          span.chip Preview mode
+
+    .statusRow
+      .statusCard
+        .statusBig
+          span.rankPill= `${topic.totalStars} ⭐ / ${topic.maxStars}`
+        .statusText Stars earned in this topic
+      .statusCard
+        .statusBig
+          span.rankPill= `${topic.stickerCount} / ${topic.subtopicCount}`
+        .statusText Stickers unlocked in this topic
+
+    .panel(style="margin-top:14px;")
+      .panelHead
+        .panelTitle Topic Lessons
+        .panelBlurb Choose any lesson or continue where you left off.
+      if topic.subtopics && topic.subtopics.length
+        .lessonGrid
+          each subtopic in topic.subtopics
+            a.lessonCard.lessonCardLink(href=subtopic.path, style=subtopic.themeStyle)
+              .lessonIcon= subtopic.iconText
+              .lessonTitle= subtopic.title
+              .lessonTagline= subtopic.description
+              .lessonStars= `${subtopic.totalStars} ⭐ / ${subtopic.maxStars}`
+              .progressMeter
+                .progressMeterFill(style=`width:${subtopic.percentComplete}%`)
+              .lockBadge= `${subtopic.actionLabel} • ${subtopic.estimatedMinutes} min`
+      else
+        .speech
+          .speechTitle No lessons yet
+          .speechText Add some subtopics in the learning admin area.
+
+    .panel(style="margin-top:14px;")
+      .panelHead
+        .panelTitle Sticker Shelf
+        .panelBlurb Finish a lesson to unlock its sticker.
+      .stickerGrid
+        each subtopic in topic.subtopics
+          .stickerCard(class=subtopic.stickerUnlocked ? 'earned' : 'missing', style=subtopic.themeStyle)
+            .stickerEmoji= subtopic.rewardText
+            .stickerLabel= subtopic.rewardLabel
+            .stickerHint= subtopic.stickerUnlocked ? 'Unlocked!' : 'Locked'

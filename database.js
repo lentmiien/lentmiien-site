@@ -140,6 +140,12 @@ const AsrJob = require('./models/asr_job');
 // Message inbox
 const MessageInboxEntry = require('./models/message_inbox');
 const MessageFilter = require('./models/message_filter');
+// Learning tool
+const LearningTopic = require('./models/learning_topic');
+const LearningSubtopic = require('./models/learning_subtopic');
+const LearningItem = require('./models/learning_item');
+const LearningProgress = require('./models/learning_progress');
+const LearningAttempt = require('./models/learning_attempt');
 
 // Export models
 module.exports = {
@@ -225,4 +231,9 @@ module.exports = {
   AsrJob,
   MessageInboxEntry,
   MessageFilter,
+  LearningTopic,
+  LearningSubtopic,
+  LearningItem,
+  LearningProgress,
+  LearningAttempt,
 };

@@ -444,6 +444,7 @@ block content
     .col 
       .mypage-grid
         +tile('/mypage/life_log', '/i/health.svg', 'life log', 'My Life Log')
+        +tile('/learning', '/i/learning.svg', 'Play learning games', 'Learning Lab')
         +tile('/mypage/blogpost', '/i/blog.svg', 'blogpost', 'Write blog')
         if permissions && permissions.indexOf("accounting") >= 0
           +tile('/accounting', '/i/budget.svg', 'accounting', 'Accounting')

@@ -1,0 +1,56 @@
+.learning-admin-tree__topic,
+.learning-admin-tree__subtopic,
+.learning-admin-tree__item {
+  border-left: 2px solid rgba(15, 23, 42, 0.12);
+  margin-left: 0.25rem;
+  padding-left: 0.85rem;
+}
+
+.learning-admin-tree__topic + .learning-admin-tree__topic {
+  margin-top: 1rem;
+}
+
+.learning-admin-tree__subtopic {
+  margin-top: 0.75rem;
+  margin-left: 0.75rem;
+}
+
+.learning-admin-tree__item {
+  margin-top: 0.5rem;
+  margin-left: 0.75rem;
+}
+
+.learning-admin-tree__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.learning-admin-tree__actions {
+  display: inline-flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.learning-admin-tree__title {
+  font-weight: 600;
+}
+
+.admin-template-box {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  background: rgba(248, 250, 252, 0.8);
+}
+
+[data-template-section][hidden] {
+  display: none !important;
+}
+
+@media (max-width: 991px) {
+  .learning-admin-tree__row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

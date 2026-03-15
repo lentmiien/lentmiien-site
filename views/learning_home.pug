@@ -1,0 +1,50 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/learning.css")
+
+block content
+  .learning-backdrop(style=themeStyle)
+  .learning-page(style=themeStyle)
+    .topbar
+      .brand
+        .logo
+          span.learning-icon-text 🧪
+        div
+          .title Learning Lab
+          .subtitle Play, earn stars, and keep your progress
+      .topActions
+        a.chip(href="/mypage") My Page
+        if admin
+          a.chip(href="/admin/learning") Learning CMS
+        if previewMode
+          span.chip Preview mode
+
+    .statusRow
+      .statusCard
+        .statusBig
+          span.rankPill= `${totals.totalStars} ⭐`
+          span.rankPill= `${totals.stickerCount} stickers`
+        .statusText= `${totals.topicCount} topics • ${totals.subtopicCount} lessons`
+      .statusCard
+        .statusBig
+          span.rankPill= `${totals.maxStars} stars to collect`
+        .statusText Your learning progress is saved in the database.
+
+    .panel(style="margin-top:14px;")
+      .panelHead
+        .panelTitle Pick a topic
+        .panelBlurb Each topic can have many playful, reusable lessons.
+      if topics && topics.length
+        .lessonGrid
+          each topic in topics
+            a.lessonCard.lessonCardLink(href=topic.path, style=topic.themeStyle)
+              .lessonIcon= topic.iconText
+              .lessonTitle= topic.title
+              .lessonTagline= topic.description
+              .lessonStars= `${topic.totalStars} ⭐ / ${topic.maxStars}`
+              .lockBadge= `${topic.subtopicCount} lessons`
+      else
+        .speech
+          .speechTitle No topics yet
+          .speechText Add the first topic from the learning admin area.

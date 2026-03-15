@@ -4,6 +4,7 @@ const router = express.Router();
 
 // Require controller modules.
 const controller = require('../controllers/admincontroller');
+const learningAdminController = require('../controllers/learningAdminController');
 const messageInboxController = require('../controllers/messageInboxAdminController');
 
 const htmlUpload = multer({
@@ -60,6 +61,14 @@ router.post('/create_user', controller.create_user);
 
 router.get('/manage_roles', controller.manage_roles);
 router.post('/update_role', controller.update_role);
+
+router.get('/learning', learningAdminController.dashboard);
+router.post('/learning/topics/save', learningAdminController.save_topic);
+router.post('/learning/topics/delete', learningAdminController.delete_topic);
+router.post('/learning/subtopics/save', learningAdminController.save_subtopic);
+router.post('/learning/subtopics/delete', learningAdminController.delete_subtopic);
+router.post('/learning/items/save', learningAdminController.save_item);
+router.post('/learning/items/delete', learningAdminController.delete_item);
 
 router.get('/app_logs', controller.app_logs);
 router.get('/log_file/:file', controller.log_file);
