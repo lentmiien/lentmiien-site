@@ -4,7 +4,7 @@ const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.ASR_API_BASE || 'http://192.168.0.20:8080';
-const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const JS_FILE_NAME = 'services/asrApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 
