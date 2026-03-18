@@ -219,6 +219,70 @@ describe('ApiRecordService', () => {
     expect(result.data[0].fields).toEqual({ public: 'data' });
   });
 
+  test('fetchOrderReferencesByTitle returns id and order pairs for an exact title match', async () => {
+    const chain = createSortChain([
+      { _id: 'rec-1', title: 'Alpha Order', order: 2 },
+      { _id: 'rec-2', title: 'Alpha Order', order: 8 },
+    ]);
+    ApiRecordModel.find.mockReturnValue({ sort: chain.sort });
+
+    const result = await service.fetchOrderReferencesByTitle(' Alpha Order ', { tier: 'tier1' });
+
+    expect(ApiRecordModel.find).toHaveBeenCalledWith({
+      title: /^Alpha Order$/i,
+    });
+    expect(result).toEqual({
+      count: 2,
+      data: [
+        { id: 'rec-1', order: 2 },
+        { id: 'rec-2', order: 8 },
+      ],
+    });
+  });
+
+  test('fetchEntryById returns a single serialized record and redacts encrypted fields for tier1', async () => {
+    ApiRecordModel.findOne.mockReturnValue({
+      lean: jest.fn().mockReturnValue(createLeanQuery({
+        _id: 'rec-1',
+        order: 5,
+        customer: 'Customer Corp',
+        tracking: 'TRK',
+        title: 'Alpha Order',
+        comment: 'note',
+        next_deadline: new Date('2024-02-01T00:00:00.000Z'),
+        completed: false,
+        fields: { public: 'data' },
+        encryptedFields: { secret: encryptedSecret },
+        rev: 1,
+        createdAt: new Date('2024-01-10T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-11T00:00:00.000Z'),
+      })),
+    });
+
+    const result = await service.fetchEntryById('rec-1', { tier: 'tier1' });
+
+    expect(ApiRecordModel.findOne).toHaveBeenCalledWith({ _id: 'rec-1' });
+    expect(result).toEqual(expect.objectContaining({
+      id: 'rec-1',
+      order: 5,
+      title: 'Alpha Order',
+      fields: { public: 'data' },
+    }));
+    expect(result.encryptedFields).toBeUndefined();
+  });
+
+  test('fetchEntryById throws not_found when the record does not exist', async () => {
+    ApiRecordModel.findOne.mockReturnValue({
+      lean: jest.fn().mockReturnValue(createLeanQuery(null)),
+    });
+
+    await expect(service.fetchEntryById('missing-rec', { tier: 'tier2' })).rejects.toMatchObject({
+      code: 'not_found',
+      status: 404,
+      details: { id: 'missing-rec' },
+    });
+  });
+
   test('deleteEntry blocks tier1 deletion when encrypted fields exist', async () => {
     ApiRecordModel.findOne.mockReturnValue({
       lean: jest.fn().mockReturnValue(createLeanQuery({

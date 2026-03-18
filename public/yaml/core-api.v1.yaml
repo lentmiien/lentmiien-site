@@ -369,7 +369,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemResponse'
+  /api/records/orders:
+    get:
+      summary: List record ids and order numbers by title
+      description: >
+        Returns all matching records for a required `title` value as lightweight
+        `{ id, order }` pairs. Title matching is exact after trimming, but case-insensitive.
+      tags: [Records]
+      security:
+        - bearerApiKey: []
+          apiRecordUserIdHeader: []
+      parameters:
+        - in: query
+          name: title
+          required: true
+          schema:
+            type: string
+          description: Exact `title` value to match, case-insensitive.
+      responses:
+        '200':
+          description: Matching record ids and order values
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiRecordOrderReference'
+        '400':
+          description: Missing or invalid title filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
   /api/records/{id}:
+    get:
+      summary: Fetch a record by id
+      description: >
+        Returns a single record identified by its unique id. Tier 1 callers never receive
+        `encryptedFields` in the response body.
+      tags: [Records]
+      security:
+        - bearerApiKey: []
+          apiRecordUserIdHeader: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ApiRecord'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemResponse'
     delete:
       summary: Delete a record by id
       description: >
@@ -732,6 +804,14 @@ components:
           type: string
         ct:
           type: string
+    ApiRecordOrderReference:
+      type: object
+      properties:
+        id:
+          type: string
+        order:
+          type: number
+          nullable: true
     ApiRecord:
       type: object
       properties:

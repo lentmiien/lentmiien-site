@@ -36,6 +36,8 @@ router.post('/setTask', controller.setTask);
 
 /* Records */
 router.get('/records', apiRecordController.requireApiRecordUser, apiRecordController.fetchRecords);
+router.get('/records/orders', apiRecordController.requireApiRecordUser, apiRecordController.fetchRecordOrdersByTitle);
+router.get('/records/:id', apiRecordController.requireApiRecordUser, apiRecordController.fetchRecordById);
 router.post('/records', apiRecordController.requireApiRecordUser, apiRecordController.upsertRecords);
 router.delete('/records/:id', apiRecordController.requireApiRecordUser, apiRecordController.deleteRecord);
 

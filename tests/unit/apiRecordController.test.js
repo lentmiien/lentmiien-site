@@ -6,6 +6,8 @@ jest.mock('../../services/apiRecordService', () => {
   const MockService = jest.fn().mockImplementation(() => ({
     upsertBatch: jest.fn(),
     fetchEntries: jest.fn(),
+    fetchOrderReferencesByTitle: jest.fn(),
+    fetchEntryById: jest.fn(),
     deleteEntry: jest.fn(),
   }));
   MockService.ApiRecordError = class ApiRecordError extends Error {
@@ -19,7 +21,9 @@ jest.mock('../../services/apiRecordService', () => {
   return MockService;
 });
 
+const ApiRecordService = require('../../services/apiRecordService');
 const controller = require('../../controllers/apiRecordController');
+const apiRecordService = ApiRecordService.mock.results[0].value;
 
 describe('apiRecordController.requireApiRecordUser', () => {
   const originalEnv = { ...process.env };
@@ -81,5 +85,75 @@ describe('apiRecordController.requireApiRecordUser', () => {
       success: false,
       code: 'invalid_user_id',
     }));
+  });
+});
+
+describe('apiRecordController record fetch helpers', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    apiRecordService.fetchOrderReferencesByTitle.mockReset();
+    apiRecordService.fetchEntryById.mockReset();
+  });
+
+  test('fetchRecordOrdersByTitle returns order references for a title', async () => {
+    apiRecordService.fetchOrderReferencesByTitle.mockResolvedValue({
+      count: 2,
+      data: [
+        { id: 'rec-1', order: 5 },
+        { id: 'rec-2', order: 8 },
+      ],
+    });
+
+    const req = {
+      query: { title: 'Alpha' },
+      apiRecordAccess: { userId: 'tier-1-user', tier: 'tier1' },
+    };
+    const res = {
+      json: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+    };
+
+    await controller.fetchRecordOrdersByTitle(req, res);
+
+    expect(apiRecordService.fetchOrderReferencesByTitle).toHaveBeenCalledWith('Alpha', req.apiRecordAccess);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      count: 2,
+      data: [
+        { id: 'rec-1', order: 5 },
+        { id: 'rec-2', order: 8 },
+      ],
+    });
+  });
+
+  test('fetchRecordById returns a single record', async () => {
+    apiRecordService.fetchEntryById.mockResolvedValue({
+      id: 'rec-1',
+      title: 'Alpha',
+      order: 5,
+      rev: 2,
+    });
+
+    const req = {
+      params: { id: 'rec-1' },
+      apiRecordAccess: { userId: 'tier-2-user', tier: 'tier2' },
+    };
+    const res = {
+      json: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+    };
+
+    await controller.fetchRecordById(req, res);
+
+    expect(apiRecordService.fetchEntryById).toHaveBeenCalledWith('rec-1', req.apiRecordAccess);
+    expect(res.json).toHaveBeenCalledWith({
+      success: true,
+      data: {
+        id: 'rec-1',
+        title: 'Alpha',
+        order: 5,
+        rev: 2,
+      },
+    });
   });
 });

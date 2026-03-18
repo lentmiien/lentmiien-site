@@ -81,12 +81,26 @@ class ApiRecordService {
     return normalized.length > 0 ? normalized : null;
   }
 
-  normalizeRequiredId(value) {
+  normalizeRequiredId(value, options = {}) {
+    const { message = 'Entry id is required.' } = options;
     const id = this.normalizeOptionalId(value);
     if (!id) {
-      throw new ApiRecordError('Entry id is required for updates.', 400, 'missing_id');
+      throw new ApiRecordError(message, 400, 'missing_id');
     }
     return id;
+  }
+
+  normalizeRequiredTitle(value) {
+    if (typeof value !== 'string') {
+      throw new ApiRecordError('title is required.', 400, 'missing_title', { field: 'title' });
+    }
+
+    const normalized = value.trim();
+    if (!normalized) {
+      throw new ApiRecordError('title is required.', 400, 'missing_title', { field: 'title' });
+    }
+
+    return normalized;
   }
 
   normalizeRequiredRev(value) {
@@ -473,7 +487,7 @@ class ApiRecordService {
 
   async updateEntry(entry, access, options = {}) {
     const now = options.now instanceof Date ? options.now : new Date();
-    const id = this.normalizeRequiredId(entry.id);
+    const id = this.normalizeRequiredId(entry.id, { message: 'Entry id is required for updates.' });
     const rev = this.normalizeRequiredRev(entry.rev);
     const updateOperation = this.buildUpdateOperation(entry, access, now);
 
@@ -689,6 +703,51 @@ class ApiRecordService {
       count: data.length,
       data,
     };
+  }
+
+  async fetchOrderReferencesByTitle(title, access = {}) {
+    this.normalizeAccess(access);
+    const normalizedTitle = this.normalizeRequiredTitle(title);
+
+    let findQuery = this.ApiRecordModel.find({
+      title: new RegExp(`^${this.escapeRegex(normalizedTitle)}$`, 'i'),
+    });
+    if (findQuery && typeof findQuery.sort === 'function') {
+      findQuery = findQuery.sort({ order: 1, _id: 1 });
+    }
+    if (findQuery && typeof findQuery.lean === 'function') {
+      findQuery = findQuery.lean();
+    }
+
+    const records = await this.executeQuery(findQuery);
+    const data = Array.isArray(records)
+      ? records.map((record) => ({
+        id: record.id || record._id,
+        order: record.order ?? null,
+      }))
+      : [];
+
+    return {
+      count: data.length,
+      data,
+    };
+  }
+
+  async fetchEntryById(id, access = {}) {
+    const normalizedAccess = this.normalizeAccess(access);
+    const recordId = this.normalizeRequiredId(id);
+
+    let findQuery = this.ApiRecordModel.findOne({ _id: recordId });
+    if (findQuery && typeof findQuery.lean === 'function') {
+      findQuery = findQuery.lean();
+    }
+
+    const record = await this.executeQuery(findQuery);
+    if (!record) {
+      throw new ApiRecordError(`Entry ${recordId} was not found.`, 404, 'not_found', { id: recordId });
+    }
+
+    return this.serializeEntry(record, normalizedAccess);
   }
 
   hasEncryptedFields(record) {

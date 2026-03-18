@@ -178,6 +178,31 @@ exports.fetchRecords = async (req, res) => {
   }
 };
 
+exports.fetchRecordOrdersByTitle = async (req, res) => {
+  try {
+    const result = await apiRecordService.fetchOrderReferencesByTitle(req.query?.title, req.apiRecordAccess);
+    return res.json({
+      success: true,
+      count: result.count,
+      data: result.data,
+    });
+  } catch (error) {
+    return handleControllerError(res, error, 'fetch order references');
+  }
+};
+
+exports.fetchRecordById = async (req, res) => {
+  try {
+    const result = await apiRecordService.fetchEntryById(req.params.id, req.apiRecordAccess);
+    return res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return handleControllerError(res, error, 'fetch by id');
+  }
+};
+
 exports.deleteRecord = async (req, res) => {
   try {
     const result = await apiRecordService.deleteEntry(req.params.id, req.apiRecordAccess);
