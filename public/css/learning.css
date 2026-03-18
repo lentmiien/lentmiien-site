@@ -350,6 +350,15 @@
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
 }
 
+.lessonIcon svg,
+.lessonIcon img,
+.stickerEmoji svg,
+.stickerEmoji img {
+  width: 56px;
+  height: 56px;
+  display: block;
+}
+
 .lessonTitle {
   margin-top: 14px;
   font-size: 1.15rem;

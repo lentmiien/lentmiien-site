@@ -34,6 +34,13 @@ const audioUpload = multer({
   },
 });
 
+const svgUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 1024 * 1024,
+  },
+});
+
 const handleAsrUpload = (req, res, next) => {
   audioUpload.single('file')(req, res, (err) => {
     if (err) {
@@ -49,6 +56,18 @@ const handleAsrUpload = (req, res, next) => {
       return controller.asr_test_page(req, res, next);
     }
     return controller.asr_test_transcribe(req, res, next);
+  });
+};
+
+const handleLearningArtUpload = (req, res, next) => {
+  svgUpload.single('svgFile')(req, res, (err) => {
+    if (err) {
+      req.learningArtUploadError = err.code === 'LIMIT_FILE_SIZE'
+        ? 'SVG upload exceeds the 1MB limit.'
+        : 'Unable to process the uploaded SVG file.';
+    }
+
+    return learningAdminController.upload_art_asset(req, res, next);
   });
 };
 
@@ -69,6 +88,10 @@ router.post('/learning/subtopics/save', learningAdminController.save_subtopic);
 router.post('/learning/subtopics/delete', learningAdminController.delete_subtopic);
 router.post('/learning/items/save', learningAdminController.save_item);
 router.post('/learning/items/delete', learningAdminController.delete_item);
+router.get('/learning/art', learningAdminController.art_library);
+router.post('/learning/art/upload', handleLearningArtUpload);
+router.get('/learning/users', learningAdminController.users);
+router.get('/learning/users/:userId', learningAdminController.user_profile);
 
 router.get('/app_logs', controller.app_logs);
 router.get('/log_file/:file', controller.log_file);

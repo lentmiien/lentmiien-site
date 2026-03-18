@@ -1,10 +1,13 @@
 const crypto = require('crypto');
+const sanitizeHtml = require('sanitize-html');
 
 const LearningTopic = require('../models/learning_topic');
 const LearningSubtopic = require('../models/learning_subtopic');
 const LearningItem = require('../models/learning_item');
 const LearningProgress = require('../models/learning_progress');
 const LearningAttempt = require('../models/learning_attempt');
+const LearningArtAsset = require('../models/learning_art_asset');
+const UserAccount = require('../models/useraccount');
 const logger = require('../utils/logger');
 
 const CONTENT_STATUS = Object.freeze({
@@ -65,6 +68,15 @@ const PATTERN_OPTIONS = [
   { value: 'dots', label: 'Dots' },
 ];
 
+const ADMIN_DATE_TIME_FORMAT = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+const ADMIN_DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
+  dateStyle: 'medium',
+});
+
 const DEFAULT_THEME = Object.freeze({
   accentColor: '#ffb703',
   accentColorSoft: '#ffd166',
@@ -107,6 +119,25 @@ const BUILTIN_ART_FALLBACKS = Object.freeze({
   space: '🚀',
   numbers: '🔢',
 });
+
+const CUSTOM_ART_PLACEHOLDER = '🖼️';
+
+const SYSTEM_BUILTIN_ART_CHOICES = Object.freeze(
+  Object.entries(BUILTIN_ART_FALLBACKS).map(([key, previewText]) => ({
+    key,
+    title: key
+      .split('-')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' '),
+    description: 'System built-in art',
+    previewText,
+    previewHtml: '',
+    source: 'system',
+  }))
+);
+
+const SYSTEM_BUILTIN_ART_KEY_SET = new Set(SYSTEM_BUILTIN_ART_CHOICES.map((entry) => entry.key));
 
 const CHEMISTRY_SEED = Object.freeze({
   topic: {
@@ -445,6 +476,79 @@ function createError(message, statusCode = 400) {
   return error;
 }
 
+function toPlainObject(doc) {
+  if (!doc) {
+    return null;
+  }
+  return typeof doc.toObject === 'function' ? doc.toObject() : doc;
+}
+
+function sortByTitle(entries) {
+  return [...entries].sort((left, right) => String(left.title || '').localeCompare(String(right.title || '')));
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatAdminDateTime(date) {
+  if (!date) {
+    return 'No activity yet';
+  }
+  return ADMIN_DATE_TIME_FORMAT.format(new Date(date));
+}
+
+function formatAdminDate(date) {
+  if (!date) {
+    return '—';
+  }
+  return ADMIN_DATE_FORMAT.format(new Date(date));
+}
+
+function pickLatestDate(...dates) {
+  const validDates = dates
+    .flat()
+    .filter(Boolean)
+    .map((entry) => new Date(entry))
+    .filter((entry) => Number.isFinite(entry.getTime()));
+
+  if (!validDates.length) {
+    return null;
+  }
+
+  return validDates.reduce((latest, entry) => (entry > latest ? entry : latest));
+}
+
+function pickEarliestDate(...dates) {
+  const validDates = dates
+    .flat()
+    .filter(Boolean)
+    .map((entry) => new Date(entry))
+    .filter((entry) => Number.isFinite(entry.getTime()));
+
+  if (!validDates.length) {
+    return null;
+  }
+
+  return validDates.reduce((earliest, entry) => (entry < earliest ? entry : earliest));
+}
+
+function compareDateDesc(leftDate, rightDate) {
+  const left = leftDate ? new Date(leftDate).getTime() : 0;
+  const right = rightDate ? new Date(rightDate).getTime() : 0;
+  return right - left;
+}
+
+function describeTemplateType(templateType) {
+  const option = TEMPLATE_OPTIONS.find((entry) => entry.value === templateType);
+  return option ? option.label : normalizeText(templateType, 64, { multiline: false }) || 'Unknown template';
+}
+
 function normalizeText(raw, maxLength = 280, { multiline = true } = {}) {
   if (typeof raw !== 'string') {
     return '';
@@ -562,6 +666,63 @@ function normalizePattern(raw) {
   return '';
 }
 
+function sanitizeSvgMarkup(rawSvg) {
+  const value = String(rawSvg || '').trim().slice(0, 100000);
+
+  if (!value) {
+    throw createError('Choose an SVG file or paste SVG markup to add art to the library.');
+  }
+
+  if (!/<svg[\s>]/i.test(value)) {
+    throw createError('Only SVG artwork can be added to the built-in art library.');
+  }
+
+  const cleanSvg = sanitizeHtml(value, {
+    allowedTags: [
+      'svg', 'g', 'path', 'circle', 'rect', 'ellipse', 'line', 'polyline', 'polygon',
+      'defs', 'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'pattern',
+      'text', 'tspan', 'title', 'desc', 'symbol',
+    ],
+    allowedAttributes: {
+      '*': [
+        'id', 'class', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+        'stroke-miterlimit', 'stroke-dasharray', 'opacity', 'transform', 'style',
+        'fill-rule', 'clip-rule', 'vector-effect', 'mask', 'clip-path', 'filter',
+      ],
+      svg: ['xmlns', 'xmlns:xlink', 'viewBox', 'width', 'height', 'role', 'aria-hidden', 'focusable', 'preserveAspectRatio'],
+      path: ['d', 'pathLength'],
+      circle: ['cx', 'cy', 'r'],
+      rect: ['x', 'y', 'width', 'height', 'rx', 'ry'],
+      ellipse: ['cx', 'cy', 'rx', 'ry'],
+      line: ['x1', 'y1', 'x2', 'y2'],
+      polyline: ['points'],
+      polygon: ['points'],
+      linearGradient: ['x1', 'x2', 'y1', 'y2', 'gradientUnits', 'gradientTransform'],
+      radialGradient: ['cx', 'cy', 'r', 'fx', 'fy', 'gradientUnits', 'gradientTransform'],
+      stop: ['offset', 'stop-color', 'stop-opacity'],
+      clipPath: ['clipPathUnits'],
+      mask: ['maskUnits', 'maskContentUnits', 'x', 'y', 'width', 'height'],
+      pattern: ['x', 'y', 'width', 'height', 'patternUnits', 'patternContentUnits', 'patternTransform'],
+      text: ['x', 'y', 'dx', 'dy', 'text-anchor', 'font-size', 'font-family', 'font-weight', 'letter-spacing'],
+      tspan: ['x', 'y', 'dx', 'dy', 'text-anchor', 'font-size', 'font-family', 'font-weight', 'letter-spacing'],
+      symbol: ['viewBox', 'preserveAspectRatio'],
+    },
+    parser: {
+      lowerCaseTags: false,
+      lowerCaseAttributeNames: false,
+    },
+    allowedSchemes: [],
+    allowProtocolRelative: false,
+    disallowedTagsMode: 'discard',
+  }).trim();
+
+  if (!cleanSvg || !/^<svg[\s>]/i.test(cleanSvg)) {
+    throw createError('SVG upload did not contain a valid <svg> element.');
+  }
+
+  return cleanSvg;
+}
+
 function normalizeArt(kindRaw, valueRaw, fallback = null) {
   const kind = Object.values(ART_KINDS).includes(kindRaw) ? kindRaw : ART_KINDS.EMOJI;
   const value = normalizeText(valueRaw, kind === ART_KINDS.IMAGE ? 2048 : 80, { multiline: false });
@@ -637,10 +798,65 @@ function getArtText(art) {
   }
 
   if (art.kind === ART_KINDS.IMAGE) {
-    return '🖼️';
+    return CUSTOM_ART_PLACEHOLDER;
   }
 
-  return BUILTIN_ART_FALLBACKS[art.value] || '✨';
+  return BUILTIN_ART_FALLBACKS[art.value] || CUSTOM_ART_PLACEHOLDER;
+}
+
+function renderArtMarkup(art, uploadedBuiltinArtMap = {}) {
+  if (!art || !art.value) {
+    return '<span class="learning-icon-text">✨</span>';
+  }
+
+  if (art.kind === ART_KINDS.EMOJI) {
+    return `<span class="learning-icon-text">${escapeHtml(art.value)}</span>`;
+  }
+
+  if (art.kind === ART_KINDS.IMAGE) {
+    return `<img src="${escapeHtml(art.value)}" alt="" loading="lazy">`;
+  }
+
+  if (uploadedBuiltinArtMap[art.value]) {
+    return uploadedBuiltinArtMap[art.value];
+  }
+
+  const previewText = BUILTIN_ART_FALLBACKS[art.value] || CUSTOM_ART_PLACEHOLDER;
+  return `<span class="learning-icon-text">${escapeHtml(previewText)}</span>`;
+}
+
+async function loadLearningArtAssets() {
+  return sortByTitle((await LearningArtAsset.find({})).map((asset) => toPlainObject(asset)));
+}
+
+function buildUploadedBuiltinArtMap(artAssets = []) {
+  return artAssets.reduce((map, asset) => {
+    if (asset?.key && asset?.svgMarkup) {
+      map[asset.key] = asset.svgMarkup;
+    }
+    return map;
+  }, {});
+}
+
+function buildUploadedBuiltinArtChoices(artAssets = []) {
+  return artAssets.map((asset) => ({
+    _id: String(asset._id),
+    stableId: asset.stableId,
+    key: asset.key,
+    title: asset.title,
+    description: asset.description || '',
+    previewText: CUSTOM_ART_PLACEHOLDER,
+    previewHtml: asset.svgMarkup,
+    source: asset.source || 'upload',
+    createdBy: asset.createdBy || '',
+    createdAt: asset.createdAt || null,
+    createdAtDisplay: formatAdminDateTime(asset.createdAt),
+    updatedAtDisplay: formatAdminDateTime(asset.updatedAt),
+  }));
+}
+
+function getSystemBuiltinArtChoices() {
+  return SYSTEM_BUILTIN_ART_CHOICES.map((entry) => ({ ...entry }));
 }
 
 function withPreview(path, preview) {
@@ -824,13 +1040,13 @@ function buildItemConfigFromForm(body, templateType) {
   throw createError('Unsupported learning template selected.');
 }
 
-async function ensureUniqueSlug(Model, baseSlug, extraFilter = {}, excludeId = null) {
-  const base = slugify(baseSlug, 'entry');
+async function ensureUniqueFieldValue(Model, fieldName, baseValue, fallbackPrefix = 'entry', extraFilter = {}, excludeId = null) {
+  const base = slugify(baseValue, fallbackPrefix);
   let candidate = base;
   let suffix = 2;
 
   while (true) {
-    const filter = { ...extraFilter, slug: candidate };
+    const filter = { ...extraFilter, [fieldName]: candidate };
     if (excludeId) {
       filter._id = { $ne: excludeId };
     }
@@ -843,6 +1059,10 @@ async function ensureUniqueSlug(Model, baseSlug, extraFilter = {}, excludeId = n
     candidate = `${base}-${suffix}`;
     suffix += 1;
   }
+}
+
+async function ensureUniqueSlug(Model, baseSlug, extraFilter = {}, excludeId = null) {
+  return ensureUniqueFieldValue(Model, 'slug', baseSlug, 'entry', extraFilter, excludeId);
 }
 
 function buildProgressSummary(progressDoc, items, subtopic) {
@@ -1235,9 +1455,10 @@ async function recordAttempt(user, topic, subtopic, item, evaluation, starsAward
   }
 }
 
-function decorateSubtopicSummary(topic, subtopic, items, progressDoc, preview = false) {
+function decorateSubtopicSummary(topic, subtopic, items, progressDoc, preview = false, uploadedBuiltinArtMap = {}) {
   const resolvedTheme = resolveTheme(topic.theme || {}, subtopic.theme || {});
   const progress = buildProgressSummary(progressDoc, items, subtopic);
+  const rewardArt = subtopic.reward?.stickerArt || DEFAULT_REWARD.stickerArt;
 
   return {
     _id: String(subtopic._id),
@@ -1251,8 +1472,10 @@ function decorateSubtopicSummary(topic, subtopic, items, progressDoc, preview = 
     theme: resolvedTheme,
     themeStyle: buildThemeStyleAttribute(resolvedTheme),
     iconText: getArtText(resolvedTheme.iconArt),
+    iconMarkup: renderArtMarkup(resolvedTheme.iconArt, uploadedBuiltinArtMap),
     rewardLabel: subtopic.reward?.label || DEFAULT_REWARD.label,
-    rewardText: getArtText(subtopic.reward?.stickerArt || DEFAULT_REWARD.stickerArt),
+    rewardText: getArtText(rewardArt),
+    rewardMarkup: renderArtMarkup(rewardArt, uploadedBuiltinArtMap),
     rewardDescription: subtopic.reward?.description || '',
     path: withPreview(`/learning/topic/${topic.slug}/${subtopic.slug}`, preview),
     previewPath: withPreview(`/learning/topic/${topic.slug}/${subtopic.slug}`, true),
@@ -1268,7 +1491,7 @@ function decorateSubtopicSummary(topic, subtopic, items, progressDoc, preview = 
   };
 }
 
-function decorateTopicSummary(topic, subtopics, preview = false) {
+function decorateTopicSummary(topic, subtopics, preview = false, uploadedBuiltinArtMap = {}) {
   const resolvedTheme = resolveTheme(topic.theme || {}, {});
   const totalStars = subtopics.reduce((sum, subtopic) => sum + subtopic.totalStars, 0);
   const maxStars = subtopics.reduce((sum, subtopic) => sum + subtopic.maxStars, 0);
@@ -1287,7 +1510,9 @@ function decorateTopicSummary(topic, subtopics, preview = false) {
     theme: resolvedTheme,
     themeStyle: buildThemeStyleAttribute(resolvedTheme),
     iconText: getArtText(resolvedTheme.iconArt),
+    iconMarkup: renderArtMarkup(resolvedTheme.iconArt, uploadedBuiltinArtMap),
     badgeText: getArtText(resolvedTheme.badgeArt),
+    badgeMarkup: renderArtMarkup(resolvedTheme.badgeArt, uploadedBuiltinArtMap),
     subtopicCount: subtopics.length,
     totalStars,
     maxStars,
@@ -1303,6 +1528,8 @@ function decorateTopicSummary(topic, subtopics, preview = false) {
 async function loadTopicTreeForUser(user, { preview = false } = {}) {
   const visibilityFilter = buildVisibilityFilter(preview);
   const topics = sortByOrderThenTitle(await LearningTopic.find(visibilityFilter).lean());
+  const artAssets = await loadLearningArtAssets();
+  const uploadedBuiltinArtMap = buildUploadedBuiltinArtMap(artAssets);
 
   if (!topics.length) {
     return [];
@@ -1350,7 +1577,8 @@ async function loadTopicTreeForUser(user, { preview = false } = {}) {
       subtopic,
       itemsBySubtopic.get(String(subtopic._id)) || [],
       progressBySubtopic.get(String(subtopic._id)) || null,
-      preview
+      preview,
+      uploadedBuiltinArtMap
     );
 
     const key = String(topic._id);
@@ -1363,7 +1591,8 @@ async function loadTopicTreeForUser(user, { preview = false } = {}) {
   return topics.map((topic) => decorateTopicSummary(
     topic,
     sortByOrderThenTitle(subtopicsByTopic.get(String(topic._id)) || []),
-    preview
+    preview,
+    uploadedBuiltinArtMap
   ));
 }
 
@@ -1417,6 +1646,8 @@ async function getSubtopicPlayerData(user, topicSlug, subtopicSlug, { preview = 
     subtopicId: subtopic._id,
     ...visibilityFilter,
   }));
+  const artAssets = await loadLearningArtAssets();
+  const uploadedBuiltinArtMap = buildUploadedBuiltinArtMap(artAssets);
 
   const progressDoc = await ensureProgressDocument(user, topic, subtopic, items, { persist: !preview });
   const progress = buildProgressSummary(progressDoc, items, subtopic);
@@ -1451,6 +1682,7 @@ async function getSubtopicPlayerData(user, topicSlug, subtopicSlug, { preview = 
       submitBase: `/learning/api/subtopics/${subtopic.stableId}/items`,
       submitPreviewQuery: preview ? '?preview=1' : '',
     },
+    builtinArtMap: uploadedBuiltinArtMap,
     preview,
   };
 }
@@ -1682,10 +1914,23 @@ function getItemForm(item = null, fallbackSubtopicId = '') {
   };
 }
 
-async function getAdminDashboardData({ selectedTopicId = '', selectedSubtopicId = '', selectedItemId = '' } = {}) {
+async function getAdminDashboardData({
+  selectedTopicId = '',
+  selectedSubtopicId = '',
+  selectedItemId = '',
+  creatingTopic = false,
+  creatingSubtopic = false,
+  creatingItem = false,
+} = {}) {
   const topics = sortByOrderThenTitle(await LearningTopic.find().lean());
   const subtopics = sortByOrderThenTitle(await LearningSubtopic.find().lean());
   const items = sortByOrderThenTitle(await LearningItem.find().lean());
+  const artAssets = await loadLearningArtAssets();
+  const artLibrary = {
+    uploaded: buildUploadedBuiltinArtChoices(artAssets),
+    system: getSystemBuiltinArtChoices(),
+  };
+  artLibrary.combined = [...artLibrary.uploaded, ...artLibrary.system];
 
   const itemsBySubtopic = new Map();
   items.forEach((item) => {
@@ -1723,24 +1968,24 @@ async function getAdminDashboardData({ selectedTopicId = '', selectedSubtopicId 
     subtopics: sortByOrderThenTitle(subtopicsByTopic.get(String(topic._id)) || []),
   }));
 
-  let selectedTopic = topics.find((topic) => String(topic._id) === selectedTopicId) || null;
-  let selectedSubtopic = subtopics.find((subtopic) => String(subtopic._id) === selectedSubtopicId) || null;
-  let selectedItem = items.find((item) => String(item._id) === selectedItemId) || null;
+  let topicContext = topics.find((topic) => String(topic._id) === selectedTopicId) || null;
+  let subtopicContext = subtopics.find((subtopic) => String(subtopic._id) === selectedSubtopicId) || null;
+  let itemContext = items.find((item) => String(item._id) === selectedItemId) || null;
 
-  if (!selectedSubtopic && selectedItem) {
-    selectedSubtopic = subtopics.find((subtopic) => String(subtopic._id) === String(selectedItem.subtopicId)) || null;
+  if (!subtopicContext && itemContext) {
+    subtopicContext = subtopics.find((subtopic) => String(subtopic._id) === String(itemContext.subtopicId)) || null;
   }
-  if (!selectedTopic && selectedSubtopic) {
-    selectedTopic = topics.find((topic) => String(topic._id) === String(selectedSubtopic.topicId)) || null;
+  if (!topicContext && subtopicContext) {
+    topicContext = topics.find((topic) => String(topic._id) === String(subtopicContext.topicId)) || null;
   }
-  if (!selectedTopic && topics.length) {
-    selectedTopic = topics[0];
+  if (!topicContext && topics.length) {
+    topicContext = topics[0];
   }
-  if (!selectedSubtopic && selectedTopic) {
-    selectedSubtopic = subtopics.find((subtopic) => String(subtopic.topicId) === String(selectedTopic._id)) || null;
+  if (!subtopicContext && topicContext) {
+    subtopicContext = subtopics.find((subtopic) => String(subtopic.topicId) === String(topicContext._id)) || null;
   }
-  if (!selectedItem && selectedSubtopic) {
-    selectedItem = items.find((item) => String(item.subtopicId) === String(selectedSubtopic._id)) || null;
+  if (!itemContext && subtopicContext) {
+    itemContext = items.find((item) => String(item.subtopicId) === String(subtopicContext._id)) || null;
   }
 
   return {
@@ -1753,16 +1998,458 @@ async function getAdminDashboardData({ selectedTopicId = '', selectedSubtopicId 
       value: String(subtopic._id),
       label: `${subtopic.title} (${subtopic.status})`,
     })),
-    selectedTopic: getTopicForm(selectedTopic),
-    selectedSubtopic: getSubtopicForm(selectedSubtopic, selectedTopic ? String(selectedTopic._id) : ''),
-    selectedItem: getItemForm(selectedItem, selectedSubtopic ? String(selectedSubtopic._id) : ''),
-    selectedSubtopicPreviewPath: selectedSubtopic ? withPreview(`/learning/topic/${selectedSubtopic.topicSlug}/${selectedSubtopic.slug}`, true) : null,
+    selectedTopic: creatingTopic ? getTopicForm(null) : getTopicForm(topicContext),
+    selectedSubtopic: creatingSubtopic
+      ? getSubtopicForm(null, topicContext ? String(topicContext._id) : '')
+      : getSubtopicForm(subtopicContext, topicContext ? String(topicContext._id) : ''),
+    selectedItem: creatingItem
+      ? getItemForm(null, subtopicContext ? String(subtopicContext._id) : '')
+      : getItemForm(itemContext, subtopicContext ? String(subtopicContext._id) : ''),
+    selectedTopicContextId: topicContext ? String(topicContext._id) : '',
+    selectedSubtopicContextId: subtopicContext ? String(subtopicContext._id) : '',
+    selectedItemContextId: itemContext ? String(itemContext._id) : '',
+    selectionState: {
+      creatingTopic,
+      creatingSubtopic,
+      creatingItem,
+    },
+    selectedSubtopicPreviewPath: subtopicContext ? withPreview(`/learning/topic/${subtopicContext.topicSlug}/${subtopicContext.slug}`, true) : null,
     templateOptions: TEMPLATE_OPTIONS,
     sceneOptions: SCENE_OPTIONS,
     stateOptions: STATE_OPTIONS,
     artKindOptions: ART_KIND_OPTIONS,
     patternOptions: PATTERN_OPTIONS,
+    artLibrary,
   };
+}
+
+async function getAdminArtLibraryData() {
+  const artAssets = await loadLearningArtAssets();
+  const uploaded = buildUploadedBuiltinArtChoices(artAssets);
+  const system = getSystemBuiltinArtChoices();
+
+  return {
+    artLibrary: {
+      uploaded,
+      system,
+      combined: [...uploaded, ...system],
+    },
+    stats: {
+      uploadedCount: uploaded.length,
+      systemCount: system.length,
+      totalCount: uploaded.length + system.length,
+    },
+  };
+}
+
+function hasStartedProgress(progressDoc) {
+  if (!progressDoc) {
+    return false;
+  }
+
+  return progressDoc.status === 'in_progress'
+    || progressDoc.status === 'completed'
+    || Boolean(progressDoc.startedAt)
+    || Boolean(progressDoc.lastPlayedAt)
+    || Boolean(progressDoc.completedAt)
+    || (Number(progressDoc.totalStars) || 0) > 0;
+}
+
+function hasCompletedProgress(progressDoc) {
+  return Boolean(progressDoc) && (progressDoc.status === 'completed' || Boolean(progressDoc.completedAt));
+}
+
+function buildLearningContentIndex(topics, subtopics, items) {
+  const plainTopics = topics.map((topic) => toPlainObject(topic));
+  const plainSubtopics = subtopics.map((subtopic) => toPlainObject(subtopic));
+  const plainItems = items.map((item) => toPlainObject(item));
+
+  const topicMap = new Map(plainTopics.map((topic) => [String(topic._id), topic]));
+  const subtopicMap = new Map(plainSubtopics.map((subtopic) => [String(subtopic._id), subtopic]));
+  const itemMap = new Map(plainItems.map((item) => [String(item._id), item]));
+  const subtopicStarTotals = new Map();
+
+  plainItems.forEach((item) => {
+    const key = String(item.subtopicId);
+    subtopicStarTotals.set(key, (subtopicStarTotals.get(key) || 0) + computeItemStarValue(item));
+  });
+
+  const topicStarTotals = new Map();
+  plainSubtopics.forEach((subtopic) => {
+    const topicKey = String(subtopic.topicId);
+    const stars = subtopicStarTotals.get(String(subtopic._id)) || 0;
+    topicStarTotals.set(topicKey, (topicStarTotals.get(topicKey) || 0) + stars);
+  });
+
+  return {
+    topics: plainTopics,
+    subtopics: plainSubtopics,
+    items: plainItems,
+    topicMap,
+    subtopicMap,
+    itemMap,
+    subtopicStarTotals,
+    topicStarTotals,
+    totalLibrarySubtopics: plainSubtopics.length,
+    totalLibraryStars: Array.from(subtopicStarTotals.values()).reduce((sum, value) => sum + value, 0),
+  };
+}
+
+function buildUserLearningSummary(userDoc, progressDocs, attempts, contentIndex) {
+  const user = toPlainObject(userDoc) || {};
+  const userProgressDocs = progressDocs.map((progress) => toPlainObject(progress));
+  const userAttempts = attempts.map((attempt) => toPlainObject(attempt));
+  const starsEarned = userProgressDocs.reduce((sum, progress) => sum + (Number(progress.totalStars) || 0), 0);
+  const startedSubtopics = userProgressDocs.filter((progress) => hasStartedProgress(progress)).length;
+  const completedSubtopics = userProgressDocs.filter((progress) => hasCompletedProgress(progress)).length;
+  const stickerCount = userProgressDocs.filter((progress) => progress.stickerUnlocked).length;
+  const attemptCount = userAttempts.length;
+  const correctAttempts = userAttempts.filter((attempt) => attempt.isCorrect === true).length;
+  const accuracyPercent = attemptCount > 0 ? Math.round((correctAttempts / attemptCount) * 100) : 0;
+  const firstActivityAt = pickEarliestDate(
+    userProgressDocs.map((progress) => progress.startedAt),
+    userProgressDocs.map((progress) => progress.completedAt),
+    userProgressDocs.map((progress) => progress.lastPlayedAt),
+    userAttempts.map((attempt) => attempt.createdAt)
+  );
+  const lastActivityAt = pickLatestDate(
+    userProgressDocs.map((progress) => progress.lastPlayedAt),
+    userProgressDocs.map((progress) => progress.completedAt),
+    userProgressDocs.map((progress) => progress.updatedAt),
+    userAttempts.map((attempt) => attempt.createdAt)
+  );
+  const favoriteTemplateCounts = new Map();
+  const favoriteTopicCounts = new Map();
+
+  userAttempts.forEach((attempt) => {
+    if (attempt.templateType) {
+      favoriteTemplateCounts.set(attempt.templateType, (favoriteTemplateCounts.get(attempt.templateType) || 0) + 1);
+    }
+    if (attempt.topicId) {
+      const topicKey = String(attempt.topicId);
+      favoriteTopicCounts.set(topicKey, (favoriteTopicCounts.get(topicKey) || 0) + 1);
+    }
+  });
+
+  if (!favoriteTopicCounts.size) {
+    userProgressDocs.forEach((progress) => {
+      if (progress.topicId && hasStartedProgress(progress)) {
+        const topicKey = String(progress.topicId);
+        favoriteTopicCounts.set(topicKey, (favoriteTopicCounts.get(topicKey) || 0) + 1);
+      }
+    });
+  }
+
+  const favoriteTemplateEntry = [...favoriteTemplateCounts.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+  const favoriteTopicEntry = [...favoriteTopicCounts.entries()].sort((left, right) => right[1] - left[1])[0] || null;
+  const currentLessonProgress = [...userProgressDocs]
+    .filter((progress) => hasStartedProgress(progress) && !hasCompletedProgress(progress))
+    .sort((left, right) => compareDateDesc(left.lastPlayedAt || left.updatedAt || left.startedAt, right.lastPlayedAt || right.updatedAt || right.startedAt))[0] || null;
+  const currentLesson = currentLessonProgress
+    ? (contentIndex.subtopicMap.get(String(currentLessonProgress.subtopicId))?.title
+      || currentLessonProgress.subtopicSlug
+      || currentLessonProgress.subtopicStableId
+      || 'Current lesson')
+    : '—';
+
+  return {
+    _id: String(user._id || ''),
+    name: user.name || 'Unknown user',
+    email: user.email || '',
+    typeUser: user.type_user || '',
+    starsEarned,
+    availableStars: contentIndex.totalLibraryStars,
+    starPercent: contentIndex.totalLibraryStars > 0 ? Math.round((starsEarned / contentIndex.totalLibraryStars) * 100) : 0,
+    startedSubtopics,
+    completedSubtopics,
+    totalSubtopics: contentIndex.totalLibrarySubtopics,
+    completionPercent: contentIndex.totalLibrarySubtopics > 0
+      ? Math.round((completedSubtopics / contentIndex.totalLibrarySubtopics) * 100)
+      : 0,
+    stickerCount,
+    attemptCount,
+    correctAttempts,
+    accuracyPercent,
+    firstActivityAt,
+    firstActivityAtDisplay: firstActivityAt ? formatAdminDateTime(firstActivityAt) : 'No activity yet',
+    lastActivityAt,
+    lastActivityAtDisplay: lastActivityAt ? formatAdminDateTime(lastActivityAt) : 'No activity yet',
+    favoriteTemplate: favoriteTemplateEntry ? describeTemplateType(favoriteTemplateEntry[0]) : '—',
+    favoriteTopic: favoriteTopicEntry ? (contentIndex.topicMap.get(favoriteTopicEntry[0])?.title || 'Unknown topic') : '—',
+    currentLesson,
+    isActive: Boolean(lastActivityAt),
+    profilePath: `/admin/learning/users/${user._id}`,
+  };
+}
+
+function buildUserLearningTimeline(progressDocs, attempts, contentIndex) {
+  const events = [];
+
+  progressDocs.map((progress) => toPlainObject(progress)).forEach((progress) => {
+    const topic = contentIndex.topicMap.get(String(progress.topicId));
+    const subtopic = contentIndex.subtopicMap.get(String(progress.subtopicId));
+    const subtopicTitle = subtopic?.title || progress.subtopicSlug || progress.subtopicStableId || 'Lesson';
+    const topicTitle = topic?.title || progress.topicSlug || progress.topicStableId || 'Topic';
+
+    if (progress.startedAt) {
+      events.push({
+        key: `started_${progress._id || progress.subtopicStableId}`,
+        tone: 'info',
+        at: progress.startedAt,
+        atDisplay: formatAdminDateTime(progress.startedAt),
+        title: `Started ${subtopicTitle}`,
+        subtitle: topicTitle,
+        detail: progress.currentItemStableId ? `Current checkpoint: ${progress.currentItemStableId}` : 'Lesson opened for the first time.',
+      });
+    }
+
+    if (progress.completedAt) {
+      const rewardLabel = progress.stickerLabel ? ` • ${progress.stickerLabel}` : '';
+      events.push({
+        key: `completed_${progress._id || progress.subtopicStableId}`,
+        tone: 'success',
+        at: progress.completedAt,
+        atDisplay: formatAdminDateTime(progress.completedAt),
+        title: `Completed ${subtopicTitle}`,
+        subtitle: topicTitle,
+        detail: `${Number(progress.totalStars) || 0}/${Number(progress.maxStars) || 0} stars${rewardLabel}`,
+      });
+    }
+  });
+
+  attempts.map((attempt) => toPlainObject(attempt)).forEach((attempt) => {
+    const topic = contentIndex.topicMap.get(String(attempt.topicId));
+    const subtopic = contentIndex.subtopicMap.get(String(attempt.subtopicId));
+    const item = contentIndex.itemMap.get(String(attempt.itemId));
+    const topicTitle = topic?.title || attempt.topicStableId || 'Topic';
+    const subtopicTitle = subtopic?.title || attempt.subtopicStableId || 'Lesson';
+    const itemTitle = item?.title || attempt.itemStableId || 'Learning item';
+    const isPositive = attempt.isCorrect === true || attempt.completed === true;
+    const detailParts = [subtopicTitle];
+
+    if ((Number(attempt.starsAwarded) || 0) > 0) {
+      detailParts.push(`+${attempt.starsAwarded} ⭐`);
+    }
+    if (attempt.feedbackMessage) {
+      detailParts.push(normalizeText(attempt.feedbackMessage, 120));
+    }
+
+    events.push({
+      key: `attempt_${attempt._id || `${attempt.itemStableId}_${attempt.createdAt}`}`,
+      tone: isPositive ? 'success' : 'warning',
+      at: attempt.createdAt,
+      atDisplay: formatAdminDateTime(attempt.createdAt),
+      title: isPositive ? `Progress on ${itemTitle}` : `Tried ${itemTitle}`,
+      subtitle: topicTitle,
+      detail: detailParts.join(' • '),
+    });
+  });
+
+  return events
+    .filter((event) => event.at)
+    .sort((left, right) => compareDateDesc(left.at, right.at));
+}
+
+async function getAdminUsersProgressData() {
+  const [users, topics, subtopics, items, progressDocs, attempts] = await Promise.all([
+    UserAccount.find({}),
+    LearningTopic.find({}),
+    LearningSubtopic.find({}),
+    LearningItem.find({}),
+    LearningProgress.find({}),
+    LearningAttempt.find({}),
+  ]);
+
+  const contentIndex = buildLearningContentIndex(topics, subtopics, items);
+  const progressByUser = new Map();
+  const attemptsByUser = new Map();
+
+  progressDocs.forEach((progress) => {
+    const key = String(progress.userId);
+    if (!progressByUser.has(key)) {
+      progressByUser.set(key, []);
+    }
+    progressByUser.get(key).push(progress);
+  });
+
+  attempts.forEach((attempt) => {
+    const key = String(attempt.userId);
+    if (!attemptsByUser.has(key)) {
+      attemptsByUser.set(key, []);
+    }
+    attemptsByUser.get(key).push(attempt);
+  });
+
+  const userSummaries = users
+    .map((user) => buildUserLearningSummary(
+      user,
+      progressByUser.get(String(user._id)) || [],
+      attemptsByUser.get(String(user._id)) || [],
+      contentIndex
+    ))
+    .sort((left, right) => {
+      if (right.completedSubtopics !== left.completedSubtopics) {
+        return right.completedSubtopics - left.completedSubtopics;
+      }
+      if (right.starsEarned !== left.starsEarned) {
+        return right.starsEarned - left.starsEarned;
+      }
+      const lastActivityDelta = compareDateDesc(left.lastActivityAt, right.lastActivityAt);
+      if (lastActivityDelta !== 0) {
+        return lastActivityDelta;
+      }
+      return String(left.name || '').localeCompare(String(right.name || ''));
+    });
+
+  const totals = userSummaries.reduce((summary, user) => {
+    summary.userCount += 1;
+    summary.activeLearnerCount += user.isActive ? 1 : 0;
+    summary.completedSubtopics += user.completedSubtopics;
+    summary.starsEarned += user.starsEarned;
+    summary.attemptCount += user.attemptCount;
+    return summary;
+  }, {
+    userCount: 0,
+    activeLearnerCount: 0,
+    completedSubtopics: 0,
+    starsEarned: 0,
+    attemptCount: 0,
+  });
+
+  totals.topicCount = contentIndex.topics.length;
+  totals.subtopicCount = contentIndex.totalLibrarySubtopics;
+  totals.availableStars = contentIndex.totalLibraryStars;
+
+  return {
+    users: userSummaries,
+    totals,
+    hasLearningData: progressDocs.length > 0 || attempts.length > 0,
+  };
+}
+
+async function getAdminUserLearningProfileData(userId) {
+  const user = await UserAccount.findById(userId);
+  if (!user) {
+    throw createError('Learning user not found.', 404);
+  }
+
+  const [topics, subtopics, items, progressDocs, attempts] = await Promise.all([
+    LearningTopic.find({}),
+    LearningSubtopic.find({}),
+    LearningItem.find({}),
+    LearningProgress.find({ userId }),
+    LearningAttempt.find({ userId }),
+  ]);
+
+  const contentIndex = buildLearningContentIndex(topics, subtopics, items);
+  const summary = buildUserLearningSummary(user, progressDocs, attempts, contentIndex);
+  const plainProgressDocs = progressDocs.map((progress) => toPlainObject(progress));
+  const plainAttempts = attempts.map((attempt) => toPlainObject(attempt));
+
+  const topicProgress = sortByOrderThenTitle(contentIndex.topics.map((topic) => {
+    const topicProgressDocs = plainProgressDocs.filter((progress) => String(progress.topicId) === String(topic._id));
+    const topicAttempts = plainAttempts.filter((attempt) => String(attempt.topicId) === String(topic._id));
+    const availableSubtopics = contentIndex.subtopics.filter((subtopic) => String(subtopic.topicId) === String(topic._id));
+    const starsEarned = topicProgressDocs.reduce((sum, progress) => sum + (Number(progress.totalStars) || 0), 0);
+    const startedSubtopics = topicProgressDocs.filter((progress) => hasStartedProgress(progress)).length;
+    const completedSubtopics = topicProgressDocs.filter((progress) => hasCompletedProgress(progress)).length;
+    const lastActivityAt = pickLatestDate(
+      topicProgressDocs.map((progress) => progress.lastPlayedAt),
+      topicProgressDocs.map((progress) => progress.completedAt),
+      topicAttempts.map((attempt) => attempt.createdAt)
+    );
+
+    return {
+      _id: String(topic._id),
+      title: topic.title,
+      slug: topic.slug,
+      status: topic.status,
+      startedSubtopics,
+      completedSubtopics,
+      totalSubtopics: availableSubtopics.length,
+      completionPercent: availableSubtopics.length > 0 ? Math.round((completedSubtopics / availableSubtopics.length) * 100) : 0,
+      starsEarned,
+      availableStars: contentIndex.topicStarTotals.get(String(topic._id)) || 0,
+      starPercent: (contentIndex.topicStarTotals.get(String(topic._id)) || 0) > 0
+        ? Math.round((starsEarned / (contentIndex.topicStarTotals.get(String(topic._id)) || 0)) * 100)
+        : 0,
+      lastActivityAt,
+      lastActivityAtDisplay: lastActivityAt ? formatAdminDateTime(lastActivityAt) : 'No activity yet',
+      isStarted: startedSubtopics > 0 || topicAttempts.length > 0,
+    };
+  }));
+
+  const recentRewards = plainProgressDocs
+    .filter((progress) => progress.stickerUnlocked)
+    .map((progress) => {
+      const topic = contentIndex.topicMap.get(String(progress.topicId));
+      const subtopic = contentIndex.subtopicMap.get(String(progress.subtopicId));
+      const unlockedAt = progress.completedAt || progress.updatedAt;
+
+      return {
+        key: `reward_${progress._id || progress.subtopicStableId}`,
+        title: progress.stickerLabel || subtopic?.reward?.label || `${subtopic?.title || 'Lesson'} sticker`,
+        topicTitle: topic?.title || progress.topicSlug || 'Topic',
+        subtopicTitle: subtopic?.title || progress.subtopicSlug || 'Lesson',
+        unlockedAt,
+        unlockedAtDisplay: unlockedAt ? formatAdminDateTime(unlockedAt) : 'No activity yet',
+      };
+    })
+    .sort((left, right) => compareDateDesc(left.unlockedAt, right.unlockedAt));
+
+  return {
+    user: {
+      _id: String(user._id),
+      name: user.name,
+      email: user.email,
+      typeUser: user.type_user,
+      joinedDisplay: formatAdminDate(user._id?.getTimestamp ? user._id.getTimestamp() : null),
+    },
+    summary,
+    topicProgress,
+    recentRewards,
+    timeline: buildUserLearningTimeline(plainProgressDocs, plainAttempts, contentIndex).slice(0, 80),
+    contentTotals: {
+      topicCount: contentIndex.topics.length,
+      subtopicCount: contentIndex.totalLibrarySubtopics,
+      availableStars: contentIndex.totalLibraryStars,
+    },
+  };
+}
+
+async function saveArtAssetFromUpload({ body = {}, file = null, userName = '' } = {}) {
+  const rawSvg = file?.buffer ? file.buffer.toString('utf8') : String(body.svgMarkup || '');
+  const cleanSvg = sanitizeSvgMarkup(rawSvg);
+  const requestedTitle = normalizeText(body.title, 120, { multiline: false });
+  const requestedKey = normalizeText(body.key, 120, { multiline: false });
+  const fileBaseName = normalizeText(String(file?.originalname || '').replace(/\.svg$/i, ''), 120, { multiline: false });
+  const baseKey = requestedKey || requestedTitle || fileBaseName || 'art';
+  const normalizedKey = slugify(baseKey, 'art');
+
+  if (SYSTEM_BUILTIN_ART_KEY_SET.has(normalizedKey)) {
+    throw createError('That art value is reserved by the system library. Choose a different key.');
+  }
+
+  const uniqueKey = await ensureUniqueFieldValue(LearningArtAsset, 'key', normalizedKey, 'art');
+  const fallbackTitle = uniqueKey
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
+  const asset = new LearningArtAsset({
+    stableId: generateStableId('art'),
+    createdBy: userName,
+  });
+
+  asset.key = uniqueKey;
+  asset.title = requestedTitle || fileBaseName || fallbackTitle;
+  asset.description = normalizeText(body.description, 280);
+  asset.svgMarkup = cleanSvg;
+  asset.updatedBy = userName;
+
+  await asset.save();
+  return asset;
 }
 
 async function syncTopicReferences(topic) {
@@ -2099,13 +2786,17 @@ module.exports = {
   deleteTopicById,
   ensureSeedData,
   evaluateItemAnswer,
+  getAdminArtLibraryData,
   getAdminDashboardData,
+  getAdminUserLearningProfileData,
+  getAdminUsersProgressData,
   getArtText,
   getHomePageData,
   getSubtopicPlayerData,
   getTopicPageData,
   resolveTheme,
   resetSubtopicProgress,
+  saveArtAssetFromUpload,
   saveItemFromForm,
   saveSubtopicFromForm,
   saveTopicFromForm,

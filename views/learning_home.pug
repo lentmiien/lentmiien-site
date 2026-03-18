@@ -39,7 +39,7 @@ block content
         .lessonGrid
           each topic in topics
             a.lessonCard.lessonCardLink(href=topic.path, style=topic.themeStyle)
-              .lessonIcon= topic.iconText
+              .lessonIcon!= topic.iconMarkup || topic.iconText
               .lessonTitle= topic.title
               .lessonTagline= topic.description
               .lessonStars= `${topic.totalStars} ⭐ / ${topic.maxStars}`

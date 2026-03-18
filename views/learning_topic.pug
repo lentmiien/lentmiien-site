@@ -10,7 +10,7 @@ block content
       a.chip(href=previewMode ? '/learning?preview=1' : '/learning') ← All Topics
       .brand
         .logo
-          span.learning-icon-text= topic.iconText
+          != topic.iconMarkup || topic.iconText
         div
           .title= topic.title
           .subtitle= topic.description
@@ -40,7 +40,7 @@ block content
         .lessonGrid
           each subtopic in topic.subtopics
             a.lessonCard.lessonCardLink(href=subtopic.path, style=subtopic.themeStyle)
-              .lessonIcon= subtopic.iconText
+              .lessonIcon!= subtopic.iconMarkup || subtopic.iconText
               .lessonTitle= subtopic.title
               .lessonTagline= subtopic.description
               .lessonStars= `${subtopic.totalStars} ⭐ / ${subtopic.maxStars}`
@@ -59,6 +59,6 @@ block content
       .stickerGrid
         each subtopic in topic.subtopics
           .stickerCard(class=subtopic.stickerUnlocked ? 'earned' : 'missing', style=subtopic.themeStyle)
-            .stickerEmoji= subtopic.rewardText
+            .stickerEmoji!= subtopic.rewardMarkup || subtopic.rewardText
             .stickerLabel= subtopic.rewardLabel
             .stickerHint= subtopic.stickerUnlocked ? 'Unlocked!' : 'Locked'

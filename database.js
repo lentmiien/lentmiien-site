@@ -146,6 +146,7 @@ const LearningSubtopic = require('./models/learning_subtopic');
 const LearningItem = require('./models/learning_item');
 const LearningProgress = require('./models/learning_progress');
 const LearningAttempt = require('./models/learning_attempt');
+const LearningArtAsset = require('./models/learning_art_asset');
 
 // Export models
 module.exports = {
@@ -236,4 +237,5 @@ module.exports = {
   LearningItem,
   LearningProgress,
   LearningAttempt,
+  LearningArtAsset,
 };

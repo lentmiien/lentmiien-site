@@ -18,6 +18,7 @@
     topic: bootstrap.topic || {},
     subtopic: bootstrap.subtopic || {},
     theme: bootstrap.theme || {},
+    builtinArtMap: bootstrap.builtinArtMap || {},
     items: Array.isArray(bootstrap.items) ? bootstrap.items : [],
     paths: bootstrap.paths || {},
     progress: bootstrap.progress || {},
@@ -396,6 +397,10 @@
   }
 
   function renderBuiltinArt(name, variant = 'option') {
+    if (state.builtinArtMap && state.builtinArtMap[name]) {
+      return state.builtinArtMap[name];
+    }
+
     switch (name) {
       case 'mascot':
       case 'chemistry':

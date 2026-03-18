@@ -1,0 +1,121 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/admin-learning.css")
+
+block content
+  .container.py-4.learning-admin
+    .learning-admin__profile-header.mb-4
+      .learning-admin__profile-copy
+        h1.mb-1= `${user.name} · learning profile`
+        p.mb-2= user.email
+        p.learning-admin__subcopy.mb-0
+          span.learning-admin__art-key= `Role: ${user.typeUser || 'unknown'}`
+          span.learning-admin__art-key= `First seen: ${summary.firstActivityAtDisplay}`
+          span.learning-admin__art-key= `Last activity: ${summary.lastActivityAtDisplay}`
+      .learning-admin__header-actions
+        a.btn.btn-outline-primary(href="/admin/learning/users") Back to learner list
+        a.btn.btn-outline-primary(href="/admin/learning") Back to CMS
+        a.btn.btn-outline-primary(href="/admin/learning/art") SVG art library
+
+    .learning-admin__stats-grid.mb-4
+      .learning-admin__stat-card
+        .learning-admin__stat-label Lessons completed
+        .learning-admin__stat-value= `${summary.completedSubtopics}/${summary.totalSubtopics}`
+        .learning-admin__stat-meta
+          span= `${summary.completionPercent}% completion`
+      .learning-admin__stat-card
+        .learning-admin__stat-label Stars earned
+        .learning-admin__stat-value= `${summary.starsEarned}/${summary.availableStars}`
+        .learning-admin__stat-meta
+          span= `${summary.starPercent}% of all available stars`
+      .learning-admin__stat-card
+        .learning-admin__stat-label Attempts logged
+        .learning-admin__stat-value= summary.attemptCount
+        .learning-admin__stat-meta
+          span= `${summary.accuracyPercent}% answer accuracy`
+      .learning-admin__stat-card
+        .learning-admin__stat-label Stickers unlocked
+        .learning-admin__stat-value= summary.stickerCount
+        .learning-admin__stat-meta
+          span Rewards earned from completed lessons
+      .learning-admin__stat-card
+        .learning-admin__stat-label Favorite topic
+        .learning-admin__stat-value= summary.favoriteTopic
+        .learning-admin__stat-meta
+          span Most active topic overall
+      .learning-admin__stat-card
+        .learning-admin__stat-label Favorite template
+        .learning-admin__stat-value= summary.favoriteTemplate
+        .learning-admin__stat-meta
+          span Most-used item type
+
+    .row.g-4
+      .col-xl-6
+        .card
+          .card-body
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 Topic breakdown
+                p.learning-admin__hint.mb-0 Which parts of the curriculum this learner has explored most.
+            if topicProgress && topicProgress.length
+              .learning-admin__topic-grid
+                each topic in topicProgress
+                  .learning-admin__topic-card
+                    div
+                      h3.mb-1= topic.title
+                      .learning-admin__topic-status= topic.status
+                    .learning-admin__topic-stats
+                      span= `${topic.completedSubtopics}/${topic.totalSubtopics} lessons`
+                      span= `${topic.starsEarned}/${topic.availableStars} stars`
+                      span= topic.lastActivityAtDisplay
+                    div
+                      .learning-admin__topic-label.mb-1 Lesson completion
+                      .learning-admin__progress-bar
+                        .learning-admin__progress-fill(style=`width:${topic.completionPercent}%`)
+                    div
+                      .learning-admin__topic-label.mb-1 Stars collected
+                      .learning-admin__progress-bar
+                        .learning-admin__progress-fill(style=`width:${topic.starPercent}%`)
+            else
+              .learning-admin__empty No topic activity yet.
+
+      .col-xl-6
+        .card
+          .card-body
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 Reward shelf
+                p.learning-admin__hint.mb-0 Recently unlocked stickers and lesson rewards.
+            if recentRewards && recentRewards.length
+              .learning-admin__reward-grid
+                each reward in recentRewards
+                  .learning-admin__reward-card
+                    h3.mb-1= reward.title
+                    .learning-admin__reward-meta
+                      span= reward.topicTitle
+                      span= reward.subtopicTitle
+                      span= reward.unlockedAtDisplay
+            else
+              .learning-admin__empty No lesson rewards unlocked yet.
+
+      .col-12
+        .card
+          .card-body
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 Learning timeline
+                p.learning-admin__hint.mb-0 A chronological view of lesson starts, completions, and answer activity.
+            if timeline && timeline.length
+              .learning-admin__timeline
+                each event in timeline
+                  .learning-admin__timeline-item(class=`learning-admin__timeline-item--${event.tone}`)
+                    .learning-admin__timeline-meta
+                      span= event.atDisplay
+                      if event.subtitle
+                        span= event.subtitle
+                    .learning-admin__timeline-title.mt-2= event.title
+                    if event.detail
+                      .learning-admin__timeline-detail= event.detail
+            else
+              .learning-admin__empty No timeline events recorded yet.

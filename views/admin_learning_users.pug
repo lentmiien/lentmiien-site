@@ -1,0 +1,85 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/admin-learning.css")
+
+block content
+  .container.py-4.learning-admin
+    .d-flex.flex-column.flex-xl-row.justify-content-between.align-items-xl-center.gap-3.mb-4
+      div
+        h1.mb-1 Learner progress overview
+        p.learning-admin__section-copy.mb-0 See every account’s overall Learning Lab progress, completion rate, stars earned, and latest activity.
+      .learning-admin__header-actions
+        a.btn.btn-outline-primary(href="/admin/learning") Back to CMS
+        a.btn.btn-outline-primary(href="/admin/learning/art") SVG art library
+        a.btn.btn-outline-primary(href="/learning") Open learner home
+
+    .learning-admin__stats-grid.mb-4
+      .learning-admin__stat-card
+        .learning-admin__stat-label Accounts
+        .learning-admin__stat-value= totals.userCount
+        .learning-admin__stat-meta
+          span All users in the system
+      .learning-admin__stat-card
+        .learning-admin__stat-label Active learners
+        .learning-admin__stat-value= totals.activeLearnerCount
+        .learning-admin__stat-meta
+          span Users with recorded learning activity
+      .learning-admin__stat-card
+        .learning-admin__stat-label Completed lessons
+        .learning-admin__stat-value= totals.completedSubtopics
+        .learning-admin__stat-meta
+          span Total lesson completions
+      .learning-admin__stat-card
+        .learning-admin__stat-label Stars earned
+        .learning-admin__stat-value= totals.starsEarned
+        .learning-admin__stat-meta
+          span Across the whole learner base
+      .learning-admin__stat-card
+        .learning-admin__stat-label Attempts logged
+        .learning-admin__stat-value= totals.attemptCount
+        .learning-admin__stat-meta
+          span Submitted answers and activities
+      .learning-admin__stat-card
+        .learning-admin__stat-label Library size
+        .learning-admin__stat-value= `${totals.topicCount} / ${totals.subtopicCount}`
+        .learning-admin__stat-meta
+          span Topics / lessons available
+
+    if !hasLearningData
+      .learning-admin__empty.mb-4 No learner progress has been recorded yet. Once users open lessons and submit answers, their profiles will appear here.
+
+    if users && users.length
+      .learning-admin__user-grid
+        each user in users
+          .learning-admin__user-card
+            div
+              h3.mb-1= user.name
+              .learning-admin__user-email= user.email
+            .learning-admin__user-meta
+              span= `Role: ${user.typeUser || 'unknown'}`
+              span= `Last activity: ${user.lastActivityAtDisplay}`
+              if user.currentLesson && user.currentLesson !== '—'
+                span= `Current lesson: ${user.currentLesson}`
+            div
+              .learning-admin__topic-label.mb-1 Lesson completion
+              .learning-admin__progress-bar
+                .learning-admin__progress-fill(style=`width:${user.completionPercent}%`)
+              .learning-admin__topic-meta.mt-2
+                span= `${user.completedSubtopics} / ${user.totalSubtopics} lessons`
+                span= `${user.completionPercent}% complete`
+            div
+              .learning-admin__topic-label.mb-1 Stars collected
+              .learning-admin__progress-bar
+                .learning-admin__progress-fill(style=`width:${user.starPercent}%`)
+              .learning-admin__topic-meta.mt-2
+                span= `${user.starsEarned} / ${user.availableStars} stars`
+                span= `${user.starPercent}% collected`
+            .learning-admin__user-meta
+              span= `${user.attemptCount} attempts`
+              span= `${user.accuracyPercent}% accuracy`
+              span= `${user.stickerCount} stickers`
+              span= `Favorite topic: ${user.favoriteTopic}`
+            a.btn.btn-outline-primary(href=user.profilePath) View profile
+    else
+      .learning-admin__empty No user accounts were found.

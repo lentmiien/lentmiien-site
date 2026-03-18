@@ -1,18 +1,61 @@
 extends layout
 
+mixin statusBadge(status)
+  if status === 'published'
+    span.badge.text-bg-secondary= status
+  else
+    span.badge.text-bg-light= status
+
+mixin artField(kindId, kindName, kindValue, valueId, valueName, valueValue, label, kindCol, valueCol, placeholder)
+  div(class=`col-md-${kindCol}`)
+    label.form-label(for=kindId)= `${label} kind`
+    select.form-select(id=kindId name=kindName)
+      each option in artKindOptions
+        option(value=option.value selected=kindValue === option.value)= option.label
+  div(class=`col-md-${valueCol}`)
+    label.form-label(for=valueId)= `${label} value`
+    .input-group
+      input.form-control(type="text" id=valueId name=valueName value=valueValue placeholder=placeholder || '')
+      button.btn.btn-outline-secondary(
+        type="button"
+        data-bs-toggle="modal"
+        data-bs-target="#artPickerModal"
+        data-art-picker-target=`#${valueId}`
+        data-art-kind-target=`#${kindId}`
+        data-art-label=`${label} value`
+      ) Library
+
 block styles
   link(rel="stylesheet", href="/css/admin-learning.css")
 
 block content
+  - const cancelTopicHref = selectedTopicContextId ? `/admin/learning?topicId=${selectedTopicContextId}` : '/admin/learning';
+  - const cancelSubtopicHref = selectedTopicContextId || selectedSubtopicContextId ? `/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId || ''}` : '/admin/learning';
+  - const cancelItemHref = selectedSubtopicContextId ? `/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId}&itemId=${selectedItemContextId || ''}` : '/admin/learning';
   .container.py-4.learning-admin
-    .d-flex.flex-column.flex-lg-row.justify-content-between.align-items-lg-center.gap-3.mb-4
+    .d-flex.flex-column.flex-xl-row.justify-content-between.align-items-xl-center.gap-3.mb-4
       div
         h1.mb-1 Learning Lab CMS
-        p.text-muted.mb-0 Manage topics, subtopics, and reusable learning templates.
-      .d-flex.flex-wrap.gap-2
-        a.btn.btn-outline-primary(href="/learning") Open learner home
-        if selectedSubtopicPreviewPath
-          a.btn.btn-primary(href=selectedSubtopicPreviewPath target="_blank" rel="noopener") Preview selected lesson
+        p.learning-admin__section-copy.mb-0 Manage topics, subtopics, reusable art, and learner progress from one place.
+        .learning-admin__quick-actions
+          a.btn.btn-outline-primary(href="/learning") Open learner home
+          a.btn.btn-outline-primary(href="/admin/learning/art") SVG art library
+          a.btn.btn-outline-primary(href="/admin/learning/users") Learner progress
+          if selectedSubtopicPreviewPath
+            a.btn.btn-primary(href=selectedSubtopicPreviewPath target="_blank" rel="noopener") Preview selected lesson
+      .learning-admin__header-actions
+        a.btn.btn-primary(href="/admin/learning?newTopic=1") New topic
+        a.btn.btn-outline-primary(
+          href=selectedTopicContextId ? `/admin/learning?topicId=${selectedTopicContextId}&newSubtopic=1` : '#'
+          class=!selectedTopicContextId ? 'disabled' : ''
+          aria-disabled=!selectedTopicContextId ? 'true' : 'false'
+        ) New subtopic
+        a.btn.btn-outline-primary(
+          href=selectedSubtopicContextId ? `/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId}&newItem=1` : '#'
+          class=!selectedSubtopicContextId ? 'disabled' : ''
+          aria-disabled=!selectedSubtopicContextId ? 'true' : 'false'
+        ) New item
+        button.btn.btn-outline-secondary(type="button" data-bs-toggle="modal" data-bs-target="#svgUploadModal") Upload SVG art
 
     if successMessage
       .alert.alert-success(role="alert")= successMessage
@@ -20,52 +63,90 @@ block content
       .alert.alert-danger(role="alert")= errorMessage
 
     .row.g-4
-      .col-lg-4
-        .card.shadow-sm
+      .col-xl-4
+        .card
           .card-body
-            h2.h5.mb-3 Content tree
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 Content tree
+                p.learning-admin__hint.mb-0 Jump between lessons or create new nested content directly from the tree.
+              a.btn.btn-sm.btn-primary(href="/admin/learning?newTopic=1") Add topic
             if topicsTree && topicsTree.length
               each topic in topicsTree
                 .learning-admin-tree__topic
                   .learning-admin-tree__row
                     div
-                      strong= topic.title
-                      span.badge.text-bg-light.ms-2= topic.status
+                      strong.learning-admin-tree__title= topic.title
+                      .learning-admin-tree__meta
+                        +statusBadge(topic.status)
+                        span.learning-admin-tree__count= `${topic.subtopics.length} subtopics`
                     .learning-admin-tree__actions
                       a.btn.btn-sm.btn-outline-secondary(href=`/admin/learning?topicId=${topic._id}`) Edit
                       a.btn.btn-sm.btn-outline-primary(href=topic.previewPath target="_blank" rel="noopener") Preview
+                      a.btn.btn-sm.btn-outline-primary(href=`/admin/learning?topicId=${topic._id}&newSubtopic=1`) Add subtopic
                   if topic.subtopics && topic.subtopics.length
                     each subtopic in topic.subtopics
                       .learning-admin-tree__subtopic
                         .learning-admin-tree__row
                           div
                             span.learning-admin-tree__title= subtopic.title
-                            span.badge.text-bg-light.ms-2= subtopic.status
+                            .learning-admin-tree__meta
+                              +statusBadge(subtopic.status)
+                              span.learning-admin-tree__count= `${subtopic.itemCount} items`
                           .learning-admin-tree__actions
                             a.btn.btn-sm.btn-outline-secondary(href=`/admin/learning?topicId=${topic._id}&subtopicId=${subtopic._id}`) Edit
                             a.btn.btn-sm.btn-outline-primary(href=subtopic.previewPath target="_blank" rel="noopener") Preview
+                            a.btn.btn-sm.btn-outline-primary(href=`/admin/learning?topicId=${topic._id}&subtopicId=${subtopic._id}&newItem=1`) Add item
                         if subtopic.items && subtopic.items.length
                           each item in subtopic.items
                             .learning-admin-tree__item
                               .learning-admin-tree__row
                                 div
                                   span.learning-admin-tree__title= item.title
-                                  span.badge.text-bg-secondary.ms-2= item.templateType
+                                  .learning-admin-tree__meta
+                                    span.badge.text-bg-secondary= item.templateType
                                 .learning-admin-tree__actions
                                   a.btn.btn-sm.btn-outline-secondary(href=`/admin/learning?topicId=${topic._id}&subtopicId=${subtopic._id}&itemId=${item._id}`) Edit
             else
-              p.text-muted.mb-0 No learning content yet.
+              .learning-admin__empty No learning content yet. Start by creating the first topic.
 
-      .col-lg-8
+        .card.mt-4
+          .card-body
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 Built-in art
+                p.learning-admin__hint.mb-0 Pick from uploaded SVG assets or from the system art values already used by the player.
+              a.btn.btn-sm.btn-outline-primary(href="/admin/learning/art") Open library page
+            .learning-admin__stats-grid
+              .learning-admin__stat-card
+                .learning-admin__stat-label Uploaded SVGs
+                .learning-admin__stat-value= artLibrary.uploaded.length
+                .learning-admin__stat-meta
+                  span Stored in the database
+              .learning-admin__stat-card
+                .learning-admin__stat-label System art values
+                .learning-admin__stat-value= artLibrary.system.length
+                .learning-admin__stat-meta
+                  span Hardcoded player art
+            .learning-admin__quick-actions.mt-3
+              button.btn.btn-outline-secondary(type="button" data-bs-toggle="modal" data-bs-target="#svgUploadModal") Upload another SVG
+              a.btn.btn-outline-primary(href="/admin/learning/users") View learner progress
+
+      .col-xl-8
         .row.g-4
           .col-12
-            .card.shadow-sm
+            .card
               .card-body
-                .d-flex.justify-content-between.align-items-center.mb-3
-                  h2.h5.mb-0 Topic
-                  if selectedTopic.stableId
-                    code= selectedTopic.stableId
-                form(method="post", action="/admin/learning/topics/save")
+                .learning-admin__card-title-row.mb-3
+                  div
+                    h2.h5.mb-1= selectionState.creatingTopic ? 'Create topic' : 'Edit topic'
+                    p.learning-admin__hint.mb-0 Topics group the high-level learning areas shown on the learner home page.
+                  .learning-admin__card-actions
+                    if selectedTopic.stableId
+                      code= selectedTopic.stableId
+                    if selectionState.creatingTopic
+                      a.btn.btn-sm.btn-outline-secondary(href=cancelTopicHref) Cancel new topic
+                form(method="post" action="/admin/learning/topics/save")
                   input(type="hidden" name="topicId" value=selectedTopic._id)
                   .row.g-3
                     .col-md-6
@@ -88,82 +169,63 @@ block content
                     .col-12
                       label.form-label(for="topic-description") Description
                       textarea#topic-description.form-control(name="description" rows="2")= selectedTopic.description
+                    .col-12
+                      h3.h6.mb-0 Theme
                     .col-md-6
-                      label.form-label Accent color
-                      input.form-control(type="text" name="topicAccentColor" value=selectedTopic.topicAccentColor placeholder="#ffb703")
+                      label.form-label(for="topic-accent-color") Accent color
+                      input#topic-accent-color.form-control(type="text" name="topicAccentColor" value=selectedTopic.topicAccentColor placeholder="#FF6A1F")
                     .col-md-6
-                      label.form-label Soft accent color
-                      input.form-control(type="text" name="topicAccentColorSoft" value=selectedTopic.topicAccentColorSoft placeholder="#ffd166")
+                      label.form-label(for="topic-soft-accent-color") Soft accent color
+                      input#topic-soft-accent-color.form-control(type="text" name="topicAccentColorSoft" value=selectedTopic.topicAccentColorSoft placeholder="#FFC247")
                     .col-md-6
-                      label.form-label Background start
-                      input.form-control(type="text" name="topicBackgroundStart" value=selectedTopic.topicBackgroundStart placeholder="#081225")
+                      label.form-label(for="topic-background-start") Background start
+                      input#topic-background-start.form-control(type="text" name="topicBackgroundStart" value=selectedTopic.topicBackgroundStart placeholder="#0E0F13")
                     .col-md-6
-                      label.form-label Background end
-                      input.form-control(type="text" name="topicBackgroundEnd" value=selectedTopic.topicBackgroundEnd placeholder="#0b2a42")
+                      label.form-label(for="topic-background-end") Background end
+                      input#topic-background-end.form-control(type="text" name="topicBackgroundEnd" value=selectedTopic.topicBackgroundEnd placeholder="#1B2026")
                     .col-md-6
-                      label.form-label Glow color
-                      input.form-control(type="text" name="topicGlowColor" value=selectedTopic.topicGlowColor placeholder="rgba(56,189,248,0.25)")
+                      label.form-label(for="topic-glow-color") Glow color
+                      input#topic-glow-color.form-control(type="text" name="topicGlowColor" value=selectedTopic.topicGlowColor placeholder="rgba(255,194,71,0.18)")
                     .col-md-6
-                      label.form-label Background image URL
-                      input.form-control(type="text" name="topicBackgroundImageUrl" value=selectedTopic.topicBackgroundImageUrl)
+                      label.form-label(for="topic-background-image") Background image URL
+                      input#topic-background-image.form-control(type="text" name="topicBackgroundImageUrl" value=selectedTopic.topicBackgroundImageUrl)
                     .col-md-4
-                      label.form-label Pattern
-                      select.form-select(name="topicPattern")
+                      label.form-label(for="topic-pattern") Pattern
+                      select#topic-pattern.form-select(name="topicPattern")
                         each option in patternOptions
                           option(value=option.value selected=selectedTopic.topicPattern === option.value)= option.label
-                    .col-md-4
-                      label.form-label Icon art kind
-                      select.form-select(name="topicIconArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedTopic.topicIconArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Icon art value
-                      input.form-control(type="text" name="topicIconArtValue" value=selectedTopic.topicIconArtValue)
-                    .col-md-4
-                      label.form-label Mascot art kind
-                      select.form-select(name="topicMascotArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedTopic.topicMascotArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Mascot art value
-                      input.form-control(type="text" name="topicMascotArtValue" value=selectedTopic.topicMascotArtValue)
-                    .col-md-4
-                      label.form-label Badge art kind
-                      select.form-select(name="topicBadgeArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedTopic.topicBadgeArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Badge art value
-                      input.form-control(type="text" name="topicBadgeArtValue" value=selectedTopic.topicBadgeArtValue)
-                    .col-md-4
-                      label.form-label Reward label
-                      input.form-control(type="text" name="topicRewardLabel" value=selectedTopic.topicRewardLabel)
-                    .col-md-4
-                      label.form-label Reward art kind
-                      select.form-select(name="topicRewardArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedTopic.topicRewardArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Reward art value
-                      input.form-control(type="text" name="topicRewardArtValue" value=selectedTopic.topicRewardArtValue)
+                    +artField('topic-icon-art-kind', 'topicIconArtKind', selectedTopic.topicIconArtKind, 'topic-icon-art-value', 'topicIconArtValue', selectedTopic.topicIconArtValue, 'Icon art', 4, 8, 'chemistry')
+                    +artField('topic-mascot-art-kind', 'topicMascotArtKind', selectedTopic.topicMascotArtKind, 'topic-mascot-art-value', 'topicMascotArtValue', selectedTopic.topicMascotArtValue, 'Mascot art', 4, 8, 'mascot')
+                    +artField('topic-badge-art-kind', 'topicBadgeArtKind', selectedTopic.topicBadgeArtKind, 'topic-badge-art-value', 'topicBadgeArtValue', selectedTopic.topicBadgeArtValue, 'Badge art', 4, 8, 'star')
                     .col-12
-                      label.form-label Reward description
-                      textarea.form-control(name="topicRewardDescription" rows="2")= selectedTopic.topicRewardDescription
+                      h3.h6.mb-0 Reward
+                    .col-md-4
+                      label.form-label(for="topic-reward-label") Reward label
+                      input#topic-reward-label.form-control(type="text" name="topicRewardLabel" value=selectedTopic.topicRewardLabel)
+                    +artField('topic-reward-art-kind', 'topicRewardArtKind', selectedTopic.topicRewardArtKind, 'topic-reward-art-value', 'topicRewardArtValue', selectedTopic.topicRewardArtValue, 'Reward art', 4, 8, 'atom')
+                    .col-12
+                      label.form-label(for="topic-reward-description") Reward description
+                      textarea#topic-reward-description.form-control(name="topicRewardDescription" rows="2")= selectedTopic.topicRewardDescription
                   .d-flex.flex-wrap.gap-2.mt-3
-                    button.btn.btn-primary(type="submit") Save topic
-                if selectedTopic._id
+                    button.btn.btn-primary(type="submit")= selectionState.creatingTopic ? 'Create topic' : 'Save topic'
+                if selectedTopic._id && !selectionState.creatingTopic
                   form.mt-3(method="post" action="/admin/learning/topics/delete")
                     input(type="hidden" name="topicId" value=selectedTopic._id)
                     button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this topic and all nested content?") Delete topic
 
           .col-12
-            .card.shadow-sm
+            .card
               .card-body
-                .d-flex.justify-content-between.align-items-center.mb-3
-                  h2.h5.mb-0 Subtopic
-                  if selectedSubtopic.stableId
-                    code= selectedSubtopic.stableId
-                form(method="post", action="/admin/learning/subtopics/save")
+                .learning-admin__card-title-row.mb-3
+                  div
+                    h2.h5.mb-1= selectionState.creatingSubtopic ? 'Create subtopic' : 'Edit subtopic'
+                    p.learning-admin__hint.mb-0 Subtopics become the playable lessons inside each topic.
+                  .learning-admin__card-actions
+                    if selectedSubtopic.stableId
+                      code= selectedSubtopic.stableId
+                    if selectionState.creatingSubtopic
+                      a.btn.btn-sm.btn-outline-secondary(href=cancelSubtopicHref) Cancel new subtopic
+                form(method="post" action="/admin/learning/subtopics/save")
                   input(type="hidden" name="subtopicId" value=selectedSubtopic._id)
                   .row.g-3
                     .col-md-6
@@ -187,89 +249,71 @@ block content
                       label.form-label(for="subtopic-slug") Slug
                       input#subtopic-slug.form-control(type="text" name="slug" value=selectedSubtopic.slug)
                     .col-md-4
-                      label.form-label Estimated minutes
-                      input.form-control(type="number" min="1" name="estimatedMinutes" value=selectedSubtopic.estimatedMinutes)
+                      label.form-label(for="subtopic-estimated-minutes") Estimated minutes
+                      input#subtopic-estimated-minutes.form-control(type="number" min="1" name="estimatedMinutes" value=selectedSubtopic.estimatedMinutes)
                     .col-12
                       label.form-label(for="subtopic-description") Description
                       textarea#subtopic-description.form-control(name="description" rows="2")= selectedSubtopic.description
+                    .col-12
+                      h3.h6.mb-0 Theme
                     .col-md-6
-                      label.form-label Accent color
-                      input.form-control(type="text" name="subtopicAccentColor" value=selectedSubtopic.subtopicAccentColor)
+                      label.form-label(for="subtopic-accent-color") Accent color
+                      input#subtopic-accent-color.form-control(type="text" name="subtopicAccentColor" value=selectedSubtopic.subtopicAccentColor placeholder="#FF6A1F")
                     .col-md-6
-                      label.form-label Soft accent color
-                      input.form-control(type="text" name="subtopicAccentColorSoft" value=selectedSubtopic.subtopicAccentColorSoft)
+                      label.form-label(for="subtopic-soft-accent-color") Soft accent color
+                      input#subtopic-soft-accent-color.form-control(type="text" name="subtopicAccentColorSoft" value=selectedSubtopic.subtopicAccentColorSoft placeholder="#FFC247")
                     .col-md-6
-                      label.form-label Background start
-                      input.form-control(type="text" name="subtopicBackgroundStart" value=selectedSubtopic.subtopicBackgroundStart)
+                      label.form-label(for="subtopic-background-start") Background start
+                      input#subtopic-background-start.form-control(type="text" name="subtopicBackgroundStart" value=selectedSubtopic.subtopicBackgroundStart placeholder="#0E0F13")
                     .col-md-6
-                      label.form-label Background end
-                      input.form-control(type="text" name="subtopicBackgroundEnd" value=selectedSubtopic.subtopicBackgroundEnd)
+                      label.form-label(for="subtopic-background-end") Background end
+                      input#subtopic-background-end.form-control(type="text" name="subtopicBackgroundEnd" value=selectedSubtopic.subtopicBackgroundEnd placeholder="#1B2026")
                     .col-md-6
-                      label.form-label Glow color
-                      input.form-control(type="text" name="subtopicGlowColor" value=selectedSubtopic.subtopicGlowColor)
+                      label.form-label(for="subtopic-glow-color") Glow color
+                      input#subtopic-glow-color.form-control(type="text" name="subtopicGlowColor" value=selectedSubtopic.subtopicGlowColor placeholder="rgba(255,194,71,0.18)")
                     .col-md-6
-                      label.form-label Background image URL
-                      input.form-control(type="text" name="subtopicBackgroundImageUrl" value=selectedSubtopic.subtopicBackgroundImageUrl)
+                      label.form-label(for="subtopic-background-image") Background image URL
+                      input#subtopic-background-image.form-control(type="text" name="subtopicBackgroundImageUrl" value=selectedSubtopic.subtopicBackgroundImageUrl)
                     .col-md-4
-                      label.form-label Pattern
-                      select.form-select(name="subtopicPattern")
+                      label.form-label(for="subtopic-pattern") Pattern
+                      select#subtopic-pattern.form-select(name="subtopicPattern")
                         each option in patternOptions
                           option(value=option.value selected=selectedSubtopic.subtopicPattern === option.value)= option.label
-                    .col-md-4
-                      label.form-label Icon art kind
-                      select.form-select(name="subtopicIconArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedSubtopic.subtopicIconArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Icon art value
-                      input.form-control(type="text" name="subtopicIconArtValue" value=selectedSubtopic.subtopicIconArtValue)
-                    .col-md-4
-                      label.form-label Mascot art kind
-                      select.form-select(name="subtopicMascotArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedSubtopic.subtopicMascotArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Mascot art value
-                      input.form-control(type="text" name="subtopicMascotArtValue" value=selectedSubtopic.subtopicMascotArtValue)
-                    .col-md-4
-                      label.form-label Badge art kind
-                      select.form-select(name="subtopicBadgeArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedSubtopic.subtopicBadgeArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Badge art value
-                      input.form-control(type="text" name="subtopicBadgeArtValue" value=selectedSubtopic.subtopicBadgeArtValue)
-                    .col-md-4
-                      label.form-label Reward label
-                      input.form-control(type="text" name="subtopicRewardLabel" value=selectedSubtopic.subtopicRewardLabel)
-                    .col-md-4
-                      label.form-label Reward art kind
-                      select.form-select(name="subtopicRewardArtKind")
-                        each option in artKindOptions
-                          option(value=option.value selected=selectedSubtopic.subtopicRewardArtKind === option.value)= option.label
-                    .col-md-4
-                      label.form-label Reward art value
-                      input.form-control(type="text" name="subtopicRewardArtValue" value=selectedSubtopic.subtopicRewardArtValue)
+                    +artField('subtopic-icon-art-kind', 'subtopicIconArtKind', selectedSubtopic.subtopicIconArtKind, 'subtopic-icon-art-value', 'subtopicIconArtValue', selectedSubtopic.subtopicIconArtValue, 'Icon art', 4, 8, 'atom')
+                    +artField('subtopic-mascot-art-kind', 'subtopicMascotArtKind', selectedSubtopic.subtopicMascotArtKind, 'subtopic-mascot-art-value', 'subtopicMascotArtValue', selectedSubtopic.subtopicMascotArtValue, 'Mascot art', 4, 8, 'mascot')
+                    +artField('subtopic-badge-art-kind', 'subtopicBadgeArtKind', selectedSubtopic.subtopicBadgeArtKind, 'subtopic-badge-art-value', 'subtopicBadgeArtValue', selectedSubtopic.subtopicBadgeArtValue, 'Badge art', 4, 8, 'water')
                     .col-12
-                      label.form-label Reward description
-                      textarea.form-control(name="subtopicRewardDescription" rows="2")= selectedSubtopic.subtopicRewardDescription
+                      h3.h6.mb-0 Reward
+                    .col-md-4
+                      label.form-label(for="subtopic-reward-label") Reward label
+                      input#subtopic-reward-label.form-control(type="text" name="subtopicRewardLabel" value=selectedSubtopic.subtopicRewardLabel)
+                    +artField('subtopic-reward-art-kind', 'subtopicRewardArtKind', selectedSubtopic.subtopicRewardArtKind, 'subtopic-reward-art-value', 'subtopicRewardArtValue', selectedSubtopic.subtopicRewardArtValue, 'Reward art', 4, 8, 'atom')
+                    .col-12
+                      label.form-label(for="subtopic-reward-description") Reward description
+                      textarea#subtopic-reward-description.form-control(name="subtopicRewardDescription" rows="2")= selectedSubtopic.subtopicRewardDescription
                   .d-flex.flex-wrap.gap-2.mt-3
-                    button.btn.btn-primary(type="submit") Save subtopic
-                if selectedSubtopic._id
+                    button.btn.btn-primary(type="submit")= selectionState.creatingSubtopic ? 'Create subtopic' : 'Save subtopic'
+                if selectedSubtopic._id && !selectionState.creatingSubtopic
                   form.mt-3(method="post" action="/admin/learning/subtopics/delete")
                     input(type="hidden" name="topicId" value=selectedSubtopic.topicId)
                     input(type="hidden" name="subtopicId" value=selectedSubtopic._id)
                     button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this subtopic and its lessons?") Delete subtopic
 
           .col-12
-            .card.shadow-sm
+            .card
               .card-body
-                .d-flex.justify-content-between.align-items-center.mb-3
-                  h2.h5.mb-0 Item
-                  if selectedItem.stableId
-                    code= selectedItem.stableId
+                .learning-admin__card-title-row.mb-3
+                  div
+                    h2.h5.mb-1= selectionState.creatingItem ? 'Create item' : 'Edit item'
+                    p.learning-admin__hint.mb-0 Items are the activities and questions inside each lesson. Use the art library for built-in quiz art.
+                  .learning-admin__card-actions
+                    if selectedItem.stableId
+                      code= selectedItem.stableId
+                    if selectionState.creatingItem
+                      a.btn.btn-sm.btn-outline-secondary(href=cancelItemHref) Cancel new item
                 form(method="post" action="/admin/learning/items/save")
                   input(type="hidden" name="itemId" value=selectedItem._id)
+                  input(type="hidden" name="topicId" value=selectedTopicContextId)
                   .row.g-3
                     .col-md-6
                       label.form-label(for="item-subtopic") Subtopic
@@ -308,114 +352,205 @@ block content
 
                     .col-12(data-template-section="scene")
                       .admin-template-box
-                        h3.h6 Scene settings
+                        h3.h6.mb-2 Scene settings
+                        p.learning-admin__hint.mb-3 The scene panel now uses the dark graphite palette so labels stay readable while editing.
                         .row.g-3
                           .col-md-4
-                            label.form-label Scene type
-                            select.form-select(name="sceneType")
+                            label.form-label(for="scene-type") Scene type
+                            select#scene-type.form-select(name="sceneType")
                               each scene in sceneOptions
                                 option(value=scene.value selected=selectedItem.sceneType === scene.value)= scene.label
                           .col-md-4
-                            label.form-label Slot count
-                            input.form-control(type="number" min="2" max="6" name="sceneSlotCount" value=selectedItem.sceneSlotCount)
+                            label.form-label(for="scene-slot-count") Slot count
+                            input#scene-slot-count.form-control(type="number" min="2" max="6" name="sceneSlotCount" value=selectedItem.sceneSlotCount)
                           .col-md-4
-                            label.form-label Pieces CSV
-                            input.form-control(type="text" name="scenePieces" value=selectedItem.scenePieces placeholder="H, H, O")
+                            label.form-label(for="scene-pieces") Pieces CSV
+                            input#scene-pieces.form-control(type="text" name="scenePieces" value=selectedItem.scenePieces placeholder="H, H, O")
                           .col-12
-                            label.form-label Body text
-                            textarea.form-control(name="sceneBodyText" rows="2")= selectedItem.sceneBodyText
+                            label.form-label(for="scene-body-text") Body text
+                            textarea#scene-body-text.form-control(name="sceneBodyText" rows="2")= selectedItem.sceneBodyText
                           .col-md-6
-                            label.form-label Hint text
-                            textarea.form-control(name="sceneHintText" rows="2")= selectedItem.sceneHintText
+                            label.form-label(for="scene-hint-text") Hint text
+                            textarea#scene-hint-text.form-control(name="sceneHintText" rows="2")= selectedItem.sceneHintText
                           .col-md-6
-                            label.form-label Example text
-                            textarea.form-control(name="sceneExampleText" rows="2")= selectedItem.sceneExampleText
+                            label.form-label(for="scene-example-text") Example text
+                            textarea#scene-example-text.form-control(name="sceneExampleText" rows="2")= selectedItem.sceneExampleText
 
                     .col-12(data-template-section="single_choice")
                       .admin-template-box
-                        h3.h6 Single-choice options
+                        h3.h6.mb-2 Single-choice options
+                        p.learning-admin__hint.mb-3 Pick built-in art values from the library button if you want to reuse uploaded SVGs.
                         - const choiceOptions = selectedItem.choiceOptions || []
                         each opt, index in choiceOptions
-                          .row.g-3.mb-2
+                          - const optNumber = index + 1
+                          - const artKindId = `choice-option-${optNumber}-art-kind`
+                          - const artValueId = `choice-option-${optNumber}-art-value`
+                          .row.g-3.mb-3
                             .col-md-2
-                              label.form-label= `Key ${index + 1}`
-                              input.form-control(type="text" name=`choiceOption${index + 1}Key` value=opt.key)
-                            .col-md-4
-                              label.form-label= `Label ${index + 1}`
-                              input.form-control(type="text" name=`choiceOption${index + 1}Label` value=opt.label)
+                              label.form-label(for=`choice-option-${optNumber}-key`)= `Key ${optNumber}`
+                              input.form-control(type="text" id=`choice-option-${optNumber}-key` name=`choiceOption${optNumber}Key` value=opt.key)
                             .col-md-3
-                              label.form-label Art kind
-                              select.form-select(name=`choiceOption${index + 1}ArtKind`)
+                              label.form-label(for=`choice-option-${optNumber}-label`)= `Label ${optNumber}`
+                              input.form-control(type="text" id=`choice-option-${optNumber}-label` name=`choiceOption${optNumber}Label` value=opt.label)
+                            div(class="col-md-3")
+                              label.form-label(for=artKindId) Art kind
+                              select.form-select(id=artKindId name=`choiceOption${optNumber}ArtKind`)
                                 each option in artKindOptions
                                   option(value=option.value selected=opt.artKind === option.value)= option.label
-                            .col-md-3
-                              label.form-label Art value
-                              input.form-control(type="text" name=`choiceOption${index + 1}ArtValue` value=opt.artValue)
+                            div(class="col-md-4")
+                              label.form-label(for=artValueId) Art value
+                              .input-group
+                                input.form-control(type="text" id=artValueId name=`choiceOption${optNumber}ArtValue` value=opt.artValue)
+                                button.btn.btn-outline-secondary(
+                                  type="button"
+                                  data-bs-toggle="modal"
+                                  data-bs-target="#artPickerModal"
+                                  data-art-picker-target=`#${artValueId}`
+                                  data-art-kind-target=`#${artKindId}`
+                                  data-art-label=`Choice ${optNumber} art value`
+                                ) Library
                         .row.g-3
                           .col-md-4
-                            label.form-label Correct option key
-                            input.form-control(type="text" name="correctOptionKey" value=selectedItem.correctOptionKey)
+                            label.form-label(for="correct-option-key") Correct option key
+                            input#correct-option-key.form-control(type="text" name="correctOptionKey" value=selectedItem.correctOptionKey)
 
                     .col-12(data-template-section="count_target")
                       .admin-template-box
-                        h3.h6 Counting settings
+                        h3.h6.mb-2 Counting settings
                         .row.g-3
                           .col-md-4
-                            label.form-label Target count
-                            input.form-control(type="number" min="0" max="30" name="targetCount" value=selectedItem.targetCount)
+                            label.form-label(for="target-count") Target count
+                            input#target-count.form-control(type="number" min="0" max="30" name="targetCount" value=selectedItem.targetCount)
                           .col-md-4
-                            label.form-label Max count
-                            input.form-control(type="number" min="1" max="40" name="maxCount" value=selectedItem.maxCount)
+                            label.form-label(for="max-count") Max count
+                            input#max-count.form-control(type="number" min="1" max="40" name="maxCount" value=selectedItem.maxCount)
                           .col-md-4
-                            label.form-label Counter label
-                            input.form-control(type="text" name="counterLabel" value=selectedItem.counterLabel)
+                            label.form-label(for="counter-label") Counter label
+                            input#counter-label.form-control(type="text" name="counterLabel" value=selectedItem.counterLabel)
 
                     .col-12(data-template-section="builder_sequence")
                       .admin-template-box
-                        h3.h6 Builder settings
+                        h3.h6.mb-2 Builder settings
                         .row.g-3
                           .col-md-4
-                            label.form-label Slot count
-                            input.form-control(type="number" min="2" max="6" name="builderSlotCount" value=selectedItem.builderSlotCount)
+                            label.form-label(for="builder-slot-count") Slot count
+                            input#builder-slot-count.form-control(type="number" min="2" max="6" name="builderSlotCount" value=selectedItem.builderSlotCount)
                           .col-md-8
-                            label.form-label Pieces CSV
-                            input.form-control(type="text" name="builderPieces" value=selectedItem.builderPieces placeholder="H, H, O")
+                            label.form-label(for="builder-pieces") Pieces CSV
+                            input#builder-pieces.form-control(type="text" name="builderPieces" value=selectedItem.builderPieces placeholder="H, H, O")
                           .col-12
-                            label.form-label Target sequence CSV
-                            input.form-control(type="text" name="builderTargetSequence" value=selectedItem.builderTargetSequence placeholder="H, O, H")
+                            label.form-label(for="builder-target-sequence") Target sequence CSV
+                            input#builder-target-sequence.form-control(type="text" name="builderTargetSequence" value=selectedItem.builderTargetSequence placeholder="H, O, H")
 
                     .col-12(data-template-section="state_change")
                       .admin-template-box
-                        h3.h6 State-change settings
+                        h3.h6.mb-2 State-change settings
                         .row.g-3
                           .col-md-4
-                            label.form-label Start state
-                            select.form-select(name="startState")
+                            label.form-label(for="start-state") Start state
+                            select#start-state.form-select(name="startState")
                               each option in stateOptions
                                 option(value=option.value selected=selectedItem.startState === option.value)= option.label
                           .col-md-4
-                            label.form-label Target state
-                            select.form-select(name="targetState")
+                            label.form-label(for="target-state") Target state
+                            select#target-state.form-select(name="targetState")
                               each option in stateOptions
                                 option(value=option.value selected=selectedItem.targetState === option.value)= option.label
                           .col-md-4.d-flex.align-items-end
                             .form-check.mb-2
-                              input.form-check-input(type="checkbox" name="showCoolButton" id="show-cool-button" checked=selectedItem.showCoolButton)
+                              input#show-cool-button.form-check-input(type="checkbox" name="showCoolButton" checked=selectedItem.showCoolButton)
                               label.form-check-label(for="show-cool-button") Show cool button
 
                     .col-md-6
-                      label.form-label Good feedback
-                      textarea.form-control(name="goodFeedback" rows="2")= selectedItem.goodFeedback
+                      label.form-label(for="good-feedback") Good feedback
+                      textarea#good-feedback.form-control(name="goodFeedback" rows="2")= selectedItem.goodFeedback
                     .col-md-6
-                      label.form-label Bad feedback
-                      textarea.form-control(name="badFeedback" rows="2")= selectedItem.badFeedback
+                      label.form-label(for="bad-feedback") Bad feedback
+                      textarea#bad-feedback.form-control(name="badFeedback" rows="2")= selectedItem.badFeedback
                   .d-flex.flex-wrap.gap-2.mt-3
-                    button.btn.btn-primary(type="submit") Save item
-                if selectedItem._id
+                    button.btn.btn-primary(type="submit")= selectionState.creatingItem ? 'Create item' : 'Save item'
+                if selectedItem._id && !selectionState.creatingItem
                   form.mt-3(method="post" action="/admin/learning/items/delete")
                     input(type="hidden" name="subtopicId" value=selectedItem.subtopicId)
                     input(type="hidden" name="itemId" value=selectedItem._id)
                     button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this item?") Delete item
+
+    .modal.fade#artPickerModal(tabindex="-1" aria-labelledby="artPickerModalLabel" aria-hidden="true")
+      .modal-dialog.modal-xl.modal-dialog-scrollable
+        .modal-content
+          .modal-header
+            div
+              h2#artPickerModalLabel.modal-title Built-in art library
+              p.learning-admin__hint.mb-0 Pick an art value for #[span#artPickerTargetLabel this field].
+            button.btn-close(type="button" data-bs-dismiss="modal" aria-label="Close")
+          .modal-body
+            .row.g-3.align-items-center.mb-3
+              .col-md-6
+                label.form-label(for="artPickerSearch") Filter art
+                input#artPickerSearch.form-control(type="search" placeholder="Search by title, description, or art value")
+              .col-md-6
+                .learning-admin__empty Uploaded SVGs render as real previews. System entries show the current player shorthand and key.
+            if artLibrary && artLibrary.uploaded && artLibrary.uploaded.length
+              h3.h6.mb-3 Uploaded SVG art
+              .learning-admin__art-grid.mb-4
+                each art in artLibrary.uploaded
+                  - const uploadedSearch = `${art.title} ${art.key} ${art.description || ''}`.toLowerCase()
+                  button.learning-admin__art-card(type="button" data-art-card="1" data-art-search=uploadedSearch data-art-pick-value=art.key)
+                    .learning-admin__art-preview!= art.previewHtml
+                    .learning-admin__art-meta
+                      h3.h6.mb-1= art.title
+                      span.learning-admin__art-key= art.key
+                      if art.description
+                        p.learning-admin__art-subtitle.mb-0= art.description
+            else
+              .learning-admin__empty.mb-4 No uploaded SVG art yet. Use the upload modal to add reusable built-in art values.
+            h3.h6.mb-3 System art values
+            .learning-admin__art-grid
+              each art in artLibrary.system
+                - const systemSearch = `${art.title} ${art.key} ${art.description || ''}`.toLowerCase()
+                button.learning-admin__art-card(type="button" data-art-card="1" data-art-search=systemSearch data-art-pick-value=art.key)
+                  .learning-admin__art-preview
+                    span= art.previewText
+                  .learning-admin__art-meta
+                    h3.h6.mb-1= art.title
+                    span.learning-admin__art-key= art.key
+                    p.learning-admin__art-subtitle.mb-0= art.description
+
+    .modal.fade#svgUploadModal(tabindex="-1" aria-labelledby="svgUploadModalLabel" aria-hidden="true")
+      .modal-dialog.modal-lg.modal-dialog-scrollable
+        .modal-content
+          .modal-header
+            div
+              h2#svgUploadModalLabel.modal-title Upload SVG art
+              p.learning-admin__hint.mb-0 Add reusable SVG resources that become available anywhere the CMS accepts built-in art values.
+            button.btn-close(type="button" data-bs-dismiss="modal" aria-label="Close")
+          form(method="post" action="/admin/learning/art/upload" enctype="multipart/form-data" data-learning-art-upload-form="1")
+            input(type="hidden" name="returnTo" value="/admin/learning")
+            .modal-body
+              .row.g-3
+                .col-md-6
+                  label.form-label(for="svg-art-title") Title
+                  input#svg-art-title.form-control(type="text" name="title" placeholder="Water droplet sticker")
+                .col-md-6
+                  label.form-label(for="svg-art-key") Art value
+                  input#svg-art-key.form-control(type="text" name="key" placeholder="water-droplet")
+                .col-12
+                  label.form-label(for="svg-art-description") Description
+                  textarea#svg-art-description.form-control(name="description" rows="2" placeholder="Optional note about how this SVG should be used.")
+                .col-md-6
+                  label.form-label(for="svg-art-file") SVG file
+                  input#svg-art-file.form-control(type="file" name="svgFile" accept=".svg,image/svg+xml")
+                .col-md-6
+                  .learning-admin__empty
+                    strong.d-block.mb-1 Upload tips
+                    div Use a short, memorable art value.
+                    div The system keeps uploaded art in MongoDB and makes it available as built-in art in lessons.
+                .col-12
+                  label.form-label(for="svg-art-markup") Or paste SVG markup
+                  textarea#svg-art-markup.form-control(name="svgMarkup" rows="8" placeholder="<svg viewBox='0 0 128 128'>...</svg>")
+            .modal-footer
+              button.btn.btn-outline-secondary(type="button" data-bs-dismiss="modal") Cancel
+              button.btn.btn-primary(type="submit") Save SVG art
 
 block script
   script(src="/js/admin_learning.js", defer)

@@ -1,0 +1,120 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/admin-learning.css")
+
+block content
+  .container.py-4.learning-admin
+    .d-flex.flex-column.flex-xl-row.justify-content-between.align-items-xl-center.gap-3.mb-4
+      div
+        h1.mb-1 Learning art library
+        p.learning-admin__section-copy.mb-0 Preview every art value available to the Learning Lab and upload more SVG resources for the built-in art picker.
+      .learning-admin__header-actions
+        a.btn.btn-outline-primary(href="/admin/learning") Back to CMS
+        a.btn.btn-outline-primary(href="/admin/learning/users") Learner progress
+        a.btn.btn-outline-primary(href="/learning") Open learner home
+        button.btn.btn-primary(type="button" data-bs-toggle="modal" data-bs-target="#svgUploadModal") Upload SVG art
+
+    if successMessage
+      .alert.alert-success(role="alert")= successMessage
+    if errorMessage
+      .alert.alert-danger(role="alert")= errorMessage
+
+    .learning-admin__stats-grid.mb-4
+      .learning-admin__stat-card
+        .learning-admin__stat-label Uploaded SVG assets
+        .learning-admin__stat-value= stats.uploadedCount
+        .learning-admin__stat-meta
+          span Stored in MongoDB
+      .learning-admin__stat-card
+        .learning-admin__stat-label System built-ins
+        .learning-admin__stat-value= stats.systemCount
+        .learning-admin__stat-meta
+          span Existing player keys
+      .learning-admin__stat-card
+        .learning-admin__stat-label Total art values
+        .learning-admin__stat-value= stats.totalCount
+        .learning-admin__stat-meta
+          span Searchable in the CMS picker
+
+    .row.g-4
+      .col-12
+        .card
+          .card-body
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 Uploaded SVG art
+                p.learning-admin__hint.mb-0 These assets render as reusable built-in art anywhere the CMS supports art values.
+              button.btn.btn-sm.btn-outline-secondary(type="button" data-bs-toggle="modal" data-bs-target="#svgUploadModal") Upload another SVG
+            if artLibrary.uploaded && artLibrary.uploaded.length
+              .learning-admin__art-grid
+                each art in artLibrary.uploaded
+                  .learning-admin__art-card
+                    .learning-admin__art-preview!= art.previewHtml
+                    .learning-admin__art-meta
+                      h3.h6.mb-1= art.title
+                      span.learning-admin__art-key= art.key
+                      if art.description
+                        p.learning-admin__art-subtitle.mb-0= art.description
+                    .learning-admin__art-meta
+                      span= `Saved by ${art.createdBy || 'unknown'}`
+                      span= `Created ${art.createdAtDisplay}`
+            else
+              .learning-admin__empty No uploaded SVG art yet. Open the upload modal to add the first reusable art asset.
+
+      .col-12
+        .card
+          .card-body
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 System built-in art values
+                p.learning-admin__hint.mb-0 These keys are already available from the client-side player. Uploaded SVGs extend this set with your own resources.
+              a.btn.btn-sm.btn-outline-primary(href="/admin/learning") Open picker in CMS
+            .learning-admin__art-grid
+              each art in artLibrary.system
+                .learning-admin__art-card
+                  .learning-admin__art-preview
+                    span= art.previewText
+                  .learning-admin__art-meta
+                    h3.h6.mb-1= art.title
+                    span.learning-admin__art-key= art.key
+                    p.learning-admin__art-subtitle.mb-0= art.description
+
+    .modal.fade#svgUploadModal(tabindex="-1" aria-labelledby="svgUploadModalLabel" aria-hidden="true")
+      .modal-dialog.modal-lg.modal-dialog-scrollable
+        .modal-content
+          .modal-header
+            div
+              h2#svgUploadModalLabel.modal-title Upload SVG art
+              p.learning-admin__hint.mb-0 Uploaded SVGs become available everywhere the CMS expects a built-in art value.
+            button.btn-close(type="button" data-bs-dismiss="modal" aria-label="Close")
+          form(method="post" action="/admin/learning/art/upload" enctype="multipart/form-data" data-learning-art-upload-form="1")
+            input(type="hidden" name="returnTo" value="/admin/learning/art")
+            .modal-body
+              .row.g-3
+                .col-md-6
+                  label.form-label(for="svg-art-title") Title
+                  input#svg-art-title.form-control(type="text" name="title" placeholder="Water droplet sticker")
+                .col-md-6
+                  label.form-label(for="svg-art-key") Art value
+                  input#svg-art-key.form-control(type="text" name="key" placeholder="water-droplet")
+                .col-12
+                  label.form-label(for="svg-art-description") Description
+                  textarea#svg-art-description.form-control(name="description" rows="2" placeholder="Optional note about how this SVG should be used.")
+                .col-md-6
+                  label.form-label(for="svg-art-file") SVG file
+                  input#svg-art-file.form-control(type="file" name="svgFile" accept=".svg,image/svg+xml")
+                .col-md-6
+                  .learning-admin__empty
+                    strong.d-block.mb-1 Upload tips
+                    div Reserved system keys cannot be overwritten.
+                    div Use the resulting art value anywhere the CMS says “Built-in art”.
+                .col-12
+                  label.form-label(for="svg-art-markup") Or paste SVG markup
+                  textarea#svg-art-markup.form-control(name="svgMarkup" rows="8" placeholder="<svg viewBox='0 0 128 128'>...</svg>")
+            .modal-footer
+              button.btn.btn-outline-secondary(type="button" data-bs-dismiss="modal") Cancel
+              button.btn.btn-primary(type="submit") Save SVG art
+
+block script
+  script(src="/js/admin_learning.js", defer)

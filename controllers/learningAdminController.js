@@ -30,11 +30,39 @@ function buildAdminPath(params = {}) {
   return `/admin/learning${query ? `?${query}` : ''}`;
 }
 
+function appendQueryParams(path, params = {}) {
+  const url = new URL(path, 'http://localhost');
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return;
+    }
+    url.searchParams.set(key, value);
+  });
+
+  return `${url.pathname}${url.search}`;
+}
+
+function parseFlag(value) {
+  return value === true || value === '1' || value === 'true' || value === 1;
+}
+
+function sanitizeReturnToPath(rawPath) {
+  const value = typeof rawPath === 'string' ? rawPath.trim() : '';
+  if (!value.startsWith('/admin/learning')) {
+    return '/admin/learning';
+  }
+  return value;
+}
+
 function dashboardSelectionFromQuery(query) {
   return {
     selectedTopicId: typeof query.topicId === 'string' ? query.topicId : '',
     selectedSubtopicId: typeof query.subtopicId === 'string' ? query.subtopicId : '',
     selectedItemId: typeof query.itemId === 'string' ? query.itemId : '',
+    creatingTopic: parseFlag(query.newTopic),
+    creatingSubtopic: parseFlag(query.newSubtopic),
+    creatingItem: parseFlag(query.newItem),
   };
 }
 
@@ -82,6 +110,7 @@ exports.save_topic = async (req, res) => {
 
     return res.redirect(buildAdminPath({
       topicId: req.body.topicId,
+      newTopic: !req.body.topicId ? '1' : '',
       error: error.message || 'Unable to save topic.',
     }));
   }
@@ -107,6 +136,7 @@ exports.save_subtopic = async (req, res) => {
     return res.redirect(buildAdminPath({
       topicId: req.body.topicId,
       subtopicId: req.body.subtopicId,
+      newSubtopic: !req.body.subtopicId ? '1' : '',
       error: error.message || 'Unable to save subtopic.',
     }));
   }
@@ -130,8 +160,10 @@ exports.save_item = async (req, res) => {
     });
 
     return res.redirect(buildAdminPath({
+      topicId: req.body.topicId,
       subtopicId: req.body.subtopicId,
       itemId: req.body.itemId,
+      newItem: !req.body.itemId ? '1' : '',
       error: error.message || 'Unable to save item.',
     }));
   }
@@ -205,5 +237,105 @@ exports.delete_item = async (req, res) => {
       itemId: req.body.itemId,
       error: error.message || 'Unable to delete item.',
     }));
+  }
+};
+
+exports.art_library = async (req, res) => {
+  try {
+    await ensureSeedData();
+    const artData = await learningService.getAdminArtLibraryData();
+
+    return res.render('admin_learning_art', {
+      ...artData,
+      successMessage: typeof req.query.success === 'string' ? req.query.success : null,
+      errorMessage: typeof req.query.error === 'string' ? req.query.error : null,
+    });
+  } catch (error) {
+    logger.error('Unable to render learning art library', {
+      category: 'learning_admin',
+      metadata: {
+        userId: String(req.user?._id || ''),
+        error: error.message,
+      },
+    });
+
+    return res.status(error?.statusCode || 500).render('error_page', {
+      error: error.message || 'Unable to open the learning art library.',
+    });
+  }
+};
+
+exports.upload_art_asset = async (req, res) => {
+  const returnTo = sanitizeReturnToPath(req.body.returnTo);
+
+  try {
+    if (req.learningArtUploadError) {
+      throw new Error(req.learningArtUploadError);
+    }
+
+    const asset = await learningService.saveArtAssetFromUpload({
+      body: req.body,
+      file: req.file,
+      userName: req.user.name,
+    });
+
+    return res.redirect(appendQueryParams(returnTo, {
+      success: `SVG art saved as ${asset.key}.`,
+    }));
+  } catch (error) {
+    logger.warning('Unable to save learning art asset', {
+      category: 'learning_admin',
+      metadata: {
+        userId: String(req.user?._id || ''),
+        error: error.message,
+      },
+    });
+
+    return res.redirect(appendQueryParams(returnTo, {
+      error: error.message || 'Unable to save SVG art.',
+    }));
+  }
+};
+
+exports.users = async (req, res) => {
+  try {
+    await ensureSeedData();
+    const pageData = await learningService.getAdminUsersProgressData();
+
+    return res.render('admin_learning_users', pageData);
+  } catch (error) {
+    logger.error('Unable to render learning user overview', {
+      category: 'learning_admin',
+      metadata: {
+        userId: String(req.user?._id || ''),
+        error: error.message,
+      },
+    });
+
+    return res.status(error?.statusCode || 500).render('error_page', {
+      error: error.message || 'Unable to open the learning user overview.',
+    });
+  }
+};
+
+exports.user_profile = async (req, res) => {
+  try {
+    await ensureSeedData();
+    const profileData = await learningService.getAdminUserLearningProfileData(req.params.userId);
+
+    return res.render('admin_learning_user_profile', profileData);
+  } catch (error) {
+    logger.error('Unable to render learning user profile', {
+      category: 'learning_admin',
+      metadata: {
+        userId: String(req.user?._id || ''),
+        viewedUserId: req.params.userId,
+        error: error.message,
+      },
+    });
+
+    return res.status(error?.statusCode || 500).render('error_page', {
+      error: error.message || 'Unable to open this learning user profile.',
+    });
   }
 };

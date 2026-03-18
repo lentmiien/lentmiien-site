@@ -22,6 +22,8 @@ jest.mock('../../models/learning_subtopic', () => createModelMock());
 jest.mock('../../models/learning_item', () => createModelMock());
 jest.mock('../../models/learning_progress', () => createModelMock());
 jest.mock('../../models/learning_attempt', () => createModelMock());
+jest.mock('../../models/learning_art_asset', () => createModelMock());
+jest.mock('../../models/useraccount', () => createModelMock());
 jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
   warning: jest.fn(),
@@ -34,6 +36,8 @@ const LearningSubtopic = require('../../models/learning_subtopic');
 const LearningItem = require('../../models/learning_item');
 const LearningProgress = require('../../models/learning_progress');
 const LearningAttempt = require('../../models/learning_attempt');
+const LearningArtAsset = require('../../models/learning_art_asset');
+const UserAccount = require('../../models/useraccount');
 const learningService = require('../../services/learningService');
 
 function createExistingDoc(overrides = {}) {
@@ -53,6 +57,10 @@ describe('learningService', () => {
     LearningProgress.updateMany.mockResolvedValue({ modifiedCount: 1 });
     LearningAttempt.updateMany.mockResolvedValue({ modifiedCount: 1 });
     LearningAttempt.create.mockResolvedValue({});
+    LearningArtAsset.exists.mockResolvedValue(null);
+    LearningArtAsset.find.mockResolvedValue([]);
+    UserAccount.find.mockResolvedValue([]);
+    UserAccount.findById.mockResolvedValue(null);
   });
 
   test('saveTopicFromForm cascades slug updates to linked records', async () => {
@@ -324,5 +332,26 @@ describe('learningService', () => {
     expect(result.progress.completedItems).toBe(1);
     expect(progress.save).not.toHaveBeenCalled();
     expect(LearningAttempt.create).not.toHaveBeenCalled();
+  });
+
+  test('saveArtAssetFromUpload stores sanitized SVG library entries', async () => {
+    const result = await learningService.saveArtAssetFromUpload({
+      body: {
+        title: 'Water Drop',
+        key: 'water-drop',
+        description: 'Reusable droplet art',
+      },
+      file: {
+        originalname: 'water-drop.svg',
+        buffer: Buffer.from('<svg viewBox="0 0 10 10"><script>alert(1)</script><circle cx="5" cy="5" r="4" /></svg>'),
+      },
+      userName: 'Admin',
+    });
+
+    expect(result.key).toBe('water-drop');
+    expect(result.title).toBe('Water Drop');
+    expect(result.svgMarkup).toContain('<svg');
+    expect(result.svgMarkup).not.toContain('<script');
+    expect(result.save).toHaveBeenCalledTimes(1);
   });
 });
