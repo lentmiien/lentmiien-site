@@ -250,8 +250,9 @@ paths:
       summary: Query API records
       description: >
         Returns records filtered by title, completion state, created/updated ranges,
-        deadline range, and optional order/customer matches. Tier 1 callers never receive
-        `encryptedFields` in the response body.
+        deadline range, and optional order/customer matches. Title matching is exact after
+        trimming, but case-insensitive. Tier 1 callers never receive `encryptedFields` in
+        the response body.
       tags: [Records]
       security:
         - bearerApiKey: []
@@ -261,7 +262,7 @@ paths:
           name: title
           schema:
             type: string
-          description: Case-insensitive substring match on `title`.
+          description: Exact `title` value to match, case-insensitive.
         - in: query
           name: customer
           schema:

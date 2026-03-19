@@ -166,7 +166,7 @@ describe('ApiRecordService', () => {
     expect(result.results[0].message).toContain('Current rev is 9');
   });
 
-  test('fetchEntries builds supported filters and strips encrypted fields for tier1', async () => {
+  test('fetchEntries uses exact title matches and strips encrypted fields for tier1', async () => {
     const records = [
       {
         _id: 'rec-1',
@@ -201,10 +201,11 @@ describe('ApiRecordService', () => {
       { tier: 'tier1' }
     );
 
-    expect(ApiRecordModel.find).toHaveBeenCalledWith(expect.objectContaining({
+    const findQuery = ApiRecordModel.find.mock.calls[0][0];
+
+    expect(findQuery).toEqual(expect.objectContaining({
       order: 5,
       completed: false,
-      title: expect.any(RegExp),
       customer: expect.any(RegExp),
       createdAt: {
         $gte: new Date('2024-01-01T00:00:00.000Z'),
@@ -214,6 +215,9 @@ describe('ApiRecordService', () => {
         $lte: new Date('2024-02-01T00:00:00.000Z'),
       },
     }));
+    expect(findQuery.title).toEqual(/^alpha$/i);
+    expect(findQuery.title.test('Alpha')).toBe(true);
+    expect(findQuery.title.test('Credit Card Alpha')).toBe(false);
     expect(result.count).toBe(1);
     expect(result.data[0].encryptedFields).toBeUndefined();
     expect(result.data[0].fields).toEqual({ public: 'data' });

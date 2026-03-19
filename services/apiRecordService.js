@@ -609,6 +609,10 @@ class ApiRecordService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  buildExactCaseInsensitiveRegex(value) {
+    return new RegExp(`^${this.escapeRegex(value)}$`, 'i');
+  }
+
   pickFirstDefined(source = {}, keys = []) {
     for (const key of keys) {
       if (source[key] !== undefined && source[key] !== null && source[key] !== '') {
@@ -651,7 +655,7 @@ class ApiRecordService {
 
     const title = this.pickFirstDefined(filters, ['title']);
     if (title !== undefined) {
-      query.title = new RegExp(this.escapeRegex(String(title).trim()), 'i');
+      query.title = this.buildExactCaseInsensitiveRegex(this.normalizeRequiredTitle(title));
     }
 
     const customer = this.pickFirstDefined(filters, ['customer']);
@@ -710,7 +714,7 @@ class ApiRecordService {
     const normalizedTitle = this.normalizeRequiredTitle(title);
 
     let findQuery = this.ApiRecordModel.find({
-      title: new RegExp(`^${this.escapeRegex(normalizedTitle)}$`, 'i'),
+      title: this.buildExactCaseInsensitiveRegex(normalizedTitle),
     });
     if (findQuery && typeof findQuery.sort === 'function') {
       findQuery = findQuery.sort({ order: 1, _id: 1 });
