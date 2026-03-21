@@ -117,6 +117,7 @@ router.post('/embedding-test/delete', controller.embedding_test_delete);
 router.get('/rag-memory', controller.rag_memory_page);
 router.post('/rag-memory', controller.rag_memory_recall);
 router.get('/html-pages', controller.html_pages);
+router.get('/project-docs', controller.project_docs);
 router.post('/html-pages/upload-text', controller.create_html_page_from_text);
 router.post('/html-pages/upload-file', handleHtmlUpload);
 router.post('/html-pages/delete', controller.delete_html_page);

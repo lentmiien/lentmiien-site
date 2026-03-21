@@ -2,6 +2,8 @@ const axios = require('axios');
 const FormData = require('form-data');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
+const marked = require('marked');
+const sanitizeHtml = require('sanitize-html');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const {
   UseraccountModel,
@@ -210,6 +212,8 @@ const LOG_LEVELS = ['debug', 'notice', 'warning', 'error'];
 const MAX_LOG_ENTRIES = 1000;
 const HTML_DIRECTORY = path.resolve(__dirname, '..', 'public', 'html');
 const HTML_FILE_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const DOCUMENTATION_DIRECTORY = path.resolve(__dirname, '..', 'documentation');
+const DOCUMENTATION_FILE_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const FEEDBACK_STATUSES = new Set(['success', 'error', 'info']);
 const htmlDateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 const API_DEBUG_TIME_FILTERS = [
@@ -664,6 +668,69 @@ exports.delete_log_file = (req, res) => {
   }
 };
 
+exports.project_docs = async (req, res) => {
+  let files = [];
+
+  try {
+    files = await listDocumentationFiles();
+  } catch (error) {
+    logger.error('Failed to load project documentation list', {
+      category: 'admin_project_docs',
+      metadata: { error: error.message },
+    });
+    res.status(500);
+    return res.render('admin_project_docs', {
+      files: [],
+      selectedDoc: null,
+      feedbackStatus: 'error',
+      feedbackMessage: 'Unable to read the documentation directory.',
+    });
+  }
+
+  let feedbackStatus = null;
+  let feedbackMessage = null;
+  const requestedFile = sanitizeDocumentationFileName(req.query.file);
+
+  if (req.query.file && !requestedFile) {
+    feedbackStatus = 'error';
+    feedbackMessage = 'Invalid documentation file requested.';
+  }
+
+  let selectedFileMeta = requestedFile
+    ? files.find((file) => file.name === requestedFile) || null
+    : null;
+
+  if (!selectedFileMeta && requestedFile) {
+    feedbackStatus = 'error';
+    feedbackMessage = `Documentation file ${requestedFile} was not found.`;
+  }
+
+  if (!selectedFileMeta && files.length > 0) {
+    selectedFileMeta = files[0];
+  }
+
+  let selectedDoc = null;
+  if (selectedFileMeta) {
+    try {
+      selectedDoc = await buildDocumentationDocument(selectedFileMeta);
+    } catch (error) {
+      logger.error('Failed to read project documentation file', {
+        category: 'admin_project_docs',
+        metadata: { file: selectedFileMeta.name, error: error.message },
+      });
+      feedbackStatus = 'error';
+      feedbackMessage = `Unable to read ${selectedFileMeta.name}.`;
+    }
+  }
+
+  return res.render('admin_project_docs', {
+    files,
+    selectedDoc,
+    feedbackStatus,
+    feedbackMessage,
+  });
+};
+
 function sanitizeHtmlFileName(rawName) {
   if (!rawName && rawName !== 0) {
     return null;
@@ -691,6 +758,28 @@ function sanitizeHtmlFileName(rawName) {
   return normalized;
 }
 
+function sanitizeDocumentationFileName(rawName) {
+  if (!rawName && rawName !== 0) {
+    return null;
+  }
+
+  const trimmed = String(rawName).trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const baseName = path.basename(trimmed);
+  if (!baseName || baseName.startsWith('.') || !baseName.toLowerCase().endsWith('.md')) {
+    return null;
+  }
+
+  if (!DOCUMENTATION_FILE_NAME_PATTERN.test(baseName)) {
+    return null;
+  }
+
+  return baseName;
+}
+
 async function ensureHtmlDirectory() {
   await fsp.mkdir(HTML_DIRECTORY, { recursive: true });
 }
@@ -709,6 +798,167 @@ function formatHtmlFileSize(bytes) {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`;
+}
+
+function extractDocumentationTitle(rawContent, fallbackName) {
+  const headingMatch = String(rawContent || '').match(/^\s*#\s+(.+?)\s*$/m);
+  if (headingMatch && headingMatch[1]) {
+    return headingMatch[1].trim();
+  }
+
+  return String(fallbackName || '').replace(/\.md$/i, '');
+}
+
+function slugifyDocumentationHeading(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[`~!@#$%^&*()+=[\]{}|\\:;"'<>,.?/]+/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function addDocumentationHeadingIds(html) {
+  const seenIds = new Set();
+
+  return String(html || '').replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (fullMatch, level, innerHtml) => {
+    const plainText = sanitizeHtml(innerHtml, {
+      allowedTags: [],
+      allowedAttributes: {},
+    }).trim();
+    const baseId = slugifyDocumentationHeading(plainText);
+
+    if (!baseId) {
+      return fullMatch;
+    }
+
+    let headingId = baseId;
+    let suffix = 2;
+    while (seenIds.has(headingId)) {
+      headingId = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    seenIds.add(headingId);
+
+    return `<h${level} id="${headingId}">${innerHtml}</h${level}>`;
+  });
+}
+
+function transformDocumentationHref(href) {
+  if (!href) {
+    return href;
+  }
+
+  if (/^(#|https?:|mailto:)/i.test(href)) {
+    return href;
+  }
+
+  const mdMatch = String(href).match(/^(?:\.\/)?([^/#?]+\.md)(#[^?]*)?$/i);
+  if (!mdMatch) {
+    return href;
+  }
+
+  const fileName = sanitizeDocumentationFileName(mdMatch[1]);
+  if (!fileName) {
+    return href;
+  }
+
+  return `/admin/project-docs?file=${encodeURIComponent(fileName)}${mdMatch[2] || ''}`;
+}
+
+function renderDocumentationMarkdown(rawContent) {
+  const rendered = marked.parse(String(rawContent || ''), {
+    gfm: true,
+  });
+
+  const clean = sanitizeHtml(rendered, {
+    allowedTags: [
+      'a', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'hr', 'img', 'li', 'ol', 'p', 'pre', 'strong', 'table', 'tbody', 'td', 'th',
+      'thead', 'tr', 'ul',
+    ],
+    allowedAttributes: {
+      a: ['href', 'title'],
+      code: ['class'],
+      img: ['src', 'alt', 'title', 'loading'],
+      th: ['align'],
+      td: ['align'],
+    },
+    allowedSchemes: ['http', 'https', 'mailto'],
+    allowedSchemesByTag: {
+      img: ['http', 'https', 'data'],
+    },
+    disallowedTagsMode: 'escape',
+    transformTags: {
+      a: (tagName, attribs) => {
+        const safeHref = transformDocumentationHref(attribs.href);
+        const nextAttribs = {
+          ...attribs,
+          href: safeHref,
+        };
+
+        if (/^(https?:|mailto:)/i.test(safeHref || '')) {
+          nextAttribs.rel = 'noopener noreferrer nofollow';
+          nextAttribs.target = '_blank';
+        } else {
+          delete nextAttribs.rel;
+          delete nextAttribs.target;
+        }
+
+        return { tagName, attribs: nextAttribs };
+      },
+      img: (tagName, attribs) => ({
+        tagName,
+        attribs: {
+          ...attribs,
+          loading: 'lazy',
+        },
+      }),
+    },
+  });
+
+  return addDocumentationHeadingIds(clean);
+}
+
+async function listDocumentationFiles() {
+  const entries = await fsp.readdir(DOCUMENTATION_DIRECTORY, { withFileTypes: true });
+  const docEntries = entries.filter((entry) => (
+    entry.isFile()
+    && entry.name.toLowerCase().endsWith('.md')
+    && sanitizeDocumentationFileName(entry.name)
+  ));
+
+  const files = await Promise.all(docEntries.map(async (entry) => {
+    const filePath = path.join(DOCUMENTATION_DIRECTORY, entry.name);
+    const stats = await fsp.stat(filePath);
+
+    return {
+      name: entry.name,
+      href: `/admin/project-docs?file=${encodeURIComponent(entry.name)}`,
+      size: formatHtmlFileSize(stats.size),
+      modified: htmlDateFormatter.format(stats.mtime),
+      modifiedMs: stats.mtime.getTime(),
+    };
+  }));
+
+  return files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+async function buildDocumentationDocument(fileMeta) {
+  if (!fileMeta || !fileMeta.name) {
+    return null;
+  }
+
+  const filePath = path.join(DOCUMENTATION_DIRECTORY, fileMeta.name);
+  const rawContent = await fsp.readFile(filePath, 'utf8');
+
+  return {
+    ...fileMeta,
+    title: extractDocumentationTitle(rawContent, fileMeta.name),
+    rawContent,
+    contentHtml: renderDocumentationMarkdown(rawContent),
+  };
 }
 
 async function listHtmlFiles() {

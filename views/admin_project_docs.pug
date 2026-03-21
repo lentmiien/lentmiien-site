@@ -1,0 +1,57 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/admin-project-docs.css')
+
+block content
+  section.project-docs
+    header.project-docs__header
+      div
+        h1.project-docs__title Project Documentation
+        p.project-docs__subtitle Browse the Markdown files in the local `documentation` folder. The preview renders formatted HTML, while `Copy RAW` keeps the original Markdown available for reuse.
+      .project-docs__summary
+        span.project-docs__summary-pill #{files.length} files
+        if selectedDoc
+          span.project-docs__summary-pill= selectedDoc.name
+    if feedbackStatus
+      div(class=`project-docs__alert project-docs__alert--${feedbackStatus}`, role='alert')= feedbackMessage
+    .project-docs__layout
+      aside.project-docs__sidebar
+        .project-docs__sidebar-head
+          h2.project-docs__sidebar-title Files
+          span.project-docs__sidebar-count= files.length
+        if files && files.length
+          nav.project-docs__nav(aria-label='Project documentation files')
+            each file in files
+              - const isActive = selectedDoc && selectedDoc.name === file.name;
+              a(
+                class=`project-docs__nav-link${isActive ? ' project-docs__nav-link--active' : ''}`
+                href=file.href
+                aria-current=isActive ? 'page' : null
+              )
+                span.project-docs__nav-name= file.name
+                span.project-docs__nav-meta #{file.size} | #{file.modified}
+        else
+          p.project-docs__empty No Markdown files were found in the `documentation` folder.
+      main.project-docs__content
+        if selectedDoc
+          article.project-docs__reader
+            header.project-docs__reader-head
+              .project-docs__reader-copy
+                h2.project-docs__reader-title= selectedDoc.title
+                p.project-docs__reader-file= selectedDoc.name
+              .project-docs__reader-actions
+                button#copyRawButton.project-docs__button(type='button') Copy RAW
+                span#copyRawStatus.project-docs__copy-status(role='status', aria-live='polite')
+            .project-docs__reader-meta
+              span Size: #{selectedDoc.size}
+              span Updated: #{selectedDoc.modified}
+            textarea#projectDocsRaw.project-docs__raw(hidden readonly)= selectedDoc.rawContent
+            .project-docs__markdown!= selectedDoc.contentHtml
+        else
+          .project-docs__empty-state
+            h2.project-docs__empty-title No document selected
+            p.project-docs__empty-copy Select a Markdown file from the list to read it here.
+
+block script
+  script(src='/js/admin-project-docs.js', defer)
