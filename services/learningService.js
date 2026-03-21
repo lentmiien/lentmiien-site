@@ -7,6 +7,7 @@ const LearningItem = require('../models/learning_item');
 const LearningProgress = require('../models/learning_progress');
 const LearningAttempt = require('../models/learning_attempt');
 const LearningArtAsset = require('../models/learning_art_asset');
+const LearningTemplateProfile = require('../models/learning_template_profile');
 const UserAccount = require('../models/useraccount');
 const logger = require('../utils/logger');
 
@@ -54,6 +55,19 @@ const TEMPLATE_OPTIONS = [
   { value: TEMPLATE_TYPES.BUILDER_SEQUENCE, label: 'Builder sequence' },
   { value: TEMPLATE_TYPES.STATE_CHANGE, label: 'State change controls' },
 ];
+
+const COUNT_DISPLAY_OPTIONS = [
+  { value: 'tokens', label: 'Token grid' },
+  { value: 'atom', label: 'Atom / electron widget' },
+];
+
+const BUILDER_DISPLAY_OPTIONS = [
+  { value: 'tokens', label: 'Generic token sequence' },
+  { value: 'atoms', label: 'Atom / molecule sequence' },
+];
+
+const MAX_CHOICE_OPTIONS = 6;
+const MAX_SEQUENCE_SLOT_COUNT = 8;
 
 const SCENE_OPTIONS = [
   { value: SCENE_TYPES.ATOM_PLAY, label: 'Atom play scene' },
@@ -104,6 +118,15 @@ const BUILTIN_ART_FALLBACKS = Object.freeze({
   mixture: '✨',
   states: '☁️',
   water: '💧',
+  weather: '⛅',
+  cloud: '☁️',
+  sun: '☀️',
+  rain: '🌧️',
+  snow: '❄️',
+  wind: '💨',
+  storm: '⛈️',
+  lightning: '⚡',
+  rainbow: '🌈',
   star: '⭐',
   solid: '🧊',
   liquid: '💦',
@@ -620,6 +643,48 @@ function normalizeSceneType(raw) {
   return SCENE_TYPES.ATOM_PLAY;
 }
 
+function normalizeCountDisplayMode(raw, fallback = 'tokens') {
+  const value = normalizeText(raw, 32, { multiline: false });
+  if (COUNT_DISPLAY_OPTIONS.some((entry) => entry.value === value)) {
+    return value;
+  }
+  return fallback;
+}
+
+function normalizeBuilderDisplayMode(raw, fallback = 'tokens') {
+  const value = normalizeText(raw, 32, { multiline: false });
+  if (BUILDER_DISPLAY_OPTIONS.some((entry) => entry.value === value)) {
+    return value;
+  }
+  return fallback;
+}
+
+function resolveCountDisplayMode(config = {}, fallback = 'tokens') {
+  if (config && typeof config === 'object' && config.displayMode) {
+    return normalizeCountDisplayMode(config.displayMode, fallback);
+  }
+
+  const label = normalizeText(config?.counterLabel, 40, { multiline: false }).toLowerCase();
+  if (label.includes('electron') || label.includes('atom')) {
+    return 'atom';
+  }
+
+  return fallback;
+}
+
+function resolveBuilderDisplayMode(config = {}, fallback = 'tokens') {
+  if (config && typeof config === 'object' && config.displayMode) {
+    return normalizeBuilderDisplayMode(config.displayMode, fallback);
+  }
+
+  const pieces = Array.isArray(config?.pieces) ? config.pieces : [];
+  if (pieces.length && pieces.every((piece) => /^[A-Z][a-z]?$/.test(String(piece || '').trim()))) {
+    return 'atoms';
+  }
+
+  return fallback;
+}
+
 function normalizeState(raw, fallback = 'solid') {
   const value = normalizeText(raw, 16, { multiline: false }).toLowerCase();
   if (STATE_OPTIONS.some((entry) => entry.value === value)) {
@@ -898,10 +963,28 @@ function normalizeStringList(raw, maxItems = 12, maxLength = 24) {
     .slice(0, maxItems);
 }
 
+function buildValueCountMap(values = []) {
+  return values.reduce((map, value) => {
+    const key = normalizeText(value, 32, { multiline: false });
+    if (!key) {
+      return map;
+    }
+    map.set(key, (map.get(key) || 0) + 1);
+    return map;
+  }, new Map());
+}
+
+function hasSufficientSequencePieces(pieces = [], targetSequence = []) {
+  const available = buildValueCountMap(pieces);
+  const required = buildValueCountMap(targetSequence);
+
+  return Array.from(required.entries()).every(([key, count]) => (available.get(key) || 0) >= count);
+}
+
 function buildChoiceOptionsFromForm(body) {
   const options = [];
 
-  for (let index = 1; index <= 4; index += 1) {
+  for (let index = 1; index <= MAX_CHOICE_OPTIONS; index += 1) {
     const label = normalizeText(body[`choiceOption${index}Label`], 80, { multiline: false });
     const rawKey = normalizeText(body[`choiceOption${index}Key`], 80, { multiline: false });
     const art = normalizeArt(
@@ -953,8 +1036,8 @@ function buildSceneConfigFromForm(body) {
     bodyText: normalizeText(body.sceneBodyText, 280),
     hintText: normalizeText(body.sceneHintText, 220),
     exampleText: normalizeText(body.sceneExampleText, 220),
-    pieces: normalizeStringList(body.scenePieces, 12, 8),
-    slotCount: normalizeInteger(body.sceneSlotCount, 3, 2, 6),
+    pieces: normalizeStringList(body.scenePieces, 12, 24),
+    slotCount: normalizeInteger(body.sceneSlotCount, 3, 2, MAX_SEQUENCE_SLOT_COUNT),
     completeMessage: normalizeText(body.goodFeedback, 180) || 'Nice exploring!',
   };
 }
@@ -977,34 +1060,63 @@ function buildSingleChoiceConfigFromForm(body) {
   return {
     options,
     correctOptionKey: safeCorrectOptionKey,
+    shuffleOptions: parseCheckbox(body.shuffleChoiceOptions),
     goodFeedback: normalizeText(body.goodFeedback, 180) || 'Correct!',
     badFeedback: normalizeText(body.badFeedback, 180) || 'Try again!',
   };
 }
 
 function buildCountTargetConfigFromForm(body) {
+  const target = normalizeInteger(body.targetCount, 1, 0, 30);
+  const max = normalizeInteger(body.maxCount, 8, 1, 40);
+  if (target > max) {
+    throw createError('Counting target cannot be larger than the max count.');
+  }
+
   return {
-    target: normalizeInteger(body.targetCount, 1, 0, 30),
-    max: normalizeInteger(body.maxCount, 8, 1, 40),
+    target,
+    max,
     counterLabel: normalizeText(body.counterLabel, 40, { multiline: false }) || 'Count',
+    displayMode: normalizeCountDisplayMode(body.countDisplayMode, 'tokens'),
+    counterArt: normalizeArt(
+      body.countTokenArtKind,
+      body.countTokenArtValue,
+      { kind: ART_KINDS.EMOJI, value: '' }
+    ),
     goodFeedback: normalizeText(body.goodFeedback, 180) || 'Nice counting!',
     badFeedback: normalizeText(body.badFeedback, 180) || 'Try again!',
   };
 }
 
 function buildBuilderSequenceConfigFromForm(body) {
-  const pieces = normalizeStringList(body.builderPieces, 12, 8);
-  const targetSequence = normalizeStringList(body.builderTargetSequence, 12, 8);
-  const slots = normalizeInteger(body.builderSlotCount, targetSequence.length || 3, 2, 6);
+  const pieces = normalizeStringList(body.builderPieces, 20, 32);
+  const targetSequence = normalizeStringList(body.builderTargetSequence, 20, 32);
+  const slots = normalizeInteger(
+    body.builderSlotCount,
+    targetSequence.length || 3,
+    2,
+    MAX_SEQUENCE_SLOT_COUNT
+  );
 
   if (!targetSequence.length) {
     throw createError('Builder items need a target sequence.');
   }
 
+  if (slots < targetSequence.length) {
+    throw createError('Builder slot count cannot be shorter than the target sequence.');
+  }
+
+  const effectivePieces = pieces.length ? pieces : [...targetSequence];
+  if (!hasSufficientSequencePieces(effectivePieces, targetSequence)) {
+    throw createError('Builder pieces must include all values needed for the target sequence.');
+  }
+
   return {
-    pieces: pieces.length ? pieces : [...targetSequence],
+    pieces: effectivePieces,
     targetSequence,
     slots,
+    displayMode: normalizeBuilderDisplayMode(body.builderDisplayMode, 'tokens'),
+    shufflePieces: parseCheckbox(body.builderShufflePieces),
     goodFeedback: normalizeText(body.goodFeedback, 180) || 'Perfect!',
     badFeedback: normalizeText(body.badFeedback, 180) || 'Try again!',
   };
@@ -1220,7 +1332,7 @@ function sanitizePublicItem(itemDoc) {
       hintText: normalizeText(config.hintText, 220),
       exampleText: normalizeText(config.exampleText, 220),
       pieces: Array.isArray(config.pieces) ? config.pieces.slice(0, 12) : [],
-      slotCount: normalizeInteger(config.slotCount, 3, 2, 6),
+      slotCount: normalizeInteger(config.slotCount, 3, 2, MAX_SEQUENCE_SLOT_COUNT),
     };
     return base;
   }
@@ -1234,6 +1346,7 @@ function sanitizePublicItem(itemDoc) {
             art: sanitizeArtPayload(option.art, { kind: ART_KINDS.EMOJI, value: '✨' }),
           }))
         : [],
+      shuffleOptions: config.shuffleOptions !== false,
     };
     return base;
   }
@@ -1242,14 +1355,25 @@ function sanitizePublicItem(itemDoc) {
     base.config = {
       max: normalizeInteger(config.max, 8, 1, 40),
       counterLabel: normalizeText(config.counterLabel, 40, { multiline: false }) || 'Count',
+      displayMode: resolveCountDisplayMode(config, 'tokens'),
+      counterArt: sanitizeArtPayload(config.counterArt, { kind: ART_KINDS.EMOJI, value: '' }),
     };
     return base;
   }
 
   if (item.templateType === TEMPLATE_TYPES.BUILDER_SEQUENCE) {
     base.config = {
-      pieces: Array.isArray(config.pieces) ? config.pieces.slice(0, 12) : [],
-      slots: normalizeInteger(config.slots, Array.isArray(config.targetSequence) ? config.targetSequence.length : 3, 2, 6),
+      pieces: Array.isArray(config.pieces)
+        ? config.pieces.map((entry) => normalizeText(entry, 32, { multiline: false })).filter(Boolean).slice(0, 20)
+        : [],
+      slots: normalizeInteger(
+        config.slots,
+        Array.isArray(config.targetSequence) ? config.targetSequence.length : 3,
+        2,
+        MAX_SEQUENCE_SLOT_COUNT
+      ),
+      displayMode: resolveBuilderDisplayMode(config, 'tokens'),
+      shufflePieces: config.shufflePieces !== false,
     };
     return base;
   }
@@ -1326,7 +1450,7 @@ function evaluateItemAnswer(itemDoc, payload = {}) {
         ? body.answer.sequence
         : [];
     const sequence = sequenceRaw
-      .map((entry) => normalizeText(entry, 8, { multiline: false }))
+      .map((entry) => normalizeText(entry, 32, { multiline: false }))
       .filter(Boolean);
     const targetSequence = Array.isArray(config.targetSequence) ? config.targetSequence : [];
 
@@ -1668,6 +1792,7 @@ async function getSubtopicPlayerData(user, topicSlug, subtopicSlug, { preview = 
       description: subtopic.description,
       rewardLabel: subtopic.reward?.label || DEFAULT_REWARD.label,
       rewardText: getArtText(subtopic.reward?.stickerArt || DEFAULT_REWARD.stickerArt),
+      rewardArt: sanitizeArtPayload(subtopic.reward?.stickerArt, DEFAULT_REWARD.stickerArt),
       estimatedMinutes: subtopic.estimatedMinutes,
     },
     theme: resolvedTheme,
@@ -1868,9 +1993,9 @@ function getSubtopicForm(subtopic = null, fallbackTopicId = '') {
   };
 }
 
-function getItemForm(item = null, fallbackSubtopicId = '') {
-  const config = item?.config || {};
-  const choiceOptions = Array.from({ length: 4 }).map((_, index) => {
+function getTemplateConfigFormFields(source = null) {
+  const config = source?.config || {};
+  const choiceOptions = Array.from({ length: MAX_CHOICE_OPTIONS }).map((_, index) => {
     const option = Array.isArray(config.options) ? config.options[index] || {} : {};
     return {
       key: option.key || '',
@@ -1880,6 +2005,37 @@ function getItemForm(item = null, fallbackSubtopicId = '') {
     };
   });
 
+  return {
+    templateType: source?.templateType || TEMPLATE_TYPES.SINGLE_CHOICE,
+    sceneType: config.sceneType || SCENE_TYPES.ATOM_PLAY,
+    sceneBodyText: config.bodyText || '',
+    sceneHintText: config.hintText || '',
+    sceneExampleText: config.exampleText || '',
+    scenePieces: Array.isArray(config.pieces) ? config.pieces.join(', ') : '',
+    sceneSlotCount: config.slotCount ?? 3,
+    correctOptionKey: config.correctOptionKey || '',
+    choiceOptions,
+    shuffleChoiceOptions: config.shuffleOptions !== false,
+    targetCount: config.target ?? 2,
+    maxCount: config.max ?? 8,
+    counterLabel: config.counterLabel || 'Count',
+    countDisplayMode: resolveCountDisplayMode(config, 'tokens'),
+    countTokenArtKind: config.counterArt?.kind || ART_KINDS.EMOJI,
+    countTokenArtValue: config.counterArt?.value || '',
+    builderPieces: Array.isArray(config.pieces) ? config.pieces.join(', ') : '',
+    builderTargetSequence: Array.isArray(config.targetSequence) ? config.targetSequence.join(', ') : '',
+    builderSlotCount: config.slots ?? 3,
+    builderDisplayMode: resolveBuilderDisplayMode(config, 'tokens'),
+    builderShufflePieces: config.shufflePieces !== false,
+    startState: config.startState || 'solid',
+    targetState: config.targetState || 'gas',
+    showCoolButton: config.showCoolButton !== false,
+    goodFeedback: config.goodFeedback || config.completeMessage || '',
+    badFeedback: config.badFeedback || '',
+  };
+}
+
+function getItemForm(item = null, fallbackSubtopicId = '') {
   return {
     _id: item ? String(item._id) : '',
     stableId: item?.stableId || '',
@@ -1891,26 +2047,24 @@ function getItemForm(item = null, fallbackSubtopicId = '') {
     status: item?.status || CONTENT_STATUS.DRAFT,
     order: item?.order ?? 0,
     points: item?.points ?? 1,
-    templateType: item?.templateType || TEMPLATE_TYPES.SINGLE_CHOICE,
-    sceneType: config.sceneType || SCENE_TYPES.ATOM_PLAY,
-    sceneBodyText: config.bodyText || '',
-    sceneHintText: config.hintText || '',
-    sceneExampleText: config.exampleText || '',
-    scenePieces: Array.isArray(config.pieces) ? config.pieces.join(', ') : '',
-    sceneSlotCount: config.slotCount ?? 3,
-    correctOptionKey: config.correctOptionKey || '',
-    choiceOptions,
-    targetCount: config.target ?? 2,
-    maxCount: config.max ?? 8,
-    counterLabel: config.counterLabel || 'Electrons',
-    builderPieces: Array.isArray(config.pieces) ? config.pieces.join(', ') : '',
-    builderTargetSequence: Array.isArray(config.targetSequence) ? config.targetSequence.join(', ') : '',
-    builderSlotCount: config.slots ?? 3,
-    startState: config.startState || 'solid',
-    targetState: config.targetState || 'gas',
-    showCoolButton: config.showCoolButton !== false,
-    goodFeedback: config.goodFeedback || config.completeMessage || '',
-    badFeedback: config.badFeedback || '',
+    ...getTemplateConfigFormFields(item),
+  };
+}
+
+function getTemplateProfileForm(profile = null) {
+  return {
+    _id: profile ? String(profile._id) : '',
+    stableId: profile?.stableId || '',
+    slug: profile?.slug || '',
+    title: profile?.title || '',
+    description: profile?.description || '',
+    defaultItemTitle: profile?.defaultItemTitle || '',
+    prompt: profile?.prompt || '',
+    helperText: profile?.helperText || '',
+    blurb: profile?.blurb || '',
+    order: profile?.order ?? 0,
+    points: profile?.points ?? 1,
+    ...getTemplateConfigFormFields(profile),
   };
 }
 
@@ -1918,13 +2072,16 @@ async function getAdminDashboardData({
   selectedTopicId = '',
   selectedSubtopicId = '',
   selectedItemId = '',
+  selectedTemplateProfileId = '',
   creatingTopic = false,
   creatingSubtopic = false,
   creatingItem = false,
+  creatingTemplate = false,
 } = {}) {
   const topics = sortByOrderThenTitle(await LearningTopic.find().lean());
   const subtopics = sortByOrderThenTitle(await LearningSubtopic.find().lean());
   const items = sortByOrderThenTitle(await LearningItem.find().lean());
+  const templateProfiles = sortByOrderThenTitle(await LearningTemplateProfile.find().lean());
   const artAssets = await loadLearningArtAssets();
   const artLibrary = {
     uploaded: buildUploadedBuiltinArtChoices(artAssets),
@@ -1971,6 +2128,7 @@ async function getAdminDashboardData({
   let topicContext = topics.find((topic) => String(topic._id) === selectedTopicId) || null;
   let subtopicContext = subtopics.find((subtopic) => String(subtopic._id) === selectedSubtopicId) || null;
   let itemContext = items.find((item) => String(item._id) === selectedItemId) || null;
+  let templateProfileContext = templateProfiles.find((profile) => String(profile._id) === selectedTemplateProfileId) || null;
 
   if (!subtopicContext && itemContext) {
     subtopicContext = subtopics.find((subtopic) => String(subtopic._id) === String(itemContext.subtopicId)) || null;
@@ -1986,6 +2144,9 @@ async function getAdminDashboardData({
   }
   if (!itemContext && subtopicContext) {
     itemContext = items.find((item) => String(item.subtopicId) === String(subtopicContext._id)) || null;
+  }
+  if (!templateProfileContext && templateProfiles.length) {
+    templateProfileContext = templateProfiles[0];
   }
 
   return {
@@ -2005,17 +2166,49 @@ async function getAdminDashboardData({
     selectedItem: creatingItem
       ? getItemForm(null, subtopicContext ? String(subtopicContext._id) : '')
       : getItemForm(itemContext, subtopicContext ? String(subtopicContext._id) : ''),
+    templateProfiles: templateProfiles.map((profile) => ({
+      _id: String(profile._id),
+      stableId: profile.stableId,
+      slug: profile.slug,
+      title: profile.title,
+      description: profile.description || '',
+      templateType: profile.templateType,
+      templateTypeLabel: describeTemplateType(profile.templateType),
+      defaultItemTitle: profile.defaultItemTitle || '',
+      order: profile.order ?? 0,
+    })),
+    templateProfileOptions: templateProfiles.map((profile) => ({
+      value: String(profile._id),
+      label: `${profile.title} (${describeTemplateType(profile.templateType)})`,
+    })),
+    templateProfilesForClient: templateProfiles.map((profile) => ({
+      _id: String(profile._id),
+      stableId: profile.stableId,
+      slug: profile.slug,
+      title: profile.title,
+      description: profile.description || '',
+      defaultItemTitle: profile.defaultItemTitle || '',
+      ...getTemplateProfileForm(profile),
+      templateTypeLabel: describeTemplateType(profile.templateType),
+    })),
+    selectedTemplateProfile: creatingTemplate
+      ? getTemplateProfileForm(null)
+      : getTemplateProfileForm(templateProfileContext),
     selectedTopicContextId: topicContext ? String(topicContext._id) : '',
     selectedSubtopicContextId: subtopicContext ? String(subtopicContext._id) : '',
     selectedItemContextId: itemContext ? String(itemContext._id) : '',
+    selectedTemplateProfileContextId: templateProfileContext ? String(templateProfileContext._id) : '',
     selectionState: {
       creatingTopic,
       creatingSubtopic,
       creatingItem,
+      creatingTemplate,
     },
     selectedSubtopicPreviewPath: subtopicContext ? withPreview(`/learning/topic/${subtopicContext.topicSlug}/${subtopicContext.slug}`, true) : null,
     templateOptions: TEMPLATE_OPTIONS,
     sceneOptions: SCENE_OPTIONS,
+    countDisplayOptions: COUNT_DISPLAY_OPTIONS,
+    builderDisplayOptions: BUILDER_DISPLAY_OPTIONS,
     stateOptions: STATE_OPTIONS,
     artKindOptions: ART_KIND_OPTIONS,
     patternOptions: PATTERN_OPTIONS,
@@ -2676,6 +2869,48 @@ async function saveItemFromForm(body, userName) {
   return item;
 }
 
+async function saveTemplateProfileFromForm(body, userName) {
+  const templateProfileId = normalizeText(body.templateProfileId, 64, { multiline: false });
+  const existing = templateProfileId ? await LearningTemplateProfile.findById(templateProfileId) : null;
+  const title = normalizeText(body.title, 120, { multiline: false });
+  if (!title) {
+    throw createError('Template profile name is required.');
+  }
+
+  const templateType = normalizeTemplateType(body.templateType);
+  const slug = await ensureUniqueFieldValue(
+    LearningTemplateProfile,
+    'slug',
+    body.slug || title,
+    'template',
+    {},
+    existing?._id || null
+  );
+
+  const profile = existing || new LearningTemplateProfile({
+    stableId: generateStableId('template'),
+    createdBy: userName,
+  });
+
+  profile.slug = slug;
+  profile.title = title;
+  profile.description = normalizeText(body.description, 280);
+  profile.templateType = templateType;
+  profile.order = normalizeInteger(body.order, 0, 0, 9999);
+  profile.defaultItemTitle = normalizeText(body.defaultItemTitle, 120, { multiline: false });
+  profile.prompt = normalizeText(body.prompt, 280);
+  profile.helperText = normalizeText(body.helperText, 280);
+  profile.blurb = normalizeText(body.blurb, 280);
+  profile.points = templateType === TEMPLATE_TYPES.SCENE
+    ? 0
+    : normalizeInteger(body.points, 1, 0, 10);
+  profile.config = buildItemConfigFromForm(body, templateType);
+  profile.updatedBy = userName;
+
+  await profile.save();
+  return profile;
+}
+
 async function deleteTopicById(topicId) {
   const topic = await LearningTopic.findById(topicId);
   if (!topic) {
@@ -2715,6 +2950,16 @@ async function deleteItemById(itemId) {
     { $pull: { itemStates: { itemId: item._id } } }
   );
   await LearningItem.deleteOne({ _id: item._id });
+  return true;
+}
+
+async function deleteTemplateProfileById(templateProfileId) {
+  const profile = await LearningTemplateProfile.findById(templateProfileId);
+  if (!profile) {
+    return false;
+  }
+
+  await LearningTemplateProfile.deleteOne({ _id: profile._id });
   return true;
 }
 
@@ -2771,6 +3016,8 @@ async function ensureSeedData() {
 module.exports = {
   ART_KIND_OPTIONS,
   ART_KINDS,
+  BUILDER_DISPLAY_OPTIONS,
+  COUNT_DISPLAY_OPTIONS,
   CONTENT_STATUS,
   DEFAULT_THEME,
   PATTERN_OPTIONS,
@@ -2783,6 +3030,7 @@ module.exports = {
   buildThemeStyleAttribute,
   deleteItemById,
   deleteSubtopicById,
+  deleteTemplateProfileById,
   deleteTopicById,
   ensureSeedData,
   evaluateItemAnswer,
@@ -2799,6 +3047,7 @@ module.exports = {
   saveArtAssetFromUpload,
   saveItemFromForm,
   saveSubtopicFromForm,
+  saveTemplateProfileFromForm,
   saveTopicFromForm,
   slugify,
   submitItemResponse,

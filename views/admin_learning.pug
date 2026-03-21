@@ -25,6 +25,139 @@ mixin artField(kindId, kindName, kindValue, valueId, valueName, valueValue, labe
         data-art-label=`${label} value`
       ) Library
 
+mixin learningTemplateSections(formKey, selectedData)
+  .col-12(data-template-section="scene")
+    .admin-template-box
+      h3.h6.mb-2 Scene settings
+      p.learning-admin__hint.mb-3 Scene items stay interactive, but the config is now reusable in saved template profiles too.
+      .row.g-3
+        .col-md-4
+          label.form-label(for=`${formKey}-scene-type`) Scene type
+          select.form-select(id=`${formKey}-scene-type` name="sceneType")
+            each scene in sceneOptions
+              option(value=scene.value selected=selectedData.sceneType === scene.value)= scene.label
+        .col-md-4
+          label.form-label(for=`${formKey}-scene-slot-count`) Slot count
+          input.form-control(type="number" min="2" max="8" id=`${formKey}-scene-slot-count` name="sceneSlotCount" value=selectedData.sceneSlotCount)
+        .col-md-4
+          label.form-label(for=`${formKey}-scene-pieces`) Pieces CSV
+          input.form-control(type="text" id=`${formKey}-scene-pieces` name="scenePieces" value=selectedData.scenePieces placeholder="H, H, O or ☀️, ☁️, 🌧️")
+        .col-12
+          label.form-label(for=`${formKey}-scene-body-text`) Body text
+          textarea.form-control(id=`${formKey}-scene-body-text` name="sceneBodyText" rows="2")= selectedData.sceneBodyText
+        .col-md-6
+          label.form-label(for=`${formKey}-scene-hint-text`) Hint text
+          textarea.form-control(id=`${formKey}-scene-hint-text` name="sceneHintText" rows="2")= selectedData.sceneHintText
+        .col-md-6
+          label.form-label(for=`${formKey}-scene-example-text`) Example text
+          textarea.form-control(id=`${formKey}-scene-example-text` name="sceneExampleText" rows="2")= selectedData.sceneExampleText
+
+  .col-12(data-template-section="single_choice")
+    .admin-template-box
+      h3.h6.mb-2 Single-choice options
+      p.learning-admin__hint.mb-3 Choices can now be shuffled automatically so the correct answer does not stay in the same slot.
+      - const choiceOptions = selectedData.choiceOptions || []
+      each opt, index in choiceOptions
+        - const optNumber = index + 1
+        - const artKindId = `${formKey}-choice-option-${optNumber}-art-kind`
+        - const artValueId = `${formKey}-choice-option-${optNumber}-art-value`
+        .row.g-3.mb-3
+          .col-md-2
+            label.form-label(for=`${formKey}-choice-option-${optNumber}-key`)= `Key ${optNumber}`
+            input.form-control(type="text" id=`${formKey}-choice-option-${optNumber}-key` name=`choiceOption${optNumber}Key` value=opt.key)
+          .col-md-3
+            label.form-label(for=`${formKey}-choice-option-${optNumber}-label`)= `Label ${optNumber}`
+            input.form-control(type="text" id=`${formKey}-choice-option-${optNumber}-label` name=`choiceOption${optNumber}Label` value=opt.label)
+          .col-md-3
+            label.form-label(for=artKindId) Art kind
+            select.form-select(id=artKindId name=`choiceOption${optNumber}ArtKind`)
+              each option in artKindOptions
+                option(value=option.value selected=opt.artKind === option.value)= option.label
+          .col-md-4
+            label.form-label(for=artValueId) Art value
+            .input-group
+              input.form-control(type="text" id=artValueId name=`choiceOption${optNumber}ArtValue` value=opt.artValue)
+              button.btn.btn-outline-secondary(
+                type="button"
+                data-bs-toggle="modal"
+                data-bs-target="#artPickerModal"
+                data-art-picker-target=`#${artValueId}`
+                data-art-kind-target=`#${artKindId}`
+                data-art-label=`Choice ${optNumber} art value`
+              ) Library
+      .row.g-3
+        .col-md-6
+          label.form-label(for=`${formKey}-correct-option-key`) Correct option key
+          input.form-control(type="text" id=`${formKey}-correct-option-key` name="correctOptionKey" value=selectedData.correctOptionKey)
+        .col-md-6.d-flex.align-items-end
+          .form-check.mb-2
+            input.form-check-input(type="checkbox" id=`${formKey}-shuffle-choices` name="shuffleChoiceOptions" checked=selectedData.shuffleChoiceOptions)
+            label.form-check-label(for=`${formKey}-shuffle-choices`) Shuffle choices for the learner
+
+  .col-12(data-template-section="count_target")
+    .admin-template-box
+      h3.h6.mb-2 Counting settings
+      p.learning-admin__hint.mb-3 Use token grid mode for topic-agnostic counts like clouds, raindrops, animals, fruit, or stars.
+      .row.g-3
+        .col-md-4
+          label.form-label(for=`${formKey}-target-count`) Target count
+          input.form-control(type="number" min="0" max="30" id=`${formKey}-target-count` name="targetCount" value=selectedData.targetCount)
+        .col-md-4
+          label.form-label(for=`${formKey}-max-count`) Max count
+          input.form-control(type="number" min="1" max="40" id=`${formKey}-max-count` name="maxCount" value=selectedData.maxCount)
+        .col-md-4
+          label.form-label(for=`${formKey}-counter-label`) Counter label
+          input.form-control(type="text" id=`${formKey}-counter-label` name="counterLabel" value=selectedData.counterLabel placeholder="Clouds")
+        .col-md-4
+          label.form-label(for=`${formKey}-count-display-mode`) Display mode
+          select.form-select(id=`${formKey}-count-display-mode` name="countDisplayMode")
+            each option in countDisplayOptions
+              option(value=option.value selected=selectedData.countDisplayMode === option.value)= option.label
+        +artField(`${formKey}-count-token-art-kind`, 'countTokenArtKind', selectedData.countTokenArtKind, `${formKey}-count-token-art-value`, 'countTokenArtValue', selectedData.countTokenArtValue, 'Token art', 4, 8, 'cloud')
+
+  .col-12(data-template-section="builder_sequence")
+    .admin-template-box
+      h3.h6.mb-2 Builder settings
+      p.learning-admin__hint.mb-3 Builder sequences now support up to 8 slots and can shuffle the available pieces before each playthrough.
+      .row.g-3
+        .col-md-4
+          label.form-label(for=`${formKey}-builder-slot-count`) Slot count
+          input.form-control(type="number" min="2" max="8" id=`${formKey}-builder-slot-count` name="builderSlotCount" value=selectedData.builderSlotCount)
+        .col-md-4
+          label.form-label(for=`${formKey}-builder-display-mode`) Display mode
+          select.form-select(id=`${formKey}-builder-display-mode` name="builderDisplayMode")
+            each option in builderDisplayOptions
+              option(value=option.value selected=selectedData.builderDisplayMode === option.value)= option.label
+        .col-md-4.d-flex.align-items-end
+          .form-check.mb-2
+            input.form-check-input(type="checkbox" id=`${formKey}-builder-shuffle` name="builderShufflePieces" checked=selectedData.builderShufflePieces)
+            label.form-check-label(for=`${formKey}-builder-shuffle`) Shuffle builder pieces
+        .col-12
+          label.form-label(for=`${formKey}-builder-pieces`) Pieces CSV
+          input.form-control(type="text" id=`${formKey}-builder-pieces` name="builderPieces" value=selectedData.builderPieces placeholder="☀️, ☁️, 🌧️ or H, H, O")
+        .col-12
+          label.form-label(for=`${formKey}-builder-target-sequence`) Target sequence CSV
+          input.form-control(type="text" id=`${formKey}-builder-target-sequence` name="builderTargetSequence" value=selectedData.builderTargetSequence placeholder="☀️, ☁️, 🌧️ or H, O, H")
+
+  .col-12(data-template-section="state_change")
+    .admin-template-box
+      h3.h6.mb-2 State-change settings
+      .row.g-3
+        .col-md-4
+          label.form-label(for=`${formKey}-start-state`) Start state
+          select.form-select(id=`${formKey}-start-state` name="startState")
+            each option in stateOptions
+              option(value=option.value selected=selectedData.startState === option.value)= option.label
+        .col-md-4
+          label.form-label(for=`${formKey}-target-state`) Target state
+          select.form-select(id=`${formKey}-target-state` name="targetState")
+            each option in stateOptions
+              option(value=option.value selected=selectedData.targetState === option.value)= option.label
+        .col-md-4.d-flex.align-items-end
+          .form-check.mb-2
+            input.form-check-input(type="checkbox" id=`${formKey}-show-cool-button` name="showCoolButton" checked=selectedData.showCoolButton)
+            label.form-check-label(for=`${formKey}-show-cool-button`) Show cool button
+
 block styles
   link(rel="stylesheet", href="/css/admin-learning.css")
 
@@ -32,6 +165,7 @@ block content
   - const cancelTopicHref = selectedTopicContextId ? `/admin/learning?topicId=${selectedTopicContextId}` : '/admin/learning';
   - const cancelSubtopicHref = selectedTopicContextId || selectedSubtopicContextId ? `/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId || ''}` : '/admin/learning';
   - const cancelItemHref = selectedSubtopicContextId ? `/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId}&itemId=${selectedItemContextId || ''}` : '/admin/learning';
+  - const cancelTemplateHref = selectedTemplateProfileContextId ? `/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId || ''}&itemId=${selectedItemContextId || ''}&templateProfileId=${selectedTemplateProfileContextId}` : '/admin/learning';
   .container.py-4.learning-admin
     .d-flex.flex-column.flex-xl-row.justify-content-between.align-items-xl-center.gap-3.mb-4
       div
@@ -55,6 +189,7 @@ block content
           class=!selectedSubtopicContextId ? 'disabled' : ''
           aria-disabled=!selectedSubtopicContextId ? 'true' : 'false'
         ) New item
+        a.btn.btn-outline-primary(href=`/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId || ''}&itemId=${selectedItemContextId || ''}&newTemplate=1`) New template
         button.btn.btn-outline-secondary(type="button" data-bs-toggle="modal" data-bs-target="#svgUploadModal") Upload SVG art
 
     if successMessage
@@ -131,6 +266,30 @@ block content
             .learning-admin__quick-actions.mt-3
               button.btn.btn-outline-secondary(type="button" data-bs-toggle="modal" data-bs-target="#svgUploadModal") Upload another SVG
               a.btn.btn-outline-primary(href="/admin/learning/users") View learner progress
+
+        .card.mt-4
+          .card-body
+            .learning-admin__card-title-row.mb-3
+              div
+                h2.h5.mb-1 Template profiles
+                p.learning-admin__hint.mb-0 Save reusable lesson presets in the database, then apply them to new items.
+              a.btn.btn-sm.btn-primary(href=`/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId || ''}&itemId=${selectedItemContextId || ''}&newTemplate=1`) New template
+            if templateProfiles && templateProfiles.length
+              .learning-admin__template-grid
+                each profile in templateProfiles
+                  .learning-admin__template-card
+                    .learning-admin__card-title-row.mb-2
+                      div
+                        h3.h6.mb-1= profile.title
+                        if profile.description
+                          p.learning-admin__hint.mb-0= profile.description
+                      a.btn.btn-sm.btn-outline-secondary(href=`/admin/learning?topicId=${selectedTopicContextId || ''}&subtopicId=${selectedSubtopicContextId || ''}&itemId=${selectedItemContextId || ''}&templateProfileId=${profile._id}`) Edit
+                    .learning-admin__topic-meta
+                      span.badge.text-bg-secondary= profile.templateTypeLabel
+                      if profile.defaultItemTitle
+                        span= `Default title: ${profile.defaultItemTitle}`
+            else
+              .learning-admin__empty Create a template profile to reuse item settings across topics.
 
       .col-xl-8
         .row.g-4
@@ -311,7 +470,7 @@ block content
                       code= selectedItem.stableId
                     if selectionState.creatingItem
                       a.btn.btn-sm.btn-outline-secondary(href=cancelItemHref) Cancel new item
-                form(method="post" action="/admin/learning/items/save")
+                form(method="post" action="/admin/learning/items/save" data-template-form-root="item")
                   input(type="hidden" name="itemId" value=selectedItem._id)
                   input(type="hidden" name="topicId" value=selectedTopicContextId)
                   .row.g-3
@@ -332,14 +491,22 @@ block content
                     .col-md-6
                       label.form-label(for="item-title") Title
                       input#item-title.form-control(type="text" name="title" value=selectedItem.title required)
+                    .col-md-6
+                      label.form-label(for="item-template-profile-select") Saved template profile
+                      .input-group
+                        select#item-template-profile-select.form-select(data-template-profile-select)
+                          option(value="") Choose a saved profile
+                          each profile in templateProfileOptions
+                            option(value=profile.value)= profile.label
+                        button.btn.btn-outline-secondary(type="button" data-template-profile-apply) Apply profile
                     .col-md-3
-                      label.form-label(for="templateTypeSelect") Template
-                      select#templateTypeSelect.form-select(name="templateType")
+                      label.form-label(for="item-template-type") Template
+                      select#item-template-type.form-select(name="templateType" data-template-select)
                         each template in templateOptions
                           option(value=template.value selected=selectedItem.templateType === template.value)= template.label
                     .col-md-3
-                      label.form-label(for="learningPointsInput") Stars
-                      input#learningPointsInput.form-control(type="number" min="0" max="10" name="points" value=selectedItem.points)
+                      label.form-label(for="item-learning-points") Stars
+                      input#item-learning-points.form-control(type="number" min="0" max="10" name="points" value=selectedItem.points data-template-points)
                     .col-12
                       label.form-label(for="item-prompt") Prompt
                       textarea#item-prompt.form-control(name="prompt" rows="2")= selectedItem.prompt
@@ -349,117 +516,7 @@ block content
                     .col-12
                       label.form-label(for="item-blurb") Card blurb
                       textarea#item-blurb.form-control(name="blurb" rows="2")= selectedItem.blurb
-
-                    .col-12(data-template-section="scene")
-                      .admin-template-box
-                        h3.h6.mb-2 Scene settings
-                        p.learning-admin__hint.mb-3 The scene panel now uses the dark graphite palette so labels stay readable while editing.
-                        .row.g-3
-                          .col-md-4
-                            label.form-label(for="scene-type") Scene type
-                            select#scene-type.form-select(name="sceneType")
-                              each scene in sceneOptions
-                                option(value=scene.value selected=selectedItem.sceneType === scene.value)= scene.label
-                          .col-md-4
-                            label.form-label(for="scene-slot-count") Slot count
-                            input#scene-slot-count.form-control(type="number" min="2" max="6" name="sceneSlotCount" value=selectedItem.sceneSlotCount)
-                          .col-md-4
-                            label.form-label(for="scene-pieces") Pieces CSV
-                            input#scene-pieces.form-control(type="text" name="scenePieces" value=selectedItem.scenePieces placeholder="H, H, O")
-                          .col-12
-                            label.form-label(for="scene-body-text") Body text
-                            textarea#scene-body-text.form-control(name="sceneBodyText" rows="2")= selectedItem.sceneBodyText
-                          .col-md-6
-                            label.form-label(for="scene-hint-text") Hint text
-                            textarea#scene-hint-text.form-control(name="sceneHintText" rows="2")= selectedItem.sceneHintText
-                          .col-md-6
-                            label.form-label(for="scene-example-text") Example text
-                            textarea#scene-example-text.form-control(name="sceneExampleText" rows="2")= selectedItem.sceneExampleText
-
-                    .col-12(data-template-section="single_choice")
-                      .admin-template-box
-                        h3.h6.mb-2 Single-choice options
-                        p.learning-admin__hint.mb-3 Pick built-in art values from the library button if you want to reuse uploaded SVGs.
-                        - const choiceOptions = selectedItem.choiceOptions || []
-                        each opt, index in choiceOptions
-                          - const optNumber = index + 1
-                          - const artKindId = `choice-option-${optNumber}-art-kind`
-                          - const artValueId = `choice-option-${optNumber}-art-value`
-                          .row.g-3.mb-3
-                            .col-md-2
-                              label.form-label(for=`choice-option-${optNumber}-key`)= `Key ${optNumber}`
-                              input.form-control(type="text" id=`choice-option-${optNumber}-key` name=`choiceOption${optNumber}Key` value=opt.key)
-                            .col-md-3
-                              label.form-label(for=`choice-option-${optNumber}-label`)= `Label ${optNumber}`
-                              input.form-control(type="text" id=`choice-option-${optNumber}-label` name=`choiceOption${optNumber}Label` value=opt.label)
-                            div(class="col-md-3")
-                              label.form-label(for=artKindId) Art kind
-                              select.form-select(id=artKindId name=`choiceOption${optNumber}ArtKind`)
-                                each option in artKindOptions
-                                  option(value=option.value selected=opt.artKind === option.value)= option.label
-                            div(class="col-md-4")
-                              label.form-label(for=artValueId) Art value
-                              .input-group
-                                input.form-control(type="text" id=artValueId name=`choiceOption${optNumber}ArtValue` value=opt.artValue)
-                                button.btn.btn-outline-secondary(
-                                  type="button"
-                                  data-bs-toggle="modal"
-                                  data-bs-target="#artPickerModal"
-                                  data-art-picker-target=`#${artValueId}`
-                                  data-art-kind-target=`#${artKindId}`
-                                  data-art-label=`Choice ${optNumber} art value`
-                                ) Library
-                        .row.g-3
-                          .col-md-4
-                            label.form-label(for="correct-option-key") Correct option key
-                            input#correct-option-key.form-control(type="text" name="correctOptionKey" value=selectedItem.correctOptionKey)
-
-                    .col-12(data-template-section="count_target")
-                      .admin-template-box
-                        h3.h6.mb-2 Counting settings
-                        .row.g-3
-                          .col-md-4
-                            label.form-label(for="target-count") Target count
-                            input#target-count.form-control(type="number" min="0" max="30" name="targetCount" value=selectedItem.targetCount)
-                          .col-md-4
-                            label.form-label(for="max-count") Max count
-                            input#max-count.form-control(type="number" min="1" max="40" name="maxCount" value=selectedItem.maxCount)
-                          .col-md-4
-                            label.form-label(for="counter-label") Counter label
-                            input#counter-label.form-control(type="text" name="counterLabel" value=selectedItem.counterLabel)
-
-                    .col-12(data-template-section="builder_sequence")
-                      .admin-template-box
-                        h3.h6.mb-2 Builder settings
-                        .row.g-3
-                          .col-md-4
-                            label.form-label(for="builder-slot-count") Slot count
-                            input#builder-slot-count.form-control(type="number" min="2" max="6" name="builderSlotCount" value=selectedItem.builderSlotCount)
-                          .col-md-8
-                            label.form-label(for="builder-pieces") Pieces CSV
-                            input#builder-pieces.form-control(type="text" name="builderPieces" value=selectedItem.builderPieces placeholder="H, H, O")
-                          .col-12
-                            label.form-label(for="builder-target-sequence") Target sequence CSV
-                            input#builder-target-sequence.form-control(type="text" name="builderTargetSequence" value=selectedItem.builderTargetSequence placeholder="H, O, H")
-
-                    .col-12(data-template-section="state_change")
-                      .admin-template-box
-                        h3.h6.mb-2 State-change settings
-                        .row.g-3
-                          .col-md-4
-                            label.form-label(for="start-state") Start state
-                            select#start-state.form-select(name="startState")
-                              each option in stateOptions
-                                option(value=option.value selected=selectedItem.startState === option.value)= option.label
-                          .col-md-4
-                            label.form-label(for="target-state") Target state
-                            select#target-state.form-select(name="targetState")
-                              each option in stateOptions
-                                option(value=option.value selected=selectedItem.targetState === option.value)= option.label
-                          .col-md-4.d-flex.align-items-end
-                            .form-check.mb-2
-                              input#show-cool-button.form-check-input(type="checkbox" name="showCoolButton" checked=selectedItem.showCoolButton)
-                              label.form-check-label(for="show-cool-button") Show cool button
+                    +learningTemplateSections('item', selectedItem)
 
                     .col-md-6
                       label.form-label(for="good-feedback") Good feedback
@@ -469,11 +526,79 @@ block content
                       textarea#bad-feedback.form-control(name="badFeedback" rows="2")= selectedItem.badFeedback
                   .d-flex.flex-wrap.gap-2.mt-3
                     button.btn.btn-primary(type="submit")= selectionState.creatingItem ? 'Create item' : 'Save item'
+                    button.btn.btn-outline-secondary(type="button" data-copy-item-to-template) Copy item into template editor
                 if selectedItem._id && !selectionState.creatingItem
                   form.mt-3(method="post" action="/admin/learning/items/delete")
                     input(type="hidden" name="subtopicId" value=selectedItem.subtopicId)
                     input(type="hidden" name="itemId" value=selectedItem._id)
                     button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this item?") Delete item
+
+          .col-12
+            .card
+              .card-body
+                .learning-admin__card-title-row.mb-3
+                  div
+                    h2.h5.mb-1= selectionState.creatingTemplate ? 'Create template profile' : 'Edit template profile'
+                    p.learning-admin__hint.mb-0 Template profiles are saved in MongoDB and can be applied to items as reusable presets.
+                  .learning-admin__card-actions
+                    if selectedTemplateProfile.stableId
+                      code= selectedTemplateProfile.stableId
+                    if selectionState.creatingTemplate
+                      a.btn.btn-sm.btn-outline-secondary(href=cancelTemplateHref) Cancel new template
+                form(method="post" action="/admin/learning/templates/save" data-template-form-root="template-profile")
+                  input(type="hidden" name="templateProfileId" value=selectedTemplateProfile._id)
+                  input(type="hidden" name="topicContextId" value=selectedTopicContextId)
+                  input(type="hidden" name="subtopicContextId" value=selectedSubtopicContextId)
+                  input(type="hidden" name="itemContextId" value=selectedItemContextId)
+                  .row.g-3
+                    .col-md-6
+                      label.form-label(for="template-profile-title") Profile name
+                      input#template-profile-title.form-control(type="text" name="title" value=selectedTemplateProfile.title required)
+                    .col-md-3
+                      label.form-label(for="template-profile-slug") Slug
+                      input#template-profile-slug.form-control(type="text" name="slug" value=selectedTemplateProfile.slug)
+                    .col-md-3
+                      label.form-label(for="template-profile-order") Order
+                      input#template-profile-order.form-control(type="number" min="0" name="order" value=selectedTemplateProfile.order)
+                    .col-md-6
+                      label.form-label(for="template-profile-default-item-title") Default item title
+                      input#template-profile-default-item-title.form-control(type="text" name="defaultItemTitle" value=selectedTemplateProfile.defaultItemTitle placeholder="Count the Clouds")
+                    .col-md-3
+                      label.form-label(for="template-profile-type") Template
+                      select#template-profile-type.form-select(name="templateType" data-template-select)
+                        each template in templateOptions
+                          option(value=template.value selected=selectedTemplateProfile.templateType === template.value)= template.label
+                    .col-md-3
+                      label.form-label(for="template-profile-points") Default stars
+                      input#template-profile-points.form-control(type="number" min="0" max="10" name="points" value=selectedTemplateProfile.points data-template-points)
+                    .col-12
+                      label.form-label(for="template-profile-description") Description
+                      textarea#template-profile-description.form-control(name="description" rows="2")= selectedTemplateProfile.description
+                    .col-12
+                      label.form-label(for="template-profile-prompt") Default prompt
+                      textarea#template-profile-prompt.form-control(name="prompt" rows="2")= selectedTemplateProfile.prompt
+                    .col-md-6
+                      label.form-label(for="template-profile-helper") Default helper text
+                      textarea#template-profile-helper.form-control(name="helperText" rows="2")= selectedTemplateProfile.helperText
+                    .col-md-6
+                      label.form-label(for="template-profile-blurb") Default card blurb
+                      textarea#template-profile-blurb.form-control(name="blurb" rows="2")= selectedTemplateProfile.blurb
+                    +learningTemplateSections('template-profile', selectedTemplateProfile)
+                    .col-md-6
+                      label.form-label(for="template-profile-good-feedback") Good feedback
+                      textarea#template-profile-good-feedback.form-control(name="goodFeedback" rows="2")= selectedTemplateProfile.goodFeedback
+                    .col-md-6
+                      label.form-label(for="template-profile-bad-feedback") Bad feedback
+                      textarea#template-profile-bad-feedback.form-control(name="badFeedback" rows="2")= selectedTemplateProfile.badFeedback
+                  .d-flex.flex-wrap.gap-2.mt-3
+                    button.btn.btn-primary(type="submit")= selectionState.creatingTemplate ? 'Create template profile' : 'Save template profile'
+                if selectedTemplateProfile._id && !selectionState.creatingTemplate
+                  form.mt-3(method="post" action="/admin/learning/templates/delete")
+                    input(type="hidden" name="templateProfileId" value=selectedTemplateProfile._id)
+                    input(type="hidden" name="topicContextId" value=selectedTopicContextId)
+                    input(type="hidden" name="subtopicContextId" value=selectedSubtopicContextId)
+                    input(type="hidden" name="itemContextId" value=selectedItemContextId)
+                    button.btn.btn-outline-danger(type="submit" data-confirm-message="Delete this template profile?") Delete template profile
 
     .modal.fade#artPickerModal(tabindex="-1" aria-labelledby="artPickerModalLabel" aria-hidden="true")
       .modal-dialog.modal-xl.modal-dialog-scrollable
@@ -551,6 +676,8 @@ block content
             .modal-footer
               button.btn.btn-outline-secondary(type="button" data-bs-dismiss="modal") Cancel
               button.btn.btn-primary(type="submit") Save SVG art
+
+    script(type="application/json" id="learning-template-profiles-json")!= JSON.stringify(templateProfilesForClient || []).replace(/</g, '\\u003c')
 
 block script
   script(src="/js/admin_learning.js", defer)

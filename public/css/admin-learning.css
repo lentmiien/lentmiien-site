@@ -277,6 +277,7 @@
 }
 
 .learning-admin__art-grid,
+.learning-admin__template-grid,
 .learning-admin__user-grid,
 .learning-admin__topic-grid,
 .learning-admin__stats-grid,
@@ -287,6 +288,10 @@
 
 .learning-admin__art-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.learning-admin__template-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .learning-admin__user-grid {
@@ -306,6 +311,7 @@
 }
 
 .learning-admin__stat-card,
+.learning-admin__template-card,
 .learning-admin__user-card,
 .learning-admin__topic-card,
 .learning-admin__reward-card,

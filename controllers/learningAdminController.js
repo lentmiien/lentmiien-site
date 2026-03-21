@@ -60,9 +60,11 @@ function dashboardSelectionFromQuery(query) {
     selectedTopicId: typeof query.topicId === 'string' ? query.topicId : '',
     selectedSubtopicId: typeof query.subtopicId === 'string' ? query.subtopicId : '',
     selectedItemId: typeof query.itemId === 'string' ? query.itemId : '',
+    selectedTemplateProfileId: typeof query.templateProfileId === 'string' ? query.templateProfileId : '',
     creatingTopic: parseFlag(query.newTopic),
     creatingSubtopic: parseFlag(query.newSubtopic),
     creatingItem: parseFlag(query.newItem),
+    creatingTemplate: parseFlag(query.newTemplate),
   };
 }
 
@@ -169,6 +171,36 @@ exports.save_item = async (req, res) => {
   }
 };
 
+exports.save_template_profile = async (req, res) => {
+  try {
+    const profile = await learningService.saveTemplateProfileFromForm(req.body, req.user.name);
+    return res.redirect(buildAdminPath({
+      topicId: req.body.topicContextId,
+      subtopicId: req.body.subtopicContextId,
+      itemId: req.body.itemContextId,
+      templateProfileId: String(profile._id),
+      success: 'Template profile saved.',
+    }));
+  } catch (error) {
+    logger.warning('Unable to save learning template profile', {
+      category: 'learning_admin',
+      metadata: {
+        userId: String(req.user?._id || ''),
+        error: error.message,
+      },
+    });
+
+    return res.redirect(buildAdminPath({
+      topicId: req.body.topicContextId,
+      subtopicId: req.body.subtopicContextId,
+      itemId: req.body.itemContextId,
+      templateProfileId: req.body.templateProfileId,
+      newTemplate: !req.body.templateProfileId ? '1' : '',
+      error: error.message || 'Unable to save template profile.',
+    }));
+  }
+};
+
 exports.delete_topic = async (req, res) => {
   try {
     await learningService.deleteTopicById(req.body.topicId);
@@ -236,6 +268,35 @@ exports.delete_item = async (req, res) => {
       subtopicId: req.body.subtopicId,
       itemId: req.body.itemId,
       error: error.message || 'Unable to delete item.',
+    }));
+  }
+};
+
+exports.delete_template_profile = async (req, res) => {
+  try {
+    await learningService.deleteTemplateProfileById(req.body.templateProfileId);
+    return res.redirect(buildAdminPath({
+      topicId: req.body.topicContextId,
+      subtopicId: req.body.subtopicContextId,
+      itemId: req.body.itemContextId,
+      success: 'Template profile deleted.',
+    }));
+  } catch (error) {
+    logger.warning('Unable to delete learning template profile', {
+      category: 'learning_admin',
+      metadata: {
+        userId: String(req.user?._id || ''),
+        templateProfileId: req.body.templateProfileId,
+        error: error.message,
+      },
+    });
+
+    return res.redirect(buildAdminPath({
+      topicId: req.body.topicContextId,
+      subtopicId: req.body.subtopicContextId,
+      itemId: req.body.itemContextId,
+      templateProfileId: req.body.templateProfileId,
+      error: error.message || 'Unable to delete template profile.',
     }));
   }
 };

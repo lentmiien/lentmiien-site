@@ -56,6 +56,42 @@
       .replace(/'/g, '&#39;');
   }
 
+  function shuffleCopy(entries = []) {
+    const shuffled = [...entries];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled;
+  }
+
+  function normalizeTokenText(value, maxLength = 32) {
+    return String(value || '').trim().slice(0, maxLength);
+  }
+
+  function prepareItemForPlayback(item) {
+    const prepared = {
+      ...item,
+      config: { ...(item?.config || {}) },
+    };
+
+    if (prepared.templateType === 'single_choice') {
+      const options = Array.isArray(prepared.config.options) ? prepared.config.options : [];
+      prepared.displayOptions = prepared.config.shuffleOptions === false ? [...options] : shuffleCopy(options);
+    }
+
+    if (prepared.templateType === 'builder_sequence') {
+      const pieces = Array.isArray(prepared.config.pieces) ? prepared.config.pieces : [];
+      prepared.displayPieces = prepared.config.shufflePieces === false ? [...pieces] : shuffleCopy(pieces);
+    }
+
+    return prepared;
+  }
+
+  function prepareItemsForPlayback(items) {
+    return Array.isArray(items) ? items.map((item) => prepareItemForPlayback(item)) : [];
+  }
+
   function announce(message) {
     if (srLive) {
       srLive.textContent = message;
@@ -396,6 +432,39 @@
     `;
   }
 
+  const builtinArtEmojiFallbacks = {
+    mascot: '🐱',
+    chemistry: '🧪',
+    atom: '⚛️',
+    molecule: '💧',
+    mixture: '✨',
+    states: '☁️',
+    water: '💧',
+    weather: '⛅',
+    cloud: '☁️',
+    sun: '☀️',
+    rain: '🌧️',
+    snow: '❄️',
+    wind: '💨',
+    storm: '⛈️',
+    lightning: '⚡',
+    rainbow: '🌈',
+    star: '⭐',
+    colors: '🎨',
+    animals: '🐾',
+    space: '🚀',
+    numbers: '🔢',
+    solid: '🧊',
+    liquid: '💦',
+    gas: '☁️',
+    'solid-box': '🧊',
+    'liquid-box': '💦',
+    'gas-box': '☁️',
+    'molecule-h2o': '💧',
+    'molecule-co2': '🫧',
+    'molecule-o2': '🫧',
+  };
+
   function renderBuiltinArt(name, variant = 'option') {
     if (state.builtinArtMap && state.builtinArtMap[name]) {
       return state.builtinArtMap[name];
@@ -431,7 +500,7 @@
       case 'molecule-o2':
         return moleculeSvg(['O', 'O', '_']);
       default:
-        return `<div class="emojiArt">✨</div>`;
+        return `<div class="emojiArt">${escapeHtml(builtinArtEmojiFallbacks[name] || '✨')}</div>`;
     }
   }
 
@@ -452,14 +521,7 @@
   }
 
   function renderRewardArt() {
-    const label = (state.subtopic.rewardLabel || '').toLowerCase();
-    if (label.includes('atom')) {
-      return stickerAtom(state.theme.accentColor || '#ffb703');
-    }
-    if (label.includes('particle') || label.includes('state')) {
-      return stickerStates(state.theme.accentColor || '#a78bfa');
-    }
-    return stickerWater(state.theme.accentColor || '#38bdf8');
+    return renderArt(state.subtopic.rewardArt, 'sticker');
   }
 
   function mountAtomWidget(mount, { accent = '#ffb703', count = 0, max = 8 } = {}) {
@@ -528,10 +590,111 @@
     };
   }
 
-  function mountTapBuilder(mount, { pieces = ['H', 'H', 'O'], slots = 3, accent = '#ffb703', onChange } = {}) {
+  function renderCounterToken(counterArt, label) {
+    if (counterArt && counterArt.value) {
+      return renderArt(counterArt, 'option');
+    }
+
+    return `<div class="countTokenText">${escapeHtml(normalizeTokenText(label, 12) || '•')}</div>`;
+  }
+
+  function mountCountWidget(mount, {
+    displayMode = 'tokens',
+    accent = '#ffb703',
+    count = 0,
+    max = 8,
+    counterArt = null,
+    label = 'Count',
+  } = {}) {
+    if (displayMode === 'atom') {
+      return mountAtomWidget(mount, { accent, count, max });
+    }
+
+    mount.innerHTML = `
+      <div class="countTokenBoard">
+        <div class="countTokenGrid" id="count-token-grid"></div>
+      </div>
+    `;
+
+    const grid = $('#count-token-grid', mount);
+    let current = clamp(count, 0, max);
+
+    const redraw = () => {
+      if (!grid) {
+        return;
+      }
+
+      if (!current) {
+        grid.innerHTML = `
+          <div class="countTokenEmpty">
+            Add some ${escapeHtml(normalizeTokenText(label, 16) || 'items')} to begin.
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = Array.from({ length: current }).map(() => `
+        <div class="countToken" style="--tokenAccent:${accent}">
+          ${renderCounterToken(counterArt, label)}
+        </div>
+      `).join('');
+    };
+
+    redraw();
+
+    return {
+      getCount: () => current,
+      setCount: (next) => {
+        current = clamp(next, 0, max);
+        redraw();
+      },
+      add: () => {
+        current = clamp(current + 1, 0, max);
+        redraw();
+      },
+      remove: () => {
+        current = clamp(current - 1, 0, max);
+        redraw();
+      },
+      clear: () => {
+        current = 0;
+        redraw();
+      },
+    };
+  }
+
+  function createBuilderPiece(value, index) {
+    const label = normalizeTokenText(value, 32);
+    return {
+      value: label,
+      label,
+      index,
+      used: false,
+    };
+  }
+
+  function renderSequencePieceVisual(piece, displayMode = 'tokens', variant = 'piece') {
+    const label = normalizeTokenText(piece?.label || piece, 32);
+    if (displayMode === 'atoms' && /^[A-Za-z0-9+-]{1,3}$/.test(label)) {
+      const size = variant === 'slot' ? 64 : variant === 'preview' ? 48 : 52;
+      return svgAtomBall(label, size);
+    }
+
+    return `<div class="tokenChip tokenChip--${escapeHtml(variant)}">${escapeHtml(label || '?')}</div>`;
+  }
+
+  function mountTapBuilder(mount, {
+    pieces = ['H', 'H', 'O'],
+    slots = 3,
+    accent = '#ffb703',
+    displayMode = 'tokens',
+    onChange,
+  } = {}) {
     mount.style.setProperty('--accent', accent);
 
-    const pieceObjects = pieces.map((symbol, index) => ({ symbol, index, used: false }));
+    const pieceObjects = pieces
+      .map((value, index) => createBuilderPiece(value, index))
+      .filter((piece) => piece.label);
     const slotToPiece = Array.from({ length: slots }, () => null);
     let selectedPieceIndex = null;
 
@@ -540,19 +703,21 @@
         <div class="builderPieces" id="pieces"></div>
         <div class="builderSlots" id="slots"></div>
         <div class="builderPreview">
-          <svg viewBox="0 0 320 120" id="previewSvg" aria-label="Molecule preview"></svg>
+          <div class="builderPreviewTrack" id="previewTrack" aria-label="Sequence preview"></div>
         </div>
       </div>
     `;
 
     const piecesEl = $('#pieces', mount);
     const slotsEl = $('#slots', mount);
-    const previewSvg = $('#previewSvg', mount);
+    const previewTrack = $('#previewTrack', mount);
 
-    piecesEl.innerHTML = pieceObjects.map((piece) => `
-      <button class="pieceBtn" data-piece="${piece.index}" aria-label="Atom ${escapeHtml(piece.symbol)}">
-        ${svgAtomBall(piece.symbol, 52)}
-        <div class="pieceLbl">${escapeHtml(piece.symbol)}</div>
+    piecesEl.innerHTML = pieceObjects.map((piece, pieceIndex) => `
+      <button class="pieceBtn" data-piece="${pieceIndex}" aria-label="Piece ${escapeHtml(piece.label)}">
+        <div class="pieceVisual">
+          ${renderSequencePieceVisual(piece, displayMode, 'piece')}
+        </div>
+        <div class="pieceLbl">${escapeHtml(piece.label)}</div>
       </button>
     `).join('');
 
@@ -565,36 +730,25 @@
     const pieceButtons = $$('button.pieceBtn', mount);
     const slotButtons = $$('button.slotBtn', mount);
 
-    const getSlots = () => slotToPiece.map((pieceIndex) => (pieceIndex == null ? null : pieceObjects[pieceIndex].symbol));
+    const getSlots = () => slotToPiece.map((pieceIndex) => (pieceIndex == null ? null : pieceObjects[pieceIndex].value));
 
     const redrawPreview = () => {
-      const symbols = getSlots();
-      const positions = [
-        { x: 80, y: 60 },
-        { x: 160, y: 60 },
-        { x: 240, y: 60 },
-      ];
-      const lines = [];
-      if (symbols[0] && symbols[1]) {
-        lines.push([0, 1]);
-      }
-      if (symbols[1] && symbols[2]) {
-        lines.push([1, 2]);
+      if (!previewTrack) {
+        return;
       }
 
-      previewSvg.innerHTML = `
-        <rect x="10" y="10" width="300" height="100" rx="20" fill="rgba(255,255,255,0.55)" stroke="rgba(2,6,23,0.10)" stroke-width="3"></rect>
-        ${lines.map(([fromIndex, toIndex]) => `<line x1="${positions[fromIndex].x}" y1="${positions[fromIndex].y}" x2="${positions[toIndex].x}" y2="${positions[toIndex].y}" stroke="rgba(2,6,23,0.35)" stroke-width="8" stroke-linecap="round"></line>`).join('')}
-        ${symbols.map((symbol, index) => {
-          if (!symbol) {
-            return '';
-          }
-          return `
-            <circle cx="${positions[index].x}" cy="${positions[index].y}" r="22" fill="${atomColor(symbol)}" stroke="rgba(2,6,23,0.22)" stroke-width="5"></circle>
-            <text x="${positions[index].x}" y="${positions[index].y + 8}" text-anchor="middle" font-size="22" font-weight="950" fill="rgba(2,6,23,0.75)">${escapeHtml(symbol)}</text>
-          `;
-        }).join('')}
-      `;
+      previewTrack.innerHTML = Array.from({ length: slots }).map((_, index) => {
+        const pieceIndex = slotToPiece[index];
+        const piece = pieceIndex == null ? null : pieceObjects[pieceIndex];
+        return `
+          <div class="builderPreviewNode ${piece ? 'filled' : ''}">
+            ${piece
+              ? renderSequencePieceVisual(piece, displayMode, 'preview')
+              : '<div class="builderPreviewPlaceholder">?</div>'}
+          </div>
+          ${index < slots - 1 ? '<div class="builderPreviewLink"></div>' : ''}
+        `;
+      }).join('');
     };
 
     const redrawUI = () => {
@@ -612,8 +766,8 @@
         const filled = pieceIndex != null;
         button.classList.toggle('filled', filled);
         button.innerHTML = filled
-          ? svgAtomBall(pieceObjects[pieceIndex].symbol, 64)
-          : '<div style="font-weight:950;color:rgba(2,6,23,0.35);">?</div>';
+          ? renderSequencePieceVisual(pieceObjects[pieceIndex], displayMode, 'slot')
+          : '<div class="slotPlaceholder">?</div>';
       });
 
       redrawPreview();
@@ -626,7 +780,7 @@
       button.addEventListener('click', () => {
         soundTap();
         const pieceIndex = Number(button.dataset.piece);
-        if (pieceObjects[pieceIndex].used) {
+        if (!pieceObjects[pieceIndex] || pieceObjects[pieceIndex].used) {
           return;
         }
         selectedPieceIndex = selectedPieceIndex === pieceIndex ? null : pieceIndex;
@@ -862,6 +1016,8 @@
     }
   }
 
+  state.items = prepareItemsForPlayback(state.items);
+
   function normalizeProgress(progress) {
     return {
       status: progress.status || 'not_started',
@@ -982,6 +1138,7 @@
     try {
       const result = await postJson(state.paths.restart, {});
       state.progress = normalizeProgress(result.progress || {});
+      state.items = prepareItemsForPlayback(state.items);
       state.pendingProgress = null;
       state.pendingAdvanceIndex = null;
       state.currentIndex = clamp(state.progress.currentItemIndex || 0, 0, state.items.length);
@@ -1107,6 +1264,7 @@
       accent: state.theme.accentColor || '#38bdf8',
       pieces: item.config.pieces || ['H', 'H', 'O', 'O', 'C'],
       slots: item.config.slotCount || 3,
+      displayMode: 'atoms',
       onChange: (symbols) => {
         const joined = symbols.map((symbol) => symbol || '_').join('');
         if (joined === 'HOH') {
@@ -1250,6 +1408,7 @@
   }
 
   function renderSingleChoice(item, body, foot) {
+    const options = Array.isArray(item.displayOptions) ? item.displayOptions : (item.config.options || []);
     body.innerHTML = `
       <div class="quizHead">
         <div class="quizProgress">Question ${state.currentIndex + 1} / ${state.items.length}</div>
@@ -1260,7 +1419,7 @@
         ${item.helperText ? `<div class="speechText">${escapeHtml(item.helperText)}</div>` : ''}
       </div>
       <div class="optionGrid">
-        ${(item.config.options || []).map((option) => `
+        ${options.map((option) => `
           <button class="optionBtn" data-key="${escapeHtml(option.key)}">
             <div class="optSvg">${renderArt(option.art, 'option')}</div>
             <div class="optLabel">${escapeHtml(option.label)}</div>
@@ -1311,13 +1470,13 @@
         ${item.helperText ? `<div class="speechText">${escapeHtml(item.helperText)}</div>` : ''}
       </div>
       <div class="atomWidgetWrap" style="margin-top:14px;">
-        <div id="atomMount"></div>
+        <div id="countMount"></div>
         <div class="controls">
           <button class="btn" id="plus">+ ${escapeHtml(item.config.counterLabel || 'Count')}</button>
           <button class="btn secondary" id="minus">-</button>
           <button class="btn secondary" id="clear">Clear</button>
         </div>
-        <div class="bigNumber">Count: <span id="countValue">0</span></div>
+        <div class="bigNumber">${escapeHtml(item.config.counterLabel || 'Count')}: <span id="countValue">0</span></div>
         <div class="controls">
           <button class="btn" id="checkCount">Check</button>
         </div>
@@ -1325,10 +1484,13 @@
       <div class="feedback" id="feedback">Use the buttons, then tap check.</div>
     `;
 
-    const widget = mountAtomWidget($('#atomMount', body), {
+    const widget = mountCountWidget($('#countMount', body), {
+      displayMode: item.config.displayMode || 'tokens',
       accent: state.theme.accentColor || '#ffb703',
       count: 0,
       max: item.config.max || 8,
+      counterArt: item.config.counterArt || null,
+      label: item.config.counterLabel || 'Count',
     });
     const countValue = $('#countValue', body);
     const sync = () => {
@@ -1397,8 +1559,9 @@
 
     const builder = mountTapBuilder($('#builderMount', body), {
       accent: state.theme.accentColor || '#ffb703',
-      pieces: item.config.pieces || [],
+      pieces: item.displayPieces || item.config.pieces || [],
       slots: item.config.slots || 3,
+      displayMode: item.config.displayMode || 'tokens',
     });
 
     $('#resetBuilder', body).addEventListener('click', () => {

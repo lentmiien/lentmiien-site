@@ -88,6 +88,8 @@ router.post('/learning/subtopics/save', learningAdminController.save_subtopic);
 router.post('/learning/subtopics/delete', learningAdminController.delete_subtopic);
 router.post('/learning/items/save', learningAdminController.save_item);
 router.post('/learning/items/delete', learningAdminController.delete_item);
+router.post('/learning/templates/save', learningAdminController.save_template_profile);
+router.post('/learning/templates/delete', learningAdminController.delete_template_profile);
 router.get('/learning/art', learningAdminController.art_library);
 router.post('/learning/art/upload', handleLearningArtUpload);
 router.get('/learning/users', learningAdminController.users);
