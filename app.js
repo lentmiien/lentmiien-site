@@ -285,6 +285,7 @@ const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
 const shoppingListRouter = require('./routes/shopping_list');
 const bookmarkRouter = require('./routes/bookmarks');
+const clusterPlannerRouter = require('./routes/ai_cluster_planner');
 
 app.use('/', indexRouter);
 app.use('/api', isAuthenticated, apiRouter);
@@ -314,6 +315,7 @@ app.use('/quicknote', isAuthenticated, authorize("quicknote"), quicknoteRouter);
 app.use('/es', isAuthenticated, authorize("emergencystock"), esRouter);
 app.use('/receipt', isAuthenticated, authorize("receipt"), receiptRouter);
 app.use('/product', isAuthenticated, authorize("product"), productRouter);
+app.use('/ai-cluster-planner', isAuthenticated, authorize("test"), clusterPlannerRouter);
 app.use('/gallery', isAuthenticated, authorize("gallery"), galleryRouter);
 app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);

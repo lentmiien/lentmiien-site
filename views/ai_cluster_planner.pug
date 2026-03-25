@@ -1,0 +1,13 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/ai-cluster-planner.css')
+
+block content
+  .cluster-planner-shell
+    #cluster-planner-app.cluster-planner-app
+      .cluster-planner-loading
+        h1 Home AI Fabric Planner
+        p Loading planner state...
+    script(type='application/json', id='cluster-planner-bootstrap')!= clusterPlannerBootstrapJson
+    script(src='/js/ai-cluster-planner.js', defer)

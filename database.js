@@ -147,6 +147,10 @@ const LearningItem = require('./models/learning_item');
 const LearningProgress = require('./models/learning_progress');
 const LearningAttempt = require('./models/learning_attempt');
 const LearningArtAsset = require('./models/learning_art_asset');
+// AI cluster planner
+const ClusterInventoryItem = require('./models/cluster_inventory_item');
+const ClusterNodeType = require('./models/cluster_node_type');
+const ClusterHardwareCatalogItem = require('./models/cluster_hardware_catalog_item');
 
 // Export models
 module.exports = {
@@ -238,4 +242,7 @@ module.exports = {
   LearningProgress,
   LearningAttempt,
   LearningArtAsset,
+  ClusterInventoryItem,
+  ClusterNodeType,
+  ClusterHardwareCatalogItem,
 };
