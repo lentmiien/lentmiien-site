@@ -403,13 +403,19 @@
           <text x="44" y="54" class="svg-title">Home AI Fabric — conceptual layout</text>
           <text x="44" y="79" class="svg-sub">Solid nodes/links = near-term or current. Dashed nodes/links = future local expansion. Purple cloud = remote capacity / offsite services.</text>
 
-          <rect x="42" y="110" width="396" height="620" rx="22" class="svg-group-home"></rect>
+          <rect x="42" y="110" width="384" height="620" rx="22" class="svg-group-home"></rect>
           <text x="66" y="145" class="svg-group-label">Home / User Network</text>
-          <text x="66" y="168" class="svg-sub">Internet access, personal devices, shared LAN, and the normal home path</text>
+          <text x="66" y="168" class="svg-sub">
+            <tspan x="66" dy="0">Internet access, personal devices, shared LAN,</tspan>
+            <tspan x="66" dy="18">and the normal home path</tspan>
+          </text>
 
-          <rect x="500" y="110" width="898" height="620" rx="22" class="svg-group-ai"></rect>
-          <text x="525" y="145" class="svg-group-label">Private AI Fabric</text>
-          <text x="525" y="168" class="svg-sub">Compute, storage, orchestration, and direct east-west traffic</text>
+          <rect x="478" y="110" width="920" height="620" rx="22" class="svg-group-ai"></rect>
+          <text x="502" y="145" class="svg-group-label">Private AI Fabric</text>
+          <text x="502" y="168" class="svg-sub">
+            <tspan x="502" dy="0">Compute, storage, orchestration,</tspan>
+            <tspan x="502" dy="18">and direct east-west traffic</tspan>
+          </text>
 
           <path class="svg-cloud" d="M110 218
             c0 -28 22 -50 52 -50
@@ -424,57 +430,60 @@
           <text x="126" y="234" class="svg-node-label">Internet</text>
           <text x="120" y="254" class="svg-node-small">remote access / upstream</text>
 
-          <rect x="92" y="340" width="150" height="82" rx="18" class="svg-node"></rect>
-          <text x="121" y="372" class="svg-node-label">Home Router</text>
-          <text x="116" y="393" class="svg-node-small">normal LAN / internet edge</text>
+          <rect x="74" y="340" width="150" height="82" rx="18" class="svg-node"></rect>
+          <text x="149" y="372" text-anchor="middle" class="svg-node-label">Home Router</text>
+          <text x="149" y="393" text-anchor="middle" class="svg-node-small">normal LAN / internet edge</text>
 
-          <rect x="272" y="340" width="126" height="82" rx="18" class="svg-node"></rect>
-          <text x="300" y="372" class="svg-node-label">Devices</text>
-          <text x="293" y="393" class="svg-node-small">laptop / phone / browser</text>
+          <rect x="244" y="340" width="132" height="82" rx="18" class="svg-node"></rect>
+          <text x="310" y="372" text-anchor="middle" class="svg-node-label">Devices</text>
+          <text x="310" y="393" text-anchor="middle" class="svg-node-small">laptop / phone / browser</text>
 
-          <rect x="82" y="530" width="332" height="100" rx="18" class="svg-node"></rect>
-          <text x="115" y="568" class="svg-node-label">Home NAS / Shared Storage</text>
-          <text x="115" y="591" class="svg-node-small">authoritative data, backups, model archives</text>
-          <text x="115" y="610" class="svg-node-small">home access + optional AI-fabric path</text>
+          <rect x="72" y="530" width="334" height="100" rx="18" class="svg-node"></rect>
+          <text x="239" y="568" text-anchor="middle" class="svg-node-label">Home NAS / Shared Storage</text>
+          <text x="239" y="591" text-anchor="middle" class="svg-node-small">authoritative data, backups, model archives</text>
+          <text x="239" y="610" text-anchor="middle" class="svg-node-small">home access + optional AI-fabric path</text>
 
-          <rect x="432" y="298" width="180" height="126" rx="20" fill="url(#plannerG1Grad)" stroke="rgba(255,159,67,.55)" stroke-width="2.2"></rect>
-          <text x="486" y="338" class="svg-node-label">${escapeHtml(g1Short)}</text>
-          <text x="458" y="361" class="svg-node-small">Gateway / Control bridge</text>
-          <text x="455" y="382" class="svg-node-small">routing, queues, auth, metrics</text>
-          <text x="450" y="401" class="svg-node-small">dual-homed ingress boundary</text>
+          <text x="418" y="280" class="svg-sub">dual-homed bridge</text>
+          <rect x="406" y="292" width="180" height="126" rx="20" fill="url(#plannerG1Grad)" stroke="rgba(255,159,67,.55)" stroke-width="2.2"></rect>
+          <text x="496" y="332" text-anchor="middle" class="svg-node-label">${escapeHtml(g1Short)}</text>
+          <text x="496" y="356" text-anchor="middle" class="svg-node-small">
+            <tspan x="496" dy="0">Gateway / Control bridge</tspan>
+            <tspan x="496" dy="20">routing, queues, auth, metrics</tspan>
+            <tspan x="496" dy="20">dual-homed ingress boundary</tspan>
+          </text>
 
-          <rect x="448" y="472" width="150" height="84" rx="18" class="svg-node future"></rect>
-          <text x="500" y="504" class="svg-node-label">${escapeHtml(uShort)}</text>
-          <text x="470" y="527" class="svg-node-small">utility sidecar / helper tier</text>
+          <rect x="428" y="468" width="150" height="86" rx="18" class="svg-node future"></rect>
+          <text x="503" y="501" text-anchor="middle" class="svg-node-label">${escapeHtml(uShort)}</text>
+          <text x="503" y="524" text-anchor="middle" class="svg-node-small">utility sidecar / helper tier</text>
 
-          <rect x="832" y="220" width="200" height="88" rx="18" class="svg-node"></rect>
-          <text x="905" y="253" class="svg-node-label">${escapeHtml(fShort)}</text>
-          <text x="860" y="276" class="svg-node-small">AI fabric switch / fast LAN</text>
+          <rect x="810" y="220" width="210" height="88" rx="18" class="svg-node"></rect>
+          <text x="915" y="253" text-anchor="middle" class="svg-node-label">${escapeHtml(fShort)}</text>
+          <text x="915" y="276" text-anchor="middle" class="svg-node-small">AI fabric switch / fast LAN</text>
 
-          <rect x="560" y="360" width="190" height="98" rx="18" class="svg-node"></rect>
-          <text x="632" y="396" class="svg-node-label">${escapeHtml(sShort)}</text>
-          <text x="594" y="419" class="svg-node-small">interactive / low latency</text>
-          <text x="590" y="438" class="svg-node-small">chat / coding / fast tools</text>
+          <rect x="540" y="360" width="200" height="100" rx="18" class="svg-node"></rect>
+          <text x="640" y="396" text-anchor="middle" class="svg-node-label">${escapeHtml(sShort)}</text>
+          <text x="640" y="419" text-anchor="middle" class="svg-node-small">interactive / low latency</text>
+          <text x="640" y="438" text-anchor="middle" class="svg-node-small">chat / coding / fast tools</text>
 
-          <rect x="810" y="360" width="190" height="98" rx="18" class="svg-node"></rect>
-          <text x="882" y="396" class="svg-node-label">${escapeHtml(wShort)}</text>
-          <text x="854" y="419" class="svg-node-small">daily worker / throughput tier</text>
-          <text x="853" y="438" class="svg-node-small">inference / agents / pipelines</text>
+          <rect x="810" y="360" width="210" height="100" rx="18" class="svg-node"></rect>
+          <text x="915" y="396" text-anchor="middle" class="svg-node-label">${escapeHtml(wShort)}</text>
+          <text x="915" y="419" text-anchor="middle" class="svg-node-small">daily worker / throughput tier</text>
+          <text x="915" y="438" text-anchor="middle" class="svg-node-small">inference / agents / pipelines</text>
 
-          <rect x="1060" y="360" width="190" height="98" rx="18" class="svg-node future"></rect>
-          <text x="1130" y="396" class="svg-node-label">W2+</text>
-          <text x="1090" y="419" class="svg-node-small">future workers</text>
-          <text x="1082" y="438" class="svg-node-small">repeatable scale-out nodes</text>
+          <rect x="1082" y="360" width="170" height="100" rx="18" class="svg-node future"></rect>
+          <text x="1167" y="396" text-anchor="middle" class="svg-node-label">W2+</text>
+          <text x="1167" y="419" text-anchor="middle" class="svg-node-small">future workers</text>
+          <text x="1167" y="438" text-anchor="middle" class="svg-node-small">repeatable scale-out nodes</text>
 
-          <rect x="560" y="560" width="190" height="98" rx="18" class="svg-node"></rect>
-          <text x="632" y="596" class="svg-node-label">${escapeHtml(nShort)}</text>
-          <text x="602" y="619" class="svg-node-small">authoritative storage path</text>
-          <text x="594" y="638" class="svg-node-small">datasets / archives / artifacts</text>
+          <rect x="540" y="560" width="200" height="100" rx="18" class="svg-node"></rect>
+          <text x="640" y="596" text-anchor="middle" class="svg-node-label">${escapeHtml(nShort)}</text>
+          <text x="640" y="619" text-anchor="middle" class="svg-node-small">authoritative storage path</text>
+          <text x="640" y="638" text-anchor="middle" class="svg-node-small">datasets / archives / artifacts</text>
 
-          <rect x="810" y="560" width="190" height="98" rx="18" class="svg-node future"></rect>
-          <text x="872" y="596" class="svg-node-label">${escapeHtml(xShort)}</text>
-          <text x="839" y="619" class="svg-node-small">capacity role / giant-fit jobs</text>
-          <text x="848" y="638" class="svg-node-small">local later, cloud first now</text>
+          <rect x="810" y="560" width="210" height="100" rx="18" class="svg-node future"></rect>
+          <text x="915" y="596" text-anchor="middle" class="svg-node-label">${escapeHtml(xShort)}</text>
+          <text x="915" y="619" text-anchor="middle" class="svg-node-small">capacity role / giant-fit jobs</text>
+          <text x="915" y="638" text-anchor="middle" class="svg-node-small">local later, cloud first now</text>
 
           <path class="svg-cloud" d="M1160 560
             c0 -26 20 -47 47 -47
@@ -489,23 +498,20 @@
           <text x="1187" y="582" class="svg-node-label">External</text>
           <text x="1176" y="603" class="svg-node-small">X-cloud / offsite backup / burst</text>
 
-          <path d="M185 309 L167 340" class="svg-home-link"></path>
-          <path d="M242 381 L272 381" class="svg-home-link"></path>
-          <path d="M167 422 L167 530" class="svg-home-link"></path>
-          <path d="M242 381 C322 381 377 372 432 360" class="svg-home-link"></path>
-          <path d="M414 584 C470 584 510 609 560 609" class="svg-home-link"></path>
+          <path d="M150 309 L150 340" class="svg-home-link"></path>
+          <path d="M224 381 L244 381" class="svg-home-link"></path>
+          <path d="M149 422 L149 530" class="svg-home-link"></path>
+          <path d="M376 381 C388 381 396 372 406 364" class="svg-home-link"></path>
+          <path d="M406 580 C460 580 492 610 540 610" class="svg-home-link"></path>
 
-          <path d="M612 360 C688 318 762 286 832 264" class="svg-ai-link" marker-end="url(#plannerArrowA)"></path>
-          <path d="M522 424 L522 472" class="svg-future-link"></path>
-          <path d="M832 264 C760 304 722 326 690 360" class="svg-ai-link"></path>
-          <path d="M932 308 L932 360" class="svg-ai-link"></path>
-          <path d="M866 308 C788 390 718 500 654 560" class="svg-ai-link"></path>
-          <path d="M1000 409 L1060 409" class="svg-future-link"></path>
-          <path d="M905 458 L905 560" class="svg-future-link"></path>
-          <path d="M1000 609 C1085 609 1135 609 1180 609" class="svg-remote-link" marker-end="url(#plannerArrowB)"></path>
-          <path d="M612 330 C735 240 1035 226 1180 252" class="svg-remote-link" opacity=".58"></path>
-
-          <text x="432" y="290" class="svg-sub">dual-homed bridge</text>
+          <path d="M586 346 C650 320 720 292 810 264" class="svg-ai-link" marker-end="url(#plannerArrowA)"></path>
+          <path d="M496 418 L496 468" class="svg-future-link"></path>
+          <path d="M845 308 C780 326 720 344 676 360" class="svg-ai-link"></path>
+          <path d="M915 308 L915 360" class="svg-ai-link"></path>
+          <path d="M850 308 C790 392 720 500 665 560" class="svg-ai-link"></path>
+          <path d="M1020 410 L1082 410" class="svg-future-link"></path>
+          <path d="M915 460 L915 560" class="svg-future-link"></path>
+          <path d="M1020 610 C1086 610 1132 610 1178 610" class="svg-remote-link" marker-end="url(#plannerArrowB)"></path>
         </svg>
 
         <div class="legend">
