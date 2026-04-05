@@ -9,6 +9,8 @@ const DEFAULT_BASE_URL = 'http://192.168.0.20:8080';
 const MODELS_ENDPOINT = '/llm/models';
 const CHAT_ENDPOINT = '/llm/chat';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+const DEFAULT_MAX_TOOL_ROUNDS = 4;
+const GEMMA4_ESCAPE_TOKEN = '<|"|>';
 
 const normalizeBaseUrl = (value) => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -85,6 +87,8 @@ const loadImageToBase64 = (filename) => {
   const buffer = fs.readFileSync(filePath);
   return buffer.toString('base64');
 };
+
+const isGemma4Model = (value) => normalizeModelIdentifier(value).toLowerCase().startsWith('gemma4');
 
 const resolveContextPrompt = (conversation) => {
   if (!conversation) return '';
@@ -222,6 +226,60 @@ const buildChatCompletionMessages = (contextPrompt, messages, allowImages) => {
   return formatted;
 };
 
+const messageHasPayload = (message) => {
+  if (!message || typeof message !== 'object') return false;
+  if (typeof message.content === 'string' && message.content.trim().length > 0) return true;
+  if (typeof message.thinking === 'string' && message.thinking.trim().length > 0) return true;
+  if (Array.isArray(message.images) && message.images.length > 0) return true;
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) return true;
+  if (typeof message.tool_name === 'string' && message.tool_name.trim().length > 0) return true;
+  return false;
+};
+
+const limitMessagesToLastImage = (messages, maxImages = null) => {
+  if (!Array.isArray(messages)) return [];
+  if (maxImages === 0) {
+    return messages
+      .map((message) => {
+        if (!message || typeof message !== 'object') return message;
+        const nextMessage = { ...message };
+        delete nextMessage.images;
+        return nextMessage;
+      })
+      .filter(messageHasPayload);
+  }
+  if (maxImages !== 1) {
+    return messages.filter(messageHasPayload).map((message) => ({ ...message }));
+  }
+
+  let lastImage = null;
+  let lastImageMessageIndex = -1;
+  messages.forEach((message, index) => {
+    if (message && Array.isArray(message.images) && message.images.length > 0) {
+      lastImage = message.images[message.images.length - 1];
+      lastImageMessageIndex = index;
+    }
+  });
+
+  return messages
+    .map((message, index) => {
+      if (!message || typeof message !== 'object') return message;
+      if (!Array.isArray(message.images) || message.images.length === 0) {
+        return { ...message };
+      }
+      if (index === lastImageMessageIndex && lastImage) {
+        return {
+          ...message,
+          images: [lastImage],
+        };
+      }
+      const nextMessage = { ...message };
+      delete nextMessage.images;
+      return nextMessage;
+    })
+    .filter(messageHasPayload);
+};
+
 const resolveMaxMessagesLimit = (conversation) => {
   const raw = conversation?.metadata?.maxMessages;
   const parsed = Number.parseInt(raw, 10);
@@ -259,6 +317,49 @@ const setModelCacheFromResponse = (data) => {
   cachedModelTags = tagModels;
   cachedDefaultModel = typeof data?.default_model === 'string' ? data.default_model : null;
   return models;
+};
+
+const extractGatewayErrorDetail = (error) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim().length > 0) {
+    return detail.trim();
+  }
+  return '';
+};
+
+const shouldRetryWithToolRoleFallback = (error, payload) => {
+  if (!payload || !Array.isArray(payload.messages)) return false;
+  const detail = extractGatewayErrorDetail(error);
+  if (detail !== 'Invalid role: tool') return false;
+  return payload.messages.some((message) => message?.role === 'tool');
+};
+
+const buildGatewayToolResultFallbackMessage = (message) => {
+  const toolName = typeof message?.tool_name === 'string' && message.tool_name.trim().length > 0
+    ? message.tool_name.trim()
+    : 'unknown_tool';
+  const toolContent = typeof message?.content === 'string' ? message.content : serializeToolResult(message?.content);
+  const content = [
+    `Tool result for ${toolName}:`,
+    toolContent && toolContent.trim().length > 0 ? toolContent.trim() : '[empty tool result]',
+    'Use this tool result to continue the conversation and answer the original request.',
+  ].join('\n\n');
+
+  return {
+    role: 'user',
+    content,
+  };
+};
+
+const convertMessagesForGatewayToolRoleFallback = (messages) => {
+  if (!Array.isArray(messages)) return [];
+  return messages.map((message) => {
+    if (!message || typeof message !== 'object') return message;
+    if (message.role !== 'tool') {
+      return cloneMessageForToolLoop(message);
+    }
+    return buildGatewayToolResultFallbackMessage(message);
+  });
 };
 
 const loadModelList = async () => {
@@ -316,6 +417,688 @@ const normalizeChatResponse = (data) => {
   return { ...data, choices: Array.isArray(data.choices) ? data.choices : [] };
 };
 
+const extractAssistantMessage = (response) => {
+  if (!response || typeof response !== 'object') return null;
+  if (response.message && typeof response.message === 'object') {
+    return response.message;
+  }
+  if (Array.isArray(response.choices) && response.choices[0]?.message) {
+    return response.choices[0].message;
+  }
+  return null;
+};
+
+const cloneMessageForToolLoop = (message) => {
+  if (!message || typeof message !== 'object') return message;
+  const copy = { ...message };
+  if (Array.isArray(message.images)) copy.images = [...message.images];
+  if (Array.isArray(message.tool_calls)) {
+    copy.tool_calls = message.tool_calls.map((toolCall) => ({
+      ...toolCall,
+      function: toolCall?.function && typeof toolCall.function === 'object'
+        ? { ...toolCall.function }
+        : toolCall?.function,
+    }));
+  }
+  return copy;
+};
+
+const normalizeToolDefinitions = (tools) => {
+  if (!Array.isArray(tools)) return [];
+  return tools.filter((tool) => {
+    if (!tool || typeof tool !== 'object') return false;
+    if (typeof tool.type !== 'string' || tool.type.trim().length === 0) return false;
+    if (!tool.function || typeof tool.function !== 'object') return false;
+    return typeof tool.function.name === 'string' && tool.function.name.trim().length > 0;
+  });
+};
+
+const normalizeToolHandlers = (toolHandlers) => {
+  if (!toolHandlers) return {};
+  if (toolHandlers instanceof Map) {
+    return Object.fromEntries(toolHandlers.entries());
+  }
+  return typeof toolHandlers === 'object' ? { ...toolHandlers } : {};
+};
+
+const parseToolArguments = (value) => {
+  if (value === null || value === undefined) return {};
+  if (typeof value === 'object') return value;
+  if (typeof value !== 'string') return {};
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return {};
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+};
+
+const splitTopLevelSegments = (value, delimiter = ',') => {
+  if (typeof value !== 'string' || value.length === 0) return [];
+
+  const segments = [];
+  let current = '';
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      current += char;
+      if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === '\'') {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === '{' || char === '[' || char === '(') {
+      depth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === '}' || char === ']' || char === ')') {
+      depth = Math.max(0, depth - 1);
+      current += char;
+      continue;
+    }
+
+    if (char === delimiter && depth === 0) {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        segments.push(trimmed);
+      }
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trailing = current.trim();
+  if (trailing.length > 0) {
+    segments.push(trailing);
+  }
+
+  return segments;
+};
+
+const findTopLevelDelimiterIndex = (value, delimiter = ':') => {
+  if (typeof value !== 'string' || value.length === 0) return -1;
+
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      if (char === '\\') {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === '\'') {
+      quote = char;
+      continue;
+    }
+
+    if (char === '{' || char === '[' || char === '(') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}' || char === ']' || char === ')') {
+      depth = Math.max(0, depth - 1);
+      continue;
+    }
+
+    if (char === delimiter && depth === 0) {
+      return i;
+    }
+  }
+
+  return -1;
+};
+
+const parseLooseToolArgumentValue = (value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return '';
+
+  const normalized = trimmed.replaceAll(GEMMA4_ESCAPE_TOKEN, '"');
+  const jsonCandidate = normalized.startsWith('\'') && normalized.endsWith('\'')
+    ? `"${normalized.slice(1, -1).replace(/"/g, '\\"')}"`
+    : normalized;
+
+  if (
+    (jsonCandidate.startsWith('"') && jsonCandidate.endsWith('"'))
+    || (jsonCandidate.startsWith('{') && jsonCandidate.endsWith('}'))
+    || (jsonCandidate.startsWith('[') && jsonCandidate.endsWith(']'))
+  ) {
+    try {
+      return JSON.parse(jsonCandidate);
+    } catch (error) {
+      return jsonCandidate;
+    }
+  }
+
+  if (/^-?\d+(?:\.\d+)?$/.test(jsonCandidate)) {
+    return Number(jsonCandidate);
+  }
+  if (jsonCandidate === 'true') return true;
+  if (jsonCandidate === 'false') return false;
+  if (jsonCandidate === 'null') return null;
+
+  return jsonCandidate;
+};
+
+const parseGemma4Arguments = (value) => {
+  if (typeof value !== 'string' || value.trim().length === 0) return {};
+
+  const normalized = value.trim().replaceAll(GEMMA4_ESCAPE_TOKEN, '"');
+  const jsonParsed = parseToolArguments(`{${normalized}}`);
+  if (Object.keys(jsonParsed).length > 0) {
+    return jsonParsed;
+  }
+
+  const segments = splitTopLevelSegments(normalized, ',');
+  const parsed = {};
+
+  segments.forEach((segment) => {
+    const delimiterIndex = findTopLevelDelimiterIndex(segment, ':');
+    if (delimiterIndex <= 0) return;
+
+    const key = segment.slice(0, delimiterIndex).trim().replace(/^['"]|['"]$/g, '');
+    const rawValue = segment.slice(delimiterIndex + 1);
+    if (!key) return;
+    parsed[key] = parseLooseToolArgumentValue(rawValue);
+  });
+
+  return parsed;
+};
+
+const parseFunctionStyleArguments = (value) => {
+  if (typeof value !== 'string' || value.trim().length === 0) return {};
+
+  const segments = splitTopLevelSegments(value.trim(), ',');
+  const parsed = {};
+
+  segments.forEach((segment) => {
+    let delimiterIndex = findTopLevelDelimiterIndex(segment, '=');
+    if (delimiterIndex < 0) {
+      delimiterIndex = findTopLevelDelimiterIndex(segment, ':');
+    }
+    if (delimiterIndex <= 0) return;
+
+    const key = segment.slice(0, delimiterIndex).trim().replace(/^['"`]|['"`]$/g, '');
+    const rawValue = segment.slice(delimiterIndex + 1);
+    if (!key) return;
+    parsed[key] = parseLooseToolArgumentValue(rawValue);
+  });
+
+  return parsed;
+};
+
+const isWordChar = (value) => typeof value === 'string' && /[A-Za-z0-9_]/.test(value);
+
+const extractFunctionStyleToolCalls = (text, allowedToolNames = []) => {
+  if (typeof text !== 'string' || text.length === 0 || !Array.isArray(allowedToolNames) || allowedToolNames.length === 0) {
+    return [];
+  }
+
+  const toolNames = Array.from(new Set(
+    allowedToolNames
+      .filter((name) => typeof name === 'string')
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0)
+  )).sort((a, b) => b.length - a.length);
+
+  const toolCalls = [];
+  const seen = new Set();
+
+  const readCallArguments = (source, openParenIndex) => {
+    let depth = 1;
+    let quote = null;
+    let escaped = false;
+
+    for (let i = openParenIndex + 1; i < source.length; i += 1) {
+      const char = source[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (quote) {
+        if (char === '\\') {
+          escaped = true;
+        } else if (char === quote) {
+          quote = null;
+        }
+        continue;
+      }
+
+      if (char === '"' || char === '\'' || char === '`') {
+        quote = char;
+        continue;
+      }
+
+      if (char === '(') {
+        depth += 1;
+        continue;
+      }
+
+      if (char === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          return {
+            argsString: source.slice(openParenIndex + 1, i),
+            endIndex: i,
+          };
+        }
+      }
+    }
+
+    return null;
+  };
+
+  toolNames.forEach((toolName) => {
+    let searchIndex = 0;
+
+    while (searchIndex < text.length) {
+      const foundIndex = text.indexOf(toolName, searchIndex);
+      if (foundIndex < 0) break;
+
+      const beforeChar = foundIndex > 0 ? text[foundIndex - 1] : '';
+      const afterNameIndex = foundIndex + toolName.length;
+      if (isWordChar(beforeChar)) {
+        searchIndex = afterNameIndex;
+        continue;
+      }
+
+      let cursor = afterNameIndex;
+      while (cursor < text.length && /\s/.test(text[cursor])) {
+        cursor += 1;
+      }
+
+      if (text[cursor] !== '(') {
+        searchIndex = afterNameIndex;
+        continue;
+      }
+
+      const afterParenChar = cursor + 1 < text.length ? text[cursor + 1] : '';
+      if (isWordChar(afterParenChar) === false && text.slice(foundIndex, cursor).trim().length === 0) {
+        searchIndex = afterNameIndex;
+        continue;
+      }
+
+      const parsedCall = readCallArguments(text, cursor);
+      if (!parsedCall) {
+        searchIndex = afterNameIndex;
+        continue;
+      }
+
+      const args = parseFunctionStyleArguments(parsedCall.argsString);
+      const signature = `${toolName}:${JSON.stringify(args)}`;
+      if (!seen.has(signature)) {
+        seen.add(signature);
+        toolCalls.push({
+          type: 'function',
+          function: {
+            index: toolCalls.length,
+            name: toolName,
+            arguments: args,
+          },
+        });
+      }
+
+      searchIndex = parsedCall.endIndex + 1;
+    }
+  });
+
+  return toolCalls;
+};
+
+const normalizeToolCall = (toolCall, index = 0) => {
+  if (!toolCall || typeof toolCall !== 'object') return null;
+
+  const fn = toolCall.function && typeof toolCall.function === 'object'
+    ? toolCall.function
+    : toolCall;
+  const toolName = typeof fn?.name === 'string' ? fn.name.trim() : '';
+  if (!toolName) return null;
+
+  return {
+    ...toolCall,
+    type: typeof toolCall.type === 'string' && toolCall.type.trim().length > 0
+      ? toolCall.type
+      : 'function',
+    function: {
+      ...(toolCall.function && typeof toolCall.function === 'object' ? toolCall.function : {}),
+      index: Number.isInteger(fn?.index) ? fn.index : index,
+      name: toolName,
+      arguments: parseToolArguments(fn?.arguments),
+    },
+  };
+};
+
+const extractToolCallsFromStructuredCandidate = (candidate) => {
+  if (!candidate) return [];
+
+  if (typeof candidate === 'string') {
+    const trimmed = candidate.trim();
+    if (trimmed.length === 0) return [];
+    try {
+      return extractToolCallsFromStructuredCandidate(JSON.parse(trimmed));
+    } catch (error) {
+      return [];
+    }
+  }
+
+  if (Array.isArray(candidate)) {
+    return candidate
+      .map((toolCall, index) => normalizeToolCall(toolCall, index))
+      .filter(Boolean);
+  }
+
+  if (typeof candidate !== 'object') {
+    return [];
+  }
+
+  if (Array.isArray(candidate.tool_calls)) {
+    return candidate.tool_calls
+      .map((toolCall, index) => normalizeToolCall(toolCall, index))
+      .filter(Boolean);
+  }
+
+  const single = normalizeToolCall(candidate, 0);
+  return single ? [single] : [];
+};
+
+const extractToolCallsFromText = (text, options = {}) => {
+  if (typeof text !== 'string') {
+    return { toolCalls: [], cleanedText: '' };
+  }
+
+  let cleanedText = text;
+  const toolCalls = [];
+  const patterns = [
+    /<\|tool_call\>call:(\w+)\{([\s\S]*?)\}(?:<tool_call\|>|<turn\|>)/g,
+    /(?:<call>|(?:^|\s)call:)(\w+)\{([\s\S]*?)\}/g,
+  ];
+
+  patterns.forEach((pattern) => {
+    cleanedText = cleanedText.replace(pattern, (fullMatch, name, argsString) => {
+      toolCalls.push({
+        type: 'function',
+        function: {
+          index: toolCalls.length,
+          name,
+          arguments: parseGemma4Arguments(argsString),
+        },
+      });
+      return '';
+    });
+  });
+
+  if (toolCalls.length > 0) {
+    return {
+      toolCalls,
+      cleanedText: cleanedText.replace(/\n{3,}/g, '\n\n').trim(),
+    };
+  }
+
+  const trimmed = text.trim();
+  const structuredCandidates = [trimmed];
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fencedMatch) {
+    structuredCandidates.push(fencedMatch[1].trim());
+  }
+
+  for (const candidate of structuredCandidates) {
+    const parsed = extractToolCallsFromStructuredCandidate(candidate);
+    if (parsed.length > 0) {
+      return {
+        toolCalls: parsed,
+        cleanedText: '',
+      };
+    }
+  }
+
+  const functionStyleToolCalls = extractFunctionStyleToolCalls(text, options.allowedToolNames);
+  if (functionStyleToolCalls.length > 0) {
+    return {
+      toolCalls: functionStyleToolCalls,
+      cleanedText: trimmed,
+    };
+  }
+
+  return {
+    toolCalls: [],
+    cleanedText: trimmed,
+  };
+};
+
+const extractToolCallsFromMessage = (message, allowTextFallback = false, options = {}) => {
+  const content = typeof message?.content === 'string' ? message.content : '';
+  const thinking = typeof message?.thinking === 'string' ? message.thinking : '';
+
+  const explicitToolCalls = extractToolCallsFromStructuredCandidate(message?.tool_calls);
+  if (explicitToolCalls.length > 0) {
+    return {
+      toolCalls: explicitToolCalls,
+      content,
+      thinking,
+      source: 'tool_calls',
+    };
+  }
+
+  if (!allowTextFallback) {
+    return {
+      toolCalls: [],
+      content,
+      thinking,
+      source: null,
+    };
+  }
+
+  const contentResult = extractToolCallsFromText(content, options);
+  const thinkingResult = extractToolCallsFromText(thinking, options);
+  const combined = [...contentResult.toolCalls, ...thinkingResult.toolCalls]
+    .map((toolCall, index) => normalizeToolCall(toolCall, index))
+    .filter(Boolean);
+
+  return {
+    toolCalls: combined,
+    content: contentResult.cleanedText,
+    thinking: thinkingResult.cleanedText,
+    source: combined.length > 0
+      ? [
+          contentResult.toolCalls.length > 0 ? 'content' : null,
+          thinkingResult.toolCalls.length > 0 ? 'thinking' : null,
+        ].filter(Boolean).join('+')
+      : null,
+  };
+};
+
+const serializeToolResult = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return String(value);
+  }
+};
+
+const buildAssistantLoopMessage = (message, options = {}) => {
+  const extracted = extractToolCallsFromMessage(
+    message,
+    options.allowTextToolFallback === true,
+    options,
+  );
+  const assistantMessage = {
+    role: 'assistant',
+    content: extracted.content,
+  };
+
+  if (typeof extracted.thinking === 'string' && extracted.thinking.trim().length > 0) {
+    assistantMessage.thinking = extracted.thinking;
+  }
+  if (Array.isArray(extracted.toolCalls) && extracted.toolCalls.length > 0) {
+    assistantMessage.tool_calls = extracted.toolCalls.map((toolCall) => ({
+      ...toolCall,
+      function: toolCall?.function && typeof toolCall.function === 'object'
+        ? { ...toolCall.function }
+        : toolCall?.function,
+    }));
+  }
+  return {
+    assistantMessage,
+    toolCallSource: extracted.source,
+  };
+};
+
+const buildChatPayloadOptions = (conversation) => {
+  const options = {};
+  const metadata = conversation?.metadata || {};
+  if (typeof metadata.temperature === 'number') {
+    options.temperature = metadata.temperature;
+  }
+  if (typeof metadata.max_tokens === 'number') {
+    options.max_tokens = metadata.max_tokens;
+  }
+  return options;
+};
+
+const ensureModelAvailable = async (targetModel) => {
+  if (isModelAvailable(targetModel)) {
+    return;
+  }
+
+  try {
+    await loadModelList();
+  } catch (error) {
+    throw new Error(`Unable to refresh Ollama model list: ${error.message || error}`);
+  }
+
+  if (!isModelAvailable(targetModel)) {
+    const available = describeAvailableModels();
+    logger.error('Requested model not available on AI gateway', {
+      requestedModel: targetModel,
+      availableModels: available,
+    });
+    throw new Error(`Model "${targetModel}" is not available on the configured AI gateway. Available models: ${available}.`);
+  }
+};
+
+const postChatPayload = async (payload, functionName) => {
+  const requestUrl = `${hostBaseUrl}${CHAT_ENDPOINT}`;
+  const logPayload = {
+    ...payload,
+    messages: sanitizeMessagesForLogging(payload.messages),
+  };
+
+  try {
+    const response = await httpClient.post(CHAT_ENDPOINT, payload, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const normalizedResponse = normalizeChatResponse(response.data);
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: logPayload,
+      responseHeaders: headersToObject(response.headers),
+      responseBody: response.data,
+      functionName,
+    });
+    return normalizedResponse;
+  } catch (error) {
+    if (shouldRetryWithToolRoleFallback(error, payload)) {
+      const fallbackPayload = {
+        ...payload,
+        messages: convertMessagesForGatewayToolRoleFallback(payload.messages),
+      };
+      const fallbackLogPayload = {
+        ...fallbackPayload,
+        messages: sanitizeMessagesForLogging(fallbackPayload.messages),
+      };
+
+      try {
+        const fallbackResponse = await httpClient.post(CHAT_ENDPOINT, fallbackPayload, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const normalizedFallbackResponse = normalizeChatResponse(fallbackResponse.data);
+        normalizedFallbackResponse.gateway_tool_role_fallback = true;
+        await recordApiDebugLog({
+          requestUrl,
+          requestHeaders: null,
+          requestBody: fallbackLogPayload,
+          responseHeaders: headersToObject(fallbackResponse.headers),
+          responseBody: fallbackResponse.data,
+          functionName: `${functionName}.toolRoleFallback`,
+        });
+        return normalizedFallbackResponse;
+      } catch (fallbackError) {
+        await recordApiDebugLog({
+          requestUrl,
+          requestHeaders: null,
+          requestBody: fallbackLogPayload,
+          responseHeaders: headersToObject(fallbackError.response?.headers),
+          responseBody: fallbackError.response?.data || fallbackError.message || fallbackError,
+          functionName: `${functionName}.toolRoleFallback`,
+        });
+      }
+    }
+
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: logPayload,
+      responseHeaders: headersToObject(error.response?.headers),
+      responseBody: error.response?.data || error.message || error,
+      functionName,
+    });
+    logger.error('Failed to complete AI gateway chat request', {
+      error: error?.message || error,
+      model: payload?.model,
+      functionName,
+    });
+    throw error;
+  }
+};
+
 const chat = async (conversation, messages, model) => {
   if (!model || typeof model.api_model !== 'string' || model.api_model.length === 0) {
     throw new Error('Model information is required for Ollama chat requests');
@@ -326,21 +1109,7 @@ const chat = async (conversation, messages, model) => {
     throw new Error('Model information is required for Ollama chat requests');
   }
 
-  if (!isModelAvailable(targetModel)) {
-    try {
-      await loadModelList();
-    } catch (error) {
-      throw new Error(`Unable to refresh Ollama model list: ${error.message || error}`);
-    }
-    if (!isModelAvailable(targetModel)) {
-      const available = describeAvailableModels();
-      logger.error('Requested model not available on AI gateway', {
-        requestedModel: targetModel,
-        availableModels: available,
-      });
-      throw new Error(`Model "${targetModel}" is not available on the configured AI gateway. Available models: ${available}.`);
-    }
-  }
+  await ensureModelAvailable(targetModel);
 
   const supportsImages = model.allow_images === true
     || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'));
@@ -366,50 +1135,186 @@ const chat = async (conversation, messages, model) => {
     model: targetModel,
     messages: messageArray,
   };
+  Object.assign(payload, buildChatPayloadOptions(conversation));
 
-  const metadata = conversation?.metadata || {};
-  if (typeof metadata.temperature === 'number') {
-    payload.temperature = metadata.temperature;
-  }
-  if (typeof metadata.max_tokens === 'number') {
-    payload.max_tokens = metadata.max_tokens;
+  return postChatPayload(payload, 'chat');
+};
+
+const chatWithThinkingAndTools = async (conversation, messages, model, options = {}) => {
+  if (!model || typeof model.api_model !== 'string' || model.api_model.length === 0) {
+    throw new Error('Model information is required for Ollama chat requests');
   }
 
-  const requestUrl = `${hostBaseUrl}${CHAT_ENDPOINT}`;
-  const logPayload = {
-    ...payload,
-    messages: sanitizeMessagesForLogging(payload.messages),
+  const targetModel = normalizeModelIdentifier(model.api_model);
+  if (!targetModel) {
+    throw new Error('Model information is required for Ollama chat requests');
+  }
+
+  await ensureModelAvailable(targetModel);
+
+  const supportsImages = model.allow_images === true
+    || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'))
+    || isGemma4Model(targetModel);
+  const contextPrompt = resolveContextPrompt(conversation);
+  const visibleMessages = Array.isArray(messages)
+    ? messages.filter((message) => message && !message.hideFromBot)
+    : [];
+  const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
+  const limitedMessages = maxMessagesLimit
+    ? visibleMessages.slice(-maxMessagesLimit)
+    : visibleMessages;
+  const rawMessages = buildChatCompletionMessages(
+    contextPrompt,
+    limitedMessages,
+    supportsImages,
+  );
+  const maxImages = Number.isInteger(options.maxImages) && options.maxImages >= 0
+    ? options.maxImages
+    : 1;
+  const messageArray = limitMessagesToLastImage(rawMessages, maxImages);
+
+  if (messageArray.length === 0) {
+    throw new Error('No messages available to send to the AI gateway');
+  }
+
+  const tools = normalizeToolDefinitions(options.tools);
+  const toolHandlers = normalizeToolHandlers(options.toolHandlers);
+  const allowedToolNames = tools
+    .map((tool) => tool?.function?.name)
+    .filter((name) => typeof name === 'string' && name.trim().length > 0)
+    .map((name) => name.trim());
+  const maxToolRounds = Number.isInteger(options.maxToolRounds) && options.maxToolRounds > 0
+    ? options.maxToolRounds
+    : DEFAULT_MAX_TOOL_ROUNDS;
+  const includeThinkingInHistory = typeof options.includeThinkingInHistory === 'boolean'
+    ? options.includeThinkingInHistory
+    : !isGemma4Model(targetModel);
+  const basePayload = {
+    model: targetModel,
+    messages: [],
+    stream: false,
+    ...buildChatPayloadOptions(conversation),
   };
 
-  try {
-    const response = await httpClient.post(CHAT_ENDPOINT, payload, {
-      headers: { 'Content-Type': 'application/json' },
-    });
-    const normalizedResponse = normalizeChatResponse(response.data);
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders: null,
-      requestBody: logPayload,
-      responseHeaders: headersToObject(response.headers),
-      responseBody: response.data,
-      functionName: 'chat',
-    });
-    return normalizedResponse;
-  } catch (error) {
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders: null,
-      requestBody: logPayload,
-      responseHeaders: headersToObject(error.response?.headers),
-      responseBody: error.response?.data || error.message || error,
-      functionName: 'chat',
-    });
-    logger.error('Failed to complete AI gateway chat request', {
-      error: error?.message || error,
-      model: targetModel,
-    });
-    throw error;
+  if (Object.prototype.hasOwnProperty.call(options, 'think')) {
+    basePayload.think = options.think;
   }
+  if (tools.length > 0) {
+    basePayload.tools = tools;
+  }
+
+  let workingMessages = messageArray.map(cloneMessageForToolLoop);
+  const toolSteps = [];
+  let round = 0;
+
+  while (true) {
+    round += 1;
+
+    const response = await postChatPayload({
+      ...basePayload,
+      messages: workingMessages.map(cloneMessageForToolLoop),
+    }, round === 1 ? 'chatWithThinkingAndTools' : `chatWithThinkingAndTools.round${round}`);
+    const responseMessage = extractAssistantMessage(response);
+    if (!responseMessage) {
+      return {
+        ...response,
+        message_history: [...workingMessages].filter(messageHasPayload),
+        tool_steps: toolSteps,
+        rounds: round,
+      };
+    }
+    const { assistantMessage, toolCallSource } = buildAssistantLoopMessage(responseMessage, {
+      allowTextToolFallback: tools.length > 0,
+      allowedToolNames,
+    });
+    const toolCalls = Array.isArray(assistantMessage.tool_calls) ? assistantMessage.tool_calls : [];
+
+    toolSteps.push({
+      round,
+      type: 'assistant',
+      content: assistantMessage.content || '',
+      thinking: assistantMessage.thinking || '',
+      tool_calls: toolCalls,
+      tool_call_source: toolCallSource,
+    });
+
+    if (toolCalls.length === 0 || tools.length === 0) {
+      return {
+        ...response,
+        message_history: [...workingMessages, assistantMessage].filter(messageHasPayload),
+        tool_steps: toolSteps,
+        rounds: round,
+      };
+    }
+
+    if (round >= maxToolRounds) {
+      throw new Error(`Ollama tool loop exceeded maxToolRounds (${maxToolRounds}) for model "${targetModel}".`);
+    }
+
+    const assistantHistoryMessage = cloneMessageForToolLoop(assistantMessage);
+    if (!includeThinkingInHistory) {
+      delete assistantHistoryMessage.thinking;
+    }
+    workingMessages = [...workingMessages, assistantHistoryMessage].filter(messageHasPayload);
+
+    for (const toolCall of toolCalls) {
+      const toolName = typeof toolCall?.function?.name === 'string'
+        ? toolCall.function.name.trim()
+        : '';
+      const args = parseToolArguments(toolCall?.function?.arguments);
+      const handler = toolHandlers[toolName];
+      let result;
+      let toolError = null;
+
+      if (typeof handler !== 'function') {
+        toolError = `No local tool handler is registered for "${toolName || 'unknown'}".`;
+        result = toolError;
+      } else {
+        try {
+          result = await handler(args, {
+            conversation,
+            messages: workingMessages.map(cloneMessageForToolLoop),
+            model,
+            round,
+            toolCall,
+          });
+        } catch (error) {
+          toolError = error?.message || String(error);
+          logger.error('Failed to execute local tool handler for Ollama chat', {
+            error: toolError,
+            toolName,
+            model: targetModel,
+          });
+          result = `Tool execution error for "${toolName}": ${toolError}`;
+        }
+      }
+
+      const serializedResult = serializeToolResult(result);
+      const toolMessage = {
+        role: 'tool',
+        tool_name: toolName || 'unknown',
+        content: serializedResult,
+      };
+
+      workingMessages.push(toolMessage);
+      toolSteps.push({
+        round,
+        type: 'tool',
+        name: toolMessage.tool_name,
+        arguments: args,
+        content: serializedResult,
+        error: toolError,
+      });
+    }
+  }
+};
+
+const chatGemma4 = async (conversation, messages, model, options = {}) => {
+  const normalizedOptions = options && typeof options === 'object'
+    ? { ...options }
+    : {};
+  normalizedOptions.maxImages = 1;
+  return chatWithThinkingAndTools(conversation, messages, model, normalizedOptions);
 };
 
 const getCachedModels = () => [...cachedModels];
@@ -421,4 +1326,6 @@ module.exports = {
   getCachedDefaultModel,
   isModelAvailable,
   chat,
+  chatWithThinkingAndTools,
+  chatGemma4,
 };

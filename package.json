@@ -8,6 +8,7 @@
     "start": "node app",
     "git_test": "node git_test",
     "test": "jest --coverage",
+    "test:ollama:gemma4": "node test_ollama_gemma4.js",
     "lint:openapi": "node scripts/validate-openapi.js",
     "codex": "codex",
     "codex-update": "npm install -g @openai/codex@latest",
