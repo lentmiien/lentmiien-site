@@ -15,6 +15,7 @@ const expressSession = require('express-session');
 const bcrypt = require('bcryptjs');
 const expressStaticGzip = require('express-static-gzip');
 const crypto = require('crypto');
+const { ensurePublicTobuyListPath } = require('./utils/publicTobuyList');
 
 // Database models
 const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
@@ -284,10 +285,13 @@ const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
 const shoppingListRouter = require('./routes/shopping_list');
+const publicTobuyListRouter = require('./routes/public_tobuy_list');
 const bookmarkRouter = require('./routes/bookmarks');
 const clusterPlannerRouter = require('./routes/ai_cluster_planner');
+const publicTobuyListPath = ensurePublicTobuyListPath();
 
 app.use('/', indexRouter);
+app.use(publicTobuyListPath, publicTobuyListRouter);
 app.use('/api', isAuthenticated, apiRouter);
 app.use('/mydhlapi/test', dummyapiRouter);
 app.use('/webapi/servlet', dummyapiRouter);

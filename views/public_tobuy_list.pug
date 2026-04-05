@@ -1,0 +1,49 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap')
+  link(rel='stylesheet', href='/css/public_tobuy_list.css')
+
+block content
+  .public-tobuy-page
+    .public-tobuy-shell
+      header.public-tobuy-hero
+        p.public-tobuy-eyebrow Shared to-buy page
+        .public-tobuy-title-row
+          h1 To Buy
+          span.public-tobuy-count= `${taskCount} open`
+        p.public-tobuy-subtitle Ongoing items only. New entries are shared with Lennart's existing to-buy tasks.
+
+      if successMessage
+        .public-tobuy-alert.public-tobuy-alert--success= successMessage
+
+      if errorMessage
+        .public-tobuy-alert.public-tobuy-alert--error= errorMessage
+
+      section.public-tobuy-panel
+        form.public-tobuy-form(method='post', action=submitPath)
+          label.public-tobuy-label(for='title') Add item
+          .public-tobuy-form-row
+            input#title.public-tobuy-input(
+              type='text'
+              name='title'
+              value=formTitle
+              maxlength='200'
+              placeholder='Milk, onions, dish soap'
+              autocomplete='off'
+              required
+            )
+            button.public-tobuy-button(type='submit') Add
+          p.public-tobuy-hint Shared add limit: 1 request per second, max 10 per day.
+
+      section.public-tobuy-panel
+        .public-tobuy-section-head
+          h2 Open items
+        if tasks.length
+          ul.public-tobuy-list
+            each task, index in tasks
+              li.public-tobuy-item(style=`--item-index:${index};`)
+                span.public-tobuy-item__marker
+                span.public-tobuy-item__title= task.title
+        else
+          p.public-tobuy-empty Nothing is queued right now.
