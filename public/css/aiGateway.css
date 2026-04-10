@@ -184,6 +184,10 @@
   font-size: 0.9rem;
 }
 
+.health-card__meta + .health-card__meta {
+  margin-top: 0.15rem;
+}
+
 .health-card__detail {
   margin-top: 0.35rem;
   color: #ff8b7b;

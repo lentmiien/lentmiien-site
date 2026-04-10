@@ -67,12 +67,9 @@ block content
               .health-card(class= upstream.ok ? 'health-card--ok' : 'health-card--fail')
                 .health-card__title= upstream.key
                 .health-card__status= upstream.ok ? 'OK' : 'Issue'
-                if upstream.status
-                  .health-card__meta= upstream.status
-                if upstream.model
-                  .health-card__meta= upstream.model
-                if upstream.statusCode
-                  .health-card__meta Code: #{upstream.statusCode}
+                if upstream.meta && upstream.meta.length
+                  each line in upstream.meta
+                    .health-card__meta= line
                 if upstream.detail
                   .health-card__detail= upstream.detail
         else
@@ -429,6 +426,25 @@ block content
                       td= formatFixed(timing.p95, 3)
         else
           p.text-muted.mb-0 No OCR log entries yet.
+      .panel
+        .panel__header
+          h2.panel__title ACE-Step 1.5 VRAM Usage
+          p.panel__subtitle Recent /music/acestep15/generate requests with start-to-peak deltas and absolute peak usage.
+        if logInsights.music
+          ul.limits-list
+            li Requests sampled: #{formatNumber(logInsights.music.sampleCount)}
+            li Avg VRAM delta: #{logInsights.music.avgVramDeltaDisplay || 'N/A'}
+            li Peak VRAM delta: #{logInsights.music.maxVramDeltaDisplay || 'N/A'}
+            li Avg peak used VRAM: #{logInsights.music.avgPeakVramUsedDisplay || 'N/A'}
+            li Highest peak used VRAM: #{logInsights.music.maxPeakVramUsedDisplay || 'N/A'}
+            li Avg start VRAM: #{logInsights.music.avgStartVramUsedDisplay || 'N/A'}
+            li Avg end VRAM: #{logInsights.music.avgEndVramUsedDisplay || 'N/A'}
+            li Avg duration: #{formatFixed(logInsights.music.avgDurationSec, 2)} s
+            li Avg queue wait: #{formatFixed(logInsights.music.avgQueueSec, 3)} s
+            if typeof logInsights.music.successRate === 'number'
+              li Success rate: #{formatPercent(logInsights.music.successRate)}
+        else
+          p.text-muted.mb-0 No ACE-Step generate log entries yet.
       .panel
         .panel__header
           h2.panel__title ComfyUI VRAM Usage

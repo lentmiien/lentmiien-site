@@ -2266,11 +2266,76 @@ function buildComfyLogStats(entries) {
   };
 }
 
+function buildMusicLogStats(entries) {
+  if (!entries.length) {
+    return null;
+  }
+
+  const vramDeltas = [];
+  const peakVramUsed = [];
+  const startVramUsed = [];
+  const endVramUsed = [];
+  const durations = [];
+  const queueValues = [];
+  const statusCodes = [];
+
+  entries.forEach((entry) => {
+    if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) vramDeltas.push(entry.vramDeltaBytes);
+    if (entry.gpuPeakVramUsedBytes !== null && entry.gpuPeakVramUsedBytes !== undefined) peakVramUsed.push(entry.gpuPeakVramUsedBytes);
+    if (entry.gpuBeforeUsedBytes !== null && entry.gpuBeforeUsedBytes !== undefined) startVramUsed.push(entry.gpuBeforeUsedBytes);
+    if (entry.gpuAfterUsedBytes !== null && entry.gpuAfterUsedBytes !== undefined) endVramUsed.push(entry.gpuAfterUsedBytes);
+    if (entry.durationSec !== null && entry.durationSec !== undefined) durations.push(entry.durationSec);
+    if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) queueValues.push(entry.queueWaitSec);
+    if (entry.statusCode !== null && entry.statusCode !== undefined) statusCodes.push(asNumber(entry.statusCode));
+  });
+
+  const vramDeltaStats = summarizeNumbers(vramDeltas);
+  const peakUsedStats = summarizeNumbers(peakVramUsed);
+  const startUsedStats = summarizeNumbers(startVramUsed);
+  const endUsedStats = summarizeNumbers(endVramUsed);
+  const validStatusCodes = statusCodes.filter((code) => typeof code === 'number' && !Number.isNaN(code));
+  const successRate = validStatusCodes.length
+    ? validStatusCodes.filter((code) => code >= 200 && code < 300).length / validStatusCodes.length
+    : null;
+
+  return {
+    sampleCount: entries.length,
+    avgVramDeltaBytes: vramDeltaStats?.average || null,
+    avgVramDeltaDisplay: vramDeltaStats?.average !== null && vramDeltaStats?.average !== undefined
+      ? formatBytes(vramDeltaStats.average)
+      : 'N/A',
+    maxVramDeltaBytes: vramDeltaStats?.max || null,
+    maxVramDeltaDisplay: vramDeltaStats?.max !== null && vramDeltaStats?.max !== undefined
+      ? formatBytes(vramDeltaStats.max)
+      : 'N/A',
+    avgPeakVramUsedBytes: peakUsedStats?.average || null,
+    avgPeakVramUsedDisplay: peakUsedStats?.average !== null && peakUsedStats?.average !== undefined
+      ? formatBytes(peakUsedStats.average)
+      : 'N/A',
+    maxPeakVramUsedBytes: peakUsedStats?.max || null,
+    maxPeakVramUsedDisplay: peakUsedStats?.max !== null && peakUsedStats?.max !== undefined
+      ? formatBytes(peakUsedStats.max)
+      : 'N/A',
+    avgStartVramUsedBytes: startUsedStats?.average || null,
+    avgStartVramUsedDisplay: startUsedStats?.average !== null && startUsedStats?.average !== undefined
+      ? formatBytes(startUsedStats.average)
+      : 'N/A',
+    avgEndVramUsedBytes: endUsedStats?.average || null,
+    avgEndVramUsedDisplay: endUsedStats?.average !== null && endUsedStats?.average !== undefined
+      ? formatBytes(endUsedStats.average)
+      : 'N/A',
+    avgDurationSec: average(durations),
+    avgQueueSec: average(queueValues),
+    successRate,
+  };
+}
+
 function buildGatewayLogInsights(logEntries) {
   const logs = Array.isArray(logEntries) ? logEntries : [];
   const ttsEntries = logs.filter((entry) => entry.route === 'tts');
   const llmEntries = logs.filter((entry) => (entry.route || '').startsWith('llm'));
   const ocrEntries = logs.filter((entry) => entry.route === 'ocr');
+  const musicEntries = logs.filter((entry) => entry.route === 'music_acestep15_generate');
   const comfyEntries = logs.filter((entry) => entry.route === 'comfy_run');
 
   return {
@@ -2278,6 +2343,7 @@ function buildGatewayLogInsights(logEntries) {
     tts: buildTtsLogStats(ttsEntries),
     llm: buildLlmLogStats(llmEntries),
     ocr: buildOcrLogStats(ocrEntries),
+    music: buildMusicLogStats(musicEntries),
     comfy: buildComfyLogStats(comfyEntries),
   };
 }
@@ -2303,17 +2369,175 @@ function buildGpuTimeline(gpuData) {
   return { points, latest };
 }
 
+function formatGatewayBooleanLabel(value) {
+  if (value === true) {
+    return 'Yes';
+  }
+  if (value === false) {
+    return 'No';
+  }
+  return null;
+}
+
+function formatGatewayVramSummary(rawVram) {
+  if (!rawVram || typeof rawVram !== 'object') {
+    return null;
+  }
+
+  const freeBytes = asNumber(rawVram.free_bytes ?? rawVram.vram_free_bytes);
+  const totalBytes = asNumber(rawVram.total_bytes ?? rawVram.vram_total_bytes);
+  const usedBytes = asNumber(rawVram.used_bytes ?? rawVram.vram_used_bytes);
+  const allocatedBytes = asNumber(rawVram.allocated_bytes);
+  const reservedBytes = asNumber(rawVram.reserved_bytes);
+  const parts = [];
+
+  if (usedBytes !== null && totalBytes !== null) {
+    parts.push(`${formatBytes(usedBytes)} used`);
+    parts.push(`${formatBytes(totalBytes)} total`);
+  } else {
+    if (freeBytes !== null) {
+      parts.push(`${formatBytes(freeBytes)} free`);
+    }
+    if (totalBytes !== null) {
+      parts.push(`${formatBytes(totalBytes)} total`);
+    }
+  }
+
+  if (allocatedBytes !== null && allocatedBytes > 0) {
+    parts.push(`${formatBytes(allocatedBytes)} allocated`);
+  }
+  if (reservedBytes !== null && reservedBytes > 0) {
+    parts.push(`${formatBytes(reservedBytes)} reserved`);
+  }
+
+  return parts.length ? parts.join(' / ') : null;
+}
+
+function pushGatewayMeta(meta, label, rawValue) {
+  if (!Array.isArray(meta) || rawValue === null || rawValue === undefined) {
+    return;
+  }
+
+  let value = rawValue;
+  if (typeof value === 'boolean') {
+    value = formatGatewayBooleanLabel(value);
+  } else if (typeof value === 'number') {
+    value = Number.isInteger(value) ? formatNumber(value) : String(value);
+  } else if (typeof value !== 'string') {
+    return;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  meta.push(`${label}: ${trimmed}`);
+}
+
+function buildGatewayUpstreamMeta(rawUpstream) {
+  const meta = [];
+  const upstream = rawUpstream && typeof rawUpstream === 'object' ? rawUpstream : {};
+  const json = upstream.json && typeof upstream.json === 'object' ? upstream.json : {};
+  const statusCode = asNumber(upstream.status_code ?? upstream.statusCode);
+
+  pushGatewayMeta(meta, 'Status', json.status || upstream.status || null);
+  pushGatewayMeta(meta, 'HTTP', statusCode);
+
+  if (typeof json.model === 'string') {
+    pushGatewayMeta(meta, 'Model', json.model);
+  } else if (typeof json.model_id === 'string') {
+    pushGatewayMeta(meta, 'Model', json.model_id);
+  }
+
+  pushGatewayMeta(meta, 'Backend', json.backend || null);
+  pushGatewayMeta(meta, 'Device', json.target_device || json.device || json.device_target || null);
+  pushGatewayMeta(meta, 'GPU', json.gpu_name || json.gpu?.device?.name || null);
+
+  const vramSummary = formatGatewayVramSummary(
+    (json.vram && typeof json.vram === 'object')
+      ? json.vram
+      : (json.gpu?.memory && typeof json.gpu.memory === 'object' ? json.gpu.memory : null),
+  );
+  pushGatewayMeta(meta, 'VRAM', vramSummary);
+
+  if (typeof json.batch_size === 'number') {
+    pushGatewayMeta(meta, 'Batch size', formatNumber(json.batch_size));
+  }
+  if (typeof json.default_max_new_tokens === 'number') {
+    pushGatewayMeta(meta, 'Default max tokens', formatNumber(json.default_max_new_tokens));
+  }
+  if (typeof json.voices_found === 'number') {
+    pushGatewayMeta(meta, 'Voices', formatNumber(json.voices_found));
+  }
+  if (Array.isArray(json.models)) {
+    pushGatewayMeta(meta, 'Models', formatNumber(json.models.length));
+  }
+
+  if (json.model && typeof json.model === 'object' && !Array.isArray(json.model)) {
+    const model = json.model;
+    pushGatewayMeta(meta, 'Model state', model.busy === true ? 'Busy' : (model.busy === false ? 'Idle' : null));
+    pushGatewayMeta(meta, 'DiT loaded', model.dit_loaded);
+    pushGatewayMeta(meta, 'LLM loaded', model.llm_loaded);
+    pushGatewayMeta(meta, 'Config', model.loaded_config_path || null);
+    pushGatewayMeta(meta, 'LM path', model.loaded_lm_model_path || null);
+    pushGatewayMeta(meta, 'LLM backend', model.loaded_llm_backend || null);
+    if (model.offload_to_cpu !== null && model.offload_to_cpu !== undefined) {
+      pushGatewayMeta(meta, 'Offload to CPU', model.offload_to_cpu);
+    }
+    if (model.offload_dit_to_cpu !== null && model.offload_dit_to_cpu !== undefined) {
+      pushGatewayMeta(meta, 'DiT offload', model.offload_dit_to_cpu);
+    }
+  }
+
+  if (json.model_placement && typeof json.model_placement === 'object') {
+    const placementParts = [];
+    if (typeof json.model_placement.loaded === 'boolean') {
+      placementParts.push(json.model_placement.loaded ? 'loaded' : 'not loaded');
+    }
+    if (typeof json.model_placement.device === 'string' && json.model_placement.device.trim()) {
+      placementParts.push(json.model_placement.device.trim());
+    }
+    if (typeof json.model_placement.dtype === 'string' && json.model_placement.dtype.trim()) {
+      placementParts.push(json.model_placement.dtype.trim());
+    }
+    pushGatewayMeta(meta, 'Placement', placementParts.length ? placementParts.join(' · ') : null);
+  }
+
+  if (json.prefetch && typeof json.prefetch === 'object') {
+    const prefetchParts = [];
+    if (typeof json.prefetch.status === 'string' && json.prefetch.status.trim()) {
+      prefetchParts.push(json.prefetch.status.trim());
+    } else if (typeof json.prefetch.enabled === 'boolean') {
+      prefetchParts.push(json.prefetch.enabled ? 'enabled' : 'disabled');
+    }
+    if (typeof json.prefetch.prefetch_lm === 'boolean') {
+      prefetchParts.push(json.prefetch.prefetch_lm ? 'LM on' : 'LM off');
+    }
+    pushGatewayMeta(meta, 'Prefetch', prefetchParts.length ? prefetchParts.join(' · ') : null);
+  }
+
+  pushGatewayMeta(meta, 'Container', upstream.container_state || null);
+  pushGatewayMeta(meta, 'Note', upstream.message || null);
+
+  return meta.filter((line, index) => meta.indexOf(line) === index);
+}
+
 function normalizeGatewayHealth(rawHealth) {
   const upstreamEntries = [];
   if (rawHealth?.upstreams && typeof rawHealth.upstreams === 'object') {
     Object.entries(rawHealth.upstreams).forEach(([key, value]) => {
+      const detail = typeof value?.json?.error === 'string' && value.json.error.trim()
+        ? value.json.error.trim()
+        : (typeof value?.error === 'string' && value.error.trim()
+          ? value.error.trim()
+          : ((!value?.ok && typeof value?.message === 'string' && value.message.trim()) ? value.message.trim() : null));
+
       upstreamEntries.push({
         key,
         ok: Boolean(value?.ok),
-        statusCode: value?.status_code || value?.statusCode,
-        status: value?.json?.status || value?.status || '',
-        model: value?.json?.model || value?.json?.gpu_name || value?.json?.backend,
-        detail: value?.json?.error || value?.error || null,
+        meta: buildGatewayUpstreamMeta(value),
+        detail,
       });
     });
   }
