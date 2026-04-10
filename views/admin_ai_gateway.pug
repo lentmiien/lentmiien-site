@@ -7,6 +7,11 @@ block content
   - const errorKeys = Object.keys(dashboard.errors || {}).filter((key) => dashboard.errors[key]);
   - const recentLogs = (dashboard.logs || []).slice(-10).reverse();
   - const logInsights = dashboard.logInsights || {};
+  - const overviewData = dashboard.chartData || {};
+  - const logWindow = overviewData.logWindow || {};
+  - const hasLlmChart = Array.isArray(overviewData.llmThroughput) && overviewData.llmThroughput.length;
+  - const hasOcrTimingChart = Array.isArray(overviewData.ocrTimings) && overviewData.ocrTimings.length;
+  - const hasTtsChart = Array.isArray(overviewData.ttsBackends) && overviewData.ttsBackends.length;
   - const autoStop = dashboard.autoStop || null;
   - const checkpoints = Array.isArray(dashboard.checkpoints) ? dashboard.checkpoints : [];
   - const checkpointNames = Array.from(new Set(checkpoints.map((entry) => entry.checkpoint).filter((name) => name && name !== 'Unknown'))).sort();
@@ -39,22 +44,47 @@ block content
             if card.helper
               .stat-card__helper= card.helper
 
+    .ai-gateway__hero-grid
+      .panel
+        .panel__header
+          h2.panel__title GPU Pressure
+          p.panel__subtitle Recent /gpu samples for busy %, VRAM usage, and temperature.
+        .chart-shell.chart-shell--hero#gpuTimelineChart
+      .panel
+        .panel__header
+          h2.panel__title Route Latency & Queue
+          p.panel__subtitle= logWindow.count ? `Average and p95 request times across the latest ${formatNumber(logWindow.count)} log entries.` : 'Average and p95 request times from recent gateway logs.'
+        .chart-shell.chart-shell--hero#routeLatencyChart
+
     .ai-gateway__grid
       .panel
         .panel__header
-          h2.panel__title Request Volume
-          p.panel__subtitle Totals per route by HTTP status from /metrics.
+          h2.panel__title Workload Mix & Errors
+          p.panel__subtitle= logWindow.count ? `Recent request counts by route and status from the latest ${formatNumber(logWindow.count)} log entries.` : 'Recent request counts by route and status from gateway logs.'
         .chart-shell#requestVolumeChart
       .panel
         .panel__header
-          h2.panel__title Average Duration
-          p.panel__subtitle Mean per-route latency using /metrics histograms.
-        .chart-shell#durationChart
-      .panel
-        .panel__header
-          h2.panel__title GPU Utilization
-          p.panel__subtitle Busy % and VRAM usage sampled from /gpu.
-        .chart-shell#gpuTimelineChart
+          h2.panel__title VRAM Footprint by Route
+          p.panel__subtitle Average and largest before-to-peak VRAM jumps seen per route in recent logs.
+        .chart-shell#vramPressureChart
+      if hasLlmChart
+        .panel
+          .panel__header
+            h2.panel__title LLM Throughput by Model
+            p.panel__subtitle Prompt and generation token rates from recent LLM logs (log scale).
+          .chart-shell#llmThroughputChart
+      if hasOcrTimingChart
+        .panel
+          .panel__header
+            h2.panel__title OCR Pipeline Timing
+            p.panel__subtitle Average and p95 timings from Hunyuan OCR job summaries (log scale).
+          .chart-shell#ocrTimingChart
+      if hasTtsChart
+        .panel
+          .panel__header
+            h2.panel__title TTS Real-Time Factor
+            p.panel__subtitle Average and p95 real-time factor by backend.
+          .chart-shell#ttsRtfChart
 
     .ai-gateway__details
       .panel

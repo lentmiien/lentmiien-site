@@ -1529,6 +1529,57 @@ function findBucket(buckets, value) {
   return buckets.find((bucket) => value <= bucket.max);
 }
 
+const GATEWAY_ROUTE_LABELS = {
+  embed_mpnet: 'Embed MPNet',
+  embed_nomic: 'Embed Nomic',
+  llm_chat: 'LLM Chat',
+  llm_generate: 'LLM Generate',
+  llm_embeddings: 'LLM Embeddings',
+  ocr: 'OCR',
+  tts: 'TTS',
+  comfy_run: 'ComfyUI Run',
+  music_acestep15_generate: 'ACE-Step Generate',
+  music_acestep15_load: 'ACE-Step Load',
+  music_acestep15_health: 'ACE-Step Health',
+  music_acestep15_state: 'ACE-Step State',
+};
+
+function formatGatewayRouteLabel(route) {
+  const raw = typeof route === 'string' ? route.trim() : '';
+  if (!raw) {
+    return 'Unknown';
+  }
+  if (GATEWAY_ROUTE_LABELS[raw]) {
+    return GATEWAY_ROUTE_LABELS[raw];
+  }
+
+  return raw
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .replace(/\bLlm\b/g, 'LLM')
+    .replace(/\bTts\b/g, 'TTS')
+    .replace(/\bOcr\b/g, 'OCR')
+    .replace(/\bMpnet\b/g, 'MPNet')
+    .replace(/\bUi\b/g, 'UI');
+}
+
+function bucketGatewayStatusCode(statusCode) {
+  const code = asNumber(statusCode);
+  if (code === null) {
+    return 'other';
+  }
+  if (code >= 200 && code < 300) {
+    return 'success';
+  }
+  if (code >= 400 && code < 500) {
+    return 'clientError';
+  }
+  if (code >= 500 && code < 600) {
+    return 'serverError';
+  }
+  return 'other';
+}
+
 function pickMetricValue(metricsByName, metricName) {
   const entries = metricsByName[metricName];
   if (!entries || !entries.length) {
@@ -2348,6 +2399,173 @@ function buildGatewayLogInsights(logEntries) {
   };
 }
 
+function buildGatewayLogWindow(logEntries) {
+  const logs = Array.isArray(logEntries) ? logEntries : [];
+  const timestamps = logs
+    .map((entry) => asNumber(entry.tsMs))
+    .filter((value) => value !== null && value !== undefined);
+  const routeCount = new Set(logs.map((entry) => entry.route).filter(Boolean)).size;
+
+  if (!timestamps.length) {
+    return {
+      count: logs.length,
+      routeCount,
+      startTsMs: null,
+      endTsMs: null,
+      spanSec: null,
+    };
+  }
+
+  const startTsMs = Math.min(...timestamps);
+  const endTsMs = Math.max(...timestamps);
+
+  return {
+    count: logs.length,
+    routeCount,
+    startTsMs,
+    endTsMs,
+    spanSec: Math.max(0, (endTsMs - startTsMs) / 1000),
+  };
+}
+
+function buildGatewayRouteOverview(logEntries, totalGpuBytes) {
+  const logs = Array.isArray(logEntries) ? logEntries : [];
+  if (!logs.length) {
+    return [];
+  }
+
+  const routes = new Map();
+
+  logs.forEach((entry) => {
+    const route = entry.route || 'unknown';
+    if (!routes.has(route)) {
+      routes.set(route, {
+        route,
+        count: 0,
+        successCount: 0,
+        errorCount: 0,
+        statusBuckets: {
+          success: 0,
+          clientError: 0,
+          serverError: 0,
+          other: 0,
+        },
+        durationValues: [],
+        queueValues: [],
+        vramDeltaValues: [],
+        peakVramValues: [],
+        totalDurationSec: 0,
+      });
+    }
+
+    const bucket = routes.get(route);
+    bucket.count += 1;
+
+    const statusBucket = bucketGatewayStatusCode(entry.statusCode);
+    bucket.statusBuckets[statusBucket] += 1;
+    if (statusBucket === 'success') {
+      bucket.successCount += 1;
+    } else if (statusBucket === 'clientError' || statusBucket === 'serverError') {
+      bucket.errorCount += 1;
+    }
+
+    if (entry.durationSec !== null && entry.durationSec !== undefined) {
+      bucket.durationValues.push(entry.durationSec);
+      bucket.totalDurationSec += entry.durationSec;
+    }
+    if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) {
+      bucket.queueValues.push(entry.queueWaitSec);
+    }
+    if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) {
+      bucket.vramDeltaValues.push(entry.vramDeltaBytes);
+    }
+
+    const peakUsedBytes = entry.gpuPeakVramUsedBytes !== null && entry.gpuPeakVramUsedBytes !== undefined
+      ? entry.gpuPeakVramUsedBytes
+      : entry.gpuAfterUsedBytes;
+    if (peakUsedBytes !== null && peakUsedBytes !== undefined) {
+      bucket.peakVramValues.push(peakUsedBytes);
+    }
+  });
+
+  return Array.from(routes.values()).map((bucket) => {
+    const durationStats = summarizeNumbers(bucket.durationValues);
+    const queueStats = summarizeNumbers(bucket.queueValues);
+    const vramStats = summarizeNumbers(bucket.vramDeltaValues);
+    const peakVramStats = summarizeNumbers(bucket.peakVramValues);
+    const avgPeakVramBytes = peakVramStats?.average || null;
+    const maxPeakVramBytes = peakVramStats?.max || null;
+
+    return {
+      route: bucket.route,
+      label: formatGatewayRouteLabel(bucket.route),
+      count: bucket.count,
+      successCount: bucket.successCount,
+      errorCount: bucket.errorCount,
+      successRate: bucket.count ? bucket.successCount / bucket.count : null,
+      statusBuckets: bucket.statusBuckets,
+      totalDurationSec: bucket.totalDurationSec,
+      avgDurationSec: durationStats?.average || null,
+      p95DurationSec: durationStats?.p95 || null,
+      avgQueueSec: queueStats?.average || null,
+      avgVramDeltaBytes: vramStats?.average || null,
+      maxVramDeltaBytes: vramStats?.max || null,
+      avgPeakVramUsedBytes: avgPeakVramBytes,
+      maxPeakVramUsedBytes: maxPeakVramBytes,
+      avgPeakVramPercent: totalGpuBytes && avgPeakVramBytes !== null && avgPeakVramBytes !== undefined
+        ? calculatePercent(totalGpuBytes, avgPeakVramBytes)
+        : null,
+      maxPeakVramPercent: totalGpuBytes && maxPeakVramBytes !== null && maxPeakVramBytes !== undefined
+        ? calculatePercent(totalGpuBytes, maxPeakVramBytes)
+        : null,
+    };
+  }).sort((a, b) => {
+    if ((b.count || 0) !== (a.count || 0)) {
+      return (b.count || 0) - (a.count || 0);
+    }
+    return (b.totalDurationSec || 0) - (a.totalDurationSec || 0);
+  });
+}
+
+function buildGatewayLlmChartData(logInsights) {
+  const models = Array.isArray(logInsights?.llm?.models) ? logInsights.llm.models : [];
+  return models.map((model) => ({
+    model: model.model,
+    label: model.model,
+    count: model.count,
+    avgPromptTokPerSec: model.promptTokPerSec?.average || null,
+    avgGenTokPerSec: model.genTokPerSec?.average || null,
+    avgTotalTokens: model.avgTotalTokens,
+    avgDurationSec: model.avgDurationSec,
+    avgVramDeltaBytes: model.avgVramDeltaBytes,
+  }));
+}
+
+function buildGatewayTtsChartData(logInsights) {
+  const backends = Array.isArray(logInsights?.tts?.backends) ? logInsights.tts.backends : [];
+  return backends.map((backend) => ({
+    backend: backend.backend,
+    label: backend.backend,
+    count: backend.count,
+    averageRtf: backend.rtf?.average || null,
+    p95Rtf: backend.rtf?.p95 || null,
+    avgTextChars: backend.avgTextChars,
+    avgAudioSec: backend.avgAudioSec,
+    avgDurationSec: backend.avgDurationSec,
+    avgQueueSec: backend.avgQueueSec,
+  }));
+}
+
+function buildGatewayOcrTimingChartData(logInsights) {
+  const timings = Array.isArray(logInsights?.ocr?.timings) ? logInsights.ocr.timings : [];
+  return timings.map((timing) => ({
+    stage: timing.stage,
+    label: timing.label,
+    average: timing.average,
+    p95: timing.p95,
+  }));
+}
+
 function buildGpuTimeline(gpuData) {
   const tail = Array.isArray(gpuData?.tail) ? gpuData.tail : [];
   const now = gpuData?.now && typeof gpuData.now === 'object' ? gpuData.now : null;
@@ -2709,6 +2927,11 @@ function buildAiGatewayDashboard(rawData) {
   const logs = parseGatewayLogs(rawData.logsRaw);
   const logInsights = buildGatewayLogInsights(logs);
   const gpuTimeline = buildGpuTimeline(rawData.gpu);
+  const logWindow = buildGatewayLogWindow(logs);
+  const routeOverview = buildGatewayRouteOverview(logs, gpu.totalBytes);
+  const llmChartData = buildGatewayLlmChartData(logInsights);
+  const ocrTimingChartData = buildGatewayOcrTimingChartData(logInsights);
+  const ttsChartData = buildGatewayTtsChartData(logInsights);
   const limits = normalizeGatewayLimits(rawData.limits);
   const autoStop = normalizeGatewayAutoStop(rawData.autoStop);
   const checkpoints = normalizeGatewayCheckpoints(rawData.checkpoints);
@@ -2724,17 +2947,36 @@ function buildAiGatewayDashboard(rawData) {
     return weightedTotal / totalCount;
   })();
 
+  const busiestRecentRoute = routeOverview[0] || null;
+  const slowestRecentRoute = routeOverview
+    .filter((entry) => entry.avgDurationSec !== null && entry.avgDurationSec !== undefined)
+    .sort((a, b) => (b.avgDurationSec || 0) - (a.avgDurationSec || 0))[0] || null;
+  const heaviestVramRoute = routeOverview
+    .filter((entry) => entry.maxVramDeltaBytes !== null && entry.maxVramDeltaBytes !== undefined)
+    .sort((a, b) => (b.maxVramDeltaBytes || 0) - (a.maxVramDeltaBytes || 0))[0] || null;
+  const fastestLlmModel = llmChartData
+    .filter((entry) => entry.avgGenTokPerSec !== null && entry.avgGenTokPerSec !== undefined)
+    .sort((a, b) => (b.avgGenTokPerSec || 0) - (a.avgGenTokPerSec || 0))[0] || null;
+
   const summaryCards = [
     {
       label: 'Gateway',
       value: health.status === 'ok' ? 'Healthy' : (health.status || 'Unknown'),
       helper: `${health.upstreamOk}/${health.upstreamTotal || 0} upstreams responding`,
     },
-    {
-      label: 'Requests',
-      value: formatNumber(requests.totals.total),
-      helper: `${formatPercent(successRate)} success · ${formatPercent(errorRate)} error`,
-    },
+    logWindow.count
+      ? {
+          label: 'Log window',
+          value: formatNumber(logWindow.count),
+          helper: busiestRecentRoute
+            ? `${busiestRecentRoute.label} most active · ${formatNumber(logWindow.routeCount)} routes`
+            : 'Recent gateway history',
+        }
+      : {
+          label: 'Requests',
+          value: formatNumber(requests.totals.total),
+          helper: `${formatPercent(successRate)} success · ${formatPercent(errorRate)} error`,
+        },
     {
       label: 'GPU',
       value: gpu.busyPercent !== null && gpu.busyPercent !== undefined
@@ -2742,7 +2984,29 @@ function buildAiGatewayDashboard(rawData) {
         : 'GPU idle',
       helper: `${gpu.usedDisplay} / ${gpu.totalDisplay} VRAM`,
     },
-  ];
+  ].filter(Boolean);
+
+  if (heaviestVramRoute) {
+    summaryCards.push({
+      label: 'VRAM spike',
+      value: formatBytes(heaviestVramRoute.maxVramDeltaBytes || heaviestVramRoute.avgVramDeltaBytes || 0),
+      helper: `${heaviestVramRoute.label} largest before-to-peak jump`,
+    });
+  }
+
+  if (fastestLlmModel) {
+    summaryCards.push({
+      label: 'LLM speed',
+      value: `${fastestLlmModel.avgGenTokPerSec.toFixed(1)} tok/s`,
+      helper: `${fastestLlmModel.model} average generation`,
+    });
+  } else if (slowestRecentRoute) {
+    summaryCards.push({
+      label: 'Slowest route',
+      value: `${slowestRecentRoute.avgDurationSec.toFixed(2)}s`,
+      helper: `${slowestRecentRoute.label} average duration`,
+    });
+  }
 
   const queueHelperParts = [];
   if (waiters.ttsWaiters !== null && waiters.ttsWaiters !== undefined) queueHelperParts.push(`TTS waiters ${waiters.ttsWaiters}`);
@@ -2789,6 +3053,11 @@ function buildAiGatewayDashboard(rawData) {
       durations,
       gpuTimeline,
       logs,
+      logWindow,
+      routeOverview,
+      llmThroughput: llmChartData,
+      ocrTimings: ocrTimingChartData,
+      ttsBackends: ttsChartData,
     },
   };
 }

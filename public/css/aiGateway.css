@@ -72,6 +72,12 @@
   gap: 1rem;
 }
 
+.ai-gateway__hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
 .ai-gateway__details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -113,6 +119,10 @@
   min-height: 280px;
   padding: 0.5rem;
   position: relative;
+}
+
+.chart-shell--hero {
+  min-height: 320px;
 }
 
 .chart-empty {
@@ -384,5 +394,9 @@
 
   .chart-shell {
     min-height: 240px;
+  }
+
+  .chart-shell--hero {
+    min-height: 260px;
   }
 }
