@@ -4,23 +4,49 @@ const logger = require('./logger');
 const anthropicAPI = new Anthropic();
 
 const model_list = [];
-async function Models() {
-  const list = await anthropicAPI.models.list({limit: 1000});
+let modelRefreshPromise = null;
 
-  for await (const model of list.data) {
-    model_list.push({
-      model: model.id,
-      created: Math.round(((new Date(model.created_at)).getTime())/1000),
-    })
+function sortModelsByCreatedDesc(a, b) {
+  if (a.created > b.created) return -1;
+  if (a.created < b.created) return 1;
+  return 0;
+}
+
+async function RefreshAnthropicModels() {
+  if (modelRefreshPromise) {
+    return modelRefreshPromise;
   }
 
-  model_list.sort((a,b) => {
-    if (a.created > b.created) return -1;
-    if (a.created < b.created) return 1;
-    return 0;
+  modelRefreshPromise = (async () => {
+    const nextModels = [];
+    const list = await anthropicAPI.models.list({ limit: 1000 });
+
+    for (const model of list.data || []) {
+      nextModels.push({
+        model: model.id,
+        created: Math.round((new Date(model.created_at).getTime()) / 1000),
+      });
+    }
+
+    nextModels.sort(sortModelsByCreatedDesc);
+    model_list.splice(0, model_list.length, ...nextModels);
+    return model_list;
+  })().catch((error) => {
+    logger.warning('Unable to refresh Anthropic model list', {
+      category: 'anthropic_models',
+      metadata: { error: error.message },
+    });
+    throw error;
   });
+
+  try {
+    return await modelRefreshPromise;
+  } finally {
+    modelRefreshPromise = null;
+  }
 }
-Models();
+
+RefreshAnthropicModels().catch(() => {});
 
 const GetAnthropicModels = () => {
   return model_list;
@@ -154,6 +180,7 @@ const anthropic_batch_results = async (batch_id) => {
 
 module.exports = {
   GetAnthropicModels,
+  RefreshAnthropicModels,
   anthropic,
   anthropic_batch_start,
   anthropic_batch_status,

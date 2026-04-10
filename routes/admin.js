@@ -73,6 +73,8 @@ const handleLearningArtUpload = (req, res, next) => {
 
 /* GET home page. */
 router.get('/', controller.manage_users);
+router.post('/openai_usage/refresh', controller.refresh_openai_usage);
+router.post('/model-lists/refresh', controller.refresh_model_lists);
 router.post('/set_type', controller.set_type);
 router.post('/reset_password', controller.reset_password);
 router.post('/delete_user', controller.delete_user);

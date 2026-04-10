@@ -3,6 +3,43 @@ extends layout
 block content
   a.btn.btn-link(href="/admin/manage_roles") Go to manage roles
   a.btn.btn-link(href="/admin/project-docs") Project docs
+  a.btn.btn-link(href="/admin/openai_usage") OpenAI usage
+  if feedback
+    - const alertClass = feedback.status === 'error' ? 'alert-danger' : feedback.status === 'success' ? 'alert-success' : 'alert-info';
+    .alert(class=alertClass role="alert")= feedback.message
+  .card.mb-4
+    .card-body
+      h2.h4 Manual refresh
+      p.text-muted Run the existing usage/model refreshers without restarting. Each action is locked for #{refreshCooldownHours} hours after a successful manual run.
+      .row.g-3
+        .col-md-6
+          .border.rounded.p-3.h-100
+            h3.h5 OpenAI usage
+            if refreshState && refreshState.openaiUsage
+              p.text-muted.small.mb-2
+                if refreshState.openaiUsage.lastSuccessLabel
+                  | Last successful manual run: #{refreshState.openaiUsage.lastSuccessLabel}
+                else
+                  | No successful manual run yet.
+              if !refreshState.openaiUsage.canRun && refreshState.openaiUsage.nextAllowedLabel
+                p.text-muted.small.mb-3 Next available: #{refreshState.openaiUsage.nextAllowedLabel}
+            form(method="post", action="/admin/openai_usage/refresh")
+              input(type="hidden", name="return_to", value="/admin")
+              button.btn.btn-primary(type="submit", disabled=refreshState && refreshState.openaiUsage ? !refreshState.openaiUsage.canRun : false) Refresh OpenAI usage
+        .col-md-6
+          .border.rounded.p-3.h-100
+            h3.h5 OpenAI and Anthropic model lists
+            if refreshState && refreshState.aiModelLists
+              p.text-muted.small.mb-2
+                if refreshState.aiModelLists.lastSuccessLabel
+                  | Last successful manual run: #{refreshState.aiModelLists.lastSuccessLabel}
+                else
+                  | No successful manual run yet.
+              if !refreshState.aiModelLists.canRun && refreshState.aiModelLists.nextAllowedLabel
+                p.text-muted.small.mb-3 Next available: #{refreshState.aiModelLists.nextAllowedLabel}
+            form(method="post", action="/admin/model-lists/refresh")
+              input(type="hidden", name="return_to", value="/admin")
+              button.btn.btn-secondary(type="submit", disabled=refreshState && refreshState.aiModelLists ? !refreshState.aiModelLists.canRun : false) Refresh model lists
   h2 User list 
   table.table.table-striped 
     thead 

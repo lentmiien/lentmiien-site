@@ -13,23 +13,49 @@ const openai_private = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE }
 const local_llm = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, baseURL: 'http://localhost:1234/v1' });
 
 const model_list = [];
-async function Models() {
-  const list = await openai.models.list();
+let modelRefreshPromise = null;
 
-  for await (const model of list) {
-    model_list.push({
-      model: model.id,
-      created: model.created,
-    })
+function sortModelsByCreatedDesc(a, b) {
+  if (a.created > b.created) return -1;
+  if (a.created < b.created) return 1;
+  return 0;
+}
+
+async function RefreshOpenAIModels() {
+  if (modelRefreshPromise) {
+    return modelRefreshPromise;
   }
 
-  model_list.sort((a,b) => {
-    if (a.created > b.created) return -1;
-    if (a.created < b.created) return 1;
-    return 0;
+  modelRefreshPromise = (async () => {
+    const nextModels = [];
+    const list = await openai.models.list();
+
+    for await (const model of list) {
+      nextModels.push({
+        model: model.id,
+        created: model.created,
+      });
+    }
+
+    nextModels.sort(sortModelsByCreatedDesc);
+    model_list.splice(0, model_list.length, ...nextModels);
+    return model_list;
+  })().catch((error) => {
+    logger.warning('Unable to refresh OpenAI model list', {
+      category: 'openai_models',
+      metadata: { error: error.message },
+    });
+    throw error;
   });
+
+  try {
+    return await modelRefreshPromise;
+  } finally {
+    modelRefreshPromise = null;
+  }
 }
-Models();
+
+RefreshOpenAIModels().catch(() => {});
 
 const GetOpenAIModels = () => {
   return model_list;
@@ -813,6 +839,7 @@ const mod = async (data) => {
 
 module.exports = {
   GetOpenAIModels,
+  RefreshOpenAIModels,
   OpenAIAPICallLog,
   chatGPT,
   chatGPTaudio,

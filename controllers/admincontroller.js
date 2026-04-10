@@ -25,6 +25,12 @@ const EmbeddingApiService = require('../services/embeddingApiService');
 const Agent5Service = require('../services/agent5Service');
 const TtsService = require('../services/ttsService');
 const RagMemoryService = require('../services/ragMemoryService');
+const {
+  REFRESH_COOLDOWN_HOURS,
+  getAdminRefreshState,
+  refreshAIModelListsForAdmin,
+  refreshOpenAIUsageForAdmin,
+} = require('../services/adminRefreshService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -100,10 +106,96 @@ function parseFeedback(req) {
   return { status, message };
 }
 
-exports.manage_users = async (req, res) => {
-  const users = await UseraccountModel.find();
-  res.render('manage_users', { users });
+function sanitizeAdminReturnTo(value, fallback = '/admin') {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized.startsWith('/admin')) {
+    return fallback;
+  }
+  return normalized;
 }
+
+function redirectAdminWithFeedback(res, returnTo, status, message) {
+  const target = sanitizeAdminReturnTo(returnTo);
+  const normalizedStatus = typeof status === 'string' && status.length > 0 ? status : 'info';
+  const separator = target.includes('?') ? '&' : '?';
+  return res.redirect(`${target}${separator}status=${encodeURIComponent(normalizedStatus)}&message=${encodeURIComponent(String(message || ''))}`);
+}
+
+function buildRefreshCooldownMessage(label, cooldown) {
+  const nextRunText = cooldown?.nextAllowedLabel ? ` Next available: ${cooldown.nextAllowedLabel}.` : '';
+  return `${label} is locked for ${REFRESH_COOLDOWN_HOURS} hours after a successful manual refresh.${nextRunText}`;
+}
+
+exports.manage_users = async (req, res) => {
+  const [users, refreshState] = await Promise.all([
+    UseraccountModel.find(),
+    getAdminRefreshState(),
+  ]);
+  res.render('manage_users', {
+    users,
+    feedback: parseFeedback(req),
+    refreshCooldownHours: REFRESH_COOLDOWN_HOURS,
+    refreshState,
+  });
+}
+
+exports.refresh_openai_usage = async (req, res) => {
+  const returnTo = sanitizeAdminReturnTo(req.body.return_to);
+
+  try {
+    const refresh = await refreshOpenAIUsageForAdmin();
+    if (refresh.cooldownActive) {
+      return redirectAdminWithFeedback(res, returnTo, 'info', buildRefreshCooldownMessage('OpenAI usage refresh', refresh.cooldown));
+    }
+
+    if (refresh.skipped) {
+      return redirectAdminWithFeedback(res, returnTo, 'error', refresh.result?.reason || 'OpenAI usage refresh is unavailable.');
+    }
+
+    const inserted = refresh.result?.usageEntriesInserted || 0;
+    const existing = refresh.result?.existingEntriesSkipped || 0;
+    const message = inserted > 0
+      ? `OpenAI usage refresh completed. Inserted ${inserted} new ${inserted === 1 ? 'day' : 'days'} and skipped ${existing} existing ${existing === 1 ? 'day' : 'days'}.`
+      : `OpenAI usage refresh completed. No new days were inserted; ${existing} existing ${existing === 1 ? 'day was' : 'days were'} already present.`;
+    return redirectAdminWithFeedback(res, returnTo, 'success', message);
+  } catch (error) {
+    logger.error('Failed to refresh OpenAI usage from admin route', {
+      category: 'admin_refresh',
+      metadata: { error: error.message, user: req.user?.name || null },
+    });
+    return redirectAdminWithFeedback(res, returnTo, 'error', 'Unable to refresh OpenAI usage right now.');
+  }
+};
+
+exports.refresh_model_lists = async (req, res) => {
+  const returnTo = sanitizeAdminReturnTo(req.body.return_to);
+
+  try {
+    const refresh = await refreshAIModelListsForAdmin();
+    if (refresh.cooldownActive) {
+      return redirectAdminWithFeedback(res, returnTo, 'info', buildRefreshCooldownMessage('AI model list refresh', refresh.cooldown));
+    }
+
+    if (refresh.skipped) {
+      return redirectAdminWithFeedback(res, returnTo, 'error', refresh.result?.reason || 'AI model list refresh is unavailable.');
+    }
+
+    const openaiCount = refresh.result?.openaiCount || 0;
+    const anthropicCount = refresh.result?.anthropicCount || 0;
+    return redirectAdminWithFeedback(
+      res,
+      returnTo,
+      'success',
+      `AI model lists refreshed. OpenAI models: ${openaiCount}. Anthropic models: ${anthropicCount}.`,
+    );
+  } catch (error) {
+    logger.error('Failed to refresh AI model lists from admin route', {
+      category: 'admin_refresh',
+      metadata: { error: error.message, user: req.user?.name || null },
+    });
+    return redirectAdminWithFeedback(res, returnTo, 'error', 'Unable to refresh the provider model lists right now.');
+  }
+};
 
 exports.set_type = async (req, res) => {
   const id = req.body.id;

@@ -6,13 +6,12 @@ const sharp = require('sharp');
 const mongoose = require('mongoose');
 const logger = require('./utils/logger');
 const { runPreflightChecks, notifyStartupAlert } = require('./utils/startupChecks');
-const { fetchUsageSummaryForPeriod } = require('./usage');
+const { syncOpenAIUsageHistory } = require('./services/openaiUsageSyncService');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
 const batchprompt = require('./models/batchprompt');
 const embedding = require('./models/embedding');
 const openaicalllog = require('./models/openaicalllog');
-const OpenAIUsage = require('./models/openai_usage');
 const SoraVideo = require('./models/sora_video');
 const ApiDebugLog = require('./models/api_debug_log');
 const TransactionModel = require('./models/transaction_db');
@@ -530,31 +529,8 @@ async function performDatabaseMaintenance() {
     summary.deletedTestConversations = conversationRemoved;
 
     if (process.env.OPENAI_ADMIN_KEY) {
-      let currentMs = Date.now() - 1000 * 60 * 60 * 24 * 30;
-      for (let i = 0; i < 31; i += 1) {
-        const now = new Date(currentMs);
-        const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-        const startDate = new Date(endDate.getTime() - 1000 * 60 * 60 * 24);
-        const dateString = `${startDate.getFullYear()}-${startDate.getMonth() > 8 ? startDate.getMonth() + 1 : `0${startDate.getMonth() + 1}`}-${startDate.getDate() > 9 ? startDate.getDate() : `0${startDate.getDate()}`}`;
-        const existing = await OpenAIUsage.find({ entry_date: dateString });
-        if (existing.length === 0) {
-          const usageSummary = await withRetry(
-            async () => {
-              const summaryForDay = await fetchUsageSummaryForPeriod(startDate, endDate);
-              if (!summaryForDay) {
-                throw new Error('Usage summary unavailable');
-              }
-              return summaryForDay;
-            },
-            { attempts: 3, baseDelayMs: 750, label: `openai-usage-${dateString}` },
-          );
-          usageSummary.entry_date = dateString;
-          await new OpenAIUsage(usageSummary).save();
-          summary.usageEntriesInserted += 1;
-          logger.notice(`Saved OpenAI usage data for ${dateString}`);
-        }
-        currentMs += 1000 * 60 * 60 * 24;
-      }
+      const usageSyncSummary = await syncOpenAIUsageHistory();
+      summary.usageEntriesInserted = usageSyncSummary.usageEntriesInserted || 0;
     } else {
       summary.usageSyncSkipped = true;
       logger.warning('Skipping OpenAI usage sync; OPENAI_ADMIN_KEY not configured', {
