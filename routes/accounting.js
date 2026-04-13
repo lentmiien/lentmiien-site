@@ -26,6 +26,7 @@ router.get('/cards/api/overview', controller.creditCardsOverview);
 router.get('/cards/api/month/:year/:month', controller.creditCardsMonthData);
 router.post('/cards/api/transaction', controller.creditCardsCreateTransaction);
 router.delete('/cards/api/transaction/:transactionId', controller.creditCardsDeleteTransaction);
+router.post('/cards/api/month/:year/:month/push-to-next', controller.creditCardsPushTransactionsToNextMonth);
 router.post('/cards/api/month/:year/:month/confirm', controller.creditCardsConfirmMonth);
 router.patch('/cards/api/card/:cardId', controller.creditCardsUpdateCard);
 router.delete('/cards/api/card/:cardId/data', controller.creditCardsClearData);

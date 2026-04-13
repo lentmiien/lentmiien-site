@@ -62,12 +62,21 @@ block content
           h4.credit-section-title Comparison vs previous month
           .comparison-card__body
       .credit-section.month-transactions
-        h3.credit-section-title Transactions
-        p.inline-feedback All transactions recorded for the selected month.
+        .month-transactions__header
+          div
+            h3.credit-section-title Transactions
+            p#transactionsDescription.inline-feedback All transactions recorded for the selected month.
+          .month-transactions__bulk.hidden#transactionPushControls
+            label.form-chip(for='selectAllTransactions')
+              input#selectAllTransactions(type='checkbox', aria-label='Select all transactions to push')
+              span Select all
+            button#pushTransactionsBtn.btn.btn-outline-primary(type='button', disabled) Push selected to next month
+        p#transactionsFeedback.inline-feedback.hidden
         .month-transactions__table
           table.credit-table
             thead
               tr
+                th#transactionSelectHeader.credit-table__selection.hidden
                 th Date
                 th Label
                 th Amount

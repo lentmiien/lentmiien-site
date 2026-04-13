@@ -432,6 +432,36 @@
   padding: 24px;
 }
 
+.month-transactions__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.month-transactions__bulk {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.month-transactions__bulk .form-chip {
+  margin: 0;
+}
+
+.month-transactions__bulk input[type="checkbox"],
+.credit-table__selection input[type="checkbox"] {
+  accent-color: var(--credit-accent);
+}
+
+.credit-table__selection {
+  width: 1%;
+  white-space: nowrap;
+}
+
 .month-transactions__table {
   overflow-x: auto;
 }
@@ -469,5 +499,10 @@
   .credit-limit-form input {
     flex: 1;
     min-width: 0;
+  }
+
+  .month-transactions__bulk {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

@@ -10,6 +10,14 @@
     activeCardId: pageData.activeCardId || (pageData.cards && pageData.cards[0] ? pageData.cards[0].id : null),
     year: Number(pageData.year),
     month: Number(pageData.month),
+    transactionPush: {
+      allowed: false,
+      reason: null,
+      target: null,
+      targetDate: null,
+    },
+    selectedTransactionIds: new Set(),
+    pushInFlight: false,
     navigation: {
       previous: null,
       next: null,
@@ -40,6 +48,12 @@
     comparisonBlock: document.getElementById('comparisonBlock'),
     comparisonBody: document.querySelector('#comparisonBlock .comparison-card__body'),
     transactionsBody: document.getElementById('monthTransactionsBody'),
+    transactionsDescription: document.getElementById('transactionsDescription'),
+    transactionsFeedback: document.getElementById('transactionsFeedback'),
+    transactionPushControls: document.getElementById('transactionPushControls'),
+    transactionSelectHeader: document.getElementById('transactionSelectHeader'),
+    selectAllTransactions: document.getElementById('selectAllTransactions'),
+    pushTransactionsBtn: document.getElementById('pushTransactionsBtn'),
     updatedAtInfo: document.getElementById('updatedAtInfo'),
     backToDashboard: document.getElementById('backToDashboard'),
   };
@@ -72,6 +86,15 @@
       dashUrl.searchParams.set('cardId', state.activeCardId);
       elements.backToDashboard.setAttribute('href', dashUrl.toString());
     }
+    if (elements.transactionsBody) {
+      elements.transactionsBody.addEventListener('change', handleTransactionSelectionChange);
+    }
+    if (elements.selectAllTransactions) {
+      elements.selectAllTransactions.addEventListener('change', toggleSelectAllTransactions);
+    }
+    if (elements.pushTransactionsBtn) {
+      elements.pushTransactionsBtn.addEventListener('click', pushSelectedTransactions);
+    }
 
     if (state.year && state.month) {
       loadMonthData();
@@ -84,6 +107,7 @@
     if (state.activeCardId) {
       url.searchParams.set('cardId', state.activeCardId);
     }
+    showTransactionsFeedback('');
     try {
       const data = await fetchJson(url.toString());
       renderMonth(data);
@@ -106,6 +130,13 @@
   function renderMonth(data) {
     if (!data || !data.summary) return;
     const summary = data.summary;
+    state.transactionPush = {
+      allowed: Boolean(data.transactionPush && data.transactionPush.allowed),
+      reason: data.transactionPush ? data.transactionPush.reason : null,
+      target: data.transactionPush ? data.transactionPush.target : null,
+      targetDate: data.transactionPush ? data.transactionPush.targetDate : null,
+    };
+    state.selectedTransactionIds.clear();
 
     if (elements.summaryLimit) elements.summaryLimit.textContent = formatCurrency(summary.creditLimit);
     setAmountWithPercent(elements.summaryStarting, summary.startingBalance, elements.summaryStartingPercent, summary.startingBalancePercent);
@@ -123,6 +154,7 @@
 
     renderRunningChart(data.dailySeries || []);
     renderComparison(data.comparison);
+    renderTransactionPushControls(summary);
     renderTransactions(data.transactions || []);
 
     if (elements.updatedAtInfo) {
@@ -152,8 +184,9 @@
 
     if (monthTransactions.length === 0) {
       const emptyRow = document.createElement('tr');
-      emptyRow.innerHTML = '<td colspan="6" class="inline-feedback">No transactions recorded for this month.</td>';
+      emptyRow.innerHTML = `<td colspan="${getTransactionTableColumnCount()}" class="inline-feedback">No transactions recorded for this month.</td>`;
       elements.transactionsBody.appendChild(emptyRow);
+      syncTransactionSelectionState();
       return;
     }
 
@@ -167,8 +200,12 @@
       const createdLabel = tx.createdAt
         ? new Date(tx.createdAt).toLocaleString()
         : '–';
+      const selectionCell = state.transactionPush.allowed
+        ? `<td class="credit-table__selection"><input class="js-transaction-select" type="checkbox" data-id="${tx.id}" aria-label="Select ${escapeHtml(tx.label || 'transaction')}"></td>`
+        : '';
 
       row.innerHTML = `
+        ${selectionCell}
         <td>${formatDate(tx.transactionDate)}</td>
         <td>${escapeHtml(tx.label || '')}</td>
         <td class="credit-table__amount ${amountClass}">${formatCurrency(tx.amount)}</td>
@@ -178,6 +215,8 @@
       `;
       elements.transactionsBody.appendChild(row);
     });
+
+    syncTransactionSelectionState();
   }
 
   function renderRunningChart(series) {
@@ -341,6 +380,34 @@
     }
   }
 
+  function renderTransactionPushControls(summary) {
+    const pushState = state.transactionPush || {};
+    const allowed = Boolean(pushState.allowed);
+    const targetDateLabel = pushState.targetDate ? formatDate(pushState.targetDate) : 'the first day of next month';
+    const defaultDescription = 'All transactions recorded for the selected month.';
+    const pushDescription = `Select end-of-month transactions that should be moved to ${targetDateLabel}.`;
+    const blockedDescription = pushState.reason || defaultDescription;
+
+    if (elements.transactionsDescription) {
+      elements.transactionsDescription.textContent = allowed
+        ? pushDescription
+        : (!summary.confirmed && pushState.reason ? blockedDescription : defaultDescription);
+    }
+    if (elements.transactionPushControls) {
+      elements.transactionPushControls.classList.toggle('hidden', !allowed);
+    }
+    if (elements.transactionSelectHeader) {
+      elements.transactionSelectHeader.classList.toggle('hidden', !allowed);
+    }
+    if (elements.selectAllTransactions) {
+      elements.selectAllTransactions.checked = false;
+      elements.selectAllTransactions.indeterminate = false;
+      elements.selectAllTransactions.disabled = !allowed;
+    }
+
+    syncTransactionSelectionState();
+  }
+
   function updateUrl() {
     const monthPath = `${pageData.routes.monthViewBase}/${state.year}/${String(state.month).padStart(2, '0')}`;
     const url = new URL(monthPath, window.location.origin);
@@ -357,6 +424,114 @@
       url.searchParams.set('cardId', state.activeCardId);
     }
     window.history.replaceState({}, '', url.pathname + url.search);
+  }
+
+  function handleTransactionSelectionChange(event) {
+    const checkbox = event.target.closest('.js-transaction-select');
+    if (!checkbox) return;
+    const { id } = checkbox.dataset;
+    if (!id) return;
+    if (checkbox.checked) {
+      state.selectedTransactionIds.add(id);
+    } else {
+      state.selectedTransactionIds.delete(id);
+    }
+    syncTransactionSelectionState();
+  }
+
+  function toggleSelectAllTransactions() {
+    if (!elements.transactionsBody || !elements.selectAllTransactions) return;
+    const shouldSelect = elements.selectAllTransactions.checked;
+    const checkboxes = elements.transactionsBody.querySelectorAll('.js-transaction-select');
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = shouldSelect;
+      const { id } = checkbox.dataset;
+      if (!id) return;
+      if (shouldSelect) {
+        state.selectedTransactionIds.add(id);
+      } else {
+        state.selectedTransactionIds.delete(id);
+      }
+    });
+    syncTransactionSelectionState();
+  }
+
+  function syncTransactionSelectionState() {
+    const checkboxes = elements.transactionsBody
+      ? Array.from(elements.transactionsBody.querySelectorAll('.js-transaction-select'))
+      : [];
+    const validIds = new Set(checkboxes.map((checkbox) => checkbox.dataset.id).filter(Boolean));
+    state.selectedTransactionIds.forEach((id) => {
+      if (!validIds.has(id)) {
+        state.selectedTransactionIds.delete(id);
+      }
+    });
+
+    let selectedCount = 0;
+    checkboxes.forEach((checkbox) => {
+      const { id } = checkbox.dataset;
+      const checked = Boolean(id && state.selectedTransactionIds.has(id));
+      checkbox.checked = checked;
+      if (checked) selectedCount += 1;
+    });
+
+    if (elements.selectAllTransactions) {
+      elements.selectAllTransactions.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+      elements.selectAllTransactions.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+    if (elements.pushTransactionsBtn) {
+      const targetDateLabel = state.transactionPush && state.transactionPush.targetDate
+        ? formatDate(state.transactionPush.targetDate)
+        : 'next month';
+      elements.pushTransactionsBtn.textContent = state.pushInFlight
+        ? 'Pushing...'
+        : `Push selected to ${targetDateLabel}`;
+      elements.pushTransactionsBtn.disabled = !state.transactionPush.allowed || state.pushInFlight || selectedCount === 0;
+    }
+  }
+
+  async function pushSelectedTransactions() {
+    const selectedIds = Array.from(state.selectedTransactionIds);
+    if (!selectedIds.length) {
+      showTransactionsFeedback('Select at least one transaction to push.', true);
+      return;
+    }
+
+    const targetDateLabel = state.transactionPush && state.transactionPush.targetDate
+      ? formatDate(state.transactionPush.targetDate)
+      : 'the first day of next month';
+    if (!window.confirm(`Push ${selectedIds.length} selected transaction${selectedIds.length === 1 ? '' : 's'} to ${targetDateLabel}?`)) {
+      return;
+    }
+
+    const endpoint = `${pageData.routes.monthData}/${state.year}/${String(state.month).padStart(2, '0')}/push-to-next`;
+    state.pushInFlight = true;
+    syncTransactionSelectionState();
+    showTransactionsFeedback('');
+
+    try {
+      const result = await fetchJson(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardId: state.activeCardId,
+          transactionIds: selectedIds,
+        }),
+      });
+      await loadMonthData();
+      showTransactionsFeedback(
+        `Moved ${result.moved} transaction${result.moved === 1 ? '' : 's'} to ${formatDate(result.targetDate)}.`,
+      );
+    } catch (error) {
+      showTransactionsFeedback(error.message, true);
+    } finally {
+      state.pushInFlight = false;
+      syncTransactionSelectionState();
+    }
+  }
+
+  function getTransactionTableColumnCount() {
+    return state.transactionPush.allowed ? 7 : 6;
   }
 
   function setAmountWithPercent(amountElement, amount, percentElement, percentValue) {
@@ -407,6 +582,13 @@
       '"': '&quot;',
       "'": '&#39;',
     }[match]));
+  }
+
+  function showTransactionsFeedback(message, isError = false) {
+    if (!elements.transactionsFeedback) return;
+    elements.transactionsFeedback.textContent = message || '';
+    elements.transactionsFeedback.classList.toggle('hidden', !message);
+    elements.transactionsFeedback.classList.toggle('inline-feedback--error', Boolean(message) && isError);
   }
 
   async function fetchJson(url, options = {}) {

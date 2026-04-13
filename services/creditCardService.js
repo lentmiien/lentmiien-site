@@ -286,6 +286,57 @@ async function computeBasicMonthSummary(cardId, year, month, creditLimit = null)
   return decorateSummaryWithCreditLimit(summary, creditLimit);
 }
 
+async function resolveTransactionPushState(cardId, year, month, monthDoc = null) {
+  const target = incrementMonth(year, month);
+  const targetDate = new Date(Date.UTC(target.year, target.month - 1, 1));
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+
+  if (compareYearMonth(year, month, currentYear, currentMonth) >= 0) {
+    return {
+      allowed: false,
+      reason: 'Only past months can be adjusted.',
+      target,
+      targetDate,
+    };
+  }
+
+  if (monthDoc && monthDoc.confirmedAt) {
+    return {
+      allowed: false,
+      reason: 'Confirmed months cannot be adjusted.',
+      target,
+      targetDate,
+    };
+  }
+
+  const confirmedConflict = await CreditCardMonthlyBalance.findOne({
+    creditCard: cardId,
+    confirmedAt: { $ne: null },
+    $or: [
+      { year: { $gt: target.year } },
+      { year: target.year, month: { $gte: target.month } },
+    ],
+  }).sort({ year: 1, month: 1 }).lean();
+
+  if (confirmedConflict) {
+    return {
+      allowed: false,
+      reason: `Transactions can only be pushed while later months are still unconfirmed. ${monthKey(confirmedConflict.year, confirmedConflict.month)} is already confirmed.`,
+      target,
+      targetDate,
+    };
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+    target,
+    targetDate,
+  };
+}
+
 const creditCardService = {
   async listCards(options = {}) {
     const { includeStats = false } = options;
@@ -552,7 +603,10 @@ const creditCardService = {
 
     const previousParts = decrementMonth(yearNum, monthNum);
     const nextParts = incrementMonth(yearNum, monthNum);
-    const previousSummary = await computeBasicMonthSummary(card._id, previousParts.year, previousParts.month, card.creditLimit);
+    const [previousSummary, transactionPush] = await Promise.all([
+      computeBasicMonthSummary(card._id, previousParts.year, previousParts.month, card.creditLimit),
+      resolveTransactionPushState(card._id, yearNum, monthNum, monthDoc),
+    ]);
     const summary = decorateSummaryWithCreditLimit({
       year: yearNum,
       month: monthNum,
@@ -612,6 +666,12 @@ const creditCardService = {
       dailySeries,
       comparison,
       navigation,
+      transactionPush: {
+        allowed: Boolean(transactionPush && transactionPush.allowed),
+        reason: transactionPush ? transactionPush.reason : null,
+        target: transactionPush ? transactionPush.target : incrementMonth(yearNum, monthNum),
+        targetDate: transactionPush ? transactionPush.targetDate.toISOString() : new Date(Date.UTC(yearNum, monthNum, 1)).toISOString(),
+      },
     };
   },
 
@@ -661,6 +721,65 @@ const creditCardService = {
     const doc = await CreditCardTransaction.findByIdAndDelete(id);
     if (!doc) throw new Error('Transaction not found');
     return { id };
+  },
+
+  async pushTransactionsToNextMonth({ cardId, year, month, transactionIds = [] }) {
+    if (!year || !month) throw new Error('Year and month are required');
+    const card = await this._resolveCard(cardId);
+    const yearNum = Number(year);
+    const monthNum = Number(month);
+    if (!Number.isInteger(yearNum) || !Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12) {
+      throw new Error('Invalid year or month');
+    }
+
+    const selectedIds = Array.from(new Set(
+      (Array.isArray(transactionIds) ? transactionIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean),
+    ));
+
+    if (!selectedIds.length) {
+      throw new Error('Select at least one transaction to push.');
+    }
+
+    if (selectedIds.some((id) => !mongoose.isValidObjectId(id))) {
+      throw new Error('Invalid transaction selection.');
+    }
+
+    const monthDoc = await CreditCardMonthlyBalance.findOne({
+      creditCard: card._id,
+      year: yearNum,
+      month: monthNum,
+    }).lean();
+    const pushState = await resolveTransactionPushState(card._id, yearNum, monthNum, monthDoc);
+    if (!pushState.allowed) {
+      throw new Error(pushState.reason || 'This month cannot be adjusted.');
+    }
+
+    const monthStart = new Date(Date.UTC(yearNum, monthNum - 1, 1));
+    const monthEnd = new Date(Date.UTC(yearNum, monthNum, 1));
+    const objectIds = selectedIds.map((id) => new ObjectId(id));
+    const matchingTransactions = await CreditCardTransaction.find({
+      _id: { $in: objectIds },
+      creditCard: card._id,
+      transactionDate: { $gte: monthStart, $lt: monthEnd },
+    }).select({ _id: 1 }).lean();
+
+    if (matchingTransactions.length !== objectIds.length) {
+      throw new Error('Some selected transactions are no longer in this month.');
+    }
+
+    const matchingIds = matchingTransactions.map((tx) => tx._id);
+    await CreditCardTransaction.updateMany(
+      { _id: { $in: matchingIds } },
+      { $set: { transactionDate: pushState.targetDate } },
+    );
+
+    return {
+      moved: matchingTransactions.length,
+      target: pushState.target,
+      targetDate: pushState.targetDate.toISOString(),
+    };
   },
 
   async confirmMonthlyBalance({ cardId, year, month }) {

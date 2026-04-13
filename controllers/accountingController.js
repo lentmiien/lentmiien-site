@@ -209,6 +209,22 @@ exports.creditCardsDeleteTransaction = async (req, res) => {
   }
 };
 
+exports.creditCardsPushTransactionsToNextMonth = async (req, res) => {
+  try {
+    const { year, month } = req.params;
+    const { cardId = null, transactionIds = [] } = req.body || {};
+    const result = await CreditCardService.pushTransactionsToNextMonth({
+      cardId,
+      year: Number.parseInt(year, 10),
+      month: Number.parseInt(month, 10),
+      transactionIds,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
 exports.creditCardsConfirmMonth = async (req, res) => {
   try {
     const { year, month } = req.params;
@@ -345,4 +361,3 @@ function resolvePeriodFromRequest(req) {
 function padMonth(month) {
   return month.toString().padStart(2, '0');
 }
-
