@@ -2,6 +2,11 @@ extends layout
 
 block content
   h1 Quick Notes Review
+  .d-flex.flex-column.flex-md-row.justify-content-md-between.align-items-md-center.gap-2.mb-3
+    .btn-group(role='group' aria-label='Quick note sort order')
+      button#sortNewerFirst.btn.btn-outline-primary.active(type='button' data-sort-mode='newer' aria-pressed='true') Newer first
+      button#sortCloserFirst.btn.btn-outline-primary(type='button' data-sort-mode='closer' aria-pressed='false') Closer first
+    p#quickNotesSortStatus.text-muted.mb-0 Sorted newer first.
   #quickNotes
   button#deleteOldNotes.btn.btn-danger Delete notes older than 30 days
   hr
