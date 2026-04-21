@@ -1309,14 +1309,28 @@ class MessageService {
 
   async processFailedResponse(conversation, response_id) {
     // TODO: Only support OpenAi at this stage
-    const resp = await ai.fetchCompleted(response_id);
-    let error_msg = "Unknown error";
-    for (const m of resp) {
-      if (Object.hasOwn(m, 'error')) {
-        if (m.error) error_msg = m.error;
-      }
+    const resp = await ai.retrieveResponse(response_id);
+    if (!resp) {
+      return 'Unable to retrieve failed OpenAI response details';
     }
-    return error_msg;
+
+    if (typeof resp.error === 'string' && resp.error.trim().length > 0) {
+      return resp.error.trim();
+    }
+
+    if (resp.error && typeof resp.error.message === 'string' && resp.error.message.trim().length > 0) {
+      return resp.error.message.trim();
+    }
+
+    if (resp.incomplete_details && typeof resp.incomplete_details.reason === 'string' && resp.incomplete_details.reason.trim().length > 0) {
+      return `Incomplete: ${resp.incomplete_details.reason.trim()}`;
+    }
+
+    if (typeof resp.status === 'string' && resp.status.length > 0) {
+      return `OpenAI response status: ${resp.status}`;
+    }
+
+    return 'Unknown error';
   }
 }
 

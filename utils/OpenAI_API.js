@@ -172,6 +172,10 @@ function loadImageToBase64(filename) {
 }
 
 async function saveImageFromBase64(b64_img) {
+  if (typeof b64_img !== 'string' || b64_img.length === 0) {
+    throw new Error('Missing base64 image data');
+  }
+
   const number = Date.now();
   const filename = `image-${number}-.png`;
   const outputfile = path.resolve(`./public/img/${filename}`);
@@ -187,25 +191,108 @@ async function saveImageFromBase64(b64_img) {
   return jpg_filename;
 }
 
-async function convertOutput (d) {
+function createTextOutput(text, hideFromBot = false) {
+  return {
+    contentType: 'text',
+    content: {
+      text,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: null,
+    },
+    hideFromBot,
+  };
+}
+
+function createToolOutput(toolOutput, extras = {}) {
+  return {
+    contentType: 'tool',
+    content: {
+      text: null,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: extras.revisedPrompt || null,
+      imageQuality: null,
+      toolOutput,
+    },
+    hideFromBot: true,
+  };
+}
+
+function extractTextFromMessageContent(content) {
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  const parts = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue;
+    if (typeof part.text === 'string' && part.text.trim().length > 0) {
+      parts.push(part.text.trim());
+      continue;
+    }
+    if (typeof part.refusal === 'string' && part.refusal.trim().length > 0) {
+      parts.push(part.refusal.trim());
+    }
+  }
+
+  return parts.join('\n\n');
+}
+
+function extractResponseErrorMessage(response) {
+  if (!response) return '';
+  if (typeof response.error === 'string' && response.error.trim().length > 0) {
+    return response.error.trim();
+  }
+  if (response.error && typeof response.error.message === 'string' && response.error.message.trim().length > 0) {
+    return response.error.message.trim();
+  }
+  if (response.incomplete_details && typeof response.incomplete_details.reason === 'string' && response.incomplete_details.reason.trim().length > 0) {
+    return `Incomplete: ${response.incomplete_details.reason.trim()}`;
+  }
+  if (typeof response.status === 'string' && response.status.length > 0 && response.status !== 'completed') {
+    return `OpenAI response status: ${response.status}`;
+  }
+  return '';
+}
+
+async function convertOutput(d, response = null) {
   const type = type_map[d.type];
   switch (d.type) {
-    case "message":
-      return {
-        contentType: type,
-        content: {
-          text: d.content[0].text,
-          image: null,
-          audio: null,
-          tts: null,
-          transcript: null,
-          revisedPrompt: null,
-          imageQuality: null,
-          toolOutput: null,
-        },
-        hideFromBot: false,
-      };
-    case "image_generation_call":
+    case 'message': {
+      const text = extractTextFromMessageContent(d.content) || (typeof response?.output_text === 'string' ? response.output_text.trim() : '');
+      if (!text) {
+        logger.warning('OpenAI message output missing text content', {
+          itemType: d.type,
+          itemId: d.id,
+          responseId: response?.id,
+        });
+        return null;
+      }
+      return createTextOutput(text, false);
+    }
+    case 'image_generation_call': {
+      if (typeof d.result !== 'string' || d.result.length === 0) {
+        logger.warning('OpenAI image generation output missing base64 result', {
+          itemType: d.type,
+          itemId: d.id,
+          responseId: response?.id,
+          status: d.status,
+        });
+        const details = [];
+        if (d.status) details.push(`status: ${d.status}`);
+        if (d.revised_prompt) details.push(`revised_prompt: ${d.revised_prompt}`);
+        if (details.length === 0) details.push('image result unavailable');
+        return createToolOutput(`image_generation_call: ${details.join(', ')}`, {
+          revisedPrompt: d.revised_prompt,
+        });
+      }
       const image_file = await saveImageFromBase64(d.result);
       return {
         contentType: type,
@@ -216,58 +303,51 @@ async function convertOutput (d) {
           tts: null,
           transcript: null,
           revisedPrompt: d.revised_prompt,
-          imageQuality: "high",
+          imageQuality: 'high',
           toolOutput: null,
         },
         hideFromBot: true,
       };
-    case "web_search_call":
+    }
+    case 'web_search_call': {
       let search_details = [];
       if (d.action) {
         if (d.action.type) search_details.push(`type: ${d.action.type}`);
         if (d.action.query) search_details.push(`query: ${d.action.query}`);
       }
       if (search_details.length === 0) search_details.push(`${d.type}: ${d.status}`);
-      return {
-        contentType: type,
-        content: {
-          text: null,
-          image: null,
-          audio: null,
-          tts: null,
-          transcript: null,
-          revisedPrompt: null,
-          imageQuality: null,
-          toolOutput: search_details.join(', '),
-        },
-        hideFromBot: true,
-      };
-    case "reasoning":
-      if (d.summary.length === 0) {
+      return createToolOutput(search_details.join(', '));
+    }
+    case 'reasoning': {
+      const summary = Array.isArray(d.summary) ? d.summary : [];
+      if (summary.length === 0) {
         return null;
-      } else {
-        let summary_texts = [];
-        d.summary.forEach(d => {
-          if (d.type === "summary_text") summary_texts.push(d.text);
-        });
-        return {
-          contentType: type,
-          content: {
-            text: summary_texts.join('\n\n'),
-            image: null,
-            audio: null,
-            tts: null,
-            transcript: null,
-            revisedPrompt: null,
-            imageQuality: null,
-            toolOutput: null,
-          },
-          hideFromBot: true,
-        };
       }
+      let summary_texts = [];
+      summary.forEach((entry) => {
+        if (entry.type === 'summary_text' && typeof entry.text === 'string') {
+          summary_texts.push(entry.text);
+        }
+      });
+      return summary_texts.length > 0 ? createTextOutput(summary_texts.join('\n\n'), true) : null;
+    }
     default:
-      logger.notice("Type undefined: ", d);
+      logger.notice('Type undefined: ', d);
       return null;
+  }
+}
+
+async function safeConvertOutput(d, response = null) {
+  try {
+    return await convertOutput(d, response);
+  } catch (error) {
+    logger.error('Failed to convert OpenAI output item', {
+      responseId: response?.id,
+      itemType: d?.type,
+      itemId: d?.id,
+      error,
+    });
+    return createToolOutput(`conversion_error: ${d?.type || 'unknown'}`);
   }
 }
 
@@ -516,12 +596,15 @@ const fetchCompleted = async (response_id) => {
 
         const formattedOutput = [];
         for (const d of output) {
-          const data = await convertOutput(d);
+          const data = await safeConvertOutput(d, response);
           if (data) {
             formattedOutput.push(data);
           }
         }
-        formattedOutput.push({ error: response.error });
+        if (formattedOutput.length === 0 && typeof response.output_text === 'string' && response.output_text.trim().length > 0) {
+          formattedOutput.push(createTextOutput(response.output_text.trim(), false));
+        }
+        formattedOutput.push({ error: extractResponseErrorMessage(response) || null });
         return formattedOutput;
       }
     }
@@ -702,14 +785,18 @@ const convertResponseBody = async (body) => {
 
   if (Array.isArray(body.output)) {
     for (const item of body.output) {
-      const data = await convertOutput(item);
+      const data = await safeConvertOutput(item, body);
       if (data) {
         converted.push(data);
       }
     }
   }
 
-  converted.push({ error: body.error ?? null });
+  if (converted.length === 0 && typeof body.output_text === 'string' && body.output_text.trim().length > 0) {
+    converted.push(createTextOutput(body.output_text.trim(), false));
+  }
+
+  converted.push({ error: extractResponseErrorMessage(body) || null });
   return converted;
 };
 

@@ -28,7 +28,7 @@ jest.mock('../../utils/anthropic', () => ({ anthropic: jest.fn() }));
 jest.mock('../../utils/groq', () => ({ groq: jest.fn(), groq_vision: jest.fn() }));
 jest.mock('../../utils/google', () => ({ googleAI: jest.fn() }));
 jest.mock('../../utils/lmstudio', () => ({ chat: jest.fn() }));
-jest.mock('../../utils/OpenAI_API', () => ({ fetchCompleted: jest.fn() }));
+jest.mock('../../utils/OpenAI_API', () => ({ fetchCompleted: jest.fn(), retrieveResponse: jest.fn() }));
 jest.mock('../../utils/logger', () => ({
   notice: jest.fn(),
   error: jest.fn(),
@@ -48,6 +48,7 @@ jest.mock('../../database', () => {
 jest.mock('marked', () => ({ parse: mockMarkedParse }));
 
 const MessageService = require('../../services/messageService');
+const ai = require('../../utils/OpenAI_API');
 
 const createMessageDoc = (id, overrides = {}) => ({
   _id: { toString: () => id },
@@ -144,6 +145,18 @@ describe('MessageService', () => {
     expect(mockMarkedParse).toHaveBeenCalledTimes(4);
     expect(result[0].prompt_html).toBe('parsed:p1');
     expect(result[1].response_html).toBe('parsed:r2');
+  });
+
+  test('processFailedResponse returns retrieved failure details without iterating converted outputs', async () => {
+    ai.retrieveResponse.mockResolvedValue({
+      status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' },
+    });
+
+    const result = await service.processFailedResponse({}, 'resp-old');
+
+    expect(ai.retrieveResponse).toHaveBeenCalledWith('resp-old');
+    expect(result).toBe('Incomplete: max_output_tokens');
   });
 
   test('getMessagesByCategoryUserId filters by category without html parsing', async () => {
