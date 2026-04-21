@@ -452,10 +452,41 @@ const embedding = async (text, model) => {
   }
 };
 
+const retrieveOpenAIResponse = async (response_id, functionName = 'retrieveResponse') => {
+  const requestUrl = `openai.responses.retrieve:${response_id}`;
+
+  try {
+    const response = await openai.responses.retrieve(response_id);
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName,
+      responseBody: response,
+    });
+    return response;
+  } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestBody: null,
+      functionName,
+      responseBody: error,
+    });
+    logger.error('Error while retrieving OpenAI response', {
+      responseId: response_id,
+      functionName,
+      error,
+    });
+    return null;
+  }
+};
+
+const retrieveResponse = async (response_id) => {
+  return await retrieveOpenAIResponse(response_id, 'retrieveResponse');
+};
+
 const fetchCompleted = async (response_id) => {
   const waitSchedule = [0, 30000, 300000];
   const responses = [];
-  const retrieveUrl = `openai.responses.retrieve:${response_id}`;
 
   try {
     for (let attempt = 0; attempt < waitSchedule.length; attempt++) {
@@ -464,13 +495,10 @@ const fetchCompleted = async (response_id) => {
         await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
 
-      const response = await openai.responses.retrieve(response_id);
-      await recordApiDebugLog({
-        requestUrl: retrieveUrl,
-        requestBody: null,
-        functionName: 'fetchCompleted',
-        responseBody: response,
-      });
+      const response = await retrieveOpenAIResponse(response_id, 'fetchCompleted');
+      if (!response) {
+        return null;
+      }
       responses.push(response);
 
       const output = Array.isArray(response.output) ? response.output : [];
@@ -520,12 +548,6 @@ const fetchCompleted = async (response_id) => {
 
     return null;
   } catch (error) {
-    await recordApiDebugLog({
-      requestUrl: retrieveUrl,
-      requestBody: null,
-      functionName: 'fetchCompleted',
-      responseBody: error,
-    });
     logger.error(`Error while fetching completed response API: ${error}`);
     return null;
   }
@@ -868,6 +890,7 @@ const checkVideoProgress = async (video_id) => {
 module.exports = {
   chat,
   embedding,
+  retrieveResponse,
   fetchCompleted,
   uploadBatchFile,
   startBatchJob,

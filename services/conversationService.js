@@ -1,6 +1,7 @@
 ﻿const fs = require('fs');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
+const ai = require('../utils/OpenAI_API');
 
 const { Conversation5Model, PendingRequests, Chat5Model } = require('../database');
 
@@ -33,6 +34,28 @@ class ConversationService {
 
     this.categoryList = [];
     this.tagList = [];
+  }
+
+  async claimPendingRequest(response_id) {
+    const staleThreshold = new Date(Date.now() - (15 * 60 * 1000));
+
+    return await PendingRequests.findOneAndUpdate(
+      {
+        response_id,
+        $or: [
+          { processingStartedAt: null },
+          { processingStartedAt: { $exists: false } },
+          { processingStartedAt: { $lt: staleThreshold } },
+        ],
+      },
+      { $set: { processingStartedAt: new Date() } },
+      { new: true },
+    );
+  }
+
+  async releasePendingRequest(pendingId) {
+    if (!pendingId) return;
+    await PendingRequests.updateOne({ _id: pendingId }, { $set: { processingStartedAt: null } });
   }
 
   async generateCategoryList() {
@@ -1475,62 +1498,116 @@ class ConversationService {
     return msg_ids;
   }
 
-  // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
-  async processCompletedResponse(response_id) {
-    const pending = await PendingRequests.findOne({response_id});
+  async reconcilePendingResponses({ limit = 25 } = {}) {
+    const parsedLimit = Number.parseInt(limit, 10);
+    const resolvedLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25;
+    const pendingItems = await PendingRequests.find({}).sort({ _id: 1 }).limit(resolvedLimit);
+    const updates = [];
 
-    if (!pending) {
-      logger.warning('No pending request found for completed response', { response_id });
-      return null;
-    }
+    for (const pending of pendingItems) {
+      if (!pending?.response_id) {
+        continue;
+      }
 
-    const conversation = await Conversation5Model.findById(pending.conversation_id);
+      const response = await ai.retrieveResponse(pending.response_id);
+      if (!response || typeof response.status !== 'string') {
+        continue;
+      }
 
-    if (!conversation) {
-      logger.warning('Conversation not found for completed response', { response_id, conversation_id: pending.conversation_id });
-      await PendingRequests.deleteOne({_id: pending._id});
-      return { conversation: null, messages: [], placeholder_id: pending.placeholder_id };
-    }
+      if (response.status === 'completed') {
+        const result = await this.processCompletedResponse(pending.response_id);
+        if (result) {
+          updates.push({
+            type: 'completed',
+            response_id: pending.response_id,
+            ...result,
+          });
+        }
+        continue;
+      }
 
-    const messages = await this.messageService.processCompletedResponse(conversation, response_id);
-
-    conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
-    for (const m of messages) {
-      if (!m.error) {
-        conversation.messages.push(m._id.toString());
+      if (response.status === 'cancelled' || response.status === 'failed' || response.status === 'incomplete') {
+        const error_msg = await this.processFailedResponse(pending.response_id);
+        updates.push({
+          type: 'failed',
+          response_id: pending.response_id,
+          conversation_id: pending.conversation_id,
+          placeholder_id: pending.placeholder_id,
+          error_msg,
+          status: response.status,
+        });
       }
     }
 
-    await conversation.save();
-    await PendingRequests.deleteOne({_id: pending._id});
+    return updates;
+  }
 
-    return { conversation, messages, placeholder_id: pending.placeholder_id };
+  // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
+  async processCompletedResponse(response_id) {
+    const pending = await this.claimPendingRequest(response_id);
+
+    if (!pending) {
+      logger.debug('No claimable pending request found for completed response', { response_id });
+      return null;
+    }
+
+    try {
+      const conversation = await Conversation5Model.findById(pending.conversation_id);
+
+      if (!conversation) {
+        logger.warning('Conversation not found for completed response', { response_id, conversation_id: pending.conversation_id });
+        await PendingRequests.deleteOne({_id: pending._id});
+        return { conversation: null, messages: [], placeholder_id: pending.placeholder_id };
+      }
+
+      const messages = await this.messageService.processCompletedResponse(conversation, response_id);
+
+      conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
+      for (const m of messages) {
+        if (!m.error) {
+          conversation.messages.push(m._id.toString());
+        }
+      }
+
+      await conversation.save();
+      await PendingRequests.deleteOne({_id: pending._id});
+
+      return { conversation, messages, placeholder_id: pending.placeholder_id };
+    } catch (error) {
+      await this.releasePendingRequest(pending._id);
+      throw error;
+    }
   }
 
   async processFailedResponse(response_id) {
-    const pending = await PendingRequests.findOne({response_id});
+    const pending = await this.claimPendingRequest(response_id);
 
     if (!pending) {
-      logger.warning('No pending request found for failed response', { response_id });
+      logger.debug('No claimable pending request found for failed response', { response_id });
       return 'No pending request found for failed response';
     }
 
-    const conversation = await Conversation5Model.findById(pending.conversation_id);
+    try {
+      const conversation = await Conversation5Model.findById(pending.conversation_id);
 
-    if (!conversation) {
-      logger.warning('Conversation not found for failed response', { response_id, conversation_id: pending.conversation_id });
+      if (!conversation) {
+        logger.warning('Conversation not found for failed response', { response_id, conversation_id: pending.conversation_id });
+        await PendingRequests.deleteOne({_id: pending._id});
+        return 'Conversation not found for failed response';
+      }
+
+      const error_msg = await this.messageService.processFailedResponse(conversation, response_id);
+
+      conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
+
+      await conversation.save();
       await PendingRequests.deleteOne({_id: pending._id});
-      return 'Conversation not found for failed response';
+
+      return error_msg;
+    } catch (error) {
+      await this.releasePendingRequest(pending._id);
+      throw error;
     }
-
-    const error_msg = await this.messageService.processFailedResponse(conversation, response_id);
-
-    conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
-
-    await conversation.save();
-    await PendingRequests.deleteOne({_id: pending._id});
-
-    return error_msg;
   }
 
   async deleteNewConversation(id) {

@@ -1,9 +1,15 @@
-For the recently added "Learning Lab" (controllers/learningcontroller.js), and the admin tool (controllers/learningAdminController.js), there are a couple of things that I feel are missing at the moment.
+For the OpenAI API webhook responses, I've seen the following error repeatedly lately:
+```
+{
+  "name": "Error",
+  "message": "Webhook timestamp is too old",
+  "stack": "Error: Webhook timestamp is too old\n    at Webhooks.verifySignature (C:\\Projects\\lentmiien-site\\node_modules\\openai\\resources\\webhooks.js:50:19)\n    at Webhooks.unwrap (C:\\Projects\\lentmiien-site\\node_modules\\openai\\resources\\webhooks.js:19:20)\n    at exports.openai (C:\\Projects\\lentmiien-site\\controllers\\webhook.js:40:35)\n    at Layer.handle [as handle_request] (C:\\Projects\\lentmiien-site\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (C:\\Projects\\lentmiien-site\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at C:\\Projects\\lentmiien-site\\node_modules\\body-parser\\lib\\read.js:137:5\n    at AsyncResource.runInAsyncScope (node:async_hooks:211:14)\n    at invokeCallback (C:\\Projects\\lentmiien-site\\node_modules\\raw-body\\index.js:238:16)\n    at done (C:\\Projects\\lentmiien-site\\node_modules\\raw-body\\index.js:227:7)\n    at IncomingMessage.onEnd (C:\\Projects\\lentmiien-site\\node_modules\\raw-body\\index.js:287:7)"
+}
+```
 
-Most importantly, even if I can edit content on the `views/admin_learning.pug` page, I don't see any options for adding new content, so I need to expand the admin tool to allow for adding new topics, subtopics, and items.
+A side effect of the error is that I don't fetch the response and save to my database, so even if the response is there (completed on OpenAI's side), I end up with no response on my side (this app).
+*I have confirmed the responses as complete on the OpenAI dashboard, so the webhook seems to be the response "complete" webhook, but for some reason, there is a "timestamp?" error?
 
-In the item edit section, on the edit content page, there is a "Scene settings" section, with light grayish background color and white text, making the text mostly unreadable, so fix the coloring, I'm aiming for a dark theme, refer to `documentation/README-Colors.md` for my color theme.
+Review my webhook code in `controllers/webhook.js`, and figure out what might be the error, and how to potentially fix the problem.
 
-There is also this "Built-in art" option for some quiz options, that uses an "Art value" string to identify which SVG to insert. The thing is that I don't know where the SVGs are saved, but I'd like to add an option for "uploading" additional SVG reasources, that can then be used as "Built-in art", so add some SVG upload modal, that allows me to expand the "Built-in art" library, and some library preview page, and save the SVGs in some reasonable place, maybe a new document collection in the database, and make the tool use that as source for "Built-in art".
-
-Also, create an admin page, that display all users and their overall progress, and possibility of displaying a nice user learning profile, with a few interesting statistics and a nice timeline, etc.
+Some requests complete without errors, so the error seems to have some randomness. Also, I've seen several incident reports from OpenAI, so maybe that's related, but most importantly, I need some backup plan for these kind of errors, so that I don't get stuck without responses on my side.

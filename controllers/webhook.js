@@ -4,6 +4,8 @@ const KnowledgeService = require('../services/knowledgeService');
 const BatchService = require('../services/batchService');
 const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, BatchPromptModel, BatchRequestModel, SoraVideo } = require('../database');
 const logger = require('../utils/logger');
+const { emitConversationMessages, toClientMessage } = require('../utils/chat5Realtime');
+const { unwrapOpenAIWebhook } = require('../utils/openaiWebhook');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
@@ -13,34 +15,18 @@ const { fetchVideo, checkVideoProgress } = require('../utils/OpenAI_API');
 const { OpenAI } = require('openai');
 const client = new OpenAI({ webhookSecret: process.env.OPENAI_WEBHOOK_SECRET });
 
-function toPlain(doc) {
-  if (!doc) return doc;
-  if (typeof doc.toObject === 'function') {
-    return doc.toObject({ virtuals: true, versionKey: false });
-  }
-  if (Array.isArray(doc)) return doc.map(toPlain);
-  if (typeof doc === 'object') {
-    return { ...doc };
-  }
-  return doc;
-}
-
-function toClientMessage(message) {
-  const plain = toPlain(message);
-  if (!plain) return plain;
-  if (plain._id && typeof plain._id !== 'string') plain._id = plain._id.toString();
-  if (plain.id && typeof plain.id !== 'string') plain.id = plain.id.toString();
-  return plain;
-}
-
 exports.openai = async (req, res) => {
   let event;
 
   try {
-    event = await client.webhooks.unwrap(req.body, req.headers);
+    event = await unwrapOpenAIWebhook({
+      client,
+      payload: req.body,
+      headers: req.headers,
+    });
   } catch (error) {
     if (error instanceof OpenAI.InvalidWebhookSignatureError) {
-      logger.error('Invalid signature', error);
+      logger.error('Invalid OpenAI webhook signature', error);
       return res.status(400).send('Invalid signature');
     }
 
@@ -155,11 +141,11 @@ exports.openai = async (req, res) => {
       const result = await conversationService.processCompletedResponse(response_id);
 
       if (!result) {
-        logger.warning('No pending conversation for completed response', { response_id });
+        logger.debug('No pending conversation claimed for completed response', { response_id });
         return;
       }
 
-      const { conversation, messages } = result;
+      const { conversation, messages, placeholder_id } = result;
 
       if (!conversation) {
         logger.warning('Conversation missing for completed response', { response_id });
@@ -173,13 +159,11 @@ exports.openai = async (req, res) => {
         return;
       }
 
-      const roomForUser = io.userRoom;
-      const roomForConversation = io.conversationRoom;
-      const convRoom = roomForConversation(conversation._id.toString());
-      io.to(convRoom).emit('chat5-messages', { id: conversation._id.toString(), messages });
-      io.to(convRoom).emit('chat5_6-messages', { id: conversation._id.toString(), messages: messages.map(toClientMessage) });
-      const rooms = conversation.members.map(roomForUser);
-      io.to(rooms).emit('chat5-notice', { id: conversation._id.toString(), title: conversation.title });
+      emitConversationMessages(io, {
+        conversation,
+        messages,
+        placeholderId: placeholder_id,
+      });
     }
 
     if (event.type === 'response.cancelled' || event.type === 'response.failed' || event.type === 'response.incomplete') {

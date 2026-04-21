@@ -22,6 +22,8 @@ jest.mock('sharp', () =>
 jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
   notice: jest.fn(),
+  warning: jest.fn(),
+  debug: jest.fn(),
   info: jest.fn(),
   warn: jest.fn()
 }));
@@ -29,6 +31,10 @@ jest.mock('../../utils/logger', () => ({
 jest.mock('../../database', () => ({
   Conversation5Model: {},
   PendingRequests: {}
+}));
+
+jest.mock('../../utils/OpenAI_API', () => ({
+  retrieveResponse: jest.fn(),
 }));
 
 const ConversationService = require('../../services/conversationService');

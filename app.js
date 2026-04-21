@@ -39,6 +39,7 @@ const socketIO = require('./socket_io/index');
 const scheduleDailyBatchTrigger = require('./schedulers/batchTrigger');
 const scheduleDatabaseUsageMonitor = require('./schedulers/databaseUsageMonitor');
 const scheduleAgent5Runner = require('./schedulers/agent5');
+const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecovery');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
 
@@ -530,3 +531,4 @@ server.on('error', (err) => {
 scheduleDailyBatchTrigger();
 scheduleDatabaseUsageMonitor();
 scheduleAgent5Runner();
+scheduleOpenAIResponseRecovery(app);
