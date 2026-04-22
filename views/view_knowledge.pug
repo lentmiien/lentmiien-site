@@ -12,6 +12,8 @@ block content
           a.btn.btn-outline-primary(href=`/chat5?id=${knowledge.originConversationId}`) Show chat 
         a.btn.btn-outline-primary(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge 
         button.btn.btn-outline-warning(data-title=knowledge.title, data-content=knowledge.contentMarkdown, onclick="CopyKnowledge(this)") Copy
+        if cookbookEntryUrl
+          a.btn.btn-outline-info(href=cookbookEntryUrl) Cookbook entry
         a.btn.btn-outline-primary(href=`/chat4/knowledgelist`) Back
       hr
       each img in knowledge.images

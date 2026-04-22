@@ -19,8 +19,8 @@ block content
       .d-flex.flex-wrap.gap-2
         a.btn.btn-outline-secondary(href='/cooking/cookbook') Back to list
         a.btn.btn-outline-primary(href=`/cooking/cookbook/${recipe._id.toString()}/edit`) Edit
-        if recipe.originKnowledgeId
-          a.btn.btn-outline-info(href=`/chat4/viewknowledge/${recipe.originKnowledgeId}`) Legacy entry
+        if recipe.legacyViewPath
+          a.btn.btn-outline-info(href=recipe.legacyViewPath) Legacy entry
 
     if status === 'saved'
       .alert.alert-success.mb-3 Rating saved.
@@ -212,7 +212,7 @@ block content
               h6.mb-2 Source knowledge
               p.small.mb-2
                 strong= sourceKnowledge.title
-              a.btn.btn-sm.btn-outline-info(href=`/chat4/viewknowledge/${sourceKnowledge._id.toString()}`) Open legacy recipe
+              a.btn.btn-sm.btn-outline-info(href=sourceKnowledge.legacyViewPath) Open legacy recipe
 
 block script
   script(src='/js/cookbook_view.js', defer)

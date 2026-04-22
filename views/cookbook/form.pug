@@ -106,7 +106,7 @@ block content
                 .small.text-muted.mb-2 Markdown preview
                 div!= sourceKnowledge.contentHTML
               .mt-3
-                a.btn.btn-sm.btn-outline-primary(href=`/chat4/viewknowledge/${sourceKnowledge._id}`) Open legacy entry
+                a.btn.btn-sm.btn-outline-primary(href=sourceKnowledge.legacyViewPath) Open legacy entry
         .card.shadow-sm
           .card-body
             h5 JSON format examples

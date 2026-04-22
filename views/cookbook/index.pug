@@ -85,8 +85,8 @@ block content
                 .d-flex.flex-wrap.gap-2.mt-auto
                   a.btn.btn-sm.btn-primary(href=`/cooking/cookbook/${recipe._id.toString()}`) View
                   a.btn.btn-sm.btn-outline-secondary(href=`/cooking/cookbook/${recipe._id.toString()}/edit`) Edit
-                  if recipe.originKnowledgeId
-                    a.btn.btn-sm.btn-outline-info(href=`/chat4/viewknowledge/${recipe.originKnowledgeId}`) Legacy
+                  if recipe.legacyViewPath
+                    a.btn.btn-sm.btn-outline-info(href=recipe.legacyViewPath) Legacy
 
     .card.shadow-sm
       .card-body

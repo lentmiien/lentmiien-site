@@ -498,7 +498,18 @@ function buildSourceKnowledgeView(knowledge) {
     updatedDateDisplay: toDisplayDate(knowledge.updatedDate),
     contentHTML: marked.parse(knowledge.contentMarkdown || ''),
     contentMarkdown: knowledge.contentMarkdown || '',
+    legacyViewPath: buildLegacyKnowledgeUrl(knowledge._id),
   };
+}
+
+function buildLegacyKnowledgeUrl(knowledgeId) {
+  const normalizedKnowledgeId = String(knowledgeId || '').trim();
+  if (!normalizedKnowledgeId) return '';
+
+  const params = new URLSearchParams();
+  params.set('raw', '1');
+  const query = params.toString();
+  return `/chat4/viewknowledge/${normalizedKnowledgeId}${query ? `?${query}` : ''}`;
 }
 
 async function loadKnowledgeById(userId, knowledgeId) {
@@ -736,7 +747,10 @@ exports.index = async (req, res) => {
     );
 
     res.render('cookbook/index', {
-      recipes: filteredRecipes,
+      recipes: filteredRecipes.map((recipe) => ({
+        ...recipe,
+        legacyViewPath: buildLegacyKnowledgeUrl(recipe.originKnowledgeId),
+      })),
       sortOptions: SORT_OPTIONS,
       filters,
       hasActiveFilters: hasActiveFilters(filters),
@@ -940,6 +954,7 @@ exports.view = async (req, res) => {
         ...recipe,
         tags: toArray(recipe.tags),
         images: toArray(recipe.images),
+        legacyViewPath: buildLegacyKnowledgeUrl(recipe.originKnowledgeId),
       },
       sourceKnowledge,
       instructions,

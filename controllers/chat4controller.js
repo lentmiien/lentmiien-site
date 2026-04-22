@@ -331,13 +331,14 @@ async function getImageDimensions(imagePath) {
 exports.viewknowledge = async (req, res) => {
   const knowledge_id = req.params.id;
   const user_id = req.user.name;
+  const openRawLegacy = ['1', 'true', 'yes'].includes(String(req.query.raw || '').trim().toLowerCase());
 
   // Recipe knowledge entries that already transitioned to cookbook should open the cookbook page.
   const transitionedRecipe = await CookbookRecipeModel
     .findOne({ user_id, originKnowledgeId: knowledge_id })
     .select({ _id: 1 })
     .lean();
-  if (transitionedRecipe && transitionedRecipe._id) {
+  if (!openRawLegacy && transitionedRecipe && transitionedRecipe._id) {
     return res.redirect(`/cooking/cookbook/${transitionedRecipe._id.toString()}`);
   }
 
@@ -364,7 +365,12 @@ exports.viewknowledge = async (req, res) => {
     }
   }
 
-  res.render("view_knowledge", { knowledge });
+  res.render("view_knowledge", {
+    knowledge,
+    cookbookEntryUrl: transitionedRecipe && transitionedRecipe._id
+      ? `/cooking/cookbook/${transitionedRecipe._id.toString()}`
+      : null,
+  });
 };
 
 exports.saveknowledge = async (req, res) => {
