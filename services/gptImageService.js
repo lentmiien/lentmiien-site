@@ -24,6 +24,15 @@ const SIZE_PRESETS = [
   { value: '2160x3840', label: '2160 × 3840' },
 ];
 const N_OPTIONS = Array.from({ length: 10 }, (_entry, index) => index + 1);
+const RETRYABLE_EDIT_PARAMETERS = [
+  'quality',
+  'background',
+  'output_format',
+  'output_compression',
+  'size',
+  'moderation',
+  'n',
+];
 
 const DEFAULT_FORM_VALUES = {
   prompt: '',
@@ -396,6 +405,47 @@ function fileNameFromOriginal(originalName, mimeType = '') {
   return '.png';
 }
 
+function extractUnknownParameterName(error) {
+  const message = error && typeof error.message === 'string'
+    ? error.message
+    : String(error || '');
+  const match = message.match(/Unknown parameter:\s*'([^']+)'/i);
+  return match ? match[1] : null;
+}
+
+async function executeWithUnknownParameterRetry(initialRequest, executor, retryableParameters = RETRYABLE_EDIT_PARAMETERS) {
+  let currentRequest = { ...initialRequest };
+  const removedParameters = [];
+  const retryableSet = new Set(Array.isArray(retryableParameters) ? retryableParameters : []);
+
+  while (true) {
+    try {
+      const response = await executor(currentRequest);
+      return {
+        response,
+        request: currentRequest,
+        removedParameters,
+      };
+    } catch (error) {
+      const parameterName = extractUnknownParameterName(error);
+      const isRetryable = Number(error && error.status) === 400 &&
+        parameterName &&
+        retryableSet.has(parameterName) &&
+        Object.prototype.hasOwnProperty.call(currentRequest, parameterName);
+
+      if (!isRetryable) {
+        throw error;
+      }
+
+      const nextRequest = { ...currentRequest };
+      delete nextRequest[parameterName];
+      currentRequest = nextRequest;
+      retryableSet.delete(parameterName);
+      removedParameters.push(parameterName);
+    }
+  }
+}
+
 module.exports = {
   MODEL_NAME,
   PAGE_SIZE,
@@ -404,6 +454,7 @@ module.exports = {
   MAX_GALLERY_INPUT_SELECTIONS,
   MAX_UPLOAD_IMAGE_COUNT,
   MAX_UPLOAD_FILE_SIZE_BYTES,
+  RETRYABLE_EDIT_PARAMETERS,
   QUALITY_OPTIONS,
   BACKGROUND_OPTIONS,
   OUTPUT_FORMAT_OPTIONS,
@@ -430,4 +481,6 @@ module.exports = {
   buildGalleryAggregate,
   dedupeStrings,
   fileNameFromOriginal,
+  extractUnknownParameterName,
+  executeWithUnknownParameterRetry,
 };

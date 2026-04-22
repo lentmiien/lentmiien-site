@@ -4,6 +4,8 @@ const {
   resolveRequestedSize,
   normalizeGenerationForm,
   buildStoredFileName,
+  extractUnknownParameterName,
+  executeWithUnknownParameterRetry,
 } = require('../../services/gptImageService');
 
 describe('gptImageService', () => {
@@ -107,5 +109,63 @@ describe('gptImageService', () => {
     const fileName = buildStoredFileName('GPT Image2 Output', 'Blue fox portrait', '.webp');
     expect(fileName.startsWith('gpt-image2-output-blue-fox-portrait-')).toBe(true);
     expect(fileName.endsWith('.webp')).toBe(true);
+  });
+
+  test('extractUnknownParameterName parses OpenAI unknown-parameter errors', () => {
+    expect(extractUnknownParameterName(new Error("400 Unknown parameter: 'quality'."))).toBe('quality');
+    expect(extractUnknownParameterName(new Error('Something else failed'))).toBe(null);
+  });
+
+  test('executeWithUnknownParameterRetry retries after removing unsupported optional edit parameters', async () => {
+    const executor = jest.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("400 Unknown parameter: 'quality'."), { status: 400 }))
+      .mockRejectedValueOnce(Object.assign(new Error("400 Unknown parameter: 'background'."), { status: 400 }))
+      .mockResolvedValueOnce({ ok: true });
+
+    const result = await executeWithUnknownParameterRetry({
+      model: 'gpt-image-2',
+      prompt: 'Edit this image',
+      quality: 'medium',
+      background: 'auto',
+      size: '1024x1024',
+    }, executor);
+
+    expect(executor).toHaveBeenNthCalledWith(1, {
+      model: 'gpt-image-2',
+      prompt: 'Edit this image',
+      quality: 'medium',
+      background: 'auto',
+      size: '1024x1024',
+    });
+    expect(executor).toHaveBeenNthCalledWith(2, {
+      model: 'gpt-image-2',
+      prompt: 'Edit this image',
+      background: 'auto',
+      size: '1024x1024',
+    });
+    expect(executor).toHaveBeenNthCalledWith(3, {
+      model: 'gpt-image-2',
+      prompt: 'Edit this image',
+      size: '1024x1024',
+    });
+    expect(result).toEqual({
+      response: { ok: true },
+      request: {
+        model: 'gpt-image-2',
+        prompt: 'Edit this image',
+        size: '1024x1024',
+      },
+      removedParameters: ['quality', 'background'],
+    });
+  });
+
+  test('executeWithUnknownParameterRetry rethrows non-retryable errors', async () => {
+    const executor = jest.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("400 Unknown parameter: 'prompt'."), { status: 400 }));
+
+    await expect(executeWithUnknownParameterRetry({
+      model: 'gpt-image-2',
+      prompt: 'Edit this image',
+    }, executor)).rejects.toThrow("400 Unknown parameter: 'prompt'.");
   });
 });

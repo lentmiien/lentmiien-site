@@ -30,6 +30,7 @@ const {
   buildGalleryAggregate,
   dedupeStrings,
   fileNameFromOriginal,
+  executeWithUnknownParameterRetry,
 } = require('../services/gptImageService');
 
 const openai = new OpenAI({
@@ -308,6 +309,47 @@ function stripAbsolutePaths(inputImages = []) {
   }));
 }
 
+async function buildOpenAIEditImages(inputImages = []) {
+  const uploadables = [];
+
+  for (const image of inputImages) {
+    const fileBuffer = await fsp.readFile(image.absolutePath);
+    const fileOptions = image.mimeType ? { type: image.mimeType } : undefined;
+    uploadables.push(await OpenAI.toFile(
+      fileBuffer,
+      image.fileName || image.originalName || 'input-image.png',
+      fileOptions
+    ));
+  }
+
+  return uploadables;
+}
+
+async function executeCompatibleEditRequest(baseRequest, inputImages) {
+  const { response, removedParameters } = await executeWithUnknownParameterRetry(
+    baseRequest,
+    async (request) => {
+      const uploadables = await buildOpenAIEditImages(inputImages);
+      return openai.images.edit({
+        ...request,
+        image: uploadables.length === 1 ? uploadables[0] : uploadables,
+      });
+    }
+  );
+
+  if (removedParameters.length > 0) {
+    logger.warning('GPT Image edit retried without unsupported parameters', {
+      category: 'gpt_image',
+      metadata: {
+        removedParameters,
+        model: MODEL_NAME,
+      },
+    });
+  }
+
+  return response;
+}
+
 async function generate(req, res) {
   if (!process.env.OPENAI_API_KEY) {
     return jsonError(res, 500, 'OPENAI_API_KEY is not configured.');
@@ -360,11 +402,7 @@ async function generate(req, res) {
     let requestType = 'generate';
     if (combinedInputs.length > 0) {
       requestType = 'edit';
-      const imagePayload = combinedInputs.map((image) => fs.createReadStream(image.absolutePath));
-      response = await openai.images.edit({
-        ...baseRequest,
-        image: imagePayload.length === 1 ? imagePayload[0] : imagePayload,
-      });
+      response = await executeCompatibleEditRequest(baseRequest, combinedInputs);
     } else {
       response = await openai.images.generate(baseRequest);
     }
