@@ -48,11 +48,12 @@ block content
           .knowledge-grid
             each knowledge in categoryEntries
               - const previewImages = knowledge.images ? knowledge.images.slice(0, 3) : [];
+              - const knowledgeHref = `/chat4/viewknowledge/${knowledge._id.toString()}?raw=1`;
               article.knowledge-card(data-tags=`|${knowledge.tags.join('|')}|`)
                 .knowledge-card__body
                   header.knowledge-card__header
                     h3.knowledge-card__title
-                      a.knowledge-link(href=`/chat4/viewknowledge/${knowledge._id.toString()}`)= knowledge.title
+                      a.knowledge-link(href=knowledgeHref)= knowledge.title
                   if knowledge.tags && knowledge.tags.length
                     ul.knowledge-tags
                       each tag in knowledge.tags
