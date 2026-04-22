@@ -375,14 +375,15 @@ exports.receipt_entry_form = async (req, res, next) => {
     const requestedRuleId = typeof req.query.rule === 'string' ? req.query.rule : null;
     const appliedRule = mappingMatches.find((rule) => rule.id === requestedRuleId) || mappingMatches[0] || null;
 
-    const baseBudgetPrefill = buildBaseBudgetPrefill(receipt, referenceLists.accounts || []);
-    const baseCreditPrefill = buildBaseCreditPrefill(receipt);
+    const defaultBudgetPrefill = buildBaseBudgetPrefill(receipt, referenceLists.accounts || []);
+    const defaultCreditPrefill = buildBaseCreditPrefill(receipt);
+    const defaultEntryMode = resolveEntryMode(receipt, null);
     const budgetPrefill = appliedRule
-      ? mergeBudgetPrefill(baseBudgetPrefill, appliedRule.budgetPrefill)
-      : baseBudgetPrefill;
+      ? mergeBudgetPrefill(defaultBudgetPrefill, appliedRule.budgetPrefill)
+      : defaultBudgetPrefill;
     const creditPrefill = appliedRule
-      ? mergeCreditPrefill(baseCreditPrefill, appliedRule.creditPrefill)
-      : baseCreditPrefill;
+      ? mergeCreditPrefill(defaultCreditPrefill, appliedRule.creditPrefill)
+      : defaultCreditPrefill;
 
     res.render('receipt_entry', {
       receipt,
@@ -393,6 +394,9 @@ exports.receipt_entry_form = async (req, res, next) => {
       creditCards: creditCards || [],
       mappingMatches,
       appliedRuleId: appliedRule ? appliedRule.id : null,
+      defaultBudgetPrefill,
+      defaultCreditPrefill,
+      defaultEntryMode,
       budgetPrefill,
       creditPrefill,
       entryMode: resolveEntryMode(receipt, appliedRule),

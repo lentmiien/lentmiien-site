@@ -72,7 +72,7 @@ block content
           button(type="button", data-mode-toggle="budget", class=entryMode === 'budget' ? 'is-active' : '') Budget transaction
           button(type="button", data-mode-toggle="credit", class=entryMode === 'credit' ? 'is-active' : '') Credit card transaction
 
-        .ledger-form(data-section="budget")
+        .ledger-form(data-section="budget", class=entryMode === 'credit' ? 'is-hidden' : '')
           h3 Budget details
           .form-grid
             .form-field
@@ -120,7 +120,7 @@ block content
               label(for="to_fee") To fee
               input#to_fee.form-control(type="number", step="0.01", name="to_fee", value=budgetPrefill && budgetPrefill.to_fee !== undefined ? budgetPrefill.to_fee : 0, data-required-when="budget")
 
-        .ledger-form(data-section="credit")
+        .ledger-form(data-section="credit", class=entryMode === 'credit' ? '' : 'is-hidden')
           h3 Credit card details
           .form-grid
             .form-field
@@ -156,7 +156,7 @@ block content
 
 block script
   script(type="application/json", id="mapping-data")= JSON.stringify(mappingMatches || [])
-  script(type="application/json", id="prefill-data")= JSON.stringify({ budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget' })
+  script(type="application/json", id="prefill-data")= JSON.stringify({ defaults: { budgetPrefill: defaultBudgetPrefill || {}, creditPrefill: defaultCreditPrefill || {}, entryMode: defaultEntryMode || 'budget' }, applied: { budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget', appliedRuleId: appliedRuleId || null } })
   script.
     (function () {
       const parseJson = function (id, fallback) {
@@ -169,7 +169,10 @@ block script
         }
       };
       const mapping = parseJson('mapping-data', []);
-      const prefill = parseJson('prefill-data', { budgetPrefill: {}, creditPrefill: {}, entryMode: 'budget' });
+      const prefill = parseJson('prefill-data', {
+        defaults: { budgetPrefill: {}, creditPrefill: {}, entryMode: 'budget' },
+        applied: { budgetPrefill: {}, creditPrefill: {}, entryMode: 'budget', appliedRuleId: null },
+      });
       const form = document.querySelector('.js-receipt-entry-form');
       if (!form) return;
 
@@ -179,6 +182,18 @@ block script
       const budgetRequired = form.querySelectorAll('[data-required-when="budget"]');
       const creditRequired = form.querySelectorAll('[data-required-when="credit"]');
       const mappingStatus = document.querySelector('.js-mapping-status');
+      const defaultState = {
+        budgetPrefill: prefill.defaults && prefill.defaults.budgetPrefill ? { ...prefill.defaults.budgetPrefill } : {},
+        creditPrefill: prefill.defaults && prefill.defaults.creditPrefill ? { ...prefill.defaults.creditPrefill } : {},
+        entryMode: prefill.defaults && prefill.defaults.entryMode === 'credit' ? 'credit' : 'budget',
+        appliedRuleId: null,
+      };
+      const serverAppliedState = {
+        budgetPrefill: prefill.applied && prefill.applied.budgetPrefill ? { ...prefill.applied.budgetPrefill } : {},
+        creditPrefill: prefill.applied && prefill.applied.creditPrefill ? { ...prefill.applied.creditPrefill } : {},
+        entryMode: prefill.applied && prefill.applied.entryMode === 'credit' ? 'credit' : defaultState.entryMode,
+        appliedRuleId: prefill.applied && prefill.applied.appliedRuleId ? prefill.applied.appliedRuleId : null,
+      };
 
       const toggleRequired = function (nodes, enabled) {
         nodes.forEach(function (node) {
@@ -202,8 +217,33 @@ block script
         });
       };
 
-      const setValueIfPresent = function (selector, value) {
-        if (value === undefined || value === null || value === '') return;
+      const toBoolean = function (value) {
+        if (typeof value === 'string') {
+          const normalized = value.trim().toLowerCase();
+          return normalized === 'true'
+            || normalized === '1'
+            || normalized === 'yes'
+            || normalized === 'on'
+            || normalized === 'y'
+            || normalized === 't';
+        }
+        return Boolean(value);
+      };
+
+      const mergePrefill = function (base, override) {
+        const merged = base ? { ...base } : {};
+        const source = override && typeof override === 'object' ? override : {};
+        Object.keys(source).forEach(function (key) {
+          const value = source[key];
+          if (value === undefined || value === null) return;
+          if (typeof value === 'string' && value === '') return;
+          merged[key] = value;
+        });
+        return merged;
+      };
+
+      const setValue = function (selector, value) {
+        if (value === undefined || value === null) return;
         const el = form.querySelector(selector);
         if (el) {
           el.removeAttribute('disabled');
@@ -213,41 +253,68 @@ block script
 
       const applyBudgetPrefill = function (payload) {
         if (!payload) return;
-        setValueIfPresent('input[name="date"]', payload.date);
-        setValueIfPresent('select[name="from_account"]', payload.from_account);
-        setValueIfPresent('select[name="to_account"]', payload.to_account);
-        setValueIfPresent('input[name="categories"]', payload.categories);
-        setValueIfPresent('input[name="tags"]', payload.tags);
-        setValueIfPresent('select[name="type"]', payload.type);
-        setValueIfPresent('input[name="from_fee"]', payload.from_fee);
-        setValueIfPresent('input[name="to_fee"]', payload.to_fee);
-        setValueIfPresent('input[name="transaction_business"]', payload.transaction_business);
-        setValueIfPresent('input[name="amount"]', payload.amount);
+        setValue('input[name="date"]', payload.date);
+        setValue('select[name="from_account"]', payload.from_account);
+        setValue('select[name="to_account"]', payload.to_account);
+        setValue('input[name="categories"]', payload.categories);
+        setValue('input[name="tags"]', payload.tags);
+        setValue('select[name="type"]', payload.type);
+        setValue('input[name="from_fee"]', payload.from_fee);
+        setValue('input[name="to_fee"]', payload.to_fee);
+        setValue('input[name="transaction_business"]', payload.transaction_business);
+        setValue('input[name="amount"]', payload.amount);
       };
 
       const applyCreditPrefill = function (payload) {
         if (!payload) return;
-        setValueIfPresent('input[name="transactionDate"]', payload.transactionDate);
-        setValueIfPresent('select[name="cardId"]', payload.cardId);
-        setValueIfPresent('input[name="label"]', payload.label);
-        setValueIfPresent('input[name="externalMultiplier"]', payload.externalMultiplier);
-        setValueIfPresent('input[name="amount"]', payload.amount);
+        setValue('input[name="transactionDate"]', payload.transactionDate);
+        setValue('select[name="cardId"]', payload.cardId);
+        setValue('input[name="label"]', payload.label);
+        setValue('input[name="externalMultiplier"]', payload.externalMultiplier);
+        setValue('input[name="amount"]', payload.amount);
         const external = form.querySelector('input[name="external"]');
-        if (external) external.checked = Boolean(payload.external);
+        if (external) external.checked = toBoolean(payload.external);
+      };
+
+      const updateActiveRule = function (ruleId) {
+        document.querySelectorAll('[data-apply-mapping]').forEach(function (btn) {
+          btn.classList.toggle('is-active', Boolean(ruleId) && btn.getAttribute('data-apply-mapping') === ruleId);
+        });
+      };
+
+      const buildStateForRule = function (rule) {
+        if (!rule) {
+          return {
+            budgetPrefill: { ...defaultState.budgetPrefill },
+            creditPrefill: { ...defaultState.creditPrefill },
+            entryMode: defaultState.entryMode,
+            appliedRuleId: null,
+          };
+        }
+        return {
+          budgetPrefill: rule.target === 'budget'
+            ? mergePrefill(defaultState.budgetPrefill, rule.budgetPrefill)
+            : { ...defaultState.budgetPrefill },
+          creditPrefill: rule.target === 'credit'
+            ? mergePrefill(defaultState.creditPrefill, rule.creditPrefill)
+            : { ...defaultState.creditPrefill },
+          entryMode: rule.target === 'credit' ? 'credit' : 'budget',
+          appliedRuleId: rule.id || null,
+        };
+      };
+
+      const applyState = function (state) {
+        const nextState = state || defaultState;
+        applyBudgetPrefill(nextState.budgetPrefill || {});
+        applyCreditPrefill(nextState.creditPrefill || {});
+        setMode(nextState.entryMode || 'budget');
+        updateActiveRule(nextState.appliedRuleId || null);
       };
 
       const applyMapping = function (ruleId) {
         const rule = mapping.find(function (m) { return m.id === ruleId; });
         if (!rule) return;
-        if (rule.target === 'credit') {
-          applyCreditPrefill(rule.creditPrefill);
-        } else {
-          applyBudgetPrefill(rule.budgetPrefill);
-        }
-        setMode(rule.target);
-        document.querySelectorAll('[data-apply-mapping]').forEach(function (btn) {
-          btn.classList.toggle('is-active', btn.getAttribute('data-apply-mapping') === ruleId);
-        });
+        applyState(buildStateForRule(rule));
         if (mappingStatus) mappingStatus.textContent = "Applied rule: " + rule.name;
       };
 
@@ -258,12 +325,7 @@ block script
       });
 
       const resetToDefaults = function () {
-        applyBudgetPrefill(prefill.budgetPrefill || {});
-        applyCreditPrefill(prefill.creditPrefill || {});
-        setMode(prefill.entryMode || 'budget');
-        document.querySelectorAll('[data-apply-mapping]').forEach(function (btn) {
-          btn.classList.toggle('is-active', false);
-        });
+        applyState(defaultState);
         if (mappingStatus) mappingStatus.textContent = 'Reset to receipt defaults.';
       };
 
@@ -279,12 +341,22 @@ block script
       });
 
       // Apply initial state
-      applyBudgetPrefill(prefill.budgetPrefill || {});
-      applyCreditPrefill(prefill.creditPrefill || {});
-      setMode(prefill.entryMode || 'budget');
+      const initialRule = serverAppliedState.appliedRuleId
+        ? mapping.find(function (rule) { return rule.id === serverAppliedState.appliedRuleId; })
+        : null;
+      const initialState = initialRule
+        ? buildStateForRule(initialRule)
+        : {
+          budgetPrefill: mergePrefill(defaultState.budgetPrefill, serverAppliedState.budgetPrefill),
+          creditPrefill: mergePrefill(defaultState.creditPrefill, serverAppliedState.creditPrefill),
+          entryMode: serverAppliedState.entryMode || defaultState.entryMode,
+          appliedRuleId: serverAppliedState.appliedRuleId || null,
+        };
 
-      if (mappingStatus && mapping && mapping.length && prefill.entryMode) {
-        const applied = mapping.find(function (r) { return r.target === prefill.entryMode; });
-        if (applied) mappingStatus.textContent = "Using " + prefill.entryMode + " defaults.";
+      applyState(initialState);
+
+      if (mappingStatus) {
+        if (initialRule) mappingStatus.textContent = "Applied rule: " + initialRule.name;
+        else if (mapping && mapping.length) mappingStatus.textContent = 'Using receipt defaults.';
       }
     }());
