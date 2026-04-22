@@ -1,0 +1,185 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/gpt_image.css')
+
+block content
+  .gpt-image-page
+    section.gpt-image-hero
+      .gpt-image-hero__text
+        p.gpt-image-hero__eyebrow GPT Image 2 Studio
+        h1.gpt-image-hero__title Text-to-image and reference-image generation in one page
+        p.gpt-image-hero__copy Generate fresh images from a prompt, optionally add uploaded or previously generated references, and keep everything searchable in the gallery.
+      .gpt-image-hero__meta
+        .gpt-image-hero__metric
+          span.gpt-image-hero__metric-value= gallery.totalCount
+          span.gpt-image-hero__metric-label Stored images
+        .gpt-image-hero__metric
+          span.gpt-image-hero__metric-value= modelInfo.inputLimit
+          span.gpt-image-hero__metric-label Max reference images
+        .gpt-image-hero__metric
+          span.gpt-image-hero__metric-value= gallery.currentPage
+          span.gpt-image-hero__metric-label Current page
+
+    .gpt-image-layout
+      aside.gpt-image-sidebar
+        section.gpt-image-panel
+          .gpt-image-panel__header
+            h2.gpt-image-panel__title New Generation
+            p.gpt-image-panel__copy= modelInfo.quickNote
+          form#gptImageForm.gpt-image-form(method='post', action=pageConfig.generateEndpoint, enctype='multipart/form-data')
+            label.gpt-image-field
+              span.gpt-image-field__label Prompt
+              textarea.gpt-image-field__input.gpt-image-field__input--textarea(name='prompt', rows='6', maxlength='32000', required, placeholder='Describe the image you want to create or the edit you want to apply.')= formDefaults.prompt
+
+            .gpt-image-field-grid
+              label.gpt-image-field
+                span.gpt-image-field__label Outputs
+                select.gpt-image-field__input(name='n')
+                  each count in options.counts
+                    option(value=count, selected=formDefaults.n === count)= count
+              label.gpt-image-field
+                span.gpt-image-field__label Quality
+                select.gpt-image-field__input(name='quality')
+                  each quality in options.qualities
+                    option(value=quality, selected=formDefaults.quality === quality)= quality
+
+            .gpt-image-field-grid
+              label.gpt-image-field
+                span.gpt-image-field__label Size mode
+                select#gptImageSizeMode.gpt-image-field__input(name='sizeMode')
+                  option(value='preset', selected=formDefaults.sizeMode === 'preset') Preset
+                  option(value='custom', selected=formDefaults.sizeMode === 'custom') Custom
+                  option(value='auto', selected=formDefaults.sizeMode === 'auto') Auto
+              label#gptImagePresetField.gpt-image-field
+                span.gpt-image-field__label Preset size
+                select.gpt-image-field__input(name='sizePreset')
+                  each size in options.sizes
+                    option(value=size.value, selected=formDefaults.sizePreset === size.value)= size.label
+
+            #gptImageCustomSize.gpt-image-field-grid
+              label.gpt-image-field
+                span.gpt-image-field__label Custom width
+                input.gpt-image-field__input(type='number', name='customWidth', min='256', max='3840', step='16', value=formDefaults.customWidth)
+              label.gpt-image-field
+                span.gpt-image-field__label Custom height
+                input.gpt-image-field__input(type='number', name='customHeight', min='256', max='3840', step='16', value=formDefaults.customHeight)
+
+            .gpt-image-field-grid
+              label.gpt-image-field
+                span.gpt-image-field__label Background
+                select.gpt-image-field__input(name='background')
+                  each background in options.backgrounds
+                    option(value=background, selected=formDefaults.background === background)= background
+              label.gpt-image-field
+                span.gpt-image-field__label Output format
+                select#gptImageOutputFormat.gpt-image-field__input(name='outputFormat')
+                  each outputFormat in options.outputFormats
+                    option(value=outputFormat, selected=formDefaults.outputFormat === outputFormat)= outputFormat
+
+            #gptImageCompressionField.gpt-image-field
+              span.gpt-image-field__label Compression
+              input#gptImageCompression.gpt-image-field__input(type='number', name='outputCompression', min='0', max='100', step='1', value=formDefaults.outputCompression)
+              small.gpt-image-field__hint Used for JPEG and WebP output only.
+
+            .gpt-image-field-grid
+              label.gpt-image-field
+                span.gpt-image-field__label Moderation
+                select.gpt-image-field__input(name='moderation')
+                  each moderation in options.moderations
+                    option(value=moderation, selected=formDefaults.moderation === moderation)= moderation
+              label.gpt-image-field
+                span.gpt-image-field__label Upload reference images
+                input#gptImageUploads.gpt-image-field__input(type='file', name='inputImages', accept='image/png,image/jpeg,image/webp', multiple)
+
+            #gptImageUploadSummary.gpt-image-upload-summary No uploaded files selected.
+
+            .gpt-image-selection
+              .gpt-image-selection__header
+                .gpt-image-selection__title-wrap
+                  h3.gpt-image-selection__title Selected gallery references
+                  p.gpt-image-selection__copy Pick images from the gallery below and they will be reused as input for the next generation.
+                button#gptImageClearSelection.btn.btn-outline-secondary.btn-sm(type='button') Clear selected
+              #gptImageSelectedInputs.gpt-image-selection__items
+              p#gptImageSelectedCount.gpt-image-selection__count 0 selected
+
+            #gptImageStatus.gpt-image-status(aria-live='polite')
+            .gpt-image-actions
+              button#gptImageSubmit.btn.btn-primary(type='submit') Generate image
+
+      main.gpt-image-main
+        section.gpt-image-toolbar
+          form.gpt-image-filter(method='get', action='/gpt-image')
+            .gpt-image-filter__fields
+              input.gpt-image-filter__input(type='search', name='keyword', value=filters.keyword, placeholder='Filter gallery by prompt keywords')
+              button.btn.btn-outline-primary(type='submit') Filter
+              if filters.keyword
+                a.btn.btn-outline-secondary(href='/gpt-image') Clear
+          p.gpt-image-toolbar__note Gallery order: most recent 5 generations first, then images you liked, then the remaining results.
+
+        if gallery.items && gallery.items.length
+          .gpt-image-grid
+            each item in gallery.items
+              - const promptPreview = item.prompt.length > 180 ? `${item.prompt.slice(0, 180)}…` : item.prompt;
+              - const cardClasses = ['gpt-image-card'];
+              - if (item.generationId === highlightGenerationId) cardClasses.push('gpt-image-card--highlight');
+              - if (item.likedByCurrentUser) cardClasses.push('gpt-image-card--liked');
+              article(class=cardClasses.join(' '), data-gallery-card='1', data-image-id=item.id, data-generation-id=item.generationId, data-preview-url=item.outputUrl, data-card-label=promptPreview)
+                .gpt-image-card__media
+                  img.gpt-image-card__img(src=item.outputUrl, alt=promptPreview, loading='lazy')
+                  .gpt-image-card__badges
+                    if item.isRecentGeneration
+                      span.gpt-image-badge.gpt-image-badge--recent Recent batch
+                    if item.likedByCurrentUser
+                      span.gpt-image-badge.gpt-image-badge--liked Liked
+                .gpt-image-card__body
+                  p.gpt-image-card__prompt= promptPreview
+                  dl.gpt-image-card__meta
+                    div
+                      dt Type
+                      dd= item.requestType
+                    div
+                      dt Size
+                      dd= item.resolvedSize
+                    div
+                      dt Quality
+                      dd= item.quality
+                    div
+                      dt Likes
+                      dd(data-like-count='1')= item.likeCount
+                    div
+                      dt Inputs
+                      dd= item.inputImageCount
+                    div
+                      dt Created
+                      dd= new Date(item.createdAt).toLocaleString()
+                  p.gpt-image-card__byline= `By ${item.createdBy}`
+                .gpt-image-card__actions
+                  button.btn.btn-sm.btn-outline-danger(type='button', data-like-button='1', data-image-id=item.id, data-liked=item.likedByCurrentUser ? 'true' : 'false')
+                    = item.likedByCurrentUser ? 'Unlike' : 'Like'
+                  button.btn.btn-sm.btn-outline-primary(type='button', data-select-input='1', data-image-id=item.id)
+                    | Use as input
+        else
+          .gpt-image-empty
+            h2.gpt-image-empty__title No images found
+            if filters.keyword
+              p.gpt-image-empty__copy Try a different keyword or clear the filter to browse the full gallery.
+            else
+              p.gpt-image-empty__copy Your first generation will appear here once it has been saved.
+
+        if gallery.pagination && gallery.pagination.totalPages > 1
+          nav.gpt-image-pagination(aria-label='Gallery pagination')
+            if gallery.pagination.prevUrl
+              a.btn.btn-outline-secondary(href=gallery.pagination.prevUrl) Previous
+            each pageItem in gallery.pagination.pages
+              if pageItem.isCurrent
+                span.btn.btn-primary.disabled= pageItem.page
+              else
+                a.btn.btn-outline-primary(href=pageItem.url)= pageItem.page
+            if gallery.pagination.nextUrl
+              a.btn.btn-outline-secondary(href=gallery.pagination.nextUrl) Next
+
+  script(type='application/json', id='gptImagePageConfig') !{JSON.stringify(pageConfig)}
+
+block script
+  script(src='/js/gpt_image.js', defer)

@@ -277,6 +277,7 @@ const galleryRouter = require('./routes/gallery');
 const payrollRouter = require('./routes/payroll');
 const scheduleTaskRouter = require('./routes/scheduleTaskRoute');
 const imageGenRouter = require('./routes/image_gen');
+const gptImageRouter = require('./routes/gpt_image');
 const musicRouter = require('./routes/music');
 const ocrRouter = require('./routes/ocr');
 const ocrTtsRouter = require('./routes/ocr_tts');
@@ -327,6 +328,7 @@ app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTas
 app.use('/shopping-list', isAuthenticated, authorize("shoppinglist"), shoppingListRouter);
 app.use('/bookmarks', isAuthenticated, bookmarkRouter);
 app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
+app.use('/gpt-image', isAuthenticated, gptImageRouter);
 app.use('/music', isAuthenticated, authorize("music"), musicRouter);
 app.use('/ocr', isAuthenticated, authorize("ocr"), ocrRouter);
 app.use('/ocr-tts', isAuthenticated, authorize("ocr"), ocrTtsRouter);

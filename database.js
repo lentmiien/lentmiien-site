@@ -108,6 +108,7 @@ const AIModelCards = require('./models/ai_model_card');
 // Gallery images
 const Images = require('./models/image');
 const GoodImage = require('./models/good_image');
+const GptImageGeneration = require('./models/gpt_image_generation');
 // HTML page ratings
 const HtmlPageRating = require('./models/html_page_rating');
 // Music generation library
@@ -217,6 +218,7 @@ module.exports = {
   AIModelCards,
   Images,
   GoodImage,
+  GptImageGeneration,
   HtmlPageRating,
   MusicGeneration,
   Payroll,

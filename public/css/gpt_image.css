@@ -1,0 +1,444 @@
+:root {
+  --gpt-image-bg: #f4efe7;
+  --gpt-image-surface: rgba(255, 252, 247, 0.94);
+  --gpt-image-surface-strong: #fffaf2;
+  --gpt-image-border: rgba(114, 87, 53, 0.18);
+  --gpt-image-border-strong: rgba(114, 87, 53, 0.36);
+  --gpt-image-ink: #2c2318;
+  --gpt-image-muted: #6a5843;
+  --gpt-image-accent: #9f4f2c;
+  --gpt-image-accent-soft: #f4d8c3;
+  --gpt-image-liked: #b82f49;
+  --gpt-image-liked-soft: #fde6ed;
+}
+
+.gpt-image-page {
+  color: var(--gpt-image-ink);
+  padding: 24px 0 48px;
+  background:
+    radial-gradient(circle at top right, rgba(226, 193, 156, 0.42), transparent 28rem),
+    radial-gradient(circle at bottom left, rgba(211, 108, 72, 0.16), transparent 24rem),
+    linear-gradient(180deg, #fbf6ee 0%, var(--gpt-image-bg) 100%);
+  min-height: calc(100vh - 120px);
+}
+
+.gpt-image-hero {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  margin-bottom: 24px;
+  padding: 28px;
+  border: 1px solid var(--gpt-image-border);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(255, 246, 233, 0.96), rgba(250, 238, 221, 0.9)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
+  box-shadow: 0 20px 45px rgba(78, 55, 30, 0.08);
+}
+
+.gpt-image-hero__eyebrow {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gpt-image-accent);
+  font-weight: 700;
+}
+
+.gpt-image-hero__title {
+  margin: 0 0 12px;
+  font-size: clamp(2rem, 3.2vw, 3.3rem);
+  line-height: 1.02;
+  font-weight: 700;
+}
+
+.gpt-image-hero__copy {
+  margin: 0;
+  max-width: 58ch;
+  color: var(--gpt-image-muted);
+  font-size: 1rem;
+}
+
+.gpt-image-hero__meta {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.gpt-image-hero__metric {
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 1px solid var(--gpt-image-border);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.gpt-image-hero__metric-value {
+  display: block;
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.gpt-image-hero__metric-label {
+  color: var(--gpt-image-muted);
+  font-size: 0.92rem;
+}
+
+.gpt-image-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.gpt-image-sidebar {
+  position: sticky;
+  top: 72px;
+}
+
+.gpt-image-panel,
+.gpt-image-toolbar,
+.gpt-image-card,
+.gpt-image-empty {
+  border: 1px solid var(--gpt-image-border);
+  background: var(--gpt-image-surface);
+  box-shadow: 0 18px 36px rgba(88, 58, 24, 0.08);
+}
+
+.gpt-image-panel {
+  border-radius: 22px;
+  padding: 24px;
+}
+
+.gpt-image-panel__header {
+  margin-bottom: 18px;
+}
+
+.gpt-image-panel__title,
+.gpt-image-selection__title,
+.gpt-image-empty__title {
+  margin: 0 0 6px;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.gpt-image-panel__copy,
+.gpt-image-selection__copy,
+.gpt-image-empty__copy,
+.gpt-image-toolbar__note,
+.gpt-image-selection__count {
+  margin: 0;
+  color: var(--gpt-image-muted);
+}
+
+.gpt-image-form {
+  display: grid;
+  gap: 16px;
+}
+
+.gpt-image-field,
+.gpt-image-filter {
+  display: grid;
+  gap: 8px;
+}
+
+.gpt-image-field-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gpt-image-field__label {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.gpt-image-field__input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--gpt-image-border-strong);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: var(--gpt-image-surface-strong);
+  color: var(--gpt-image-ink);
+}
+
+.gpt-image-field__input--textarea {
+  resize: vertical;
+  min-height: 140px;
+}
+
+.gpt-image-field__hint {
+  color: var(--gpt-image-muted);
+  font-size: 0.84rem;
+}
+
+.gpt-image-upload-summary {
+  border-radius: 14px;
+  background: rgba(244, 216, 195, 0.55);
+  padding: 12px 14px;
+  color: var(--gpt-image-muted);
+  font-size: 0.92rem;
+}
+
+.gpt-image-selection {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid var(--gpt-image-border);
+}
+
+.gpt-image-selection__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.gpt-image-selection__items {
+  display: grid;
+  gap: 12px;
+}
+
+.gpt-image-selection__empty {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(244, 239, 231, 0.9);
+  color: var(--gpt-image-muted);
+}
+
+.gpt-image-selection__item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--gpt-image-border);
+}
+
+.gpt-image-selection__thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.gpt-image-selection__label {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.gpt-image-status {
+  min-height: 24px;
+  font-size: 0.92rem;
+}
+
+.gpt-image-status[data-tone='error'] {
+  color: #9d1f32;
+}
+
+.gpt-image-status[data-tone='success'] {
+  color: #1c6a43;
+}
+
+.gpt-image-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.gpt-image-main {
+  display: grid;
+  gap: 20px;
+}
+
+.gpt-image-toolbar {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 20px;
+}
+
+.gpt-image-filter__fields {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.gpt-image-filter__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 14px;
+  border: 1px solid var(--gpt-image-border-strong);
+  background: var(--gpt-image-surface-strong);
+  padding: 12px 14px;
+}
+
+.gpt-image-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.gpt-image-card {
+  border-radius: 22px;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.gpt-image-card--highlight {
+  border-color: rgba(159, 79, 44, 0.7);
+  box-shadow: 0 20px 44px rgba(159, 79, 44, 0.16);
+}
+
+.gpt-image-card--liked {
+  border-color: rgba(184, 47, 73, 0.32);
+}
+
+.gpt-image-card__media {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: #ece2d7;
+}
+
+.gpt-image-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gpt-image-card__badges {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gpt-image-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.gpt-image-badge--recent {
+  color: var(--gpt-image-accent);
+}
+
+.gpt-image-badge--liked {
+  color: var(--gpt-image-liked);
+  background: var(--gpt-image-liked-soft);
+}
+
+.gpt-image-card__body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.gpt-image-card__prompt {
+  margin: 0;
+  font-size: 0.96rem;
+  line-height: 1.45;
+}
+
+.gpt-image-card__meta {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gpt-image-card__meta div {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.gpt-image-card__meta dt {
+  margin: 0 0 2px;
+  color: var(--gpt-image-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gpt-image-card__meta dd,
+.gpt-image-card__byline {
+  margin: 0;
+}
+
+.gpt-image-card__byline {
+  color: var(--gpt-image-muted);
+  font-size: 0.88rem;
+}
+
+.gpt-image-card__actions {
+  display: flex;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.gpt-image-card__actions .btn {
+  flex: 1 1 0;
+}
+
+.gpt-image-empty {
+  border-radius: 22px;
+  padding: 28px;
+}
+
+.gpt-image-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+@media (max-width: 1100px) {
+  .gpt-image-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .gpt-image-sidebar {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .gpt-image-page {
+    padding: 18px 0 40px;
+  }
+
+  .gpt-image-hero {
+    grid-template-columns: 1fr;
+    padding: 22px;
+  }
+
+  .gpt-image-field-grid,
+  .gpt-image-selection__item {
+    grid-template-columns: 1fr;
+  }
+
+  .gpt-image-filter__fields,
+  .gpt-image-card__actions,
+  .gpt-image-selection__header {
+    flex-direction: column;
+  }
+
+  .gpt-image-selection__thumb {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;
+  }
+}
