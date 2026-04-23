@@ -59,7 +59,7 @@ block content
     section.section-card
       h2 Create entry
       p.section-subtitle Choose a destination ledger, confirm the pre-filled fields, and submit. The tab will close after a successful save.
-      form.js-receipt-entry-form(action=`/receipt/add-entry/${receipt._id.toString()}`, method="post")
+      form.js-receipt-entry-form(action=`/receipt/add-entry/${receipt._id.toString()}`, method="post", autocomplete="off")
         input(type="hidden", name="entryType", value=entryMode || 'budget')
         .form-grid
           .form-field
@@ -251,6 +251,16 @@ block script
         }
       };
 
+      const setChecked = function (selector, checked) {
+        const el = form.querySelector(selector);
+        if (!el) return;
+        const normalized = Boolean(checked);
+        el.checked = normalized;
+        el.defaultChecked = normalized;
+        if (normalized) el.setAttribute('checked', 'checked');
+        else el.removeAttribute('checked');
+      };
+
       const applyBudgetPrefill = function (payload) {
         if (!payload) return;
         setValue('input[name="date"]', payload.date);
@@ -272,8 +282,7 @@ block script
         setValue('input[name="label"]', payload.label);
         setValue('input[name="externalMultiplier"]', payload.externalMultiplier);
         setValue('input[name="amount"]', payload.amount);
-        const external = form.querySelector('input[name="external"]');
-        if (external) external.checked = toBoolean(payload.external);
+        setChecked('input[name="external"]', toBoolean(payload.external));
       };
 
       const updateActiveRule = function (ruleId) {
@@ -353,10 +362,16 @@ block script
           appliedRuleId: serverAppliedState.appliedRuleId || null,
         };
 
-      applyState(initialState);
+      const applyInitialState = function () {
+        applyState(initialState);
+        if (mappingStatus) {
+          if (initialRule) mappingStatus.textContent = "Applied rule: " + initialRule.name;
+          else if (mapping && mapping.length) mappingStatus.textContent = 'Using receipt defaults.';
+        }
+      };
 
-      if (mappingStatus) {
-        if (initialRule) mappingStatus.textContent = "Applied rule: " + initialRule.name;
-        else if (mapping && mapping.length) mappingStatus.textContent = 'Using receipt defaults.';
-      }
+      applyInitialState();
+      window.requestAnimationFrame(applyInitialState);
+      window.setTimeout(applyInitialState, 0);
+      window.addEventListener('pageshow', applyInitialState);
     }());

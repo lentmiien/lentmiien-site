@@ -194,6 +194,57 @@ describe('receiptcontroller receipt entry form', () => {
     }));
   });
 
+  test('supports legacy root-level credit mapping fields', async () => {
+    const receipt = {
+      _id: toObjectId('receipt-legacy'),
+      date: new Date('2026-04-21T00:00:00.000Z'),
+      amount: 4500,
+      method: 'cash',
+      business_name: 'Shop B',
+      business_address: 'Address',
+      layout_text: 'OCR text',
+    };
+    const legacyRule = {
+      _id: toObjectId('rule-legacy'),
+      name: 'Legacy card rule',
+      target: 'credit',
+      priority: 7,
+      active: true,
+      description: 'Legacy rule shape',
+      conditions: [{ field: 'business_name', operator: 'icontains', value: 'shop' }],
+      cardId: toObjectId('card-legacy'),
+      label: 'Legacy label',
+      external: true,
+      externalMultiplier: 3,
+      updatedAt: new Date('2026-04-22T00:00:00.000Z'),
+    };
+    const sortRules = jest.fn().mockResolvedValue([legacyRule]);
+    const res = { render: jest.fn() };
+
+    mockReceipt.findById.mockResolvedValue(receipt);
+    mockReceiptMappingRule.find.mockReturnValue({ sort: sortRules });
+    BudgetService.getReferenceLists.mockResolvedValue({
+      accounts: [],
+      categories: [],
+      tags: [],
+      types: ['expense'],
+    });
+    CreditCardService.listCards.mockResolvedValue([{ id: 'card-legacy', name: 'Visa' }]);
+
+    await controller.receipt_entry_form({ params: { id: 'receipt-legacy' }, query: {} }, res);
+
+    expect(res.render).toHaveBeenCalledWith('receipt_entry', expect.objectContaining({
+      entryMode: 'credit',
+      creditPrefill: expect.objectContaining({
+        cardId: 'card-legacy',
+        label: 'Legacy label',
+        amount: 4500,
+        external: true,
+        externalMultiplier: 3,
+      }),
+    }));
+  });
+
   test('receipt entry view renders the credit section open and external checked for an applied credit rule', () => {
     const html = pug.renderFile(path.join(process.cwd(), 'views/receipt_entry.pug'), {
       receipt: {
@@ -272,6 +323,7 @@ describe('receiptcontroller receipt entry form', () => {
 
     expect(html).toContain('class="ledger-form is-hidden" data-section="budget"');
     expect(html).toContain('class="ledger-form" data-section="credit"');
+    expect(html).toContain('autocomplete="off"');
     expect(html).toContain('id="external" type="checkbox" name="external" value="true" checked');
 
     const prefillMatch = html.match(/<script type="application\/json" id="prefill-data">([\s\S]*?)<\/script>/);

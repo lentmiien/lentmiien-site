@@ -79,22 +79,28 @@ const sanitizeBudgetPrefill = (raw = {}) => {
   };
 };
 
-const sanitizeCreditPrefill = (raw = {}) => {
-  const multiplier = Number(raw.externalMultiplier);
-  return {
-    cardId: raw.cardId ? raw.cardId.toString() : '',
-    label: raw.label || '',
-    external: Boolean(raw.external),
-    externalMultiplier: Number.isFinite(multiplier) ? multiplier : 1,
-  };
-};
-
 const TRUE_LITERALS = new Set(['true', '1', 'yes', 'on', 'y', 't']);
 const toBoolean = (value) => {
   if (typeof value === 'string') {
     return TRUE_LITERALS.has(value.trim().toLowerCase());
   }
   return Boolean(value);
+};
+
+const sanitizeCreditPrefill = (raw = {}, fallback = {}) => {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const legacy = fallback && typeof fallback === 'object' ? fallback : {};
+  const pick = (key) => {
+    if (source[key] !== undefined && source[key] !== null) return source[key];
+    return legacy[key];
+  };
+  const multiplier = Number(pick('externalMultiplier'));
+  return {
+    cardId: pick('cardId') ? pick('cardId').toString() : '',
+    label: pick('label') || '',
+    external: toBoolean(pick('external')),
+    externalMultiplier: Number.isFinite(multiplier) ? multiplier : 1,
+  };
 };
 
 const ensureArray = (value) => {
@@ -168,7 +174,7 @@ const getMatchingRules = (receipt, rules) => {
       priority: entry.rule.priority || 0,
       description: entry.rule.description || '',
       budgetPrefill: sanitizeBudgetPrefill(entry.rule.budgetPrefill || {}),
-      creditPrefill: sanitizeCreditPrefill(entry.rule.creditPrefill || {}),
+      creditPrefill: sanitizeCreditPrefill(entry.rule.creditPrefill || {}, entry.rule),
       conditions: entry.conditions,
       updatedAt: entry.rule.updatedAt || null,
     }))
