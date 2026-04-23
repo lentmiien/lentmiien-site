@@ -155,8 +155,8 @@ block content
       option(value=catId)= cat.title
 
 block script
-  script(type="application/json", id="mapping-data")= JSON.stringify(mappingMatches || [])
-  script(type="application/json", id="prefill-data")= JSON.stringify({ defaults: { budgetPrefill: defaultBudgetPrefill || {}, creditPrefill: defaultCreditPrefill || {}, entryMode: defaultEntryMode || 'budget' }, applied: { budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget', appliedRuleId: appliedRuleId || null } })
+  script(type="application/json", id="mapping-data")!= JSON.stringify(mappingMatches || [])
+  script(type="application/json", id="prefill-data")!= JSON.stringify({ defaults: { budgetPrefill: defaultBudgetPrefill || {}, creditPrefill: defaultCreditPrefill || {}, entryMode: defaultEntryMode || 'budget' }, applied: { budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget', appliedRuleId: appliedRuleId || null } })
   script.
     (function () {
       const parseJson = function (id, fallback) {

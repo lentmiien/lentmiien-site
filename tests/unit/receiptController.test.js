@@ -10,13 +10,6 @@ const mockReceiptMappingRule = {
 };
 
 const toObjectId = (value) => ({ toString: () => value });
-const decodeHtmlEntities = (value) => String(value || '')
-  .replace(/&quot;/g, '"')
-  .replace(/&#39;/g, '\'')
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/&amp;/g, '&');
-
 jest.mock('openai', () => jest.fn().mockImplementation(() => ({
   chat: {
     completions: {
@@ -328,7 +321,8 @@ describe('receiptcontroller receipt entry form', () => {
 
     const prefillMatch = html.match(/<script type="application\/json" id="prefill-data">([\s\S]*?)<\/script>/);
     expect(prefillMatch).not.toBeNull();
-    const prefillData = JSON.parse(decodeHtmlEntities(prefillMatch[1]));
+    expect(prefillMatch[1]).not.toContain('&quot;');
+    const prefillData = JSON.parse(prefillMatch[1]);
     expect(prefillData.defaults.entryMode).toBe('budget');
     expect(prefillData.applied.entryMode).toBe('credit');
     expect(prefillData.applied.appliedRuleId).toBe('rule-1');
