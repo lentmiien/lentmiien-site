@@ -61,6 +61,10 @@ function parseActiveFlag(value) {
 
 let chat_models = [];
 
+function invalidateChatModelCache() {
+  chat_models = [];
+}
+
 async function ensureChatModels() {
   if (Array.isArray(chat_models) && chat_models.length > 0) return chat_models;
   const models = await AIModelCards.find();
@@ -186,7 +190,22 @@ exports.add_model_card = async (req, res) => {
     await new AIModelCards(data).save();
   }
 
+  invalidateChatModelCache();
   res.redirect('/chat5/ai_model_cards');
+};
+
+exports.delete_model_card = async (req, res) => {
+  try {
+    await AIModelCards.findByIdAndDelete(req.params.id);
+    invalidateChatModelCache();
+    return res.redirect('/chat5/ai_model_cards');
+  } catch (error) {
+    logger.error('Failed to delete AI model card', {
+      error: error.message,
+      metadata: { id: req.params.id },
+    });
+    return res.redirect('/chat5/ai_model_cards');
+  }
 };
 
 exports.viewDraftingPresets = async (req, res) => {

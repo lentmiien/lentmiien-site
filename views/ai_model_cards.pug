@@ -15,6 +15,7 @@ block content
             th Added
             th Batch
             th Context
+            th Actions
         tbody 
           each m in models
             tr 
@@ -29,6 +30,9 @@ block content
               td= m.added_date.toDateString()
               td= m.batch_use ? "✔" : "✘"
               td= m.context_type
+              td
+                form(method="post", action=`/chat5/ai_model_cards/${m._id}/delete`, onsubmit="return confirm('Delete this AI model card?');")
+                  button.btn.btn-outline-danger.btn-sm(type="submit") Delete
   .row 
     .col 
       h2 Add new model
