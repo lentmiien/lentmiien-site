@@ -1,4 +1,5 @@
 const ScheduleTaskService = require('../services/scheduleTaskService');
+const ScheduleTaskStatsService = require('../services/scheduleTaskStatsService');
 const { Task, Palette } = require('../database');
 
 /**
@@ -334,3 +335,18 @@ exports.renderUpcomingTasksPage = async function(req, res, next) {
   }
 };
 
+/**
+ * GET /statistics - Schedule task statistics and leaderboards
+ */
+exports.renderStatisticsPage = async function(req, res, next) {
+  try {
+    const currentUserId = req.user.name;
+    const stats = await ScheduleTaskStatsService.getDashboardData({ currentUserId });
+
+    res.render('scheduleTask/statistics', {
+      ...stats
+    });
+  } catch (err) {
+    next(err);
+  }
+};

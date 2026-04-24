@@ -3,6 +3,7 @@ extends ../layout
 block content
   .container
     a.btn.btn-outline-secondary(href='/scheduleTask/upcoming') List tasks →
+    a.btn.btn-outline-warning(href='/scheduleTask/statistics') Statistics
     a.btn.btn-outline-success(href="/scheduleTask/new/presence") New Presence
     a.btn.btn-outline-primary(href="/scheduleTask/new/task") New Task
 
@@ -61,4 +62,3 @@ block styles
     .schedule-task-pill { cursor:pointer; white-space:nowrap }
     .current-slot { outline: 2px solid #dc3545; }        /* red outline for now-slot */
     @media (max-width: 767px){ .slot-time{display:none;} } /* hide time text on xs */
-

@@ -6,6 +6,8 @@ const ctrl = require('../controllers/scheduleTaskController');
 router.get('/calendar', ctrl.renderCalendarPage);
 // Upcoming tasks (grouped by month)
 router.get('/upcoming', ctrl.renderUpcomingTasksPage);
+// Statistics and leaderboards
+router.get('/statistics', ctrl.renderStatisticsPage);
 
 // API endpoints
 router.get('/api/tasks', ctrl.listTasksApi);

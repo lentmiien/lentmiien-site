@@ -1,0 +1,326 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/scheduleTaskStats.css')
+
+block content
+  .schedule-task-stats
+    .container.schedule-task-stats__container
+      .stats-hero
+        .stats-hero__content
+          span.stats-hero__eyebrow Schedule Task Analytics
+          h1.stats-hero__title Todo / ToBuy Statistics
+          p.stats-hero__subtitle
+            | Leaderboards and timing analytics for `todo` and `tobuy` tasks, using `updatedAt` as the completion timestamp whenever `done` becomes true.
+          .stats-hero__meta
+            span.stats-chip Snapshot #{generatedAtLabel}
+            span.stats-chip Current user #{currentUserId}
+            if period28d && period28d.summary && period28d.summary.currentUserRank
+              span.stats-chip Rank in 28d ##{period28d.summary.currentUserRank}
+        .stats-hero__actions
+          a.btn.btn-outline-secondary(href='/scheduleTask/calendar') Calendar
+          a.btn.btn-outline-secondary(href='/scheduleTask/upcoming') Upcoming
+          a.btn.btn-outline-primary(href='/scheduleTask/new/task') New Task
+      if hasData
+        - const recentLeader = period28d.summary.leader;
+        .hero-kpi-grid
+          .hero-kpi
+            span.hero-kpi__label Tracked users
+            strong.hero-kpi__value= trackedUsers
+            span.hero-kpi__meta Users with work in the 1-year analytics window
+          .hero-kpi
+            span.hero-kpi__label 28-day leader
+            if recentLeader
+              strong.hero-kpi__value= recentLeader.userId
+              span.hero-kpi__meta #{recentLeader.overallScore} pts overall
+            else
+              strong.hero-kpi__value —
+              span.hero-kpi__meta No recent completions yet
+          .hero-kpi
+            span.hero-kpi__label 28-day completions
+            strong.hero-kpi__value= period28d.summary.completedCount
+            span.hero-kpi__meta Window hit #{period28d.summary.windowHitRate}
+          .hero-kpi
+            span.hero-kpi__label Overdue open now
+            strong.hero-kpi__value= period28d.summary.overdueOpenCount
+            span.hero-kpi__meta Across all active todo/tobuy tasks
+
+        .stats-grid.stats-grid--charts
+          section.stats-panel
+            .stats-panel__header
+              div
+                h2.stats-panel__title Activity Trend
+                p.stats-panel__subtitle Daily created vs completed work over the last 28 days.
+              span.stats-panel__range= period28d.rangeLabel
+            #activityChart.chart-shell
+          section.stats-panel
+            .stats-panel__header
+              div
+                h2.stats-panel__title 3-Month Leaderboard
+                p.stats-panel__subtitle Overall score bars with window-hit accuracy markers.
+              span.stats-panel__range= period90d.rangeLabel
+            #scoreChart.chart-shell
+
+        section.stats-panel
+          .stats-panel__header
+            div
+              h2.stats-panel__title Overall Score Formula
+              p.stats-panel__subtitle= scoreFormula.summary
+          .formula-grid
+            each detail in scoreFormula.details
+              .formula-card= detail
+
+        section.stats-section
+          .stats-section__header
+            div
+              h2.stats-section__title Last 28 Days
+              p.stats-section__subtitle Detailed leaderboard for the most recent 28-day window.
+            span.stats-panel__range= period28d.rangeLabel
+          .summary-card-grid
+            .summary-card
+              span.summary-card__label Created
+              strong.summary-card__value= period28d.summary.createdCount
+              span.summary-card__meta Carry-in open #{period28d.summary.carryInOpen}
+            .summary-card
+              span.summary-card__label Completed
+              strong.summary-card__value= period28d.summary.completedCount
+              span.summary-card__meta Median cycle #{period28d.summary.medianCycleDays}
+            .summary-card
+              span.summary-card__label Window hit
+              strong.summary-card__value= period28d.summary.windowHitRate
+              span.summary-card__meta Deadline hit #{period28d.summary.onTimeDeadlineRate}
+            .summary-card
+              span.summary-card__label Late completions
+              strong.summary-card__value= period28d.summary.lateCount
+              span.summary-card__meta Avg delay #{period28d.summary.avgLateDays}
+            .summary-card
+              span.summary-card__label Open backlog
+              strong.summary-card__value= period28d.summary.openNow
+              span.summary-card__meta Overdue #{period28d.summary.overdueOpenCount}
+            .summary-card
+              span.summary-card__label Your rank
+              if period28d.summary.currentUserRank
+                strong.summary-card__value ##{period28d.summary.currentUserRank}
+                span.summary-card__meta Score #{period28d.summary.currentUser.overallScore} pts
+              else
+                strong.summary-card__value —
+                span.summary-card__meta No recent activity yet
+
+          if period28d.metricLeaders && period28d.metricLeaders.length
+            .metric-leader-grid
+              each board in period28d.metricLeaders
+                .metric-leader-card
+                  h3.metric-leader-card__title= board.title
+                  p.metric-leader-card__subtitle= board.subtitle
+                  ol.metric-leader-card__list
+                    each entry in board.entries
+                      li.metric-leader-card__item(class=entry.isCurrentUser ? 'is-current' : '')
+                        span.metric-leader-card__rank ##{entry.rank}
+                        .metric-leader-card__body
+                          strong= entry.userId
+                          if entry.secondaryLabel
+                            span= entry.secondaryLabel
+                        span.metric-leader-card__value= entry.valueLabel
+
+          if period28d.leaderboard && period28d.leaderboard.length
+            .stats-table-wrap
+              table.table.stats-table
+                thead
+                  tr
+                    th Rank
+                    th User
+                    th Score
+                    th Completed
+                    th Created
+                    th Window hit
+                    th Closure
+                    th Median cycle
+                    th Avg delay
+                    th Overdue open
+                tbody
+                  each user in period28d.leaderboard
+                    tr(class=user.isCurrentUser ? 'is-current' : '')
+                      td
+                        span.rank-badge= user.rank
+                      td
+                        .stats-table__user
+                          strong= user.userId
+                          if user.isCurrentUser
+                            span.table-chip You
+                      td
+                        .score-stack
+                          strong.score-stack__value= user.overallScore
+                          - const meterWidth = Math.max(0, Math.min(100, user.overallScore));
+                          .score-meter
+                            span(style=`width:${meterWidth}%`)
+                      td= user.completedCount
+                      td= user.createdCount
+                      td= user.display.windowHitRate
+                      td= user.display.closureRate
+                      td= user.display.medianCycleDays
+                      td= user.display.avgLateDays
+                      td
+                        .stats-table__late
+                          span= user.overdueOpenCount
+                          if user.lateCount
+                            span.table-chip.table-chip--late #{user.lateCount} late
+          else
+            .stats-empty-state No recent 28-day data yet.
+
+        section.stats-section
+          .stats-section__header
+            div
+              h2.stats-section__title Last 3 Months
+              p.stats-section__subtitle Broader leaderboard with more stable signal and less noise than the 28-day slice.
+            span.stats-panel__range= period90d.rangeLabel
+          .summary-card-grid.summary-card-grid--wide
+            .summary-card
+              span.summary-card__label Created
+              strong.summary-card__value= period90d.summary.createdCount
+              span.summary-card__meta Carry-in open #{period90d.summary.carryInOpen}
+            .summary-card
+              span.summary-card__label Completed
+              strong.summary-card__value= period90d.summary.completedCount
+              span.summary-card__meta Median cycle #{period90d.summary.medianCycleDays}
+            .summary-card
+              span.summary-card__label Window hit
+              strong.summary-card__value= period90d.summary.windowHitRate
+              span.summary-card__meta Deadline hit #{period90d.summary.onTimeDeadlineRate}
+            .summary-card
+              span.summary-card__label Overdue open
+              strong.summary-card__value= period90d.summary.overdueOpenCount
+              span.summary-card__meta Late completions #{period90d.summary.lateCount}
+
+          if period90d.leaderboard && period90d.leaderboard.length
+            .stats-table-wrap
+              table.table.stats-table
+                thead
+                  tr
+                    th Rank
+                    th User
+                    th Score
+                    th Completed
+                    th Window hit
+                    th Deadline hit
+                    th Median cycle
+                    th Avg delay
+                    th Overdue open
+                tbody
+                  each user in period90d.leaderboard
+                    tr(class=user.isCurrentUser ? 'is-current' : '')
+                      td
+                        span.rank-badge= user.rank
+                      td
+                        .stats-table__user
+                          strong= user.userId
+                          if user.isCurrentUser
+                            span.table-chip You
+                      td
+                        .score-stack
+                          strong.score-stack__value= user.overallScore
+                          - const meterWidth = Math.max(0, Math.min(100, user.overallScore));
+                          .score-meter
+                            span(style=`width:${meterWidth}%`)
+                      td= user.completedCount
+                      td= user.display.windowHitRate
+                      td= user.display.onTimeDeadlineRate
+                      td= user.display.medianCycleDays
+                      td= user.display.avgLateDays
+                      td= user.overdueOpenCount
+          else
+            .stats-empty-state No 3-month data yet.
+
+        section.stats-panel
+          .stats-panel__header
+            div
+              h2.stats-panel__title Top Recurring Titles
+              p.stats-panel__subtitle Top 5 repeating title values within the 1-year analytics scope.
+            span.stats-panel__range Last year
+          if recurringTitles && recurringTitles.length
+            .stats-table-wrap
+              table.table.stats-table
+                thead
+                  tr
+                    th Title
+                    th Frequency
+                    th Users
+                    th Completion rate
+                    th Avg cycle
+                    th Avg delay
+                    th Mix
+                    th Last seen
+                tbody
+                  each item in recurringTitles
+                    tr
+                      td
+                        strong= item.title
+                      td= item.totalCount
+                      td= item.userCount
+                      td= item.completionRate
+                      td= item.avgCycleDays
+                      td= item.avgLateDays
+                      td
+                        .mix-badges
+                          span.table-chip.table-chip--todo todo #{item.todoCount}
+                          span.table-chip.table-chip--tobuy tobuy #{item.tobuyCount}
+                      td= item.lastSeenAt
+          else
+            .stats-empty-state No recurring titles detected in the last year.
+
+        section.stats-section
+          .stats-section__header
+            div
+              h2.stats-section__title Last Year
+              p.stats-section__subtitle Compact view for the broader annual picture.
+            span.stats-panel__range= period1y.rangeLabel
+          .summary-card-grid.summary-card-grid--wide
+            .summary-card
+              span.summary-card__label Created
+              strong.summary-card__value= period1y.summary.createdCount
+              span.summary-card__meta Completed #{period1y.summary.completedCount}
+            .summary-card
+              span.summary-card__label Window hit
+              strong.summary-card__value= period1y.summary.windowHitRate
+              span.summary-card__meta Deadline hit #{period1y.summary.onTimeDeadlineRate}
+            .summary-card
+              span.summary-card__label Overdue open
+              strong.summary-card__value= period1y.summary.overdueOpenCount
+              span.summary-card__meta Carry-in open #{period1y.summary.carryInOpen}
+
+          if period1y.leaderboard && period1y.leaderboard.length
+            .stats-table-wrap
+              table.table.stats-table.stats-table--compact
+                thead
+                  tr
+                    th Rank
+                    th User
+                    th Score
+                    th Completed
+                    th Window hit
+                    th Overdue open
+                tbody
+                  each user in period1y.leaderboard
+                    tr(class=user.isCurrentUser ? 'is-current' : '')
+                      td
+                        span.rank-badge= user.rank
+                      td
+                        .stats-table__user
+                          strong= user.userId
+                          if user.isCurrentUser
+                            span.table-chip You
+                      td= user.overallScore
+                      td= user.completedCount
+                      td= user.display.windowHitRate
+                      td= user.overdueOpenCount
+          else
+            .stats-empty-state No yearly data yet.
+      else
+        .stats-panel.stats-panel--empty
+          h2.stats-panel__title No todo/tobuy data available
+          p.stats-panel__subtitle Create or complete some tasks first, then the leaderboard and timing charts will populate here.
+
+block script
+  if hasData
+    script(src='https://d3js.org/d3.v7.min.js', defer)
+    script(type='application/json', id='scheduleTaskStatsData') !{JSON.stringify({ charts, currentUserId })}
+    script(src='/js/scheduleTask/stats.js', defer)
