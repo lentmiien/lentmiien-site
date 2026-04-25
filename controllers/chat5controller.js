@@ -431,7 +431,7 @@ const DEFAULT_CONVERSATION = {
   messages: [],
   metadata: {
     contextPrompt: "",
-    model: "gpt-5.4-2026-03-05",
+    model: "gpt-5.5",
     maxMessages: 999,
     maxAudioMessages: 3,
     tools: [],

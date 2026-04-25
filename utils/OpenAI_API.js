@@ -23,6 +23,8 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
 const VIDEO_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'video');
 
 const reasoningModels = [
+  "gpt-5.5-pro",
+  "gpt-5.5",
   "gpt-5.4-nano-2026-03-17",
   "gpt-5.4-mini-2026-03-17",
   "gpt-5.4-2026-03-05",
