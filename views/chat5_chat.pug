@@ -3,6 +3,7 @@ extends layout
 block content
   - const personaOptions = Array.isArray(personalities) ? personalities : [];
   - const responseTypeOptions = Array.isArray(responseTypes) ? responseTypes : [];
+  - const availableToolOptions = typeof availableTools !== 'undefined' && Array.isArray(availableTools) ? availableTools : [];
   h2#conversation_title.chat5-title= conversation.title
   p#id.chat5-meta(data-source=conversationSource)= conversation._id
   .chat5-header-actions.d-flex.gap-2.mb-3
@@ -260,6 +261,8 @@ block content
       select#tools.form-control(name="tools", multiple) 
         option(value="image_generation", selected=selectedTools.indexOf("image_generation") >= 0) Generate Images
         option(value="web_search_preview", selected=selectedTools.indexOf("web_search_preview") >= 0) Search Web
+        each tool in availableToolOptions
+          option(value=tool.name, title=tool.description, selected=selectedTools.indexOf(tool.name) >= 0)= tool.displayName || tool.name
       label.chat5-input-label(for="model") Model 
       select#model.form-control(name="model") 
         option(value=conversation.metadata.model) Use previous (#{conversation.metadata.model})

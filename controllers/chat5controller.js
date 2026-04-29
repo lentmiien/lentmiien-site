@@ -13,11 +13,13 @@ const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
 const TemplateService = require('../services/templateService');
 const TtsService = require('../services/ttsService');
+const ToolManagerService = require('../services/toolManagerService');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 const ttsService = new TtsService();
+const toolManagerService = new ToolManagerService();
 
 function slugify(value, fallbackPrefix = 'preset') {
   if (typeof value !== 'string') {
@@ -504,10 +506,11 @@ exports.view_chat5 = async (req, res) => {
     }
   })
 
-  const [templates, personalities, responseTypes] = await Promise.all([
+  const [templates, personalities, responseTypes, availableTools] = await Promise.all([
     templateService.getTemplates(),
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
+    toolManagerService.getAvailableTools(),
   ]);
   const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
@@ -517,6 +520,7 @@ exports.view_chat5 = async (req, res) => {
     templates,
     personalities,
     responseTypes,
+    availableTools,
     conversationSource,
     ttsVoices,
   });
@@ -624,10 +628,11 @@ exports.post_chat5 = async (req, res) => {
     }
   })
 
-  const [templates, personalities, responseTypes] = await Promise.all([
+  const [templates, personalities, responseTypes, availableTools] = await Promise.all([
     templateService.getTemplates(),
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
+    toolManagerService.getAvailableTools(),
   ]);
-  res.render("chat5_chat", {conversation, messages, chat_models, templates, personalities, responseTypes});
+  res.render("chat5_chat", {conversation, messages, chat_models, templates, personalities, responseTypes, availableTools});
 };
