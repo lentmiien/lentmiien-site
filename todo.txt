@@ -1,15 +1,21 @@
-For the OpenAI API webhook responses, I've seen the following error repeatedly lately:
+In `utils/OpenAI_API.js`, I add tools (in the `chat` function) like this before sending a request to the OpenAI API:
+
 ```
-{
-  "name": "Error",
-  "message": "Webhook timestamp is too old",
-  "stack": "Error: Webhook timestamp is too old\n    at Webhooks.verifySignature (C:\\Projects\\lentmiien-site\\node_modules\\openai\\resources\\webhooks.js:50:19)\n    at Webhooks.unwrap (C:\\Projects\\lentmiien-site\\node_modules\\openai\\resources\\webhooks.js:19:20)\n    at exports.openai (C:\\Projects\\lentmiien-site\\controllers\\webhook.js:40:35)\n    at Layer.handle [as handle_request] (C:\\Projects\\lentmiien-site\\node_modules\\express\\lib\\router\\layer.js:95:5)\n    at next (C:\\Projects\\lentmiien-site\\node_modules\\express\\lib\\router\\route.js:149:13)\n    at C:\\Projects\\lentmiien-site\\node_modules\\body-parser\\lib\\read.js:137:5\n    at AsyncResource.runInAsyncScope (node:async_hooks:211:14)\n    at invokeCallback (C:\\Projects\\lentmiien-site\\node_modules\\raw-body\\index.js:238:16)\n    at done (C:\\Projects\\lentmiien-site\\node_modules\\raw-body\\index.js:227:7)\n    at IncomingMessage.onEnd (C:\\Projects\\lentmiien-site\\node_modules\\raw-body\\index.js:287:7)"
-}
+  const tools = [];
+  if (conversation.metadata.tools && conversation.metadata.tools.length > 0) {
+    for (const t of conversation.metadata.tools) {
+      tools.push(tools_map[t]);
+    }
+  }
 ```
 
-A side effect of the error is that I don't fetch the response and save to my database, so even if the response is there (completed on OpenAI's side), I end up with no response on my side (this app).
-*I have confirmed the responses as complete on the OpenAI dashboard, so the webhook seems to be the response "complete" webhook, but for some reason, there is a "timestamp?" error?
+This is only made to work with OpenAI's built in tools right now, but I just added my custom tools in `services/toolManagerService.js`, so when the tool don't exist in the `tools_map`, fetch the JSON from the tool manager instead.
 
-Review my webhook code in `controllers/webhook.js`, and figure out what might be the error, and how to potentially fix the problem.
+That should be all the changes needed when sending an API call, next, we also need to implement the actual tool calling when fetching the response, and send back the tool response to the API. 
 
-Some requests complete without errors, so the error seems to have some randomness. Also, I've seen several incident reports from OpenAI, so maybe that's related, but most importantly, I need some backup plan for these kind of errors, so that I don't get stuck without responses on my side.
+Responses come back as webhooks, and are processed in the function `async processCompletedResponse(response_id)` in `services/conversationService.js`, so when I get the response data, I first need to save the messages and append to the conversation as I currently do, but add support for the `function_call` response type, so it can be saved, and also when I get this type of response, do the actual message calls, append the function responses as new messages, and trigger another API call when all function calls are done.
+
+So, I need to save the 'function_call' and 'function_call_output' to the message database, in a way that I can recreate the content properly for the next API call, then add another API call after a function call was processed, that include the 'function_call' and 'function_call_output', but lets only include the last batch of 'function_call' and 'function_call_output' when responding to a 'function_call' message, so when the user continue the conversation after a function call, only regular messages will be included.
+
+Please adjust the `chat` function in `utils/OpenAI_API.js`, to handle my custom tools, from the tool manager.
+Please adjust the `processCompletedResponse` function in `services/conversationService.js` to handle 'function_call' responses, including saving the messages to the messages database, calling the required functions, and sending the follow up API call with the function call responses, that should also be saved to the database; and adjust the `chat` function to handle 'function_call' and 'function_call_output' messages appropriately (ignore for user triggered responses, or include last batch for tool call responses).

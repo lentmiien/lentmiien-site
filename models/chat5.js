@@ -4,7 +4,7 @@ const Chat5 = new mongoose.Schema({
   user_id: { type: String, required: true, max: 100 },
   category: { type: String, required: true, max: 100 },
   tags: [{ type: String, max: 100 }],
-  contentType: { type: String, enum: ["text", "image", "audio", "video", "file", "tool", "reasoning"], required: true },
+  contentType: { type: String, enum: ["text", "image", "audio", "video", "file", "tool", "reasoning", "function_call", "function_call_output"], required: true },
 
   content: {
     text: String,
@@ -15,6 +15,15 @@ const Chat5 = new mongoose.Schema({
     revisedPrompt: String,
     imageQuality: String,
     toolOutput: String,
+    toolCallId: String,
+    callId: String,
+    toolName: String,
+    arguments: mongoose.Schema.Types.Mixed,
+    output: mongoose.Schema.Types.Mixed,
+    result: mongoose.Schema.Types.Mixed,
+    raw: mongoose.Schema.Types.Mixed,
+    status: String,
+    error: String,
   },
 
   timestamp: { type: Date, default: Date.now },

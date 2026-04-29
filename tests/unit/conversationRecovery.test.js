@@ -9,22 +9,34 @@ jest.mock('../../utils/OpenAI_API', () => ({
   retrieveResponse: jest.fn(),
 }));
 
-jest.mock('../../database', () => ({
-  Conversation5Model: {
-    findById: jest.fn(),
-  },
-  PendingRequests: {
-    find: jest.fn(),
-    findOneAndUpdate: jest.fn(),
-    updateOne: jest.fn(),
-    deleteOne: jest.fn(),
-  },
-  Chat5Model: jest.fn(function chat5Ctor(doc) {
-    this._id = { toString: () => 'chat5-generated' };
-    this.save = jest.fn().mockResolvedValue({ _id: this._id, ...doc });
+jest.mock('../../database', () => {
+  const PendingRequests = jest.fn(function pendingCtor(doc) {
+    Object.assign(this, doc);
+    this._id = 'pending-generated';
+    this.save = jest.fn().mockResolvedValue(this);
     return this;
-  }),
-}));
+  });
+  PendingRequests.find = jest.fn();
+  PendingRequests.findOneAndUpdate = jest.fn();
+  PendingRequests.updateOne = jest.fn();
+  PendingRequests.deleteOne = jest.fn();
+
+  const Chat5Model = jest.fn(function chat5Ctor(doc) {
+    Object.assign(this, doc);
+    this._id = { toString: () => 'chat5-generated' };
+    this.save = jest.fn().mockResolvedValue(this);
+    return this;
+  });
+  Chat5Model.deleteOne = jest.fn().mockResolvedValue({ deletedCount: 1 });
+
+  return {
+    Conversation5Model: {
+      findById: jest.fn(),
+    },
+    PendingRequests,
+    Chat5Model,
+  };
+});
 
 const ConversationService = require('../../services/conversationService');
 const ai = require('../../utils/OpenAI_API');
@@ -117,6 +129,89 @@ describe('ConversationService response recovery', () => {
       messages: [savedMessage],
       placeholder_id: 'ph-1',
     });
+  });
+
+  test('processCompletedResponse executes function calls and queues follow-up response', async () => {
+    const pending = {
+      _id: 'pending-tools',
+      response_id: 'resp-tools',
+      conversation_id: 'conv-tools',
+      placeholder_id: 'ph-old',
+    };
+    const conversation = {
+      _id: { toString: () => 'conv-tools' },
+      category: 'Chat5',
+      tags: ['chat5'],
+      members: ['Lennart'],
+      messages: ['user-1', 'ph-old'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    const functionCallMessage = {
+      _id: { toString: () => 'fc-msg' },
+      contentType: 'function_call',
+      content: {
+        toolCallId: 'fc_123',
+        callId: 'call_123',
+        toolName: 'demo_tool',
+        raw: {
+          type: 'function_call',
+          id: 'fc_123',
+          call_id: 'call_123',
+          name: 'demo_tool',
+          arguments: '{"prompt":"hello"}',
+        },
+      },
+    };
+    const followUpPlaceholder = {
+      _id: { toString: () => 'ph-next' },
+      contentType: 'text',
+      content: { text: 'Pending response' },
+    };
+
+    PendingRequests.findOneAndUpdate.mockResolvedValue(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const messageService = {
+      processCompletedResponse: jest.fn().mockResolvedValue([functionCallMessage]),
+      generateAIMessage: jest.fn().mockResolvedValue({
+        response_id: 'resp-follow',
+        msg: followUpPlaceholder,
+      }),
+    };
+    const service = new ConversationService({}, messageService, {});
+    service.toolManagerService = {
+      executeToolCall: jest.fn().mockResolvedValue({
+        ok: true,
+        tool: 'demo_tool',
+        toolCallId: 'fc_123',
+        callId: 'call_123',
+        result: { ok: true, answer: 42 },
+      }),
+      formatToolResultForOpenAI: jest.fn((toolCall, result) => ({
+        type: 'function_call_output',
+        call_id: toolCall.call_id,
+        output: JSON.stringify(result),
+      })),
+    };
+
+    const result = await service.processCompletedResponse('resp-tools');
+
+    expect(service.toolManagerService.executeToolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'demo_tool', call_id: 'call_123' }),
+      expect.objectContaining({ conversationId: 'conv-tools', userName: 'Lennart' })
+    );
+    expect(messageService.generateAIMessage).toHaveBeenCalledWith({
+      conversation: expect.objectContaining({ messages: ['user-1', 'fc-msg', 'chat5-generated'] }),
+      includeLastToolBatch: true,
+    });
+    expect(PendingRequests).toHaveBeenCalledWith({
+      response_id: 'resp-follow',
+      conversation_id: 'conv-tools',
+      placeholder_id: 'ph-next',
+    });
+    expect(conversation.messages).toEqual(['user-1', 'fc-msg', 'chat5-generated', 'ph-next']);
+    expect(result.messages.map(m => m.contentType)).toEqual(['function_call', 'function_call_output', 'text']);
+    expect(PendingRequests.deleteOne).toHaveBeenCalledWith({ _id: 'pending-tools' });
   });
 
   test('processCompletedResponse releases claim when persistence fails', async () => {

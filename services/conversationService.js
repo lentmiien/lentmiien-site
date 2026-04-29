@@ -2,6 +2,7 @@
 const sharp = require('sharp');
 const logger = require('../utils/logger');
 const ai = require('../utils/OpenAI_API');
+const ToolManagerService = require('./toolManagerService');
 
 const { Conversation5Model, PendingRequests, Chat5Model } = require('../database');
 
@@ -31,6 +32,7 @@ class ConversationService {
     this.conversationModel = conversationModel;
     this.messageService = messageService;
     this.knowledgeService = knowledgeService;
+    this.toolManagerService = new ToolManagerService();
 
     this.categoryList = [];
     this.tagList = [];
@@ -1542,6 +1544,148 @@ class ConversationService {
     return updates;
   }
 
+  buildToolCallFromMessage(message) {
+    const content = message?.content || {};
+    if (content.raw && typeof content.raw === 'object') {
+      return content.raw;
+    }
+    return {
+      type: 'function_call',
+      id: content.toolCallId || null,
+      call_id: content.callId || content.toolCallId || null,
+      name: content.toolName || null,
+      arguments: content.arguments || '{}',
+    };
+  }
+
+  stringifyToolOutput(value) {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value === undefined || value === null) {
+      return '';
+    }
+    try {
+      return JSON.stringify(value);
+    } catch (error) {
+      return String(value);
+    }
+  }
+
+  async saveFunctionCallOutputMessage({ conversation, functionCallMessage, toolCall, outputItem, execution }) {
+    const content = functionCallMessage?.content || {};
+    const output = Object.prototype.hasOwnProperty.call(outputItem, 'output') ? outputItem.output : '';
+    const message = new Chat5Model({
+      user_id: 'bot',
+      category: conversation.category,
+      tags: conversation.tags,
+      contentType: 'function_call_output',
+      content: {
+        text: null,
+        image: null,
+        audio: null,
+        tts: null,
+        transcript: null,
+        revisedPrompt: null,
+        imageQuality: null,
+        toolOutput: this.stringifyToolOutput(output),
+        toolCallId: content.toolCallId || toolCall.id || toolCall.call_id || null,
+        callId: outputItem.call_id || content.callId || toolCall.call_id || toolCall.id || null,
+        toolName: content.toolName || toolCall.name || null,
+        arguments: null,
+        output,
+        result: execution || null,
+        raw: outputItem,
+        status: execution && execution.ok === false ? 'failed' : 'completed',
+        error: execution && execution.ok === false ? execution.error : null,
+      },
+      timestamp: new Date(),
+      hideFromBot: true,
+    });
+    await message.save();
+    return message;
+  }
+
+  async executeFunctionCallsForConversation(conversation, functionCallMessages = []) {
+    const outputMessages = [];
+    const userName = Array.isArray(conversation.members) && conversation.members.length > 0
+      ? conversation.members[0]
+      : 'chat5';
+
+    for (const functionCallMessage of functionCallMessages) {
+      const toolCall = this.buildToolCallFromMessage(functionCallMessage);
+      let execution;
+      let outputPayload;
+
+      try {
+        execution = await this.toolManagerService.executeToolCall(toolCall, {
+          conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
+          conversation,
+          userName,
+          userId: userName,
+          openaiUser: userName,
+          createdBy: 'Chat5',
+        });
+        outputPayload = execution.result;
+      } catch (error) {
+        logger.error('Tool execution failed for function_call response', {
+          conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
+          toolName: toolCall.name,
+          callId: toolCall.call_id || toolCall.id,
+          error,
+        });
+        execution = {
+          ok: false,
+          tool: toolCall.name || null,
+          toolCallId: toolCall.id || null,
+          callId: toolCall.call_id || toolCall.id || null,
+          error: error?.message || String(error),
+        };
+        outputPayload = execution;
+      }
+
+      const outputItem = this.toolManagerService.formatToolResultForOpenAI(toolCall, outputPayload, { format: 'responses' });
+      const outputMessage = await this.saveFunctionCallOutputMessage({
+        conversation,
+        functionCallMessage,
+        toolCall,
+        outputItem,
+        execution,
+      });
+      outputMessages.push(outputMessage);
+    }
+
+    return outputMessages;
+  }
+
+  async queueFollowUpAfterFunctionCalls(conversation) {
+    const conversationForAI = this.normalizeMembersForAI(conversation);
+    const { response_id, msg } = await this.messageService.generateAIMessage({
+      conversation: conversationForAI,
+      includeLastToolBatch: true,
+    });
+
+    if (!response_id) {
+      if (msg?._id) {
+        await Chat5Model.deleteOne({ _id: msg._id });
+      }
+      return [];
+    }
+
+    if (msg) {
+      conversation.messages.push(msg._id.toString());
+      const pr = new PendingRequests({
+        response_id,
+        conversation_id: conversation._id.toString(),
+        placeholder_id: msg._id.toString(),
+      });
+      await pr.save();
+      return [msg];
+    }
+
+    return [];
+  }
+
   // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
   async processCompletedResponse(response_id) {
     const pending = await this.claimPendingRequest(response_id);
@@ -1561,18 +1705,30 @@ class ConversationService {
       }
 
       const messages = await this.messageService.processCompletedResponse(conversation, response_id);
+      const returnedMessages = [...messages];
 
       conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
-      for (const m of messages) {
-        if (!m.error) {
+      const savedMessages = messages.filter(m => m && !m.error);
+      for (const m of savedMessages) {
+        conversation.messages.push(m._id.toString());
+      }
+
+      const functionCallMessages = savedMessages.filter(m => m.contentType === 'function_call');
+      if (functionCallMessages.length > 0) {
+        const functionOutputMessages = await this.executeFunctionCallsForConversation(conversation, functionCallMessages);
+        for (const m of functionOutputMessages) {
           conversation.messages.push(m._id.toString());
+          returnedMessages.push(m);
         }
+
+        const followUpMessages = await this.queueFollowUpAfterFunctionCalls(conversation);
+        returnedMessages.push(...followUpMessages);
       }
 
       await conversation.save();
       await PendingRequests.deleteOne({_id: pending._id});
 
-      return { conversation, messages, placeholder_id: pending.placeholder_id };
+      return { conversation, messages: returnedMessages, placeholder_id: pending.placeholder_id };
     } catch (error) {
       await this.releasePendingRequest(pending._id);
       throw error;

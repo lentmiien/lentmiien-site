@@ -1079,19 +1079,27 @@ class MessageService {
     return result.deletedCount || 0;
   }
 
-  async generateAIMessage({conversation}) {
+  async generateAIMessage({conversation, includeLastToolBatch = false}) {
     // Generate a message through AI and save to database *Can possible generate multiple messages if using tools or reasoning
     const model = (await AIModelCards.find({api_model: conversation.metadata.model}))[0];
     if (!model) {
       throw new Error(`AI model card not found for api_model: ${conversation.metadata.model}`);
     }
 
-    const messages = await Chat5Model.find({_id: conversation.messages});
+    const messageIds = Array.isArray(conversation.messages) ? conversation.messages.map(id => id.toString()) : [];
+    const messages = await Chat5Model.find({_id: messageIds});
+    messages.sort((a,b) => {
+      const a_i = messageIds.indexOf(a._id.toString());
+      const b_i = messageIds.indexOf(b._id.toString());
+      if (a_i < b_i) return -1;
+      if (a_i > b_i) return 1;
+      return 0;
+    });
     const effectiveContextPrompt = buildEffectiveContextPrompt(conversation);
     const runtimeConversation = cloneConversationForAI(conversation, effectiveContextPrompt);
 
     if (model.provider === "OpenAI") {
-      const response_id = await ai.chat(runtimeConversation, messages, model);
+      const response_id = await ai.chat(runtimeConversation, messages, model, { includeLastToolBatch });
 
       const message = {
         user_id: "bot",

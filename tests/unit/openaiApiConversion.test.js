@@ -18,9 +18,16 @@ jest.mock('../../utils/apiDebugLogger', () => ({
   createApiDebugLogger: jest.fn(() => jest.fn().mockResolvedValue()),
 }));
 
+const mockResponsesCreate = jest.fn();
+const mockGetToolJson = jest.fn();
+
+jest.mock('../../services/toolManagerService', () => jest.fn().mockImplementation(() => ({
+  getToolJson: mockGetToolJson,
+})));
+
 jest.mock('openai', () => ({
   OpenAI: jest.fn().mockImplementation(() => ({
-    responses: { retrieve: jest.fn() },
+    responses: { retrieve: jest.fn(), create: mockResponsesCreate },
     embeddings: { create: jest.fn() },
     files: {
       create: jest.fn(),
@@ -40,9 +47,14 @@ jest.mock('openai', () => ({
   toFile: jest.fn(),
 }));
 
-const { convertResponseBody } = require('../../utils/OpenAI_API');
+const { convertResponseBody, chat } = require('../../utils/OpenAI_API');
 
 describe('OpenAI_API response conversion', () => {
+  beforeEach(() => {
+    mockResponsesCreate.mockReset();
+    mockGetToolJson.mockReset();
+  });
+
   test('converts image items without result into a tool fallback instead of throwing', async () => {
     const converted = await convertResponseBody({
       id: 'resp-old',
@@ -75,5 +87,116 @@ describe('OpenAI_API response conversion', () => {
       },
       { error: null },
     ]);
+  });
+
+  test('converts function_call response items into persistable messages', async () => {
+    const converted = await convertResponseBody({
+      id: 'resp-tools',
+      status: 'completed',
+      output: [
+        {
+          id: 'fc_123',
+          type: 'function_call',
+          call_id: 'call_123',
+          name: 'demo_tool',
+          arguments: '{"prompt":"hello"}',
+          status: 'completed',
+        },
+      ],
+      error: null,
+    });
+
+    expect(converted).toEqual([
+      {
+        contentType: 'function_call',
+        content: expect.objectContaining({
+          toolCallId: 'fc_123',
+          callId: 'call_123',
+          toolName: 'demo_tool',
+          arguments: '{"prompt":"hello"}',
+          raw: expect.objectContaining({ type: 'function_call' }),
+          status: 'completed',
+        }),
+        hideFromBot: true,
+      },
+      { error: null },
+    ]);
+  });
+
+  test('chat resolves custom tools and only includes last tool batch when requested', async () => {
+    mockGetToolJson.mockResolvedValue({
+      type: 'function',
+      name: 'demo_tool',
+      description: 'Demo tool',
+      parameters: { type: 'object', properties: {} },
+    });
+    mockResponsesCreate.mockResolvedValue({ id: 'resp-next' });
+
+    const conversation = {
+      metadata: {
+        tools: ['web_search_preview', 'demo_tool'],
+        maxMessages: 20,
+        outputFormat: 'text',
+      },
+    };
+    const model = {
+      api_model: 'gpt-4.1',
+      context_type: 'system',
+      in_modalities: ['text'],
+    };
+    const messages = [
+      {
+        _id: 'user-1',
+        user_id: 'Lennart',
+        contentType: 'text',
+        content: { text: 'Use the tool' },
+        hideFromBot: false,
+      },
+      {
+        _id: 'fc-1',
+        user_id: 'bot',
+        contentType: 'function_call',
+        content: {
+          toolCallId: 'fc_123',
+          callId: 'call_123',
+          toolName: 'demo_tool',
+          arguments: { prompt: 'hello' },
+        },
+        hideFromBot: true,
+      },
+      {
+        _id: 'out-1',
+        user_id: 'bot',
+        contentType: 'function_call_output',
+        content: {
+          callId: 'call_123',
+          output: { ok: true },
+        },
+        hideFromBot: true,
+      },
+    ];
+
+    await chat(conversation, messages, model, { includeLastToolBatch: true });
+
+    expect(mockGetToolJson).toHaveBeenCalledWith('demo_tool', {
+      format: 'responses',
+      includeDisabled: false,
+    });
+    expect(mockResponsesCreate).toHaveBeenCalledWith(expect.objectContaining({
+      tools: [
+        { type: 'web_search_preview' },
+        {
+          type: 'function',
+          name: 'demo_tool',
+          description: 'Demo tool',
+          parameters: { type: 'object', properties: {} },
+        },
+      ],
+      input: expect.arrayContaining([
+        expect.objectContaining({ role: 'user' }),
+        expect.objectContaining({ type: 'function_call', call_id: 'call_123', name: 'demo_tool' }),
+        expect.objectContaining({ type: 'function_call_output', call_id: 'call_123', output: '{"ok":true}' }),
+      ]),
+    }));
   });
 });

@@ -4,6 +4,7 @@ const sharp = require('sharp');
 const { OpenAI } = require('openai');
 const logger = require('./logger');
 const { createApiDebugLogger } = require('./apiDebugLogger');
+const ToolManagerService = require('../services/toolManagerService');
 
 const JS_FILE_NAME = 'utils/OpenAI_API.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
@@ -20,6 +21,7 @@ const headersToObject = (headers) => {
 };
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
+const toolManagerService = new ToolManagerService();
 const VIDEO_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'video');
 
 const reasoningModels = [
@@ -47,6 +49,8 @@ const type_map = {
   image_generation_call: "image",
   web_search_call: "tool",
   reasoning: "reasoning",
+  function_call: "function_call",
+  function_call_output: "function_call_output",
 };
 
 const tools_map = {
@@ -118,6 +122,190 @@ function appendToolGuidance(prompt, tools = []) {
   return normalizedBase.length > 0 ? `${normalizedBase}\n\n${hint}` : hint;
 }
 
+function getMessageIdentity(message, fallbackIndex = 0) {
+  if (!message) return `message-${fallbackIndex}`;
+  const rawId = message._id || message.id;
+  if (!rawId) return `message-${fallbackIndex}`;
+  if (typeof rawId === 'string') return rawId;
+  if (rawId && typeof rawId.toString === 'function') return rawId.toString();
+  return `message-${fallbackIndex}`;
+}
+
+function isFunctionResponseMessage(message) {
+  return message?.contentType === 'function_call' || message?.contentType === 'function_call_output';
+}
+
+function findLastFunctionResponseBatch(messages = []) {
+  const batch = new Set();
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return batch;
+  }
+
+  let foundBatch = false;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (!message) continue;
+
+    if (isFunctionResponseMessage(message)) {
+      batch.add(getMessageIdentity(message, index));
+      foundBatch = true;
+      continue;
+    }
+
+    if (foundBatch && !message.hideFromBot) {
+      break;
+    }
+  }
+
+  return batch;
+}
+
+function selectMessagesForResponses(messages = [], maxMessagesLimit = null, { includeLastToolBatch = false } = {}) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return [];
+  }
+
+  const toolBatch = includeLastToolBatch ? findLastFunctionResponseBatch(messages) : new Set();
+  const selected = [];
+  let visibleCount = 0;
+
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (!message) continue;
+
+    if (isFunctionResponseMessage(message)) {
+      if (toolBatch.has(getMessageIdentity(message, index))) {
+        selected.push(message);
+      }
+      continue;
+    }
+
+    if (message.hideFromBot) {
+      continue;
+    }
+
+    if (maxMessagesLimit && visibleCount >= maxMessagesLimit) {
+      continue;
+    }
+
+    selected.push(message);
+    visibleCount += 1;
+  }
+
+  return selected.reverse();
+}
+
+function stringifyJsonForOpenAI(value, fallback = '{}') {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function buildFunctionCallInput(message) {
+  const content = message?.content || {};
+  const callId = content.callId || content.toolCallId;
+  const name = content.toolName || content.name;
+  if (!callId || !name) {
+    logger.warning('Skipping malformed function_call message', {
+      messageId: getMessageIdentity(message),
+      callId,
+      name,
+    });
+    return null;
+  }
+
+  const functionCall = {
+    type: 'function_call',
+    call_id: callId,
+    name,
+    arguments: stringifyJsonForOpenAI(content.arguments, '{}'),
+  };
+  if (content.toolCallId && content.toolCallId !== callId) {
+    functionCall.id = content.toolCallId;
+  }
+  if (content.status) {
+    functionCall.status = content.status;
+  }
+  return functionCall;
+}
+
+function buildFunctionCallOutputInput(message) {
+  const content = message?.content || {};
+  const callId = content.callId || content.toolCallId;
+  if (!callId) {
+    logger.warning('Skipping malformed function_call_output message', {
+      messageId: getMessageIdentity(message),
+    });
+    return null;
+  }
+
+  const output = Object.prototype.hasOwnProperty.call(content, 'output')
+    ? content.output
+    : content.toolOutput;
+
+  return {
+    type: 'function_call_output',
+    call_id: callId,
+    output: stringifyJsonForOpenAI(output, ''),
+  };
+}
+
+function buildFunctionResponseInput(message) {
+  if (message?.contentType === 'function_call') {
+    return buildFunctionCallInput(message);
+  }
+  if (message?.contentType === 'function_call_output') {
+    return buildFunctionCallOutputInput(message);
+  }
+  return null;
+}
+
+async function resolveToolsForConversation(conversation) {
+  const selectedTools = Array.isArray(conversation?.metadata?.tools)
+    ? conversation.metadata.tools
+    : [];
+  const tools = [];
+
+  for (const toolName of selectedTools) {
+    if (typeof toolName !== 'string' || toolName.trim().length === 0) {
+      continue;
+    }
+
+    const normalizedName = toolName.trim();
+    if (tools_map[normalizedName]) {
+      tools.push(tools_map[normalizedName]);
+      continue;
+    }
+
+    try {
+      const customTool = await toolManagerService.getToolJson(normalizedName, {
+        format: 'responses',
+        includeDisabled: false,
+      });
+      if (customTool) {
+        tools.push(customTool);
+      } else {
+        logger.warning('Selected tool not found in tool manager', { toolName: normalizedName });
+      }
+    } catch (error) {
+      logger.error('Failed to load custom tool definition', {
+        toolName: normalizedName,
+        error,
+      });
+    }
+  }
+
+  return tools;
+}
+
 function GenerateMessagesArray_Responses(context, messages, isImageModel) {
   const messageArray = [];
   if (context.type != "none" && context.prompt && context.prompt.length > 0) {
@@ -131,38 +319,58 @@ function GenerateMessagesArray_Responses(context, messages, isImageModel) {
     return messageArray;
   }
 
-  // Messages
-  let role = messages[0].user_id === "bot" ? 'assistant' : 'user';
+  let role = null;
   let content = [];
-  for (const message of messages) {
-    const this_role = message.user_id === "bot" ? 'assistant' : 'user';
-    if (role != this_role) {
+
+  const flushContent = () => {
+    if (role && content.length > 0) {
       messageArray.push({
         role,
         content,
       });
-      role = this_role;
-      content = [];
     }
-    if (!message.hideFromBot) {
-      if (message.contentType === "text") {
-        content.push({ type: this_role === "user" ? 'input_text' : 'output_text', text: message.content.text });
+    role = null;
+    content = [];
+  };
+
+  for (const message of messages) {
+    if (!message) continue;
+
+    if (isFunctionResponseMessage(message)) {
+      const functionInput = buildFunctionResponseInput(message);
+      if (functionInput) {
+        flushContent();
+        messageArray.push(functionInput);
       }
-      if (message.contentType === "image") {
-        if (isImageModel && this_role === "user") {
-          const b64_img = loadImageToBase64(message.content.image);
-          content.push({ type: 'input_image', image_url: `data:image/jpeg;base64,${b64_img}` });
-        }
-        else {
-          content.push({ type: this_role === "user" ? 'input_text' : 'output_text', text: `Image prompt: ${message.content.revisedPrompt}` });
-        }
+      continue;
+    }
+
+    if (message.hideFromBot) {
+      continue;
+    }
+
+    const this_role = message.user_id === "bot" ? 'assistant' : 'user';
+    if (role && role != this_role) {
+      flushContent();
+    }
+    if (!role) {
+      role = this_role;
+    }
+
+    if (message.contentType === "text") {
+      content.push({ type: this_role === "user" ? 'input_text' : 'output_text', text: message.content.text });
+    }
+    if (message.contentType === "image") {
+      if (isImageModel && this_role === "user") {
+        const b64_img = loadImageToBase64(message.content.image);
+        content.push({ type: 'input_image', image_url: `data:image/jpeg;base64,${b64_img}` });
+      }
+      else {
+        content.push({ type: this_role === "user" ? 'input_text' : 'output_text', text: `Image prompt: ${message.content.revisedPrompt}` });
       }
     }
   }
-  messageArray.push({
-    role,
-    content,
-  });
+  flushContent();
 
   return messageArray;
 }
@@ -222,6 +430,59 @@ function createToolOutput(toolOutput, extras = {}) {
       revisedPrompt: extras.revisedPrompt || null,
       imageQuality: null,
       toolOutput,
+    },
+    hideFromBot: true,
+  };
+}
+
+function createFunctionCallMessage(functionCall) {
+  return {
+    contentType: 'function_call',
+    content: {
+      text: null,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: null,
+      toolCallId: functionCall.id || functionCall.call_id || null,
+      callId: functionCall.call_id || functionCall.id || null,
+      toolName: functionCall.name || null,
+      arguments: Object.prototype.hasOwnProperty.call(functionCall, 'arguments') ? functionCall.arguments : '{}',
+      output: null,
+      result: null,
+      raw: functionCall,
+      status: functionCall.status || null,
+      error: null,
+    },
+    hideFromBot: true,
+  };
+}
+
+function createFunctionCallOutputMessage(outputItem) {
+  const output = Object.prototype.hasOwnProperty.call(outputItem, 'output') ? outputItem.output : '';
+  return {
+    contentType: 'function_call_output',
+    content: {
+      text: null,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: stringifyJsonForOpenAI(output, ''),
+      toolCallId: outputItem.id || outputItem.call_id || null,
+      callId: outputItem.call_id || outputItem.id || null,
+      toolName: outputItem.name || null,
+      arguments: null,
+      output,
+      result: outputItem.result || null,
+      raw: outputItem,
+      status: outputItem.status || null,
+      error: outputItem.error || null,
     },
     hideFromBot: true,
   };
@@ -333,6 +594,12 @@ async function convertOutput(d, response = null) {
       });
       return summary_texts.length > 0 ? createTextOutput(summary_texts.join('\n\n'), true) : null;
     }
+    case 'function_call': {
+      return createFunctionCallMessage(d);
+    }
+    case 'function_call_output': {
+      return createFunctionCallOutputMessage(d);
+    }
     default:
       logger.notice('Type undefined: ', d);
       return null;
@@ -443,28 +710,20 @@ const generateStructuredOutput = async ({ model, prompt, schema, schemaName, sys
   }
 };
 
-const chat = async (conversation, messages, model) => {
+const chat = async (conversation, messages, model, options = {}) => {
   const resolvedContext = resolveContextPrompt(conversation);
   const promptWithTools = appendToolGuidance(resolvedContext, conversation?.metadata?.tools);
-  const visibleMessages = Array.isArray(messages)
-    ? messages.filter((message) => message && !message.hideFromBot)
-    : [];
   const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
-  const limitedMessages = maxMessagesLimit
-    ? visibleMessages.slice(-maxMessagesLimit)
-    : visibleMessages;
+  const limitedMessages = selectMessagesForResponses(messages, maxMessagesLimit, {
+    includeLastToolBatch: !!options.includeLastToolBatch,
+  });
   const messageArray = GenerateMessagesArray_Responses(
     {type: model.context_type, prompt: promptWithTools},
     limitedMessages,
     model.in_modalities.indexOf("image") >= 0
   );
 
-  const tools = [];
-  if (conversation.metadata.tools && conversation.metadata.tools.length > 0) {
-    for (const t of conversation.metadata.tools) {
-      tools.push(tools_map[t]);
-    }
-  }
+  const tools = await resolveToolsForConversation(conversation);
 
   const inputParameters = {
     model: model.api_model,
