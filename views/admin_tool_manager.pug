@@ -21,6 +21,31 @@ block content
     if feedback
       .alert(class=feedback.status === 'success' ? 'alert-success' : feedback.status === 'error' ? 'alert-danger' : 'alert-info')= feedback.message
 
+    section.tool-manager-panel.tool-manager-tester
+      .tool-manager-panel__header
+        .tool-manager-panel__heading
+          h2.tool-manager-panel__title Manual tester
+          p.tool-manager-panel__meta= `${tools.filter((tool) => tool.enabled).length} enabled`
+        span.tool-manager-tester__status#toolTesterStatus(aria-live='polite')
+      form#toolTesterForm.tool-manager-tester__form
+        .tool-manager-tester__controls
+          label.form-label(for='toolTesterName') Tool
+          select#toolTesterName.form-select(name='toolName', required)
+            option(value='') Select a tool
+            each tool in tools
+              option(value=tool.name, disabled=!tool.enabled)= `${tool.displayName} (${tool.name})${tool.enabled ? '' : ' - disabled'}`
+          button#toolTesterSubmit.btn.btn-primary(type='submit') Run tool
+        label.form-label(for='toolTesterArguments') Arguments JSON
+        textarea#toolTesterArguments.form-control.tool-manager-json-input(name='arguments', rows='8', spellcheck='false').
+          {
+            "prompt": "A clean product-style image of a small graphite and ember desk tool"
+          }
+        .tool-manager-tester__output-wrap
+          .tool-manager-tester__output-header
+            h3.tool-manager-tester__output-title Output
+            button#toolTesterCopy.btn.btn-outline-secondary.btn-sm(type='button') Copy
+          pre#toolTesterOutput.tool-manager-tester__output No tool run yet.
+
     .tool-manager-layout
       section.tool-manager-panel.tool-manager-editor
         .tool-manager-panel__header
@@ -126,6 +151,8 @@ block content
         else
           .tool-manager-empty
             p No tools stored yet.
+
+  script(type='application/json', id='toolManagerPageConfig') !{JSON.stringify(testerConfig)}
 
 block script
   script(src='/js/tool_manager.js', defer)

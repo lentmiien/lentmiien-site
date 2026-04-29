@@ -26,6 +26,30 @@ function safeJsonString(value) {
   }
 }
 
+function parseJsonInput(value, label) {
+  if (value === undefined || value === null || value === '') {
+    return {};
+  }
+  if (typeof value === 'object') {
+    return value;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${label} must be a JSON object.`);
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${label} must be a JSON object.`);
+    }
+    return parsed;
+  } catch (error) {
+    if (error.message.includes('must be a JSON object')) {
+      throw error;
+    }
+    throw new Error(`${label} contains invalid JSON: ${error.message}`);
+  }
+}
+
 exports.index = async (req, res) => {
   try {
     const [tools, editTool] = await Promise.all([
@@ -58,6 +82,15 @@ exports.index = async (req, res) => {
       feedback: parseFeedback(req),
       handlerKeys: toolManagerService.getRegisteredHandlerKeys(),
       seedToolNames: defaultToolSeeds.map((seed) => seed.name),
+      testerConfig: {
+        endpoint: '/admin/tools/test',
+        tools: tools.map((tool) => ({
+          name: tool.name,
+          displayName: tool.displayName,
+          enabled: tool.enabled,
+          handlerKey: tool.handlerKey,
+        })),
+      },
       formDefaults: editTool || createTemplate,
       toolDefinitionText: safeJsonString(editTool ? editTool.toolDefinition : createTemplate.toolDefinition),
       metadataText: safeJsonString(editTool ? editTool.metadata : createTemplate.metadata),
@@ -133,5 +166,44 @@ exports.seed = async (req, res) => {
       metadata: { error: error.message },
     });
     return redirectWithFeedback(res, 'error', error.message || 'Unable to seed default tools.');
+  }
+};
+
+exports.test = async (req, res) => {
+  const toolName = typeof req.body?.toolName === 'string' ? req.body.toolName.trim() : '';
+  if (!toolName) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Tool name is required.',
+    });
+  }
+
+  try {
+    const args = parseJsonInput(req.body.arguments, 'Arguments');
+    const execution = await toolManagerService.executeTool(toolName, args, {
+      user: req.user || null,
+      userName: req.user?.name || 'admin',
+      userId: req.user?._id ? req.user._id.toString() : null,
+      createdBy: 'Tool',
+      source: 'admin-tool-manager-test',
+    });
+
+    return res.json({
+      ok: true,
+      execution,
+    });
+  } catch (error) {
+    logger.warning('Manual tool test failed', {
+      category: 'tool_manager',
+      metadata: {
+        toolName,
+        error: error.message,
+        user: req.user?.name || null,
+      },
+    });
+    return res.status(error.status || 400).json({
+      ok: false,
+      error: error.message || 'Tool test failed.',
+    });
   }
 };

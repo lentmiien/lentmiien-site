@@ -1,5 +1,5 @@
 .tool-manager-page {
-  color: #1f2933;
+  color: var(--text);
   padding: 24px 0 48px;
 }
 
@@ -13,7 +13,7 @@
 
 .tool-manager-header__eyebrow {
   margin: 0 0 4px;
-  color: #5f6f52;
+  color: var(--accent);
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -22,6 +22,7 @@
 
 .tool-manager-header__title {
   margin: 0;
+  color: var(--text);
   font-size: 2rem;
   font-weight: 700;
 }
@@ -43,18 +44,20 @@
 }
 
 .tool-manager-panel {
-  border: 1px solid #d6ddd2;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 12px 28px rgba(31, 41, 51, 0.08);
+  background: var(--surface-1);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
 }
 
-.tool-manager-editor {
+.tool-manager-editor,
+.tool-manager-list,
+.tool-manager-tester {
   padding: 20px;
 }
 
-.tool-manager-list {
-  padding: 20px;
+.tool-manager-tester {
+  margin-bottom: 20px;
 }
 
 .tool-manager-panel__header {
@@ -63,17 +66,25 @@
   gap: 12px;
   align-items: baseline;
   margin-bottom: 16px;
+  border-bottom: 1px solid var(--divider);
+  padding-bottom: 12px;
+}
+
+.tool-manager-panel__heading {
+  display: grid;
+  gap: 4px;
 }
 
 .tool-manager-panel__title {
   margin: 0;
+  color: var(--text);
   font-size: 1.25rem;
   font-weight: 700;
 }
 
 .tool-manager-panel__meta {
   margin: 0;
-  color: #687782;
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
@@ -85,6 +96,21 @@
   padding-top: 32px;
 }
 
+.tool-manager-page .form-check-input {
+  background-color: var(--surface-2);
+  border-color: var(--border);
+}
+
+.tool-manager-page .form-check-input:checked {
+  background-color: var(--brand);
+  border-color: var(--brand);
+}
+
+.tool-manager-page .form-check-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 194, 71, 0.18);
+}
+
 .tool-manager-json-input {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.86rem;
@@ -94,15 +120,22 @@
 .tool-manager-json-status {
   min-height: 20px;
   margin-top: 4px;
+  color: var(--text-muted);
   font-size: 0.86rem;
 }
 
-.tool-manager-json-status[data-state='ok'] {
-  color: #1f7a4d;
+.tool-manager-json-status[data-state='ok'],
+.tool-manager-tester__status[data-state='ok'] {
+  color: var(--success);
 }
 
-.tool-manager-json-status[data-state='error'] {
-  color: #b3261e;
+.tool-manager-json-status[data-state='error'],
+.tool-manager-tester__status[data-state='error'] {
+  color: var(--danger);
+}
+
+.tool-manager-tester__status[data-state='running'] {
+  color: var(--accent);
 }
 
 .tool-manager-editor__actions {
@@ -110,12 +143,60 @@
   margin-top: 18px;
 }
 
+.tool-manager-tester__form {
+  display: grid;
+  gap: 12px;
+}
+
+.tool-manager-tester__controls {
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.tool-manager-tester__status {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.tool-manager-tester__output-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-manager-tester__output-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.tool-manager-tester__output-title {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.tool-manager-tester__output {
+  min-height: 180px;
+  max-height: 520px;
+  overflow: auto;
+  margin: 0;
+  border-color: var(--divider);
+  background: rgba(14, 15, 19, 0.92);
+}
+
 .tool-manager-table {
   margin-bottom: 0;
+  color: var(--text-secondary);
+  background: transparent;
 }
 
 .tool-manager-table th {
-  color: #4f5f6b;
+  color: var(--text);
+  background: var(--surface-2);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -123,11 +204,20 @@
 
 .tool-manager-table td {
   vertical-align: top;
+  background: rgba(23, 26, 32, 0.74);
+}
+
+.tool-manager-table tbody tr:hover td {
+  background: rgba(255, 194, 71, 0.08);
+}
+
+.tool-manager-table strong {
+  color: var(--text);
 }
 
 .tool-manager-table__sub,
 .tool-manager-table__description {
-  color: #687782;
+  color: var(--text-muted);
   font-size: 0.88rem;
 }
 
@@ -145,17 +235,22 @@
 .tool-manager-tag {
   display: inline-flex;
   align-items: center;
-  border: 1px solid #c8d5bf;
+  border: 1px solid rgba(255, 194, 71, 0.35);
   border-radius: 999px;
   padding: 2px 8px;
-  background: #f6f8f4;
-  color: #41503b;
+  background: var(--accent-tint);
+  color: var(--accent);
   font-size: 0.78rem;
 }
 
 .tool-manager-details summary {
   cursor: pointer;
-  color: #2457a6;
+  color: var(--accent);
+}
+
+.tool-manager-details summary:hover,
+.tool-manager-details summary:focus {
+  color: var(--accent-hover);
 }
 
 .tool-manager-details pre {
@@ -164,17 +259,49 @@
   overflow: auto;
   margin: 8px 0 0;
   padding: 12px;
-  border: 1px solid #d9e0e6;
+  border: 1px solid var(--divider);
   border-radius: 6px;
-  background: #f7f9fb;
+  background: rgba(14, 15, 19, 0.92);
+  color: var(--text);
   font-size: 0.8rem;
 }
 
+.tool-manager-actions {
+  align-items: flex-start;
+}
+
+.tool-manager-actions .btn-outline-danger {
+  color: var(--danger);
+  border-color: rgba(255, 77, 79, 0.58);
+  background: transparent;
+}
+
+.tool-manager-actions .btn-outline-danger:hover,
+.tool-manager-actions .btn-outline-danger:focus {
+  color: var(--text-inverse);
+  background: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.25);
+}
+
 .tool-manager-empty {
-  border: 1px dashed #b8c2cc;
+  border: 1px dashed var(--divider);
   border-radius: 8px;
   padding: 22px;
-  color: #687782;
+  color: var(--text-muted);
+  background: rgba(27, 32, 38, 0.55);
+}
+
+.tool-manager-page .badge.text-bg-success {
+  border-color: rgba(23, 198, 150, 0.42);
+  background: rgba(23, 198, 150, 0.16) !important;
+  color: var(--success) !important;
+}
+
+.tool-manager-page .badge.text-bg-secondary {
+  border-color: var(--divider);
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
 }
 
 @media (max-width: 1100px) {
@@ -184,13 +311,14 @@
 }
 
 @media (max-width: 720px) {
-  .tool-manager-header {
+  .tool-manager-header,
+  .tool-manager-panel__header,
+  .tool-manager-tester__output-header {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .tool-manager-panel__header {
-    align-items: flex-start;
-    flex-direction: column;
+  .tool-manager-tester__controls {
+    grid-template-columns: 1fr;
   }
 }

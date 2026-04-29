@@ -115,6 +115,7 @@ router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
 router.get('/tools', toolManagerController.index);
 router.post('/tools/save', toolManagerController.save);
 router.post('/tools/seed', toolManagerController.seed);
+router.post('/tools/test', toolManagerController.test);
 router.post('/tools/:id/toggle', toolManagerController.toggle);
 router.post('/tools/:id/delete', toolManagerController.delete);
 
