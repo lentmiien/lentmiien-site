@@ -109,6 +109,7 @@ const AIModelCards = require('./models/ai_model_card');
 const Images = require('./models/image');
 const GoodImage = require('./models/good_image');
 const GptImageGeneration = require('./models/gpt_image_generation');
+const LlmTool = require('./models/llm_tool');
 // HTML page ratings
 const HtmlPageRating = require('./models/html_page_rating');
 // Music generation library
@@ -219,6 +220,7 @@ module.exports = {
   Images,
   GoodImage,
   GptImageGeneration,
+  LlmTool,
   HtmlPageRating,
   MusicGeneration,
   Payroll,

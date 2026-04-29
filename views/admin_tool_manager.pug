@@ -1,0 +1,131 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/tool_manager.css')
+
+block content
+  - const editing = !!editTool;
+  - const formTool = formDefaults || {};
+  - const tagsValue = Array.isArray(formTool.tags) ? formTool.tags.join(', ') : '';
+  .tool-manager-page
+    .tool-manager-header
+      .tool-manager-header__main
+        p.tool-manager-header__eyebrow Admin
+        h1.tool-manager-header__title Tool Manager
+      .tool-manager-header__actions
+        form(method='post', action='/admin/tools/seed')
+          button.btn.btn-outline-primary(type='submit') Seed defaults
+        if editing
+          a.btn.btn-outline-secondary(href='/admin/tools') New tool
+
+    if feedback
+      .alert(class=feedback.status === 'success' ? 'alert-success' : feedback.status === 'error' ? 'alert-danger' : 'alert-info')= feedback.message
+
+    .tool-manager-layout
+      section.tool-manager-panel.tool-manager-editor
+        .tool-manager-panel__header
+          h2.tool-manager-panel__title= editing ? `Edit ${editTool.name}` : 'Create tool'
+          if editing
+            p.tool-manager-panel__meta= `Last updated ${new Date(editTool.updatedAt).toLocaleString()}`
+        form#toolManagerForm(method='post', action='/admin/tools/save', novalidate)
+          if editing
+            input(type='hidden', name='id', value=editTool._id)
+          input(type='hidden', name='enabled', value='false')
+
+          .row.g-3
+            .col-md-6
+              label.form-label(for='toolName') Name
+              input#toolName.form-control(type='text', name='name', value=formTool.name || '', maxlength='64', pattern='[a-zA-Z0-9_-]+', required)
+            .col-md-6
+              label.form-label(for='toolDisplayName') Display name
+              input#toolDisplayName.form-control(type='text', name='displayName', value=formTool.displayName || '', maxlength='160', required)
+            .col-md-6
+              label.form-label(for='toolHandlerKey') Handler key
+              input#toolHandlerKey.form-control(type='text', name='handlerKey', value=formTool.handlerKey || '', list='toolHandlerKeys', maxlength='160', required)
+              datalist#toolHandlerKeys
+                each handlerKey in handlerKeys
+                  option(value=handlerKey)
+            .col-md-6
+              label.form-label(for='toolSourcePath') Source path
+              input#toolSourcePath.form-control(type='text', name='sourcePath', value=formTool.sourcePath || '', maxlength='300')
+            .col-md-8
+              label.form-label(for='toolTags') Tags
+              input#toolTags.form-control(type='text', name='tags', value=tagsValue)
+            .col-md-4
+              .tool-manager-enabled
+                input#toolEnabled.form-check-input(type='checkbox', name='enabled', value='true', checked=formTool.enabled !== false)
+                label.form-check-label(for='toolEnabled') Enabled
+            .col-12
+              label.form-label(for='toolDescription') Description
+              textarea#toolDescription.form-control(name='description', rows='3', maxlength='4000')= formTool.description || ''
+            .col-12
+              label.form-label(for='toolDefinition') Tool JSON
+              textarea#toolDefinition.form-control.tool-manager-json-input(name='toolDefinition', rows='16', data-json-field='Tool JSON', spellcheck='false', required)= toolDefinitionText
+              .tool-manager-json-status(data-json-status-for='toolDefinition')
+            .col-12
+              label.form-label(for='toolMetadata') Metadata JSON
+              textarea#toolMetadata.form-control.tool-manager-json-input(name='metadata', rows='8', data-json-field='Metadata JSON', spellcheck='false')= metadataText
+              .tool-manager-json-status(data-json-status-for='toolMetadata')
+
+          .tool-manager-editor__actions
+            button.btn.btn-primary(type='submit')= editing ? 'Save changes' : 'Create tool'
+            if editing
+              a.btn.btn-outline-secondary(href='/admin/tools') Cancel
+
+      section.tool-manager-panel.tool-manager-list
+        .tool-manager-panel__header
+          h2.tool-manager-panel__title Tools
+          p.tool-manager-panel__meta= `${tools.length} stored`
+
+        if tools && tools.length
+          .table-responsive
+            table.table.table-sm.align-middle.tool-manager-table
+              thead
+                tr
+                  th Name
+                  th Handler
+                  th Source
+                  th State
+                  th JSON
+                  th Actions
+              tbody
+                each tool in tools
+                  tr
+                    td
+                      strong= tool.displayName
+                      .tool-manager-table__sub= tool.name
+                      if tool.description
+                        .tool-manager-table__description= tool.description
+                      if tool.tags && tool.tags.length
+                        .tool-manager-tags
+                          each tag in tool.tags
+                            span.tool-manager-tag= tag
+                    td
+                      code= tool.handlerKey
+                    td
+                      if tool.sourcePath
+                        code= tool.sourcePath
+                      else
+                        span.text-muted -
+                    td
+                      if tool.enabled
+                        span.badge.text-bg-success Enabled
+                      else
+                        span.badge.text-bg-secondary Disabled
+                    td
+                      details.tool-manager-details
+                        summary View
+                        pre= JSON.stringify(tool.toolDefinition, null, 2)
+                    td.tool-manager-actions
+                      a.btn.btn-outline-primary.btn-sm(href=`/admin/tools?edit=${tool._id}`) Edit
+                      form(method='post', action=`/admin/tools/${tool._id}/toggle`)
+                        input(type='hidden', name='enabled', value=tool.enabled ? 'false' : 'true')
+                        button.btn.btn-outline-secondary.btn-sm(type='submit')= tool.enabled ? 'Disable' : 'Enable'
+                      form(method='post', action=`/admin/tools/${tool._id}/delete`, data-confirm='Delete this tool?')
+                        button.btn.btn-outline-danger.btn-sm(type='submit') Delete
+        else
+          .tool-manager-empty
+            p No tools stored yet.
+
+block script
+  script(src='/js/tool_manager.js', defer)

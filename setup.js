@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const logger = require('./utils/logger');
 const { runPreflightChecks, notifyStartupAlert } = require('./utils/startupChecks');
 const { syncOpenAIUsageHistory } = require('./services/openaiUsageSyncService');
+const ToolManagerService = require('./services/toolManagerService');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
 const batchprompt = require('./models/batchprompt');
@@ -515,6 +516,7 @@ async function performDatabaseMaintenance() {
     expiredInboxMessagesRemoved: 0,
     messageInboxDefaultEmbeddingsRemoved: 0,
     messageInboxHighQualityEmbeddingsRemoved: 0,
+    toolManagerSeed: null,
   };
 
   await mongoose.connect(mongoUrl, {
@@ -565,6 +567,8 @@ async function performDatabaseMaintenance() {
     summary.expiredInboxMessagesRemoved = inboxCleanup.removed;
     summary.messageInboxDefaultEmbeddingsRemoved = inboxCleanup.defaultEmbeddingsRemoved;
     summary.messageInboxHighQualityEmbeddingsRemoved = inboxCleanup.highQualityEmbeddingsRemoved;
+    const toolManagerService = new ToolManagerService();
+    summary.toolManagerSeed = await toolManagerService.seedDefaultTools({ actor: 'setup' });
 
     return summary;
   } finally {

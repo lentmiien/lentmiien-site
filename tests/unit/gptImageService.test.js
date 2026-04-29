@@ -3,6 +3,8 @@ const {
   buildPromptFilter,
   resolveRequestedSize,
   normalizeGenerationForm,
+  normalizeToolImageArguments,
+  buildToolImageRequest,
   buildStoredFileName,
   extractUnknownParameterName,
   executeWithUnknownParameterRetry,
@@ -101,6 +103,38 @@ describe('gptImageService', () => {
         outputFormat: 'png',
         outputCompression: null,
         moderation: 'auto',
+      },
+    });
+  });
+
+  test('normalizeToolImageArguments converts tool-call options to the image form shape', () => {
+    expect(normalizeToolImageArguments({
+      prompt: 'A small robot chef',
+      n: 2,
+      size: '2048x1152',
+      output_format: 'webp',
+      output_compression: 82,
+    })).toEqual({
+      prompt: 'A small robot chef',
+      n: 2,
+      quality: undefined,
+      background: undefined,
+      outputFormat: 'webp',
+      outputCompression: 82,
+      moderation: undefined,
+      sizeMode: 'preset',
+      sizePreset: '2048x1152',
+    });
+  });
+
+  test('buildToolImageRequest normalizes selected gallery image ids', () => {
+    expect(buildToolImageRequest({
+      prompt: 'A reference edit',
+      selected_image_ids: ['abc', 'abc', 'def'],
+    })).toMatchObject({
+      selectedImageIds: ['abc', 'def'],
+      rawOptions: {
+        prompt: 'A reference edit',
       },
     });
   });

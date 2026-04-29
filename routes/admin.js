@@ -6,6 +6,7 @@ const router = express.Router();
 const controller = require('../controllers/admincontroller');
 const learningAdminController = require('../controllers/learningAdminController');
 const messageInboxController = require('../controllers/messageInboxAdminController');
+const toolManagerController = require('../controllers/toolManagerController');
 
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
@@ -111,6 +112,11 @@ router.get('/database-viewer/data', controller.database_viewer_data);
 router.post('/database-viewer/delete', controller.database_viewer_delete);
 router.get('/api-debug-logs', controller.api_debug_logs);
 router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
+router.get('/tools', toolManagerController.index);
+router.post('/tools/save', toolManagerController.save);
+router.post('/tools/seed', toolManagerController.seed);
+router.post('/tools/:id/toggle', toolManagerController.toggle);
+router.post('/tools/:id/delete', toolManagerController.delete);
 
 router.get('/embedding-test', controller.embedding_test_page);
 router.post('/embedding-test', controller.embedding_test_generate);
