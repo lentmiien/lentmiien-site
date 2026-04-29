@@ -26,7 +26,7 @@ jest.mock('../../services/toolManagerService', () => jest.fn().mockImplementatio
   executeToolCall: mockExecuteToolCall,
 })));
 
-const { chat } = require('../../utils/Ollama_API');
+const { chat, convertResponseBody } = require('../../utils/Ollama_API');
 
 describe('Ollama_API tool manager integration', () => {
   beforeEach(() => {
@@ -158,5 +158,93 @@ describe('Ollama_API tool manager integration', () => {
     ]));
     expect(response.choices[0].message.content).toBe('The tool returned: tool result');
     expect(response.rounds).toBe(2);
+    expect(response.tool_steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'tool',
+        name: 'demo_tool',
+        tool_call_id: 'call_1',
+        call_id: 'call_1',
+      }),
+    ]));
+  });
+
+  test('converts Ollama tool steps into persistable function call messages', async () => {
+    const converted = await convertResponseBody({
+      message: {
+        role: 'assistant',
+        content: 'Final answer',
+      },
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: 'Final answer',
+          },
+        },
+      ],
+      tool_steps: [
+        {
+          round: 1,
+          type: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'demo_tool',
+                arguments: { prompt: 'hello' },
+              },
+            },
+          ],
+        },
+        {
+          round: 1,
+          type: 'tool',
+          name: 'demo_tool',
+          tool_call_id: 'call_1',
+          call_id: 'call_1',
+          arguments: { prompt: 'hello' },
+          content: '{"answer":"tool result"}',
+          error: null,
+          execution: {
+            ok: true,
+            tool: 'demo_tool',
+          },
+        },
+      ],
+    });
+
+    expect(converted.map((message) => message.contentType)).toEqual([
+      'function_call',
+      'function_call_output',
+      'text',
+    ]);
+    expect(converted[0]).toMatchObject({
+      hideFromBot: true,
+      content: {
+        toolCallId: 'call_1',
+        callId: 'call_1',
+        toolName: 'demo_tool',
+        arguments: '{"prompt":"hello"}',
+      },
+    });
+    expect(converted[1]).toMatchObject({
+      hideFromBot: true,
+      content: {
+        toolCallId: 'call_1',
+        callId: 'call_1',
+        toolName: 'demo_tool',
+        toolOutput: '{"answer":"tool result"}',
+        output: '{"answer":"tool result"}',
+        status: 'completed',
+      },
+    });
+    expect(converted[2]).toMatchObject({
+      hideFromBot: false,
+      content: {
+        text: 'Final answer',
+      },
+    });
   });
 });

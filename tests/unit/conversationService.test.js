@@ -28,9 +28,18 @@ jest.mock('../../utils/logger', () => ({
   warn: jest.fn()
 }));
 
+const mockConversation5Model = {
+  findById: jest.fn(),
+};
+const mockPendingRequests = jest.fn(function pendingRequestCtor(doc) {
+  this.doc = doc;
+  this.save = jest.fn().mockResolvedValue(this);
+});
+
 jest.mock('../../database', () => ({
-  Conversation5Model: {},
-  PendingRequests: {}
+  Conversation5Model: mockConversation5Model,
+  PendingRequests: mockPendingRequests,
+  Chat5Model: {},
 }));
 
 jest.mock('../../utils/OpenAI_API', () => ({
@@ -38,6 +47,7 @@ jest.mock('../../utils/OpenAI_API', () => ({
 }));
 
 const ConversationService = require('../../services/conversationService');
+const { Conversation5Model } = require('../../database');
 
 const createConversationModel = () => {
   const modelFn = jest.fn(function conversationCtor(doc) {
@@ -214,6 +224,67 @@ describe('ConversationService', () => {
       default_model: 'model-x'
     });
     expect(savedEntries[0].messages).toEqual(['msg-1', 'msg-2']);
+  });
+
+  test('postToConversationNew appends every generated AI message', async () => {
+    const conversation = {
+      _id: { toString: () => 'conv-1' },
+      category: 'chat',
+      tags: ['demo'],
+      members: ['Lennart'],
+      metadata: {
+        model: 'llama3.2',
+        maxMessages: 10,
+        tools: ['demo_tool'],
+      },
+      messages: [],
+      save: jest.fn().mockResolvedValue(),
+    };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const userMessage = {
+      _id: { toString: () => 'user-1' },
+      contentType: 'text',
+    };
+    const aiMessages = [
+      {
+        _id: { toString: () => 'fc-1' },
+        contentType: 'function_call',
+      },
+      {
+        _id: { toString: () => 'out-1' },
+        contentType: 'function_call_output',
+      },
+      {
+        _id: { toString: () => 'final-1' },
+        contentType: 'text',
+      },
+    ];
+    const messageService = {
+      createMessageNew: jest.fn().mockResolvedValue(userMessage),
+      generateAIMessage: jest.fn().mockResolvedValue({
+        response_id: null,
+        msg: aiMessages[2],
+        messages: aiMessages,
+      }),
+    };
+
+    const service = new ConversationService({}, messageService, {});
+    const result = await service.postToConversationNew({
+      conversationId: 'conv-1',
+      userId: 'Lennart',
+      messageContent: { text: 'Use the tool.' },
+      messageType: 'text',
+      generateAI: true,
+    });
+
+    expect(conversation.messages).toEqual(['user-1', 'fc-1', 'out-1', 'final-1']);
+    expect(result.aiMessages.map((message) => message.contentType)).toEqual([
+      'function_call',
+      'function_call_output',
+      'text',
+    ]);
+    expect(conversation.save).toHaveBeenCalled();
   });
 
   test('generateMessageArrayForConversation builds context with knowledge and prior messages', async () => {

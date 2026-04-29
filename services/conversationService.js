@@ -1188,12 +1188,23 @@ class ConversationService {
     let aiMessages = [];
       if (generateAI) {
         const conversationForAI = this.normalizeMembersForAI(conversation);
-        const {response_id, msg} = await this.messageService.generateAIMessage({conversation: conversationForAI});
+        const {response_id, msg, messages: generatedMessages} = await this.messageService.generateAIMessage({conversation: conversationForAI});
+        const messagesToAppend = Array.isArray(generatedMessages) && generatedMessages.length > 0
+          ? generatedMessages
+          : (msg ? [msg] : []);
         let placeholder_id = null;
-        if (msg) {
+        const existingMessageIds = new Set(conversation.messages.map(id => id.toString()));
+        for (const generatedMessage of messagesToAppend) {
+          if (!generatedMessage || !generatedMessage._id) continue;
+          const messageId = generatedMessage._id.toString();
+          if (!existingMessageIds.has(messageId)) {
+            conversation.messages.push(messageId);
+            existingMessageIds.add(messageId);
+          }
+          aiMessages.push(generatedMessage);
+        }
+        if (msg && msg._id) {
           placeholder_id = msg._id.toString();
-          conversation.messages.push(placeholder_id);
-          aiMessages.push(msg);
         }
 
         if (response_id && placeholder_id) {

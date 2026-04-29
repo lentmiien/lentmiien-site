@@ -1126,8 +1126,21 @@ class MessageService {
 
     // Non-OpenAI providers are handled via the local Ollama helper
     const response = await ollama.chat(runtimeConversation, messages, model);
-    const assistantText = extractAssistantText(response) || '[No response produced]';
+    const convertedOutputs = typeof ollama.convertResponseBody === 'function'
+      ? await ollama.convertResponseBody(response)
+      : [];
+    if (Array.isArray(convertedOutputs) && convertedOutputs.length > 0) {
+      const newAiMessages = await this._persistConvertedOutputs(conversation, convertedOutputs);
+      if (newAiMessages.length > 0) {
+        return {
+          response_id: null,
+          msg: newAiMessages[newAiMessages.length - 1],
+          messages: newAiMessages,
+        };
+      }
+    }
 
+    const assistantText = extractAssistantText(response) || '[No response produced]';
     const message = {
       user_id: "bot",
       category: conversation.category,

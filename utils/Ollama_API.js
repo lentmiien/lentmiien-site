@@ -567,6 +567,20 @@ const parseToolArguments = (value) => {
   }
 };
 
+const stringifyJsonForOllama = (value, fallback = '{}') => {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return fallback;
+  }
+};
+
 const splitTopLevelSegments = (value, delimiter = ',') => {
   if (typeof value !== 'string' || value.length === 0) return [];
 
@@ -1080,6 +1094,185 @@ const buildAssistantLoopMessage = (message, options = {}) => {
   };
 };
 
+const ensureToolCallIdentifier = (toolCall, round = 0, index = 0) => {
+  if (!toolCall || typeof toolCall !== 'object') return toolCall;
+  const copy = cloneMessageForToolLoop(toolCall);
+  const existingId = copy.id || copy.tool_call_id || copy.call_id;
+  if (!existingId) {
+    const fnName = typeof copy?.function?.name === 'string' && copy.function.name.trim().length > 0
+      ? copy.function.name.trim().replace(/[^A-Za-z0-9_-]/g, '_')
+      : 'tool';
+    copy.id = `ollama_call_${round}_${index + 1}_${fnName}`;
+  }
+  return copy;
+};
+
+const createOllamaTextOutput = (text, hideFromBot = false) => ({
+  contentType: 'text',
+  content: {
+    text,
+    image: null,
+    audio: null,
+    tts: null,
+    transcript: null,
+    revisedPrompt: null,
+    imageQuality: null,
+    toolOutput: null,
+  },
+  hideFromBot,
+});
+
+const getToolCallIdentifier = (toolCall) => {
+  if (!toolCall || typeof toolCall !== 'object') {
+    return {
+      toolCallId: null,
+      callId: null,
+    };
+  }
+  const toolCallId = toolCall.id || toolCall.tool_call_id || null;
+  return {
+    toolCallId,
+    callId: toolCall.call_id || toolCallId || null,
+  };
+};
+
+const createOllamaFunctionCallOutput = (toolCall) => {
+  const normalized = normalizeToolCall(toolCall, 0);
+  if (!normalized) return null;
+
+  const { toolCallId, callId } = getToolCallIdentifier(normalized);
+  const fn = normalized.function || {};
+  const raw = {
+    ...normalized,
+    type: 'function_call',
+    call_id: callId,
+    name: fn.name || null,
+    arguments: stringifyJsonForOllama(fn.arguments, '{}'),
+    status: 'completed',
+  };
+
+  return {
+    contentType: 'function_call',
+    content: {
+      text: null,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: null,
+      toolCallId,
+      callId,
+      toolName: fn.name || null,
+      arguments: stringifyJsonForOllama(fn.arguments, '{}'),
+      output: null,
+      result: null,
+      raw,
+      status: 'completed',
+      error: null,
+    },
+    hideFromBot: true,
+  };
+};
+
+const createOllamaFunctionCallResultOutput = (toolStep) => {
+  if (!toolStep || typeof toolStep !== 'object') return null;
+
+  const output = Object.prototype.hasOwnProperty.call(toolStep, 'content') ? toolStep.content : '';
+  const toolCallId = toolStep.tool_call_id || toolStep.toolCallId || null;
+  const callId = toolStep.call_id || toolStep.callId || toolCallId || null;
+  const raw = {
+    type: 'function_call_output',
+    call_id: callId,
+    tool_call_id: toolCallId,
+    name: toolStep.name || null,
+    output,
+    status: toolStep.error ? 'failed' : 'completed',
+  };
+  if (toolStep.error) {
+    raw.error = toolStep.error;
+  }
+  if (toolStep.execution) {
+    raw.result = toolStep.execution;
+  }
+
+  return {
+    contentType: 'function_call_output',
+    content: {
+      text: null,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: serializeToolResult(output),
+      toolCallId,
+      callId,
+      toolName: toolStep.name || null,
+      arguments: null,
+      output,
+      result: toolStep.execution || null,
+      raw,
+      status: toolStep.error ? 'failed' : 'completed',
+      error: toolStep.error || null,
+    },
+    hideFromBot: true,
+  };
+};
+
+const flattenAssistantContent = (content) => {
+  if (!content) return '';
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => flattenAssistantContent(item))
+      .filter((item) => item && item.length > 0)
+      .join('\n\n')
+      .trim();
+  }
+  if (typeof content === 'object') {
+    if (typeof content.text === 'string') {
+      return content.text.trim();
+    }
+    if (typeof content.content === 'string') {
+      return content.content.trim();
+    }
+  }
+  return '';
+};
+
+const convertResponseBody = async (response) => {
+  const outputs = [];
+  const toolSteps = Array.isArray(response?.tool_steps) ? response.tool_steps : [];
+
+  for (const step of toolSteps) {
+    if (!step || typeof step !== 'object') continue;
+    if (step.type === 'assistant' && Array.isArray(step.tool_calls)) {
+      step.tool_calls.forEach((toolCall) => {
+        const output = createOllamaFunctionCallOutput(toolCall);
+        if (output) outputs.push(output);
+      });
+      continue;
+    }
+    if (step.type === 'tool') {
+      const output = createOllamaFunctionCallResultOutput(step);
+      if (output) outputs.push(output);
+    }
+  }
+
+  const assistantMessage = extractAssistantMessage(response);
+  const assistantText = flattenAssistantContent(assistantMessage?.content);
+  if (assistantText) {
+    outputs.push(createOllamaTextOutput(assistantText, false));
+  }
+
+  return outputs;
+};
+
 const buildChatPayloadOptions = (conversation) => {
   const options = {};
   const metadata = conversation?.metadata || {};
@@ -1327,7 +1520,12 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
       allowTextToolFallback: tools.length > 0,
       allowedToolNames,
     });
-    const toolCalls = Array.isArray(assistantMessage.tool_calls) ? assistantMessage.tool_calls : [];
+    const toolCalls = Array.isArray(assistantMessage.tool_calls)
+      ? assistantMessage.tool_calls.map((toolCall, index) => ensureToolCallIdentifier(toolCall, round, index))
+      : [];
+    if (toolCalls.length > 0) {
+      assistantMessage.tool_calls = toolCalls;
+    }
 
     toolSteps.push({
       round,
@@ -1420,16 +1618,18 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
       }
 
       const serializedResult = serializeToolResult(result);
+      const toolCallId = toolCall?.id || toolCall?.tool_call_id || null;
+      const callId = toolCall?.call_id || toolCallId || null;
       const toolMessage = {
         role: 'tool',
         tool_name: toolName || 'unknown',
         content: serializedResult,
       };
-      if (toolCall?.id) {
-        toolMessage.tool_call_id = toolCall.id;
+      if (toolCallId) {
+        toolMessage.tool_call_id = toolCallId;
       }
-      if (toolCall?.call_id) {
-        toolMessage.call_id = toolCall.call_id;
+      if (callId) {
+        toolMessage.call_id = callId;
       }
 
       workingMessages.push(toolMessage);
@@ -1437,6 +1637,8 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
         round,
         type: 'tool',
         name: toolMessage.tool_name,
+        tool_call_id: toolCallId,
+        call_id: callId,
         arguments: args,
         content: serializedResult,
         error: toolError,
@@ -1465,4 +1667,5 @@ module.exports = {
   chat,
   chatWithThinkingAndTools,
   chatGemma4,
+  convertResponseBody,
 };
