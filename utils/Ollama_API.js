@@ -501,12 +501,88 @@ const mergeToolDefinitions = (...toolLists) => {
   return merged;
 };
 
+const buildToolGuidanceEntriesFromDefinitions = (tools = []) => normalizeToolDefinitions(tools)
+  .map((tool) => {
+    const name = extractToolDefinitionName(tool);
+    if (!name) return null;
+    return {
+      name,
+      displayName: name,
+      description: typeof tool.function?.description === 'string' ? tool.function.description.trim() : '',
+    };
+  })
+  .filter(Boolean);
+
+const mergeToolGuidanceEntries = (...entryLists) => {
+  const merged = [];
+  const seen = new Set();
+
+  entryLists.forEach((entries) => {
+    if (!Array.isArray(entries)) return;
+    entries.forEach((entry) => {
+      const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
+      if (!name || seen.has(name)) return;
+      seen.add(name);
+      merged.push({
+        name,
+        displayName: typeof entry.displayName === 'string' && entry.displayName.trim().length > 0
+          ? entry.displayName.trim()
+          : name,
+        description: typeof entry.description === 'string' ? entry.description.trim() : '',
+      });
+    });
+  });
+
+  return merged;
+};
+
+const appendToolGuidanceToContext = (contextPrompt, toolGuidanceEntries = []) => {
+  const entries = mergeToolGuidanceEntries(toolGuidanceEntries);
+  if (entries.length === 0) {
+    return typeof contextPrompt === 'string' ? contextPrompt : '';
+  }
+
+  const list = entries
+    .map((entry) => {
+      const description = entry.description || 'Available tool.';
+      return `- ${entry.displayName}: ${description}`;
+    })
+    .join('\n');
+  const guidance = `Use tools when needed. These are the tools available to you:\n${list}`;
+  const base = typeof contextPrompt === 'string' ? contextPrompt.trimEnd() : '';
+  return base.length > 0 ? `${base}\n\n${guidance}` : guidance;
+};
+
+const resolveToolMetadataByName = async (toolNames = []) => {
+  const byName = new Map();
+  if (typeof toolManagerService.getTool !== 'function') {
+    return byName;
+  }
+
+  for (const toolName of toolNames) {
+    try {
+      const tool = await toolManagerService.getTool(toolName, { includeDisabled: false });
+      if (tool && typeof tool.name === 'string') {
+        byName.set(tool.name, tool);
+      }
+    } catch (error) {
+      logger.error('Failed to load custom tool metadata for Ollama chat guidance', {
+        toolName,
+        error,
+      });
+    }
+  }
+
+  return byName;
+};
+
 const resolveToolManagerToolsForConversation = async (conversation) => {
   const selectedToolNames = getSelectedToolManagerToolNames(conversation);
   if (selectedToolNames.length === 0) {
     return {
       tools: [],
       toolNames: new Set(),
+      toolGuidance: [],
     };
   }
 
@@ -516,9 +592,20 @@ const resolveToolManagerToolsForConversation = async (conversation) => {
       includeDisabled: false,
       strict: false,
     }));
+    const metadataByName = await resolveToolMetadataByName(selectedToolNames);
+    const definitionGuidance = buildToolGuidanceEntriesFromDefinitions(tools);
+    const toolGuidance = definitionGuidance.map((entry) => {
+      const metadata = metadataByName.get(entry.name);
+      return {
+        ...entry,
+        displayName: metadata?.displayName || entry.displayName,
+        description: metadata?.description || entry.description,
+      };
+    });
     return {
       tools,
       toolNames: new Set(tools.map((tool) => extractToolDefinitionName(tool)).filter(Boolean)),
+      toolGuidance,
     };
   } catch (error) {
     logger.error('Failed to load custom tool definitions for Ollama chat', {
@@ -528,6 +615,7 @@ const resolveToolManagerToolsForConversation = async (conversation) => {
     return {
       tools: [],
       toolNames: new Set(),
+      toolGuidance: [],
     };
   }
 };
@@ -1442,7 +1530,15 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
   const supportsImages = model.allow_images === true
     || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'))
     || isGemma4Model(targetModel);
-  const contextPrompt = resolveContextPrompt(conversation);
+  const toolManagerConfig = options.useToolManager === false
+    ? { tools: [], toolNames: new Set(), toolGuidance: [] }
+    : await resolveToolManagerToolsForConversation(conversation);
+  const tools = mergeToolDefinitions(options.tools, toolManagerConfig.tools);
+  const toolGuidance = mergeToolGuidanceEntries(
+    buildToolGuidanceEntriesFromDefinitions(options.tools),
+    toolManagerConfig.toolGuidance,
+  );
+  const contextPrompt = appendToolGuidanceToContext(resolveContextPrompt(conversation), toolGuidance);
   const visibleMessages = Array.isArray(messages)
     ? messages.filter((message) => message && !message.hideFromBot)
     : [];
@@ -1466,10 +1562,6 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
     throw new Error('No messages available to send to the AI gateway');
   }
 
-  const toolManagerConfig = options.useToolManager === false
-    ? { tools: [], toolNames: new Set() }
-    : await resolveToolManagerToolsForConversation(conversation);
-  const tools = mergeToolDefinitions(options.tools, toolManagerConfig.tools);
   const toolManagerToolNames = toolManagerConfig.toolNames;
   const toolHandlers = normalizeToolHandlers(options.toolHandlers);
   const allowedToolNames = tools

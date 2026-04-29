@@ -1,6 +1,7 @@
 const mockGet = jest.fn();
 const mockPost = jest.fn();
 const mockGetToolDefinitions = jest.fn();
+const mockGetTool = jest.fn();
 const mockExecuteToolCall = jest.fn();
 
 jest.mock('axios', () => ({
@@ -23,6 +24,7 @@ jest.mock('../../utils/apiDebugLogger', () => ({
 
 jest.mock('../../services/toolManagerService', () => jest.fn().mockImplementation(() => ({
   getToolDefinitions: mockGetToolDefinitions,
+  getTool: mockGetTool,
   executeToolCall: mockExecuteToolCall,
 })));
 
@@ -33,6 +35,7 @@ describe('Ollama_API tool manager integration', () => {
     mockGet.mockReset();
     mockPost.mockReset();
     mockGetToolDefinitions.mockReset();
+    mockGetTool.mockReset();
     mockExecuteToolCall.mockReset();
   });
 
@@ -59,6 +62,11 @@ describe('Ollama_API tool manager integration', () => {
         },
       },
     ]);
+    mockGetTool.mockResolvedValue({
+      name: 'demo_tool',
+      displayName: 'Demo Tool',
+      description: 'Looks up a demo value.',
+    });
     mockExecuteToolCall.mockResolvedValue({
       ok: true,
       tool: 'demo_tool',
@@ -135,6 +143,12 @@ describe('Ollama_API tool manager integration', () => {
       ],
     });
     expect(mockPost.mock.calls[0][1].tools).toHaveLength(1);
+    expect(mockPost.mock.calls[0][1].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'system',
+        content: expect.stringContaining('Use tools when needed. These are the tools available to you:\n- Demo Tool: Looks up a demo value.'),
+      }),
+    ]));
     expect(mockExecuteToolCall).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'call_1',
