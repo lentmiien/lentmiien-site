@@ -3,6 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const logger = require('./logger');
 const { createApiDebugLogger } = require('./apiDebugLogger');
+const ToolManagerService = require('../services/toolManagerService');
 
 const JS_FILE_NAME = 'utils/Ollama_API.js';
 const DEFAULT_BASE_URL = 'http://192.168.0.20:8080';
@@ -11,6 +12,11 @@ const CHAT_ENDPOINT = '/llm/chat';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const DEFAULT_MAX_TOOL_ROUNDS = 4;
 const GEMMA4_ESCAPE_TOKEN = '<|"|>';
+const OPENAI_BUILT_IN_TOOL_NAMES = new Set([
+  'image_generation',
+  'web_search_preview',
+]);
+const toolManagerService = new ToolManagerService();
 
 const normalizeBaseUrl = (value) => {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -451,6 +457,90 @@ const normalizeToolDefinitions = (tools) => {
     if (!tool.function || typeof tool.function !== 'object') return false;
     return typeof tool.function.name === 'string' && tool.function.name.trim().length > 0;
   });
+};
+
+const extractToolDefinitionName = (tool) => {
+  if (!tool || typeof tool !== 'object') return '';
+  if (tool.function && typeof tool.function.name === 'string') {
+    return tool.function.name.trim();
+  }
+  if (typeof tool.name === 'string') {
+    return tool.name.trim();
+  }
+  return '';
+};
+
+const normalizeToolNameList = (names = []) => {
+  if (typeof names === 'string') {
+    return normalizeToolNameList(names.split(','));
+  }
+  if (!Array.isArray(names)) return [];
+
+  const cleaned = names
+    .map((name) => (typeof name === 'string' ? name.trim() : ''))
+    .filter((name) => name.length > 0);
+  return Array.from(new Set(cleaned));
+};
+
+const getSelectedToolManagerToolNames = (conversation) => normalizeToolNameList(conversation?.metadata?.tools)
+  .filter((name) => !OPENAI_BUILT_IN_TOOL_NAMES.has(name));
+
+const mergeToolDefinitions = (...toolLists) => {
+  const merged = [];
+  const seen = new Set();
+
+  toolLists.forEach((toolList) => {
+    normalizeToolDefinitions(toolList).forEach((tool) => {
+      const name = extractToolDefinitionName(tool);
+      if (!name || seen.has(name)) return;
+      seen.add(name);
+      merged.push(tool);
+    });
+  });
+
+  return merged;
+};
+
+const resolveToolManagerToolsForConversation = async (conversation) => {
+  const selectedToolNames = getSelectedToolManagerToolNames(conversation);
+  if (selectedToolNames.length === 0) {
+    return {
+      tools: [],
+      toolNames: new Set(),
+    };
+  }
+
+  try {
+    const tools = normalizeToolDefinitions(await toolManagerService.getToolDefinitions(selectedToolNames, {
+      format: 'chat_completions',
+      includeDisabled: false,
+      strict: false,
+    }));
+    return {
+      tools,
+      toolNames: new Set(tools.map((tool) => extractToolDefinitionName(tool)).filter(Boolean)),
+    };
+  } catch (error) {
+    logger.error('Failed to load custom tool definitions for Ollama chat', {
+      toolNames: selectedToolNames,
+      error,
+    });
+    return {
+      tools: [],
+      toolNames: new Set(),
+    };
+  }
+};
+
+const resolveToolUserName = (conversation) => {
+  if (Array.isArray(conversation?.members) && conversation.members.length > 0) {
+    const member = conversation.members.find((name) => typeof name === 'string' && name.trim().length > 0);
+    if (member) return member.trim();
+  }
+  if (typeof conversation?.user_id === 'string' && conversation.user_id.trim().length > 0) {
+    return conversation.user_id.trim();
+  }
+  return 'chat5';
 };
 
 const normalizeToolHandlers = (toolHandlers) => {
@@ -1109,6 +1199,10 @@ const chat = async (conversation, messages, model) => {
     throw new Error('Model information is required for Ollama chat requests');
   }
 
+  if (getSelectedToolManagerToolNames(conversation).length > 0) {
+    return chatWithThinkingAndTools(conversation, messages, model);
+  }
+
   await ensureModelAvailable(targetModel);
 
   const supportsImages = model.allow_images === true
@@ -1170,14 +1264,20 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
   );
   const maxImages = Number.isInteger(options.maxImages) && options.maxImages >= 0
     ? options.maxImages
-    : 1;
-  const messageArray = limitMessagesToLastImage(rawMessages, maxImages);
+    : (isGemma4Model(targetModel) ? 1 : null);
+  const messageArray = Number.isInteger(maxImages)
+    ? limitMessagesToLastImage(rawMessages, maxImages)
+    : rawMessages.filter(messageHasPayload).map(cloneMessageForToolLoop);
 
   if (messageArray.length === 0) {
     throw new Error('No messages available to send to the AI gateway');
   }
 
-  const tools = normalizeToolDefinitions(options.tools);
+  const toolManagerConfig = options.useToolManager === false
+    ? { tools: [], toolNames: new Set() }
+    : await resolveToolManagerToolsForConversation(conversation);
+  const tools = mergeToolDefinitions(options.tools, toolManagerConfig.tools);
+  const toolManagerToolNames = toolManagerConfig.toolNames;
   const toolHandlers = normalizeToolHandlers(options.toolHandlers);
   const allowedToolNames = tools
     .map((tool) => tool?.function?.name)
@@ -1265,11 +1365,9 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
       const handler = toolHandlers[toolName];
       let result;
       let toolError = null;
+      let execution = null;
 
-      if (typeof handler !== 'function') {
-        toolError = `No local tool handler is registered for "${toolName || 'unknown'}".`;
-        result = toolError;
-      } else {
+      if (typeof handler === 'function') {
         try {
           result = await handler(args, {
             conversation,
@@ -1287,6 +1385,38 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
           });
           result = `Tool execution error for "${toolName}": ${toolError}`;
         }
+      } else if (toolManagerToolNames.has(toolName)) {
+        try {
+          const userName = resolveToolUserName(conversation);
+          execution = await toolManagerService.executeToolCall(toolCall, {
+            conversation,
+            messages: workingMessages.map(cloneMessageForToolLoop),
+            model,
+            round,
+            userName,
+            userId: userName,
+            openaiUser: userName,
+            createdBy: 'Ollama',
+          });
+          result = execution.result;
+        } catch (error) {
+          toolError = error?.message || String(error);
+          logger.error('Failed to execute tool manager tool for Ollama chat', {
+            error: toolError,
+            toolName,
+            model: targetModel,
+          });
+          result = {
+            ok: false,
+            tool: toolName || null,
+            toolCallId: toolCall?.id || null,
+            callId: toolCall?.call_id || toolCall?.id || null,
+            error: toolError,
+          };
+        }
+      } else {
+        toolError = `No local tool handler is registered for "${toolName || 'unknown'}".`;
+        result = toolError;
       }
 
       const serializedResult = serializeToolResult(result);
@@ -1295,6 +1425,12 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
         tool_name: toolName || 'unknown',
         content: serializedResult,
       };
+      if (toolCall?.id) {
+        toolMessage.tool_call_id = toolCall.id;
+      }
+      if (toolCall?.call_id) {
+        toolMessage.call_id = toolCall.call_id;
+      }
 
       workingMessages.push(toolMessage);
       toolSteps.push({
@@ -1304,6 +1440,7 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
         arguments: args,
         content: serializedResult,
         error: toolError,
+        execution,
       });
     }
   }
