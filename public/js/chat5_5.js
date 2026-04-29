@@ -176,8 +176,84 @@ function setCopyFeedback(el, status) {
   }, 1500);
 }
 
+function parseJsonLikeString(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  const firstChar = trimmed[0];
+  if (firstChar !== '{' && firstChar !== '[') return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    return value;
+  }
+}
+
+function buildStructuredMessagePayload(m) {
+  if (!m || typeof m !== 'object') return null;
+  if (m.contentType !== 'function_call' && m.contentType !== 'function_call_output') {
+    return null;
+  }
+
+  const content = m.content && typeof m.content === 'object' ? m.content : {};
+  const payload = content.raw && typeof content.raw === 'object' ? { ...content.raw } : {};
+
+  if (!payload.type) payload.type = m.contentType;
+  if (!payload.call_id && (content.callId || content.toolCallId)) {
+    payload.call_id = content.callId || content.toolCallId;
+  }
+  if (!payload.tool_call_id && !payload.id && content.toolCallId) {
+    payload.tool_call_id = content.toolCallId;
+  }
+  if (!payload.name && content.toolName) {
+    payload.name = content.toolName;
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, 'arguments') && m.contentType === 'function_call') {
+    payload.arguments = content.arguments;
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, 'output') && m.contentType === 'function_call_output') {
+    payload.output = Object.prototype.hasOwnProperty.call(content, 'output') ? content.output : content.toolOutput;
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, 'status') && content.status) {
+    payload.status = content.status;
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, 'error') && content.error) {
+    payload.error = content.error;
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, 'result') && content.result) {
+    payload.result = content.result;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'arguments')) {
+    payload.arguments = parseJsonLikeString(payload.arguments);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'output')) {
+    payload.output = parseJsonLikeString(payload.output);
+  }
+
+  return payload;
+}
+
+function stringifyStructuredMessagePayload(m) {
+  const payload = buildStructuredMessagePayload(m);
+  if (!payload) return '';
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch (error) {
+    const content = m && typeof m === 'object' && m.content && typeof m.content === 'object' ? m.content : {};
+    return JSON.stringify({
+      type: m.contentType,
+      call_id: content.callId || content.toolCallId || null,
+      error: 'Unable to stringify message payload',
+    }, null, 2);
+  }
+}
+
 function resolveMessageCopySource(m) {
   if (!m || typeof m !== 'object') return '';
+  const structuredPayload = stringifyStructuredMessagePayload(m);
+  if (structuredPayload) {
+    return structuredPayload;
+  }
   const content = m.content || {};
   const sources = [
     content.text,
@@ -1035,6 +1111,18 @@ function message(m) {
     italics.innerHTML = marked.parse(m.content.text);
     div.append(italics);
     body.append(div);
+  }
+  if (m.contentType === "function_call" || m.contentType === "function_call_output") {
+    const jsonText = stringifyStructuredMessagePayload(m);
+    if (jsonText) {
+      const pre = document.createElement('pre');
+      pre.classList.add('chat5-message-json');
+      const code = document.createElement('code');
+      code.classList.add('language-json');
+      code.textContent = jsonText;
+      pre.append(code);
+      body.append(pre);
+    }
   }
   if (m.contentType === "audio") {
     const wrapper = document.createElement('div');

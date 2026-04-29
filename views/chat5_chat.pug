@@ -26,6 +26,69 @@ block content
         return dateValue.toISOString();
       }
     };
+  - 
+    const parseJsonLikeString = (value) => {
+      if (typeof value !== 'string') return value;
+      const trimmed = value.trim();
+      if (!trimmed) return value;
+      const firstChar = trimmed[0];
+      if (firstChar !== '{' && firstChar !== '[') return value;
+      try {
+        return JSON.parse(trimmed);
+      } catch (err) {
+        return value;
+      }
+    };
+  -
+    const formatStructuredMessageJson = (message) => {
+      if (!message || (message.contentType !== 'function_call' && message.contentType !== 'function_call_output')) {
+        return '';
+      }
+      const content = message.content && typeof message.content === 'object' ? message.content : {};
+      const payload = content.raw && typeof content.raw === 'object' ? { ...content.raw } : {};
+
+      if (!payload.type) payload.type = message.contentType;
+      if (!payload.call_id && (content.callId || content.toolCallId)) {
+        payload.call_id = content.callId || content.toolCallId;
+      }
+      if (!payload.tool_call_id && !payload.id && content.toolCallId) {
+        payload.tool_call_id = content.toolCallId;
+      }
+      if (!payload.name && content.toolName) {
+        payload.name = content.toolName;
+      }
+      if (!Object.prototype.hasOwnProperty.call(payload, 'arguments') && message.contentType === 'function_call') {
+        payload.arguments = content.arguments;
+      }
+      if (!Object.prototype.hasOwnProperty.call(payload, 'output') && message.contentType === 'function_call_output') {
+        payload.output = Object.prototype.hasOwnProperty.call(content, 'output') ? content.output : content.toolOutput;
+      }
+      if (!Object.prototype.hasOwnProperty.call(payload, 'status') && content.status) {
+        payload.status = content.status;
+      }
+      if (!Object.prototype.hasOwnProperty.call(payload, 'error') && content.error) {
+        payload.error = content.error;
+      }
+      if (!Object.prototype.hasOwnProperty.call(payload, 'result') && content.result) {
+        payload.result = content.result;
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'arguments')) {
+        payload.arguments = parseJsonLikeString(payload.arguments);
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'output')) {
+        payload.output = parseJsonLikeString(payload.output);
+      }
+
+      try {
+        return JSON.stringify(payload, null, 2);
+      } catch (err) {
+        return JSON.stringify({
+          type: message.contentType,
+          call_id: content.callId || content.toolCallId || null,
+          error: 'Unable to stringify message payload',
+        }, null, 2);
+      }
+    };
   - const configuredMaxMessages = toPositiveInt(conversation && conversation.metadata && conversation.metadata.maxMessages, 25);
   - const visibleLimit = Math.min(25, configuredMaxMessages);
   - 
@@ -108,6 +171,11 @@ block content
         if m.contentType === "reasoning"
           div.chat5-message-reasoning
             i!= m.content.html
+        if m.contentType === "function_call" || m.contentType === "function_call_output"
+          - const structuredJson = formatStructuredMessageJson(m);
+          if structuredJson
+            pre.chat5-message-json
+              code.language-json= structuredJson
   mixin chat5RenderHiddenGroup(group, state)
     - if (!group || !group.length) return;
     - const firstHidden = group[0];
