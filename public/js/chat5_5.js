@@ -1000,11 +1000,13 @@ function message(m) {
   }
 
   if (m.contentType === "text") {
-    const span = document.createElement("span");
-    span.classList.add('chat5-message-text');
-    span.id = `${m._id}textout`;
-    span.innerHTML = marked.parse(m.content.text);
-    body.append(span);
+    const textBlock = document.createElement('div');
+    textBlock.classList.add('chat5-message-text');
+    textBlock.id = `${m._id}textout`;
+    textBlock.innerHTML = (m.content && typeof m.content.html === 'string' && m.content.html.length > 0)
+      ? m.content.html
+      : marked.parse(m.content.text);
+    body.append(textBlock);
   }
   if (m.contentType === "image") {
     const img = document.createElement("img");

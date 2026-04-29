@@ -91,7 +91,7 @@ block content
             button.chat5-embed-button(type='button', aria-label='Embed message (high quality)', data-message-id=m._id, data-conversation-id=conversation && conversation._id ? conversation._id.toString() : '') Embed HQ
       .chat5-message-body
         if m.contentType === "text"
-          span.chat5-message-text(id=`${m._id}textout`)!= m.content.html 
+          div.chat5-message-text(id=`${m._id}textout`)!= m.content.html 
         if m.contentType === "image"
           img.chat5-message-image(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt)
           p.chat5-image-caption

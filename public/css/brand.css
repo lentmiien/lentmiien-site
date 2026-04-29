@@ -2040,6 +2040,16 @@ label,
   color: var(--text);
 }
 
+.chat5-message-text img,
+#conversationContainer .chat5-message-text img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin: 12px 0;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
 .chat5-message-body pre,
 #conversationContainer pre {
   background: var(--surface-2);

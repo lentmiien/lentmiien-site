@@ -1,11 +1,9 @@
-const marked = require('marked');
-const sanitizeHtml = require('sanitize-html');
-
 const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
 const logger = require('../utils/logger');
+const { renderMessagesHtml, renderMessageHtml } = require('../utils/chat5Markdown');
 
 // Instantiate the services
 const MessageService = require('../services/messageService');
@@ -444,43 +442,6 @@ const DEFAULT_CONVERSATION = {
   members: [],
 };
 
-const renderer = new marked.Renderer();
-function escapeHtml(str) { return str.replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":"'"}[c])); }
-renderer.html = (html) => escapeHtml(html); // raw HTML in markdown becomes text
-function looksLikeFullHtmlDocument(s) { return /<!doctype html/i.test(s) || /<html[\s>]/i.test(s) || /<head[\s>]/i.test(s) || /<body[\s>]/i.test(s); }
-
-function renderMarkdownSafe(md) {
-  if (looksLikeFullHtmlDocument(md)) {
-  md = 'html\n' + md + '\n';
-  }
-
-  const html = marked.parse(md, { renderer });
-
-  const clean = sanitizeHtml(html, {
-    // Keep only what you want to allow in user content:
-    allowedTags: [
-      'p','em','strong','blockquote','a','ul','ol','li','pre','code','hr','br',
-      'h1','h2','h3','h4','h5','h6','table','thead','tbody','tr','th','td'
-    ],
-    allowedAttributes: {
-      a: ['href','title','target','rel'],
-      code: ['class']
-    },
-    allowedSchemes: ['http','https','mailto'],
-    // Important: escape any unexpected tags (e.g., someone typed <script>)
-    disallowedTagsMode: 'escape',
-    // Optionally normalize links to be safe:
-    transformTags: {
-      'a': (tagName, attribs) => ({
-      tagName: 'a',
-      attribs: { ...attribs, rel: 'noopener noreferrer nofollow', target: '_blank' }
-      })
-    }
-  });
-
-  return clean;
-}
-
 exports.view_chat5 = async (req, res) => {
   const id = req.params.id;
 
@@ -499,12 +460,7 @@ exports.view_chat5 = async (req, res) => {
     conversationSource = data.source || 'conversation5';
   }
 
-  // Generate HTML from marked content
-  messages.forEach(m => {
-    if (m.content.text && m.content.text.length > 0) {
-      m.content.html = renderMarkdownSafe(m.content.text);
-    }
-  })
+  renderMessagesHtml(messages);
 
   const [templates, personalities, responseTypes, availableTools] = await Promise.all([
     templateService.getTemplates(),
@@ -545,9 +501,7 @@ exports.view_chat5_voice = async (req, res) => {
 
   const formattedMessages = Array.isArray(messages) ? messages.map((m) => {
     const msg = typeof m?.toObject === 'function' ? m.toObject({ depopulate: true }) : m;
-    if (msg && msg.content && msg.content.text && msg.content.text.length > 0) {
-      msg.content.html = renderMarkdownSafe(msg.content.text);
-    }
+    renderMessageHtml(msg);
     if (msg && msg._id && typeof msg._id !== 'string') {
       msg._id = msg._id.toString();
     }
@@ -621,12 +575,7 @@ exports.post_chat5 = async (req, res) => {
   const conversation = await Conversation5Model.findById(id);
   const messages = await Chat5Model.find({_id: conversation.messages});
 
-  // Generate HTML from marked content
-  messages.forEach(m => {
-    if (m.content.text && m.content.text.length > 0) {
-      m.content.html = marked.parse(m.content.text);
-    }
-  })
+  renderMessagesHtml(messages);
 
   const [templates, personalities, responseTypes, availableTools] = await Promise.all([
     templateService.getTemplates(),
