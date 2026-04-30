@@ -1,0 +1,232 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/performanceDashboard.css')
+
+block content
+  .performance-page
+    header.performance-header
+      div
+        h1.performance-title App Performance
+        p.performance-subtitle Runtime, route, and background task metrics.
+      div.performance-header__meta
+        if generatedAtDisplay
+          p Last updated #{generatedAtDisplay}
+        form.performance-range(method='get', action='/admin/performance')
+          label(for='range') Range
+          select#range(name='range', onchange='this.form.submit()')
+            each option in rangeOptions
+              option(value=option.value, selected=option.value === rangeHours)= option.label
+          noscript
+            button(type='submit') Apply
+
+    if loadError
+      .performance-alert.performance-alert--error= loadError
+    else
+      if latestSnapshotAtDisplay
+        .performance-alert
+          span Latest snapshot
+          strong= latestSnapshotAtDisplay
+      else
+        .performance-alert.performance-alert--warning No snapshots have been stored yet.
+
+      section.performance-section
+        .performance-grid
+          each card in overviewCards
+            article.performance-card(class=card.tone ? `performance-card--${card.tone}` : '')
+              p.performance-card__label= card.label
+              p.performance-card__value= card.value
+              if card.helper
+                p.performance-card__helper= card.helper
+
+      section.performance-section
+        header.performance-section__header
+          h2 Collector
+        dl.performance-facts
+          div
+            dt Enabled
+            dd= collector && collector.enabled ? 'Yes' : 'No'
+          div
+            dt Snapshot Interval
+            dd= collector ? (collector.intervalDisplay || collector.snapshotIntervalMs + ' ms') : 'N/A'
+          div
+            dt Slow Threshold
+            dd= collector ? (collector.slowThresholdDisplay || collector.slowRequestThresholdMs + ' ms') : 'N/A'
+          div
+            dt Active Requests
+            dd= collector ? collector.activeRequests : 0
+          div
+            dt Current Interval
+            dd= collector && collector.intervalStartedAtDisplay ? collector.intervalStartedAtDisplay : 'N/A'
+          div
+            dt Buffered Routes
+            dd= collector ? collector.inMemoryRouteCount : 0
+
+      if runtimeRows && runtimeRows.length
+        section.performance-section
+          header.performance-section__header
+            h2 Recent Runtime Snapshots
+          .performance-table-wrap
+            table.performance-table
+              thead
+                tr
+                  th Time
+                  th Requests
+                  th Errors
+                  th Heap
+                  th RSS
+                  th CPU
+                  th Event Loop
+                  th p95 Delay
+                  th Max Delay
+              tbody
+                each row in runtimeRows
+                  tr
+                    td= row.capturedAtDisplay
+                    td= row.requestCountDisplay
+                    td= row.errorCountDisplay
+                    td= row.heapDisplay
+                    td= row.rssDisplay
+                    td= row.cpuDisplay
+                    td= row.eluDisplay
+                    td= row.delayP95Display
+                    td= row.delayMaxDisplay
+
+      section.performance-section
+        header.performance-section__header
+          h2 Route Performance
+        if routeRows && routeRows.length
+          .performance-table-wrap
+            table.performance-table
+              thead
+                tr
+                  th Route
+                  th Count
+                  th Avg
+                  th Worst p95
+                  th Max
+                  th Errors
+                  th Slow
+                  th Status
+              tbody
+                each row in routeRows
+                  tr
+                    td
+                      span.performance-method= row.method
+                      span.performance-route= row.route
+                    td= row.countDisplay
+                    td= row.avgDisplay
+                    td= row.p95Display
+                    td= row.maxDisplay
+                    td= row.errorDisplay
+                    td= row.slowDisplay
+                    td= row.statusDisplay
+        else
+          p.performance-empty No route metrics in this range.
+
+      section.performance-section
+        header.performance-section__header
+          h2 Background Tasks
+        if taskRows && taskRows.length
+          .performance-table-wrap
+            table.performance-table
+              thead
+                tr
+                  th Task
+                  th Runs
+                  th Avg
+                  th Worst p95
+                  th Max
+                  th Errors
+              tbody
+                each row in taskRows
+                  tr
+                    td= row.name
+                    td= row.countDisplay
+                    td= row.avgDisplay
+                    td= row.p95Display
+                    td= row.maxDisplay
+                    td= row.errorDisplay
+        else
+          p.performance-empty No task metrics in this range.
+
+      section.performance-section
+        header.performance-section__header
+          h2 Slow Requests
+        if slowRequests && slowRequests.length
+          .performance-table-wrap
+            table.performance-table
+              thead
+                tr
+                  th Time
+                  th Route
+                  th Path
+                  th Status
+                  th Duration
+                  th User
+              tbody
+                each row in slowRequests
+                  tr
+                    td= row.timestampDisplay
+                    td
+                      span.performance-method= row.method
+                      span.performance-route= row.route
+                    td= row.path
+                    td= row.statusCode
+                    td= row.durationDisplay
+                    td= row.userDisplay
+        else
+          p.performance-empty No slow request samples in this range.
+
+      .performance-rollups
+        section.performance-section
+          header.performance-section__header
+            h2 Daily Rollup
+          if dailyOverall && dailyOverall.length
+            .performance-table-wrap
+              table.performance-table
+                thead
+                  tr
+                    th Day
+                    th Requests
+                    th Avg
+                    th Max
+                    th Errors
+                    th Slow
+                tbody
+                  each row in dailyOverall
+                    tr
+                      td= row.periodKey
+                      td= row.countDisplay
+                      td= row.avgDisplay
+                      td= row.maxDisplay
+                      td= row.errorDisplay
+                      td= row.slowDisplay
+          else
+            p.performance-empty No daily rollups yet.
+
+        section.performance-section
+          header.performance-section__header
+            h2 Monthly Rollup
+          if monthlyOverall && monthlyOverall.length
+            .performance-table-wrap
+              table.performance-table
+                thead
+                  tr
+                    th Month
+                    th Requests
+                    th Avg
+                    th Max
+                    th Errors
+                    th Slow
+                tbody
+                  each row in monthlyOverall
+                    tr
+                      td= row.periodKey
+                      td= row.countDisplay
+                      td= row.avgDisplay
+                      td= row.maxDisplay
+                      td= row.errorDisplay
+                      td= row.slowDisplay
+          else
+            p.performance-empty No monthly rollups yet.

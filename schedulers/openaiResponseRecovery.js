@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
+const performanceMetrics = require('../services/performanceMetricsService');
 const MessageService = require('../services/messageService');
 const KnowledgeService = require('../services/knowledgeService');
 const ConversationService = require('../services/conversationService');
@@ -68,7 +69,7 @@ function scheduleOpenAIResponseRecovery(app) {
     if (running) return;
     running = true;
     try {
-      await runRecovery(app);
+      await performanceMetrics.trackTask('openaiResponseRecovery.run', () => runRecovery(app));
     } catch (error) {
       logger.error('OpenAI pending response recovery failed', {
         category: 'openai_webhook_recovery',

@@ -20,6 +20,8 @@ const { ensurePublicTobuyListPath } = require('./utils/publicTobuyList');
 // Database models
 const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
 const { HTML_RATING_CATEGORIES, computeAverageRating } = require('./utils/htmlRatings');
+const performanceMetrics = require('./services/performanceMetricsService');
+const createPerformanceMetricsMiddleware = require('./middleware/performanceMetrics');
 
 // Initialize app and server
 const app = express();
@@ -42,6 +44,9 @@ const scheduleAgent5Runner = require('./schedulers/agent5');
 const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecovery');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
+
+performanceMetrics.start();
+app.use(createPerformanceMetricsMiddleware(performanceMetrics));
 
 // Setup webhooks
 // app.use(express.text({ type: 'application/json' }));

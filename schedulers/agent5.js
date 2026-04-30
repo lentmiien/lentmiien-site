@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const performanceMetrics = require('../services/performanceMetricsService');
 const Agent5Service = require('../services/agent5Service');
 const MessageService = require('../services/messageService');
 const KnowledgeService = require('../services/knowledgeService');
@@ -39,7 +40,7 @@ function scheduleAgent5Runner() {
     if (running) return;
     running = true;
     try {
-      await agent5Service.runDueAgents(runState);
+      await performanceMetrics.trackTask('agent5.runDueAgents', () => agent5Service.runDueAgents(runState));
     } catch (error) {
       logger.error('Agent5 scheduler tick failed', {
         category: 'agent5',

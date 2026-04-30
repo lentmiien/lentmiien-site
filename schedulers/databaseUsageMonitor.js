@@ -1,6 +1,7 @@
 const axios = require('axios');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
+const performanceMetrics = require('../services/performanceMetricsService');
 const { ApiDebugLog } = require('../database');
 const { fetchDatabaseUsage, evaluateAlerts } = require('../services/databaseUsageService');
 const { formatBytes, formatPercent, calculatePercent } = require('../utils/metricsFormatter');
@@ -79,22 +80,24 @@ function createMonitorRunner() {
 
   const runCheck = async () => {
     try {
-      const usage = await fetchDatabaseUsage();
-      const apiDebugCollectionName = ApiDebugLog?.collection?.collectionName;
-      const alerts = evaluateAlerts(usage, { collectionHints: { apiDebugCollectionName } });
+      await performanceMetrics.trackTask('databaseUsageMonitor.runCheck', async () => {
+        const usage = await fetchDatabaseUsage();
+        const apiDebugCollectionName = ApiDebugLog?.collection?.collectionName;
+        const alerts = evaluateAlerts(usage, { collectionHints: { apiDebugCollectionName } });
 
-      if (!alerts.length) {
-        lastSignature = null;
-        return;
-      }
+        if (!alerts.length) {
+          lastSignature = null;
+          return;
+        }
 
-      const signature = createSignature(alerts);
-      if (signature === lastSignature) {
-        return;
-      }
+        const signature = createSignature(alerts);
+        if (signature === lastSignature) {
+          return;
+        }
 
-      lastSignature = signature;
-      await dispatchAlerts(alerts, usage);
+        lastSignature = signature;
+        await dispatchAlerts(alerts, usage);
+      });
     } catch (error) {
       logger.error('Database usage monitor failed', {
         error: error.message,

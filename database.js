@@ -134,6 +134,9 @@ const CreditCardTransaction = require('./models/credit_card_transaction');
 const ApiDebugLog = require('./models/api_debug_log');
 // API records
 const ApiRecordModel = require('./models/api_record');
+const PerformanceSnapshot = require('./models/performance_snapshot');
+const PerformanceRollup = require('./models/performance_rollup');
+const PerformanceSlowRequest = require('./models/performance_slow_request');
 // OCR jobs
 const OcrJob = require('./models/ocr_job');
 const OcrTtsJob = require('./models/ocr_tts_job');
@@ -235,6 +238,9 @@ module.exports = {
   CreditCardTransaction,
   ApiDebugLog,
   ApiRecordModel,
+  PerformanceSnapshot,
+  PerformanceRollup,
+  PerformanceSlowRequest,
   OcrJob,
   OcrTtsJob,
   AsrJob,

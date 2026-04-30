@@ -20,6 +20,7 @@ const {
 } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
+const performanceMetricsService = require('../services/performanceMetricsService');
 const { formatBytes, formatNumber, formatPercent, calculatePercent } = require('../utils/metricsFormatter');
 const EmbeddingApiService = require('../services/embeddingApiService');
 const Agent5Service = require('../services/agent5Service');
@@ -323,6 +324,13 @@ const apiDebugTimeFilterMap = API_DEBUG_TIME_FILTERS.reduce((acc, option) => {
   return acc;
 }, {});
 const DB_FEEDBACK_STATUSES = new Set(['success', 'error', 'info']);
+const PERFORMANCE_RANGE_OPTIONS = [
+  { value: 1, label: 'Last hour' },
+  { value: 6, label: 'Last 6 hours' },
+  { value: 24, label: 'Last 24 hours' },
+  { value: 72, label: 'Last 3 days' },
+  { value: 168, label: 'Last 7 days' },
+];
 const DB_VIEWER_DEFAULT_LIMIT = 25;
 const DB_VIEWER_MAX_LIMIT = 200;
 const DB_VIEWER_SYSTEM_PREFIX = 'system.';
@@ -474,6 +482,154 @@ function redirectDatabaseUsageWithFeedback(res, status, message) {
   const text = message ? String(message) : '';
   const location = `/admin/database_usage?status=${encodeURIComponent(normalizedStatus)}${text ? `&message=${encodeURIComponent(text)}` : ''}`;
   return res.redirect(location);
+}
+
+function normalizePerformanceRange(rawRange) {
+  const parsed = Number.parseInt(rawRange, 10);
+  const match = PERFORMANCE_RANGE_OPTIONS.find((option) => option.value === parsed);
+  return match ? match.value : 6;
+}
+
+function formatDuration(value) {
+  const ms = Number(value) || 0;
+  if (ms >= 1000) {
+    return `${(ms / 1000).toFixed(ms >= 10000 ? 1 : 2)} s`;
+  }
+  return `${ms.toFixed(ms >= 100 ? 0 : 1)} ms`;
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return 'N/A';
+  }
+  return new Date(value).toLocaleString();
+}
+
+function formatRequestRate(total, rangeHours) {
+  const minutes = Math.max(1, rangeHours * 60);
+  return `${(total / minutes).toFixed(2)}/min`;
+}
+
+function statusSummary(statusCounts = {}) {
+  return ['2xx', '3xx', '4xx', '5xx', 'other']
+    .filter((key) => statusCounts[key])
+    .map((key) => `${key}: ${formatNumber(statusCounts[key])}`)
+    .join(' | ') || 'None';
+}
+
+function buildPerformanceOverview(data) {
+  const snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+  const latest = data.latestSnapshot;
+  const totalRequests = snapshots.reduce((sum, snapshot) => sum + (snapshot.requests?.totalCount || 0), 0);
+  const totalErrors = snapshots.reduce((sum, snapshot) => sum + (snapshot.requests?.errorCount || 0), 0);
+  const totalSlow = snapshots.reduce((sum, snapshot) => sum + (snapshot.requests?.slowCount || 0), 0);
+  const eventLoop = latest?.runtime?.eventLoop || {};
+  const memory = latest?.runtime?.memory || {};
+  const cpu = latest?.runtime?.cpu || {};
+
+  return [
+    {
+      label: 'Requests',
+      value: formatNumber(totalRequests),
+      helper: `${formatRequestRate(totalRequests, data.rangeHours)} over selected range`,
+    },
+    {
+      label: 'Errors',
+      value: formatNumber(totalErrors),
+      helper: formatPercent(totalRequests ? (totalErrors / totalRequests) * 100 : 0),
+      tone: totalErrors > 0 ? 'warning' : null,
+    },
+    {
+      label: 'Slow Requests',
+      value: formatNumber(totalSlow),
+      helper: `Threshold ${formatDuration(data.collector?.slowRequestThresholdMs || 0)}`,
+      tone: totalSlow > 0 ? 'warning' : null,
+    },
+    {
+      label: 'Active Requests',
+      value: formatNumber(data.collector?.activeRequests || latest?.requests?.activeCount || 0),
+      helper: `Peak last snapshot ${formatNumber(latest?.requests?.peakActiveCount || 0)}`,
+    },
+    {
+      label: 'Heap Used',
+      value: formatBytes(memory.heapUsedBytes || 0),
+      helper: `RSS ${formatBytes(memory.rssBytes || 0)}`,
+    },
+    {
+      label: 'CPU',
+      value: formatPercent(cpu.totalPercent || 0),
+      helper: 'Process CPU in latest snapshot',
+    },
+    {
+      label: 'Event Loop',
+      value: formatPercent((eventLoop.utilization || 0) * 100),
+      helper: `p95 delay ${formatDuration(eventLoop.delayP95Ms || 0)}`,
+      tone: (eventLoop.delayP95Ms || 0) > 100 ? 'warning' : null,
+    },
+  ];
+}
+
+function mapPerformanceRouteRow(row) {
+  return {
+    ...row,
+    countDisplay: formatNumber(row.count || 0),
+    avgDisplay: formatDuration(row.avgMs || 0),
+    p95Display: formatDuration(row.worstP95Ms || 0),
+    maxDisplay: formatDuration(row.maxMs || 0),
+    errorDisplay: `${formatNumber(row.errorCount || 0)} (${formatPercent(row.errorRate || 0)})`,
+    slowDisplay: `${formatNumber(row.slowCount || 0)} (${formatPercent(row.slowRate || 0)})`,
+    statusDisplay: statusSummary(row.statusCounts),
+  };
+}
+
+function mapPerformanceTaskRow(row) {
+  return {
+    ...row,
+    countDisplay: formatNumber(row.count || 0),
+    avgDisplay: formatDuration(row.avgMs || 0),
+    p95Display: formatDuration(row.worstP95Ms || 0),
+    maxDisplay: formatDuration(row.maxMs || 0),
+    errorDisplay: `${formatNumber(row.errorCount || 0)} (${formatPercent(row.errorRate || 0)})`,
+  };
+}
+
+function mapSlowRequest(row) {
+  return {
+    timestampDisplay: formatDateTime(row.timestamp),
+    method: row.method,
+    route: row.route,
+    path: row.path,
+    statusCode: row.statusCode,
+    durationDisplay: formatDuration(row.durationMs || 0),
+    userDisplay: row.userName || 'anonymous',
+  };
+}
+
+function mapRuntimePoint(point) {
+  return {
+    capturedAtDisplay: formatDateTime(point.capturedAt),
+    requestCountDisplay: formatNumber(point.requestCount || 0),
+    errorCountDisplay: formatNumber(point.errorCount || 0),
+    heapDisplay: formatBytes(point.heapUsedBytes || 0),
+    rssDisplay: formatBytes(point.rssBytes || 0),
+    cpuDisplay: formatPercent(point.cpuTotalPercent || 0),
+    eluDisplay: formatPercent((point.eventLoopUtilization || 0) * 100),
+    delayP95Display: formatDuration(point.eventLoopDelayP95Ms || 0),
+    delayMaxDisplay: formatDuration(point.eventLoopDelayMaxMs || 0),
+  };
+}
+
+function mapPerformanceRollup(row) {
+  const count = row.count || 0;
+  const avgMs = count ? (row.totalDurationMs || 0) / count : 0;
+  return {
+    periodKey: row.periodKey,
+    countDisplay: formatNumber(count),
+    avgDisplay: formatDuration(avgMs),
+    maxDisplay: formatDuration(row.maxDurationMs || 0),
+    errorDisplay: `${formatNumber(row.errorCount || 0)} (${formatPercent(count ? (row.errorCount / count) * 100 : 0)})`,
+    slowDisplay: `${formatNumber(row.slowCount || 0)} (${formatPercent(count ? (row.slowCount / count) * 100 : 0)})`,
+  };
 }
 
 function assertMongoReady() {
@@ -3390,6 +3546,57 @@ exports.database_viewer_delete = async (req, res) => {
       metadata: { error: error.message },
     });
     return res.status(status).json({ error: 'Unable to delete this entry right now.' });
+  }
+};
+
+exports.performance_dashboard = async (req, res) => {
+  const rangeHours = normalizePerformanceRange(req.query?.range);
+
+  try {
+    assertMongoReady();
+    const dashboard = await performanceMetricsService.getDashboardData({ rangeHours });
+
+    return res.render('performance_dashboard', {
+      generatedAtDisplay: formatDateTime(dashboard.generatedAt),
+      rangeHours,
+      rangeOptions: PERFORMANCE_RANGE_OPTIONS,
+      collector: {
+        ...dashboard.collector,
+        intervalDisplay: formatDuration(dashboard.collector.snapshotIntervalMs || 0),
+        slowThresholdDisplay: formatDuration(dashboard.collector.slowRequestThresholdMs || 0),
+        intervalStartedAtDisplay: formatDateTime(dashboard.collector.intervalStartedAt),
+      },
+      latestSnapshotAtDisplay: dashboard.latestSnapshot
+        ? formatDateTime(dashboard.latestSnapshot.capturedAt)
+        : null,
+      overviewCards: buildPerformanceOverview(dashboard),
+      runtimeRows: dashboard.runtimeSeries.slice(-20).reverse().map(mapRuntimePoint),
+      routeRows: dashboard.routeRows.map(mapPerformanceRouteRow),
+      taskRows: dashboard.taskRows.map(mapPerformanceTaskRow),
+      slowRequests: dashboard.slowRequests.map(mapSlowRequest),
+      dailyOverall: dashboard.dailyOverall.map(mapPerformanceRollup),
+      monthlyOverall: dashboard.monthlyOverall.map(mapPerformanceRollup),
+      loadError: null,
+    });
+  } catch (error) {
+    logger.error('Failed to load performance dashboard', {
+      category: 'admin_performance',
+      metadata: { error: error.message },
+    });
+    return res.render('performance_dashboard', {
+      generatedAtDisplay: formatDateTime(new Date()),
+      rangeHours,
+      rangeOptions: PERFORMANCE_RANGE_OPTIONS,
+      collector: performanceMetricsService.getCurrentStatus(),
+      overviewCards: [],
+      runtimeRows: [],
+      routeRows: [],
+      taskRows: [],
+      slowRequests: [],
+      dailyOverall: [],
+      monthlyOverall: [],
+      loadError: 'Unable to load performance metrics right now.',
+    });
   }
 };
 

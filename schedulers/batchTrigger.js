@@ -11,6 +11,7 @@ const {
   BatchRequestModel,
 } = require('../database');
 const logger = require('../utils/logger');
+const performanceMetrics = require('../services/performanceMetricsService');
 
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
@@ -27,16 +28,18 @@ function shouldRun(now, lastRunKey) {
 
 async function runBatchTrigger() {
   try {
-    const pendingCount = await BatchPromptModel.countDocuments({ request_id: 'new' });
-    if (pendingCount === 0) {
-      logger.debug('Scheduled batch trigger skipped, no pending prompts', { pendingCount });
-      return;
-    }
+    await performanceMetrics.trackTask('dailyBatchTrigger.run', async () => {
+      const pendingCount = await BatchPromptModel.countDocuments({ request_id: 'new' });
+      if (pendingCount === 0) {
+        logger.debug('Scheduled batch trigger skipped, no pending prompts', { pendingCount });
+        return;
+      }
 
-    const result = await batchService.triggerBatchRequest();
-    logger.notice('Scheduled batch trigger executed', {
-      processedPrompts: result.ids.length,
-      createdRequests: result.requests.length,
+      const result = await batchService.triggerBatchRequest();
+      logger.notice('Scheduled batch trigger executed', {
+        processedPrompts: result.ids.length,
+        createdRequests: result.requests.length,
+      });
     });
   } catch (error) {
     logger.error('Scheduled batch trigger failed', { error });
