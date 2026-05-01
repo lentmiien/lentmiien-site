@@ -78,6 +78,5 @@ const AudioWorkflowJobSchema = new Schema({
 AudioWorkflowJobSchema.index({ createdAt: -1 });
 AudioWorkflowJobSchema.index({ status: 1, createdAt: 1 });
 AudioWorkflowJobSchema.index({ 'llm.responseIds': 1 });
-AudioWorkflowJobSchema.index({ 'outputAudio.id': 1 });
 
 module.exports = mongoose.model('audio_workflow_job', AudioWorkflowJobSchema);
