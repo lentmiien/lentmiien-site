@@ -163,7 +163,8 @@
   padding: 1.1rem 1.25rem;
   border-radius: 18px;
   border: 1px solid var(--es-border);
-  background: rgba(255, 255, 255, 0.65);
+  background: linear-gradient(135deg, rgba(255, 194, 71, 0.12), rgba(27, 32, 38, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255, 194, 71, 0.08);
   display: grid;
   gap: 0.65rem;
 }
@@ -216,15 +217,15 @@
 .es-category {
   padding: 1rem 1.2rem;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid var(--es-border);
+  background: var(--es-surface-alt);
+  border: 1px solid rgba(38, 43, 52, 0.9);
   display: grid;
   gap: 0.4rem;
 }
 
 .es-category--ready {
-  background: rgba(34, 197, 94, 0.08);
-  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(23, 198, 150, 0.08);
+  border-color: rgba(23, 198, 150, 0.35);
 }
 
 .es-category__row {

@@ -38,8 +38,12 @@ exports.es_dashboard = async (req, res) => {
       category_lookup_and_stock[c._id.toString()].percent = percent;
       total += percent > 100 ? 100 : percent;
     });
+    const itemsToRotate = old_items.filter(i => {
+      const categoryData = category_lookup_and_stock[i.categoryId];
+      return !categoryData || categoryData.percent < 100;
+    });
     const average = Math.round(10 * total / categories.length) / 10;
-    res.render('es_dashboard', { categories, items: old_items, category_lookup_and_stock, average });
+    res.render('es_dashboard', { categories, items: itemsToRotate, category_lookup_and_stock, average });
   } catch (err) {
     res.status(500).send('Server Error');
   }
