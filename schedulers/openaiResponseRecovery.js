@@ -4,6 +4,7 @@ const performanceMetrics = require('../services/performanceMetricsService');
 const MessageService = require('../services/messageService');
 const KnowledgeService = require('../services/knowledgeService');
 const ConversationService = require('../services/conversationService');
+const audioWorkflowService = require('../services/audioWorkflowInstance');
 const { emitConversationMessages } = require('../utils/chat5Realtime');
 const {
   Chat4Model,
@@ -46,11 +47,13 @@ async function runRecovery(app) {
           placeholderId: update.placeholder_id,
         });
       }
+      await audioWorkflowService.handleOpenAiResponseCompleted(update.response_id, update);
       continue;
     }
 
     if (update?.type === 'failed') {
       failedCount += 1;
+      await audioWorkflowService.handleOpenAiResponseFailed(update.response_id, update.error_msg);
     }
   }
 

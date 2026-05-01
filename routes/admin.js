@@ -7,6 +7,7 @@ const controller = require('../controllers/admincontroller');
 const learningAdminController = require('../controllers/learningAdminController');
 const messageInboxController = require('../controllers/messageInboxAdminController');
 const toolManagerController = require('../controllers/toolManagerController');
+const audioWorkflowController = require('../controllers/audioWorkflowController');
 
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
@@ -119,6 +120,11 @@ router.post('/tools/seed', toolManagerController.seed);
 router.post('/tools/test', toolManagerController.test);
 router.post('/tools/:id/toggle', toolManagerController.toggle);
 router.post('/tools/:id/delete', toolManagerController.delete);
+
+router.get('/audio-workflow', audioWorkflowController.renderAdmin);
+router.post('/audio-workflow/triggers/save', audioWorkflowController.saveTrigger);
+router.post('/audio-workflow/triggers/:id/toggle', audioWorkflowController.toggleTrigger);
+router.post('/audio-workflow/triggers/:id/delete', audioWorkflowController.deleteTrigger);
 
 router.get('/embedding-test', controller.embedding_test_page);
 router.post('/embedding-test', controller.embedding_test_generate);

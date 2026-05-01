@@ -142,6 +142,9 @@ const OcrJob = require('./models/ocr_job');
 const OcrTtsJob = require('./models/ocr_tts_job');
 // ASR jobs
 const AsrJob = require('./models/asr_job');
+// Audio workflow jobs
+const AudioWorkflowJob = require('./models/audio_workflow_job');
+const AudioWorkflowTrigger = require('./models/audio_workflow_trigger');
 // Message inbox
 const MessageInboxEntry = require('./models/message_inbox');
 const MessageFilter = require('./models/message_filter');
@@ -244,6 +247,8 @@ module.exports = {
   OcrJob,
   OcrTtsJob,
   AsrJob,
+  AudioWorkflowJob,
+  AudioWorkflowTrigger,
   MessageInboxEntry,
   MessageFilter,
   LearningTopic,

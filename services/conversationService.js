@@ -1669,7 +1669,7 @@ class ConversationService {
     return outputMessages;
   }
 
-  async queueFollowUpAfterFunctionCalls(conversation) {
+  async queueFollowUpAfterFunctionCalls(conversation, pendingContext = {}) {
     const conversationForAI = this.normalizeMembersForAI(conversation);
     const { response_id, msg } = await this.messageService.generateAIMessage({
       conversation: conversationForAI,
@@ -1680,21 +1680,28 @@ class ConversationService {
       if (msg?._id) {
         await Chat5Model.deleteOne({ _id: msg._id });
       }
-      return [];
+      return { messages: [], responseId: null };
     }
 
     if (msg) {
       conversation.messages.push(msg._id.toString());
-      const pr = new PendingRequests({
+      const pendingRequest = {
         response_id,
         conversation_id: conversation._id.toString(),
         placeholder_id: msg._id.toString(),
-      });
+      };
+      if (pendingContext?.sourceType) {
+        pendingRequest.sourceType = pendingContext.sourceType;
+      }
+      if (pendingContext?.sourceId) {
+        pendingRequest.sourceId = pendingContext.sourceId;
+      }
+      const pr = new PendingRequests(pendingRequest);
       await pr.save();
-      return [msg];
+      return { messages: [msg], responseId: response_id };
     }
 
-    return [];
+    return { messages: [], responseId: null };
   }
 
   // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
@@ -1717,6 +1724,7 @@ class ConversationService {
 
       const messages = await this.messageService.processCompletedResponse(conversation, response_id);
       const returnedMessages = [...messages];
+      const followUpResponseIds = [];
 
       conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
       const savedMessages = messages.filter(m => m && !m.error);
@@ -1732,14 +1740,24 @@ class ConversationService {
           returnedMessages.push(m);
         }
 
-        const followUpMessages = await this.queueFollowUpAfterFunctionCalls(conversation);
-        returnedMessages.push(...followUpMessages);
+        const followUp = await this.queueFollowUpAfterFunctionCalls(conversation, pending);
+        returnedMessages.push(...followUp.messages);
+        if (followUp.responseId) {
+          followUpResponseIds.push(followUp.responseId);
+        }
       }
 
       await conversation.save();
       await PendingRequests.deleteOne({_id: pending._id});
 
-      return { conversation, messages: returnedMessages, placeholder_id: pending.placeholder_id };
+      const result = { conversation, messages: returnedMessages, placeholder_id: pending.placeholder_id };
+      if (functionCallMessages.length > 0) {
+        result.hasFunctionCalls = true;
+      }
+      if (followUpResponseIds.length > 0) {
+        result.followUpResponseIds = followUpResponseIds;
+      }
+      return result;
     } catch (error) {
       await this.releasePendingRequest(pending._id);
       throw error;

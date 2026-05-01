@@ -42,6 +42,7 @@ const scheduleDailyBatchTrigger = require('./schedulers/batchTrigger');
 const scheduleDatabaseUsageMonitor = require('./schedulers/databaseUsageMonitor');
 const scheduleAgent5Runner = require('./schedulers/agent5');
 const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecovery');
+const audioWorkflowService = require('./services/audioWorkflowInstance');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
 
@@ -539,3 +540,9 @@ scheduleDailyBatchTrigger();
 scheduleDatabaseUsageMonitor();
 scheduleAgent5Runner();
 scheduleOpenAIResponseRecovery(app);
+audioWorkflowService.start().catch((error) => {
+  logger.error('Failed to start audio workflow service', {
+    category: 'audio_workflow',
+    metadata: { error: error.message },
+  });
+});

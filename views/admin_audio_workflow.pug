@@ -1,0 +1,212 @@
+extends layout
+
+block content
+  - const formTrigger = editTrigger || defaultTrigger || {};
+  - const selectedTools = Array.isArray(formTrigger.tools) ? formTrigger.tools : [];
+  - const includeValue = Array.isArray(formTrigger.shouldInclude) ? formTrigger.shouldInclude.join('\n') : '';
+  - const excludeValue = Array.isArray(formTrigger.shouldNotInclude) ? formTrigger.shouldNotInclude.join('\n') : '';
+  .container-fluid
+    .d-flex.justify-content-between.align-items-start.mb-4
+      div
+        h1.mb-2 Audio workflow
+        p.text-muted.mb-0 Monitor queued audio jobs and manage transcript trigger templates.
+      if editTrigger
+        a.btn.btn-outline-secondary(href='/admin/audio-workflow') New trigger
+
+    if feedback
+      .alert(class=feedback.status === 'success' ? 'alert-success' : feedback.status === 'error' ? 'alert-danger' : 'alert-info')= feedback.message
+
+    .row.g-4
+      .col-xl-7
+        .card.mb-4
+          .card-body
+            .d-flex.justify-content-between.align-items-center.mb-3
+              div
+                h2.h4.mb-1 Recent jobs
+                p.text-muted.mb-0 Latest audio workflow jobs, newest first.
+              a.btn.btn-outline-primary.btn-sm(href='/admin/audio-workflow') Refresh
+            if jobs && jobs.length
+              .table-responsive
+                table.table.table-sm.align-middle
+                  thead
+                    tr
+                      th Created
+                      th Status
+                      th Transcript
+                      th Trigger
+                      th Output
+                      th Links
+                  tbody
+                    each job in jobs
+                      tr
+                        td
+                          div= job.created_at ? new Date(job.created_at).toLocaleString() : '-'
+                          if job.device_id
+                            small.text-muted= job.device_id
+                          div
+                            code.small= job.job_id
+                        td
+                          - const statusClass = job.status === 'completed' ? 'text-bg-success' : job.status === 'failed' ? 'text-bg-danger' : job.status === 'waiting_for_llm' ? 'text-bg-warning' : 'text-bg-secondary';
+                          span.badge(class=statusClass)= job.status
+                          if job.error
+                            div.text-danger.small.mt-1= job.error
+                        td(style='max-width: 320px;')
+                          if job.transcribed_text
+                            div.text-truncate(title=job.transcribed_text)= job.transcribed_text
+                          else
+                            span.text-muted -
+                        td
+                          if job.matched_trigger_name
+                            div= job.matched_trigger_name
+                            if job.matched_trigger_id
+                              a.small(href=`/admin/audio-workflow?edit=${job.matched_trigger_id}`) Edit trigger
+                          else
+                            span.text-muted No match
+                        td
+                          if job.output_audio_id
+                            code.small= job.output_audio_id
+                            div.mt-1
+                              a.btn.btn-outline-primary.btn-sm(href=`/api/audio/output/${job.output_audio_id}`) Download
+                          else
+                            span.text-muted -
+                        td
+                          if job.transcribe_work_id
+                            a.small.d-block(href=`/asr/job/${job.transcribe_work_id}`) ASR job
+                          if job.conversation5_id
+                            a.small.d-block(href=`/chat5/chat/${job.conversation5_id}`) Chat5
+            else
+              p.text-muted.mb-0 No audio workflow jobs yet.
+
+        .card
+          .card-body
+            h2.h4.mb-3 Triggers
+            if triggers && triggers.length
+              .table-responsive
+                table.table.table-sm.align-middle
+                  thead
+                    tr
+                      th Name
+                      th Match
+                      th Tools
+                      th TTS
+                      th State
+                      th Actions
+                  tbody
+                    each trigger in triggers
+                      tr
+                        td
+                          strong= trigger.name
+                          div.text-muted.small= `Order ${trigger.sortOrder || 0}`
+                        td
+                          if trigger.shouldInclude && trigger.shouldInclude.length
+                            div.small
+                              strong Include: 
+                              = trigger.shouldInclude.join(', ')
+                          if trigger.shouldNotInclude && trigger.shouldNotInclude.length
+                            div.small
+                              strong Exclude: 
+                              = trigger.shouldNotInclude.join(', ')
+                        td
+                          if trigger.tools && trigger.tools.length
+                            each tool in trigger.tools
+                              span.badge.text-bg-light.border.me-1= tool
+                          else
+                            span.text-muted -
+                        td
+                          if trigger.ttsEnabled
+                            code= trigger.ttsVoiceId || 'default'
+                            div.text-muted.small= trigger.ttsFormat || 'wav'
+                          else
+                            span.text-muted Disabled
+                        td
+                          if trigger.enabled
+                            span.badge.text-bg-success Enabled
+                          else
+                            span.badge.text-bg-secondary Disabled
+                        td
+                          .d-flex.gap-2.flex-wrap
+                            a.btn.btn-outline-primary.btn-sm(href=`/admin/audio-workflow?edit=${trigger.id}`) Edit
+                            form(method='post', action=`/admin/audio-workflow/triggers/${trigger.id}/toggle`)
+                              input(type='hidden', name='enabled', value=trigger.enabled ? 'false' : 'true')
+                              button.btn.btn-outline-secondary.btn-sm(type='submit')= trigger.enabled ? 'Disable' : 'Enable'
+                            form(method='post', action=`/admin/audio-workflow/triggers/${trigger.id}/delete`, onsubmit="return confirm('Delete this trigger?');")
+                              button.btn.btn-outline-danger.btn-sm(type='submit') Delete
+            else
+              p.text-muted.mb-0 No triggers configured. Add one with the form.
+
+      .col-xl-5
+        .card
+          .card-body
+            h2.h4.mb-3= editTrigger ? `Edit ${editTrigger.name}` : 'Create trigger'
+            p.text-muted Use `{{transcript}}`, `{{job_id}}`, and `{{device_id}}` placeholders in prompts.
+            form(method='post', action='/admin/audio-workflow/triggers/save')
+              if editTrigger
+                input(type='hidden', name='id', value=editTrigger.id)
+              input(type='hidden', name='enabled', value='false')
+              input(type='hidden', name='ttsEnabled', value='false')
+
+              .mb-3
+                label.form-label(for='triggerName') Name
+                input#triggerName.form-control(type='text', name='name', value=formTrigger.name || '', maxlength='160', required)
+              .row.g-3
+                .col-md-6
+                  label.form-label(for='triggerEnabled') Enabled
+                  .form-check.mt-2
+                    input#triggerEnabled.form-check-input(type='checkbox', name='enabled', value='true', checked=formTrigger.enabled !== false)
+                    label.form-check-label(for='triggerEnabled') Match incoming transcripts
+                .col-md-6
+                  label.form-label(for='triggerSortOrder') Sort order
+                  input#triggerSortOrder.form-control(type='number', name='sortOrder', value=formTrigger.sortOrder || 0)
+              .mb-3.mt-3
+                label.form-label(for='shouldInclude') Should include phrases
+                textarea#shouldInclude.form-control(name='shouldInclude', rows='3', placeholder='One phrase per line', required)= includeValue
+                small.text-muted All phrases must appear. More phrases wins when multiple triggers match.
+              .mb-3
+                label.form-label(for='shouldNotInclude') Should not include phrases
+                textarea#shouldNotInclude.form-control(name='shouldNotInclude', rows='3', placeholder='Optional, one phrase per line')= excludeValue
+              .mb-3
+                label.form-label(for='systemPrompt') System prompt
+                textarea#systemPrompt.form-control(name='systemPrompt', rows='4')= formTrigger.systemPrompt || ''
+              .mb-3
+                label.form-label(for='messagePrompt') Message prompt
+                textarea#messagePrompt.form-control(name='messagePrompt', rows='4', required)= formTrigger.messagePrompt || '{{transcript}}'
+              .row.g-3
+                .col-md-6
+                  label.form-label(for='llmModel') LLM model
+                  input#llmModel.form-control(type='text', name='llmModel', value=formTrigger.llmModel || 'gpt-4.1-2025-04-14')
+                .col-md-6
+                  label.form-label(for='outputFormat') Output format
+                  select#outputFormat.form-select(name='outputFormat')
+                    option(value='text', selected=(formTrigger.outputFormat || 'text') === 'text') text
+                    option(value='json', selected=formTrigger.outputFormat === 'json') json
+                .col-md-6
+                  label.form-label(for='reasoning') Reasoning
+                  select#reasoning.form-select(name='reasoning')
+                    each value in ['minimal', 'low', 'medium', 'high', 'xhigh']
+                      option(value=value, selected=(formTrigger.reasoning || 'medium') === value)= value
+                .col-md-6
+                  label.form-label(for='verbosity') Verbosity
+                  select#verbosity.form-select(name='verbosity')
+                    each value in ['low', 'medium', 'high']
+                      option(value=value, selected=(formTrigger.verbosity || 'medium') === value)= value
+              .mb-3.mt-3
+                label.form-label(for='tools') Enabled tools
+                select#tools.form-select(name='tools', multiple, size='6')
+                  each tool in availableTools || []
+                    option(value=tool.name, selected=selectedTools.indexOf(tool.name) >= 0)= `${tool.displayName || tool.name} (${tool.name})`
+                small.text-muted Hold Ctrl/Cmd to select multiple tool-manager tools.
+              .row.g-3
+                .col-md-4
+                  .form-check.mt-4
+                    input#ttsEnabled.form-check-input(type='checkbox', name='ttsEnabled', value='true', checked=formTrigger.ttsEnabled !== false)
+                    label.form-check-label(for='ttsEnabled') Generate TTS
+                .col-md-4
+                  label.form-label(for='ttsVoiceId') TTS voice
+                  input#ttsVoiceId.form-control(type='text', name='ttsVoiceId', value=formTrigger.ttsVoiceId || 'piper_en_amy')
+                .col-md-4
+                  label.form-label(for='ttsFormat') TTS format
+                  input#ttsFormat.form-control(type='text', name='ttsFormat', value=formTrigger.ttsFormat || 'wav')
+              .d-flex.gap-2.mt-4
+                button.btn.btn-primary(type='submit')= editTrigger ? 'Save changes' : 'Create trigger'
+                if editTrigger
+                  a.btn.btn-outline-secondary(href='/admin/audio-workflow') Cancel

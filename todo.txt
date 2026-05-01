@@ -1,21 +1,63 @@
-In `utils/OpenAI_API.js`, I add tools (in the `chat` function) like this before sending a request to the OpenAI API:
+I need to add 3 new API routes, and a wrapper service class for a new workflow.
 
+API endpoints:
+1. POST http://192.168.0.21:3000/api/audio/upload
+For uploading an audio recording and create a transcription job. Return the job id to the user.
+
+Sample upload command on the user side:
 ```
-  const tools = [];
-  if (conversation.metadata.tools && conversation.metadata.tools.length > 0) {
-    for (const t of conversation.metadata.tools) {
-      tools.push(tools_map[t]);
-    }
-  }
+curl -v \
+  -F "audio=@/tmp/manual_api_test.wav;type=audio/wav" \
+  -F "device_id=room-pi-01" \
+  -F "sample_rate=16000" \
+  -F "channels=1" \
+  -F "format=wav_pcm16" \
+  http://192.168.0.21:3000/api/audio/upload
 ```
 
-This is only made to work with OpenAI's built in tools right now, but I just added my custom tools in `services/toolManagerService.js`, so when the tool don't exist in the `tools_map`, fetch the JSON from the tool manager instead.
+Expect response to be:
+```
+{
+  "job_id": "some-job-id"
+}
+```
 
-That should be all the changes needed when sending an API call, next, we also need to implement the actual tool calling when fetching the response, and send back the tool response to the API. 
+2. GET  http://192.168.0.21:3000/api/audio/jobs/{job_id}
+For fetching the job status. Return that status, transcripted text (if done), and an output audio file id (optional)
 
-Responses come back as webhooks, and are processed in the function `async processCompletedResponse(response_id)` in `services/conversationService.js`, so when I get the response data, I first need to save the messages and append to the conversation as I currently do, but add support for the `function_call` response type, so it can be saved, and also when I get this type of response, do the actual message calls, append the function responses as new messages, and trigger another API call when all function calls are done.
+Sample command on the user side:
+```
+curl -v \
+  http://192.168.0.21:3000/api/audio/jobs/JOB_ID_HERE
+```
 
-So, I need to save the 'function_call' and 'function_call_output' to the message database, in a way that I can recreate the content properly for the next API call, then add another API call after a function call was processed, that include the 'function_call' and 'function_call_output', but lets only include the last batch of 'function_call' and 'function_call_output' when responding to a 'function_call' message, so when the user continue the conversation after a function call, only regular messages will be included.
+Expect response to be a JSON object with `status`, `transcribed text`, and `output file id`, where only `status` is required.
 
-Please adjust the `chat` function in `utils/OpenAI_API.js`, to handle my custom tools, from the tool manager.
-Please adjust the `processCompletedResponse` function in `services/conversationService.js` to handle 'function_call' responses, including saving the messages to the messages database, calling the required functions, and sending the follow up API call with the function call responses, that should also be saved to the database; and adjust the `chat` function to handle 'function_call' and 'function_call_output' messages appropriately (ignore for user triggered responses, or include last batch for tool call responses).
+3. GET  http://192.168.0.21:3000/api/audio/output/{output_audio_id}
+For fetching the output audio file. Return the audio file data.
+
+Sample command on the user side:
+```
+curl -L \
+  -o /tmp/manual_api_output.wav \
+  http://192.168.0.21:3000/api/audio/output/OUTPUT_AUDIO_ID_HERE
+```
+
+What the wrapper function does:
+1. Receive an input audio
+2. Transcribe through the existing ASR workflow (controllers/asrcontroller.js) *I plan to use the 'whisper-api' model for this, and want all transcriptions to be visible on the ASR page
+3. When transcription is done, look for trigger phrases and trigger LLM API calls, based on message templates and transcript data, including function calling *I plan to use OpenAI API for this, saving chat history to conversation5/chat5, in a new conversation for each job
+4. When receiving the LLM response, run output text through existing TTS workflow *I'll probably just use the 'wyoming_piper' - 'piper_en_amy' TTS model, and possible a 'voicevox' model, if I choose to support Japanese
+5. Set job as done, with the output audio
+
+Note: if no trigger phrase matches, then skip LLM and TTS, and set as done without output audio; if multiple matches, choose the trigger with the most text phrases (more specific match), or just the first match if equal.
+
+So, I'll need some additional database tables as well:
+* job: job id, status, transcribed text, output audio id, audio file name, transcribe work id, conversation5 id, TTS id
+* trigger/template: one or more "should include"/"should not include" text phrases, together with template texts (system prompt/message prompt, with transcript placeholder), and enable toggles for existing tools (services/toolManagerService.js)
+
+Important: since the worflow is rather long, I could receive a second input audio before the first is done, so que input audios an process one-by-one until completed.
+
+Note regarding LLM: I want to send requests to the OpenAI API as background tasks, and trigger follow ups in the webhook code, for processing responses when done (trigger when fully done, not when returning for a tool call).
+
+Now implement this new service class/workflow, and the API endpoints for interacting with the service class. Also add a small admin page for monitoring recent jobs in this new service class, and for managing trigger/template data.

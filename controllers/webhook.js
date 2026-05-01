@@ -6,6 +6,7 @@ const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, Batc
 const logger = require('../utils/logger');
 const { emitConversationMessages, toClientMessage } = require('../utils/chat5Realtime');
 const { unwrapOpenAIWebhook } = require('../utils/openaiWebhook');
+const audioWorkflowService = require('../services/audioWorkflowInstance');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
@@ -152,6 +153,8 @@ exports.openai = async (req, res) => {
         return;
       }
 
+      await audioWorkflowService.handleOpenAiResponseCompleted(response_id, result);
+
       const io = req.app.get('io');
 
       if (!io) {
@@ -169,6 +172,7 @@ exports.openai = async (req, res) => {
     if (event.type === 'response.cancelled' || event.type === 'response.failed' || event.type === 'response.incomplete') {
       const response_id = event.data.id;
       const error_msg = await conversationService.processFailedResponse(response_id);
+      await audioWorkflowService.handleOpenAiResponseFailed(response_id, error_msg);
       logger.debug(`Response failed [type=${event.type}]`, { error_msg });
     }
   } catch (error) {
