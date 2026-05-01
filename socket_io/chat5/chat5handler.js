@@ -20,7 +20,7 @@ module.exports = async function registerChat5Handlers({
 
   // ---- INIT per-connection state as before ----
   socket.conversationTitle = 'Placeholder';
-  socket.model             = 'gpt-4.1-2025-04-14';
+  socket.model             = 'gpt-5.5';
   socket.conversation_id   = "new";
   socket.context           = '';
   socket.category          = 'Chat5';

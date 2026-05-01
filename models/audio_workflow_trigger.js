@@ -11,7 +11,7 @@ const AudioWorkflowTriggerSchema = new Schema({
   shouldNotInclude: { type: [String], default: [] },
   systemPrompt: { type: String, default: '' },
   messagePrompt: { type: String, default: '{{transcript}}' },
-  llmModel: { type: String, default: 'gpt-4.1-2025-04-14' },
+  llmModel: { type: String, default: 'gpt-5.5' },
   reasoning: { type: String, enum: ['minimal', 'low', 'medium', 'high', 'xhigh'], default: 'medium' },
   verbosity: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
   outputFormat: { type: String, enum: ['text', 'json'], default: 'text' },

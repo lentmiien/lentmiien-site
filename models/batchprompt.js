@@ -9,7 +9,7 @@ const BatchPrompt = new mongoose.Schema({
   message_id: { type: String, max: 100 },
   model: {
     type: String,
-    default: 'gpt-4.1-2025-04-14'
+    default: 'gpt-5.5'
   },
   task_type: {
     type: String,

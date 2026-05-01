@@ -10,7 +10,7 @@ const Conversation5 = new mongoose.Schema({
 
   metadata: {
     contextPrompt: { type: String, default: "" },
-    model: { type: String, default: "gpt-4.1-2025-04-14" },
+    model: { type: String, default: "gpt-5.5" },
     maxMessages: { type: Number, default: 999 },
     maxAudioMessages: { type: Number, default: 3 },
     tools: [{ type: String, max: 100 }],

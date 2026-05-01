@@ -119,7 +119,7 @@ exports.renderAdmin = async (req, res) => {
         shouldNotInclude: [],
         systemPrompt: 'You are a concise voice assistant. Answer the user based on the transcript.',
         messagePrompt: '{{transcript}}',
-        llmModel: process.env.AUDIO_WORKFLOW_LLM_MODEL || 'gpt-4.1-2025-04-14',
+        llmModel: process.env.AUDIO_WORKFLOW_LLM_MODEL || 'gpt-5.5',
         reasoning: 'medium',
         verbosity: 'medium',
         outputFormat: 'text',
