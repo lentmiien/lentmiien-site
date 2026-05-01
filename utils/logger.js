@@ -204,6 +204,9 @@ const logger = {
   warning(message, ...args) {
     return writeLog('warning', message, ...args);
   },
+  warn(message, ...args) {
+    return writeLog('warning', message, ...args);
+  },
   error(message, ...args) {
     return writeLog('error', message, ...args);
   },
