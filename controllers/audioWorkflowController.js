@@ -58,6 +58,7 @@ exports.getJob = async (req, res) => {
     return res.json({
       status: job.status,
       transcribed_text: job.transcribed_text || '',
+      detected_language: job.detected_language || null,
       output_audio_id: job.output_audio_id || null,
       error: job.error || null,
       job_id: job.job_id,
@@ -106,12 +107,14 @@ exports.renderAdmin = async (req, res) => {
       toolManagerService.getAvailableTools(),
     ]);
     const editTrigger = req.query.edit ? await audioWorkflowService.getTrigger(req.query.edit) : null;
+    const languageDefaultTtsVoices = audioWorkflowService.getDefaultTtsVoicesByLanguage();
 
     return res.render('admin_audio_workflow', {
       jobs,
       triggers,
       editTrigger,
       availableTools,
+      languageDefaultTtsVoices,
       feedback: buildFeedback(req.query),
       defaultTrigger: {
         enabled: true,
@@ -125,7 +128,7 @@ exports.renderAdmin = async (req, res) => {
         outputFormat: 'text',
         tools: [],
         ttsEnabled: true,
-        ttsVoiceId: process.env.AUDIO_WORKFLOW_TTS_VOICE || 'piper_en_amy',
+        ttsVoiceId: process.env.AUDIO_WORKFLOW_TTS_VOICE || '',
         ttsFormat: process.env.AUDIO_WORKFLOW_TTS_FORMAT || 'wav',
         sortOrder: 0,
       },

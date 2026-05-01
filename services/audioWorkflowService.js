@@ -19,7 +19,22 @@ const {
 const AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'audio');
 const MP3_DIR = path.resolve(__dirname, '..', 'public', 'mp3');
 const DEFAULT_LLM_MODEL = process.env.AUDIO_WORKFLOW_LLM_MODEL || 'gpt-5.5';
-const DEFAULT_TTS_VOICE = process.env.AUDIO_WORKFLOW_TTS_VOICE || 'piper_en_amy';
+const LEGACY_DEFAULT_TTS_VOICE = 'piper_en_amy';
+const DEFAULT_TTS_VOICE_EN = process.env.AUDIO_WORKFLOW_TTS_VOICE_EN
+  || process.env.AUDIO_WORKFLOW_TTS_VOICE
+  || LEGACY_DEFAULT_TTS_VOICE;
+const DEFAULT_TTS_VOICE_JP = process.env.AUDIO_WORKFLOW_TTS_VOICE_JP
+  || process.env.AUDIO_WORKFLOW_TTS_VOICE_JA
+  || 'ja_shikoku_metan_amaama';
+const DEFAULT_TTS_VOICE_SV = process.env.AUDIO_WORKFLOW_TTS_VOICE_SV || 'piper_sv';
+const DEFAULT_TTS_VOICE = DEFAULT_TTS_VOICE_EN;
+const DEFAULT_TTS_VOICES_BY_LANGUAGE = Object.freeze({
+  en: DEFAULT_TTS_VOICE_EN,
+  jp: DEFAULT_TTS_VOICE_JP,
+  ja: DEFAULT_TTS_VOICE_JP,
+  sv: DEFAULT_TTS_VOICE_SV,
+  unknown: DEFAULT_TTS_VOICE_EN,
+});
 const DEFAULT_TTS_FORMAT = process.env.AUDIO_WORKFLOW_TTS_FORMAT || 'wav';
 const DEFAULT_CATEGORY = 'Audio workflow';
 const DEFAULT_TAGS = ['audio-workflow', 'asr'];
@@ -59,6 +74,36 @@ function sanitizeText(value, fallback = '') {
   return trimmed.length > 0 ? trimmed : fallback;
 }
 
+function normalizeDetectedLanguage(language) {
+  const raw = typeof language === 'string' ? language.trim().toLowerCase() : '';
+  if (!raw || raw === 'unknown' || raw === 'und') return 'en';
+  const primary = raw.split(/[-_]/)[0];
+  if (primary === 'ja' || primary === 'jp') return 'jp';
+  if (primary === 'sv') return 'sv';
+  if (primary === 'en') return 'en';
+  return 'en';
+}
+
+function getDefaultTtsVoiceForLanguage(language) {
+  const normalized = normalizeDetectedLanguage(language);
+  return DEFAULT_TTS_VOICES_BY_LANGUAGE[normalized] || DEFAULT_TTS_VOICE_EN;
+}
+
+function isDefaultTtsVoiceSelection(voiceId) {
+  const normalized = sanitizeText(voiceId, '');
+  return !normalized
+    || normalized === DEFAULT_TTS_VOICE
+    || normalized === LEGACY_DEFAULT_TTS_VOICE;
+}
+
+function resolveTtsVoiceId({ detectedLanguage, triggerVoiceId } = {}) {
+  const normalizedTriggerVoiceId = sanitizeText(triggerVoiceId, '');
+  if (!isDefaultTtsVoiceSelection(normalizedTriggerVoiceId)) {
+    return normalizedTriggerVoiceId;
+  }
+  return getDefaultTtsVoiceForLanguage(detectedLanguage);
+}
+
 function guessExtension(mimetype, fallbackFormat = '') {
   const map = {
     'audio/webm': '.webm',
@@ -87,6 +132,25 @@ function buildStoredFileName(originalName, mimetype, format) {
     .slice(0, 40) || 'audio';
   const ext = extFromName || guessExtension(mimetype, format);
   return `${Date.now()}-${randomUUID().slice(0, 8)}-${baseName}${ext}`;
+}
+
+function resolvePathInside(rootDir, filePath) {
+  if (!filePath) return null;
+  const resolvedRoot = path.resolve(rootDir);
+  const resolvedPath = path.resolve(filePath);
+  if (resolvedPath.startsWith(resolvedRoot + path.sep)) {
+    return resolvedPath;
+  }
+  return null;
+}
+
+function addStoredAudioPath(paths, audio = {}) {
+  if (audio.storedPath) {
+    paths.add(audio.storedPath);
+  }
+  if (audio.storedFileName) {
+    paths.add(path.join(AUDIO_DIR, audio.storedFileName));
+  }
 }
 
 function buildTextContent(text) {
@@ -123,6 +187,7 @@ function sanitizeJob(job) {
     job_id: extractJobId(job),
     status: job.status || 'queued',
     transcribed_text: job.transcriptText || '',
+    detected_language: job.detectedLanguage || null,
     output_audio_id: outputAudioId,
     error: job.error || null,
     device_id: job.deviceId || null,
@@ -135,6 +200,27 @@ function sanitizeJob(job) {
     created_at: job.createdAt,
     updated_at: job.updatedAt,
     completed_at: job.completedAt || null,
+  };
+}
+
+function sanitizeMissingCompletedJob(jobId) {
+  return {
+    job_id: jobId || null,
+    status: 'completed',
+    transcribed_text: '',
+    detected_language: null,
+    output_audio_id: null,
+    error: null,
+    device_id: null,
+    audio_file_name: null,
+    transcribe_work_id: null,
+    conversation5_id: null,
+    tts_id: null,
+    matched_trigger_id: null,
+    matched_trigger_name: null,
+    created_at: null,
+    updated_at: null,
+    completed_at: null,
   };
 }
 
@@ -266,6 +352,68 @@ class AudioWorkflowService {
 
   async ensureAudioDirectory() {
     await fs.mkdir(AUDIO_DIR, { recursive: true });
+  }
+
+  async deleteStoredAudioFiles(job, asrJob = null) {
+    const paths = new Set();
+    addStoredAudioPath(paths, job?.inputAudio || {});
+    addStoredAudioPath(paths, asrJob || {});
+    const deleted = [];
+
+    for (const candidatePath of paths) {
+      const safePath = resolvePathInside(AUDIO_DIR, candidatePath);
+      if (!safePath) {
+        logger.warning('Skipped unsafe audio workflow file cleanup path', {
+          category: 'audio_workflow',
+          metadata: {
+            jobId: extractJobId(job),
+            path: candidatePath,
+          },
+        });
+        continue;
+      }
+
+      try {
+        await fs.unlink(safePath);
+        deleted.push(safePath);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') {
+          logger.warning('Failed to delete audio workflow file during cleanup', {
+            category: 'audio_workflow',
+            metadata: {
+              jobId: extractJobId(job),
+              path: safePath,
+              message: error?.message || error,
+            },
+          });
+        }
+      }
+    }
+
+    return deleted;
+  }
+
+  async deleteEmptyTranscriptJob(job, asrJob = null) {
+    const jobId = extractJobId(job);
+    const asrJobId = extractJobId(asrJob);
+    const deletedFiles = await this.deleteStoredAudioFiles(job, asrJob);
+
+    if (asrJobId && this.asrJobModel?.deleteOne) {
+      await this.asrJobModel.deleteOne({ _id: asrJobId });
+    }
+    if (jobId && this.jobModel?.deleteOne) {
+      await this.jobModel.deleteOne({ _id: jobId });
+    }
+
+    logger.notice('Audio workflow empty transcript job deleted', {
+      category: 'audio_workflow',
+      metadata: {
+        jobId,
+        asrJobId,
+        deletedFileCount: deletedFiles.length,
+      },
+    });
+    this.kickQueue();
   }
 
   async saveUploadedAudio(file, fields = {}) {
@@ -417,11 +565,16 @@ class AudioWorkflowService {
 
       logger.notice('Audio workflow ASR completed', {
         category: 'audio_workflow',
-        metadata: { jobId, asrJobId: asrJob._id, transcriptLength: transcriptText.length },
+        metadata: {
+          jobId,
+          asrJobId: asrJob._id,
+          transcriptLength: transcriptText.length,
+          detectedLanguage: job.detectedLanguage,
+        },
       });
 
       if (!transcriptText) {
-        await this.completeJobWithoutOutput(jobId);
+        await this.deleteEmptyTranscriptJob(job, asrJob);
         return;
       }
 
@@ -662,9 +815,13 @@ class AudioWorkflowService {
     await this.jobModel.updateOne({ _id: jobId }, { $set: { status: 'processing_tts', error: null } });
 
     try {
+      const voiceId = resolveTtsVoiceId({
+        detectedLanguage: job.detectedLanguage,
+        triggerVoiceId: trigger.ttsVoiceId,
+      });
       const ttsResult = await this.ttsService.synthesize({
         text: normalizedText,
-        voiceId: trigger.ttsVoiceId || DEFAULT_TTS_VOICE,
+        voiceId,
         format: trigger.ttsFormat || DEFAULT_TTS_FORMAT,
       });
       const outputAudioId = `${jobId}-output-${randomUUID()}`;
@@ -680,7 +837,7 @@ class AudioWorkflowService {
               fileName: ttsResult.fileName,
               filePath: path.join(MP3_DIR, ttsResult.fileName),
               mimeType: ttsResult.contentType || `audio/${ttsResult.format || 'wav'}`,
-              voiceId: ttsResult.voiceId || trigger.ttsVoiceId || DEFAULT_TTS_VOICE,
+              voiceId: ttsResult.voiceId || voiceId,
               format: ttsResult.format || trigger.ttsFormat || DEFAULT_TTS_FORMAT,
               sizeBytes: ttsResult.size || 0,
             },
@@ -690,7 +847,13 @@ class AudioWorkflowService {
       );
       logger.notice('Audio workflow TTS completed', {
         category: 'audio_workflow',
-        metadata: { jobId, outputAudioId, fileName: ttsResult.fileName },
+        metadata: {
+          jobId,
+          outputAudioId,
+          fileName: ttsResult.fileName,
+          detectedLanguage: job.detectedLanguage,
+          voiceId: ttsResult.voiceId || voiceId,
+        },
       });
       this.kickQueue();
     } catch (error) {
@@ -733,8 +896,9 @@ class AudioWorkflowService {
   }
 
   async getJobStatus(jobId) {
-    const job = await this.jobModel.findById(jobId).lean();
-    return sanitizeJob(job);
+    const query = this.jobModel.findById(jobId);
+    const job = typeof query?.lean === 'function' ? await query.lean() : await query;
+    return job ? sanitizeJob(job) : sanitizeMissingCompletedJob(jobId);
   }
 
   async getOutputAudio(outputAudioId) {
@@ -799,6 +963,14 @@ class AudioWorkflowService {
     const result = await this.triggerModel.deleteOne({ _id: id });
     return result.deletedCount || 0;
   }
+
+  getDefaultTtsVoicesByLanguage() {
+    return {
+      en: DEFAULT_TTS_VOICE_EN,
+      jp: DEFAULT_TTS_VOICE_JP,
+      sv: DEFAULT_TTS_VOICE_SV,
+    };
+  }
 }
 
 AudioWorkflowService.sanitizeJob = sanitizeJob;
@@ -806,5 +978,13 @@ AudioWorkflowService.sanitizeTrigger = sanitizeTrigger;
 AudioWorkflowService.normalizeTriggerInput = normalizeTriggerInput;
 AudioWorkflowService.normalizePhraseList = normalizePhraseList;
 AudioWorkflowService.renderTemplate = renderTemplate;
+AudioWorkflowService.normalizeDetectedLanguage = normalizeDetectedLanguage;
+AudioWorkflowService.getDefaultTtsVoiceForLanguage = getDefaultTtsVoiceForLanguage;
+AudioWorkflowService.resolveTtsVoiceId = resolveTtsVoiceId;
+AudioWorkflowService.defaultTtsVoicesByLanguage = {
+  en: DEFAULT_TTS_VOICE_EN,
+  jp: DEFAULT_TTS_VOICE_JP,
+  sv: DEFAULT_TTS_VOICE_SV,
+};
 
 module.exports = AudioWorkflowService;

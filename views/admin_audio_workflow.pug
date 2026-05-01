@@ -5,6 +5,8 @@ block content
   - const selectedTools = Array.isArray(formTrigger.tools) ? formTrigger.tools : [];
   - const includeValue = Array.isArray(formTrigger.shouldInclude) ? formTrigger.shouldInclude.join('\n') : '';
   - const excludeValue = Array.isArray(formTrigger.shouldNotInclude) ? formTrigger.shouldNotInclude.join('\n') : '';
+  - const voiceDefaults = languageDefaultTtsVoices || {};
+  - const voiceDefaultsText = `en: ${voiceDefaults.en || 'piper_en_amy'}, jp: ${voiceDefaults.jp || 'ja_shikoku_metan_amaama'}, sv: ${voiceDefaults.sv || 'piper_sv'}`;
   .container-fluid
     .d-flex.justify-content-between.align-items-start.mb-4
       div
@@ -53,6 +55,8 @@ block content
                         td(style='max-width: 320px;')
                           if job.transcribed_text
                             div.text-truncate(title=job.transcribed_text)= job.transcribed_text
+                            if job.detected_language
+                              small.text-muted= `Language: ${job.detected_language}`
                           else
                             span.text-muted -
                         td
@@ -114,7 +118,12 @@ block content
                             span.text-muted -
                         td
                           if trigger.ttsEnabled
-                            code= trigger.ttsVoiceId || 'default'
+                            - const triggerUsesLanguageDefaults = !trigger.ttsVoiceId || trigger.ttsVoiceId === (voiceDefaults.en || 'piper_en_amy') || trigger.ttsVoiceId === 'piper_en_amy';
+                            if triggerUsesLanguageDefaults
+                              div.text-muted.small Language defaults
+                              code.small= voiceDefaultsText
+                            else
+                              code= trigger.ttsVoiceId
                             div.text-muted.small= trigger.ttsFormat || 'wav'
                           else
                             span.text-muted Disabled
@@ -202,7 +211,8 @@ block content
                     label.form-check-label(for='ttsEnabled') Generate TTS
                 .col-md-4
                   label.form-label(for='ttsVoiceId') TTS voice
-                  input#ttsVoiceId.form-control(type='text', name='ttsVoiceId', value=formTrigger.ttsVoiceId || 'piper_en_amy')
+                  input#ttsVoiceId.form-control(type='text', name='ttsVoiceId', value=formTrigger.ttsVoiceId || '', placeholder='Detected-language default')
+                  small.text-muted= `Defaults: ${voiceDefaultsText}`
                 .col-md-4
                   label.form-label(for='ttsFormat') TTS format
                   input#ttsFormat.form-control(type='text', name='ttsFormat', value=formTrigger.ttsFormat || 'wav')
