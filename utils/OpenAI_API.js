@@ -131,8 +131,21 @@ function getMessageIdentity(message, fallbackIndex = 0) {
   return `message-${fallbackIndex}`;
 }
 
+function getContentResponseId(message) {
+  const content = message?.content || {};
+  return content.responseId || content.response_id || content.raw?.response_id || null;
+}
+
 function isFunctionResponseMessage(message) {
   return message?.contentType === 'function_call' || message?.contentType === 'function_call_output';
+}
+
+function isReasoningResponseMessage(message) {
+  return message?.contentType === 'reasoning';
+}
+
+function isResponseReplayMessage(message) {
+  return isFunctionResponseMessage(message) || isReasoningResponseMessage(message);
 }
 
 function findLastFunctionResponseBatch(messages = []) {
@@ -142,6 +155,7 @@ function findLastFunctionResponseBatch(messages = []) {
   }
 
   let foundBatch = false;
+  const responseIds = new Set();
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index];
     if (!message) continue;
@@ -149,6 +163,18 @@ function findLastFunctionResponseBatch(messages = []) {
     if (isFunctionResponseMessage(message)) {
       batch.add(getMessageIdentity(message, index));
       foundBatch = true;
+      const responseId = getContentResponseId(message);
+      if (responseId) {
+        responseIds.add(responseId);
+      }
+      continue;
+    }
+
+    if (foundBatch && isReasoningResponseMessage(message)) {
+      const responseId = getContentResponseId(message);
+      if (responseIds.size === 0 || !responseId || responseIds.has(responseId)) {
+        batch.add(getMessageIdentity(message, index));
+      }
       continue;
     }
 
@@ -173,7 +199,7 @@ function selectMessagesForResponses(messages = [], maxMessagesLimit = null, { in
     const message = messages[index];
     if (!message) continue;
 
-    if (isFunctionResponseMessage(message)) {
+    if (isResponseReplayMessage(message)) {
       if (toolBatch.has(getMessageIdentity(message, index))) {
         selected.push(message);
       }
@@ -195,6 +221,23 @@ function selectMessagesForResponses(messages = [], maxMessagesLimit = null, { in
   return selected.reverse();
 }
 
+function getResponseOutputIndex(outputItem, response = null) {
+  if (!outputItem || !Array.isArray(response?.output)) {
+    return null;
+  }
+  const index = response.output.findIndex((item) => item === outputItem || (item?.id && item.id === outputItem.id));
+  return index >= 0 ? index : null;
+}
+
+function getOutputMetadata(outputItem, response = null) {
+  return {
+    outputId: outputItem?.id || null,
+    responseId: response?.id || outputItem?.response_id || null,
+    outputIndex: getResponseOutputIndex(outputItem, response),
+    raw: outputItem || null,
+  };
+}
+
 function stringifyJsonForOpenAI(value, fallback = '{}') {
   if (typeof value === 'string') {
     return value;
@@ -212,6 +255,7 @@ function stringifyJsonForOpenAI(value, fallback = '{}') {
 function buildFunctionCallInput(message) {
   const content = message?.content || {};
   const callId = content.callId || content.toolCallId;
+  const outputId = content.outputId || content.toolCallId;
   const name = content.toolName || content.name;
   if (!callId || !name) {
     logger.warning('Skipping malformed function_call message', {
@@ -231,10 +275,50 @@ function buildFunctionCallInput(message) {
   if (content.toolCallId && content.toolCallId !== callId) {
     functionCall.id = content.toolCallId;
   }
+  if (outputId && outputId !== callId) {
+    functionCall.id = outputId;
+  }
   if (content.status) {
     functionCall.status = content.status;
   }
   return functionCall;
+}
+
+function buildReasoningInput(message) {
+  const content = message?.content || {};
+  const raw = content.raw && typeof content.raw === 'object' ? content.raw : {};
+  const outputId = content.outputId || raw.id;
+
+  if (!outputId) {
+    logger.warning('Skipping malformed reasoning message without output id', {
+      messageId: getMessageIdentity(message),
+    });
+    return null;
+  }
+
+  const reasoning = {
+    type: 'reasoning',
+    id: outputId,
+  };
+
+  const summary = Array.isArray(content.summary)
+    ? content.summary
+    : (Array.isArray(raw.summary) ? raw.summary : []);
+  if (summary.length > 0 || Array.isArray(content.summary) || Array.isArray(raw.summary)) {
+    reasoning.summary = summary;
+  }
+  const encryptedContent = content.encryptedContent || raw.encrypted_content;
+  if (encryptedContent) {
+    reasoning.encrypted_content = encryptedContent;
+  }
+  if (Array.isArray(raw.content) && raw.content.length > 0) {
+    reasoning.content = raw.content;
+  }
+  if (raw.status) {
+    reasoning.status = raw.status;
+  }
+
+  return reasoning;
 }
 
 function buildFunctionCallOutputInput(message) {
@@ -259,6 +343,9 @@ function buildFunctionCallOutputInput(message) {
 }
 
 function buildFunctionResponseInput(message) {
+  if (message?.contentType === 'reasoning') {
+    return buildReasoningInput(message);
+  }
   if (message?.contentType === 'function_call') {
     return buildFunctionCallInput(message);
   }
@@ -336,7 +423,7 @@ function GenerateMessagesArray_Responses(context, messages, isImageModel) {
   for (const message of messages) {
     if (!message) continue;
 
-    if (isFunctionResponseMessage(message)) {
+    if (isResponseReplayMessage(message)) {
       const functionInput = buildFunctionResponseInput(message);
       if (functionInput) {
         flushContent();
@@ -401,7 +488,7 @@ async function saveImageFromBase64(b64_img) {
   return jpg_filename;
 }
 
-function createTextOutput(text, hideFromBot = false) {
+function createTextOutput(text, hideFromBot = false, extras = {}) {
   return {
     contentType: 'text',
     content: {
@@ -413,6 +500,10 @@ function createTextOutput(text, hideFromBot = false) {
       revisedPrompt: null,
       imageQuality: null,
       toolOutput: null,
+      outputId: extras.outputId || null,
+      responseId: extras.responseId || null,
+      outputIndex: Number.isInteger(extras.outputIndex) ? extras.outputIndex : null,
+      raw: extras.raw || null,
     },
     hideFromBot,
   };
@@ -430,12 +521,56 @@ function createToolOutput(toolOutput, extras = {}) {
       revisedPrompt: extras.revisedPrompt || null,
       imageQuality: null,
       toolOutput,
+      outputId: extras.outputId || null,
+      responseId: extras.responseId || null,
+      outputIndex: Number.isInteger(extras.outputIndex) ? extras.outputIndex : null,
+      raw: extras.raw || null,
     },
     hideFromBot: true,
   };
 }
 
-function createFunctionCallMessage(functionCall) {
+function createReasoningMessage(reasoningItem, response = null) {
+  const summary = Array.isArray(reasoningItem.summary) ? reasoningItem.summary : [];
+  const summaryTexts = [];
+  for (const entry of summary) {
+    if (entry?.type === 'summary_text' && typeof entry.text === 'string') {
+      summaryTexts.push(entry.text);
+    }
+  }
+
+  return {
+    contentType: 'reasoning',
+    content: {
+      text: summaryTexts.length > 0 ? summaryTexts.join('\n\n') : null,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: null,
+      outputId: reasoningItem.id || null,
+      responseId: response?.id || reasoningItem.response_id || null,
+      outputIndex: getResponseOutputIndex(reasoningItem, response),
+      toolCallId: null,
+      callId: null,
+      toolName: null,
+      summary,
+      encryptedContent: reasoningItem.encrypted_content || null,
+      arguments: null,
+      output: null,
+      result: null,
+      raw: reasoningItem,
+      status: reasoningItem.status || null,
+      error: reasoningItem.error || null,
+    },
+    hideFromBot: true,
+  };
+}
+
+function createFunctionCallMessage(functionCall, response = null) {
+  const outputIndex = getResponseOutputIndex(functionCall, response);
   return {
     contentType: 'function_call',
     content: {
@@ -447,6 +582,9 @@ function createFunctionCallMessage(functionCall) {
       revisedPrompt: null,
       imageQuality: null,
       toolOutput: null,
+      outputId: functionCall.id || null,
+      responseId: response?.id || functionCall.response_id || null,
+      outputIndex,
       toolCallId: functionCall.id || functionCall.call_id || null,
       callId: functionCall.call_id || functionCall.id || null,
       toolName: functionCall.name || null,
@@ -461,8 +599,9 @@ function createFunctionCallMessage(functionCall) {
   };
 }
 
-function createFunctionCallOutputMessage(outputItem) {
+function createFunctionCallOutputMessage(outputItem, response = null) {
   const output = Object.prototype.hasOwnProperty.call(outputItem, 'output') ? outputItem.output : '';
+  const outputIndex = getResponseOutputIndex(outputItem, response);
   return {
     contentType: 'function_call_output',
     content: {
@@ -474,6 +613,9 @@ function createFunctionCallOutputMessage(outputItem) {
       revisedPrompt: null,
       imageQuality: null,
       toolOutput: stringifyJsonForOpenAI(output, ''),
+      outputId: outputItem.id || null,
+      responseId: response?.id || outputItem.response_id || null,
+      outputIndex,
       toolCallId: outputItem.id || outputItem.call_id || null,
       callId: outputItem.call_id || outputItem.id || null,
       toolName: outputItem.name || null,
@@ -538,7 +680,7 @@ async function convertOutput(d, response = null) {
         });
         return null;
       }
-      return createTextOutput(text, false);
+      return createTextOutput(text, false, getOutputMetadata(d, response));
     }
     case 'image_generation_call': {
       if (typeof d.result !== 'string' || d.result.length === 0) {
@@ -553,6 +695,7 @@ async function convertOutput(d, response = null) {
         if (d.revised_prompt) details.push(`revised_prompt: ${d.revised_prompt}`);
         if (details.length === 0) details.push('image result unavailable');
         return createToolOutput(`image_generation_call: ${details.join(', ')}`, {
+          ...getOutputMetadata(d, response),
           revisedPrompt: d.revised_prompt,
         });
       }
@@ -568,6 +711,10 @@ async function convertOutput(d, response = null) {
           revisedPrompt: d.revised_prompt,
           imageQuality: 'high',
           toolOutput: null,
+          outputId: d.id || null,
+          responseId: response?.id || d.response_id || null,
+          outputIndex: getResponseOutputIndex(d, response),
+          raw: d,
         },
         hideFromBot: true,
       };
@@ -579,26 +726,16 @@ async function convertOutput(d, response = null) {
         if (d.action.query) search_details.push(`query: ${d.action.query}`);
       }
       if (search_details.length === 0) search_details.push(`${d.type}: ${d.status}`);
-      return createToolOutput(search_details.join(', '));
+      return createToolOutput(search_details.join(', '), getOutputMetadata(d, response));
     }
     case 'reasoning': {
-      const summary = Array.isArray(d.summary) ? d.summary : [];
-      if (summary.length === 0) {
-        return null;
-      }
-      let summary_texts = [];
-      summary.forEach((entry) => {
-        if (entry.type === 'summary_text' && typeof entry.text === 'string') {
-          summary_texts.push(entry.text);
-        }
-      });
-      return summary_texts.length > 0 ? createTextOutput(summary_texts.join('\n\n'), true) : null;
+      return createReasoningMessage(d, response);
     }
     case 'function_call': {
-      return createFunctionCallMessage(d);
+      return createFunctionCallMessage(d, response);
     }
     case 'function_call_output': {
-      return createFunctionCallOutputMessage(d);
+      return createFunctionCallOutputMessage(d, response);
     }
     default:
       logger.notice('Type undefined: ', d);
