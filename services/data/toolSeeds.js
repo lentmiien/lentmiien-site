@@ -84,4 +84,164 @@ module.exports = [
       storesRecordsIn: 'GptImageGeneration',
     },
   },
+  {
+    name: 'add_todo',
+    displayName: 'Add Todo',
+    description: 'Create a new todo task for Lennart in the schedule task database.',
+    enabled: true,
+    handlerKey: 'scheduleTask.createTodo',
+    sourcePath: 'services/scheduleTaskToolService.js',
+    tags: ['schedule-task', 'todo', 'task'],
+    toolDefinition: {
+      type: 'function',
+      name: 'add_todo',
+      description: 'Create a new todo for Lennart. start and end are optional and should be omitted when not needed.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Short todo title.',
+          },
+          description: {
+            type: 'string',
+            description: 'Optional details for the todo.',
+          },
+          start: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the todo starts.',
+          },
+          end: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the todo ends or is due.',
+          },
+        },
+        required: ['title'],
+      },
+      strict: false,
+    },
+    metadata: {
+      taskType: 'todo',
+      fixedUserId: 'Lennart',
+      createdByDefault: 'Tool',
+      storesRecordsIn: 'Task',
+    },
+  },
+  {
+    name: 'add_tobuy',
+    displayName: 'Add To-Buy Item',
+    description: 'Create a new to-buy task for Lennart in the schedule task database.',
+    enabled: true,
+    handlerKey: 'scheduleTask.createTobuy',
+    sourcePath: 'services/scheduleTaskToolService.js',
+    tags: ['schedule-task', 'tobuy', 'shopping'],
+    toolDefinition: {
+      type: 'function',
+      name: 'add_tobuy',
+      description: 'Create a new to-buy item for Lennart. start and end are optional and should be omitted when not needed.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Short to-buy title.',
+          },
+          description: {
+            type: 'string',
+            description: 'Optional details for the to-buy item.',
+          },
+          start: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the to-buy item starts.',
+          },
+          end: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the to-buy item ends or is due.',
+          },
+        },
+        required: ['title'],
+      },
+      strict: false,
+    },
+    metadata: {
+      taskType: 'tobuy',
+      fixedUserId: 'Lennart',
+      createdByDefault: 'Tool',
+      storesRecordsIn: 'Task',
+    },
+  },
+  {
+    name: 'fetch_todos',
+    displayName: 'Fetch Open Todos',
+    description: 'Fetch Lennart\'s open todo tasks for a date window.',
+    enabled: true,
+    handlerKey: 'scheduleTask.fetchTodos',
+    sourcePath: 'services/scheduleTaskToolService.js',
+    tags: ['schedule-task', 'todo', 'read'],
+    toolDefinition: {
+      type: 'function',
+      name: 'fetch_todos',
+      description: 'Fetch open todos for Lennart within a date window. Use from and to as ISO 8601 dates or datetimes.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          from: {
+            type: 'string',
+            description: 'Start of the date window as an ISO 8601 date or datetime.',
+          },
+          to: {
+            type: 'string',
+            description: 'End of the date window as an ISO 8601 date or datetime.',
+          },
+        },
+        required: ['from', 'to'],
+      },
+      strict: false,
+    },
+    metadata: {
+      taskType: 'todo',
+      fixedUserId: 'Lennart',
+      doneFilter: false,
+      storesRecordsIn: 'Task',
+    },
+  },
+  {
+    name: 'fetch_tobuys',
+    displayName: 'Fetch Open To-Buy Items',
+    description: 'Fetch Lennart\'s open to-buy tasks for a date window.',
+    enabled: true,
+    handlerKey: 'scheduleTask.fetchTobuys',
+    sourcePath: 'services/scheduleTaskToolService.js',
+    tags: ['schedule-task', 'tobuy', 'read'],
+    toolDefinition: {
+      type: 'function',
+      name: 'fetch_tobuys',
+      description: 'Fetch open to-buy items for Lennart within a date window. Use from and to as ISO 8601 dates or datetimes.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          from: {
+            type: 'string',
+            description: 'Start of the date window as an ISO 8601 date or datetime.',
+          },
+          to: {
+            type: 'string',
+            description: 'End of the date window as an ISO 8601 date or datetime.',
+          },
+        },
+        required: ['from', 'to'],
+      },
+      strict: false,
+    },
+    metadata: {
+      taskType: 'tobuy',
+      fixedUserId: 'Lennart',
+      doneFilter: false,
+      storesRecordsIn: 'Task',
+    },
+  },
 ];
