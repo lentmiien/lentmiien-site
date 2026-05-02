@@ -2,6 +2,8 @@ const { Task } = require('../database');
 const ScheduleTaskService = require('./scheduleTaskService');
 
 const FIXED_USER_ID = 'Lennart';
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 function createInputError(message) {
   const error = new Error(message);
@@ -24,7 +26,41 @@ function normalizeDescription(value) {
   return String(value).trim();
 }
 
-function parseDateValue(value, fieldName, { required = false, roundToSlot = false } = {}) {
+function parseJstDateOnly(value, fieldName, boundary) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const match = value.match(DATE_ONLY_PATTERN);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    throw createInputError(`${fieldName} must be a valid date or datetime string.`);
+  }
+
+  if (boundary === 'end') {
+    return new Date(Date.UTC(year, month - 1, day + 1) - JST_OFFSET_MS - 1);
+  }
+
+  return new Date(Date.UTC(year, month - 1, day) - JST_OFFSET_MS);
+}
+
+function parseDateValue(value, fieldName, {
+  required = false,
+  roundToSlot = false,
+  dateOnlyBoundary = null,
+} = {}) {
   if (value === undefined || value === null || value === '') {
     if (required) {
       throw createInputError(`${fieldName} is required.`);
@@ -32,7 +68,15 @@ function parseDateValue(value, fieldName, { required = false, roundToSlot = fals
     return null;
   }
 
-  const date = new Date(value);
+  const normalizedValue = typeof value === 'string' ? value.trim() : value;
+  const jstDateOnly = parseJstDateOnly(normalizedValue, fieldName, dateOnlyBoundary);
+  if (jstDateOnly) {
+    return jstDateOnly;
+  }
+
+  const date = normalizedValue instanceof Date
+    ? new Date(normalizedValue.getTime())
+    : new Date(normalizedValue);
   if (Number.isNaN(date.getTime())) {
     throw createInputError(`${fieldName} must be a valid date or datetime string.`);
   }
@@ -122,8 +166,14 @@ class ScheduleTaskToolService {
   async createTask(args = {}, context = {}, type) {
     const title = normalizeTitle(args.title);
     const description = normalizeDescription(args.description);
-    const start = parseDateValue(args.start, 'start', { roundToSlot: true });
-    const end = parseDateValue(args.end, 'end', { roundToSlot: true });
+    const start = parseDateValue(args.start, 'start', {
+      roundToSlot: true,
+      dateOnlyBoundary: 'start',
+    });
+    const end = parseDateValue(args.end, 'end', {
+      roundToSlot: true,
+      dateOnlyBoundary: 'end',
+    });
 
     if (start && end && end < start) {
       throw createInputError('end must be the same as or after start.');
@@ -151,8 +201,14 @@ class ScheduleTaskToolService {
   }
 
   async fetchTasks(args = {}, _context = {}, type) {
-    const from = parseDateValue(args.from ?? args.start, 'from', { required: true });
-    const to = parseDateValue(args.to ?? args.end, 'to', { required: true });
+    const from = parseDateValue(args.from ?? args.start, 'from', {
+      required: true,
+      dateOnlyBoundary: 'start',
+    });
+    const to = parseDateValue(args.to ?? args.end, 'to', {
+      required: true,
+      dateOnlyBoundary: 'end',
+    });
 
     if (to < from) {
       throw createInputError('to must be the same as or after from.');
