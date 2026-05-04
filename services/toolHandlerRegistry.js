@@ -1,26 +1,51 @@
-const GptImageToolService = require('./gptImageToolService');
-const ScheduleTaskToolService = require('./scheduleTaskToolService');
+let gptImageToolService;
+let knowledgeToolService;
+let scheduleTaskToolService;
 
-const gptImageToolService = new GptImageToolService();
-const scheduleTaskToolService = new ScheduleTaskToolService();
+function getGptImageToolService() {
+  if (!gptImageToolService) {
+    const GptImageToolService = require('./gptImageToolService');
+    gptImageToolService = new GptImageToolService();
+  }
+  return gptImageToolService;
+}
+
+function getKnowledgeToolService() {
+  if (!knowledgeToolService) {
+    const KnowledgeToolService = require('./knowledgeToolService');
+    knowledgeToolService = new KnowledgeToolService();
+  }
+  return knowledgeToolService;
+}
+
+function getScheduleTaskToolService() {
+  if (!scheduleTaskToolService) {
+    const ScheduleTaskToolService = require('./scheduleTaskToolService');
+    scheduleTaskToolService = new ScheduleTaskToolService();
+  }
+  return scheduleTaskToolService;
+}
 
 module.exports = {
   'gptImage.generate': {
-    execute: (args, context) => gptImageToolService.execute(args, context),
+    execute: (args, context) => getGptImageToolService().execute(args, context),
+  },
+  'knowledge.create': {
+    execute: (args, context) => getKnowledgeToolService().createKnowledge(args, context),
   },
   'scheduleTask.createTodo': {
-    execute: (args, context) => scheduleTaskToolService.createTodo(args, context),
+    execute: (args, context) => getScheduleTaskToolService().createTodo(args, context),
   },
   'scheduleTask.createTobuy': {
-    execute: (args, context) => scheduleTaskToolService.createTobuy(args, context),
+    execute: (args, context) => getScheduleTaskToolService().createTobuy(args, context),
   },
   'scheduleTask.createQuickNote': {
-    execute: (args, context) => scheduleTaskToolService.createQuickNote(args, context),
+    execute: (args, context) => getScheduleTaskToolService().createQuickNote(args, context),
   },
   'scheduleTask.fetchTodos': {
-    execute: (args, context) => scheduleTaskToolService.fetchTodos(args, context),
+    execute: (args, context) => getScheduleTaskToolService().fetchTodos(args, context),
   },
   'scheduleTask.fetchTobuys': {
-    execute: (args, context) => scheduleTaskToolService.fetchTobuys(args, context),
+    execute: (args, context) => getScheduleTaskToolService().fetchTobuys(args, context),
   },
 };

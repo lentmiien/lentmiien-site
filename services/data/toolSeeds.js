@@ -208,6 +208,62 @@ module.exports = [
     },
   },
   {
+    name: 'add_knowledge',
+    displayName: 'Add Knowledge Entry',
+    description: 'Create a new Chat4 knowledge entry for Lennart.',
+    enabled: true,
+    handlerKey: 'knowledge.create',
+    sourcePath: 'services/knowledgeToolService.js',
+    tags: ['knowledge', 'memory', 'chat4'],
+    toolDefinition: {
+      type: 'function',
+      name: 'add_knowledge',
+      description: 'Save durable knowledge for Lennart. Use short broad category terms and include images only when a usable existing filename is available.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Short title for the knowledge entry, 100 characters or fewer.',
+          },
+          contentMarkdown: {
+            type: 'string',
+            description: 'Knowledge content to save, formatted as Markdown.',
+          },
+          category: {
+            type: 'string',
+            description: 'Short generic grouping term, such as coding, recipe, finance, health, home, or travel.',
+          },
+          tags: {
+            type: 'array',
+            description: 'Specific tags for lookup. Use short terms; spaces will be normalized to underscores.',
+            items: {
+              type: 'string',
+            },
+            default: [],
+          },
+          images: {
+            type: 'array',
+            description: 'Optional existing image filenames from the conversation. Leave empty when no usable filename exists.',
+            items: {
+              type: 'string',
+            },
+            default: [],
+          },
+        },
+        required: ['title', 'contentMarkdown', 'category', 'tags'],
+      },
+      strict: false,
+    },
+    metadata: {
+      fixedUserId: 'Lennart',
+      defaultOriginConversationId: 'none',
+      fixedOriginType: 'chat5',
+      storesRecordsIn: 'chat4_knowledge',
+    },
+  },
+  {
     name: 'fetch_todos',
     displayName: 'Fetch Open Todos',
     description: 'Fetch Lennart\'s open todo tasks for a date window.',
