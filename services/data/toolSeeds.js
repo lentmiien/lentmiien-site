@@ -173,6 +173,41 @@ module.exports = [
     },
   },
   {
+    name: 'add_quick_note',
+    displayName: 'Add Quick Note',
+    description: 'Create a new quick note for Lennart with a fixed Home location.',
+    enabled: true,
+    handlerKey: 'scheduleTask.createQuickNote',
+    sourcePath: 'services/scheduleTaskToolService.js',
+    tags: ['quick-note', 'note', 'location'],
+    toolDefinition: {
+      type: 'function',
+      name: 'add_quick_note',
+      description: 'Create a new quick note for Lennart. This tool always saves the note with the fixed Home coordinates 139.54047677, 35.46015017 and nearestLocation Home.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          content: {
+            type: 'string',
+            description: 'The quick note text to save.',
+          },
+        },
+        required: ['content'],
+      },
+      strict: false,
+    },
+    metadata: {
+      fixedUserId: 'Lennart',
+      fixedCoordinates: [139.54047677, 35.46015017],
+      nearestLocation: {
+        name: 'Home',
+        distance: 0,
+      },
+      storesRecordsIn: 'QuickNote',
+    },
+  },
+  {
     name: 'fetch_todos',
     displayName: 'Fetch Open Todos',
     description: 'Fetch Lennart\'s open todo tasks for a date window.',

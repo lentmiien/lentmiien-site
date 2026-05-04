@@ -14,6 +14,9 @@ module.exports = {
   'scheduleTask.createTobuy': {
     execute: (args, context) => scheduleTaskToolService.createTobuy(args, context),
   },
+  'scheduleTask.createQuickNote': {
+    execute: (args, context) => scheduleTaskToolService.createQuickNote(args, context),
+  },
   'scheduleTask.fetchTodos': {
     execute: (args, context) => scheduleTaskToolService.fetchTodos(args, context),
   },

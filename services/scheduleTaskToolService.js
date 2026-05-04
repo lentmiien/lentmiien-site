@@ -1,7 +1,12 @@
-const { Task } = require('../database');
+const { Task, QuicknoteModel } = require('../database');
 const ScheduleTaskService = require('./scheduleTaskService');
 
 const FIXED_USER_ID = 'Lennart';
+const FIXED_QUICK_NOTE_COORDINATES = [139.54047677, 35.46015017];
+const FIXED_NEAREST_LOCATION = {
+  name: 'Home',
+  distance: 0,
+};
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
@@ -24,6 +29,14 @@ function normalizeDescription(value) {
     return '';
   }
   return String(value).trim();
+}
+
+function normalizeContent(value) {
+  const content = String(value || '').trim();
+  if (!content) {
+    throw createInputError('content is required.');
+  }
+  return content;
 }
 
 function parseJstDateOnly(value, fieldName, boundary) {
@@ -113,6 +126,31 @@ function serializeTask(task) {
   };
 }
 
+function serializeQuickNote(note) {
+  const location = note && note.location ? note.location : null;
+  const nearestLocation = note && note.nearestLocation ? note.nearestLocation : null;
+
+  return {
+    _id: note && note._id ? note._id.toString() : '',
+    user: note && note.user ? note.user : FIXED_USER_ID,
+    content: note && note.content ? note.content : '',
+    location: {
+      type: location && location.type ? location.type : 'Point',
+      coordinates: Array.isArray(location && location.coordinates)
+        ? [...location.coordinates]
+        : [...FIXED_QUICK_NOTE_COORDINATES],
+    },
+    nearestLocation: {
+      name: nearestLocation && nearestLocation.name ? nearestLocation.name : FIXED_NEAREST_LOCATION.name,
+      distance: nearestLocation && typeof nearestLocation.distance === 'number'
+        ? nearestLocation.distance
+        : FIXED_NEAREST_LOCATION.distance,
+    },
+    timestamp: toIsoString(note ? note.timestamp : null),
+    __v: note && typeof note.__v === 'number' ? note.__v : 0,
+  };
+}
+
 function buildToolCreationMeta(context = {}) {
   return {
     createdByToolCall: true,
@@ -153,6 +191,30 @@ class ScheduleTaskToolService {
 
   async createTobuy(args = {}, context = {}) {
     return this.createTask(args, context, 'tobuy');
+  }
+
+  async createQuickNote(args = {}, _context = {}) {
+    const content = normalizeContent(args.content);
+
+    const doc = new QuicknoteModel({
+      user: FIXED_USER_ID,
+      content,
+      location: {
+        type: 'Point',
+        coordinates: [...FIXED_QUICK_NOTE_COORDINATES],
+      },
+      nearestLocation: {
+        ...FIXED_NEAREST_LOCATION,
+      },
+    });
+
+    await doc.save();
+
+    return {
+      ok: true,
+      user: FIXED_USER_ID,
+      note: serializeQuickNote(doc),
+    };
   }
 
   async fetchTodos(args = {}, context = {}) {
