@@ -157,6 +157,99 @@ describe('AudioWorkflowService', () => {
     expect(AudioWorkflowService.isSupportedTranscriptionLanguage(null)).toBe(false);
   });
 
+
+  test('processClaimedJob copies ASR quality metrics to workflow jobs', async () => {
+    const storedFileName = `audio-workflow-quality-${Date.now()}.webm`;
+    const storedPath = path.resolve(__dirname, '..', '..', 'public', 'audio', storedFileName);
+    await fs.mkdir(path.dirname(storedPath), { recursive: true });
+    await fs.writeFile(storedPath, Buffer.from('voice'));
+
+    const job = {
+      _id: 'quality-job',
+      inputAudio: {
+        originalName: 'voice.webm',
+        storedFileName,
+        storedPath,
+        publicUrl: `/audio/${storedFileName}`,
+        mimeType: 'audio/webm',
+        sizeBytes: 5,
+      },
+      owner: {},
+      sampleRate: null,
+      save: jest.fn().mockResolvedValue(),
+    };
+    const jobModel = {
+      findById: jest.fn().mockResolvedValue(job),
+      updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+    };
+    const asrJobModel = {
+      create: jest.fn().mockImplementation(async (doc) => ({ _id: 'asr-quality', ...doc })),
+    };
+    const asrApiService = {
+      transcribeBuffer: jest.fn().mockResolvedValue({
+        data: {
+          text: 'Bush-adony brand of power quelques',
+          language: 'en',
+          duration: 5.73,
+          segments: [{
+            id: 0,
+            start: 2.5,
+            end: 4.54,
+            text: 'Bush-adony brand of power quelques',
+            avg_logprob: -6.050871415571733,
+            no_speech_prob: 0.4987715482711792,
+            compression_ratio: 0.85,
+          }],
+        },
+        request: { options: { task: 'transcribe' } },
+      }),
+    };
+    const triggerModel = {
+      find: jest.fn().mockReturnValue(createFindChain([])),
+    };
+    const service = new AudioWorkflowService({
+      jobModel,
+      asrJobModel,
+      asrApiService,
+      triggerModel,
+      ttsService: {},
+      messageService: {},
+      conversationModel: {},
+      chatModel: {},
+      pendingModel: {},
+    });
+    service.kickQueue = jest.fn();
+
+    try {
+      await service.processClaimedJob('quality-job');
+
+      expect(asrJobModel.create).toHaveBeenCalledWith(expect.objectContaining({
+        segments: [expect.objectContaining({
+          avgLogprob: -6.050871415571733,
+          noSpeechProb: 0.4987715482711792,
+          compressionRatio: 0.85,
+        })],
+        quality: expect.objectContaining({
+          possibleGarbage: true,
+          garbageReasons: ['avg_logprob_below_threshold'],
+        }),
+      }));
+      expect(job.asrSegments[0]).toMatchObject({
+        avgLogprob: -6.050871415571733,
+        noSpeechProb: 0.4987715482711792,
+        compressionRatio: 0.85,
+      });
+      expect(job.asrQuality).toMatchObject({
+        possibleGarbage: true,
+        garbageReasons: ['avg_logprob_below_threshold'],
+      });
+      expect(job.possibleGarbage).toBe(true);
+      expect(job.save).toHaveBeenCalled();
+    } finally {
+      await fs.unlink(storedPath).catch(() => {});
+    }
+  });
+
   test('finalizeLlmText uses detected-language default voice for legacy trigger defaults', async () => {
     const job = {
       _id: 'job-tts',

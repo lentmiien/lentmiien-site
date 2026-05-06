@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const AsrApiService = require('./asrApiService');
 const TtsService = require('./ttsService');
 const MessageService = require('./messageService');
+const { buildAsrQuality } = require('../utils/asrQuality');
 const {
   AudioWorkflowJob,
   AudioWorkflowTrigger,
@@ -202,6 +203,9 @@ function sanitizeJob(job) {
     status: job.status || 'queued',
     transcribed_text: job.transcriptText || '',
     detected_language: job.detectedLanguage || null,
+    asr_segments: Array.isArray(job.asrSegments) ? job.asrSegments : [],
+    asr_quality: job.asrQuality || {},
+    possible_garbage: Boolean(job.possibleGarbage || job.asrQuality?.possibleGarbage),
     output_audio_id: outputAudioId,
     error: job.error || null,
     device_id: job.deviceId || null,
@@ -223,6 +227,9 @@ function sanitizeMissingCompletedJob(jobId) {
     status: 'completed',
     transcribed_text: '',
     detected_language: null,
+    asr_segments: [],
+    asr_quality: {},
+    possible_garbage: false,
     output_audio_id: null,
     error: null,
     device_id: null,
@@ -542,9 +549,10 @@ class AudioWorkflowService {
     return options;
   }
 
-  async createAsrJobRecord({ job, data = {}, request = {}, status = 'completed', error = null }) {
+  async createAsrJobRecord({ job, data = {}, request = {}, status = 'completed', error = null, asrQuality = null }) {
     const inputAudio = job.inputAudio || {};
     const transcriptText = typeof data?.text === 'string' ? data.text.trim() : '';
+    const { segments, quality } = asrQuality || buildAsrQuality(data);
     const asrJob = await this.asrJobModel.create({
       sourceType: 'upload',
       originalName: inputAudio.originalName || null,
@@ -557,6 +565,8 @@ class AudioWorkflowService {
       transcriptText,
       detectedLanguage: data?.language || null,
       duration: typeof data?.duration === 'number' ? data.duration : null,
+      segments,
+      quality,
       task: request.options?.task || 'transcribe',
       model: data?.model || null,
       status,
@@ -584,13 +594,17 @@ class AudioWorkflowService {
       });
 
       const transcriptText = typeof data?.text === 'string' ? data.text.trim() : '';
-      asrJob = await this.createAsrJobRecord({ job, data, request, status: 'completed', error: null });
+      const asrQuality = buildAsrQuality(data);
+      asrJob = await this.createAsrJobRecord({ job, data, request, status: 'completed', error: null, asrQuality });
 
       job.asrJobId = asrJob._id.toString();
       job.transcribeWorkId = asrJob._id.toString();
       job.transcriptText = transcriptText;
       job.detectedLanguage = data?.language || null;
       job.duration = typeof data?.duration === 'number' ? data.duration : null;
+      job.asrSegments = asrQuality.segments;
+      job.asrQuality = asrQuality.quality;
+      job.possibleGarbage = asrQuality.quality.possibleGarbage;
       await job.save();
 
       logger.notice('Audio workflow ASR completed', {
@@ -600,6 +614,8 @@ class AudioWorkflowService {
           asrJobId: asrJob._id,
           transcriptLength: transcriptText.length,
           detectedLanguage: job.detectedLanguage,
+          possibleGarbage: job.possibleGarbage,
+          garbageReasons: asrQuality.quality.garbageReasons,
         },
       });
 

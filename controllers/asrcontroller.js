@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const AsrApiService = require('../services/asrApiService');
 const EmbeddingApiService = require('../services/embeddingApiService');
 const { AsrJob } = require('../database');
+const { buildAsrQuality } = require('../utils/asrQuality');
 
 const asrApiService = new AsrApiService();
 const AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'audio');
@@ -104,6 +105,8 @@ function sanitizeJob(job) {
     transcriptText: job.transcriptText || '',
     detectedLanguage: job.detectedLanguage || job.requestOptions?.language || null,
     duration: job.duration || null,
+    segments: Array.isArray(job.segments) ? job.segments : [],
+    quality: job.quality || {},
     task: job.task || 'transcribe',
     model: job.model || null,
     status: job.status || 'completed',
@@ -257,6 +260,7 @@ exports.transcribe = async (req, res) => {
   try {
     const { data, request } = await transcribeAudioWithAsrApi(file, form);
     const transcriptText = typeof data?.text === 'string' ? data.text.trim() : '';
+    const { segments, quality } = buildAsrQuality(data);
     const job = await AsrJob.create({
       sourceType,
       originalName: file.originalname || null,
@@ -269,6 +273,8 @@ exports.transcribe = async (req, res) => {
       transcriptText,
       detectedLanguage: data?.language || null,
       duration: typeof data?.duration === 'number' ? data.duration : null,
+      segments,
+      quality,
       task: request.options.task,
       model: data?.model || null,
       status: 'completed',
@@ -327,6 +333,8 @@ exports.transcribe = async (req, res) => {
         language: data?.language || request.options.language,
         task: request.options.task,
         model: data?.model,
+        possibleGarbage: quality.possibleGarbage,
+        garbageReasons: quality.garbageReasons,
         embeddingStatus,
       },
     });
@@ -338,6 +346,8 @@ exports.transcribe = async (req, res) => {
         language: data?.language || request.options.language,
         duration: typeof data?.duration === 'number' ? data.duration : null,
         model: data?.model || null,
+        segments,
+        quality,
       },
       request,
       embeddingStatus,

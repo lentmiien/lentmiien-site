@@ -22,6 +22,35 @@ const OwnerSchema = new Schema({
   name: { type: String, default: null },
 }, { _id: false });
 
+const AsrSegmentSchema = new Schema({
+  id: { type: Number, default: 0 },
+  start: { type: Number, default: null },
+  end: { type: Number, default: null },
+  text: { type: String, default: '' },
+  avgLogprob: { type: Number, default: null },
+  noSpeechProb: { type: Number, default: null },
+  compressionRatio: { type: Number, default: null },
+}, { _id: false });
+
+const AsrQualityThresholdsSchema = new Schema({
+  avgLogprobMin: { type: Number, default: null },
+  noSpeechProbMax: { type: Number, default: null },
+  compressionRatioMax: { type: Number, default: null },
+}, { _id: false });
+
+const AsrQualitySchema = new Schema({
+  segmentCount: { type: Number, default: 0 },
+  avgLogprob: { type: Number, default: null },
+  minAvgLogprob: { type: Number, default: null },
+  noSpeechProb: { type: Number, default: null },
+  maxNoSpeechProb: { type: Number, default: null },
+  compressionRatio: { type: Number, default: null },
+  maxCompressionRatio: { type: Number, default: null },
+  possibleGarbage: { type: Boolean, default: false },
+  garbageReasons: { type: [String], default: [] },
+  thresholds: { type: AsrQualityThresholdsSchema, default: () => ({}) },
+}, { _id: false });
+
 const AsrJobSchema = new Schema({
   _id: { type: String, default: () => randomUUID() },
   sourceType: {
@@ -39,6 +68,8 @@ const AsrJobSchema = new Schema({
   transcriptText: { type: String, default: '' },
   detectedLanguage: { type: String, default: null },
   duration: { type: Number, default: null },
+  segments: { type: [AsrSegmentSchema], default: [] },
+  quality: { type: AsrQualitySchema, default: () => ({}) },
   task: { type: String, default: 'transcribe' },
   model: { type: String, default: null },
   status: {

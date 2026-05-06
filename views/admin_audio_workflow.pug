@@ -7,6 +7,7 @@ block content
   - const excludeValue = Array.isArray(formTrigger.shouldNotInclude) ? formTrigger.shouldNotInclude.join('\n') : '';
   - const voiceDefaults = languageDefaultTtsVoices || {};
   - const voiceDefaultsText = `en: ${voiceDefaults.en || 'piper_en_amy'}, jp: ${voiceDefaults.jp || 'ja_shikoku_metan_amaama'}, sv: ${voiceDefaults.sv || 'piper_sv'}`;
+  - const formatMetric = (value) => (value === null || value === undefined || value === '') ? '-' : (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : '-');
   .container-fluid
     .d-flex.justify-content-between.align-items-start.mb-4
       div
@@ -35,6 +36,7 @@ block content
                       th Created
                       th Status
                       th Transcript
+                      th Quality
                       th Trigger
                       th Output
                       th Links
@@ -59,6 +61,31 @@ block content
                               small.text-muted= `Language: ${job.detected_language}`
                           else
                             span.text-muted -
+                        td(style='min-width: 185px;')
+                          - const quality = job.asr_quality || {};
+                          - const isPossibleGarbage = Boolean(job.possible_garbage || quality.possibleGarbage);
+                          if isPossibleGarbage
+                            span.badge.text-bg-warning.mb-1 Possible garbage
+                          else if quality.segmentCount
+                            span.badge.text-bg-light.border.mb-1 Quality ok
+                          else
+                            span.text-muted -
+                          if quality.segmentCount
+                            div.small.text-muted
+                              div= `avg_logprob: ${formatMetric(quality.avgLogprob)}`
+                              div= `no_speech_prob: ${formatMetric(quality.noSpeechProb)}`
+                              div= `compression_ratio: ${formatMetric(quality.compressionRatio)}`
+                            if quality.garbageReasons && quality.garbageReasons.length
+                              div.text-danger.small(title=quality.garbageReasons.join(', '))= quality.garbageReasons.join(', ')
+                          if job.asr_segments && job.asr_segments.length
+                            details.mt-1
+                              summary.small.text-muted Segment metrics
+                              each segment in job.asr_segments
+                                .small.text-muted.mt-1
+                                  code= `#${segment.id}`
+                                  div= `avg_logprob: ${formatMetric(segment.avgLogprob)}`
+                                  div= `no_speech_prob: ${formatMetric(segment.noSpeechProb)}`
+                                  div= `compression_ratio: ${formatMetric(segment.compressionRatio)}`
                         td
                           if job.matched_trigger_name
                             div= job.matched_trigger_name
