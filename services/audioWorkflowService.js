@@ -206,6 +206,9 @@ function sanitizeJob(job) {
     asr_segments: Array.isArray(job.asrSegments) ? job.asrSegments : [],
     asr_quality: job.asrQuality || {},
     possible_garbage: Boolean(job.possibleGarbage || job.asrQuality?.possibleGarbage),
+    manual_quality_rating: job.manualQualityRating || 'unrated',
+    manual_quality_rated_at: job.manualQualityRatedAt || null,
+    manual_quality_rated_by: job.manualQualityRatedBy || {},
     output_audio_id: outputAudioId,
     error: job.error || null,
     device_id: job.deviceId || null,
@@ -230,6 +233,9 @@ function sanitizeMissingCompletedJob(jobId) {
     asr_segments: [],
     asr_quality: {},
     possible_garbage: false,
+    manual_quality_rating: 'unrated',
+    manual_quality_rated_at: null,
+    manual_quality_rated_by: {},
     output_audio_id: null,
     error: null,
     device_id: null,
@@ -968,6 +974,37 @@ class AudioWorkflowService {
     const resolvedLimit = Math.max(1, Math.min(parseInteger(limit, 50), 200));
     const jobs = await this.jobModel.find().sort({ createdAt: -1 }).limit(resolvedLimit).lean();
     return jobs.map(sanitizeJob);
+  }
+
+  async listQualityJobs({ limit = 1000 } = {}) {
+    const resolvedLimit = Math.max(1, Math.min(parseInteger(limit, 1000), 5000));
+    const jobs = await this.jobModel.find({ 'asrQuality.segmentCount': { $gt: 0 } })
+      .sort({ createdAt: -1 })
+      .limit(resolvedLimit)
+      .lean();
+    return jobs.map(sanitizeJob);
+  }
+
+  async updateManualQualityRating(jobId, rating, actor = {}) {
+    const normalizedRating = ['ok', 'garbage'].includes(rating) ? rating : 'unrated';
+    const ratedAt = normalizedRating === 'unrated' ? null : new Date();
+    const ratedBy = normalizedRating === 'unrated' ? {} : {
+      id: actor?._id?.toString?.() || actor?.id || null,
+      name: actor?.name || 'admin',
+    };
+    const updated = await this.jobModel.findByIdAndUpdate(
+      jobId,
+      {
+        $set: {
+          manualQualityRating: normalizedRating,
+          manualQualityRatedAt: ratedAt,
+          manualQualityRatedBy: ratedBy,
+        },
+      },
+      { new: true, runValidators: true },
+    ).lean();
+    if (!updated) throw new Error('Audio workflow job not found.');
+    return sanitizeJob(updated);
   }
 
   async listTriggers() {

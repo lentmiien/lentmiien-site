@@ -8,6 +8,7 @@ block content
   - const voiceDefaults = languageDefaultTtsVoices || {};
   - const voiceDefaultsText = `en: ${voiceDefaults.en || 'piper_en_amy'}, jp: ${voiceDefaults.jp || 'ja_shikoku_metan_amaama'}, sv: ${voiceDefaults.sv || 'piper_sv'}`;
   - const formatMetric = (value) => (value === null || value === undefined || value === '') ? '-' : (Number.isFinite(Number(value)) ? Number(value).toFixed(3) : '-');
+  - const plotJobs = Array.isArray(qualityJobs) ? qualityJobs : (jobs || []);
   .container-fluid
     .d-flex.justify-content-between.align-items-start.mb-4
       div
@@ -37,12 +38,13 @@ block content
                       th Status
                       th Transcript
                       th Quality
+                      th Rating
                       th Trigger
                       th Output
                       th Links
                   tbody
                     each job in jobs
-                      tr
+                      tr(data-job-id=job.job_id)
                         td
                           div= job.created_at ? new Date(job.created_at).toLocaleString() : '-'
                           if job.device_id
@@ -86,6 +88,13 @@ block content
                                   div= `avg_logprob: ${formatMetric(segment.avgLogprob)}`
                                   div= `no_speech_prob: ${formatMetric(segment.noSpeechProb)}`
                                   div= `compression_ratio: ${formatMetric(segment.compressionRatio)}`
+                        td(style='min-width: 150px;')
+                          - const rating = job.manual_quality_rating || 'unrated';
+                          .btn-group.btn-group-sm.audio-quality-rating(role='group', aria-label='Manual quality rating')
+                            each option in ['unrated', 'ok', 'garbage']
+                              - const buttonClass = option === 'ok' ? 'btn-outline-success' : option === 'garbage' ? 'btn-outline-danger' : 'btn-outline-secondary';
+                              button.btn(type='button', class=`${buttonClass}${rating === option ? ' active' : ''}`, data-job-id=job.job_id, data-rating=option)= option === 'unrated' ? 'Unset' : option
+                          .small.text-muted.mt-1.manual-quality-rated-at(data-job-id=job.job_id)= job.manual_quality_rated_at ? `Rated ${new Date(job.manual_quality_rated_at).toLocaleString()}` : ''
                         td
                           if job.matched_trigger_name
                             div= job.matched_trigger_name
@@ -107,6 +116,25 @@ block content
                             a.small.d-block(href=`/chat5/chat/${job.conversation5_id}`) Chat5
             else
               p.text-muted.mb-0 No audio workflow jobs yet.
+
+        .card.mb-4
+          .card-body
+            .d-flex.justify-content-between.align-items-center.mb-3
+              div
+                h2.h4.mb-1 Quality plots
+                p.text-muted.mb-0 Compare ASR segment metric pairs. Dots use manual rating colors.
+              .d-flex.gap-3.small.flex-wrap
+                span.badge.text-bg-success OK
+                span.badge.text-bg-danger Garbage
+                span.badge.text-bg-secondary Unrated
+            if plotJobs && plotJobs.length
+              .row.g-3
+                each plot in [{ id: 'plot-logprob-nospeech', x: 'avgLogprob', y: 'noSpeechProb', title: 'avg_logprob vs no_speech_prob' }, { id: 'plot-logprob-compression', x: 'avgLogprob', y: 'compressionRatio', title: 'avg_logprob vs compression_ratio' }, { id: 'plot-nospeech-compression', x: 'noSpeechProb', y: 'compressionRatio', title: 'no_speech_prob vs compression_ratio' }]
+                  .col-lg-4
+                    h3.h6.mb-2= plot.title
+                    canvas.audio-quality-plot.border.rounded.bg-white.w-100(height='220', data-x=plot.x, data-y=plot.y, aria-label=plot.title)
+            else
+              p.text-muted.mb-0 No quality data to plot yet.
 
         .card
           .card-body
@@ -247,3 +275,182 @@ block content
                 button.btn.btn-primary(type='submit')= editTrigger ? 'Save changes' : 'Create trigger'
                 if editTrigger
                   a.btn.btn-outline-secondary(href='/admin/audio-workflow') Cancel
+
+block script
+  script.
+    (() => {
+      const state = {
+        jobs: !{JSON.stringify(jobs || [])},
+        plotJobs: !{JSON.stringify(plotJobs || [])},
+      };
+      const metricLabels = {
+        avgLogprob: 'avg_logprob',
+        noSpeechProb: 'no_speech_prob',
+        compressionRatio: 'compression_ratio',
+      };
+      const ratingColors = {
+        ok: '#198754',
+        garbage: '#dc3545',
+        unrated: '#6c757d',
+      };
+
+      const getMetric = (source, key) => {
+        const value = Number(source && source[key]);
+        return Number.isFinite(value) ? value : null;
+      };
+
+      const getPlotData = (xKey, yKey) => state.plotJobs.flatMap((job) => {
+        const rating = job.manual_quality_rating || 'unrated';
+        const segments = Array.isArray(job.asr_segments) && job.asr_segments.length
+          ? job.asr_segments
+          : [job.asr_quality || {}];
+        return segments.map((segment) => ({
+          job,
+          x: getMetric(segment, xKey),
+          y: getMetric(segment, yKey),
+          rating,
+        }));
+      }).filter((point) => point.x !== null && point.y !== null);
+
+      const padRange = (min, max) => {
+        if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
+        if (min === max) {
+          const pad = Math.max(Math.abs(min) * 0.1, 0.1);
+          return [min - pad, max + pad];
+        }
+        const pad = (max - min) * 0.08;
+        return [min - pad, max + pad];
+      };
+
+      const drawPlot = (canvas) => {
+        const xKey = canvas.dataset.x;
+        const yKey = canvas.dataset.y;
+        const points = getPlotData(xKey, yKey);
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(280, rect.width || canvas.clientWidth || 300);
+        const height = Number(canvas.getAttribute('height')) || 220;
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        const margin = { top: 18, right: 14, bottom: 44, left: 54 };
+        const plotWidth = width - margin.left - margin.right;
+        const plotHeight = height - margin.top - margin.bottom;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.strokeStyle = '#dee2e6';
+        ctx.strokeRect(margin.left, margin.top, plotWidth, plotHeight);
+        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#6c757d';
+
+        if (!points.length) {
+          ctx.textAlign = 'center';
+          ctx.fillText('No quality metrics yet', width / 2, height / 2);
+          return;
+        }
+
+        const xValues = points.map((point) => point.x);
+        const yValues = points.map((point) => point.y);
+        const [xMin, xMax] = padRange(Math.min(...xValues), Math.max(...xValues));
+        const [yMin, yMax] = padRange(Math.min(...yValues), Math.max(...yValues));
+        const xScale = (value) => margin.left + ((value - xMin) / (xMax - xMin)) * plotWidth;
+        const yScale = (value) => margin.top + plotHeight - ((value - yMin) / (yMax - yMin)) * plotHeight;
+
+        ctx.strokeStyle = '#e9ecef';
+        ctx.fillStyle = '#6c757d';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let tick = 0; tick <= 4; tick += 1) {
+          const ratio = tick / 4;
+          const x = margin.left + ratio * plotWidth;
+          const y = margin.top + ratio * plotHeight;
+          ctx.beginPath();
+          ctx.moveTo(x, margin.top);
+          ctx.lineTo(x, margin.top + plotHeight);
+          ctx.moveTo(margin.left, y);
+          ctx.lineTo(margin.left + plotWidth, y);
+          ctx.stroke();
+          const xValue = xMin + ratio * (xMax - xMin);
+          const yValue = yMax - ratio * (yMax - yMin);
+          ctx.fillText(xValue.toFixed(2), x, margin.top + plotHeight + 6);
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(yValue.toFixed(2), margin.left - 8, y);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+        }
+
+        ctx.fillStyle = '#212529';
+        ctx.fillText(metricLabels[xKey] || xKey, margin.left + plotWidth / 2, height - 18);
+        ctx.save();
+        ctx.translate(14, margin.top + plotHeight / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(metricLabels[yKey] || yKey, 0, 0);
+        ctx.restore();
+
+        points.forEach((point) => {
+          ctx.beginPath();
+          ctx.fillStyle = ratingColors[point.rating] || ratingColors.unrated;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.arc(xScale(point.x), yScale(point.y), 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+      };
+
+      const drawPlots = () => {
+        document.querySelectorAll('.audio-quality-plot').forEach(drawPlot);
+      };
+
+      const updateRatingButtons = (jobId, rating) => {
+        document.querySelectorAll(`.audio-quality-rating button[data-job-id="${CSS.escape(jobId)}"]`).forEach((button) => {
+          button.classList.toggle('active', button.dataset.rating === rating);
+          button.disabled = false;
+        });
+      };
+
+      const setRating = async (jobId, rating) => {
+        const buttons = document.querySelectorAll(`.audio-quality-rating button[data-job-id="${CSS.escape(jobId)}"]`);
+        buttons.forEach((button) => { button.disabled = true; });
+        try {
+          const response = await fetch(`/admin/audio-workflow/jobs/${encodeURIComponent(jobId)}/quality-rating`, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ rating }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || 'Unable to save rating.');
+          const updatedJob = payload.job || {};
+          const applyUpdatedJob = (job) => (job.job_id === jobId ? { ...job, ...updatedJob } : job);
+          state.jobs = state.jobs.map(applyUpdatedJob);
+          state.plotJobs = state.plotJobs.map(applyUpdatedJob);
+          updateRatingButtons(jobId, updatedJob.manual_quality_rating || rating || 'unrated');
+          const ratedAt = document.querySelector(`.manual-quality-rated-at[data-job-id="${CSS.escape(jobId)}"]`);
+          if (ratedAt) {
+            ratedAt.textContent = updatedJob.manual_quality_rated_at
+              ? `Rated ${new Date(updatedJob.manual_quality_rated_at).toLocaleString()}`
+              : '';
+          }
+          drawPlots();
+        } catch (error) {
+          buttons.forEach((button) => { button.disabled = false; });
+          alert(error.message || 'Unable to save rating.');
+        }
+      };
+
+      document.addEventListener('click', (event) => {
+        const button = event.target.closest('.audio-quality-rating button[data-job-id]');
+        if (!button) return;
+        setRating(button.dataset.jobId, button.dataset.rating);
+      });
+
+      window.addEventListener('resize', drawPlots);
+      drawPlots();
+    })();

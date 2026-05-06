@@ -62,6 +62,9 @@ exports.getJob = async (req, res) => {
       asr_quality: job.asr_quality || {},
       asr_segments: Array.isArray(job.asr_segments) ? job.asr_segments : [],
       possible_garbage: Boolean(job.possible_garbage),
+      manual_quality_rating: job.manual_quality_rating || 'unrated',
+      manual_quality_rated_at: job.manual_quality_rated_at || null,
+      manual_quality_rated_by: job.manual_quality_rated_by || {},
       output_audio_id: job.output_audio_id || null,
       error: job.error || null,
       job_id: job.job_id,
@@ -72,6 +75,29 @@ exports.getJob = async (req, res) => {
       metadata: { jobId: req.params.jobId, message: error?.message || error },
     });
     return res.status(500).json({ error: 'Unable to fetch audio workflow job.' });
+  }
+};
+
+exports.rateJobQuality = async (req, res) => {
+  try {
+    const job = await audioWorkflowService.updateManualQualityRating(
+      req.params.jobId,
+      req.body?.rating,
+      req.user || {},
+    );
+    if (String(req.headers?.accept || '').includes('application/json') || req.xhr) {
+      return res.json({ ok: true, job });
+    }
+    return redirectWithFeedback(res, 'success', 'Manual quality rating saved.');
+  } catch (error) {
+    logger.error('Failed to save audio workflow quality rating', {
+      category: 'audio_workflow_admin',
+      metadata: { jobId: req.params.jobId, message: error?.message || error },
+    });
+    if (String(req.headers?.accept || '').includes('application/json') || req.xhr) {
+      return res.status(400).json({ error: error?.message || 'Unable to save quality rating.' });
+    }
+    return redirectWithFeedback(res, 'error', error?.message || 'Unable to save quality rating.');
   }
 };
 
@@ -104,8 +130,9 @@ exports.getOutputAudio = async (req, res) => {
 
 exports.renderAdmin = async (req, res) => {
   try {
-    const [jobs, triggers, availableTools] = await Promise.all([
+    const [jobs, qualityJobs, triggers, availableTools] = await Promise.all([
       audioWorkflowService.listJobs({ limit: req.query.limit || 50 }),
+      audioWorkflowService.listQualityJobs({ limit: process.env.AUDIO_WORKFLOW_QUALITY_PLOT_LIMIT || 1000 }),
       audioWorkflowService.listTriggers(),
       toolManagerService.getAvailableTools(),
     ]);
@@ -114,6 +141,7 @@ exports.renderAdmin = async (req, res) => {
 
     return res.render('admin_audio_workflow', {
       jobs,
+      qualityJobs,
       triggers,
       editTrigger,
       availableTools,

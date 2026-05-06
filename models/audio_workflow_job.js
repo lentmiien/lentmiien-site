@@ -63,6 +63,11 @@ const AsrQualitySchema = new Schema({
   thresholds: { type: AsrQualityThresholdsSchema, default: () => ({}) },
 }, { _id: false });
 
+const ManualQualityRatedBySchema = new Schema({
+  id: { type: String, default: null },
+  name: { type: String, default: null },
+}, { _id: false });
+
 const AudioWorkflowJobSchema = new Schema({
   _id: { type: String, default: () => randomUUID() },
   status: {
@@ -93,6 +98,14 @@ const AudioWorkflowJobSchema = new Schema({
   asrSegments: { type: [AsrSegmentSchema], default: [] },
   asrQuality: { type: AsrQualitySchema, default: () => ({}) },
   possibleGarbage: { type: Boolean, default: false, index: true },
+  manualQualityRating: {
+    type: String,
+    enum: ['unrated', 'ok', 'garbage'],
+    default: 'unrated',
+    index: true,
+  },
+  manualQualityRatedAt: { type: Date, default: null },
+  manualQualityRatedBy: { type: ManualQualityRatedBySchema, default: () => ({}) },
   matchedTriggerId: { type: String, default: null, index: true },
   matchedTriggerName: { type: String, default: null },
   conversation5Id: { type: String, default: null, index: true },

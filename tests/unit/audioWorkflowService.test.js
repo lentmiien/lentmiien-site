@@ -158,6 +158,49 @@ describe('AudioWorkflowService', () => {
   });
 
 
+
+  test('updateManualQualityRating persists manual ASR quality ratings', async () => {
+    const updatedJob = {
+      _id: 'rated-job',
+      manualQualityRating: 'garbage',
+      manualQualityRatedAt: new Date('2026-05-06T00:00:00.000Z'),
+      manualQualityRatedBy: { id: 'admin-1', name: 'Admin' },
+    };
+    const lean = jest.fn().mockResolvedValue(updatedJob);
+    const jobModel = {
+      findByIdAndUpdate: jest.fn().mockReturnValue({ lean }),
+    };
+    const service = new AudioWorkflowService({
+      jobModel,
+      triggerModel: {},
+      ttsService: {},
+      asrApiService: {},
+      messageService: {},
+      asrJobModel: {},
+      conversationModel: {},
+      chatModel: {},
+      pendingModel: {},
+    });
+
+    const result = await service.updateManualQualityRating('rated-job', 'garbage', { _id: 'admin-1', name: 'Admin' });
+
+    expect(jobModel.findByIdAndUpdate).toHaveBeenCalledWith(
+      'rated-job',
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          manualQualityRating: 'garbage',
+          manualQualityRatedBy: { id: 'admin-1', name: 'Admin' },
+        }),
+      }),
+      { new: true, runValidators: true },
+    );
+    expect(result).toMatchObject({
+      job_id: 'rated-job',
+      manual_quality_rating: 'garbage',
+      manual_quality_rated_by: { id: 'admin-1', name: 'Admin' },
+    });
+  });
+
   test('processClaimedJob copies ASR quality metrics to workflow jobs', async () => {
     const storedFileName = `audio-workflow-quality-${Date.now()}.webm`;
     const storedPath = path.resolve(__dirname, '..', '..', 'public', 'audio', storedFileName);

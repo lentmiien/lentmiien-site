@@ -122,6 +122,7 @@ router.post('/tools/:id/toggle', toolManagerController.toggle);
 router.post('/tools/:id/delete', toolManagerController.delete);
 
 router.get('/audio-workflow', audioWorkflowController.renderAdmin);
+router.post('/audio-workflow/jobs/:jobId/quality-rating', audioWorkflowController.rateJobQuality);
 router.post('/audio-workflow/triggers/save', audioWorkflowController.saveTrigger);
 router.post('/audio-workflow/triggers/:id/toggle', audioWorkflowController.toggleTrigger);
 router.post('/audio-workflow/triggers/:id/delete', audioWorkflowController.deleteTrigger);
