@@ -146,6 +146,12 @@ function normalizeInput(input) {
   }
 }
 
+function normalizeKnowledgeCategory(value) {
+  const category = String(value || '').trim();
+  if (!category) return '';
+  return `${category.charAt(0).toUpperCase()}${category.slice(1).toLowerCase()}`;
+}
+
 exports.post = async (req, res) => {
   const user_id = req.user.name;
   let use_conversation_id = req.params.id;
@@ -262,9 +268,14 @@ exports.knowledgelist = async (req, res) => {
 
   let knowledges = await knowledgeService.getKnowledgesByUser(user_id);
 
+  knowledges.forEach((knowledge) => {
+    knowledge.displayCategory = normalizeKnowledgeCategory(knowledge.category);
+  });
+
   // Page can be opened with category in query parameters, in which case only that category will be shown
   if ("category" in req.query) {
-    knowledges = knowledges.filter(d => d.category === req.query.category);
+    const requestedCategory = normalizeKnowledgeCategory(req.query.category);
+    knowledges = knowledges.filter((knowledge) => knowledge.displayCategory === requestedCategory);
   }
 
   const knowledge_categories = [];
@@ -272,8 +283,8 @@ exports.knowledgelist = async (req, res) => {
   const tags_lookup = [];
 
   knowledges.forEach(d => {
-    if (knowledge_categories.indexOf(d.category) === -1) {
-      knowledge_categories.push(d.category);
+    if (knowledge_categories.indexOf(d.displayCategory) === -1) {
+      knowledge_categories.push(d.displayCategory);
     }
     d.tags.forEach(t => {
       const index = tags_lookup.indexOf(t);

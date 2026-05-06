@@ -39,7 +39,7 @@ block content
       p No knowledge entries yet. Start by adding a new note.
   else
     each category in knowledge_categories
-      - const categoryEntries = knowledges.filter(function(item) { return item.category === category; });
+      - const categoryEntries = knowledges.filter(function(item) { return item.displayCategory === category; });
       if categoryEntries.length
         section.knowledge-section.category_container(id=`${category}_container`, data-category=category)
           header.section-header
