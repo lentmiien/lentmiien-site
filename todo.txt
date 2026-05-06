@@ -1,151 +1,47 @@
-I recently got this error from, the OpenAI API, when doing a custom function call: `[2026-05-02T03:05:46.533Z] ERROR Error while calling ChatGPT API: Error: 400 Item 'fc_0c68166e0dc8b4a10069f56a00c988819797f59c8f9f49c8fe' of type 'function_call' was provided without its required 'reasoning' item: 'rs_0c68166e0dc8b4a10069f569fe019481978301880027fea026'.`, I think the issue is that I don't provide the reasoning item, when responding with the tool output.
+The Whisper API model used for ASR, now return "avg_logprob", "no_speech_prob" and "compression_ratio" values for each detected segment, so I want to append these values for all completed ASR jobs going forward.
 
-The API response I got directly before this error, to make a function call, is as following:
+Also, for the `views/admin_audio_workflow.pug` page, I want to append the same values in the UI, so I want to save copies of the values in the audio workflow database, that I plan to use for filtering out random noise generations later.
 
-```
-{
-  "id": "resp_0c68166e0dc8b4a10069f569fc54c48197b7f1e24f88dfe945",
-  "object": "response",
-  "created_at": 1777691132,
-  "status": "completed",
-  "background": true,
-  "billing": {
-    "payer": "developer"
-  },
-  "completed_at": 1777691137,
-  "error": null,
-  "frequency_penalty": 0,
-  "incomplete_details": null,
-  "instructions": null,
-  "max_output_tokens": null,
-  "max_tool_calls": null,
-  "model": "gpt-5.5-2026-04-23",
-  "moderation": null,
-  "output": [
-    {
-      "id": "rs_0c68166e0dc8b4a10069f569fe019481978301880027fea026",
-      "type": "reasoning",
-      "summary": [
-        {
-          "type": "summary_text",
-          "text": "**Planning for tomato purchase**\n\nThe user mentioned they need to buy tomatoes today, so I should add that to the shopping list. Today is May 2, 2026, and I want to make sure I'm clear about the task. I believe I also need to create an item specifically for Lennart, since the tool indicates that. I'll make a note to do this and use the right commentary for it. Let's keep things organized!"
-        }
-      ]
-    },
-    {
-      "id": "fc_0c68166e0dc8b4a10069f56a00c988819797f59c8f9f49c8fe",
-      "type": "function_call",
-      "status": "completed",
-      "arguments": "{\"title\":\"Buy tomatoes\",\"end\":\"2026-05-02\"}",
-      "call_id": "call_SnJ03s7OOPDkx92XiKIW3Ham",
-      "name": "add_tobuy"
-    }
-  ],
-  "parallel_tool_calls": true,
-  "presence_penalty": 0,
-  "previous_response_id": null,
-  "prompt_cache_key": null,
-  "prompt_cache_retention": "24h",
-  "reasoning": {
-    "effort": "medium",
-    "summary": "detailed"
-  },
-  "safety_identifier": null,
-  "service_tier": "default",
-  "store": true,
-  "temperature": 1,
-  "text": {
-    "format": {
-      "type": "text"
-    },
-    "verbosity": "medium"
-  },
-  "tool_choice": "auto",
-  "tools": [
-    {
-      "type": "function",
-      "description": "Create a new to-buy item for Lennart. start and end are optional and should be omitted when not needed.",
-      "name": "add_tobuy",
-      "parameters": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "title": {
-            "type": "string",
-            "description": "Short to-buy title."
-          },
-          "description": {
-            "type": "string",
-            "description": "Optional details for the to-buy item."
-          },
-          "start": {
-            "type": "string",
-            "description": "Optional ISO 8601 date or datetime for when the to-buy item starts."
-          },
-          "end": {
-            "type": "string",
-            "description": "Optional ISO 8601 date or datetime for when the to-buy item ends or is due."
-          }
-        },
-        "required": [
-          "title"
-        ]
-      },
-      "strict": false
-    }
-  ],
-  "top_logprobs": 0,
-  "top_p": 0.98,
-  "truncation": "disabled",
-  "usage": {
-    "input_tokens": 174,
-    "input_tokens_details": {
-      "cached_tokens": 0
-    },
-    "output_tokens": 88,
-    "output_tokens_details": {
-      "reasoning_tokens": 56
-    },
-    "total_tokens": 262
-  },
-  "user": null,
-  "output_text": ""
-}
-```
+I still don't know the ranges for these values, and what's considered as good/bad/plain garbage, so I still have to fintune how to use these values for filtering, but for now, add some good default values, and add a "possible garbage" flagg on audio workflow database entries, that is set based on the initial filter values, then display the values and this flag in the UI, so I can review for changes (fine tuning of the trigger values).
 
-So the reasoning item is there, and I do save it to my message database:
+As example, this is an accurate ASR job response:
 
 ```
 {
-  "_id": "69f56a0a23d38f17f873950f",
-  "user_id": "bot",
-  "category": "Audio workflow",
-  "tags": [
-    "audio-workflow",
-    "asr",
-    "device:raspberrypi"
-  ],
-  "contentType": "text",
-  "content": {
-    "text": "**Planning for tomato purchase**\n\nThe user mentioned they need to buy tomatoes today, so I should add that to the shopping list. Today is May 2, 2026, and I want to make sure I'm clear about the task. I believe I also need to create an item specifically for Lennart, since the tool indicates that. I'll make a note to do this and use the right commentary for it. Let's keep things organized!",
-    "image": null,
-    "audio": null,
-    "tts": null,
-    "transcript": null,
-    "revisedPrompt": null,
-    "imageQuality": null,
-    "toolOutput": null
-  },
-  "timestamp": "2026-05-02T03:05:46.204Z",
-  "hideFromBot": true,
-  "__v": 0
+  "text": "I have a question what's the fastest thing in the universe?",
+  "language": "en",
+  "duration": 7.14,
+  "segments": [
+    {
+      "id": 0,
+      "start": 2.5,
+      "end": 8.66,
+      "text": "I have a question what's the fastest thing in the universe?",
+      "avg_logprob": -0.575066089630127,
+      "no_speech_prob": 0.11265980452299118,
+      "compression_ratio": 0.9672131147540983
+    }
+  ]
 }
 ```
 
-However, I don't save the reasoning ID, and I don't include reasoning messages when doing API calls, so this needs to be fixed.
+This is an example of a garbage response:
 
-First, I think I need to add output id to the messages, and some reasoning message flag, as currently reasoning messages look the same as normal messages with `"contentType": "text"`, secondly, after a function call, when I include "function_call" and "function_call_output" in the next API call, I need to also include any reasoning entries, that belong in the same conversation turn.
-
-Please update my code to handle the tool response accurately.
-
-I think you need to fix the API call code in `utils/OpenAI_API.js`, and possible the webhook code in `controllers/webhook.js`, if necessary, that initiate processing of responses.
+```
+{
+  "text": "Bush-adony brand of power quelques",
+  "language": "en",
+  "duration": 5.73,
+  "segments": [
+    {
+      "id": 0,
+      "start": 2.5,
+      "end": 4.54,
+      "text": "Bush-adony brand of power quelques",
+      "avg_logprob": -6.050871415571733,
+      "no_speech_prob": 0.4987715482711792,
+      "compression_ratio": 0.85
+    }
+  ]
+}
+```
