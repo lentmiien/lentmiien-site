@@ -145,6 +145,18 @@ describe('AudioWorkflowService', () => {
     })).toBe('custom_voice');
   });
 
+  test('isSupportedTranscriptionLanguage only allows English, Japanese, and Swedish', () => {
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('en')).toBe(true);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('en-US')).toBe(true);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('ja')).toBe(true);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('ja-JP')).toBe(true);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('jp')).toBe(true);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('sv-SE')).toBe(true);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('de')).toBe(false);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage('unknown')).toBe(false);
+    expect(AudioWorkflowService.isSupportedTranscriptionLanguage(null)).toBe(false);
+  });
+
   test('finalizeLlmText uses detected-language default voice for legacy trigger defaults', async () => {
     const job = {
       _id: 'job-tts',
@@ -258,6 +270,76 @@ describe('AudioWorkflowService', () => {
       expect(asrJobModel.create).toHaveBeenCalled();
       expect(asrJobModel.deleteOne).toHaveBeenCalledWith({ _id: 'asr-empty' });
       expect(jobModel.deleteOne).toHaveBeenCalledWith({ _id: 'empty-job' });
+      await expect(fs.stat(storedPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await fs.unlink(storedPath).catch(() => {});
+    }
+  });
+
+  test('processClaimedJob deletes unsupported-language jobs, ASR records, and uploaded audio', async () => {
+    const storedFileName = `audio-workflow-unsupported-${Date.now()}.webm`;
+    const storedPath = path.resolve(__dirname, '..', '..', 'public', 'audio', storedFileName);
+    await fs.mkdir(path.dirname(storedPath), { recursive: true });
+    await fs.writeFile(storedPath, Buffer.from('voice'));
+
+    const job = {
+      _id: 'unsupported-job',
+      inputAudio: {
+        originalName: 'voice.webm',
+        storedFileName,
+        storedPath,
+        publicUrl: `/audio/${storedFileName}`,
+        mimeType: 'audio/webm',
+        sizeBytes: 5,
+      },
+      owner: {},
+      sampleRate: null,
+      save: jest.fn().mockResolvedValue(),
+    };
+    const asrJob = {
+      _id: 'asr-unsupported',
+      storedFileName,
+      storedPath,
+    };
+    const jobModel = {
+      findById: jest.fn().mockResolvedValue(job),
+      deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+      updateOne: jest.fn(),
+    };
+    const asrJobModel = {
+      create: jest.fn().mockResolvedValue(asrJob),
+      deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+    };
+    const asrApiService = {
+      transcribeBuffer: jest.fn().mockResolvedValue({
+        data: { text: 'Guten Tag', language: 'de', duration: 1 },
+        request: { options: { task: 'transcribe' } },
+      }),
+    };
+    const triggerModel = {
+      find: jest.fn(),
+    };
+    const service = new AudioWorkflowService({
+      jobModel,
+      asrJobModel,
+      asrApiService,
+      triggerModel,
+      ttsService: {},
+      messageService: {},
+      conversationModel: {},
+      chatModel: {},
+      pendingModel: {},
+    });
+    service.kickQueue = jest.fn();
+
+    try {
+      await service.processClaimedJob('unsupported-job');
+
+      expect(job.detectedLanguage).toBe('de');
+      expect(asrJobModel.create).toHaveBeenCalled();
+      expect(asrJobModel.deleteOne).toHaveBeenCalledWith({ _id: 'asr-unsupported' });
+      expect(jobModel.deleteOne).toHaveBeenCalledWith({ _id: 'unsupported-job' });
+      expect(triggerModel.find).not.toHaveBeenCalled();
       await expect(fs.stat(storedPath)).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       await fs.unlink(storedPath).catch(() => {});

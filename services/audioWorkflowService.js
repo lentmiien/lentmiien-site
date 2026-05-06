@@ -38,6 +38,8 @@ const DEFAULT_TTS_VOICES_BY_LANGUAGE = Object.freeze({
 const DEFAULT_TTS_FORMAT = process.env.AUDIO_WORKFLOW_TTS_FORMAT || 'wav';
 const DEFAULT_CATEGORY = 'Audio workflow';
 const DEFAULT_TAGS = ['audio-workflow', 'asr'];
+const SUPPORTED_TRANSCRIPTION_LANGUAGES = Object.freeze(['en', 'ja', 'sv']);
+const SUPPORTED_TRANSCRIPTION_LANGUAGE_SET = new Set(SUPPORTED_TRANSCRIPTION_LANGUAGES);
 
 function parseInteger(value, fallback = null) {
   const parsed = Number.parseInt(value, 10);
@@ -82,6 +84,18 @@ function normalizeDetectedLanguage(language) {
   if (primary === 'sv') return 'sv';
   if (primary === 'en') return 'en';
   return 'en';
+}
+
+function normalizeSupportedTranscriptionLanguage(language) {
+  const raw = typeof language === 'string' ? language.trim().toLowerCase() : '';
+  if (!raw || raw === 'unknown' || raw === 'und') return null;
+  const primary = raw.split(/[-_]/)[0];
+  return primary === 'jp' ? 'ja' : primary;
+}
+
+function isSupportedTranscriptionLanguage(language) {
+  const normalized = normalizeSupportedTranscriptionLanguage(language);
+  return SUPPORTED_TRANSCRIPTION_LANGUAGE_SET.has(normalized);
 }
 
 function getDefaultTtsVoiceForLanguage(language) {
@@ -393,7 +407,7 @@ class AudioWorkflowService {
     return deleted;
   }
 
-  async deleteEmptyTranscriptJob(job, asrJob = null) {
+  async deleteDiscardedTranscriptionJob(job, asrJob = null, reason = 'discarded_transcription') {
     const jobId = extractJobId(job);
     const asrJobId = extractJobId(asrJob);
     const deletedFiles = await this.deleteStoredAudioFiles(job, asrJob);
@@ -405,15 +419,31 @@ class AudioWorkflowService {
       await this.jobModel.deleteOne({ _id: jobId });
     }
 
-    logger.notice('Audio workflow empty transcript job deleted', {
+    const logMessage = reason === 'empty_transcript'
+      ? 'Audio workflow empty transcript job deleted'
+      : reason === 'unsupported_language'
+        ? 'Audio workflow unsupported language job deleted'
+        : 'Audio workflow discarded transcription job deleted';
+
+    logger.notice(logMessage, {
       category: 'audio_workflow',
       metadata: {
         jobId,
         asrJobId,
+        reason,
+        detectedLanguage: job?.detectedLanguage || asrJob?.detectedLanguage || null,
         deletedFileCount: deletedFiles.length,
       },
     });
     this.kickQueue();
+  }
+
+  async deleteEmptyTranscriptJob(job, asrJob = null) {
+    await this.deleteDiscardedTranscriptionJob(job, asrJob, 'empty_transcript');
+  }
+
+  async deleteUnsupportedLanguageJob(job, asrJob = null) {
+    await this.deleteDiscardedTranscriptionJob(job, asrJob, 'unsupported_language');
   }
 
   async saveUploadedAudio(file, fields = {}) {
@@ -575,6 +605,11 @@ class AudioWorkflowService {
 
       if (!transcriptText) {
         await this.deleteEmptyTranscriptJob(job, asrJob);
+        return;
+      }
+
+      if (!isSupportedTranscriptionLanguage(job.detectedLanguage)) {
+        await this.deleteUnsupportedLanguageJob(job, asrJob);
         return;
       }
 
@@ -979,6 +1014,8 @@ AudioWorkflowService.normalizeTriggerInput = normalizeTriggerInput;
 AudioWorkflowService.normalizePhraseList = normalizePhraseList;
 AudioWorkflowService.renderTemplate = renderTemplate;
 AudioWorkflowService.normalizeDetectedLanguage = normalizeDetectedLanguage;
+AudioWorkflowService.isSupportedTranscriptionLanguage = isSupportedTranscriptionLanguage;
+AudioWorkflowService.supportedTranscriptionLanguages = [...SUPPORTED_TRANSCRIPTION_LANGUAGES];
 AudioWorkflowService.getDefaultTtsVoiceForLanguage = getDefaultTtsVoiceForLanguage;
 AudioWorkflowService.resolveTtsVoiceId = resolveTtsVoiceId;
 AudioWorkflowService.defaultTtsVoicesByLanguage = {
