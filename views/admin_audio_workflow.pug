@@ -122,7 +122,7 @@ block content
             .d-flex.justify-content-between.align-items-center.mb-3
               div
                 h2.h4.mb-1 Quality plots
-                p.text-muted.mb-0 Compare ASR segment metric pairs. Dots use manual rating colors.
+                p.text-muted.mb-0 Compare ASR segment metric pairs. Dots use manual rating colors; box stats ignore unrated points.
               .d-flex.gap-3.small.flex-wrap
                 span.badge.text-bg-success OK
                 span.badge.text-bg-danger Garbage
@@ -133,6 +133,11 @@ block content
                   .col-lg-4
                     h3.h6.mb-2= plot.title
                     canvas.audio-quality-plot.border.rounded.bg-white.w-100(height='220', data-x=plot.x, data-y=plot.y, aria-label=plot.title)
+                    .small.text-muted.mt-2.audio-quality-box-summary(data-x=plot.x, data-y=plot.y)
+                .col-12
+                  .border.rounded.bg-light.p-3
+                    h3.h6.mb-2 3D OK bounding box
+                    #quality-3d-box-summary.small.text-muted
             else
               p.text-muted.mb-0 No quality data to plot yet.
 
@@ -312,6 +317,96 @@ block script
         }));
       }).filter((point) => point.x !== null && point.y !== null);
 
+      const getMetricPoints = () => state.plotJobs.flatMap((job) => {
+        const rating = job.manual_quality_rating || 'unrated';
+        const segments = Array.isArray(job.asr_segments) && job.asr_segments.length
+          ? job.asr_segments
+          : [job.asr_quality || {}];
+        return segments.map((segment) => ({
+          job,
+          rating,
+          avgLogprob: getMetric(segment, 'avgLogprob'),
+          noSpeechProb: getMetric(segment, 'noSpeechProb'),
+          compressionRatio: getMetric(segment, 'compressionRatio'),
+        }));
+      });
+
+      const getRatedPoints = (points) => points.filter((point) => (
+        point.rating === 'ok' || point.rating === 'garbage'
+      ));
+
+      const getBoundingBox = (points, keys) => {
+        const okPoints = points.filter((point) => point.rating === 'ok');
+        if (!okPoints.length) return null;
+        return keys.reduce((box, key) => {
+          const values = okPoints.map((point) => point[key]);
+          box[key] = {
+            min: Math.min(...values),
+            max: Math.max(...values),
+          };
+          return box;
+        }, {});
+      };
+
+      const isInsideBox = (point, box, keys) => keys.every((key) => (
+        point[key] >= box[key].min && point[key] <= box[key].max
+      ));
+
+      const getBoxStats = (points, keys) => {
+        const ratedPoints = getRatedPoints(points);
+        const box = getBoundingBox(ratedPoints, keys);
+        if (!box) return null;
+        const insidePoints = ratedPoints.filter((point) => isInsideBox(point, box, keys));
+        const okInside = insidePoints.filter((point) => point.rating === 'ok').length;
+        const garbageInside = insidePoints.filter((point) => point.rating === 'garbage').length;
+        const totalInside = okInside + garbageInside;
+        return {
+          box,
+          okInside,
+          garbageInside,
+          totalInside,
+          accuracy: totalInside ? (okInside / totalInside) * 100 : null,
+        };
+      };
+
+      const formatMetric = (value) => (
+        Number.isFinite(value) ? value.toFixed(3) : 'n/a'
+      );
+
+      const formatAccuracy = (value) => (
+        Number.isFinite(value) ? `${value.toFixed(1)}%` : 'n/a'
+      );
+
+      const formatRange = (box, key) => (
+        `${metricLabels[key] || key} [${formatMetric(box[key].min)}, ${formatMetric(box[key].max)}]`
+      );
+
+      const formatBoxSummary = (stats, keys) => {
+        if (!stats) return 'No OK-rated points yet. Rate entries as OK to build a bounding box.';
+        return [
+          `OK box: ${keys.map((key) => formatRange(stats.box, key)).join(', ')}`,
+          `OK inside: ${stats.okInside}`,
+          `garbage inside: ${stats.garbageInside}`,
+          `accuracy: ${formatAccuracy(stats.accuracy)}`,
+        ].join(' · ');
+      };
+
+      const updateBoxSummary = (keys, stats) => {
+        const selector = `.audio-quality-box-summary[data-x="${keys[0]}"][data-y="${keys[1]}"]`;
+        const summary = document.querySelector(selector);
+        if (summary) summary.textContent = formatBoxSummary(stats, keys);
+      };
+
+      const updateThreeDimensionalSummary = () => {
+        const summary = document.getElementById('quality-3d-box-summary');
+        if (!summary) return;
+        const keys = ['avgLogprob', 'noSpeechProb', 'compressionRatio'];
+        const points = getMetricPoints().filter((point) => (
+          keys.every((key) => point[key] !== null)
+        ));
+        summary.textContent = formatBoxSummary(getBoxStats(points, keys), keys);
+      };
+
       const padRange = (min, max) => {
         if (!Number.isFinite(min) || !Number.isFinite(max)) return [0, 1];
         if (min === max) {
@@ -326,6 +421,14 @@ block script
         const xKey = canvas.dataset.x;
         const yKey = canvas.dataset.y;
         const points = getPlotData(xKey, yKey);
+        const boxStats = getBoxStats(points, ['x', 'y']);
+        updateBoxSummary([xKey, yKey], boxStats ? {
+          ...boxStats,
+          box: {
+            [xKey]: boxStats.box.x,
+            [yKey]: boxStats.box.y,
+          },
+        } : null);
         const rect = canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
         const width = Math.max(280, rect.width || canvas.clientWidth || 300);
@@ -383,6 +486,21 @@ block script
           ctx.textBaseline = 'top';
         }
 
+        if (boxStats) {
+          const left = xScale(boxStats.box.x.min);
+          const right = xScale(boxStats.box.x.max);
+          const top = yScale(boxStats.box.y.max);
+          const bottom = yScale(boxStats.box.y.min);
+          ctx.save();
+          ctx.fillStyle = 'rgba(25, 135, 84, 0.06)';
+          ctx.fillRect(left, top, right - left, bottom - top);
+          ctx.strokeStyle = ratingColors.ok;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.strokeRect(left, top, right - left, bottom - top);
+          ctx.restore();
+        }
+
         ctx.fillStyle = '#212529';
         ctx.fillText(metricLabels[xKey] || xKey, margin.left + plotWidth / 2, height - 18);
         ctx.save();
@@ -404,6 +522,7 @@ block script
 
       const drawPlots = () => {
         document.querySelectorAll('.audio-quality-plot').forEach(drawPlot);
+        updateThreeDimensionalSummary();
       };
 
       const updateRatingButtons = (jobId, rating) => {
