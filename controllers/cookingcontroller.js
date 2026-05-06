@@ -14,6 +14,7 @@ const cookingCalendarService = new CookingCalendarService({
   Chat4KnowledgeModel,
   CookbookRecipeModel,
 });
+const RECIPE_CATEGORY_QUERY = /^Recipe$/i;
 
 // ----- Legacy v1 routes -----
 exports.index = async (req, res) => {
@@ -22,7 +23,7 @@ exports.index = async (req, res) => {
     const datesOnly = datesArray.map(d => d.date);
     const [calendarDocs, knowledge] = await Promise.all([
       CookingCalendarModel.find({ date: datesOnly }),
-      Chat4KnowledgeModel.find({ category: 'Recipe' }),
+      Chat4KnowledgeModel.find({ category: RECIPE_CATEGORY_QUERY }),
     ]);
 
     knowledge.sort(compareByTitle);
@@ -48,7 +49,7 @@ exports.edit_date = async (req, res) => {
     const dateKeys = datesArray.map(d => d.date);
     const [calendarDocs, knowledge] = await Promise.all([
       CookingCalendarModel.find({ date: dateKeys }),
-      Chat4KnowledgeModel.find({ category: 'Recipe' }),
+      Chat4KnowledgeModel.find({ category: RECIPE_CATEGORY_QUERY }),
     ]);
 
     knowledge.sort(compareByTitle);
@@ -96,7 +97,7 @@ exports.update_cooking_calendar = async (req, res) => {
 exports.cooking_statistics = async (req, res) => {
   try {
     const stats = await getCookingStatisticsLegacy();
-    const knowledge = await Chat4KnowledgeModel.find({ category: 'Recipe' });
+    const knowledge = await Chat4KnowledgeModel.find({ category: RECIPE_CATEGORY_QUERY });
     const knowledge_lookup = {};
     const knowledge_lookup_used = {};
     knowledge.forEach(k => {

@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const DAYS_WARNING_WINDOW = 10;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const RECIPE_CATEGORY_QUERY = /^Recipe$/i;
 
 class CookingCalendarService {
   constructor({ CookingCalendarModel, CookingCalendarV2Model, Chat4KnowledgeModel, CookbookRecipeModel = null }) {
@@ -210,7 +211,7 @@ class CookingCalendarService {
 
     const [cookbookRecipes, knowledgeRecipes] = await Promise.all([
       cookbookQuery ? cookbookQuery.lean() : [],
-      this.Chat4KnowledgeModel.find({ category: 'Recipe' }).lean(),
+      this.Chat4KnowledgeModel.find({ category: RECIPE_CATEGORY_QUERY }).lean(),
     ]);
 
     const recipes = [];
@@ -279,7 +280,7 @@ class CookingCalendarService {
     }
 
     const knowledge = await this.Chat4KnowledgeModel
-      .findOne({ _id: recipeId, category: 'Recipe' })
+      .findOne({ _id: recipeId, category: RECIPE_CATEGORY_QUERY })
       .lean();
     if (!knowledge) {
       return null;

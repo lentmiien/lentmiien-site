@@ -141,7 +141,7 @@ describe('CookingCalendarService', () => {
     const result = await service.getRecipeLibraryWithUsage();
 
     expect(CookbookRecipeModel.find).toHaveBeenCalledWith({});
-    expect(Chat4KnowledgeModel.find).toHaveBeenCalledWith({ category: 'Recipe' });
+    expect(Chat4KnowledgeModel.find).toHaveBeenCalledWith({ category: /^Recipe$/i });
     expect(usageSpy).toHaveBeenCalledTimes(1);
     expect(result).toEqual([
       {

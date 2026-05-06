@@ -7,6 +7,7 @@ const logger = require('../utils/logger');
 const DEFAULT_SORT = 'updated_desc';
 const NUTRITION_LEVELS = ['high', 'medium', 'low'];
 const COOKBOOK_DRAFT_MODEL = 'gpt-5.2-2025-12-11';
+const RECIPE_CATEGORY_QUERY = /^Recipe$/i;
 const DEFAULT_RATING_LABELS = [
   'my_overall_rating',
   'easy_to_cook',
@@ -516,7 +517,7 @@ async function loadKnowledgeById(userId, knowledgeId) {
   if (!knowledgeId) return null;
   try {
     return await Chat4KnowledgeModel
-      .findOne({ _id: knowledgeId, user_id: userId, category: 'Recipe' })
+      .findOne({ _id: knowledgeId, user_id: userId, category: RECIPE_CATEGORY_QUERY })
       .lean()
       .exec();
   } catch (error) {
@@ -728,7 +729,7 @@ exports.index = async (req, res) => {
   try {
     const [allRecipes, legacyKnowledge] = await Promise.all([
       CookbookRecipeModel.find({ user_id: userId }).lean().exec(),
-      Chat4KnowledgeModel.find({ user_id: userId, category: 'Recipe' }).sort({ updatedDate: -1 }).lean().exec(),
+      Chat4KnowledgeModel.find({ user_id: userId, category: RECIPE_CATEGORY_QUERY }).sort({ updatedDate: -1 }).lean().exec(),
     ]);
 
     const availableFoodCategories = uniqueSorted(allRecipes.map((recipe) => recipe.food_category));
