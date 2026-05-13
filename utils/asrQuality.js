@@ -1,7 +1,10 @@
 const DEFAULT_ASR_QUALITY_THRESHOLDS = Object.freeze({
-  avgLogprobMin: parseNumberEnv('ASR_QUALITY_AVG_LOGPROB_MIN', -1),
-  noSpeechProbMax: parseNumberEnv('ASR_QUALITY_NO_SPEECH_PROB_MAX', 0.6),
-  compressionRatioMax: parseNumberEnv('ASR_QUALITY_COMPRESSION_RATIO_MAX', 2.4),
+  avgLogprobMin: parseNumberEnv('ASR_QUALITY_AVG_LOGPROB_MIN', -1.75),
+  avgLogprobMax: parseNumberEnv('ASR_QUALITY_AVG_LOGPROB_MAX', -0.1),
+  noSpeechProbMin: parseNumberEnv('ASR_QUALITY_NO_SPEECH_PROB_MIN', 0),
+  noSpeechProbMax: parseNumberEnv('ASR_QUALITY_NO_SPEECH_PROB_MAX', 0.3),
+  compressionRatioMin: parseNumberEnv('ASR_QUALITY_COMPRESSION_RATIO_MIN', 0.6),
+  compressionRatioMax: parseNumberEnv('ASR_QUALITY_COMPRESSION_RATIO_MAX', 1.15),
 });
 
 function parseNumberEnv(name, fallback) {
@@ -49,7 +52,10 @@ function normalizeAsrSegments(data = {}) {
 function resolveThresholds(overrides = {}) {
   return {
     avgLogprobMin: toNullableNumber(overrides.avgLogprobMin) ?? DEFAULT_ASR_QUALITY_THRESHOLDS.avgLogprobMin,
+    avgLogprobMax: toNullableNumber(overrides.avgLogprobMax) ?? DEFAULT_ASR_QUALITY_THRESHOLDS.avgLogprobMax,
+    noSpeechProbMin: toNullableNumber(overrides.noSpeechProbMin) ?? DEFAULT_ASR_QUALITY_THRESHOLDS.noSpeechProbMin,
     noSpeechProbMax: toNullableNumber(overrides.noSpeechProbMax) ?? DEFAULT_ASR_QUALITY_THRESHOLDS.noSpeechProbMax,
+    compressionRatioMin: toNullableNumber(overrides.compressionRatioMin) ?? DEFAULT_ASR_QUALITY_THRESHOLDS.compressionRatioMin,
     compressionRatioMax: toNullableNumber(overrides.compressionRatioMax) ?? DEFAULT_ASR_QUALITY_THRESHOLDS.compressionRatioMax,
   };
 }
@@ -67,15 +73,27 @@ function buildAsrQualitySummary(segments = [], thresholdOverrides = {}) {
     .filter((value) => Number.isFinite(value));
 
   const minAvgLogprob = avgLogprobs.length ? Math.min(...avgLogprobs) : null;
+  const maxAvgLogprob = avgLogprobs.length ? Math.max(...avgLogprobs) : null;
+  const minNoSpeechProb = noSpeechProbs.length ? Math.min(...noSpeechProbs) : null;
   const maxNoSpeechProb = noSpeechProbs.length ? Math.max(...noSpeechProbs) : null;
+  const minCompressionRatio = compressionRatios.length ? Math.min(...compressionRatios) : null;
   const maxCompressionRatio = compressionRatios.length ? Math.max(...compressionRatios) : null;
   const garbageReasons = [];
 
   if (minAvgLogprob !== null && minAvgLogprob < thresholds.avgLogprobMin) {
     garbageReasons.push('avg_logprob_below_threshold');
   }
+  if (maxAvgLogprob !== null && maxAvgLogprob > thresholds.avgLogprobMax) {
+    garbageReasons.push('avg_logprob_above_threshold');
+  }
+  if (minNoSpeechProb !== null && minNoSpeechProb < thresholds.noSpeechProbMin) {
+    garbageReasons.push('no_speech_prob_below_threshold');
+  }
   if (maxNoSpeechProb !== null && maxNoSpeechProb > thresholds.noSpeechProbMax) {
     garbageReasons.push('no_speech_prob_above_threshold');
+  }
+  if (minCompressionRatio !== null && minCompressionRatio < thresholds.compressionRatioMin) {
+    garbageReasons.push('compression_ratio_below_threshold');
   }
   if (maxCompressionRatio !== null && maxCompressionRatio > thresholds.compressionRatioMax) {
     garbageReasons.push('compression_ratio_above_threshold');
@@ -85,9 +103,12 @@ function buildAsrQualitySummary(segments = [], thresholdOverrides = {}) {
     segmentCount: segments.length,
     avgLogprob: average(avgLogprobs),
     minAvgLogprob: roundMetric(minAvgLogprob),
+    maxAvgLogprob: roundMetric(maxAvgLogprob),
     noSpeechProb: average(noSpeechProbs),
+    minNoSpeechProb: roundMetric(minNoSpeechProb),
     maxNoSpeechProb: roundMetric(maxNoSpeechProb),
     compressionRatio: average(compressionRatios),
+    minCompressionRatio: roundMetric(minCompressionRatio),
     maxCompressionRatio: roundMetric(maxCompressionRatio),
     possibleGarbage: garbageReasons.length > 0,
     garbageReasons,

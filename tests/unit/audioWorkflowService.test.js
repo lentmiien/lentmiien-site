@@ -157,7 +157,20 @@ describe('AudioWorkflowService', () => {
     expect(AudioWorkflowService.isSupportedTranscriptionLanguage(null)).toBe(false);
   });
 
-
+  test('resolveAutomaticQualityRating prioritizes trigger matches, then possible garbage', () => {
+    expect(AudioWorkflowService.resolveAutomaticQualityRating({
+      trigger: { _id: 'trigger-1' },
+      quality: { possibleGarbage: true },
+    })).toBe('ok');
+    expect(AudioWorkflowService.resolveAutomaticQualityRating({
+      trigger: null,
+      quality: { possibleGarbage: true },
+    })).toBe('garbage');
+    expect(AudioWorkflowService.resolveAutomaticQualityRating({
+      trigger: null,
+      quality: { possibleGarbage: false },
+    })).toBe('unrated');
+  });
 
   test('updateManualQualityRating persists manual ASR quality ratings', async () => {
     const updatedJob = {
@@ -240,7 +253,7 @@ describe('AudioWorkflowService', () => {
             end: 4.54,
             text: 'Bush-adony brand of power quelques',
             avg_logprob: -6.050871415571733,
-            no_speech_prob: 0.4987715482711792,
+            no_speech_prob: 0.2,
             compression_ratio: 0.85,
           }],
         },
@@ -269,7 +282,7 @@ describe('AudioWorkflowService', () => {
       expect(asrJobModel.create).toHaveBeenCalledWith(expect.objectContaining({
         segments: [expect.objectContaining({
           avgLogprob: -6.050871415571733,
-          noSpeechProb: 0.4987715482711792,
+          noSpeechProb: 0.2,
           compressionRatio: 0.85,
         })],
         quality: expect.objectContaining({
@@ -279,7 +292,7 @@ describe('AudioWorkflowService', () => {
       }));
       expect(job.asrSegments[0]).toMatchObject({
         avgLogprob: -6.050871415571733,
-        noSpeechProb: 0.4987715482711792,
+        noSpeechProb: 0.2,
         compressionRatio: 0.85,
       });
       expect(job.asrQuality).toMatchObject({
@@ -287,6 +300,9 @@ describe('AudioWorkflowService', () => {
         garbageReasons: ['avg_logprob_below_threshold'],
       });
       expect(job.possibleGarbage).toBe(true);
+      expect(job.manualQualityRating).toBe('garbage');
+      expect(job.manualQualityRatedAt).toBeInstanceOf(Date);
+      expect(job.manualQualityRatedBy).toEqual({ id: null, name: 'auto' });
       expect(job.save).toHaveBeenCalled();
     } finally {
       await fs.unlink(storedPath).catch(() => {});

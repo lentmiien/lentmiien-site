@@ -88,7 +88,7 @@ exports.rateJobQuality = async (req, res) => {
     if (String(req.headers?.accept || '').includes('application/json') || req.xhr) {
       return res.json({ ok: true, job });
     }
-    return redirectWithFeedback(res, 'success', 'Manual quality rating saved.');
+    return redirectWithFeedback(res, 'success', 'Quality rating saved.');
   } catch (error) {
     logger.error('Failed to save audio workflow quality rating', {
       category: 'audio_workflow_admin',

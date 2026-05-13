@@ -251,6 +251,29 @@ function sanitizeMissingCompletedJob(jobId) {
   };
 }
 
+function normalizeQualityRating(rating) {
+  return ['ok', 'garbage'].includes(rating) ? rating : 'unrated';
+}
+
+function resolveAutomaticQualityRating({ trigger, quality } = {}) {
+  if (trigger) return 'ok';
+  if (quality?.possibleGarbage) return 'garbage';
+  return 'unrated';
+}
+
+function applyAutomaticQualityRating(job, rating) {
+  if (!job) return false;
+  const normalizedRating = normalizeQualityRating(rating);
+  if (normalizedRating === 'unrated') return false;
+  const currentRating = normalizeQualityRating(job.manualQualityRating);
+  if (currentRating !== 'unrated') return false;
+
+  job.manualQualityRating = normalizedRating;
+  job.manualQualityRatedAt = new Date();
+  job.manualQualityRatedBy = { id: null, name: 'auto' };
+  return true;
+}
+
 function sanitizeTrigger(trigger) {
   if (!trigger) return null;
   return {
@@ -636,6 +659,13 @@ class AudioWorkflowService {
       }
 
       const trigger = await this.findBestTrigger(transcriptText);
+      const automaticRating = resolveAutomaticQualityRating({
+        trigger,
+        quality: asrQuality.quality,
+      });
+      if (applyAutomaticQualityRating(job, automaticRating)) {
+        await job.save();
+      }
       if (!trigger) {
         await this.completeJobWithoutOutput(jobId);
         return;
@@ -986,7 +1016,7 @@ class AudioWorkflowService {
   }
 
   async updateManualQualityRating(jobId, rating, actor = {}) {
-    const normalizedRating = ['ok', 'garbage'].includes(rating) ? rating : 'unrated';
+    const normalizedRating = normalizeQualityRating(rating);
     const ratedAt = normalizedRating === 'unrated' ? null : new Date();
     const ratedBy = normalizedRating === 'unrated' ? {} : {
       id: actor?._id?.toString?.() || actor?.id || null,
@@ -1065,6 +1095,8 @@ AudioWorkflowService.sanitizeJob = sanitizeJob;
 AudioWorkflowService.sanitizeTrigger = sanitizeTrigger;
 AudioWorkflowService.normalizeTriggerInput = normalizeTriggerInput;
 AudioWorkflowService.normalizePhraseList = normalizePhraseList;
+AudioWorkflowService.normalizeQualityRating = normalizeQualityRating;
+AudioWorkflowService.resolveAutomaticQualityRating = resolveAutomaticQualityRating;
 AudioWorkflowService.renderTemplate = renderTemplate;
 AudioWorkflowService.normalizeDetectedLanguage = normalizeDetectedLanguage;
 AudioWorkflowService.isSupportedTranscriptionLanguage = isSupportedTranscriptionLanguage;

@@ -34,7 +34,10 @@ const AsrSegmentSchema = new Schema({
 
 const AsrQualityThresholdsSchema = new Schema({
   avgLogprobMin: { type: Number, default: null },
+  avgLogprobMax: { type: Number, default: null },
+  noSpeechProbMin: { type: Number, default: null },
   noSpeechProbMax: { type: Number, default: null },
+  compressionRatioMin: { type: Number, default: null },
   compressionRatioMax: { type: Number, default: null },
 }, { _id: false });
 
@@ -42,9 +45,12 @@ const AsrQualitySchema = new Schema({
   segmentCount: { type: Number, default: 0 },
   avgLogprob: { type: Number, default: null },
   minAvgLogprob: { type: Number, default: null },
+  maxAvgLogprob: { type: Number, default: null },
   noSpeechProb: { type: Number, default: null },
+  minNoSpeechProb: { type: Number, default: null },
   maxNoSpeechProb: { type: Number, default: null },
   compressionRatio: { type: Number, default: null },
+  minCompressionRatio: { type: Number, default: null },
   maxCompressionRatio: { type: Number, default: null },
   possibleGarbage: { type: Boolean, default: false },
   garbageReasons: { type: [String], default: [] },

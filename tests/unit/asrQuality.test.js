@@ -23,10 +23,24 @@ describe('ASR quality helpers', () => {
     expect(quality).toMatchObject({
       segmentCount: 1,
       avgLogprob: -0.575066,
+      minAvgLogprob: -0.575066,
+      maxAvgLogprob: -0.575066,
       noSpeechProb: 0.11266,
+      minNoSpeechProb: 0.11266,
+      maxNoSpeechProb: 0.11266,
       compressionRatio: 0.967213,
+      minCompressionRatio: 0.967213,
+      maxCompressionRatio: 0.967213,
       possibleGarbage: false,
       garbageReasons: [],
+      thresholds: {
+        avgLogprobMin: -1.75,
+        avgLogprobMax: -0.1,
+        noSpeechProbMin: 0,
+        noSpeechProbMax: 0.3,
+        compressionRatioMin: 0.6,
+        compressionRatioMax: 1.15,
+      },
     });
   });
 
@@ -35,12 +49,41 @@ describe('ASR quality helpers', () => {
       segments: [{
         text: 'Bush-adony brand of power quelques',
         avg_logprob: -6.050871415571733,
-        no_speech_prob: 0.4987715482711792,
+        no_speech_prob: 0.2,
         compression_ratio: 0.85,
       }],
     });
 
     expect(quality.possibleGarbage).toBe(true);
-    expect(quality.garbageReasons).toContain('avg_logprob_below_threshold');
+    expect(quality.garbageReasons).toEqual(['avg_logprob_below_threshold']);
+  });
+
+  test('flags metrics outside the padded quality ranges', () => {
+    const { quality } = buildAsrQuality({
+      segments: [
+        {
+          text: 'too low values',
+          avg_logprob: -1.76,
+          no_speech_prob: -0.01,
+          compression_ratio: 0.59,
+        },
+        {
+          text: 'too high values',
+          avg_logprob: -0.05,
+          no_speech_prob: 0.31,
+          compression_ratio: 1.16,
+        },
+      ],
+    });
+
+    expect(quality.possibleGarbage).toBe(true);
+    expect(quality.garbageReasons).toEqual([
+      'avg_logprob_below_threshold',
+      'avg_logprob_above_threshold',
+      'no_speech_prob_below_threshold',
+      'no_speech_prob_above_threshold',
+      'compression_ratio_below_threshold',
+      'compression_ratio_above_threshold',
+    ]);
   });
 });
