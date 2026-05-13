@@ -1,18 +1,23 @@
 extends ../layout
 
 block content
-  .container
-    a.btn.btn-outline-secondary(href='/scheduleTask/upcoming') List tasks →
-    a.btn.btn-outline-warning(href='/scheduleTask/statistics') Statistics
-    a.btn.btn-outline-success(href="/scheduleTask/new/presence") New Presence
-    a.btn.btn-outline-primary(href="/scheduleTask/new/task") New Task
+  .container-fluid.schedule-calendar-page
+    .schedule-page-header
+      div
+        p.schedule-page-kicker Schedule
+        h2.mb-0 Next 72 Hours
+      .schedule-actions
+        a.btn.schedule-nav-button(href='/scheduleTask/upcoming') Upcoming
+        a.btn.schedule-nav-button(href='/scheduleTask/statistics') Statistics
+        a.btn.schedule-nav-button.schedule-nav-button--presence(href="/scheduleTask/new/presence") New Presence
+        a.btn.schedule-nav-button.schedule-nav-button--task(href="/scheduleTask/new/task") New Task
 
     //- Overdue bar placeholder (will be inserted by JS)
     #overdueBar
 
-    h2.mt-4.mb-2 Schedule (Next 3 Days)
     // Grid rendered via calendar.js
     #calendarGrid
+      .schedule-loading Loading schedule...
 
     //- Modals for task and slot (hidden, filled by JS)
     #taskModal.modal.fade(style="z-index:1051;", tabindex="0")
@@ -46,19 +51,4 @@ block content
   script(src="/js/scheduleTask/interactions.js", defer)
 
 block styles
-  style.
-    .calendar-slot {
-      min-height: 32px;
-      border-bottom: 1px solid #f1f1f1;
-      cursor: pointer;
-      padding: 2px 4px;
-      overflow-x: auto;
-      display: flex;
-      align-items: flex-start;
-    }
-    .slot-time { font-size: .85em; color: #888; min-width: 45px; display: inline-block; }
-    .slot-tasks { flex: 1; display: inline-block; }
-    .calendar-day-label { font-weight: bold; }
-    .schedule-task-pill { cursor:pointer; white-space:nowrap }
-    .current-slot { outline: 2px solid #dc3545; }        /* red outline for now-slot */
-    @media (max-width: 767px){ .slot-time{display:none;} } /* hide time text on xs */
+  link(rel='stylesheet', href='/css/scheduleTaskCalendar.css')
