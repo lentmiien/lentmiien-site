@@ -11,6 +11,22 @@ const formatDateLocal = (date) => {
   return `${safe.getFullYear()}-${pad2(safe.getMonth() + 1)}-${pad2(safe.getDate())}`;
 };
 
+const parseDateKeyLocal = (dateKey, { endOfDay = false } = {}) => {
+  if (typeof dateKey !== 'string') return null;
+  const match = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 999 : 0
+  );
+};
+
 const toDate = (value) => {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -22,6 +38,10 @@ const normalizeLabel = (label) => {
   const trimmed = label.trim();
   return trimmed.length > 0 ? trimmed : '';
 };
+
+const duplicateLabelKey = (label) => normalizeLabel(label).toLowerCase();
+
+const buildDateLabelKey = (dateKey, label) => `${dateKey}::${duplicateLabelKey(label)}`;
 
 const extractMapEntries = (value) => {
   if (!value) return [];
@@ -189,6 +209,144 @@ class MyLifeLogService {
       await this.refreshCaches();
     }
     return deleted;
+  }
+
+  async collectExistingImportKeys({ dateKeys = [], labels = [] } = {}) {
+    const normalizedDateKeys = Array.from(new Set(
+      dateKeys.map((dateKey) => String(dateKey || '').trim()).filter(Boolean)
+    )).sort();
+    const normalizedLabels = Array.from(new Set(
+      labels.map(normalizeLabel).filter(Boolean)
+    ));
+    const existingKeys = new Set();
+
+    if (!normalizedDateKeys.length || !normalizedLabels.length) {
+      return existingKeys;
+    }
+
+    const dateKeySet = new Set(normalizedDateKeys);
+    const labelKeySet = new Set(normalizedLabels.map(duplicateLabelKey));
+    const start = parseDateKeyLocal(normalizedDateKeys[0]);
+    const end = parseDateKeyLocal(normalizedDateKeys[normalizedDateKeys.length - 1], { endOfDay: true });
+
+    const lifeQuery = {
+      timestamp: { $gte: start, $lte: end },
+      label: { $in: normalizedLabels },
+    };
+
+    const lifeEntries = await this.LifeLogEntry.find(
+      lifeQuery,
+      { label: 1, timestamp: 1 }
+    ).lean();
+    lifeEntries.forEach((entry) => {
+      const dateKey = formatDateLocal(entry.timestamp);
+      if (!dateKeySet.has(dateKey)) return;
+      existingKeys.add(buildDateLabelKey(dateKey, entry.label));
+    });
+
+    const legacyEntries = await this.HealthEntry.find(
+      { dateOfEntry: { $gte: normalizedDateKeys[0], $lte: normalizedDateKeys[normalizedDateKeys.length - 1] } },
+      { dateOfEntry: 1, basicData: 1, medicalRecord: 1 }
+    ).lean();
+    legacyEntries.forEach((entry) => {
+      const dateKey = entry?.dateOfEntry;
+      if (!dateKeySet.has(dateKey)) return;
+      const trackLegacyLabel = (label) => {
+        if (!labelKeySet.has(duplicateLabelKey(label))) return;
+        existingKeys.add(buildDateLabelKey(dateKey, label));
+      };
+      extractMapEntries(entry.basicData).forEach(([label]) => trackLegacyLabel(label));
+      extractMapEntries(entry.medicalRecord).forEach(([label]) => trackLegacyLabel(label));
+    });
+
+    return existingKeys;
+  }
+
+  async importCsvRecords({ records = [] } = {}) {
+    const summary = {
+      sourceRows: Array.isArray(records) ? records.length : 0,
+      importedEntries: 0,
+      duplicateEntries: 0,
+      duplicateRows: 0,
+      skippedRows: 0,
+    };
+
+    const normalizedRecords = Array.isArray(records)
+      ? records.map((record) => {
+        const timestamp = toDate(record.timestamp);
+        const dateKey = record.dateKey || formatDateLocal(timestamp);
+        const values = Array.isArray(record.values)
+          ? record.values
+            .map((value) => ({
+              label: normalizeLabel(value.label),
+              value: value.value === undefined ? '' : String(value.value).trim(),
+              type: ['basic', 'medical'].includes(value.type) ? value.type : 'basic',
+              source: value.source || '',
+            }))
+            .filter((value) => value.label && value.value)
+          : [];
+        return {
+          sourceRow: record.sourceRow || null,
+          timestamp,
+          dateKey,
+          values,
+        };
+      }).filter((record) => record.timestamp && record.dateKey && record.values.length)
+      : [];
+
+    if (!normalizedRecords.length) {
+      return summary;
+    }
+
+    const dateKeys = normalizedRecords.map((record) => record.dateKey);
+    const labels = normalizedRecords.flatMap((record) => record.values.map((value) => value.label));
+    const existingKeys = await this.collectExistingImportKeys({ dateKeys, labels });
+    const seenKeys = new Set(existingKeys);
+    const duplicateRows = new Set();
+    const documents = [];
+
+    normalizedRecords.forEach((record) => {
+      let rowImportCount = 0;
+      record.values.forEach((value) => {
+        const key = buildDateLabelKey(record.dateKey, value.label);
+        if (seenKeys.has(key)) {
+          summary.duplicateEntries += 1;
+          duplicateRows.add(record.sourceRow || record.dateKey);
+          return;
+        }
+
+        documents.push({
+          type: value.type,
+          label: value.label,
+          value: value.value,
+          text: '',
+          v_log_data: '',
+          timestamp: record.timestamp,
+        });
+        seenKeys.add(key);
+        rowImportCount += 1;
+      });
+
+      if (rowImportCount === 0) {
+        summary.skippedRows += 1;
+      }
+    });
+
+    summary.duplicateRows = duplicateRows.size;
+
+    if (!documents.length) {
+      return summary;
+    }
+
+    const inserted = await this.LifeLogEntry.insertMany(documents, { ordered: false });
+    summary.importedEntries = inserted.length;
+    inserted.forEach((entry) => {
+      if (entry.label) {
+        this.updateLabelCache(entry.label, entry.timestamp);
+      }
+    });
+
+    return summary;
   }
 
   async listEntries({ start, end, labels = [], types = [], includeLegacy = true, limit = null } = {}) {

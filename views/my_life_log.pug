@@ -44,6 +44,18 @@ block content
       .d-flex.justify-content-end.mt-3
         button.btn.btn-dark(type="submit") Apply filters
 
+    .life-log-import-panel
+      .life-log-import-heading
+        h2 CSV import
+        p.mb-0 Upload a measurement CSV, review detected columns, then map them to life log labels.
+      form.life-log-import-upload(method="post", action="/mypage/life_log/import/preview", enctype="multipart/form-data")
+        .row.g-3.align-items-end
+          .col-md-8
+            label(for="life-log-csv-file") CSV file
+            input#life-log-csv-file.form-control(type="file", name="csv_file", accept=".csv,text/csv", required)
+          .col-md-4.d-flex.justify-content-md-end
+            button.btn.btn-dark(type="submit") Preview mapping
+
     if entries && entries.length
       .life-log-layout-controls
         span.life-log-layout-label View

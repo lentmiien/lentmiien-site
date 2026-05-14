@@ -84,6 +84,141 @@
   border-color: var(--log-accent);
 }
 
+.life-log-import-panel,
+.life-log-import-summary,
+.life-log-import-result {
+  background: rgba(23, 26, 32, 0.85);
+  border: 1px solid var(--log-border);
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  margin-top: 1.5rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.life-log-import-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.life-log-import-heading h2,
+.life-log-import-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.life-log-import-heading p,
+.life-log-import-muted,
+.life-log-import-result p {
+  color: var(--log-muted);
+}
+
+.life-log-import-upload label,
+.life-log-import-map label,
+.life-log-import-stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--log-muted);
+  font-weight: 600;
+}
+
+.life-log-import-upload input,
+.life-log-import-map input,
+.life-log-import-map select {
+  border-radius: 10px;
+  border: 1px solid var(--log-border);
+  padding: 0.45rem 0.65rem;
+  font-size: 0.9rem;
+  background: var(--log-surface-2);
+  color: var(--log-ink);
+}
+
+.life-log-import-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.life-log-import-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.life-log-import-stat strong {
+  font-size: 0.98rem;
+}
+
+.life-log-import-warning {
+  color: #ffd18a;
+  border: 1px solid rgba(255, 209, 138, 0.35);
+  background: rgba(255, 209, 138, 0.08);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+}
+
+.life-log-import-map {
+  margin-top: 1.5rem;
+}
+
+.life-log-import-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--log-border);
+  border-radius: 16px;
+  background: var(--log-surface);
+}
+
+.life-log-import-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+}
+
+.life-log-import-table th,
+.life-log-import-table td {
+  border-bottom: 1px solid var(--log-line);
+  padding: 0.75rem;
+  vertical-align: top;
+}
+
+.life-log-import-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--log-muted);
+  font-weight: 600;
+  background: var(--log-surface-2);
+}
+
+.life-log-import-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.life-log-import-table tr.is-muted {
+  opacity: 0.65;
+}
+
+.life-log-import-samples {
+  color: var(--log-muted);
+  font-family: 'SFMono-Regular', 'Consolas', 'Menlo', monospace;
+  font-size: 0.82rem;
+  max-width: 220px;
+}
+
+.life-log-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
 .life-log-page .btn-dark {
   background: var(--log-accent);
   border-color: transparent;

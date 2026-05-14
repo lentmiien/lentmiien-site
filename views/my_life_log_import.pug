@@ -1,0 +1,80 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/my_life_log.css")
+
+block content
+  .life-log-page
+    .life-log-hero
+      h1.mb-2 Import life log CSV
+      p.mb-0= fileName
+      .life-log-actions
+        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage/life_log") Back to timeline
+
+    .life-log-import-summary
+      .life-log-import-stat
+        span.life-log-import-stat-label Format
+        strong= preview.formatName
+      .life-log-import-stat
+        span.life-log-import-stat-label Rows
+        strong #{preview.validRowCount} valid / #{preview.rowCount} total
+      .life-log-import-stat
+        span.life-log-import-stat-label Date range
+        strong #{preview.firstDate || 'n/a'} - #{preview.lastDate || 'n/a'}
+      .life-log-import-stat
+        span.life-log-import-stat-label Time column
+        strong= preview.timestampColumn
+
+    if preview.invalidRowCount
+      .life-log-import-warning
+        | #{preview.invalidRowCount} rows have invalid or missing timestamps and will be skipped.
+
+    form.life-log-import-map(method="post", action="/mypage/life_log/import")
+      input(type="hidden", name="token", value=token)
+      input(type="hidden", name="file_name", value=fileName)
+      input(type="hidden", name="column_count", value=preview.columns.length)
+      datalist#life-log-import-labels
+        each label in labelOptions
+          option(value=label)
+
+      .life-log-import-table-wrap
+        table.life-log-import-table
+          thead
+            tr
+              th Import
+              th CSV column
+              th Life log label
+              th Type
+              th Sample
+              th Parsed
+          tbody
+            each column, idx in preview.columns
+              tr(class=column.enabled ? '' : 'is-muted')
+                td
+                  input(type="hidden", name=`source_${idx}`, value=column.source)
+                  .form-check
+                    input.form-check-input(type="checkbox", name=`enabled_${idx}`, value="true", checked=column.enabled)
+                td
+                  strong= column.source
+                  if column.ignoreReason
+                    .life-log-import-muted= column.ignoreReason
+                td
+                  input.form-control(type="text", name=`target_label_${idx}`, value=column.targetLabel, list="life-log-import-labels", placeholder="label")
+                td
+                  select.form-select(name=`entry_type_${idx}`)
+                    each option in typeOptions
+                      option(value=option.value, selected=option.value === column.entryType)= option.label
+                td.life-log-import-samples
+                  if column.sampleValues && column.sampleValues.length
+                    = column.sampleValues.join(', ')
+                  else
+                    span.life-log-import-muted n/a
+                td.life-log-import-samples
+                  if column.parsedSampleValues && column.parsedSampleValues.length
+                    = column.parsedSampleValues.join(', ')
+                  else
+                    span.life-log-import-muted n/a
+
+      .life-log-import-actions
+        a.btn.btn-outline-dark(href="/mypage/life_log") Cancel
+        button.btn.btn-dark(type="submit") Import mapped data

@@ -1,14 +1,21 @@
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const logger = require('../utils/logger');
 const myLifeLogService = require('../services/myLifeLogService');
+const myLifeLogCsvImportService = require('../services/myLifeLogCsvImportService');
 const ollama = require('../utils/Ollama_API');
 
 const LIFE_LOG_TYPES = ['basic', 'medical', 'diary', 'visual_log'];
+const LIFE_LOG_IMPORT_TYPES = ['basic', 'medical'];
 const TYPE_LABELS = {
   basic: 'Basic',
   medical: 'Medical',
   diary: 'Diary',
   visual_log: 'Visual log',
 };
+const LIFE_LOG_IMPORT_DIR = path.join(__dirname, '..', 'tmp_data', 'life-log-imports');
+const LIFE_LOG_IMPORT_TOKEN_RE = /^[a-f0-9]{32}$/;
 
 const MY_LIFE_LOG_PROMPT = `You are a journaling assistant that cleans up short, raw life-log notes.
 
@@ -125,6 +132,69 @@ const normalizeEntry = (entry) => ({
   displayTime: formatDisplayTime(entry.timestamp),
   isLegacy: entry.isLegacy === true,
 });
+
+const ensureLifeLogImportDir = async () => {
+  await fs.promises.mkdir(LIFE_LOG_IMPORT_DIR, { recursive: true });
+};
+
+const getLifeLogImportPath = (token) => {
+  if (!LIFE_LOG_IMPORT_TOKEN_RE.test(String(token || ''))) {
+    throw new Error('Invalid import token.');
+  }
+  return path.join(LIFE_LOG_IMPORT_DIR, `${token}.csv`);
+};
+
+const saveLifeLogImportFile = async (buffer) => {
+  await ensureLifeLogImportDir();
+  const token = crypto.randomBytes(16).toString('hex');
+  await fs.promises.writeFile(getLifeLogImportPath(token), buffer);
+  return token;
+};
+
+const readLifeLogImportFile = async (token) => fs.promises.readFile(getLifeLogImportPath(token), 'utf8');
+
+const removeLifeLogImportFile = async (token) => {
+  try {
+    await fs.promises.unlink(getLifeLogImportPath(token));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      logger.warning('Unable to remove life log import file', {
+        category: 'life_log',
+        metadata: { message: error?.message || error },
+      });
+    }
+  }
+};
+
+const getImportTypeOptions = () => LIFE_LOG_IMPORT_TYPES.map((type) => ({
+  value: type,
+  label: TYPE_LABELS[type] || type,
+}));
+
+const parseImportMappings = (body = {}) => {
+  const count = Number.parseInt(body.column_count, 10);
+  if (!Number.isFinite(count) || count < 1) return [];
+
+  const mappings = [];
+  for (let index = 0; index < count; index += 1) {
+    const source = typeof body[`source_${index}`] === 'string'
+      ? body[`source_${index}`].trim()
+      : '';
+    const targetLabel = typeof body[`target_label_${index}`] === 'string'
+      ? body[`target_label_${index}`].trim()
+      : '';
+    const requestedType = typeof body[`entry_type_${index}`] === 'string'
+      ? body[`entry_type_${index}`].trim()
+      : 'basic';
+    mappings.push({
+      source,
+      targetLabel,
+      entryType: LIFE_LOG_IMPORT_TYPES.includes(requestedType) ? requestedType : 'basic',
+      enabled: parseBoolean(body[`enabled_${index}`]),
+    });
+  }
+  return mappings;
+};
 
 const buildDailySummary = (entries) => {
   const days = new Map();
@@ -367,6 +437,73 @@ exports.life_log_delete_entry = async (req, res) => {
       metadata: { message: error?.message || error },
     });
     return res.status(500).json({ error: 'Unable to delete life log entry.' });
+  }
+};
+
+exports.life_log_import_preview = async (req, res) => {
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).render('error_page', { error: 'Please choose a CSV file to import.' });
+  }
+
+  try {
+    const csvText = req.file.buffer.toString('utf8');
+    const labelOptions = myLifeLogService.getLabelSuggestions(new Date()).all;
+    const preview = await myLifeLogCsvImportService.buildLifeLogImportPreview(csvText, {
+      existingLabels: labelOptions,
+    });
+    const token = await saveLifeLogImportFile(req.file.buffer);
+
+    return res.render('my_life_log_import', {
+      preview,
+      token,
+      fileName: req.file.originalname || 'uploaded.csv',
+      labelOptions,
+      typeOptions: getImportTypeOptions(),
+    });
+  } catch (error) {
+    logger.error('Failed to preview life log CSV import', {
+      category: 'life_log',
+      metadata: { message: error?.message || error },
+    });
+    return res.status(400).render('error_page', {
+      error: error?.message || 'Unable to preview this CSV file.',
+    });
+  }
+};
+
+exports.life_log_import = async (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const mappings = parseImportMappings(req.body);
+
+  if (!token) {
+    return res.status(400).render('error_page', { error: 'Missing import token.' });
+  }
+
+  try {
+    const csvText = await readLifeLogImportFile(token);
+    const parsedImport = await myLifeLogCsvImportService.buildLifeLogImportRecords(csvText, {
+      mappings,
+    });
+    const result = await myLifeLogService.importCsvRecords({
+      records: parsedImport.records,
+    });
+    await removeLifeLogImportFile(token);
+
+    return res.render('my_life_log_import_result', {
+      fileName: req.body?.file_name || 'uploaded CSV',
+      parsedImport,
+      result,
+      activeMappings: mappings.filter((mapping) => mapping.enabled && mapping.targetLabel),
+    });
+  } catch (error) {
+    await removeLifeLogImportFile(token);
+    logger.error('Failed to import life log CSV', {
+      category: 'life_log',
+      metadata: { message: error?.message || error },
+    });
+    return res.status(500).render('error_page', {
+      error: error?.message || 'Unable to import this CSV file.',
+    });
   }
 };
 

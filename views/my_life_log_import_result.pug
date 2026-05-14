@@ -1,0 +1,54 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/my_life_log.css")
+
+block content
+  .life-log-page
+    .life-log-hero
+      h1.mb-2 CSV import result
+      p.mb-0= fileName
+      .life-log-actions
+        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage/life_log") Back to timeline
+
+    .life-log-import-summary
+      .life-log-import-stat
+        span.life-log-import-stat-label Format
+        strong= parsedImport.formatName
+      .life-log-import-stat
+        span.life-log-import-stat-label Imported
+        strong #{result.importedEntries} entries
+      .life-log-import-stat
+        span.life-log-import-stat-label Duplicates
+        strong #{result.duplicateEntries} entries
+      .life-log-import-stat
+        span.life-log-import-stat-label Source rows
+        strong #{parsedImport.records.length} usable / #{parsedImport.rowCount} total
+
+    .life-log-import-result
+      if result.importedEntries
+        p #{result.importedEntries} life log entries were saved.
+      else
+        p No new life log entries were saved.
+      if result.duplicateEntries
+        p #{result.duplicateEntries} mapped values were skipped because the same label already exists on that calendar date.
+      if parsedImport.invalidRows
+        p #{parsedImport.invalidRows} rows were skipped because the timestamp could not be parsed.
+      if parsedImport.emptyRows
+        p #{parsedImport.emptyRows} rows had no mapped numeric values.
+
+    if activeMappings && activeMappings.length
+      h2.life-log-import-section-title Active mappings
+      .life-log-import-table-wrap
+        table.life-log-import-table
+          thead
+            tr
+              th CSV column
+              th Life log label
+              th Type
+          tbody
+            each mapping in activeMappings
+              tr
+                td= mapping.source
+                td= mapping.targetLabel
+                td= mapping.entryType
