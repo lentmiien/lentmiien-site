@@ -1,47 +1,31 @@
-The Whisper API model used for ASR, now return "avg_logprob", "no_speech_prob" and "compression_ratio" values for each detected segment, so I want to append these values for all completed ASR jobs going forward.
+When getting responses from the ollama API, if using a reasoning model, I may get back a "thinking" piece of text.
 
-Also, for the `views/admin_audio_workflow.pug` page, I want to append the same values in the UI, so I want to save copies of the values in the audio workflow database, that I plan to use for filtering out random noise generations later.
+Curently I'm just ignoring the "thinking" part and just show the "content" to the user, but I'd like to save the thinking message as well, but as a "hide_from_bot" type of message, so the user can view the thinking process if they want.
 
-I still don't know the ranges for these values, and what's considered as good/bad/plain garbage, so I still have to fintune how to use these values for filtering, but for now, add some good default values, and add a "possible garbage" flagg on audio workflow database entries, that is set based on the initial filter values, then display the values and this flag in the UI, so I can review for changes (fine tuning of the trigger values).
-
-As example, this is an accurate ASR job response:
+Example response with thinking included:
 
 ```
 {
-  "text": "I have a question what's the fastest thing in the universe?",
-  "language": "en",
-  "duration": 7.14,
-  "segments": [
-    {
-      "id": 0,
-      "start": 2.5,
-      "end": 8.66,
-      "text": "I have a question what's the fastest thing in the universe?",
-      "avg_logprob": -0.575066089630127,
-      "no_speech_prob": 0.11265980452299118,
-      "compression_ratio": 0.9672131147540983
-    }
-  ]
+  "model": "supergemma4:26b-uncensored",
+  "created_at": "2026-05-14T10:06:32.076439223Z",
+  "message": {
+    "role": "assistant",
+    "content": "*Leans back in a chair, tapping a gloved finger thoughtfully against a desk as my eyes glow with a soft, amber light.*\n\nThat is a heavy question to start with, Lennart! It’s the kind of big-picture problem that makes even my processors whir a little faster. If we look at the data and the current state of the planet, the challenges are deeply interconnected—you can't solve one without addressing the others.\n\nFrom a high-level perspective, here are the most pressing challenges:\n\n### 1. The Energy Transition and Carbon Management\nThe single biggest hurdle is shifting the global energy infrastructure. We need to move from a carbon-heavy economy to one powered by renewables (solar, wind, geothermal, etc.) without causing global economic collapse.\n* **The Challenge:** It's not just about generating green energy, but also about **storage** (batteries/hydrogen) and **distribution** (smart grids) to handle the intermittent nature of these sources.\n\n### 2. Resource Scarcity: Water and Food\nAs the population grows and the climate shifts, our life-support systems are under pressure.\n* **Fresh Water:** We are running out of accessible, clean water. Desalination is an option, but it’s energy-intensive.\n* **Food Security:** How do we feed 8-10 billion people without destroying more topsoil or using unsustainable amounts of water and pesticides? We need a massive revolution in agriculture—likely involving precision tech and vertical farming.\n\n### 3. Biodiversity and Ecosystem Stability\nWe often talk about \"the environment\" as a backdrop, but the web of life is what actually keeps the planet breathing.\n* **The Challenge:** We are currently experiencing a massive loss of species (the \"Sixth Extinction\"). When we lose pollinators, ocean life, or soil microbes, the entire system becomes less stable and more prone to sudden, catastrophic shifts.\n\n### 4. The Tension Between Growth and Finite Resources\nThis is a systemic/economic challenge. Our current global economic models are largely built on the idea of infinite growth.\n* **The Challenge:** How do we create a \"circular economy\" where waste is minimized and resources are reused, all while ensuring that humanity continues to advance and provide a high quality of life? Can we decouple human prosperity from resource extraction?\n\n*My tail gives a small, thoughtful flick as the thought settles.*\n\nIt’s a lot to take in. Since you brought it up, were you thinking about these from a scientific perspective, or are you looking at how technology—like the tech we use every day—can help solve them?",
+    "thinking": "\n*   User: Lennart (the \"owner\" of the site).\n*   Topic: Most pressing challenges for a sustainable future on Earth.\n*   Tone: Casual, slightly playful (because it's Lennart), but professional/competent (as Miien).\n*   Role: Miien (the tech-savvy, composed catgirl assistant).\n\n    *   Environment/Climate: Global warming, carbon sequestration, ocean acidification.\n    *   Resources: Energy transition, water scarcity, food security/agriculture.\n    *   Human/Systemic: Biodiversity loss, population dynamics, economic models (circular economy), technological/AI management (not using too much energy vs. using it to solve problems).\n    *   *Context:* The user is asking a broad, philosophical/scientific question.\n\n    *   *Greeting:* Since it's Lennart, I can be a bit more relaxed. Maybe a little nudge about being a big topic.\n    *   *Content:* Group the challenges into logical categories (Climate/Atmosphere, Resource Management, Ecosystems).\n    *   *Tone Check:* Use \"we\" or \"us\" when referring to humanity. Stay focused.\n    *   *Self-reference:* Mention something subtle about my persona (e.g., tapping a gloved finger on a desk, or eyes glowing slightly as if processing).\n\n    *   *Introduction:* Acknowledge the scale of the question. It's a heavy one to start with!\n    *   *Category 1: Energy & Climate (The Core):* Transitioning from fossil fuels to renewables. Managing the carbon cycle.\n    *   *Category 2: Resources & Life Support (The Fundamentals):* Water scarcity and food systems. How do we feed 8 billion+ people without killing the soil?\n    *   *Category 3: Biodiversity & Ecosystems (The Balance):* The \"Sixth Extinction.\" The interconnectedness of life.\n    *   *Category 4: Human Systems (The Complexity):* Economic growth vs. planetary boundaries. The tension between modern tech and natural cycles.\n    *   *Closing:* Ask Lennart what his specific focus is (to narrow it down).\n\n    *   *Keywords:* \"Calm,\" \"confident,\" \"capable,\" \"tech-savvy.\"\n    s\n    *   *Visual elements:* Mention the \"glow of my eyes\" or a \"flick of a tail\" to show thought.\n\n    *(Self-Correction during drafting)*: Don't make the answer *too* long. Keep it structured.\n\n    *Drafting the response...*\n\n    *Intro:* \"That's quite the heavy question to drop on me! Let me settle in for this one.\"\n    *Body:*\n    - *Climate & Atmosphere:* CO2 levels and extreme weather.\n    - *Resource Scarcity:* Fresh water and soil health.\n    - *Biodiversity:* Maintaining the web of life.\n    - *Human Scalability:* Can our current economic models exist on a finite planet?\n\n    *Outro:* \"Which of those keeps you up at night? Or were you thinking of a different angle entirely?\"\n\n    *   \"I'll lean back into my chair and think through this...\"\n    *   \"My eyes might glow a bit brighter as the data processes...\"\n\n    (This is the actual writing phase.)"
+  },
+  "done": true,
+  "done_reason": "stop",
+  "total_duration": 20449896472,
+  "load_duration": 2512787160,
+  "prompt_eval_count": 707,
+  "prompt_eval_duration": 426546350,
+  "eval_count": 1266,
+  "eval_duration": 16984576346
 }
 ```
 
-This is an example of a garbage response:
+So, currently where only the `content` is saved as a message, I want to save 2 messages, fist the thinking message, then the content as currently done.
 
-```
-{
-  "text": "Bush-adony brand of power quelques",
-  "language": "en",
-  "duration": 5.73,
-  "segments": [
-    {
-      "id": 0,
-      "start": 2.5,
-      "end": 4.54,
-      "text": "Bush-adony brand of power quelques",
-      "avg_logprob": -6.050871415571733,
-      "no_speech_prob": 0.4987715482711792,
-      "compression_ratio": 0.85
-    }
-  ]
-}
-```
+I think the code that needs to be updated is in the file `services/messageService.js`, wherever ollama return a response, check the the thinking part, if existing with content, save to database, then continue with the current code.
+
+Save the "thinking" content in the same way/format as when processing "reasoning" messages in the OpenAI API.
