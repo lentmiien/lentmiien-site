@@ -84,6 +84,7 @@ describe('MessageService', () => {
     mockMarkedParse.mockClear();
     mockMarkedParse.mockImplementation((text) => `parsed:${text}`);
     AIModelCards.find.mockReset();
+    Chat5Model.mockClear();
     Chat5Model.find.mockReset();
     ollama.chat.mockReset();
     ollama.convertResponseBody.mockReset();
@@ -254,6 +255,86 @@ describe('MessageService', () => {
     expect(result.messages.map((message) => message.contentType)).toEqual([
       'function_call',
       'function_call_output',
+      'text',
+    ]);
+    expect(result.msg.content.text).toBe('Final answer');
+  });
+
+  test('generateAIMessage saves converted Ollama thinking as hidden reasoning before content', async () => {
+    AIModelCards.find.mockResolvedValue([
+      {
+        provider: 'Local',
+        api_model: 'supergemma4:26b-uncensored',
+        context_type: 'system',
+        in_modalities: ['text'],
+      },
+    ]);
+    Chat5Model.find.mockResolvedValue([
+      {
+        _id: { toString: () => 'user-msg' },
+        user_id: 'Lennart',
+        contentType: 'text',
+        content: { text: 'Give me an answer' },
+        hideFromBot: false,
+      },
+    ]);
+    ollama.chat.mockResolvedValue({
+      message: {
+        role: 'assistant',
+        content: 'Final answer',
+        thinking: 'Plan the answer.',
+      },
+    });
+    ollama.convertResponseBody.mockResolvedValue([
+      {
+        contentType: 'reasoning',
+        content: {
+          text: 'Plan the answer.',
+          summary: [{ type: 'summary_text', text: 'Plan the answer.' }],
+        },
+        hideFromBot: true,
+      },
+      {
+        contentType: 'text',
+        content: {
+          text: 'Final answer',
+        },
+        hideFromBot: false,
+      },
+    ]);
+
+    service.syncTextEmbedding = jest.fn().mockResolvedValue();
+    const result = await service.generateAIMessage({
+      conversation: {
+        _id: { toString: () => 'conv-1' },
+        category: 'chat',
+        tags: ['demo'],
+        members: ['Lennart'],
+        metadata: {
+          model: 'supergemma4:26b-uncensored',
+          maxMessages: 10,
+        },
+        messages: ['user-msg'],
+      },
+    });
+
+    expect(Chat5Model).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      contentType: 'reasoning',
+      hideFromBot: true,
+      content: expect.objectContaining({
+        text: 'Plan the answer.',
+        summary: [{ type: 'summary_text', text: 'Plan the answer.' }],
+      }),
+    }));
+    expect(Chat5Model).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      contentType: 'text',
+      hideFromBot: false,
+      content: expect.objectContaining({
+        text: 'Final answer',
+      }),
+    }));
+    expect(result.messages.map((message) => message.contentType)).toEqual([
+      'reasoning',
       'text',
     ]);
     expect(result.msg.content.text).toBe('Final answer');

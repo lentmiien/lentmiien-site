@@ -1210,6 +1210,57 @@ const createOllamaTextOutput = (text, hideFromBot = false) => ({
   hideFromBot,
 });
 
+const normalizeThinkingText = (thinking) => (
+  typeof thinking === 'string' ? thinking.trim() : ''
+);
+
+const createOllamaReasoningOutput = (thinking, extras = {}) => {
+  const text = normalizeThinkingText(thinking);
+  if (!text) return null;
+
+  const summary = [{ type: 'summary_text', text }];
+  const raw = {
+    type: 'reasoning',
+    source: 'ollama_thinking',
+    thinking: text,
+  };
+
+  if (extras.model) raw.model = extras.model;
+  if (extras.createdAt) raw.created_at = extras.createdAt;
+  if (Number.isInteger(extras.round)) raw.round = extras.round;
+  if (extras.role) raw.role = extras.role;
+  if (extras.toolCallSource) raw.tool_call_source = extras.toolCallSource;
+
+  return {
+    contentType: 'reasoning',
+    content: {
+      text,
+      image: null,
+      audio: null,
+      tts: null,
+      transcript: null,
+      revisedPrompt: null,
+      imageQuality: null,
+      toolOutput: null,
+      outputId: null,
+      responseId: null,
+      outputIndex: Number.isInteger(extras.outputIndex) ? extras.outputIndex : null,
+      toolCallId: null,
+      callId: null,
+      toolName: null,
+      summary,
+      encryptedContent: null,
+      arguments: null,
+      output: null,
+      result: null,
+      raw,
+      status: 'completed',
+      error: null,
+    },
+    hideFromBot: true,
+  };
+};
+
 const getToolCallIdentifier = (toolCall) => {
   if (!toolCall || typeof toolCall !== 'object') {
     return {
@@ -1336,14 +1387,32 @@ const flattenAssistantContent = (content) => {
 const convertResponseBody = async (response) => {
   const outputs = [];
   const toolSteps = Array.isArray(response?.tool_steps) ? response.tool_steps : [];
+  const includedThinking = new Set();
 
-  for (const step of toolSteps) {
+  const addThinkingOutput = (thinking, extras = {}) => {
+    const text = normalizeThinkingText(thinking);
+    if (!text || includedThinking.has(text)) return;
+    const output = createOllamaReasoningOutput(text, extras);
+    if (!output) return;
+    includedThinking.add(text);
+    outputs.push(output);
+  };
+
+  for (let index = 0; index < toolSteps.length; index++) {
+    const step = toolSteps[index];
     if (!step || typeof step !== 'object') continue;
-    if (step.type === 'assistant' && Array.isArray(step.tool_calls)) {
-      step.tool_calls.forEach((toolCall) => {
-        const output = createOllamaFunctionCallOutput(toolCall);
-        if (output) outputs.push(output);
+    if (step.type === 'assistant') {
+      addThinkingOutput(step.thinking, {
+        round: step.round,
+        outputIndex: index,
+        toolCallSource: step.tool_call_source,
       });
+      if (Array.isArray(step.tool_calls)) {
+        step.tool_calls.forEach((toolCall) => {
+          const output = createOllamaFunctionCallOutput(toolCall);
+          if (output) outputs.push(output);
+        });
+      }
       continue;
     }
     if (step.type === 'tool') {
@@ -1353,6 +1422,11 @@ const convertResponseBody = async (response) => {
   }
 
   const assistantMessage = extractAssistantMessage(response);
+  addThinkingOutput(assistantMessage?.thinking, {
+    model: response?.model,
+    createdAt: response?.created_at,
+    role: assistantMessage?.role,
+  });
   const assistantText = flattenAssistantContent(assistantMessage?.content);
   if (assistantText) {
     outputs.push(createOllamaTextOutput(assistantText, false));

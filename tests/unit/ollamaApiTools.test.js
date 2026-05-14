@@ -261,4 +261,122 @@ describe('Ollama_API tool manager integration', () => {
       },
     });
   });
+
+  test('converts Ollama thinking into a hidden reasoning message before text', async () => {
+    const converted = await convertResponseBody({
+      model: 'supergemma4:26b-uncensored',
+      created_at: '2026-05-14T10:06:32.076439223Z',
+      message: {
+        role: 'assistant',
+        content: 'Final answer',
+        thinking: 'Draft the answer first.',
+      },
+      done: true,
+    });
+
+    expect(converted.map((message) => message.contentType)).toEqual([
+      'reasoning',
+      'text',
+    ]);
+    expect(converted[0]).toMatchObject({
+      hideFromBot: true,
+      content: {
+        text: 'Draft the answer first.',
+        summary: [{ type: 'summary_text', text: 'Draft the answer first.' }],
+        raw: {
+          type: 'reasoning',
+          source: 'ollama_thinking',
+          thinking: 'Draft the answer first.',
+          model: 'supergemma4:26b-uncensored',
+          created_at: '2026-05-14T10:06:32.076439223Z',
+          role: 'assistant',
+        },
+        status: 'completed',
+        error: null,
+      },
+    });
+    expect(converted[1]).toMatchObject({
+      hideFromBot: false,
+      content: {
+        text: 'Final answer',
+      },
+    });
+  });
+
+  test('orders Ollama tool thinking before tool calls and final text', async () => {
+    const converted = await convertResponseBody({
+      message: {
+        role: 'assistant',
+        content: 'Final answer',
+        thinking: 'Summarize the tool result.',
+      },
+      tool_steps: [
+        {
+          round: 1,
+          type: 'assistant',
+          content: '',
+          thinking: 'I should call the demo tool.',
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: {
+                name: 'demo_tool',
+                arguments: { prompt: 'hello' },
+              },
+            },
+          ],
+        },
+        {
+          round: 1,
+          type: 'tool',
+          name: 'demo_tool',
+          tool_call_id: 'call_1',
+          call_id: 'call_1',
+          arguments: { prompt: 'hello' },
+          content: '{"answer":"tool result"}',
+          error: null,
+        },
+        {
+          round: 2,
+          type: 'assistant',
+          content: 'Final answer',
+          thinking: 'Summarize the tool result.',
+          tool_calls: [],
+        },
+      ],
+    });
+
+    expect(converted.map((message) => message.contentType)).toEqual([
+      'reasoning',
+      'function_call',
+      'function_call_output',
+      'reasoning',
+      'text',
+    ]);
+    expect(converted[0]).toMatchObject({
+      content: {
+        text: 'I should call the demo tool.',
+        outputIndex: 0,
+        raw: {
+          round: 1,
+        },
+      },
+    });
+    expect(converted[3]).toMatchObject({
+      content: {
+        text: 'Summarize the tool result.',
+        outputIndex: 2,
+        raw: {
+          round: 2,
+        },
+      },
+    });
+    expect(converted[4]).toMatchObject({
+      hideFromBot: false,
+      content: {
+        text: 'Final answer',
+      },
+    });
+  });
 });
