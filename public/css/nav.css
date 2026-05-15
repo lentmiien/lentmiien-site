@@ -42,7 +42,7 @@
 .navbar {
   display: none; /* Hidden by default */
   grid-template-columns: 1fr; /* Single column layout by default */
-  gap: 20px; /* Spacing between columns */
+  gap: 18px; /* Spacing between columns */
   padding: 20px; /* Spacing around the content */
   align-items: start; /* Aligns grid items to the start of the grid area vertically */
   position: fixed;
@@ -57,22 +57,52 @@
   z-index: 499; /* Ensures the navbar is below the toggle icon but above other content */
 }
 
+.navbar-column {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.navbar-column > h2:first-child {
+  margin-top: 0;
+}
+
 .navbar .type-1-link {
-  padding: 10px 15px;
+  padding: 8px 12px;
   display: block;
   color: white;
   text-decoration: none;
   font-weight: 900;
-  font-size: 20px;
-  margin-bottom: 10px;
+  font-size: 17px;
+  line-height: 1.25;
+  margin-bottom: 3px;
+  width: 100%;
 }
 
 .navbar .type-2-link {
-  padding: 10px 15px;
+  padding: 7px 12px;
   display: block;
   color: #cccccc;
   text-decoration: none;
-  font-size: 16px;
+  font-size: 15px;
+  line-height: 1.25;
+  width: 100%;
+}
+
+.navbar .nav-item {
+  list-style: none;
+  width: 100%;
+}
+
+.navbar .nav-link.dropdown-toggle {
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.25;
+  width: 100%;
 }
 
 .navbar-html-entry {

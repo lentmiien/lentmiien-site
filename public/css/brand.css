@@ -92,6 +92,18 @@ body a:focus {
   color: var(--text);
 }
 
+.navbar .nav-link.dropdown-toggle {
+  color: var(--text);
+  border-left: 3px solid transparent;
+}
+
+.navbar .nav-link.dropdown-toggle:hover,
+.navbar .nav-link.dropdown-toggle:focus {
+  background: var(--brand-tint);
+  border-color: var(--brand);
+  color: var(--text);
+}
+
 .navbar .type-2-link {
   color: var(--text-secondary);
   border-radius: 6px;
@@ -108,7 +120,7 @@ body a:focus {
   margin-top: 12px;
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .dropdown-menu {

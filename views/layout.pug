@@ -1,3 +1,13 @@
+mixin navColumn(title)
+  .navbar-column
+    if title
+      h2= title
+    block
+
+mixin navLink(href, label, variant)
+  - const linkClass = variant === 'secondary' ? 'type-2-link' : 'type-1-link';
+  a(class=linkClass, href=href)&attributes(attributes)= label
+
 doctype html
 html(lang='en')
   head
@@ -40,8 +50,9 @@ html(lang='en')
     a#goTopPageBtn.nav-action-btn(href=`${loggedIn ? "/mypage" : "/"}`) ⌂
     button#actionBtn.nav-action-btn(disabled) ---
     #navbar.navbar
-      .navbar-column
-        if loggedIn === true && permissions && permissions.indexOf("quicknote") >= 0
+      - const hasPermission = (permission) => Array.isArray(permissions) && permissions.indexOf(permission) >= 0;
+      if loggedIn === true && hasPermission("quicknote")
+        +navColumn('Quick Add')
           form#quickNoteForm
             .input-group.mb-1
               input#quickNoteInput.form-control(type='text' placeholder='Quick note...')
@@ -52,45 +63,26 @@ html(lang='en')
               input#locationInput.form-control(type='text' placeholder='Location name...')
               .input-group-append
                 button.btn.btn-primary(type='submit') Add location
-        a.type-1-link(href="/blog", style="width:100%;") Blog
-        a.type-2-link(href="/blog/Personal/list", style="width:100%;") Personal
-        a.type-2-link(href="/blog/Programming/list", style="width:100%;") Programming
-        a.type-2-link(href="/blog/Food/list", style="width:100%;") Food
-        a.type-2-link(href="/yaml-viewer", style="width:100%;") YAML viewer
-        a.type-2-link(href="/exchange-rates", style="width:100%;") Exchange rates
+      +navColumn('Content')
+        +navLink('/blog', 'Blog')
+        +navLink('/blog/Personal/list', 'Personal', 'secondary')
+        +navLink('/blog/Programming/list', 'Programming', 'secondary')
+        +navLink('/blog/Food/list', 'Food', 'secondary')
         if loggedIn == true
-          a.type-1-link(href="/learning", style="width:100%;") Learning Lab
-          a.type-2-link(href="/gpt-image", style="width:100%;") GPT Image 2
-          a.type-2-link(href="/mypage/blogpost", style="width:100%;") Write blog
-        if admin
-          a.type-1-link(href="/admin", style="width:100%;") Admin page
-          a.type-1-link(href="/admin/learning", style="width:100%;") Learning CMS
-          a.type-1-link(href="/admin/html-pages", style="width:100%;") HTML content
-          a.type-1-link(href="/admin/project-docs", style="width:100%;") Project docs
-          a.type-1-link(href="/admin/app_logs", style="width:100%;") App logs
-          a.type-1-link(href="/admin/openai_usage", style="width:100%;") OpenAI Usage
-          a.type-1-link(href="/admin/ai-gateway", style="width:100%;") AI Gateway
-          a.type-1-link(href="/admin/performance", style="width:100%;") App Performance
-          a.type-1-link(href="/admin/database_usage", style="width:100%;") Database Usage
-          a.type-1-link(href="/admin/database-viewer", style="width:100%;") Database Viewer
-          a.type-1-link(href="/admin/tools", style="width:100%;") Tool Manager
-          a.type-1-link(href="/admin/audio-workflow", style="width:100%;") Audio workflow
-          a.type-1-link(href="/admin/api-debug-logs", style="width:100%;") API Debug Logs
-          a.type-1-link(href="/admin/message-inbox", style="width:100%;") Message inbox
-          a.type-2-link(href="/admin/message-filters", style="width:100%;") Message filters
-          a.type-1-link(href="/admin/agent5", style="width:100%;") Agent5
-          a.type-1-link(href="/admin/embedding-test", style="width:100%;") Embedding Management
-          a.type-1-link(href="/admin/tts-test", style="width:100%;") TTS Test
-          a.type-1-link(href="/admin/music-test", style="width:100%;") Music generator
-          a.type-1-link(href="/admin/asr-test", style="width:100%;") Audio transcription
-          a.type-1-link(href="/admin/rag-memory", style="width:100%;") RAG recall test
-          a.type-1-link(href="/tmp-files", style="width:100%;") Temp files
-        a.type-1-link(href="/cookingp", style="width:100%;") Cooking public page
-        a.type-1-link(href="/games", style="width:100%;") Games
+          +navLink('/learning', 'Learning Lab')
+          +navLink('/mypage/blogpost', 'Write blog', 'secondary')
+        +navLink('/cookingp', 'Cooking public page')
+        +navLink('/games', 'Games')
+      +navColumn('Tools')
+        +navLink('/yaml-viewer', 'YAML viewer')
+        +navLink('/exchange-rates', 'Exchange rates')
       if loggedIn == true
+        - const canUseTestLinks = hasPermission("test");
+        - const showUtilityLinks = canUseTestLinks || hasPermission("box") || hasPermission("binpacking") || hasPermission("quicknote") || hasPermission("product") || hasPermission("gallery");
+        - const showLifeAdmin = hasPermission("accounting") || hasPermission("budget") || hasPermission("receipt") || hasPermission("payroll") || hasPermission("scheduletask") || hasPermission("emergencystock") || hasPermission("shoppinglist") || canUseTestLinks;
         if chatmode
-          .navbar-column
-            a.type-1-link(href="/chat3", style="width:100%;") New chat
+          +navColumn('Chat History')
+            +navLink('/chat3', 'New chat')
             li.nav-item.dropdown
               a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") History
               ul.dropdown-menu
@@ -101,84 +93,108 @@ html(lang='en')
               a.nav-link.dropdown-toggle(href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false") Select head
               ul.dropdown-menu
                 li#head_list
-        if permissions && permissions.indexOf("chat5") >= 0
-          .navbar-column
-            a.type-1-link(href="/chat5/top", style="width:100%;") ChatGPT
-            a.type-2-link(href="/chat5/drafting-presets", style="width:100%;") Drafting presets
-            if permissions && permissions.indexOf("chat4") >= 0
-              a.type-2-link(href="/chat4/knowledgelist", style="width:100%;") Knowledge
-              a.type-2-link(href="/chat4/templates", style="width:100%;") Tempaltes
-        if permissions && permissions.indexOf("accounting") >= 0
-          .navbar-column
-            a.type-1-link(href="/accounting", style="width:100%;") Accounting hub
-            a.type-2-link(href="/accounting/legacy", style="width:100%;") Legacy budget view
-        if permissions && permissions.indexOf("cooking") >= 0
-          .navbar-column
-            a.type-1-link(href="/cooking", style="width:100%;") Cooking calendar
-            a.type-2-link(href="/cooking/cookbook", style="width:100%;") Cookbook
-            a.type-2-link(href="/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW", style="width:100%;") [TEST] Maiko cooking request page
-            a.type-2-link(href="/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G", style="width:100%;") [TEST] Mizuki cooking request page
-        if permissions && permissions.indexOf("music") >= 0
-          .navbar-column
-            a.type-1-link(href="/music", style="width:100%;") Music library
-        if permissions && permissions.indexOf("test") >= 0
-          .navbar-column
-            h2 Test stuff
-            if permissions && permissions.indexOf("box") >= 0
-              a.type-1-link(href="/box", style="width:100%;") Box packer
-            if permissions && permissions.indexOf("binpacking") >= 0
-              a.type-1-link(href="/binpacking", style="width:100%;") 3D Bin Packing
-            a.type-1-link(href="/mypage/pdf_to_jpg", style="width:100%;") PDF to JPG
-            if permissions && permissions.indexOf("quicknote") >= 0
-              a.type-1-link(href="/quicknote", style="width:100%;") Quick note
-            a.type-1-link(href="/electricity_usage", style="width:100%;") EL
-            a.type-1-link(href="/mpu6050", style="width:100%;") MPU6050
-            a.type-1-link(href="/dht22", style="width:100%;") DHT22
-            a.type-1-link(href="/mypage/github", style="width:100%;") GitHub (lentmiien)
-            a.type-1-link(href="/es/es_dashboard", style="width:100%;") Emergency Stock
-            a.type-1-link(href="/receipt", style="width:100%;") Upload receipt
-            a.type-1-link(href="/product", style="width:100%;") Product details
-            a.type-1-link(href="/ai-cluster-planner", style="width:100%;") AI cluster planner
-            a.type-1-link(href="/chat5", style="width:100%;") Chat5
-            a.type-1-link(href="/chat5/top", style="width:100%;") Chat5 (new)
-            a.type-1-link(href="/chat5/ai_model_cards", style="width:100%;") Manage AI Models
-            a.type-1-link(href="/budget", style="width:100%;") Accounting (new)
-            a.type-1-link(href="/budget/review", style="width:100%;") Budget review
-            a.type-1-link(href="/budget/cards", style="width:100%;") Credit cards
-            a.type-1-link(href="/gallery", style="width:100%;") Gallery
-            a.type-1-link(href="/payroll", style="width:100%;") Payroll
-            a.type-1-link(href="/scheduleTask/calendar", style="width:100%;") Schedule
-            a.type-1-link(href="/image_gen", style="width:100%;") ComfyIU
-            a.type-1-link(href="/image_gen/bulk", style="width:100%;") ComfyIU bulk
-            a.type-1-link(href="/ocr", style="width:100%;") OCR tool
-            a.type-1-link(href="/ocr-tts", style="width:100%;") OCR → TTS
-            a.type-1-link(href="/sora", style="width:100%;") Sora
-            a.type-1-link(href="/diff", style="width:100%;") JSON diff
-            if permissions && permissions.indexOf("asr") >= 0
-              a.type-1-link(href="/asr", style="width:100%;") Audio transcription
-            if permissions && permissions.indexOf("shoppinglist") >= 0
-              a.type-1-link(href="/shopping-list", style="width:100%;") Shopping list
-        if permissions && permissions.indexOf("archive") >= 0
-          .navbar-column
-            h2 Archive
-            a.type-2-link(href="/chat", style="width:100%;") [OLD] ChatGPT v1
-            a.type-2-link(href="/chat2", style="width:100%;") [OLD] ChatGPT v2
-            a.type-2-link(href="/chat3", style="width:100%;") [OLD] ChatGPT v3
-            a.type-2-link(href="/chat4", style="width:100%;") [OLD] ChatGPT v4
-            a.type-2-link(href="/chat3/manage_knowledge", style="width:100%;") [OLD] ChatGPT knowledge
-            a.type-2-link(href="/gptdocument", style="width:100%;") [OLD] GPT document
-            a.type-2-link(href="/mypage/speektome", style="width:100%;") [TEST] Speek to me
-            a.type-2-link(href="/mypage/showtome", style="width:100%;") [TEST] Show to me
-            a.type-1-link(href="/chat3/browse_knowledge?id=6562e7bb5d76250d064fe480", style="width:100%;") Cookbook
-            a.type-1-link(href="/chat3/browse_knowledge?id=656304600cbce400a732cc81", style="width:100%;") Knowledge
-            a.type-2-link(href="/openai", style="width:100%;") OpenAI database
-            a.type-2-link(href="/openai/manage", style="width:100%;") Manage Open AI API models
-            a.type-2-link(href="/openai/history", style="width:100%;") Open AI API usage history
-            a.type-2-link(href="/embedding", style="width:100%;") Embeddings
-            a.type-2-link(href="/health", style="width:100%;") Health tracker
-        .navbar-column
-          h2 Bookmarks
-          a.type-1-link(href="/bookmarks", style="width:100%;") Manage bookmarks
+        if hasPermission("chat5")
+          +navColumn('Chat & Knowledge')
+            +navLink('/chat5/top', 'ChatGPT')
+            +navLink('/chat5/drafting-presets', 'Drafting presets', 'secondary')
+            if hasPermission("chat4")
+              +navLink('/chat4/knowledgelist', 'Knowledge', 'secondary')
+              +navLink('/chat4/templates', 'Templates', 'secondary')
+            +navLink('/chat5', 'Chat5 classic', 'secondary')
+            +navLink('/chat5/ai_model_cards', 'AI model cards', 'secondary')
+        +navColumn('AI & Media')
+          +navLink('/gpt-image', 'GPT Image 2')
+          if hasPermission("image_gen")
+            +navLink('/image_gen', 'ComfyUI')
+            +navLink('/image_gen/bulk', 'ComfyUI bulk', 'secondary')
+          if hasPermission("ocr")
+            +navLink('/ocr', 'OCR tool')
+            +navLink('/ocr-tts', 'OCR to TTS', 'secondary')
+          if hasPermission("sora")
+            +navLink('/sora', 'Sora')
+          if canUseTestLinks
+            +navLink('/ai-cluster-planner', 'AI cluster planner', 'secondary')
+          if hasPermission("asr")
+            +navLink('/asr', 'Audio transcription')
+          if hasPermission("music")
+            +navLink('/music', 'Music library')
+        if showUtilityLinks
+          +navColumn('Utilities')
+            if hasPermission("box")
+              +navLink('/box', 'Box packer')
+            if hasPermission("binpacking")
+              +navLink('/binpacking', '3D Bin Packing')
+            if canUseTestLinks
+              +navLink('/mypage/pdf_to_jpg', 'PDF to JPG')
+            if hasPermission("quicknote")
+              +navLink('/quicknote', 'Quick note')
+            if hasPermission("product")
+              +navLink('/product', 'Product details')
+            if canUseTestLinks
+              +navLink('/diff', 'JSON diff')
+            if hasPermission("gallery")
+              +navLink('/gallery', 'Gallery')
+            if canUseTestLinks
+              +navLink('/mypage/github', 'GitHub (lentmiien)', 'secondary')
+        if showLifeAdmin
+          +navColumn('Life Admin')
+            if hasPermission("accounting")
+              +navLink('/accounting', 'Accounting hub')
+              +navLink('/accounting/legacy', 'Legacy budget view', 'secondary')
+            if hasPermission("budget")
+              +navLink('/budget', 'Accounting (new)')
+              +navLink('/budget/review', 'Budget review', 'secondary')
+              +navLink('/budget/cards', 'Credit cards', 'secondary')
+            if hasPermission("receipt")
+              +navLink('/receipt', 'Upload receipt')
+            if hasPermission("payroll")
+              +navLink('/payroll', 'Payroll')
+            if hasPermission("scheduletask")
+              +navLink('/scheduleTask/calendar', 'Schedule')
+            if hasPermission("emergencystock")
+              +navLink('/es/es_dashboard', 'Emergency Stock')
+            if canUseTestLinks
+              +navLink('/electricity_usage', 'Electricity usage', 'secondary')
+            if hasPermission("shoppinglist")
+              +navLink('/shopping-list', 'Shopping list')
+        if hasPermission("cooking")
+          +navColumn('Cooking')
+            +navLink('/cooking', 'Cooking calendar')
+            +navLink('/cooking/cookbook', 'Cookbook', 'secondary')
+            +navLink('/cookingp?uid=nzz8gXilQBZ8nxS78b0UjhpPtnXqUMFW', 'Maiko cooking request page', 'secondary')
+            +navLink('/cookingp?uid=JSqngWDQyGoIVohdrG96dxU6XYSDv98G', 'Mizuki cooking request page', 'secondary')
+        if canUseTestLinks
+          +navColumn('Devices')
+            +navLink('/mpu6050', 'MPU6050')
+            +navLink('/dht22', 'DHT22')
+        if admin
+          +navColumn('Admin')
+            +navLink('/admin', 'Admin page')
+            +navLink('/admin/learning', 'Learning CMS')
+            +navLink('/admin/html-pages', 'HTML content')
+            +navLink('/admin/project-docs', 'Project docs')
+            +navLink('/admin/app_logs', 'App logs')
+            +navLink('/admin/message-inbox', 'Message inbox')
+            +navLink('/admin/message-filters', 'Message filters', 'secondary')
+            +navLink('/tmp-files', 'Temp files')
+          +navColumn('System Admin')
+            +navLink('/admin/performance', 'App Performance')
+            +navLink('/admin/database_usage', 'Database Usage')
+            +navLink('/admin/database-viewer', 'Database Viewer')
+            +navLink('/admin/tools', 'Tool Manager')
+            +navLink('/admin/audio-workflow', 'Audio workflow')
+            +navLink('/admin/api-debug-logs', 'API Debug Logs')
+          +navColumn('AI Admin')
+            +navLink('/admin/openai_usage', 'OpenAI Usage')
+            +navLink('/admin/ai-gateway', 'AI Gateway')
+            +navLink('/admin/agent5', 'Agent5')
+            +navLink('/admin/embedding-test', 'Embedding Management')
+            +navLink('/admin/tts-test', 'TTS Test')
+            +navLink('/admin/music-test', 'Music generator')
+            +navLink('/admin/asr-test', 'Audio transcription')
+            +navLink('/admin/rag-memory', 'RAG recall test')
+        +navColumn('Bookmarks')
+          +navLink('/bookmarks', 'Manage bookmarks')
           form.navbar-bookmark-form(method='post', action='/bookmarks/add')
             input(type='hidden', name='returnTo', value=currentPath)
             .mb-1
@@ -190,18 +206,18 @@ html(lang='en')
               button.btn.btn-primary(type='submit') Save
           if bookmarks && bookmarks.length
             each bookmark in bookmarks
-              a.type-2-link(href=bookmark.url, target='_blank', rel='noopener noreferrer', style='width:100%;') [#{bookmark.importance}] #{bookmark.title}
+              - const bookmarkLabel = `[${bookmark.importance}] ${bookmark.title}`;
+              +navLink(bookmark.url, bookmarkLabel, 'secondary')(target='_blank', rel='noopener noreferrer')
           else
             small.navbar-html-empty No bookmarks yet.
       else
-        .navbar-column
-          a.type-1-link(href="/login", style="width:100%;") Log in
-      .navbar-column
-        h2 Sample/Demos
+        +navColumn('Account')
+          +navLink('/login', 'Log in')
+      +navColumn('Samples & Demos')
         if htmlPaths && htmlPaths.length
           each l in htmlPaths
             .navbar-html-entry
-              a.type-2-link(href=l.path, style="width:100%;", target="_blank")= l.name
+              +navLink(l.path, l.name, 'secondary')(target="_blank", rel="noopener noreferrer")
               - const avgDisplay = typeof l.averageRating === 'number' ? l.averageRating.toFixed(2) : null;
               - const ratingParts = Array.isArray(l.ratings) ? l.ratings.filter(r => Number.isFinite(r.score)).map(r => `${r.label}: ${r.score}`) : [];
               if avgDisplay || ratingParts.length
