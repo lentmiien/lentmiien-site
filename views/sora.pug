@@ -11,41 +11,54 @@ block content
           h1.sora-title Sora 2 Studio
           p.sora-subtitle Craft cinematic experiments with Sora 2, track generation progress, and curate your personal video library.
 
+          if soraLifecycle
+            .sora-lifecycle(id='sora-lifecycle', class=soraLifecycle.generationDisabled ? 'sora-lifecycle--closed' : '')
+              .sora-lifecycle__metric
+                span.sora-lifecycle__value#sora-countdown-days= soraLifecycle.generationDisabled ? 'Closed' : soraLifecycle.daysUntilGenerationStop
+                span.sora-lifecycle__label= soraLifecycle.generationDisabled ? 'generation stopped' : 'days to cutoff'
+              .sora-lifecycle__body
+                strong Sora API discontinuation: #{soraLifecycle.apiDiscontinuationLabel}
+                p#sora-countdown-text.mb-0
+                  if soraLifecycle.generationDisabled
+                    | New Sora generations stopped here on #{soraLifecycle.generationStopLabel}.
+                  else
+                    | New Sora generations stop here on #{soraLifecycle.generationStopLabel}, #{soraLifecycle.generationStopOffsetDays} days before the API is discontinued.
+
           form#sora-generate-form.sora-card.sora-form(enctype='multipart/form-data')
             .row.g-3
               .col-12
                 label.form-label(for='sora-prompt') Prompt
-                textarea#sora-prompt.form-control(name='prompt', rows='3', placeholder='Describe the scene you want to create...') 
+                textarea#sora-prompt.form-control(name='prompt', rows='3', placeholder='Describe the scene you want to create...', disabled=soraLifecycle && soraLifecycle.generationDisabled)
               .col-md-3
                 label.form-label(for='sora-model') Model
-                select#sora-model.form-select(name='model')
+                select#sora-model.form-select(name='model', disabled=soraLifecycle && soraLifecycle.generationDisabled)
                   each key in modelKeys
                     option(value=key, selected=key === primaryModel)= modelOptions[key].label
               .col-md-3
                 label.form-label(for='sora-seconds') Seconds
-                select#sora-seconds.form-select(name='seconds')
+                select#sora-seconds.form-select(name='seconds', disabled=soraLifecycle && soraLifecycle.generationDisabled)
                   if primaryModel && modelOptions[primaryModel]
                     each sec in modelOptions[primaryModel].seconds
                       option(value=sec)= sec + ' sec'
               .col-md-3
                 label.form-label(for='sora-size') Size
-                select#sora-size.form-select(name='size')
+                select#sora-size.form-select(name='size', disabled=soraLifecycle && soraLifecycle.generationDisabled)
                   if primaryModel && modelOptions[primaryModel]
                     each sz in modelOptions[primaryModel].sizes
                       option(value=sz)= sz
               .col-md-3
                 label.form-label(for='sora-category') Category
-                input#sora-category.form-control(type='text', name='category', placeholder='e.g. Portfolio', list='sora-category-list')
+                input#sora-category.form-control(type='text', name='category', placeholder='e.g. Portfolio', list='sora-category-list', disabled=soraLifecycle && soraLifecycle.generationDisabled)
                 datalist#sora-category-list
                   each cat in categoryList
                     option(value=cat)
               .col-md-6
                 label.form-label(for='sora-input-image') Reference image (optional)
-                input#sora-input-image.form-control(type='file', name='inputImage', accept='image/*')
+                input#sora-input-image.form-control(type='file', name='inputImage', accept='image/*', disabled=soraLifecycle && soraLifecycle.generationDisabled)
                 small.sora-field-hint Max 20&nbsp;MB. Image is resized to match the selected video size.
             .d-flex.flex-wrap.align-items-center.gap-3.mt-3
               small.mb-0 Ratings: 1 Garbage · 2 Bad · 3 OK · 4 Good · 5 Awesome
-              button#sora-generate-btn.sora-submit(type='submit') Generate video
+              button#sora-generate-btn.sora-submit(type='submit', disabled=soraLifecycle && soraLifecycle.generationDisabled)= soraLifecycle && soraLifecycle.generationDisabled ? 'Generation stopped' : 'Generate video'
 
           #sora-status.sora-status
             .sora-card
@@ -111,6 +124,6 @@ block content
             button#sora-next.btn(type='button') Next ▶
 
 block script
-  - const soraConfig = { modelOptions, defaultPageSize, ratingDescriptions, categories: categoryList };
+  - const soraConfig = { modelOptions, defaultPageSize, ratingDescriptions, categories: categoryList, soraLifecycle };
   script#sora-config(type='application/json')!= JSON.stringify(soraConfig)
   script(src='/js/sora.js', defer)

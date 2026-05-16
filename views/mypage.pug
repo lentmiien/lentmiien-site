@@ -1,10 +1,12 @@
 extends layout
 
-mixin tile(href, src, alt, label)
+mixin tile(href, src, alt, label, meta)
   a.mypage-tile(href=href)
     .img-card
       .img-card__inner
         img.mypage-img(src=src, alt=alt)
+        if meta
+          span.img-card__meta= meta
         span.img-card__label= label
 
 block styles
@@ -509,7 +511,8 @@ block content
         if permissions && permissions.indexOf("music") >= 0
           +tile('/music', '/i/music.svg', 'AI music library', 'Music')
         if permissions && permissions.indexOf("sora") >= 0
-          +tile('/sora', '/i/vid_gen.svg', 'Generate and edit short videos', 'Video Gen')
+          - const soraTileMeta = soraLifecycle ? (soraLifecycle.generationDisabled ? 'Generation stopped' : `${soraLifecycle.daysUntilGenerationStop} days left`) : null
+          +tile('/sora', '/i/vid_gen.svg', 'Generate and edit short videos', 'Video Gen', soraTileMeta)
         if permissions && permissions.indexOf("budget") >= 0
           +tile('/budget/cards', '/i/credit.svg', 'Credit Card usage', 'Credit Card')
         if permissions && permissions.indexOf("shoppinglist") >= 0

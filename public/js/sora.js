@@ -10,6 +10,7 @@
     defaultPageSize: 12,
     ratingDescriptions: {},
     categories: [],
+    soraLifecycle: null,
   };
 
   if (configEl) {
@@ -46,8 +47,12 @@
   const FINALIZING_POLL_INTERVAL_MS = 3000;
   const FINALIZING_POLL_SLOW_INTERVAL_MS = 10000;
   const FINALIZING_POLL_SLOW_THRESHOLD = 10;
+  const DAY_MS = 24 * 60 * 60 * 1000;
 
   const dom = {
+    lifecycleNotice: document.getElementById('sora-lifecycle'),
+    countdownDays: document.getElementById('sora-countdown-days'),
+    countdownText: document.getElementById('sora-countdown-text'),
     form: document.getElementById('sora-generate-form'),
     prompt: document.getElementById('sora-prompt'),
     model: document.getElementById('sora-model'),
@@ -130,6 +135,78 @@
     }
   }
 
+  function formatDateOnly(value) {
+    if (!value) return '';
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleDateString(undefined, {
+        timeZone: 'UTC',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function getLifecycleTimestamp(key) {
+    const lifecycle = state.config.soraLifecycle;
+    if (!lifecycle || !lifecycle[key]) return null;
+    const timestamp = new Date(lifecycle[key]).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  function getDaysUntilTimestamp(timestamp) {
+    if (!timestamp) return 0;
+    const diff = timestamp - Date.now();
+    return diff > 0 ? Math.ceil(diff / DAY_MS) : 0;
+  }
+
+  function pluralizeDays(days) {
+    return days === 1 ? '1 day' : `${days} days`;
+  }
+
+  function isGenerationClosed() {
+    const stopAt = getLifecycleTimestamp('generationStopAt');
+    if (!stopAt) return false;
+    return Date.now() >= stopAt;
+  }
+
+  function updateLifecycleCountdown() {
+    const lifecycle = state.config.soraLifecycle;
+    if (!lifecycle) return;
+
+    const stopAt = getLifecycleTimestamp('generationStopAt');
+    const apiEndAt = getLifecycleTimestamp('apiDiscontinuationAt');
+    const generationClosed = isGenerationClosed();
+    const daysToStop = getDaysUntilTimestamp(stopAt);
+    const daysToApiEnd = getDaysUntilTimestamp(apiEndAt);
+    const stopLabel = lifecycle.generationStopLabel || formatDateOnly(lifecycle.generationStopAt);
+    const apiLabel = lifecycle.apiDiscontinuationLabel || formatDateOnly(lifecycle.apiDiscontinuationAt);
+
+    lifecycle.generationDisabled = generationClosed;
+    lifecycle.daysUntilGenerationStop = daysToStop;
+    lifecycle.daysUntilApiDiscontinuation = daysToApiEnd;
+
+    if (dom.lifecycleNotice) {
+      dom.lifecycleNotice.classList.toggle('sora-lifecycle--closed', generationClosed);
+    }
+    if (dom.countdownDays) {
+      dom.countdownDays.textContent = generationClosed ? 'Closed' : String(daysToStop);
+    }
+    if (dom.countdownText) {
+      dom.countdownText.textContent = generationClosed
+        ? `New Sora generations stopped here on ${stopLabel}. Sora API discontinuation: ${apiLabel}.`
+        : `${pluralizeDays(daysToStop)} to the local generation cutoff on ${stopLabel}. Sora API discontinuation: ${apiLabel}.`;
+    }
+
+    if (generationClosed) {
+      setFormDisabled(true);
+    }
+  }
+
   function clearTimer() {
     if (state.pollTimer) {
       clearTimeout(state.pollTimer);
@@ -139,10 +216,14 @@
 
   function setFormDisabled(disabled) {
     if (!dom.form) return;
+    const shouldDisable = disabled || isGenerationClosed();
     const fields = dom.form.querySelectorAll('input, textarea, select, button');
     fields.forEach((node) => {
-      node.disabled = disabled;
+      node.disabled = shouldDisable;
     });
+    if (dom.generateBtn && isGenerationClosed()) {
+      dom.generateBtn.textContent = 'Generation stopped';
+    }
   }
 
   function setStatus(options) {
@@ -456,6 +537,18 @@
 
   async function handleGenerationSubmit(event) {
     event.preventDefault();
+    if (isGenerationClosed()) {
+      updateLifecycleCountdown();
+      setStatus({
+        visible: true,
+        label: 'Generation stopped',
+        progress: 0,
+        message: state.config.soraLifecycle?.generationDisabledMessage || 'Sora generation is disabled.',
+        tone: 'error',
+      });
+      return;
+    }
+
     const promptValue = dom.prompt.value.trim();
     const modelValue = dom.model.value;
     const secondsValue = dom.seconds.value;
@@ -670,6 +763,8 @@
   function init() {
     updateModelDependentFields();
     updateCategoryOptions(state.config.categories || []);
+    updateLifecycleCountdown();
+    setInterval(updateLifecycleCountdown, 60 * 60 * 1000);
     wireEventListeners();
     loadVideos();
   }

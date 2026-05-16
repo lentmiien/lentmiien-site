@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { SoraVideo } = require('../database');
 const { generateVideo, checkVideoProgress } = require('../utils/OpenAI_API');
+const { getSoraLifecycle, isSoraGenerationDisabled } = require('../utils/soraLifecycle');
 const logger = require('../utils/logger');
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -197,6 +198,7 @@ startBackgroundStatusPolling();
 
 exports.renderLanding = async (_req, res) => {
   try {
+    const soraLifecycle = getSoraLifecycle();
     const categories = await SoraVideo.distinct('category', { category: { $nin: ['', null] } });
     const categoryList = categories
       .map((c) => (typeof c === 'string' ? c.trim() : ''))
@@ -240,6 +242,7 @@ exports.renderLanding = async (_req, res) => {
       secondsOptions,
       sizeOptions,
       ratingOptions,
+      soraLifecycle,
     });
   } catch (error) {
     logger.error('Failed to render Sora landing page', { error });
@@ -334,8 +337,20 @@ exports.listVideos = async (req, res) => {
 };
 
 exports.startGeneration = async (req, res) => {
-  const cleanupTargets = [];
+  const cleanupTargets = new Set();
   try {
+    if (req.file && req.file.path) {
+      cleanupTargets.add(req.file.path);
+    }
+
+    if (isSoraGenerationDisabled()) {
+      const soraLifecycle = getSoraLifecycle();
+      return res.status(410).json({
+        error: soraLifecycle.generationDisabledMessage,
+        soraLifecycle,
+      });
+    }
+
     const prompt = (req.body.prompt || '').trim();
     const model = (req.body.model || '').trim();
     const seconds = parseInt(req.body.seconds, 10);
@@ -370,10 +385,10 @@ exports.startGeneration = async (req, res) => {
         sizeBytes: req.file.size,
         targetSize: size,
       });
-      cleanupTargets.push(req.file.path);
+      cleanupTargets.add(req.file.path);
       try {
         processedImagePath = await resizeReferenceImage(req.file.path, size);
-        cleanupTargets.push(processedImagePath);
+        cleanupTargets.add(processedImagePath);
         logger.debug('Resized Sora reference image', { processedImagePath });
       } catch (error) {
         logger.error('Failed to prepare Sora reference image', { error });
@@ -409,7 +424,7 @@ exports.startGeneration = async (req, res) => {
     logger.error('Failed to start Sora video generation', { error });
     res.status(500).json({ error: 'Unable to start generation' });
   } finally {
-    await Promise.all(cleanupTargets.map((filepath) => removeFileQuietly(filepath)));
+    await Promise.all(Array.from(cleanupTargets).map((filepath) => removeFileQuietly(filepath)));
   }
 };
 

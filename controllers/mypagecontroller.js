@@ -9,6 +9,7 @@ const { GetAnthropicModels } = require('../utils/anthropic');
 const ScheduleTaskService = require('../services/scheduleTaskService');
 const pdfUtils = require('../utils/pdf');
 const EmbeddingApiService = require('../services/embeddingApiService');
+const { getSoraLifecycle } = require('../utils/soraLifecycle');
 const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
@@ -257,6 +258,7 @@ exports.mypage = async (req, res) => {
 
   const decoratedOpenAIModels = decorateNewModels(new_openai_models, 'OpenAI');
   const decoratedAnthropicModels = decorateNewModels(new_anthropic_models, 'Anthropic');
+  const soraLifecycle = getSoraLifecycle();
 
   const userId = req.user.name;
   const today = ScheduleTaskService.roundToSlot(new Date());
@@ -272,6 +274,7 @@ exports.mypage = async (req, res) => {
     embeddingSearchTypes: EMBEDDING_SEARCH_TYPES,
     embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,
     lifeLogSuggestions,
+    soraLifecycle,
   });
 };
 

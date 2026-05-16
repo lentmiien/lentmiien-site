@@ -39,6 +39,56 @@
   max-width: 720px;
 }
 
+.sora-lifecycle {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 194, 71, 0.38);
+  background: rgba(255, 194, 71, 0.1);
+}
+
+.sora-lifecycle--closed {
+  border-color: rgba(255, 106, 31, 0.48);
+  background: rgba(255, 106, 31, 0.12);
+}
+
+.sora-lifecycle__metric {
+  min-width: 110px;
+  padding-right: 1rem;
+  border-right: 1px solid rgba(255, 194, 71, 0.28);
+  text-align: center;
+}
+
+.sora-lifecycle__value {
+  display: block;
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: var(--sora-accent);
+  line-height: 1.1;
+}
+
+.sora-lifecycle__label {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--sora-text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sora-lifecycle__body {
+  color: var(--sora-text-secondary);
+}
+
+.sora-lifecycle__body strong {
+  display: block;
+  color: var(--sora-text);
+  margin-bottom: 0.25rem;
+}
+
 .sora-card {
   background: var(--sora-surface);
   color: var(--sora-text);
@@ -342,4 +392,19 @@
   border: 1px dashed var(--sora-border);
   border-radius: 12px;
   background: rgba(23, 26, 32, 0.65);
+}
+
+@media (max-width: 575.98px) {
+  .sora-lifecycle {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sora-lifecycle__metric {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 194, 71, 0.28);
+    padding-right: 0;
+    padding-bottom: 0.75rem;
+    text-align: left;
+  }
 }
