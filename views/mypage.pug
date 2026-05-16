@@ -487,6 +487,8 @@ block content
           +tile('/cooking/v2', '/i/calendar.svg', 'cooking calendar', 'Cooking calendar')
           +tile('/cooking/cookbook', '/i/cookbook.svg', 'cookbook', 'Cookbook')
         +tile('/chat4/batch_status', '/i/batch.svg', 'batch', 'Batch')
+        if permissions && permissions.indexOf("binpacking") >= 0
+          +tile('/binpacking', '/i/binpacking.svg', '3D bin packing', '3D Bin Packing')
         +tile('/mypage/pdf_to_jpg', '/i/pdfconv.svg', 'PDF to image converter', 'PDF to Image')
         if permissions && permissions.indexOf("ocr") >= 0
           +tile('/ocr', '/i/receipt.svg', 'ocr tool', 'OCR tool')

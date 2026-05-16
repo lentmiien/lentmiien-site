@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">3D bin packing tile illustration</title>
+  <desc id="desc">Packed cuboid boxes arranged inside an open three dimensional bin.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#151A21"/>
+      <stop offset="100%" stop-color="#202833"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#26303C"/>
+      <stop offset="100%" stop-color="#171D25"/>
+    </linearGradient>
+    <linearGradient id="orangeBox" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF8B45"/>
+      <stop offset="100%" stop-color="#D95A1B"/>
+    </linearGradient>
+    <linearGradient id="goldBox" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFD069"/>
+      <stop offset="100%" stop-color="#F0A72F"/>
+    </linearGradient>
+    <linearGradient id="tealBox" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#45B2A5"/>
+      <stop offset="100%" stop-color="#2F8F83"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="536" cy="78" r="92" fill="#FF6A1F" fill-opacity="0.12"/>
+  <circle cx="104" cy="326" r="112" fill="#FFC247" fill-opacity="0.08"/>
+
+  <g transform="translate(94 64)">
+    <polygon points="74,94 284,0 496,94 286,188" fill="#1C242E" stroke="#FFC247" stroke-opacity="0.32" stroke-width="3"/>
+    <polygon points="74,94 286,188 286,292 74,198" fill="#202A35" fill-opacity="0.82" stroke="#FFC247" stroke-opacity="0.28" stroke-width="3"/>
+    <polygon points="496,94 286,188 286,292 496,198" fill="#18202A" fill-opacity="0.9" stroke="#FFC247" stroke-opacity="0.28" stroke-width="3"/>
+    <polygon points="74,198 286,292 496,198 286,104" fill="url(#floor)" stroke="#FFC247" stroke-opacity="0.42" stroke-width="3"/>
+
+    <path d="M134 171l152 68 152-68M194 198l92-42 92 42M286 104v188" fill="none" stroke="#FFC247" stroke-opacity="0.22" stroke-width="2"/>
+    <path d="M74 94v104M496 94v104" stroke="#FFB84E" stroke-opacity="0.28" stroke-width="3"/>
+
+    <g transform="translate(170 116)">
+      <polygon points="0,34 76,0 151,34 75,68" fill="#FF9A55"/>
+      <polygon points="0,34 75,68 75,128 0,94" fill="#D95A1B"/>
+      <polygon points="75,68 151,34 151,94 75,128" fill="#B94E1A"/>
+      <path d="M76 0v68" stroke="#FFC247" stroke-opacity="0.35" stroke-width="3"/>
+    </g>
+
+    <g transform="translate(312 120)">
+      <polygon points="0,30 66,0 132,30 66,60" fill="#FFD980"/>
+      <polygon points="0,30 66,60 66,118 0,88" fill="#F0A72F"/>
+      <polygon points="66,60 132,30 132,88 66,118" fill="#D38720"/>
+      <rect x="74" y="57" width="38" height="7" rx="3.5" transform="rotate(-24 93 60.5)" fill="#1B2026" fill-opacity="0.35"/>
+    </g>
+
+    <g transform="translate(110 186)">
+      <polygon points="0,28 64,0 129,28 65,58" fill="#54C3B6"/>
+      <polygon points="0,28 65,58 65,110 0,80" fill="#2F8F83"/>
+      <polygon points="65,58 129,28 129,80 65,110" fill="#25776D"/>
+    </g>
+
+    <g transform="translate(250 198)">
+      <polygon points="0,27 58,0 116,27 58,54" fill="url(#goldBox)"/>
+      <polygon points="0,27 58,54 58,104 0,78" fill="#E89A25"/>
+      <polygon points="58,54 116,27 116,78 58,104" fill="#C97E1D"/>
+    </g>
+
+    <g transform="translate(370 188)">
+      <polygon points="0,26 58,0 116,26 58,52" fill="url(#orangeBox)"/>
+      <polygon points="0,26 58,52 58,104 0,78" fill="#D95A1B"/>
+      <polygon points="58,52 116,26 116,78 58,104" fill="#A94719"/>
+    </g>
+  </g>
+
+  <g transform="translate(98 54)">
+    <path d="M0 0h92" stroke="#FFC247" stroke-width="7" stroke-linecap="round"/>
+    <path d="M0 0v54" stroke="#FFC247" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="10" fill="#FF6A1F"/>
+  </g>
+</svg>
