@@ -19,6 +19,8 @@ const BulkJobSchema = new mongoose.Schema({
     values: { type: [String], default: [] }
   }],
   negative_prompt: { type: String, default: null },
+  workflow_template: { type: mongoose.Schema.Types.Mixed, default: null },
+  field_mappings: { type: mongoose.Schema.Types.Mixed, default: [] },
   status: {
     type: String,
     enum: ['Created', 'Paused', 'Processing', 'Completed', 'Canceled'],

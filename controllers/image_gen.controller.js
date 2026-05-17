@@ -34,7 +34,7 @@ const GOOD_IMAGE_PARENT_COLLECTION = 'image_gen_job';
 const embeddingApiService = new EmbeddingApiService();
 const comfyGatewayService = new ComfyGatewayService();
 const localJobStore = new Map(); // prompt_id -> job payload for quick lookups
-const BULK_FEATURE_DISABLED = true;
+const BULK_FEATURE_DISABLED = false;
 
 // Track in-flight downloads to avoid duplicate fetches
 const inFlightDownloads = new Map(); // `${bucket}:${safeName}` -> Promise
@@ -420,11 +420,235 @@ async function cacheGatewayOutputs(jobId, outputs, instanceId) {
   return items.filter(Boolean);
 }
 
+function clonePlain(value) {
+  if (value === null || value === undefined) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getWorkflowNodeLabel(node, fallback) {
+  return (
+    node?.title ||
+    node?._meta?.title ||
+    node?.label ||
+    node?.name ||
+    node?.type ||
+    node?.class_type ||
+    (fallback ? `Node ${fallback}` : 'Node')
+  );
+}
+
+function collectWorkflowNodeRefs(workflow) {
+  const refs = [];
+  if (!workflow || typeof workflow !== 'object') return refs;
+
+  if (Array.isArray(workflow.nodes)) {
+    workflow.nodes.forEach((node, idx) => {
+      if (!node || typeof node !== 'object' || !node.inputs || typeof node.inputs !== 'object') return;
+      const nodeId = String(node.id ?? node._id ?? idx);
+      refs.push({
+        node,
+        nodeId,
+        nodeLabel: getWorkflowNodeLabel(node, nodeId),
+        mode: 'array',
+        key: nodeId
+      });
+    });
+  }
+
+  Object.entries(workflow).forEach(([key, node]) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    if (!node.inputs || typeof node.inputs !== 'object') return;
+    const nodeId = String(node.id ?? node._id ?? key);
+    refs.push({
+      node,
+      nodeId,
+      nodeLabel: getWorkflowNodeLabel(node, nodeId),
+      mode: 'map',
+      key
+    });
+  });
+
+  return refs;
+}
+
+function findWorkflowNodeForField(workflow, loc = {}) {
+  if (!workflow || typeof workflow !== 'object') return null;
+  if (loc.mode === 'map' && loc.key && workflow[loc.key]) return workflow[loc.key];
+
+  if (Array.isArray(workflow.nodes) && loc.nodeId) {
+    const match = workflow.nodes.find((node) => String(node.id ?? node._id ?? node.name) === String(loc.nodeId));
+    if (match) return match;
+  }
+
+  if (loc.mode === 'map' && loc.nodeId && workflow[loc.nodeId]) {
+    return workflow[loc.nodeId];
+  }
+
+  const refs = collectWorkflowNodeRefs(workflow);
+  const ref = refs.find(
+    (entry) => entry.nodeId === loc.nodeId || entry.key === loc.key || entry.nodeLabel === loc.nodeLabel
+  );
+  return ref ? ref.node : null;
+}
+
+function normalizeBulkFieldRole(raw) {
+  const role = String(raw || '').trim().toLowerCase();
+  if (role === 'prompt' || role === 'negative' || role === 'image') return role;
+  return 'base';
+}
+
+function normalizeBulkFieldMappings(raw) {
+  const source = Array.isArray(raw) ? raw : [];
+  return source.map((entry) => {
+    if (!entry || typeof entry !== 'object') return null;
+    const key = String(entry.key || '').trim();
+    const field = String(entry.field || '').trim();
+    if (!key || !field) return null;
+    const nodeId = entry.nodeId === undefined || entry.nodeId === null ? '' : String(entry.nodeId);
+    const nodeLabel = entry.nodeLabel === undefined || entry.nodeLabel === null ? '' : String(entry.nodeLabel);
+    const loc = entry.loc && typeof entry.loc === 'object'
+      ? {
+          mode: entry.loc.mode === 'array' ? 'array' : 'map',
+          key: entry.loc.key === undefined || entry.loc.key === null ? undefined : String(entry.loc.key),
+          nodeId: entry.loc.nodeId === undefined || entry.loc.nodeId === null ? nodeId : String(entry.loc.nodeId),
+          nodeLabel: entry.loc.nodeLabel === undefined || entry.loc.nodeLabel === null ? nodeLabel : String(entry.loc.nodeLabel)
+        }
+      : { mode: 'map', key: nodeId, nodeId, nodeLabel };
+    return {
+      key,
+      nodeId,
+      nodeLabel,
+      field,
+      bulkRole: normalizeBulkFieldRole(entry.bulkRole || entry.role),
+      controlType: entry.controlType === 'number' ? 'number' : entry.controlType === 'boolean' ? 'boolean' : 'text',
+      value: entry.value,
+      defaultValue: entry.defaultValue,
+      loc
+    };
+  }).filter(Boolean);
+}
+
+function isSafeBulkVariableKey(key) {
+  const str = String(key || '').trim();
+  return Boolean(str) && str.length <= 160 && !/[.$\0]/.test(str);
+}
+
+function coerceWorkflowFieldValue(value, currentValue, field = {}) {
+  const type = field.controlType || typeof currentValue;
+  if (type === 'number' || typeof currentValue === 'number') {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const fallback = Number(field.defaultValue);
+    return Number.isFinite(fallback) ? fallback : 0;
+  }
+  if (type === 'boolean' || typeof currentValue === 'boolean') {
+    if (typeof value === 'boolean') return value;
+    const str = String(value ?? '').trim().toLowerCase();
+    return str === 'true' || str === '1' || str === 'yes' || str === 'on';
+  }
+  return String(value ?? '');
+}
+
+function applyWorkflowFieldMapping(workflow, mapping, value) {
+  if (!mapping || value === undefined) return false;
+  const node = findWorkflowNodeForField(workflow, mapping.loc || {});
+  if (!node || !node.inputs || typeof node.inputs !== 'object') return false;
+  const currentValue = node.inputs[mapping.field];
+  node.inputs[mapping.field] = coerceWorkflowFieldValue(value, currentValue, mapping);
+  return true;
+}
+
+function applyWorkflowInputByName(workflow, inputName, value, options = {}) {
+  const name = String(inputName || '').trim();
+  if (!name || value === undefined) return 0;
+  const refs = collectWorkflowNodeRefs(workflow);
+  const role = options.role || '';
+  const exactNames = new Set([name]);
+  if (name === 'negative') exactNames.add('negative_prompt');
+  if (name === 'prompt') {
+    exactNames.add('positive');
+    exactNames.add('positive_prompt');
+  }
+
+  let applied = 0;
+  refs.forEach((ref) => {
+    if (!ref.node?.inputs || typeof ref.node.inputs !== 'object') return;
+    Object.keys(ref.node.inputs).forEach((fieldName) => {
+      const lowerField = fieldName.toLowerCase();
+      const lowerLabel = String(ref.nodeLabel || '').toLowerCase();
+      let matches = exactNames.has(fieldName) || exactNames.has(lowerField);
+      if (!matches && role === 'prompt') {
+        matches = /prompt|text/.test(lowerField) && !/negative/.test(lowerField) && !/negative/.test(lowerLabel);
+      } else if (!matches && role === 'negative') {
+        matches = /negative/.test(lowerField) || (/negative/.test(lowerLabel) && /prompt|text/.test(lowerField));
+      }
+      if (!matches) return;
+      ref.node.inputs[fieldName] = coerceWorkflowFieldValue(value, ref.node.inputs[fieldName], { controlType: typeof value === 'number' ? 'number' : 'text' });
+      applied += 1;
+    });
+  });
+  return applied;
+}
+
+async function loadWorkflowTemplateForBulkJob(job) {
+  if (job?.workflow_template && typeof job.workflow_template === 'object') {
+    return clonePlain(job.workflow_template);
+  }
+  const workflowName = String(job?.workflow || '').trim();
+  if (!workflowName) throw new Error('bulk job missing workflow');
+  const loaded = await comfyGatewayService.getWorkflow(workflowName);
+  const workflow = loaded?.workflow && typeof loaded.workflow === 'object' ? loaded.workflow : loaded;
+  if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) {
+    throw new Error(`workflow "${workflowName}" did not return a prompt JSON object`);
+  }
+  return clonePlain(workflow);
+}
+
+async function buildBulkWorkflowPrompt(job, promptDoc, inputValues) {
+  const workflow = await loadWorkflowTemplateForBulkJob(job);
+  const mappings = normalizeBulkFieldMappings(job?.field_mappings);
+  const baseInputs = Object.assign({}, job?.base_inputs || {});
+  delete baseInputs.instance_id;
+  delete baseInputs.instanceId;
+  const generatedInputs = Object.assign({}, inputValues || {});
+
+  if (mappings.length) {
+    const mappedBaseKeys = new Set();
+    mappings.forEach((mapping) => {
+      let value;
+      if (mapping.bulkRole === 'prompt') {
+        value = generatedInputs.prompt;
+      } else if (mapping.bulkRole === 'negative') {
+        value = generatedInputs.negative ?? '';
+      } else if (mapping.bulkRole === 'image') {
+        value = promptDoc?.input_values?.[mapping.key] ?? generatedInputs[mapping.key];
+      } else {
+        mappedBaseKeys.add(mapping.key);
+        value = Object.prototype.hasOwnProperty.call(baseInputs, mapping.key)
+          ? baseInputs[mapping.key]
+          : mapping.value;
+      }
+      applyWorkflowFieldMapping(workflow, mapping, value);
+    });
+
+    Object.entries(baseInputs).forEach(([key, value]) => {
+      if (mappedBaseKeys.has(key)) return;
+      applyWorkflowInputByName(workflow, key, value);
+    });
+    return workflow;
+  }
+
+  Object.entries(generatedInputs).forEach(([key, value]) => {
+    const role = key === 'prompt' ? 'prompt' : key === 'negative' ? 'negative' : '';
+    applyWorkflowInputByName(workflow, key, value, { role });
+  });
+  return workflow;
+}
+
 const BULK_PROMPT_STATUSES = Object.freeze(['Pending', 'Processing', 'Paused', 'Completed', 'Canceled']);
 const BULK_WORKER_INTERVAL_MS = 4000;
 const BULK_JOB_POLL_DELAY_MS = 5000;
 const BULK_JOB_POLL_LIMIT = 400;
-const BULK_DOWNLOAD_TIMEOUT_MS = 60000;
 const GALLERY_BATCH_RATING_VALUES = Object.freeze({
   bad: 0,
   neutral: 0.5,
@@ -926,128 +1150,16 @@ const bulkWorkerState = {
 
 async function waitForComfyJob(jobId, instanceId) {
   for (let attempt = 0; attempt < BULK_JOB_POLL_LIMIT; attempt++) {
-    const functionName = 'waitForComfyJob';
-    const url = buildComfyUrl(`/v1/jobs/${encodeURIComponent(jobId)}`, { instanceId });
-    const requestHeaders = apiHeaders();
-    const fetchOptions = { headers: requestHeaders };
-    let responseHeaders = null;
-    let logged = false;
     try {
-      const r = await fetch(url, fetchOptions);
-      responseHeaders = headersToObject(r.headers);
-      if (!r.ok) {
-        const txt = await r.text().catch(() => '');
-        await recordApiDebugLog({
-          requestUrl: url,
-          requestHeaders,
-          requestBody: null,
-          responseHeaders,
-          responseBody: { status: r.status, body: txt, attempt },
-          functionName
-        });
-        logged = true;
-        throw new Error(`job status ${r.status} ${txt}`.trim());
-      }
-      const json = await r.json();
-      await recordApiDebugLog({
-        requestUrl: url,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { attempt, data: json },
-        functionName
-      });
-      const status = json?.status;
-      if (status === 'completed' || status === 'failed' || status === 'canceled') {
-        return json;
-      }
+      const json = await comfyGatewayService.getStatus(jobId);
+      const status = normalizeJobStatus(json?.status);
+      if (isCompletedStatus(status) || ['failed', 'error', 'timeout', 'canceled'].includes(status)) return json;
       await delay(BULK_JOB_POLL_DELAY_MS);
     } catch (err) {
-      if (!logged) {
-        await recordApiDebugLog({
-          requestUrl: url,
-          requestHeaders,
-          requestBody: null,
-          responseHeaders,
-          responseBody: err,
-          functionName
-        });
-      }
       throw err;
     }
   }
   throw new Error('upstream job timeout');
-}
-
-async function downloadComfyOutputs(jobId, files, fallbackPrefix, instanceId) {
-  const stored = [];
-  const list = Array.isArray(files) ? files : [];
-  for (let i = 0; i < list.length; i++) {
-    const meta = list[i];
-    const original = typeof meta === 'string'
-      ? meta
-      : (meta?.filename || meta?.name || meta?.file || meta?.path || null);
-    const fallback = `${fallbackPrefix}_${i}.png`;
-    const safeName = toSafeName(original) || toSafeName(fallback) || `bulk_${jobId}_${i}.png`;
-    const mediaType = meta?.media_type || detectMediaType(original || fallback);
-    const bucket = meta?.bucket || (mediaType === 'video' ? 'video' : 'output');
-    const url = buildComfyUrl(`/v1/jobs/${encodeURIComponent(jobId)}/images/${i}`, { instanceId });
-    const functionName = 'downloadComfyOutputs';
-    const requestHeaders = apiHeaders();
-    const fetchOptions = {
-      headers: requestHeaders,
-      signal: AbortSignal.timeout(BULK_DOWNLOAD_TIMEOUT_MS)
-    };
-    let responseHeaders = null;
-    let logged = false;
-    try {
-      const r = await fetch(url, fetchOptions);
-      responseHeaders = headersToObject(r.headers);
-      if (!r.ok) {
-        const txt = await r.text().catch(() => '');
-        await recordApiDebugLog({
-          requestUrl: url,
-          requestHeaders,
-          requestBody: null,
-          responseHeaders,
-          responseBody: { status: r.status, body: txt, imageIndex: i },
-          functionName
-        });
-        logged = true;
-        throw new Error(`image download ${r.status} ${txt}`.trim());
-      }
-      const buf = Buffer.from(await r.arrayBuffer());
-      await recordApiDebugLog({
-        requestUrl: url,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { imageIndex: i, mediaType, size: buf.length, data: buf },
-        functionName
-      });
-      const rec = await writeCacheFile(safeName, buf, { bucket, mediaType, instanceId });
-      stored.push({
-        safeName,
-        bucket,
-        mediaType,
-        instanceId: instanceId || null,
-        url: rec?.url || null
-      });
-    } catch (err) {
-      if (!logged) {
-        await recordApiDebugLog({
-          requestUrl: url,
-          requestHeaders,
-          requestBody: null,
-          responseHeaders,
-          responseBody: err,
-          functionName
-        });
-      }
-      throw err;
-    }
-  }
-  return stored;
 }
 
 async function processBulkPrompt(job, prompt) {
@@ -1070,59 +1182,10 @@ async function processBulkPrompt(job, prompt) {
     }
 
     const instanceId = normalizeInstanceId(prompt.instance_id ?? job.instance_id);
-    const payload = { workflow: job.workflow, inputs };
-    if (instanceId) payload.instance_id = instanceId;
-
-    const functionName = 'processBulkPrompt';
-    const requestUrl = buildComfyUrl('/v1/generate');
-    const requestHeaders = apiHeaders({ 'Content-Type': 'application/json' });
-    const fetchOptions = {
-      method: 'POST',
-      headers: requestHeaders,
-      body: JSON.stringify(payload)
-    };
-    let responseHeaders = null;
-    let logged = false;
-    const queuedResp = await fetch(requestUrl, fetchOptions).catch(async (err) => {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: payload,
-        responseHeaders: null,
-        responseBody: err,
-        functionName
-      });
-      throw err;
-    });
-    responseHeaders = headersToObject(queuedResp.headers);
-    if (!queuedResp.ok) {
-      const txt = await queuedResp.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: payload,
-        responseHeaders,
-        responseBody: { status: queuedResp.status, body: txt },
-        functionName
-      });
-      throw new Error(`queue failed ${queuedResp.status} ${txt}`.trim());
-    }
-    let queued = null;
-    let parsedText = null;
-    try {
-      queued = await queuedResp.json();
-    } catch (_) {
-      parsedText = await queuedResp.text().catch(() => '');
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: payload,
-      responseHeaders,
-      responseBody: queued ?? parsedText,
-      functionName
-    });
-    const comfyJobId = queued?.job_id;
+    const promptJson = await buildBulkWorkflowPrompt(job, prompt, inputs);
+    const timeoutSec = inputs.timeout_sec ?? inputs.timeoutSec;
+    const queued = await comfyGatewayService.submitPrompt(promptJson, { timeoutSec });
+    const comfyJobId = queued?.prompt_id;
     if (!comfyJobId) throw new Error('missing job id from ComfyUI');
 
     await BulkTestPrompt.updateOne(
@@ -1130,12 +1193,18 @@ async function processBulkPrompt(job, prompt) {
       { $set: { comfy_job_id: comfyJobId, instance_id: instanceId || null } }
     );
 
-    const result = await waitForComfyJob(comfyJobId, instanceId);
-    if (result?.status !== 'completed') {
-      const errMsg = result?.error || 'upstream generation failed';
+    const queuedStatus = normalizeJobStatus(queued?.status);
+    const result = isCompletedStatus(queuedStatus) && Array.isArray(queued?.outputs)
+      ? queued
+      : await waitForComfyJob(comfyJobId, instanceId);
+    if (!isCompletedStatus(result?.status)) {
+      const errMsg = result?.error || result?.details || `upstream generation failed with status ${result?.status || 'unknown'}`;
       throw new Error(errMsg);
     }
-    const stored = await downloadComfyOutputs(comfyJobId, result.files, `bulk_${prompt._id}`, instanceId);
+    const outputs = Array.isArray(result.outputs) ? result.outputs : [];
+    if (!outputs.length) throw new Error('upstream generation completed without outputs');
+    const stored = await cacheGatewayOutputs(comfyJobId, outputs, instanceId);
+    if (!stored.length) throw new Error('failed to cache generated outputs');
     const primary = stored[0] || null;
     await BulkTestPrompt.updateOne(
       { _id: prompt._id },
@@ -1696,6 +1765,15 @@ exports.createBulkJob = async (req, res) => {
     const instanceId = normalizeInstanceId(body.instance_id ?? body.instanceId);
     if (!name) return errorJson(res, 400, 'name required');
     if (!workflow) return errorJson(res, 400, 'workflow required');
+    const workflowTemplateRaw = body.workflowTemplate ?? body.workflow_template;
+    const workflowTemplate = workflowTemplateRaw && typeof workflowTemplateRaw === 'object' && !Array.isArray(workflowTemplateRaw)
+      ? clonePlain(workflowTemplateRaw)
+      : null;
+    const fieldMappings = normalizeBulkFieldMappings(body.fieldMappings ?? body.field_mappings);
+    const unsafeFieldMapping = fieldMappings.find((mapping) => !isSafeBulkVariableKey(mapping.key));
+    if (unsafeFieldMapping) {
+      return errorJson(res, 400, `invalid workflow field key "${unsafeFieldMapping.key}"`);
+    }
 
     const templatesInput = Array.isArray(body.templates) ? body.templates : [];
     const templates = templatesInput.map((tpl, idx) => {
@@ -1733,7 +1811,18 @@ exports.createBulkJob = async (req, res) => {
       ? body.imageInputs
       : {};
     const imageInputs = [];
-    for (const key of IMAGE_INPUT_KEYS) {
+    const imageInputKeys = new Set();
+    fieldMappings
+      .filter((mapping) => mapping.bulkRole === 'image')
+      .forEach((mapping) => imageInputKeys.add(mapping.key));
+    Object.keys(imageInputsSource).forEach((key) => {
+      const cleaned = String(key || '').trim();
+      if (cleaned) imageInputKeys.add(cleaned);
+    });
+    for (const key of imageInputKeys) {
+      if (!isSafeBulkVariableKey(key)) {
+        return errorJson(res, 400, `invalid image input key "${key}"`);
+      }
       if (!Object.prototype.hasOwnProperty.call(imageInputsSource, key)) continue;
       const raw = imageInputsSource[key];
       let values = [];
@@ -1770,6 +1859,8 @@ exports.createBulkJob = async (req, res) => {
       placeholder_values: placeholderValues,
       image_inputs: imageInputs,
       negative_prompt: negativePrompt || null,
+      workflow_template: workflowTemplate,
+      field_mappings: fieldMappings,
       base_inputs: baseInputs,
       instance_id: instanceId || null,
       status: 'Created',
@@ -2958,15 +3049,26 @@ exports.submitBulkScore = async (req, res) => {
 // Proxy: list workflows
 exports.listInstances = async (_req, res) => {
   try {
-    const stats = await comfyGatewayService.getSystemStats();
+    const [stats, bulkQueues] = await Promise.all([
+      comfyGatewayService.getSystemStats(),
+      computeBulkInstanceQueues()
+    ]);
     const system = stats?.system || stats || {};
     const devices = Array.isArray(stats?.devices) ? stats.devices : [];
+    const bulkQueue = Array.from(bulkQueues.values()).reduce((acc, entry) => {
+      acc.pending += Number(entry?.pending || 0);
+      acc.processing += Number(entry?.processing || 0);
+      acc.total += Number(entry?.total || 0);
+      return acc;
+    }, { pending: 0, processing: 0, total: 0 });
     return res.json({
+      default_instance_id: 'gateway',
       instances: [
         {
           id: 'gateway',
           name: 'AI Gateway',
-          devices
+          devices,
+          bulk_queue: bulkQueue
         }
       ],
       system
@@ -2988,6 +3090,9 @@ exports.getWorkflows = async (req, res) => {
               ? {
                   key,
                   name: wf.name || key,
+                  description: wf.description || null,
+                  outputType: wf.outputType || wf.output_type || null,
+                  inputs: Array.isArray(wf.inputs) ? wf.inputs : undefined,
                   bytes: wf.bytes,
                   mtime: wf.mtime
                 }
@@ -3248,7 +3353,6 @@ exports.listFiles = async (req, res) => {
 exports.getFile = async (req, res) => {
   const bucket = req.params.bucket;
   if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
-  return errorJson(res, 503, 'direct file proxying is temporarily disabled for the new gateway');
   const name = req.params.filename;
   const functionName = 'getFile';
   let requestHeaders = null;

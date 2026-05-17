@@ -8,6 +8,9 @@ block styles
     .panel small{color:var(--text-muted)}
     .template-item,.placeholder-item{background:var(--surface-2);border:1px solid var(--divider);border-radius:.85rem;padding:1rem;margin-bottom:.75rem}
     .template-item h3,.placeholder-item h3{font-size:.95rem;margin-bottom:.75rem;color:var(--text-secondary)}
+    .workflow-field{background:var(--surface-2);border:1px solid var(--divider);border-radius:.85rem;padding:1rem;margin-bottom:.75rem}
+    .workflow-field__title{font-weight:700;color:var(--text)}
+    .workflow-field__meta{color:var(--text-muted);font-size:.85rem}
     .flex-gap{display:flex;flex-wrap:wrap;gap:.75rem}
     .pill{display:inline-flex;align-items:center;padding:.25rem .75rem;border-radius:999px;border:1px solid var(--divider);background:var(--surface-2);color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;font-size:.72rem}
     textarea.form-control{min-height:120px;background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
@@ -39,7 +42,22 @@ block content
         .mt-3
           small.text-soft Choose a workflow first to configure base inputs. Prompt and negative prompt inputs will be handled per template.
         .mt-3#workflowInputs
-          .text-soft Loading workflow definitions…
+          .row.g-3.align-items-end
+            .col-md-7
+              label.form-label(for="nodeFieldSelect") Workflow field
+              select#nodeFieldSelect.form-select(disabled)
+            .col-md-3
+              label.form-label(for="fieldBulkRole") Role
+              select#fieldBulkRole.form-select(disabled)
+                option(value="base") Base input
+                option(value="prompt") Prompt template
+                option(value="negative") Negative prompt
+                option(value="image") Image list
+            .col-md-2.d-grid
+              button#btnMakeEditable.btn.btn-outline-primary(type="button" disabled) Add field
+          #editableFields.mt-3
+          #workflowInputStatus.text-soft.mt-2 Loading workflow definitions...
+          textarea#workflowJson.d-none
         .mt-4#workflowImageInputs.d-none
           h3.h6.mb-2 Image filename lists
           p.text-soft.mb-3 Provide one filename per line for each image input. Filenames must already exist in the ComfyUI input folder.

@@ -6,7 +6,7 @@ const multer = require('multer');
 const ctrl = require('../controllers/image_gen.controller');
 
 const router = express.Router();
-const BULK_DISABLED = true;
+const BULK_DISABLED = false;
 
 // Ensure tmp folder exists
 const TMP_DIR = path.join(__dirname, '../tmp_data');
