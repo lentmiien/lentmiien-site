@@ -497,6 +497,33 @@ function normalizeBulkFieldRole(raw) {
   return 'base';
 }
 
+function normalizeBulkNegativePromptMode(raw) {
+  const mode = String(raw || '').trim().toLowerCase();
+  if (['only', 'negative_only', 'negative-only', 'with_negative_only', 'with-negative-only'].includes(mode)) {
+    return 'only';
+  }
+  return 'compare';
+}
+
+function parseBulkBoolean(raw) {
+  if (raw === true) return true;
+  if (raw === false || raw === null || raw === undefined) return false;
+  return ['true', '1', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
+}
+
+function hasBulkNegativePrompt(job) {
+  return Boolean(String(job?.negative_prompt || '').trim());
+}
+
+function usesBulkNegativeComparison(job) {
+  return hasBulkNegativePrompt(job) && normalizeBulkNegativePromptMode(job?.negative_prompt_mode) === 'compare';
+}
+
+function getBulkNegativeVariants(job) {
+  if (!hasBulkNegativePrompt(job)) return [false];
+  return normalizeBulkNegativePromptMode(job?.negative_prompt_mode) === 'only' ? [true] : [false, true];
+}
+
 function normalizeBulkFieldMappings(raw) {
   const source = Array.isArray(raw) ? raw : [];
   return source.map((entry) => {
@@ -700,7 +727,7 @@ function computeAvailableVariables(job) {
     const values = Array.isArray(entry.values) ? entry.values : [];
     if (values.length > 1) vars.push(`input:${entry.key}`);
   }
-  if (job?.negative_prompt) vars.push('negative');
+  if (usesBulkNegativeComparison(job)) vars.push('negative');
   return vars;
 }
 
@@ -792,7 +819,7 @@ function buildVariablesObject(job, templateLabel, placeholderValues, negativeUse
       vars[`input:${entry.key}`] = String(inputValues[entry.key]);
     }
   }
-  if (job?.negative_prompt) {
+  if (usesBulkNegativeComparison(job)) {
     vars.negative = negativeUsed ? 'With negative' : 'No negative';
   }
   return vars;
@@ -895,7 +922,7 @@ function buildPromptAlignmentParts(job, promptDoc) {
     });
     index += 1;
   });
-  if (promptDoc.negative_used && job?.negative_prompt) {
+  if (promptDoc.negative_used && hasBulkNegativePrompt(job)) {
     parts.push({
       part_key: 'negative',
       label: 'Negative prompt',
@@ -1030,7 +1057,7 @@ async function seedBulkTestPrompts(jobDoc) {
   const templates = Array.isArray(job.prompt_templates) ? job.prompt_templates : [];
   if (!templates.length) return 0;
   const combos = generateVariantCombinations(job.placeholder_values || [], job.image_inputs || []);
-  const negVariants = job.negative_prompt ? [false, true] : [false];
+  const negVariants = getBulkNegativeVariants(job);
   const docs = [];
   templates.forEach((tpl, index) => {
     const label = tpl?.label?.trim() || `Prompt ${index + 1}`;
@@ -1168,7 +1195,7 @@ async function processBulkPrompt(job, prompt) {
     delete inputs.instance_id;
     delete inputs.instanceId;
     inputs.prompt = prompt.prompt_text;
-    if (job.negative_prompt) {
+    if (hasBulkNegativePrompt(job)) {
       inputs.negative = prompt.negative_used ? job.negative_prompt : '';
     } else {
       delete inputs.negative;
@@ -1797,6 +1824,7 @@ exports.listBulkJobs = async (req, res) => {
       progress: job.progress || 0,
       workflow: job.workflow,
       instance_id: job.instance_id || null,
+      negative_prompt_mode: normalizeBulkNegativePromptMode(job.negative_prompt_mode),
       counters: Object.assign({
         total: 0,
         pending: 0,
@@ -1805,7 +1833,7 @@ exports.listBulkJobs = async (req, res) => {
         completed: 0,
         canceled: 0
       }, job.counters || {}),
-      variables: job.variables_available || [],
+      variables: computeAvailableVariables(job),
       created_at: job.created_at,
       updated_at: job.updated_at,
       started_at: job.started_at,
@@ -1902,6 +1930,13 @@ exports.createBulkJob = async (req, res) => {
     const negativePrompt = typeof body.negativePrompt === 'string'
       ? body.negativePrompt.trim()
       : '';
+    const negativePromptOnly = parseBulkBoolean(body.negativePromptOnly ?? body.negative_prompt_only);
+    const negativePromptMode = negativePromptOnly
+      ? 'only'
+      : normalizeBulkNegativePromptMode(body.negativePromptMode ?? body.negative_prompt_mode);
+    if (!negativePrompt && negativePromptMode === 'only') {
+      return errorJson(res, 400, 'negative prompt is required when only generating with a negative prompt');
+    }
 
     const baseInputsRaw = body.baseInputs;
     const baseInputs = (baseInputsRaw && typeof baseInputsRaw === 'object' && !Array.isArray(baseInputsRaw))
@@ -1920,6 +1955,7 @@ exports.createBulkJob = async (req, res) => {
       placeholder_values: placeholderValues,
       image_inputs: imageInputs,
       negative_prompt: negativePrompt || null,
+      negative_prompt_mode: negativePrompt ? negativePromptMode : 'compare',
       workflow_template: workflowTemplate,
       field_mappings: fieldMappings,
       base_inputs: baseInputs,
@@ -1938,7 +1974,8 @@ exports.createBulkJob = async (req, res) => {
         prompt_templates: templates,
         placeholder_values: placeholderValues,
         image_inputs: imageInputs,
-        negative_prompt: negativePrompt || null
+        negative_prompt: negativePrompt || null,
+        negative_prompt_mode: negativePrompt ? negativePromptMode : 'compare'
       })
     };
 
@@ -1993,6 +2030,7 @@ exports.getBulkJob = async (req, res) => {
           canceled: 0
         }, job.counters || {}),
         variables_available: computeAvailableVariables(job),
+        negative_prompt_mode: normalizeBulkNegativePromptMode(job.negative_prompt_mode),
         instance_id: job.instance_id || null
       }),
       score: {
@@ -2183,9 +2221,10 @@ exports.getBulkMatrix = async (req, res) => {
     if (!job) return errorJson(res, 404, 'bulk job not found');
     await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
 
-    const availableVars = new Set(computeAvailableVariables(job));
-    const varA = String(req.query.varA || '').trim() || (job.variables_available?.[0] || '');
-    const varB = String(req.query.varB || '').trim() || (job.variables_available?.[1] || '');
+    const computedVars = computeAvailableVariables(job);
+    const availableVars = new Set(computedVars);
+    const varA = String(req.query.varA || '').trim() || (computedVars[0] || '');
+    const varB = String(req.query.varB || '').trim() || (computedVars[1] || '');
     if (!availableVars.has(varA) || !availableVars.has(varB) || varA === varB) {
       return errorJson(res, 400, 'invalid variable selection');
     }
@@ -2909,7 +2948,8 @@ exports.getBulkSlideshowItem = async (req, res) => {
       id: String(job._id),
       name: job.name,
       workflow: job.workflow,
-      negative_prompt: job.negative_prompt || null
+      negative_prompt: job.negative_prompt || null,
+      negative_prompt_mode: normalizeBulkNegativePromptMode(job.negative_prompt_mode)
     };
     if (!doc) {
       return res.json({

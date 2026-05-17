@@ -79,7 +79,10 @@ block content
         .alert.alert-info.d-none#placeholderHint Placeholder keys detected from templates will appear here automatically.
       .panel
         h2 Negative Prompt (optional)
-        textarea#negativePrompt.form-control(placeholder="Enter a negative prompt to test with and without it")
+        textarea#negativePrompt.form-control(placeholder="Enter a negative prompt")
+        .form-check.mt-3
+          input#negativeOnly.form-check-input(type="checkbox")
+          label.form-check-label(for="negativeOnly") Only generate with the negative prompt
       .panel
         h2 Review
         .flex-gap.mb-2
@@ -87,7 +90,7 @@ block content
           span.pill#summaryPlaceholders 0 placeholders
           span.pill#summaryImages 0 image inputs
           span.pill#summaryCombinations 0 combinations
-        p.text-soft.mb-0 A job will generate every combination of placeholders across all templates. With a negative prompt supplied the job will run both with and without it.
+        p#summaryNegativeMode.text-soft.mb-0 A job will generate every combination of placeholders across all templates.
       .panel
         .sticky-actions.d-flex.gap-2.flex-wrap.justify-content-between.align-items-center
           span#formStatus.text-soft

@@ -19,9 +19,11 @@
   const placeholderList = $('#placeholderList');
   const placeholderHint = $('#placeholderHint');
   const negativePrompt = $('#negativePrompt');
+  const negativeOnly = $('#negativeOnly');
   const summaryPrompts = $('#summaryPrompts');
   const summaryPlaceholders = $('#summaryPlaceholders');
   const summaryCombinations = $('#summaryCombinations');
+  const summaryNegativeMode = $('#summaryNegativeMode');
   const formStatus = $('#formStatus');
   const submitBtn = $('#submitBtn');
   const workflowImageInputs = $('#workflowImageInputs');
@@ -128,6 +130,33 @@
     if (!workflowInputStatus) return;
     workflowInputStatus.textContent = text || '';
     workflowInputStatus.className = isError ? 'text-danger mt-2' : 'text-soft mt-2';
+  }
+
+  function getNegativePromptText() {
+    return negativePrompt?.value.trim() || '';
+  }
+
+  function isNegativeOnlyMode() {
+    return Boolean(negativeOnly?.checked);
+  }
+
+  function getNegativeVariantCount() {
+    const hasNegativePrompt = Boolean(getNegativePromptText());
+    if (!hasNegativePrompt) return isNegativeOnlyMode() ? 0 : 1;
+    return isNegativeOnlyMode() ? 1 : 2;
+  }
+
+  function updateNegativeModeSummary() {
+    if (!summaryNegativeMode) return;
+    if (!getNegativePromptText()) {
+      summaryNegativeMode.textContent = isNegativeOnlyMode()
+        ? 'Add a negative prompt to generate only negative-prompt variations.'
+        : 'A job will generate every combination of placeholders across all templates.';
+    } else if (isNegativeOnlyMode()) {
+      summaryNegativeMode.textContent = 'A job will generate every combination with the negative prompt applied.';
+    } else {
+      summaryNegativeMode.textContent = 'A job will generate every combination both with and without the negative prompt.';
+    }
   }
 
   function describeInstance(inst) {
@@ -955,7 +984,7 @@
     const imageValues = gatherImageInputValues();
     const imageMultiplier = computeImageMultiplier(imageValues);
     if (imageMultiplier === 0) return 0;
-    const negativeFactor = negativePrompt?.value.trim() ? 2 : 1;
+    const negativeFactor = getNegativeVariantCount();
     return templateCount * multiplier * imageMultiplier * negativeFactor;
   }
 
@@ -971,11 +1000,13 @@
       .map((spec) => spec?.key)
       .filter((key) => key && !(imageValues[key] && imageValues[key].length));
     const combos = computeCombinationEstimate();
+    const missingNegativePrompt = isNegativeOnlyMode() && !getNegativePromptText();
 
     if (summaryPrompts) summaryPrompts.textContent = `${templateCount} template${templateCount === 1 ? '' : 's'}`;
     if (summaryPlaceholders) summaryPlaceholders.textContent = `${placeholderCount} placeholder${placeholderCount === 1 ? '' : 's'}`;
     if (summaryImages) summaryImages.textContent = `${imageCount} image input${imageCount === 1 ? '' : 's'}`;
     if (summaryCombinations) summaryCombinations.textContent = `${combos} combination${combos === 1 ? '' : 's'}`;
+    updateNegativeModeSummary();
 
     if (workflowImageInputs && imageInputAlert) {
       if (state.currentImageSpecs.length && missingImages.length) {
@@ -993,6 +1024,9 @@
     if (!formStatus) return;
     if (!templateCount) {
       formStatus.textContent = 'Add at least one template.';
+      formStatus.className = 'text-warning';
+    } else if (missingNegativePrompt) {
+      formStatus.textContent = 'Add a negative prompt or turn off negative-only generation.';
       formStatus.className = 'text-warning';
     } else if (missingPlaceholders.length) {
       formStatus.textContent = `Add values for placeholder(s): ${missingPlaceholders.join(', ')}`;
@@ -1077,6 +1111,9 @@
 
       const imageInputs = collectImageInputs();
       const baseInputs = collectBaseInputs();
+      if (isNegativeOnlyMode() && !getNegativePromptText()) {
+        throw new Error('Add a negative prompt or turn off negative-only generation.');
+      }
       const payload = {
         name,
         workflow: workflowSelect.value,
@@ -1085,6 +1122,8 @@
         templates,
         placeholderValues,
         negativePrompt: negativePrompt?.value || '',
+        negativePromptMode: isNegativeOnlyMode() ? 'only' : 'compare',
+        negativePromptOnly: isNegativeOnlyMode(),
         baseInputs,
         imageInputs,
         instance_id: state.currentInstanceId
@@ -1141,6 +1180,7 @@
   addTemplateBtn?.addEventListener('click', () => addTemplate());
   addPlaceholderBtn?.addEventListener('click', () => addPlaceholder());
   negativePrompt?.addEventListener('input', updateSummary);
+  negativeOnly?.addEventListener('change', updateSummary);
   jobForm?.addEventListener('submit', handleSubmit);
 
   addTemplate();

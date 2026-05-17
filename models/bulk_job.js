@@ -19,6 +19,7 @@ const BulkJobSchema = new mongoose.Schema({
     values: { type: [String], default: [] }
   }],
   negative_prompt: { type: String, default: null },
+  negative_prompt_mode: { type: String, enum: ['compare', 'only'], default: 'compare' },
   workflow_template: { type: mongoose.Schema.Types.Mixed, default: null },
   field_mappings: { type: mongoose.Schema.Types.Mixed, default: [] },
   status: {
