@@ -996,7 +996,7 @@ function buildSlideshowPendingMatch(jobId) {
   return {
     job: jobId,
     status: 'Completed',
-    filename: { $ne: null },
+    filename: { $nin: [null, ''] },
     $or: [
       { defect_rating_value: { $exists: false } },
       { defect_rating_value: null },
@@ -1212,8 +1212,8 @@ async function processBulkPrompt(job, prompt) {
         $set: {
           status: 'Completed',
           completed_at: new Date(),
-          filename: primary?.safeName || null,
-          file_url: primary?.url || null,
+          filename: primary?.filename || primary?.safeName || null,
+          file_url: primary?.cached_url || primary?.url || primary?.download_url || null,
           comfy_error: null,
           instance_id: instanceId || null
         }
@@ -1235,6 +1235,67 @@ async function processBulkPrompt(job, prompt) {
   } finally {
     await refreshJobCounters(job._id);
   }
+}
+
+async function hydrateMissingBulkPromptOutputs(job, { limit = 25 } = {}) {
+  const jobId = toObjectId(job?._id || job);
+  if (!jobId) return 0;
+  const max = Math.max(1, Math.min(100, Number(limit || 25)));
+  const docs = await BulkTestPrompt.find({
+    job: jobId,
+    status: 'Completed',
+    comfy_job_id: { $exists: true, $nin: [null, ''] },
+    $or: [
+      { filename: { $exists: false } },
+      { filename: null },
+      { filename: '' }
+    ]
+  })
+    .sort({ completed_at: -1, updated_at: -1 })
+    .limit(max)
+    .lean();
+
+  if (!docs.length) return 0;
+  let repaired = 0;
+  await mapWithConcurrency(docs, Math.min(3, docs.length), async (doc) => {
+    const comfyJobId = String(doc.comfy_job_id || '').trim();
+    if (!comfyJobId) return;
+    const instanceId = normalizeInstanceId(doc.instance_id ?? job?.instance_id);
+    try {
+      const status = await comfyGatewayService.getStatus(comfyJobId);
+      if (!isCompletedStatus(status?.status)) return;
+      const outputs = Array.isArray(status?.outputs)
+        ? status.outputs
+        : Array.isArray(status?.files)
+          ? status.files
+          : [];
+      if (!outputs.length) return;
+      const stored = await cacheGatewayOutputs(comfyJobId, outputs, instanceId);
+      const primary = stored[0] || null;
+      const filename = primary?.filename || primary?.safeName || null;
+      const fileUrl = primary?.cached_url || primary?.url || primary?.download_url || null;
+      if (!filename) return;
+      await BulkTestPrompt.updateOne(
+        { _id: doc._id },
+        {
+          $set: {
+            filename,
+            file_url: fileUrl,
+            comfy_error: null,
+            instance_id: instanceId || null
+          }
+        }
+      );
+      repaired += 1;
+    } catch (err) {
+      logger.warn('[hydrateMissingBulkPromptOutputs] failed to hydrate output', {
+        promptId: String(doc._id),
+        comfyJobId,
+        message: err?.message || String(err)
+      });
+    }
+  });
+  return repaired;
 }
 
 async function claimRandomPendingPrompt(jobId) {
@@ -1905,6 +1966,7 @@ exports.getBulkJob = async (req, res) => {
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const job = await BulkJob.findById(jobId).lean();
     if (!job) return errorJson(res, 404, 'bulk job not found');
+    await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
 
     const scoreAgg = await BulkTestPrompt.aggregate([
       { $match: { job: jobId, score_count: { $gt: 0 } } },
@@ -2059,6 +2121,8 @@ exports.listBulkTestPrompts = async (req, res) => {
   try {
     const jobId = toObjectId(req.params.id);
     if (!jobId) return errorJson(res, 400, 'invalid job id');
+    const job = await BulkJob.findById(jobId).lean();
+    if (job) await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
     const filter = { job: jobId };
     const status = String(req.query.status || '').trim();
     if (status) {
@@ -2117,6 +2181,7 @@ exports.getBulkMatrix = async (req, res) => {
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const job = await BulkJob.findById(jobId).lean();
     if (!job) return errorJson(res, 404, 'bulk job not found');
+    await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
 
     const availableVars = new Set(computeAvailableVariables(job));
     const varA = String(req.query.varA || '').trim() || (job.variables_available?.[0] || '');
@@ -2217,13 +2282,14 @@ exports.listBulkGalleryImages = async (req, res) => {
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const job = await BulkJob.findById(jobId).lean();
     if (!job) return errorJson(res, 404, 'bulk job not found');
+    await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
 
     const filters = parseGalleryFilters(req.query.filters);
     const normalizedFilters = {};
     const match = {
       job: jobId,
       status: 'Completed',
-      filename: { $ne: null }
+      filename: { $nin: [null, ''] }
     };
 
     for (const [rawKey, rawValue] of Object.entries(filters || {})) {
@@ -2406,7 +2472,7 @@ exports.submitBulkGalleryRating = async (req, res) => {
         _id: { $in: dedupedIds },
         job: jobId,
         status: 'Completed',
-        filename: { $ne: null }
+        filename: { $nin: [null, ''] }
       },
       {
         $inc: {
@@ -2435,8 +2501,9 @@ exports.getBulkAnalytics = async (req, res) => {
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const job = await BulkJob.findById(jobId).lean();
     if (!job) return errorJson(res, 404, 'bulk job not found');
+    await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
 
-    const match = { job: jobId, status: 'Completed', filename: { $ne: null } };
+    const match = { job: jobId, status: 'Completed', filename: { $nin: [null, ''] } };
     const analytics = await BulkTestPrompt.aggregate([
       { $match: match },
       {
@@ -2820,6 +2887,7 @@ exports.getBulkSlideshowItem = async (req, res) => {
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const job = await BulkJob.findById(jobId).lean();
     if (!job) return errorJson(res, 404, 'bulk job not found');
+    await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
 
     const match = buildSlideshowPendingMatch(jobId);
     const [result = {}] = await BulkTestPrompt.aggregate([
@@ -2920,7 +2988,7 @@ exports.submitBulkSlideshowRating = async (req, res) => {
       _id: promptId,
       job: jobId,
       status: 'Completed',
-      filename: { $ne: null }
+      filename: { $nin: [null, ''] }
     }).lean();
     if (!prompt) return errorJson(res, 404, 'prompt not found for job');
 
@@ -2975,8 +3043,9 @@ exports.getBulkScorePair = async (req, res) => {
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const job = await BulkJob.findById(jobId).lean();
     if (!job) return errorJson(res, 404, 'bulk job not found');
+    await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
     const docs = await BulkTestPrompt.aggregate([
-      { $match: { job: jobId, status: 'Completed', filename: { $ne: null } } },
+      { $match: { job: jobId, status: 'Completed', filename: { $nin: [null, ''] } } },
       { $sample: { size: 2 } }
     ]);
     if (docs.length < 2) return errorJson(res, 404, 'not enough completed images to score');
