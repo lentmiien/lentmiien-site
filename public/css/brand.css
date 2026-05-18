@@ -149,6 +149,53 @@ hr {
   gap: 20px;
 }
 
+.mypage-icon-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mypage-icon-toolbar__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mypage-icon-status {
+  min-height: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.mypage-tile-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.mypage-grid:not(.is-editing) .mypage-tile-shell.is-hidden {
+  display: none;
+}
+
+.mypage-grid.is-editing .mypage-tile-shell {
+  min-height: 0;
+}
+
+.mypage-grid.is-editing .mypage-tile-shell.is-hidden {
+  opacity: 0.52;
+}
+
+.mypage-grid.is-editing .mypage-tile-shell.is-dragging {
+  opacity: 0.35;
+}
+
+.mypage-grid.is-editing a.mypage-tile {
+  cursor: default;
+  pointer-events: none;
+}
+
 a.mypage-tile {
   text-decoration: none;
   color: var(--text);
@@ -173,6 +220,10 @@ a.mypage-tile:focus-visible {
 .img-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 18px 42px rgba(255, 106, 31, 0.22);
+}
+
+.mypage-grid.is-editing .img-card:hover {
+  transform: none;
 }
 
 .img-card__inner {
@@ -222,6 +273,78 @@ a.mypage-tile:focus-visible {
   text-align: center;
   border: 1px solid rgba(255, 194, 71, 0.38);
   backdrop-filter: blur(4px);
+}
+
+.mypage-hidden-badge {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(14, 15, 19, 0.82);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.mypage-tile-shell.has-meta .mypage-hidden-badge {
+  top: 44px;
+}
+
+.mypage-grid.is-editing .mypage-tile-shell.is-hidden .mypage-hidden-badge {
+  display: inline-flex;
+}
+
+.mypage-tile-controls {
+  display: none;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mypage-grid.is-editing .mypage-tile-controls {
+  display: grid;
+}
+
+.mypage-tile-control {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.mypage-tile-control:hover,
+.mypage-tile-control:focus {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mypage-tile-drag {
+  cursor: grab;
+}
+
+.mypage-tile-drag:active {
+  cursor: grabbing;
+}
+
+@media (max-width: 576px) {
+  .mypage-icon-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mypage-icon-toolbar__actions {
+    width: 100%;
+  }
+
+  .mypage-icon-toolbar__actions .btn {
+    flex: 1 1 auto;
+  }
 }
 
 .schedule-task-pill {

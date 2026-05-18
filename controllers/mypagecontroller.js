@@ -3,7 +3,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const SoundDataFolder = './public/mp3';
 const ImageDataFolder = './public/img';
-const { ArticleModel, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, AIModelCards } = require('../database');
+const { ArticleModel, Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, AIModelCards, UseraccountModel } = require('../database');
 const { tts, ig, GetOpenAIModels } = require('../utils/ChatGPT');
 const { GetAnthropicModels } = require('../utils/anthropic');
 const ScheduleTaskService = require('../services/scheduleTaskService');
@@ -14,6 +14,10 @@ const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
 const myLifeLogService = require('../services/myLifeLogService');
+const {
+  buildMypageTiles,
+  sanitizeMypageIconSettings,
+} = require('../services/mypageIconService');
 
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
@@ -259,6 +263,16 @@ exports.mypage = async (req, res) => {
   const decoratedOpenAIModels = decorateNewModels(new_openai_models, 'OpenAI');
   const decoratedAnthropicModels = decorateNewModels(new_anthropic_models, 'Anthropic');
   const soraLifecycle = getSoraLifecycle();
+  const permissions = Array.isArray(res.locals.permissions) ? res.locals.permissions : [];
+  const mypageTiles = buildMypageTiles({
+    permissions,
+    settings: req.user.mypage_icon_settings || {},
+    metaById: {
+      sora: soraLifecycle
+        ? (soraLifecycle.generationDisabled ? 'Generation stopped' : `${soraLifecycle.daysUntilGenerationStop} days left`)
+        : null,
+    },
+  });
 
   const userId = req.user.name;
   const today = ScheduleTaskService.roundToSlot(new Date());
@@ -275,7 +289,41 @@ exports.mypage = async (req, res) => {
     embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,
     lifeLogSuggestions,
     soraLifecycle,
+    mypageTiles,
   });
+};
+
+exports.update_icon_settings = async (req, res) => {
+  const userId = req.user && req.user._id ? req.user._id : null;
+  if (!userId) {
+    return res.status(401).json({ ok: false, message: 'Login required.' });
+  }
+
+  const nextSettings = req.body && req.body.reset
+    ? { order: [], hidden: [], updatedAt: new Date() }
+    : sanitizeMypageIconSettings(
+      req.body || {},
+      req.user.mypage_icon_settings || {},
+      Array.isArray(res.locals.permissions) ? res.locals.permissions : []
+    );
+
+  try {
+    await UseraccountModel.updateOne(
+      { _id: userId },
+      { $set: { mypage_icon_settings: nextSettings } }
+    );
+    req.user.mypage_icon_settings = nextSettings;
+    return res.json({ ok: true, settings: nextSettings });
+  } catch (error) {
+    logger.error('Failed to save mypage icon settings', {
+      category: 'mypage',
+      metadata: {
+        user: req.user.name,
+        error: error.message,
+      },
+    });
+    return res.status(500).json({ ok: false, message: 'Unable to save icon settings.' });
+  }
 };
 
 exports.embedding_search_page = async (req, res) => handleEmbeddingSearch(req, res, req.query || {}, { requireQuery: false });

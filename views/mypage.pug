@@ -1,13 +1,20 @@
 extends layout
 
-mixin tile(href, src, alt, label, meta)
-  a.mypage-tile(href=href)
-    .img-card
-      .img-card__inner
-        img.mypage-img(src=src, alt=alt)
-        if meta
-          span.img-card__meta= meta
-        span.img-card__label= label
+mixin tile(tile)
+  .mypage-tile-shell(class=[tile.hidden ? 'is-hidden' : '', tile.meta ? 'has-meta' : ''], data-tile-id=tile.id)
+    a.mypage-tile(href=tile.href)
+      .img-card
+        .img-card__inner
+          img.mypage-img(src=tile.src, alt=tile.alt)
+          if tile.meta
+            span.img-card__meta= tile.meta
+          span.img-card__label= tile.label
+          span.mypage-hidden-badge Hidden
+    .mypage-tile-controls(aria-label=`${tile.label} controls`)
+      button.mypage-tile-control.mypage-tile-drag(type="button", title="Drag to reorder", aria-label=`Drag ${tile.label}`) Drag
+      button.mypage-tile-control.mypage-tile-up(type="button", title="Move up", aria-label=`Move ${tile.label} up`) Up
+      button.mypage-tile-control.mypage-tile-down(type="button", title="Move down", aria-label=`Move ${tile.label} down`) Down
+      button.mypage-tile-control.mypage-tile-hide(type="button", aria-pressed=tile.hidden ? 'true' : 'false', aria-label=`Toggle ${tile.label}`)= tile.hidden ? 'Show' : 'Hide'
 
 block styles
   link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap")
@@ -475,48 +482,16 @@ block content
                   .life-log-status.mt-2#llv-status Ready.
   .row 
     .col 
-      .mypage-grid
-        +tile('/mypage/life_log', '/i/health.svg', 'life log', 'My Life Log')
-        +tile('/learning', '/i/learning.svg', 'Play learning games', 'Learning Lab')
-        +tile('/mypage/blogpost', '/i/blog.svg', 'blogpost', 'Write blog')
-        if permissions && permissions.indexOf("accounting") >= 0
-          +tile('/accounting', '/i/budget.svg', 'accounting', 'Accounting')
-        if permissions && permissions.indexOf("chat5") >= 0
-          +tile('/chat5/top', '/i/chat5.svg', 'chat5', 'Chat 5')
-        if permissions && permissions.indexOf("chat4") >= 0
-          +tile('/chat4/knowledgelist', '/i/knowledge.svg', 'knowledge', 'Knowledge')
-        if permissions && permissions.indexOf("cooking") >= 0
-          +tile('/cooking/v2', '/i/calendar.svg', 'cooking calendar', 'Cooking calendar')
-          +tile('/cooking/cookbook', '/i/cookbook.svg', 'cookbook', 'Cookbook')
-        +tile('/chat4/batch_status', '/i/batch.svg', 'batch', 'Batch')
-        if permissions && permissions.indexOf("binpacking") >= 0
-          +tile('/binpacking', '/i/binpacking.svg', '3D bin packing', '3D Bin Packing')
-        +tile('/mypage/pdf_to_jpg', '/i/pdfconv.svg', 'PDF to image converter', 'PDF to Image')
-        if permissions && permissions.indexOf("ocr") >= 0
-          +tile('/ocr', '/i/receipt.svg', 'ocr tool', 'OCR tool')
-          +tile('/ocr-tts', '/i/receipt_tts.svg', 'ocr → tts', 'OCR → TTS queue')
-        if permissions && permissions.indexOf("product") >= 0
-          +tile('/product', '/i/product.svg', 'Product details', 'Product details')
-        if permissions && permissions.indexOf("gallery") >= 0
-          +tile('/gallery', '/i/gallery.svg', 'Gallery', 'Gallery')
-        if permissions && permissions.indexOf("payroll") >= 0
-          +tile('/payroll', '/i/payroll.svg', 'Payroll', 'Payroll')
-        if permissions && permissions.indexOf("emergencystock") >= 0
-          +tile('/es/es_dashboard', '/i/stock.svg', 'Emergency stock', 'Emergency stock')
-        if permissions && permissions.indexOf("scheduletask") >= 0
-          +tile('/scheduleTask/calendar', '/i/schedule.svg', 'Calendar', 'Calendar')
-        if permissions && permissions.indexOf("image_gen") >= 0
-          +tile('/image_gen', '/i/img_gen.svg', 'Generate and edit images', 'Image Gen')
-          +tile('/image_gen/bulk', '/i/img_gen_bulk.svg', 'Generate and edit images in batches', 'Image Gen bulk')
-        if permissions && permissions.indexOf("music") >= 0
-          +tile('/music', '/i/music.svg', 'AI music library', 'Music')
-        if permissions && permissions.indexOf("sora") >= 0
-          - const soraTileMeta = soraLifecycle ? (soraLifecycle.generationDisabled ? 'Generation stopped' : `${soraLifecycle.daysUntilGenerationStop} days left`) : null
-          +tile('/sora', '/i/vid_gen.svg', 'Generate and edit short videos', 'Video Gen', soraTileMeta)
-        if permissions && permissions.indexOf("budget") >= 0
-          +tile('/budget/cards', '/i/credit.svg', 'Credit Card usage', 'Credit Card')
-        if permissions && permissions.indexOf("shoppinglist") >= 0
-          +tile('/shopping-list', '/i/shopping.svg', 'Shopping list', 'Shopping list')
+      .mypage-icon-toolbar
+        .mypage-icon-toolbar__actions
+          button#mypage-icons-customize.btn.btn-outline-secondary.btn-sm(type="button") Customize icons
+          button#mypage-icons-save.btn.btn-primary.btn-sm(type="button" hidden) Save
+          button#mypage-icons-cancel.btn.btn-outline-secondary.btn-sm(type="button" hidden) Cancel
+          button#mypage-icons-reset.btn.btn-outline-danger.btn-sm(type="button" hidden) Reset
+        span#mypage-icons-status.mypage-icon-status(aria-live="polite")
+      .mypage-grid(data-mypage-icon-grid)
+        each pageTile in (mypageTiles || [])
+          +tile(pageTile)
   if new_openai_models.length > 0
     .row 
       .col
@@ -546,3 +521,4 @@ block content
 
 block script
   script(src="/js/my_life_log.js")
+  script(src="/js/mypage_icons.js")

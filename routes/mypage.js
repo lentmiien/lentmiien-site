@@ -33,6 +33,7 @@ const lifeLogController = require('../controllers/mylifelogcontroller');
 
 /* GET home page. */
 router.get('/', controller.mypage);
+router.post('/icon-settings', controller.update_icon_settings);
 
 router.get('/embedding-search', controller.embedding_search_page);
 router.post('/embedding-search', controller.embedding_search);
