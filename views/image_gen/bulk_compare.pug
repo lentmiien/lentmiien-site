@@ -1,0 +1,59 @@
+//- views/image_gen/bulk_compare.pug
+extends ../layout
+
+block styles
+  style.
+    .panel{background:var(--surface-1);color:var(--text);border:1px solid var(--border);border-radius:1rem;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 20px 48px rgba(0,0,0,0.28)}
+    .panel h2{font-size:1.05rem;margin-bottom:1rem;color:var(--text)}
+    .text-soft{color:var(--text-muted)}
+    .job-select-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.75rem}
+    .job-select-card{border:1px solid var(--divider);border-radius:.85rem;background:var(--surface-2);padding:.85rem;display:flex;gap:.65rem;align-items:flex-start}
+    .job-select-card label{display:flex;flex-direction:column;gap:.2rem;cursor:pointer}
+    .job-select-title{font-weight:700;color:var(--text)}
+    .job-select-meta{font-size:.82rem;color:var(--text-secondary)}
+    .compare-status{font-size:.9rem;color:var(--text-muted)}
+    .compare-scroll{overflow-x:auto;padding-bottom:1rem}
+    .compare-table{width:100%;min-width:860px;border-collapse:separate;border-spacing:0;border:1px solid var(--border);border-radius:1rem;overflow:hidden;background:var(--surface-1)}
+    .compare-table th,.compare-table td{padding:.75rem;border-bottom:1px solid var(--divider);border-right:1px solid var(--divider);vertical-align:top}
+    .compare-table th:last-child,.compare-table td:last-child{border-right:none}
+    .compare-table tr:last-child td{border-bottom:none}
+    .compare-table thead th{background:var(--surface-2);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-secondary)}
+    .prompt-cell{min-width:260px;font-size:.86rem;color:var(--text-secondary)}
+    .prompt-cell strong{display:block;color:var(--text);margin-bottom:.35rem}
+    .compare-result{display:flex;flex-direction:column;gap:.5rem;min-width:180px}
+    .compare-result img,.compare-result video{width:100%;max-height:220px;object-fit:contain;border:1px solid var(--border);border-radius:.65rem;background:var(--surface-2)}
+    .compare-result-meta{font-size:.78rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:.2rem}
+    .missing-result{color:var(--text-muted);font-size:.85rem}
+
+block content
+  .container.py-4#compareRoot
+    a.text-decoration-none.text-soft(href="/image_gen/bulk") Back to bulk jobs
+    .d-flex.flex-wrap.justify-content-between.align-items-start.mt-2.mb-3.gap-2
+      div
+        h1.h4.mb-1 Compare Bulk Generations
+        p.text-soft.mb-0 Match completed outputs by the same generated prompt and inputs across selected jobs.
+      a.btn.btn-primary.btn-sm(href="/image_gen/bulk/new") Create new job
+    .panel
+      .d-flex.justify-content-between.align-items-center.flex-wrap.gap-2.mb-3
+        h2.mb-0 Jobs
+        button#reloadJobsBtn.btn.btn-outline-secondary.btn-sm(type="button") Reload jobs
+      #jobSelection.job-select-grid
+        .text-soft Loading jobs...
+      .d-flex.flex-wrap.gap-3.align-items-center.mt-3
+        .form-check
+          input#completeOnly.form-check-input(type="checkbox" checked)
+          label.form-check-label(for="completeOnly") Complete matches only
+        .d-flex.align-items-center.gap-2
+          label.form-label.mb-0(for="compareLimit") Rows
+          input#compareLimit.form-control.form-control-sm(type="number" min="1" max="300" value="100" style="width:90px")
+        button#compareBtn.btn.btn-primary(type="button") Compare selected jobs
+        span#compareStatus.compare-status
+    .panel
+      h2 Results
+      #compareSummary.compare-status.mb-2
+      .compare-scroll
+        #compareResults
+          .text-soft Select at least two jobs to compare.
+
+block script
+  script(src="/js/image_gen_bulk_compare.js")

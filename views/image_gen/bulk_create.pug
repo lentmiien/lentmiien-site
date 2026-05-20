@@ -21,7 +21,8 @@ block styles
 block content
   .container.py-4
     a.text-decoration-none.text-soft(href="/image_gen/bulk") Back to bulk jobs
-    h1.h4.mt-2.mb-3 Create Bulk Prompt Experiment
+    h1#bulkCreateTitle.h4.mt-2.mb-3 Create Bulk Prompt Experiment
+    .alert.alert-info.d-none#copySourceNotice
     form#jobForm
       .panel
         h2 Workflow & Base Inputs

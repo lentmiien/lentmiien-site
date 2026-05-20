@@ -1019,6 +1019,150 @@ function hydrateImageResults(items, job) {
   });
 }
 
+function stableSortPlain(value) {
+  if (Array.isArray(value)) return value.map(stableSortPlain);
+  if (value && typeof value === 'object') {
+    const sorted = {};
+    Object.keys(value).sort().forEach((key) => {
+      sorted[key] = stableSortPlain(value[key]);
+    });
+    return sorted;
+  }
+  return value;
+}
+
+function normalizeCompareJobIds(raw) {
+  const parts = [];
+  const push = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(push);
+      return;
+    }
+    if (value === null || value === undefined) return;
+    String(value)
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => parts.push(part));
+  };
+  push(raw);
+  const seen = new Set();
+  const ids = [];
+  parts.forEach((id) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  });
+  return ids.slice(0, 6);
+}
+
+function parseCompareCompleteOnly(raw) {
+  if (raw === undefined || raw === null || raw === '') return true;
+  return !['0', 'false', 'no', 'partial'].includes(String(raw).trim().toLowerCase());
+}
+
+function normalizeCompareInputValues(inputValues) {
+  if (!inputValues || typeof inputValues !== 'object') return [];
+  return Object.values(inputValues)
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .sort();
+}
+
+function normalizeCompareText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function buildBulkPromptComparisonSignature(doc, job) {
+  const negativeUsed = Boolean(doc?.negative_used);
+  const payload = {
+    prompt_text: normalizeCompareText(doc?.prompt_text),
+    negative_used: negativeUsed,
+    negative_prompt: negativeUsed ? normalizeCompareText(job?.negative_prompt) : '',
+    input_values_key: normalizeCompareInputValues(doc?.input_values),
+    placeholder_values: stableSortPlain(doc?.placeholder_values || {}),
+    input_values: stableSortPlain(doc?.input_values || {})
+  };
+  return {
+    key: JSON.stringify({
+      prompt_text: payload.prompt_text,
+      negative_used: payload.negative_used,
+      negative_prompt: payload.negative_prompt,
+      input_values: payload.input_values_key
+    }),
+    payload
+  };
+}
+
+function comparePromptScore(item) {
+  const avg = Number(item?.score_average || 0);
+  const count = Number(item?.score_count || 0);
+  const completedAt = item?.completed_at ? new Date(item.completed_at).getTime() : 0;
+  return { avg, count, completedAt: Number.isFinite(completedAt) ? completedAt : 0 };
+}
+
+function isBetterCompareItem(candidate, existing) {
+  if (!existing) return true;
+  const a = comparePromptScore(candidate);
+  const b = comparePromptScore(existing);
+  if (a.avg !== b.avg) return a.avg > b.avg;
+  if (a.count !== b.count) return a.count > b.count;
+  return a.completedAt > b.completedAt;
+}
+
+function hydrateBulkCompareItem(doc, job) {
+  const mediaType = detectMediaType(doc.filename);
+  const bucket = mediaType === 'video' ? 'video' : 'output';
+  const instanceId = doc.instance_id || job?.instance_id || null;
+  const cacheRec = doc.filename ? buildCacheRecord(doc.filename, { bucket, mediaType, instanceId }) : null;
+  const downloadUrl = doc.filename
+    ? `/image_gen/api/files/${bucket}/${encodeURIComponent(doc.filename)}${instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''}`
+    : null;
+  const scoreCount = Number(doc.score_count || 0);
+  const scoreTotal = Number(doc.score_total || 0);
+  return {
+    id: String(doc._id),
+    job_id: String(doc.job),
+    filename: doc.filename,
+    media_type: mediaType,
+    cached_url: cacheRec ? cacheRec.url : null,
+    download_url: downloadUrl,
+    instance_id: instanceId,
+    prompt_text: doc.prompt_text || '',
+    template_label: doc.template_label,
+    placeholder_values: doc.placeholder_values || {},
+    input_values: doc.input_values || {},
+    variables: toPlainVariables(doc.variables),
+    negative_used: !!doc.negative_used,
+    score_total: scoreTotal,
+    score_count: scoreCount,
+    score_average: scoreCount > 0 ? scoreTotal / scoreCount : 0,
+    defect_rating: Number.isFinite(doc.defect_rating_value) ? doc.defect_rating_value : null,
+    completed_at: doc.completed_at
+  };
+}
+
+function bulkJobCompareSummary(job) {
+  return {
+    id: String(job._id),
+    name: job.name,
+    status: job.status,
+    workflow: job.workflow,
+    instance_id: job.instance_id || null,
+    copied_from_job: job.copied_from_job ? String(job.copied_from_job) : null,
+    counters: Object.assign({
+      total: 0,
+      pending: 0,
+      processing: 0,
+      paused: 0,
+      completed: 0,
+      canceled: 0
+    }, job.counters || {}),
+    created_at: job.created_at,
+    updated_at: job.updated_at
+  };
+}
+
 function buildSlideshowPendingMatch(jobId) {
   return {
     job: jobId,
@@ -1782,6 +1926,12 @@ exports.renderBulkCreate = (req, res) => {
   });
 };
 
+exports.renderBulkCompare = (req, res) => {
+  res.render('image_gen/bulk_compare', {
+    title: 'ComfyUI  EBulk Job Compare',
+  });
+};
+
 exports.renderBulkJob = (req, res) => {
   res.render('image_gen/bulk_job', {
     title: 'ComfyUI  EBulk Job Detail',
@@ -1824,6 +1974,7 @@ exports.listBulkJobs = async (req, res) => {
       progress: job.progress || 0,
       workflow: job.workflow,
       instance_id: job.instance_id || null,
+      copied_from_job: job.copied_from_job ? String(job.copied_from_job) : null,
       negative_prompt_mode: normalizeBulkNegativePromptMode(job.negative_prompt_mode),
       counters: Object.assign({
         total: 0,
@@ -1854,6 +2005,13 @@ exports.createBulkJob = async (req, res) => {
     const instanceId = normalizeInstanceId(body.instance_id ?? body.instanceId);
     if (!name) return errorJson(res, 400, 'name required');
     if (!workflow) return errorJson(res, 400, 'workflow required');
+    const copiedFromRaw = body.copiedFromJobId ?? body.copyFromJobId ?? body.sourceJobId ?? body.source_job_id ?? body.copied_from_job;
+    const copiedFromJobId = copiedFromRaw ? toObjectId(copiedFromRaw) : null;
+    if (copiedFromRaw && !copiedFromJobId) return errorJson(res, 400, 'invalid copied-from job id');
+    if (copiedFromJobId) {
+      const sourceExists = await BulkJob.exists({ _id: copiedFromJobId });
+      if (!sourceExists) return errorJson(res, 404, 'copied-from bulk job not found');
+    }
     const workflowTemplateRaw = body.workflowTemplate ?? body.workflow_template;
     const workflowTemplate = workflowTemplateRaw && typeof workflowTemplateRaw === 'object' && !Array.isArray(workflowTemplateRaw)
       ? clonePlain(workflowTemplateRaw)
@@ -1950,6 +2108,7 @@ exports.createBulkJob = async (req, res) => {
     const jobData = {
       name,
       workflow,
+      copied_from_job: copiedFromJobId || null,
       prompt_templates: templates,
       placeholder_keys: placeholderKeys,
       placeholder_values: placeholderValues,
@@ -1990,6 +2149,7 @@ exports.createBulkJob = async (req, res) => {
       counters: refreshed?.counters || jobData.counters,
       status: refreshed?.status || job.status,
       instance_id: job.instance_id || instanceId || null,
+      copied_from_job: copiedFromJobId ? String(copiedFromJobId) : null,
     });
   } catch (e) {
     logger.error('[createBulkJob] error', e);
@@ -2031,6 +2191,7 @@ exports.getBulkJob = async (req, res) => {
         }, job.counters || {}),
         variables_available: computeAvailableVariables(job),
         negative_prompt_mode: normalizeBulkNegativePromptMode(job.negative_prompt_mode),
+        copied_from_job: job.copied_from_job ? String(job.copied_from_job) : null,
         instance_id: job.instance_id || null
       }),
       score: {
@@ -2476,6 +2637,101 @@ exports.listBulkGalleryImages = async (req, res) => {
   } catch (e) {
     logger.error('[listBulkGalleryImages] error', e);
     return errorJson(res, 500, 'failed to load gallery images', String(e.message || e));
+  }
+};
+
+exports.compareBulkJobs = async (req, res) => {
+  try {
+    const rawJobIds = req.query.jobIds ?? req.query.job_ids ?? req.query.jobs ?? [req.query.job, req.query.with];
+    const jobIdStrings = normalizeCompareJobIds(rawJobIds);
+    if (jobIdStrings.length < 2) return errorJson(res, 400, 'select at least two jobs to compare');
+
+    const jobIds = jobIdStrings.map((id) => toObjectId(id));
+    if (jobIds.some((id) => !id)) return errorJson(res, 400, 'invalid job id in comparison');
+
+    const limit = Math.max(1, Math.min(300, Number(req.query.limit || 100)));
+    const promptLimit = Math.max(limit, Math.min(5000, Number(req.query.promptLimit || 3000)));
+    const completeOnly = parseCompareCompleteOnly(req.query.complete ?? req.query.completeOnly);
+
+    const jobs = await BulkJob.find({ _id: { $in: jobIds } }).lean();
+    const jobsById = new Map(jobs.map((job) => [String(job._id), job]));
+    const orderedJobs = jobIds.map((id) => jobsById.get(String(id))).filter(Boolean);
+    if (orderedJobs.length !== jobIds.length) return errorJson(res, 404, 'one or more bulk jobs were not found');
+
+    await Promise.all(orderedJobs.map((job) => hydrateMissingBulkPromptOutputs(job, { limit: 50 })));
+
+    const prompts = await BulkTestPrompt.find({
+      job: { $in: jobIds },
+      status: 'Completed',
+      filename: { $nin: [null, ''] }
+    })
+      .sort({ prompt_text: 1, completed_at: -1, _id: 1 })
+      .limit(promptLimit)
+      .lean();
+
+    const groupsByKey = new Map();
+    prompts.forEach((doc) => {
+      const jobId = String(doc.job);
+      const job = jobsById.get(jobId);
+      if (!job) return;
+      const signature = buildBulkPromptComparisonSignature(doc, job);
+      if (!signature.payload.prompt_text) return;
+      if (!groupsByKey.has(signature.key)) {
+        groupsByKey.set(signature.key, {
+          key: signature.key,
+          prompt_text: signature.payload.prompt_text,
+          negative_used: signature.payload.negative_used,
+          placeholder_values: signature.payload.placeholder_values,
+          input_values: signature.payload.input_values,
+          itemsByJob: new Map()
+        });
+      }
+      const group = groupsByKey.get(signature.key);
+      const item = hydrateBulkCompareItem(doc, job);
+      const existing = group.itemsByJob.get(jobId);
+      if (isBetterCompareItem(item, existing)) {
+        group.itemsByJob.set(jobId, item);
+      }
+    });
+
+    const selectedJobCount = orderedJobs.length;
+    const allGroups = Array.from(groupsByKey.values())
+      .map((group) => {
+        const jobCount = group.itemsByJob.size;
+        return Object.assign(group, {
+          job_count: jobCount,
+          complete: jobCount === selectedJobCount
+        });
+      })
+      .filter((group) => completeOnly ? group.complete : group.job_count >= 2)
+      .sort((a, b) => {
+        if (a.complete !== b.complete) return a.complete ? -1 : 1;
+        return a.prompt_text.localeCompare(b.prompt_text);
+      });
+
+    const groups = allGroups.slice(0, limit).map((group) => ({
+      key: group.key,
+      prompt_text: group.prompt_text,
+      negative_used: group.negative_used,
+      placeholder_values: group.placeholder_values,
+      input_values: group.input_values,
+      job_count: group.job_count,
+      complete: group.complete,
+      items: orderedJobs.map((job) => group.itemsByJob.get(String(job._id)) || null)
+    }));
+
+    res.json({
+      jobs: orderedJobs.map(bulkJobCompareSummary),
+      complete_only: completeOnly,
+      prompt_limit: promptLimit,
+      limit,
+      total_groups: allGroups.length,
+      returned: groups.length,
+      groups
+    });
+  } catch (e) {
+    logger.error('[compareBulkJobs] error', e);
+    return errorJson(res, 500, 'failed to compare bulk jobs', String(e.message || e));
   }
 };
 

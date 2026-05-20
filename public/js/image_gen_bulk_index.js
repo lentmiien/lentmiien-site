@@ -169,6 +169,16 @@
       detailBtn.href = `/image_gen/bulk/${encodeURIComponent(job.id)}`;
       detailBtn.textContent = 'Open details';
       actionWrap.appendChild(detailBtn);
+      const copyBtn = document.createElement('a');
+      copyBtn.className = 'btn btn-sm btn-outline-secondary';
+      copyBtn.href = `/image_gen/bulk/new?copyFrom=${encodeURIComponent(job.id)}`;
+      copyBtn.textContent = 'Copy as new';
+      actionWrap.appendChild(copyBtn);
+      const compareBtn = document.createElement('a');
+      compareBtn.className = 'btn btn-sm btn-outline-secondary';
+      compareBtn.href = `/image_gen/bulk/compare?jobIds=${encodeURIComponent(job.id)}`;
+      compareBtn.textContent = 'Compare';
+      actionWrap.appendChild(compareBtn);
       const scoreBtn = document.createElement('a');
       scoreBtn.className = 'btn btn-sm btn-outline-primary';
       scoreBtn.href = `/image_gen/bulk/${encodeURIComponent(job.id)}/score`;

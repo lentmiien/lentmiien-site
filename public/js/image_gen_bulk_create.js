@@ -30,8 +30,12 @@
   const imageInputList = $('#imageInputList');
   const imageInputAlert = $('#imageInputAlert');
   const summaryImages = $('#summaryImages');
+  const bulkCreateTitle = $('#bulkCreateTitle');
+  const copySourceNotice = $('#copySourceNotice');
 
   const DEFAULT_INSTANCE_KEY = '__default__';
+  const urlParams = new URLSearchParams(window.location.search);
+  const copyFromJobId = (urlParams.get('copyFrom') || urlParams.get('copy_from') || '').trim();
 
   const state = {
     instances: [],
@@ -42,7 +46,10 @@
     originalWorkflow: null,
     availableFields: new Map(),
     editableFields: new Map(),
-    currentImageSpecs: []
+    currentImageSpecs: [],
+    copySourceJob: null,
+    desiredWorkflow: null,
+    prefillImageInputs: {}
   };
 
   function isPlainObject(value) {
@@ -244,12 +251,14 @@
       state.instances = list;
       state.instanceMap = new Map(list.filter(inst => inst && inst.id).map(inst => [inst.id, inst]));
       const defaultId = determineDefaultInstanceId(list, payload);
+      const requestedId = options.selectedId && state.instanceMap.has(options.selectedId) ? options.selectedId : null;
       populateInstanceOptions(list, {
-        selectedId: options.preserveSelection ? state.currentInstanceId : defaultId,
+        selectedId: requestedId || (options.preserveSelection ? state.currentInstanceId : defaultId),
         preserveSelection: options.preserveSelection,
         defaultId
       });
       const nextId = (() => {
+        if (requestedId) return requestedId;
         if (options.preserveSelection && state.currentInstanceId && state.instanceMap.has(state.currentInstanceId)) return state.currentInstanceId;
         if (instanceSelect && instanceSelect.value) return instanceSelect.value;
         return defaultId;
@@ -634,7 +643,46 @@
       workflowSelect.appendChild(opt);
     });
     const validKeys = new Set(state.workflows.map((wf) => wf.key));
-    workflowSelect.value = validKeys.has(previousValue) ? previousValue : state.workflows[0].key;
+    const desiredWorkflow = state.desiredWorkflow && validKeys.has(state.desiredWorkflow)
+      ? state.desiredWorkflow
+      : null;
+    workflowSelect.value = desiredWorkflow || (validKeys.has(previousValue) ? previousValue : state.workflows[0].key);
+  }
+
+  function copiedImageValuesByKey(job) {
+    const result = {};
+    (Array.isArray(job?.image_inputs) ? job.image_inputs : []).forEach((entry) => {
+      const key = entry?.key;
+      if (!key) return;
+      result[key] = Array.isArray(entry.values) ? entry.values.slice() : [];
+    });
+    return result;
+  }
+
+  function normalizeCopiedMapping(mapping, baseInputs) {
+    if (!mapping || !mapping.key) return null;
+    const role = mapping.bulkRole || mapping.role || 'base';
+    const copiedValue = role === 'base' && Object.prototype.hasOwnProperty.call(baseInputs || {}, mapping.key)
+      ? baseInputs[mapping.key]
+      : mapping.value;
+    return Object.assign({}, mapping, {
+      bulkRole: role,
+      value: copiedValue
+    });
+  }
+
+  function applyCopiedWorkflowFields(job) {
+    const mappings = Array.isArray(job?.field_mappings) ? job.field_mappings : [];
+    if (!mappings.length) return false;
+    const baseInputs = job?.base_inputs || {};
+    state.editableFields.clear();
+    mappings.forEach((mapping) => {
+      const normalized = normalizeCopiedMapping(mapping, baseInputs);
+      if (!normalized || !normalized.key) return;
+      const descriptor = state.availableFields.get(normalized.key) || normalized;
+      addEditableField(Object.assign({}, descriptor, normalized), normalized.bulkRole);
+    });
+    return state.editableFields.size > 0;
   }
 
   async function loadWorkflowJson(name) {
@@ -650,14 +698,25 @@
     setWorkflowStatus('Loading workflow JSON...');
     try {
       const resp = await api(`/api/workflows/${encodeURIComponent(name)}`);
-      const workflow = unwrapWorkflowPayload(resp);
+      let workflow = unwrapWorkflowPayload(resp);
       if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) {
         throw new Error('Workflow response did not contain a JSON object.');
+      }
+      if (
+        state.copySourceJob &&
+        name === state.copySourceJob.workflow &&
+        state.copySourceJob.workflow_template &&
+        typeof state.copySourceJob.workflow_template === 'object'
+      ) {
+        workflow = state.copySourceJob.workflow_template;
       }
       state.originalWorkflow = cloneWorkflow(workflow);
       if (workflowJsonArea) workflowJsonArea.value = JSON.stringify(state.originalWorkflow);
       buildAvailableFields(state.originalWorkflow);
       autoAddDefaultFields();
+      if (state.copySourceJob && name === state.copySourceJob.workflow) {
+        applyCopiedWorkflowFields(state.copySourceJob);
+      }
       renderNodeFieldSelect();
       renderEditableFields();
       const count = state.availableFields.size;
@@ -845,6 +904,72 @@
     updateSummary();
   }
 
+  function setCopyNotice(message, isError = false) {
+    if (!copySourceNotice) return;
+    copySourceNotice.textContent = message || '';
+    copySourceNotice.classList.toggle('d-none', !message);
+    copySourceNotice.classList.toggle('alert-info', !isError);
+    copySourceNotice.classList.toggle('alert-danger', isError);
+  }
+
+  function applyCopiedJobForm(job) {
+    if (!job) return;
+    state.copySourceJob = job;
+    state.desiredWorkflow = job.workflow || null;
+    state.prefillImageInputs = copiedImageValuesByKey(job);
+
+    if (bulkCreateTitle) bulkCreateTitle.textContent = 'Create Bulk Prompt Experiment From Existing Job';
+    setCopyNotice(`Prefilled from "${job.name || 'Untitled job'}". Change the workflow or inputs, then create a new job.`);
+
+    const nameInput = $('#jobName');
+    if (nameInput) nameInput.value = `Copy of ${job.name || 'bulk job'}`;
+
+    if (templateList) {
+      templateList.innerHTML = '';
+      const templates = Array.isArray(job.prompt_templates) ? job.prompt_templates : [];
+      templates.forEach((tpl, idx) => {
+        addTemplate({
+          label: tpl?.label || `Prompt ${idx + 1}`,
+          template: tpl?.template || ''
+        });
+      });
+      if (!templates.length) addTemplate();
+    }
+
+    if (placeholderList) {
+      placeholderList.innerHTML = '';
+      const placeholders = Array.isArray(job.placeholder_values) ? job.placeholder_values : [];
+      placeholders.forEach((entry) => {
+        addPlaceholder({
+          name: entry?.key || '',
+          values: Array.isArray(entry?.values) ? entry.values.join('\n') : ''
+        });
+      });
+      syncPlaceholders();
+    }
+
+    if (negativePrompt) negativePrompt.value = job.negative_prompt || '';
+    if (negativeOnly) negativeOnly.checked = (job.negative_prompt_mode || '').toLowerCase() === 'only';
+    updateTemplateEmptyState();
+    updateSummary();
+  }
+
+  async function loadCopySourceJob() {
+    if (!copyFromJobId) return null;
+    try {
+      setCopyNotice('Loading source job...');
+      const data = await api(`/api/bulk/jobs/${encodeURIComponent(copyFromJobId)}`, { skipInstance: true });
+      const job = data?.job || null;
+      if (!job) throw new Error('Source job response was empty.');
+      applyCopiedJobForm(job);
+      return job;
+    } catch (err) {
+      state.copySourceJob = null;
+      setCopyNotice(`Could not load source job: ${err.message}`, true);
+      throw err;
+    }
+  }
+
   function updateTemplateEmptyState() {
     const hasTemplates = templateList?.querySelector('.template-item');
     if (!templateEmptyAlert) return;
@@ -924,6 +1049,8 @@
       textarea.placeholder = 'example.png\nexample-2.png';
       if (previousValues[spec.key]?.length) {
         textarea.value = previousValues[spec.key].join('\n');
+      } else if (state.prefillImageInputs[spec.key]?.length) {
+        textarea.value = state.prefillImageInputs[spec.key].join('\n');
       } else if (Array.isArray(spec.defaultValue)) {
         textarea.value = spec.defaultValue.join('\n');
       } else if (spec.defaultValue && typeof spec.defaultValue === 'string') {
@@ -1126,7 +1253,8 @@
         negativePromptOnly: isNegativeOnlyMode(),
         baseInputs,
         imageInputs,
-        instance_id: state.currentInstanceId
+        instance_id: state.currentInstanceId,
+        sourceJobId: state.copySourceJob?.id || copyFromJobId || null
       };
 
       const resp = await api('/api/bulk/jobs', {
@@ -1166,6 +1294,7 @@
     });
   });
   workflowSelect?.addEventListener('change', (event) => {
+    state.desiredWorkflow = null;
     loadWorkflowJson(event.target.value).catch((err) => {
       setWorkflowStatus(err.message, true);
     });
@@ -1183,11 +1312,31 @@
   negativeOnly?.addEventListener('change', updateSummary);
   jobForm?.addEventListener('submit', handleSubmit);
 
-  addTemplate();
-  renderInstanceSummary();
-  renderNodeFieldSelect();
-  renderEditableFields();
-  loadInstances().catch((err) => {
+  async function init() {
+    if (!copyFromJobId) addTemplate();
+    renderInstanceSummary();
+    renderNodeFieldSelect();
+    renderEditableFields();
+    let sourceJob = null;
+    if (copyFromJobId) {
+      try {
+        sourceJob = await loadCopySourceJob();
+      } catch (err) {
+        if (formStatus) {
+          formStatus.textContent = err.message;
+          formStatus.className = 'text-danger';
+        }
+      }
+    }
+    if (copyFromJobId && !sourceJob && !templateList?.querySelector('.template-item')) {
+      addTemplate();
+    }
+    await loadInstances({
+      selectedId: sourceJob?.instance_id || null
+    });
+  }
+
+  init().catch((err) => {
     if (formStatus) {
       formStatus.textContent = err.message;
       formStatus.className = 'text-danger';

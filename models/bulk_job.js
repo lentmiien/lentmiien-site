@@ -5,6 +5,11 @@ const BulkJobSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   workflow: { type: String, required: true, trim: true },
   instance_id: { type: String, default: null, trim: true },
+  copied_from_job: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'bulk_job',
+    default: null
+  },
   prompt_templates: [{
     label: { type: String, required: true, trim: true },
     template: { type: String, required: true, trim: true }
@@ -55,5 +60,6 @@ BulkJobSchema.pre('save', function saveHook(next) {
 });
 
 BulkJobSchema.index({ status: 1, updated_at: -1 });
+BulkJobSchema.index({ copied_from_job: 1, created_at: -1 });
 
 module.exports = mongoose.model('bulk_job', BulkJobSchema);

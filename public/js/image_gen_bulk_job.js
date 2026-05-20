@@ -20,6 +20,7 @@
   const resumeBtn = document.getElementById('resumeBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const redoBtn = document.getElementById('redoBtn');
+  const compareBtn = document.getElementById('compareBtn');
   const varSelectA = document.getElementById('varSelectA');
   const varSelectB = document.getElementById('varSelectB');
   const refreshMatrixBtn = document.getElementById('refreshMatrixBtn');
@@ -202,6 +203,15 @@
       redoBtn.classList.remove('d-none');
       redoBtn.disabled = false;
     }
+  }
+
+  function updateCompareButton(job) {
+    if (!compareBtn || !job) return;
+    const ids = [];
+    if (job.copied_from_job) ids.push(job.copied_from_job);
+    ids.push(job.id || jobId);
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    compareBtn.href = `/image_gen/bulk/compare?jobIds=${uniqueIds.map(encodeURIComponent).join(',')}`;
   }
 
   function populateVariableSelects(variables) {
@@ -589,6 +599,7 @@
         const counters = renderCounts(job.counters);
         updateActionButtons(job.status);
         updateRedoButton(counters, job.status);
+        updateCompareButton(job);
         populateVariableSelects(job.variables_available || []);
         const filtersUpdated = renderGalleryFilterFields(job);
         jobDetails = job;
@@ -918,4 +929,3 @@
   loadPrompts(true);
   setupAutoRefresh();
 })();
-

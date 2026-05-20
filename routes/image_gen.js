@@ -39,6 +39,7 @@ router.get('/good', ctrl.renderGoodGallery);
 if (!BULK_DISABLED) {
   router.get('/bulk', ctrl.renderBulkLanding);
   router.get('/bulk/new', ctrl.renderBulkCreate);
+  router.get('/bulk/compare', ctrl.renderBulkCompare);
   router.get('/bulk/:id/score', ctrl.renderBulkScoring);
   router.get('/bulk/:id/slideshow', ctrl.renderBulkSlideshow);
   router.get('/bulk/:id/analytics', ctrl.renderBulkAnalytics);
@@ -67,6 +68,7 @@ router.post('/api/rate', ctrl.rateJob);
 router.get('/api/good-images', ctrl.listGoodImages);
 if (!BULK_DISABLED) {
   router.get('/api/bulk/jobs', ctrl.listBulkJobs);
+  router.get('/api/bulk/compare', ctrl.compareBulkJobs);
   router.post('/api/bulk/jobs', ctrl.createBulkJob);
   router.get('/api/bulk/jobs/:id', ctrl.getBulkJob);
   router.patch('/api/bulk/jobs/:id/status', ctrl.updateBulkJobStatus);
