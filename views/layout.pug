@@ -118,6 +118,7 @@ html(lang='en')
             +navLink('/asr', 'Audio transcription')
           if hasPermission("music")
             +navLink('/music', 'Music library')
+          +navLink('/qwen3-lora', 'Qwen3 LoRA')
         if showUtilityLinks
           +navColumn('Utilities')
             if hasPermission("box")

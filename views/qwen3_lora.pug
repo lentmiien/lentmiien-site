@@ -1,0 +1,77 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/qwen3_lora.css')
+
+block content
+  .qwen-user
+    .qwen-user__header
+      div
+        h1 Qwen3 LoRA
+        p.text-muted.mb-0 One-shot text generation with the base model or a trained LoRA.
+      .qwen-user__meta
+        span#qwenServiceBadge.qwen-user__badge.qwen-user__badge--warn Checking service
+        button#qwenRefreshBtn.btn.btn-outline-light.btn-sm(type='button') Refresh
+
+    #qwenAlert.qwen-user__alert(role='status', aria-live='polite', hidden)
+
+    .qwen-user__layout
+      section.qwen-user__panel
+        .qwen-user__panel-head
+          h2 Generate
+          span#qwenFetched.qwen-user__muted Not loaded
+        form#qwenGenerateForm
+          fieldset#qwenGenerationFields(disabled)
+            .row
+              .col-md-6.mb-3
+                label.form-label(for='qwenTarget') Target
+                select#qwenTarget.form-select(name='adapter_name')
+                  option(value='') Base model
+              .col-md-3.mb-3
+                label.form-label(for='qwenMaxTokens') Max tokens
+                input#qwenMaxTokens.form-control(type='number', name='max_new_tokens', min='1', max=maxNewTokens, step='1', value=defaultMaxNewTokens)
+              .col-md-3.mb-3
+                label.form-label(for='qwenTemperature') Temperature
+                input#qwenTemperature.form-control(type='number', name='temperature', min='0', max='2', step='0.05', value='0')
+            .mb-3
+              label.form-label(for='qwenSystem') System prompt
+              textarea#qwenSystem.form-control(name='system', rows='3', placeholder='Optional system instruction')
+            .mb-3
+              label.form-label(for='qwenPrompt') User prompt
+              textarea#qwenPrompt.form-control(name='prompt', rows='7', required, placeholder='Write your prompt here.')
+            details.qwen-user__advanced
+              summary Advanced inputs
+              .row.mt-3
+                .col-md-6.mb-3
+                  label.form-label(for='qwenTools') tools
+                  textarea#qwenTools.form-control(name='tools', rows='6', placeholder='[]')
+                .col-md-6.mb-3
+                  label.form-label(for='qwenResponseFormat') response_format
+                  textarea#qwenResponseFormat.form-control(name='response_format', rows='6', placeholder='{"type":"json_object"}')
+              .row
+                .col-md-4.mb-3
+                  label.form-label(for='qwenTopP') top_p
+                  input#qwenTopP.form-control(type='number', name='top_p', min='0', max='1', step='0.01', placeholder='0.8')
+                .col-md-4.mb-3
+                  label.form-label(for='qwenTopK') top_k
+                  input#qwenTopK.form-control(type='number', name='top_k', min='0', max='1000', step='1', placeholder='20')
+                .col-md-4.mb-3
+                  label.form-label(for='qwenRepetitionPenalty') repetition_penalty
+                  input#qwenRepetitionPenalty.form-control(type='number', name='repetition_penalty', min='0.1', max='3', step='0.01', placeholder='1.05')
+            .qwen-user__actions
+              button#qwenGenerateBtn.btn.btn-primary(type='submit') Generate
+              span#qwenBusyText.qwen-user__muted
+
+      section.qwen-user__panel.qwen-user__panel--response
+        .qwen-user__panel-head
+          h2 Response
+          span#qwenUsage.qwen-user__muted
+        #qwenResponse.qwen-user__response
+          p.text-muted.mb-0 Submit a prompt to see the model response.
+        details#qwenRawDetails.qwen-user__advanced(hidden)
+          summary Raw response
+          pre#qwenRaw.qwen-user__pre
+
+block script
+  script(type='application/json', id='qwenUserConfig') !{JSON.stringify({ maxNewTokens, defaultMaxNewTokens })}
+  script(src='/js/qwen3_lora.js', defer)

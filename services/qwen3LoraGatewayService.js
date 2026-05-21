@@ -131,7 +131,18 @@ class Qwen3LoraGatewayService {
     return joinUrl(this.gatewayBaseUrl, path);
   }
 
-  async request({ method = 'get', path, data, params, headers, timeout, functionName, requestBodyForLog }) {
+  async request({
+    method = 'get',
+    path,
+    data,
+    params,
+    headers,
+    timeout,
+    functionName,
+    requestBodyForLog,
+    responseBodyForLog,
+    debugLog = true,
+  }) {
     const requestUrl = this.url(path);
     const startedAt = Date.now();
     logger.debug('Qwen3 LoRA gateway request started', {
@@ -157,13 +168,15 @@ class Qwen3LoraGatewayService {
         maxBodyLength: Infinity,
       });
 
-      recordDebugLog({
-        functionName,
-        requestUrl,
-        requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
-        responseHeaders: response.headers || null,
-        responseBody: response.data,
-      });
+      if (debugLog) {
+        recordDebugLog({
+          functionName,
+          requestUrl,
+          requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
+          responseHeaders: response.headers || null,
+          responseBody: responseBodyForLog === undefined ? response.data : responseBodyForLog,
+        });
+      }
 
       logger.debug('Qwen3 LoRA gateway request completed', {
         category: 'qwen3_lora_gateway',
@@ -172,13 +185,15 @@ class Qwen3LoraGatewayService {
 
       return response.data;
     } catch (error) {
-      recordDebugLog({
-        functionName,
-        requestUrl,
-        requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
-        responseHeaders: error?.response?.headers || null,
-        responseBody: getErrorPayload(error),
-      });
+      if (debugLog) {
+        recordDebugLog({
+          functionName,
+          requestUrl,
+          requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
+          responseHeaders: error?.response?.headers || null,
+          responseBody: responseBodyForLog === undefined ? getErrorPayload(error) : responseBodyForLog,
+        });
+      }
 
       logger.warning('Qwen3 LoRA gateway request failed', {
         category: 'qwen3_lora_gateway',
@@ -366,13 +381,16 @@ class Qwen3LoraGatewayService {
     });
   }
 
-  async generate(payload) {
+  async generate(payload, options = {}) {
     return this.request({
       method: 'post',
       path: this.servicePath('/generate'),
       data: payload,
       timeout: this.generateTimeoutMs,
       functionName: 'qwen3_lora_generate',
+      requestBodyForLog: options.requestBodyForLog,
+      responseBodyForLog: options.responseBodyForLog,
+      debugLog: options.debugLog !== false,
     });
   }
 

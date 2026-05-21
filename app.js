@@ -289,6 +289,7 @@ const ocrRouter = require('./routes/ocr');
 const ocrTtsRouter = require('./routes/ocr_tts');
 const asrRouter = require('./routes/asr');
 const soraRouter = require('./routes/sora');
+const qwen3LoraRouter = require('./routes/qwen3_lora');
 const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
@@ -340,6 +341,7 @@ app.use('/ocr', isAuthenticated, authorize("ocr"), ocrRouter);
 app.use('/ocr-tts', isAuthenticated, authorize("ocr"), ocrTtsRouter);
 app.use('/asr', isAuthenticated, authorize("asr"), asrRouter);
 app.use('/sora', isAuthenticated, authorize("sora"), soraRouter);
+app.use('/qwen3-lora', isAuthenticated, qwen3LoraRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 

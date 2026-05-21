@@ -44,4 +44,12 @@ describe('mypageIconService', () => {
     expect(regularTiles.some((tile) => tile.id === 'qwen3_lora')).toBe(false);
     expect(adminTiles.some((tile) => tile.id === 'qwen3_lora')).toBe(true);
   });
+
+  test('Qwen3 LoRA text tile is available to regular logged-in users', () => {
+    const regularTiles = buildMypageTiles();
+    const tile = regularTiles.find((entry) => entry.id === 'qwen3_lora_text');
+
+    expect(tile).toBeDefined();
+    expect(tile.href).toBe('/qwen3-lora');
+  });
 });

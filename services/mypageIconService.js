@@ -171,6 +171,13 @@ const MYPAGE_ICON_DEFINITIONS = [
     permissions: ['sora'],
   },
   {
+    id: 'qwen3_lora_text',
+    href: '/qwen3-lora',
+    src: '/i/qwen3_lora.svg',
+    alt: 'Qwen3 LoRA text generation',
+    label: 'Qwen3 Text',
+  },
+  {
     id: 'credit_card',
     href: '/budget/cards',
     src: '/i/credit.svg',
