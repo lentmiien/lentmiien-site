@@ -67,7 +67,29 @@ const routes = [
   "archive",
 ];
 
-const AI_GATEWAY_BASE_URL = process.env.AI_GATEWAY_BASE_URL || 'http://192.168.0.20:8080';
+const DEFAULT_AI_GATEWAY_BASE_URL = 'http://192.168.0.20:8080';
+
+function normalizeAiGatewayBaseUrl(rawValue) {
+  const raw = typeof rawValue === 'string' ? rawValue.trim() : '';
+  if (!raw) {
+    return DEFAULT_AI_GATEWAY_BASE_URL;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    const hostname = parsed.hostname.toLowerCase();
+    const isLocalhost = ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(hostname);
+    if (isLocalhost && process.env.AI_GATEWAY_ALLOW_LOCALHOST !== 'true') {
+      return DEFAULT_AI_GATEWAY_BASE_URL;
+    }
+  } catch (error) {
+    return DEFAULT_AI_GATEWAY_BASE_URL;
+  }
+
+  return raw.replace(/\/+$/, '');
+}
+
+const AI_GATEWAY_BASE_URL = normalizeAiGatewayBaseUrl(process.env.AI_GATEWAY_BASE_URL);
 const AI_GATEWAY_ENDPOINTS = {
   metrics: '/metrics',
   gpu: '/gpu',
