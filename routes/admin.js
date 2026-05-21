@@ -8,6 +8,7 @@ const learningAdminController = require('../controllers/learningAdminController'
 const messageInboxController = require('../controllers/messageInboxAdminController');
 const toolManagerController = require('../controllers/toolManagerController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
+const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminController');
 
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
@@ -33,6 +34,13 @@ const audioUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 25 * 1024 * 1024,
+  },
+});
+
+const qwen3LoraUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: Number(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB || 100) * 1024 * 1024,
   },
 });
 
@@ -70,6 +78,19 @@ const handleLearningArtUpload = (req, res, next) => {
     }
 
     return learningAdminController.upload_art_asset(req, res, next);
+  });
+};
+
+const handleQwen3LoraDatasetUpload = (req, res, next) => {
+  qwen3LoraUpload.single('file')(req, res, (err) => {
+    if (err) {
+      const maxMb = Number(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB || 100);
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? `CSV upload exceeds the ${maxMb}MB limit.`
+        : 'Unable to process the uploaded CSV file.';
+      return res.status(400).json({ error: message });
+    }
+    return qwen3LoraAdminController.uploadDataset(req, res, next);
   });
 };
 
@@ -150,6 +171,19 @@ router.get('/music-test', controller.music_test_page);
 router.post('/music-test', controller.music_test_generate);
 router.get('/music-test/status/:id', controller.music_test_status);
 router.get('/music-test/output', controller.music_test_output);
+
+router.get('/qwen3-lora', qwen3LoraAdminController.render);
+router.get('/qwen3-lora/state', qwen3LoraAdminController.state);
+router.post('/qwen3-lora/container/:action', qwen3LoraAdminController.containerAction);
+router.post('/qwen3-lora/model/download', qwen3LoraAdminController.downloadModel);
+router.post('/qwen3-lora/model/unload', qwen3LoraAdminController.unloadModel);
+router.post('/qwen3-lora/datasets/upload', handleQwen3LoraDatasetUpload);
+router.delete('/qwen3-lora/datasets/:datasetId', qwen3LoraAdminController.deleteDataset);
+router.post('/qwen3-lora/datasets/:datasetId/delete', qwen3LoraAdminController.deleteDataset);
+router.post('/qwen3-lora/train/jobs', qwen3LoraAdminController.createTrainingJob);
+router.get('/qwen3-lora/train/jobs/:jobId', qwen3LoraAdminController.getTrainingJob);
+router.post('/qwen3-lora/generate', qwen3LoraAdminController.generate);
+router.post('/qwen3-lora/compare', qwen3LoraAdminController.compare);
 
 /* Message inbox */
 router.get('/message-inbox', messageInboxController.renderMessageInbox);

@@ -1,0 +1,211 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/qwen3_lora_admin.css')
+
+block content
+  .qwen-lora
+    .qwen-lora__header
+      div
+        h1 Qwen3 LoRA
+        p.text-muted.mb-0 Train adapters, manage the container, and compare generations.
+      .qwen-lora__meta
+        span.qwen-lora__chip Gateway: #{apiBase}
+        span.qwen-lora__chip Prefix: #{servicePrefix}
+        button#refreshStateBtn.btn.btn-outline-light.btn-sm(type='button') Refresh
+
+    #qwenLoraAlert.qwen-lora__alert(role='status', aria-live='polite', hidden)
+
+    .qwen-lora__top-grid
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Runtime
+          span#runtimeFetched.qwen-lora__muted Not loaded
+        .qwen-lora__status-grid
+          .qwen-lora__status-item
+            span.qwen-lora__status-label Container
+            strong#containerState Unknown
+          .qwen-lora__status-item
+            span.qwen-lora__status-label Service
+            strong#serviceHealth Unknown
+          .qwen-lora__status-item
+            span.qwen-lora__status-label Model cache
+            strong#modelDownloadStatus Unknown
+          .qwen-lora__status-item
+            span.qwen-lora__status-label Loaded adapter
+            strong#loadedAdapter None
+        .qwen-lora__actions
+          button#containerStartBtn.btn.btn-success.btn-sm(type='button') Start
+          button#containerRestartBtn.btn.btn-warning.btn-sm(type='button') Restart
+          button#containerStopBtn.btn.btn-outline-danger.btn-sm(type='button') Stop
+          .form-check.form-switch.qwen-lora__switch
+            input#containerWaitToggle.form-check-input(type='checkbox', checked)
+            label.form-check-label(for='containerWaitToggle') wait
+        .qwen-lora__actions
+          button#modelDownloadBtn.btn.btn-outline-primary.btn-sm(type='button') Verify model
+          button#modelUnloadBtn.btn.btn-outline-secondary.btn-sm(type='button') Unload model
+        details.qwen-lora__details
+          summary Raw runtime payload
+          pre#runtimeRaw.qwen-lora__pre
+
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Upload Dataset
+          span.qwen-lora__muted CSV, max #{maxUploadMb}MB
+        form#datasetUploadForm
+          .mb-3
+            label.form-label(for='datasetFile') CSV file
+            input#datasetFile.form-control(type='file', name='file', accept='.csv,text/csv', required)
+          .mb-3
+            label.form-label(for='datasetName') Dataset name
+            input#datasetName.form-control(type='text', name='name', placeholder='support-reply-tone')
+          button.btn.btn-primary(type='submit') Upload
+        #uploadResult.qwen-lora__result
+
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Start Training
+          span.qwen-lora__muted One active job
+        form#trainingForm
+          .mb-3
+            label.form-label(for='trainDataset') Dataset
+            select#trainDataset.form-select(name='dataset_id', required)
+              option(value='') Load datasets first
+          .mb-3
+            label.form-label(for='adapterName') Adapter name
+            input#adapterName.form-control(type='text', name='adapter_name', placeholder='support-reply-tone-v1')
+          .row
+            .col-md-6.mb-3
+              label.form-label(for='columnPreset') Columns
+              select#columnPreset.form-select
+                option(value='auto') Auto-detect
+                option(value='prompt_response') system / prompt / response
+                option(value='instruction_output') instruction / input / output
+                option(value='messages') messages
+                option(value='custom') Custom JSON
+            .col-md-6.mb-3
+              label.form-label(for='trainEpochs') Epochs
+              input#trainEpochs.form-control(type='number', min='0.1', step='0.1', value=defaultTrainingParams.num_train_epochs)
+          textarea#columnJson.form-control.qwen-lora__textarea.mb-3(rows='2', placeholder='{"prompt":"prompt","response":"response"}', hidden)
+          .qwen-lora__param-grid
+            label
+              span Learning rate
+              input#trainLearningRate.form-control(type='number', min='0', step='0.00001', value=defaultTrainingParams.learning_rate)
+            label
+              span Batch size
+              input#trainBatchSize.form-control(type='number', min='1', step='1', value=defaultTrainingParams.per_device_train_batch_size)
+            label
+              span Grad accum.
+              input#trainGradAccum.form-control(type='number', min='1', step='1', value=defaultTrainingParams.gradient_accumulation_steps)
+            label
+              span Max seq.
+              input#trainMaxSeq.form-control(type='number', min='128', step='128', value=defaultTrainingParams.max_seq_length)
+            label
+              span LoRA r
+              input#trainLoraR.form-control(type='number', min='1', step='1', value=defaultTrainingParams.lora_r)
+            label
+              span LoRA alpha
+              input#trainLoraAlpha.form-control(type='number', min='1', step='1', value=defaultTrainingParams.lora_alpha)
+            label
+              span LoRA dropout
+              input#trainLoraDropout.form-control(type='number', min='0', max='1', step='0.01', value=defaultTrainingParams.lora_dropout)
+            label
+              span Seed
+              input#trainSeed.form-control(type='number', step='1', value=defaultTrainingParams.seed)
+          .form-check.mt-3.mb-3
+            input#overwriteAdapter.form-check-input(type='checkbox')
+            label.form-check-label(for='overwriteAdapter') Overwrite adapter
+          button.btn.btn-primary(type='submit') Start job
+        #trainResult.qwen-lora__result
+
+    .qwen-lora__main-grid
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Datasets
+          span#datasetCount.qwen-lora__muted 0
+        #datasetList.qwen-lora__list
+
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Training Jobs
+          span#jobCount.qwen-lora__muted 0
+        #jobList.qwen-lora__list
+
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Adapters
+          span#adapterCount.qwen-lora__muted 0
+        #adapterList.qwen-lora__list
+
+    .qwen-lora__generation-grid
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Generate
+          span.qwen-lora__muted Base or one adapter
+        form#generateForm
+          .row
+            .col-md-6.mb-3
+              label.form-label(for='generateAdapter') Target
+              select#generateAdapter.form-select
+                option(value='') Base model
+            .col-md-3.mb-3
+              label.form-label(for='generateMaxTokens') Max tokens
+              input#generateMaxTokens.form-control(type='number', min='1', step='1', value='160')
+            .col-md-3.mb-3
+              label.form-label(for='generateTemperature') Temperature
+              input#generateTemperature.form-control(type='number', min='0', max='2', step='0.05', value='0')
+          .mb-3
+            label.form-label(for='generateSystem') System
+            textarea#generateSystem.form-control(rows='2', placeholder='Optional system message')
+          .mb-3
+            label.form-label(for='generatePrompt') Prompt
+            textarea#generatePrompt.form-control(rows='5', required, placeholder='Explain LoRA in one sentence.')
+          details.qwen-lora__advanced
+            summary Advanced request JSON
+            .row.mt-3
+              .col-md-6.mb-3
+                label.form-label(for='generateTools') tools
+                textarea#generateTools.form-control(rows='5', placeholder='[]')
+              .col-md-6.mb-3
+                label.form-label(for='generateResponseFormat') response_format
+                textarea#generateResponseFormat.form-control(rows='5', placeholder='{"type":"json_object"}')
+            .row
+              .col-md-4.mb-3
+                label.form-label(for='generateTopP') top_p
+                input#generateTopP.form-control(type='number', min='0', max='1', step='0.01', value='0.8')
+              .col-md-4.mb-3
+                label.form-label(for='generateTopK') top_k
+                input#generateTopK.form-control(type='number', min='0', step='1', value='20')
+              .col-md-4.mb-3
+                label.form-label(for='generateRepetitionPenalty') repetition_penalty
+                input#generateRepetitionPenalty.form-control(type='number', min='0', step='0.01', value='1.05')
+          button.btn.btn-primary(type='submit') Generate
+        #generateResult.qwen-lora__result
+
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Compare
+          span.qwen-lora__muted Base plus selected LoRAs
+        form#compareForm
+          .mb-3
+            label.form-label Targets
+            #compareTargets.qwen-lora__target-list
+          .row
+            .col-md-6.mb-3
+              label.form-label(for='compareMaxTokens') Max tokens
+              input#compareMaxTokens.form-control(type='number', min='1', step='1', value='160')
+            .col-md-6.mb-3
+              label.form-label(for='compareTemperature') Temperature
+              input#compareTemperature.form-control(type='number', min='0', max='2', step='0.05', value='0')
+          .mb-3
+            label.form-label(for='compareSystem') System
+            textarea#compareSystem.form-control(rows='2', placeholder='Optional system message')
+          .mb-3
+            label.form-label(for='comparePrompt') Prompt
+            textarea#comparePrompt.form-control(rows='5', required, placeholder='A customer says their invoice was charged twice. Write a short support reply.')
+          button.btn.btn-primary(type='submit') Run comparison
+        #compareResult.qwen-lora__compare-results
+
+block script
+  script(type='application/json', id='qwen3LoraConfig') !{JSON.stringify({ maxCompareTargets, defaultTrainingParams })}
+  script(src='/js/qwen3_lora_admin.js', defer)

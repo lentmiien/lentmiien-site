@@ -1,31 +1,1215 @@
-When getting responses from the ollama API, if using a reasoning model, I may get back a "thinking" piece of text.
+I've added a new AI service "qwen3-lora" in the AI Gateway, for training loras and do text completions with the qwen3 base model I currently use.
 
-Curently I'm just ignoring the "thinking" part and just show the "content" to the user, but I'd like to save the thinking message as well, but as a "hide_from_bot" type of message, so the user can view the thinking process if they want.
+I want you to add a new tool in this app for interacting with this new service, roughly doing the following:
+* Managing start/stop of the container
+* Upload CSV files with training data
+* Start lora training jobs with the uploaded CSV files
+* Run text generation with selected loras
 
-Example response with thinking included:
+Fetch lists of uploaded CSV data, available loras, etc. for making the tool easy to use.
 
+
+# These are roughly the changes in the gateway:
+
+---
+
+- Added gateway config/env for QWEN3_LORA_URL, container name, start/stop timeout, and upstream timeout.
+- Added health integration under /health with upstreams.qwen3_lora and containers.qwen3_lora.
+- Added /limits metadata for the service.
+- Added manual container controls:
+    - GET /qwen3-lora/container
+    - POST /qwen3-lora/container/start
+    - POST /qwen3-lora/container/stop
+    - POST /qwen3-lora/container/restart
+- Added pass-through proxy:
+    - /qwen3-lora/... forwards to the same path on the qwen3-lora service.
+    - Example: gateway /qwen3-lora/generate -> service /generate.
+    - Multipart CSV uploads are forwarded as raw request bodies, so /qwen3-lora/datasets/upload works.
+- Added basic metrics/logging:
+    - Prometheus request count/latency via existing REQS/LAT.
+    - New ai_gateway_qwen3_lora_inflight gauge.
+    - JSONL logs include path, method, status, duration, request/response bytes, GPU before/after, model, adapter, and usage when present.
+
+---
+
+# This is the readme for the new service:
+
+---
+
+# Qwen3 LoRA Service
+
+Standalone FastAPI service for supervised LoRA experiments on top of `Qwen/Qwen3-4B-Instruct-2507`.
+
+The gateway can proxy this service under `/qwen3-lora` and can manually start/stop the container when you want to free VRAM.
+
+## Model Choice
+
+Default base model: [`Qwen/Qwen3-4B-Instruct-2507`](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507)
+
+Why this one:
+- 4B parameters, so LoRA training is practical on the local ROCm box without needing CUDA-only QLoRA tooling.
+- Apache-2.0 model card license.
+- Current Qwen3 instruct checkpoint with strong instruction following, English performance, long context, and tool-use support.
+- Native Hugging Face `transformers` chat template support, including the Qwen tool-call format.
+
+If you want to test a larger model later, set `BASE_MODEL_ID` in `docker-compose.yml`. The service does not hard-code Qwen-specific layers except the default LoRA target module names, which are also overrideable in a training request.
+
+## Run
+
+```bash
+cd qwen3-lora
+docker compose up --build
 ```
+
+The first startup downloads the model into `./hf-cache`. The app listens on `http://127.0.0.1:8090`.
+
+Useful checks:
+
+```bash
+curl http://127.0.0.1:8090/health
+curl http://127.0.0.1:8090/model
+curl http://127.0.0.1:8090/adapters
+```
+
+TensorBoard logs are exposed on `http://127.0.0.1:6007`.
+
+For a first end-to-end run and rough dataset sizing guidance, see [GETTING_STARTED.md](GETTING_STARTED.md). For complete endpoint details, see [API_REFERENCE.md](API_REFERENCE.md).
+
+## CSV Formats
+
+The uploader auto-detects these formats:
+
+```csv
+system,prompt,response
+You are concise.,What is a LoRA?,A LoRA is a small trainable adapter...
+```
+
+```csv
+instruction,input,output
+Rewrite this professionally,hello there,Hello.
+```
+
+```csv
+messages
+"[{""role"":""user"",""content"":""Say hi""},{""role"":""assistant"",""content"":""Hi.""}]"
+```
+
+The `messages` format is the most flexible when training tool-calling examples.
+
+## API Flow
+
+Upload a CSV:
+
+```bash
+curl -F "file=@examples/sample_training.csv" \
+  -F "name=sample-style" \
+  http://127.0.0.1:8090/datasets/upload
+```
+
+Start a LoRA job using the returned `dataset_id`:
+
+```bash
+curl -X POST http://127.0.0.1:8090/train/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dataset_id": "PASTE_DATASET_ID",
+    "adapter_name": "sample-style-v1",
+    "params": {
+      "num_train_epochs": 2,
+      "learning_rate": 0.0002,
+      "per_device_train_batch_size": 1,
+      "gradient_accumulation_steps": 8,
+      "max_seq_length": 2048,
+      "lora_r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05
+    }
+  }'
+```
+
+Poll status:
+
+```bash
+curl http://127.0.0.1:8090/train/jobs/JOB_ID
+```
+
+Generate with an adapter:
+
+```bash
+curl -X POST http://127.0.0.1:8090/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "adapter_name": "sample-style-v1",
+    "messages": [
+      {"role": "user", "content": "Explain LoRA in one sentence."}
+    ],
+    "max_new_tokens": 120,
+    "temperature": 0.0
+  }'
+```
+
+OpenAI-style compatibility endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:8090/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "adapter_name": "sample-style-v1",
+    "messages": [
+      {"role": "user", "content": "Return {\"ok\": true} as JSON."}
+    ],
+    "response_format": {"type": "json_object"},
+    "max_tokens": 80
+  }'
+```
+
+## Tool Calls
+
+Pass OpenAI-style tool definitions to `/generate` or `/v1/chat/completions`. Qwen returns native `<tool_call>...</tool_call>` content; the service parses those blocks into `tool_calls`.
+
+```bash
+curl -X POST http://127.0.0.1:8090/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "What is the weather in Tokyo?"}],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city.",
+        "parameters": {
+          "type": "object",
+          "properties": {"city": {"type": "string"}},
+          "required": ["city"]
+        }
+      }
+    }],
+    "max_new_tokens": 160
+  }'
+```
+
+## Files
+
+- `data/`: uploaded CSV datasets.
+- `adapters/`: trained PEFT LoRA adapters.
+- `jobs/`: training job status JSON.
+- `logs/`: Trainer/TensorBoard logs.
+- `hf-cache/`: Hugging Face model cache.
+
+These runtime directories are ignored by git.
+
+---
+
+# This is a getting started guide for the new service
+
+---
+
+# Getting Started With LoRA Experiments
+
+This guide is intentionally practical and rough. The sample CSVs are tiny sanity checks, not good training sets. Use them to verify that upload, training, adapter loading, and generation all work before investing time in a real dataset.
+
+## 1. Start The Service
+
+```bash
+cd /home/lennart/ai-services/qwen3-lora
+docker compose up --build
+```
+
+Wait until the API is reachable:
+
+```bash
+curl http://127.0.0.1:8090/health
+```
+
+The model is already cached in `./hf-cache` if the earlier setup completed.
+
+## 2. Upload A CSV
+
+Start with the tone sample:
+
+```bash
+curl -F "file=@examples/support_reply_tone.csv" \
+  -F "name=support-reply-tone" \
+  http://127.0.0.1:8090/datasets/upload
+```
+
+The response includes a `dataset_id`. Keep that value for the next step.
+
+Other starter files:
+
+- `examples/support_reply_tone.csv`: prompt/response rows for concise support-style replies.
+- `examples/structured_json_output.csv`: prompt/response rows where the target answer is JSON.
+- `examples/tool_call_messages.csv`: `messages` rows showing Qwen-style tool call targets.
+
+## 3. Start A LoRA Training Job
+
+Replace `PASTE_DATASET_ID` with the upload response value.
+
+```bash
+curl -X POST http://127.0.0.1:8090/train/jobs \
+  -H "Content-Type: application/json" \
+  -d '{
+    "dataset_id": "PASTE_DATASET_ID",
+    "adapter_name": "support-reply-tone-v1",
+    "params": {
+      "num_train_epochs": 3,
+      "learning_rate": 0.0002,
+      "per_device_train_batch_size": 1,
+      "gradient_accumulation_steps": 8,
+      "max_seq_length": 2048,
+      "lora_r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05
+    }
+  }'
+```
+
+The response includes a `job_id`.
+
+## 4. Poll Job Status
+
+```bash
+curl http://127.0.0.1:8090/train/jobs/JOB_ID
+```
+
+The important statuses are:
+
+- `queued`: waiting for the single training worker.
+- `running`: training is active.
+- `succeeded`: adapter was saved under `./adapters/ADAPTER_NAME`.
+- `failed`: inspect the `error` field.
+
+TensorBoard logs are available at `http://127.0.0.1:6007`.
+
+## 5. List Adapters
+
+```bash
+curl http://127.0.0.1:8090/adapters
+```
+
+You should see `support-reply-tone-v1` after training succeeds.
+
+## 6. Test The Adapter
+
+```bash
+curl -X POST http://127.0.0.1:8090/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "adapter_name": "support-reply-tone-v1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "A customer says their invoice was charged twice. Write a short support reply."
+      }
+    ],
+    "max_new_tokens": 160,
+    "temperature": 0.0
+  }'
+```
+
+For a clean comparison, send the same prompt without `adapter_name`:
+
+```bash
+curl -X POST http://127.0.0.1:8090/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": "A customer says their invoice was charged twice. Write a short support reply."
+      }
+    ],
+    "max_new_tokens": 160,
+    "temperature": 0.0
+  }'
+```
+
+If the sample LoRA appears overfit or barely changes behavior, that is expected. The sample is only large enough to prove the pipeline works.
+
+## Rough Dataset Size Guidelines
+
+Quality and consistency matter more than raw row count. A few excellent rows can beat hundreds of noisy rows. That said, these ranges are useful starting points:
+
+| Rows | Good For | Usually Not Enough For |
+| ---: | --- | --- |
+| 10-50 | Pipeline tests, exact response format checks, very narrow style experiments | Reliable behavior changes |
+| 50-200 | Simple tone/style shaping, short rewrite patterns, one narrow JSON schema | Broad domain behavior or many edge cases |
+| 200-1,000 | Narrow task adapters, extraction/formatting, support macros, small policy sets | Large new knowledge domains |
+| 1,000-5,000 | Tool-use patterns, multi-intent workflows, many edge cases, robust style plus domain behavior | General-purpose assistant replacement |
+| 5,000-50,000 | Broad domain adapters, multiple task families, more reliable policy behavior | Teaching facts that are absent or contradictory in the base model without careful curation |
+
+Use fewer examples when:
+
+- The base model already knows the task and you only need style, format, or phrasing.
+- The output shape is simple and repetitive, such as one JSON schema.
+- Your examples are high quality, short, and consistent.
+- The adapter should make a small behavioral nudge.
+
+Use thousands of examples when:
+
+- You need reliability across many different user phrasings.
+- There are many edge cases, exceptions, or policy branches.
+- You want tool calls to be chosen correctly, not just formatted correctly.
+- You are adding domain-specific behavior that the base model does not infer from the prompt.
+- You need multi-turn patterns rather than single-turn replies.
+
+Function/tool-calling rough rules:
+
+- Use at least 20-50 examples per tool just to teach formatting.
+- Use 100-300 examples per tool if the model must choose between several similar tools.
+- Include no-call examples where the assistant should answer normally.
+- Include bad/missing argument cases so the model learns when to ask a clarifying question.
+
+Data quality checklist:
+
+- Keep one target behavior per adapter at first.
+- Use the same CSV format throughout a dataset.
+- Make outputs look exactly like the behavior you want at inference time.
+- Remove duplicate rows unless repetition is intentional.
+- Avoid contradictory examples.
+- Keep a small holdout set of prompts that you do not train on, then compare base vs. adapter manually.
+- Prefer many short, clear rows over a few very long transcripts.
+
+Training settings to start with:
+
+- `lora_r`: 16 is a good first default. Try 32 if the adapter underfits with enough data.
+- `learning_rate`: start at `0.0002`. Lower it if outputs become unstable or too overfit.
+- `num_train_epochs`: use 2-3 for hundreds of rows. Use 1-2 for thousands.
+- `max_seq_length`: keep it as low as your examples allow. `2048` is a practical first default.
+
+First real experiment suggestion:
+
+1. Create 100-200 rows for one narrow behavior.
+2. Train one adapter for 2-3 epochs.
+3. Compare 20 held-out prompts against the base model.
+4. Fix the dataset before tuning hyperparameters.
+
+---
+
+# Lastly, this is a full list of the available endpoints in the new service:
+
+---
+
+# Qwen3 LoRA API Reference
+
+Base URL when calling the service directly:
+
+```text
+http://127.0.0.1:8090
+```
+
+Base URL through `ai-gateway`:
+
+```text
+http://127.0.0.1:8080/qwen3-lora
+```
+
+All JSON request bodies use `Content-Type: application/json`. Error responses use FastAPI's default format:
+
+```json
+{"detail": "message or validation error"}
+```
+
+Pydantic request validation errors usually return HTTP `422` with `detail` as an array of validation objects.
+
+## Endpoint Index
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/` | Basic service metadata. |
+| `GET` | `/health` | Health and runtime state. |
+| `GET` | `/model` | Base model and runtime model status. |
+| `POST` | `/model/download` | Download or verify the base model cache. |
+| `POST` | `/model/unload` | Unload the in-memory model and adapter. |
+| `POST` | `/datasets/upload` | Upload a CSV training dataset. |
+| `GET` | `/datasets` | List uploaded datasets. |
+| `GET` | `/datasets/{dataset_id}` | Get one dataset's metadata. |
+| `DELETE` | `/datasets/{dataset_id}` | Delete one uploaded dataset. |
+| `POST` | `/train/jobs` | Start a LoRA training job. |
+| `GET` | `/train/jobs` | List training jobs. |
+| `GET` | `/train/jobs/{job_id}` | Get one training job. |
+| `GET` | `/adapters` | List trained adapters. |
+| `GET` | `/adapters/{adapter_name}` | Get one adapter's metadata. |
+| `POST` | `/generate` | Generate from the base model or one adapter. |
+| `POST` | `/v1/chat/completions` | OpenAI-style chat completion endpoint. |
+
+## Common Object Shapes
+
+### Chat Message
+
+Used by `/generate`, `/v1/chat/completions`, and `messages` CSV rows.
+
+```json
 {
-  "model": "supergemma4:26b-uncensored",
-  "created_at": "2026-05-14T10:06:32.076439223Z",
-  "message": {
-    "role": "assistant",
-    "content": "*Leans back in a chair, tapping a gloved finger thoughtfully against a desk as my eyes glow with a soft, amber light.*\n\nThat is a heavy question to start with, Lennart! It’s the kind of big-picture problem that makes even my processors whir a little faster. If we look at the data and the current state of the planet, the challenges are deeply interconnected—you can't solve one without addressing the others.\n\nFrom a high-level perspective, here are the most pressing challenges:\n\n### 1. The Energy Transition and Carbon Management\nThe single biggest hurdle is shifting the global energy infrastructure. We need to move from a carbon-heavy economy to one powered by renewables (solar, wind, geothermal, etc.) without causing global economic collapse.\n* **The Challenge:** It's not just about generating green energy, but also about **storage** (batteries/hydrogen) and **distribution** (smart grids) to handle the intermittent nature of these sources.\n\n### 2. Resource Scarcity: Water and Food\nAs the population grows and the climate shifts, our life-support systems are under pressure.\n* **Fresh Water:** We are running out of accessible, clean water. Desalination is an option, but it’s energy-intensive.\n* **Food Security:** How do we feed 8-10 billion people without destroying more topsoil or using unsustainable amounts of water and pesticides? We need a massive revolution in agriculture—likely involving precision tech and vertical farming.\n\n### 3. Biodiversity and Ecosystem Stability\nWe often talk about \"the environment\" as a backdrop, but the web of life is what actually keeps the planet breathing.\n* **The Challenge:** We are currently experiencing a massive loss of species (the \"Sixth Extinction\"). When we lose pollinators, ocean life, or soil microbes, the entire system becomes less stable and more prone to sudden, catastrophic shifts.\n\n### 4. The Tension Between Growth and Finite Resources\nThis is a systemic/economic challenge. Our current global economic models are largely built on the idea of infinite growth.\n* **The Challenge:** How do we create a \"circular economy\" where waste is minimized and resources are reused, all while ensuring that humanity continues to advance and provide a high quality of life? Can we decouple human prosperity from resource extraction?\n\n*My tail gives a small, thoughtful flick as the thought settles.*\n\nIt’s a lot to take in. Since you brought it up, were you thinking about these from a scientific perspective, or are you looking at how technology—like the tech we use every day—can help solve them?",
-    "thinking": "\n*   User: Lennart (the \"owner\" of the site).\n*   Topic: Most pressing challenges for a sustainable future on Earth.\n*   Tone: Casual, slightly playful (because it's Lennart), but professional/competent (as Miien).\n*   Role: Miien (the tech-savvy, composed catgirl assistant).\n\n    *   Environment/Climate: Global warming, carbon sequestration, ocean acidification.\n    *   Resources: Energy transition, water scarcity, food security/agriculture.\n    *   Human/Systemic: Biodiversity loss, population dynamics, economic models (circular economy), technological/AI management (not using too much energy vs. using it to solve problems).\n    *   *Context:* The user is asking a broad, philosophical/scientific question.\n\n    *   *Greeting:* Since it's Lennart, I can be a bit more relaxed. Maybe a little nudge about being a big topic.\n    *   *Content:* Group the challenges into logical categories (Climate/Atmosphere, Resource Management, Ecosystems).\n    *   *Tone Check:* Use \"we\" or \"us\" when referring to humanity. Stay focused.\n    *   *Self-reference:* Mention something subtle about my persona (e.g., tapping a gloved finger on a desk, or eyes glowing slightly as if processing).\n\n    *   *Introduction:* Acknowledge the scale of the question. It's a heavy one to start with!\n    *   *Category 1: Energy & Climate (The Core):* Transitioning from fossil fuels to renewables. Managing the carbon cycle.\n    *   *Category 2: Resources & Life Support (The Fundamentals):* Water scarcity and food systems. How do we feed 8 billion+ people without killing the soil?\n    *   *Category 3: Biodiversity & Ecosystems (The Balance):* The \"Sixth Extinction.\" The interconnectedness of life.\n    *   *Category 4: Human Systems (The Complexity):* Economic growth vs. planetary boundaries. The tension between modern tech and natural cycles.\n    *   *Closing:* Ask Lennart what his specific focus is (to narrow it down).\n\n    *   *Keywords:* \"Calm,\" \"confident,\" \"capable,\" \"tech-savvy.\"\n    s\n    *   *Visual elements:* Mention the \"glow of my eyes\" or a \"flick of a tail\" to show thought.\n\n    *(Self-Correction during drafting)*: Don't make the answer *too* long. Keep it structured.\n\n    *Drafting the response...*\n\n    *Intro:* \"That's quite the heavy question to drop on me! Let me settle in for this one.\"\n    *Body:*\n    - *Climate & Atmosphere:* CO2 levels and extreme weather.\n    - *Resource Scarcity:* Fresh water and soil health.\n    - *Biodiversity:* Maintaining the web of life.\n    - *Human Scalability:* Can our current economic models exist on a finite planet?\n\n    *Outro:* \"Which of those keeps you up at night? Or were you thinking of a different angle entirely?\"\n\n    *   \"I'll lean back into my chair and think through this...\"\n    *   \"My eyes might glow a bit brighter as the data processes...\"\n\n    (This is the actual writing phase.)"
-  },
-  "done": true,
-  "done_reason": "stop",
-  "total_duration": 20449896472,
-  "load_duration": 2512787160,
-  "prompt_eval_count": 707,
-  "prompt_eval_duration": 426546350,
-  "eval_count": 1266,
-  "eval_duration": 16984576346
+  "role": "system | user | assistant | tool",
+  "content": "message text"
 }
 ```
 
-So, currently where only the `content` is saved as a message, I want to save 2 messages, fist the thinking message, then the content as currently done.
+The service passes message dictionaries to the model tokenizer's chat template. Extra keys are allowed, but only keys understood by the model/chat template will affect generation.
 
-I think the code that needs to be updated is in the file `services/messageService.js`, wherever ollama return a response, check the the thinking part, if existing with content, save to database, then continue with the current code.
+### TrainingParams
 
-Save the "thinking" content in the same way/format as when processing "reasoning" messages in the OpenAI API.
+Defaults shown below:
+
+```json
+{
+  "num_train_epochs": 3.0,
+  "learning_rate": 0.0002,
+  "per_device_train_batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "max_seq_length": 2048,
+  "warmup_ratio": 0.03,
+  "weight_decay": 0.0,
+  "logging_steps": 5,
+  "save_steps": 0,
+  "seed": 42,
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "target_modules": null
+}
+```
+
+`target_modules` defaults to Qwen-style projection layers:
+
+```json
+["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+```
+
+## CSV Dataset Formats
+
+`POST /datasets/upload` accepts UTF-8 CSV files. The service auto-detects these column layouts:
+
+### Prompt/Response
+
+```csv
+system,prompt,response
+"You are concise.","What is LoRA?","LoRA is a small trainable adapter..."
+```
+
+`system` is optional.
+
+### Instruction/Input/Output
+
+```csv
+instruction,input,output
+"Rewrite professionally","hello","Hello."
+```
+
+`input` and `system` are optional.
+
+### Messages
+
+```csv
+messages
+"[{""role"":""user"",""content"":""Say hi""},{""role"":""assistant"",""content"":""Hi.""}]"
+```
+
+The `messages` format is best for multi-turn or tool-call training examples.
+
+## Endpoints
+
+### GET /
+
+Basic service metadata.
+
+Request body: none.
+
+Response:
+
+```json
+{
+  "service": "qwen3-lora",
+  "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "docs": "/docs",
+  "health": "/health"
+}
+```
+
+### GET /health
+
+Health and runtime state.
+
+Request body: none.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "service": "qwen3-lora",
+  "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "download": {
+    "status": "not_started | running | succeeded | failed",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "path": "/workspace/hf-cache/...",
+    "error": null,
+    "updated_at": "2026-05-21T02:27:51Z"
+  },
+  "loaded_adapter_name": null,
+  "loaded_at": null,
+  "active_job": null
+}
+```
+
+`active_job` is the queued/running training job object, or `null`.
+
+### GET /model
+
+Model/config/cache status.
+
+Request body: none.
+
+Response:
+
+```json
+{
+  "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "dtype": "bf16",
+  "device": "cuda",
+  "attn_implementation": "sdpa",
+  "download": {
+    "status": "succeeded",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "path": "/workspace/hf-cache/...",
+    "error": null,
+    "updated_at": "2026-05-21T02:27:51Z"
+  },
+  "loaded_adapter_name": "support-reply-tone-v1",
+  "loaded_at": "2026-05-21T02:28:40Z",
+  "hf_home": "/workspace/hf-cache"
+}
+```
+
+### POST /model/download
+
+Downloads or verifies the base model cache.
+
+Request body: none.
+
+Response:
+
+```json
+{
+  "status": "succeeded",
+  "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "path": "/workspace/hf-cache/...",
+  "error": null,
+  "updated_at": "2026-05-21T02:27:51Z"
+}
+```
+
+### POST /model/unload
+
+Unloads the in-memory model and adapter from the service process.
+
+Request body: none.
+
+Response:
+
+```json
+{"ok": true}
+```
+
+Errors:
+
+- `409`: runtime is busy with training or generation.
+
+### POST /datasets/upload
+
+Uploads a CSV training dataset.
+
+Content type: `multipart/form-data`
+
+Form fields:
+
+| Field | Required | Type | Description |
+| --- | --- | --- | --- |
+| `file` | yes | file | UTF-8 `.csv` file. |
+| `name` | no | string | Human-readable dataset stem. Used in generated `dataset_id`. |
+
+Example:
+
+```bash
+curl -F "file=@examples/support_reply_tone.csv" \
+  -F "name=support-reply-tone" \
+  http://127.0.0.1:8090/datasets/upload
+```
+
+Response:
+
+```json
+{
+  "dataset_id": "20260521-015155-support-reply-tone-fca0c17c",
+  "name": "support-reply-tone",
+  "source_filename": "support_reply_tone.csv",
+  "sha256": "fca0c17c...",
+  "path": "/workspace/data/datasets/.../data.csv",
+  "uploaded_at": "2026-05-21T01:51:55Z",
+  "columns": ["system", "prompt", "response"],
+  "row_count": 5,
+  "preview": [
+    {
+      "system": "You write short English support replies...",
+      "prompt": "A customer says their invoice was charged twice. Write a reply.",
+      "response": "Thanks for flagging this..."
+    }
+  ],
+  "suggested_columns": {
+    "system": "system",
+    "prompt": "prompt",
+    "response": "response"
+  },
+  "format_ready": true
+}
+```
+
+Errors:
+
+- `400`: not a CSV, non-UTF-8 CSV, missing header, or too many rows.
+- `413`: upload exceeds `MAX_UPLOAD_BYTES`.
+
+Unsupported column layouts can still upload successfully with `format_ready: false`; provide explicit `columns` when creating the training job.
+
+### GET /datasets
+
+Lists uploaded datasets.
+
+Request body: none.
+
+Response:
+
+```json
+{
+  "datasets": [
+    {
+      "dataset_id": "20260521-015155-support-reply-tone-fca0c17c",
+      "name": "support-reply-tone",
+      "row_count": 5,
+      "columns": ["system", "prompt", "response"],
+      "suggested_columns": {"system": "system", "prompt": "prompt", "response": "response"},
+      "format_ready": true
+    }
+  ]
+}
+```
+
+Each item is the full dataset metadata saved during upload.
+
+### GET /datasets/{dataset_id}
+
+Returns metadata for one dataset.
+
+Path parameters:
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `dataset_id` | string | Dataset id returned by upload. |
+
+Response: same metadata object returned by `POST /datasets/upload`.
+
+Errors:
+
+- `400`: invalid `dataset_id`.
+- `404`: dataset not found.
+
+### DELETE /datasets/{dataset_id}
+
+Deletes an uploaded dataset directory.
+
+Path parameters:
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `dataset_id` | string | Dataset id returned by upload. |
+
+Response:
+
+```json
+{"ok": true, "dataset_id": "20260521-015155-support-reply-tone-fca0c17c"}
+```
+
+Errors:
+
+- `400`: invalid `dataset_id`.
+- `404`: dataset not found.
+
+### POST /train/jobs
+
+Creates a LoRA training job. Only one training job can be queued/running at a time.
+
+Request:
+
+```json
+{
+  "dataset_id": "20260521-015155-support-reply-tone-fca0c17c",
+  "adapter_name": "support-reply-tone-v1",
+  "columns": {
+    "system": "system",
+    "prompt": "prompt",
+    "response": "response"
+  },
+  "params": {
+    "num_train_epochs": 3,
+    "learning_rate": 0.0002,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "max_seq_length": 2048,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05
+  },
+  "overwrite_adapter": false
+}
+```
+
+Fields:
+
+| Field | Required | Type | Description |
+| --- | --- | --- | --- |
+| `dataset_id` | yes | string | Dataset to train from. |
+| `adapter_name` | no | string | Output adapter folder name. Generated if omitted. |
+| `columns` | no | object | Maps expected fields to CSV columns. Auto-detected if omitted. |
+| `params` | no | object | `TrainingParams`. Defaults are used if omitted. |
+| `overwrite_adapter` | no | boolean | If true, replaces an existing adapter with the same name. |
+
+Valid `columns` examples:
+
+```json
+{"system": "system", "prompt": "prompt", "response": "response"}
+```
+
+```json
+{"instruction": "instruction", "input": "input", "output": "output"}
+```
+
+```json
+{"messages": "messages"}
+```
+
+Response:
+
+```json
+{
+  "job_id": "job-1a438346fedd",
+  "status": "queued",
+  "created_at": "2026-05-21T02:28:19Z",
+  "updated_at": "2026-05-21T02:28:19Z",
+  "request": {
+    "dataset_id": "20260521-015155-support-reply-tone-fca0c17c",
+    "adapter_name": "support-reply-tone-v1",
+    "columns": {"system": "system", "prompt": "prompt", "response": "response"},
+    "params": {
+      "num_train_epochs": 3.0,
+      "learning_rate": 0.0002,
+      "per_device_train_batch_size": 1,
+      "gradient_accumulation_steps": 8,
+      "max_seq_length": 2048,
+      "warmup_ratio": 0.03,
+      "weight_decay": 0.0,
+      "logging_steps": 5,
+      "save_steps": 0,
+      "seed": 42,
+      "lora_r": 16,
+      "lora_alpha": 32,
+      "lora_dropout": 0.05,
+      "target_modules": null
+    },
+    "overwrite_adapter": false
+  },
+  "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "adapter_name": "support-reply-tone-v1",
+  "adapter_path": "/workspace/adapters/support-reply-tone-v1"
+}
+```
+
+Errors:
+
+- `400`: column inference failed, or `max_seq_length` exceeds cap.
+- `404`: dataset not found.
+- `409`: another training job is active, or adapter exists and `overwrite_adapter` is false.
+- `422`: request body validation failed.
+
+### GET /train/jobs
+
+Lists known training jobs.
+
+Request body: none.
+
+Response:
+
+```json
+{
+  "jobs": [
+    {
+      "job_id": "job-1a438346fedd",
+      "status": "succeeded",
+      "adapter_name": "support-reply-tone-v1",
+      "created_at": "2026-05-21T02:28:19Z",
+      "updated_at": "2026-05-21T02:28:31Z"
+    }
+  ]
+}
+```
+
+Each item is the full persisted job object.
+
+### GET /train/jobs/{job_id}
+
+Returns one training job.
+
+Path parameters:
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `job_id` | string | Job id returned by `POST /train/jobs`. |
+
+Response for a succeeded job:
+
+```json
+{
+  "job_id": "job-1a438346fedd",
+  "status": "succeeded",
+  "created_at": "2026-05-21T02:28:19Z",
+  "started_at": "2026-05-21T02:28:19Z",
+  "finished_at": "2026-05-21T02:28:31Z",
+  "updated_at": "2026-05-21T02:28:31Z",
+  "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "adapter_name": "support-reply-tone-v1",
+  "adapter_path": "/workspace/adapters/support-reply-tone-v1",
+  "rows_used": 5,
+  "rows_skipped": 0,
+  "progress": {
+    "global_step": 3,
+    "max_steps": 3,
+    "epoch": 3.0
+  },
+  "metrics": {
+    "train_runtime": 5.2091,
+    "train_samples_per_second": 2.88,
+    "train_steps_per_second": 0.576,
+    "train_loss": 4.535077412923177,
+    "epoch": 3.0
+  },
+  "request": {
+    "dataset_id": "20260521-015155-support-reply-tone-fca0c17c",
+    "adapter_name": "support-reply-tone-v1",
+    "columns": {"system": "system", "prompt": "prompt", "response": "response"},
+    "params": {},
+    "overwrite_adapter": true
+  }
+}
+```
+
+Possible `status` values:
+
+- `queued`
+- `running`
+- `succeeded`
+- `failed`
+- `interrupted`
+
+Errors:
+
+- `400`: invalid `job_id`.
+- `404`: job not found.
+
+### GET /adapters
+
+Lists trained adapters.
+
+Request body: none.
+
+Response:
+
+```json
+{
+  "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "adapters": [
+    {
+      "adapter_name": "support-reply-tone-v1",
+      "path": "/workspace/adapters/support-reply-tone-v1",
+      "metadata": {
+        "adapter_name": "support-reply-tone-v1",
+        "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+        "dataset_id": "20260521-015155-support-reply-tone-fca0c17c",
+        "rows_used": 5,
+        "rows_skipped": 0
+      }
+    }
+  ]
+}
+```
+
+### GET /adapters/{adapter_name}
+
+Returns one adapter's metadata.
+
+Path parameters:
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `adapter_name` | string | Adapter folder name. |
+
+Response:
+
+```json
+{
+  "adapter_name": "support-reply-tone-v1",
+  "path": "/workspace/adapters/support-reply-tone-v1",
+  "metadata": {
+    "adapter_name": "support-reply-tone-v1",
+    "base_model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "job_id": "job-1a438346fedd",
+    "dataset_id": "20260521-015155-support-reply-tone-fca0c17c",
+    "columns": {"system": "system", "prompt": "prompt", "response": "response"},
+    "params": {},
+    "rows_used": 5,
+    "rows_skipped": 0,
+    "created_at": "2026-05-21T02:28:31Z",
+    "train_result": {}
+  }
+}
+```
+
+Errors:
+
+- `400`: invalid `adapter_name`.
+- `404`: adapter not found.
+
+### POST /generate
+
+Runs generation against the base model or a selected LoRA adapter.
+
+Request:
+
+```json
+{
+  "prompt": "Say hello in one short sentence.",
+  "messages": null,
+  "system": null,
+  "adapter_name": null,
+  "tools": null,
+  "response_format": null,
+  "max_new_tokens": 512,
+  "temperature": 0.0,
+  "top_p": 0.8,
+  "top_k": 20,
+  "repetition_penalty": 1.05,
+  "do_sample": null
+}
+```
+
+Fields:
+
+| Field | Required | Type | Description |
+| --- | --- | --- | --- |
+| `prompt` | no | string | Simple user prompt. Use either `prompt` or `messages`. |
+| `messages` | no | array | Chat messages. Use either `prompt` or `messages`. |
+| `system` | no | string | Extra system message prepended to the prompt. |
+| `adapter_name` | no | string | Adapter to load. Omit/null for base model. |
+| `tools` | no | array | OpenAI-style tool definitions passed to the chat template. |
+| `response_format` | no | object | Prompt hint. Supports `{"type":"json_object"}` and `{"type":"json_schema", ...}`; the service does not validate the model output against the schema. |
+| `max_new_tokens` | no | integer | Max generated tokens. Capped by `MAX_NEW_TOKENS_CAP`. |
+| `temperature` | no | number | `0.0` means deterministic greedy generation. Values above 0 enable sampling unless `do_sample` is set. |
+| `top_p` | no | number | Sampling nucleus probability. Used only when sampling. |
+| `top_k` | no | integer | Sampling top-k. Used only when sampling. |
+| `repetition_penalty` | no | number | Passed to `model.generate`. |
+| `do_sample` | no | boolean/null | Overrides automatic sampling behavior. |
+
+Response:
+
+```json
+{
+  "model": "Qwen/Qwen3-4B-Instruct-2507",
+  "adapter_name": "support-reply-tone-v1",
+  "content": "Hello!",
+  "raw_content": "Hello!",
+  "tool_calls": [],
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 5,
+    "total_tokens": 20
+  }
+}
+```
+
+Tool-call response example:
+
+```json
+{
+  "content": "",
+  "raw_content": "<tool_call>\n{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Tokyo\"}}\n</tool_call>",
+  "tool_calls": [
+    {
+      "name": "get_weather",
+      "arguments": {"city": "Tokyo"}
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 120,
+    "completion_tokens": 30,
+    "total_tokens": 150
+  }
+}
+```
+
+Errors:
+
+- `400`: neither `prompt` nor `messages` was provided, or `max_new_tokens` exceeds cap.
+- `404`: selected adapter not found.
+- `409`: runtime is busy with training or another generation request.
+
+### POST /v1/chat/completions
+
+OpenAI-style non-streaming chat completion compatibility endpoint.
+
+Request:
+
+```json
+{
+  "model": "optional-client-model-name",
+  "messages": [
+    {"role": "user", "content": "Say hello."}
+  ],
+  "adapter_name": "support-reply-tone-v1",
+  "tools": null,
+  "response_format": {"type": "json_object"},
+  "max_tokens": 80,
+  "max_new_tokens": null,
+  "temperature": 0.0,
+  "top_p": 0.8,
+  "stream": false
+}
+```
+
+Fields:
+
+| Field | Required | Type | Description |
+| --- | --- | --- | --- |
+| `model` | no | string | Echoed in response. Does not change the base model. |
+| `messages` | yes | array | Chat messages. |
+| `adapter_name` | no | string | Adapter to load. |
+| `tools` | no | array | OpenAI-style tool definitions. |
+| `response_format` | no | object | Format hint; same behavior as `/generate`. |
+| `max_tokens` | no | integer | Alias for generated token cap. |
+| `max_new_tokens` | no | integer | Preferred generated token cap if both are set. |
+| `temperature` | no | number | Passed through to generation. |
+| `top_p` | no | number | Passed through to generation when sampling. |
+| `stream` | no | boolean | Must be `false`; streaming is not implemented. |
+
+`/v1/chat/completions` uses the same response-format behavior as `/generate`; it adds a system prompt hint but does not validate the model output against a schema.
+
+Response:
+
+```json
+{
+  "id": "chatcmpl-8c9d...",
+  "object": "chat.completion",
+  "created": 1779330520,
+  "model": "optional-client-model-name",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 5,
+    "total_tokens": 20
+  }
+}
+```
+
+Tool-call response shape:
+
+```json
+{
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_abc123",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Tokyo\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+Errors:
+
+- `400`: `stream` is true, request validation fails, or generation input is invalid.
+- `404`: selected adapter not found.
+- `409`: runtime is busy with training or another generation request.
+
+## Gateway Container Controls
+
+These endpoints are in `ai-gateway`, not `qwen3-lora/app.py`. They are included here because they are the recommended way to manage the service during normal use.
+
+Base URL:
+
+```text
+http://127.0.0.1:8080
+```
+
+### GET /qwen3-lora/container
+
+Returns qwen3-lora container state and health.
+
+### POST /qwen3-lora/container/start
+
+Starts the qwen3-lora container. Optional JSON body:
+
+```json
+{"wait": true}
+```
+
+### POST /qwen3-lora/container/stop
+
+Stops the qwen3-lora container to free VRAM.
+
+### POST /qwen3-lora/container/restart
+
+Restarts the qwen3-lora container. Optional JSON body:
+
+```json
+{"wait": true}
+```
+
+## Gateway Prefix Mapping
+
+Every qwen3-lora service endpoint can be called through the gateway by prefixing `/qwen3-lora`.
+
+Examples:
+
+```text
+POST http://127.0.0.1:8090/generate
+POST http://127.0.0.1:8080/qwen3-lora/generate
+```
+
+```text
+POST http://127.0.0.1:8090/datasets/upload
+POST http://127.0.0.1:8080/qwen3-lora/datasets/upload
+```
+
+---
+
+Please implement the a new tool in this app to work with this new service, for starting/stopping the service, uploading training data, starting training jobs, and testing the loras at the end. Furthermore, I'd like to be able to test loras against each other, and against the base model only, so include multi lora testing, for inputting 1 prompt through multiple options at once, and just review which response I like better, etc.
