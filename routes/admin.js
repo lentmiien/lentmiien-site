@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
+const logger = require('../utils/logger');
 
 // Require controller modules.
 const controller = require('../controllers/admincontroller');
@@ -37,10 +38,15 @@ const audioUpload = multer({
   },
 });
 
+const qwen3LoraMaxUploadMb = (() => {
+  const parsed = Number.parseInt(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
+})();
+
 const qwen3LoraUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: Number(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB || 100) * 1024 * 1024,
+    fileSize: qwen3LoraMaxUploadMb * 1024 * 1024,
   },
 });
 
@@ -84,10 +90,18 @@ const handleLearningArtUpload = (req, res, next) => {
 const handleQwen3LoraDatasetUpload = (req, res, next) => {
   qwen3LoraUpload.single('file')(req, res, (err) => {
     if (err) {
-      const maxMb = Number(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB || 100);
       const message = err.code === 'LIMIT_FILE_SIZE'
-        ? `CSV upload exceeds the ${maxMb}MB limit.`
+        ? `CSV upload exceeds the ${qwen3LoraMaxUploadMb}MB limit.`
         : 'Unable to process the uploaded CSV file.';
+      logger.warning('Qwen3 LoRA CSV upload rejected before controller', {
+        category: 'qwen3_lora_admin',
+        metadata: {
+          path: req.originalUrl || req.url,
+          user: req.user?.name || null,
+          code: err.code || null,
+          message: err.message || String(err),
+        },
+      });
       return res.status(400).json({ error: message });
     }
     return qwen3LoraAdminController.uploadDataset(req, res, next);

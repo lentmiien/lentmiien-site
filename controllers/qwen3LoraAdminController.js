@@ -3,7 +3,8 @@ const Qwen3LoraGatewayService = require('../services/qwen3LoraGatewayService');
 const { buildGatewayErrorMessage } = require('../services/qwen3LoraGatewayService');
 
 const qwen3LoraGateway = new Qwen3LoraGatewayService();
-const MAX_COMPARE_TARGETS = Number(process.env.QWEN3_LORA_MAX_COMPARE_TARGETS || 8);
+const MAX_COMPARE_TARGETS = readPositiveInteger(process.env.QWEN3_LORA_MAX_COMPARE_TARGETS, 8);
+const MAX_UPLOAD_MB = readPositiveInteger(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB, 100);
 const DEFAULT_TRAINING_PARAMS = Object.freeze({
   num_train_epochs: 3,
   learning_rate: 0.0002,
@@ -19,6 +20,11 @@ const DEFAULT_TRAINING_PARAMS = Object.freeze({
   lora_alpha: 32,
   lora_dropout: 0.05,
 });
+
+function readPositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function parseBoolean(value, defaultValue = false) {
   if (value === undefined || value === null || value === '') {
@@ -215,7 +221,7 @@ function normalizeCompareTargets(rawTargets) {
 
 function sendControllerError(res, error, fallback) {
   const status = error?.statusCode || error?.response?.status || 502;
-  const detail = error?.response?.data || null;
+  const detail = sanitizeErrorDetail(error?.response?.data || null);
   const message = error?.statusCode ? error.message : buildGatewayErrorMessage(error, fallback);
   return res.status(status).json({
     error: message,
@@ -223,146 +229,407 @@ function sendControllerError(res, error, fallback) {
   });
 }
 
-exports.render = async (req, res) => {
-  res.render('admin_qwen3_lora', {
+function sanitizeErrorDetail(detail) {
+  if (!detail) {
+    return null;
+  }
+  if (typeof detail === 'string') {
+    return detail.slice(0, 1000);
+  }
+  try {
+    return JSON.parse(JSON.stringify(detail));
+  } catch {
+    return String(detail).slice(0, 1000);
+  }
+}
+
+function requestMetadata(req, extra = {}) {
+  return {
+    method: req.method,
+    path: req.originalUrl || req.url,
+    user: req.user?.name || null,
+    ip: req.ip || req.connection?.remoteAddress || null,
+    ...extra,
+  };
+}
+
+function sendUnexpectedError(req, res, action, error) {
+  logger.error('Unhandled Qwen3 LoRA admin route error', {
+    category: 'qwen3_lora_admin',
+    metadata: requestMetadata(req, {
+      action,
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    }),
+  });
+
+  if (res.headersSent) {
+    return;
+  }
+
+  if (action === 'render') {
+    return res.status(500).render('error_page', {
+      error: 'Unable to load the Qwen3 LoRA admin tool. Check qwen3_lora_admin logs for details.',
+    }, (renderError, html) => {
+      if (renderError) {
+        logger.error('Failed to render Qwen3 LoRA fallback error page', {
+          category: 'qwen3_lora_admin',
+          metadata: requestMetadata(req, {
+            action,
+            message: renderError?.message || String(renderError),
+            stack: renderError?.stack || null,
+          }),
+        });
+        return res.type('text/plain').send('Unable to load the Qwen3 LoRA admin tool.');
+      }
+      return res.send(html);
+    });
+  }
+
+  return res.status(500).json({
+    error: 'Unexpected Qwen3 LoRA admin error. Check qwen3_lora_admin logs for details.',
+  });
+}
+
+function routeGuard(action, handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch((error) => {
+      sendUnexpectedError(req, res, action, error);
+    });
+  };
+}
+
+function renderQwen3LoraPage(req, res) {
+  logger.notice('Rendering Qwen3 LoRA admin page', {
+    category: 'qwen3_lora_admin',
+    metadata: requestMetadata(req, {
+      gatewayBaseUrl: qwen3LoraGateway.gatewayBaseUrl,
+    }),
+  });
+
+  return res.render('admin_qwen3_lora', {
     apiBase: qwen3LoraGateway.gatewayBaseUrl,
-    servicePrefix: Qwen3LoraGateway.SERVICE_PREFIX,
+    servicePrefix: Qwen3LoraGatewayService.SERVICE_PREFIX,
     defaultTrainingParams: DEFAULT_TRAINING_PARAMS,
     maxCompareTargets: MAX_COMPARE_TARGETS,
-    maxUploadMb: Number(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB || 100),
+    maxUploadMb: MAX_UPLOAD_MB,
+  }, (error, html) => {
+    if (error) {
+      return sendUnexpectedError(req, res, 'render', error);
+    }
+    return res.send(html);
   });
-};
+}
 
-exports.state = async (req, res) => {
+exports.render = routeGuard('render', renderQwen3LoraPage);
+
+exports.state = routeGuard('state', async (req, res) => {
+  logger.debug('Fetching Qwen3 LoRA admin state', {
+    category: 'qwen3_lora_admin',
+    metadata: requestMetadata(req, {
+      gatewayBaseUrl: qwen3LoraGateway.gatewayBaseUrl,
+    }),
+  });
+
   try {
     const state = await qwen3LoraGateway.getDashboardState();
+    const errorKeys = Object.keys(state.errors || {});
+    if (errorKeys.length) {
+      logger.warning('Qwen3 LoRA admin state returned endpoint errors', {
+        category: 'qwen3_lora_admin',
+        metadata: requestMetadata(req, {
+          failedEndpoints: errorKeys,
+          errors: state.errors,
+        }),
+      });
+    } else {
+      logger.debug('Qwen3 LoRA admin state returned successfully', {
+        category: 'qwen3_lora_admin',
+        metadata: requestMetadata(req),
+      });
+    }
     return res.json(state);
   } catch (error) {
     logger.error('Failed to build Qwen3 LoRA admin state', {
       category: 'qwen3_lora_admin',
-      metadata: { message: error?.message || error },
+      metadata: requestMetadata(req, {
+        message: error?.message || String(error),
+        stack: error?.stack || null,
+      }),
     });
     return sendControllerError(res, error, 'Unable to fetch Qwen3 LoRA state.');
   }
-};
+});
 
-exports.containerAction = async (req, res) => {
+exports.containerAction = routeGuard('containerAction', async (req, res) => {
   const action = req.params?.action;
   try {
+    logger.notice('Qwen3 LoRA container action requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        action,
+        wait: parseBoolean(req.body?.wait, true),
+      }),
+    });
     const result = await qwen3LoraGateway.containerAction(action, {
       wait: parseBoolean(req.body?.wait, true),
+    });
+    logger.notice('Qwen3 LoRA container action completed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, { action, result: sanitizeErrorDetail(result) }),
     });
     return res.json(result);
   } catch (error) {
     logger.warning('Qwen3 LoRA container action failed', {
       category: 'qwen3_lora_admin',
-      metadata: { action, status: error?.response?.status, message: error?.message || error },
+      metadata: requestMetadata(req, {
+        action,
+        status: error?.response?.status,
+        message: error?.message || String(error),
+      }),
     });
     return sendControllerError(res, error, 'Unable to update Qwen3 LoRA container.');
   }
-};
+});
 
-exports.downloadModel = async (req, res) => {
+exports.downloadModel = routeGuard('downloadModel', async (req, res) => {
   try {
+    logger.notice('Qwen3 LoRA model cache verification requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req),
+    });
     const result = await qwen3LoraGateway.downloadModel();
+    logger.notice('Qwen3 LoRA model cache verification completed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, { status: result?.status || null }),
+    });
     return res.json(result);
   } catch (error) {
+    logger.warning('Qwen3 LoRA model cache verification failed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        status: error?.response?.status || null,
+        message: error?.message || String(error),
+      }),
+    });
     return sendControllerError(res, error, 'Unable to download or verify the base model.');
   }
-};
+});
 
-exports.unloadModel = async (req, res) => {
+exports.unloadModel = routeGuard('unloadModel', async (req, res) => {
   try {
+    logger.notice('Qwen3 LoRA model unload requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req),
+    });
     const result = await qwen3LoraGateway.unloadModel();
+    logger.notice('Qwen3 LoRA model unload completed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req),
+    });
     return res.json(result);
   } catch (error) {
+    logger.warning('Qwen3 LoRA model unload failed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        status: error?.response?.status || null,
+        message: error?.message || String(error),
+      }),
+    });
     return sendControllerError(res, error, 'Unable to unload the model.');
   }
-};
+});
 
-exports.uploadDataset = async (req, res) => {
+exports.uploadDataset = routeGuard('uploadDataset', async (req, res) => {
   try {
+    logger.notice('Qwen3 LoRA dataset upload requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        fileName: req.file?.originalname || null,
+        size: req.file?.size || req.file?.buffer?.length || null,
+        name: req.body?.name || null,
+      }),
+    });
     const result = await qwen3LoraGateway.uploadDataset({
       file: req.file,
       name: req.body?.name,
+    });
+    logger.notice('Qwen3 LoRA dataset upload completed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        datasetId: result?.dataset_id || null,
+        rowCount: result?.row_count || null,
+        formatReady: result?.format_ready === true,
+      }),
     });
     return res.json(result);
   } catch (error) {
     logger.warning('Qwen3 LoRA dataset upload failed', {
       category: 'qwen3_lora_admin',
-      metadata: {
+      metadata: requestMetadata(req, {
         fileName: req.file?.originalname || null,
         size: req.file?.size || req.file?.buffer?.length || null,
         status: error?.response?.status,
-        message: error?.message || error,
-      },
+        message: error?.message || String(error),
+      }),
     });
     return sendControllerError(res, error, 'Unable to upload dataset.');
   }
-};
+});
 
-exports.deleteDataset = async (req, res) => {
+exports.deleteDataset = routeGuard('deleteDataset', async (req, res) => {
   const datasetId = req.params?.datasetId;
   try {
+    logger.notice('Qwen3 LoRA dataset delete requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, { datasetId }),
+    });
     const result = await qwen3LoraGateway.deleteDataset(datasetId);
+    logger.notice('Qwen3 LoRA dataset delete completed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, { datasetId }),
+    });
     return res.json(result);
   } catch (error) {
+    logger.warning('Qwen3 LoRA dataset delete failed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        datasetId,
+        status: error?.response?.status || null,
+        message: error?.message || String(error),
+      }),
+    });
     return sendControllerError(res, error, 'Unable to delete dataset.');
   }
-};
+});
 
-exports.createTrainingJob = async (req, res) => {
+exports.createTrainingJob = routeGuard('createTrainingJob', async (req, res) => {
   try {
     const payload = buildTrainingPayload(req.body || {});
+    logger.notice('Qwen3 LoRA training job requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        datasetId: payload.dataset_id,
+        adapterName: payload.adapter_name || null,
+        overwriteAdapter: payload.overwrite_adapter === true,
+        params: payload.params || {},
+      }),
+    });
     const result = await qwen3LoraGateway.createTrainingJob(payload);
+    logger.notice('Qwen3 LoRA training job created', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        jobId: result?.job_id || null,
+        adapterName: result?.adapter_name || payload.adapter_name || null,
+        status: result?.status || null,
+      }),
+    });
     return res.json(result);
   } catch (error) {
     logger.warning('Qwen3 LoRA training job creation failed', {
       category: 'qwen3_lora_admin',
-      metadata: { status: error?.response?.status, message: error?.message || error },
+      metadata: requestMetadata(req, {
+        datasetId: req.body?.dataset_id || null,
+        adapterName: req.body?.adapter_name || null,
+        status: error?.response?.status,
+        message: error?.message || String(error),
+      }),
     });
     return sendControllerError(res, error, 'Unable to start training job.');
   }
-};
+});
 
-exports.getTrainingJob = async (req, res) => {
+exports.getTrainingJob = routeGuard('getTrainingJob', async (req, res) => {
   const jobId = req.params?.jobId;
   try {
     const result = await qwen3LoraGateway.getTrainingJob(jobId);
     return res.json(result);
   } catch (error) {
+    logger.warning('Qwen3 LoRA training job fetch failed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        jobId,
+        status: error?.response?.status || null,
+        message: error?.message || String(error),
+      }),
+    });
     return sendControllerError(res, error, 'Unable to fetch training job.');
   }
-};
+});
 
-exports.generate = async (req, res) => {
+exports.generate = routeGuard('generate', async (req, res) => {
   try {
     const payload = buildGenerationPayload(req.body || {});
+    logger.notice('Qwen3 LoRA generation requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        adapterName: payload.adapter_name || null,
+        promptLength: payload.prompt ? payload.prompt.length : null,
+        messageCount: Array.isArray(payload.messages) ? payload.messages.length : null,
+        maxNewTokens: payload.max_new_tokens || null,
+        temperature: payload.temperature ?? null,
+      }),
+    });
     const result = await qwen3LoraGateway.generate(payload);
+    logger.notice('Qwen3 LoRA generation completed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        adapterName: result?.adapter_name || payload.adapter_name || null,
+        promptTokens: result?.usage?.prompt_tokens || null,
+        completionTokens: result?.usage?.completion_tokens || null,
+        totalTokens: result?.usage?.total_tokens || null,
+        toolCallCount: Array.isArray(result?.tool_calls) ? result.tool_calls.length : null,
+      }),
+    });
     return res.json(result);
   } catch (error) {
     logger.warning('Qwen3 LoRA generation failed', {
       category: 'qwen3_lora_admin',
-      metadata: { status: error?.response?.status, message: error?.message || error },
+      metadata: requestMetadata(req, {
+        adapterName: req.body?.adapter_name || null,
+        status: error?.response?.status,
+        message: error?.message || String(error),
+      }),
     });
     return sendControllerError(res, error, 'Unable to run Qwen3 LoRA generation.');
   }
-};
+});
 
-exports.compare = async (req, res) => {
+exports.compare = routeGuard('compare', async (req, res) => {
   try {
     const targets = normalizeCompareTargets(req.body?.targets);
     const payload = buildGenerationPayload({
       ...req.body,
       adapter_name: undefined,
     });
+    logger.notice('Qwen3 LoRA comparison requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        targetCount: targets.length,
+        targets: targets.map((target) => target.adapter_name || 'base'),
+        promptLength: payload.prompt ? payload.prompt.length : null,
+        maxNewTokens: payload.max_new_tokens || null,
+        temperature: payload.temperature ?? null,
+      }),
+    });
     const result = await qwen3LoraGateway.compareGenerations({ targets, payload });
+    logger.notice('Qwen3 LoRA comparison completed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        targetCount: targets.length,
+        successCount: Array.isArray(result?.results) ? result.results.filter((entry) => entry.ok).length : null,
+        failedCount: Array.isArray(result?.results) ? result.results.filter((entry) => !entry.ok).length : null,
+      }),
+    });
     return res.json(result);
   } catch (error) {
     logger.warning('Qwen3 LoRA comparison failed', {
       category: 'qwen3_lora_admin',
-      metadata: { status: error?.response?.status, message: error?.message || error },
+      metadata: requestMetadata(req, {
+        status: error?.response?.status,
+        message: error?.message || String(error),
+      }),
     });
     return sendControllerError(res, error, 'Unable to compare Qwen3 LoRA generations.');
   }
-};
+});

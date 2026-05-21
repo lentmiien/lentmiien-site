@@ -1,15 +1,21 @@
 const axios = require('axios');
 const FormData = require('form-data');
+const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_GATEWAY_BASE_URL = process.env.AI_GATEWAY_BASE_URL || 'http://192.168.0.20:8080';
-const DEFAULT_INFO_TIMEOUT_MS = Number(process.env.QWEN3_LORA_INFO_TIMEOUT_MS || 10000);
-const DEFAULT_ACTION_TIMEOUT_MS = Number(process.env.QWEN3_LORA_ACTION_TIMEOUT_MS || 120000);
-const DEFAULT_UPLOAD_TIMEOUT_MS = Number(process.env.QWEN3_LORA_UPLOAD_TIMEOUT_MS || 120000);
-const DEFAULT_GENERATE_TIMEOUT_MS = Number(process.env.QWEN3_LORA_GENERATE_TIMEOUT_MS || 10 * 60 * 1000);
+const DEFAULT_INFO_TIMEOUT_MS = readPositiveInteger(process.env.QWEN3_LORA_INFO_TIMEOUT_MS, 10000);
+const DEFAULT_ACTION_TIMEOUT_MS = readPositiveInteger(process.env.QWEN3_LORA_ACTION_TIMEOUT_MS, 120000);
+const DEFAULT_UPLOAD_TIMEOUT_MS = readPositiveInteger(process.env.QWEN3_LORA_UPLOAD_TIMEOUT_MS, 120000);
+const DEFAULT_GENERATE_TIMEOUT_MS = readPositiveInteger(process.env.QWEN3_LORA_GENERATE_TIMEOUT_MS, 10 * 60 * 1000);
 const SERVICE_PREFIX = '/qwen3-lora';
 const JS_FILE_NAME = 'services/qwen3LoraGatewayService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+
+function readPositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function joinUrl(base, path) {
   const normalizedBase = String(base || '').replace(/\/+$/, '');
@@ -64,6 +70,43 @@ function buildGatewayErrorMessage(error, fallback = 'Qwen3 LoRA request failed.'
   return error?.message || fallback;
 }
 
+function fireAndForgetLog(promise) {
+  if (!promise || typeof promise.catch !== 'function') {
+    return;
+  }
+  promise.catch((error) => {
+    console.error('[QWEN3_LORA_LOGGING]', error);
+  });
+}
+
+function recordDebugLog(payload) {
+  fireAndForgetLog(recordApiDebugLog(payload));
+}
+
+function requestLogMetadata({ method, path, requestUrl, startedAt, error = null, response = null }) {
+  const durationMs = Date.now() - startedAt;
+  const base = {
+    method: String(method || 'get').toUpperCase(),
+    path,
+    requestUrl,
+    durationMs,
+  };
+
+  if (response) {
+    base.status = response.status;
+  }
+
+  if (error) {
+    base.status = error?.response?.status || null;
+    base.code = error?.code || null;
+    base.message = error?.message || String(error);
+    base.gatewayMessage = buildGatewayErrorMessage(error);
+    base.responseDetail = extractDetail(error?.response?.data);
+  }
+
+  return base;
+}
+
 class Qwen3LoraGatewayService {
   constructor({
     gatewayBaseUrl = DEFAULT_GATEWAY_BASE_URL,
@@ -90,6 +133,18 @@ class Qwen3LoraGatewayService {
 
   async request({ method = 'get', path, data, params, headers, timeout, functionName, requestBodyForLog }) {
     const requestUrl = this.url(path);
+    const startedAt = Date.now();
+    logger.debug('Qwen3 LoRA gateway request started', {
+      category: 'qwen3_lora_gateway',
+      metadata: {
+        method: String(method || 'get').toUpperCase(),
+        path,
+        requestUrl,
+        timeout: timeout || this.infoTimeoutMs,
+        functionName,
+      },
+    });
+
     try {
       const response = await axios({
         method,
@@ -102,7 +157,7 @@ class Qwen3LoraGatewayService {
         maxBodyLength: Infinity,
       });
 
-      await recordApiDebugLog({
+      recordDebugLog({
         functionName,
         requestUrl,
         requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
@@ -110,15 +165,26 @@ class Qwen3LoraGatewayService {
         responseBody: response.data,
       });
 
+      logger.debug('Qwen3 LoRA gateway request completed', {
+        category: 'qwen3_lora_gateway',
+        metadata: requestLogMetadata({ method, path, requestUrl, startedAt, response }),
+      });
+
       return response.data;
     } catch (error) {
-      await recordApiDebugLog({
+      recordDebugLog({
         functionName,
         requestUrl,
         requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
         responseHeaders: error?.response?.headers || null,
         responseBody: getErrorPayload(error),
       });
+
+      logger.warning('Qwen3 LoRA gateway request failed', {
+        category: 'qwen3_lora_gateway',
+        metadata: requestLogMetadata({ method, path, requestUrl, startedAt, error }),
+      });
+
       throw error;
     }
   }
@@ -153,6 +219,16 @@ class Qwen3LoraGatewayService {
         });
         return [key, data, null];
       } catch (error) {
+        logger.warning('Qwen3 LoRA dashboard endpoint unavailable', {
+          category: 'qwen3_lora_gateway',
+          metadata: {
+            endpoint: key,
+            path: endpoint.path,
+            message: buildGatewayErrorMessage(error),
+            status: error?.response?.status || null,
+            code: error?.code || null,
+          },
+        });
         return [key, null, buildGatewayErrorMessage(error)];
       }
     }));
@@ -170,6 +246,23 @@ class Qwen3LoraGatewayService {
         state.errors[key] = error;
       }
     });
+
+    const errorKeys = Object.keys(state.errors);
+    if (errorKeys.length) {
+      logger.warning('Qwen3 LoRA dashboard state loaded with endpoint errors', {
+        category: 'qwen3_lora_gateway',
+        metadata: {
+          baseUrl: this.gatewayBaseUrl,
+          failedEndpoints: errorKeys,
+          errors: state.errors,
+        },
+      });
+    } else {
+      logger.debug('Qwen3 LoRA dashboard state loaded', {
+        category: 'qwen3_lora_gateway',
+        metadata: { baseUrl: this.gatewayBaseUrl },
+      });
+    }
 
     return state;
   }
