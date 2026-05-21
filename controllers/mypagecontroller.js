@@ -264,8 +264,10 @@ exports.mypage = async (req, res) => {
   const decoratedAnthropicModels = decorateNewModels(new_anthropic_models, 'Anthropic');
   const soraLifecycle = getSoraLifecycle();
   const permissions = Array.isArray(res.locals.permissions) ? res.locals.permissions : [];
+  const isAdmin = res.locals.admin === true || req.user.type_user === 'admin';
   const mypageTiles = buildMypageTiles({
     permissions,
+    isAdmin,
     settings: req.user.mypage_icon_settings || {},
     metaById: {
       sora: soraLifecycle
@@ -304,7 +306,8 @@ exports.update_icon_settings = async (req, res) => {
     : sanitizeMypageIconSettings(
       req.body || {},
       req.user.mypage_icon_settings || {},
-      Array.isArray(res.locals.permissions) ? res.locals.permissions : []
+      Array.isArray(res.locals.permissions) ? res.locals.permissions : [],
+      { isAdmin: res.locals.admin === true || req.user.type_user === 'admin' }
     );
 
   try {

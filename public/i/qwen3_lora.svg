@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Qwen3 LoRA admin tool tile illustration</title>
+  <desc id="desc">A graphite AI chip training a glowing LoRA adapter with amber and ember signal paths.</desc>
+  <defs>
+    <linearGradient id="qwenBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0F13"/>
+      <stop offset="55%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="qwenChip" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#20242A"/>
+      <stop offset="100%" stop-color="#1B2026"/>
+    </linearGradient>
+    <linearGradient id="qwenSpark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="100%" stop-color="#FF6A1F"/>
+    </linearGradient>
+    <filter id="qwenGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 1 0 0.58 0 0 0.55 0 0 0.18 0 0.12 0 0 0 0.8 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#qwenBg)"/>
+  <circle cx="510" cy="92" r="108" fill="#FF6A1F" opacity="0.12"/>
+  <circle cx="122" cy="318" r="132" fill="#FFC247" opacity="0.1"/>
+  <path d="M82 302c68-70 126-91 174-62 44 27 74 26 118-1 56-35 114-28 184 34" fill="none" stroke="#2B313C" stroke-width="3"/>
+
+  <g opacity="0.9">
+    <path d="M158 84h324c22 0 40 18 40 40v172c0 22-18 40-40 40H158c-22 0-40-18-40-40V124c0-22 18-40 40-40Z" fill="#171A20" stroke="#262B34" stroke-width="4"/>
+    <path d="M144 122h352v176H144Z" fill="#1B2026"/>
+  </g>
+
+  <g stroke="#2B313C" stroke-width="8" stroke-linecap="round">
+    <path d="M174 70v-26M222 70V44M270 70V44M318 70V44M366 70V44M414 70V44M462 70V44"/>
+    <path d="M174 356v-26M222 356v-26M270 356v-26M318 356v-26M366 356v-26M414 356v-26M462 356v-26"/>
+    <path d="M104 150H78M104 198H78M104 246H78M104 294H78"/>
+    <path d="M562 150h-26M562 198h-26M562 246h-26M562 294h-26"/>
+  </g>
+
+  <rect x="190" y="128" width="190" height="146" rx="18" fill="url(#qwenChip)" stroke="#FFC247" stroke-opacity="0.38" stroke-width="3"/>
+  <rect x="214" y="154" width="142" height="94" rx="12" fill="#0E0F13" stroke="#262B34" stroke-width="2"/>
+  <path d="M238 206c18-36 54-36 72 0 12 24 30 26 46 6" fill="none" stroke="#FFC247" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="238" cy="206" r="8" fill="#FF6A1F"/>
+  <circle cx="356" cy="212" r="8" fill="#17C696"/>
+
+  <g filter="url(#qwenGlow)">
+    <path d="M386 200h50" stroke="#FFC247" stroke-width="10" stroke-linecap="round"/>
+    <path d="M436 166h74c14 0 26 12 26 26v60c0 14-12 26-26 26h-74c-14 0-26-12-26-26v-60c0-14 12-26 26-26Z" fill="#20242A" stroke="#FF6A1F" stroke-width="4"/>
+    <path d="M446 205h54M446 227h38" stroke="#FFC247" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="506" cy="228" r="9" fill="#19E3E3"/>
+  </g>
+
+  <g fill="url(#qwenSpark)">
+    <path d="M146 92l8 18 18 8-18 8-8 18-8-18-18-8 18-8Z"/>
+    <path d="M532 104l5 12 12 5-12 5-5 12-5-12-12-5 12-5Z"/>
+    <path d="M126 260l5 11 11 5-11 5-5 11-5-11-11-5 11-5Z"/>
+  </g>
+
+  <g stroke="#17C696" stroke-width="6" stroke-linecap="round" opacity="0.9">
+    <path d="M214 306c36 20 76 20 120 0"/>
+    <path d="M236 318c26 10 50 10 76 0"/>
+  </g>
+</svg>

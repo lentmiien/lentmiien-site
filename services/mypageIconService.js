@@ -186,6 +186,14 @@ const MYPAGE_ICON_DEFINITIONS = [
     label: 'Shopping list',
     permissions: ['shoppinglist'],
   },
+  {
+    id: 'qwen3_lora',
+    href: '/admin/qwen3-lora',
+    src: '/i/qwen3_lora.svg',
+    alt: 'Qwen3 LoRA admin tool',
+    label: 'Qwen3 LoRA',
+    adminOnly: true,
+  },
 ];
 
 const DEFINITION_IDS = MYPAGE_ICON_DEFINITIONS.map((definition) => definition.id);
@@ -213,15 +221,18 @@ function normalizeMypageIconSettings(settings = {}) {
   };
 }
 
-function hasRequiredPermissions(definition, permissions = []) {
+function hasRequiredPermissions(definition, permissions = [], options = {}) {
+  if (definition.adminOnly && !options.isAdmin) {
+    return false;
+  }
   if (!Array.isArray(definition.permissions) || definition.permissions.length === 0) {
     return true;
   }
   return definition.permissions.every((permission) => permissions.indexOf(permission) >= 0);
 }
 
-function getAllowedMypageIconDefinitions(permissions = []) {
-  return MYPAGE_ICON_DEFINITIONS.filter((definition) => hasRequiredPermissions(definition, permissions));
+function getAllowedMypageIconDefinitions(permissions = [], options = {}) {
+  return MYPAGE_ICON_DEFINITIONS.filter((definition) => hasRequiredPermissions(definition, permissions, options));
 }
 
 function orderDefinitions(definitions, savedOrder = []) {
@@ -243,11 +254,11 @@ function orderDefinitions(definitions, savedOrder = []) {
   return orderedIds.map((id) => definitionById.get(id));
 }
 
-function buildMypageTiles({ permissions = [], settings = {}, metaById = {} } = {}) {
+function buildMypageTiles({ permissions = [], settings = {}, metaById = {}, isAdmin = false } = {}) {
   const normalizedSettings = normalizeMypageIconSettings(settings);
   const hidden = new Set(normalizedSettings.hidden);
 
-  return orderDefinitions(getAllowedMypageIconDefinitions(permissions), normalizedSettings.order)
+  return orderDefinitions(getAllowedMypageIconDefinitions(permissions, { isAdmin }), normalizedSettings.order)
     .map((definition) => ({
       ...definition,
       meta: Object.prototype.hasOwnProperty.call(metaById, definition.id)
@@ -257,9 +268,9 @@ function buildMypageTiles({ permissions = [], settings = {}, metaById = {} } = {
     }));
 }
 
-function sanitizeMypageIconSettings(input = {}, previousSettings = {}, permissions = []) {
+function sanitizeMypageIconSettings(input = {}, previousSettings = {}, permissions = [], options = {}) {
   const definitionIds = new Set(DEFINITION_IDS);
-  const allowedIds = new Set(getAllowedMypageIconDefinitions(permissions).map((definition) => definition.id));
+  const allowedIds = new Set(getAllowedMypageIconDefinitions(permissions, options).map((definition) => definition.id));
   const previous = normalizeMypageIconSettings(previousSettings);
   const submitted = normalizeMypageIconSettings(input);
 

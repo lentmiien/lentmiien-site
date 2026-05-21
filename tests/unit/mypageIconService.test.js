@@ -36,4 +36,12 @@ describe('mypageIconService', () => {
     expect(settings.hidden).toEqual(['my_life_log', 'chat5']);
     expect(settings.updatedAt).toBeInstanceOf(Date);
   });
+
+  test('Qwen3 LoRA tile is visible only for admins', () => {
+    const regularTiles = buildMypageTiles();
+    const adminTiles = buildMypageTiles({ isAdmin: true });
+
+    expect(regularTiles.some((tile) => tile.id === 'qwen3_lora')).toBe(false);
+    expect(adminTiles.some((tile) => tile.id === 'qwen3_lora')).toBe(true);
+  });
 });
