@@ -21,6 +21,8 @@
   const gpuTimeline = chartData.gpuTimeline || {};
   const gpu = payload.gpu || {};
   const autoStop = payload.autoStop || null;
+  let containers = Array.isArray(payload.containers) ? payload.containers : [];
+  let containerSummary = payload.containerSummary || {};
 
   const STATUS_LABELS = {
     success: '2xx success',
@@ -875,6 +877,296 @@
     ]);
   };
 
+  const initContainerControls = () => {
+    const root = document.getElementById('containerControls');
+    if (!root) {
+      return;
+    }
+
+    const listEl = document.getElementById('containerList');
+    const summaryEl = document.getElementById('containerSummary');
+    const summaryDetailEl = document.getElementById('containerSummaryDetail');
+    const refreshButton = document.getElementById('containersRefresh');
+    const resetButton = document.getElementById('containersResetDefaults');
+    const feedbackEl = document.getElementById('containersFeedback');
+
+    const actionLabels = {
+      start: 'Start',
+      stop: 'Stop',
+      restart: 'Restart',
+    };
+    const actionProgressLabels = {
+      start: 'Starting...',
+      stop: 'Stopping...',
+      restart: 'Restarting...',
+    };
+    const actionButtonClasses = {
+      start: 'btn-outline-success',
+      stop: 'btn-outline-danger',
+      restart: 'btn-outline-warning',
+    };
+
+    const setFeedback = (message, isError) => {
+      if (!feedbackEl) return;
+      feedbackEl.textContent = message || '';
+      feedbackEl.classList.toggle('container-controls__feedback--error', Boolean(isError));
+    };
+
+    const getSummary = (items) => {
+      const list = Array.isArray(items) ? items : [];
+      const running = list.filter((container) => container.running === true).length;
+      const stopped = list.filter((container) => container.running === false).length;
+      const unknown = list.length - running - stopped;
+      const defaultRunning = list.filter((container) => container.defaultRunning === true).length;
+      return {
+        total: list.length,
+        running,
+        stopped,
+        unknown,
+        defaultRunning,
+        display: list.length ? `${running}/${list.length} running` : 'No containers',
+      };
+    };
+
+    const updateSummary = () => {
+      const resolvedSummary = {
+        ...getSummary(containers),
+        ...(containerSummary || {}),
+      };
+      if (summaryEl) {
+        summaryEl.textContent = resolvedSummary.display || `${resolvedSummary.running}/${resolvedSummary.total} running`;
+      }
+      if (summaryDetailEl) {
+        const parts = [
+          `${resolvedSummary.defaultRunning || 0} default-running`,
+          `${resolvedSummary.stopped || 0} stopped`,
+        ];
+        if (resolvedSummary.unknown) {
+          parts.push(`${resolvedSummary.unknown} unknown`);
+        }
+        summaryDetailEl.textContent = parts.join(' · ');
+      }
+    };
+
+    const appendText = (parent, tagName, className, text) => {
+      const el = document.createElement(tagName);
+      if (className) {
+        el.className = className;
+      }
+      el.textContent = text || '';
+      parent.appendChild(el);
+      return el;
+    };
+
+    const appendMeta = (list, label, value) => {
+      if (!value) {
+        return;
+      }
+      const item = document.createElement('li');
+      appendText(item, 'span', '', label);
+      appendText(item, 'strong', '', value);
+      list.appendChild(item);
+    };
+
+    const actionDisabled = (container, action) => {
+      if (action === 'start') {
+        return container.canStart === false || container.running === true;
+      }
+      if (action === 'stop') {
+        return container.canStop === false || container.running === false;
+      }
+      if (action === 'restart') {
+        return container.canRestart === false || container.running === false;
+      }
+      return true;
+    };
+
+    const renderContainers = () => {
+      if (!listEl) {
+        return;
+      }
+
+      listEl.innerHTML = '';
+      if (!containers.length) {
+        appendText(listEl, 'p', 'text-muted mb-0', 'No managed services are available.');
+        updateSummary();
+        return;
+      }
+
+      containers.forEach((container) => {
+        const card = document.createElement('div');
+        card.className = 'service-card';
+        card.dataset.containerId = container.id;
+
+        const top = document.createElement('div');
+        top.className = 'service-card__top';
+        const titleWrap = document.createElement('div');
+        appendText(titleWrap, 'div', 'service-card__name', container.label || container.name || container.id);
+        appendText(titleWrap, 'div', 'service-card__id', container.name && container.name !== container.label ? container.name : container.id);
+        top.appendChild(titleWrap);
+
+        const badge = appendText(top, 'span', 'service-card__badge', container.stateDisplay || 'Unknown');
+        badge.classList.toggle('service-card__badge--running', container.running === true);
+        badge.classList.toggle('service-card__badge--stopped', container.running === false);
+        card.appendChild(top);
+
+        const metaList = document.createElement('ul');
+        metaList.className = 'service-card__meta';
+        appendMeta(metaList, 'Status', container.statusDisplay || 'Unknown');
+        appendMeta(metaList, 'Default', container.defaultStateDisplay || 'Unknown');
+        (container.meta || []).forEach((line) => {
+          if (typeof line !== 'string' || !line.trim()) {
+            return;
+          }
+          const separatorIndex = line.indexOf(': ');
+          if (separatorIndex > -1) {
+            appendMeta(metaList, line.slice(0, separatorIndex), line.slice(separatorIndex + 2));
+          } else {
+            appendMeta(metaList, 'Info', line);
+          }
+        });
+        card.appendChild(metaList);
+
+        const actions = document.createElement('div');
+        actions.className = 'service-card__actions';
+        ['start', 'stop', 'restart'].forEach((action) => {
+          const button = document.createElement('button');
+          const disabled = actionDisabled(container, action);
+          button.type = 'button';
+          button.className = `btn btn-sm ${actionButtonClasses[action]}`;
+          button.dataset.containerAction = action;
+          button.dataset.stateDisabled = disabled ? 'true' : 'false';
+          button.disabled = disabled;
+          button.textContent = actionLabels[action];
+          button.title = `${actionLabels[action]} ${container.label || container.id}`;
+          actions.appendChild(button);
+        });
+        card.appendChild(actions);
+        listEl.appendChild(card);
+      });
+
+      updateSummary();
+    };
+
+    const setBusy = (disabled) => {
+      if (refreshButton) refreshButton.disabled = disabled;
+      if (resetButton) resetButton.disabled = disabled;
+      if (!listEl) return;
+      listEl.querySelectorAll('button[data-container-action]').forEach((button) => {
+        button.disabled = disabled || button.dataset.stateDisabled === 'true';
+      });
+      listEl.querySelectorAll('.service-card').forEach((card) => {
+        card.classList.toggle('service-card--busy', disabled);
+      });
+    };
+
+    const applyContainerResponse = (data) => {
+      if (Array.isArray(data?.containers)) {
+        containers = data.containers;
+      }
+      if (data?.containerSummary) {
+        containerSummary = data.containerSummary;
+      } else {
+        containerSummary = getSummary(containers);
+      }
+      renderContainers();
+    };
+
+    const readJsonResponse = async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed (${response.status})`);
+      }
+      return data;
+    };
+
+    const refreshContainers = async () => {
+      setBusy(true);
+      setFeedback('Refreshing...', false);
+      try {
+        const response = await fetch('/admin/ai-gateway/containers');
+        const data = await readJsonResponse(response);
+        applyContainerResponse(data);
+        setFeedback('Refreshed.', false);
+        window.setTimeout(() => setFeedback('', false), 2000);
+      } catch (error) {
+        setFeedback(error.message || 'Refresh failed.', true);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    const submitAction = async (id, action) => {
+      setBusy(true);
+      setFeedback(actionProgressLabels[action] || 'Updating...', false);
+      try {
+        const response = await fetch(`/admin/ai-gateway/containers/${encodeURIComponent(id)}/${action}`, {
+          method: 'POST',
+        });
+        const data = await readJsonResponse(response);
+        applyContainerResponse(data);
+        setFeedback('Service state updated.', false);
+        window.setTimeout(() => setFeedback('', false), 2000);
+      } catch (error) {
+        setFeedback(error.message || 'Update failed.', true);
+      } finally {
+        setBusy(false);
+      }
+    };
+
+    if (listEl) {
+      listEl.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-container-action]');
+        if (!button || button.disabled) {
+          return;
+        }
+        const card = button.closest('[data-container-id]');
+        const id = card?.dataset.containerId;
+        const action = button.dataset.containerAction;
+        if (!id || !actionLabels[action]) {
+          return;
+        }
+        submitAction(id, action);
+      });
+    }
+
+    if (refreshButton) {
+      refreshButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        refreshContainers();
+      });
+    }
+
+    if (resetButton) {
+      resetButton.addEventListener('click', async (event) => {
+        event.preventDefault();
+        if (!window.confirm('Reset AI Gateway containers to their default states?')) {
+          return;
+        }
+
+        setBusy(true);
+        setFeedback('Resetting defaults...', false);
+        try {
+          const response = await fetch('/admin/ai-gateway/containers/reset-defaults', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ restart_running: true, wait: false }),
+          });
+          const data = await readJsonResponse(response);
+          applyContainerResponse(data);
+          setFeedback('Defaults applied.', false);
+          window.setTimeout(() => setFeedback('', false), 2000);
+        } catch (error) {
+          setFeedback(error.message || 'Reset failed.', true);
+        } finally {
+          setBusy(false);
+        }
+      });
+    }
+
+    renderContainers();
+  };
+
   const initAutoStopControls = () => {
     const toggle = document.getElementById('autoStopToggle');
     if (!toggle) {
@@ -1110,5 +1402,6 @@
   resizeCallbacks.push(safeTtsChart);
 
   initAutoStopControls();
+  initContainerControls();
   initMonitorControls();
 })();

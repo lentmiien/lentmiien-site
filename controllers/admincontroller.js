@@ -74,11 +74,47 @@ const AI_GATEWAY_ENDPOINTS = {
   limits: '/limits',
   health: '/health',
   logs: '/logs/tail?n=500',
+  containers: '/containers',
+  containerResetDefaults: '/containers/reset-defaults',
   autoStop: '/comfy/auto_stop',
   checkpoints: '/lentmiienlm/checkpoints',
   monitor: '/lentmiienlm/monitor',
 };
 const AI_GATEWAY_TIMEOUT_MS = 5000;
+
+function buildAiGatewayAdminHeaders() {
+  const headers = {};
+  if (process.env.LLM_ADMIN_TOKEN) {
+    headers['X-Admin-Token'] = process.env.LLM_ADMIN_TOKEN;
+  }
+  return headers;
+}
+
+function buildAiGatewayErrorMessage(error, fallback) {
+  if (error?.response?.data) {
+    if (typeof error.response.data === 'string') {
+      return error.response.data;
+    }
+    if (typeof error.response.data.error === 'string') {
+      return error.response.data.error;
+    }
+    if (typeof error.response.data.message === 'string') {
+      return error.response.data.message;
+    }
+    if (typeof error.response.data.detail === 'string') {
+      return error.response.data.detail;
+    }
+  }
+
+  if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+    return `Unable to reach the AI Gateway at ${AI_GATEWAY_BASE_URL}.`;
+  }
+  if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
+    return `AI Gateway request timed out after ${AI_GATEWAY_TIMEOUT_MS}ms.`;
+  }
+
+  return error?.message || fallback;
+}
 
 function parseCheckbox(value) {
   return value === 'on' || value === 'true' || value === true || value === '1';
@@ -2897,6 +2933,285 @@ function buildGatewayUpstreamMeta(rawUpstream) {
   return meta.filter((line, index) => meta.indexOf(line) === index);
 }
 
+function normalizeGatewayBool(value) {
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === 'yes' || normalized === 'on') return true;
+    if (normalized === 'false' || normalized === 'no' || normalized === 'off') return false;
+  }
+  return null;
+}
+
+function formatGatewayStateLabel(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) {
+    return 'Unknown';
+  }
+
+  return raw
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function hasGatewayContainerShape(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  return [
+    'id',
+    'name',
+    'container_id',
+    'containerId',
+    'container_name',
+    'containerName',
+    'service',
+    'compose_service',
+    'state',
+    'status',
+    'container_state',
+    'containerState',
+    'running',
+    'is_running',
+    'default_running',
+    'defaultRunning',
+    'image',
+  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function collectGatewayContainerEntries(rawContainers, fallbackKey, entries = []) {
+  if (!rawContainers) {
+    return entries;
+  }
+
+  if (Array.isArray(rawContainers)) {
+    rawContainers.forEach((entry, index) => {
+      const entryKey = fallbackKey ? `${fallbackKey}-${index}` : String(index);
+      collectGatewayContainerEntries(entry, entryKey, entries);
+    });
+    return entries;
+  }
+
+  if (typeof rawContainers !== 'object') {
+    return entries;
+  }
+
+  if (hasGatewayContainerShape(rawContainers)) {
+    entries.push({ key: fallbackKey, raw: rawContainers });
+    return entries;
+  }
+
+  const nestedKeys = [
+    'containers',
+    'managed_containers',
+    'managedContainers',
+    'services',
+    'items',
+    'data',
+    'container',
+  ];
+  const nestedValues = nestedKeys
+    .filter((key) => rawContainers[key])
+    .map((key) => ({ key, value: rawContainers[key] }));
+
+  if (nestedValues.length) {
+    nestedValues.forEach((entry) => {
+      collectGatewayContainerEntries(entry.value, entry.key, entries);
+    });
+    return entries;
+  }
+
+  Object.entries(rawContainers).forEach(([key, value]) => {
+    if (value && typeof value === 'object') {
+      collectGatewayContainerEntries(value, key, entries);
+    } else if (typeof value === 'string' && /^(created|running|paused|restarting|removing|exited|dead|stopped|up|down|missing|not_found)$/i.test(value.trim())) {
+      entries.push({
+        key,
+        raw: {
+          id: key,
+          state: value.trim(),
+          status: value.trim(),
+        },
+      });
+    }
+  });
+
+  return entries;
+}
+
+function normalizeGatewayContainer(rawContainer, fallbackId) {
+  if (!rawContainer || typeof rawContainer !== 'object') {
+    return null;
+  }
+
+  const rawId = rawContainer.id
+    || rawContainer.container_id
+    || rawContainer.containerId
+    || rawContainer.key
+    || fallbackId
+    || rawContainer.name
+    || rawContainer.container_name
+    || rawContainer.containerName
+    || rawContainer.service
+    || rawContainer.compose_service;
+  const id = typeof rawId === 'string' && rawId.trim() ? rawId.trim() : String(rawId || '').trim();
+  if (!id) {
+    return null;
+  }
+
+  const name = rawContainer.name
+    || rawContainer.container_name
+    || rawContainer.containerName
+    || rawContainer.service
+    || rawContainer.compose_service
+    || id;
+  const label = rawContainer.label
+    || rawContainer.display_name
+    || rawContainer.displayName
+    || rawContainer.title
+    || name
+    || id;
+  const statusText = rawContainer.status_text
+    || rawContainer.statusText
+    || rawContainer.docker_status
+    || rawContainer.dockerStatus
+    || rawContainer.status
+    || null;
+  const state = rawContainer.state
+    || rawContainer.container_state
+    || rawContainer.containerState
+    || (typeof statusText === 'string' && /^(created|running|paused|restarting|removing|exited|dead|stopped)$/i.test(statusText.trim())
+      ? statusText.trim().toLowerCase()
+      : null);
+  let running = normalizeGatewayBool(rawContainer.running ?? rawContainer.is_running ?? rawContainer.isRunning);
+  if (running === null && typeof state === 'string') {
+    const normalizedState = state.trim().toLowerCase();
+    if (['running', 'up', 'healthy'].includes(normalizedState)) {
+      running = true;
+    } else if (['created', 'exited', 'dead', 'stopped', 'down', 'not_found', 'missing'].includes(normalizedState)) {
+      running = false;
+    }
+  }
+  if (running === null && typeof statusText === 'string') {
+    const normalizedStatus = statusText.trim().toLowerCase();
+    if (normalizedStatus.startsWith('up ') || normalizedStatus === 'up' || normalizedStatus.includes('running')) {
+      running = true;
+    } else if (normalizedStatus.startsWith('exited') || normalizedStatus.includes('stopped')) {
+      running = false;
+    }
+  }
+
+  let defaultRunning = normalizeGatewayBool(
+    rawContainer.default_running
+      ?? rawContainer.defaultRunning
+      ?? rawContainer.default?.running
+      ?? rawContainer.default?.default_running,
+  );
+  const rawDefaultState = rawContainer.default_state
+    || rawContainer.defaultState
+    || rawContainer.default?.state
+    || rawContainer.default?.container_state
+    || null;
+  if (defaultRunning === null && typeof rawDefaultState === 'string') {
+    const normalizedDefaultState = rawDefaultState.trim().toLowerCase();
+    if (['running', 'up', 'healthy'].includes(normalizedDefaultState)) {
+      defaultRunning = true;
+    } else if (['created', 'exited', 'dead', 'stopped', 'down', 'not_found', 'missing'].includes(normalizedDefaultState)) {
+      defaultRunning = false;
+    }
+  }
+  const defaultState = rawDefaultState
+    || (defaultRunning === true ? 'running' : (defaultRunning === false ? 'stopped' : null));
+  const health = rawContainer.health
+    || rawContainer.health_status
+    || rawContainer.healthStatus
+    || rawContainer.status_health
+    || null;
+  const ports = Array.isArray(rawContainer.ports)
+    ? rawContainer.ports.map((port) => {
+        if (typeof port === 'string') return port;
+        if (port && typeof port === 'object') {
+          return port.public || port.host || port.target || port.container
+            ? [port.public || port.host, port.target || port.container].filter(Boolean).join(':')
+            : JSON.stringify(port);
+        }
+        return String(port);
+      }).filter(Boolean)
+    : [];
+  const meta = [];
+  pushGatewayMeta(meta, 'Image', rawContainer.image || rawContainer.image_name || null);
+  pushGatewayMeta(meta, 'Service', rawContainer.service || rawContainer.compose_service || null);
+  pushGatewayMeta(meta, 'Project', rawContainer.project || rawContainer.compose_project || null);
+  pushGatewayMeta(meta, 'Health', health);
+  pushGatewayMeta(meta, 'Ports', ports.length ? ports.join(', ') : null);
+  pushGatewayMeta(meta, 'Note', rawContainer.message || rawContainer.detail || null);
+
+  return {
+    id,
+    name: String(name || id),
+    label: String(label || name || id),
+    state: typeof state === 'string' ? state : null,
+    stateDisplay: state ? formatGatewayStateLabel(state) : (running === true ? 'Running' : (running === false ? 'Stopped' : 'Unknown')),
+    status: typeof statusText === 'string' ? statusText : null,
+    statusDisplay: statusText ? String(statusText) : (state ? formatGatewayStateLabel(state) : 'Unknown'),
+    running,
+    defaultRunning,
+    defaultState: typeof defaultState === 'string' ? defaultState : null,
+    defaultStateDisplay: defaultState ? formatGatewayStateLabel(defaultState) : 'Unknown',
+    image: rawContainer.image || rawContainer.image_name || null,
+    service: rawContainer.service || rawContainer.compose_service || null,
+    project: rawContainer.project || rawContainer.compose_project || null,
+    health,
+    meta: meta.filter((line, index) => meta.indexOf(line) === index),
+    canStart: running !== true,
+    canStop: running !== false,
+    canRestart: running !== false,
+  };
+}
+
+function normalizeGatewayContainers(rawContainers, rawHealth) {
+  const entries = collectGatewayContainerEntries(rawContainers);
+  if (!entries.length) {
+    collectGatewayContainerEntries(rawHealth?.managed_containers || rawHealth?.managedContainers || rawHealth?.containers, null, entries);
+  }
+
+  const byId = new Map();
+  entries.forEach((entry) => {
+    const container = normalizeGatewayContainer(entry.raw, entry.key);
+    if (!container) {
+      return;
+    }
+    byId.set(container.id, container);
+  });
+
+  return Array.from(byId.values()).sort((a, b) => {
+    if (a.running !== b.running) {
+      return a.running === true ? -1 : 1;
+    }
+    return (a.label || a.id).localeCompare(b.label || b.id);
+  });
+}
+
+function buildGatewayContainerSummary(containers) {
+  const items = Array.isArray(containers) ? containers : [];
+  const running = items.filter((container) => container.running === true).length;
+  const stopped = items.filter((container) => container.running === false).length;
+  const unknown = items.length - running - stopped;
+  const defaultRunning = items.filter((container) => container.defaultRunning === true).length;
+
+  return {
+    total: items.length,
+    running,
+    stopped,
+    unknown,
+    defaultRunning,
+    display: items.length ? `${running}/${items.length} running` : 'No containers',
+  };
+}
+
 function normalizeGatewayHealth(rawHealth) {
   const upstreamEntries = [];
   if (rawHealth?.upstreams && typeof rawHealth.upstreams === 'object') {
@@ -3091,6 +3406,8 @@ function buildAiGatewayDashboard(rawData) {
   const limits = normalizeGatewayLimits(rawData.limits);
   const autoStop = normalizeGatewayAutoStop(rawData.autoStop);
   const checkpoints = normalizeGatewayCheckpoints(rawData.checkpoints);
+  const containers = normalizeGatewayContainers(rawData.containers, rawData.health);
+  const containerSummary = buildGatewayContainerSummary(containers);
   const successRate = calculatePercent(requests.totals.total || 0, requests.totals.success || 0);
   const errorRate = calculatePercent(requests.totals.total || 0, requests.totals.errors || 0);
 
@@ -3120,6 +3437,13 @@ function buildAiGatewayDashboard(rawData) {
       value: health.status === 'ok' ? 'Healthy' : (health.status || 'Unknown'),
       helper: `${health.upstreamOk}/${health.upstreamTotal || 0} upstreams responding`,
     },
+    containers.length
+      ? {
+          label: 'Services',
+          value: containerSummary.display,
+          helper: `${containerSummary.defaultRunning} default-running · ${containerSummary.stopped} stopped`,
+        }
+      : null,
     logWindow.count
       ? {
           label: 'Log window',
@@ -3200,6 +3524,8 @@ function buildAiGatewayDashboard(rawData) {
     limits,
     autoStop,
     checkpoints,
+    containers,
+    containerSummary,
     health,
     logs,
     logInsights,
@@ -3224,6 +3550,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     { key: 'gpu', path: AI_GATEWAY_ENDPOINTS.gpu },
     { key: 'limits', path: AI_GATEWAY_ENDPOINTS.limits },
     { key: 'health', path: AI_GATEWAY_ENDPOINTS.health },
+    { key: 'containers', path: AI_GATEWAY_ENDPOINTS.containers, admin: true },
     { key: 'autoStop', path: AI_GATEWAY_ENDPOINTS.autoStop },
     { key: 'checkpoints', path: AI_GATEWAY_ENDPOINTS.checkpoints },
     { key: 'logsRaw', path: AI_GATEWAY_ENDPOINTS.logs, responseType: 'text' },
@@ -3235,6 +3562,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     {
       timeout: AI_GATEWAY_TIMEOUT_MS,
       responseType: endpoint.responseType || 'json',
+      headers: endpoint.admin ? buildAiGatewayAdminHeaders() : undefined,
     },
   ));
 
@@ -3260,6 +3588,179 @@ exports.ai_gateway_dashboard = async (req, res) => {
   return res.render('admin_ai_gateway', {
     dashboard,
   });
+};
+
+async function fetchAiGatewayContainerState() {
+  const response = await axios.get(
+    `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.containers}`,
+    {
+      timeout: AI_GATEWAY_TIMEOUT_MS,
+      headers: buildAiGatewayAdminHeaders(),
+    },
+  );
+  const containers = normalizeGatewayContainers(response.data);
+  return {
+    containers,
+    containerSummary: buildGatewayContainerSummary(containers),
+  };
+}
+
+function buildGatewayContainerActionBody(body) {
+  if (!body || typeof body !== 'object' || typeof body.wait === 'undefined') {
+    return undefined;
+  }
+
+  return { wait: parseCheckbox(body.wait) };
+}
+
+exports.ai_gateway_containers = async (req, res) => {
+  try {
+    const containerState = await fetchAiGatewayContainerState();
+    return res.json({
+      ok: true,
+      ...containerState,
+    });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    const message = buildAiGatewayErrorMessage(error, 'Unable to fetch AI gateway containers.');
+
+    logger.warning('Failed to fetch AI gateway containers', {
+      category: 'ai_gateway',
+      metadata: { error: message, status },
+    });
+
+    return res.status(status).json({ ok: false, error: message });
+  }
+};
+
+exports.ai_gateway_container_action = async (req, res) => {
+  const id = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+  const action = typeof req.params.action === 'string' ? req.params.action.trim() : '';
+  const allowedActions = ['start', 'stop', 'restart'];
+
+  if (!id) {
+    return res.status(400).json({ ok: false, error: 'Container id is required.' });
+  }
+  if (!allowedActions.includes(action)) {
+    return res.status(400).json({ ok: false, error: 'Unsupported container action.' });
+  }
+
+  try {
+    const gatewayPath = `${AI_GATEWAY_ENDPOINTS.containers}/${encodeURIComponent(id)}/${action}`;
+    const response = await axios.post(
+      `${AI_GATEWAY_BASE_URL}${gatewayPath}`,
+      buildGatewayContainerActionBody(req.body),
+      {
+        timeout: AI_GATEWAY_TIMEOUT_MS,
+        headers: buildAiGatewayAdminHeaders(),
+      },
+    );
+
+    let containerState = null;
+    try {
+      containerState = await fetchAiGatewayContainerState();
+    } catch (refreshError) {
+      const message = buildAiGatewayErrorMessage(refreshError, 'Container action completed, but refresh failed.');
+      logger.warning('Failed to refresh AI gateway containers after action', {
+        category: 'ai_gateway',
+        metadata: { id, action, error: message },
+      });
+    }
+
+    const responseContainers = normalizeGatewayContainers(response.data);
+    const containers = containerState?.containers?.length
+      ? containerState.containers
+      : responseContainers;
+    const containerSummary = containerState?.containerSummary || buildGatewayContainerSummary(containers);
+
+    logger.notice('Updated AI gateway container state', {
+      category: 'ai_gateway',
+      metadata: {
+        id,
+        action,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return res.json({
+      ok: true,
+      action,
+      id,
+      containers,
+      containerSummary,
+    });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    const message = buildAiGatewayErrorMessage(error, `Unable to ${action || 'update'} AI gateway container.`);
+
+    logger.warning('Failed to update AI gateway container state', {
+      category: 'ai_gateway',
+      metadata: { id, action, error: message, status },
+    });
+
+    return res.status(status).json({ ok: false, error: message });
+  }
+};
+
+exports.ai_gateway_containers_reset_defaults = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const restartRunning = typeof body.restart_running !== 'undefined'
+      ? parseCheckbox(body.restart_running)
+      : (typeof body.restartRunning !== 'undefined' ? parseCheckbox(body.restartRunning) : true);
+    const wait = typeof body.wait !== 'undefined' ? parseCheckbox(body.wait) : false;
+
+    const response = await axios.post(
+      `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.containerResetDefaults}`,
+      { restart_running: restartRunning, wait },
+      {
+        timeout: AI_GATEWAY_TIMEOUT_MS,
+        headers: buildAiGatewayAdminHeaders(),
+      },
+    );
+
+    let containerState = null;
+    try {
+      containerState = await fetchAiGatewayContainerState();
+    } catch (refreshError) {
+      const message = buildAiGatewayErrorMessage(refreshError, 'Container defaults reset, but refresh failed.');
+      logger.warning('Failed to refresh AI gateway containers after reset-defaults', {
+        category: 'ai_gateway',
+        metadata: { error: message },
+      });
+    }
+
+    const responseContainers = normalizeGatewayContainers(response.data);
+    const containers = containerState?.containers?.length
+      ? containerState.containers
+      : responseContainers;
+    const containerSummary = containerState?.containerSummary || buildGatewayContainerSummary(containers);
+
+    logger.notice('Reset AI gateway containers to defaults', {
+      category: 'ai_gateway',
+      metadata: {
+        restartRunning,
+        wait,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return res.json({
+      ok: true,
+      containers,
+      containerSummary,
+    });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    const message = buildAiGatewayErrorMessage(error, 'Unable to reset AI gateway containers to defaults.');
+
+    logger.warning('Failed to reset AI gateway containers to defaults', {
+      category: 'ai_gateway',
+      metadata: { error: message, status },
+    });
+
+    return res.status(status).json({ ok: false, error: message });
+  }
 };
 
 exports.ai_gateway_auto_stop_update = async (req, res) => {
@@ -3330,15 +3831,10 @@ exports.ai_gateway_monitor_update = async (req, res) => {
       return res.status(400).json({ error: 'Folder must be a string or null.' });
     }
 
-    const headers = {};
-    if (process.env.LLM_ADMIN_TOKEN) {
-      headers['X-Admin-Token'] = process.env.LLM_ADMIN_TOKEN;
-    }
-
     const response = await axios.post(
       `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.monitor}`,
       { folder },
-      { timeout: AI_GATEWAY_TIMEOUT_MS, headers },
+      { timeout: AI_GATEWAY_TIMEOUT_MS, headers: buildAiGatewayAdminHeaders() },
     );
 
     logger.notice('Updated AI gateway training monitor', {

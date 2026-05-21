@@ -140,6 +140,9 @@ router.get('/delete_log_file/:file', controller.delete_log_file);
 
 router.get('/openai_usage', controller.openai_usage);
 router.get('/ai-gateway', controller.ai_gateway_dashboard);
+router.get('/ai-gateway/containers', controller.ai_gateway_containers);
+router.post('/ai-gateway/containers/reset-defaults', controller.ai_gateway_containers_reset_defaults);
+router.post('/ai-gateway/containers/:id/:action', controller.ai_gateway_container_action);
 router.post('/ai-gateway/auto-stop', controller.ai_gateway_auto_stop_update);
 router.post('/ai-gateway/monitor', controller.ai_gateway_monitor_update);
 router.get('/performance', controller.performance_dashboard);

@@ -13,6 +13,8 @@ block content
   - const hasOcrTimingChart = Array.isArray(overviewData.ocrTimings) && overviewData.ocrTimings.length;
   - const hasTtsChart = Array.isArray(overviewData.ttsBackends) && overviewData.ttsBackends.length;
   - const autoStop = dashboard.autoStop || null;
+  - const containers = Array.isArray(dashboard.containers) ? dashboard.containers : [];
+  - const containerSummary = dashboard.containerSummary || {};
   - const checkpoints = Array.isArray(dashboard.checkpoints) ? dashboard.checkpoints : [];
   - const checkpointNames = Array.from(new Set(checkpoints.map((entry) => entry.checkpoint).filter((name) => name && name !== 'Unknown'))).sort();
   - const formatFixed = (value, digits = 2) => (typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(digits) : 'N/A');
@@ -104,6 +106,56 @@ block content
                   .health-card__detail= upstream.detail
         else
           p.text-muted.mb-0 No upstream data available.
+      .panel
+        .panel__header
+          h2.panel__title Managed Services
+          p.panel__subtitle Start, stop, and restart gateway-managed containers.
+        if containers.length
+          .container-controls#containerControls
+            .container-controls__toolbar
+              .container-controls__summary
+                strong#containerSummary= containerSummary.display || `${containers.filter((container) => container.running === true).length}/${containers.length} running`
+                span.text-muted#containerSummaryDetail= `${containerSummary.defaultRunning || 0} default-running · ${containerSummary.stopped || 0} stopped`
+              .container-controls__actions
+                button#containersRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
+                button#containersResetDefaults.btn.btn-outline-warning.btn-sm(type='button') Reset defaults
+                span#containersFeedback.container-controls__feedback.text-muted
+            .service-grid#containerList
+              each container in containers
+                .service-card(data-container-id=container.id)
+                  .service-card__top
+                    div
+                      .service-card__name= container.label || container.name || container.id
+                      .service-card__id= container.name && container.name !== container.label ? container.name : container.id
+                    span.service-card__badge(class=container.running === true ? 'service-card__badge--running' : (container.running === false ? 'service-card__badge--stopped' : ''))= container.stateDisplay || 'Unknown'
+                  ul.service-card__meta
+                    li
+                      span Status
+                      strong= container.statusDisplay || 'Unknown'
+                    li
+                      span Default
+                      strong= container.defaultStateDisplay || 'Unknown'
+                    if container.meta && container.meta.length
+                      each line in container.meta
+                        li
+                          span= line.split(': ')[0]
+                          strong= line.split(': ').slice(1).join(': ') || 'N/A'
+                  .service-card__actions
+                    button.btn.btn-outline-success.btn-sm(type='button', data-container-action='start', disabled=container.running === true) Start
+                    button.btn.btn-outline-danger.btn-sm(type='button', data-container-action='stop', disabled=container.running === false) Stop
+                    button.btn.btn-outline-warning.btn-sm(type='button', data-container-action='restart', disabled=container.running === false) Restart
+        else
+          .container-controls#containerControls
+            .container-controls__toolbar
+              .container-controls__summary
+                strong#containerSummary No containers
+                span.text-muted#containerSummaryDetail Gateway did not return managed container data.
+              .container-controls__actions
+                button#containersRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
+                button#containersResetDefaults.btn.btn-outline-warning.btn-sm(type='button') Reset defaults
+                span#containersFeedback.container-controls__feedback.text-muted
+            .service-grid#containerList
+              p.text-muted.mb-0 No managed services are available.
       .panel
         .panel__header
           h2.panel__title Auto-stop Policy
@@ -491,5 +543,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='aiGatewayData') !{JSON.stringify({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop })}
+  script(type='application/json', id='aiGatewayData') !{JSON.stringify({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary })}
   script(src='/js/aiGateway.js', defer)
