@@ -2998,8 +2998,7 @@ function hasGatewayContainerShape(value) {
     'containerState',
     'running',
     'is_running',
-    'default_running',
-    'defaultRunning',
+    'isRunning',
     'image',
   ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
