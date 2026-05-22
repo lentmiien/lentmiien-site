@@ -93,6 +93,10 @@ const DetailedDataModel = require('./models/detailed_data');
 // DHT22
 const Dht22AggregatedData = require('./models/dht22_aggregated_data');
 const Dht22DetailedData = require('./models/dht22_detailed_data');
+// Tapo energy readings
+const TapoReading = require('./models/tapo_reading');
+const TapoDailyConsumptionSnapshot = require('./models/tapo_daily_consumption_snapshot');
+const TapoMonthlyConsumptionSnapshot = require('./models/tapo_monthly_consumption_snapshot');
 // Emergency Stock
 const ESCategory = require('./models/es_category');
 const ESItem = require('./models/es_item');
@@ -216,6 +220,9 @@ module.exports = {
   DetailedDataModel,
   Dht22AggregatedData,
   Dht22DetailedData,
+  TapoReading,
+  TapoDailyConsumptionSnapshot,
+  TapoMonthlyConsumptionSnapshot,
   ESCategory,
   ESItem,
   Receipt,

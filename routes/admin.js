@@ -10,6 +10,7 @@ const messageInboxController = require('../controllers/messageInboxAdminControll
 const toolManagerController = require('../controllers/toolManagerController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
 const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminController');
+const tapoController = require('../controllers/tapoController');
 
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
@@ -150,6 +151,7 @@ router.get('/database_usage', controller.database_usage);
 router.get('/database-viewer', controller.database_viewer_page);
 router.get('/database-viewer/data', controller.database_viewer_data);
 router.post('/database-viewer/delete', controller.database_viewer_delete);
+router.get('/tapo', tapoController.dashboard);
 router.get('/api-debug-logs', controller.api_debug_logs);
 router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
 router.get('/tools', toolManagerController.index);

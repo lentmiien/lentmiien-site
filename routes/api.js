@@ -6,6 +6,7 @@ const router = express.Router();
 const controller = require('../controllers/apicontroller');
 const apiRecordController = require('../controllers/apiRecordController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
+const tapoController = require('../controllers/tapoController');
 
 const audioUpload = multer({
   storage: multer.memoryStorage(),
@@ -43,6 +44,9 @@ router.post('/deleteHealthEntry', controller.deleteHealthEntry);
 
 /* Message inbox */
 router.post('/messages', controller.saveIncomingMessage);
+
+/* Tapo energy readings */
+router.post('/tapo/readings/batch', tapoController.saveBatch);
 
 /* Audio workflow */
 router.post('/audio/upload', handleAudioWorkflowUpload);

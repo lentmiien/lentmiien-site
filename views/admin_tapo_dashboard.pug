@@ -1,0 +1,112 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/tapo_dashboard.css')
+
+block content
+  - const stats = tapoDashboard && tapoDashboard.stats ? tapoDashboard.stats : {};
+  - const devices = tapoDashboard && Array.isArray(tapoDashboard.deviceStats) ? tapoDashboard.deviceStats : [];
+  - const formatNumber = (value, digits = 2) => Number.isFinite(value) ? value.toFixed(digits) : 'N/A';
+  - const formatDate = (value) => value ? new Date(value).toLocaleString() : 'N/A';
+  .tapo-dashboard
+    header.tapo-dashboard__header
+      .tapo-dashboard__heading
+        h1 Tapo Energy
+        p.tapo-dashboard__subtitle Device-name based power readings, consumption snapshots, and retention-aware history.
+      form.tapo-dashboard__filters(method='get', action='/admin/tapo')
+        label
+          span Raw days
+          input(type='number', name='rawDays', min='1', max='31', value=rawDays)
+        label
+          span Daily days
+          input(type='number', name='dailyDays', min='1', max='1095', value=dailyDays)
+        label
+          span Months
+          input(type='number', name='months', min='1', max='120', value=monthlyMonths)
+        button(type='submit') Update
+
+    if loadError
+      .tapo-dashboard__alert.tapo-dashboard__alert--error= loadError
+
+    .tapo-stat-grid
+      .tapo-stat
+        .tapo-stat__label Devices
+        .tapo-stat__value= stats.deviceCount || 0
+        .tapo-stat__meta Latest #{formatDate(stats.latestReadingAt)}
+      .tapo-stat
+        .tapo-stat__label Current load
+        .tapo-stat__value #{formatNumber(stats.totalCurrentPowerW, 1)} W
+        .tapo-stat__meta Peak #{formatNumber(stats.peakPowerW, 1)} W
+      .tapo-stat
+        .tapo-stat__label Today
+        .tapo-stat__value #{formatNumber(stats.totalTodayKwh, 3)} kWh
+        .tapo-stat__meta Date #{tapoDashboard.latestDailyKey || 'N/A'}
+      .tapo-stat
+        .tapo-stat__label This month
+        .tapo-stat__value #{formatNumber(stats.totalMonthKwh, 3)} kWh
+        .tapo-stat__meta Month #{tapoDashboard.latestMonthKey || 'N/A'}
+      .tapo-stat
+        .tapo-stat__label Raw readings
+        .tapo-stat__value= stats.rawReadingsInWindow || 0
+        .tapo-stat__meta #{stats.rawReadingsTotal || 0} retained total
+
+    if !devices.length
+      .tapo-dashboard__empty
+        h2 No Tapo readings yet
+        p POST batches to `/api/tapo/readings/batch` and reload this page after MongoDB has stored the first records.
+    else
+      section.tapo-dashboard__section
+        header.tapo-section-header
+          h2 Current Power
+          p Last #{rawDays} days of raw readings.
+        #tapoPowerChart.tapo-chart(aria-label='Current power chart')
+
+      section.tapo-dashboard__section
+        header.tapo-section-header
+          h2 Daily Consumption
+          p Latest daily snapshot values by device.
+        #tapoDailyChart.tapo-chart(aria-label='Daily consumption chart')
+
+      section.tapo-dashboard__section
+        header.tapo-section-header
+          h2 Monthly Consumption
+          p Monthly snapshot totals by device.
+        #tapoMonthlyChart.tapo-chart(aria-label='Monthly consumption chart')
+
+      section.tapo-dashboard__section
+        header.tapo-section-header
+          h2 Device Status
+          p Device identity is based on `device_name`; IP addresses are shown only as latest metadata.
+        .tapo-table-wrap
+          table.table.table-sm.tapo-table
+            thead
+              tr
+                th Device
+                th Current
+                th Today
+                th Month
+                th Voltage
+                th RSSI
+                th Signal
+                th IP
+                th Last reading
+            tbody
+              each device in devices
+                tr
+                  td
+                    strong= device.deviceName
+                    if device.model
+                      span.tapo-table__sub= device.model
+                  td #{formatNumber(device.currentPowerW, 1)} W
+                  td #{formatNumber(device.todayKwh, 3)} kWh
+                  td #{formatNumber(device.monthKwh, 3)} kWh
+                  td #{formatNumber(device.voltage, 1)} V
+                  td= Number.isFinite(device.rssi) ? device.rssi : 'N/A'
+                  td= Number.isFinite(device.signalLevel) ? device.signalLevel : 'N/A'
+                  td= device.deviceIp || 'N/A'
+                  td= formatDate(device.lastReadingAt)
+
+block script
+  script(src='https://d3js.org/d3.v7.min.js', defer)
+  script(type='application/json', id='tapoDashboardData') !{JSON.stringify(tapoDashboard || {})}
+  script(src='/js/tapo_dashboard.js', defer)
