@@ -1,4 +1,33 @@
+- const remainingBalances = (typeof cardBalances !== 'undefined' && cardBalances) ? cardBalances : ((typeof creditSummary !== 'undefined' && creditSummary && creditSummary.cardBalances) ? creditSummary.cardBalances : [])
+- const formatJpy = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Math.round(Number(value)).toLocaleString()} JPY`
 .credit-dashboard
+  .credit-remaining-panel
+    .credit-remaining-panel__header
+      h3.credit-dashboard__title Remaining balance
+      p.inline-feedback Rounded down to nearest 1,000 JPY for quick app comparison.
+    #remainingBalanceList.remaining-balance-list
+      if remainingBalances && remainingBalances.length
+        each balance in remainingBalances
+          - const hasRoundedRemaining = balance.roundedRemainingBalance !== null && balance.roundedRemainingBalance !== undefined
+          - const remainingToneClass = hasRoundedRemaining && Number(balance.remainingBalance) < 0 ? 'metric-card__value--negative' : 'metric-card__value--positive'
+          - const detailParts = []
+          - if (balance.creditLimit !== null && balance.creditLimit !== undefined) detailParts.push(`Limit ${formatJpy(balance.creditLimit)}`)
+          - if (balance.currentBalance !== null && balance.currentBalance !== undefined) detailParts.push(`Balance ${formatJpy(balance.currentBalance)}`)
+          - if (balance.utilisationPercent !== null && balance.utilisationPercent !== undefined) detailParts.push(`${Number(balance.utilisationPercent).toFixed(1)}% used`)
+          .remaining-balance-card(class=balance.cardId === activeCardId ? 'is-active' : '', data-card-id=balance.cardId)
+            .remaining-balance-card__title
+              span.remaining-balance-card__name= balance.name
+              if balance.cardId === activeCardId
+                span.badge-soft Selected
+            strong.remaining-balance-card__value(class=hasRoundedRemaining ? remainingToneClass : '')= hasRoundedRemaining ? formatJpy(balance.roundedRemainingBalance) : '--'
+            if hasRoundedRemaining
+              span.remaining-balance-card__meta= `Exact ${formatJpy(balance.remainingBalance)}`
+            else
+              span.remaining-balance-card__meta Set a credit limit to calculate remaining balance.
+            if detailParts.length
+              span.remaining-balance-card__details= detailParts.join(' · ')
+      else
+        p.inline-feedback No card balances available yet.
   .credit-dashboard__header
     h3.credit-dashboard__title Credit Card Usage
     .credit-dashboard__controls

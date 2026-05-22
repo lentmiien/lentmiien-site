@@ -62,6 +62,49 @@ function percentOfLimit(value, limit) {
   return (numeric / limit) * 100;
 }
 
+function roundDownToNearestThousand(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.floor(numeric / 1000) * 1000;
+}
+
+function buildRemainingBalanceSummary(card, overview) {
+  const currentBalanceValue = overview
+    && overview.currentBalance !== undefined
+    && overview.currentBalance !== null
+    ? Number(overview.currentBalance)
+    : null;
+  const currentBalance = Number.isFinite(currentBalanceValue) ? currentBalanceValue : null;
+  const creditLimit = resolveCreditLimitValue(card.creditLimit);
+  const remainingBalance = creditLimit !== null && currentBalance !== null
+    ? creditLimit - currentBalance
+    : null;
+
+  return {
+    cardId: card.id || (card._id ? card._id.toString() : null),
+    name: card.name,
+    creditLimit,
+    currentBalance,
+    remainingBalance,
+    roundedRemainingBalance: remainingBalance !== null
+      ? roundDownToNearestThousand(remainingBalance)
+      : null,
+    utilisationPercent: creditLimit !== null && currentBalance !== null
+      ? percentOfLimit(currentBalance, creditLimit)
+      : null,
+  };
+}
+
+function attachRemainingBalanceSummaries(cards, cardBalances) {
+  const balanceByCardId = new Map(
+    (cardBalances || []).map((balance) => [balance.cardId, balance]),
+  );
+  return (cards || []).map((card) => ({
+    ...card,
+    balanceSummary: balanceByCardId.get(card.id) || null,
+  }));
+}
+
 function decorateSummaryWithCreditLimit(summary, creditLimit) {
   const limit = resolveCreditLimitValue(creditLimit);
   const percent = (val) => percentOfLimit(val, limit);
@@ -535,11 +578,41 @@ const creditCardService = {
       currentMonthTransactions: currentTransactions,
       labelSuggestions: suggestions,
       pendingConfirmations,
+      remainingBalanceSummary: buildRemainingBalanceSummary(serializeCard(card), {
+        currentBalance: currentSummary ? currentSummary.closingBalance : runningBalance,
+      }),
       range: {
         start: firstMonthDate.toISOString(),
         endExclusive: rangeEndExclusive.toISOString(),
       },
     };
+  },
+
+  async getRemainingBalanceSummaries(options = {}) {
+    const {
+      cards = null,
+      months = 1,
+      overviewByCardId = null,
+    } = options;
+    const sourceCards = cards || await this.listCards({ includeStats: true });
+    if (!sourceCards.length) return [];
+
+    const monthsCount = Math.max(1, Number(months) || 1);
+    return Promise.all(sourceCards.map(async (card) => {
+      const cachedOverview = overviewByCardId && overviewByCardId.get(card.id);
+      const overview = cachedOverview || await this.getOverview({
+        cardId: card.id,
+        months: monthsCount,
+      });
+      return buildRemainingBalanceSummary(card, overview);
+    }));
+  },
+
+  async listCardsWithRemainingBalances(options = {}) {
+    const { includeStats = true, months = 1 } = options;
+    const cards = await this.listCards({ includeStats });
+    const cardBalances = await this.getRemainingBalanceSummaries({ cards, months });
+    return attachRemainingBalanceSummaries(cards, cardBalances);
   },
 
   async getMonthDetails({ cardId, year, month }) {
@@ -1017,7 +1090,11 @@ const creditCardService = {
 };
 
 creditCardService.getSummary = async function getSummary(options = {}) {
-  const { cardId = null, months = 6 } = options;
+  const {
+    cardId = null,
+    months = 6,
+    includeCardBalances = true,
+  } = options;
   const cards = await this.listCards({ includeStats: true });
   if (!cards.length) {
     return {
@@ -1026,12 +1103,23 @@ creditCardService.getSummary = async function getSummary(options = {}) {
       overview: null,
       monthlyTrend: [],
       headline: null,
+      cardBalances: [],
     };
   }
   const preferredCard = cardId && cards.some((card) => card.id === cardId)
     ? cardId
     : cards[0].id;
   const overview = await this.getOverview({ cardId: preferredCard, months });
+  const cardBalances = includeCardBalances
+    ? await this.getRemainingBalanceSummaries({
+        cards,
+        months,
+        overviewByCardId: new Map([[preferredCard, overview]]),
+      })
+    : [];
+  const cardsWithBalances = includeCardBalances
+    ? attachRemainingBalanceSummaries(cards, cardBalances)
+    : cards;
   const monthlyTrend = (overview.months || []).map((month) => ({
     label: finance.monthKey(month.year, month.month),
     usageTotal: month.usageTotal,
@@ -1043,10 +1131,11 @@ creditCardService.getSummary = async function getSummary(options = {}) {
   const previous = overview.previousMonth || null;
 
   return {
-    cards,
+    cards: cardsWithBalances,
     activeCardId: preferredCard,
     overview,
     monthlyTrend,
+    cardBalances,
     headline: current
       ? {
         balance: overview.currentBalance,
@@ -1091,7 +1180,11 @@ creditCardService.getTransactions = async function getTransactions(options = {})
 creditCardService.getAnomalies = async function getAnomalies(options = {}) {
   const { cardId = null, months = 6 } = options;
   try {
-    const summary = await this.getSummary({ cardId, months });
+    const summary = await this.getSummary({
+      cardId,
+      months,
+      includeCardBalances: false,
+    });
     if (!summary.overview) {
       return {
         alerts: [],

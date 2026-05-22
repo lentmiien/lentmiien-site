@@ -13,10 +13,12 @@
   const state = {
     activeCardId: pageData.activeCardId || (pageData.cards && pageData.cards[0] ? pageData.cards[0].id : null),
     overview: null,
+    cardBalances: getInitialCardBalances(),
   };
 
   const elements = {
     cardSelect: document.getElementById('cardSelect'),
+    remainingBalanceList: document.getElementById('remainingBalanceList'),
     monthDetailsLink: document.getElementById('monthDetailsLink'),
     currentBalance: document.getElementById('currentBalance'),
     currentUsage: document.getElementById('currentUsage'),
@@ -56,6 +58,7 @@
       elements.cardSelect.addEventListener('change', () => {
         state.activeCardId = elements.cardSelect.value;
         syncCreditLimitInput();
+        renderRemainingBalances();
         if (elements.limitFeedback) showFeedback(elements.limitFeedback, '');
         loadOverview();
       });
@@ -98,6 +101,7 @@
 
     updateCsvCardDropdown(pageData.cards || []);
     syncCreditLimitInput();
+    renderRemainingBalances();
 
     if (state.activeCardId) {
       loadOverview();
@@ -115,6 +119,7 @@
       const data = await fetchJson(url.toString());
       state.overview = data;
       updateMetrics(data);
+      updateActiveRemainingBalance(data);
       renderChart(data.months || []);
       renderTransactions(data.currentMonthTransactions || []);
       renderConfirmations(data.pendingConfirmations || []);
@@ -146,6 +151,89 @@
     toggleAmountClass(elements.currentUsage, summary ? summary.usageTotal : null);
     toggleAmountClass(elements.currentRepay, summary ? -summary.repaymentTotal : null);
     toggleAmountClass(elements.currentBalance, balanceValue);
+  }
+
+  function renderRemainingBalances() {
+    if (!elements.remainingBalanceList) return;
+    const cards = pageData.cards || [];
+    const balanceByCardId = new Map(
+      (state.cardBalances || [])
+        .filter((balance) => balance && balance.cardId)
+        .map((balance) => [balance.cardId, balance]),
+    );
+
+    elements.remainingBalanceList.innerHTML = '';
+    if (!cards.length) {
+      const empty = document.createElement('p');
+      empty.className = 'inline-feedback';
+      empty.textContent = 'No card balances available yet.';
+      elements.remainingBalanceList.appendChild(empty);
+      return;
+    }
+
+    cards.forEach((card) => {
+      const balance = balanceByCardId.get(card.id) || card.balanceSummary || {};
+      const hasRoundedRemaining = Number.isFinite(Number(balance.roundedRemainingBalance));
+      const remainingBalance = Number(balance.remainingBalance);
+      const detailParts = [];
+      if (Number.isFinite(Number(balance.creditLimit))) {
+        detailParts.push(`Limit ${formatJpy(balance.creditLimit)}`);
+      }
+      if (Number.isFinite(Number(balance.currentBalance))) {
+        detailParts.push(`Balance ${formatJpy(balance.currentBalance)}`);
+      }
+      if (Number.isFinite(Number(balance.utilisationPercent))) {
+        detailParts.push(`${Number(balance.utilisationPercent).toFixed(1)}% used`);
+      }
+
+      const item = document.createElement('article');
+      item.className = 'remaining-balance-card';
+      if (card.id === state.activeCardId) item.classList.add('is-active');
+      item.dataset.cardId = card.id;
+
+      const valueClass = hasRoundedRemaining && remainingBalance < 0
+        ? 'metric-card__value--negative'
+        : 'metric-card__value--positive';
+      const selectedBadge = card.id === state.activeCardId
+        ? '<span class="badge-soft">Selected</span>'
+        : '';
+      const metaText = hasRoundedRemaining
+        ? `Exact ${formatJpy(balance.remainingBalance)}`
+        : 'Set a credit limit to calculate remaining balance.';
+
+      item.innerHTML = `
+        <div class="remaining-balance-card__title">
+          <span class="remaining-balance-card__name">${escapeHtml(card.name || 'Unnamed card')}</span>
+          ${selectedBadge}
+        </div>
+        <strong class="remaining-balance-card__value ${hasRoundedRemaining ? valueClass : ''}">
+          ${hasRoundedRemaining ? formatJpy(balance.roundedRemainingBalance) : '--'}
+        </strong>
+        <span class="remaining-balance-card__meta">${escapeHtml(metaText)}</span>
+        ${detailParts.length ? `<span class="remaining-balance-card__details">${escapeHtml(detailParts.join(' · '))}</span>` : ''}
+      `;
+      elements.remainingBalanceList.appendChild(item);
+    });
+  }
+
+  function updateActiveRemainingBalance(data) {
+    if (!data || !data.remainingBalanceSummary) return;
+    const summary = data.remainingBalanceSummary;
+    const cards = pageData.cards || [];
+    const activeCard = cards.find((card) => card.id === summary.cardId);
+    if (activeCard) {
+      activeCard.balanceSummary = summary;
+    }
+    const summaries = new Map(
+      (state.cardBalances || [])
+        .filter((balance) => balance && balance.cardId)
+        .map((balance) => [balance.cardId, balance]),
+    );
+    summaries.set(summary.cardId, summary);
+    state.cardBalances = cards
+      .map((card) => summaries.get(card.id) || card.balanceSummary)
+      .filter(Boolean);
+    renderRemainingBalances();
   }
 
   function renderChart(months) {
@@ -578,6 +666,7 @@
     try {
       const cards = await fetchJson(pageData.routes.cards);
       pageData.cards = cards;
+      state.cardBalances = extractCardBalances(cards);
       const previousActive = state.activeCardId;
       let nextActive = selectId || previousActive;
       if (nextActive && !cards.some((card) => card.id === nextActive)) {
@@ -600,6 +689,7 @@
       }
       updateCsvCardDropdown(cards);
       syncCreditLimitInput();
+      renderRemainingBalances();
       if (reloadOverview && state.activeCardId) {
         await loadOverview();
       }
@@ -673,6 +763,26 @@
     if (button) button.disabled = !enabled;
   }
 
+  function getInitialCardBalances() {
+    if (Array.isArray(pageData.cardBalances) && pageData.cardBalances.length) {
+      return pageData.cardBalances;
+    }
+    return extractCardBalances(pageData.cards || []);
+  }
+
+  function extractCardBalances(cards) {
+    return (cards || [])
+      .map((card) => card.balanceSummary)
+      .filter(Boolean);
+  }
+
+  function formatJpy(value) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+      return '--';
+    }
+    return `${Math.round(Number(value)).toLocaleString()} JPY`;
+  }
+
   function formatCurrency(value) {
     if (value === null || value === undefined || Number.isNaN(Number(value))) {
       return '--';
@@ -696,7 +806,7 @@
   }
 
   function escapeHtml(value) {
-    return value.replace(/[&<>"']/g, (m) => ({
+    return String(value).replace(/[&<>"']/g, (m) => ({
       '&': '&amp;',
       '<': '&lt;',
       '>': '&gt;',

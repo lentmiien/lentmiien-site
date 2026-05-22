@@ -129,11 +129,14 @@ exports.reviewTransactions = async (req, res) => {
 
 exports.creditCardsDashboard = async (req, res, next) => {
   try {
-    const cards = await CreditCardService.listCards({ includeStats: true });
-    const activeCardId = req.query.cardId || (cards[0] ? cards[0].id : null);
+    const summary = await CreditCardService.getSummary({
+      cardId: req.query.cardId || null,
+      months: 6,
+    });
     res.render('credit_cards_dashboard', {
-      cards,
-      activeCardId,
+      cards: summary.cards,
+      activeCardId: summary.activeCardId,
+      cardBalances: summary.cardBalances,
     });
   } catch (err) {
     next(err);
@@ -158,7 +161,10 @@ exports.creditCardsMonthPage = async (req, res, next) => {
 
 exports.creditCardsList = async (req, res) => {
   try {
-    const cards = await CreditCardService.listCards({ includeStats: true });
+    const cards = await CreditCardService.listCardsWithRemainingBalances({
+      includeStats: true,
+      months: 1,
+    });
     res.json(cards);
   } catch (err) {
     res.status(500).json({ error: err.message });

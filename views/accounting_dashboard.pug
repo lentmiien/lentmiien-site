@@ -234,6 +234,7 @@ block script
     window.creditCardPage = {
       cards: !{JSON.stringify(cards || [])},
       activeCardId: !{JSON.stringify(activeCardId || null)},
+      cardBalances: !{JSON.stringify((creditSummary && creditSummary.cardBalances) || [])},
       routes: {
         overview: '/budget/cards/api/overview',
         month: '/budget/cards/api/month',
