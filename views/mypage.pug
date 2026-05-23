@@ -219,6 +219,24 @@ block styles
       background: #fff;
     }
 
+    .life-log-followup-item.is-followup-window {
+      border-color: rgba(208, 92, 51, 0.75);
+      box-shadow: 0 8px 20px rgba(208, 92, 51, 0.16);
+    }
+
+    .life-log-followup-item.is-late {
+      border-color: rgba(31, 26, 22, 0.36);
+      box-shadow: 0 6px 16px rgba(31, 26, 22, 0.08);
+    }
+
+    .life-log-followup-header-row {
+      align-items: flex-start;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      justify-content: space-between;
+    }
+
     .life-log-followup-meta {
       display: flex;
       align-items: center;
@@ -234,6 +252,31 @@ block styles
       color: var(--life-log-ink);
       font-weight: 700;
       line-height: 1.25;
+    }
+
+    .life-log-followup-age {
+      background: #f6efe6;
+      border: 1px solid var(--life-log-border);
+      border-radius: 999px;
+      color: var(--life-log-muted);
+      font-size: 0.8rem;
+      font-weight: 800;
+      line-height: 1;
+      padding: 0.28rem 0.6rem;
+      white-space: nowrap;
+    }
+
+    .life-log-followup-age.is-followup-window {
+      background: var(--life-log-accent);
+      border-color: #ad4825;
+      box-shadow: 0 5px 14px rgba(208, 92, 51, 0.28);
+      color: #fff;
+    }
+
+    .life-log-followup-age.is-late {
+      background: var(--life-log-ink);
+      border-color: var(--life-log-ink);
+      color: #fff;
     }
 
     .life-log-followup-preview {

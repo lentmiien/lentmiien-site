@@ -187,6 +187,8 @@
   const visualFollowupsStatus = document.getElementById('llv-followups-status');
   const visualFollowupsRefresh = document.getElementById('llv-followups-refresh');
   const FOLLOWUP_WINDOW_MS = 48 * 60 * 60 * 1000;
+  const FOLLOWUP_TARGET_WINDOW_START_HOURS = 18;
+  const FOLLOWUP_TARGET_WINDOW_END_HOURS = 36;
 
   if (imgWrap && img && overlay && hitbox) {
     const setVisualStatus = (message, isError = false) => {
@@ -216,6 +218,31 @@
         hour: '2-digit',
         minute: '2-digit',
       });
+    };
+
+    const getFollowupAgeTag = (value) => {
+      const date = value ? new Date(value) : null;
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return {
+          label: 'Unknown age',
+          badgeClass: 'life-log-followup-age',
+          itemClass: 'life-log-followup-item',
+        };
+      }
+
+      const hours = Math.max(0, Math.round((Date.now() - date.getTime()) / (60 * 60 * 1000)));
+      const modifier = hours >= FOLLOWUP_TARGET_WINDOW_START_HOURS
+        && hours <= FOLLOWUP_TARGET_WINDOW_END_HOURS
+        ? 'is-followup-window'
+        : hours > FOLLOWUP_TARGET_WINDOW_END_HOURS
+          ? 'is-late'
+          : '';
+
+      return {
+        label: `${hours} hour${hours === 1 ? '' : 's'} ago`,
+        badgeClass: ['life-log-followup-age', modifier].filter(Boolean).join(' '),
+        itemClass: ['life-log-followup-item', modifier].filter(Boolean).join(' '),
+      };
     };
 
     const normalizeCanvas = (canvas) => ({
@@ -363,11 +390,15 @@
 
       items.forEach((item) => {
         const cat = getCategory(item.point.category);
+        const ageTag = getFollowupAgeTag(item.timestamp);
         const card = document.createElement('div');
-        card.className = 'life-log-followup-item';
+        card.className = ageTag.itemClass;
 
         const header = document.createElement('div');
         header.className = 'd-flex flex-column gap-1 mb-3';
+
+        const headerRow = document.createElement('div');
+        headerRow.className = 'life-log-followup-header-row';
 
         const title = document.createElement('div');
         title.className = 'life-log-followup-title';
@@ -380,6 +411,10 @@
         const titleText = document.createElement('span');
         titleText.textContent = cat.label;
 
+        const age = document.createElement('span');
+        age.className = ageTag.badgeClass;
+        age.textContent = ageTag.label;
+
         const meta = document.createElement('div');
         meta.className = 'life-log-followup-meta';
         const location = `${Math.round(item.point.x * 100)}%, ${Math.round(item.point.y * 100)}%`;
@@ -387,7 +422,9 @@
 
         title.appendChild(dot);
         title.appendChild(titleText);
-        header.appendChild(title);
+        headerRow.appendChild(title);
+        headerRow.appendChild(age);
+        header.appendChild(headerRow);
         header.appendChild(meta);
 
         const preview = document.createElement('div');
