@@ -200,6 +200,74 @@ block styles
       font-weight: 600;
     }
 
+    .life-log-followups {
+      background: #fffdfa;
+      border: 1px solid var(--life-log-border);
+      border-radius: 14px;
+      padding: 1rem;
+    }
+
+    .life-log-followups-list {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .life-log-followup-item {
+      border: 1px solid var(--life-log-border);
+      border-radius: 10px;
+      padding: 0.85rem;
+      background: #fff;
+    }
+
+    .life-log-followup-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--life-log-muted);
+      font-size: 0.84rem;
+    }
+
+    .life-log-followup-title {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      color: var(--life-log-ink);
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .life-log-followup-preview {
+      background:
+        linear-gradient(90deg, rgba(31, 26, 22, 0.06) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(31, 26, 22, 0.06) 1px, transparent 1px),
+        #fff8ef;
+      background-size: 25% 25%;
+      border: 1px solid var(--life-log-border);
+      border-radius: 8px;
+      height: 48px;
+      margin-bottom: 0.85rem;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .life-log-followup-preview-point {
+      border: 2px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 1px 5px rgba(31, 26, 22, 0.2);
+      position: absolute;
+      transform: translate(-50%, -50%);
+    }
+
+    .life-log-followup-slider-label {
+      align-items: center;
+      color: var(--life-log-muted);
+      display: flex;
+      font-size: 0.82rem;
+      font-weight: 700;
+      justify-content: space-between;
+      text-transform: uppercase;
+    }
+
     .life-log-visual {
       background: #fff;
       border-radius: 16px;
@@ -449,6 +517,14 @@ block content
                     h4.mb-1 Visual log
                     p.text-muted.mb-0 Tap the body map to place points for pain or discomfort.
                   span.life-log-label Visual log entry
+                .life-log-followups.mb-3
+                  .d-flex.justify-content-between.align-items-start.gap-3.mb-3
+                    div
+                      h5.mb-1 Follow up
+                      span.life-log-label Last 48 hours
+                    button#llv-followups-refresh.btn.btn-outline-secondary.btn-sm(type="button") Refresh
+                  #llv-followups-list.life-log-followups-list
+                  .life-log-status.mt-2#llv-followups-status Loading recent visual logs...
                 .life-log-visual
                   #llv-img-wrap.life-log-visual-canvas
                     img#llv-img(src="/i/img_select.jpg", alt="Body map", draggable="false")

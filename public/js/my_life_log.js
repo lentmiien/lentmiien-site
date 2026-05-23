@@ -183,12 +183,328 @@
   const visualClear = document.getElementById('llv-clear');
   const visualDelete = document.getElementById('llv-delete');
   const visualStatus = document.getElementById('llv-status');
+  const visualFollowupsList = document.getElementById('llv-followups-list');
+  const visualFollowupsStatus = document.getElementById('llv-followups-status');
+  const visualFollowupsRefresh = document.getElementById('llv-followups-refresh');
+  const FOLLOWUP_WINDOW_MS = 48 * 60 * 60 * 1000;
 
   if (imgWrap && img && overlay && hitbox) {
     const setVisualStatus = (message, isError = false) => {
       if (!visualStatus) return;
       visualStatus.textContent = message;
       visualStatus.style.color = isError ? '#b02a37' : '';
+    };
+
+    const setVisualFollowupsStatus = (message, isError = false) => {
+      if (!visualFollowupsStatus) return;
+      visualFollowupsStatus.textContent = message;
+      visualFollowupsStatus.style.color = isError ? '#b02a37' : '';
+    };
+
+    const clampNumber = (value, min, max, fallback) => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return fallback;
+      return Math.min(Math.max(parsed, min), max);
+    };
+
+    const formatFollowupTimestamp = (value) => {
+      const date = value ? new Date(value) : null;
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+      return date.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    };
+
+    const normalizeCanvas = (canvas) => ({
+      width: clampNumber(canvas?.width, 1, 5000, visualLogState.canvas.width || 1),
+      height: clampNumber(canvas?.height, 1, 5000, visualLogState.canvas.height || 1),
+    });
+
+    const normalizeVisualPoint = (point) => {
+      if (!point || typeof point !== 'object') return null;
+      const x = Number(point.x);
+      const y = Number(point.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return {
+        x: clampNumber(x, 0, 1, 0),
+        y: clampNumber(y, 0, 1, 0),
+        radius: clampNumber(point.radius, 2, 28, 8),
+        opacity: clampNumber(point.opacity ?? point.intensity, 25, 100, 80),
+        category: typeof point.category === 'string' && point.category
+          ? point.category
+          : CATEGORIES[0].key,
+      };
+    };
+
+    const parseVisualLogEntry = (entry) => {
+      if (!entry || !entry.v_log_data) return [];
+      let parsed;
+      try {
+        parsed = typeof entry.v_log_data === 'string'
+          ? JSON.parse(entry.v_log_data)
+          : entry.v_log_data;
+      } catch (error) {
+        return [];
+      }
+      const points = Array.isArray(parsed?.points) ? parsed.points : [];
+      const canvas = normalizeCanvas(parsed?.canvas || {});
+      const displayTimestamp = entry.displayTimestamp || formatFollowupTimestamp(entry.timestamp);
+      return points
+        .map((point, pointIndex) => {
+          const normalized = normalizeVisualPoint(point);
+          if (!normalized) return null;
+          return {
+            id: `${entry.id || entry.timestamp || 'visual'}:${pointIndex}`,
+            entryId: entry.id || '',
+            entryLabel: entry.label || 'body_map',
+            displayTimestamp,
+            timestamp: entry.timestamp || '',
+            pointIndex,
+            image: parsed?.image || '/i/img_select.jpg',
+            canvas,
+            point: normalized,
+          };
+        })
+        .filter(Boolean);
+    };
+
+    const createFollowupSlider = ({ label, value, min, max, suffix }) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'd-flex flex-column gap-1';
+
+      const labelEl = document.createElement('label');
+      labelEl.className = 'life-log-followup-slider-label';
+
+      const labelText = document.createElement('span');
+      labelText.textContent = label;
+
+      const valueText = document.createElement('span');
+      valueText.textContent = `${value}${suffix}`;
+
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.className = 'form-range';
+      input.min = min;
+      input.max = max;
+      input.value = value;
+
+      input.addEventListener('input', () => {
+        valueText.textContent = `${input.value}${suffix}`;
+      });
+
+      labelEl.appendChild(labelText);
+      labelEl.appendChild(valueText);
+      wrapper.appendChild(labelEl);
+      wrapper.appendChild(input);
+
+      return { wrapper, input };
+    };
+
+    const saveVisualFollowup = async (item, values, button, itemStatus) => {
+      const point = {
+        ...item.point,
+        radius: clampNumber(values.radius, 2, 28, item.point.radius),
+        opacity: clampNumber(values.opacity, 25, 100, item.point.opacity),
+      };
+      const payload = {
+        type: 'visual_log',
+        label: item.entryLabel || 'body_map',
+        // No timestamp: the API stores the follow-up at the current save time.
+        v_log_data: JSON.stringify({
+          version: 1,
+          image: item.image || '/i/img_select.jpg',
+          canvas: { ...item.canvas },
+          points: [point],
+        }),
+      };
+
+      button.disabled = true;
+      itemStatus.textContent = 'Saving...';
+      setVisualFollowupsStatus('Saving follow-up...');
+
+      try {
+        const resp = await fetch('/mypage/life_log/entry', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data?.error || 'Unable to save follow-up.');
+        }
+        itemStatus.textContent = 'Saved.';
+        setVisualFollowupsStatus('Saved follow-up.');
+        loadVisualFollowups({ silent: true });
+      } catch (error) {
+        itemStatus.textContent = error.message || 'Unable to save.';
+        setVisualFollowupsStatus(error.message || 'Unable to save follow-up.', true);
+      } finally {
+        button.disabled = false;
+      }
+    };
+
+    const renderVisualFollowups = (items) => {
+      if (!visualFollowupsList) return;
+      visualFollowupsList.innerHTML = '';
+
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'life-log-status';
+        empty.textContent = 'No visual logs in the last 48 hours.';
+        visualFollowupsList.appendChild(empty);
+        return;
+      }
+
+      items.forEach((item) => {
+        const cat = getCategory(item.point.category);
+        const card = document.createElement('div');
+        card.className = 'life-log-followup-item';
+
+        const header = document.createElement('div');
+        header.className = 'd-flex flex-column gap-1 mb-3';
+
+        const title = document.createElement('div');
+        title.className = 'life-log-followup-title';
+
+        const dot = document.createElement('span');
+        dot.className = 'cat-dot';
+        dot.style.background = cat.color;
+        dot.style.borderColor = cat.border;
+
+        const titleText = document.createElement('span');
+        titleText.textContent = cat.label;
+
+        const meta = document.createElement('div');
+        meta.className = 'life-log-followup-meta';
+        const location = `${Math.round(item.point.x * 100)}%, ${Math.round(item.point.y * 100)}%`;
+        meta.textContent = [item.displayTimestamp, `Location ${location}`].filter(Boolean).join(' - ');
+
+        title.appendChild(dot);
+        title.appendChild(titleText);
+        header.appendChild(title);
+        header.appendChild(meta);
+
+        const preview = document.createElement('div');
+        preview.className = 'life-log-followup-preview';
+
+        const previewPoint = document.createElement('span');
+        previewPoint.className = 'life-log-followup-preview-point';
+        previewPoint.style.background = cat.color;
+        previewPoint.style.left = `${item.point.x * 100}%`;
+        previewPoint.style.top = `${item.point.y * 100}%`;
+        previewPoint.style.opacity = item.point.opacity / 100;
+        const previewRadius = clampNumber(item.point.radius, 5, 18, 8);
+        previewPoint.style.width = `${previewRadius * 2}px`;
+        previewPoint.style.height = `${previewRadius * 2}px`;
+
+        preview.appendChild(previewPoint);
+
+        const controls = document.createElement('div');
+        controls.className = 'row g-3';
+
+        const radiusCol = document.createElement('div');
+        radiusCol.className = 'col-sm-6';
+        const radius = createFollowupSlider({
+          label: 'Radius',
+          value: item.point.radius,
+          min: 2,
+          max: 28,
+          suffix: 'px',
+        });
+        radiusCol.appendChild(radius.wrapper);
+
+        const opacityCol = document.createElement('div');
+        opacityCol.className = 'col-sm-6';
+        const opacity = createFollowupSlider({
+          label: 'Intensity',
+          value: item.point.opacity,
+          min: 25,
+          max: 100,
+          suffix: '%',
+        });
+        opacityCol.appendChild(opacity.wrapper);
+
+        const updatePreviewPoint = () => {
+          const nextRadius = clampNumber(radius.input.value, 5, 18, 8);
+          previewPoint.style.width = `${nextRadius * 2}px`;
+          previewPoint.style.height = `${nextRadius * 2}px`;
+          previewPoint.style.opacity = clampNumber(opacity.input.value, 25, 100, 80) / 100;
+        };
+        radius.input.addEventListener('input', updatePreviewPoint);
+        opacity.input.addEventListener('input', updatePreviewPoint);
+
+        controls.appendChild(radiusCol);
+        controls.appendChild(opacityCol);
+
+        const actions = document.createElement('div');
+        actions.className = 'd-flex flex-wrap align-items-center gap-2 mt-3';
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-dark btn-sm';
+        button.textContent = 'Save follow-up';
+
+        const itemStatus = document.createElement('span');
+        itemStatus.className = 'life-log-status';
+
+        button.addEventListener('click', () => {
+          saveVisualFollowup(item, {
+            radius: radius.input.value,
+            opacity: opacity.input.value,
+          }, button, itemStatus);
+        });
+
+        actions.appendChild(button);
+        actions.appendChild(itemStatus);
+
+        card.appendChild(header);
+        card.appendChild(preview);
+        card.appendChild(controls);
+        card.appendChild(actions);
+        visualFollowupsList.appendChild(card);
+      });
+    };
+
+    const loadVisualFollowups = async ({ silent = false } = {}) => {
+      if (!visualFollowupsList) return;
+      if (!silent) {
+        setVisualFollowupsStatus('Loading recent visual logs...');
+      }
+
+      const end = new Date();
+      const start = new Date(end.getTime() - FOLLOWUP_WINDOW_MS);
+      const params = new URLSearchParams({
+        start: start.toISOString(),
+        end: end.toISOString(),
+        types: 'visual_log',
+        include_legacy: 'false',
+        limit: '100',
+      });
+
+      try {
+        const resp = await fetch(`/mypage/life_log/entries?${params.toString()}`, {
+          headers: { 'Accept': 'application/json' },
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data?.error || 'Unable to load follow-ups.');
+        }
+        const entries = Array.isArray(data.entries) ? data.entries : [];
+        const items = entries.flatMap(parseVisualLogEntry);
+        renderVisualFollowups(items);
+        setVisualFollowupsStatus(items.length
+          ? `${items.length} recent point${items.length === 1 ? '' : 's'}.`
+          : 'No recent visual logs.');
+      } catch (error) {
+        renderVisualFollowups([]);
+        setVisualFollowupsStatus(error.message || 'Unable to load follow-ups.', true);
+      }
     };
 
     const fillCategorySelector = () => {
@@ -218,6 +534,7 @@
       lifeLogDetails.addEventListener('toggle', () => {
         if (lifeLogDetails.open) {
           setTimeout(updateCanvasSize, 0);
+          loadVisualFollowups({ silent: true });
         }
       });
     }
@@ -418,6 +735,7 @@
         visualLogState.points = [];
         visualLogState.selected = -1;
         renderAll();
+        loadVisualFollowups({ silent: true });
       } catch (error) {
         setVisualStatus(error.message || 'Unable to save visual log.', true);
       }
@@ -429,5 +747,9 @@
     fillCategorySelector();
     renderAll();
     updateCanvasSize();
+    if (visualFollowupsRefresh) {
+      visualFollowupsRefresh.addEventListener('click', () => loadVisualFollowups());
+    }
+    loadVisualFollowups();
   }
 })();
