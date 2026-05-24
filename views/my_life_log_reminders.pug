@@ -1,0 +1,101 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/my_life_log.css")
+
+block content
+  .life-log-page
+    .life-log-hero
+      h1.mb-2 Life Log Reminders
+      p.mb-0 Create triggers for type-label combinations and show reminders on /mypage when a new entry is due.
+      .life-log-actions
+        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage") Back to mypage
+        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage/life_log") View timeline
+
+    if error
+      .life-log-import-warning= error
+
+    .life-log-reminder-form-panel
+      h2.life-log-reminder-page-title= form.id ? 'Edit reminder trigger' : 'New reminder trigger'
+      form#life-log-reminder-form(method="post", action="/mypage/life_log/reminders")
+        input(type="hidden", name="id", value=form.id)
+        .row.g-3
+          .col-md-3
+            label(for="reminder-type") Type
+            select#reminder-type.form-select(name="type", required)
+              each option in typeOptions
+                option(value=option.value, selected=form.type === option.value)= option.label
+          .col-md-7
+            label(for="reminder-label") Label
+            input#reminder-label.form-control(type="text", name="label", value=form.label, list="life-log-reminder-labels", maxlength="160", required)
+            datalist#life-log-reminder-labels
+              each label in labelOptions
+                option(value=label)
+          .col-md-2
+            label Enabled
+            .form-check.form-switch.life-log-reminder-enabled
+              input(type="hidden", name="enabled", value="false")
+              input#reminder-enabled.form-check-input(type="checkbox", name="enabled", value="true", checked=form.enabled)
+              span.form-check-label Active
+        .row.g-3.mt-1
+          .col-md-4
+            label(for="reminder-schedule-type") Schedule
+            select#reminder-schedule-type.form-select(name="schedule_type", data-reminder-schedule-select)
+              option(value="interval", selected=form.scheduleType === 'interval') Every xx days
+              option(value="weekdays", selected=form.scheduleType === 'weekdays') Selected weekdays
+              option(value="month_dates", selected=form.scheduleType === 'month_dates') Selected dates of month
+          .col-md-8
+            .life-log-reminder-schedule-fields(data-reminder-fields="interval")
+              label(for="reminder-interval-days") Every
+              .input-group
+                input#reminder-interval-days.form-control(type="number", min="1", max="366", step="1", name="interval_days", value=form.intervalDays || 1)
+                span.input-group-text day(s)
+            .life-log-reminder-schedule-fields(data-reminder-fields="weekdays")
+              label Weekdays
+              .life-log-reminder-check-grid
+                each day in weekdays
+                  label.life-log-reminder-check
+                    input.form-check-input(type="checkbox", name="weekdays", value=day.value, checked=form.weekdays && form.weekdays.includes(day.value))
+                    span= day.label
+            .life-log-reminder-schedule-fields(data-reminder-fields="month_dates")
+              label Dates of month
+              .life-log-reminder-check-grid.life-log-reminder-date-grid
+                each day in monthDates
+                  label.life-log-reminder-check
+                    input.form-check-input(type="checkbox", name="month_dates", value=day, checked=form.monthDates && form.monthDates.includes(day))
+                    span= day
+        .life-log-import-actions
+          if form.id
+            a.btn.btn-outline-dark(href="/mypage/life_log/reminders") Cancel edit
+          button.btn.btn-dark(type="submit")= form.id ? 'Save reminder' : 'Create reminder'
+
+    .life-log-reminder-list-panel
+      .life-log-import-heading
+        h2 Existing triggers
+        p.mb-0 #{reminders.length} trigger#{reminders.length === 1 ? '' : 's'}
+      if reminders && reminders.length
+        .life-log-reminder-table-wrap
+          table.life-log-reminder-table
+            thead
+              tr
+                th Type
+                th Label
+                th Schedule
+                th Status
+                th Actions
+            tbody
+              each reminder in reminders
+                tr(class=reminder.enabled ? '' : 'is-muted')
+                  td= reminder.typeLabel
+                  td= reminder.label
+                  td= reminder.scheduleLabel
+                  td= reminder.enabled ? 'Active' : 'Paused'
+                  td.life-log-reminder-actions-cell
+                    a.btn.btn-sm.btn-outline-dark(href=`/mypage/life_log/reminders?id=${reminder.id}`) Edit
+                    form(method="post", action=`/mypage/life_log/reminders/${reminder.id}/delete`, onsubmit="return confirm('Delete this reminder trigger?');")
+                      button.btn.btn-sm.btn-outline-danger(type="submit") Delete
+      else
+        p.text-muted.mb-0 No reminder triggers yet.
+
+block script
+  script(src="/js/my_life_log_reminders.js")

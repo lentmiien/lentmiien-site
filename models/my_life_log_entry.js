@@ -16,5 +16,6 @@ const MyLifeLogEntrySchema = new Schema({
 MyLifeLogEntrySchema.index({ timestamp: -1 });
 MyLifeLogEntrySchema.index({ label: 1 });
 MyLifeLogEntrySchema.index({ type: 1 });
+MyLifeLogEntrySchema.index({ type: 1, label: 1, timestamp: -1 });
 
 module.exports = mongoose.model('my_life_log_entry', MyLifeLogEntrySchema);

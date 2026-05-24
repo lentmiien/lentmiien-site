@@ -25,6 +25,42 @@
     statusEl.style.color = isError ? '#b02a37' : '';
   };
 
+  const getReminderKey = (type, label) => `${type}::${String(label || '').trim().toLowerCase()}`;
+
+  const updateReminderCount = () => {
+    const reminderItems = Array.from(document.querySelectorAll('.life-log-reminder-item'));
+    const count = reminderItems.length;
+    const badge = document.querySelector('[data-life-log-reminder-count]');
+    const emptyStatus = document.querySelector('[data-life-log-reminder-empty]');
+    if (badge) {
+      if (count > 0) {
+        badge.textContent = `${count} reminder${count === 1 ? '' : 's'}`;
+        badge.setAttribute('data-life-log-reminder-count', String(count));
+        badge.hidden = false;
+      } else {
+        badge.remove();
+      }
+    }
+    if (emptyStatus && count === 0) {
+      emptyStatus.textContent = 'No due reminders.';
+      emptyStatus.setAttribute('data-life-log-reminder-empty', 'true');
+    }
+  };
+
+  const removeMatchingReminder = (type, label) => {
+    const key = getReminderKey(type, label);
+    document.querySelectorAll('.life-log-reminder-item').forEach((item) => {
+      if (item.getAttribute('data-reminder-key') === key) {
+        item.remove();
+      }
+    });
+    const reminderList = document.querySelector('[data-life-log-reminder-list]');
+    if (reminderList && !reminderList.querySelector('.life-log-reminder-item')) {
+      reminderList.remove();
+    }
+    updateReminderCount();
+  };
+
   const updateTypeRows = () => {
     const isDiary = typeSelect.value === 'diary';
     valueRow.style.display = isDiary ? 'none' : '';
@@ -57,6 +93,23 @@
 
   typeSelect.addEventListener('change', updateTypeRows);
 
+  document.querySelectorAll('.life-log-reminder-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const type = item.getAttribute('data-type') || 'basic';
+      const label = item.getAttribute('data-label') || '';
+      typeSelect.value = type;
+      labelInput.value = label;
+      timestampInput.value = formatDateTimeInput(new Date());
+      updateTypeRows();
+      if (type === 'diary') {
+        textInput.focus();
+      } else {
+        valueInput.focus();
+      }
+      setStatus(`Ready for ${label}.`);
+    });
+  });
+
   document.querySelectorAll('.life-log-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const label = chip.getAttribute('data-label') || chip.textContent || '';
@@ -84,6 +137,7 @@
         throw new Error(data?.error || 'Unable to save entry.');
       }
       setStatus('Saved.');
+      removeMatchingReminder(payload.type, payload.label);
       resetForm();
     } catch (error) {
       setStatus(error.message || 'Unable to save entry.', true);

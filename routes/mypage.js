@@ -30,6 +30,7 @@ const lifeLogCsvUploadMiddleware = (req, res, next) => {
 // Require controller modules.
 const controller = require('../controllers/mypagecontroller');
 const lifeLogController = require('../controllers/mylifelogcontroller');
+const lifeLogReminderController = require('../controllers/myLifeLogReminderController');
 
 /* GET home page. */
 router.get('/', controller.mypage);
@@ -62,6 +63,9 @@ router.get('/getfile', controller.getfile);
 
 // My life log
 router.get('/life_log', lifeLogController.life_log_page);
+router.get('/life_log/reminders', lifeLogReminderController.life_log_reminders_page);
+router.post('/life_log/reminders', lifeLogReminderController.life_log_save_reminder);
+router.post('/life_log/reminders/:id/delete', lifeLogReminderController.life_log_delete_reminder);
 router.get('/life_log/analytics', lifeLogController.life_log_analytics_page);
 router.get('/life_log/entries', lifeLogController.life_log_entries);
 router.post('/life_log/entry', lifeLogController.life_log_add_entry);

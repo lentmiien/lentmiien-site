@@ -14,6 +14,7 @@ const MessageService = require('../services/messageService');
 const ConversationService = require('../services/conversationService');
 const KnowledgeService = require('../services/knowledgeService');
 const myLifeLogService = require('../services/myLifeLogService');
+const myLifeLogReminderService = require('../services/myLifeLogReminderService');
 const {
   buildMypageTiles,
   sanitizeMypageIconSettings,
@@ -282,6 +283,15 @@ exports.mypage = async (req, res) => {
   const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
   const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
   const lifeLogSuggestions = myLifeLogService.getLabelSuggestions(new Date());
+  let lifeLogReminders = [];
+  try {
+    lifeLogReminders = await myLifeLogReminderService.getDueReminders(new Date());
+  } catch (error) {
+    logger.error('Failed to load life log reminders', {
+      category: 'life_log_reminders',
+      metadata: { message: error?.message || error },
+    });
+  }
 
   res.render('mypage', {
     new_openai_models: decoratedOpenAIModels,
@@ -290,6 +300,7 @@ exports.mypage = async (req, res) => {
     embeddingSearchTypes: EMBEDDING_SEARCH_TYPES,
     embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,
     lifeLogSuggestions,
+    lifeLogReminders,
     soraLifecycle,
     mypageTiles,
   });

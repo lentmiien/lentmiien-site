@@ -86,7 +86,9 @@
 
 .life-log-import-panel,
 .life-log-import-summary,
-.life-log-import-result {
+.life-log-import-result,
+.life-log-reminder-form-panel,
+.life-log-reminder-list-panel {
   background: rgba(23, 26, 32, 0.85);
   border: 1px solid var(--log-border);
   border-radius: 16px;
@@ -119,7 +121,8 @@
 
 .life-log-import-upload label,
 .life-log-import-map label,
-.life-log-import-stat-label {
+.life-log-import-stat-label,
+.life-log-reminder-form-panel label {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -129,13 +132,117 @@
 
 .life-log-import-upload input,
 .life-log-import-map input,
-.life-log-import-map select {
+.life-log-import-map select,
+.life-log-reminder-form-panel input,
+.life-log-reminder-form-panel select {
   border-radius: 10px;
   border: 1px solid var(--log-border);
   padding: 0.45rem 0.65rem;
   font-size: 0.9rem;
   background: var(--log-surface-2);
   color: var(--log-ink);
+}
+
+.life-log-reminder-page-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+.life-log-reminder-enabled {
+  min-height: 38px;
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.life-log-reminder-schedule-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.life-log-reminder-check-grid {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.life-log-reminder-date-grid {
+  grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
+}
+
+.life-log-reminder-check {
+  align-items: center;
+  background: var(--log-surface-2);
+  border: 1px solid var(--log-border);
+  border-radius: 10px;
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.life-log-reminder-form-panel .input-group-text {
+  background: var(--log-surface-2);
+  border-color: var(--log-border);
+  color: var(--log-muted);
+}
+
+.life-log-reminder-form-panel .form-check-input {
+  padding: 0;
+  width: 1em;
+  height: 1em;
+}
+
+.life-log-reminder-enabled .form-check-input {
+  width: 2em;
+}
+
+.life-log-reminder-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--log-border);
+  border-radius: 16px;
+  background: var(--log-surface);
+}
+
+.life-log-reminder-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+}
+
+.life-log-reminder-table th,
+.life-log-reminder-table td {
+  border-bottom: 1px solid var(--log-line);
+  padding: 0.75rem;
+  vertical-align: middle;
+}
+
+.life-log-reminder-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--log-muted);
+  font-weight: 600;
+  background: var(--log-surface-2);
+}
+
+.life-log-reminder-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.life-log-reminder-table tr.is-muted {
+  opacity: 0.6;
+}
+
+.life-log-reminder-actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.life-log-reminder-actions-cell form {
+  margin: 0;
 }
 
 .life-log-import-summary {
