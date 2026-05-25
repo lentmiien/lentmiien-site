@@ -4,20 +4,21 @@ block styles
   link(rel="stylesheet", href="/css/my_life_log.css")
 
 block content
+  - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
   .life-log-page
     .life-log-hero
       h1.mb-2 Life Log Reminders
       p.mb-0 Create triggers for type-label combinations and show reminders on /mypage when a new entry is due.
       .life-log-actions
         a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage") Back to mypage
-        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage/life_log") View timeline
+        a.btn.btn-outline-dark.btn-sm.mt-3(href=lifeLogPath) View timeline
 
     if error
       .life-log-import-warning= error
 
     .life-log-reminder-form-panel
       h2.life-log-reminder-page-title= form.id ? 'Edit reminder trigger' : 'New reminder trigger'
-      form#life-log-reminder-form(method="post", action="/mypage/life_log/reminders")
+      form#life-log-reminder-form(method="post", action=`${lifeLogPath}/reminders`)
         input(type="hidden", name="id", value=form.id)
         .row.g-3
           .col-md-3
@@ -66,7 +67,7 @@ block content
                     span= day
         .life-log-import-actions
           if form.id
-            a.btn.btn-outline-dark(href="/mypage/life_log/reminders") Cancel edit
+            a.btn.btn-outline-dark(href=`${lifeLogPath}/reminders`) Cancel edit
           button.btn.btn-dark(type="submit")= form.id ? 'Save reminder' : 'Create reminder'
 
     .life-log-reminder-list-panel
@@ -91,8 +92,8 @@ block content
                   td= reminder.scheduleLabel
                   td= reminder.enabled ? 'Active' : 'Paused'
                   td.life-log-reminder-actions-cell
-                    a.btn.btn-sm.btn-outline-dark(href=`/mypage/life_log/reminders?id=${reminder.id}`) Edit
-                    form(method="post", action=`/mypage/life_log/reminders/${reminder.id}/delete`, onsubmit="return confirm('Delete this reminder trigger?');")
+                    a.btn.btn-sm.btn-outline-dark(href=`${lifeLogPath}/reminders?id=${reminder.id}`) Edit
+                    form(method="post", action=`${lifeLogPath}/reminders/${reminder.id}/delete`, onsubmit="return confirm('Delete this reminder trigger?');")
                       button.btn.btn-sm.btn-outline-danger(type="submit") Delete
       else
         p.text-muted.mb-0 No reminder triggers yet.

@@ -2,6 +2,9 @@
   const lifeLogForm = document.getElementById('life-log-form');
   if (!lifeLogForm) return;
 
+  const lifeLogBasePath = window.LIFE_LOG_BASE_PATH || '/admin/life_log';
+  const lifeLogUrl = (path = '') => `${lifeLogBasePath}${path}`;
+
   const typeSelect = document.getElementById('life-log-type');
   const labelInput = document.getElementById('life-log-label');
   const valueInput = document.getElementById('life-log-value');
@@ -124,7 +127,7 @@
     const payload = collectPayload();
 
     try {
-      const resp = await fetch('/mypage/life_log/entry', {
+      const resp = await fetch(lifeLogUrl('/entry'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -153,7 +156,7 @@
       }
       setStatus('Formatting...');
       try {
-        const resp = await fetch('/mypage/life_log/format', {
+        const resp = await fetch(lifeLogUrl('/format'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -407,7 +410,7 @@
       setVisualFollowupsStatus('Saving follow-up...');
 
       try {
-        const resp = await fetch('/mypage/life_log/entry', {
+        const resp = await fetch(lifeLogUrl('/entry'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -579,7 +582,7 @@
       });
 
       try {
-        const resp = await fetch(`/mypage/life_log/entries?${params.toString()}`, {
+        const resp = await fetch(lifeLogUrl(`/entries?${params.toString()}`), {
           headers: { 'Accept': 'application/json' },
         });
         const data = await resp.json();
@@ -810,7 +813,7 @@
         timestamp: visualTimestamp.value,
       };
       try {
-        const resp = await fetch('/mypage/life_log/entry', {
+        const resp = await fetch(lifeLogUrl('/entry'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

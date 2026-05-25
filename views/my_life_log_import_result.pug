@@ -4,12 +4,13 @@ block styles
   link(rel="stylesheet", href="/css/my_life_log.css")
 
 block content
+  - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
   .life-log-page
     .life-log-hero
       h1.mb-2 CSV import result
       p.mb-0= fileName
       .life-log-actions
-        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage/life_log") Back to timeline
+        a.btn.btn-outline-dark.btn-sm.mt-3(href=lifeLogPath) Back to timeline
 
     .life-log-import-summary
       .life-log-import-stat

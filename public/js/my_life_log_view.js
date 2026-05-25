@@ -1,4 +1,7 @@
 (() => {
+  const lifeLogBasePath = window.LIFE_LOG_BASE_PATH || '/admin/life_log';
+  const lifeLogUrl = (path = '') => `${lifeLogBasePath}${path}`;
+
   const CATEGORIES = [
     { key:'a', label:'Sting / Burn (skin-level)', color:'#FFD700', border:'#866F10'},
     { key:'b', label:'Aching / Tender (deep sore)', color:'#FF4B60', border:'#7E262F'},
@@ -390,7 +393,7 @@
     if (includeLegacy !== undefined) params.set('include_legacy', includeLegacy ? 'true' : 'false');
     types.forEach((type) => params.append('types', type));
     labels.forEach((label) => params.append('labels', label));
-    const resp = await fetch(`/mypage/life_log/entries?${params.toString()}`, {
+    const resp = await fetch(lifeLogUrl(`/entries?${params.toString()}`), {
       headers: { 'Accept': 'application/json' },
     });
     const data = await resp.json();
@@ -873,7 +876,7 @@
 
       button.disabled = true;
       try {
-        const resp = await fetch(`/mypage/life_log/entry/${entryId}`, {
+        const resp = await fetch(lifeLogUrl(`/entry/${entryId}`), {
           method: 'DELETE',
           headers: { 'Accept': 'application/json' },
         });

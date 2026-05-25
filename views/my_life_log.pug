@@ -4,16 +4,17 @@ block styles
   link(rel="stylesheet", href="/css/my_life_log.css")
 
 block content
+  - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
   .life-log-page
     .life-log-hero
       h1.mb-2 My Life Log Timeline
       p.mb-0 Filter by dates, labels, and types. Newer entries show up first, with legacy health logs merged in.
       .life-log-actions
         a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage") Back to mypage
-        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage/life_log/reminders") Reminders
+        a.btn.btn-outline-dark.btn-sm.mt-3(href=`${lifeLogPath}/reminders`) Reminders
         button.btn.btn-primary.btn-sm.mt-3(type="button", data-bs-toggle="modal", data-bs-target="#lifeLogAnalyticsModal") Analytics
 
-    form.life-log-filter(method="get", action="/mypage/life_log")
+    form.life-log-filter(method="get", action=lifeLogPath)
       .row.g-3
         .col-md-4
           label(for="life-log-start") Start
@@ -49,7 +50,7 @@ block content
       .life-log-import-heading
         h2 CSV import
         p.mb-0 Upload a measurement CSV, review detected columns, then map them to life log labels.
-      form.life-log-import-upload(method="post", action="/mypage/life_log/import/preview", enctype="multipart/form-data")
+      form.life-log-import-upload(method="post", action=`${lifeLogPath}/import/preview`, enctype="multipart/form-data")
         .row.g-3.align-items-end
           .col-md-8
             label(for="life-log-csv-file") CSV file
@@ -126,7 +127,7 @@ block content
           button.btn-close(type='button', data-bs-dismiss='modal', aria-label='Close')
         .modal-body
           - const analyticsLabelDefaults = filters.labels ? filters.labels.split(',').map((item) => item.trim()).filter(Boolean) : [];
-          form#lifeLogAnalyticsForm.life-log-analytics-form(data-analytics-mode="external", method="get", action="/mypage/life_log/analytics", target="_blank")
+          form#lifeLogAnalyticsForm.life-log-analytics-form(data-analytics-mode="external", method="get", action=`${lifeLogPath}/analytics`, target="_blank")
             input(type="hidden", name="auto", value="1")
             .row.g-3
               .col-md-4
@@ -170,4 +171,6 @@ block content
           .life-log-analytics-note.text-muted.mt-3 Analytics results open in a new tab.
 
 block script
+  script.
+    window.LIFE_LOG_BASE_PATH = !{JSON.stringify(lifeLogBasePath || '/admin/life_log')};
   script(src="/js/my_life_log_view.js")

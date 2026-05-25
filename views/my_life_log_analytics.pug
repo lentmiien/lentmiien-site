@@ -4,15 +4,16 @@ block styles
   link(rel="stylesheet", href="/css/my_life_log.css")
 
 block content
+  - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
   .life-log-page
     .life-log-hero
       h1.mb-2 Life Log Analytics
       p.mb-0 Explore trends, diary notes, and visual overlays for the selected period.
       .life-log-actions
-        a.btn.btn-outline-dark.btn-sm.mt-3(href="/mypage/life_log") Back to life log
+        a.btn.btn-outline-dark.btn-sm.mt-3(href=lifeLogPath) Back to life log
     - const basicDefaults = Array.isArray(filters.basicLabels) ? filters.basicLabels : [];
     - const medicalDefaults = Array.isArray(filters.medicalLabels) ? filters.medicalLabels : [];
-    form#lifeLogAnalyticsForm.life-log-analytics-form(data-analytics-mode="inline", data-analytics-auto=analyticsAutoRun ? 'true' : 'false', method="get", action="/mypage/life_log/analytics")
+    form#lifeLogAnalyticsForm.life-log-analytics-form(data-analytics-mode="inline", data-analytics-auto=analyticsAutoRun ? 'true' : 'false', method="get", action=`${lifeLogPath}/analytics`)
       .row.g-3
         .col-md-4
           label(for="life-log-analytics-start") Start
@@ -75,4 +76,6 @@ block content
         .life-log-visual-caption.text-muted(data-visual-status)
 
 block script
+  script.
+    window.LIFE_LOG_BASE_PATH = !{JSON.stringify(lifeLogBasePath || '/admin/life_log')};
   script(src="/js/my_life_log_view.js")

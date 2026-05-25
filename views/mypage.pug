@@ -587,138 +587,140 @@ block content
                 option(value="high_quality") High-quality model
                 option(value="combined") Combined (rerank with high-quality)
             button.btn.btn-primary(type="submit") Search
-  .row.mb-4
-    .col
-      - const lifeLogReminderCount = lifeLogReminders && lifeLogReminders.length ? lifeLogReminders.length : 0;
-      details#life-log-details.life-log-details
-        summary.life-log-toggle
-          span.life-log-toggle-title
-            | My Life Log
-            if lifeLogReminderCount
-              span.life-log-reminder-badge(data-life-log-reminder-count=lifeLogReminderCount)= `${lifeLogReminderCount} reminder${lifeLogReminderCount === 1 ? '' : 's'}`
-          span.life-log-toggle-hint
-        .life-log-shell
-          - const lifeLog = lifeLogSuggestions || {};
-          - const lifeLogLabels = lifeLog.all || [];
-          .d-flex.flex-column.flex-lg-row.justify-content-between.gap-3.align-items-start.life-log-header.mb-3
-            div
-              h2.mb-1 My Life Log
-              p.mb-0 Quick entries, diary notes, and body-map visual logs. View the timeline anytime.
-            .d-flex.flex-wrap.gap-2
-              a.btn.btn-outline-dark.btn-sm.mt-1(href="/mypage/life_log/reminders") Manage reminders
-              a.btn.btn-outline-dark.btn-sm.mt-1(href="/mypage/life_log") View timeline
-          .life-log-reminder-section.mb-3
-            .life-log-reminder-section-header
+  if admin
+    - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
+    .row.mb-4
+      .col
+        - const lifeLogReminderCount = lifeLogReminders && lifeLogReminders.length ? lifeLogReminders.length : 0;
+        details#life-log-details.life-log-details
+          summary.life-log-toggle
+            span.life-log-toggle-title
+              | My Life Log
+              if lifeLogReminderCount
+                span.life-log-reminder-badge(data-life-log-reminder-count=lifeLogReminderCount)= `${lifeLogReminderCount} reminder${lifeLogReminderCount === 1 ? '' : 's'}`
+            span.life-log-toggle-hint
+          .life-log-shell
+            - const lifeLog = lifeLogSuggestions || {};
+            - const lifeLogLabels = lifeLog.all || [];
+            .d-flex.flex-column.flex-lg-row.justify-content-between.gap-3.align-items-start.life-log-header.mb-3
               div
-                h3.life-log-reminder-section-title Reminders
-                .life-log-status(data-life-log-reminder-empty=lifeLogReminderCount ? 'false' : 'true')= lifeLogReminderCount ? 'Click a reminder to fill the entry type and label.' : 'No due reminders.'
-              a.btn.btn-outline-dark.btn-sm(href="/mypage/life_log/reminders") Triggers
-            if lifeLogReminderCount
-              .life-log-reminder-list(data-life-log-reminder-list)
-                each reminder in lifeLogReminders
-                  button.life-log-reminder-item(type="button", class=reminder.daysLate > 0 ? 'is-late' : '', data-reminder-key=reminder.reminderKey, data-type=reminder.type, data-label=reminder.label)
-                    span.life-log-reminder-status= reminder.statusLabel
-                    span.life-log-reminder-body
-                      span.life-log-reminder-name= `${reminder.typeLabel}: ${reminder.label}`
-                      span.life-log-reminder-meta= `${reminder.scheduleLabel} - ${reminder.detailLabel} - due ${reminder.dueDate}`
-          .row.g-4
-            .col-lg-5
-              .life-log-panel
-                form#life-log-form
-                  .d-flex.flex-column.gap-3
-                    .d-flex.flex-column
-                      span.life-log-label Type
-                      select#life-log-type.life-log-input(name="type")
-                        option(value="basic") Basic
-                        option(value="medical") Medical
-                        option(value="diary") Diary
-                    .d-flex.flex-column
-                      span.life-log-label Label
-                      input#life-log-label.life-log-input(type="text", name="label", list="life-log-labels", placeholder="e.g. Vitamin C, Mood, Work")
-                      datalist#life-log-labels
-                        each label in lifeLogLabels
-                          option(value=label)
-                    .d-flex.flex-column#life-log-value-row
-                      span.life-log-label Value
-                      input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")
-                    .d-flex.flex-column#life-log-text-row(style="display:none;")
-                      span.life-log-label Diary text
-                      textarea#life-log-text.life-log-input(rows="5", placeholder="Add a short note...")
-                      .d-flex.flex-column.gap-2.mt-2
-                        label.life-log-label(for="life-log-audio") Transcribe audio
-                        input#life-log-audio.form-control(type="file", accept="audio/*")
-                        button#life-log-transcribe.btn.btn-outline-secondary.btn-sm(type="button") Transcribe audio
-                        button#life-log-format.btn.btn-outline-dark.btn-sm(type="button") Polish text with AI
-                    .d-flex.flex-column
-                      span.life-log-label Timestamp
-                      input#life-log-timestamp.life-log-input(type="datetime-local", name="timestamp")
-                    .life-log-actions.d-flex.flex-wrap.gap-2
-                      button#life-log-save.btn.btn-dark(type="submit") Save entry
-                    .life-log-status#life-log-status Ready.
-                if lifeLog.top && lifeLog.top.length
-                  .mt-4
-                    .life-log-label.mb-2 Top labels
-                    .life-log-chips
-                      each label in lifeLog.top
-                        button.life-log-chip(type="button", data-label=label)= label
-                if lifeLog.timeOfDay && lifeLog.timeOfDay.length
-                  .mt-3
-                    .life-log-label.mb-2 Suggested for now
-                    .life-log-chips
-                      each label in lifeLog.timeOfDay
-                        button.life-log-chip(type="button", data-label=label)= label
-                if lifeLog.recent && lifeLog.recent.length
-                  .mt-3
-                    .life-log-label.mb-2 Recently used
-                    .life-log-chips
-                      each label in lifeLog.recent
-                        button.life-log-chip(type="button", data-label=label)= label
-            .col-lg-7
-              .life-log-panel
-                .d-flex.justify-content-between.align-items-start.mb-3
-                  div
-                    h4.mb-1 Visual log
-                    p.text-muted.mb-0 Tap the body map to place points for pain or discomfort.
-                  span.life-log-label Visual log entry
-                .life-log-followups.mb-3
-                  .d-flex.justify-content-between.align-items-start.gap-3.mb-3
+                h2.mb-1 My Life Log
+                p.mb-0 Quick entries, diary notes, and body-map visual logs. View the timeline anytime.
+              .d-flex.flex-wrap.gap-2
+                a.btn.btn-outline-dark.btn-sm.mt-1(href=`${lifeLogPath}/reminders`) Manage reminders
+                a.btn.btn-outline-dark.btn-sm.mt-1(href=lifeLogPath) View timeline
+            .life-log-reminder-section.mb-3
+              .life-log-reminder-section-header
+                div
+                  h3.life-log-reminder-section-title Reminders
+                  .life-log-status(data-life-log-reminder-empty=lifeLogReminderCount ? 'false' : 'true')= lifeLogReminderCount ? 'Click a reminder to fill the entry type and label.' : 'No due reminders.'
+                a.btn.btn-outline-dark.btn-sm(href=`${lifeLogPath}/reminders`) Triggers
+              if lifeLogReminderCount
+                .life-log-reminder-list(data-life-log-reminder-list)
+                  each reminder in lifeLogReminders
+                    button.life-log-reminder-item(type="button", class=reminder.daysLate > 0 ? 'is-late' : '', data-reminder-key=reminder.reminderKey, data-type=reminder.type, data-label=reminder.label)
+                      span.life-log-reminder-status= reminder.statusLabel
+                      span.life-log-reminder-body
+                        span.life-log-reminder-name= `${reminder.typeLabel}: ${reminder.label}`
+                        span.life-log-reminder-meta= `${reminder.scheduleLabel} - ${reminder.detailLabel} - due ${reminder.dueDate}`
+            .row.g-4
+              .col-lg-5
+                .life-log-panel
+                  form#life-log-form
+                    .d-flex.flex-column.gap-3
+                      .d-flex.flex-column
+                        span.life-log-label Type
+                        select#life-log-type.life-log-input(name="type")
+                          option(value="basic") Basic
+                          option(value="medical") Medical
+                          option(value="diary") Diary
+                      .d-flex.flex-column
+                        span.life-log-label Label
+                        input#life-log-label.life-log-input(type="text", name="label", list="life-log-labels", placeholder="e.g. Vitamin C, Mood, Work")
+                        datalist#life-log-labels
+                          each label in lifeLogLabels
+                            option(value=label)
+                      .d-flex.flex-column#life-log-value-row
+                        span.life-log-label Value
+                        input#life-log-value.life-log-input(type="text", name="value", placeholder="e.g. 1, yes, 20 min")
+                      .d-flex.flex-column#life-log-text-row(style="display:none;")
+                        span.life-log-label Diary text
+                        textarea#life-log-text.life-log-input(rows="5", placeholder="Add a short note...")
+                        .d-flex.flex-column.gap-2.mt-2
+                          label.life-log-label(for="life-log-audio") Transcribe audio
+                          input#life-log-audio.form-control(type="file", accept="audio/*")
+                          button#life-log-transcribe.btn.btn-outline-secondary.btn-sm(type="button") Transcribe audio
+                          button#life-log-format.btn.btn-outline-dark.btn-sm(type="button") Polish text with AI
+                      .d-flex.flex-column
+                        span.life-log-label Timestamp
+                        input#life-log-timestamp.life-log-input(type="datetime-local", name="timestamp")
+                      .life-log-actions.d-flex.flex-wrap.gap-2
+                        button#life-log-save.btn.btn-dark(type="submit") Save entry
+                      .life-log-status#life-log-status Ready.
+                  if lifeLog.top && lifeLog.top.length
+                    .mt-4
+                      .life-log-label.mb-2 Top labels
+                      .life-log-chips
+                        each label in lifeLog.top
+                          button.life-log-chip(type="button", data-label=label)= label
+                  if lifeLog.timeOfDay && lifeLog.timeOfDay.length
+                    .mt-3
+                      .life-log-label.mb-2 Suggested for now
+                      .life-log-chips
+                        each label in lifeLog.timeOfDay
+                          button.life-log-chip(type="button", data-label=label)= label
+                  if lifeLog.recent && lifeLog.recent.length
+                    .mt-3
+                      .life-log-label.mb-2 Recently used
+                      .life-log-chips
+                        each label in lifeLog.recent
+                          button.life-log-chip(type="button", data-label=label)= label
+              .col-lg-7
+                .life-log-panel
+                  .d-flex.justify-content-between.align-items-start.mb-3
                     div
-                      h5.mb-1 Follow up
-                      span.life-log-label Last 48 hours
-                    button#llv-followups-refresh.btn.btn-outline-secondary.btn-sm(type="button") Refresh
-                  #llv-followups-list.life-log-followups-list
-                  .life-log-status.mt-2#llv-followups-status Loading recent visual logs...
-                .life-log-visual
-                  #llv-img-wrap.life-log-visual-canvas
-                    img#llv-img(src="/i/img_select.jpg", alt="Body map", draggable="false")
-                    #llv-points-overlay.life-log-visual-overlay
-                    #llv-img-hitbox(style="position:absolute;inset:0;z-index:5;cursor:crosshair;")
-                  .row.mt-3.g-3
-                    .col-md-6
-                      .d-flex.flex-column.gap-2
-                        label.life-log-label(for="llv-radius") Point radius
-                        input#llv-radius.form-range(type="range", min="2", max="28", value="8")
-                        div#llv-radius-val.life-log-status 8 px
-                    .col-md-6
-                      .d-flex.flex-column.gap-2
-                        label.life-log-label(for="llv-opacity") Intensity
-                        input#llv-opacity.form-range(type="range", min="25", max="100", value="80")
-                        div#llv-opacity-val.life-log-status 80%
-                  .row.mt-3.g-3
-                    .col-md-6
-                      .d-flex.flex-column.gap-2
-                        label.life-log-label(for="llv-category") Category
-                        select#llv-category.form-select
-                    .col-md-6
-                      .d-flex.flex-column.gap-2
-                        label.life-log-label(for="llv-timestamp") Timestamp
-                        input#llv-timestamp.form-control(type="datetime-local")
-                  #llv-point-list.life-log-point-list.mt-3
-                  .d-flex.flex-wrap.gap-2.mt-3
-                    button#llv-save.btn.btn-dark(type="button") Save visual log
-                    button#llv-clear.btn.btn-outline-secondary(type="button") Clear
-                    button#llv-delete.btn.btn-outline-danger(type="button" disabled) Delete point
-                  .life-log-status.mt-2#llv-status Ready.
+                      h4.mb-1 Visual log
+                      p.text-muted.mb-0 Tap the body map to place points for pain or discomfort.
+                    span.life-log-label Visual log entry
+                  .life-log-followups.mb-3
+                    .d-flex.justify-content-between.align-items-start.gap-3.mb-3
+                      div
+                        h5.mb-1 Follow up
+                        span.life-log-label Last 48 hours
+                      button#llv-followups-refresh.btn.btn-outline-secondary.btn-sm(type="button") Refresh
+                    #llv-followups-list.life-log-followups-list
+                    .life-log-status.mt-2#llv-followups-status Loading recent visual logs...
+                  .life-log-visual
+                    #llv-img-wrap.life-log-visual-canvas
+                      img#llv-img(src="/i/img_select.jpg", alt="Body map", draggable="false")
+                      #llv-points-overlay.life-log-visual-overlay
+                      #llv-img-hitbox(style="position:absolute;inset:0;z-index:5;cursor:crosshair;")
+                    .row.mt-3.g-3
+                      .col-md-6
+                        .d-flex.flex-column.gap-2
+                          label.life-log-label(for="llv-radius") Point radius
+                          input#llv-radius.form-range(type="range", min="2", max="28", value="8")
+                          div#llv-radius-val.life-log-status 8 px
+                      .col-md-6
+                        .d-flex.flex-column.gap-2
+                          label.life-log-label(for="llv-opacity") Intensity
+                          input#llv-opacity.form-range(type="range", min="25", max="100", value="80")
+                          div#llv-opacity-val.life-log-status 80%
+                    .row.mt-3.g-3
+                      .col-md-6
+                        .d-flex.flex-column.gap-2
+                          label.life-log-label(for="llv-category") Category
+                          select#llv-category.form-select
+                      .col-md-6
+                        .d-flex.flex-column.gap-2
+                          label.life-log-label(for="llv-timestamp") Timestamp
+                          input#llv-timestamp.form-control(type="datetime-local")
+                    #llv-point-list.life-log-point-list.mt-3
+                    .d-flex.flex-wrap.gap-2.mt-3
+                      button#llv-save.btn.btn-dark(type="button") Save visual log
+                      button#llv-clear.btn.btn-outline-secondary(type="button") Clear
+                      button#llv-delete.btn.btn-outline-danger(type="button" disabled) Delete point
+                    .life-log-status.mt-2#llv-status Ready.
   .row 
     .col 
       .mypage-icon-toolbar
@@ -759,5 +761,8 @@ block content
               span.model-tag__status(title="Not saved in AI model cards - click to add")= ' - missing'
 
 block script
-  script(src="/js/my_life_log.js")
+  if admin
+    script.
+      window.LIFE_LOG_BASE_PATH = !{JSON.stringify(lifeLogBasePath || '/admin/life_log')};
+    script(src="/js/my_life_log.js")
   script(src="/js/mypage_icons.js")

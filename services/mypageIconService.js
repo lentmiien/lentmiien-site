@@ -1,10 +1,11 @@
 const MYPAGE_ICON_DEFINITIONS = [
   {
     id: 'my_life_log',
-    href: '/mypage/life_log',
+    href: '/admin/life_log',
     src: '/i/health.svg',
     alt: 'life log',
     label: 'My Life Log',
+    adminOnly: true,
   },
   {
     id: 'learning',

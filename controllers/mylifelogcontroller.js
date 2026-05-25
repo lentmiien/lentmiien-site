@@ -171,6 +171,8 @@ const getImportTypeOptions = () => LIFE_LOG_IMPORT_TYPES.map((type) => ({
   label: TYPE_LABELS[type] || type,
 }));
 
+const getLifeLogBasePath = (req) => req.baseUrl || '/admin/life_log';
+
 const parseImportMappings = (body = {}) => {
   const count = Number.parseInt(body.column_count, 10);
   if (!Number.isFinite(count) || count < 1) return [];
@@ -264,6 +266,7 @@ exports.life_log_page = async (req, res) => {
     res.render('my_life_log', {
       entries: normalizedEntries,
       dailySummary,
+      lifeLogBasePath: getLifeLogBasePath(req),
       filters: {
         start: formatDateTimeInput(start),
         end: formatDateTimeInput(end),
@@ -305,6 +308,7 @@ exports.life_log_analytics_page = async (req, res) => {
     const suggestions = myLifeLogService.getLabelSuggestions(now);
 
     res.render('my_life_log_analytics', {
+      lifeLogBasePath: getLifeLogBasePath(req),
       filters: {
         start: formatDateTimeInput(start),
         end: formatDateTimeInput(end),
@@ -457,6 +461,7 @@ exports.life_log_import_preview = async (req, res) => {
       preview,
       token,
       fileName: req.file.originalname || 'uploaded.csv',
+      lifeLogBasePath: getLifeLogBasePath(req),
       labelOptions,
       typeOptions: getImportTypeOptions(),
     });
@@ -493,6 +498,7 @@ exports.life_log_import = async (req, res) => {
       fileName: req.body?.file_name || 'uploaded CSV',
       parsedImport,
       result,
+      lifeLogBasePath: getLifeLogBasePath(req),
       activeMappings: mappings.filter((mapping) => mapping.enabled && mapping.targetLabel),
     });
   } catch (error) {

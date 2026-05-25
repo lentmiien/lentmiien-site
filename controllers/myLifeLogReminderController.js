@@ -63,6 +63,8 @@ const buildFormFromBody = (body = {}) => ({
   monthDates: numberList(body.month_dates),
 });
 
+const getLifeLogBasePath = (req) => req.baseUrl || '/admin/life_log';
+
 const decorateReminder = (reminder) => ({
   ...reminder,
   id: reminder._id?.toString() || reminder.id || '',
@@ -81,6 +83,7 @@ const renderReminderPage = async (req, res, {
     reminders: reminders.map(decorateReminder),
     form: form || buildBlankForm(),
     error,
+    lifeLogBasePath: getLifeLogBasePath(req),
     labelOptions: labels,
     typeOptions: REMINDER_TYPES.map((type) => ({
       value: type,
@@ -126,7 +129,7 @@ exports.life_log_save_reminder = async (req, res) => {
       weekdays: form.weekdays,
       monthDates: form.monthDates,
     });
-    return res.redirect('/mypage/life_log/reminders');
+    return res.redirect(`${getLifeLogBasePath(req)}/reminders`);
   } catch (error) {
     logger.warning('Invalid life log reminder trigger', {
       category: 'life_log_reminders',
@@ -143,7 +146,7 @@ exports.life_log_save_reminder = async (req, res) => {
 exports.life_log_delete_reminder = async (req, res) => {
   try {
     await myLifeLogReminderService.deleteTrigger(req.params.id);
-    return res.redirect('/mypage/life_log/reminders');
+    return res.redirect(`${getLifeLogBasePath(req)}/reminders`);
   } catch (error) {
     logger.error('Failed to delete life log reminder trigger', {
       category: 'life_log_reminders',

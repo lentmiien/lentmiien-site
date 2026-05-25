@@ -11,6 +11,7 @@ const toolManagerController = require('../controllers/toolManagerController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
 const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminController');
 const tapoController = require('../controllers/tapoController');
+const lifeLogRouter = require('./lifeLog');
 
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
@@ -166,6 +167,7 @@ router.post('/audio-workflow/jobs/:jobId/quality-rating', audioWorkflowControlle
 router.post('/audio-workflow/triggers/save', audioWorkflowController.saveTrigger);
 router.post('/audio-workflow/triggers/:id/toggle', audioWorkflowController.toggleTrigger);
 router.post('/audio-workflow/triggers/:id/delete', audioWorkflowController.deleteTrigger);
+router.use('/life_log', lifeLogRouter);
 
 router.get('/embedding-test', controller.embedding_test_page);
 router.post('/embedding-test', controller.embedding_test_generate);

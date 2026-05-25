@@ -5,6 +5,9 @@ const CATEGORIES = [
   { key:'d', label:'Head Pressure / Throb', color:'#B455FF', border:'#5B277D'},
   { key:'e', label:'Queasy / Off (stomach + whole-body unwell)', color:'#FFEC80', border:'#BCAA43'}
 ];
+const lifeLogBasePath = window.LIFE_LOG_BASE_PATH || '/admin/life_log';
+const lifeLogUrl = (path = '') => `${lifeLogBasePath}${path}`;
+
 function getCategory(k) {
   return CATEGORIES.find(c=>c.key===k) || CATEGORIES[0];
 }
@@ -219,7 +222,7 @@ async function apiSave(dateStr, points) {
   };
 
   try {
-    const resp = await fetch('/mypage/life_log/entry', {
+    const resp = await fetch(lifeLogUrl('/entry'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(payload),
@@ -246,7 +249,7 @@ async function apiLoad(dateStr) {
       end: end.toISOString(),
       limit: '1',
     });
-    const resp = await fetch(`/mypage/life_log/entries?${params.toString()}`, {
+    const resp = await fetch(lifeLogUrl(`/entries?${params.toString()}`), {
       headers: { 'Accept': 'application/json' },
     });
     const contentType = resp.headers.get('content-type') || '';

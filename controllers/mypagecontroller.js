@@ -282,15 +282,17 @@ exports.mypage = async (req, res) => {
   const from = today;
   const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
   const { presences, tasks } = await ScheduleTaskService.getTasksForWindow(userId, from, to);
-  const lifeLogSuggestions = myLifeLogService.getLabelSuggestions(new Date());
+  const lifeLogSuggestions = isAdmin ? myLifeLogService.getLabelSuggestions(new Date()) : null;
   let lifeLogReminders = [];
-  try {
-    lifeLogReminders = await myLifeLogReminderService.getDueReminders(new Date());
-  } catch (error) {
-    logger.error('Failed to load life log reminders', {
-      category: 'life_log_reminders',
-      metadata: { message: error?.message || error },
-    });
+  if (isAdmin) {
+    try {
+      lifeLogReminders = await myLifeLogReminderService.getDueReminders(new Date());
+    } catch (error) {
+      logger.error('Failed to load life log reminders', {
+        category: 'life_log_reminders',
+        metadata: { message: error?.message || error },
+      });
+    }
   }
 
   res.render('mypage', {
@@ -301,6 +303,7 @@ exports.mypage = async (req, res) => {
     embeddingSearchDefaultType: EMBEDDING_DEFAULT_SEARCH_TYPE,
     lifeLogSuggestions,
     lifeLogReminders,
+    lifeLogBasePath: '/admin/life_log',
     soraLifecycle,
     mypageTiles,
   });
