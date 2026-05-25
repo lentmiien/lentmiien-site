@@ -1596,8 +1596,11 @@ code {
   border-bottom: 1px solid var(--divider);
   background: transparent;
   color: var(--text-secondary);
+  min-height: 44px;
   padding: 0.5rem 0.75rem;
   text-align: left;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .receipt-autocomplete-option:last-child {

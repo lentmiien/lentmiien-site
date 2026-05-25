@@ -5,10 +5,6 @@ block content
   - const budgetDateValue = budgetPrefill && budgetPrefill.date ? budgetPrefill.date : (receipt && receipt.date ? receipt.date.toISOString().split('T')[0] : '');
   - const creditDateValue = creditPrefill && creditPrefill.transactionDate ? creditPrefill.transactionDate : budgetDateValue;
   - const typeOptions = Array.isArray(types) && types.length ? types : ['income', 'expense', 'saving'];
-  - const autocompleteSuggestions = typeof receiptAutocomplete !== 'undefined' && receiptAutocomplete ? receiptAutocomplete : {};
-  - const businessSuggestions = Array.isArray(autocompleteSuggestions.businesses) ? autocompleteSuggestions.businesses : [];
-  - const tagSuggestions = Array.isArray(autocompleteSuggestions.tags) ? autocompleteSuggestions.tags : [];
-  - const creditLabelSuggestions = Array.isArray(autocompleteSuggestions.creditLabels) ? autocompleteSuggestions.creditLabels : [];
   .receipt-entry-page
     h1 Add receipt to ledger
     p.page-intro Turn this receipt into a budget or credit-card entry with your saved mapping rules.
@@ -71,7 +67,7 @@ block content
             input#amount.form-control(type="number", step="0.01", name="amount", value=amountValue, required)
           .form-field
             label(for="transaction_business") Business
-            input#transaction_business.form-control(type="text", name="transaction_business", value=budgetPrefill && budgetPrefill.transaction_business ? budgetPrefill.transaction_business : (receipt.business_name || ''), placeholder="Store or vendor name", data-required-when="budget", list="receipt-business-suggestions")
+            input#transaction_business.form-control(type="text", name="transaction_business", value=budgetPrefill && budgetPrefill.transaction_business ? budgetPrefill.transaction_business : (receipt.business_name || ''), placeholder="Store or vendor name", data-required-when="budget", data-single-autocomplete="businesses", autocomplete="off")
         .entry-mode-toggle
           button(type="button", data-mode-toggle="budget", class=entryMode === 'budget' ? 'is-active' : '') Budget transaction
           button(type="button", data-mode-toggle="credit", class=entryMode === 'credit' ? 'is-active' : '') Credit card transaction
@@ -139,7 +135,7 @@ block content
                   option(value=cardValue, selected=creditPrefill && creditPrefill.cardId === cardValue)= card.name
             .form-field
               label(for="label") Description
-              input#label.form-control(type="text", name="label", value=creditPrefill && creditPrefill.label || (receipt.business_name || ''), placeholder="Statement label", data-required-when="credit", list="receipt-credit-label-suggestions")
+              input#label.form-control(type="text", name="label", value=creditPrefill && creditPrefill.label || (receipt.business_name || ''), placeholder="Statement label", data-required-when="credit", data-single-autocomplete="creditLabels", autocomplete="off")
             .form-field
               .form-check.mt-4
                 input#external.form-check-input(type="checkbox", name="external", value="true", checked=creditPrefill && creditPrefill.external)
@@ -157,20 +153,16 @@ block content
     each cat in categories || []
       - const catId = cat._id ? cat._id.toString() : '';
       option(value=catId)= cat.title
-  datalist#receipt-business-suggestions
-    each business in businessSuggestions
-      option(value=business)
-  datalist#receipt-credit-label-suggestions
-    each label in creditLabelSuggestions
-      option(value=label)
 
 block script
   - const scriptAutocompleteSuggestions = typeof receiptAutocomplete !== 'undefined' && receiptAutocomplete ? receiptAutocomplete : {};
+  - const scriptBusinessSuggestions = Array.isArray(scriptAutocompleteSuggestions.businesses) ? scriptAutocompleteSuggestions.businesses : [];
   - const scriptTagSuggestions = Array.isArray(scriptAutocompleteSuggestions.tags) ? scriptAutocompleteSuggestions.tags : [];
+  - const scriptCreditLabelSuggestions = Array.isArray(scriptAutocompleteSuggestions.creditLabels) ? scriptAutocompleteSuggestions.creditLabels : [];
   - const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
   script(type="application/json", id="mapping-data")!= JSON.stringify(mappingMatches || [])
   script(type="application/json", id="prefill-data")!= JSON.stringify({ defaults: { budgetPrefill: defaultBudgetPrefill || {}, creditPrefill: defaultCreditPrefill || {}, entryMode: defaultEntryMode || 'budget' }, applied: { budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget', appliedRuleId: appliedRuleId || null } })
-  script(type="application/json", id="autocomplete-data")!= safeJson({ tags: scriptTagSuggestions })
+  script(type="application/json", id="autocomplete-data")!= safeJson({ businesses: scriptBusinessSuggestions, tags: scriptTagSuggestions, creditLabels: scriptCreditLabelSuggestions })
   script.
     (function () {
       const parseJson = function (id, fallback) {
@@ -276,10 +268,50 @@ block script
         else el.removeAttribute('checked');
       };
 
-      const setupTokenAutocomplete = function (input, suggestions) {
-        const source = Array.isArray(suggestions)
-          ? suggestions.map(function (item) { return typeof item === 'string' ? item.trim() : ''; }).filter(Boolean)
-          : [];
+      const normalizeAutocompleteValue = function (value) {
+        return String(value || '').trim().toLowerCase();
+      };
+
+      const cleanSuggestionList = function (suggestions) {
+        const seen = new Set();
+        const source = [];
+        if (!Array.isArray(suggestions)) return source;
+
+        suggestions.forEach(function (item) {
+          const value = typeof item === 'string' ? item.trim() : '';
+          const key = normalizeAutocompleteValue(value);
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          source.push(value);
+        });
+
+        return source;
+      };
+
+      const attachOptionHandlers = function (button, onSelect) {
+        let selectedEarly = false;
+        const selectEarly = function (event) {
+          if (event.cancelable) event.preventDefault();
+          selectedEarly = true;
+          onSelect();
+        };
+
+        if (window.PointerEvent) {
+          button.addEventListener('pointerdown', selectEarly);
+        } else {
+          button.addEventListener('mousedown', selectEarly);
+          button.addEventListener('touchstart', selectEarly, { passive: false });
+        }
+
+        button.addEventListener('click', function (event) {
+          event.preventDefault();
+          if (selectedEarly) return;
+          onSelect();
+        });
+      };
+
+      const setupSingleAutocomplete = function (input, suggestions) {
+        const source = cleanSuggestionList(suggestions);
         if (!input || !source.length) return;
 
         const field = input.closest('.form-field') || input.parentNode;
@@ -295,9 +327,118 @@ block script
         input.setAttribute('aria-autocomplete', 'list');
         input.setAttribute('aria-expanded', 'false');
 
-        const normalize = function (value) {
-          return String(value || '').trim().toLowerCase();
+        const buildMatches = function () {
+          const query = normalizeAutocompleteValue(input.value);
+          return source.filter(function (suggestion) {
+            const key = normalizeAutocompleteValue(suggestion);
+            return !query || key.includes(query);
+          }).slice(0, 8);
         };
+
+        const hideMenu = function () {
+          menu.hidden = true;
+          input.setAttribute('aria-expanded', 'false');
+          activeIndex = -1;
+        };
+
+        const setActive = function (index) {
+          activeIndex = index;
+          Array.from(menu.children).forEach(function (child, childIndex) {
+            child.classList.toggle('is-active', childIndex === activeIndex);
+          });
+        };
+
+        const selectSuggestion = function (value) {
+          input.value = value;
+          if (typeof input.setSelectionRange === 'function') {
+            const cursor = input.value.length;
+            input.setSelectionRange(cursor, cursor);
+          }
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          hideMenu();
+        };
+
+        const renderMenu = function () {
+          if (input.disabled) {
+            hideMenu();
+            return;
+          }
+
+          matches = buildMatches();
+          menu.innerHTML = '';
+          if (!matches.length) {
+            hideMenu();
+            return;
+          }
+
+          matches.forEach(function (suggestion, index) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'receipt-autocomplete-option';
+            button.textContent = suggestion;
+            button.setAttribute('role', 'option');
+            attachOptionHandlers(button, function () {
+              selectSuggestion(suggestion);
+            });
+            button.addEventListener('mouseenter', function () {
+              setActive(index);
+            });
+            menu.appendChild(button);
+          });
+
+          menu.hidden = false;
+          input.setAttribute('aria-expanded', 'true');
+          setActive(Math.min(Math.max(activeIndex, 0), matches.length - 1));
+        };
+
+        input.addEventListener('input', renderMenu);
+        input.addEventListener('focus', renderMenu);
+        input.addEventListener('click', renderMenu);
+        input.addEventListener('blur', function () {
+          window.setTimeout(hideMenu, 120);
+        });
+        input.addEventListener('keydown', function (event) {
+          if (menu.hidden) {
+            if (event.key === 'ArrowDown') renderMenu();
+            return;
+          }
+
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setActive((activeIndex + 1) % matches.length);
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActive((activeIndex - 1 + matches.length) % matches.length);
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            selectSuggestion(matches[activeIndex] || matches[0]);
+          } else if (event.key === 'Tab' && activeIndex >= 0) {
+            event.preventDefault();
+            selectSuggestion(matches[activeIndex]);
+          } else if (event.key === 'Escape') {
+            hideMenu();
+          }
+        });
+      };
+
+      const setupTokenAutocomplete = function (input, suggestions) {
+        const source = cleanSuggestionList(suggestions);
+        if (!input || !source.length) return;
+
+        const field = input.closest('.form-field') || input.parentNode;
+        const menu = document.createElement('div');
+        let matches = [];
+        let activeIndex = -1;
+
+        field.classList.add('receipt-autocomplete-field');
+        menu.className = 'receipt-autocomplete-menu';
+        menu.hidden = true;
+        menu.setAttribute('role', 'listbox');
+        field.appendChild(menu);
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-expanded', 'false');
+
+        const normalize = normalizeAutocompleteValue;
 
         const getParts = function () {
           const value = input.value || '';
@@ -414,8 +555,7 @@ block script
             button.className = 'receipt-autocomplete-option';
             button.textContent = suggestion;
             button.setAttribute('role', 'option');
-            button.addEventListener('mousedown', function (event) {
-              event.preventDefault();
+            attachOptionHandlers(button, function () {
               selectSuggestion(suggestion);
             });
             button.addEventListener('mouseenter', function () {
@@ -547,6 +687,14 @@ block script
         });
       });
 
+      setupSingleAutocomplete(
+        form.querySelector('[data-single-autocomplete="businesses"]'),
+        autocompleteData.businesses || []
+      );
+      setupSingleAutocomplete(
+        form.querySelector('[data-single-autocomplete="creditLabels"]'),
+        autocompleteData.creditLabels || []
+      );
       setupTokenAutocomplete(
         form.querySelector('[data-token-autocomplete="tags"]'),
         autocompleteData.tags || []

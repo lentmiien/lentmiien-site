@@ -326,6 +326,8 @@ describe('receiptcontroller receipt entry form', () => {
     expect(html).toContain('class="ledger-form is-hidden" data-section="budget"');
     expect(html).toContain('class="ledger-form" data-section="credit"');
     expect(html).toContain('autocomplete="off"');
+    expect(html).toContain('data-single-autocomplete="businesses"');
+    expect(html).toContain('data-single-autocomplete="creditLabels"');
     expect(html).toContain('id="external" type="checkbox" name="external" value="true" checked');
 
     const prefillMatch = html.match(/<script type="application\/json" id="prefill-data">([\s\S]*?)<\/script>/);
