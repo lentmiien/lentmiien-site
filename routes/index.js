@@ -23,7 +23,9 @@ router.get('/scroll_test', controller.scroll_test);
 /****************************/
 // TEST TEST TEST TEST TEST //
 /****************************/
-router.get('/electricity_usage', controller.electricity_usage);
+router.get('/electricity_usage', (req, res) => {
+  res.redirect(301, '/admin/tapo');
+});
 
 /****************************/
 // TEST TEST TEST TEST TEST //

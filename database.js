@@ -80,9 +80,6 @@ const Agent5ConversationBehavior = require('./models/agent5_conversation_behavio
 // Batch
 const BatchPromptModel = require('./models/batchprompt');
 const BatchRequestModel = require('./models/batchrequest');
-// El
-const LogModel = require('./models/log');
-const SummaryModel = require('./models/summary');
 // Quick note
 const LocationModel = require('./models/location');
 const QuicknoteModel = require('./models/quicknote');
@@ -213,8 +210,6 @@ module.exports = {
   Agent5ConversationBehavior,
   BatchPromptModel,
   BatchRequestModel,
-  LogModel,
-  SummaryModel,
   LocationModel,
   QuicknoteModel,
   BookmarkModel,

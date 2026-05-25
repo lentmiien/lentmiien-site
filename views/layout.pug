@@ -154,8 +154,6 @@ html(lang='en')
               +navLink('/scheduleTask/calendar', 'Schedule')
             if hasPermission("emergencystock")
               +navLink('/es/es_dashboard', 'Emergency Stock')
-            if canUseTestLinks
-              +navLink('/electricity_usage', 'Electricity usage', 'secondary')
             if hasPermission("shoppinglist")
               +navLink('/shopping-list', 'Shopping list')
         if hasPermission("cooking")

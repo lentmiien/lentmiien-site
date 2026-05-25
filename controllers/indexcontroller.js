@@ -1,4 +1,4 @@
-const { LogModel, SummaryModel, AggregatedDataModel, DetailedDataModel, Dht22AggregatedData, Dht22DetailedData, ExchangeRate } = require('../database');
+const { AggregatedDataModel, DetailedDataModel, Dht22AggregatedData, Dht22DetailedData, ExchangeRate } = require('../database');
 const logger = require('../utils/logger');
 const { diffJSON } = require('../utils/diffJSON');
 
@@ -158,15 +158,6 @@ exports.download_test = async (req, res) => {
 exports.scroll_test = (req, res) => {
   res.render('scroll_test')
 };
-
-/****************************/
-// TEST TEST TEST TEST TEST //
-/****************************/
-exports.electricity_usage = async (req, res) => {
-  const log = await LogModel.find();
-  const summary = await SummaryModel.find();
-  res.render('electricity_usage', {log, summary});
-}
 
 /****************************/
 // TEST TEST TEST TEST TEST //
