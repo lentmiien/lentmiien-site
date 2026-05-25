@@ -225,7 +225,7 @@ describe('budgetService', () => {
         from_account: 'a1',
         to_account: 'a2',
         from_fee: 1,
-        to_fee: 0,
+        to_fee: 1,
         categories: 'Food',
         tags: 'dine',
         type: 'expense',
@@ -245,8 +245,16 @@ describe('budgetService', () => {
     expect(values).toMatchObject({
       from_account: 'a1',
       to_account: 'a2',
+      to_fee: null,
       amountAvg: 45,
     });
+  });
+
+  test('searchBusiness and businessLastValues return empty results for blank input', async () => {
+    await expect(budgetService.searchBusiness('')).resolves.toEqual([]);
+    await expect(budgetService.businessLastValues('')).resolves.toEqual({});
+    expect(TransactionDBModel.aggregate).not.toHaveBeenCalled();
+    expect(TransactionDBModel.find).not.toHaveBeenCalled();
   });
 
   test('insertTransaction persists new document', async () => {
@@ -278,7 +286,45 @@ describe('budgetService', () => {
     });
   });
 
+  test('getReceiptEntrySuggestions returns business names and split tag values', async () => {
+    TransactionDBModel.aggregate.mockResolvedValue([
+      { value: 'Market' },
+      { value: 'Cafe' },
+      { value: ' cafe ' },
+      { value: '' },
+    ]);
+    TransactionDBModel.distinct.mockResolvedValue([
+      'food | grocery',
+      'Food, errands',
+      '',
+      null,
+    ]);
+
+    const suggestions = await budgetService.getReceiptEntrySuggestions({ limit: 50 });
+
+    expect(TransactionDBModel.aggregate).toHaveBeenCalledWith(expect.any(Array));
+    expect(TransactionDBModel.distinct).toHaveBeenCalledWith('tags');
+    expect(suggestions).toEqual({
+      businesses: ['Cafe', 'Market'],
+      tags: ['errands', 'food', 'grocery'],
+    });
+  });
+
   test('getTransactionsByPeriod validates input and formats records', async () => {
+    Receipt.find.mockResolvedValue([
+      {
+        _id: createObjectId('receipt-2'),
+        date: new Date('2024-05-15T00:00:00Z'),
+        amount: 25,
+      },
+    ]);
+    Payroll.find.mockResolvedValue([
+      {
+        _id: createObjectId('payroll-2'),
+        payDate: new Date('2024-05-15T00:00:00Z'),
+        bankTransferAmount: 25,
+      },
+    ]);
     TransactionDBModel.find.mockReturnValue({
       sort: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue([
@@ -315,6 +361,10 @@ describe('budgetService', () => {
       displayDate: '2024-05-15',
       fromAccountName: 'Wallet',
       toAccountName: 'Card',
+      linkedReceiptId: 'receipt-2',
+      linkedPayrollId: 'payroll-2',
+      hasLinkedReceipt: true,
+      hasLinkedPayroll: true,
     });
   });
 

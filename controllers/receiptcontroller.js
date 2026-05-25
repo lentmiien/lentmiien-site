@@ -372,10 +372,18 @@ exports.receipt_entry_form = async (req, res, next) => {
       return res.status(404).render('receipt_entry_result', { ok: false, error: 'Receipt not found.' });
     }
 
-    const [referenceLists = {}, creditCards = [], rules = []] = await Promise.all([
+    const [
+      referenceLists = {},
+      creditCards = [],
+      rules = [],
+      budgetSuggestions = {},
+      creditLabelSuggestions = [],
+    ] = await Promise.all([
       BudgetService.getReferenceLists(),
       CreditCardService.listCards({ includeStats: false }),
       ReceiptMappingRule.find({}).sort({ priority: -1, updatedAt: -1 }),
+      BudgetService.getReceiptEntrySuggestions({ limit: 300 }),
+      CreditCardService.getLabelSuggestions({ limit: 300 }),
     ]);
     const mappingMatches = getMatchingRules(receipt, rules);
     const requestedRuleId = typeof req.query.rule === 'string' ? req.query.rule : null;
@@ -406,6 +414,11 @@ exports.receipt_entry_form = async (req, res, next) => {
       budgetPrefill,
       creditPrefill,
       entryMode: resolveEntryMode(receipt, appliedRule),
+      receiptAutocomplete: {
+        businesses: budgetSuggestions.businesses || [],
+        tags: budgetSuggestions.tags || [],
+        creditLabels: (creditLabelSuggestions || []).map((entry) => entry.label).filter(Boolean),
+      },
     });
   } catch (error) {
     if (typeof next === 'function') {

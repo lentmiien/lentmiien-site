@@ -748,6 +748,25 @@ const creditCardService = {
     };
   },
 
+  async getLabelSuggestions(options = {}) {
+    const limit = Math.max(20, Math.min(500, Number(options.limit) || 250));
+    const rows = await CreditCardTransaction.aggregate([
+      { $match: { label: { $nin: ['', null] } } },
+      {
+        $group: {
+          _id: '$label',
+          count: { $sum: 1 },
+          latestDate: { $max: '$transactionDate' },
+        },
+      },
+      { $sort: { count: -1, latestDate: -1, _id: 1 } },
+      { $limit: limit },
+      { $project: { _id: 0, label: '$_id', count: 1 } },
+    ]);
+
+    return rows;
+  },
+
   async createTransaction(payload) {
     const {
       cardId,

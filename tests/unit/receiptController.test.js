@@ -38,10 +38,12 @@ jest.mock('../../services/conversationService', () => jest.fn().mockImplementati
 jest.mock('../../services/knowledgeService', () => jest.fn().mockImplementation(() => ({})));
 jest.mock('../../services/budgetService', () => ({
   getReferenceLists: jest.fn(),
+  getReceiptEntrySuggestions: jest.fn(),
   insertTransaction: jest.fn(),
 }));
 jest.mock('../../services/creditCardService', () => ({
   listCards: jest.fn(),
+  getLabelSuggestions: jest.fn(),
   createTransaction: jest.fn(),
 }));
 
@@ -115,6 +117,8 @@ describe('receiptcontroller history filters', () => {
 describe('receiptcontroller receipt entry form', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    BudgetService.getReceiptEntrySuggestions.mockResolvedValue({ businesses: [], tags: [] });
+    CreditCardService.getLabelSuggestions.mockResolvedValue([]);
   });
 
   test('renders credit mapping state and receipt defaults separately', async () => {
@@ -184,6 +188,11 @@ describe('receiptcontroller receipt entry form', () => {
         external: true,
         externalMultiplier: 2.5,
       }),
+      receiptAutocomplete: {
+        businesses: [],
+        tags: [],
+        creditLabels: [],
+      },
     }));
   });
 

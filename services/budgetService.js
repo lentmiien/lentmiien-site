@@ -311,6 +311,62 @@ async function businessLastValues(name){
   return out;
 }
 
+function normalizeSuggestion(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function uniqueSorted(values) {
+  const seen = new Set();
+  const out = [];
+  values.forEach((value) => {
+    const normalized = normalizeSuggestion(value);
+    if (!normalized) return;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(normalized);
+  });
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+function splitTagValues(values) {
+  const pieces = [];
+  (values || []).forEach((value) => {
+    normalizeSuggestion(value)
+      .split(/[|,]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach((part) => pieces.push(part));
+  });
+  return uniqueSorted(pieces);
+}
+
+async function getReceiptEntrySuggestions(options = {}) {
+  const limit = Math.max(20, Math.min(500, Number(options.limit) || 250));
+  const [businessRows, rawTags] = await Promise.all([
+    TransactionDBModel.aggregate([
+      { $match: { transaction_business: { $nin: ['', null] } } },
+      {
+        $group: {
+          _id: '$transaction_business',
+          count: { $sum: 1 },
+          latestDate: { $max: '$date' },
+        },
+      },
+      { $sort: { count: -1, latestDate: -1, _id: 1 } },
+      { $limit: limit },
+      { $project: { _id: 0, value: '$_id' } },
+    ]),
+    TransactionDBModel.distinct('tags'),
+  ]);
+
+  return {
+    businesses: uniqueSorted(businessRows.map((row) => row.value)).slice(0, limit),
+    tags: splitTagValues(rawTags).slice(0, limit),
+  };
+}
+
 /* 4)  Insert new transaction  */
 async function insertTransaction(body){
   const t = new TransactionDBModel(body);
@@ -765,6 +821,7 @@ module.exports = {
   getCategoryBreakdown     : breakdown,
   searchBusiness,
   businessLastValues,
+  getReceiptEntrySuggestions,
   insertTransaction,
   getReferenceLists,
   getTransactionsByPeriod,
