@@ -99,6 +99,7 @@ const ReceiptMappingRule = require('./models/receipt_mapping_rule');
 const ProductDetails = require('./models/product_details');
 // OpenAI Usage
 const OpenAIUsage = require('./models/openai_usage');
+const OpenAISubscriptionPlan = require('./models/openai_subscription_plan');
 // AI model cards
 const AIModelCards = require('./models/ai_model_card');
 // Gallery images
@@ -216,6 +217,7 @@ module.exports = {
   ReceiptMappingRule,
   ProductDetails,
   OpenAIUsage,
+  OpenAISubscriptionPlan,
   AIModelCards,
   Images,
   GoodImage,

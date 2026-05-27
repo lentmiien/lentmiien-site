@@ -58,7 +58,10 @@
       month: entry.month,
       label: entry.label,
       date: parseMonth(entry.month),
+      apiCost: Number(entry.apiCost) || 0,
+      subscriptionCost: Number(entry.subscriptionCost) || 0,
       totalCost: Number(entry.totalCost) || 0,
+      subscriptionPlanName: entry.subscriptionPlanName || 'Free',
     }))
     .filter((entry) => entry.date instanceof Date && !Number.isNaN(entry.date.getTime()))
     .sort((a, b) => a.date - b.date);
@@ -66,6 +69,8 @@
   const monthlyDetailSeries = monthlyCards.map((month) => ({
     month: month.month,
     label: month.label,
+    apiCost: Number(month.apiCost) || 0,
+    subscriptionCost: Number(month.subscriptionCost) || 0,
     totalCost: Number(month.totalCost) || 0,
     dailyEntries: Array.isArray(month.dailyEntries)
       ? month.dailyEntries
@@ -120,7 +125,8 @@
 
     const width = container.clientWidth || container.parentElement?.clientWidth || 600;
     const height = Math.max(280, Math.floor(width * 0.45));
-    const margin = { top: 32, right: 32, bottom: 56, left: 72 };
+    const isCompactLegend = width < 520;
+    const margin = { top: isCompactLegend ? 52 : 32, right: 32, bottom: 56, left: 72 };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
 
@@ -157,18 +163,41 @@
       .attr('y1', (d) => yScale(d))
       .attr('y2', (d) => yScale(d));
 
-    const areaGenerator = d3.area()
+    const apiAreaGenerator = d3.area()
       .curve(d3.curveMonotoneX)
       .x((d) => xScale(d.date))
       .y0(innerHeight)
-      .y1((d) => yScale(d.totalCost));
+      .y1((d) => yScale(d.apiCost));
 
     chart.append('path')
       .datum(timelineSeries)
       .attr('fill', 'rgba(37, 99, 235, 0.18)')
-      .attr('d', areaGenerator);
+      .attr('d', apiAreaGenerator);
 
-    const lineGenerator = d3.line()
+    const subscriptionAreaGenerator = d3.area()
+      .curve(d3.curveMonotoneX)
+      .x((d) => xScale(d.date))
+      .y0((d) => yScale(d.apiCost))
+      .y1((d) => yScale(d.totalCost));
+
+    chart.append('path')
+      .datum(timelineSeries)
+      .attr('fill', 'rgba(20, 184, 166, 0.24)')
+      .attr('d', subscriptionAreaGenerator);
+
+    const apiLineGenerator = d3.line()
+      .curve(d3.curveMonotoneX)
+      .x((d) => xScale(d.date))
+      .y((d) => yScale(d.apiCost));
+
+    chart.append('path')
+      .datum(timelineSeries)
+      .attr('fill', 'none')
+      .attr('stroke', '#2563eb')
+      .attr('stroke-width', 2)
+      .attr('d', apiLineGenerator);
+
+    const totalLineGenerator = d3.line()
       .curve(d3.curveMonotoneX)
       .x((d) => xScale(d.date))
       .y((d) => yScale(d.totalCost));
@@ -176,9 +205,30 @@
     chart.append('path')
       .datum(timelineSeries)
       .attr('fill', 'none')
-      .attr('stroke', '#2563eb')
+      .attr('stroke', '#14b8a6')
       .attr('stroke-width', 2.5)
-      .attr('d', lineGenerator);
+      .attr('d', totalLineGenerator);
+
+    const legend = svg.append('g')
+      .attr('class', 'chart-legend')
+      .attr('transform', `translate(${margin.left},12)`);
+
+    [
+      { label: 'API usage', color: '#2563eb' },
+      { label: 'ChatGPT subscription', color: '#14b8a6' },
+    ].forEach((item, index) => {
+      const group = legend.append('g')
+        .attr('transform', isCompactLegend ? `translate(0,${index * 18})` : `translate(${index * 168},0)`);
+      group.append('rect')
+        .attr('width', 11)
+        .attr('height', 11)
+        .attr('rx', 2)
+        .attr('fill', item.color);
+      group.append('text')
+        .attr('x', 17)
+        .attr('y', 10)
+        .text(item.label);
+    });
 
     const xAxis = d3.axisBottom(xScale)
       .ticks(Math.min(10, timelineSeries.length))
@@ -207,11 +257,16 @@
       .attr('cx', (d) => xScale(d.date))
       .attr('cy', (d) => yScale(d.totalCost))
       .attr('r', 4.5)
-      .attr('fill', '#1d4ed8')
+      .attr('fill', '#0f766e')
       .attr('stroke', '#ffffff')
       .attr('stroke-width', 1.5)
       .on('mouseenter', (event, d) => {
-        tooltip.innerHTML = `<strong>${formatMonth(d.date)}</strong><br>${formatCurrencyExact(d.totalCost)}`;
+        tooltip.innerHTML = [
+          `<strong>${formatMonth(d.date)}</strong>`,
+          `Total ${formatCurrencyExact(d.totalCost)}`,
+          `API ${formatCurrencyExact(d.apiCost)}`,
+          `${d.subscriptionPlanName} ${formatCurrencyExact(d.subscriptionCost)}`,
+        ].join('<br>');
         tooltip.style.opacity = '1';
         tooltip.style.pointerEvents = 'none';
       })

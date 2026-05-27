@@ -17,6 +17,7 @@ const {
   Chat5Model,
   ChatPersonalityModel,
   ChatResponseTypeModel,
+  OpenAISubscriptionPlan,
 } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
@@ -32,6 +33,15 @@ const {
   refreshAIModelListsForAdmin,
   refreshOpenAIUsageForAdmin,
 } = require('../services/adminRefreshService');
+const {
+  buildMonthRange,
+  buildSubscriptionRows,
+  labelForMonth,
+  monthKeyFromDate,
+  monthKeyFromDateString,
+  roundCurrency,
+  sortSubscriptionPlans,
+} = require('../services/openaiSubscriptionPlanService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 
@@ -1496,7 +1506,10 @@ exports.update_html_page_rating = async (req, res) => {
 };
 
 exports.openai_usage = async (req, res) => {
-  const entries = await OpenAIUsage.find().sort({ entry_date: 1 }).lean().exec();
+  const [entries, subscriptionPlans] = await Promise.all([
+    OpenAIUsage.find().sort({ entry_date: 1 }).lean().exec(),
+    OpenAISubscriptionPlan.find().sort({ startDate: 1, createdAt: 1 }).lean().exec(),
+  ]);
 
   const monthMap = new Map();
   const modelMetrics = {
@@ -1506,11 +1519,6 @@ exports.openai_usage = async (req, res) => {
     speeches: {},
     transcriptions: {},
   };
-
-  const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
 
   const getRequestsValue = (entry) => {
     const keys = ['num_model_requests', 'request_count', 'num_requests', 'count'];
@@ -1561,18 +1569,18 @@ exports.openai_usage = async (req, res) => {
     }
 
     if (!monthMap.has(monthKey)) {
-      const [yearStr, monthStr] = monthKey.split('-');
-      const monthIndex = Math.max(0, Math.min(11, (parseInt(monthStr, 10) || 1) - 1));
       monthMap.set(monthKey, {
         month: monthKey,
-        label: `${MONTH_NAMES[monthIndex]} ${yearStr}`,
+        label: labelForMonth(monthKey),
+        apiCost: 0,
+        subscriptionCost: 0,
         totalCost: 0,
         dailyEntries: [],
       });
     }
 
     const monthBucket = monthMap.get(monthKey);
-    monthBucket.totalCost += entry.cost || 0;
+    monthBucket.apiCost += entry.cost || 0;
     monthBucket.dailyEntries.push({
       date: entry.entry_date,
       cost: entry.cost || 0,
@@ -1590,11 +1598,61 @@ exports.openai_usage = async (req, res) => {
     (entry.transcriptions || []).forEach((item) => accumulateMetric(modelMetrics.transcriptions, item));
   });
 
-  const monthlyTimeline = Array.from(monthMap.values())
-    .sort((a, b) => a.month.localeCompare(b.month))
-    .map(({ month, label, totalCost }) => ({ month, label, totalCost }));
+  const apiMonthKeys = Array.from(monthMap.keys());
+  const planMonthKeys = subscriptionPlans
+    .map((plan) => monthKeyFromDateString(plan.startDate))
+    .filter(Boolean);
+  const timelineStart = [...apiMonthKeys, ...planMonthKeys].sort()[0] || null;
+  const timelineEndCandidates = [...apiMonthKeys, ...planMonthKeys];
+  if (subscriptionPlans.length) {
+    timelineEndCandidates.push(monthKeyFromDate(new Date()));
+  }
+  const timelineEnd = timelineEndCandidates.filter(Boolean).sort().slice(-1)[0] || null;
+  const timelineMonthKeys = timelineStart && timelineEnd
+    ? buildMonthRange(timelineStart, timelineEnd)
+    : apiMonthKeys.sort();
 
-  const monthlyCards = Array.from(monthMap.values())
+  timelineMonthKeys.forEach((monthKey) => {
+    if (!monthMap.has(monthKey)) {
+      monthMap.set(monthKey, {
+        month: monthKey,
+        label: labelForMonth(monthKey),
+        apiCost: 0,
+        subscriptionCost: 0,
+        totalCost: 0,
+        dailyEntries: [],
+      });
+    }
+  });
+
+  const subscriptionRows = buildSubscriptionRows(timelineMonthKeys, subscriptionPlans);
+  const subscriptionByMonth = new Map(subscriptionRows.map((row) => [row.month, row]));
+  timelineMonthKeys.forEach((monthKey) => {
+    const monthBucket = monthMap.get(monthKey);
+    const subscriptionRow = subscriptionByMonth.get(monthKey) || null;
+    monthBucket.subscriptionCost = subscriptionRow ? subscriptionRow.subscriptionCost : 0;
+    monthBucket.subscriptionPlanName = subscriptionRow ? subscriptionRow.planName : 'Free';
+    monthBucket.subscriptionPlanStartDate = subscriptionRow ? subscriptionRow.planStartDate : null;
+    monthBucket.isDefaultSubscriptionPlan = subscriptionRow ? subscriptionRow.isDefaultPlan : true;
+    monthBucket.totalCost = monthBucket.apiCost + monthBucket.subscriptionCost;
+  });
+
+  const monthlyTimeline = timelineMonthKeys
+    .map((monthKey) => {
+      const monthData = monthMap.get(monthKey);
+      return {
+        month: monthData.month,
+        label: monthData.label,
+        apiCost: monthData.apiCost,
+        subscriptionCost: monthData.subscriptionCost,
+        totalCost: monthData.totalCost,
+        subscriptionPlanName: monthData.subscriptionPlanName,
+        subscriptionPlanStartDate: monthData.subscriptionPlanStartDate,
+      };
+    });
+
+  const monthlyCards = timelineMonthKeys
+    .map((monthKey) => monthMap.get(monthKey))
     .map((monthData) => ({
       ...monthData,
       dailyEntries: monthData.dailyEntries.sort((a, b) => a.date.localeCompare(b.date)),
@@ -1637,10 +1695,60 @@ exports.openai_usage = async (req, res) => {
   }).filter(Boolean);
 
   res.render('openai_usage', {
+    feedback: parseFeedback(req),
     monthlyTimeline,
     monthlyCards,
+    subscriptionPlans: sortSubscriptionPlans(subscriptionPlans).reverse(),
+    subscriptionMonthlyRows: subscriptionRows.slice().reverse(),
     usageMetrics,
   });
+};
+
+exports.save_openai_subscription_plan = async (req, res) => {
+  const returnTo = sanitizeAdminReturnTo(req.body.return_to, '/admin/openai_usage');
+  const planName = typeof req.body.plan_name === 'string' ? req.body.plan_name.trim() : '';
+  const startDate = typeof req.body.start_date === 'string' ? req.body.start_date.trim() : '';
+  const monthlyCost = roundCurrency(req.body.monthly_cost);
+
+  if (!planName) {
+    return redirectAdminWithFeedback(res, returnTo, 'error', 'Please enter a subscription plan name.');
+  }
+
+  if (!monthKeyFromDateString(startDate)) {
+    return redirectAdminWithFeedback(res, returnTo, 'error', 'Please enter a valid subscription start date.');
+  }
+
+  const rawMonthlyCost = Number(req.body.monthly_cost);
+  if (!Number.isFinite(rawMonthlyCost) || rawMonthlyCost < 0) {
+    return redirectAdminWithFeedback(res, returnTo, 'error', 'Please enter a valid monthly subscription cost.');
+  }
+
+  try {
+    await OpenAISubscriptionPlan.findOneAndUpdate(
+      { startDate },
+      {
+        $set: {
+          planName,
+          monthlyCost,
+          startDate,
+        },
+      },
+      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    ).exec();
+
+    return redirectAdminWithFeedback(
+      res,
+      returnTo,
+      'success',
+      `Saved ${planName} from ${startDate} at $${monthlyCost.toFixed(2)} per month.`,
+    );
+  } catch (error) {
+    logger.error('Failed to save OpenAI subscription plan', {
+      category: 'admin_openai_usage',
+      metadata: { error: error.message, user: req.user?.name || null, startDate },
+    });
+    return redirectAdminWithFeedback(res, returnTo, 'error', 'Unable to save the subscription plan right now.');
+  }
 };
 
 function asNumber(value) {

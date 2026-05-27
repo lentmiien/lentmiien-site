@@ -9,11 +9,14 @@ block content
       h1 OpenAI Usage
       p.openai-usage__subtitle Visualize spending trends and drill into detailed activity.
 
+    if feedback && feedback.message
+      .openai-usage__alert(class=`openai-usage__alert--${feedback.status || 'info'}`, role='alert')= feedback.message
+
     if monthlyTimeline && monthlyTimeline.length
       section.openai-usage__section
         header.section-header
           h2.section-title Monthly Spending Overview
-          p.section-subtitle Track how usage evolves across months.
+          p.section-subtitle Track API usage and ChatGPT subscription spending across months.
         #monthlyUsageChart.chart-container(data-chart='monthly')
     else
       .openai-usage__empty
@@ -51,7 +54,7 @@ block content
                   .summary-heading
                     span.summary-month= monthData.label
                     span.summary-total= `$${monthData.totalCost.toFixed(2)}`
-                  span.summary-meta #{monthData.dailyEntries.length} #{monthData.dailyEntries.length === 1 ? 'day' : 'days'} tracked
+                  span.summary-meta API $#{monthData.apiCost.toFixed(2)} · #{monthData.subscriptionPlanName || 'Free'} $#{monthData.subscriptionCost.toFixed(2)} · #{monthData.dailyEntries.length} #{monthData.dailyEntries.length === 1 ? 'day' : 'days'} tracked
               .month-card__body
                 .month-card__chart
                   .month-card__chart-container(data-month=monthData.month)
@@ -80,6 +83,54 @@ block content
                             td= entry.date
                             td= `$${entry.cost.toFixed(2)}`
                             td= highlightParts.length ? highlightParts.join(' · ') : 'N/A'
+
+    section.openai-usage__section.openai-subscriptions
+      header.section-header
+        h2.section-title ChatGPT Subscription
+        p.section-subtitle Monthly plan costs are stacked on top of API usage in the overview.
+      .subscription-layout
+        .subscription-panel
+          h3.subscription-panel__title Applied By Month
+          if subscriptionMonthlyRows && subscriptionMonthlyRows.length
+            .subscription-table-wrapper
+              table.table.table-sm.subscription-table
+                thead
+                  tr
+                    th(scope='col') Month
+                    th(scope='col') Plan
+                    th(scope='col') Start date
+                    th(scope='col') Cost
+                tbody
+                  each row in subscriptionMonthlyRows
+                    tr
+                      td= row.label
+                      td= row.planName
+                      td= row.planStartDate || 'Default'
+                      td= `$${row.subscriptionCost.toFixed(2)}`
+          else
+            p.subscription-empty Free $0 applies until a subscription plan is saved.
+        .subscription-panel
+          h3.subscription-panel__title Switch Plan
+          form.subscription-form(method='post', action='/admin/openai_usage/subscription-plans')
+            input(type='hidden', name='return_to', value='/admin/openai_usage')
+            label.subscription-form__field(for='subscriptionPlanName')
+              span Plan
+              input#subscriptionPlanName(type='text', name='plan_name', placeholder='Pro', maxlength='80', required)
+            label.subscription-form__field(for='subscriptionStartDate')
+              span Start date
+              input#subscriptionStartDate(type='date', name='start_date', required)
+            label.subscription-form__field(for='subscriptionMonthlyCost')
+              span Monthly cost
+              input#subscriptionMonthlyCost(type='number', name='monthly_cost', min='0', step='0.01', placeholder='100.00', required)
+            button.subscription-form__button(type='submit') Save plan
+          if subscriptionPlans && subscriptionPlans.length
+            .subscription-history
+              h4.subscription-history__title Plan Changes
+              ul.subscription-history__list
+                each plan in subscriptionPlans
+                  li
+                    span.subscription-history__plan= plan.planName
+                    span.subscription-history__meta #{plan.startDate} · $#{plan.monthlyCost.toFixed(2)}
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
