@@ -34,18 +34,10 @@ async function status(req, res) {
     const result = await getCurrentRequestCounterStatus(req.baseUrl);
 
     res
-      .status(200)
+      .status(result.wouldReturnStatusCode)
       .set('Cache-Control', 'no-store')
-      .json({
-        status: result.status,
-        countInWindow: result.countInWindow,
-        limit: result.limit,
-        remaining: result.remaining,
-        windowMinutes: result.windowMinutes,
-        windowStart: result.windowStart.toISOString(),
-        checkedAt: result.checkedAt.toISOString(),
-        wouldReturnStatusCode: result.wouldReturnStatusCode,
-      });
+      .type('text/plain')
+      .send(result.status);
   } catch (error) {
     logger.error('Incoming request counter status failed', {
       category: 'incoming-request-counter',
@@ -55,7 +47,8 @@ async function status(req, res) {
     res
       .status(500)
       .set('Cache-Control', 'no-store')
-      .json({ status: 'NG', error: 'Unable to load request counter status.' });
+      .type('text/plain')
+      .send('NG');
   }
 }
 
