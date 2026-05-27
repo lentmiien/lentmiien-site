@@ -3,6 +3,7 @@ const {
   REQUEST_COUNTER_LIMIT,
   REQUEST_COUNTER_WINDOW_MS,
   fetchRollingWindowSeries,
+  getCurrentRequestCounterStatus,
   recordAndEvaluateRequest,
   updateRequestCounterSettings,
 } = require('../../services/incomingRequestCounterService');
@@ -218,5 +219,58 @@ describe('incoming request counter service', () => {
       '2026-05-27T00:02:00.000Z',
       '2026-05-27T00:03:00.000Z',
     ]);
+  });
+
+  test('getCurrentRequestCounterStatus counts the rolling window without saving a request', async () => {
+    const model = {
+      countDocuments: jest.fn().mockResolvedValue(42),
+      create: jest.fn(),
+    };
+    const now = new Date('2026-05-27T00:00:00.000Z');
+
+    const result = await getCurrentRequestCounterStatus('/secret-counter', {
+      model,
+      now,
+      settings: { maxRequests: 60, windowMinutes: 90 },
+    });
+
+    expect(model.countDocuments).toHaveBeenCalledWith({
+      endpointPath: '/secret-counter',
+      receivedAt: { $gte: new Date('2026-05-26T22:30:00.000Z') },
+    });
+    expect(model.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      endpointPath: '/secret-counter',
+      status: 'OK',
+      allowed: true,
+      countInWindow: 42,
+      limit: 60,
+      remaining: 18,
+      windowMinutes: 90,
+      wouldReturnStatusCode: 200,
+    });
+  });
+
+  test('getCurrentRequestCounterStatus reports NG when the current count reaches the limit', async () => {
+    const model = {
+      countDocuments: jest.fn().mockResolvedValue(60),
+      create: jest.fn(),
+    };
+
+    const result = await getCurrentRequestCounterStatus('/secret-counter', {
+      model,
+      now: new Date('2026-05-27T00:00:00.000Z'),
+      settings: { maxRequests: 60, windowMinutes: 90 },
+    });
+
+    expect(model.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'NG',
+      allowed: false,
+      countInWindow: 60,
+      limit: 60,
+      remaining: 0,
+      wouldReturnStatusCode: 429,
+    });
   });
 });

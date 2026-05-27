@@ -272,6 +272,32 @@ async function getRequestCounterDashboard(options = {}) {
   };
 }
 
+async function getCurrentRequestCounterStatus(endpointPath, options = {}) {
+  const requestModel = options.model || IncomingRequest;
+  const now = new Date(options.now || Date.now());
+  const settings = await getRequestCounterSettings(options);
+  const windowStart = new Date(now.getTime() - settings.windowMs);
+  const countInWindow = await requestModel.countDocuments({
+    endpointPath,
+    receivedAt: { $gte: windowStart },
+  });
+  const allowed = countInWindow < settings.maxRequests;
+
+  return {
+    endpointPath,
+    status: allowed ? 'OK' : 'NG',
+    allowed,
+    countInWindow,
+    limit: settings.maxRequests,
+    remaining: Math.max(0, settings.maxRequests - countInWindow),
+    windowMinutes: settings.windowMinutes,
+    windowMs: settings.windowMs,
+    windowStart,
+    checkedAt: now,
+    wouldReturnStatusCode: allowed ? 200 : 429,
+  };
+}
+
 async function recordAndEvaluateRequest(req, options = {}) {
   const model = options.model || IncomingRequest;
   const settings = await getRequestCounterSettings(options);
@@ -325,6 +351,7 @@ module.exports = {
   REQUEST_COUNTER_MIN_WINDOW_MINUTES,
   REQUEST_COUNTER_WINDOW_MS,
   fetchRollingWindowSeries,
+  getCurrentRequestCounterStatus,
   getRequestCounterDashboard,
   getRequestCounterSettings,
   recordAndEvaluateRequest,
