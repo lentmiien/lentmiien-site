@@ -1,5 +1,6 @@
 const BudgetService = require('../services/budgetService');
 const CreditCardService = require('../services/creditCardService');
+const AccountingBusinessService = require('../services/accountingBusinessService');
 
 const TRUTHY_LITERALS = new Set(['true', '1', 'yes', 'on', 'y', 't']);
 
@@ -93,6 +94,73 @@ exports.accountingTransactionsApi = async (req, res) => {
       }),
     ]);
     res.json({ budget, credit });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.businessAnalytics = async (req, res, next) => {
+  try {
+    const filterOptions = await AccountingBusinessService.getFilterOptions({ limit: 1000 });
+    const selectedScope = !req.query.scope || req.query.scope === 'group' ? 'group' : 'business';
+    let selectedValue = typeof req.query.value === 'string' ? req.query.value.trim() : '';
+    if (!selectedValue && selectedScope === 'group' && filterOptions.groups.includes(AccountingBusinessService.DEFAULT_GROUP)) {
+      selectedValue = AccountingBusinessService.DEFAULT_GROUP;
+    }
+    const [analytics, mappings] = await Promise.all([
+      AccountingBusinessService.getAnalytics({ scope: selectedScope, value: selectedValue }),
+      AccountingBusinessService.listMappings({ limit: 1000 }),
+    ]);
+
+    res.render('accounting_business_analytics', {
+      analytics,
+      filterOptions,
+      mappings,
+      selectedScope,
+      selectedValue,
+      defaultGroup: AccountingBusinessService.DEFAULT_GROUP,
+    });
+  } catch (error) {
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.businessAnalyticsApi = async (req, res) => {
+  try {
+    const scope = req.query.scope === 'group' ? 'group' : 'business';
+    const value = req.query.value || '';
+    const analytics = await AccountingBusinessService.getAnalytics({ scope, value });
+    res.json(analytics);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.businessGroupsApi = async (req, res) => {
+  try {
+    const [filterOptions, mappings] = await Promise.all([
+      AccountingBusinessService.getFilterOptions({ limit: 1000 }),
+      AccountingBusinessService.listMappings({
+        limit: Number.parseInt(req.query.limit, 10) || 1000,
+        groupName: req.query.group || null,
+      }),
+    ]);
+    res.json({ ...filterOptions, mappings });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.updateBusinessGroup = async (req, res) => {
+  try {
+    const mapping = await AccountingBusinessService.updateMappingGroup(
+      req.params.id,
+      req.body.groupName,
+    );
+    res.json(mapping);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

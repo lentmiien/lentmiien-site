@@ -1,0 +1,178 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/accounting.css')
+
+block content
+  - const summary = analytics && analytics.summary ? analytics.summary : {}
+  - const formatJpy = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Math.round(Number(value)).toLocaleString()} JPY`
+  - const formatSignedJpy = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Number(value) >= 0 ? '+' : '-'}${Math.round(Math.abs(Number(value))).toLocaleString()} JPY`
+  - const formatDate = (value) => value || '--'
+  .accounting-app.business-analytics-page
+    .accounting-hero.business-analytics-hero
+      .hero-text
+        h1 Business Analytics
+        p.mb-0= analytics && analytics.value ? analytics.label : 'Monthly and yearly transaction analysis by business or group.'
+      .hero-actions
+        a.btn.btn-outline-light(href='/accounting') Accounting
+        a.btn.btn-outline-light(href='/accounting/review') Review
+    section.accounting-card.business-filter-panel
+      form.business-analytics-form(method='get', action='/accounting/business-analytics')
+        .row.g-3.align-items-end
+          .col-md-3
+            label.form-label(for='businessAnalyticsScope') Analyze
+            select#businessAnalyticsScope.form-select(name='scope')
+              option(value='group', selected=selectedScope === 'group') Group
+              option(value='business', selected=selectedScope === 'business') Business
+          .col-md-6
+            label.form-label(for='businessAnalyticsValue') Name
+            input#businessAnalyticsValue.form-control(type='text', name='value', value=selectedValue, list=selectedScope === 'group' ? 'businessGroupOptions' : 'businessNameOptions', autocomplete='off')
+            datalist#businessNameOptions
+              each business in filterOptions.businesses
+                option(value=business.name)
+            datalist#businessGroupOptions
+              each group in filterOptions.groups
+                option(value=group)
+          .col-md-3
+            button.btn.btn-primary.w-100(type='submit') Analyze
+    if analytics && analytics.value
+      .business-metrics-grid
+        .metric-card
+          span.metric-label Total spend
+          strong.metric-value= formatJpy(summary.totalSpend)
+        .metric-card
+          span.metric-label Income / credits
+          strong.metric-value= formatJpy(summary.incomeCredits)
+        .metric-card
+          span.metric-label Net cash impact
+          strong.metric-value(class=Number(summary.netCashImpact) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(summary.netCashImpact)
+        .metric-card
+          span.metric-label Transactions
+          strong.metric-value= (summary.transactionCount || 0).toLocaleString()
+        .metric-card
+          span.metric-label Active months
+          strong.metric-value= summary.activeMonths || 0
+        .metric-card
+          span.metric-label Monthly average
+          strong.metric-value= formatJpy(summary.averageMonthlySpend)
+      .analytics-grid.business-analytics-grid
+        .analytics-card
+          h3 Monthly spend
+          #businessMonthlyChart.business-chart
+        .analytics-card
+          h3 Yearly spend
+          #businessYearlyChart.business-chart
+        .analytics-card
+          h3 Source mix
+          ul.business-source-list.list-unstyled
+            each source in analytics.sourceBreakdown
+              li.business-source-row
+                span= source.label
+                strong= `${formatJpy(source.totalSpend)} / ${source.count} tx`
+          if selectedScope === 'group'
+            h4.mt-4 Businesses in group
+            #businessBreakdownChart.business-chart.business-chart--compact
+      section.accounting-card
+        .section-header
+          h2 Period totals
+          p.mb-0= `${formatDate(summary.firstDate)} to ${formatDate(summary.latestDate)}`
+        .business-period-table-wrap
+          table.table.table-dark.table-striped.table-sm.business-period-table
+            thead
+              tr
+                th Year
+                th Budget spend
+                th Credit spend
+                th Income / credits
+                th Net cash impact
+                th Count
+            tbody
+              if analytics.yearly && analytics.yearly.length
+                each row in analytics.yearly
+                  tr
+                    td= row.label
+                    td= formatJpy(row.budgetSpend)
+                    td= formatJpy(row.creditSpend)
+                    td= formatJpy(row.incomeCredits)
+                    td= formatSignedJpy(row.netCashImpact)
+                    td= row.count
+              else
+                tr
+                  td.text-muted(colspan='6') No yearly totals available.
+      section.accounting-card
+        .section-header
+          h2 Transactions
+          p.mb-0= `${(analytics.transactions || []).length.toLocaleString()} matching rows`
+        .business-transactions-wrap
+          table.table.table-dark.table-hover.table-sm.business-transactions-table
+            thead
+              tr
+                th Date
+                th Source
+                th Business
+                th Group
+                th Type
+                th Amount
+                th Spend
+                th Income / credit
+            tbody
+              if analytics.transactions && analytics.transactions.length
+                each tx in analytics.transactions
+                  tr
+                    td= tx.isoDate
+                    td= tx.sourceLabel
+                    td= tx.business
+                    td= tx.groupName
+                    td= tx.type
+                    td= formatJpy(tx.amount)
+                    td= formatJpy(tx.spendAmount)
+                    td= formatJpy(tx.incomeAmount)
+              else
+                tr
+                  td.text-muted(colspan='8') No matching transactions.
+    else
+      section.accounting-card
+        h2 Business analytics
+        p.mb-0.text-muted No business or group selected.
+    section.accounting-card#businessGroups
+      .section-header
+        h2 Business groups
+        p#businessGroupFeedback.inline-feedback.mb-0
+      .business-groups-table-wrap
+        table.table.table-dark.table-striped.table-sm.business-groups-table
+          thead
+            tr
+              th Business
+              th Sources
+              th Group
+              th
+          tbody
+            if mappings && mappings.length
+              each mapping in mappings
+                tr(data-mapping-id=mapping.id)
+                  td
+                    strong= mapping.name
+                  td
+                    if mapping.sources && mapping.sources.length
+                      each source in mapping.sources
+                        span.badge-soft.me-1= source === 'credit_card' ? 'Card' : 'Budget'
+                    else
+                      span.text-muted --
+                  td
+                    input.form-control.form-control-sm.business-group-input(type='text', value=mapping.groupName || defaultGroup, list='businessGroupOptions', aria-label=`Group for ${mapping.name}`)
+                  td.text-end
+                    button.btn.btn-outline-primary.btn-sm.business-group-save(type='button', data-mapping-id=mapping.id, disabled=!mapping.id) Save
+            else
+              tr
+                td.text-muted(colspan='4') No businesses seeded yet.
+
+block script
+  script(src='https://d3js.org/d3.v7.min.js')
+  script.
+    window.businessAnalyticsState = {
+      analytics: !{JSON.stringify(analytics || null)},
+      routes: {
+        updateGroup: '/accounting/api/business-groups'
+      }
+    };
+  script(src='/js/accounting_business_analytics.js', defer)

@@ -19,6 +19,10 @@ mockTransactionDbModel.distinct = jest.fn();
 jest.mock('../../models/transaction_db', () => mockTransactionDbModel);
 jest.mock('../../models/account_db', () => ({ find: jest.fn() }));
 jest.mock('../../models/category_db', () => ({ find: jest.fn() }));
+jest.mock('../../services/accountingBusinessService', () => ({
+  SOURCE_BUDGET: 'budget',
+  ensureBusiness: jest.fn(),
+}));
 
 jest.mock('../../database', () => ({
   Receipt: { find: jest.fn() },
@@ -36,6 +40,7 @@ const AccountModel = require('../../models/account');
 const AccountDBModel = require('../../models/account_db');
 const CategoryDBModel = require('../../models/category_db');
 const TransactionDBModel = require('../../models/transaction_db');
+const AccountingBusinessService = require('../../services/accountingBusinessService');
 const { Receipt, Payroll } = require('../../database');
 const budgetService = require('../../services/budgetService');
 
@@ -47,6 +52,7 @@ describe('budgetService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockTransactionDbModel.mockClear();
+    AccountingBusinessService.ensureBusiness.mockResolvedValue(null);
     Receipt.find.mockResolvedValue([]);
     Payroll.find.mockResolvedValue([]);
   });
@@ -258,11 +264,12 @@ describe('budgetService', () => {
   });
 
   test('insertTransaction persists new document', async () => {
-    const body = { amount: 10 };
+    const body = { amount: 10, transaction_business: 'Cafe' };
     const saved = await budgetService.insertTransaction(body);
 
     expect(TransactionDBModel).toHaveBeenCalledWith(body);
-    expect(saved).toEqual({ _id: 'new-id', amount: 10 });
+    expect(AccountingBusinessService.ensureBusiness).toHaveBeenCalledWith('Cafe', { source: 'budget' });
+    expect(saved).toEqual({ _id: 'new-id', amount: 10, transaction_business: 'Cafe' });
   });
 
   test('getReferenceLists gathers selection data', async () => {

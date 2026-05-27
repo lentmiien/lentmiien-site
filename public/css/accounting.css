@@ -158,6 +158,88 @@
   border-bottom: none;
 }
 
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.business-analytics-form {
+  margin: 0;
+}
+
+.business-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.business-chart {
+  min-height: 220px;
+}
+
+.business-chart--compact {
+  min-height: 170px;
+}
+
+.business-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 0.5rem;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 0.85rem;
+}
+
+.business-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.business-chart-legend i {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 2px;
+}
+
+.business-source-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.business-source-row:last-child {
+  border-bottom: none;
+}
+
+.metric-positive {
+  color: #54d7a5;
+}
+
+.metric-negative {
+  color: #f08a8a;
+}
+
+.business-period-table-wrap,
+.business-transactions-wrap,
+.business-groups-table-wrap {
+  overflow-x: auto;
+}
+
+.business-transactions-table,
+.business-groups-table,
+.business-period-table {
+  min-width: 760px;
+}
+
+.business-groups-table .business-group-input {
+  min-width: 160px;
+}
+
 @media (max-width: 768px) {
   .accounting-hero {
     flex-direction: column;
@@ -168,5 +250,11 @@
   }
   .workspace-side {
     max-height: none;
+  }
+  .hero-actions {
+    width: 100%;
+  }
+  .hero-actions .btn {
+    flex: 1 1 auto;
   }
 }

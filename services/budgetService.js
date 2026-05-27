@@ -11,6 +11,7 @@ const CategoryDBModel = require('../models/category_db');
 const TransactionDBModel = require('../models/transaction_db');
 
 const { Receipt, Payroll } = require('../database');
+const AccountingBusinessService = require('./accountingBusinessService');
 const finance = require('../utils/finance');
 
 const EXPENSE_TYPE_LIST = ['expense'];
@@ -370,7 +371,12 @@ async function getReceiptEntrySuggestions(options = {}) {
 /* 4)  Insert new transaction  */
 async function insertTransaction(body){
   const t = new TransactionDBModel(body);
-  return t.save();
+  const saved = await t.save();
+  await AccountingBusinessService.ensureBusiness(
+    saved.transaction_business || body.transaction_business,
+    { source: AccountingBusinessService.SOURCE_BUDGET },
+  );
+  return saved;
 }
 
 /* helper list for selects / drop-downs */

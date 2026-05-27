@@ -17,6 +17,10 @@ router.get('/review/:year/:month', controller.reviewTransactions);
 router.get('/api/unified/summary', controller.accountingSummaryApi);
 router.get('/api/unified/transactions', controller.accountingTransactionsApi);
 router.get('/api/unified/analytics', controller.accountingAnalyticsApi);
+router.get('/business-analytics', controller.businessAnalytics);
+router.get('/api/business-analytics', controller.businessAnalyticsApi);
+router.get('/api/business-groups', controller.businessGroupsApi);
+router.patch('/api/business-groups/:id', controller.updateBusinessGroup);
 
 /* ── Credit card tracker ───────────────── */
 router.get('/cards', controller.creditCardsDashboard);

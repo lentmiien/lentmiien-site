@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const CreditCard = require('../models/credit_card');
 const CreditCardTransaction = require('../models/credit_card_transaction');
 const CreditCardMonthlyBalance = require('../models/credit_card_monthly_balance');
+const AccountingBusinessService = require('./accountingBusinessService');
 const finance = require('../utils/finance');
 
 const { Types: { ObjectId } } = mongoose;
@@ -805,6 +806,9 @@ const creditCardService = {
       external: externalFlag,
       externalMultiplier: externalFlag ? (multiplierValue || 1) : 0,
     });
+    await AccountingBusinessService.ensureBusiness(label.trim(), {
+      source: AccountingBusinessService.SOURCE_CREDIT_CARD,
+    });
 
     return serializeTransaction(doc);
   },
@@ -1082,6 +1086,7 @@ const creditCardService = {
 
     let inserted = 0;
     let skipped = 0;
+    const insertedLabels = [];
 
     for (const item of uniqueItems) {
       const existing = await CreditCardTransaction.findOne({
@@ -1097,6 +1102,13 @@ const creditCardService = {
       }
       await CreditCardTransaction.create(item);
       inserted += 1;
+      insertedLabels.push(item.label);
+    }
+
+    if (insertedLabels.length > 0) {
+      await AccountingBusinessService.ensureBusinesses(insertedLabels, {
+        source: AccountingBusinessService.SOURCE_CREDIT_CARD,
+      });
     }
 
     return {
