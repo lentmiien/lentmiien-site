@@ -161,6 +161,33 @@
   font-size: 0.95rem;
 }
 
+.tapo-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.tapo-chart-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tapo-chart-panel__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.tapo-chart-panel__header h3 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
 .tapo-chart {
   position: relative;
   min-height: 300px;
@@ -191,6 +218,28 @@
   stroke-dasharray: 4 4;
 }
 
+.tapo-chart .tapo-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tapo-chart .tapo-line--raw {
+  opacity: 0.18;
+}
+
+.tapo-chart .tapo-line--smooth {
+  opacity: 0.95;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
+}
+
+.tapo-chart .tapo-point--raw {
+  opacity: 0.24;
+}
+
+.tapo-chart .tapo-point--raw:hover {
+  opacity: 0.9;
+}
+
 .tapo-chart-empty {
   min-height: 300px;
   display: flex;
@@ -215,6 +264,7 @@
   opacity: 0;
   transform: translate(-9999px, -9999px);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+  z-index: 2;
 }
 
 .tapo-chart-legend {
@@ -293,6 +343,10 @@
 
   .tapo-dashboard__heading h1 {
     font-size: 1.65rem;
+  }
+
+  .tapo-chart-grid {
+    grid-template-columns: 1fr;
   }
 
   .tapo-stat__value {

@@ -23,6 +23,8 @@
     '#a3e635',
   ];
   const color = d3.scaleOrdinal(palette);
+  const HIGH_POWER_THRESHOLD_W = 50;
+  const DAILY_HIGH_CONSUMPTION_THRESHOLD_KWH = 1.2;
   const parseDay = d3.timeParse('%Y-%m-%d');
   const parseMonth = d3.timeParse('%Y-%m');
   const formatTime = d3.timeFormat('%m/%d %H:%M');
@@ -38,6 +40,14 @@
   const numberFormat = new Intl.NumberFormat(undefined, {
     maximumFractionDigits: 2,
   });
+  const fractionalNumberFormat = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 3,
+  });
+  const smallNumberFormat = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 4,
+  });
+
+  seedDeviceColors(payload);
 
   const resizeCallbacks = [];
   let resizeFrame = null;
@@ -96,6 +106,45 @@
     container.appendChild(legend);
   }
 
+  function seedDeviceColors(dashboardPayload) {
+    if (!dashboardPayload || typeof dashboardPayload !== 'object') {
+      return;
+    }
+    const devices = new Set();
+    if (Array.isArray(dashboardPayload.deviceStats)) {
+      dashboardPayload.deviceStats.forEach((entry) => {
+        if (entry && entry.deviceName) {
+          devices.add(entry.deviceName);
+        }
+      });
+    }
+    ['powerSeries', 'dailySeries', 'monthlySeries'].forEach((key) => {
+      if (!Array.isArray(dashboardPayload[key])) {
+        return;
+      }
+      dashboardPayload[key].forEach((entry) => {
+        if (entry && entry.deviceName) {
+          devices.add(entry.deviceName);
+        }
+      });
+    });
+    color.domain(Array.from(devices).sort());
+  }
+
+  function formatMetricValue(value, options) {
+    if (typeof options.formatValue === 'function') {
+      return options.formatValue(value);
+    }
+    const absoluteValue = Math.abs(Number(value));
+    if (absoluteValue > 0 && absoluteValue < 0.1) {
+      return smallNumberFormat.format(value);
+    }
+    if (absoluteValue > 0 && absoluteValue < 1) {
+      return fractionalNumberFormat.format(value);
+    }
+    return numberFormat.format(value);
+  }
+
   function getChartSize(container, minHeight) {
     const width = Math.max(320, container.clientWidth || container.parentElement?.clientWidth || 720);
     const height = Math.max(minHeight, Math.floor(width * 0.42));
@@ -115,21 +164,113 @@
     return domain;
   }
 
+  function normalizeLineSeries(sourceSeries, options) {
+    if (!Array.isArray(sourceSeries)) {
+      return [];
+    }
+    return sourceSeries
+      .map((entry) => ({
+        source: entry,
+        deviceName: entry && entry.deviceName,
+        x: entry ? options.parseX(entry) : null,
+        y: Number(entry && entry[options.yKey]),
+        label: entry ? options.labelX(entry) : '',
+      }))
+      .filter((entry) => (
+        entry.deviceName
+        && entry.x instanceof Date
+        && !Number.isNaN(entry.x.getTime())
+        && Number.isFinite(entry.y)
+      ))
+      .sort((a, b) => a.x - b.x);
+  }
+
+  function movingAverage(values, windowSize) {
+    const size = Math.max(1, Math.floor(windowSize || 1));
+    if (size <= 1 || values.length < 3) {
+      return values;
+    }
+    const radius = Math.floor(size / 2);
+    return values.map((entry, index) => {
+      const start = Math.max(0, index - radius);
+      const end = Math.min(values.length, index + radius + 1);
+      const average = d3.mean(values.slice(start, end), (value) => value.y);
+      return {
+        ...entry,
+        rawY: entry.y,
+        y: Number.isFinite(average) ? average : entry.y,
+      };
+    });
+  }
+
+  function splitLineSeriesByThreshold(sourceSeries, options, threshold) {
+    const safeSeries = Array.isArray(sourceSeries) ? sourceSeries : [];
+    const rows = normalizeLineSeries(safeSeries, options);
+    const deviceMax = d3.rollup(
+      rows,
+      (values) => d3.max(values, (entry) => entry.y) || 0,
+      (entry) => entry.deviceName
+    );
+    const highDevices = new Set();
+    const lowDevices = new Set();
+    deviceMax.forEach((maxValue, deviceName) => {
+      if (maxValue >= threshold) {
+        highDevices.add(deviceName);
+      } else {
+        lowDevices.add(deviceName);
+      }
+    });
+
+    return {
+      highDevices,
+      lowDevices,
+      knownDevices: new Set([...highDevices, ...lowDevices]),
+      highSeries: safeSeries.filter((entry) => highDevices.has(entry.deviceName)),
+      lowSeries: safeSeries.filter((entry) => lowDevices.has(entry.deviceName)),
+    };
+  }
+
+  function splitLineSeriesByDeviceBuckets(sourceSeries, options, buckets, fallbackThreshold) {
+    const safeSeries = Array.isArray(sourceSeries) ? sourceSeries : [];
+    const rows = normalizeLineSeries(safeSeries, options);
+    const deviceMax = d3.rollup(
+      rows,
+      (values) => d3.max(values, (entry) => entry.y) || 0,
+      (entry) => entry.deviceName
+    );
+    const bucketHighDevices = buckets && buckets.highDevices instanceof Set ? buckets.highDevices : new Set();
+    const bucketLowDevices = buckets && buckets.lowDevices instanceof Set ? buckets.lowDevices : new Set();
+    const highDevices = new Set();
+    const lowDevices = new Set();
+
+    deviceMax.forEach((maxValue, deviceName) => {
+      if (bucketHighDevices.has(deviceName)) {
+        highDevices.add(deviceName);
+      } else if (bucketLowDevices.has(deviceName)) {
+        lowDevices.add(deviceName);
+      } else if (maxValue >= fallbackThreshold) {
+        highDevices.add(deviceName);
+      } else {
+        lowDevices.add(deviceName);
+      }
+    });
+
+    return {
+      highDevices,
+      lowDevices,
+      knownDevices: new Set([...highDevices, ...lowDevices]),
+      highSeries: safeSeries.filter((entry) => highDevices.has(entry.deviceName)),
+      lowSeries: safeSeries.filter((entry) => lowDevices.has(entry.deviceName)),
+    };
+  }
+
   function renderMultiLineChart(containerId, sourceSeries, options) {
     const container = document.getElementById(containerId);
     if (!container) {
       return;
     }
 
-    const series = sourceSeries
-      .map((entry) => ({
-        deviceName: entry.deviceName,
-        x: options.parseX(entry),
-        y: Number(entry[options.yKey]),
-        label: options.labelX(entry),
-      }))
-      .filter((entry) => entry.deviceName && entry.x instanceof Date && !Number.isNaN(entry.x.getTime()) && Number.isFinite(entry.y))
-      .sort((a, b) => a.x - b.x);
+    const series = normalizeLineSeries(sourceSeries, options);
 
     if (!series.length) {
       emptyChart(container, options.emptyMessage);
@@ -143,7 +284,7 @@
       top: 24,
       right: Math.max(24, Math.min(92, width * 0.08)),
       bottom: width < 560 ? 64 : 48,
-      left: 68,
+      left: options.unit === 'kWh' ? 78 : 68,
     };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
@@ -181,23 +322,37 @@
       .curve(d3.curveMonotoneX)
       .x((entry) => xScale(entry.x))
       .y((entry) => yScale(entry.y));
+    const smoothingWindow = Math.max(1, Math.floor(options.smoothWindow || 1));
+    const drawSmoothed = smoothingWindow > 1;
 
     grouped.forEach((values, deviceName) => {
+      const sortedValues = values.slice().sort((a, b) => a.x - b.x);
       chart.append('path')
-        .datum(values)
+        .datum(sortedValues)
+        .attr('class', drawSmoothed ? 'tapo-line tapo-line--raw' : 'tapo-line')
         .attr('fill', 'none')
         .attr('stroke', color(deviceName))
-        .attr('stroke-width', 2)
+        .attr('stroke-width', drawSmoothed ? 1.25 : 2)
         .attr('d', line);
+
+      if (drawSmoothed) {
+        chart.append('path')
+          .datum(movingAverage(sortedValues, smoothingWindow))
+          .attr('class', 'tapo-line tapo-line--smooth')
+          .attr('fill', 'none')
+          .attr('stroke', color(deviceName))
+          .attr('stroke-width', 2.6)
+          .attr('d', line);
+      }
     });
 
     chart.selectAll('.tapo-point')
       .data(series)
       .join('circle')
-      .attr('class', 'tapo-point')
+      .attr('class', 'tapo-point tapo-point--raw')
       .attr('cx', (entry) => xScale(entry.x))
       .attr('cy', (entry) => yScale(entry.y))
-      .attr('r', 3)
+      .attr('r', drawSmoothed ? 2.25 : 3)
       .attr('fill', (entry) => color(entry.deviceName))
       .attr('stroke', '#0e0f13')
       .attr('stroke-width', 1)
@@ -205,14 +360,14 @@
         showTooltip(
           tooltip,
           event,
-          `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${numberFormat.format(entry.y)} ${options.unit}`
+          `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${formatMetricValue(entry.y, options)} ${options.unit}`
         );
       })
       .on('mousemove', (event, entry) => {
         showTooltip(
           tooltip,
           event,
-          `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${numberFormat.format(entry.y)} ${options.unit}`
+          `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${formatMetricValue(entry.y, options)} ${options.unit}`
         );
       })
       .on('mouseleave', () => hideTooltip(tooltip));
@@ -222,7 +377,7 @@
       .tickFormat(options.formatX);
     const yAxis = d3.axisLeft(yScale)
       .ticks(6)
-      .tickFormat((value) => `${numberFormat.format(value)} ${options.unit}`);
+      .tickFormat((value) => `${formatMetricValue(value, options)} ${options.unit}`);
 
     const xAxisGroup = chart.append('g')
       .attr('class', 'axis')
@@ -372,7 +527,8 @@
   const MS_PER_DAY = 24 * MS_PER_HOUR;
 
   function renderAll() {
-    renderMultiLineChart('tapoPowerChart', Array.isArray(payload.powerSeries) ? payload.powerSeries : [], {
+    const powerSeries = Array.isArray(payload.powerSeries) ? payload.powerSeries : [];
+    const powerOptions = {
       yKey: 'currentPowerW',
       unit: 'W',
       minHeight: 320,
@@ -384,9 +540,21 @@
       },
       formatX: formatTime,
       domainPadMs: MS_PER_HOUR,
+      smoothWindow: 7,
+    };
+    const powerBuckets = splitLineSeriesByThreshold(powerSeries, powerOptions, HIGH_POWER_THRESHOLD_W);
+
+    renderMultiLineChart('tapoHighPowerChart', powerBuckets.highSeries, {
+      ...powerOptions,
+      emptyMessage: 'No 50 W+ power readings in this range.',
+    });
+    renderMultiLineChart('tapoLowPowerChart', powerBuckets.lowSeries, {
+      ...powerOptions,
+      emptyMessage: 'No sub-50 W power readings in this range.',
     });
 
-    renderMultiLineChart('tapoDailyChart', Array.isArray(payload.dailySeries) ? payload.dailySeries : [], {
+    const dailySeries = Array.isArray(payload.dailySeries) ? payload.dailySeries : [];
+    const dailyOptions = {
       yKey: 'consumptionKwh',
       unit: 'kWh',
       minHeight: 320,
@@ -395,6 +563,22 @@
       labelX: (entry) => entry.dateKey,
       formatX: formatDay,
       domainPadMs: MS_PER_DAY,
+      smoothWindow: 3,
+    };
+    const dailyBuckets = splitLineSeriesByDeviceBuckets(
+      dailySeries,
+      dailyOptions,
+      powerBuckets,
+      DAILY_HIGH_CONSUMPTION_THRESHOLD_KWH
+    );
+
+    renderMultiLineChart('tapoHighDailyChart', dailyBuckets.highSeries, {
+      ...dailyOptions,
+      emptyMessage: 'No high-draw daily snapshots yet.',
+    });
+    renderMultiLineChart('tapoLowDailyChart', dailyBuckets.lowSeries, {
+      ...dailyOptions,
+      emptyMessage: 'No low-draw daily snapshots yet.',
     });
 
     renderMonthlyStackedBars();
