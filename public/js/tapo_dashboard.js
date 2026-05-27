@@ -327,14 +327,6 @@
 
     grouped.forEach((values, deviceName) => {
       const sortedValues = values.slice().sort((a, b) => a.x - b.x);
-      chart.append('path')
-        .datum(sortedValues)
-        .attr('class', drawSmoothed ? 'tapo-line tapo-line--raw' : 'tapo-line')
-        .attr('fill', 'none')
-        .attr('stroke', color(deviceName))
-        .attr('stroke-width', drawSmoothed ? 1.25 : 2)
-        .attr('d', line);
-
       if (drawSmoothed) {
         chart.append('path')
           .datum(movingAverage(sortedValues, smoothingWindow))
@@ -342,6 +334,14 @@
           .attr('fill', 'none')
           .attr('stroke', color(deviceName))
           .attr('stroke-width', 2.6)
+          .attr('d', line);
+      } else {
+        chart.append('path')
+          .datum(sortedValues)
+          .attr('class', 'tapo-line')
+          .attr('fill', 'none')
+          .attr('stroke', color(deviceName))
+          .attr('stroke-width', 2)
           .attr('d', line);
       }
     });
@@ -540,7 +540,7 @@
       },
       formatX: formatTime,
       domainPadMs: MS_PER_HOUR,
-      smoothWindow: 7,
+      smoothWindow: 21,
     };
     const powerBuckets = splitLineSeriesByThreshold(powerSeries, powerOptions, HIGH_POWER_THRESHOLD_W);
 

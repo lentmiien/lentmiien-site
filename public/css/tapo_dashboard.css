@@ -223,10 +223,6 @@
   stroke-linejoin: round;
 }
 
-.tapo-chart .tapo-line--raw {
-  opacity: 0.18;
-}
-
 .tapo-chart .tapo-line--smooth {
   opacity: 0.95;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.38));
