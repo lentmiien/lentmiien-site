@@ -66,7 +66,7 @@ function mapRecentRequest(entry) {
     receivedAtDisplay: formatDateTime(entry.receivedAt),
     responseText: entry.responseText || (entry.allowed ? 'OK' : 'NG'),
     responseStatusCode: entry.responseStatusCode || (entry.allowed ? 200 : 429),
-    countInWindowDisplay: formatNumber(entry.countInWindow || 0),
+    windowMinutesDisplay: formatNumber(entry.countInWindow || 0),
     ip: entry.ip || 'N/A',
     userAgent: entry.userAgent || 'N/A',
     requestPath: entry.requestPath || 'N/A',
@@ -77,9 +77,9 @@ function buildOverviewCards(dashboard) {
   const settings = dashboard.settings;
   return [
     {
-      label: 'Current Window',
-      value: `${formatNumber(dashboard.currentCount)} / ${formatNumber(settings.maxRequests)}`,
-      helper: `${formatNumber(dashboard.remaining)} remaining`,
+      label: 'Current Minutes',
+      value: `${formatNumber(dashboard.currentCount)} / ${formatNumber(settings.maxRequests)} min`,
+      helper: `${formatNumber(dashboard.remaining)} min remaining`,
       tone: dashboard.currentCount >= settings.maxRequests ? 'danger' : 'ok',
     },
     {
@@ -94,16 +94,35 @@ function buildOverviewCards(dashboard) {
       helper: `Since ${formatDateTime(dashboard.currentWindowStart)}`,
     },
     {
-      label: 'Blocked In Window',
+      label: 'NG Minutes',
       value: formatNumber(dashboard.blockedInWindow),
-      helper: 'NG responses',
+      helper: 'Current window',
     },
     {
-      label: 'Stored Requests',
+      label: 'Stored Minutes',
       value: formatNumber(dashboard.totalStored),
       helper: '7-day retention',
     },
   ];
+}
+
+function mapDailyMinuteStats(rows = []) {
+  const maxTotal = Math.max(1, ...rows.map((row) => row.totalMinutes || 0));
+  return rows.map((row) => {
+    const totalMinutes = row.totalMinutes || 0;
+    const okMinutes = row.okMinutes || 0;
+    const ngMinutes = row.ngMinutes || 0;
+
+    return {
+      dateKey: row.dateKey,
+      totalMinutesDisplay: formatNumber(totalMinutes),
+      okMinutesDisplay: formatNumber(okMinutes),
+      ngMinutesDisplay: formatNumber(ngMinutes),
+      totalPercent: Math.round((totalMinutes / maxTotal) * 100),
+      okPercent: totalMinutes > 0 ? Math.round((okMinutes / totalMinutes) * 100) : 0,
+      ngPercent: totalMinutes > 0 ? Math.round((ngMinutes / totalMinutes) * 100) : 0,
+    };
+  });
 }
 
 exports.dashboard = async (req, res) => {
@@ -114,6 +133,7 @@ exports.dashboard = async (req, res) => {
       limit: dashboard.settings.maxRequests,
       windowMinutes: dashboard.settings.windowMinutes,
     };
+    const dailyMinuteStats = mapDailyMinuteStats(dashboard.dailyMinuteStats);
 
     return res.render('admin_request_counter', {
       feedback: parseFeedback(req.query),
@@ -127,6 +147,7 @@ exports.dashboard = async (req, res) => {
         updatedByDisplay: dashboard.settings.updatedBy || 'N/A',
       },
       overviewCards: buildOverviewCards(dashboard),
+      dailyMinuteStats,
       recentRequests: dashboard.recentRequests.map(mapRecentRequest),
       chartJson: JSON.stringify(chartPayload),
     });
@@ -149,6 +170,7 @@ exports.dashboard = async (req, res) => {
         updatedByDisplay: 'N/A',
       },
       overviewCards: [],
+      dailyMinuteStats: [],
       recentRequests: [],
       chartJson: JSON.stringify({ points: [], limit: 60, windowMinutes: 90 }),
     });

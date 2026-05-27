@@ -7,8 +7,8 @@ block content
   .request-counter-admin
     header.request-counter-admin__header
       div
-        h1.request-counter-admin__title Request Counter
-        p.request-counter-admin__subtitle Rolling request count and live threshold settings.
+        h1.request-counter-admin__title Minute Counter
+        p.request-counter-admin__subtitle Rolling minutes and live threshold settings.
       .request-counter-admin__meta
         span Last updated #{generatedAtDisplay}
         a.request-counter-admin__refresh(href='/admin/request-counter') Refresh
@@ -31,7 +31,7 @@ block content
       .request-counter-admin__grid
         section.request-counter-panel.request-counter-panel--wide
           .request-counter-panel__header
-            h2 Request Count
+            h2 Rolling Minutes
             span.request-counter-panel__meta #{settings.windowDisplay} rolling window
           #requestCounterChart.request-counter-chart
 
@@ -41,10 +41,10 @@ block content
             span.request-counter-panel__meta Live
           form.request-counter-form(method='post', action='/admin/request-counter/settings')
             label.request-counter-form__field(for='maxRequests')
-              span Max Requests
+              span Max Minutes
               input#maxRequests(type='number', name='maxRequests', min='1', max='100000', step='1', value=settings.maxRequests, required)
             label.request-counter-form__field(for='windowMinutes')
-              span Window Minutes
+              span Window Length
               input#windowMinutes(type='number', name='windowMinutes', min='1', max='10080', step='1', value=settings.windowMinutes, required)
             button.request-counter-form__button(type='submit') Save
           dl.request-counter-settings
@@ -61,7 +61,29 @@ block content
       section.request-counter-admin__section
         .request-counter-panel
           .request-counter-panel__header
-            h2 Recent Requests
+            h2 Daily Minutes
+            span.request-counter-panel__meta Complete days in retention
+          if dailyMinuteStats && dailyMinuteStats.length
+            .request-counter-days
+              each day in dailyMinuteStats
+                .request-counter-day
+                  .request-counter-day__top
+                    span.request-counter-day__date= day.dateKey
+                    strong #{day.totalMinutesDisplay} min
+                  .request-counter-day__bar(style=`--total-percent: ${day.totalPercent}%; --ok-percent: ${day.okPercent}%; --ng-percent: ${day.ngPercent}%;`)
+                    span.request-counter-day__bar-total
+                      span.request-counter-day__bar-ok
+                      span.request-counter-day__bar-ng
+                  .request-counter-day__meta
+                    span OK #{day.okMinutesDisplay} min
+                    span NG #{day.ngMinutesDisplay} min
+          else
+            p.request-counter-empty No complete local days are available in the 7-day retention window.
+
+      section.request-counter-admin__section
+        .request-counter-panel
+          .request-counter-panel__header
+            h2 Recent Minutes
             span.request-counter-panel__meta Latest 25
           if recentRequests && recentRequests.length
             .request-counter-table-wrap
@@ -70,7 +92,7 @@ block content
                   tr
                     th Time
                     th Result
-                    th Window Count
+                    th Window Minutes
                     th HTTP
                     th IP
                     th Path
@@ -81,13 +103,13 @@ block content
                       td= row.receivedAtDisplay
                       td
                         span.request-counter-result(class=row.responseText === 'OK' ? 'request-counter-result--ok' : 'request-counter-result--ng')= row.responseText
-                      td= row.countInWindowDisplay
+                      td= row.windowMinutesDisplay
                       td= row.responseStatusCode
                       td= row.ip
                       td= row.requestPath
                       td= row.userAgent
           else
-            p.request-counter-empty No request records yet.
+            p.request-counter-empty No minute records yet.
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)

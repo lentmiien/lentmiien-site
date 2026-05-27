@@ -11,6 +11,8 @@ const REQUEST_COUNTER_MIN_WINDOW_MINUTES = 1;
 const REQUEST_COUNTER_MAX_WINDOW_MINUTES = 7 * 24 * 60;
 const REQUEST_COUNTER_SETTINGS_KEY = 'default';
 const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const REQUEST_COUNTER_RETENTION_DAYS = 7;
 
 class RequestCounterSettingsError extends Error {
   constructor(message, status = 400, code = 'invalid_settings') {
@@ -181,6 +183,50 @@ function floorToMinute(date) {
   return value;
 }
 
+function startOfLocalDay(date) {
+  const value = new Date(date);
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function addLocalDays(date, days) {
+  const value = new Date(date);
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate() + days);
+}
+
+function formatLocalDateKey(date) {
+  const value = new Date(date);
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function buildCompleteRetentionDayRanges(now = new Date(), retentionDays = REQUEST_COUNTER_RETENTION_DAYS) {
+  const nowDate = new Date(now);
+  const retentionStart = new Date(nowDate.getTime() - retentionDays * DAY_MS);
+  const currentDayStart = startOfLocalDay(nowDate);
+  let dayStart = startOfLocalDay(retentionStart);
+
+  if (dayStart.getTime() < retentionStart.getTime()) {
+    dayStart = addLocalDays(dayStart, 1);
+  }
+
+  const ranges = [];
+  while (dayStart.getTime() < currentDayStart.getTime()) {
+    const dayEnd = addLocalDays(dayStart, 1);
+    if (dayStart.getTime() >= retentionStart.getTime() && dayEnd.getTime() <= nowDate.getTime()) {
+      ranges.push({
+        dateKey: formatLocalDateKey(dayStart),
+        start: dayStart,
+        end: dayEnd,
+      });
+    }
+    dayStart = dayEnd;
+  }
+
+  return ranges;
+}
+
 async function fetchRollingWindowSeries(endpointPath, settings, options = {}) {
   const requestModel = options.model || IncomingRequest;
   const now = new Date(options.now || Date.now());
@@ -232,6 +278,40 @@ async function fetchRollingWindowSeries(endpointPath, settings, options = {}) {
   return points;
 }
 
+async function fetchDailyMinuteStats(endpointPath, options = {}) {
+  const requestModel = options.model || IncomingRequest;
+  const now = new Date(options.now || Date.now());
+  const ranges = buildCompleteRetentionDayRanges(now);
+
+  return Promise.all(ranges.map(async (range) => {
+    const baseQuery = {
+      endpointPath,
+      receivedAt: {
+        $gte: range.start,
+        $lt: range.end,
+      },
+    };
+    const [totalMinutes, ngMinutes] = await Promise.all([
+      requestModel.countDocuments(baseQuery),
+      requestModel.countDocuments({
+        ...baseQuery,
+        allowed: false,
+      }),
+    ]);
+    const safeTotal = Number.isFinite(totalMinutes) ? totalMinutes : 0;
+    const safeNg = Number.isFinite(ngMinutes) ? ngMinutes : 0;
+
+    return {
+      dateKey: range.dateKey,
+      start: range.start,
+      end: range.end,
+      totalMinutes: safeTotal,
+      okMinutes: Math.max(0, safeTotal - safeNg),
+      ngMinutes: safeNg,
+    };
+  }));
+}
+
 async function getRequestCounterDashboard(options = {}) {
   const requestModel = options.model || IncomingRequest;
   const endpointPath = options.endpointPath || ensureRequestCounterPath();
@@ -256,6 +336,10 @@ async function getRequestCounterDashboard(options = {}) {
     model: requestModel,
     now,
   });
+  const dailyMinuteStats = await fetchDailyMinuteStats(endpointPath, {
+    model: requestModel,
+    now,
+  });
 
   return {
     endpointPath,
@@ -268,6 +352,7 @@ async function getRequestCounterDashboard(options = {}) {
     remaining: Math.max(0, settings.maxRequests - currentCount),
     nextDecision: currentCount < settings.maxRequests ? 'OK' : 'NG',
     chartSeries,
+    dailyMinuteStats,
     recentRequests: Array.isArray(recentRequests) ? recentRequests : [],
   };
 }
@@ -349,7 +434,10 @@ module.exports = {
   REQUEST_COUNTER_MAX_WINDOW_MINUTES,
   REQUEST_COUNTER_MIN_LIMIT,
   REQUEST_COUNTER_MIN_WINDOW_MINUTES,
+  REQUEST_COUNTER_RETENTION_DAYS,
   REQUEST_COUNTER_WINDOW_MS,
+  buildCompleteRetentionDayRanges,
+  fetchDailyMinuteStats,
   fetchRollingWindowSeries,
   getCurrentRequestCounterStatus,
   getRequestCounterDashboard,

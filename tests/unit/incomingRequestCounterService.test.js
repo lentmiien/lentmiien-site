@@ -2,6 +2,8 @@ const {
   RequestCounterSettingsError,
   REQUEST_COUNTER_LIMIT,
   REQUEST_COUNTER_WINDOW_MS,
+  buildCompleteRetentionDayRanges,
+  fetchDailyMinuteStats,
   fetchRollingWindowSeries,
   getCurrentRequestCounterStatus,
   recordAndEvaluateRequest,
@@ -219,6 +221,69 @@ describe('incoming request counter service', () => {
       '2026-05-27T00:02:00.000Z',
       '2026-05-27T00:03:00.000Z',
     ]);
+  });
+
+  test('buildCompleteRetentionDayRanges includes only full local days in retention', () => {
+    const ranges = buildCompleteRetentionDayRanges(new Date(2026, 4, 28, 15, 0, 0));
+
+    expect(ranges.map((range) => range.dateKey)).toEqual([
+      '2026-05-22',
+      '2026-05-23',
+      '2026-05-24',
+      '2026-05-25',
+      '2026-05-26',
+      '2026-05-27',
+    ]);
+  });
+
+  test('fetchDailyMinuteStats counts total, OK, and NG minutes per complete day', async () => {
+    const model = {
+      countDocuments: jest.fn((query) => {
+        const start = query.receivedAt.$gte;
+        const dateKey = [
+          start.getFullYear(),
+          String(start.getMonth() + 1).padStart(2, '0'),
+          String(start.getDate()).padStart(2, '0'),
+        ].join('-');
+        const totals = {
+          '2026-05-22': 12,
+          '2026-05-23': 20,
+          '2026-05-24': 0,
+          '2026-05-25': 7,
+          '2026-05-26': 9,
+          '2026-05-27': 15,
+        };
+        const ng = {
+          '2026-05-22': 2,
+          '2026-05-23': 0,
+          '2026-05-24': 0,
+          '2026-05-25': 1,
+          '2026-05-26': 4,
+          '2026-05-27': 5,
+        };
+        return Promise.resolve(query.allowed === false ? (ng[dateKey] || 0) : (totals[dateKey] || 0));
+      }),
+    };
+
+    const stats = await fetchDailyMinuteStats('/secret-counter', {
+      model,
+      now: new Date(2026, 4, 28, 15, 0, 0),
+    });
+
+    expect(stats.map((row) => ({
+      dateKey: row.dateKey,
+      totalMinutes: row.totalMinutes,
+      okMinutes: row.okMinutes,
+      ngMinutes: row.ngMinutes,
+    }))).toEqual([
+      { dateKey: '2026-05-22', totalMinutes: 12, okMinutes: 10, ngMinutes: 2 },
+      { dateKey: '2026-05-23', totalMinutes: 20, okMinutes: 20, ngMinutes: 0 },
+      { dateKey: '2026-05-24', totalMinutes: 0, okMinutes: 0, ngMinutes: 0 },
+      { dateKey: '2026-05-25', totalMinutes: 7, okMinutes: 6, ngMinutes: 1 },
+      { dateKey: '2026-05-26', totalMinutes: 9, okMinutes: 5, ngMinutes: 4 },
+      { dateKey: '2026-05-27', totalMinutes: 15, okMinutes: 10, ngMinutes: 5 },
+    ]);
+    expect(model.countDocuments).toHaveBeenCalledTimes(12);
   });
 
   test('getCurrentRequestCounterStatus counts the rolling window without saving a request', async () => {
