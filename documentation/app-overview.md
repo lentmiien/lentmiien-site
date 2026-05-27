@@ -74,7 +74,6 @@ This document gives a high-level tour of the Lentmiien personal platform, highli
   - **Request Queue:** Collects meal requests and links to groceries inventory.
   - **Health Tracker:** Logs vitals, trends, and reminders with chart-ready datasets.
   - **Schedule Task Planner:** Detects overlapping presence events and notifies conflicts.
-  - **Sensor Dashboards:** `/mpu6050` and `/dht22` visualise home IoT readings.
 - **Backing Components:** `controllers/{cookingcontroller,healthcontroller,scheduleTaskController}`, `services/{cookingCalendar,health,scheduleTask}Service`, `models/*`, `views/*`.
 
 ### Document & Prompt Operations

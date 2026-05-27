@@ -8,7 +8,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 - **Media Generation Pipeline:** Sora 2 Studio for OpenAI video jobs, background polling/webhooks, ComfyUI and OpenAI image generation with caching, PDF-to-image conversion, ASR/TTS workflows, OCR tooling, and gallery ratings with Dropbox backups.
 - **Operations & Productivity Suite:** Unified accounting workspace (budgets, cards, analytics), receipt OCR, customs-ready product summaries, payroll builder, cooking calendar v2 with cookbook-first recipe handling, a dedicated cookbook module, unified shopping list, health tracker, quick notes, emergency stock, and a schedule-task planner.
 - **Automation & Integrations:** Startup maintenance, OpenAI usage harvesting, Dropbox sync, GitHub repository mirroring, temporary file transfer tool, Mailgun notifications, performance metrics, database usage alerts, hidden public to-buy intake, and bearer-protected API access.
-- **Experimentation Sandbox:** Sensor dashboards (MPU6050, DHT22), markdown editor demos, browser games with Brotli assets, reference materials, and agent orchestration docs (`AGENTS.md`, `documentation/framework.md`).
+- **Experimentation Sandbox:** Markdown editor demos, browser games with Brotli assets, reference materials, and agent orchestration docs (`AGENTS.md`, `documentation/framework.md`).
 - **Documentation & Quality:** Centralized guides and prompt libraries in `documentation/`, plus Jest-backed service tests with coverage artifacts under `coverage/`.
 
 ## Architecture

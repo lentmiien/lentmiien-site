@@ -85,12 +85,6 @@ const LocationModel = require('./models/location');
 const QuicknoteModel = require('./models/quicknote');
 // Bookmarks
 const BookmarkModel = require('./models/bookmark');
-// MPU6050
-const AggregatedDataModel = require('./models/aggregated_data');
-const DetailedDataModel = require('./models/detailed_data');
-// DHT22
-const Dht22AggregatedData = require('./models/dht22_aggregated_data');
-const Dht22DetailedData = require('./models/dht22_detailed_data');
 // Tapo energy readings
 const TapoReading = require('./models/tapo_reading');
 const TapoDailyConsumptionSnapshot = require('./models/tapo_daily_consumption_snapshot');
@@ -213,10 +207,6 @@ module.exports = {
   LocationModel,
   QuicknoteModel,
   BookmarkModel,
-  AggregatedDataModel,
-  DetailedDataModel,
-  Dht22AggregatedData,
-  Dht22DetailedData,
   TapoReading,
   TapoDailyConsumptionSnapshot,
   TapoMonthlyConsumptionSnapshot,

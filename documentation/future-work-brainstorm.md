@@ -50,9 +50,8 @@ This living list captures ideas for evolving the Lentmiien platform. It pairs in
 - **Multi-tenant scenarios** — Extend auth and data partitioning to support household members or collaborators with scoped access.
 
 ### Home & IoT Integrations
-- **Sensor automations** — Tie MPU6050/DHT22 readings to actual automations (trigger fans, lights) via Home Assistant or MQTT bridges.
 - **Energy usage optimisation** — Track electricity usage trends, predict high-consumption windows, and recommend scheduling adjustments for heavy appliances.
-- **Security & presence detection** — Fuse schedule tasks, sensor data, and manual overrides to power occupancy-aware alerts.
+- **Security & presence detection** — Fuse schedule tasks and manual overrides to power occupancy-aware alerts.
 
 ### Content & Knowledge Ecosystem
 - **Personal knowledge graph** — Link documents, conversations, prompts, and media outputs to uncover relationships and suggest relevant assets contextually.

@@ -30,16 +30,6 @@ router.get('/electricity_usage', (req, res) => {
 /****************************/
 // TEST TEST TEST TEST TEST //
 /****************************/
-router.get('/mpu6050', controller.mpu6050);
-
-/****************************/
-// TEST TEST TEST TEST TEST //
-/****************************/
-router.get('/dht22', controller.dht22);
-
-/****************************/
-// TEST TEST TEST TEST TEST //
-/****************************/
 router.get('/test_editor', controller.test_editor);
 
 /****************************/

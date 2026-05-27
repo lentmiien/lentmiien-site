@@ -1,4 +1,4 @@
-const { AggregatedDataModel, DetailedDataModel, Dht22AggregatedData, Dht22DetailedData, ExchangeRate } = require('../database');
+const { ExchangeRate } = require('../database');
 const logger = require('../utils/logger');
 const { diffJSON } = require('../utils/diffJSON');
 
@@ -158,24 +158,6 @@ exports.download_test = async (req, res) => {
 exports.scroll_test = (req, res) => {
   res.render('scroll_test')
 };
-
-/****************************/
-// TEST TEST TEST TEST TEST //
-/****************************/
-exports.mpu6050 = async (req, res) => {
-  const aggregated_data = await AggregatedDataModel.find();
-  const detailed_data = await DetailedDataModel.find();
-  res.render('mpu6050', {aggregated_data, detailed_data});
-}
-
-/****************************/
-// TEST TEST TEST TEST TEST //
-/****************************/
-exports.dht22 = async (req, res) => {
-  const aggregated_data = await Dht22AggregatedData.find();
-  const detailed_data = await Dht22DetailedData.find();
-  res.render('dht22', {aggregated_data, detailed_data});
-}
 
 /****************************/
 // TEST TEST TEST TEST TEST //
