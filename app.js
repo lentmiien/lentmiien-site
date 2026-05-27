@@ -16,6 +16,7 @@ const bcrypt = require('bcryptjs');
 const expressStaticGzip = require('express-static-gzip');
 const crypto = require('crypto');
 const { ensurePublicTobuyListPath } = require('./utils/publicTobuyList');
+const { ensureRequestCounterPath } = require('./utils/requestCounterPath');
 
 // Database models
 const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
@@ -61,6 +62,11 @@ app.use(express.json({ limit: DEFAULT_BODY_LIMIT }));
 
 // App health
 app.use('/apphealth', (req, res) => res.json({status: "ok"}));
+
+// Public hidden request counter endpoint
+const requestCounterRouter = require('./routes/request_counter');
+const requestCounterPath = ensureRequestCounterPath();
+app.use(requestCounterPath, requestCounterRouter);
 
 // Passport setup
 app.use(passport.initialize());

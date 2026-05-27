@@ -155,6 +155,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `API_KEY` | Bearer token required for `/api` automation routes. |
 | `API_TIER1_USER_ID`, `API_TIER2_USER_ID` | User IDs required by `/api/records` endpoints after bearer-token authentication. |
 | `PUBLIC_TOBUY_LIST_PATH` | Hidden public route for the shared to-buy form; generated and persisted to `.env` if omitted. |
+| `REQUEST_COUNTER_PATH` | Hidden public GET endpoint for the 60-requests-per-90-minutes counter; generated and persisted to `.env` if omitted. |
 | `employeeNo`, `employeeName`, `department` | Default payroll metadata injected into forms. |
 | `HIDE_GTAG` | Set to `YES` to suppress Google Analytics tags. |
 

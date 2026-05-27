@@ -157,6 +157,7 @@ const LearningArtAsset = require('./models/learning_art_asset');
 const ClusterInventoryItem = require('./models/cluster_inventory_item');
 const ClusterNodeType = require('./models/cluster_node_type');
 const ClusterHardwareCatalogItem = require('./models/cluster_hardware_catalog_item');
+const IncomingRequest = require('./models/incoming_request');
 
 // Export models
 module.exports = {
@@ -258,4 +259,5 @@ module.exports = {
   ClusterInventoryItem,
   ClusterNodeType,
   ClusterHardwareCatalogItem,
+  IncomingRequest,
 };
