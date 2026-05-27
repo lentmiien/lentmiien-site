@@ -158,6 +158,7 @@ const ClusterInventoryItem = require('./models/cluster_inventory_item');
 const ClusterNodeType = require('./models/cluster_node_type');
 const ClusterHardwareCatalogItem = require('./models/cluster_hardware_catalog_item');
 const IncomingRequest = require('./models/incoming_request');
+const RequestCounterSettings = require('./models/request_counter_settings');
 
 // Export models
 module.exports = {
@@ -260,4 +261,5 @@ module.exports = {
   ClusterNodeType,
   ClusterHardwareCatalogItem,
   IncomingRequest,
+  RequestCounterSettings,
 };

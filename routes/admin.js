@@ -11,6 +11,7 @@ const toolManagerController = require('../controllers/toolManagerController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
 const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminController');
 const tapoController = require('../controllers/tapoController');
+const requestCounterAdminController = require('../controllers/requestCounterAdminController');
 const lifeLogRouter = require('./lifeLog');
 
 const htmlUpload = multer({
@@ -149,6 +150,8 @@ router.post('/ai-gateway/containers/:id/:action', controller.ai_gateway_containe
 router.post('/ai-gateway/auto-stop', controller.ai_gateway_auto_stop_update);
 router.post('/ai-gateway/monitor', controller.ai_gateway_monitor_update);
 router.get('/performance', controller.performance_dashboard);
+router.get('/request-counter', requestCounterAdminController.dashboard);
+router.post('/request-counter/settings', requestCounterAdminController.updateSettings);
 router.get('/database_usage', controller.database_usage);
 router.get('/database-viewer', controller.database_viewer_page);
 router.get('/database-viewer/data', controller.database_viewer_data);

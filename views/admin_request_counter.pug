@@ -1,0 +1,95 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/request_counter_admin.css')
+
+block content
+  .request-counter-admin
+    header.request-counter-admin__header
+      div
+        h1.request-counter-admin__title Request Counter
+        p.request-counter-admin__subtitle Rolling request count and live threshold settings.
+      .request-counter-admin__meta
+        span Last updated #{generatedAtDisplay}
+        a.request-counter-admin__refresh(href='/admin/request-counter') Refresh
+
+    if feedback
+      .request-counter-admin__alert(class=`request-counter-admin__alert--${feedback.status}`)= feedback.message
+
+    if loadError
+      .request-counter-admin__alert.request-counter-admin__alert--error= loadError
+    else
+      section.request-counter-admin__section
+        .request-counter-admin__cards
+          each card in overviewCards
+            article.request-counter-card(class=card.tone ? `request-counter-card--${card.tone}` : '')
+              p.request-counter-card__label= card.label
+              p.request-counter-card__value= card.value
+              if card.helper
+                p.request-counter-card__helper= card.helper
+
+      .request-counter-admin__grid
+        section.request-counter-panel.request-counter-panel--wide
+          .request-counter-panel__header
+            h2 Request Count
+            span.request-counter-panel__meta #{settings.windowDisplay} rolling window
+          #requestCounterChart.request-counter-chart
+
+        section.request-counter-panel
+          .request-counter-panel__header
+            h2 Settings
+            span.request-counter-panel__meta Live
+          form.request-counter-form(method='post', action='/admin/request-counter/settings')
+            label.request-counter-form__field(for='maxRequests')
+              span Max Requests
+              input#maxRequests(type='number', name='maxRequests', min='1', max='100000', step='1', value=settings.maxRequests, required)
+            label.request-counter-form__field(for='windowMinutes')
+              span Window Minutes
+              input#windowMinutes(type='number', name='windowMinutes', min='1', max='10080', step='1', value=settings.windowMinutes, required)
+            button.request-counter-form__button(type='submit') Save
+          dl.request-counter-settings
+            div
+              dt Endpoint
+              dd= endpointPath
+            div
+              dt Updated
+              dd= settings.updatedAtDisplay
+            div
+              dt Updated By
+              dd= settings.updatedByDisplay
+
+      section.request-counter-admin__section
+        .request-counter-panel
+          .request-counter-panel__header
+            h2 Recent Requests
+            span.request-counter-panel__meta Latest 25
+          if recentRequests && recentRequests.length
+            .request-counter-table-wrap
+              table.request-counter-table
+                thead
+                  tr
+                    th Time
+                    th Result
+                    th Window Count
+                    th HTTP
+                    th IP
+                    th Path
+                    th User Agent
+                tbody
+                  each row in recentRequests
+                    tr
+                      td= row.receivedAtDisplay
+                      td
+                        span.request-counter-result(class=row.responseText === 'OK' ? 'request-counter-result--ok' : 'request-counter-result--ng')= row.responseText
+                      td= row.countInWindowDisplay
+                      td= row.responseStatusCode
+                      td= row.ip
+                      td= row.requestPath
+                      td= row.userAgent
+          else
+            p.request-counter-empty No request records yet.
+
+block script
+  script(src='https://d3js.org/d3.v7.min.js', defer)
+  script(type='application/json', id='requestCounterData') !{chartJson}
+  script(src='/js/request_counter_admin.js', defer)

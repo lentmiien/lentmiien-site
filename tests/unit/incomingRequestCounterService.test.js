@@ -1,8 +1,24 @@
 const {
+  RequestCounterSettingsError,
   REQUEST_COUNTER_LIMIT,
   REQUEST_COUNTER_WINDOW_MS,
+  fetchRollingWindowSeries,
   recordAndEvaluateRequest,
+  updateRequestCounterSettings,
 } = require('../../services/incomingRequestCounterService');
+
+function createLeanQuery(result) {
+  const exec = jest.fn().mockResolvedValue(result);
+  const lean = jest.fn().mockReturnValue({ exec });
+  return { lean, exec };
+}
+
+function createFindChain(result) {
+  const leanQuery = createLeanQuery(result);
+  const select = jest.fn().mockReturnValue(leanQuery);
+  const sort = jest.fn().mockReturnValue({ select });
+  return { sort, select, leanQuery };
+}
 
 function createRequest(overrides = {}) {
   return {
@@ -31,7 +47,11 @@ describe('incoming request counter service', () => {
     };
     const now = new Date('2026-05-27T00:00:00.000Z');
 
-    const result = await recordAndEvaluateRequest(createRequest(), { model, now });
+    const result = await recordAndEvaluateRequest(createRequest(), {
+      model,
+      now,
+      settings: { maxRequests: 60, windowMinutes: 90 },
+    });
 
     expect(result).toMatchObject({
       allowed: true,
@@ -70,6 +90,7 @@ describe('incoming request counter service', () => {
     const result = await recordAndEvaluateRequest(createRequest(), {
       model,
       now: new Date('2026-05-27T00:00:00.000Z'),
+      settings: { maxRequests: 60, windowMinutes: 90 },
     });
 
     expect(result).toMatchObject({
@@ -84,5 +105,118 @@ describe('incoming request counter service', () => {
       responseStatusCode: 429,
       responseText: 'NG',
     }));
+  });
+
+  test('uses live settings for the limit and rolling window length', async () => {
+    const model = {
+      countDocuments: jest.fn().mockResolvedValue(119),
+      create: jest.fn().mockResolvedValue({}),
+    };
+    const now = new Date('2026-05-27T00:00:00.000Z');
+
+    const result = await recordAndEvaluateRequest(createRequest(), {
+      model,
+      now,
+      settings: { maxRequests: 120, windowMinutes: 45 },
+    });
+
+    expect(result).toMatchObject({
+      allowed: true,
+      countInWindow: 120,
+      limit: 120,
+      windowMinutes: 45,
+      responseStatusCode: 200,
+      responseText: 'OK',
+    });
+    expect(model.countDocuments).toHaveBeenCalledWith({
+      endpointPath: '/secret-counter',
+      receivedAt: { $gte: new Date('2026-05-26T23:15:00.000Z') },
+    });
+  });
+
+  test('updateRequestCounterSettings validates and persists admin changes', async () => {
+    const settingsModel = {
+      findOneAndUpdate: jest.fn().mockReturnValue(createLeanQuery({
+        key: 'default',
+        maxRequests: 120,
+        windowMinutes: 45,
+        updatedBy: 'admin-user',
+      })),
+    };
+
+    const result = await updateRequestCounterSettings(
+      { maxRequests: '120', windowMinutes: '45' },
+      { settingsModel, updatedBy: 'admin-user' }
+    );
+
+    expect(settingsModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { key: 'default' },
+      {
+        $set: {
+          maxRequests: 120,
+          windowMinutes: 45,
+          updatedBy: 'admin-user',
+        },
+        $setOnInsert: {
+          key: 'default',
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+    expect(result).toMatchObject({
+      maxRequests: 120,
+      windowMinutes: 45,
+      windowMs: 45 * 60 * 1000,
+      updatedBy: 'admin-user',
+    });
+  });
+
+  test('updateRequestCounterSettings rejects out-of-range values', async () => {
+    await expect(updateRequestCounterSettings(
+      { maxRequests: '0', windowMinutes: '45' },
+      { settingsModel: {} }
+    )).rejects.toBeInstanceOf(RequestCounterSettingsError);
+  });
+
+  test('fetchRollingWindowSeries builds per-minute rolling counts', async () => {
+    const rows = [
+      { receivedAt: new Date('2026-05-27T00:00:30.000Z') },
+      { receivedAt: new Date('2026-05-27T00:01:45.000Z') },
+      { receivedAt: new Date('2026-05-27T00:03:00.000Z') },
+    ];
+    const chain = createFindChain(rows);
+    const model = {
+      find: jest.fn().mockReturnValue({ sort: chain.sort }),
+    };
+
+    const series = await fetchRollingWindowSeries(
+      '/secret-counter',
+      { windowMinutes: 3, windowMs: 3 * 60 * 1000 },
+      {
+        model,
+        now: new Date('2026-05-27T00:03:30.000Z'),
+      }
+    );
+
+    expect(model.find).toHaveBeenCalledWith({
+      endpointPath: '/secret-counter',
+      receivedAt: {
+        $gte: new Date('2026-05-26T23:58:00.000Z'),
+        $lte: new Date('2026-05-27T00:03:30.000Z'),
+      },
+    });
+    expect(chain.sort).toHaveBeenCalledWith({ receivedAt: 1 });
+    expect(chain.select).toHaveBeenCalledWith({ receivedAt: 1 });
+    expect(series.map((point) => point.count)).toEqual([2, 2, 3]);
+    expect(series.map((point) => point.timestamp)).toEqual([
+      '2026-05-27T00:01:00.000Z',
+      '2026-05-27T00:02:00.000Z',
+      '2026-05-27T00:03:00.000Z',
+    ]);
   });
 });
