@@ -13,6 +13,19 @@ const CREDIT_BRIDGE_GROUPS = new Set(['credit card repayments', 'repayment']);
 const SAVINGS_GROUP = 'savings';
 const FAMILY_GROUP = 'family';
 const SELF_BUSINESS = 'self';
+const GUIDELINE_PROFILE = {
+  birthYear: 1985,
+  birthMonth: 7,
+  householdLabel: 'Japan household: wife and son',
+  nenkinYears: 11,
+  emergencyMonths: 6,
+  emergencyMinimumMonths: 3,
+  emergencyConservativeMonths: 9,
+  retirementMultiplierNow: 3,
+  retirementMultiplierAge50: 6,
+  savingsRateLow: 15,
+  savingsRateHigh: 20,
+};
 
 function cleanBusinessName(value) {
   if (typeof value !== 'string') return '';
@@ -327,6 +340,7 @@ function emptyOverallAnalytics() {
     groupBreakdown: [],
     specialBreakdown: [],
     prediction: buildEmptyPrediction(currentYear),
+    guidelines: buildEmptyGuidelines(),
   };
 }
 
@@ -681,6 +695,174 @@ function buildYearlyRows(monthlyRows) {
   return Array.from(byYear.values()).sort((a, b) => a.year - b.year);
 }
 
+function ageFromBirthMonth(referenceDate, birthYear, birthMonth) {
+  const year = referenceDate.getUTCFullYear();
+  const month = referenceDate.getUTCMonth() + 1;
+  return year - birthYear - (month < birthMonth ? 1 : 0);
+}
+
+function averageRows(rows, field) {
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  return rows.reduce((sum, row) => sum + Number(row[field] || 0), 0) / rows.length;
+}
+
+function numberRatio(value, base) {
+  if (!Number.isFinite(value) || !Number.isFinite(base) || base === 0) return null;
+  return value / base;
+}
+
+function guidelineStatusEmergency(monthsCovered) {
+  if (!Number.isFinite(monthsCovered)) return 'unknown';
+  if (monthsCovered < GUIDELINE_PROFILE.emergencyMinimumMonths) return 'low';
+  if (monthsCovered < GUIDELINE_PROFILE.emergencyMonths) return 'watch';
+  if (monthsCovered <= GUIDELINE_PROFILE.emergencyConservativeMonths) return 'balanced';
+  return 'high';
+}
+
+function guidelineStatusWorth(multiple) {
+  if (!Number.isFinite(multiple)) return 'unknown';
+  if (multiple >= GUIDELINE_PROFILE.retirementMultiplierNow) return 'balanced';
+  if (multiple >= 2) return 'watch';
+  return 'low';
+}
+
+function guidelineStatusSavings(rate) {
+  if (!Number.isFinite(rate)) return 'unknown';
+  if (rate >= GUIDELINE_PROFILE.savingsRateHigh) return 'high';
+  if (rate >= GUIDELINE_PROFILE.savingsRateLow) return 'balanced';
+  if (rate >= 10) return 'watch';
+  return 'low';
+}
+
+function buildEmptyGuidelines() {
+  const age = ageFromBirthMonth(new Date(), GUIDELINE_PROFILE.birthYear, GUIDELINE_PROFILE.birthMonth);
+  return {
+    profile: {
+      age,
+      birthContext: 'Born July 1985',
+      householdLabel: GUIDELINE_PROFILE.householdLabel,
+      scopeNotes: [
+        'Only your tracked accounts and cards are included.',
+        'Spouse, child, Nenkin value, pre-tracking savings, and savings interest are not capitalized.',
+      ],
+    },
+    basis: {
+      monthsUsed: 0,
+      averageMonthlyIncome: 0,
+      averageMonthlySpend: 0,
+      annualIncomeBasis: 0,
+    },
+    emergencyFund: {
+      status: 'unknown',
+      liquidCash: 0,
+      monthsCovered: null,
+      targetMonths: GUIDELINE_PROFILE.emergencyMonths,
+      minimumTarget: 0,
+      target: 0,
+      conservativeTarget: 0,
+      gapToTarget: 0,
+      excessAboveTarget: 0,
+      excessAboveConservative: 0,
+    },
+    worthBenchmark: {
+      status: 'unknown',
+      currentWorth: 0,
+      annualIncomeBasis: 0,
+      worthToIncomeMultiple: null,
+      currentTarget: 0,
+      currentGap: 0,
+      age50Target: 0,
+      age50Gap: 0,
+      yearsTo50: Math.max(0, 50 - age),
+      monthlyIncreaseNeededTo50: 0,
+    },
+    savingsPace: {
+      status: 'unknown',
+      recentSavingsRate: null,
+      averageMonthlySavings: 0,
+      targetMonthlyLow: 0,
+      targetMonthlyHigh: 0,
+      gapToLowTarget: 0,
+    },
+    pension: {
+      nenkinYears: GUIDELINE_PROFILE.nenkinYears,
+      eligibilityYears: 10,
+      includedInWorth: false,
+      status: GUIDELINE_PROFILE.nenkinYears >= 10 ? 'eligible-window' : 'building',
+    },
+  };
+}
+
+function buildEconomicGuidelines(monthlyRows, summary) {
+  const guidelines = buildEmptyGuidelines();
+  const sourceRows = (monthlyRows || []).filter((row) => row.transactionCount > 0).slice(-12);
+  const baseRows = sourceRows.length ? sourceRows : (monthlyRows || []).slice(-12);
+  const latestRow = monthlyRows && monthlyRows.length ? monthlyRows[monthlyRows.length - 1] : null;
+  const monthsUsed = baseRows.length;
+  const averageMonthlyIncome = averageRows(baseRows, 'income');
+  const averageMonthlySpend = averageRows(baseRows, 'operatingExpense');
+  const averageMonthlySavings = averageRows(baseRows, 'savingsContribution');
+  const annualIncomeBasis = averageMonthlyIncome * 12;
+  const liquidCash = latestRow ? Number(latestRow.liquidCashEstimate || 0) : Number(summary.currentTrackedCash || 0);
+  const currentWorth = Number(summary.latestWorthEstimate || 0);
+  const emergencyMinimum = averageMonthlySpend * GUIDELINE_PROFILE.emergencyMinimumMonths;
+  const emergencyTarget = averageMonthlySpend * GUIDELINE_PROFILE.emergencyMonths;
+  const emergencyConservative = averageMonthlySpend * GUIDELINE_PROFILE.emergencyConservativeMonths;
+  const monthsCovered = averageMonthlySpend > 0 ? liquidCash / averageMonthlySpend : null;
+  const worthMultiple = numberRatio(currentWorth, annualIncomeBasis);
+  const currentTarget = annualIncomeBasis * GUIDELINE_PROFILE.retirementMultiplierNow;
+  const age50Target = annualIncomeBasis * GUIDELINE_PROFILE.retirementMultiplierAge50;
+  const yearsTo50 = Math.max(0, 50 - guidelines.profile.age);
+  const age50Gap = age50Target - currentWorth;
+  const recentSavingsRate = averageMonthlyIncome > 0
+    ? (averageMonthlySavings / averageMonthlyIncome) * 100
+    : null;
+  const targetMonthlyLow = averageMonthlyIncome * (GUIDELINE_PROFILE.savingsRateLow / 100);
+  const targetMonthlyHigh = averageMonthlyIncome * (GUIDELINE_PROFILE.savingsRateHigh / 100);
+
+  return {
+    ...guidelines,
+    basis: {
+      monthsUsed,
+      averageMonthlyIncome,
+      averageMonthlySpend,
+      annualIncomeBasis,
+    },
+    emergencyFund: {
+      status: guidelineStatusEmergency(monthsCovered),
+      liquidCash,
+      monthsCovered,
+      targetMonths: GUIDELINE_PROFILE.emergencyMonths,
+      minimumTarget: emergencyMinimum,
+      target: emergencyTarget,
+      conservativeTarget: emergencyConservative,
+      gapToTarget: Math.max(0, emergencyTarget - liquidCash),
+      excessAboveTarget: Math.max(0, liquidCash - emergencyTarget),
+      excessAboveConservative: Math.max(0, liquidCash - emergencyConservative),
+    },
+    worthBenchmark: {
+      status: guidelineStatusWorth(worthMultiple),
+      currentWorth,
+      annualIncomeBasis,
+      worthToIncomeMultiple: worthMultiple,
+      currentTarget,
+      currentGap: currentTarget - currentWorth,
+      age50Target,
+      age50Gap,
+      yearsTo50,
+      monthlyIncreaseNeededTo50: yearsTo50 > 0 ? Math.max(0, age50Gap / (yearsTo50 * 12)) : 0,
+    },
+    savingsPace: {
+      status: guidelineStatusSavings(recentSavingsRate),
+      recentSavingsRate,
+      averageMonthlySavings,
+      targetMonthlyLow,
+      targetMonthlyHigh,
+      gapToLowTarget: Math.max(0, targetMonthlyLow - averageMonthlySavings),
+    },
+  };
+}
+
 async function ensureBusiness(name, options = {}) {
   const item = uniqueBusinessNames([name])[0];
   if (!item) return null;
@@ -975,7 +1157,27 @@ async function getOverallAnalytics() {
   const latestMonthly = monthly[monthly.length - 1];
   const latestWorthEstimate = latestMonthly ? latestMonthly.worthEstimate : accountSnapshot.total;
   const worthChangeTotal = latestMonthly ? latestMonthly.cumulativeEconomicNet : 0;
+  const summary = {
+    transactionCount: transactions.length,
+    firstDate: first.isoDate,
+    latestDate: latest.isoDate,
+    currentTrackedCash: accountSnapshot.total,
+    hasTrackedCashAnchor: accountSnapshot.hasAnchor,
+    latestWorthEstimate,
+    worthChangeTotal,
+    income: totalIncome,
+    operatingExpense: totalOperatingExpense,
+    refundsCredits: totalRefundsCredits,
+    savingsContribution: totalSavingsContribution,
+    internalTransferNet: totalInternalTransferNet,
+    bridgeCash: totalBridgeCash,
+    bridgeCard: totalBridgeCard,
+    estimatedCardLiability: latestMonthly ? latestMonthly.creditCardLiability : 0,
+    savingsRate: totalIncome > 0 ? (totalSavingsContribution / totalIncome) * 100 : null,
+    expenseRatio: totalIncome > 0 ? (totalOperatingExpense / totalIncome) * 100 : null,
+  };
   const prediction = buildPrediction(monthly, latestWorthEstimate);
+  const guidelines = buildEconomicGuidelines(monthly, summary);
 
   groupRows.forEach((row) => {
     row.shareOfExpense = totalOperatingExpense > 0
@@ -1005,30 +1207,13 @@ async function getOverallAnalytics() {
     .sort((a, b) => a.groupName.localeCompare(b.groupName));
 
   return {
-    summary: {
-      transactionCount: transactions.length,
-      firstDate: first.isoDate,
-      latestDate: latest.isoDate,
-      currentTrackedCash: accountSnapshot.total,
-      hasTrackedCashAnchor: accountSnapshot.hasAnchor,
-      latestWorthEstimate,
-      worthChangeTotal,
-      income: totalIncome,
-      operatingExpense: totalOperatingExpense,
-      refundsCredits: totalRefundsCredits,
-      savingsContribution: totalSavingsContribution,
-      internalTransferNet: totalInternalTransferNet,
-      bridgeCash: totalBridgeCash,
-      bridgeCard: totalBridgeCard,
-      estimatedCardLiability: latestMonthly ? latestMonthly.creditCardLiability : 0,
-      savingsRate: totalIncome > 0 ? (totalSavingsContribution / totalIncome) * 100 : null,
-      expenseRatio: totalIncome > 0 ? (totalOperatingExpense / totalIncome) * 100 : null,
-    },
+    summary,
     monthly,
     yearly: buildYearlyRows(monthly),
     groupBreakdown,
     specialBreakdown,
     prediction,
+    guidelines,
   };
 }
 

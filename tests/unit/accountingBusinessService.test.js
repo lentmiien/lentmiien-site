@@ -330,5 +330,20 @@ describe('accountingBusinessService', () => {
       economicNet: 239900,
       worthEstimate: 739900,
     });
+    expect(analytics.guidelines.emergencyFund).toMatchObject({
+      liquidCash: 719900,
+      monthsCovered: expect.closeTo(11.998, 2),
+      target: 360000,
+      excessAboveTarget: 359900,
+    });
+    expect(analytics.guidelines.worthBenchmark).toMatchObject({
+      annualIncomeBasis: 3600000,
+      worthToIncomeMultiple: expect.closeTo(0.205, 2),
+      currentTarget: 10800000,
+    });
+    expect(analytics.guidelines.savingsPace).toMatchObject({
+      recentSavingsRate: expect.closeTo(6.666, 2),
+      targetMonthlyLow: 45000,
+    });
   });
 });

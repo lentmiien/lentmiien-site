@@ -6,6 +6,13 @@ block styles
 block content
   - const summary = analytics && analytics.summary ? analytics.summary : {}
   - const prediction = analytics && analytics.prediction ? analytics.prediction : {}
+  - const guidelines = analytics && analytics.guidelines ? analytics.guidelines : {}
+  - const emergencyFund = guidelines.emergencyFund || {}
+  - const worthBenchmark = guidelines.worthBenchmark || {}
+  - const savingsPace = guidelines.savingsPace || {}
+  - const pensionGuide = guidelines.pension || {}
+  - const profileGuide = guidelines.profile || {}
+  - const basisGuide = guidelines.basis || {}
   - const monthlyRows = analytics && analytics.monthly ? analytics.monthly : []
   - const yearlyRows = analytics && analytics.yearly ? analytics.yearly : []
   - const groupRows = analytics && analytics.groupBreakdown ? analytics.groupBreakdown : []
@@ -13,8 +20,13 @@ block content
   - const formatJpy = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Math.round(Number(value)).toLocaleString()} JPY`
   - const formatSignedJpy = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Number(value) >= 0 ? '+' : '-'}${Math.round(Math.abs(Number(value))).toLocaleString()} JPY`
   - const formatPercent = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Number(value).toFixed(1)}%`
+  - const formatMultiple = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Number(value).toFixed(1)}x`
+  - const formatMonths = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Number(value).toFixed(1)} months`
   - const formatDate = (value) => value || '--'
   - const formatRange = (low, high) => `${formatJpy(low)} to ${formatJpy(high)}`
+  - const emergencyProgress = emergencyFund.target > 0 ? Math.min(100, Math.max(0, (Number(emergencyFund.liquidCash || 0) / Number(emergencyFund.target)) * 100)) : 0
+  - const worthProgress = worthBenchmark.currentTarget > 0 ? Math.min(100, Math.max(0, (Number(worthBenchmark.currentWorth || 0) / Number(worthBenchmark.currentTarget)) * 100)) : 0
+  - const savingsProgress = savingsPace.targetMonthlyLow > 0 ? Math.min(100, Math.max(0, (Number(savingsPace.averageMonthlySavings || 0) / Number(savingsPace.targetMonthlyLow)) * 100)) : 0
   .accounting-app.business-overall-page
     .accounting-hero.business-overall-hero
       .hero-text
@@ -55,6 +67,76 @@ block content
       .metric-card
         span.metric-label Transactions
         strong.metric-value= (summary.transactionCount || 0).toLocaleString()
+    section.accounting-card.economic-guidelines
+      .section-header
+        h2 Personal guidelines
+        p.mb-0= `Age ${profileGuide.age || '--'}; ${profileGuide.householdLabel || 'household context unavailable'}. Wife/son assets, future Nenkin value, pre-tracking savings, and interest are not included in the estimate.`
+      .economic-guideline-grid
+        .economic-guideline-panel(class=`guideline-status-${emergencyFund.status || 'unknown'}`)
+          .guideline-panel-header
+            span.metric-label Liquid cash reserve
+            span.guideline-status= emergencyFund.status || 'unknown'
+          strong.metric-value= formatMonths(emergencyFund.monthsCovered)
+          .guideline-progress
+            span.guideline-progress-fill(style=`width: ${emergencyProgress}%`)
+          dl.economic-stat-list
+            dt Current liquid cash
+            dd= formatJpy(emergencyFund.liquidCash)
+            dt 6-month target
+            dd= formatJpy(emergencyFund.target)
+            dt Gap / excess
+            dd= emergencyFund.gapToTarget > 0 ? formatSignedJpy(0 - emergencyFund.gapToTarget) : formatSignedJpy(emergencyFund.excessAboveTarget)
+            dt Conservative 9 months
+            dd= formatJpy(emergencyFund.conservativeTarget)
+        .economic-guideline-panel(class=`guideline-status-${worthBenchmark.status || 'unknown'}`)
+          .guideline-panel-header
+            span.metric-label Visible worth benchmark
+            span.guideline-status= worthBenchmark.status || 'unknown'
+          strong.metric-value= formatMultiple(worthBenchmark.worthToIncomeMultiple)
+          .guideline-progress
+            span.guideline-progress-fill(style=`width: ${worthProgress}%`)
+          dl.economic-stat-list
+            dt Annual income basis
+            dd= formatJpy(worthBenchmark.annualIncomeBasis)
+            dt Age-40 rough target
+            dd= formatJpy(worthBenchmark.currentTarget)
+            dt Gap / surplus
+            dd= formatSignedJpy(0 - Number(worthBenchmark.currentGap || 0))
+            dt Static age-50 target
+            dd= formatJpy(worthBenchmark.age50Target)
+        .economic-guideline-panel(class=`guideline-status-${savingsPace.status || 'unknown'}`)
+          .guideline-panel-header
+            span.metric-label Savings pace
+            span.guideline-status= savingsPace.status || 'unknown'
+          strong.metric-value= formatPercent(savingsPace.recentSavingsRate)
+          .guideline-progress
+            span.guideline-progress-fill(style=`width: ${savingsProgress}%`)
+          dl.economic-stat-list
+            dt Avg monthly savings
+            dd= formatJpy(savingsPace.averageMonthlySavings)
+            dt 15% monthly target
+            dd= formatJpy(savingsPace.targetMonthlyLow)
+            dt 20% monthly target
+            dd= formatJpy(savingsPace.targetMonthlyHigh)
+            dt Gap to 15%
+            dd= savingsPace.gapToLowTarget > 0 ? formatSignedJpy(0 - savingsPace.gapToLowTarget) : formatSignedJpy(0)
+        .economic-guideline-panel.guideline-status-balanced
+          .guideline-panel-header
+            span.metric-label Nenkin context
+            span.guideline-status not valued
+          strong.metric-value= `${pensionGuide.nenkinYears || 0} years`
+          dl.economic-stat-list
+            dt Eligibility threshold
+            dd= `${pensionGuide.eligibilityYears || 10} years`
+            dt Included in worth
+            dd= pensionGuide.includedInWorth ? 'Yes' : 'No'
+            dt Guideline basis
+            dd= `${basisGuide.monthsUsed || 0} months`
+            dt Avg monthly spend
+            dd= formatJpy(basisGuide.averageMonthlySpend)
+      .economic-guideline-note
+        span.badge-soft Awareness only
+        span These are ballpark personal-finance checks. The visible worth target is intentionally conservative because public pension value and untracked family assets are outside the dashboard.
     .analytics-grid.economic-dashboard-grid
       .analytics-card.economic-card-wide
         h3 Worth trend
