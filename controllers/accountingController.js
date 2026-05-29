@@ -128,11 +128,34 @@ exports.businessAnalytics = async (req, res, next) => {
   }
 };
 
+exports.overallBusinessAnalytics = async (req, res, next) => {
+  try {
+    const analytics = await AccountingBusinessService.getOverallAnalytics();
+    res.render('accounting_business_overall', {
+      analytics,
+    });
+  } catch (error) {
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    res.status(500).json({ error: error.message });
+  }
+};
+
 exports.businessAnalyticsApi = async (req, res) => {
   try {
     const scope = req.query.scope === 'group' ? 'group' : 'business';
     const value = req.query.value || '';
     const analytics = await AccountingBusinessService.getAnalytics({ scope, value });
+    res.json(analytics);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.overallBusinessAnalyticsApi = async (req, res) => {
+  try {
+    const analytics = await AccountingBusinessService.getOverallAnalytics();
     res.json(analytics);
   } catch (err) {
     res.status(400).json({ error: err.message });

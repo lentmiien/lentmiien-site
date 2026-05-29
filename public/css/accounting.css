@@ -178,6 +178,10 @@
   min-height: 220px;
 }
 
+.business-chart svg {
+  max-width: 100%;
+}
+
 .business-chart--compact {
   min-height: 170px;
 }
@@ -236,6 +240,46 @@
   min-width: 760px;
 }
 
+.economic-dashboard-grid {
+  align-items: stretch;
+}
+
+.economic-card-wide {
+  grid-column: span 2;
+}
+
+.economic-worth-chart {
+  min-height: 300px;
+}
+
+.economic-stat-list {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.2fr);
+  gap: 0.45rem 0.75rem;
+  margin: 1rem 0 0;
+}
+
+.economic-stat-list dt {
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 500;
+}
+
+.economic-stat-list dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+}
+
+.economic-forecast-table {
+  min-width: 430px;
+}
+
+.economic-report-table,
+.economic-group-table,
+.economic-monthly-table {
+  min-width: 980px;
+}
+
 .business-groups-table .business-group-input {
   min-width: 160px;
 }
@@ -256,5 +300,11 @@
   }
   .hero-actions .btn {
     flex: 1 1 auto;
+  }
+  .economic-card-wide {
+    grid-column: auto;
+  }
+  .economic-stat-list dd {
+    text-align: left;
   }
 }

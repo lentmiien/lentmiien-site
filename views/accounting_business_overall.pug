@@ -1,0 +1,247 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/accounting.css')
+
+block content
+  - const summary = analytics && analytics.summary ? analytics.summary : {}
+  - const prediction = analytics && analytics.prediction ? analytics.prediction : {}
+  - const monthlyRows = analytics && analytics.monthly ? analytics.monthly : []
+  - const yearlyRows = analytics && analytics.yearly ? analytics.yearly : []
+  - const groupRows = analytics && analytics.groupBreakdown ? analytics.groupBreakdown : []
+  - const specialRows = analytics && analytics.specialBreakdown ? analytics.specialBreakdown : []
+  - const formatJpy = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Math.round(Number(value)).toLocaleString()} JPY`
+  - const formatSignedJpy = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Number(value) >= 0 ? '+' : '-'}${Math.round(Math.abs(Number(value))).toLocaleString()} JPY`
+  - const formatPercent = (value) => value === null || value === undefined || Number.isNaN(Number(value)) ? '--' : `${Number(value).toFixed(1)}%`
+  - const formatDate = (value) => value || '--'
+  - const formatRange = (low, high) => `${formatJpy(low)} to ${formatJpy(high)}`
+  .accounting-app.business-overall-page
+    .accounting-hero.business-overall-hero
+      .hero-text
+        h1 Economic Dashboard
+        p.mb-0= `${formatDate(summary.firstDate)} to ${formatDate(summary.latestDate)}`
+        .hero-actions.mt-3
+          a.btn.btn-outline-light(href='/accounting') Accounting
+          a.btn.btn-outline-light(href='/accounting/business-analytics') Group analytics
+      .hero-metrics
+        .metric-card
+          span.metric-label Estimated worth
+          strong.metric-value(class=Number(summary.latestWorthEstimate) < 0 ? 'metric-negative' : 'metric-positive')= formatJpy(summary.latestWorthEstimate)
+        .metric-card
+          span.metric-label Worth movement
+          strong.metric-value(class=Number(summary.worthChangeTotal) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(summary.worthChangeTotal)
+        .metric-card
+          span.metric-label Operating income
+          strong.metric-value= formatJpy(summary.income)
+        .metric-card
+          span.metric-label Operating spend
+          strong.metric-value= formatJpy(summary.operatingExpense)
+    .business-metrics-grid
+      .metric-card
+        span.metric-label Savings moved off-book
+        strong.metric-value= formatJpy(summary.savingsContribution)
+      .metric-card
+        span.metric-label Savings rate
+        strong.metric-value= formatPercent(summary.savingsRate)
+      .metric-card
+        span.metric-label Expense ratio
+        strong.metric-value= formatPercent(summary.expenseRatio)
+      .metric-card
+        span.metric-label Card liability estimate
+        strong.metric-value= formatJpy(summary.estimatedCardLiability)
+      .metric-card
+        span.metric-label Internal / transfer net
+        strong.metric-value(class=Number(summary.internalTransferNet) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(summary.internalTransferNet)
+      .metric-card
+        span.metric-label Transactions
+        strong.metric-value= (summary.transactionCount || 0).toLocaleString()
+    .analytics-grid.economic-dashboard-grid
+      .analytics-card.economic-card-wide
+        h3 Worth trend
+        #economicWorthChart.business-chart.economic-worth-chart
+      .analytics-card
+        h3 Forecast
+        table.table.table-dark.table-sm.economic-forecast-table
+          thead
+            tr
+              th Target
+              th Worth
+              th 80% range
+          tbody
+            if prediction.targets && prediction.targets.length
+              each target in prediction.targets
+                tr
+                  td= target.label
+                  td= formatJpy(target.projectedWorth)
+                  td= formatRange(target.lowWorth, target.highWorth)
+            else
+              tr
+                td.text-muted(colspan='3') No forecast available.
+        dl.economic-stat-list
+          dt Base months
+          dd= prediction.baseMonths || 0
+          dt Monthly net average
+          dd= formatSignedJpy(prediction.averageMonthlyNet)
+          dt Monthly volatility
+          dd= formatJpy(prediction.monthlyNetStdDev)
+    .analytics-grid.economic-dashboard-grid
+      .analytics-card
+        h3 Monthly economics
+        #economicMonthlyChart.business-chart
+      .analytics-card
+        h3 Spend by group
+        #economicGroupSpendChart.business-chart
+      .analytics-card
+        h3 Prediction scenarios
+        table.table.table-dark.table-sm
+          thead
+            tr
+              th Scenario
+              th Monthly net
+              th End next year
+          tbody
+            if prediction.scenarios && prediction.scenarios.length
+              each scenario in prediction.scenarios
+                tr
+                  td= scenario.label
+                  td= formatSignedJpy(scenario.monthlyNet)
+                  td= formatJpy(scenario.endNextYearWorth)
+            else
+              tr
+                td.text-muted(colspan='3') No scenarios available.
+    section.accounting-card
+      .section-header
+        h2 Economic report
+        p.mb-0= summary.hasTrackedCashAnchor ? `Cash anchor: ${formatJpy(summary.currentTrackedCash)}` : 'No account cash anchor found.'
+      .business-period-table-wrap
+        table.table.table-dark.table-striped.table-sm.business-period-table.economic-report-table
+          thead
+            tr
+              th Year
+              th Income
+              th Spend
+              th Refunds / credits
+              th Savings moved
+              th Internal net
+              th Net result
+              th Ending worth
+          tbody
+            if yearlyRows.length
+              each row in yearlyRows
+                tr
+                  td= row.label
+                  td= formatJpy(row.income)
+                  td= formatJpy(row.operatingExpense)
+                  td= formatJpy(row.refundsCredits)
+                  td= formatJpy(row.savingsContribution)
+                  td= formatSignedJpy(row.internalTransferNet)
+                  td(class=Number(row.economicNet) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(row.economicNet)
+                  td= formatJpy(row.endingWorthEstimate)
+            else
+              tr
+                td.text-muted(colspan='8') No yearly report data available.
+    section.accounting-card
+      .section-header
+        h2 Group performance
+        p.mb-0 Spending and earning categories from business groupings.
+      .business-period-table-wrap
+        table.table.table-dark.table-striped.table-sm.business-period-table.economic-group-table
+          thead
+            tr
+              th Group
+              th Role
+              th Sources
+              th Income
+              th Spend
+              th Refunds
+              th Savings
+              th Net result
+              th Spend share
+              th Count
+          tbody
+            if groupRows.length
+              each row in groupRows
+                tr
+                  td
+                    strong= row.groupName
+                  td= row.role
+                  td
+                    each source in row.sources
+                      span.badge-soft.me-1= source === 'credit_card' ? 'Card' : 'Budget'
+                  td= formatJpy(row.income)
+                  td= formatJpy(row.operatingExpense)
+                  td= formatJpy(row.refundsCredits)
+                  td= formatJpy(row.savingsContribution)
+                  td(class=Number(row.economicNet) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(row.economicNet)
+                  td= formatPercent(row.shareOfExpense)
+                  td= row.transactionCount
+            else
+              tr
+                td.text-muted(colspan='10') No group report data available.
+    section.accounting-card
+      .section-header
+        h2 Special handling
+        p.mb-0 Credit repayments, card repayments, and savings transfers are separated from operating results.
+      .business-period-table-wrap
+        table.table.table-dark.table-striped.table-sm.business-period-table
+          thead
+            tr
+              th Group
+              th Role
+              th Budget bridge
+              th Card bridge
+              th Savings moved
+              th Count
+          tbody
+            if specialRows.length
+              each row in specialRows
+                tr
+                  td
+                    strong= row.groupName
+                  td= row.role
+                  td= formatSignedJpy(row.bridgeCash)
+                  td= formatSignedJpy(row.bridgeCard)
+                  td= formatSignedJpy(row.savingsContribution)
+                  td= row.transactionCount
+            else
+              tr
+                td.text-muted(colspan='6') No special groups found.
+    section.accounting-card
+      .section-header
+        h2 Monthly ledger
+        p.mb-0 Latest #{Math.min(monthlyRows.length, 18)} months.
+      .business-period-table-wrap
+        table.table.table-dark.table-hover.table-sm.business-period-table.economic-monthly-table
+          thead
+            tr
+              th Month
+              th Income
+              th Spend
+              th Savings moved
+              th Bridge cash
+              th Bridge card
+              th Net result
+              th Worth
+          tbody
+            if monthlyRows.length
+              each row in monthlyRows.slice(-18).reverse()
+                tr
+                  td= row.label
+                  td= formatJpy(row.income)
+                  td= formatJpy(row.operatingExpense)
+                  td= formatSignedJpy(row.savingsContribution)
+                  td= formatSignedJpy(row.bridgeCash)
+                  td= formatSignedJpy(row.bridgeCard)
+                  td(class=Number(row.economicNet) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(row.economicNet)
+                  td= formatJpy(row.worthEstimate)
+            else
+              tr
+                td.text-muted(colspan='8') No monthly ledger rows available.
+
+block script
+  script(src='https://d3js.org/d3.v7.min.js')
+  script.
+    window.businessOverallState = {
+      analytics: !{JSON.stringify(analytics || null)}
+    };
+  script(src='/js/accounting_business_overall.js', defer)
