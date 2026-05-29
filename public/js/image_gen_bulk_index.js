@@ -108,6 +108,16 @@
     }
   }
 
+  function shouldShowResetProcessing(job) {
+    const processing = Number(job?.counters?.processing || 0);
+    const status = String(job?.status || '').toLowerCase();
+    return processing > 0 || status === 'processing' || status === 'paused';
+  }
+
+  function confirmResetProcessing() {
+    return window.confirm('Reset all Processing prompts for this job back to Pending? If an upstream generation is still running, this can create a duplicate generation.');
+  }
+
   function renderJobs(items) {
     jobListEl.innerHTML = '';
     if (!items || !items.length) {
@@ -164,6 +174,14 @@
         btn.addEventListener('click', () => updateStatus(job.id, action));
         actionWrap.appendChild(btn);
       });
+      if (shouldShowResetProcessing(job)) {
+        const resetProcessingBtn = document.createElement('button');
+        resetProcessingBtn.type = 'button';
+        resetProcessingBtn.className = 'btn btn-sm btn-outline-warning';
+        resetProcessingBtn.textContent = 'Reset processing to pending';
+        resetProcessingBtn.addEventListener('click', () => updateStatus(job.id, 'reset_processing_to_pending'));
+        actionWrap.appendChild(resetProcessingBtn);
+      }
       const detailBtn = document.createElement('a');
       detailBtn.className = 'btn btn-sm btn-outline-secondary';
       detailBtn.href = `/image_gen/bulk/${encodeURIComponent(job.id)}`;
@@ -204,6 +222,7 @@
 
   async function updateStatus(id, action) {
     try {
+      if (action === 'reset_processing_to_pending' && !confirmResetProcessing()) return;
       disableActions(true);
       await api(`/api/bulk/jobs/${encodeURIComponent(id)}/status`, {
         method: 'PATCH',

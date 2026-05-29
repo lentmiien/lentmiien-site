@@ -2164,6 +2164,8 @@ exports.getBulkJob = async (req, res) => {
     const job = await BulkJob.findById(jobId).lean();
     if (!job) return errorJson(res, 404, 'bulk job not found');
     await hydrateMissingBulkPromptOutputs(job, { limit: 50 });
+    const refreshedJob = await refreshJobCounters(jobId);
+    const responseJob = refreshedJob || job;
 
     const scoreAgg = await BulkTestPrompt.aggregate([
       { $match: { job: jobId, score_count: { $gt: 0 } } },
@@ -2179,8 +2181,8 @@ exports.getBulkJob = async (req, res) => {
     const scoreCount = scoreAgg[0]?.count || 0;
 
     res.json({
-      job: Object.assign({}, job, {
-        id: String(job._id),
+      job: Object.assign({}, responseJob, {
+        id: String(responseJob._id),
         counters: Object.assign({
           total: 0,
           pending: 0,
@@ -2188,11 +2190,11 @@ exports.getBulkJob = async (req, res) => {
           paused: 0,
           completed: 0,
           canceled: 0
-        }, job.counters || {}),
-        variables_available: computeAvailableVariables(job),
-        negative_prompt_mode: normalizeBulkNegativePromptMode(job.negative_prompt_mode),
-        copied_from_job: job.copied_from_job ? String(job.copied_from_job) : null,
-        instance_id: job.instance_id || null
+        }, responseJob.counters || {}),
+        variables_available: computeAvailableVariables(responseJob),
+        negative_prompt_mode: normalizeBulkNegativePromptMode(responseJob.negative_prompt_mode),
+        copied_from_job: responseJob.copied_from_job ? String(responseJob.copied_from_job) : null,
+        instance_id: responseJob.instance_id || null
       }),
       score: {
         total: scoreTotal,
@@ -2211,7 +2213,7 @@ exports.updateBulkJobStatus = async (req, res) => {
     const jobId = toObjectId(req.params.id);
     if (!jobId) return errorJson(res, 400, 'invalid job id');
     const action = String(req.body?.action || '').trim().toLowerCase();
-    const allowed = ['start', 'pause', 'resume', 'cancel', 'redo_canceled', 'set_instance'];
+    const allowed = ['start', 'pause', 'resume', 'cancel', 'redo_canceled', 'reset_processing_to_pending', 'set_instance'];
     if (!allowed.includes(action)) return errorJson(res, 400, 'invalid action');
 
     const job = await BulkJob.findById(jobId);
@@ -2274,6 +2276,36 @@ exports.updateBulkJobStatus = async (req, res) => {
           }
         }
       );
+    } else if (action === 'reset_processing_to_pending') {
+      const resetResult = await BulkTestPrompt.updateMany(
+        { job: jobId, status: 'Processing' },
+        {
+          $set: {
+            status: 'Pending',
+            comfy_error: null,
+            comfy_job_id: null,
+            filename: null,
+            file_url: null,
+            instance_id: job.instance_id || null,
+            updated_at: new Date()
+          },
+          $unset: {
+            started_at: 1,
+            completed_at: 1
+          }
+        }
+      );
+      if (!resetResult.modifiedCount) {
+        const refreshed = await refreshJobCounters(jobId);
+        return res.json({ job: refreshed || job.toObject() });
+      }
+      updates.completed_at = null;
+      if (job.status === 'Completed') {
+        updates.status = 'Processing';
+        shouldWake = true;
+      } else if (job.status === 'Processing') {
+        shouldWake = true;
+      }
     } else if (action === 'redo_canceled') {
       const resetResult = await BulkTestPrompt.updateMany(
         { job: jobId, status: 'Canceled' },

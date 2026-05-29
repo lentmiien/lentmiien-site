@@ -20,6 +20,7 @@
   const resumeBtn = document.getElementById('resumeBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const redoBtn = document.getElementById('redoBtn');
+  const resetProcessingBtn = document.getElementById('resetProcessingBtn');
   const compareBtn = document.getElementById('compareBtn');
   const varSelectA = document.getElementById('varSelectA');
   const varSelectB = document.getElementById('varSelectB');
@@ -188,6 +189,14 @@
     } else {
       btn.classList.add('d-none');
     }
+  }
+
+  function updateResetProcessingButton(counters, status) {
+    if (!resetProcessingBtn) return;
+    const processing = Number(counters?.processing || 0);
+    const normalized = (status || '').toLowerCase();
+    const visible = processing > 0 || normalized === 'processing' || normalized === 'paused';
+    toggleButton(resetProcessingBtn, visible);
   }
 
   function updateRedoButton(counters, status) {
@@ -599,6 +608,7 @@
         const counters = renderCounts(job.counters);
         updateActionButtons(job.status);
         updateRedoButton(counters, job.status);
+        updateResetProcessingButton(counters, job.status);
         updateCompareButton(job);
         populateVariableSelects(job.variables_available || []);
         const filtersUpdated = renderGalleryFilterFields(job);
@@ -832,6 +842,7 @@
 
   async function updateStatus(action) {
     try {
+      if (action === 'reset_processing_to_pending' && !confirmResetProcessing()) return;
       disableActionButtons(true);
       await api(`/api/bulk/jobs/${encodeURIComponent(jobId)}/status`, {
         method: 'PATCH',
@@ -847,10 +858,14 @@
   }
 
   function disableActionButtons(disabled) {
-    [startBtn, pauseBtn, resumeBtn, cancelBtn, redoBtn].forEach(btn => {
+    [startBtn, pauseBtn, resumeBtn, cancelBtn, redoBtn, resetProcessingBtn].forEach(btn => {
       if (!btn) return;
       btn.disabled = disabled;
     });
+  }
+
+  function confirmResetProcessing() {
+    return window.confirm('Reset all Processing prompts for this job back to Pending? If an upstream generation is still running, this can create a duplicate generation.');
   }
 
   function setupAutoRefresh() {
@@ -866,6 +881,7 @@
   resumeBtn?.addEventListener('click', () => updateStatus('resume'));
   cancelBtn?.addEventListener('click', () => updateStatus('cancel'));
   redoBtn?.addEventListener('click', () => updateStatus('redo_canceled'));
+  resetProcessingBtn?.addEventListener('click', () => updateStatus('reset_processing_to_pending'));
   varSelectA?.addEventListener('change', () => {
     currentVars.a = varSelectA.value;
     loadMatrix(true);
