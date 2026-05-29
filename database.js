@@ -128,6 +128,7 @@ const CreditCard = require('./models/credit_card');
 const CreditCardMonthlyBalance = require('./models/credit_card_monthly_balance');
 const CreditCardTransaction = require('./models/credit_card_transaction');
 const AccountingBusinessMapping = require('./models/accounting_business_mapping');
+const ExternalAsset = require('./models/external_asset');
 // API debug logs
 const ApiDebugLog = require('./models/api_debug_log');
 // API records
@@ -239,6 +240,7 @@ module.exports = {
   CreditCardMonthlyBalance,
   CreditCardTransaction,
   AccountingBusinessMapping,
+  ExternalAsset,
   ApiDebugLog,
   ApiRecordModel,
   PerformanceSnapshot,

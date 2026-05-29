@@ -359,6 +359,76 @@
   min-width: 980px;
 }
 
+.external-asset-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.external-asset-notes {
+  grid-column: span 2;
+}
+
+.external-asset-submit {
+  align-self: end;
+}
+
+.external-assets-table {
+  min-width: 1280px;
+}
+
+.external-assets-table .form-control,
+.external-assets-table .form-select {
+  min-width: 110px;
+}
+
+.external-assets-table .external-asset-currency {
+  min-width: 70px;
+  max-width: 90px;
+}
+
+.external-asset-date-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 150px;
+}
+
+.external-asset-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 110px;
+}
+
+.external-asset-interest-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr);
+  gap: 1rem;
+}
+
+.external-asset-summary-list {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(140px, 1fr);
+  gap: 0.45rem 0.75rem;
+}
+
+.external-asset-summary-list dt {
+  color: rgba(255, 255, 255, 0.62);
+  font-weight: 500;
+}
+
+.external-asset-summary-list dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+}
+
+.interest-impact-table {
+  min-width: 760px;
+}
+
 .business-groups-table .business-group-input {
   min-width: 160px;
 }
@@ -384,6 +454,15 @@
     grid-column: auto;
   }
   .economic-stat-list dd {
+    text-align: left;
+  }
+  .external-asset-notes {
+    grid-column: auto;
+  }
+  .external-asset-interest-grid {
+    grid-template-columns: 1fr;
+  }
+  .external-asset-summary-list dd {
     text-align: left;
   }
 }

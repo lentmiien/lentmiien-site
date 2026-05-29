@@ -22,10 +22,15 @@ const mockCreditCardTransaction = {
   find: jest.fn(),
 };
 
+const mockExternalAssetService = {
+  getSummary: jest.fn(),
+};
+
 jest.mock('../../models/accounting_business_mapping', () => mockMappingModel);
 jest.mock('../../models/account_db', () => mockAccountDbModel);
 jest.mock('../../models/transaction_db', () => mockTransactionDbModel);
 jest.mock('../../models/credit_card_transaction', () => mockCreditCardTransaction);
+jest.mock('../../services/externalAssetService', () => mockExternalAssetService);
 
 const service = require('../../services/accountingBusinessService');
 
@@ -42,6 +47,21 @@ function chainResolved(value) {
 describe('accountingBusinessService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExternalAssetService.getSummary.mockResolvedValue({
+      assets: [],
+      exchangeRate: { date: null, amount: 1, rates: {} },
+      totals: {
+        count: 0,
+        savingsJpy: 0,
+        loanJpy: 0,
+        netJpy: 0,
+        unavailableCount: 0,
+      },
+      interestImpact: {
+        horizons: [],
+        scenarios: [],
+      },
+    });
   });
 
   test('ensureBusiness creates a default Other mapping', async () => {
@@ -318,6 +338,7 @@ describe('accountingBusinessService', () => {
       worthChangeTotal: 239900,
       currentTrackedCash: 719900,
       latestWorthEstimate: 739900,
+      latestWorthWithExternalAssets: 739900,
     });
     expect(analytics.groupBreakdown.map((row) => row.groupName)).toEqual(['Income', 'Food', 'Family']);
     expect(analytics.specialBreakdown.map((row) => row.groupName)).toEqual([

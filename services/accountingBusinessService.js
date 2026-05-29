@@ -3,6 +3,7 @@ const AccountingBusinessMapping = require('../models/accounting_business_mapping
 const AccountDBModel = require('../models/account_db');
 const TransactionDBModel = require('../models/transaction_db');
 const CreditCardTransaction = require('../models/credit_card_transaction');
+const ExternalAssetService = require('./externalAssetService');
 const finance = require('../utils/finance');
 
 const DEFAULT_GROUP = 'Other';
@@ -341,6 +342,21 @@ function emptyOverallAnalytics() {
     specialBreakdown: [],
     prediction: buildEmptyPrediction(currentYear),
     guidelines: buildEmptyGuidelines(),
+    externalAssets: {
+      assets: [],
+      exchangeRate: { date: null, amount: 1, rates: {} },
+      totals: {
+        count: 0,
+        savingsJpy: 0,
+        loanJpy: 0,
+        netJpy: 0,
+        unavailableCount: 0,
+      },
+      interestImpact: {
+        horizons: [],
+        scenarios: [],
+      },
+    },
   };
 }
 
@@ -1090,7 +1106,7 @@ async function getAnalytics(options = {}) {
 }
 
 async function getOverallAnalytics() {
-  const [mappings, budgetRows, cardRows, accounts] = await Promise.all([
+  const [mappings, budgetRows, cardRows, accounts, externalAssets] = await Promise.all([
     AccountingBusinessMapping.find({})
       .sort({ groupName: 1, name: 1 })
       .lean(),
@@ -1101,6 +1117,7 @@ async function getOverallAnalytics() {
       .sort({ transactionDate: 1, label: 1 })
       .lean(),
     AccountDBModel.find({}).lean(),
+    ExternalAssetService.getSummary(),
   ]);
 
   const mappingByName = new Map(
@@ -1113,7 +1130,10 @@ async function getOverallAnalytics() {
   ].filter((tx) => tx.year && tx.month && tx.monthLabel);
 
   if (!transactions.length) {
-    return emptyOverallAnalytics();
+    const empty = emptyOverallAnalytics();
+    empty.externalAssets = externalAssets;
+    empty.summary.latestWorthWithExternalAssets = Number(externalAssets.totals.netJpy || 0);
+    return empty;
   }
 
   transactions.sort((a, b) => {
@@ -1156,6 +1176,7 @@ async function getOverallAnalytics() {
   const totalBridgeCard = summarizeRows(monthly, 'bridgeCard');
   const latestMonthly = monthly[monthly.length - 1];
   const latestWorthEstimate = latestMonthly ? latestMonthly.worthEstimate : accountSnapshot.total;
+  const latestWorthWithExternalAssets = latestWorthEstimate + Number(externalAssets.totals.netJpy || 0);
   const worthChangeTotal = latestMonthly ? latestMonthly.cumulativeEconomicNet : 0;
   const summary = {
     transactionCount: transactions.length,
@@ -1164,6 +1185,7 @@ async function getOverallAnalytics() {
     currentTrackedCash: accountSnapshot.total,
     hasTrackedCashAnchor: accountSnapshot.hasAnchor,
     latestWorthEstimate,
+    latestWorthWithExternalAssets,
     worthChangeTotal,
     income: totalIncome,
     operatingExpense: totalOperatingExpense,
@@ -1214,6 +1236,7 @@ async function getOverallAnalytics() {
     specialBreakdown,
     prediction,
     guidelines,
+    externalAssets,
   };
 }
 

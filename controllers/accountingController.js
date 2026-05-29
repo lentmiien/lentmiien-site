@@ -1,6 +1,7 @@
 const BudgetService = require('../services/budgetService');
 const CreditCardService = require('../services/creditCardService');
 const AccountingBusinessService = require('../services/accountingBusinessService');
+const ExternalAssetService = require('../services/externalAssetService');
 
 const TRUTHY_LITERALS = new Set(['true', '1', 'yes', 'on', 'y', 't']);
 
@@ -157,6 +158,65 @@ exports.overallBusinessAnalyticsApi = async (req, res) => {
   try {
     const analytics = await AccountingBusinessService.getOverallAnalytics();
     res.json(analytics);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.externalAssets = async (req, res, next) => {
+  try {
+    const externalAssets = await ExternalAssetService.getSummary();
+    res.render('accounting_external_assets', {
+      externalAssets,
+    });
+  } catch (error) {
+    if (typeof next === 'function') {
+      return next(error);
+    }
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.externalAssetsApi = async (req, res) => {
+  try {
+    const externalAssets = await ExternalAssetService.getSummary();
+    res.json(externalAssets);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.createExternalAsset = async (req, res) => {
+  try {
+    const asset = await ExternalAssetService.createAsset(req.body);
+    res.status(201).json(asset);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.updateExternalAsset = async (req, res) => {
+  try {
+    const asset = await ExternalAssetService.updateAsset(req.params.id, req.body);
+    res.json(asset);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.deleteExternalAsset = async (req, res) => {
+  try {
+    const asset = await ExternalAssetService.deleteAsset(req.params.id);
+    res.json(asset);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};
+
+exports.applyExternalAssetMonthlyPayment = async (req, res) => {
+  try {
+    const asset = await ExternalAssetService.applyMonthlyPayment(req.params.id);
+    res.json(asset);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

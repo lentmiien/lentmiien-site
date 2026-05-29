@@ -17,6 +17,7 @@
     renderWorthChart(analytics.monthly || []);
     renderMonthlyChart(analytics.monthly || []);
     renderGroupSpendChart(analytics.groupBreakdown || []);
+    renderInterestImpactChart(analytics.externalAssets || {});
   });
 
   function renderWorthChart(rows) {
@@ -208,6 +209,77 @@
       .attr('transform', `translate(0,${height - margin.bottom})`)
       .attr('color', COLORS.text)
       .call(d3.axisBottom(x).ticks(4).tickFormat(shortJpy));
+  }
+
+  function renderInterestImpactChart(externalAssets) {
+    const container = document.getElementById('interestImpactChart');
+    if (!container) return;
+    container.innerHTML = '';
+    const impact = externalAssets.interestImpact || {};
+    const horizons = impact.horizons || [];
+    const scenarios = (impact.scenarios || []).filter((scenario) => scenario.key !== 'zero');
+    if (!horizons.length || !scenarios.length || typeof d3 === 'undefined') {
+      renderEmpty(container, 'No interest scenarios available.');
+      return;
+    }
+
+    const width = container.clientWidth || 620;
+    const height = 300;
+    const margin = { top: 18, right: 18, bottom: 42, left: 72 };
+    const labels = horizons.map((horizon) => horizon.label);
+    const scenarioKeys = scenarios.map((scenario) => scenario.key);
+    const values = scenarios.flatMap((scenario) => horizons.map((horizon) => {
+      const row = (scenario.horizons || []).find((item) => item.key === horizon.key);
+      return row ? Number(row.extraVsZeroJpy || 0) : 0;
+    }));
+    const maxValue = Math.max(1, d3.max(values) || 0);
+    const svg = d3.select(container).append('svg').attr('width', width).attr('height', height);
+    const x = d3.scaleBand().domain(labels).range([margin.left, width - margin.right]).padding(0.22);
+    const subX = d3.scaleBand().domain(scenarioKeys).range([0, x.bandwidth()]).padding(0.08);
+    const y = d3.scaleLinear().domain([0, maxValue * 1.15]).nice().range([height - margin.bottom, margin.top]);
+    const color = d3.scaleOrdinal()
+      .domain(scenarioKeys)
+      .range(['#54d7a5', '#f6bd60', '#9ad7ff', '#f08a8a', '#ffffff']);
+
+    drawGrid(svg, y, margin, width, height);
+
+    const horizonGroups = svg.selectAll('.interest-horizon')
+      .data(horizons)
+      .enter()
+      .append('g')
+      .attr('class', 'interest-horizon')
+      .attr('transform', (horizon) => `translate(${x(horizon.label)},0)`);
+
+    horizonGroups.selectAll('rect')
+      .data((horizon) => scenarios.map((scenario) => {
+        const row = (scenario.horizons || []).find((item) => item.key === horizon.key);
+        return {
+          key: scenario.key,
+          label: scenario.label,
+          value: row ? Number(row.extraVsZeroJpy || 0) : 0,
+        };
+      }))
+      .enter()
+      .append('rect')
+      .attr('x', (item) => subX(item.key))
+      .attr('y', (item) => y(item.value))
+      .attr('width', subX.bandwidth())
+      .attr('height', (item) => y(0) - y(item.value))
+      .attr('fill', (item) => color(item.key))
+      .append('title')
+      .text((item) => `${item.label}: ${formatJpy(item.value)}`);
+
+    svg.append('g')
+      .attr('transform', `translate(0,${height - margin.bottom})`)
+      .attr('color', COLORS.text)
+      .call(d3.axisBottom(x));
+
+    svg.append('g')
+      .attr('transform', `translate(${margin.left},0)`)
+      .attr('color', COLORS.text)
+      .call(d3.axisLeft(y).ticks(5).tickFormat(shortJpy));
+
+    renderLegend(container, scenarios.map((scenario) => [scenario.label, color(scenario.key)]));
   }
 
   function drawGrid(svg, y, margin, width, height) {

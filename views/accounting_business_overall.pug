@@ -13,6 +13,12 @@ block content
   - const pensionGuide = guidelines.pension || {}
   - const profileGuide = guidelines.profile || {}
   - const basisGuide = guidelines.basis || {}
+  - const externalAssets = analytics && analytics.externalAssets ? analytics.externalAssets : {}
+  - const externalTotals = externalAssets.totals || {}
+  - const externalInterest = externalAssets.interestImpact || {}
+  - const externalScenarios = externalInterest.scenarios || []
+  - const externalHorizons = externalInterest.horizons || []
+  - const externalRows = externalAssets.assets || []
   - const monthlyRows = analytics && analytics.monthly ? analytics.monthly : []
   - const yearlyRows = analytics && analytics.yearly ? analytics.yearly : []
   - const groupRows = analytics && analytics.groupBreakdown ? analytics.groupBreakdown : []
@@ -35,10 +41,14 @@ block content
         .hero-actions.mt-3
           a.btn.btn-outline-light(href='/accounting') Accounting
           a.btn.btn-outline-light(href='/accounting/business-analytics') Group analytics
+          a.btn.btn-outline-light(href='/accounting/external-assets') External assets
       .hero-metrics
         .metric-card
           span.metric-label Estimated worth
           strong.metric-value(class=Number(summary.latestWorthEstimate) < 0 ? 'metric-negative' : 'metric-positive')= formatJpy(summary.latestWorthEstimate)
+        .metric-card
+          span.metric-label With external assets
+          strong.metric-value(class=Number(summary.latestWorthWithExternalAssets) < 0 ? 'metric-negative' : 'metric-positive')= formatJpy(summary.latestWorthWithExternalAssets)
         .metric-card
           span.metric-label Worth movement
           strong.metric-value(class=Number(summary.worthChangeTotal) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(summary.worthChangeTotal)
@@ -67,6 +77,9 @@ block content
       .metric-card
         span.metric-label Transactions
         strong.metric-value= (summary.transactionCount || 0).toLocaleString()
+      .metric-card
+        span.metric-label External net
+        strong.metric-value(class=Number(externalTotals.netJpy) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(externalTotals.netJpy)
     section.accounting-card.economic-guidelines
       .section-header
         h2 Personal guidelines
@@ -137,6 +150,67 @@ block content
       .economic-guideline-note
         span.badge-soft Awareness only
         span These are ballpark personal-finance checks. The visible worth target is intentionally conservative because public pension value and untracked family assets are outside the dashboard.
+    section.accounting-card
+      .section-header
+        h2 Interest impact
+        p.mb-0 Low-risk savings rates are small month to month, but the long horizon matters.
+      .external-asset-interest-grid
+        .analytics-card
+          h3 External asset summary
+          dl.external-asset-summary-list
+            dt Savings
+            dd= formatJpy(externalTotals.savingsJpy)
+            dt Loans
+            dd= formatJpy(externalTotals.loanJpy)
+            dt Net external
+            dd(class=Number(externalTotals.netJpy) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(externalTotals.netJpy)
+            dt Assets tracked
+            dd= externalTotals.count || 0
+            dt FX date
+            dd= externalAssets.exchangeRate && externalAssets.exchangeRate.date ? externalAssets.exchangeRate.date : '--'
+          .hero-actions.mt-3
+            a.btn.btn-outline-light(href='/accounting/external-assets') Manage external assets
+        .analytics-card
+          h3 Interest scenarios
+          #interestImpactChart.business-chart
+      .business-period-table-wrap.mt-3
+        table.table.table-dark.table-striped.table-sm.interest-impact-table
+          thead
+            tr
+              th Scenario
+              each horizon in externalHorizons
+                th= `${horizon.label} extra`
+          tbody
+            if externalScenarios.length && externalHorizons.length
+              each scenario in externalScenarios
+                tr
+                  td= scenario.label
+                  each horizon in externalHorizons
+                    - const projected = scenario.horizons ? scenario.horizons.find((item) => item.key === horizon.key) : null
+                    td= projected ? formatJpy(projected.extraVsZeroJpy) : '--'
+            else
+              tr
+                td.text-muted(colspan=(externalHorizons.length || 1) + 1) No savings accounts available for interest projections.
+      if externalRows.length
+        .business-period-table-wrap.mt-3
+          table.table.table-dark.table-hover.table-sm.business-period-table
+            thead
+              tr
+                th Name
+                th Type
+                th Balance
+                th JPY value
+                th Monthly
+                th APR
+            tbody
+              each asset in externalRows
+                tr
+                  td= asset.name
+                  td= asset.kind
+                  td= `${Number(asset.signedBalance || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${asset.currency}`
+                  td(class=Number(asset.signedBalanceJpy) < 0 ? 'metric-negative' : 'metric-positive')= formatSignedJpy(asset.signedBalanceJpy)
+                  td= `${Number(asset.monthlyPayment || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${asset.currency}`
+                  td= `${Number(asset.annualInterestRate || 0).toFixed(3)}%`
     .analytics-grid.economic-dashboard-grid
       .analytics-card.economic-card-wide
         h3 Worth trend
