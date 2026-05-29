@@ -202,6 +202,30 @@ const MYPAGE_ICON_DEFINITIONS = [
     label: 'Qwen3 LoRA',
     adminOnly: true,
   },
+  {
+    id: 'request_counter',
+    href: '/admin/request-counter',
+    src: '/i/request_counter.svg',
+    alt: 'Request counter admin dashboard',
+    label: 'Request Counter',
+    adminOnly: true,
+  },
+  {
+    id: 'tapo',
+    href: '/admin/tapo',
+    src: '/i/tapo.svg',
+    alt: 'Tapo power dashboard',
+    label: 'Tapo Power',
+    adminOnly: true,
+  },
+  {
+    id: 'ai_gateway',
+    href: '/admin/ai-gateway',
+    src: '/i/ai_gateway.svg',
+    alt: 'AI Gateway admin dashboard',
+    label: 'AI Gateway',
+    adminOnly: true,
+  },
 ];
 
 const DEFINITION_IDS = MYPAGE_ICON_DEFINITIONS.map((definition) => definition.id);

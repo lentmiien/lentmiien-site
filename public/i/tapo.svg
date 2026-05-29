@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Tapo power dashboard tile illustration</title>
+  <desc id="desc">A smart plug and home energy chart using graphite, ember, and amber brand colors.</desc>
+  <defs>
+    <linearGradient id="tapoBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0F13"/>
+      <stop offset="54%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="tapoPlug" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+    <linearGradient id="tapoEnergy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="100%" stop-color="#19E3E3"/>
+    </linearGradient>
+    <filter id="tapoGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0.7 0 0 0 0.45 0 0.9 0 0 0.8 0 0 0.9 0 0.7 0 0 0 0.75 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#tapoBg)"/>
+  <circle cx="96" cy="318" r="112" fill="#FFC247" fill-opacity="0.1"/>
+  <circle cx="522" cy="84" r="106" fill="#FF6A1F" fill-opacity="0.11"/>
+  <path d="M70 278c56-36 111-40 164-10 39 22 79 24 120 6 64-28 132-12 204 48" fill="none" stroke="#2B313C" stroke-width="4"/>
+
+  <rect x="98" y="74" width="444" height="254" rx="30" fill="#171A20" stroke="#262B34" stroke-width="4"/>
+  <rect x="122" y="98" width="396" height="206" rx="20" fill="#1B2026" stroke="#2B313C" stroke-width="2"/>
+
+  <g transform="translate(162 132)">
+    <rect x="0" y="54" width="134" height="96" rx="32" fill="url(#tapoPlug)" stroke="#FFC247" stroke-opacity="0.38" stroke-width="3"/>
+    <rect x="26" y="0" width="18" height="70" rx="9" fill="#C1C7D3"/>
+    <rect x="90" y="0" width="18" height="70" rx="9" fill="#C1C7D3"/>
+    <rect x="20" y="74" width="94" height="56" rx="22" fill="#20242A"/>
+    <circle cx="67" cy="102" r="22" fill="#0E0F13" stroke="#FFC247" stroke-width="4"/>
+    <path d="M67 89v15l-9 13" fill="none" stroke="#17C696" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(340 118)">
+    <rect x="0" y="0" width="136" height="48" rx="16" fill="#20242A" stroke="#FFC247" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M21 30h18l11-18 16 28 11-15h38" fill="none" stroke="#FFC247" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <rect x="0" y="74" width="136" height="104" rx="18" fill="#0E0F13" stroke="#262B34" stroke-width="3"/>
+    <path d="M18 136c18-30 33-42 50-34 15 7 24 6 34-7 8-10 18-19 34-22" fill="none" stroke="url(#tapoEnergy)" stroke-width="8" stroke-linecap="round" filter="url(#tapoGlow)"/>
+    <g stroke="#2B313C" stroke-width="3">
+      <path d="M20 96h96"/>
+      <path d="M20 124h96"/>
+      <path d="M20 152h96"/>
+    </g>
+    <circle cx="68" cy="102" r="7" fill="#FF6A1F"/>
+    <circle cx="102" cy="95" r="7" fill="#17C696"/>
+  </g>
+
+  <g transform="translate(176 266)">
+    <path d="M0 0h288" stroke="#2B313C" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="8" fill="#FFC247"/>
+    <circle cx="96" cy="0" r="8" fill="#FF6A1F"/>
+    <circle cx="192" cy="0" r="8" fill="#17C696"/>
+    <circle cx="288" cy="0" r="8" fill="#19E3E3"/>
+  </g>
+
+  <path d="M302 210l34-35 34 35v44h-68z" fill="#20242A" stroke="#FFC247" stroke-opacity="0.42" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="326" y="224" width="20" height="30" rx="8" fill="#FFC247"/>
+</svg>
