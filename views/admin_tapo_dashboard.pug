@@ -55,22 +55,28 @@ block content
         h2 No Tapo readings yet
         p POST batches to `/api/tapo/readings/batch` and reload this page after MongoDB has stored the first records.
     else
+      .tapo-dashboard__view-controls(role='group', aria-label='Chart aggregation')
+        span.tapo-dashboard__view-label View
+        button.is-active(type='button', data-tapo-view='device', aria-pressed='true') Device
+        button(type='button', data-tapo-view='room', aria-pressed='false') Room
+        button(type='button', data-tapo-view='usage', aria-pressed='false') Usage
+
       section.tapo-dashboard__section
         header.tapo-section-header
           h2 Current Power
           p Last #{rawDays} days of raw readings.
-        #tapoPowerChart.tapo-chart(aria-label='Current power chart by device')
+        #tapoPowerChart.tapo-chart(aria-label='Current power chart')
 
       section.tapo-dashboard__section
         header.tapo-section-header
           h2 Daily Consumption
-          p Latest daily snapshot values by device.
-        #tapoDailyChart.tapo-chart(aria-label='Daily consumption chart by device')
+          p Latest daily snapshot values.
+        #tapoDailyChart.tapo-chart(aria-label='Daily consumption chart')
 
       section.tapo-dashboard__section
         header.tapo-section-header
           h2 Monthly Consumption
-          p Monthly snapshot totals by device.
+          p Monthly snapshot totals.
         #tapoMonthlyChart.tapo-chart(aria-label='Monthly consumption chart')
 
       section.tapo-dashboard__section

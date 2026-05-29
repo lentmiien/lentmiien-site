@@ -544,6 +544,7 @@ function buildTapoDashboardData({
     powerSeries: readings.map((entry) => ({
       deviceName: entry.deviceName,
       timestamp: toIsoString(entry.timestampUtc),
+      bucketStart: toIsoString(entry.bucketStartUtc || entry.timestampUtc),
       currentPowerW: getMetricValue(entry, 'current_power'),
     })).filter((entry) => entry.timestamp && entry.currentPowerW !== null),
     dailySeries: dailySnapshots.map((entry) => ({

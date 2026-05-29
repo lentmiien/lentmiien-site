@@ -97,6 +97,48 @@
   margin: 0;
 }
 
+.tapo-dashboard__view-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  padding: 0.25rem;
+}
+
+.tapo-dashboard__view-label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  padding: 0 0.45rem;
+}
+
+.tapo-dashboard__view-controls button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0.35rem 0.75rem;
+  font-weight: 650;
+}
+
+.tapo-dashboard__view-controls button:hover,
+.tapo-dashboard__view-controls button:focus {
+  color: var(--text);
+}
+
+.tapo-dashboard__view-controls button:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.tapo-dashboard__view-controls button.is-active {
+  background: var(--brand);
+  color: var(--text-inverse);
+}
+
 .tapo-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -407,5 +449,15 @@
 
   .tapo-stat__value {
     font-size: 1.35rem;
+  }
+
+  .tapo-dashboard__view-controls {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto repeat(3, 1fr);
+  }
+
+  .tapo-dashboard__view-controls button {
+    padding: 0.35rem 0.45rem;
   }
 }

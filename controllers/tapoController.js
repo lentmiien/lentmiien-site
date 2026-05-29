@@ -100,6 +100,7 @@ exports.dashboard = async (req, res) => {
           deviceIp: 1,
           model: 1,
           timestampUtc: 1,
+          bucketStartUtc: 1,
           metrics: 1,
         })
         .lean(),

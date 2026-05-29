@@ -163,16 +163,19 @@ describe('TapoReadingService', () => {
         {
           deviceName: 'L-AC',
           timestampUtc: new Date('2026-05-22T06:00:00Z'),
+          bucketStartUtc: new Date('2026-05-22T06:00:00Z'),
           metrics: { current_power: 10 },
         },
         {
           deviceName: 'L-AC',
           timestampUtc: new Date('2026-05-22T06:10:00Z'),
+          bucketStartUtc: new Date('2026-05-22T06:10:00Z'),
           metrics: { current_power: 20 },
         },
         {
           deviceName: 'L-PC',
           timestampUtc: new Date('2026-05-22T06:05:00Z'),
+          bucketStartUtc: new Date('2026-05-22T06:00:00Z'),
           metrics: { current_power: 80 },
         },
       ],
@@ -192,6 +195,7 @@ describe('TapoReadingService', () => {
     expect(dashboard.stats.totalTodayKwh).toBeCloseTo(3.6);
     expect(dashboard.stats.totalMonthKwh).toBe(114);
     expect(dashboard.deviceStats.map((entry) => entry.deviceName)).toEqual(['L-PC', 'L-AC']);
+    expect(dashboard.powerSeries[0].bucketStart).toBe('2026-05-22T06:00:00.000Z');
   });
 
   test('buildTapoBatchResponse matches the compact API response shape', () => {

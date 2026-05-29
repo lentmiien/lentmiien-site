@@ -24,6 +24,11 @@
   ];
   const color = d3.scaleOrdinal(palette);
   const DEFAULT_VISIBLE_DEVICE_COUNT = 3;
+  const VIEW_MODES = {
+    device: { label: 'Device' },
+    room: { label: 'Room' },
+    usage: { label: 'Usage' },
+  };
   const parseDay = d3.timeParse('%Y-%m-%d');
   const parseMonth = d3.timeParse('%Y-%m');
   const formatTime = d3.timeFormat('%m/%d %H:%M');
@@ -51,6 +56,7 @@
   const resizeCallbacks = [];
   let resizeFrame = null;
   const chartVisibilityState = new Map();
+  let activeViewMode = 'device';
 
   function scheduleResize() {
     if (resizeFrame) {
@@ -128,9 +134,9 @@
     });
   }
 
-  function getInitialVisibleDevices(containerId, devices, scores) {
-    if (chartVisibilityState.has(containerId)) {
-      const savedDevices = chartVisibilityState.get(containerId);
+  function getInitialVisibleDevices(visibilityKey, devices, scores) {
+    if (chartVisibilityState.has(visibilityKey)) {
+      const savedDevices = chartVisibilityState.get(visibilityKey);
       return new Set(devices.filter((device) => savedDevices.has(device)));
     }
     return new Set(rankDevicesByScore(devices, scores).slice(0, DEFAULT_VISIBLE_DEVICE_COUNT));
@@ -184,16 +190,127 @@
     };
   }
 
+  function parseDeviceNameParts(deviceName) {
+    const name = String(deviceName || '').trim();
+    const separatorIndex = name.indexOf('-');
+    if (separatorIndex > 0 && separatorIndex < name.length - 1) {
+      return {
+        room: name.slice(0, separatorIndex).trim(),
+        usage: name.slice(separatorIndex + 1).trim(),
+      };
+    }
+    return {
+      room: name || 'Unknown',
+      usage: name || 'Unknown',
+    };
+  }
+
+  function getSeriesNameForView(deviceName, viewMode) {
+    if (viewMode === 'device') {
+      return deviceName;
+    }
+
+    const parts = parseDeviceNameParts(deviceName);
+    if (viewMode === 'room') {
+      return `Room ${parts.room}`;
+    }
+    if (viewMode === 'usage') {
+      return `Usage ${parts.usage}`;
+    }
+    return deviceName;
+  }
+
+  function aggregateSeriesByView(sourceSeries, viewMode, options) {
+    const safeSeries = Array.isArray(sourceSeries) ? sourceSeries : [];
+    if (viewMode === 'device') {
+      return safeSeries;
+    }
+
+    const aggregated = new Map();
+    safeSeries.forEach((entry) => {
+      const seriesName = getSeriesNameForView(entry && entry.deviceName, viewMode);
+      const xValue = typeof options.getXValue === 'function'
+        ? options.getXValue(entry)
+        : entry && entry[options.xKey];
+      const yValue = Number(entry && entry[options.yKey]);
+      if (!seriesName || !xValue || !Number.isFinite(yValue)) {
+        return;
+      }
+
+      const aggregateKey = `${seriesName}\u0000${xValue}`;
+      if (!aggregated.has(aggregateKey)) {
+        aggregated.set(aggregateKey, {
+          deviceName: seriesName,
+          [options.xKey]: xValue,
+          [options.yKey]: 0,
+          sourceCount: 0,
+          ...(typeof options.extraFields === 'function' ? options.extraFields(entry, xValue) : {}),
+        });
+      }
+
+      const row = aggregated.get(aggregateKey);
+      row[options.yKey] += yValue;
+      row.sourceCount += 1;
+    });
+
+    return Array.from(aggregated.values()).sort((a, b) => {
+      const xDiff = String(a[options.xKey]).localeCompare(String(b[options.xKey]));
+      if (xDiff !== 0) {
+        return xDiff;
+      }
+      return a.deviceName.localeCompare(b.deviceName);
+    });
+  }
+
+  function setupViewControls() {
+    const controls = Array.from(document.querySelectorAll('[data-tapo-view]'));
+    if (!controls.length) {
+      return;
+    }
+
+    controls.forEach((control) => {
+      control.addEventListener('click', () => {
+        const viewMode = control.getAttribute('data-tapo-view');
+        if (!VIEW_MODES[viewMode] || viewMode === activeViewMode) {
+          return;
+        }
+        activeViewMode = viewMode;
+        updateViewControls();
+        renderAll();
+      });
+    });
+
+    updateViewControls();
+  }
+
+  function updateViewControls() {
+    document.querySelectorAll('[data-tapo-view]').forEach((control) => {
+      const isActive = control.getAttribute('data-tapo-view') === activeViewMode;
+      control.classList.toggle('is-active', isActive);
+      control.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
   function seedDeviceColors(dashboardPayload) {
     if (!dashboardPayload || typeof dashboardPayload !== 'object') {
       return;
     }
-    const devices = new Set();
+    const seriesNamesByView = {
+      device: new Set(),
+      room: new Set(),
+      usage: new Set(),
+    };
+    const addDeviceAndGroupLabels = (deviceName) => {
+      if (!deviceName) {
+        return;
+      }
+      Object.keys(VIEW_MODES).forEach((viewMode) => {
+        seriesNamesByView[viewMode].add(getSeriesNameForView(deviceName, viewMode));
+      });
+    };
     if (Array.isArray(dashboardPayload.deviceStats)) {
       dashboardPayload.deviceStats.forEach((entry) => {
-        if (entry && entry.deviceName) {
-          devices.add(entry.deviceName);
-        }
+        addDeviceAndGroupLabels(entry && entry.deviceName);
       });
     }
     ['powerSeries', 'dailySeries', 'monthlySeries'].forEach((key) => {
@@ -201,12 +318,12 @@
         return;
       }
       dashboardPayload[key].forEach((entry) => {
-        if (entry && entry.deviceName) {
-          devices.add(entry.deviceName);
-        }
+        addDeviceAndGroupLabels(entry && entry.deviceName);
       });
     });
-    color.domain(Array.from(devices).sort());
+    color.domain(Object.keys(VIEW_MODES).flatMap((viewMode) => (
+      Array.from(seriesNamesByView[viewMode]).sort()
+    )));
   }
 
   function formatMetricValue(value, options) {
@@ -317,8 +434,9 @@
     const devices = Array.from(new Set(series.map((entry) => entry.deviceName))).sort();
     const grouped = d3.group(series, (entry) => entry.deviceName);
     const scores = getDeviceScores(series);
-    const visibleDevices = getInitialVisibleDevices(containerId, devices, scores);
-    chartVisibilityState.set(containerId, new Set(visibleDevices));
+    const visibilityKey = `${containerId}:${options.viewMode || 'device'}`;
+    const visibleDevices = getInitialVisibleDevices(visibilityKey, devices, scores);
+    chartVisibilityState.set(visibilityKey, new Set(visibleDevices));
     const xScale = d3.scaleTime()
       .domain(padDateDomain(d3.extent(series, (entry) => entry.x), options.domainPadMs || MS_PER_HOUR))
       .range([0, innerWidth]);
@@ -343,7 +461,7 @@
       .attr('x', innerWidth / 2)
       .attr('y', innerHeight / 2)
       .attr('text-anchor', 'middle')
-      .text('No devices selected.');
+      .text('No series selected.');
 
     const xAxis = d3.axisBottom(xScale)
       .ticks(Math.min(width < 560 ? 4 : 8, series.length))
@@ -379,7 +497,7 @@
         } else {
           visibleDevices.delete(device);
         }
-        chartVisibilityState.set(containerId, new Set(visibleDevices));
+        chartVisibilityState.set(visibilityKey, new Set(visibleDevices));
         updateChart();
         updateLegend();
       }
@@ -471,13 +589,13 @@
     updateLegend();
   }
 
-  function renderMonthlyStackedBars() {
+  function renderMonthlyStackedBars(sourceSeries) {
     const container = document.getElementById('tapoMonthlyChart');
     if (!container) {
       return;
     }
 
-    const series = Array.isArray(payload.monthlySeries) ? payload.monthlySeries : [];
+    const series = Array.isArray(sourceSeries) ? sourceSeries : [];
     const rows = series
       .map((entry) => ({
         deviceName: entry.deviceName,
@@ -601,7 +719,12 @@
   const MS_PER_DAY = 24 * MS_PER_HOUR;
 
   function renderAll() {
-    const powerSeries = Array.isArray(payload.powerSeries) ? payload.powerSeries : [];
+    const powerSeries = aggregateSeriesByView(payload.powerSeries, activeViewMode, {
+      yKey: 'currentPowerW',
+      xKey: 'timestamp',
+      getXValue: (entry) => entry && (entry.bucketStart || entry.timestamp),
+      extraFields: (entry, xValue) => ({ bucketStart: xValue }),
+    });
     const powerOptions = {
       yKey: 'currentPowerW',
       unit: 'W',
@@ -615,10 +738,15 @@
       formatX: formatTime,
       domainPadMs: MS_PER_HOUR,
       smoothWindow: 21,
+      viewMode: activeViewMode,
     };
     renderMultiLineChart('tapoPowerChart', powerSeries, powerOptions);
 
-    const dailySeries = Array.isArray(payload.dailySeries) ? payload.dailySeries : [];
+    const dailySeries = aggregateSeriesByView(payload.dailySeries, activeViewMode, {
+      yKey: 'consumptionKwh',
+      xKey: 'dateKey',
+      getXValue: (entry) => entry && entry.dateKey,
+    });
     const dailyOptions = {
       yKey: 'consumptionKwh',
       unit: 'kWh',
@@ -629,12 +757,19 @@
       formatX: formatDay,
       domainPadMs: MS_PER_DAY,
       smoothWindow: 3,
+      viewMode: activeViewMode,
     };
     renderMultiLineChart('tapoDailyChart', dailySeries, dailyOptions);
 
-    renderMonthlyStackedBars();
+    const monthlySeries = aggregateSeriesByView(payload.monthlySeries, activeViewMode, {
+      yKey: 'consumptionKwh',
+      xKey: 'monthKey',
+      getXValue: (entry) => entry && entry.monthKey,
+    });
+    renderMonthlyStackedBars(monthlySeries);
   }
 
+  setupViewControls();
   renderAll();
   resizeCallbacks.push(renderAll);
 })();
