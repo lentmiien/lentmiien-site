@@ -59,29 +59,13 @@ block content
         header.tapo-section-header
           h2 Current Power
           p Last #{rawDays} days of raw readings.
-        .tapo-chart-grid
-          .tapo-chart-panel
-            .tapo-chart-panel__header
-              h3 50 W+ Devices
-            #tapoHighPowerChart.tapo-chart(aria-label='Current power chart for 50 watt and higher devices')
-          .tapo-chart-panel
-            .tapo-chart-panel__header
-              h3 Low-Draw Devices
-            #tapoLowPowerChart.tapo-chart(aria-label='Current power chart for low draw devices')
+        #tapoPowerChart.tapo-chart(aria-label='Current power chart by device')
 
       section.tapo-dashboard__section
         header.tapo-section-header
           h2 Daily Consumption
           p Latest daily snapshot values by device.
-        .tapo-chart-grid
-          .tapo-chart-panel
-            .tapo-chart-panel__header
-              h3 High-Draw Devices
-            #tapoHighDailyChart.tapo-chart(aria-label='Daily consumption chart for high draw devices')
-          .tapo-chart-panel
-            .tapo-chart-panel__header
-              h3 Low-Draw Devices
-            #tapoLowDailyChart.tapo-chart(aria-label='Daily consumption chart for low draw devices')
+        #tapoDailyChart.tapo-chart(aria-label='Daily consumption chart by device')
 
       section.tapo-dashboard__section
         header.tapo-section-header

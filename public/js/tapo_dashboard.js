@@ -23,8 +23,7 @@
     '#a3e635',
   ];
   const color = d3.scaleOrdinal(palette);
-  const HIGH_POWER_THRESHOLD_W = 50;
-  const DAILY_HIGH_CONSUMPTION_THRESHOLD_KWH = 1.2;
+  const DEFAULT_VISIBLE_DEVICE_COUNT = 3;
   const parseDay = d3.timeParse('%Y-%m-%d');
   const parseMonth = d3.timeParse('%Y-%m');
   const formatTime = d3.timeFormat('%m/%d %H:%M');
@@ -51,6 +50,7 @@
 
   const resizeCallbacks = [];
   let resizeFrame = null;
+  const chartVisibilityState = new Map();
 
   function scheduleResize() {
     if (resizeFrame) {
@@ -98,12 +98,90 @@
       swatch.className = 'tapo-chart-legend__swatch';
       swatch.style.backgroundColor = color(device);
       const label = document.createElement('span');
+      label.className = 'tapo-chart-legend__label';
       label.textContent = device;
       item.appendChild(swatch);
       item.appendChild(label);
       legend.appendChild(item);
     });
     container.appendChild(legend);
+  }
+
+  function getDeviceScores(series) {
+    const scores = new Map();
+    series.forEach((entry) => {
+      const currentScore = scores.get(entry.deviceName);
+      if (!Number.isFinite(currentScore) || entry.y > currentScore) {
+        scores.set(entry.deviceName, entry.y);
+      }
+    });
+    return scores;
+  }
+
+  function rankDevicesByScore(devices, scores) {
+    return devices.slice().sort((a, b) => {
+      const scoreDiff = (scores.get(b) || 0) - (scores.get(a) || 0);
+      if (scoreDiff !== 0) {
+        return scoreDiff;
+      }
+      return a.localeCompare(b);
+    });
+  }
+
+  function getInitialVisibleDevices(containerId, devices, scores) {
+    if (chartVisibilityState.has(containerId)) {
+      const savedDevices = chartVisibilityState.get(containerId);
+      return new Set(devices.filter((device) => savedDevices.has(device)));
+    }
+    return new Set(rankDevicesByScore(devices, scores).slice(0, DEFAULT_VISIBLE_DEVICE_COUNT));
+  }
+
+  function renderDeviceToggleLegend(container, devices, visibleDevices, scores, options, onToggle) {
+    const legend = document.createElement('div');
+    legend.className = 'tapo-chart-legend tapo-chart-legend--toggles';
+    const controls = new Map();
+
+    rankDevicesByScore(devices, scores).forEach((device) => {
+      const item = document.createElement('label');
+      item.className = 'tapo-chart-legend__toggle';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = visibleDevices.has(device);
+      checkbox.addEventListener('change', () => onToggle(device, checkbox.checked));
+
+      const swatch = document.createElement('span');
+      swatch.className = 'tapo-chart-legend__swatch';
+      swatch.style.backgroundColor = color(device);
+
+      const label = document.createElement('span');
+      label.className = 'tapo-chart-legend__label';
+      label.textContent = device;
+
+      const score = scores.get(device);
+      const value = document.createElement('span');
+      value.className = 'tapo-chart-legend__value';
+      value.textContent = Number.isFinite(score)
+        ? `${formatMetricValue(score, options)} ${options.unit}`
+        : '';
+
+      item.appendChild(checkbox);
+      item.appendChild(swatch);
+      item.appendChild(label);
+      item.appendChild(value);
+      legend.appendChild(item);
+      controls.set(device, { item, checkbox });
+    });
+
+    container.appendChild(legend);
+
+    return function updateLegend() {
+      controls.forEach(({ item, checkbox }, device) => {
+        const isVisible = visibleDevices.has(device);
+        checkbox.checked = isVisible;
+        item.classList.toggle('is-active', isVisible);
+      });
+    };
   }
 
   function seedDeviceColors(dashboardPayload) {
@@ -203,67 +281,6 @@
     });
   }
 
-  function splitLineSeriesByThreshold(sourceSeries, options, threshold) {
-    const safeSeries = Array.isArray(sourceSeries) ? sourceSeries : [];
-    const rows = normalizeLineSeries(safeSeries, options);
-    const deviceMax = d3.rollup(
-      rows,
-      (values) => d3.max(values, (entry) => entry.y) || 0,
-      (entry) => entry.deviceName
-    );
-    const highDevices = new Set();
-    const lowDevices = new Set();
-    deviceMax.forEach((maxValue, deviceName) => {
-      if (maxValue >= threshold) {
-        highDevices.add(deviceName);
-      } else {
-        lowDevices.add(deviceName);
-      }
-    });
-
-    return {
-      highDevices,
-      lowDevices,
-      knownDevices: new Set([...highDevices, ...lowDevices]),
-      highSeries: safeSeries.filter((entry) => highDevices.has(entry.deviceName)),
-      lowSeries: safeSeries.filter((entry) => lowDevices.has(entry.deviceName)),
-    };
-  }
-
-  function splitLineSeriesByDeviceBuckets(sourceSeries, options, buckets, fallbackThreshold) {
-    const safeSeries = Array.isArray(sourceSeries) ? sourceSeries : [];
-    const rows = normalizeLineSeries(safeSeries, options);
-    const deviceMax = d3.rollup(
-      rows,
-      (values) => d3.max(values, (entry) => entry.y) || 0,
-      (entry) => entry.deviceName
-    );
-    const bucketHighDevices = buckets && buckets.highDevices instanceof Set ? buckets.highDevices : new Set();
-    const bucketLowDevices = buckets && buckets.lowDevices instanceof Set ? buckets.lowDevices : new Set();
-    const highDevices = new Set();
-    const lowDevices = new Set();
-
-    deviceMax.forEach((maxValue, deviceName) => {
-      if (bucketHighDevices.has(deviceName)) {
-        highDevices.add(deviceName);
-      } else if (bucketLowDevices.has(deviceName)) {
-        lowDevices.add(deviceName);
-      } else if (maxValue >= fallbackThreshold) {
-        highDevices.add(deviceName);
-      } else {
-        lowDevices.add(deviceName);
-      }
-    });
-
-    return {
-      highDevices,
-      lowDevices,
-      knownDevices: new Set([...highDevices, ...lowDevices]),
-      highSeries: safeSeries.filter((entry) => highDevices.has(entry.deviceName)),
-      lowSeries: safeSeries.filter((entry) => lowDevices.has(entry.deviceName)),
-    };
-  }
-
   function renderMultiLineChart(containerId, sourceSeries, options) {
     const container = document.getElementById(containerId);
     if (!container) {
@@ -299,24 +316,17 @@
 
     const devices = Array.from(new Set(series.map((entry) => entry.deviceName))).sort();
     const grouped = d3.group(series, (entry) => entry.deviceName);
+    const scores = getDeviceScores(series);
+    const visibleDevices = getInitialVisibleDevices(containerId, devices, scores);
+    chartVisibilityState.set(containerId, new Set(visibleDevices));
     const xScale = d3.scaleTime()
       .domain(padDateDomain(d3.extent(series, (entry) => entry.x), options.domainPadMs || MS_PER_HOUR))
       .range([0, innerWidth]);
-    const maxY = d3.max(series, (entry) => entry.y) || 0;
     const yScale = d3.scaleLinear()
-      .domain([0, maxY <= 0 ? 1 : maxY * 1.12])
-      .nice()
       .range([innerHeight, 0]);
 
-    chart.append('g')
-      .attr('class', 'grid')
-      .selectAll('line')
-      .data(yScale.ticks(6))
-      .join('line')
-      .attr('x1', 0)
-      .attr('x2', innerWidth)
-      .attr('y1', (tick) => yScale(tick))
-      .attr('y2', (tick) => yScale(tick));
+    const gridGroup = chart.append('g')
+      .attr('class', 'grid');
 
     const line = d3.line()
       .curve(d3.curveMonotoneX)
@@ -324,53 +334,16 @@
       .y((entry) => yScale(entry.y));
     const smoothingWindow = Math.max(1, Math.floor(options.smoothWindow || 1));
     const drawSmoothed = smoothingWindow > 1;
-
-    grouped.forEach((values, deviceName) => {
-      const sortedValues = values.slice().sort((a, b) => a.x - b.x);
-      if (drawSmoothed) {
-        chart.append('path')
-          .datum(movingAverage(sortedValues, smoothingWindow))
-          .attr('class', 'tapo-line tapo-line--smooth')
-          .attr('fill', 'none')
-          .attr('stroke', color(deviceName))
-          .attr('stroke-width', 2.6)
-          .attr('d', line);
-      } else {
-        chart.append('path')
-          .datum(sortedValues)
-          .attr('class', 'tapo-line')
-          .attr('fill', 'none')
-          .attr('stroke', color(deviceName))
-          .attr('stroke-width', 2)
-          .attr('d', line);
-      }
-    });
-
-    chart.selectAll('.tapo-point')
-      .data(series)
-      .join('circle')
-      .attr('class', 'tapo-point tapo-point--raw')
-      .attr('cx', (entry) => xScale(entry.x))
-      .attr('cy', (entry) => yScale(entry.y))
-      .attr('r', drawSmoothed ? 2.25 : 3)
-      .attr('fill', (entry) => color(entry.deviceName))
-      .attr('stroke', '#0e0f13')
-      .attr('stroke-width', 1)
-      .on('mouseenter', (event, entry) => {
-        showTooltip(
-          tooltip,
-          event,
-          `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${formatMetricValue(entry.y, options)} ${options.unit}`
-        );
-      })
-      .on('mousemove', (event, entry) => {
-        showTooltip(
-          tooltip,
-          event,
-          `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${formatMetricValue(entry.y, options)} ${options.unit}`
-        );
-      })
-      .on('mouseleave', () => hideTooltip(tooltip));
+    const lineGroup = chart.append('g')
+      .attr('class', 'tapo-lines');
+    const pointGroup = chart.append('g')
+      .attr('class', 'tapo-points');
+    const noVisibleMessage = chart.append('text')
+      .attr('class', 'tapo-chart-no-visible')
+      .attr('x', innerWidth / 2)
+      .attr('y', innerHeight / 2)
+      .attr('text-anchor', 'middle')
+      .text('No devices selected.');
 
     const xAxis = d3.axisBottom(xScale)
       .ticks(Math.min(width < 560 ? 4 : 8, series.length))
@@ -390,11 +363,112 @@
         .style('text-anchor', 'end');
     }
 
-    chart.append('g')
+    const yAxisGroup = chart.append('g')
       .attr('class', 'axis')
       .call(yAxis);
 
-    renderLegend(container, devices);
+    const updateLegend = renderDeviceToggleLegend(
+      container,
+      devices,
+      visibleDevices,
+      scores,
+      options,
+      (device, checked) => {
+        if (checked) {
+          visibleDevices.add(device);
+        } else {
+          visibleDevices.delete(device);
+        }
+        chartVisibilityState.set(containerId, new Set(visibleDevices));
+        updateChart();
+        updateLegend();
+      }
+    );
+
+    function visibleLineData() {
+      return devices
+        .filter((device) => visibleDevices.has(device) && grouped.has(device))
+        .map((device) => ({
+          deviceName: device,
+          values: grouped.get(device).slice().sort((a, b) => a.x - b.x),
+        }));
+    }
+
+    function pointKey(entry) {
+      return `${entry.deviceName}|${entry.x.getTime()}|${entry.y}`;
+    }
+
+    function updateChart() {
+      hideTooltip(tooltip);
+      const visibleSeries = series.filter((entry) => visibleDevices.has(entry.deviceName));
+      const maxY = d3.max(visibleSeries, (entry) => entry.y) || 0;
+      yScale
+        .domain([0, maxY <= 0 ? 1 : maxY * 1.12])
+        .nice();
+
+      gridGroup.selectAll('line')
+        .data(yScale.ticks(6))
+        .join('line')
+        .attr('x1', 0)
+        .attr('x2', innerWidth)
+        .attr('y1', (tick) => yScale(tick))
+        .attr('y2', (tick) => yScale(tick));
+
+      yAxisGroup.call(yAxis);
+
+      lineGroup.selectAll('.tapo-line')
+        .data(visibleLineData(), (entry) => entry.deviceName)
+        .join(
+          (enter) => enter.append('path')
+            .attr('class', drawSmoothed ? 'tapo-line tapo-line--smooth' : 'tapo-line')
+            .attr('fill', 'none')
+            .attr('stroke-width', drawSmoothed ? 2.6 : 2),
+          (update) => update,
+          (exit) => exit.remove()
+        )
+        .attr('stroke', (entry) => color(entry.deviceName))
+        .attr('d', (entry) => {
+          const values = drawSmoothed
+            ? movingAverage(entry.values, smoothingWindow)
+            : entry.values;
+          return line(values);
+        });
+
+      pointGroup.selectAll('.tapo-point')
+        .data(visibleSeries, pointKey)
+        .join(
+          (enter) => enter.append('circle')
+            .attr('class', 'tapo-point tapo-point--raw')
+            .attr('r', drawSmoothed ? 2.25 : 3)
+            .attr('stroke', '#0e0f13')
+            .attr('stroke-width', 1)
+            .on('mouseenter', (event, entry) => {
+              showTooltip(
+                tooltip,
+                event,
+                `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${formatMetricValue(entry.y, options)} ${options.unit}`
+              );
+            })
+            .on('mousemove', (event, entry) => {
+              showTooltip(
+                tooltip,
+                event,
+                `<strong>${entry.deviceName}</strong><br>${entry.label}<br>${formatMetricValue(entry.y, options)} ${options.unit}`
+              );
+            })
+            .on('mouseleave', () => hideTooltip(tooltip)),
+          (update) => update,
+          (exit) => exit.remove()
+        )
+        .attr('cx', (entry) => xScale(entry.x))
+        .attr('cy', (entry) => yScale(entry.y))
+        .attr('fill', (entry) => color(entry.deviceName));
+
+      noVisibleMessage.style('display', visibleSeries.length ? 'none' : 'block');
+    }
+
+    updateChart();
+    updateLegend();
   }
 
   function renderMonthlyStackedBars() {
@@ -542,16 +616,7 @@
       domainPadMs: MS_PER_HOUR,
       smoothWindow: 21,
     };
-    const powerBuckets = splitLineSeriesByThreshold(powerSeries, powerOptions, HIGH_POWER_THRESHOLD_W);
-
-    renderMultiLineChart('tapoHighPowerChart', powerBuckets.highSeries, {
-      ...powerOptions,
-      emptyMessage: 'No 50 W+ power readings in this range.',
-    });
-    renderMultiLineChart('tapoLowPowerChart', powerBuckets.lowSeries, {
-      ...powerOptions,
-      emptyMessage: 'No sub-50 W power readings in this range.',
-    });
+    renderMultiLineChart('tapoPowerChart', powerSeries, powerOptions);
 
     const dailySeries = Array.isArray(payload.dailySeries) ? payload.dailySeries : [];
     const dailyOptions = {
@@ -565,21 +630,7 @@
       domainPadMs: MS_PER_DAY,
       smoothWindow: 3,
     };
-    const dailyBuckets = splitLineSeriesByDeviceBuckets(
-      dailySeries,
-      dailyOptions,
-      powerBuckets,
-      DAILY_HIGH_CONSUMPTION_THRESHOLD_KWH
-    );
-
-    renderMultiLineChart('tapoHighDailyChart', dailyBuckets.highSeries, {
-      ...dailyOptions,
-      emptyMessage: 'No high-draw daily snapshots yet.',
-    });
-    renderMultiLineChart('tapoLowDailyChart', dailyBuckets.lowSeries, {
-      ...dailyOptions,
-      emptyMessage: 'No low-draw daily snapshots yet.',
-    });
+    renderMultiLineChart('tapoDailyChart', dailySeries, dailyOptions);
 
     renderMonthlyStackedBars();
   }

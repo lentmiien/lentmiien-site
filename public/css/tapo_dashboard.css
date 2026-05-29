@@ -236,6 +236,12 @@
   opacity: 0.9;
 }
 
+.tapo-chart .tapo-chart-no-visible {
+  fill: var(--text-muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
 .tapo-chart-empty {
   min-height: 300px;
   display: flex;
@@ -272,10 +278,50 @@
   font-size: 0.85rem;
 }
 
+.tapo-chart-legend--toggles {
+  gap: 0.45rem;
+}
+
 .tapo-chart-legend__item {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+.tapo-chart-legend__toggle {
+  max-width: 100%;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  padding: 0.32rem 0.5rem;
+  cursor: pointer;
+  opacity: 0.62;
+  user-select: none;
+}
+
+.tapo-chart-legend__toggle.is-active {
+  border-color: var(--divider);
+  background: rgba(61, 160, 255, 0.08);
+  color: var(--text);
+  opacity: 1;
+}
+
+.tapo-chart-legend__toggle:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.tapo-chart-legend__toggle input {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--brand);
 }
 
 .tapo-chart-legend__swatch {
@@ -283,6 +329,20 @@
   height: 10px;
   border-radius: 50%;
   flex: 0 0 auto;
+}
+
+.tapo-chart-legend__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tapo-chart-legend__value {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .tapo-table-wrap {
