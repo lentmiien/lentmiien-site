@@ -685,7 +685,7 @@ function initFromWindow() {
   const models = Array.isArray(window.chatModels) ? window.chatModels : [];
   state.chatModels = models;
   populateVoiceOptions();
-  const voiceRefresh = !ttsVoiceState.voices.length ? refreshTtsVoices(true) : Promise.resolve();
+  const voiceRefresh = refreshTtsVoices(true);
   hydrateSettingsFromConversation(initialConversation);
   state.conversationId = conversationIdEl ? conversationIdEl.textContent.trim() : '';
   state.conversationSource = conversationIdEl ? (conversationIdEl.dataset.source || '') : '';

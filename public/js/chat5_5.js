@@ -108,7 +108,7 @@ if (editor && typeof editor.on === 'function') {
   editor.on('change', updatePromptCharCounter);
 }
 populateTtsVoiceOptions();
-refreshTtsVoiceOptions(!ttsVoiceState.voices.length);
+refreshTtsVoiceOptions(true);
 updatePromptCharCounter();
 
 function loadDraftPreference(key) {
