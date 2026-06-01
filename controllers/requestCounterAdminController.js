@@ -42,6 +42,24 @@ function formatWindow(minutes) {
   return `${value} min`;
 }
 
+function formatMinuteDuration(minutes) {
+  const value = Number(minutes);
+  const totalMinutes = Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+  const hours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  const parts = [];
+
+  if (hours > 0) {
+    parts.push(`${formatNumber(hours)} hour${hours === 1 ? '' : 's'}`);
+  }
+
+  if (remainingMinutes > 0 || parts.length === 0) {
+    parts.push(`${remainingMinutes} minute${remainingMinutes === 1 ? '' : 's'}`);
+  }
+
+  return parts.join(' ');
+}
+
 function parseFeedback(query = {}) {
   const status = typeof query.status === 'string' ? query.status : '';
   const message = typeof query.message === 'string' ? query.message : '';
@@ -115,9 +133,9 @@ function mapDailyMinuteStats(rows = []) {
 
     return {
       dateKey: row.dateKey,
-      totalMinutesDisplay: formatNumber(totalMinutes),
-      okMinutesDisplay: formatNumber(okMinutes),
-      ngMinutesDisplay: formatNumber(ngMinutes),
+      totalDurationDisplay: formatMinuteDuration(totalMinutes),
+      okDurationDisplay: formatMinuteDuration(okMinutes),
+      ngDurationDisplay: formatMinuteDuration(ngMinutes),
       totalPercent: Math.round((totalMinutes / maxTotal) * 100),
       okPercent: totalMinutes > 0 ? Math.round((okMinutes / totalMinutes) * 100) : 0,
       ngPercent: totalMinutes > 0 ? Math.round((ngMinutes / totalMinutes) * 100) : 0,

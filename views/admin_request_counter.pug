@@ -69,14 +69,14 @@ block content
                 .request-counter-day
                   .request-counter-day__top
                     span.request-counter-day__date= day.dateKey
-                    strong #{day.totalMinutesDisplay} min
+                    strong= day.totalDurationDisplay
                   .request-counter-day__bar(style=`--total-percent: ${day.totalPercent}%; --ok-percent: ${day.okPercent}%; --ng-percent: ${day.ngPercent}%;`)
                     span.request-counter-day__bar-total
                       span.request-counter-day__bar-ok
                       span.request-counter-day__bar-ng
                   .request-counter-day__meta
-                    span OK #{day.okMinutesDisplay} min
-                    span NG #{day.ngMinutesDisplay} min
+                    span OK #{day.okDurationDisplay}
+                    span NG #{day.ngDurationDisplay}
           else
             p.request-counter-empty No complete local days are available in the 7-day retention window.
 
