@@ -2233,6 +2233,11 @@ label,
   border-left: 3px solid var(--accent);
 }
 
+.chat5-message--render-error {
+  border-color: rgba(255, 106, 31, 0.65);
+  background: rgba(64, 34, 26, 0.55);
+}
+
 .chat5-message-text {
   color: var(--text);
 }
@@ -2331,6 +2336,22 @@ label,
   padding: 8px 12px;
   border-radius: 8px;
   box-shadow: inset 0 0 0 1px rgba(38, 43, 52, 0.6);
+}
+
+.chat5-message-problem {
+  color: #ffd5bf;
+  font-style: normal;
+  background: rgba(255, 106, 31, 0.14);
+  border: 1px solid rgba(255, 106, 31, 0.38);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.chat5-message-problem-details {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 
 .chat5-avatar {

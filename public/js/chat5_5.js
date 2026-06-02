@@ -402,6 +402,100 @@ function enhanceTables(root) {
   });
 }
 
+function stringifyForDisplay(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (error) {
+    return String(value);
+  }
+}
+
+function parseMarkdownSafely(value, contextLabel) {
+  const source = stringifyForDisplay(value);
+  if (source.trim().length === 0) return '';
+  if (!window.marked || typeof window.marked.parse !== 'function') {
+    throw new Error('Markdown renderer is not available.');
+  }
+  try {
+    return window.marked.parse(source);
+  } catch (error) {
+    const label = contextLabel ? ` for ${contextLabel}` : '';
+    throw new Error(`Unable to render markdown${label}: ${error.message || error}`);
+  }
+}
+
+function describeMessageForError(m) {
+  if (!m || typeof m !== 'object') return 'message payload is missing or invalid';
+  const parts = [];
+  if (m._id) parts.push(`id ${m._id}`);
+  if (m.contentType) parts.push(`type ${m.contentType}`);
+  if (m.user_id) parts.push(`user ${m.user_id}`);
+  return parts.length > 0 ? parts.join(', ') : 'message has no id, type, or user';
+}
+
+function appendMessageProblem(parent, title, details) {
+  if (!parent) return;
+  const wrapper = document.createElement('div');
+  wrapper.classList.add('chat5-message-problem');
+
+  const strong = document.createElement('strong');
+  strong.textContent = title || 'Unable to display message.';
+  wrapper.append(strong);
+
+  if (details) {
+    const detail = document.createElement('div');
+    detail.classList.add('chat5-message-problem-details');
+    detail.textContent = details;
+    wrapper.append(detail);
+  }
+
+  parent.append(wrapper);
+}
+
+function appendRenderErrorMessage(m, error) {
+  const container = document.getElementById("conversationContainer");
+  if (!container) return;
+
+  const messageWrapper = document.createElement('div');
+  messageWrapper.classList.add('chat5-message', 'chat5-message--render-error');
+  if (m && m._id) {
+    messageWrapper.dataset.id = m._id;
+  }
+
+  const body = document.createElement('div');
+  body.classList.add('chat5-message-body');
+  appendMessageProblem(
+    body,
+    'Unable to render one live message.',
+    `${describeMessageForError(m)}. ${error && error.message ? error.message : String(error || 'Unknown rendering error')}. Check the Raw tab for the payload.`
+  );
+
+  messageWrapper.append(body);
+  container.append(messageWrapper);
+}
+
+function appendRawMessageToUI(m) {
+  const rawPane = document.getElementById("pills-raw");
+  if (!rawPane) return;
+
+  const pre = document.createElement("pre");
+  pre.classList.add('chat5-raw-message');
+  if (m && m._id) {
+    pre.dataset.messageId = m._id;
+  }
+
+  try {
+    pre.innerText = JSON.stringify(m, null, 2);
+  } catch (error) {
+    pre.innerText = `Unable to stringify live message payload: ${error.message || error}`;
+  }
+
+  rawPane.append(pre);
+}
+
 function splitInputList(value) {
   if (!value || typeof value !== 'string') return [];
   return value.split(',').map((item) => item.trim()).filter((item) => item.length > 0);
@@ -869,7 +963,14 @@ socket.on('chat5-batch-error', (data) => {
   alert(message);
 });
 
-socket.on('chat5-messages', ({id, messages, placeholderId}) => {
+socket.on('chat5-messages', ({id, messages, placeholderId} = {}) => {
+  if (!id) {
+    console.error('chat5-messages payload is missing a conversation id', { id, messages, placeholderId });
+    appendRenderErrorMessage(null, new Error('Incoming socket payload is missing a conversation id.'));
+    hideLoadingPopup();
+    return;
+  }
+
   SwitchConversation(id);
   document.getElementById("conversation_title").innerHTML = document.getElementById("title").value;
   const idEl = document.getElementById("id");
@@ -880,11 +981,25 @@ socket.on('chat5-messages', ({id, messages, placeholderId}) => {
   if (placeholderId) {
     removeMessageFromUI(placeholderId);
   }
+  if (!Array.isArray(messages)) {
+    console.error('chat5-messages payload has a non-array messages field', { id, messages, placeholderId });
+    appendRenderErrorMessage(null, new Error('Incoming socket payload did not include a messages array.'));
+    hideLoadingPopup();
+    return;
+  }
   for (const m of messages) {
-    if (m.error) {
-      console.log(m.error);
-    } else {
+    if (m && m.error) {
+      console.error('chat5 message payload reported an error', m.error);
+      appendRenderErrorMessage(m, new Error(stringifyForDisplay(m.error) || 'Message payload reported an error.'));
+      appendRawMessageToUI(m);
+      continue;
+    }
+    try {
       AddMessageToUI(m);
+    } catch (error) {
+      console.error('Unable to render chat5 message', { error, message: m });
+      appendRenderErrorMessage(m, error);
+      appendRawMessageToUI(m);
     }
   }
   hideLoadingPopup();
@@ -963,8 +1078,12 @@ socket.on('chat5-conversation-settings-updated', (data) => {
 });
 
 function AddMessageToUI(m) {
+  if (!m || typeof m !== 'object') {
+    throw new Error('Message payload is not an object.');
+  }
+  const sender = stringifyForDisplay(m.user_id).trim() || 'Unknown';
   const ul = document.getElementsByClassName("userlabel");
-  if (ul.length > 0 && ul[ul.length-1].dataset.user === m.user_id) {
+  if (ul.length > 0 && ul[ul.length-1].dataset.user === sender) {
     // Simply append message
     message(m);
   } else {
@@ -972,18 +1091,16 @@ function AddMessageToUI(m) {
     const hr = document.createElement("hr");
     const div = document.createElement("div");
     div.classList.add("userlabel");
-    div.dataset.user = m.user_id;
+    div.dataset.user = sender;
     const b = document.createElement("b");
-    b.innerText = m.user_id;
+    b.innerText = sender;
     div.append(b);
     document.getElementById("conversationContainer").append(hr, div);
     // Append message
     message(m);
   }
   // Add raw data
-  const pre = document.createElement("pre");
-  pre.innerText = JSON.stringify(m, null, 2);
-  document.getElementById("pills-raw").append(pre);
+  appendRawMessageToUI(m);
 }
 
 function removeMessageFromUI(messageId) {
@@ -1037,6 +1154,11 @@ function markMessageHiddenInUI(messageId) {
 function message(m) {
   const container = document.getElementById("conversationContainer");
   if (!container) return;
+  if (!m || typeof m !== 'object') {
+    throw new Error('Message payload is not an object.');
+  }
+  const content = m.content && typeof m.content === 'object' ? m.content : {};
+  const messageLabel = describeMessageForError(m);
 
   const messageWrapper = document.createElement('div');
   messageWrapper.classList.add('chat5-message');
@@ -1079,37 +1201,73 @@ function message(m) {
     const textBlock = document.createElement('div');
     textBlock.classList.add('chat5-message-text');
     textBlock.id = `${m._id}textout`;
-    textBlock.innerHTML = (m.content && typeof m.content.html === 'string' && m.content.html.length > 0)
-      ? m.content.html
-      : marked.parse(m.content.text);
+    textBlock.innerHTML = (typeof content.html === 'string' && content.html.trim().length > 0)
+      ? content.html
+      : parseMarkdownSafely(content.text, messageLabel);
+    if (textBlock.innerHTML.trim().length === 0) {
+      appendMessageProblem(
+        textBlock,
+        'Empty text message received.',
+        `${messageLabel}. content.text is empty, null, or missing.`
+      );
+    }
     body.append(textBlock);
   }
   if (m.contentType === "image") {
-    const img = document.createElement("img");
-    img.classList.add('chat5-message-image');
-    img.src = `/img/${m.content.image}`;
-    img.alt = m.content.revisedPrompt;
-    const caption = document.createElement("p");
-    caption.classList.add('chat5-image-caption');
-    const italics = document.createElement("i");
-    italics.innerText = m.content.revisedPrompt;
-    caption.append(italics);
-    body.append(img, caption);
+    const imageName = stringifyForDisplay(content.image).trim();
+    if (imageName) {
+      const img = document.createElement("img");
+      img.classList.add('chat5-message-image');
+      img.src = `/img/${imageName}`;
+      img.alt = stringifyForDisplay(content.revisedPrompt);
+      const caption = document.createElement("p");
+      caption.classList.add('chat5-image-caption');
+      const italics = document.createElement("i");
+      italics.innerText = stringifyForDisplay(content.revisedPrompt);
+      caption.append(italics);
+      body.append(img, caption);
+    } else {
+      appendMessageProblem(
+        body,
+        'Image message is missing a file name.',
+        `${messageLabel}. content.image is empty, null, or missing.`
+      );
+    }
   }
   if (m.contentType === "tool") {
     const div = document.createElement("div");
     div.classList.add('chat5-message-tool');
-    const italics = document.createElement("i");
-    italics.innerText = m.content.toolOutput;
-    div.append(italics);
+    const toolOutput = stringifyForDisplay(content.toolOutput);
+    if (toolOutput.trim().length > 0) {
+      const italics = document.createElement("i");
+      italics.innerText = toolOutput;
+      div.append(italics);
+    } else {
+      appendMessageProblem(
+        div,
+        'Empty tool message received.',
+        `${messageLabel}. content.toolOutput is empty, null, or missing.`
+      );
+    }
     body.append(div);
   }
   if (m.contentType === "reasoning") {
     const div = document.createElement("div");
     div.classList.add('chat5-message-reasoning');
-    const italics = document.createElement("i");
-    italics.innerHTML = marked.parse(m.content.text);
-    div.append(italics);
+    const renderedReasoning = (typeof content.html === 'string' && content.html.trim().length > 0)
+      ? content.html
+      : parseMarkdownSafely(content.text, messageLabel);
+    if (renderedReasoning.trim().length > 0) {
+      const italics = document.createElement("i");
+      italics.innerHTML = renderedReasoning;
+      div.append(italics);
+    } else {
+      appendMessageProblem(
+        div,
+        'Empty reasoning message received.',
+        `${messageLabel}. The API response did not include reasoning summary text.`
+      );
+    }
     body.append(div);
   }
   if (m.contentType === "function_call" || m.contentType === "function_call_output") {
@@ -1122,12 +1280,18 @@ function message(m) {
       code.textContent = jsonText;
       pre.append(code);
       body.append(pre);
+    } else {
+      appendMessageProblem(
+        body,
+        `Unable to display ${m.contentType} message.`,
+        `${messageLabel}. No structured payload could be built from the message content.`
+      );
     }
   }
   if (m.contentType === "audio") {
     const wrapper = document.createElement('div');
     wrapper.classList.add('chat5-message-audio');
-    const fileName = (m.content && (m.content.audio || m.content.tts)) ? (m.content.audio || m.content.tts) : null;
+    const fileName = stringifyForDisplay(content.audio || content.tts).trim();
     if (fileName) {
       const audio = document.createElement('audio');
       audio.controls = true;
@@ -1135,14 +1299,36 @@ function message(m) {
       audio.src = `/mp3/${fileName}`;
       wrapper.append(audio);
     }
-    const transcript = m.content && (m.content.transcript || m.content.text);
-    if (transcript) {
+    const transcript = stringifyForDisplay(content.transcript || content.text);
+    if (transcript.trim().length > 0) {
       const p = document.createElement('p');
       p.classList.add('chat5-audio-transcript');
       p.innerText = transcript;
       wrapper.append(p);
     }
+    if (!fileName && transcript.trim().length === 0) {
+      appendMessageProblem(
+        wrapper,
+        'Empty audio message received.',
+        `${messageLabel}. No audio file or transcript is present.`
+      );
+    }
     body.append(wrapper);
+  }
+  if (![
+    "text",
+    "image",
+    "tool",
+    "reasoning",
+    "function_call",
+    "function_call_output",
+    "audio"
+  ].includes(m.contentType)) {
+    appendMessageProblem(
+      body,
+      'Unsupported message type received.',
+      `${messageLabel}. contentType "${stringifyForDisplay(m.contentType) || 'missing'}" is not handled by the browser renderer.`
+    );
   }
 
   messageWrapper.appendChild(body);
@@ -1181,7 +1367,7 @@ function SaveText() {
   socket.emit('chat5-edittext-up', data);
   document.getElementById(`${data.message_id}${data.type}`).innerHTML = data.value;
   if (data.type === "text") {
-    document.getElementById(`${data.message_id}textout`).innerHTML = marked.parse(data.value);
+    document.getElementById(`${data.message_id}textout`).innerHTML = parseMarkdownSafely(data.value, `edited message ${data.message_id}`);
   }
   myModal.hide();
 }

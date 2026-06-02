@@ -131,14 +131,18 @@ block content
     }
   mixin chat5RenderMessageCard(m, state)
     - if (!m) return;
-    - const isBot = typeof m.user_id === 'string' && m.user_id.toUpperCase() === 'BOT';
-    - const copyText = (m && m.content) ? (m.content.text || m.content.transcript || m.content.revisedPrompt || m.content.toolOutput || '') : '';
+    - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
+    - const isBot = sender.toUpperCase() === 'BOT';
+    - const content = m.content && typeof m.content === 'object' ? m.content : {};
+    - const copyText = content ? (content.text || content.transcript || content.revisedPrompt || content.toolOutput || '') : '';
     - const hasCopyText = typeof copyText === 'string' && copyText.trim().length > 0;
-    if !state.lastUser || state.lastUser !== m.user_id
+    - const messageLabel = [m._id ? `id ${m._id}` : '', m.contentType ? `type ${m.contentType}` : '', sender ? `user ${sender}` : ''].filter(Boolean).join(', ') || 'message has no id, type, or user';
+    - const handledMessageTypes = ["text", "image", "audio", "tool", "reasoning", "function_call", "function_call_output"];
+    if !state.lastUser || state.lastUser !== sender
       hr.chat5-divider
-      div.userlabel.chat5-user-label(data-user=m.user_id)
-        b= m.user_id 
-      - state.lastUser = m.user_id
+      div.userlabel.chat5-user-label(data-user=sender)
+        b= sender 
+      - state.lastUser = sender
     div(data-id=m._id, class={
         'chat5-message': true,
         'chat5-message--hidden': m.hideFromBot,
@@ -154,28 +158,62 @@ block content
             button.chat5-embed-button(type='button', aria-label='Embed message (high quality)', data-message-id=m._id, data-conversation-id=conversation && conversation._id ? conversation._id.toString() : '') Embed HQ
       .chat5-message-body
         if m.contentType === "text"
-          div.chat5-message-text(id=`${m._id}textout`)!= m.content.html 
+          div.chat5-message-text(id=`${m._id}textout`)
+            if typeof content.html === 'string' && content.html.trim().length > 0
+              != content.html
+            else
+              .chat5-message-problem
+                strong Empty text message received.
+                .chat5-message-problem-details= `${messageLabel}. content.text is empty, null, or missing.`
         if m.contentType === "image"
-          img.chat5-message-image(src=`/img/${m.content.image}`, alt=m.content.revisedPrompt)
-          p.chat5-image-caption
-            i= m.content.revisedPrompt
+          if content.image
+            img.chat5-message-image(src=`/img/${content.image}`, alt=content.revisedPrompt)
+            p.chat5-image-caption
+              i= content.revisedPrompt
+          else
+            .chat5-message-problem
+              strong Image message is missing a file name.
+              .chat5-message-problem-details= `${messageLabel}. content.image is empty, null, or missing.`
         if m.contentType === "audio"
-          - const audioFile = m && m.content ? (m.content.audio || m.content.tts) : null;
+          - const audioFile = content.audio || content.tts;
+          - const audioTranscript = content.transcript || content.text;
           if audioFile
             audio.chat5-message-audio(controls, src=`/mp3/${audioFile}`)
-          if m.content && (m.content.transcript || m.content.text)
-            p.chat5-audio-transcript= m.content.transcript || m.content.text
+          if audioTranscript
+            p.chat5-audio-transcript= audioTranscript
+          if !audioFile && !audioTranscript
+            .chat5-message-problem
+              strong Empty audio message received.
+              .chat5-message-problem-details= `${messageLabel}. No audio file or transcript is present.`
         if m.contentType === "tool"
           div.chat5-message-tool
-            i= m.content.toolOutput
+            if content.toolOutput
+              i= content.toolOutput
+            else
+              .chat5-message-problem
+                strong Empty tool message received.
+                .chat5-message-problem-details= `${messageLabel}. content.toolOutput is empty, null, or missing.`
         if m.contentType === "reasoning"
           div.chat5-message-reasoning
-            i!= m.content.html
+            if typeof content.html === 'string' && content.html.trim().length > 0
+              i!= content.html
+            else
+              .chat5-message-problem
+                strong Empty reasoning message received.
+                .chat5-message-problem-details= `${messageLabel}. The API response did not include reasoning summary text.`
         if m.contentType === "function_call" || m.contentType === "function_call_output"
           - const structuredJson = formatStructuredMessageJson(m);
           if structuredJson
             pre.chat5-message-json
               code.language-json= structuredJson
+          else
+            .chat5-message-problem
+              strong= `Unable to display ${m.contentType} message.`
+              .chat5-message-problem-details= `${messageLabel}. No structured payload could be built from the message content.`
+        if handledMessageTypes.indexOf(m.contentType) === -1
+          .chat5-message-problem
+            strong Unsupported message type received.
+            .chat5-message-problem-details= `${messageLabel}. contentType "${m.contentType || 'missing'}" is not handled by the browser renderer.`
   mixin chat5RenderHiddenGroup(group, state)
     - if (!group || !group.length) return;
     - const firstHidden = group[0];
