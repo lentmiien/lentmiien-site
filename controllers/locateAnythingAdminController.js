@@ -223,7 +223,60 @@ function getExplicitOverlayLabel(value) {
     return null;
   }
   const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  if (!trimmed) {
+    return null;
+  }
+
+  const refMatches = Array.from(trimmed.matchAll(/<ref>([\s\S]*?)(?:<\/ref>|$)/gi));
+  if (refMatches.length) {
+    const lastRef = refMatches[refMatches.length - 1];
+    return getExplicitOverlayLabel(lastRef[1]);
+  }
+
+  if (/<\/?(?:ref|box|point)>|<\|im_end\|>/i.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+function isNoneLocationMarkup(value) {
+  const normalized = String(value || '')
+    .replace(/<\|im_end\|>/g, '')
+    .trim()
+    .toLowerCase();
+  return normalized === 'none' || normalized === 'null';
+}
+
+function extractAnswerOverlayLabels(answer) {
+  if (typeof answer !== 'string' || !answer.trim()) {
+    return { boxes: [], points: [] };
+  }
+
+  const labels = { boxes: [], points: [] };
+  let currentLabel = null;
+  const tokenPattern = /<ref>([\s\S]*?)<\/ref>|<box>([\s\S]*?)<\/box>|<point>([\s\S]*?)<\/point>/gi;
+  let match;
+
+  while ((match = tokenPattern.exec(answer)) !== null) {
+    if (match[1] !== undefined) {
+      currentLabel = getExplicitOverlayLabel(match[1]);
+      continue;
+    }
+
+    if (match[2] !== undefined) {
+      if (!isNoneLocationMarkup(match[2])) {
+        labels.boxes.push(currentLabel);
+      }
+      continue;
+    }
+
+    if (match[3] !== undefined && !isNoneLocationMarkup(match[3])) {
+      labels.points.push(currentLabel);
+    }
+  }
+
+  return labels;
 }
 
 function buildBoxOverlay(box, index, frame, label) {
@@ -269,10 +322,11 @@ function buildPointOverlay(point, index, frame, label) {
   };
 }
 
-function buildBoxOverlays(boxes, frame) {
+function buildBoxOverlays(boxes, frame, answerLabels = []) {
   let lastLabel = null;
   return boxes.map((box, index) => {
-    const explicitLabel = getExplicitOverlayLabel(box?.label);
+    const answerLabel = getExplicitOverlayLabel(answerLabels[index]);
+    const explicitLabel = answerLabel || getExplicitOverlayLabel(box?.label);
     if (explicitLabel) {
       lastLabel = explicitLabel;
     }
@@ -280,10 +334,11 @@ function buildBoxOverlays(boxes, frame) {
   });
 }
 
-function buildPointOverlays(points, frame) {
+function buildPointOverlays(points, frame, answerLabels = []) {
   let lastLabel = null;
   return points.map((point, index) => {
-    const explicitLabel = getExplicitOverlayLabel(point?.label);
+    const answerLabel = getExplicitOverlayLabel(answerLabels[index]);
+    const explicitLabel = answerLabel || getExplicitOverlayLabel(point?.label);
     if (explicitLabel) {
       lastLabel = explicitLabel;
     }
@@ -296,10 +351,11 @@ function decorateFileForDisplay(file) {
   const frame = getOverlayFrame(rawOutput);
   const rawBoxes = Array.isArray(rawOutput?.boxes) ? rawOutput.boxes : [];
   const rawPoints = Array.isArray(rawOutput?.points) ? rawOutput.points : [];
+  const answerLabels = extractAnswerOverlayLabels(rawOutput?.answer);
   const overlayItems = frame
     ? [
-        ...buildBoxOverlays(rawBoxes, frame),
-        ...buildPointOverlays(rawPoints, frame),
+        ...buildBoxOverlays(rawBoxes, frame, answerLabels.boxes),
+        ...buildPointOverlays(rawPoints, frame, answerLabels.points),
       ].filter(Boolean)
     : [];
 
