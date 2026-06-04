@@ -1,0 +1,69 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/dummy_api_requests.css')
+
+block content
+  .dummy-api-admin
+    header.dummy-api-admin__header
+      div
+        h1.dummy-api-admin__title Dummy API Requests
+        p.dummy-api-admin__subtitle Raw request logging for the dummy `/ok` endpoint.
+      .dummy-api-admin__meta
+        span Collection #{collectionName}
+        a.dummy-api-admin__refresh(href='/admin/dummy-api-requests') Refresh
+
+    if feedback
+      .dummy-api-admin__alert(class=`dummy-api-admin__alert--${feedback.status}`)= feedback.message
+
+    if loadError
+      .dummy-api-admin__alert.dummy-api-admin__alert--error= loadError
+    else
+      .dummy-api-admin__grid
+        section.dummy-api-panel
+          .dummy-api-panel__header
+            h2 Endpoint
+            span.dummy-api-status(class=settings.enabled ? 'dummy-api-status--enabled' : 'dummy-api-status--disabled')= settings.enabled ? 'Enabled' : 'Disabled'
+          dl.dummy-api-details
+            div
+              dt Paths
+              dd
+                ul.dummy-api-paths
+                  each endpoint in endpoints
+                    li= endpoint
+            div
+              dt Updated
+              dd= settings.updatedAtDisplay
+            div
+              dt Updated By
+              dd= settings.updatedByDisplay
+          form.dummy-api-form(method='post', action='/admin/dummy-api-requests/settings')
+            label.dummy-api-toggle(for='dummyApiEnabled')
+              input#dummyApiEnabled(type='checkbox', name='enabled', value='true', checked=settings.enabled)
+              span Enable `/ok` request logging
+            button.dummy-api-button(type='submit') Save
+
+        section.dummy-api-panel.dummy-api-panel--danger
+          .dummy-api-panel__header
+            h2 Logging Collection
+            span.dummy-api-panel__meta #{totalLogs} #{totalLogs === 1 ? 'entry' : 'entries'}
+          p.dummy-api-panel__copy Clear only the dummy API request log collection. The enable setting is kept.
+          form(method='post', action='/admin/dummy-api-requests/clear', onsubmit='return confirm("Clear all dummy API request logs?");')
+            button.dummy-api-button.dummy-api-button--danger(type='submit') Clear database collection
+
+      section.dummy-api-logs
+        .dummy-api-logs__header
+          h2 Recent Raw JSON
+          span Latest #{logLimit}
+        if logs && logs.length
+          .dummy-api-log-list
+            each log in logs
+              article.dummy-api-log
+                header.dummy-api-log__header
+                  .dummy-api-log__main
+                    span.dummy-api-log__time= log.receivedAtDisplay
+                    span.dummy-api-log__path= log.requestPath
+                  span.dummy-api-log__method= log.method
+                pre.dummy-api-log__json= log.rawJson
+        else
+          p.dummy-api-empty No dummy API `/ok` requests have been logged.

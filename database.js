@@ -161,6 +161,8 @@ const ClusterNodeType = require('./models/cluster_node_type');
 const ClusterHardwareCatalogItem = require('./models/cluster_hardware_catalog_item');
 const IncomingRequest = require('./models/incoming_request');
 const RequestCounterSettings = require('./models/request_counter_settings');
+const DummyApiRequestLog = require('./models/dummy_api_request_log');
+const DummyApiEndpointSetting = require('./models/dummy_api_endpoint_setting');
 
 // Export models
 module.exports = {
@@ -266,4 +268,6 @@ module.exports = {
   ClusterHardwareCatalogItem,
   IncomingRequest,
   RequestCounterSettings,
+  DummyApiRequestLog,
+  DummyApiEndpointSetting,
 };

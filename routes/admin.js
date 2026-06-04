@@ -16,6 +16,7 @@ const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminControlle
 const locateAnythingAdminController = require('../controllers/locateAnythingAdminController');
 const tapoController = require('../controllers/tapoController');
 const requestCounterAdminController = require('../controllers/requestCounterAdminController');
+const dummyApiAdminController = require('../controllers/dummyApiAdminController');
 const lifeLogRouter = require('./lifeLog');
 
 const htmlUpload = multer({
@@ -231,6 +232,9 @@ router.post('/database-viewer/delete', controller.database_viewer_delete);
 router.get('/tapo', tapoController.dashboard);
 router.get('/api-debug-logs', controller.api_debug_logs);
 router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
+router.get('/dummy-api-requests', dummyApiAdminController.dashboard);
+router.post('/dummy-api-requests/settings', dummyApiAdminController.updateSettings);
+router.post('/dummy-api-requests/clear', dummyApiAdminController.clearLogs);
 router.get('/tools', toolManagerController.index);
 router.post('/tools/save', toolManagerController.save);
 router.post('/tools/seed', toolManagerController.seed);
