@@ -128,27 +128,44 @@ block content
           .alert.alert-warning.mt-3.mb-0(role='alert')= selectedJob.error
 
         - const selectedOptions = selectedJob.requestOptions || {};
-        details.locateanything-admin__details(open)
-          summary Request options
-          pre.locateanything-admin__pre= formatJson(selectedOptions)
-
         if selectedJob.files && selectedJob.files.length
           .locateanything-admin__files
             each file in selectedJob.files
+              - const overlayItems = Array.isArray(file.overlayItems) ? file.overlayItems : [];
+              - const overlaySummary = file.overlaySummary || {};
               article.locateanything-admin__file
-                .locateanything-admin__file-image
-                  a(href=file.publicUrl, target='_blank', rel='noopener noreferrer')
+                .locateanything-admin__file-head
+                  div
+                    h3= file.originalName || file.storedFileName
+                    p.locateanything-admin__muted.mb-0 #{formatSize(file.sizeBytes)} · #{file.mimeType || 'image'} · #{file.storedPath}
+                  span.locateanything-admin__status(class=statusClass(file.status))= file.status || 'unknown'
+                if file.error
+                  .alert.alert-danger.mt-3.mb-0(role='alert')= file.error
+                .locateanything-admin__visual
+                  .locateanything-admin__image-stage
                     img(src=file.publicUrl, alt=file.originalName || file.storedFileName)
-                .locateanything-admin__file-body
-                  .locateanything-admin__file-head
-                    div
-                      h3= file.originalName || file.storedFileName
-                      p.locateanything-admin__muted.mb-0 #{formatSize(file.sizeBytes)} · #{file.mimeType || 'image'} · #{file.storedPath}
-                    span.locateanything-admin__status(class=statusClass(file.status))= file.status || 'unknown'
-                  if file.error
-                    .alert.alert-danger.mt-3.mb-0(role='alert')= file.error
-                  details.locateanything-admin__details(open=file.status === 'completed')
-                    summary Raw output
+                    if overlayItems.length
+                      .locateanything-admin__overlay(aria-hidden='true')
+                        each item in overlayItems
+                          if item.type === 'box'
+                            .locateanything-admin__box(style=item.style)
+                              span.locateanything-admin__overlay-label= item.label
+                          else if item.type === 'point'
+                            .locateanything-admin__point(style=item.style)
+                              span.locateanything-admin__point-dot
+                              span.locateanything-admin__point-label= item.label
+                  if file.status === 'completed'
+                    p.locateanything-admin__overlay-count
+                      if overlayItems.length
+                        | Showing #{overlaySummary.visible} overlay item(s): #{overlaySummary.boxes || 0} box(es), #{overlaySummary.points || 0} point(s).
+                      else
+                        | No boxes or points were present in the raw response.
+                .locateanything-admin__metadata
+                  details.locateanything-admin__details
+                    summary Request data
+                    pre.locateanything-admin__pre= formatJson(selectedOptions)
+                  details.locateanything-admin__details
+                    summary Raw response data
                     pre.locateanything-admin__pre= file.rawOutput ? formatJson(file.rawOutput) : (file.rawErrorOutput ? formatJson(file.rawErrorOutput) : 'No raw output saved.')
         else
           p.text-muted.mb-0 This job has no saved image records.

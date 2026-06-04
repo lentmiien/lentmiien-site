@@ -189,6 +189,113 @@ function buildFileRecord(file) {
   };
 }
 
+function isFiniteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function clampPercent(value) {
+  if (!isFiniteNumber(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, value));
+}
+
+function getOverlayFrame(rawOutput) {
+  const imageSize = rawOutput?.image_size || {};
+  const resizeFinal = rawOutput?.resize?.final || {};
+  const resizeOriginal = rawOutput?.resize?.original || {};
+  const width = Number(imageSize.width || resizeFinal.width || resizeOriginal.width);
+  const height = Number(imageSize.height || resizeFinal.height || resizeOriginal.height);
+
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+    return null;
+  }
+
+  return { width, height };
+}
+
+function toFramePercent(value, total) {
+  return clampPercent((Number(value) / total) * 100);
+}
+
+function buildBoxOverlay(box, index, frame) {
+  const x1 = Number(box?.x1);
+  const y1 = Number(box?.y1);
+  const x2 = Number(box?.x2);
+  const y2 = Number(box?.y2);
+
+  if (![x1, y1, x2, y2].every(Number.isFinite)) {
+    return null;
+  }
+
+  const left = toFramePercent(Math.min(x1, x2), frame.width);
+  const right = toFramePercent(Math.max(x1, x2), frame.width);
+  const top = toFramePercent(Math.min(y1, y2), frame.height);
+  const bottom = toFramePercent(Math.max(y1, y2), frame.height);
+  const width = right - left;
+  const height = bottom - top;
+
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    type: 'box',
+    label: box?.label || `box ${index + 1}`,
+    style: `left:${left}%;top:${top}%;width:${width}%;height:${height}%;`,
+  };
+}
+
+function buildPointOverlay(point, index, frame) {
+  const x = Number(point?.x);
+  const y = Number(point?.y);
+
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return null;
+  }
+
+  return {
+    type: 'point',
+    label: point?.label || `point ${index + 1}`,
+    style: `left:${toFramePercent(x, frame.width)}%;top:${toFramePercent(y, frame.height)}%;`,
+  };
+}
+
+function decorateFileForDisplay(file) {
+  const rawOutput = file?.rawOutput || null;
+  const frame = getOverlayFrame(rawOutput);
+  const rawBoxes = Array.isArray(rawOutput?.boxes) ? rawOutput.boxes : [];
+  const rawPoints = Array.isArray(rawOutput?.points) ? rawOutput.points : [];
+  const overlayItems = frame
+    ? [
+        ...rawBoxes.map((box, index) => buildBoxOverlay(box, index, frame)),
+        ...rawPoints.map((point, index) => buildPointOverlay(point, index, frame)),
+      ].filter(Boolean)
+    : [];
+
+  return {
+    ...file,
+    overlayFrame: frame,
+    overlayItems,
+    overlaySummary: {
+      boxes: rawBoxes.length,
+      points: rawPoints.length,
+      visible: overlayItems.length,
+    },
+  };
+}
+
+function decorateJobForDisplay(job) {
+  if (!job) {
+    return null;
+  }
+
+  return {
+    ...job,
+    files: Array.isArray(job.files) ? job.files.map(decorateFileForDisplay) : [],
+  };
+}
+
 async function cleanupUploadedFiles(files = []) {
   await Promise.all((files || [])
     .filter((file) => file && file.path)
@@ -225,7 +332,7 @@ async function loadPageJobs(selectedJobId) {
     selectedJob = jobs[0];
   }
 
-  return { jobs, selectedJob };
+  return { jobs, selectedJob: decorateJobForDisplay(selectedJob) };
 }
 
 async function renderPage(req, res, {
