@@ -218,7 +218,15 @@ function toFramePercent(value, total) {
   return clampPercent((Number(value) / total) * 100);
 }
 
-function buildBoxOverlay(box, index, frame) {
+function getExplicitOverlayLabel(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function buildBoxOverlay(box, index, frame, label) {
   const x1 = Number(box?.x1);
   const y1 = Number(box?.y1);
   const x2 = Number(box?.x2);
@@ -241,12 +249,12 @@ function buildBoxOverlay(box, index, frame) {
 
   return {
     type: 'box',
-    label: box?.label || `box ${index + 1}`,
+    label: label || `box ${index + 1}`,
     style: `left:${left}%;top:${top}%;width:${width}%;height:${height}%;`,
   };
 }
 
-function buildPointOverlay(point, index, frame) {
+function buildPointOverlay(point, index, frame, label) {
   const x = Number(point?.x);
   const y = Number(point?.y);
 
@@ -256,9 +264,31 @@ function buildPointOverlay(point, index, frame) {
 
   return {
     type: 'point',
-    label: point?.label || `point ${index + 1}`,
+    label: label || `point ${index + 1}`,
     style: `left:${toFramePercent(x, frame.width)}%;top:${toFramePercent(y, frame.height)}%;`,
   };
+}
+
+function buildBoxOverlays(boxes, frame) {
+  let lastLabel = null;
+  return boxes.map((box, index) => {
+    const explicitLabel = getExplicitOverlayLabel(box?.label);
+    if (explicitLabel) {
+      lastLabel = explicitLabel;
+    }
+    return buildBoxOverlay(box, index, frame, explicitLabel || lastLabel);
+  });
+}
+
+function buildPointOverlays(points, frame) {
+  let lastLabel = null;
+  return points.map((point, index) => {
+    const explicitLabel = getExplicitOverlayLabel(point?.label);
+    if (explicitLabel) {
+      lastLabel = explicitLabel;
+    }
+    return buildPointOverlay(point, index, frame, explicitLabel || lastLabel);
+  });
 }
 
 function decorateFileForDisplay(file) {
@@ -268,8 +298,8 @@ function decorateFileForDisplay(file) {
   const rawPoints = Array.isArray(rawOutput?.points) ? rawOutput.points : [];
   const overlayItems = frame
     ? [
-        ...rawBoxes.map((box, index) => buildBoxOverlay(box, index, frame)),
-        ...rawPoints.map((point, index) => buildPointOverlay(point, index, frame)),
+        ...buildBoxOverlays(rawBoxes, frame),
+        ...buildPointOverlays(rawPoints, frame),
       ].filter(Boolean)
     : [];
 
