@@ -139,6 +139,7 @@ const PerformanceSlowRequest = require('./models/performance_slow_request');
 // OCR jobs
 const OcrJob = require('./models/ocr_job');
 const OcrTtsJob = require('./models/ocr_tts_job');
+const LocateAnythingJob = require('./models/locateanything_job');
 // ASR jobs
 const AsrJob = require('./models/asr_job');
 // Audio workflow jobs
@@ -248,6 +249,7 @@ module.exports = {
   PerformanceSlowRequest,
   OcrJob,
   OcrTtsJob,
+  LocateAnythingJob,
   AsrJob,
   AudioWorkflowJob,
   AudioWorkflowTrigger,

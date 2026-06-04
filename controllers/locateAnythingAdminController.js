@@ -1,0 +1,391 @@
+const fs = require('fs');
+const path = require('path');
+const logger = require('../utils/logger');
+const LocateAnythingJob = require('../models/locateanything_job');
+const LocateAnythingGatewayService = require('../services/locateAnythingGatewayService');
+const {
+  DEFAULT_LOCATEANYTHING_OPTIONS,
+  LOCATEANYTHING_TASKS,
+  LOCATEANYTHING_OUTPUT_TYPES,
+  LOCATEANYTHING_GENERATION_MODES,
+  SERVICE_PATH,
+  buildGatewayErrorMessage,
+  getErrorPayload,
+} = require('../services/locateAnythingGatewayService');
+
+const locateAnythingGateway = new LocateAnythingGatewayService();
+const APP_ROOT = path.resolve(__dirname, '..');
+const JOB_HISTORY_LIMIT = 20;
+const QUERY_TASKS = new Set(['ground', 'ground_single', 'ground_text', 'ground_gui', 'point']);
+
+const TASK_OPTIONS = Object.freeze([
+  { value: 'ground_gui', label: 'ground_gui - UI target or region' },
+  { value: 'point', label: 'point - click target' },
+  { value: 'ground_single', label: 'ground_single - best single match' },
+  { value: 'ground', label: 'ground - all matching instances' },
+  { value: 'detect', label: 'detect - categories' },
+  { value: 'ground_text', label: 'ground_text - visible phrase region' },
+  { value: 'detect_text', label: 'detect_text - all visible text regions' },
+]);
+
+const OUTPUT_TYPE_OPTIONS = Object.freeze([
+  { value: 'point', label: 'point' },
+  { value: 'box', label: 'box' },
+]);
+
+const GENERATION_MODE_OPTIONS = Object.freeze([
+  { value: 'hybrid', label: 'hybrid' },
+  { value: 'fast', label: 'fast' },
+  { value: 'slow', label: 'slow' },
+]);
+
+function parseBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function parseInteger(value, fallback, { min = null, max = null } = {}) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  if (min !== null && parsed < min) {
+    return min;
+  }
+  if (max !== null && parsed > max) {
+    return max;
+  }
+  return parsed;
+}
+
+function parseNumber(value, fallback, { min = null, max = null } = {}) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  if (min !== null && parsed < min) {
+    return min;
+  }
+  if (max !== null && parsed > max) {
+    return max;
+  }
+  return parsed;
+}
+
+function splitCategories(value) {
+  const rawValues = Array.isArray(value) ? value : [value];
+  const categories = rawValues
+    .flatMap((entry) => String(entry || '').split(/[\n,]/g))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return Array.from(new Set(categories));
+}
+
+function defaultForm() {
+  const defaults = DEFAULT_LOCATEANYTHING_OPTIONS;
+  return {
+    task: defaults.task,
+    query: defaults.query,
+    categoriesText: '',
+    outputType: defaults.outputType,
+    generationMode: defaults.generationMode,
+    maxImageEdge: defaults.maxImageEdge,
+    maxNewTokens: defaults.maxNewTokens,
+    doSample: defaults.doSample,
+    temperature: defaults.temperature,
+    topP: defaults.topP,
+    repetitionPenalty: defaults.repetitionPenalty,
+  };
+}
+
+function normalizeForm(body = {}) {
+  const defaults = DEFAULT_LOCATEANYTHING_OPTIONS;
+  const task = LOCATEANYTHING_TASKS.includes(body.task) ? body.task : defaults.task;
+  const categories = splitCategories(body.categories);
+  const outputType = LOCATEANYTHING_OUTPUT_TYPES.includes(body.output_type || body.outputType)
+    ? body.output_type || body.outputType
+    : defaults.outputType;
+  const generationMode = LOCATEANYTHING_GENERATION_MODES.includes(body.generation_mode || body.generationMode)
+    ? body.generation_mode || body.generationMode
+    : defaults.generationMode;
+
+  return {
+    task,
+    query: typeof body.query === 'string' ? body.query.trim() : '',
+    categories,
+    categoriesText: categories.join(', '),
+    outputType,
+    generationMode,
+    maxImageEdge: parseInteger(body.max_image_edge ?? body.maxImageEdge, defaults.maxImageEdge, { min: 0, max: 10000 }),
+    maxNewTokens: parseInteger(body.max_new_tokens ?? body.maxNewTokens, defaults.maxNewTokens, { min: 1, max: 8192 }),
+    doSample: parseBoolean(body.do_sample ?? body.doSample, defaults.doSample),
+    temperature: parseNumber(body.temperature, defaults.temperature, { min: 0, max: 5 }),
+    topP: parseNumber(body.top_p ?? body.topP, defaults.topP, { min: 0, max: 1 }),
+    repetitionPenalty: parseNumber(body.repetition_penalty ?? body.repetitionPenalty, defaults.repetitionPenalty, { min: 0.1, max: 5 }),
+  };
+}
+
+function buildRequestOptions(form) {
+  return {
+    task: form.task,
+    query: form.query,
+    categories: form.categories,
+    outputType: form.outputType,
+    generationMode: form.generationMode,
+    maxImageEdge: form.maxImageEdge,
+    maxNewTokens: form.maxNewTokens,
+    doSample: form.doSample,
+    temperature: form.temperature,
+    topP: form.topP,
+    repetitionPenalty: form.repetitionPenalty,
+  };
+}
+
+function validateRequest(form, files, uploadError) {
+  if (uploadError) {
+    return uploadError;
+  }
+  if (!files || files.length === 0) {
+    return 'Upload at least one image for the LocateAnything job.';
+  }
+  if (QUERY_TASKS.has(form.task) && !form.query) {
+    return `${form.task} requires a query.`;
+  }
+  if (form.task === 'detect' && (!form.categories || form.categories.length === 0)) {
+    return 'detect requires at least one category.';
+  }
+  return null;
+}
+
+function publicUrlForUpload(file) {
+  return `/img/locateanything/${encodeURIComponent(file.filename)}`;
+}
+
+function storedPathForUpload(file) {
+  return path.relative(APP_ROOT, file.path).split(path.sep).join('/');
+}
+
+function buildFileRecord(file) {
+  return {
+    originalName: file.originalname || null,
+    storedFileName: file.filename,
+    storedPath: storedPathForUpload(file),
+    publicUrl: publicUrlForUpload(file),
+    mimeType: file.mimetype || null,
+    sizeBytes: Number.isFinite(file.size) ? file.size : 0,
+    status: 'queued',
+  };
+}
+
+async function cleanupUploadedFiles(files = []) {
+  await Promise.all((files || [])
+    .filter((file) => file && file.path)
+    .map(async (file) => {
+      try {
+        await fs.promises.unlink(file.path);
+      } catch (error) {
+        if (error?.code !== 'ENOENT') {
+          logger.warning('Unable to clean up rejected LocateAnything upload', {
+            category: 'locateanything_admin',
+            metadata: {
+              path: file.path,
+              message: error?.message || String(error),
+            },
+          });
+        }
+      }
+    }));
+}
+
+async function loadPageJobs(selectedJobId) {
+  const jobs = await LocateAnythingJob.find({})
+    .sort({ createdAt: -1 })
+    .limit(JOB_HISTORY_LIMIT)
+    .lean()
+    .exec();
+
+  let selectedJob = null;
+  if (selectedJobId) {
+    selectedJob = jobs.find((job) => String(job._id) === String(selectedJobId)) ||
+      await LocateAnythingJob.findById(selectedJobId).lean().exec();
+  }
+  if (!selectedJob && jobs.length) {
+    selectedJob = jobs[0];
+  }
+
+  return { jobs, selectedJob };
+}
+
+async function renderPage(req, res, {
+  form = defaultForm(),
+  error = null,
+  success = null,
+  selectedJobId = null,
+  statusCode = 200,
+} = {}) {
+  const { jobs, selectedJob } = await loadPageJobs(selectedJobId || req.query?.jobId);
+  const uploadMaxMb = Number.parseInt(process.env.LOCATEANYTHING_UPLOAD_MAX_MB, 10) || 25;
+
+  return res.status(statusCode).render('admin_locateanything', {
+    apiBase: locateAnythingGateway.gatewayBaseUrl,
+    servicePath: SERVICE_PATH,
+    form,
+    error,
+    success,
+    jobs,
+    selectedJob,
+    taskOptions: TASK_OPTIONS,
+    outputTypeOptions: OUTPUT_TYPE_OPTIONS,
+    generationModeOptions: GENERATION_MODE_OPTIONS,
+    uploadMaxMb,
+  });
+}
+
+function finalizeJobStatus(job) {
+  const files = Array.isArray(job.files) ? job.files : [];
+  const completedCount = files.filter((file) => file.status === 'completed').length;
+  const failedCount = files.filter((file) => file.status === 'failed').length;
+
+  if (files.length > 0 && completedCount === files.length) {
+    job.status = 'completed';
+    job.error = null;
+    return;
+  }
+
+  if (completedCount > 0 && failedCount > 0) {
+    job.status = 'partial_failed';
+    job.error = `${failedCount} of ${files.length} image request(s) failed.`;
+    return;
+  }
+
+  job.status = 'failed';
+  job.error = files.length > 0
+    ? `${failedCount || files.length} of ${files.length} image request(s) failed.`
+    : 'No image files were processed.';
+}
+
+async function processJobFiles(job, uploadedFiles, requestOptions) {
+  for (let index = 0; index < uploadedFiles.length; index += 1) {
+    const uploadedFile = uploadedFiles[index];
+    const fileRecord = job.files[index];
+    fileRecord.status = 'processing';
+    fileRecord.error = null;
+    fileRecord.startedAt = new Date();
+    job.markModified('files');
+    await job.save();
+
+    try {
+      const result = await locateAnythingGateway.locateFile({
+        file: uploadedFile,
+        options: requestOptions,
+      });
+      fileRecord.status = 'completed';
+      fileRecord.gatewayStatusCode = result.status || 200;
+      fileRecord.rawOutput = result.data;
+      fileRecord.rawErrorOutput = null;
+    } catch (error) {
+      fileRecord.status = 'failed';
+      fileRecord.gatewayStatusCode = error?.response?.status || null;
+      fileRecord.error = buildGatewayErrorMessage(error);
+      fileRecord.rawErrorOutput = getErrorPayload(error);
+    } finally {
+      fileRecord.completedAt = new Date();
+      job.markModified('files');
+      await job.save();
+    }
+  }
+}
+
+exports.render = async (req, res, next) => {
+  try {
+    const success = req.query?.status === 'saved'
+      ? 'LocateAnything job saved.'
+      : null;
+    return renderPage(req, res, { success });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.createJob = async (req, res, next) => {
+  const form = normalizeForm(req.body || {});
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  const validationError = validateRequest(form, uploadedFiles, req.locateAnythingUploadError);
+
+  if (validationError) {
+    await cleanupUploadedFiles(uploadedFiles);
+    return renderPage(req, res, {
+      form,
+      error: validationError,
+      statusCode: 400,
+    }).catch(next);
+  }
+
+  const requestOptions = buildRequestOptions(form);
+  let job = null;
+
+  try {
+    job = await LocateAnythingJob.create({
+      status: 'processing',
+      gatewayBaseUrl: locateAnythingGateway.gatewayBaseUrl,
+      gatewayPath: SERVICE_PATH,
+      requestOptions,
+      owner: {
+        id: req.user?._id ? String(req.user._id) : null,
+        name: req.user?.name || null,
+      },
+      files: uploadedFiles.map(buildFileRecord),
+      startedAt: new Date(),
+    });
+
+    logger.notice('LocateAnything admin job started', {
+      category: 'locateanything_admin',
+      metadata: {
+        jobId: job._id,
+        fileCount: uploadedFiles.length,
+        task: requestOptions.task,
+        owner: req.user?.name || null,
+      },
+    });
+
+    await processJobFiles(job, uploadedFiles, requestOptions);
+    finalizeJobStatus(job);
+    job.completedAt = new Date();
+    await job.save();
+
+    logger.notice('LocateAnything admin job finished', {
+      category: 'locateanything_admin',
+      metadata: {
+        jobId: job._id,
+        status: job.status,
+        fileCount: job.files.length,
+      },
+    });
+
+    return res.redirect(`/admin/locateanything?jobId=${encodeURIComponent(job._id)}&status=saved`);
+  } catch (error) {
+    logger.error('LocateAnything admin job failed before it could be saved', {
+      category: 'locateanything_admin',
+      metadata: {
+        message: error?.message || String(error),
+        stack: error?.stack || null,
+      },
+    });
+    if (!job) {
+      await cleanupUploadedFiles(uploadedFiles);
+    }
+    return next(error);
+  }
+};

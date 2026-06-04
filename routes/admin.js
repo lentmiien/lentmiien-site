@@ -1,4 +1,7 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const { randomUUID } = require('crypto');
 const multer = require('multer');
 const router = express.Router();
 const logger = require('../utils/logger');
@@ -10,6 +13,7 @@ const messageInboxController = require('../controllers/messageInboxAdminControll
 const toolManagerController = require('../controllers/toolManagerController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
 const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminController');
+const locateAnythingAdminController = require('../controllers/locateAnythingAdminController');
 const tapoController = require('../controllers/tapoController');
 const requestCounterAdminController = require('../controllers/requestCounterAdminController');
 const lifeLogRouter = require('./lifeLog');
@@ -57,6 +61,50 @@ const svgUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 1024 * 1024,
+  },
+});
+
+const locateAnythingMaxUploadMb = (() => {
+  const parsed = Number.parseInt(process.env.LOCATEANYTHING_UPLOAD_MAX_MB, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 25;
+})();
+
+const locateAnythingUploadDir = path.join(__dirname, '..', 'public', 'img', 'locateanything');
+
+function getImageExtension(file) {
+  const originalExt = path.extname(file?.originalname || '').toLowerCase();
+  const allowedExts = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tif', '.tiff']);
+  if (allowedExts.has(originalExt)) {
+    return originalExt;
+  }
+  const mimeType = String(file?.mimetype || '').toLowerCase();
+  if (mimeType === 'image/jpeg') return '.jpg';
+  if (mimeType === 'image/png') return '.png';
+  if (mimeType === 'image/webp') return '.webp';
+  if (mimeType === 'image/gif') return '.gif';
+  if (mimeType === 'image/bmp') return '.bmp';
+  if (mimeType === 'image/tiff') return '.tiff';
+  return '.png';
+}
+
+const locateAnythingUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      fs.mkdir(locateAnythingUploadDir, { recursive: true }, (error) => cb(error, locateAnythingUploadDir));
+    },
+    filename: (req, file, cb) => {
+      cb(null, `${Date.now()}-${randomUUID()}${getImageExtension(file)}`);
+    },
+  }),
+  limits: {
+    fileSize: locateAnythingMaxUploadMb * 1024 * 1024,
+    files: 10,
+  },
+  fileFilter: (req, file, cb) => {
+    if (String(file?.mimetype || '').startsWith('image/')) {
+      return cb(null, true);
+    }
+    return cb(new Error('Only image uploads are supported.'));
   },
 });
 
@@ -108,6 +156,30 @@ const handleQwen3LoraDatasetUpload = (req, res, next) => {
       return res.status(400).json({ error: message });
     }
     return qwen3LoraAdminController.uploadDataset(req, res, next);
+  });
+};
+
+const handleLocateAnythingUpload = (req, res, next) => {
+  locateAnythingUpload.array('images', 10)(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        req.locateAnythingUploadError = `Image upload exceeds the ${locateAnythingMaxUploadMb}MB per-file limit.`;
+      } else if (err.code === 'LIMIT_FILE_COUNT') {
+        req.locateAnythingUploadError = 'Upload at most 10 images per job.';
+      } else {
+        req.locateAnythingUploadError = err.message || 'Unable to process the uploaded image.';
+      }
+      logger.warning('LocateAnything image upload rejected before controller', {
+        category: 'locateanything_admin',
+        metadata: {
+          path: req.originalUrl || req.url,
+          user: req.user?.name || null,
+          code: err.code || null,
+          message: err.message || String(err),
+        },
+      });
+    }
+    return locateAnythingAdminController.createJob(req, res, next);
   });
 };
 
@@ -209,6 +281,9 @@ router.post('/qwen3-lora/train/jobs', qwen3LoraAdminController.createTrainingJob
 router.get('/qwen3-lora/train/jobs/:jobId', qwen3LoraAdminController.getTrainingJob);
 router.post('/qwen3-lora/generate', qwen3LoraAdminController.generate);
 router.post('/qwen3-lora/compare', qwen3LoraAdminController.compare);
+
+router.get('/locateanything', locateAnythingAdminController.render);
+router.post('/locateanything/jobs', handleLocateAnythingUpload);
 
 /* Message inbox */
 router.get('/message-inbox', messageInboxController.renderMessageInbox);

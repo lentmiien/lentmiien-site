@@ -4,6 +4,7 @@ block content
   a.btn.btn-link(href="/admin/manage_roles") Go to manage roles
   a.btn.btn-link(href="/admin/project-docs") Project docs
   a.btn.btn-link(href="/admin/openai_usage") OpenAI usage
+  a.btn.btn-link(href="/admin/locateanything") LocateAnything
   if feedback
     - const alertClass = feedback.status === 'error' ? 'alert-danger' : feedback.status === 'success' ? 'alert-success' : 'alert-info';
     .alert(class=alertClass role="alert")= feedback.message

@@ -1,0 +1,157 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/locateanything_admin.css')
+
+block content
+  - const safeJobs = Array.isArray(jobs) ? jobs : [];
+  - const selectedJobId = selectedJob && selectedJob._id ? String(selectedJob._id) : '';
+  - const formatDate = (value) => value ? new Date(value).toLocaleString() : 'n/a';
+  - const formatJson = (value) => { try { return JSON.stringify(value, null, 2); } catch (error) { return String(value || ''); } };
+  - const formatSize = (value) => { const size = Number(value) || 0; if (size < 1024) return `${size} B`; if (size < 1024 * 1024) return `${(size / 1024).toFixed(1).replace(/\.0$/, '')} KB`; return `${(size / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`; };
+  - const statusClass = (status) => status ? `locateanything-admin__status--${String(status).replace(/_/g, '-')}` : '';
+  .locateanything-admin
+    .locateanything-admin__header
+      div
+        h1 LocateAnything
+        p.text-muted.mb-0 Admin tester for image localization jobs.
+      .locateanything-admin__meta
+        span.locateanything-admin__chip Gateway: #{apiBase}
+        span.locateanything-admin__chip Endpoint: #{servicePath}
+        a.btn.btn-outline-light.btn-sm(href='/admin/locateanything') Refresh
+
+    if error
+      .alert.alert-danger(role='alert')= error
+    if success
+      .alert.alert-success(role='alert')= success
+
+    .locateanything-admin__grid
+      section.locateanything-admin__panel
+        .locateanything-admin__panel-head
+          h2 Start Job
+          span.locateanything-admin__muted Max #{uploadMaxMb}MB each
+        form#locateAnythingForm(method='post', action='/admin/locateanything/jobs', enctype='multipart/form-data', data-locateanything-form='1')
+          .mb-3
+            label.form-label(for='locateImages') Images
+            input#locateImages.form-control(type='file', name='images', accept='image/*', multiple, required)
+          #locateImagePreview.locateanything-admin__preview
+
+          .row
+            .col-md-6.mb-3
+              label.form-label(for='locateTask') task
+              select#locateTask.form-select(name='task', data-locate-task='1')
+                each option in taskOptions
+                  option(value=option.value, selected=form.task === option.value)= option.label
+            .col-md-6.mb-3
+              label.form-label(for='locateOutputType') output_type
+              select#locateOutputType.form-select(name='output_type')
+                each option in outputTypeOptions
+                  option(value=option.value, selected=form.outputType === option.value)= option.label
+
+          .mb-3(data-query-field='1')
+            label.form-label(for='locateQuery') query
+            textarea#locateQuery.form-control(name='query', rows='2', placeholder='the save button')= form.query || ''
+          .mb-3(data-categories-field='1')
+            label.form-label(for='locateCategories') categories
+            textarea#locateCategories.form-control(name='categories', rows='2', placeholder='mug, keyboard, phone')= form.categoriesText || ''
+
+          .locateanything-admin__param-grid
+            label
+              span generation_mode
+              select.form-select(name='generation_mode')
+                each option in generationModeOptions
+                  option(value=option.value, selected=form.generationMode === option.value)= option.label
+            label
+              span max_image_edge
+              input.form-control(type='number', name='max_image_edge', min='0', step='1', value=form.maxImageEdge)
+            label
+              span max_new_tokens
+              input.form-control(type='number', name='max_new_tokens', min='1', max='8192', step='1', value=form.maxNewTokens)
+            label
+              span do_sample
+              select.form-select(name='do_sample')
+                option(value='false', selected=form.doSample !== true) false
+                option(value='true', selected=form.doSample === true) true
+            label
+              span temperature
+              input.form-control(type='number', name='temperature', min='0', max='5', step='0.05', value=form.temperature)
+            label
+              span top_p
+              input.form-control(type='number', name='top_p', min='0', max='1', step='0.01', value=form.topP)
+            label
+              span repetition_penalty
+              input.form-control(type='number', name='repetition_penalty', min='0.1', max='5', step='0.05', value=form.repetitionPenalty)
+
+          .locateanything-admin__actions
+            button#locateSubmitBtn.btn.btn-primary(type='submit') Start job
+            span#locateSubmitStatus.locateanything-admin__muted(role='status', aria-live='polite')
+
+      aside.locateanything-admin__panel
+        .locateanything-admin__panel-head
+          h2 Recent Jobs
+          span.locateanything-admin__muted #{safeJobs.length}
+        if safeJobs.length
+          .locateanything-admin__job-list
+            each job in safeJobs
+              - const isSelected = String(job._id) === selectedJobId;
+              a.locateanything-admin__job-link(class=isSelected ? 'is-active' : '', href=`/admin/locateanything?jobId=${encodeURIComponent(job._id)}`)
+                .locateanything-admin__job-row
+                  strong= job.requestOptions && job.requestOptions.task ? job.requestOptions.task : 'job'
+                  span.locateanything-admin__status(class=statusClass(job.status))= job.status || 'unknown'
+                .locateanything-admin__job-meta
+                  span= formatDate(job.createdAt)
+                  span= `${job.files && job.files.length ? job.files.length : 0} image(s)`
+                  if job.requestOptions && job.requestOptions.query
+                    span= job.requestOptions.query
+        else
+          p.text-muted.mb-0 No LocateAnything jobs saved yet.
+
+    if selectedJob
+      section.locateanything-admin__panel.locateanything-admin__result
+        .locateanything-admin__panel-head
+          h2 Job Output
+          span.locateanything-admin__status(class=statusClass(selectedJob.status))= selectedJob.status || 'unknown'
+        .locateanything-admin__summary-grid
+          div
+            span Created
+            strong= formatDate(selectedJob.createdAt)
+          div
+            span Completed
+            strong= formatDate(selectedJob.completedAt)
+          div
+            span Owner
+            strong= selectedJob.owner && selectedJob.owner.name ? selectedJob.owner.name : 'n/a'
+          div
+            span Job ID
+            strong= selectedJob._id
+        if selectedJob.error
+          .alert.alert-warning.mt-3.mb-0(role='alert')= selectedJob.error
+
+        - const selectedOptions = selectedJob.requestOptions || {};
+        details.locateanything-admin__details(open)
+          summary Request options
+          pre.locateanything-admin__pre= formatJson(selectedOptions)
+
+        if selectedJob.files && selectedJob.files.length
+          .locateanything-admin__files
+            each file in selectedJob.files
+              article.locateanything-admin__file
+                .locateanything-admin__file-image
+                  a(href=file.publicUrl, target='_blank', rel='noopener noreferrer')
+                    img(src=file.publicUrl, alt=file.originalName || file.storedFileName)
+                .locateanything-admin__file-body
+                  .locateanything-admin__file-head
+                    div
+                      h3= file.originalName || file.storedFileName
+                      p.locateanything-admin__muted.mb-0 #{formatSize(file.sizeBytes)} · #{file.mimeType || 'image'} · #{file.storedPath}
+                    span.locateanything-admin__status(class=statusClass(file.status))= file.status || 'unknown'
+                  if file.error
+                    .alert.alert-danger.mt-3.mb-0(role='alert')= file.error
+                  details.locateanything-admin__details(open=file.status === 'completed')
+                    summary Raw output
+                    pre.locateanything-admin__pre= file.rawOutput ? formatJson(file.rawOutput) : (file.rawErrorOutput ? formatJson(file.rawErrorOutput) : 'No raw output saved.')
+        else
+          p.text-muted.mb-0 This job has no saved image records.
+
+block script
+  script(src='/js/locateanything_admin.js', defer)
