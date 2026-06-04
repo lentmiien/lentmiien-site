@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const logger = require('../utils/logger');
 const LocateAnythingJob = require('../models/locateanything_job');
 const LocateAnythingGatewayService = require('../services/locateAnythingGatewayService');
@@ -17,6 +18,7 @@ const locateAnythingGateway = new LocateAnythingGatewayService();
 const APP_ROOT = path.resolve(__dirname, '..');
 const JOB_HISTORY_LIMIT = 20;
 const QUERY_TASKS = new Set(['ground', 'ground_single', 'ground_text', 'ground_gui', 'point']);
+const AXIS_SWAPPED_ORIENTATIONS = new Set([5, 6, 7, 8]);
 
 const TASK_OPTIONS = Object.freeze([
   { value: 'ground_gui', label: 'ground_gui - UI target or region' },
@@ -189,6 +191,69 @@ function buildFileRecord(file) {
   };
 }
 
+function normalizeExifOrientation(value) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 8 ? parsed : 1;
+}
+
+async function normalizeUploadedImageOrientation(file) {
+  if (!file || !file.path) {
+    return;
+  }
+
+  const tempPath = `${file.path}.oriented${path.extname(file.path) || '.img'}`;
+  try {
+    const metadata = await sharp(file.path, { failOn: 'none' }).metadata();
+    const orientation = normalizeExifOrientation(metadata.orientation);
+    if (orientation === 1 || (Number.isFinite(metadata.pages) && metadata.pages > 1)) {
+      return;
+    }
+
+    await sharp(file.path, { failOn: 'none' })
+      .rotate()
+      .toFile(tempPath);
+    await fs.promises.rename(tempPath, file.path);
+    const stats = await fs.promises.stat(file.path);
+    file.size = stats.size;
+
+    logger.notice('Normalized LocateAnything upload orientation', {
+      category: 'locateanything_admin',
+      metadata: {
+        fileName: file.originalname || file.filename || null,
+        storedFileName: file.filename || null,
+        orientation,
+      },
+    });
+  } catch (error) {
+    try {
+      await fs.promises.unlink(tempPath);
+    } catch (cleanupError) {
+      if (cleanupError?.code !== 'ENOENT') {
+        logger.warning('Unable to clean up LocateAnything orientation temp file', {
+          category: 'locateanything_admin',
+          metadata: {
+            tempPath,
+            message: cleanupError?.message || String(cleanupError),
+          },
+        });
+      }
+    }
+
+    logger.warning('Unable to normalize LocateAnything upload orientation', {
+      category: 'locateanything_admin',
+      metadata: {
+        fileName: file.originalname || file.filename || null,
+        storedFileName: file.filename || null,
+        message: error?.message || String(error),
+      },
+    });
+  }
+}
+
+async function normalizeUploadedImageOrientations(files = []) {
+  await Promise.all((files || []).map((file) => normalizeUploadedImageOrientation(file)));
+}
+
 function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -214,8 +279,60 @@ function getOverlayFrame(rawOutput) {
   return { width, height };
 }
 
+function getDisplayFrame(frame, orientation) {
+  if (!frame) {
+    return null;
+  }
+  return AXIS_SWAPPED_ORIENTATIONS.has(orientation)
+    ? { width: frame.height, height: frame.width }
+    : { ...frame };
+}
+
 function toFramePercent(value, total) {
   return clampPercent((Number(value) / total) * 100);
+}
+
+function transformPointForOrientation(x, y, frame, orientation) {
+  switch (orientation) {
+    case 2:
+      return { x: frame.width - x, y };
+    case 3:
+      return { x: frame.width - x, y: frame.height - y };
+    case 4:
+      return { x, y: frame.height - y };
+    case 5:
+      return { x: y, y: x };
+    case 6:
+      return { x: frame.height - y, y: x };
+    case 7:
+      return { x: frame.height - y, y: frame.width - x };
+    case 8:
+      return { x: y, y: frame.width - x };
+    default:
+      return { x, y };
+  }
+}
+
+function transformBoxForOrientation(box, frame, orientation) {
+  if (orientation === 1) {
+    return box;
+  }
+
+  const corners = [
+    transformPointForOrientation(box.x1, box.y1, frame, orientation),
+    transformPointForOrientation(box.x2, box.y1, frame, orientation),
+    transformPointForOrientation(box.x2, box.y2, frame, orientation),
+    transformPointForOrientation(box.x1, box.y2, frame, orientation),
+  ];
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+
+  return {
+    x1: Math.min(...xs),
+    y1: Math.min(...ys),
+    x2: Math.max(...xs),
+    y2: Math.max(...ys),
+  };
 }
 
 function getExplicitOverlayLabel(value) {
@@ -279,7 +396,7 @@ function extractAnswerOverlayLabels(answer) {
   return labels;
 }
 
-function buildBoxOverlay(box, index, frame, label) {
+function buildBoxOverlay(box, index, frame, label, orientation = 1) {
   const x1 = Number(box?.x1);
   const y1 = Number(box?.y1);
   const x2 = Number(box?.x2);
@@ -289,10 +406,17 @@ function buildBoxOverlay(box, index, frame, label) {
     return null;
   }
 
-  const left = toFramePercent(Math.min(x1, x2), frame.width);
-  const right = toFramePercent(Math.max(x1, x2), frame.width);
-  const top = toFramePercent(Math.min(y1, y2), frame.height);
-  const bottom = toFramePercent(Math.max(y1, y2), frame.height);
+  const displayFrame = getDisplayFrame(frame, orientation);
+  const orientedBox = transformBoxForOrientation({
+    x1: Math.min(x1, x2),
+    y1: Math.min(y1, y2),
+    x2: Math.max(x1, x2),
+    y2: Math.max(y1, y2),
+  }, frame, orientation);
+  const left = toFramePercent(orientedBox.x1, displayFrame.width);
+  const right = toFramePercent(orientedBox.x2, displayFrame.width);
+  const top = toFramePercent(orientedBox.y1, displayFrame.height);
+  const bottom = toFramePercent(orientedBox.y2, displayFrame.height);
   const width = right - left;
   const height = bottom - top;
 
@@ -307,7 +431,7 @@ function buildBoxOverlay(box, index, frame, label) {
   };
 }
 
-function buildPointOverlay(point, index, frame, label) {
+function buildPointOverlay(point, index, frame, label, orientation = 1) {
   const x = Number(point?.x);
   const y = Number(point?.y);
 
@@ -315,14 +439,17 @@ function buildPointOverlay(point, index, frame, label) {
     return null;
   }
 
+  const displayFrame = getDisplayFrame(frame, orientation);
+  const orientedPoint = transformPointForOrientation(x, y, frame, orientation);
+
   return {
     type: 'point',
     label: label || `point ${index + 1}`,
-    style: `left:${toFramePercent(x, frame.width)}%;top:${toFramePercent(y, frame.height)}%;`,
+    style: `left:${toFramePercent(orientedPoint.x, displayFrame.width)}%;top:${toFramePercent(orientedPoint.y, displayFrame.height)}%;`,
   };
 }
 
-function buildBoxOverlays(boxes, frame, answerLabels = []) {
+function buildBoxOverlays(boxes, frame, answerLabels = [], orientation = 1) {
   let lastLabel = null;
   return boxes.map((box, index) => {
     const answerLabel = getExplicitOverlayLabel(answerLabels[index]);
@@ -330,11 +457,11 @@ function buildBoxOverlays(boxes, frame, answerLabels = []) {
     if (explicitLabel) {
       lastLabel = explicitLabel;
     }
-    return buildBoxOverlay(box, index, frame, explicitLabel || lastLabel);
+    return buildBoxOverlay(box, index, frame, explicitLabel || lastLabel, orientation);
   });
 }
 
-function buildPointOverlays(points, frame, answerLabels = []) {
+function buildPointOverlays(points, frame, answerLabels = [], orientation = 1) {
   let lastLabel = null;
   return points.map((point, index) => {
     const answerLabel = getExplicitOverlayLabel(answerLabels[index]);
@@ -342,26 +469,85 @@ function buildPointOverlays(points, frame, answerLabels = []) {
     if (explicitLabel) {
       lastLabel = explicitLabel;
     }
-    return buildPointOverlay(point, index, frame, explicitLabel || lastLabel);
+    return buildPointOverlay(point, index, frame, explicitLabel || lastLabel, orientation);
   });
 }
 
-function decorateFileForDisplay(file) {
+function resolveStoredFilePath(file) {
+  if (!file?.storedPath) {
+    return null;
+  }
+
+  const resolvedPath = path.resolve(APP_ROOT, file.storedPath);
+  if (!resolvedPath.startsWith(`${APP_ROOT}${path.sep}`)) {
+    return null;
+  }
+  return resolvedPath;
+}
+
+function aspectDistance(width, height, targetWidth, targetHeight) {
+  if (![width, height, targetWidth, targetHeight].every((value) => Number.isFinite(value) && value > 0)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs((width / height) - (targetWidth / targetHeight));
+}
+
+function shouldApplyImageOrientationToOverlay(orientation, frame, metadata) {
+  if (orientation === 1) {
+    return false;
+  }
+  if (!frame || !metadata?.width || !metadata?.height) {
+    return true;
+  }
+  if (!AXIS_SWAPPED_ORIENTATIONS.has(orientation)) {
+    return true;
+  }
+
+  const rawDistance = aspectDistance(frame.width, frame.height, metadata.width, metadata.height);
+  const orientedDistance = aspectDistance(frame.width, frame.height, metadata.height, metadata.width);
+  return rawDistance <= orientedDistance;
+}
+
+async function getImageDisplayOrientation(file, frame) {
+  const filePath = resolveStoredFilePath(file);
+  if (!filePath) {
+    return 1;
+  }
+
+  try {
+    const metadata = await sharp(filePath, { failOn: 'none' }).metadata();
+    const orientation = normalizeExifOrientation(metadata.orientation);
+    return shouldApplyImageOrientationToOverlay(orientation, frame, metadata) ? orientation : 1;
+  } catch (error) {
+    logger.warning('Unable to read LocateAnything image orientation metadata', {
+      category: 'locateanything_admin',
+      metadata: {
+        storedPath: file.storedPath || null,
+        message: error?.message || String(error),
+      },
+    });
+    return 1;
+  }
+}
+
+async function decorateFileForDisplay(file) {
   const rawOutput = file?.rawOutput || null;
   const frame = getOverlayFrame(rawOutput);
   const rawBoxes = Array.isArray(rawOutput?.boxes) ? rawOutput.boxes : [];
   const rawPoints = Array.isArray(rawOutput?.points) ? rawOutput.points : [];
   const answerLabels = extractAnswerOverlayLabels(rawOutput?.answer);
+  const displayOrientation = await getImageDisplayOrientation(file, frame);
   const overlayItems = frame
     ? [
-        ...buildBoxOverlays(rawBoxes, frame, answerLabels.boxes),
-        ...buildPointOverlays(rawPoints, frame, answerLabels.points),
+        ...buildBoxOverlays(rawBoxes, frame, answerLabels.boxes, displayOrientation),
+        ...buildPointOverlays(rawPoints, frame, answerLabels.points, displayOrientation),
       ].filter(Boolean)
     : [];
 
   return {
     ...file,
     overlayFrame: frame,
+    displayOrientation,
     overlayItems,
     overlaySummary: {
       boxes: rawBoxes.length,
@@ -371,14 +557,14 @@ function decorateFileForDisplay(file) {
   };
 }
 
-function decorateJobForDisplay(job) {
+async function decorateJobForDisplay(job) {
   if (!job) {
     return null;
   }
 
   return {
     ...job,
-    files: Array.isArray(job.files) ? job.files.map(decorateFileForDisplay) : [],
+    files: Array.isArray(job.files) ? await Promise.all(job.files.map(decorateFileForDisplay)) : [],
   };
 }
 
@@ -418,7 +604,7 @@ async function loadPageJobs(selectedJobId) {
     selectedJob = jobs[0];
   }
 
-  return { jobs, selectedJob: decorateJobForDisplay(selectedJob) };
+  return { jobs, selectedJob: await decorateJobForDisplay(selectedJob) };
 }
 
 async function renderPage(req, res, {
@@ -530,6 +716,8 @@ exports.createJob = async (req, res, next) => {
   let job = null;
 
   try {
+    await normalizeUploadedImageOrientations(uploadedFiles);
+
     job = await LocateAnythingJob.create({
       status: 'processing',
       gatewayBaseUrl: locateAnythingGateway.gatewayBaseUrl,
