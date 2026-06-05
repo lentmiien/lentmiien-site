@@ -1,9 +1,27 @@
 const logger = require('../utils/logger');
 const {
   RequestCounterSettingsError,
+  UNKNOWN_REQUEST_CATEGORY,
   getRequestCounterDashboard,
+  normalizeRequestCategory,
   updateRequestCounterSettings,
 } = require('../services/incomingRequestCounterService');
+
+const CATEGORY_COLORS = [
+  '#17C696',
+  '#19E3E3',
+  '#FFC247',
+  '#5B8DEF',
+  '#FF7A90',
+  '#B985FF',
+  '#6BE675',
+  '#FF9F40',
+  '#A5B4FC',
+  '#F472B6',
+  '#2DD4BF',
+  '#FACC15',
+];
+const UNKNOWN_CATEGORY_COLOR = '#717A88';
 
 function formatNumber(value) {
   const number = Number(value);
@@ -80,11 +98,14 @@ function redirectWithFeedback(res, status, message) {
 }
 
 function mapRecentRequest(entry) {
+  const category = normalizeRequestCategory(entry.category);
+
   return {
     receivedAtDisplay: formatDateTime(entry.receivedAt),
     responseText: entry.responseText || (entry.allowed ? 'OK' : 'NG'),
     responseStatusCode: entry.responseStatusCode || (entry.allowed ? 200 : 429),
     windowMinutesDisplay: formatNumber(entry.countInWindow || 0),
+    categoryDisplay: category,
     ip: entry.ip || 'N/A',
     userAgent: entry.userAgent || 'N/A',
     requestPath: entry.requestPath || 'N/A',
@@ -142,21 +163,75 @@ function buildOverviewCards(dashboard) {
   ];
 }
 
+function hashString(value) {
+  return String(value || '').split('').reduce((hash, character) => {
+    return ((hash << 5) - hash) + character.charCodeAt(0);
+  }, 0);
+}
+
+function getCategoryColor(category) {
+  const normalized = normalizeRequestCategory(category);
+  if (normalized === UNKNOWN_REQUEST_CATEGORY) {
+    return UNKNOWN_CATEGORY_COLOR;
+  }
+
+  const index = Math.abs(hashString(normalized)) % CATEGORY_COLORS.length;
+  return CATEGORY_COLORS[index];
+}
+
+function buildDailyCategoryOrder(rows = []) {
+  const totals = new Map();
+
+  rows.forEach((row) => {
+    (Array.isArray(row.categories) ? row.categories : []).forEach((category) => {
+      const name = normalizeRequestCategory(category.name);
+      const minutes = Number(category.minutes) || 0;
+      totals.set(name, (totals.get(name) || 0) + minutes);
+    });
+  });
+
+  return Array.from(totals.entries())
+    .sort(([leftName, leftMinutes], [rightName, rightMinutes]) => {
+      if (leftName === UNKNOWN_REQUEST_CATEGORY && rightName !== UNKNOWN_REQUEST_CATEGORY) {
+        return -1;
+      }
+      if (rightName === UNKNOWN_REQUEST_CATEGORY && leftName !== UNKNOWN_REQUEST_CATEGORY) {
+        return 1;
+      }
+      return rightMinutes - leftMinutes || leftName.localeCompare(rightName);
+    })
+    .map(([name]) => name);
+}
+
 function mapDailyMinuteStats(rows = []) {
   const maxTotal = Math.max(1, ...rows.map((row) => row.totalMinutes || 0));
+  const categoryOrder = buildDailyCategoryOrder(rows);
+
   return rows.map((row) => {
     const totalMinutes = row.totalMinutes || 0;
-    const okMinutes = row.okMinutes || 0;
-    const ngMinutes = row.ngMinutes || 0;
+    const categories = (Array.isArray(row.categories) ? row.categories : [])
+      .map((category) => {
+        const name = normalizeRequestCategory(category.name);
+        const minutes = Number(category.minutes) || 0;
+
+        return {
+          name,
+          minutes,
+          durationDisplay: formatMinuteDuration(minutes),
+          percent: totalMinutes > 0 ? (minutes / totalMinutes) * 100 : 0,
+          color: getCategoryColor(name),
+        };
+      })
+      .filter((category) => category.minutes > 0)
+      .sort((left, right) => {
+        return categoryOrder.indexOf(left.name) - categoryOrder.indexOf(right.name);
+      });
 
     return {
       dateKey: row.dateKey,
       totalDurationDisplay: formatMinuteDuration(totalMinutes),
-      okDurationDisplay: formatMinuteDuration(okMinutes),
-      ngDurationDisplay: formatMinuteDuration(ngMinutes),
       totalPercent: Math.round((totalMinutes / maxTotal) * 100),
-      okPercent: totalMinutes > 0 ? Math.round((okMinutes / totalMinutes) * 100) : 0,
-      ngPercent: totalMinutes > 0 ? Math.round((ngMinutes / totalMinutes) * 100) : 0,
+      categories,
     };
   });
 }

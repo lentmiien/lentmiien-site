@@ -7,6 +7,7 @@ const {
   fetchDailyMinuteStats,
   fetchRollingWindowSeries,
   getCurrentRequestCounterStatus,
+  normalizeRequestCategory,
   recordAndEvaluateRequest,
   updateRequestCounterSettings,
 } = require('../../services/incomingRequestCounterService');
@@ -76,6 +77,7 @@ describe('incoming request counter service', () => {
       ip: '203.0.113.10',
       userAgent: 'counter-client/1.0',
       referer: 'https://example.test/',
+      category: 'unknown',
       query: { source: 'test' },
       receivedAt: now,
       countInWindow: 60,
@@ -83,6 +85,33 @@ describe('incoming request counter service', () => {
       responseStatusCode: 200,
       responseText: 'OK',
     }));
+  });
+
+  test('categorizes requests by the package query parameter', async () => {
+    const model = {
+      countDocuments: jest.fn().mockResolvedValue(4),
+      create: jest.fn().mockResolvedValue({}),
+    };
+
+    await recordAndEvaluateRequest(createRequest({
+      originalUrl: '/secret-counter?package=com.example.app',
+      query: { package: 'com.example.app' },
+    }), {
+      model,
+      now: new Date('2026-05-27T00:00:00.000Z'),
+      settings: { maxRequests: 60, windowMinutes: 90 },
+    });
+
+    expect(model.create).toHaveBeenCalledWith(expect.objectContaining({
+      category: 'com.example.app',
+      query: { package: 'com.example.app' },
+    }));
+  });
+
+  test('normalizes missing and empty request categories to unknown', () => {
+    expect(normalizeRequestCategory(undefined)).toBe('unknown');
+    expect(normalizeRequestCategory('   ')).toBe('unknown');
+    expect(normalizeRequestCategory(['', 'client-package'])).toBe('client-package');
   });
 
   test('blocks the request once 60 requests already exist in the window', async () => {
@@ -290,32 +319,24 @@ describe('incoming request counter service', () => {
     ]);
   });
 
-  test('fetchDailyMinuteStats counts total, OK, and NG minutes per complete day', async () => {
+  test('fetchDailyMinuteStats counts category minutes per complete day', async () => {
     const model = {
-      countDocuments: jest.fn((query) => {
-        const start = query.receivedAt.$gte;
+      aggregate: jest.fn((pipeline) => {
+        const start = pipeline[0].$match.receivedAt.$gte;
         const dateKey = [
           start.getFullYear(),
           String(start.getMonth() + 1).padStart(2, '0'),
           String(start.getDate()).padStart(2, '0'),
         ].join('-');
-        const totals = {
-          '2026-05-22': 12,
-          '2026-05-23': 20,
-          '2026-05-24': 0,
-          '2026-05-25': 7,
-          '2026-05-26': 9,
-          '2026-05-27': 15,
+        const rows = {
+          '2026-05-22': [{ _id: null, minutes: 10 }, { _id: 'package-a', minutes: 2 }],
+          '2026-05-23': [{ _id: 'package-a', minutes: 20 }],
+          '2026-05-24': [],
+          '2026-05-25': [{ _id: 'package-b', minutes: 7 }],
+          '2026-05-26': [{ _id: '', minutes: 4 }, { _id: 'package-b', minutes: 5 }],
+          '2026-05-27': [{ _id: 'package-c', minutes: 15 }],
         };
-        const ng = {
-          '2026-05-22': 2,
-          '2026-05-23': 0,
-          '2026-05-24': 0,
-          '2026-05-25': 1,
-          '2026-05-26': 4,
-          '2026-05-27': 5,
-        };
-        return Promise.resolve(query.allowed === false ? (ng[dateKey] || 0) : (totals[dateKey] || 0));
+        return Promise.resolve(rows[dateKey] || []);
       }),
     };
 
@@ -327,17 +348,36 @@ describe('incoming request counter service', () => {
     expect(stats.map((row) => ({
       dateKey: row.dateKey,
       totalMinutes: row.totalMinutes,
-      okMinutes: row.okMinutes,
-      ngMinutes: row.ngMinutes,
+      categories: row.categories,
     }))).toEqual([
-      { dateKey: '2026-05-22', totalMinutes: 12, okMinutes: 10, ngMinutes: 2 },
-      { dateKey: '2026-05-23', totalMinutes: 20, okMinutes: 20, ngMinutes: 0 },
-      { dateKey: '2026-05-24', totalMinutes: 0, okMinutes: 0, ngMinutes: 0 },
-      { dateKey: '2026-05-25', totalMinutes: 7, okMinutes: 6, ngMinutes: 1 },
-      { dateKey: '2026-05-26', totalMinutes: 9, okMinutes: 5, ngMinutes: 4 },
-      { dateKey: '2026-05-27', totalMinutes: 15, okMinutes: 10, ngMinutes: 5 },
+      {
+        dateKey: '2026-05-22',
+        totalMinutes: 12,
+        categories: [{ name: 'unknown', minutes: 10 }, { name: 'package-a', minutes: 2 }],
+      },
+      {
+        dateKey: '2026-05-23',
+        totalMinutes: 20,
+        categories: [{ name: 'package-a', minutes: 20 }],
+      },
+      { dateKey: '2026-05-24', totalMinutes: 0, categories: [] },
+      {
+        dateKey: '2026-05-25',
+        totalMinutes: 7,
+        categories: [{ name: 'package-b', minutes: 7 }],
+      },
+      {
+        dateKey: '2026-05-26',
+        totalMinutes: 9,
+        categories: [{ name: 'unknown', minutes: 4 }, { name: 'package-b', minutes: 5 }],
+      },
+      {
+        dateKey: '2026-05-27',
+        totalMinutes: 15,
+        categories: [{ name: 'package-c', minutes: 15 }],
+      },
     ]);
-    expect(model.countDocuments).toHaveBeenCalledTimes(12);
+    expect(model.aggregate).toHaveBeenCalledTimes(6);
   });
 
   test('getCurrentRequestCounterStatus counts the rolling window without saving a request', async () => {

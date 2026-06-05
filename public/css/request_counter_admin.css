@@ -324,10 +324,13 @@ body,
 }
 
 .request-counter-day__top,
-.request-counter-day__meta {
+.request-counter-day__categories {
   display: flex;
-  justify-content: space-between;
   gap: 0.75rem;
+}
+
+.request-counter-day__top {
+  justify-content: space-between;
 }
 
 .request-counter-day__date {
@@ -347,33 +350,57 @@ body,
   background: var(--rc-surface-3);
 }
 
-.request-counter-day__bar-total,
-.request-counter-day__bar-ok,
-.request-counter-day__bar-ng {
+.request-counter-day__bar-total {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: inherit;
-}
-
-.request-counter-day__bar-total {
+  display: flex;
   width: var(--total-percent);
+  overflow: hidden;
+  border-radius: inherit;
   background: rgba(255, 194, 71, 0.16);
 }
 
-.request-counter-day__bar-ok {
-  width: var(--ok-percent);
-  background: var(--rc-success);
+.request-counter-day__bar-category {
+  flex: 0 0 var(--category-width);
+  min-width: 2px;
+  background: var(--category-color);
 }
 
-.request-counter-day__bar-ng {
-  left: var(--ok-percent);
-  width: var(--ng-percent);
-  background: var(--rc-danger);
-}
-
-.request-counter-day__meta {
+.request-counter-day__categories {
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  padding: 0;
   color: var(--rc-text-muted);
   font-size: 0.86rem;
+  list-style: none;
+}
+
+.request-counter-day__category {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.request-counter-day__category-swatch {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 0.72rem;
+  border-radius: 3px;
+  background: var(--category-color);
+}
+
+.request-counter-day__category-name {
+  max-width: 16rem;
+  overflow: hidden;
+  color: var(--rc-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-counter-day__category-duration {
+  color: var(--rc-text-muted);
 }
 
 .request-counter-table-wrap {
@@ -435,7 +462,7 @@ body,
   .request-counter-admin__header,
   .request-counter-panel__header,
   .request-counter-day__top,
-  .request-counter-day__meta {
+  .request-counter-day__categories {
     flex-direction: column;
     align-items: flex-start;
   }

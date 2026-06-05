@@ -5,7 +5,12 @@ jest.mock('../../utils/logger', () => ({
 
 jest.mock('../../services/incomingRequestCounterService', () => ({
   RequestCounterSettingsError: class RequestCounterSettingsError extends Error {},
+  UNKNOWN_REQUEST_CATEGORY: 'unknown',
   getRequestCounterDashboard: jest.fn(),
+  normalizeRequestCategory: jest.fn((value) => {
+    const normalized = String(value ?? '').trim();
+    return normalized || 'unknown';
+  }),
   updateRequestCounterSettings: jest.fn(),
 }));
 
@@ -50,14 +55,16 @@ describe('requestCounterAdminController.dashboard', () => {
     jest.clearAllMocks();
   });
 
-  test('formats daily minute stats as hours and minutes', async () => {
+  test('formats daily category minute stats as hours and minutes', async () => {
     counterService.getRequestCounterDashboard.mockResolvedValue(createDashboard({
       dailyMinuteStats: [
         {
           dateKey: '2026-05-27',
           totalMinutes: 63,
-          okMinutes: 60,
-          ngMinutes: 3,
+          categories: [
+            { name: 'unknown', minutes: 60 },
+            { name: 'package-a', minutes: 3 },
+          ],
         },
       ],
     }));
@@ -71,8 +78,16 @@ describe('requestCounterAdminController.dashboard', () => {
         dailyMinuteStats: [
           expect.objectContaining({
             totalDurationDisplay: '1 hour 3 minutes',
-            okDurationDisplay: '1 hour',
-            ngDurationDisplay: '3 minutes',
+            categories: [
+              expect.objectContaining({
+                name: 'unknown',
+                durationDisplay: '1 hour',
+              }),
+              expect.objectContaining({
+                name: 'package-a',
+                durationDisplay: '3 minutes',
+              }),
+            ],
           }),
         ],
       })

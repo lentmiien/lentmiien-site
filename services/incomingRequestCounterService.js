@@ -13,6 +13,8 @@ const REQUEST_COUNTER_SETTINGS_KEY = 'default';
 const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REQUEST_COUNTER_RETENTION_DAYS = 7;
+const UNKNOWN_REQUEST_CATEGORY = 'unknown';
+const REQUEST_CATEGORY_MAX_LENGTH = 120;
 
 class RequestCounterSettingsError extends Error {
   constructor(message, status = 400, code = 'invalid_settings') {
@@ -41,6 +43,18 @@ function getRequestPath(req) {
 
 function getEndpointPath(req, fallback) {
   return fallback || req.baseUrl || req.path || getRequestPath(req);
+}
+
+function normalizeRequestCategory(value) {
+  const values = Array.isArray(value) ? value : [value];
+  const rawValue = values.find((entry) => String(entry ?? '').trim());
+  const normalized = String(rawValue ?? '').trim();
+
+  if (!normalized) {
+    return UNKNOWN_REQUEST_CATEGORY;
+  }
+
+  return normalized.slice(0, REQUEST_CATEGORY_MAX_LENGTH);
 }
 
 function normalizeStoredInteger(value, fallback, min, max) {
@@ -284,30 +298,58 @@ async function fetchDailyMinuteStats(endpointPath, options = {}) {
   const ranges = buildCompleteRetentionDayRanges(now);
 
   return Promise.all(ranges.map(async (range) => {
-    const baseQuery = {
-      endpointPath,
-      receivedAt: {
-        $gte: range.start,
-        $lt: range.end,
+    const categoryRows = await leanExec(requestModel.aggregate([
+      {
+        $match: {
+          endpointPath,
+          receivedAt: {
+            $gte: range.start,
+            $lt: range.end,
+          },
+        },
       },
-    };
-    const [totalMinutes, ngMinutes] = await Promise.all([
-      requestModel.countDocuments(baseQuery),
-      requestModel.countDocuments({
-        ...baseQuery,
-        allowed: false,
-      }),
-    ]);
-    const safeTotal = Number.isFinite(totalMinutes) ? totalMinutes : 0;
-    const safeNg = Number.isFinite(ngMinutes) ? ngMinutes : 0;
+      {
+        $group: {
+          _id: {
+            $let: {
+              vars: {
+                category: {
+                  $ifNull: ['$category', UNKNOWN_REQUEST_CATEGORY],
+                },
+              },
+              in: {
+                $cond: [
+                  { $eq: ['$$category', ''] },
+                  UNKNOWN_REQUEST_CATEGORY,
+                  '$$category',
+                ],
+              },
+            },
+          },
+          minutes: { $sum: 1 },
+        },
+      },
+      {
+        $sort: {
+          minutes: -1,
+          _id: 1,
+        },
+      },
+    ]));
+    const categories = (Array.isArray(categoryRows) ? categoryRows : [])
+      .map((row) => ({
+        name: normalizeRequestCategory(row?._id),
+        minutes: Number(row?.minutes) || 0,
+      }))
+      .filter((row) => row.minutes > 0);
+    const totalMinutes = categories.reduce((sum, row) => sum + row.minutes, 0);
 
     return {
       dateKey: range.dateKey,
       start: range.start,
       end: range.end,
-      totalMinutes: safeTotal,
-      okMinutes: Math.max(0, safeTotal - safeNg),
-      ngMinutes: safeNg,
+      totalMinutes,
+      categories,
     };
   }));
 }
@@ -500,6 +542,7 @@ async function recordAndEvaluateRequest(req, options = {}) {
   const allowed = recentCount < settings.maxRequests;
   const responseText = allowed ? 'OK' : 'NG';
   const responseStatusCode = allowed ? 200 : 429;
+  const category = normalizeRequestCategory(req.query?.package);
 
   await model.create({
     endpointPath,
@@ -509,6 +552,7 @@ async function recordAndEvaluateRequest(req, options = {}) {
     ips: Array.isArray(req.ips) ? req.ips : [],
     userAgent: getHeader(req, 'user-agent'),
     referer: getHeader(req, 'referer') || getHeader(req, 'referrer'),
+    category,
     query: req.query || {},
     receivedAt: now,
     windowStart,
@@ -539,6 +583,7 @@ module.exports = {
   REQUEST_COUNTER_MIN_WINDOW_MINUTES,
   REQUEST_COUNTER_RETENTION_DAYS,
   REQUEST_COUNTER_WINDOW_MS,
+  UNKNOWN_REQUEST_CATEGORY,
   buildCompleteRetentionDayRanges,
   calculateRequestCounterLimitTiming,
   fetchCurrentWindowEventTimes,
@@ -547,6 +592,7 @@ module.exports = {
   getCurrentRequestCounterStatus,
   getRequestCounterDashboard,
   getRequestCounterSettings,
+  normalizeRequestCategory,
   recordAndEvaluateRequest,
   updateRequestCounterSettings,
 };

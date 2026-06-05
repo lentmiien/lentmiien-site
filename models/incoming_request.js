@@ -12,6 +12,7 @@ const IncomingRequestSchema = new Schema({
   ips: { type: [String], default: [] },
   userAgent: { type: String, default: null },
   referer: { type: String, default: null },
+  category: { type: String, default: 'unknown', index: true },
   query: { type: Schema.Types.Mixed, default: {} },
   receivedAt: { type: Date, default: Date.now },
   windowStart: { type: Date, required: true },
@@ -25,5 +26,6 @@ const IncomingRequestSchema = new Schema({
 
 IncomingRequestSchema.index({ receivedAt: 1 }, { expireAfterSeconds: INCOMING_REQUEST_RETENTION_SECONDS });
 IncomingRequestSchema.index({ endpointPath: 1, receivedAt: -1 });
+IncomingRequestSchema.index({ endpointPath: 1, category: 1, receivedAt: -1 });
 
 module.exports = mongoose.model('incoming_request', IncomingRequestSchema);

@@ -70,13 +70,20 @@ block content
                   .request-counter-day__top
                     span.request-counter-day__date= day.dateKey
                     strong= day.totalDurationDisplay
-                  .request-counter-day__bar(style=`--total-percent: ${day.totalPercent}%; --ok-percent: ${day.okPercent}%; --ng-percent: ${day.ngPercent}%;`)
+                  .request-counter-day__bar(style=`--total-percent: ${day.totalPercent}%;`)
                     span.request-counter-day__bar-total
-                      span.request-counter-day__bar-ok
-                      span.request-counter-day__bar-ng
-                  .request-counter-day__meta
-                    span OK #{day.okDurationDisplay}
-                    span NG #{day.ngDurationDisplay}
+                      each category in day.categories
+                        span.request-counter-day__bar-category(
+                          style=`--category-width: ${category.percent}%; --category-color: ${category.color};`
+                          title=`${category.name}: ${category.durationDisplay}`
+                        )
+                  if day.categories && day.categories.length
+                    ul.request-counter-day__categories
+                      each category in day.categories
+                        li.request-counter-day__category(style=`--category-color: ${category.color};`)
+                          span.request-counter-day__category-swatch
+                          span.request-counter-day__category-name= category.name
+                          span.request-counter-day__category-duration= category.durationDisplay
           else
             p.request-counter-empty No complete local days are available in the 7-day retention window.
 
@@ -92,6 +99,7 @@ block content
                   tr
                     th Time
                     th Result
+                    th Category
                     th Window Minutes
                     th HTTP
                     th IP
@@ -103,6 +111,7 @@ block content
                       td= row.receivedAtDisplay
                       td
                         span.request-counter-result(class=row.responseText === 'OK' ? 'request-counter-result--ok' : 'request-counter-result--ng')= row.responseText
+                      td= row.categoryDisplay
                       td= row.windowMinutesDisplay
                       td= row.responseStatusCode
                       td= row.ip
