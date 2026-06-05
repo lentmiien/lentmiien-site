@@ -9,7 +9,7 @@ mixin navLink(href, label, variant)
   a(class=linkClass, href=href)&attributes(attributes)= label
 
 doctype html
-html(lang='en')
+html(lang=pageLang || 'en')
   head
     if gtag
       script(async src="https://www.googletagmanager.com/gtag/js?id=G-RGSSE514L4")
@@ -18,7 +18,7 @@ html(lang='en')
         function gtag(){dataLayer.push(arguments);}
         gtag('js', new Date());
         gtag('config', 'G-RGSSE514L4', { cookie_domain: 'home.lentmiien.com', cookie_flags: 'SameSite=None;Secure' });
-    title Lennart's Website
+    title= pageTitle || "Lennart's Website"
     meta(charset='utf-8')
     meta(name='viewport', content='width=device-width, initial-scale=1')
     //- Social media meta tags - start

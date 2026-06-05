@@ -1,18 +1,18 @@
 extends layout
 
 block styles
-  link(rel='stylesheet', href='https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap')
+  link(rel='stylesheet', href='https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&display=swap')
   link(rel='stylesheet', href='/css/public_tobuy_list.css')
 
 block content
   .public-tobuy-page
     .public-tobuy-shell
       header.public-tobuy-hero
-        p.public-tobuy-eyebrow Shared to-buy page
+        p.public-tobuy-eyebrow 公開ツール
         .public-tobuy-title-row
-          h1 To Buy
-          span.public-tobuy-count= `${taskCount} open`
-        p.public-tobuy-subtitle Ongoing items only. New entries are shared with Lennart's existing to-buy tasks.
+          h1= pageHeading
+          span.public-tobuy-count= `未完了 ${taskCount}件`
+        p.public-tobuy-subtitle 買うものリストと、公開している小さな統計をまとめています。
 
       if successMessage
         .public-tobuy-alert.public-tobuy-alert--success= successMessage
@@ -20,25 +20,42 @@ block content
       if errorMessage
         .public-tobuy-alert.public-tobuy-alert--error= errorMessage
 
+      section.public-tobuy-panel.public-tobuy-counter-panel
+        .public-tobuy-section-head.public-tobuy-section-head--split
+          h2 分カウンター
+          if requestCounterStats && requestCounterStats.generatedAtDisplay
+            span.public-tobuy-section-meta= `最終更新 ${requestCounterStats.generatedAtDisplay}`
+        if requestCounterStats && requestCounterStats.loadError
+          p.public-tobuy-empty= requestCounterStats.loadError
+        else if requestCounterStats && requestCounterStats.currentMinutesCard
+          - const card = requestCounterStats.currentMinutesCard;
+          article.public-tobuy-counter-card(class=card.tone ? `public-tobuy-counter-card--${card.tone}` : '')
+            p.public-tobuy-counter-card__label= card.label
+            p.public-tobuy-counter-card__value= card.value
+            if card.helper
+              p.public-tobuy-counter-card__helper= card.helper
+        else
+          p.public-tobuy-empty 現在の分数はまだありません。
+
       section.public-tobuy-panel
         form.public-tobuy-form(method='post', action=submitPath)
-          label.public-tobuy-label(for='title') Add item
+          label.public-tobuy-label(for='title') 買うものを追加
           .public-tobuy-form-row
             input#title.public-tobuy-input(
               type='text'
               name='title'
               value=formTitle
               maxlength='200'
-              placeholder='Milk, onions, dish soap'
+              placeholder='牛乳、玉ねぎ、食器用洗剤'
               autocomplete='off'
               required
             )
-            button.public-tobuy-button(type='submit') Add
-          p.public-tobuy-hint Shared add limit: 1 request per second, max 10 per day.
+            button.public-tobuy-button(type='submit') 追加
+          p.public-tobuy-hint 追加制限: 1秒に1回、1日10件まで。
 
       section.public-tobuy-panel
         .public-tobuy-section-head
-          h2 Open items
+          h2 買うものリスト
         if tasks.length
           ul.public-tobuy-list
             each task, index in tasks
@@ -46,4 +63,34 @@ block content
                 span.public-tobuy-item__marker
                 span.public-tobuy-item__title= task.title
         else
-          p.public-tobuy-empty Nothing is queued right now.
+          p.public-tobuy-empty 今は何もありません。
+
+      section.public-tobuy-panel.public-tobuy-daily-panel
+        .public-tobuy-section-head.public-tobuy-section-head--split
+          h2 日別の分数
+          span.public-tobuy-section-meta 保持期間内の完了日
+        if requestCounterStats && requestCounterStats.loadError
+          p.public-tobuy-empty= requestCounterStats.loadError
+        else if requestCounterStats && requestCounterStats.dailyMinuteStats && requestCounterStats.dailyMinuteStats.length
+          .public-tobuy-days
+            each day in requestCounterStats.dailyMinuteStats
+              .public-tobuy-day
+                .public-tobuy-day__top
+                  span.public-tobuy-day__date= day.dateKey
+                  strong= day.totalDurationDisplay
+                .public-tobuy-day__bar(style=`--total-percent: ${day.totalPercent}%;`)
+                  span.public-tobuy-day__bar-total
+                    each category in day.categories
+                      span.public-tobuy-day__bar-category(
+                        style=`--category-width: ${category.percent}%; --category-color: ${category.color};`
+                        title=`${category.displayName || category.name}: ${category.durationDisplay}`
+                      )
+                if day.categories && day.categories.length
+                  ul.public-tobuy-day__categories
+                    each category in day.categories
+                      li.public-tobuy-day__category(style=`--category-color: ${category.color};`)
+                        span.public-tobuy-day__category-swatch
+                        span.public-tobuy-day__category-name= category.displayName || category.name
+                        span.public-tobuy-day__category-duration= category.durationDisplay
+        else
+          p.public-tobuy-empty 7日間の保持期間に、完了した日はまだありません。

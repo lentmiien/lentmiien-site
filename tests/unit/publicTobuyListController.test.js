@@ -20,8 +20,18 @@ jest.mock('../../utils/publicTobuyList', () => ({
   consumePublicTobuyAddQuota: jest.fn(),
 }));
 
+jest.mock('../../services/incomingRequestCounterService', () => ({
+  UNKNOWN_REQUEST_CATEGORY: 'unknown',
+  getRequestCounterDashboard: jest.fn(),
+  normalizeRequestCategory: jest.fn((value) => {
+    const normalized = String(value ?? '').trim();
+    return normalized || 'unknown';
+  }),
+}));
+
 const { Task } = require('../../database');
 const { consumePublicTobuyAddQuota } = require('../../utils/publicTobuyList');
+const { getRequestCounterDashboard } = require('../../services/incomingRequestCounterService');
 const controller = require('../../controllers/publicTobuyListController');
 
 function createFindQuery(payload) {
@@ -36,6 +46,25 @@ describe('publicTobuyListController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Task.__saveMock.mockReset();
+    getRequestCounterDashboard.mockResolvedValue({
+      endpointPath: '/secret-counter',
+      generatedAt: new Date('2026-05-28T00:00:00.000Z'),
+      settings: {
+        maxRequests: 120,
+        windowMinutes: 90,
+        windowMs: 90 * 60 * 1000,
+      },
+      currentWindowStart: new Date('2026-05-27T22:30:00.000Z'),
+      currentCount: 42,
+      totalStored: 100,
+      blockedInWindow: 3,
+      remaining: 78,
+      limitTiming: { mode: 'until_max', minutes: 78 },
+      nextDecision: 'OK',
+      chartSeries: [],
+      dailyMinuteStats: [],
+      recentRequests: [],
+    });
   });
 
   test('renderPublicPage loads open Lennart to-buy tasks', async () => {
@@ -64,13 +93,23 @@ describe('publicTobuyListController', () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.render).toHaveBeenCalledWith('public_tobuy_list', expect.objectContaining({
+      pageHeading: '妻のページ',
       taskCount: 2,
       submitPath: '/hidden-path',
       tasks: [
         { id: 'task-1', title: 'Milk' },
         { id: 'task-2', title: 'Rice' },
       ],
+      requestCounterStats: expect.objectContaining({
+        currentMinutesCard: expect.objectContaining({
+          label: '現在の分数',
+          value: '42 / 120 分',
+          helper: '上限まで 78分',
+        }),
+      }),
     }));
+    expect(res.locals.pageLang).toBe('ja');
+    expect(res.locals.pageTitle).toBe('妻のページ - Lennart\'s Website');
   });
 
   test('addPublicTask saves a trimmed to-buy task for Lennart and redirects back', async () => {
@@ -137,7 +176,7 @@ describe('publicTobuyListController', () => {
     expect(Task.__saveMock).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.render).toHaveBeenCalledWith('public_tobuy_list', expect.objectContaining({
-      errorMessage: 'The shared add limit for today has been reached.',
+      errorMessage: '今日の共有追加上限に達しました。',
       formTitle: 'Eggs',
     }));
   });
