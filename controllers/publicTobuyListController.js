@@ -1,6 +1,13 @@
-const { Task } = require('../database');
+const {
+  Task,
+  CookingCalendarModel,
+  CookingCalendarV2Model,
+  Chat4KnowledgeModel,
+  CookbookRecipeModel,
+} = require('../database');
 const logger = require('../utils/logger');
 const { getRequestCounterDashboard } = require('../services/incomingRequestCounterService');
+const CookingCalendarService = require('../services/cookingCalendarService');
 const {
   buildOverviewCards,
   formatDateTime,
@@ -13,6 +20,22 @@ const {
 
 const MAX_TITLE_LENGTH = 200;
 const PAGE_TITLE = '妻のページ';
+const WEEKDAY_LABELS_JA = {
+  Sunday: '日曜日',
+  Monday: '月曜日',
+  Tuesday: '火曜日',
+  Wednesday: '水曜日',
+  Thursday: '木曜日',
+  Friday: '金曜日',
+  Saturday: '土曜日',
+};
+
+const cookingCalendarService = new CookingCalendarService({
+  CookingCalendarModel,
+  CookingCalendarV2Model,
+  Chat4KnowledgeModel,
+  CookbookRecipeModel,
+});
 
 function normalizeTitle(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -61,10 +84,56 @@ async function fetchWifeRequestCounterStats() {
   }
 }
 
+function mapTodayCookingEntry(entry) {
+  const source = entry || {};
+  const recipe = source.recipe || null;
+
+  return {
+    entryId: source.entryId || '',
+    category: source.category || 'Other',
+    title: recipe && recipe.title ? recipe.title : '不明なレシピ',
+    viewPath: recipe && recipe.viewPath ? recipe.viewPath : null,
+    hasImage: Boolean(recipe && recipe.image),
+  };
+}
+
+async function fetchTodayCookingCalendar() {
+  const today = cookingCalendarService.formatDate(new Date());
+
+  try {
+    const calendar = await cookingCalendarService.getCalendarRange(today, today);
+    const day = Array.isArray(calendar.days) && calendar.days.length ? calendar.days[0] : null;
+    const entries = day && Array.isArray(day.entries)
+      ? day.entries.map(mapTodayCookingEntry)
+      : [];
+    const weekday = day && day.weekday ? day.weekday : '';
+
+    return {
+      loadError: null,
+      date: today,
+      weekdayDisplay: WEEKDAY_LABELS_JA[weekday] || weekday,
+      entries,
+    };
+  } catch (error) {
+    logger.error('Failed to load wife view cooking calendar', {
+      category: 'public-tobuy',
+      metadata: { error: error.message },
+    });
+
+    return {
+      loadError: '今日の料理を読み込めませんでした。',
+      date: today,
+      weekdayDisplay: '',
+      entries: [],
+    };
+  }
+}
+
 async function renderPage(req, res, options = {}) {
-  const [tasks, requestCounterStats] = await Promise.all([
+  const [tasks, requestCounterStats, todayCooking] = await Promise.all([
     options.tasks ? Promise.resolve(options.tasks) : fetchOpenTasks(),
     fetchWifeRequestCounterStats(),
+    fetchTodayCookingCalendar(),
   ]);
   const errorMessage = options.errorMessage || null;
   const successMessage = options.successMessage || (req.query && req.query.added === '1'
@@ -86,6 +155,7 @@ async function renderPage(req, res, options = {}) {
     formTitle: options.formTitle || '',
     submitPath: getSubmitPath(req),
     requestCounterStats,
+    todayCooking,
   });
 }
 

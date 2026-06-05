@@ -1,3 +1,8 @@
+const mockCookingCalendarService = {
+  formatDate: jest.fn(),
+  getCalendarRange: jest.fn(),
+};
+
 jest.mock('../../database', () => {
   const saveMock = jest.fn();
   const Task = jest.fn().mockImplementation(function Task(payload) {
@@ -28,6 +33,8 @@ jest.mock('../../services/incomingRequestCounterService', () => ({
     return normalized || 'unknown';
   }),
 }));
+
+jest.mock('../../services/cookingCalendarService', () => jest.fn(() => mockCookingCalendarService));
 
 const { Task } = require('../../database');
 const { consumePublicTobuyAddQuota } = require('../../utils/publicTobuyList');
@@ -64,6 +71,16 @@ describe('publicTobuyListController', () => {
       chartSeries: [],
       dailyMinuteStats: [],
       recentRequests: [],
+    });
+    mockCookingCalendarService.formatDate.mockReturnValue('2026-05-28');
+    mockCookingCalendarService.getCalendarRange.mockResolvedValue({
+      days: [
+        {
+          date: '2026-05-28',
+          weekday: 'Thursday',
+          entries: [],
+        },
+      ],
     });
   });
 
@@ -107,9 +124,64 @@ describe('publicTobuyListController', () => {
           helper: '上限まで 78分',
         }),
       }),
+      todayCooking: expect.objectContaining({
+        date: '2026-05-28',
+        weekdayDisplay: '木曜日',
+        entries: [],
+      }),
     }));
     expect(res.locals.pageLang).toBe('ja');
     expect(res.locals.pageTitle).toBe('妻のページ - Lennart\'s Website');
+  });
+
+  test('renderPublicPage includes today cooking entries with image flags', async () => {
+    Task.find.mockReturnValueOnce(createFindQuery([]));
+    mockCookingCalendarService.getCalendarRange.mockResolvedValueOnce({
+      days: [
+        {
+          date: '2026-05-28',
+          weekday: 'Thursday',
+          entries: [
+            {
+              entryId: 'entry-1',
+              category: 'Dinner',
+              recipe: {
+                title: 'Curry',
+                image: 'curry.jpg',
+                viewPath: '/cooking/cookbook/recipe-1',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const req = {
+      query: {},
+      baseUrl: '/hidden-path',
+      path: '/',
+    };
+    const res = {
+      locals: {},
+      status: jest.fn().mockReturnThis(),
+      render: jest.fn(),
+    };
+
+    await controller.renderPublicPage(req, res);
+
+    expect(res.render).toHaveBeenCalledWith('public_tobuy_list', expect.objectContaining({
+      todayCooking: expect.objectContaining({
+        entries: [
+          {
+            entryId: 'entry-1',
+            category: 'Dinner',
+            title: 'Curry',
+            viewPath: '/cooking/cookbook/recipe-1',
+            hasImage: true,
+          },
+        ],
+      }),
+    }));
   });
 
   test('addPublicTask saves a trimmed to-buy task for Lennart and redirects back', async () => {

@@ -2,6 +2,7 @@ extends layout
 
 block styles
   link(rel='stylesheet', href='https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&display=swap')
+  link(rel='stylesheet', href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css')
   link(rel='stylesheet', href='/css/public_tobuy_list.css')
 
 block content
@@ -36,6 +37,29 @@ block content
               p.public-tobuy-counter-card__helper= card.helper
         else
           p.public-tobuy-empty 現在の分数はまだありません。
+
+      section.public-tobuy-panel.public-tobuy-cooking-panel
+        .public-tobuy-section-head.public-tobuy-section-head--split
+          h2 今日の料理
+          if todayCooking && todayCooking.date
+            span.public-tobuy-section-meta= todayCooking.weekdayDisplay ? `${todayCooking.date}・${todayCooking.weekdayDisplay}` : todayCooking.date
+        if todayCooking && todayCooking.loadError
+          p.public-tobuy-empty= todayCooking.loadError
+        else if todayCooking && todayCooking.entries && todayCooking.entries.length
+          ul.public-tobuy-cooking-list
+            each entry in todayCooking.entries
+              li.public-tobuy-cooking-item
+                span.public-tobuy-cooking-item__category= entry.category
+                .public-tobuy-cooking-item__main
+                  if entry.viewPath
+                    a.public-tobuy-cooking-item__title(href=entry.viewPath, target='_blank', rel='noopener noreferrer')= entry.title
+                  else
+                    span.public-tobuy-cooking-item__title= entry.title
+                  if entry.hasImage
+                    span.public-tobuy-cooking-item__image-icon(title='画像あり', aria-label='画像あり')
+                      i.bi.bi-image(aria-hidden='true')
+        else
+          p.public-tobuy-empty 未設定です。
 
       section.public-tobuy-panel
         form.public-tobuy-form(method='post', action=submitPath)

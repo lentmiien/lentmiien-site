@@ -176,6 +176,80 @@
   font-size: 0.9rem;
 }
 
+.public-tobuy-cooking-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.public-tobuy-cooking-item {
+  display: grid;
+  grid-template-columns: minmax(86px, auto) 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.public-tobuy-cooking-item__category {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 1px solid rgba(180, 83, 9, 0.22);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 0.84rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.public-tobuy-cooking-item__main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.public-tobuy-cooking-item__title {
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 800;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+a.public-tobuy-cooking-item__title {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.public-tobuy-cooking-item__title:hover,
+a.public-tobuy-cooking-item__title:focus {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
+
+.public-tobuy-cooking-item__image-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 6px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-size: 1rem;
+}
+
 .public-tobuy-form {
   display: grid;
   gap: 12px;
@@ -389,6 +463,11 @@
 
   .public-tobuy-section-meta {
     white-space: normal;
+  }
+
+  .public-tobuy-cooking-item {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
   }
 
   .public-tobuy-form-row {
