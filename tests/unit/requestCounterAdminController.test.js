@@ -36,6 +36,7 @@ function createDashboard(overrides = {}) {
     totalStored: 100,
     blockedInWindow: 3,
     remaining: 78,
+    limitTiming: { mode: 'until_max', minutes: 78 },
     nextDecision: 'OK',
     chartSeries: [],
     dailyMinuteStats: [],
@@ -74,6 +75,73 @@ describe('requestCounterAdminController.dashboard', () => {
             ngDurationDisplay: '3 minutes',
           }),
         ],
+      })
+    );
+  });
+
+  test('uses projected limit timing in the Current Minutes card', async () => {
+    counterService.getRequestCounterDashboard.mockResolvedValue(createDashboard({
+      limitTiming: { mode: 'until_max', minutes: 84 },
+    }));
+    const res = createResponse();
+
+    await controller.dashboard({ query: {} }, res);
+
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_request_counter',
+      expect.objectContaining({
+        overviewCards: expect.arrayContaining([
+          expect.objectContaining({
+            label: 'Current Minutes',
+            helper: '84 min until max',
+          }),
+        ]),
+      })
+    );
+  });
+
+  test('formats infinite Current Minutes timing when max exceeds the window', async () => {
+    counterService.getRequestCounterDashboard.mockResolvedValue(createDashboard({
+      limitTiming: { mode: 'infinite', minutes: null },
+    }));
+    const res = createResponse();
+
+    await controller.dashboard({ query: {} }, res);
+
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_request_counter',
+      expect.objectContaining({
+        overviewCards: expect.arrayContaining([
+          expect.objectContaining({
+            label: 'Current Minutes',
+            helper: '∞ until max',
+          }),
+        ]),
+      })
+    );
+  });
+
+  test('formats Current Minutes timing below max while blocked', async () => {
+    counterService.getRequestCounterDashboard.mockResolvedValue(createDashboard({
+      currentCount: 121,
+      remaining: 0,
+      limitTiming: { mode: 'until_below_max', minutes: 7 },
+      nextDecision: 'NG',
+    }));
+    const res = createResponse();
+
+    await controller.dashboard({ query: {} }, res);
+
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_request_counter',
+      expect.objectContaining({
+        overviewCards: expect.arrayContaining([
+          expect.objectContaining({
+            label: 'Current Minutes',
+            helper: '7 min until below max',
+            tone: 'danger',
+          }),
+        ]),
       })
     );
   });

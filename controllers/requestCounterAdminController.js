@@ -91,13 +91,31 @@ function mapRecentRequest(entry) {
   };
 }
 
+function formatCurrentMinutesHelper(dashboard) {
+  const timing = dashboard.limitTiming || null;
+
+  if (!timing) {
+    return `${formatNumber(dashboard.remaining)} min remaining`;
+  }
+
+  if (timing.mode === 'infinite') {
+    return '∞ until max';
+  }
+
+  if (timing.mode === 'until_below_max') {
+    return `${formatNumber(timing.minutes)} min until below max`;
+  }
+
+  return `${formatNumber(timing.minutes)} min until max`;
+}
+
 function buildOverviewCards(dashboard) {
   const settings = dashboard.settings;
   return [
     {
       label: 'Current Minutes',
       value: `${formatNumber(dashboard.currentCount)} / ${formatNumber(settings.maxRequests)} min`,
-      helper: `${formatNumber(dashboard.remaining)} min remaining`,
+      helper: formatCurrentMinutesHelper(dashboard),
       tone: dashboard.currentCount >= settings.maxRequests ? 'danger' : 'ok',
     },
     {

@@ -3,6 +3,7 @@ const {
   REQUEST_COUNTER_LIMIT,
   REQUEST_COUNTER_WINDOW_MS,
   buildCompleteRetentionDayRanges,
+  calculateRequestCounterLimitTiming,
   fetchDailyMinuteStats,
   fetchRollingWindowSeries,
   getCurrentRequestCounterStatus,
@@ -221,6 +222,59 @@ describe('incoming request counter service', () => {
       '2026-05-27T00:02:00.000Z',
       '2026-05-27T00:03:00.000Z',
     ]);
+  });
+
+  test('calculateRequestCounterLimitTiming accounts for minutes sliding out before the limit is reached', () => {
+    const now = new Date('2026-05-27T00:10:00.000Z');
+    const timing = calculateRequestCounterLimitTiming(
+      [
+        new Date('2026-05-27T00:05:30.000Z'),
+        new Date('2026-05-27T00:06:30.000Z'),
+      ],
+      { maxRequests: 4, windowMinutes: 5 },
+      now
+    );
+
+    expect(timing).toEqual({
+      mode: 'until_max',
+      minutes: 4,
+    });
+  });
+
+  test('calculateRequestCounterLimitTiming reports infinity when the limit exceeds the window length', () => {
+    const now = new Date('2026-05-27T00:10:00.000Z');
+    const timing = calculateRequestCounterLimitTiming(
+      [
+        new Date('2026-05-27T00:08:00.000Z'),
+        new Date('2026-05-27T00:09:00.000Z'),
+      ],
+      { maxRequests: 4, windowMinutes: 3 },
+      now
+    );
+
+    expect(timing).toEqual({
+      mode: 'infinite',
+      minutes: null,
+    });
+  });
+
+  test('calculateRequestCounterLimitTiming reports time until dropping below the limit', () => {
+    const now = new Date('2026-05-27T00:10:00.000Z');
+    const timing = calculateRequestCounterLimitTiming(
+      [
+        new Date('2026-05-27T00:05:30.000Z'),
+        new Date('2026-05-27T00:06:30.000Z'),
+        new Date('2026-05-27T00:07:00.000Z'),
+        new Date('2026-05-27T00:08:00.000Z'),
+      ],
+      { maxRequests: 3, windowMinutes: 5 },
+      now
+    );
+
+    expect(timing).toEqual({
+      mode: 'until_below_max',
+      minutes: 2,
+    });
   });
 
   test('buildCompleteRetentionDayRanges includes only full local days in retention', () => {

@@ -312,6 +312,94 @@ async function fetchDailyMinuteStats(endpointPath, options = {}) {
   }));
 }
 
+async function fetchCurrentWindowEventTimes(endpointPath, settings, options = {}) {
+  const requestModel = options.model || IncomingRequest;
+  const now = new Date(options.now || Date.now());
+  const windowStart = new Date(now.getTime() - settings.windowMs);
+  const rows = await leanExec(requestModel.find({
+    endpointPath,
+    receivedAt: {
+      $gte: windowStart,
+      $lte: now,
+    },
+  }).sort({ receivedAt: 1 }).select({ receivedAt: 1 }));
+
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => new Date(row.receivedAt).getTime())
+    .filter((time) => Number.isFinite(time))
+    .sort((a, b) => a - b);
+}
+
+function calculateRequestCounterLimitTiming(eventTimes, settings, now = new Date()) {
+  const limit = normalizeStoredInteger(
+    settings.maxRequests,
+    REQUEST_COUNTER_LIMIT,
+    REQUEST_COUNTER_MIN_LIMIT,
+    REQUEST_COUNTER_MAX_LIMIT
+  );
+  const windowMinutes = normalizeStoredInteger(
+    settings.windowMinutes,
+    REQUEST_COUNTER_DEFAULT_WINDOW_MINUTES,
+    REQUEST_COUNTER_MIN_WINDOW_MINUTES,
+    REQUEST_COUNTER_MAX_WINDOW_MINUTES
+  );
+  const windowMs = Number.isFinite(Number(settings.windowMs)) && Number(settings.windowMs) > 0
+    ? Number(settings.windowMs)
+    : windowMinutes * MINUTE_MS;
+  const nowMs = new Date(now).getTime();
+  const windowStartMs = nowMs - windowMs;
+  const currentEventTimes = (Array.isArray(eventTimes) ? eventTimes : [])
+    .map((value) => new Date(value).getTime())
+    .filter((time) => Number.isFinite(time) && time >= windowStartMs && time <= nowMs)
+    .sort((a, b) => a - b);
+  const currentCount = currentEventTimes.length;
+  const expiryTimes = currentEventTimes
+    .map((time) => time + windowMs)
+    .sort((a, b) => a - b);
+
+  if (currentCount >= limit) {
+    const expirationsNeeded = currentCount - limit + 1;
+    const expiryTime = expiryTimes[expirationsNeeded - 1];
+    const minutes = Number.isFinite(expiryTime)
+      ? Math.max(0, Math.ceil((expiryTime - nowMs) / MINUTE_MS))
+      : null;
+
+    return {
+      mode: 'until_below_max',
+      minutes,
+    };
+  }
+
+  if (limit > windowMinutes) {
+    return {
+      mode: 'infinite',
+      minutes: null,
+    };
+  }
+
+  let expiredCount = 0;
+  for (let minuteOffset = 1; minuteOffset <= windowMinutes; minuteOffset += 1) {
+    const futureMs = nowMs + (minuteOffset * MINUTE_MS);
+
+    while (expiredCount < expiryTimes.length && expiryTimes[expiredCount] <= futureMs) {
+      expiredCount += 1;
+    }
+
+    const projectedCount = currentCount + minuteOffset - expiredCount;
+    if (projectedCount >= limit) {
+      return {
+        mode: 'until_max',
+        minutes: minuteOffset,
+      };
+    }
+  }
+
+  return {
+    mode: 'infinite',
+    minutes: null,
+  };
+}
+
 async function getRequestCounterDashboard(options = {}) {
   const requestModel = options.model || IncomingRequest;
   const endpointPath = options.endpointPath || ensureRequestCounterPath();
@@ -319,27 +407,41 @@ async function getRequestCounterDashboard(options = {}) {
   const settings = await getRequestCounterSettings(options);
   const currentWindowStart = new Date(now.getTime() - settings.windowMs);
 
-  const currentCount = await requestModel.countDocuments({
-    endpointPath,
-    receivedAt: { $gte: currentWindowStart },
-  });
-  const totalStored = await requestModel.countDocuments({ endpointPath });
-  const blockedInWindow = await requestModel.countDocuments({
-    endpointPath,
-    receivedAt: { $gte: currentWindowStart },
-    allowed: false,
-  });
-  const recentRequests = await leanExec(requestModel.find({ endpointPath })
-    .sort({ receivedAt: -1 })
-    .limit(25));
-  const chartSeries = await fetchRollingWindowSeries(endpointPath, settings, {
-    model: requestModel,
-    now,
-  });
-  const dailyMinuteStats = await fetchDailyMinuteStats(endpointPath, {
-    model: requestModel,
-    now,
-  });
+  const [
+    currentEventTimes,
+    totalStored,
+    blockedInWindow,
+    recentRequests,
+    chartSeries,
+    dailyMinuteStats,
+  ] = await Promise.all([
+    fetchCurrentWindowEventTimes(endpointPath, settings, {
+      model: requestModel,
+      now,
+    }),
+    requestModel.countDocuments({ endpointPath }),
+    requestModel.countDocuments({
+      endpointPath,
+      receivedAt: {
+        $gte: currentWindowStart,
+        $lte: now,
+      },
+      allowed: false,
+    }),
+    leanExec(requestModel.find({ endpointPath })
+      .sort({ receivedAt: -1 })
+      .limit(25)),
+    fetchRollingWindowSeries(endpointPath, settings, {
+      model: requestModel,
+      now,
+    }),
+    fetchDailyMinuteStats(endpointPath, {
+      model: requestModel,
+      now,
+    }),
+  ]);
+  const currentCount = currentEventTimes.length;
+  const limitTiming = calculateRequestCounterLimitTiming(currentEventTimes, settings, now);
 
   return {
     endpointPath,
@@ -350,6 +452,7 @@ async function getRequestCounterDashboard(options = {}) {
     totalStored,
     blockedInWindow,
     remaining: Math.max(0, settings.maxRequests - currentCount),
+    limitTiming,
     nextDecision: currentCount < settings.maxRequests ? 'OK' : 'NG',
     chartSeries,
     dailyMinuteStats,
@@ -437,6 +540,8 @@ module.exports = {
   REQUEST_COUNTER_RETENTION_DAYS,
   REQUEST_COUNTER_WINDOW_MS,
   buildCompleteRetentionDayRanges,
+  calculateRequestCounterLimitTiming,
+  fetchCurrentWindowEventTimes,
   fetchDailyMinuteStats,
   fetchRollingWindowSeries,
   getCurrentRequestCounterStatus,
