@@ -38,6 +38,18 @@ const CLARIS_UPLOAD_CONTAINER_RESPONSE = {
   ],
 };
 
+const CLARIS_VALIDATE_SESSION_RESPONSE = {
+  response: {
+    isSessionInUse: true,
+  },
+  messages: [
+    {
+      message: 'OK',
+      code: '0',
+    },
+  ],
+};
+
 async function logDummyRequest(req) {
   try {
     const result = await recordDummyApiRequest(req, {
@@ -90,7 +102,14 @@ exports.clarisUploadContainer = async (req, res) => {
   res.json(CLARIS_UPLOAD_CONTAINER_RESPONSE);
 };
 
+exports.clarisValidateSession = async (req, res) => {
+  await logDummyRequest(req);
+
+  res.json(CLARIS_VALIDATE_SESSION_RESPONSE);
+};
+
 exports.CLARIS_SAMPLE_TOKEN = CLARIS_SAMPLE_TOKEN;
 exports.CLARIS_SESSION_RESPONSE = CLARIS_SESSION_RESPONSE;
 exports.CLARIS_CREATE_RECORD_RESPONSE = CLARIS_CREATE_RECORD_RESPONSE;
 exports.CLARIS_UPLOAD_CONTAINER_RESPONSE = CLARIS_UPLOAD_CONTAINER_RESPONSE;
+exports.CLARIS_VALIDATE_SESSION_RESPONSE = CLARIS_VALIDATE_SESSION_RESPONSE;

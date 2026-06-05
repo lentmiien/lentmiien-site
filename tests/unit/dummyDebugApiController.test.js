@@ -105,4 +105,24 @@ describe('dummyDebugApiController', () => {
       ],
     });
   });
+
+  test('clarisValidateSession returns the Claris validate-session sample response', async () => {
+    const req = createRequest('/fmi/data/vLatest/validateSession');
+    const res = createResponse();
+
+    await controller.clarisValidateSession(req, res);
+
+    expect(recordDummyApiRequest).toHaveBeenCalledWith(req, { settings: undefined });
+    expect(res.json).toHaveBeenCalledWith({
+      response: {
+        isSessionInUse: true,
+      },
+      messages: [
+        {
+          message: 'OK',
+          code: '0',
+        },
+      ],
+    });
+  });
 });

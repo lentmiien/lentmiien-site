@@ -92,6 +92,12 @@ router.post(
   controller.clarisSession
 );
 
+router.get(
+  '/fmi/data/:version/validateSession',
+  parseMultipartWhenLoggingEnabled,
+  controller.clarisValidateSession
+);
+
 router.post(
   '/fmi/data/:version/databases/:databaseName/layouts/:layoutName/records',
   parseMultipartWhenLoggingEnabled,

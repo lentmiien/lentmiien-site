@@ -6,6 +6,7 @@ const DUMMY_API_LOG_LIMIT = 200;
 const DUMMY_API_ENDPOINT_PATHS = [
   '/ok',
   '/fmi/data/{version}/databases/{database-name}/sessions',
+  '/fmi/data/{version}/validateSession',
   '/fmi/data/{version}/databases/{database-name}/layouts/{layout-name}/records',
   '/fmi/data/{version}/databases/{database-name}/layouts/{layout-name}/records/{record-id}/containers/{field-name}/{field-repetition}',
 ];
