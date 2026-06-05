@@ -87,13 +87,13 @@ async function fetchWifeRequestCounterStats() {
 function mapTodayCookingEntry(entry) {
   const source = entry || {};
   const recipe = source.recipe || null;
+  const image = recipe && recipe.image ? String(recipe.image) : '';
 
   return {
     entryId: source.entryId || '',
     category: source.category || 'Other',
     title: recipe && recipe.title ? recipe.title : '不明なレシピ',
-    viewPath: recipe && recipe.viewPath ? recipe.viewPath : null,
-    hasImage: Boolean(recipe && recipe.image),
+    imageSrc: image ? `/img/${encodeURIComponent(image)}` : null,
   };
 }
 

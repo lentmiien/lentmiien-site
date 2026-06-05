@@ -134,7 +134,7 @@ describe('publicTobuyListController', () => {
     expect(res.locals.pageTitle).toBe('妻のページ - Lennart\'s Website');
   });
 
-  test('renderPublicPage includes today cooking entries with image flags', async () => {
+  test('renderPublicPage includes today cooking entries with public image previews', async () => {
     Task.find.mockReturnValueOnce(createFindQuery([]));
     mockCookingCalendarService.getCalendarRange.mockResolvedValueOnce({
       days: [
@@ -176,8 +176,7 @@ describe('publicTobuyListController', () => {
             entryId: 'entry-1',
             category: 'Dinner',
             title: 'Curry',
-            viewPath: '/cooking/cookbook/recipe-1',
-            hasImage: true,
+            imageSrc: '/img/curry.jpg',
           },
         ],
       }),
