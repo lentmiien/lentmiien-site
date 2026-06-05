@@ -51,7 +51,9 @@ exports.japanPostLabelPdf = (req, res) => {
 
 exports.ok = async (req, res) => {
   try {
-    const result = await recordDummyApiOkRequest(req);
+    const result = await recordDummyApiOkRequest(req, {
+      settings: req.dummyApiEndpointSettings,
+    });
     if (result.logged) {
       logger.debug('Dummy API /ok request logged', {
         category: 'dummy_api',

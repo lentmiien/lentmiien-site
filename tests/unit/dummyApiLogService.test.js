@@ -138,4 +138,80 @@ describe('dummyApiLogService', () => {
 
     expect(snapshot.body).toBe('plain text payload');
   });
+
+  test('buildRequestSnapshot includes multipart file metadata without content', () => {
+    const snapshot = buildRequestSnapshot(
+      createRequest({
+        headers: {
+          'content-type': 'multipart/form-data; boundary=unit',
+          'user-agent': 'dummy-client/1.0',
+        },
+        body: {
+          description: 'debug upload',
+        },
+        files: [
+          {
+            fieldname: 'attachment',
+            originalname: 'example.txt',
+            encoding: '7bit',
+            mimetype: 'text/plain',
+            size: 128,
+            buffer: Buffer.from('do not persist this'),
+            stream: {},
+          },
+        ],
+      }),
+      new Date('2026-06-01T00:00:00.000Z')
+    );
+
+    expect(snapshot.multipart).toEqual({
+      fields: { description: 'debug upload' },
+      files: [
+        {
+          fieldname: 'attachment',
+          originalname: 'example.txt',
+          encoding: '7bit',
+          mimetype: 'text/plain',
+          size: 128,
+        },
+      ],
+      fileCount: 1,
+      error: null,
+    });
+    expect(JSON.stringify(snapshot.multipart)).not.toContain('do not persist this');
+    expect(JSON.stringify(snapshot.multipart)).not.toContain('buffer');
+    expect(JSON.stringify(snapshot.multipart)).not.toContain('stream');
+  });
+
+  test('buildRequestSnapshot includes multipart parser errors', () => {
+    const snapshot = buildRequestSnapshot(
+      createRequest({
+        headers: {
+          'content-type': 'multipart/form-data; boundary=unit',
+          'user-agent': 'dummy-client/1.0',
+        },
+        body: {},
+        files: [],
+        dummyApiMultipartError: {
+          name: 'MulterError',
+          code: 'LIMIT_FILE_COUNT',
+          field: 'attachment',
+          message: 'Too many files',
+        },
+      }),
+      new Date('2026-06-01T00:00:00.000Z')
+    );
+
+    expect(snapshot.multipart).toEqual(expect.objectContaining({
+      files: [],
+      fileCount: 0,
+      error: {
+        name: 'MulterError',
+        code: 'LIMIT_FILE_COUNT',
+        field: 'attachment',
+        message: 'Too many files',
+        detail: null,
+      },
+    }));
+  });
 });

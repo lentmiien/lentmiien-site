@@ -95,6 +95,51 @@ function getRequestPath(req) {
   return req.originalUrl || req.url || req.path || '/';
 }
 
+function isMultipartFormData(req) {
+  const contentType = req?.headers?.['content-type'] || '';
+  return String(contentType).toLowerCase().includes('multipart/form-data');
+}
+
+function serializeMultipartFile(file = {}) {
+  return {
+    fieldname: file.fieldname || null,
+    originalname: file.originalname || null,
+    encoding: file.encoding || null,
+    mimetype: file.mimetype || null,
+    size: Number.isFinite(file.size) ? file.size : null,
+  };
+}
+
+function serializeMultipartError(error) {
+  if (!error) {
+    return null;
+  }
+
+  return {
+    name: error.name || null,
+    code: error.code || null,
+    field: error.field || null,
+    message: error.message || String(error),
+    detail: error.detail || null,
+  };
+}
+
+function buildMultipartSnapshot(req) {
+  const files = Array.isArray(req.files) ? req.files.map(serializeMultipartFile) : [];
+  const error = serializeMultipartError(req.dummyApiMultipartError);
+
+  if (!isMultipartFormData(req) && files.length === 0 && !error) {
+    return null;
+  }
+
+  return {
+    fields: serializeValue(req.body || {}),
+    files,
+    fileCount: files.length,
+    error,
+  };
+}
+
 function buildRequestSnapshot(req, now) {
   return {
     receivedAt: now.toISOString(),
@@ -112,6 +157,7 @@ function buildRequestSnapshot(req, now) {
     params: serializeValue(req.params || {}),
     query: serializeValue(req.query || {}),
     body: serializeValue(req.body),
+    multipart: buildMultipartSnapshot(req),
     userAgent: getHeader(req, 'user-agent'),
     referer: getHeader(req, 'referer') || getHeader(req, 'referrer'),
   };
