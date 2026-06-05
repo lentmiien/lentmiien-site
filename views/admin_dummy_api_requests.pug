@@ -8,7 +8,7 @@ block content
     header.dummy-api-admin__header
       div
         h1.dummy-api-admin__title Dummy API Requests
-        p.dummy-api-admin__subtitle Raw request logging for the dummy `/ok` endpoint.
+        p.dummy-api-admin__subtitle Raw request logging for standalone dummy debug endpoints.
       .dummy-api-admin__meta
         span Collection #{collectionName}
         a.dummy-api-admin__refresh(href='/admin/dummy-api-requests') Refresh
@@ -40,7 +40,7 @@ block content
           form.dummy-api-form(method='post', action='/admin/dummy-api-requests/settings')
             label.dummy-api-toggle(for='dummyApiEnabled')
               input#dummyApiEnabled(type='checkbox', name='enabled', value='true', checked=settings.enabled)
-              span Enable `/ok` request logging
+              span Enable dummy API request logging
             button.dummy-api-button(type='submit') Save
 
         section.dummy-api-panel.dummy-api-panel--danger
@@ -66,4 +66,4 @@ block content
                   span.dummy-api-log__method= log.method
                 pre.dummy-api-log__json= log.rawJson
         else
-          p.dummy-api-empty No dummy API `/ok` requests have been logged.
+          p.dummy-api-empty No dummy API requests have been logged.

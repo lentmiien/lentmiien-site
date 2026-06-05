@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
 const labelResponse_sample = require('../sample_data/labelResponse.json');
-const { recordDummyApiOkRequest } = require('../services/dummyApiLogService');
 
 const japanPostXmlPath = path.join(__dirname, '../sample_data/japan_post_label_response.xml');
 const japanPostPdfPath = path.join(__dirname, '../sample_data/japan_post_label.pdf');
@@ -47,33 +46,4 @@ exports.japanPostLabelPdf = (req, res) => {
   res.type('application/pdf');
   res.set('Content-Disposition', `inline; filename="${fileName}"`);
   res.send(japanPostLabelPdf);
-};
-
-exports.ok = async (req, res) => {
-  try {
-    const result = await recordDummyApiOkRequest(req, {
-      settings: req.dummyApiEndpointSettings,
-    });
-    if (result.logged) {
-      logger.debug('Dummy API /ok request logged', {
-        category: 'dummy_api',
-        metadata: {
-          method: req.method,
-          path: req.originalUrl || req.url || req.path,
-        },
-      });
-    }
-  } catch (error) {
-    logger.error('Failed to log dummy API /ok request', {
-      category: 'dummy_api',
-      metadata: {
-        error: error.message,
-        method: req.method,
-        path: req.originalUrl || req.url || req.path,
-      },
-    });
-  }
-
-  res.type('text/plain');
-  res.send('OK');
 };

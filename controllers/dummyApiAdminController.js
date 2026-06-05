@@ -115,7 +115,7 @@ exports.updateSettings = async (req, res) => {
       updatedBy: req.user?.name || null,
     });
 
-    logger.notice('Dummy API /ok logging setting updated by admin', {
+    logger.notice('Dummy API logging setting updated by admin', {
       category: 'dummy_api',
       metadata: {
         enabled: settings.enabled,
@@ -126,10 +126,10 @@ exports.updateSettings = async (req, res) => {
     return redirectWithFeedback(
       res,
       'success',
-      settings.enabled ? 'Dummy API /ok logging enabled.' : 'Dummy API /ok logging disabled.'
+      settings.enabled ? 'Dummy API logging enabled.' : 'Dummy API logging disabled.'
     );
   } catch (error) {
-    logger.error('Failed to update dummy API /ok logging setting', {
+    logger.error('Failed to update dummy API logging setting', {
       category: 'dummy_api',
       metadata: { error: error.message },
     });

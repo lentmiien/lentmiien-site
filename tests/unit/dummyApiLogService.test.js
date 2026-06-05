@@ -1,6 +1,6 @@
 const {
   buildRequestSnapshot,
-  recordDummyApiOkRequest,
+  recordDummyApiRequest,
   updateDummyApiEndpointSettings,
 } = require('../../services/dummyApiLogService');
 
@@ -13,8 +13,8 @@ function createLeanQuery(result) {
 function createRequest(overrides = {}) {
   return {
     method: 'POST',
-    originalUrl: '/mydhlapi/test/ok?source=unit',
-    baseUrl: '/mydhlapi/test',
+    originalUrl: '/ok?source=unit',
+    baseUrl: '',
     path: '/ok',
     route: { path: '/ok' },
     protocol: 'https',
@@ -46,7 +46,7 @@ describe('dummyApiLogService', () => {
       create: jest.fn(),
     };
 
-    const result = await recordDummyApiOkRequest(createRequest(), {
+    const result = await recordDummyApiRequest(createRequest(), {
       settings: { enabled: false },
       logModel,
       now: new Date('2026-06-01T00:00:00.000Z'),
@@ -66,7 +66,7 @@ describe('dummyApiLogService', () => {
     };
     const now = new Date('2026-06-01T00:00:00.000Z');
 
-    const result = await recordDummyApiOkRequest(createRequest(), {
+    const result = await recordDummyApiRequest(createRequest(), {
       settings: { enabled: true },
       logModel,
       now,
@@ -76,12 +76,12 @@ describe('dummyApiLogService', () => {
     expect(logModel.create).toHaveBeenCalledWith(expect.objectContaining({
       receivedAt: now,
       method: 'POST',
-      requestPath: '/mydhlapi/test/ok?source=unit',
+      requestPath: '/ok?source=unit',
       raw: expect.objectContaining({
         receivedAt: '2026-06-01T00:00:00.000Z',
         method: 'POST',
-        originalUrl: '/mydhlapi/test/ok?source=unit',
-        baseUrl: '/mydhlapi/test',
+        originalUrl: '/ok?source=unit',
+        baseUrl: null,
         path: '/ok',
         query: { source: 'unit' },
         body: { ok: true, nested: { value: 42 } },

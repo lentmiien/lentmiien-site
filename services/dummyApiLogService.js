@@ -4,8 +4,10 @@ const DummyApiEndpointSetting = require('../models/dummy_api_endpoint_setting');
 const DUMMY_API_SETTINGS_KEY = 'ok';
 const DUMMY_API_LOG_LIMIT = 200;
 const DUMMY_API_ENDPOINT_PATHS = [
-  '/mydhlapi/test/ok',
-  '/webapi/servlet/ok',
+  '/ok',
+  '/fmi/data/{version}/databases/{database-name}/sessions',
+  '/fmi/data/{version}/databases/{database-name}/layouts/{layout-name}/records',
+  '/fmi/data/{version}/databases/{database-name}/layouts/{layout-name}/records/{record-id}/containers/{field-name}/{field-repetition}',
 ];
 
 function leanExec(query) {
@@ -221,7 +223,7 @@ async function updateDummyApiEndpointSettings(input = {}, options = {}) {
   return normalizeSettings(updated);
 }
 
-async function recordDummyApiOkRequest(req, options = {}) {
+async function recordDummyApiRequest(req, options = {}) {
   const settings = await getDummyApiEndpointSettings(options);
   if (!settings.enabled) {
     return {
@@ -284,6 +286,6 @@ module.exports = {
   getDummyApiEndpointSettings,
   listDummyApiRequestLogs,
   parseEnabled,
-  recordDummyApiOkRequest,
+  recordDummyApiRequest,
   updateDummyApiEndpointSettings,
 };

@@ -263,6 +263,7 @@ app.use('/mp3', express.static(path.join(__dirname, 'public', 'mp3'), {
 const indexRouter = require('./routes/index');
 const apiRouter = require('./routes/api');
 const dummyapiRouter = require('./routes/dummyapi');
+const dummyDebugApiRouter = require('./routes/dummy_debug_api');
 const blogRouter = require('./routes/blog');
 const cookingPublicRouter = require('./routes/cooking_public');
 const mypageRouter = require('./routes/mypage');
@@ -306,6 +307,7 @@ const clusterPlannerRouter = require('./routes/ai_cluster_planner');
 const publicTobuyListPath = ensurePublicTobuyListPath();
 
 app.use('/', indexRouter);
+app.use('/', dummyDebugApiRouter);
 app.use(publicTobuyListPath, publicTobuyListRouter);
 app.use('/api', isAuthenticated, apiRouter);
 app.use('/mydhlapi/test', dummyapiRouter);
