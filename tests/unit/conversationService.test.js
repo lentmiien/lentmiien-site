@@ -287,6 +287,58 @@ describe('ConversationService', () => {
     expect(conversation.save).toHaveBeenCalled();
   });
 
+  test('postToConversationNew does not add bot-authored messages to conversation members', async () => {
+    const conversation = {
+      _id: { toString: () => 'conv-1' },
+      title: 'Existing title',
+      category: 'chat',
+      tags: ['demo'],
+      members: ['Lennart'],
+      metadata: {
+        model: 'llama3.2',
+        maxMessages: 10,
+        maxAudioMessages: 3,
+        tools: [],
+        reasoning: 'medium',
+        verbosity: 'medium',
+        outputFormat: 'text',
+      },
+      messages: [],
+      save: jest.fn().mockResolvedValue(),
+    };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const botMessage = {
+      _id: { toString: () => 'bot-msg-1' },
+      contentType: 'text',
+    };
+    const messageService = {
+      createMessageNew: jest.fn().mockResolvedValue(botMessage),
+    };
+
+    const service = new ConversationService({}, messageService, {});
+    await service.postToConversationNew({
+      conversationId: 'conv-1',
+      userId: 'bot',
+      messageContent: { text: 'Imported assistant response.' },
+      messageType: 'text',
+      generateAI: false,
+      c: {
+        title: 'Existing title',
+        category: 'chat',
+        tags: ['demo'],
+        members: ['Lennart'],
+      },
+    });
+
+    expect(messageService.createMessageNew).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'bot',
+    }));
+    expect(conversation.messages).toEqual(['bot-msg-1']);
+    expect(conversation.members).toEqual(['Lennart']);
+    expect(conversation.save).toHaveBeenCalled();
+  });
+
   test('generateMessageArrayForConversation builds context with knowledge and prior messages', async () => {
     const conversationModel = createConversationModel();
     const conversationDoc = {

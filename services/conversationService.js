@@ -1137,7 +1137,8 @@ class ConversationService {
     }
     if (c) {
       const members = c.members;
-      if (members.indexOf(userId) === -1) members.push(userId);
+      const isBotMessage = typeof userId === 'string' && userId.toLowerCase() === 'bot';
+      if (!isBotMessage && members.indexOf(userId) === -1) members.push(userId);
       conversation.title = c.title;
       conversation.category = c.category;
       conversation.tags = c.tags;

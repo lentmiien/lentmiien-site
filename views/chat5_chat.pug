@@ -322,6 +322,7 @@ block content
     p#chat5CharCounter.small.text-muted.mt-1 0 chars
     .chat5-send-controls.d-flex.justify-content-evenly.flex-wrap.gap-2
       button.btn.btn-success(type="button", onclick="Append(true, false)") Append
+      button.btn.btn-outline-success(type="button", onclick="Append(true, false, 'bot')") Append as bot
       button.btn.btn-success#sendAndResponse(type="button", onclick="Append(true, true)") Send & Response
       button.btn.btn-success#respondOnly(type="button", onclick="Append(false, true)") Response
       button.btn.btn-outline-success#batchSendResponse(type="button", onclick="QueueBatch(true)", disabled) Batch Send & Response

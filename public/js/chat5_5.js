@@ -588,12 +588,16 @@ function SwitchConversation(new_id) {
   updateBatchButtons();
 }
 
-function Append(send, resp) {
+function Append(send, resp, userId) {
   showLoadingPopup();
   const conversation_id = document.getElementById("id").innerHTML;
   const prompt = editor.getMarkdown();
   const settings = collectChatSettings();
-  socket.emit('chat5-append', {conversation_id, prompt: send ? prompt : null, response: resp, settings});
+  const payload = {conversation_id, prompt: send ? prompt : null, response: resp, settings};
+  if (typeof userId === 'string' && userId.trim().length > 0) {
+    payload.user_id = userId.trim();
+  }
+  socket.emit('chat5-append', payload);
   if (send) {
     editor.reset();
     updatePromptCharCounter();

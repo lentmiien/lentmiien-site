@@ -626,6 +626,15 @@ module.exports = async function registerChat5_5Handlers({
       const generateResponse = normalizeBooleanOption(raw.response, false, 'response', adjustments);
       const { settingParams, conversationParams } = sanitizeChatSettings(raw.settings, adjustments);
       conversationParams.members = [...new Set([...conversationParams.members, userName])];
+      let messageUserId = userName;
+      if (raw.user_id !== undefined) {
+        const requestedUserId = normalizeStringOption(raw.user_id, userName, 'user_id', adjustments);
+        if (requestedUserId.toLowerCase() === 'bot') {
+          messageUserId = 'bot';
+        } else if (requestedUserId !== userName) {
+          pushAdjustment(adjustments, 'user_id', 'Only the "bot" user_id override is allowed; using requester.', 'warning');
+        }
+      }
 
       let createdNewConversation = false;
       if (conversationId === 'NEW') {
@@ -648,7 +657,7 @@ module.exports = async function registerChat5_5Handlers({
 
       const { userMessage, aiMessages = [] } = await conversationService.postToConversationNew({
         conversationId,
-        userId: userName,
+        userId: messageUserId,
         messageContent,
         messageType: hasPrompt ? "text" : null,
         generateAI: generateResponse,
