@@ -16,6 +16,7 @@ const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminControlle
 const locateAnythingAdminController = require('../controllers/locateAnythingAdminController');
 const tapoController = require('../controllers/tapoController');
 const requestCounterAdminController = require('../controllers/requestCounterAdminController');
+const minuteLoggerAdminController = require('../controllers/minuteLoggerAdminController');
 const dummyApiAdminController = require('../controllers/dummyApiAdminController');
 const lifeLogRouter = require('./lifeLog');
 
@@ -225,6 +226,7 @@ router.post('/ai-gateway/monitor', controller.ai_gateway_monitor_update);
 router.get('/performance', controller.performance_dashboard);
 router.get('/request-counter', requestCounterAdminController.dashboard);
 router.post('/request-counter/settings', requestCounterAdminController.updateSettings);
+router.get('/minute-logger', minuteLoggerAdminController.dashboard);
 router.get('/database_usage', controller.database_usage);
 router.get('/database-viewer', controller.database_viewer_page);
 router.get('/database-viewer/data', controller.database_viewer_data);

@@ -1,0 +1,279 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/minute_logger_admin.css')
+
+block content
+  -
+    const hours = Array.isArray(hourlySpread) ? hourlySpread : [];
+    const hourChartWidth = 720;
+    const hourChartHeight = 190;
+    const hourBaseY = 154;
+    const hourStep = hourChartWidth / 24;
+    const maxHourMinutes = Math.max(1, ...hours.map((hour) => Number(hour.minutes) || 0));
+    const hourPoints = hours.map((hour, index) => {
+      const minutes = Number(hour.minutes) || 0;
+      const x = Math.round((index + 0.5) * hourStep);
+      const y = Math.round(hourBaseY - ((minutes / maxHourMinutes) * 122));
+      return `${x},${y}`;
+    }).join(' ');
+    const months = Array.isArray(monthlyMinuteStats) ? monthlyMinuteStats : [];
+    const monthChartWidth = 720;
+    const monthChartHeight = 180;
+    const monthBaseY = 136;
+    const monthStep = months.length ? monthChartWidth / months.length : monthChartWidth;
+    const maxMonthMinutes = Math.max(1, ...months.map((month) => Number(month.totalMinutes) || 0));
+    const maxPackageMinutes = Math.max(1, ...(packageStats || []).map((row) => Number(row.minutes) || 0));
+    const maxDeviceMinutes = Math.max(1, ...(deviceStats || []).map((row) => Number(row.minutes) || 0));
+
+  .minute-logger-admin
+    header.minute-logger-hero
+      .minute-logger-hero__content
+        p.minute-logger-eyebrow Device Minute Logger
+        h1.minute-logger-title Minute Logger
+        p.minute-logger-subtitle Device activity, package usage, and long-horizon minute rollups.
+        dl.minute-logger-hero__meta
+          div
+            dt Endpoint
+            dd
+              code= endpointPath
+          div
+            dt Raw Collection
+            dd= rawCollectionName
+          div
+            dt Rollup Collection
+            dd= statCollectionName
+      .minute-logger-hero__visual(aria-hidden='true')
+        svg(viewBox='0 0 360 210', role='img')
+          defs
+            linearGradient#minuteLoggerHeroStroke(x1='0' y1='0' x2='1' y2='0')
+              stop(offset='0%', stop-color='#FF6A1F')
+              stop(offset='58%', stop-color='#FFC247')
+              stop(offset='100%', stop-color='#19E3E3')
+            pattern#minuteLoggerGrid(width='24' height='24' patternUnits='userSpaceOnUse')
+              path(d='M 24 0 L 0 0 0 24', fill='none', stroke='#2B313C', stroke-width='1')
+          rect(width='360' height='210' rx='18', fill='#171A20')
+          rect(width='360' height='210', rx='18', fill='url(#minuteLoggerGrid)', opacity='0.72')
+          path(d='M22 150 C58 118 76 132 104 92 C134 48 166 62 196 96 C226 132 252 120 282 76 C306 42 326 52 340 38', fill='none', stroke='url(#minuteLoggerHeroStroke)', stroke-width='8', stroke-linecap='round')
+          path(d='M22 150 C58 118 76 132 104 92 C134 48 166 62 196 96 C226 132 252 120 282 76 C306 42 326 52 340 38', fill='none', stroke='#FFC247', stroke-width='2', stroke-linecap='round', opacity='0.95')
+          each point in [[104,92],[196,96],[282,76],[340,38]]
+            circle(cx=point[0], cy=point[1], r='7', fill='#0E0F13', stroke='#FFC247', stroke-width='3')
+          text(x='24', y='188', fill='#9AA3B2', font-size='13') POST / JSON OK
+      .minute-logger-hero__actions
+        span Last updated #{generatedAtDisplay}
+        a.minute-logger-refresh(href='/admin/minute-logger') Refresh
+
+    if loadError
+      .minute-logger-alert.minute-logger-alert--error= loadError
+    else
+      section.minute-logger-cards
+        each card in overviewCards
+          article.minute-logger-card(class=card.tone ? `minute-logger-card--${card.tone}` : '')
+            p.minute-logger-card__label= card.label
+            strong.minute-logger-card__value= card.value
+            if card.helper
+              p.minute-logger-card__helper= card.helper
+
+      section.minute-logger-grid.minute-logger-grid--primary
+        article.minute-logger-panel.minute-logger-panel--wide
+          header.minute-logger-panel__header
+            div
+              h2 Activity Pulse
+              span Last #{rawRetentionDays} days by local hour
+          .minute-logger-hour-chart-wrap
+            svg.minute-logger-hour-chart(viewBox=`0 0 ${hourChartWidth} ${hourChartHeight}`, role='img', aria-label='Request minutes by hour')
+              defs
+                linearGradient#minuteLoggerHourFill(x1='0' y1='1' x2='0' y2='0')
+                  stop(offset='0%', stop-color='#FF6A1F')
+                  stop(offset='100%', stop-color='#FFC247')
+              each y in [34, 74, 114, 154]
+                line.minute-logger-hour-chart__grid(x1='0', y1=y, x2=hourChartWidth, y2=y)
+              each hour, index in hours
+                - const minutes = Number(hour.minutes) || 0;
+                - const barHeight = Math.max(minutes > 0 ? 4 : 2, Math.round((minutes / maxHourMinutes) * 122));
+                - const x = Math.round((index * hourStep) + 5);
+                - const y = hourBaseY - barHeight;
+                rect(
+                  class=minutes > 0 ? 'minute-logger-hour-chart__bar' : 'minute-logger-hour-chart__bar minute-logger-hour-chart__bar--empty'
+                  x=x
+                  y=y
+                  width='20'
+                  height=barHeight
+                  rx='5'
+                )
+              if hourPoints
+                polyline.minute-logger-hour-chart__line(points=hourPoints)
+              each hour, index in hours
+                if index % 4 === 0
+                  - const x = Math.round((index + 0.5) * hourStep);
+                  text.minute-logger-hour-chart__label(x=x, y='178', text-anchor='middle')= hour.label
+
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Time Spread
+              span Average request minutes
+          if timeBucketStats && timeBucketStats.length
+            ul.minute-logger-buckets
+              each bucket in timeBucketStats
+                li.minute-logger-bucket
+                  span.minute-logger-bucket__name= bucket.label
+                  strong= bucket.minutesDisplay
+                  span= bucket.averageDisplay
+          else
+            p.minute-logger-empty No time-spread data yet.
+
+      section.minute-logger-grid
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Monthly Rollup
+              span 10-year stats collection
+          if months.length
+            svg.minute-logger-month-chart(viewBox=`0 0 ${monthChartWidth} ${monthChartHeight}`, role='img', aria-label='Monthly request minutes')
+              defs
+                linearGradient#minuteLoggerMonthFill(x1='0' y1='1' x2='0' y2='0')
+                  stop(offset='0%', stop-color='#19E3E3')
+                  stop(offset='100%', stop-color='#FFC247')
+              line.minute-logger-month-chart__axis(x1='20', y1=monthBaseY, x2=(monthChartWidth - 20), y2=monthBaseY)
+              each month, index in months
+                - const minutes = Number(month.totalMinutes) || 0;
+                - const barHeight = Math.max(minutes > 0 ? 4 : 2, Math.round((minutes / maxMonthMinutes) * 104));
+                - const x = Math.round((index * monthStep) + 16);
+                - const y = monthBaseY - barHeight;
+                - const width = Math.max(20, Math.round(monthStep - 14));
+                rect(
+                  class=minutes > 0 ? 'minute-logger-month-chart__bar' : 'minute-logger-month-chart__bar minute-logger-month-chart__bar--empty'
+                  x=x
+                  y=y
+                  width=width
+                  height=barHeight
+                  rx='7'
+                )
+                text.minute-logger-month-chart__label(x=(x + (width / 2)), y='162', text-anchor='middle')= month.monthKey.slice(5)
+          else
+            p.minute-logger-empty No monthly rollups yet.
+
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Retention
+              span Storage windows
+          dl.minute-logger-details
+            div
+              dt Raw request data
+              dd #{rawRetentionDays} days
+            div
+              dt Calculated statistics
+              dd #{statsRetentionYears} years
+            div
+              dt Endpoint method
+              dd POST only
+            div
+              dt Response
+              dd JSON {"message":"OK"}
+
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Daily Minutes
+            span Complete days in raw retention
+        if dailyMinuteStats && dailyMinuteStats.length
+          .minute-logger-days
+            each day in dailyMinuteStats
+              .minute-logger-day
+                .minute-logger-day__top
+                  span.minute-logger-day__date= day.dateKey
+                  strong= day.totalDurationDisplay
+                .minute-logger-day__bar(style=`--total-percent: ${day.totalPercent}%;`)
+                  span.minute-logger-day__bar-total
+                    each category in day.categories
+                      span.minute-logger-day__bar-category(
+                        style=`--category-width: ${category.percent}%; --category-color: ${category.color};`
+                        title=`${category.name}: ${category.durationDisplay}`
+                      )
+                if day.categories && day.categories.length
+                  ul.minute-logger-day__categories
+                    each category in day.categories
+                      li.minute-logger-day__category(style=`--category-color: ${category.color};`)
+                        span.minute-logger-day__category-swatch
+                        span.minute-logger-day__category-name= category.name
+                        span.minute-logger-day__category-duration= category.durationDisplay
+        else
+          p.minute-logger-empty No complete days are available in raw retention.
+
+      section.minute-logger-grid
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Package Minutes
+              span Last #{rawRetentionDays} days
+          if packageStats && packageStats.length
+            .minute-logger-rank-list
+              each row in packageStats
+                .minute-logger-rank
+                  .minute-logger-rank__top
+                    strong= row.packageName
+                    span= row.minutesDisplay
+                  .minute-logger-rank__bar
+                    span(style=`--rank-width: ${(row.minutes / maxPackageMinutes) * 100}%;`)
+                  .minute-logger-rank__meta
+                    span #{row.deviceCountDisplay} devices
+                    span Last #{row.lastSeenDisplay}
+          else
+            p.minute-logger-empty No package data yet.
+
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Device Minutes
+              span Last #{rawRetentionDays} days
+          if deviceStats && deviceStats.length
+            .minute-logger-rank-list
+              each row in deviceStats
+                .minute-logger-rank
+                  .minute-logger-rank__top
+                    strong= row.deviceId
+                    span= row.minutesDisplay
+                  .minute-logger-rank__bar.minute-logger-rank__bar--device
+                    span(style=`--rank-width: ${(row.minutes / maxDeviceMinutes) * 100}%;`)
+                  .minute-logger-rank__meta
+                    span #{row.packageCountDisplay} packages
+                    span Last #{row.lastSeenDisplay}
+          else
+            p.minute-logger-empty No device data yet.
+
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Last Incoming Requests
+            span Latest #{recentLimit}
+        if recentRequests && recentRequests.length
+          .minute-logger-table-wrap
+            table.minute-logger-table
+              thead
+                tr
+                  th Time
+                  th Device
+                  th Package
+                  th IP
+                  th Path
+                  th User Agent
+                  th Body
+              tbody
+                each request in recentRequests
+                  tr
+                    td= request.receivedAtDisplay
+                    td
+                      code= request.deviceId
+                    td
+                      code= request.packageName
+                    td= request.ip
+                    td= request.requestPath
+                    td= request.userAgent
+                    td
+                      details.minute-logger-request-body
+                        summary View
+                        pre= request.bodyJson
+        else
+          p.minute-logger-empty No incoming requests have been logged.

@@ -17,6 +17,7 @@ const expressStaticGzip = require('express-static-gzip');
 const crypto = require('crypto');
 const { ensurePublicTobuyListPath } = require('./utils/publicTobuyList');
 const { ensureRequestCounterPath } = require('./utils/requestCounterPath');
+const { ensureMinuteLoggerPath } = require('./utils/minuteLoggerPath');
 
 // Database models
 const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
@@ -67,6 +68,11 @@ app.use('/apphealth', (req, res) => res.json({status: "ok"}));
 const requestCounterRouter = require('./routes/request_counter');
 const requestCounterPath = ensureRequestCounterPath();
 app.use(requestCounterPath, requestCounterRouter);
+
+// Public hidden minute logger endpoint
+const minuteLoggerRouter = require('./routes/minute_logger');
+const minuteLoggerPath = ensureMinuteLoggerPath();
+app.use(minuteLoggerPath, minuteLoggerRouter);
 
 // Passport setup
 app.use(passport.initialize());

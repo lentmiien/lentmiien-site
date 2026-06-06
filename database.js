@@ -161,6 +161,8 @@ const ClusterNodeType = require('./models/cluster_node_type');
 const ClusterHardwareCatalogItem = require('./models/cluster_hardware_catalog_item');
 const IncomingRequest = require('./models/incoming_request');
 const RequestCounterSettings = require('./models/request_counter_settings');
+const MinuteLoggerRequest = require('./models/minute_logger_request');
+const MinuteLoggerStat = require('./models/minute_logger_stat');
 const DummyApiRequestLog = require('./models/dummy_api_request_log');
 const DummyApiEndpointSetting = require('./models/dummy_api_endpoint_setting');
 
@@ -268,6 +270,8 @@ module.exports = {
   ClusterHardwareCatalogItem,
   IncomingRequest,
   RequestCounterSettings,
+  MinuteLoggerRequest,
+  MinuteLoggerStat,
   DummyApiRequestLog,
   DummyApiEndpointSetting,
 };
