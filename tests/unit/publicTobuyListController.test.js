@@ -119,9 +119,9 @@ describe('publicTobuyListController', () => {
       ],
       requestCounterStats: expect.objectContaining({
         currentMinutesCard: expect.objectContaining({
-          label: '現在の分数',
-          value: '42 / 120 分',
-          helper: '上限まで 78分',
+          key: 'currentLimitTiming',
+          value: '上限まで 78分',
+          tone: 'ok',
         }),
       }),
       todayCooking: expect.objectContaining({

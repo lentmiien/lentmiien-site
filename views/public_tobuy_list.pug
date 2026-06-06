@@ -30,12 +30,9 @@ block content
         else if requestCounterStats && requestCounterStats.currentMinutesCard
           - const card = requestCounterStats.currentMinutesCard;
           article.public-tobuy-counter-card(class=card.tone ? `public-tobuy-counter-card--${card.tone}` : '')
-            p.public-tobuy-counter-card__label= card.label
-            p.public-tobuy-counter-card__value= card.value
-            if card.helper
-              p.public-tobuy-counter-card__helper= card.helper
+            p.public-tobuy-counter-card__value.public-tobuy-counter-card__value--primary= card.value
         else
-          p.public-tobuy-empty 現在の分数はまだありません。
+          p.public-tobuy-empty 分カウンターはまだありません。
 
       section.public-tobuy-panel.public-tobuy-cooking-panel
         .public-tobuy-section-head.public-tobuy-section-head--split

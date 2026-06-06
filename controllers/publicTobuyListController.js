@@ -45,6 +45,21 @@ function getSubmitPath(req) {
   return req.baseUrl || req.path || '/';
 }
 
+function buildPublicCounterCard(dashboard) {
+  const currentMinutesCard = buildOverviewCards(dashboard, { locale: 'ja' })
+    .find((card) => card.key === 'currentMinutes');
+
+  if (!currentMinutesCard) {
+    return null;
+  }
+
+  return {
+    key: 'currentLimitTiming',
+    value: currentMinutesCard.helper || currentMinutesCard.value,
+    tone: currentMinutesCard.tone,
+  };
+}
+
 async function fetchOpenTasks() {
   const tasks = await Task.find({
     userId: PUBLIC_TOBUY_LIST_OWNER,
@@ -61,12 +76,11 @@ async function fetchOpenTasks() {
 async function fetchWifeRequestCounterStats() {
   try {
     const dashboard = await getRequestCounterDashboard();
-    const overviewCards = buildOverviewCards(dashboard, { locale: 'ja' });
 
     return {
       loadError: null,
       generatedAtDisplay: formatDateTime(dashboard.generatedAt, 'ja'),
-      currentMinutesCard: overviewCards.find((card) => card.key === 'currentMinutes') || null,
+      currentMinutesCard: buildPublicCounterCard(dashboard),
       dailyMinuteStats: mapDailyMinuteStats(dashboard.dailyMinuteStats, { locale: 'ja' }),
     };
   } catch (error) {

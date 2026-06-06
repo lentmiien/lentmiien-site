@@ -171,6 +171,11 @@
   letter-spacing: 0;
 }
 
+.public-tobuy-counter-card__value--primary {
+  margin-top: 0;
+  font-size: clamp(1.8rem, 5vw, 2.4rem);
+}
+
 .public-tobuy-counter-card__helper {
   margin-top: 6px;
   font-size: 0.9rem;
