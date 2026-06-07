@@ -211,6 +211,14 @@ const MYPAGE_ICON_DEFINITIONS = [
     adminOnly: true,
   },
   {
+    id: 'minute_logger',
+    href: '/admin/minute-logger',
+    src: '/i/minute_logger.svg',
+    alt: 'Minute logger admin dashboard',
+    label: 'Minute Logger',
+    adminOnly: true,
+  },
+  {
     id: 'tapo',
     href: '/admin/tapo',
     src: '/i/tapo.svg',
