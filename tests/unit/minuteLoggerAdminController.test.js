@@ -8,6 +8,24 @@ jest.mock('../../services/minuteLoggerService', () => ({
   getMinuteLoggerDailyAnalytics: jest.fn(),
   getMinuteLoggerDashboard: jest.fn(),
   getMinuteLoggerNamedLocationAnalytics: jest.fn(),
+  parseBatteryPercent: jest.fn((value) => {
+    const candidate = Array.isArray(value)
+      ? value.find((entry) => entry !== undefined && entry !== null && String(entry).trim() !== '')
+      : value;
+    const match = String(candidate ?? '').replace(',', '.').match(/[-+]?\d+(?:\.\d+)?/u);
+    if (!match) return null;
+    const number = Number(match[0]);
+    return Number.isFinite(number) && number >= 0 && number <= 100 ? number : null;
+  }),
+  parseBatteryTempC: jest.fn((value) => {
+    const candidate = Array.isArray(value)
+      ? value.find((entry) => entry !== undefined && entry !== null && String(entry).trim() !== '')
+      : value;
+    const match = String(candidate ?? '').replace(',', '.').match(/[-+]?\d+(?:\.\d+)?/u);
+    if (!match) return null;
+    const number = Number(match[0]);
+    return Number.isFinite(number) && number >= -50 && number <= 120 ? number : null;
+  }),
   updateMinuteLoggerLocationGroupSettings: jest.fn(),
 }));
 
@@ -73,10 +91,17 @@ function createDashboard(overrides = {}) {
           longitude: 139.54049637,
           groupKey: '35.460,139.540',
         },
+        battery: 72,
+        batteryTempC: 32.2,
         ip: '203.0.113.50',
         requestPath: '/secret-minute-logger',
         userAgent: 'minute-client/1.0',
-        body: { package: 'com.example.app', deviceId: 'tablet-01' },
+        body: {
+          package: 'com.example.app',
+          deviceId: 'tablet-01',
+          battery: '72',
+          battery_temp: '32.2',
+        },
       },
     ],
     packageStats: [
@@ -95,6 +120,27 @@ function createDashboard(overrides = {}) {
         lastSeen: new Date('2026-06-07T02:58:00.000Z'),
       },
     ],
+    batteryStats: {
+      battery: {
+        count: 42,
+        average: 68.2,
+        min: 41,
+        max: 90,
+        latest: 72,
+        latestAt: new Date('2026-06-07T02:59:00.000Z'),
+        latestDeviceId: 'tablet-01',
+      },
+      batteryTempC: {
+        count: 42,
+        average: 32.4,
+        min: 28.9,
+        max: 36.1,
+        latest: 32.2,
+        latestAt: new Date('2026-06-07T02:59:00.000Z'),
+        latestDeviceId: 'tablet-01',
+      },
+      deviceStats: [],
+    },
     locationStats: {
       groups: [
         {
@@ -192,6 +238,16 @@ describe('minuteLoggerAdminController.dashboard', () => {
             label: 'Location Groups',
             value: '1',
           }),
+          expect.objectContaining({
+            label: 'Battery Left',
+            value: '72%',
+            helper: expect.stringContaining('Avg 68%'),
+          }),
+          expect.objectContaining({
+            label: 'Battery Temp',
+            value: '32.2 C',
+            helper: expect.stringContaining('max 36.1 C'),
+          }),
         ]),
         locationStats: expect.objectContaining({
           totalLocationMinutesDisplay: '26 min',
@@ -241,6 +297,8 @@ describe('minuteLoggerAdminController.dashboard', () => {
             deviceId: 'tablet-01',
             packageName: 'com.example.app',
             locationDisplay: '35.46025, 139.54050',
+            batteryDisplay: '72%',
+            batteryTempDisplay: '32.2 C',
           }),
         ],
       })
@@ -343,6 +401,26 @@ describe('minuteLoggerAdminController.dailyAnalytics', () => {
           packages: [{ name: 'com.example.app', minutes: 2 }],
         },
       ],
+      batteryStats: {
+        battery: {
+          count: 3,
+          average: 71,
+          min: 70,
+          max: 72,
+          latest: 72,
+          latestAt: new Date('2026-06-06T09:02:00.000Z'),
+          latestDeviceId: 'tablet-01',
+        },
+        batteryTempC: {
+          count: 3,
+          average: 32.2,
+          min: 32,
+          max: 32.5,
+          latest: 32.5,
+          latestAt: new Date('2026-06-06T09:02:00.000Z'),
+          latestDeviceId: 'tablet-01',
+        },
+      },
       locationGroups: [
         {
           groupKey: '35.460,139.540',
@@ -400,6 +478,8 @@ describe('minuteLoggerAdminController.dailyAnalytics', () => {
         overviewCards: expect.arrayContaining([
           expect.objectContaining({ label: 'Total Minutes', value: '3 min' }),
           expect.objectContaining({ label: 'Named Locations', value: '2 min' }),
+          expect.objectContaining({ label: 'Battery Left', value: '72%' }),
+          expect.objectContaining({ label: 'Battery Temp', value: '32.5 C' }),
         ]),
         packageStats: [
           expect.objectContaining({

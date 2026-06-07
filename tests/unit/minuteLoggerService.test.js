@@ -9,6 +9,7 @@ const {
   getPackageName,
   parseLocationValue,
   recordMinuteLoggerRequest,
+  summarizeBatteryReadings,
   summarizeLocationGroups,
   summarizeTimeBuckets,
   updateMinuteLoggerLocationGroupSettings,
@@ -45,6 +46,8 @@ function createRequest(overrides = {}) {
       package: 'com.example.app',
       deviceId: 'tablet-01',
       location: '35.4602514,139.54049637',
+      battery: '72',
+      battery_temp: '32.2',
       extra: { value: 42 },
     },
     headers: {
@@ -65,7 +68,7 @@ function createRequest(overrides = {}) {
 }
 
 describe('minuteLoggerService', () => {
-  test('buildRequestRecord stores package, device id, query, and body data', () => {
+  test('buildRequestRecord stores package, device id, battery, query, and body data', () => {
     const now = new Date('2026-06-07T03:00:00.000Z');
     const record = buildRequestRecord(createRequest(), {
       now,
@@ -81,6 +84,8 @@ describe('minuteLoggerService', () => {
       referer: 'https://example.test/',
       deviceId: 'tablet-01',
       package: 'com.example.app',
+      battery: 72,
+      batteryTempC: 32.2,
       location: {
         raw: '35.4602514,139.54049637',
         latitude: 35.4602514,
@@ -92,6 +97,8 @@ describe('minuteLoggerService', () => {
         package: 'com.example.app',
         deviceId: 'tablet-01',
         location: '35.4602514,139.54049637',
+        battery: '72',
+        battery_temp: '32.2',
         extra: { value: 42 },
       },
       receivedAt: now,
@@ -127,6 +134,56 @@ describe('minuteLoggerService', () => {
     expect(parseLocationValue('95,139')).toBeNull();
   });
 
+  test('summarizeBatteryReadings combines normalized and body-only readings', () => {
+    const summary = summarizeBatteryReadings([
+      {
+        deviceId: 'tablet-01',
+        battery: 71,
+        batteryTempC: 31.8,
+        receivedAt: new Date('2026-06-07T02:58:00.000Z'),
+      },
+      {
+        deviceId: 'tablet-01',
+        body: {
+          battery: '72%',
+          battery_temp: '32.2 C',
+        },
+        receivedAt: new Date('2026-06-07T02:59:00.000Z'),
+      },
+      {
+        deviceId: 'phone-01',
+        body: {
+          battery: 'not-a-number',
+          battery_temp: '999',
+        },
+        receivedAt: new Date('2026-06-07T03:00:00.000Z'),
+      },
+    ]);
+
+    expect(summary.battery).toMatchObject({
+      count: 2,
+      average: 71.5,
+      min: 71,
+      max: 72,
+      latest: 72,
+      latestDeviceId: 'tablet-01',
+    });
+    expect(summary.batteryTempC).toMatchObject({
+      count: 2,
+      average: 32,
+      min: 31.8,
+      max: 32.2,
+      latest: 32.2,
+    });
+    expect(summary.deviceStats).toEqual([
+      expect.objectContaining({
+        deviceId: 'tablet-01',
+        battery: expect.objectContaining({ count: 2 }),
+        batteryTempC: expect.objectContaining({ count: 2 }),
+      }),
+    ]);
+  });
+
   test('records a raw request and increments day and month rollups', async () => {
     const requestModel = {
       create: jest.fn().mockResolvedValue({ _id: 'request-1' }),
@@ -151,6 +208,8 @@ describe('minuteLoggerService', () => {
       endpointPath: '/secret-minute-logger',
       deviceId: 'tablet-01',
       package: 'com.example.app',
+      battery: 72,
+      batteryTempC: 32.2,
       location: expect.objectContaining({
         latitude: 35.4602514,
         longitude: 139.54049637,
@@ -365,6 +424,8 @@ describe('minuteLoggerService', () => {
           longitude: 139.5404,
           groupKey: '35.460,139.540',
         },
+        battery: 80,
+        batteryTempC: 31.5,
       },
       {
         receivedAt: new Date('2026-06-06T09:01:00.000Z'),
@@ -375,12 +436,18 @@ describe('minuteLoggerService', () => {
           longitude: 139.5405,
           groupKey: '35.460,139.540',
         },
+        battery: 79,
+        batteryTempC: 31.7,
       },
       {
         receivedAt: new Date('2026-06-06T10:15:00.000Z'),
         deviceId: 'phone-01',
         package: 'com.example.app',
         location: null,
+        body: {
+          battery: '68',
+          battery_temp: '33.0',
+        },
       },
     ];
     const requestModel = {
@@ -428,6 +495,21 @@ describe('minuteLoggerService', () => {
       namedLocationMinutes: 2,
       deviceCount: 2,
       packageCount: 2,
+    });
+    expect(result.batteryStats).toMatchObject({
+      battery: {
+        count: 3,
+        min: 68,
+        max: 80,
+        latest: 68,
+        latestDeviceId: 'phone-01',
+      },
+      batteryTempC: {
+        count: 3,
+        min: 31.5,
+        max: 33,
+        latest: 33,
+      },
     });
     expect(result.packageStats).toEqual([
       expect.objectContaining({ name: 'com.example.app', minutes: 2 }),

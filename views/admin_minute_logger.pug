@@ -342,6 +342,8 @@ block content
                   th Device
                   th Package
                   th Location
+                  th Battery
+                  th Temp
                   th IP
                   th Path
                   th User Agent
@@ -359,6 +361,8 @@ block content
                         a.minute-logger-location-link(href=request.locationMapUrl, target='_blank', rel='noopener noreferrer')= request.locationDisplay
                       else
                         = request.locationDisplay
+                    td= request.batteryDisplay
+                    td= request.batteryTempDisplay
                     td= request.ip
                     td= request.requestPath
                     td= request.userAgent

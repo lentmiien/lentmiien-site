@@ -24,6 +24,8 @@ const MinuteLoggerRequestSchema = new Schema({
   deviceId: { type: String, default: 'unknown', index: true },
   package: { type: String, default: 'unknown', index: true },
   location: { type: MinuteLoggerLocationSchema, default: null },
+  battery: { type: Number, default: null, min: 0, max: 100 },
+  batteryTempC: { type: Number, default: null, min: -50, max: 120 },
   query: { type: Schema.Types.Mixed, default: () => ({}) },
   body: { type: Schema.Types.Mixed, default: () => ({}) },
   receivedAt: { type: Date, default: Date.now },

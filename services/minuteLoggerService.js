@@ -15,6 +15,10 @@ const MINUTE_LOGGER_LOCATION_GROUP_LIMIT = 20;
 const MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT = 180;
 const MINUTE_LOGGER_LOCATION_GROUP_NAME_MAX_LENGTH = 80;
 const MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT = 420;
+const MINUTE_LOGGER_BATTERY_MIN = 0;
+const MINUTE_LOGGER_BATTERY_MAX = 100;
+const MINUTE_LOGGER_BATTERY_TEMP_C_MIN = -50;
+const MINUTE_LOGGER_BATTERY_TEMP_C_MAX = 120;
 
 const TIME_BUCKETS = [
   { key: 'morning', label: 'Morning', startHour: 5, endHour: 11 },
@@ -265,6 +269,69 @@ function getDeviceId(req) {
     getInputValue(req, ['deviceId', 'device_id', 'deviceID', 'device'], ['x-device-id']),
     UNKNOWN_DIMENSION
   );
+}
+
+function parseNumericInput(value) {
+  const candidate = firstPresentValue(value);
+
+  if (candidate === undefined || candidate === null) {
+    return null;
+  }
+
+  if (typeof candidate === 'number') {
+    return Number.isFinite(candidate) ? candidate : null;
+  }
+
+  const text = String(candidate).trim();
+  if (!text) {
+    return null;
+  }
+
+  const match = text.replace(',', '.').match(/[-+]?\d+(?:\.\d+)?/u);
+  if (!match) {
+    return null;
+  }
+
+  const number = Number(match[0]);
+  return Number.isFinite(number) ? number : null;
+}
+
+function parseBoundedNumber(value, min, max, digits = null) {
+  const number = parseNumericInput(value);
+
+  if (!Number.isFinite(number) || number < min || number > max) {
+    return null;
+  }
+
+  if (Number.isInteger(digits) && digits >= 0) {
+    return Number(number.toFixed(digits));
+  }
+
+  return number;
+}
+
+function parseBatteryPercent(value) {
+  return parseBoundedNumber(value, MINUTE_LOGGER_BATTERY_MIN, MINUTE_LOGGER_BATTERY_MAX, 1);
+}
+
+function parseBatteryTempC(value) {
+  return parseBoundedNumber(value, MINUTE_LOGGER_BATTERY_TEMP_C_MIN, MINUTE_LOGGER_BATTERY_TEMP_C_MAX, 1);
+}
+
+function getBatteryPercent(req) {
+  return parseBatteryPercent(getInputValue(
+    req,
+    ['battery', 'batteryPercent', 'battery_percent', 'batteryLevel', 'battery_level'],
+    ['x-battery', 'x-battery-percent', 'x-battery-level']
+  ));
+}
+
+function getBatteryTempC(req) {
+  return parseBatteryTempC(getInputValue(
+    req,
+    ['battery_temp', 'batteryTemp', 'batteryTempC', 'battery_temperature', 'battery_temperature_c'],
+    ['x-battery-temp', 'x-battery-temp-c', 'x-battery-temperature']
+  ));
 }
 
 function parseCoordinateNumber(value) {
@@ -606,6 +673,146 @@ function getRequestLatitude(row = {}) {
 function getRequestLongitude(row = {}) {
   const longitude = Number(row?.location?.longitude);
   return isValidLongitude(longitude) ? longitude : null;
+}
+
+function getRowBatteryPercent(row = {}) {
+  const normalized = parseBatteryPercent(row.battery);
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  const body = row && typeof row.body === 'object' && !Array.isArray(row.body) ? row.body : {};
+  return parseBatteryPercent(firstPresentValue([
+    body.battery,
+    body.batteryPercent,
+    body.battery_percent,
+    body.batteryLevel,
+    body.battery_level,
+  ]));
+}
+
+function getRowBatteryTempC(row = {}) {
+  const normalized = parseBatteryTempC(row.batteryTempC);
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  const body = row && typeof row.body === 'object' && !Array.isArray(row.body) ? row.body : {};
+  return parseBatteryTempC(firstPresentValue([
+    body.battery_temp,
+    body.batteryTemp,
+    body.batteryTempC,
+    body.battery_temperature,
+    body.battery_temperature_c,
+  ]));
+}
+
+function createReadingAccumulator() {
+  return {
+    count: 0,
+    total: 0,
+    min: null,
+    max: null,
+    latest: null,
+    latestAt: null,
+    latestDeviceId: null,
+  };
+}
+
+function addReading(accumulator, value, row = {}) {
+  if (!Number.isFinite(value)) {
+    return;
+  }
+
+  const receivedAt = getSafeRequestDate(row);
+  const deviceId = normalizeDimension(row.deviceId, UNKNOWN_DIMENSION);
+
+  accumulator.count += 1;
+  accumulator.total += value;
+  accumulator.min = accumulator.min === null ? value : Math.min(accumulator.min, value);
+  accumulator.max = accumulator.max === null ? value : Math.max(accumulator.max, value);
+
+  if (
+    accumulator.latest === null
+    || (receivedAt && (!accumulator.latestAt || receivedAt >= accumulator.latestAt))
+  ) {
+    accumulator.latest = value;
+    accumulator.latestAt = receivedAt;
+    accumulator.latestDeviceId = deviceId;
+  }
+}
+
+function finalizeReadingAccumulator(accumulator) {
+  const count = Number(accumulator.count) || 0;
+
+  return {
+    count,
+    average: count > 0 ? accumulator.total / count : null,
+    min: accumulator.min,
+    max: accumulator.max,
+    latest: accumulator.latest,
+    latestAt: accumulator.latestAt,
+    latestDeviceId: accumulator.latestDeviceId,
+  };
+}
+
+function summarizeBatteryReadings(rows = []) {
+  const battery = createReadingAccumulator();
+  const batteryTempC = createReadingAccumulator();
+  const deviceMap = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const batteryValue = getRowBatteryPercent(row);
+    const tempValue = getRowBatteryTempC(row);
+
+    if (batteryValue === null && tempValue === null) {
+      return;
+    }
+
+    const deviceId = normalizeDimension(row.deviceId, UNKNOWN_DIMENSION);
+    if (!deviceMap.has(deviceId)) {
+      deviceMap.set(deviceId, {
+        deviceId,
+        battery: createReadingAccumulator(),
+        batteryTempC: createReadingAccumulator(),
+      });
+    }
+
+    const device = deviceMap.get(deviceId);
+    addReading(battery, batteryValue, row);
+    addReading(device.battery, batteryValue, row);
+    addReading(batteryTempC, tempValue, row);
+    addReading(device.batteryTempC, tempValue, row);
+  });
+
+  const deviceStats = Array.from(deviceMap.values())
+    .map((device) => ({
+      deviceId: device.deviceId,
+      battery: finalizeReadingAccumulator(device.battery),
+      batteryTempC: finalizeReadingAccumulator(device.batteryTempC),
+    }))
+    .sort((left, right) => {
+      const leftLatest = Math.max(
+        new Date(left.battery.latestAt || 0).getTime(),
+        new Date(left.batteryTempC.latestAt || 0).getTime()
+      );
+      const rightLatest = Math.max(
+        new Date(right.battery.latestAt || 0).getTime(),
+        new Date(right.batteryTempC.latestAt || 0).getTime()
+      );
+
+      if (rightLatest !== leftLatest) {
+        return rightLatest - leftLatest;
+      }
+
+      return left.deviceId.localeCompare(right.deviceId);
+    });
+
+  return {
+    battery: finalizeReadingAccumulator(battery),
+    batteryTempC: finalizeReadingAccumulator(batteryTempC),
+    deviceStats,
+  };
 }
 
 function parseLocationGroupKeyCenter(groupKey) {
@@ -954,6 +1161,8 @@ function buildRequestRecord(req, options = {}) {
   const packageName = getPackageName(req);
   const deviceId = getDeviceId(req);
   const location = getLocation(req);
+  const battery = getBatteryPercent(req);
+  const batteryTempC = getBatteryTempC(req);
 
   return {
     endpointPath,
@@ -966,6 +1175,8 @@ function buildRequestRecord(req, options = {}) {
     deviceId,
     package: packageName,
     location,
+    battery,
+    batteryTempC,
     query: serializeValue(req?.query || {}),
     body: serializeValue(req?.body === undefined ? {} : req.body),
     receivedAt: now,
@@ -1234,6 +1445,44 @@ async function fetchDeviceStats(endpointPath, options = {}) {
   ]);
 
   return Array.isArray(rows) ? rows : [];
+}
+
+async function fetchBatteryStats(endpointPath, options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const since = options.since;
+  const match = {
+    endpointPath,
+    $or: [
+      { battery: { $gte: MINUTE_LOGGER_BATTERY_MIN, $lte: MINUTE_LOGGER_BATTERY_MAX } },
+      { batteryTempC: { $gte: MINUTE_LOGGER_BATTERY_TEMP_C_MIN, $lte: MINUTE_LOGGER_BATTERY_TEMP_C_MAX } },
+      { 'body.battery': { $exists: true } },
+      { 'body.batteryPercent': { $exists: true } },
+      { 'body.battery_percent': { $exists: true } },
+      { 'body.batteryLevel': { $exists: true } },
+      { 'body.battery_level': { $exists: true } },
+      { 'body.battery_temp': { $exists: true } },
+      { 'body.batteryTemp': { $exists: true } },
+      { 'body.batteryTempC': { $exists: true } },
+      { 'body.battery_temperature': { $exists: true } },
+      { 'body.battery_temperature_c': { $exists: true } },
+    ],
+  };
+
+  if (since) {
+    match.receivedAt = { $gte: since };
+  }
+
+  const rows = await leanExec(requestModel.find(match)
+    .sort({ receivedAt: 1 })
+    .select({
+      deviceId: 1,
+      battery: 1,
+      batteryTempC: 1,
+      body: 1,
+      receivedAt: 1,
+    }));
+
+  return summarizeBatteryReadings(rows);
 }
 
 async function getMinuteLoggerLocationGroupSettings(endpointPath, groupKeys = [], options = {}) {
@@ -1676,6 +1925,8 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
       deviceId: 1,
       package: 1,
       location: 1,
+      battery: 1,
+      batteryTempC: 1,
       receivedAt: 1,
       ip: 1,
       requestPath: 1,
@@ -1726,6 +1977,7 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
     packageStats: buildRequestBreakdown(requests, (row) => row.package),
     deviceStats: buildRequestBreakdown(requests, (row) => row.deviceId),
     devicePackageMatrix: buildDevicePackageMatrix(requests),
+    batteryStats: summarizeBatteryReadings(requests),
     locationGroups: buildLocationGroupSummaries(locatedRequests, settingsByKey, {
       pointSampleLimit: options.pointSampleLimit,
     }),
@@ -2031,6 +2283,7 @@ async function getMinuteLoggerDashboard(options = {}) {
     recentRequests,
     packageStats,
     deviceStats,
+    batteryStats,
     locationStats,
     hourlySpread,
     dailyMinuteStats,
@@ -2051,6 +2304,7 @@ async function getMinuteLoggerDashboard(options = {}) {
       .limit(recentLimit)),
     fetchPackageStats(endpointPath, { requestModel, since: rawWindowStart }),
     fetchDeviceStats(endpointPath, { requestModel, since: rawWindowStart }),
+    fetchBatteryStats(endpointPath, { requestModel, since: rawWindowStart }),
     fetchLocationStats(endpointPath, {
       requestModel,
       since: rawWindowStart,
@@ -2078,6 +2332,7 @@ async function getMinuteLoggerDashboard(options = {}) {
     recentRequests: Array.isArray(recentRequests) ? recentRequests : [],
     packageStats,
     deviceStats,
+    batteryStats,
     locationStats,
     lastKnownLocation,
     hourlySpread,
@@ -2110,6 +2365,7 @@ module.exports = {
   buildMonthRanges,
   buildPeriodInfo,
   buildRequestRecord,
+  fetchBatteryStats,
   fetchDailyMinuteStats,
   fetchDeviceStats,
   fetchHourlySpread,
@@ -2125,11 +2381,16 @@ module.exports = {
   getMinuteLoggerDashboard,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
+  getBatteryPercent,
+  getBatteryTempC,
   incrementMinuteLoggerStats,
   normalizeDimension,
+  parseBatteryPercent,
+  parseBatteryTempC,
   parseLocationValue,
   recordMinuteLoggerRequest,
   serializeValue,
+  summarizeBatteryReadings,
   summarizeLocationGroups,
   summarizeTimeBuckets,
   updateMinuteLoggerLocationGroupSettings,

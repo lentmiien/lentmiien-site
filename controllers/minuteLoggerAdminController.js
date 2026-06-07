@@ -9,6 +9,8 @@ const {
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
   getMinuteLoggerNamedLocationAnalytics,
+  parseBatteryPercent,
+  parseBatteryTempC,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../services/minuteLoggerService');
 const {
@@ -40,6 +42,24 @@ function formatPercent(value, digits = 1) {
 function formatCoordinate(value, digits = 5) {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : 'N/A';
+}
+
+function formatBatteryPercent(value) {
+  if (value === null || value === undefined || value === '') {
+    return 'N/A';
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? `${formatDecimal(number, 0)}%` : 'N/A';
+}
+
+function formatBatteryTempC(value) {
+  if (value === null || value === undefined || value === '') {
+    return 'N/A';
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? `${formatDecimal(number, 1)} C` : 'N/A';
 }
 
 function formatTimeOfDay(value) {
@@ -201,6 +221,38 @@ function buildLastKnownLocationCard(location) {
   };
 }
 
+function buildBatteryCard(metric, label, formatter, helperLabel) {
+  const count = Number(metric?.count) || 0;
+
+  if (count <= 0) {
+    return null;
+  }
+
+  const helperParts = [
+    `Avg ${formatter(metric.average)}`,
+    `min ${formatter(metric.min)}`,
+    `max ${formatter(metric.max)}`,
+    `${formatNumber(count)} ${helperLabel}`,
+  ];
+  const latestDevice = String(metric.latestDeviceId || '').trim();
+  if (latestDevice) {
+    helperParts.unshift(`Device ${latestDevice}`);
+  }
+
+  return {
+    label,
+    value: formatter(metric.latest),
+    helper: helperParts.join(' - '),
+  };
+}
+
+function buildBatteryOverviewCards(batteryStats = {}) {
+  return [
+    buildBatteryCard(batteryStats.battery, 'Battery Left', formatBatteryPercent, 'readings'),
+    buildBatteryCard(batteryStats.batteryTempC, 'Battery Temp', formatBatteryTempC, 'readings'),
+  ].filter(Boolean);
+}
+
 function buildOverviewCards(dashboard) {
   const busiest = dashboard.busiestTimeBucket || {};
   const locationStats = dashboard.locationStats || {};
@@ -221,6 +273,8 @@ function buildOverviewCards(dashboard) {
   if (lastKnownLocationCard) {
     cards.push(lastKnownLocationCard);
   }
+
+  cards.push(...buildBatteryOverviewCards(dashboard.batteryStats));
 
   cards.push(
     {
@@ -475,10 +529,44 @@ function mapDailyMinuteStatsLatestFirst(rows = []) {
     }));
 }
 
+function getRecentRequestBattery(row) {
+  const normalized = parseBatteryPercent(row?.battery);
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  const body = row && typeof row.body === 'object' && !Array.isArray(row.body) ? row.body : {};
+  return parseBatteryPercent([
+    body.battery,
+    body.batteryPercent,
+    body.battery_percent,
+    body.batteryLevel,
+    body.battery_level,
+  ]);
+}
+
+function getRecentRequestBatteryTempC(row) {
+  const normalized = parseBatteryTempC(row?.batteryTempC);
+  if (normalized !== null) {
+    return normalized;
+  }
+
+  const body = row && typeof row.body === 'object' && !Array.isArray(row.body) ? row.body : {};
+  return parseBatteryTempC([
+    body.battery_temp,
+    body.batteryTemp,
+    body.batteryTempC,
+    body.battery_temperature,
+    body.battery_temperature_c,
+  ]);
+}
+
 function mapRecentRequest(row) {
   const latitude = Number(row?.location?.latitude);
   const longitude = Number(row?.location?.longitude);
   const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
+  const battery = getRecentRequestBattery(row);
+  const batteryTempC = getRecentRequestBatteryTempC(row);
 
   return {
     id: row._id ? String(row._id) : '',
@@ -491,6 +579,8 @@ function mapRecentRequest(row) {
     userAgent: row.userAgent || 'N/A',
     locationDisplay: hasLocation ? `${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}` : 'N/A',
     locationMapUrl: hasLocation ? buildMapUrl(latitude, longitude) : null,
+    batteryDisplay: formatBatteryPercent(battery),
+    batteryTempDisplay: formatBatteryTempC(batteryTempC),
     bodyJson: formatPayload(row.body || {}),
   };
 }
@@ -593,6 +683,7 @@ function buildDailyOverviewCards(analytics = {}) {
         ? formatTimeRange(analytics.quietGap.longestGapStart, analytics.quietGap.longestGapEnd)
         : 'No gap between logged minutes',
     },
+    ...buildBatteryOverviewCards(analytics.batteryStats),
   ];
 }
 
