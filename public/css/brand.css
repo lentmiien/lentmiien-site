@@ -347,6 +347,13 @@ a.mypage-tile:focus-visible {
   }
 }
 
+.mypage-task-link {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-decoration: none;
+}
+
 .schedule-task-pill {
   display: inline-block;
   margin: 2px 4px 4px 0;
@@ -356,6 +363,39 @@ a.mypage-tile:focus-visible {
   border: 1px solid var(--border);
   background: var(--surface-2);
   color: var(--text-secondary);
+}
+
+.mypage-task-link .schedule-task-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: calc(100% - 4px);
+  min-width: 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.mypage-task-link .schedule-task-pill__title {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1px;
+  text-align: left;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.mypage-task-link .schedule-task-pill__separator,
+.mypage-task-link .schedule-task-pill__timing {
+  flex: 0 0 auto;
+}
+
+.mypage-task-link .schedule-task-pill__separator {
+  opacity: 0.75;
 }
 
 .schedule-task-pill--todo {

@@ -16,6 +16,13 @@ mixin tile(tile)
       button.mypage-tile-control.mypage-tile-down(type="button", title="Move down", aria-label=`Move ${tile.label} down`) Down
       button.mypage-tile-control.mypage-tile-hide(type="button", aria-pressed=tile.hidden ? 'true' : 'false', aria-label=`Toggle ${tile.label}`)= tile.hidden ? 'Show' : 'Hide'
 
+mixin taskPill(task, pillClass, timingLabel)
+  span.badge.schedule-task-pill(class=pillClass, title=timingLabel ? `${task.title} · ${timingLabel}` : task.title)
+    span.schedule-task-pill__title= task.title
+    if timingLabel
+      span.schedule-task-pill__separator(aria-hidden="true") ·
+      span.schedule-task-pill__timing= timingLabel
+
 block styles
   link(rel="stylesheet", href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap")
   style.
@@ -552,19 +559,19 @@ block content
       if (deadlineMs) return `deadline in ${formatTaskTime(deadlineMs)}`;
       return '';
     }
-  .row 
-    a(href='/scheduleTask/upcoming')
-      .col 
+  .row.mypage-task-row
+    .col
+      a.mypage-task-link(href='/scheduleTask/upcoming')
         - let noTasks = true
         each t in tasks 
           if !t.done && t.type === "todo"
             - noTasks = false
             - const timingLabel = getTaskTimingLabel(t);
-            span.badge.schedule-task-pill.schedule-task-pill--todo= timingLabel ? `${t.title} · ${timingLabel}` : t.title
+            +taskPill(t, 'schedule-task-pill--todo', timingLabel)
         each t in tasks 
           if !t.done && t.type === "tobuy"
             - noTasks = false
-            span.badge.schedule-task-pill.schedule-task-pill--tobuy= t.title
+            +taskPill(t, 'schedule-task-pill--tobuy', '')
         if noTasks
           span.badge.schedule-task-pill.schedule-task-pill--empty Show all tasks
   .row.mb-4
