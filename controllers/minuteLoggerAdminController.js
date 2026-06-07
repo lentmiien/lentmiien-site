@@ -14,6 +14,8 @@ const {
   mapDailyMinuteStats,
 } = require('../utils/requestCounterDashboardView');
 
+const METERS_PER_LATITUDE_DEGREE = 111320;
+
 function formatDecimal(value, digits = 1) {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : '0.0';
@@ -33,6 +35,53 @@ function buildMapUrl(latitude, longitude) {
   }
 
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
+}
+
+function roundToNearest(value, nearest = 1) {
+  const number = Number(value);
+  const increment = Number(nearest) || 1;
+
+  if (!Number.isFinite(number)) {
+    return 0;
+  }
+
+  return Math.round(number / increment) * increment;
+}
+
+function formatMeters(value, nearest = 1) {
+  return `${formatNumber(roundToNearest(value, nearest))} m`;
+}
+
+function getRepresentativeLatitude(stats = {}, groups = []) {
+  const explicitLatitude = Number(stats.representativeLatitude);
+  if (Number.isFinite(explicitLatitude)) {
+    return explicitLatitude;
+  }
+
+  const firstGroupLatitude = Number(groups[0]?.latitude);
+  return Number.isFinite(firstGroupLatitude) ? firstGroupLatitude : null;
+}
+
+function buildLocationPrecisionDetails(precisionDecimals, representativeLatitude) {
+  const precision = Number(precisionDecimals);
+  const latitude = Number(representativeLatitude);
+
+  if (!Number.isInteger(precision) || precision < 0 || !Number.isFinite(latitude)) {
+    return null;
+  }
+
+  const degreeStep = 10 ** -precision;
+  const latitudeMeters = METERS_PER_LATITUDE_DEGREE * degreeStep;
+  const longitudeMeters = latitudeMeters * Math.cos(Math.abs(latitude) * Math.PI / 180);
+  const diagonalMeters = Math.sqrt((latitudeMeters ** 2) + (longitudeMeters ** 2));
+  const halfLatitudeMeters = latitudeMeters / 2;
+  const halfLongitudeMeters = longitudeMeters / 2;
+  const latitudeText = formatCoordinate(latitude, 2);
+
+  return {
+    summary: `${precision} decimals = ${degreeStep.toFixed(precision)} degrees. Near latitude ${latitudeText}, one group cell is about ${formatMeters(latitudeMeters)} x ${formatMeters(longitudeMeters)}.`,
+    coverage: `Rounded groups cover about +/-${formatMeters(halfLatitudeMeters)} north/south and +/-${formatMeters(halfLongitudeMeters)} east/west from center; corner-to-corner is about ${formatMeters(diagonalMeters, 10)}.`,
+  };
 }
 
 function formatPayload(payload) {
@@ -119,6 +168,7 @@ function mapLocationStats(stats = {}) {
   const groupedLocationMinutes = Number(stats.groupedLocationMinutes) || 0;
   const noiseLocationMinutes = Number(stats.noiseLocationMinutes) || 0;
   const noiseThresholdMinutes = Number(stats.noiseThresholdMinutes) || 0;
+  const representativeLatitude = getRepresentativeLatitude(stats, groups);
 
   return {
     totalLocationMinutes,
@@ -132,6 +182,7 @@ function mapLocationStats(stats = {}) {
     noiseThresholdDisplay: `${formatNumber(noiseThresholdMinutes)} min`,
     totalGroupCountDisplay: formatNumber(stats.totalGroupCount),
     precisionDisplay: `${formatNumber(stats.precisionDecimals)} decimals`,
+    precisionDetails: buildLocationPrecisionDetails(stats.precisionDecimals, representativeLatitude),
     groups: groups.map((row) => {
       const latitude = Number(row.latitude);
       const longitude = Number(row.longitude);

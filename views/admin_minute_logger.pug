@@ -223,6 +223,11 @@ block content
             div
               dt Group precision
               dd= locationStats.precisionDisplay
+          if locationStats.precisionDetails
+            .minute-logger-location-precision
+              strong Precision scale
+              span= locationStats.precisionDetails.summary
+              span= locationStats.precisionDetails.coverage
         if locationGroups.length
           .minute-logger-location-list
             each group in locationGroups

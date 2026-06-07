@@ -166,6 +166,10 @@ describe('minuteLoggerAdminController.dashboard', () => {
         locationStats: expect.objectContaining({
           totalLocationMinutesDisplay: '26 min',
           noiseLocationMinutesDisplay: '2 min',
+          precisionDetails: {
+            summary: '3 decimals = 0.001 degrees. Near latitude 35.46, one group cell is about 111 m x 91 m.',
+            coverage: 'Rounded groups cover about +/-56 m north/south and +/-45 m east/west from center; corner-to-corner is about 140 m.',
+          },
           groups: [
             expect.objectContaining({
               groupKey: '35.460,139.540',
