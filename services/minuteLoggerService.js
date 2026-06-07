@@ -823,6 +823,54 @@ async function getMinuteLoggerLocationGroupSettings(endpointPath, groupKeys = []
   return settingsByKey;
 }
 
+function getRequestLocationGroupKey(request = {}) {
+  const explicitGroupKey = String(request?.location?.groupKey || '').trim();
+  if (explicitGroupKey) {
+    return explicitGroupKey;
+  }
+
+  const latitude = Number(request?.location?.latitude);
+  const longitude = Number(request?.location?.longitude);
+  if (isValidLatitude(latitude) && isValidLongitude(longitude)) {
+    return buildLocationGroupKey(latitude, longitude);
+  }
+
+  return '';
+}
+
+async function fetchLastKnownNamedLocation(endpointPath, recentRequests = [], options = {}) {
+  const latestRequest = Array.isArray(recentRequests) ? recentRequests[0] : null;
+  const groupKey = getRequestLocationGroupKey(latestRequest);
+
+  if (!endpointPath || !latestRequest || !groupKey) {
+    return null;
+  }
+
+  const settingsByKey = await getMinuteLoggerLocationGroupSettings(endpointPath, [groupKey], {
+    settingsModel: options.settingsModel,
+  });
+  const setting = settingsByKey.get(groupKey);
+  const name = normalizeLocationGroupName(setting?.name);
+
+  if (!name) {
+    return null;
+  }
+
+  const latitude = Number(latestRequest?.location?.latitude);
+  const longitude = Number(latestRequest?.location?.longitude);
+
+  return {
+    name,
+    groupKey,
+    hideCoordinates: Boolean(setting.hideCoordinates),
+    deviceId: normalizeDimension(latestRequest.deviceId, UNKNOWN_DIMENSION),
+    package: normalizeDimension(latestRequest.package, UNKNOWN_DIMENSION),
+    receivedAt: latestRequest.receivedAt || null,
+    latitude: isValidLatitude(latitude) ? latitude : null,
+    longitude: isValidLongitude(longitude) ? longitude : null,
+  };
+}
+
 async function updateMinuteLoggerLocationGroupSettings(input = {}, options = {}) {
   const settingsModel = options.settingsModel || MinuteLoggerLocationGroup;
   const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
@@ -1182,12 +1230,19 @@ async function getMinuteLoggerDashboard(options = {}) {
       .limit(recentLimit)),
     fetchPackageStats(endpointPath, { requestModel, since: rawWindowStart }),
     fetchDeviceStats(endpointPath, { requestModel, since: rawWindowStart }),
-    fetchLocationStats(endpointPath, { requestModel, since: rawWindowStart }),
+    fetchLocationStats(endpointPath, {
+      requestModel,
+      since: rawWindowStart,
+      locationGroupSettingsModel: options.locationGroupSettingsModel,
+    }),
     fetchHourlySpread(endpointPath, { requestModel, since: rawWindowStart }),
     fetchDailyMinuteStats(endpointPath, { statModel, now }),
     fetchMonthlyMinuteStats(endpointPath, { statModel, now }),
   ]);
   const timeBucketSummary = summarizeTimeBuckets(hourlySpread, MINUTE_LOGGER_RAW_RETENTION_DAYS);
+  const lastKnownLocation = await fetchLastKnownNamedLocation(endpointPath, recentRequests, {
+    settingsModel: options.locationGroupSettingsModel,
+  });
 
   return {
     endpointPath,
@@ -1203,6 +1258,7 @@ async function getMinuteLoggerDashboard(options = {}) {
     packageStats,
     deviceStats,
     locationStats,
+    lastKnownLocation,
     hourlySpread,
     timeBucketStats: timeBucketSummary.buckets,
     busiestTimeBucket: timeBucketSummary.busiest,
@@ -1234,6 +1290,7 @@ module.exports = {
   fetchDailyMinuteStats,
   fetchDeviceStats,
   fetchHourlySpread,
+  fetchLastKnownNamedLocation,
   fetchLocationStats,
   fetchMonthlyMinuteStats,
   fetchPackageStats,

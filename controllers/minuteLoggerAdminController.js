@@ -132,20 +132,48 @@ function formatPayload(payload) {
   }
 }
 
+function buildLastKnownLocationCard(location) {
+  const name = String(location?.name || '').trim();
+  if (!name) {
+    return null;
+  }
+
+  const deviceId = String(location.deviceId || '').trim();
+  const receivedAtDisplay = formatDateTime(location.receivedAt);
+  const helperParts = [
+    deviceId ? `Device ${deviceId}` : '',
+    receivedAtDisplay && receivedAtDisplay !== 'N/A' ? receivedAtDisplay : '',
+  ].filter(Boolean);
+
+  return {
+    label: 'Last Known Location',
+    value: name,
+    helper: helperParts.length ? helperParts.join(' - ') : 'Latest incoming request',
+  };
+}
+
 function buildOverviewCards(dashboard) {
   const busiest = dashboard.busiestTimeBucket || {};
   const locationStats = dashboard.locationStats || {};
   const locationGroupCount = Number(locationStats.totalGroupCount)
     || (Array.isArray(locationStats.groups) ? locationStats.groups.length : 0);
   const locatedMinutes = Number(locationStats.totalLocationMinutes) || 0;
+  const lastKnownLocationCard = buildLastKnownLocationCard(dashboard.lastKnownLocation);
 
-  return [
+  const cards = [
     {
       label: 'Last 24 Hours',
       value: `${formatNumber(dashboard.requestsLast24h)} min`,
       helper: `${formatNumber(dashboard.activeDevicesLast24h)} active devices`,
       tone: dashboard.requestsLast24h > 0 ? 'ok' : '',
     },
+  ];
+
+  if (lastKnownLocationCard) {
+    cards.push(lastKnownLocationCard);
+  }
+
+  cards.push(
     {
       label: 'Raw Retained Minutes',
       value: formatNumber(dashboard.totalRawRequests),
@@ -173,7 +201,9 @@ function buildOverviewCards(dashboard) {
       value: `${dashboard.statsRetentionYears} years`,
       helper: 'Daily and monthly usage stats',
     },
-  ];
+  );
+
+  return cards;
 }
 
 function mapPackageStat(row) {

@@ -47,6 +47,16 @@ function createDashboard(overrides = {}) {
     activeDevicesLast24h: 3,
     packageCountLast60d: 5,
     recentLimit: 50,
+    lastKnownLocation: {
+      name: 'Home',
+      groupKey: '35.460,139.540',
+      hideCoordinates: false,
+      deviceId: 'tablet-01',
+      package: 'com.example.app',
+      receivedAt: new Date('2026-06-07T02:59:00.000Z'),
+      latitude: 35.4602514,
+      longitude: 139.54049637,
+    },
     recentRequests: [
       {
         _id: 'request-1',
@@ -168,6 +178,11 @@ describe('minuteLoggerAdminController.dashboard', () => {
           expect.objectContaining({
             label: 'Busiest Time',
             value: 'Evening',
+          }),
+          expect.objectContaining({
+            label: 'Last Known Location',
+            value: 'Home',
+            helper: expect.stringContaining('Device tablet-01'),
           }),
           expect.objectContaining({
             label: 'Location Groups',

@@ -3,6 +3,7 @@ const {
   MINUTE_LOGGER_RESPONSE_BODY,
   buildRequestRecord,
   fetchDailyMinuteStats,
+  fetchLastKnownNamedLocation,
   getPackageName,
   parseLocationValue,
   recordMinuteLoggerRequest,
@@ -252,6 +253,90 @@ describe('minuteLoggerService', () => {
         minutes: 8,
       }),
     ]);
+  });
+
+  test('fetchLastKnownNamedLocation returns the named group for the newest request', async () => {
+    const receivedAt = new Date('2026-06-07T02:59:00.000Z');
+    const settingsModel = {
+      find: jest.fn().mockReturnValue(createLeanQuery([
+        {
+          endpointPath: '/secret-minute-logger',
+          groupKey: '35.460,139.540',
+          name: 'Home',
+          hideCoordinates: true,
+        },
+      ])),
+    };
+
+    const result = await fetchLastKnownNamedLocation('/secret-minute-logger', [
+      {
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        receivedAt,
+        location: {
+          latitude: 35.4602514,
+          longitude: 139.54049637,
+          groupKey: '35.460,139.540',
+        },
+      },
+      {
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        receivedAt: new Date('2026-06-07T02:58:00.000Z'),
+        location: {
+          latitude: 35.461,
+          longitude: 139.541,
+          groupKey: '35.461,139.541',
+        },
+      },
+    ], {
+      settingsModel,
+    });
+
+    expect(settingsModel.find).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      groupKey: { $in: ['35.460,139.540'] },
+    });
+    expect(result).toEqual({
+      name: 'Home',
+      groupKey: '35.460,139.540',
+      hideCoordinates: true,
+      deviceId: 'tablet-01',
+      package: 'com.example.app',
+      receivedAt,
+      latitude: 35.4602514,
+      longitude: 139.54049637,
+    });
+  });
+
+  test('fetchLastKnownNamedLocation ignores older located requests when the newest request is unlocated', async () => {
+    const settingsModel = {
+      find: jest.fn(),
+    };
+
+    const result = await fetchLastKnownNamedLocation('/secret-minute-logger', [
+      {
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        receivedAt: new Date('2026-06-07T02:59:00.000Z'),
+        location: null,
+      },
+      {
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        receivedAt: new Date('2026-06-07T02:58:00.000Z'),
+        location: {
+          latitude: 35.4602514,
+          longitude: 139.54049637,
+          groupKey: '35.460,139.540',
+        },
+      },
+    ], {
+      settingsModel,
+    });
+
+    expect(result).toBeNull();
+    expect(settingsModel.find).not.toHaveBeenCalled();
   });
 
   test('updateMinuteLoggerLocationGroupSettings validates and persists display names', async () => {
