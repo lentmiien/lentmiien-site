@@ -1,0 +1,182 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/minute_logger_admin.css')
+
+block content
+  .minute-logger-admin
+    header.minute-logger-hero.minute-logger-hero--compact
+      .minute-logger-hero__content
+        p.minute-logger-eyebrow Named Location Analytics
+        h1.minute-logger-title Locations
+        p.minute-logger-subtitle Named coordinate groups, point clouds, activity shape, and package/device mix across raw retention.
+        dl.minute-logger-hero__meta
+          div
+            dt Endpoint
+            dd
+              code= endpointPath
+          div
+            dt Retention
+            dd Last #{rawRetentionDays} days
+          div
+            dt Since
+            dd= sinceDisplay
+      .minute-logger-hero__actions
+        span Last updated #{generatedAtDisplay}
+        .minute-logger-action-stack
+          a.minute-logger-refresh(href='/admin/minute-logger') Dashboard
+          a.minute-logger-refresh(href='/admin/minute-logger/locations') Refresh
+
+    if loadError
+      .minute-logger-alert.minute-logger-alert--error= loadError
+    else
+      section.minute-logger-cards
+        each card in overviewCards
+          article.minute-logger-card(class=card.tone ? `minute-logger-card--${card.tone}` : '')
+            p.minute-logger-card__label= card.label
+            strong.minute-logger-card__value= card.value
+            if card.helper
+              p.minute-logger-card__helper= card.helper
+
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Grouped Location Groups
+            span #{totalNamedMinutesDisplay} across saved names
+        if groups && groups.length
+          .minute-logger-named-locations
+            each group in groups
+              article.minute-logger-named-location
+                header.minute-logger-named-location__header
+                  div
+                    h3= group.name
+                    span #{group.groupCountDisplay} groups, #{group.shareDisplay} of named minutes
+                  strong= group.totalMinutesDisplay
+                .minute-logger-named-location__body
+                  .minute-logger-named-location__cloud
+                    if group.pointCloud
+                      svg.minute-logger-location-cloud(viewBox=`0 0 ${group.pointCloud.width} ${group.pointCloud.height}`, role='img', aria-label=`Point cloud for ${group.name}`)
+                        rect.minute-logger-location-cloud__frame(x='1', y='1', width=(group.pointCloud.width - 2), height=(group.pointCloud.height - 2), rx='8')
+                        rect.minute-logger-location-cloud__plot(x=group.pointCloud.rect.x, y=group.pointCloud.rect.y, width=group.pointCloud.rect.width, height=group.pointCloud.rect.height, rx='6')
+                        each point in group.pointCloud.points
+                          circle.minute-logger-location-cloud__point(cx=point.x, cy=point.y, r='2')
+                            title= point.title
+                        each label in group.pointCloud.labels
+                          g.minute-logger-location-cloud__label
+                            circle(cx=label.x, cy=label.y, r='3')
+                            text(x=(label.x + 6), y=(label.y - 6))= label.name
+                      p.minute-logger-location-cloud__bounds= group.pointCloud.boundsDisplay
+                    else
+                      p.minute-logger-empty No retained point cloud for this named location.
+                  .minute-logger-named-location__metrics
+                    dl.minute-logger-location-summary.minute-logger-location-summary--compact
+                      div
+                        dt Minutes
+                        dd= group.totalMinutesDisplay
+                      div
+                        dt Located
+                        dd= group.locatedMinutesDisplay
+                      div
+                        dt Devices
+                        dd= group.deviceCountDisplay
+                      div
+                        dt Packages
+                        dd= group.packageCountDisplay
+                      div
+                        dt Busiest Time
+                        dd= group.busiestTimeDisplay
+                      div
+                        dt Last Seen
+                        dd= group.lastSeenDisplay
+                    if group.dailyTrend && group.dailyTrend.length
+                      .minute-logger-daily-spark
+                        each day in group.dailyTrend
+                          a.minute-logger-daily-spark__bar(
+                            href=`/admin/minute-logger/daily/${encodeURIComponent(day.dateKey)}`
+                            style=`--spark-height: ${Math.max(4, day.percent)}%;`
+                            title=`${day.dateKey}: ${day.minutesDisplay}`
+                          )
+                            span= day.label
+                    if group.hourlySpread && group.hourlySpread.length
+                      .minute-logger-hour-strip
+                        each hour in group.hourlySpread
+                          span.minute-logger-hour-strip__bar(
+                            style=`--hour-height: ${Math.max(4, hour.percent)}%;`
+                            title=`${hour.label}: ${hour.minutesDisplay}`
+                          )
+
+                .minute-logger-grid.minute-logger-grid--nested
+                  section.minute-logger-inline-panel
+                    header.minute-logger-inline-panel__header
+                      div
+                        h2 Package Mix
+                        span Top packages
+                    if group.packageStats && group.packageStats.length
+                      .minute-logger-rank-list
+                        each row in group.packageStats
+                          .minute-logger-rank
+                            .minute-logger-rank__top
+                              strong= row.name
+                              span= row.minutesDisplay
+                            .minute-logger-rank__bar
+                              span(style=`--rank-width: ${(row.minutes / group.maxPackageMinutes) * 100}%;`)
+                            .minute-logger-rank__meta
+                              span= row.shareDisplay
+                              span #{row.deviceCountDisplay} devices
+                    else
+                      p.minute-logger-empty No package activity in raw retention.
+
+                  section.minute-logger-inline-panel
+                    header.minute-logger-inline-panel__header
+                      div
+                        h2 Device Mix
+                        span Top devices
+                    if group.deviceStats && group.deviceStats.length
+                      .minute-logger-rank-list
+                        each row in group.deviceStats
+                          .minute-logger-rank
+                            .minute-logger-rank__top
+                              strong= row.name
+                              span= row.minutesDisplay
+                            .minute-logger-rank__bar.minute-logger-rank__bar--device
+                              span(style=`--rank-width: ${(row.minutes / group.maxDeviceMinutes) * 100}%;`)
+                            .minute-logger-rank__meta
+                              span= row.shareDisplay
+                              span #{row.packageCountDisplay} packages
+                    else
+                      p.minute-logger-empty No device activity in raw retention.
+
+                if group.locationStats && group.locationStats.groups && group.locationStats.groups.length
+                  .minute-logger-location-list.minute-logger-location-list--compact
+                    each locationGroup in group.locationStats.groups
+                      .minute-logger-rank.minute-logger-location
+                        if locationGroup.preview
+                          .minute-logger-location__preview
+                            svg.minute-logger-location-map(viewBox=`0 0 ${locationGroup.preview.width} ${locationGroup.preview.height}`, role='img', aria-label=`Location point cloud for ${locationGroup.titleDisplay}`)
+                              rect.minute-logger-location-map__frame(x='1', y='1', width=(locationGroup.preview.width - 2), height=(locationGroup.preview.height - 2), rx='7')
+                              rect.minute-logger-location-map__cell(x=locationGroup.preview.rect.x, y=locationGroup.preview.rect.y, width=locationGroup.preview.rect.width, height=locationGroup.preview.rect.height, rx='5')
+                              line.minute-logger-location-map__axis(x1=(locationGroup.preview.rect.x + (locationGroup.preview.rect.width / 2)), y1=locationGroup.preview.rect.y, x2=(locationGroup.preview.rect.x + (locationGroup.preview.rect.width / 2)), y2=(locationGroup.preview.rect.y + locationGroup.preview.rect.height))
+                              line.minute-logger-location-map__axis(x1=locationGroup.preview.rect.x, y1=(locationGroup.preview.rect.y + (locationGroup.preview.rect.height / 2)), x2=(locationGroup.preview.rect.x + locationGroup.preview.rect.width), y2=(locationGroup.preview.rect.y + locationGroup.preview.rect.height / 2))
+                              each point in locationGroup.preview.points
+                                circle.minute-logger-location-map__point(cx=point.x, cy=point.y, r='1.8')
+                              if locationGroup.preview.centerPoint
+                                circle.minute-logger-location-map__center(cx=locationGroup.preview.centerPoint.x, cy=locationGroup.preview.centerPoint.y, r='3.2')
+                        .minute-logger-location__content
+                          .minute-logger-rank__top
+                            strong= locationGroup.coordinateLabel
+                            span= locationGroup.minutesDisplay
+                          .minute-logger-rank__bar.minute-logger-rank__bar--location
+                            span(style=`--rank-width: ${(locationGroup.minutes / group.maxLocationMinutes) * 100}%;`)
+                          .minute-logger-rank__meta
+                            span #{locationGroup.deviceCountDisplay} devices
+                            span #{locationGroup.packageCountDisplay} packages
+                            span Last #{locationGroup.lastSeenDisplay}
+                          .minute-logger-location__detail
+                            if !locationGroup.hideCoordinates
+                              span Center #{locationGroup.coordinateDisplay}
+                            if locationGroup.mapUrl
+                              a.minute-logger-location-link(href=locationGroup.mapUrl, target='_blank', rel='noopener noreferrer') Map
+                else
+                  p.minute-logger-empty This saved name has no retained raw location points.
+        else
+          p.minute-logger-empty No named location groups have been saved yet.

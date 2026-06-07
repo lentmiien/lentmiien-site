@@ -56,6 +56,10 @@ body,
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
 }
 
+.minute-logger-hero--compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .minute-logger-hero__content,
 .minute-logger-hero__actions {
   min-width: 0;
@@ -145,6 +149,13 @@ body,
   gap: 1rem;
   color: var(--ml-text-muted);
   white-space: nowrap;
+}
+
+.minute-logger-action-stack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
 }
 
 .minute-logger-refresh {
@@ -262,6 +273,11 @@ body,
   grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.55fr);
 }
 
+.minute-logger-grid--nested {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
 .minute-logger-panel {
   min-width: 0;
   margin-top: 1rem;
@@ -298,6 +314,20 @@ body,
 .minute-logger-panel__header span {
   color: var(--ml-text-muted);
   font-size: 0.88rem;
+}
+
+.minute-logger-panel-link {
+  color: var(--ml-accent);
+  font-size: 0.88rem;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.minute-logger-panel-link:hover,
+.minute-logger-panel-link:focus {
+  color: var(--ml-accent-hover);
+  text-decoration: underline;
 }
 
 .minute-logger-hour-chart-wrap {
@@ -474,6 +504,13 @@ body,
 .minute-logger-day__date {
   color: var(--ml-text-secondary);
   font-weight: 800;
+  text-decoration: none;
+}
+
+.minute-logger-day__date:hover,
+.minute-logger-day__date:focus {
+  color: var(--ml-accent-hover);
+  text-decoration: underline;
 }
 
 .minute-logger-day__top strong {
@@ -802,6 +839,348 @@ body,
   font-size: 0.78rem;
 }
 
+.minute-logger-timeline {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.minute-logger-timeline__stage {
+  overflow: hidden;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(25, 227, 227, 0.07), transparent),
+    var(--ml-bg);
+}
+
+.minute-logger-timeline__map {
+  display: block;
+  width: 100%;
+  min-height: 22rem;
+}
+
+.minute-logger-timeline__frame {
+  fill: rgba(25, 227, 227, 0.035);
+  stroke: var(--ml-divider);
+  stroke-width: 1;
+}
+
+.minute-logger-timeline__trail {
+  fill: none;
+  stroke: var(--ml-info);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+  opacity: 0.74;
+}
+
+.minute-logger-timeline__point {
+  fill: var(--ml-accent);
+  stroke: rgba(14, 15, 19, 0.65);
+  stroke-width: 1;
+}
+
+.minute-logger-timeline__current {
+  fill: var(--ml-bg);
+  stroke: var(--ml-coral);
+  stroke-width: 3;
+}
+
+.minute-logger-timeline__label circle {
+  fill: var(--ml-info);
+  stroke: var(--ml-bg);
+  stroke-width: 2;
+}
+
+.minute-logger-timeline__label text {
+  fill: var(--ml-text);
+  font-size: 13px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(14, 15, 19, 0.85);
+  stroke-linejoin: round;
+  stroke-width: 4px;
+}
+
+.minute-logger-timeline__controls {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.minute-logger-timeline__time {
+  min-width: 4.25rem;
+  color: var(--ml-accent);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.minute-logger-timeline__slider {
+  width: 100%;
+  accent-color: var(--ml-accent);
+}
+
+.minute-logger-timeline__summary {
+  color: var(--ml-text-muted);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.minute-logger-transition-list,
+.minute-logger-matrix,
+.minute-logger-named-locations {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.minute-logger-transition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  padding: 0.7rem;
+  background: rgba(14, 15, 19, 0.32);
+}
+
+.minute-logger-transition code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ml-text-secondary);
+  text-overflow: ellipsis;
+}
+
+.minute-logger-transition span {
+  color: var(--ml-text-muted);
+}
+
+.minute-logger-transition strong {
+  color: var(--ml-accent);
+}
+
+.minute-logger-matrix__row {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.28fr) minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  padding: 0.8rem;
+  background: rgba(14, 15, 19, 0.32);
+}
+
+.minute-logger-matrix__device,
+.minute-logger-matrix__package {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.minute-logger-matrix__device strong {
+  color: var(--ml-text);
+  overflow-wrap: anywhere;
+}
+
+.minute-logger-matrix__device span,
+.minute-logger-matrix__package span {
+  color: var(--ml-text-muted);
+  font-size: 0.84rem;
+}
+
+.minute-logger-matrix__packages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.55rem;
+}
+
+.minute-logger-matrix__package {
+  border: 1px solid var(--ml-divider);
+  border-radius: 6px;
+  padding: 0.55rem;
+  background: rgba(27, 32, 38, 0.78);
+}
+
+.minute-logger-matrix__package code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ml-accent);
+  text-overflow: ellipsis;
+}
+
+.minute-logger-named-location {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(14, 15, 19, 0.32);
+}
+
+.minute-logger-named-location__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+  border-bottom: 1px solid var(--ml-divider);
+  padding-bottom: 0.85rem;
+}
+
+.minute-logger-named-location__header h3 {
+  margin: 0;
+  color: var(--ml-text);
+  font-size: 1.22rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.minute-logger-named-location__header span,
+.minute-logger-location-cloud__bounds {
+  color: var(--ml-text-muted);
+  font-size: 0.86rem;
+}
+
+.minute-logger-named-location__header strong {
+  color: var(--ml-accent);
+  white-space: nowrap;
+}
+
+.minute-logger-named-location__body {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.55fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.minute-logger-location-cloud {
+  display: block;
+  width: 100%;
+  min-height: 16rem;
+  border-radius: 8px;
+  background: var(--ml-bg);
+}
+
+.minute-logger-location-cloud__frame {
+  fill: rgba(25, 227, 227, 0.035);
+  stroke: var(--ml-divider);
+  stroke-width: 1;
+}
+
+.minute-logger-location-cloud__plot {
+  fill: rgba(25, 227, 227, 0.055);
+  stroke: rgba(25, 227, 227, 0.38);
+  stroke-width: 1;
+}
+
+.minute-logger-location-cloud__point {
+  fill: var(--ml-accent);
+  opacity: 0.38;
+}
+
+.minute-logger-location-cloud__label circle {
+  fill: var(--ml-info);
+  stroke: var(--ml-bg);
+  stroke-width: 2;
+}
+
+.minute-logger-location-cloud__label text {
+  fill: var(--ml-text);
+  font-size: 12px;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(14, 15, 19, 0.86);
+  stroke-linejoin: round;
+  stroke-width: 4px;
+}
+
+.minute-logger-location-cloud__bounds {
+  margin: 0.4rem 0 0;
+}
+
+.minute-logger-location-summary--compact {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.minute-logger-daily-spark,
+.minute-logger-hour-strip {
+  display: flex;
+  align-items: end;
+  gap: 0.25rem;
+  min-height: 4.8rem;
+  margin-top: 0.8rem;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: rgba(14, 15, 19, 0.28);
+}
+
+.minute-logger-daily-spark__bar,
+.minute-logger-hour-strip__bar {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0.35rem;
+  height: var(--spark-height);
+  min-height: 0.25rem;
+  border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, var(--ml-info), var(--ml-success));
+}
+
+.minute-logger-daily-spark__bar {
+  position: relative;
+  text-decoration: none;
+}
+
+.minute-logger-daily-spark__bar span {
+  position: absolute;
+  left: 50%;
+  bottom: -1.35rem;
+  color: var(--ml-text-muted);
+  font-size: 0.68rem;
+  transform: translateX(-50%) rotate(-32deg);
+  transform-origin: top center;
+  white-space: nowrap;
+}
+
+.minute-logger-hour-strip {
+  min-height: 3.2rem;
+  margin-top: 1.45rem;
+}
+
+.minute-logger-hour-strip__bar {
+  height: var(--hour-height);
+  background: linear-gradient(180deg, var(--ml-brand), var(--ml-accent));
+}
+
+.minute-logger-inline-panel {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.minute-logger-inline-panel__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.minute-logger-inline-panel__header h2 {
+  margin: 0;
+  color: var(--ml-text);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.minute-logger-inline-panel__header span {
+  color: var(--ml-text-muted);
+  font-size: 0.86rem;
+}
+
+.minute-logger-location-list--compact {
+  margin-top: 0.35rem;
+}
+
 @media (max-width: 1120px) {
   .minute-logger-hero {
     grid-template-columns: 1fr;
@@ -814,6 +1193,11 @@ body,
 
   .minute-logger-grid,
   .minute-logger-grid--primary {
+    grid-template-columns: 1fr;
+  }
+
+  .minute-logger-named-location__body,
+  .minute-logger-grid--nested {
     grid-template-columns: 1fr;
   }
 
@@ -853,6 +1237,25 @@ body,
 
   .minute-logger-hero__actions {
     white-space: normal;
+  }
+
+  .minute-logger-action-stack {
+    justify-content: flex-start;
+  }
+
+  .minute-logger-timeline__controls,
+  .minute-logger-matrix__row {
+    grid-template-columns: 1fr;
+  }
+
+  .minute-logger-timeline__summary {
+    white-space: normal;
+  }
+
+  .minute-logger-named-location__header,
+  .minute-logger-inline-panel__header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .minute-logger-location-form {

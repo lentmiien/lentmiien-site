@@ -4,6 +4,8 @@ const {
   buildRequestRecord,
   fetchDailyMinuteStats,
   fetchLastKnownNamedLocation,
+  getMinuteLoggerDailyAnalytics,
+  getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
   parseLocationValue,
   recordMinuteLoggerRequest,
@@ -16,6 +18,19 @@ function createLeanQuery(result) {
   const exec = jest.fn().mockResolvedValue(result);
   const lean = jest.fn().mockReturnValue({ exec });
   return { lean, exec };
+}
+
+function createChainQuery(result) {
+  const exec = jest.fn().mockResolvedValue(result);
+  const query = {
+    sort: jest.fn(() => query),
+    select: jest.fn(() => query),
+    limit: jest.fn(() => query),
+    lean: jest.fn(() => ({ exec })),
+    exec,
+  };
+
+  return query;
 }
 
 function createRequest(overrides = {}) {
@@ -337,6 +352,217 @@ describe('minuteLoggerService', () => {
 
     expect(result).toBeNull();
     expect(settingsModel.find).not.toHaveBeenCalled();
+  });
+
+  test('getMinuteLoggerDailyAnalytics builds raw daily timeline and breakdowns', async () => {
+    const requestRows = [
+      {
+        receivedAt: new Date('2026-06-06T09:00:00.000Z'),
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        location: {
+          latitude: 35.4602,
+          longitude: 139.5404,
+          groupKey: '35.460,139.540',
+        },
+      },
+      {
+        receivedAt: new Date('2026-06-06T09:01:00.000Z'),
+        deviceId: 'tablet-01',
+        package: 'com.example.other',
+        location: {
+          latitude: 35.4603,
+          longitude: 139.5405,
+          groupKey: '35.460,139.540',
+        },
+      },
+      {
+        receivedAt: new Date('2026-06-06T10:15:00.000Z'),
+        deviceId: 'phone-01',
+        package: 'com.example.app',
+        location: null,
+      },
+    ];
+    const requestModel = {
+      find: jest.fn().mockReturnValue(createChainQuery(requestRows)),
+    };
+    const settingsModel = {
+      find: jest.fn()
+        .mockReturnValueOnce(createLeanQuery([
+          {
+            endpointPath: '/secret-minute-logger',
+            groupKey: '35.460,139.540',
+            name: 'Home',
+            hideCoordinates: false,
+          },
+        ]))
+        .mockReturnValueOnce(createChainQuery([
+          {
+            endpointPath: '/secret-minute-logger',
+            groupKey: '35.460,139.540',
+            name: 'Home',
+            hideCoordinates: false,
+          },
+        ])),
+    };
+
+    const result = await getMinuteLoggerDailyAnalytics('2026-06-06', {
+      requestModel,
+      locationGroupSettingsModel: settingsModel,
+      endpointPath: '/secret-minute-logger',
+      now: new Date('2026-06-07T03:00:00.000Z'),
+    });
+
+    expect(requestModel.find).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      receivedAt: expect.objectContaining({
+        $gte: expect.any(Date),
+        $lt: expect.any(Date),
+      }),
+    });
+    expect(result).toMatchObject({
+      dateKey: '2026-06-06',
+      totalMinutes: 3,
+      locatedMinutes: 2,
+      unlocatedMinutes: 1,
+      namedLocationMinutes: 2,
+      deviceCount: 2,
+      packageCount: 2,
+    });
+    expect(result.packageStats).toEqual([
+      expect.objectContaining({ name: 'com.example.app', minutes: 2 }),
+      expect.objectContaining({ name: 'com.example.other', minutes: 1 }),
+    ]);
+    expect(result.locationGroups).toEqual([
+      expect.objectContaining({
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        minutes: 2,
+        deviceCount: 1,
+        packageCount: 2,
+      }),
+    ]);
+    expect(result.locationTimeline.points).toEqual([
+      expect.objectContaining({
+        name: 'Home',
+        minuteOfDay: expect.any(Number),
+      }),
+      expect.objectContaining({
+        name: 'Home',
+        minuteOfDay: expect.any(Number),
+      }),
+    ]);
+    expect(result.locationTimeline.labels).toEqual([
+      expect.objectContaining({ name: 'Home' }),
+    ]);
+  });
+
+  test('getMinuteLoggerDailyAnalytics returns null for invalid dates', async () => {
+    const result = await getMinuteLoggerDailyAnalytics('2026-99-99', {
+      requestModel: {},
+      endpointPath: '/secret-minute-logger',
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test('getMinuteLoggerNamedLocationAnalytics groups saved locations by shared name', async () => {
+    const settingsModel = {
+      find: jest.fn().mockReturnValue(createChainQuery([
+        {
+          endpointPath: '/secret-minute-logger',
+          groupKey: '35.460,139.540',
+          name: 'Home',
+          hideCoordinates: false,
+        },
+        {
+          endpointPath: '/secret-minute-logger',
+          groupKey: '35.461,139.541',
+          name: 'Home',
+          hideCoordinates: false,
+        },
+        {
+          endpointPath: '/secret-minute-logger',
+          groupKey: '35.470,139.550',
+          name: 'Office',
+          hideCoordinates: false,
+        },
+      ])),
+    };
+    const requestModel = {
+      find: jest.fn().mockReturnValue(createChainQuery([
+        {
+          receivedAt: new Date('2026-06-06T09:00:00.000Z'),
+          deviceId: 'tablet-01',
+          package: 'com.example.app',
+          location: {
+            latitude: 35.4602,
+            longitude: 139.5404,
+            groupKey: '35.460,139.540',
+          },
+        },
+        {
+          receivedAt: new Date('2026-06-06T10:00:00.000Z'),
+          deviceId: 'tablet-01',
+          package: 'com.example.other',
+          location: {
+            latitude: 35.4612,
+            longitude: 139.5414,
+            groupKey: '35.461,139.541',
+          },
+        },
+        {
+          receivedAt: new Date('2026-06-06T12:00:00.000Z'),
+          deviceId: 'phone-01',
+          package: 'com.example.work',
+          location: {
+            latitude: 35.4702,
+            longitude: 139.5504,
+            groupKey: '35.470,139.550',
+          },
+        },
+      ])),
+    };
+
+    const result = await getMinuteLoggerNamedLocationAnalytics({
+      requestModel,
+      locationGroupSettingsModel: settingsModel,
+      endpointPath: '/secret-minute-logger',
+      now: new Date('2026-06-07T03:00:00.000Z'),
+    });
+
+    expect(settingsModel.find).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      name: { $type: 'string', $ne: '' },
+    });
+    expect(requestModel.find).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      receivedAt: { $gte: new Date('2026-04-08T03:00:00.000Z') },
+      'location.groupKey': {
+        $in: ['35.460,139.540', '35.461,139.541', '35.470,139.550'],
+      },
+    });
+    expect(result).toMatchObject({
+      namedLocationCount: 2,
+      namedLocationGroupCount: 3,
+      activeNamedLocationCount: 2,
+      totalMinutes: 3,
+      deviceCount: 2,
+      packageCount: 3,
+    });
+    expect(result.groups.map((group) => group.name)).toEqual(['Home', 'Office']);
+    expect(result.groups[0]).toMatchObject({
+      name: 'Home',
+      groupKeys: ['35.460,139.540', '35.461,139.541'],
+      totalMinutes: 2,
+      deviceCount: 1,
+      packageCount: 2,
+    });
+    expect(result.groups[0].locationGroups).toHaveLength(2);
+    expect(result.groups[0].pointCloud.points).toEqual([
+      expect.objectContaining({ groupKey: '35.460,139.540' }),
+      expect.objectContaining({ groupKey: '35.461,139.541' }),
+    ]);
   });
 
   test('updateMinuteLoggerLocationGroupSettings validates and persists display names', async () => {

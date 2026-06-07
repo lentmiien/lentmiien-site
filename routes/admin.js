@@ -226,6 +226,8 @@ router.post('/ai-gateway/monitor', controller.ai_gateway_monitor_update);
 router.get('/performance', controller.performance_dashboard);
 router.get('/request-counter', requestCounterAdminController.dashboard);
 router.post('/request-counter/settings', requestCounterAdminController.updateSettings);
+router.get('/minute-logger/daily/:dateKey', minuteLoggerAdminController.dailyAnalytics);
+router.get('/minute-logger/locations', minuteLoggerAdminController.namedLocationAnalytics);
 router.get('/minute-logger', minuteLoggerAdminController.dashboard);
 router.post('/minute-logger/location-groups', minuteLoggerAdminController.updateLocationGroupSettings);
 router.get('/database_usage', controller.database_usage);

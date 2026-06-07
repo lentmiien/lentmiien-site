@@ -5,7 +5,9 @@ jest.mock('../../services/minuteLoggerService', () => ({
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME: 'minute_logger_requests',
   MINUTE_LOGGER_STAT_COLLECTION_NAME: 'minute_logger_stats',
   MINUTE_LOGGER_STATS_RETENTION_YEARS: 10,
+  getMinuteLoggerDailyAnalytics: jest.fn(),
   getMinuteLoggerDashboard: jest.fn(),
+  getMinuteLoggerNamedLocationAnalytics: jest.fn(),
   updateMinuteLoggerLocationGroupSettings: jest.fn(),
 }));
 
@@ -23,7 +25,9 @@ jest.mock('../../services/incomingRequestCounterService', () => ({
 }));
 
 const {
+  getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerNamedLocationAnalytics,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../../services/minuteLoggerService');
 const controller = require('../../controllers/minuteLoggerAdminController');
@@ -267,6 +271,7 @@ describe('minuteLoggerAdminController.dashboard', () => {
       '2026-06-05',
       '2026-06-04',
     ]);
+    expect(viewModel.dailyMinuteStats[0].detailsUrl).toBe('/admin/minute-logger/daily/2026-06-05');
   });
 
   test('saves a location group display name', async () => {
@@ -298,6 +303,217 @@ describe('minuteLoggerAdminController.dashboard', () => {
     );
     expect(res.redirect).toHaveBeenCalledWith(
       '/admin/minute-logger?status=success&message=Location%20group%20saved.'
+    );
+  });
+});
+
+describe('minuteLoggerAdminController.dailyAnalytics', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('renders daily analytics with timeline data', async () => {
+    getMinuteLoggerDailyAnalytics.mockResolvedValue({
+      endpointPath: '/secret-minute-logger',
+      generatedAt: new Date('2026-06-07T03:00:00.000Z'),
+      dateKey: '2026-06-06',
+      totalMinutes: 3,
+      locatedMinutes: 2,
+      unlocatedMinutes: 1,
+      namedLocationMinutes: 2,
+      deviceCount: 1,
+      packageCount: 2,
+      firstSeen: new Date('2026-06-06T09:00:00.000Z'),
+      lastSeen: new Date('2026-06-06T09:02:00.000Z'),
+      quietGap: {
+        longestGapMinutes: 0,
+        longestGapStart: null,
+        longestGapEnd: null,
+      },
+      packageStats: [
+        { name: 'com.example.app', minutes: 2, deviceCount: 1, packageCount: 1, locatedMinutes: 2 },
+      ],
+      deviceStats: [
+        { name: 'tablet-01', minutes: 3, deviceCount: 1, packageCount: 2, locatedMinutes: 2 },
+      ],
+      devicePackageMatrix: [
+        {
+          deviceId: 'tablet-01',
+          minutes: 3,
+          packages: [{ name: 'com.example.app', minutes: 2 }],
+        },
+      ],
+      locationGroups: [
+        {
+          groupKey: '35.460,139.540',
+          latitude: 35.4602,
+          longitude: 139.5404,
+          minutes: 2,
+          deviceCount: 1,
+          packageCount: 1,
+          name: 'Home',
+          hideCoordinates: false,
+          pointSamples: [
+            { latitude: 35.4602, longitude: 139.5404 },
+          ],
+        },
+      ],
+      hourlySpread: Array.from({ length: 24 }, (_, hour) => ({ hour, minutes: hour === 9 ? 3 : 0 })),
+      timeBucketStats: [
+        { key: 'morning', label: 'Morning', minutes: 3, averagePerDay: 3 },
+      ],
+      busiestTimeBucket: { key: 'morning', label: 'Morning', minutes: 3, averagePerDay: 3 },
+      packageTransitions: [{ from: 'com.example.app', to: 'com.example.other', count: 1 }],
+      namedLocationTransitions: [],
+      locationTimeline: {
+        bounds: {
+          minLatitude: 35.4602,
+          maxLatitude: 35.4603,
+          minLongitude: 139.5404,
+          maxLongitude: 139.5405,
+        },
+        labels: [{ name: 'Home', latitude: 35.4602, longitude: 139.5404 }],
+        points: [
+          {
+            latitude: 35.4602,
+            longitude: 139.5404,
+            minuteOfDay: 540,
+            name: 'Home',
+            package: 'com.example.app',
+            deviceId: 'tablet-01',
+            receivedAt: new Date('2026-06-06T09:00:00.000Z'),
+          },
+        ],
+        defaultMinute: 540,
+      },
+      recentRequests: [],
+    });
+    const res = createResponse();
+
+    await controller.dailyAnalytics({ params: { dateKey: '2026-06-06' } }, res);
+
+    expect(getMinuteLoggerDailyAnalytics).toHaveBeenCalledWith('2026-06-06');
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_minute_logger_daily',
+      expect.objectContaining({
+        dateKey: '2026-06-06',
+        overviewCards: expect.arrayContaining([
+          expect.objectContaining({ label: 'Total Minutes', value: '3 min' }),
+          expect.objectContaining({ label: 'Named Locations', value: '2 min' }),
+        ]),
+        packageStats: [
+          expect.objectContaining({
+            name: 'com.example.app',
+            minutesDisplay: '2 min',
+          }),
+        ],
+        timelinePointCountDisplay: '1',
+        timelineJson: expect.stringContaining('"name":"Home"'),
+      })
+    );
+  });
+
+  test('returns 404 for invalid daily date keys', async () => {
+    getMinuteLoggerDailyAnalytics.mockResolvedValue(null);
+    const res = createResponse();
+
+    await controller.dailyAnalytics({ params: { dateKey: 'invalid' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_minute_logger_daily',
+      expect.objectContaining({
+        dateKey: 'invalid',
+        loadError: 'Daily analytics date must use YYYY-MM-DD.',
+      })
+    );
+  });
+});
+
+describe('minuteLoggerAdminController.namedLocationAnalytics', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('renders grouped named location analytics', async () => {
+    getMinuteLoggerNamedLocationAnalytics.mockResolvedValue({
+      endpointPath: '/secret-minute-logger',
+      generatedAt: new Date('2026-06-07T03:00:00.000Z'),
+      since: new Date('2026-04-08T03:00:00.000Z'),
+      rawRetentionDays: 60,
+      namedLocationCount: 1,
+      namedLocationGroupCount: 2,
+      activeNamedLocationCount: 1,
+      totalMinutes: 12,
+      locatedMinutes: 12,
+      deviceCount: 1,
+      packageCount: 2,
+      busiestLocation: { name: 'Home', totalMinutes: 12 },
+      groups: [
+        {
+          name: 'Home',
+          groupKeys: ['35.460,139.540', '35.461,139.541'],
+          totalMinutes: 12,
+          locatedMinutes: 12,
+          deviceCount: 1,
+          packageCount: 2,
+          firstSeen: new Date('2026-06-06T09:00:00.000Z'),
+          lastSeen: new Date('2026-06-06T10:00:00.000Z'),
+          packageStats: [{ name: 'com.example.app', minutes: 9, deviceCount: 1, packageCount: 1 }],
+          deviceStats: [{ name: 'tablet-01', minutes: 12, deviceCount: 1, packageCount: 2 }],
+          locationGroups: [
+            {
+              groupKey: '35.460,139.540',
+              latitude: 35.4602,
+              longitude: 139.5404,
+              minutes: 9,
+              deviceCount: 1,
+              packageCount: 2,
+              name: 'Home',
+              hideCoordinates: false,
+              pointSamples: [{ latitude: 35.4602, longitude: 139.5404 }],
+            },
+          ],
+          hourlySpread: Array.from({ length: 24 }, (_, hour) => ({ hour, minutes: hour === 9 ? 12 : 0 })),
+          dailyTrend: [{ dateKey: '2026-06-06', minutes: 12 }],
+          busiestTimeBucket: { key: 'morning', label: 'Morning', minutes: 12, averagePerDay: 0.2 },
+          pointCloud: {
+            bounds: {
+              minLatitude: 35.4602,
+              maxLatitude: 35.461,
+              minLongitude: 139.5404,
+              maxLongitude: 139.541,
+            },
+            points: [{ latitude: 35.4602, longitude: 139.5404, package: 'com.example.app', deviceId: 'tablet-01' }],
+            labels: [{ name: 'Home', latitude: 35.460, longitude: 139.540 }],
+          },
+        },
+      ],
+    });
+    const res = createResponse();
+
+    await controller.namedLocationAnalytics({}, res);
+
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_minute_logger_locations',
+      expect.objectContaining({
+        overviewCards: expect.arrayContaining([
+          expect.objectContaining({ label: 'Named Locations', value: '1' }),
+          expect.objectContaining({ label: 'Busiest Location', value: 'Home' }),
+        ]),
+        groups: [
+          expect.objectContaining({
+            name: 'Home',
+            totalMinutesDisplay: '12 min',
+            groupCountDisplay: '2',
+            pointCloud: expect.objectContaining({
+              points: expect.arrayContaining([
+                expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+              ]),
+            }),
+          }),
+        ],
+      })
     );
   });
 });

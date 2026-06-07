@@ -6,7 +6,9 @@ const {
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME,
   MINUTE_LOGGER_STAT_COLLECTION_NAME,
   MINUTE_LOGGER_STATS_RETENTION_YEARS,
+  getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerNamedLocationAnalytics,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../services/minuteLoggerService');
 const {
@@ -22,15 +24,62 @@ const LOCATION_PREVIEW_HEIGHT = 120;
 const LOCATION_PREVIEW_CELL_HEIGHT = 86;
 const LOCATION_PREVIEW_MIN_CELL_WIDTH = 36;
 const LOCATION_PREVIEW_PADDING_Y = 14;
+const LOCATION_CLOUD_WIDTH = 520;
+const LOCATION_CLOUD_HEIGHT = 280;
+const LOCATION_CLOUD_PADDING = 18;
 
 function formatDecimal(value, digits = 1) {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : '0.0';
 }
 
+function formatPercent(value, digits = 1) {
+  return `${formatDecimal(value, digits)}%`;
+}
+
 function formatCoordinate(value, digits = 5) {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : 'N/A';
+}
+
+function formatTimeOfDay(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'N/A';
+  }
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatDateOnly(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'N/A';
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function formatTimeRange(start, end) {
+  const startDisplay = formatTimeOfDay(start);
+  const endDisplay = formatTimeOfDay(end);
+
+  if (startDisplay === 'N/A' || endDisplay === 'N/A') {
+    return 'N/A';
+  }
+
+  return `${startDisplay} - ${endDisplay}`;
+}
+
+function formatShare(part, total) {
+  const denominator = Number(total) || 0;
+  return denominator > 0 ? formatPercent(((Number(part) || 0) / denominator) * 100) : '0.0%';
+}
+
+function safeJson(data) {
+  return JSON.stringify(data || {}).replace(/</gu, '\\u003c');
 }
 
 function buildMapUrl(latitude, longitude) {
@@ -259,8 +308,14 @@ function projectLocationPoint(point, bounds, rect) {
     return null;
   }
 
-  const xRatio = clamp((longitude - bounds.minLongitude) / (bounds.maxLongitude - bounds.minLongitude), 0, 1);
-  const yRatio = clamp((bounds.maxLatitude - latitude) / (bounds.maxLatitude - bounds.minLatitude), 0, 1);
+  const longitudeSpan = bounds.maxLongitude - bounds.minLongitude;
+  const latitudeSpan = bounds.maxLatitude - bounds.minLatitude;
+  const xRatio = longitudeSpan === 0
+    ? 0.5
+    : clamp((longitude - bounds.minLongitude) / longitudeSpan, 0, 1);
+  const yRatio = latitudeSpan === 0
+    ? 0.5
+    : clamp((bounds.maxLatitude - latitude) / latitudeSpan, 0, 1);
 
   return {
     x: Number((rect.x + (xRatio * rect.width)).toFixed(2)),
@@ -411,7 +466,13 @@ function mapMonthlyStat(row) {
 }
 
 function mapDailyMinuteStatsLatestFirst(rows = []) {
-  return mapDailyMinuteStats(rows).slice().reverse();
+  return mapDailyMinuteStats(rows)
+    .slice()
+    .reverse()
+    .map((day) => ({
+      ...day,
+      detailsUrl: `/admin/minute-logger/daily/${encodeURIComponent(day.dateKey)}`,
+    }));
 }
 
 function mapRecentRequest(row) {
@@ -431,6 +492,343 @@ function mapRecentRequest(row) {
     locationDisplay: hasLocation ? `${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}` : 'N/A',
     locationMapUrl: hasLocation ? buildMapUrl(latitude, longitude) : null,
     bodyJson: formatPayload(row.body || {}),
+  };
+}
+
+function mapBreakdownRow(row, totalMinutes = 0, labelKey = 'name') {
+  const minutes = Number(row.minutes) || 0;
+
+  return {
+    name: row[labelKey] || row.name || 'unknown',
+    minutes,
+    minutesDisplay: `${formatNumber(minutes)} min`,
+    durationDisplay: formatMinuteDuration(minutes),
+    shareDisplay: formatShare(minutes, totalMinutes),
+    deviceCountDisplay: formatNumber(row.deviceCount),
+    packageCountDisplay: formatNumber(row.packageCount),
+    locatedShareDisplay: formatShare(row.locatedMinutes, minutes),
+    firstSeenDisplay: formatDateTime(row.firstSeen),
+    lastSeenDisplay: formatDateTime(row.lastSeen),
+  };
+}
+
+function mapTransitionRow(row) {
+  return {
+    from: row.from || 'unknown',
+    to: row.to || 'unknown',
+    count: Number(row.count) || 0,
+    countDisplay: formatNumber(row.count),
+  };
+}
+
+function mapDevicePackageRow(row) {
+  const minutes = Number(row.minutes) || 0;
+
+  return {
+    deviceId: row.deviceId || 'unknown',
+    minutes,
+    minutesDisplay: `${formatNumber(minutes)} min`,
+    packages: (Array.isArray(row.packages) ? row.packages : []).map((entry) => ({
+      name: entry.name || 'unknown',
+      minutes: Number(entry.minutes) || 0,
+      minutesDisplay: `${formatNumber(entry.minutes)} min`,
+      shareDisplay: formatShare(entry.minutes, minutes),
+    })),
+  };
+}
+
+function buildRawLocationStats(groups = [], totalLocationMinutes = 0) {
+  return mapLocationStats({
+    groups,
+    totalLocationMinutes,
+    groupedLocationMinutes: totalLocationMinutes,
+    noiseLocationMinutes: 0,
+    noiseGroupCount: 0,
+    totalGroupCount: groups.length,
+    noiseThresholdMinutes: 1,
+    precisionDecimals: 3,
+  });
+}
+
+function buildDailyOverviewCards(analytics = {}) {
+  const totalMinutes = Number(analytics.totalMinutes) || 0;
+  const locatedMinutes = Number(analytics.locatedMinutes) || 0;
+  const namedLocationMinutes = Number(analytics.namedLocationMinutes) || 0;
+  const quietGapMinutes = Number(analytics.quietGap?.longestGapMinutes) || 0;
+  const activeSpanMinutes = analytics.firstSeen && analytics.lastSeen
+    ? Math.max(1, Math.round((new Date(analytics.lastSeen).getTime() - new Date(analytics.firstSeen).getTime()) / 60000) + 1)
+    : 0;
+
+  return [
+    {
+      label: 'Total Minutes',
+      value: `${formatNumber(totalMinutes)} min`,
+      helper: `${formatDecimal(totalMinutes / 60)} hours logged`,
+      tone: totalMinutes > 0 ? 'ok' : '',
+    },
+    {
+      label: 'Located Minutes',
+      value: `${formatNumber(locatedMinutes)} min`,
+      helper: `${formatShare(locatedMinutes, totalMinutes)} of the day`,
+    },
+    {
+      label: 'Named Locations',
+      value: `${formatNumber(namedLocationMinutes)} min`,
+      helper: `${formatShare(namedLocationMinutes, locatedMinutes)} of located minutes`,
+    },
+    {
+      label: 'Devices',
+      value: formatNumber(analytics.deviceCount),
+      helper: `${formatNumber(analytics.packageCount)} packages seen`,
+    },
+    {
+      label: 'Active Span',
+      value: activeSpanMinutes ? formatMinuteDuration(activeSpanMinutes) : 'N/A',
+      helper: analytics.firstSeen && analytics.lastSeen ? formatTimeRange(analytics.firstSeen, analytics.lastSeen) : 'No requests',
+    },
+    {
+      label: 'Longest Quiet Gap',
+      value: formatMinuteDuration(quietGapMinutes),
+      helper: quietGapMinutes > 0
+        ? formatTimeRange(analytics.quietGap.longestGapStart, analytics.quietGap.longestGapEnd)
+        : 'No gap between logged minutes',
+    },
+  ];
+}
+
+function buildNamedLocationOverviewCards(analytics = {}) {
+  const totalMinutes = Number(analytics.totalMinutes) || 0;
+  const busiest = analytics.busiestLocation || {};
+
+  return [
+    {
+      label: 'Named Locations',
+      value: formatNumber(analytics.namedLocationCount),
+      helper: `${formatNumber(analytics.activeNamedLocationCount)} active in raw retention`,
+      tone: analytics.namedLocationCount > 0 ? 'ok' : '',
+    },
+    {
+      label: 'Location Groups',
+      value: formatNumber(analytics.namedLocationGroupCount),
+      helper: 'Saved named coordinate cells',
+    },
+    {
+      label: 'Named Minutes',
+      value: `${formatNumber(totalMinutes)} min`,
+      helper: `Last ${analytics.rawRetentionDays || MINUTE_LOGGER_RAW_RETENTION_DAYS} days`,
+    },
+    {
+      label: 'Busiest Location',
+      value: busiest.name || 'N/A',
+      helper: busiest.totalMinutes ? `${formatNumber(busiest.totalMinutes)} min` : 'No named activity',
+    },
+    {
+      label: 'Devices',
+      value: formatNumber(analytics.deviceCount),
+      helper: `${formatNumber(analytics.packageCount)} packages at named locations`,
+    },
+  ];
+}
+
+function buildLocationPointCloud(pointCloud = {}) {
+  const bounds = pointCloud.bounds;
+
+  if (!bounds) {
+    return null;
+  }
+
+  const rect = {
+    x: LOCATION_CLOUD_PADDING,
+    y: LOCATION_CLOUD_PADDING,
+    width: LOCATION_CLOUD_WIDTH - (LOCATION_CLOUD_PADDING * 2),
+    height: LOCATION_CLOUD_HEIGHT - (LOCATION_CLOUD_PADDING * 2),
+  };
+  const points = (Array.isArray(pointCloud.points) ? pointCloud.points : [])
+    .map((point) => {
+      const projected = projectLocationPoint(point, bounds, rect);
+
+      if (!projected) {
+        return null;
+      }
+
+      return {
+        ...projected,
+        title: [
+          point.package || '',
+          point.deviceId || '',
+          formatDateTime(point.receivedAt),
+        ].filter(Boolean).join(' - '),
+      };
+    })
+    .filter(Boolean);
+  const labels = (Array.isArray(pointCloud.labels) ? pointCloud.labels : [])
+    .map((label) => {
+      const projected = projectLocationPoint(label, bounds, rect);
+
+      if (!projected) {
+        return null;
+      }
+
+      return {
+        ...projected,
+        name: label.name,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    width: LOCATION_CLOUD_WIDTH,
+    height: LOCATION_CLOUD_HEIGHT,
+    rect,
+    points,
+    labels,
+    boundsDisplay: `${formatCoordinate(bounds.minLatitude, 4)}, ${formatCoordinate(bounds.minLongitude, 4)} to ${formatCoordinate(bounds.maxLatitude, 4)}, ${formatCoordinate(bounds.maxLongitude, 4)}`,
+  };
+}
+
+function mapDailyTrend(rows = []) {
+  const maxMinutes = Math.max(1, ...(Array.isArray(rows) ? rows : []).map((row) => Number(row.minutes) || 0));
+
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const minutes = Number(row.minutes) || 0;
+
+    return {
+      dateKey: row.dateKey,
+      label: String(row.dateKey || '').slice(5),
+      minutes,
+      minutesDisplay: `${formatNumber(minutes)} min`,
+      percent: Math.round((minutes / maxMinutes) * 100),
+    };
+  });
+}
+
+function mapNamedLocationGroup(group = {}, totalNamedMinutes = 0) {
+  const locationStats = buildRawLocationStats(group.locationGroups || [], group.locatedMinutes || 0);
+  const maxPackageMinutes = Math.max(1, ...(group.packageStats || []).map((row) => Number(row.minutes) || 0));
+  const maxDeviceMinutes = Math.max(1, ...(group.deviceStats || []).map((row) => Number(row.minutes) || 0));
+  const maxLocationMinutes = Math.max(1, ...locationStats.groups.map((row) => Number(row.minutes) || 0));
+
+  return {
+    name: group.name,
+    totalMinutes: Number(group.totalMinutes) || 0,
+    totalMinutesDisplay: `${formatNumber(group.totalMinutes)} min`,
+    shareDisplay: formatShare(group.totalMinutes, totalNamedMinutes),
+    locatedMinutesDisplay: `${formatNumber(group.locatedMinutes)} min`,
+    groupCountDisplay: formatNumber((group.groupKeys || []).length),
+    deviceCountDisplay: formatNumber(group.deviceCount),
+    packageCountDisplay: formatNumber(group.packageCount),
+    firstSeenDisplay: formatDateTime(group.firstSeen),
+    lastSeenDisplay: formatDateTime(group.lastSeen),
+    busiestTimeDisplay: group.busiestTimeBucket?.label || 'N/A',
+    busiestTimeHelper: group.busiestTimeBucket
+      ? `${formatNumber(group.busiestTimeBucket.minutes)} min`
+      : 'No activity',
+    packageStats: (group.packageStats || []).map((row) => mapBreakdownRow(row, group.totalMinutes)),
+    deviceStats: (group.deviceStats || []).map((row) => mapBreakdownRow(row, group.totalMinutes)),
+    locationStats,
+    maxPackageMinutes,
+    maxDeviceMinutes,
+    maxLocationMinutes,
+    hourlySpread: mapHourlySpread(group.hourlySpread || []),
+    dailyTrend: mapDailyTrend(group.dailyTrend || []),
+    pointCloud: buildLocationPointCloud(group.pointCloud),
+  };
+}
+
+function buildTimelinePayload(timeline = {}) {
+  const bounds = timeline.bounds || null;
+  const defaultMinute = Number(timeline.defaultMinute);
+
+  return {
+    bounds,
+    labels: (Array.isArray(timeline.labels) ? timeline.labels : []).map((label) => ({
+      name: label.name,
+      latitude: Number(label.latitude),
+      longitude: Number(label.longitude),
+    })).filter((label) => Number.isFinite(label.latitude) && Number.isFinite(label.longitude)),
+    points: (Array.isArray(timeline.points) ? timeline.points : []).map((point) => ({
+      latitude: Number(point.latitude),
+      longitude: Number(point.longitude),
+      minuteOfDay: Number(point.minuteOfDay) || 0,
+      name: point.name || '',
+      package: point.package || 'unknown',
+      deviceId: point.deviceId || 'unknown',
+      receivedAt: point.receivedAt ? new Date(point.receivedAt).toISOString() : null,
+    })).filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude)),
+    defaultMinute: Number.isFinite(defaultMinute) ? defaultMinute : 720,
+  };
+}
+
+function buildAdjacentDateUrl(dateKey, offset) {
+  const date = new Date(`${dateKey}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  date.setDate(date.getDate() + offset);
+  return `/admin/minute-logger/daily/${encodeURIComponent(formatDateOnly(date))}`;
+}
+
+function formatBoundsDisplay(bounds) {
+  if (!bounds) {
+    return 'No location bounds';
+  }
+
+  return `${formatCoordinate(bounds.minLatitude, 4)}, ${formatCoordinate(bounds.minLongitude, 4)} to ${formatCoordinate(bounds.maxLatitude, 4)}, ${formatCoordinate(bounds.maxLongitude, 4)}`;
+}
+
+function buildDailyAnalyticsViewModel(analytics = {}, options = {}) {
+  const totalMinutes = Number(analytics.totalMinutes) || 0;
+  const locationStats = buildRawLocationStats(analytics.locationGroups || [], analytics.locatedMinutes || 0);
+  const timelinePayload = buildTimelinePayload(analytics.locationTimeline || {});
+
+  return {
+    pageTitle: `Minute Logger Daily Analytics - ${analytics.dateKey || options.dateKey || ''}`,
+    loadError: options.loadError || null,
+    generatedAtDisplay: formatDateTime(analytics.generatedAt || new Date()),
+    endpointPath: analytics.endpointPath || 'N/A',
+    dateKey: analytics.dateKey || options.dateKey || 'N/A',
+    dateDisplay: analytics.dateKey || options.dateKey || 'N/A',
+    previousDateUrl: analytics.dateKey ? buildAdjacentDateUrl(analytics.dateKey, -1) : null,
+    nextDateUrl: analytics.dateKey ? buildAdjacentDateUrl(analytics.dateKey, 1) : null,
+    overviewCards: analytics.dateKey ? buildDailyOverviewCards(analytics) : [],
+    hourlySpread: mapHourlySpread(analytics.hourlySpread || []),
+    timeBucketStats: (analytics.timeBucketStats || []).map(mapTimeBucket),
+    busiestTimeBucket: analytics.busiestTimeBucket ? mapTimeBucket(analytics.busiestTimeBucket) : null,
+    packageStats: (analytics.packageStats || []).slice(0, 12).map((row) => mapBreakdownRow(row, totalMinutes)),
+    deviceStats: (analytics.deviceStats || []).slice(0, 12).map((row) => mapBreakdownRow(row, totalMinutes)),
+    devicePackageMatrix: (analytics.devicePackageMatrix || []).map(mapDevicePackageRow),
+    locationStats,
+    maxPackageMinutes: Math.max(1, ...(analytics.packageStats || []).map((row) => Number(row.minutes) || 0)),
+    maxDeviceMinutes: Math.max(1, ...(analytics.deviceStats || []).map((row) => Number(row.minutes) || 0)),
+    maxLocationMinutes: Math.max(1, ...locationStats.groups.map((row) => Number(row.minutes) || 0)),
+    packageTransitions: (analytics.packageTransitions || []).map(mapTransitionRow),
+    namedLocationTransitions: (analytics.namedLocationTransitions || []).map(mapTransitionRow),
+    timelineJson: safeJson(timelinePayload),
+    timelinePointCountDisplay: formatNumber(timelinePayload.points.length),
+    timelineLabelCountDisplay: formatNumber(timelinePayload.labels.length),
+    timelineBoundsDisplay: formatBoundsDisplay(timelinePayload.bounds),
+    recentRequests: (analytics.recentRequests || []).map(mapRecentRequest),
+  };
+}
+
+function buildNamedLocationAnalyticsViewModel(analytics = {}, options = {}) {
+  const totalNamedMinutes = Number(analytics.totalMinutes) || 0;
+  const groups = (analytics.groups || []).map((group) => mapNamedLocationGroup(group, totalNamedMinutes));
+
+  return {
+    pageTitle: 'Minute Logger Location Analytics',
+    loadError: options.loadError || null,
+    generatedAtDisplay: formatDateTime(analytics.generatedAt || new Date()),
+    endpointPath: analytics.endpointPath || 'N/A',
+    rawRetentionDays: analytics.rawRetentionDays || MINUTE_LOGGER_RAW_RETENTION_DAYS,
+    sinceDisplay: formatDateTime(analytics.since),
+    overviewCards: analytics.generatedAt ? buildNamedLocationOverviewCards(analytics) : [],
+    groups,
+    totalNamedMinutes,
+    totalNamedMinutesDisplay: `${formatNumber(totalNamedMinutes)} min`,
+    maxNamedLocationMinutes: Math.max(1, ...groups.map((group) => Number(group.totalMinutes) || 0)),
   };
 }
 
@@ -484,6 +882,53 @@ exports.dashboard = async (req, res) => {
       timeBucketStats: [],
       recentRequests: [],
     });
+  }
+};
+
+exports.dailyAnalytics = async (req, res) => {
+  const dateKey = String(req.params.dateKey || '').trim();
+
+  try {
+    const analytics = await getMinuteLoggerDailyAnalytics(dateKey);
+
+    if (!analytics) {
+      return res.status(404).render('admin_minute_logger_daily', buildDailyAnalyticsViewModel({}, {
+        dateKey,
+        loadError: 'Daily analytics date must use YYYY-MM-DD.',
+      }));
+    }
+
+    return res.render('admin_minute_logger_daily', buildDailyAnalyticsViewModel(analytics));
+  } catch (error) {
+    logger.error('Failed to load minute logger daily analytics', {
+      category: 'minute-logger',
+      metadata: {
+        dateKey,
+        error: error.message,
+      },
+    });
+
+    return res.status(500).render('admin_minute_logger_daily', buildDailyAnalyticsViewModel({}, {
+      dateKey,
+      loadError: 'Unable to load daily minute logger analytics right now.',
+    }));
+  }
+};
+
+exports.namedLocationAnalytics = async (req, res) => {
+  try {
+    const analytics = await getMinuteLoggerNamedLocationAnalytics();
+
+    return res.render('admin_minute_logger_locations', buildNamedLocationAnalyticsViewModel(analytics));
+  } catch (error) {
+    logger.error('Failed to load minute logger named location analytics', {
+      category: 'minute-logger',
+      metadata: { error: error.message },
+    });
+
+    return res.status(500).render('admin_minute_logger_locations', buildNamedLocationAnalyticsViewModel({}, {
+      loadError: 'Unable to load named location analytics right now.',
+    }));
   }
 };
 

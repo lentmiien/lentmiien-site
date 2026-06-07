@@ -63,7 +63,9 @@ block content
           text(x='24', y='188', fill='#9AA3B2', font-size='13') POST / JSON OK
       .minute-logger-hero__actions
         span Last updated #{generatedAtDisplay}
-        a.minute-logger-refresh(href='/admin/minute-logger') Refresh
+        .minute-logger-action-stack
+          a.minute-logger-refresh(href='/admin/minute-logger/locations') Location Analytics
+          a.minute-logger-refresh(href='/admin/minute-logger') Refresh
 
     if feedback
       .minute-logger-alert(class=`minute-logger-alert--${feedback.status}`)= feedback.message
@@ -188,7 +190,7 @@ block content
             each day in dailyMinuteStats
               .minute-logger-day
                 .minute-logger-day__top
-                  span.minute-logger-day__date= day.dateKey
+                  a.minute-logger-day__date(href=day.detailsUrl)= day.dateKey
                   strong= day.totalDurationDisplay
                 .minute-logger-day__bar(style=`--total-percent: ${day.totalPercent}%;`)
                   span.minute-logger-day__bar-total
@@ -212,6 +214,7 @@ block content
           div
             h2 Location Groups
             span Last #{rawRetentionDays} days, #{locationStats.noiseThresholdDisplay} minimum
+          a.minute-logger-panel-link(href='/admin/minute-logger/locations') Named analytics
         if locationStats
           dl.minute-logger-location-summary
             div

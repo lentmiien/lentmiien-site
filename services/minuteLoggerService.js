@@ -14,6 +14,7 @@ const MINUTE_LOGGER_LOCATION_NOISE_MINUTES = 3;
 const MINUTE_LOGGER_LOCATION_GROUP_LIMIT = 20;
 const MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT = 180;
 const MINUTE_LOGGER_LOCATION_GROUP_NAME_MAX_LENGTH = 80;
+const MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT = 420;
 
 const TIME_BUCKETS = [
   { key: 'morning', label: 'Morning', startHour: 5, endHour: 11 },
@@ -508,6 +509,445 @@ function buildMonthRanges(now = new Date(), months = 12) {
   return ranges;
 }
 
+function parseDateKey(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year
+    || date.getMonth() !== month - 1
+    || date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function buildDayRangeFromDateKey(dateKey) {
+  const start = parseDateKey(dateKey);
+
+  if (!start) {
+    return null;
+  }
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 1);
+
+  return {
+    dateKey: formatDayKey(start),
+    start,
+    end,
+  };
+}
+
+function getMinuteOfDay(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 0;
+  }
+
+  return (date.getHours() * 60) + date.getMinutes();
+}
+
+function createCountBucket() {
+  return {
+    minutes: 0,
+    devices: new Set(),
+    packages: new Set(),
+    firstSeen: null,
+    lastSeen: null,
+    locatedMinutes: 0,
+  };
+}
+
+function updateSeenRange(bucket, receivedAt) {
+  const date = receivedAt ? new Date(receivedAt) : null;
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return;
+  }
+
+  if (!bucket.firstSeen || date < bucket.firstSeen) {
+    bucket.firstSeen = date;
+  }
+
+  if (!bucket.lastSeen || date > bucket.lastSeen) {
+    bucket.lastSeen = date;
+  }
+}
+
+function getSafeRequestDate(row = {}) {
+  const date = new Date(row.receivedAt);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function hasValidRequestLocation(row = {}) {
+  const latitude = Number(row?.location?.latitude);
+  const longitude = Number(row?.location?.longitude);
+  return isValidLatitude(latitude) && isValidLongitude(longitude);
+}
+
+function getRequestLatitude(row = {}) {
+  const latitude = Number(row?.location?.latitude);
+  return isValidLatitude(latitude) ? latitude : null;
+}
+
+function getRequestLongitude(row = {}) {
+  const longitude = Number(row?.location?.longitude);
+  return isValidLongitude(longitude) ? longitude : null;
+}
+
+function parseLocationGroupKeyCenter(groupKey) {
+  const parts = String(groupKey || '').split(',');
+
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const latitude = Number(parts[0]);
+  const longitude = Number(parts[1]);
+
+  if (!isValidLatitude(latitude) || !isValidLongitude(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+function buildLocationBounds(points = [], fallbackSettings = []) {
+  const coordinates = [];
+
+  (Array.isArray(points) ? points : []).forEach((point) => {
+    const latitude = Number(point?.latitude ?? point?.location?.latitude);
+    const longitude = Number(point?.longitude ?? point?.location?.longitude);
+
+    if (isValidLatitude(latitude) && isValidLongitude(longitude)) {
+      coordinates.push({ latitude, longitude });
+    }
+  });
+
+  (Array.isArray(fallbackSettings) ? fallbackSettings : []).forEach((setting) => {
+    const center = parseLocationGroupKeyCenter(setting.groupKey);
+
+    if (center) {
+      coordinates.push(center);
+    }
+  });
+
+  if (!coordinates.length) {
+    return null;
+  }
+
+  return coordinates.reduce((bounds, point) => ({
+    minLatitude: Math.min(bounds.minLatitude, point.latitude),
+    maxLatitude: Math.max(bounds.maxLatitude, point.latitude),
+    minLongitude: Math.min(bounds.minLongitude, point.longitude),
+    maxLongitude: Math.max(bounds.maxLongitude, point.longitude),
+  }), {
+    minLatitude: coordinates[0].latitude,
+    maxLatitude: coordinates[0].latitude,
+    minLongitude: coordinates[0].longitude,
+    maxLongitude: coordinates[0].longitude,
+  });
+}
+
+function isPointWithinBounds(point, bounds) {
+  const latitude = Number(point?.latitude);
+  const longitude = Number(point?.longitude);
+
+  if (!bounds || !isValidLatitude(latitude) || !isValidLongitude(longitude)) {
+    return false;
+  }
+
+  return latitude >= bounds.minLatitude
+    && latitude <= bounds.maxLatitude
+    && longitude >= bounds.minLongitude
+    && longitude <= bounds.maxLongitude;
+}
+
+function sampleEvenly(rows = [], limit = MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT) {
+  const source = Array.isArray(rows) ? rows : [];
+  const safeLimit = Number.isInteger(limit) && limit > 0
+    ? limit
+    : MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT;
+
+  if (source.length <= safeLimit) {
+    return source.slice();
+  }
+
+  if (safeLimit === 1) {
+    return [source[0]];
+  }
+
+  const step = (source.length - 1) / (safeLimit - 1);
+  return Array.from({ length: safeLimit }, (_, index) => source[Math.round(index * step)]);
+}
+
+function mapBreakdownBucket(name, bucket) {
+  return {
+    name,
+    minutes: bucket.minutes,
+    deviceCount: bucket.devices.size,
+    packageCount: bucket.packages.size,
+    firstSeen: bucket.firstSeen,
+    lastSeen: bucket.lastSeen,
+    locatedMinutes: bucket.locatedMinutes,
+  };
+}
+
+function sortBreakdownRows(rows = []) {
+  return rows.slice().sort((left, right) => {
+    if (right.minutes !== left.minutes) {
+      return right.minutes - left.minutes;
+    }
+
+    return String(left.name).localeCompare(String(right.name));
+  });
+}
+
+function buildRequestBreakdown(rows = [], keyGetter = () => UNKNOWN_DIMENSION) {
+  const buckets = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = normalizeDimension(keyGetter(row), UNKNOWN_DIMENSION);
+
+    if (!buckets.has(key)) {
+      buckets.set(key, createCountBucket());
+    }
+
+    const bucket = buckets.get(key);
+    bucket.minutes += 1;
+    bucket.devices.add(normalizeDimension(row.deviceId, UNKNOWN_DIMENSION));
+    bucket.packages.add(normalizeDimension(row.package, UNKNOWN_DIMENSION));
+    if (hasValidRequestLocation(row)) {
+      bucket.locatedMinutes += 1;
+    }
+    updateSeenRange(bucket, row.receivedAt);
+  });
+
+  return sortBreakdownRows(Array.from(buckets.entries()).map(([name, bucket]) => {
+    return mapBreakdownBucket(name, bucket);
+  }));
+}
+
+function buildHourlyCounts(rows = []) {
+  const minutesByHour = Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    minutes: 0,
+  }));
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const date = getSafeRequestDate(row);
+
+    if (date) {
+      minutesByHour[date.getHours()].minutes += 1;
+    }
+  });
+
+  return minutesByHour;
+}
+
+function buildDailyCounts(rows = [], ranges = []) {
+  const safeRanges = Array.isArray(ranges) ? ranges : [];
+  const hasRangeFilter = safeRanges.length > 0;
+  const rowMap = new Map(safeRanges
+    .map((range) => [range.dateKey, 0]));
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const date = getSafeRequestDate(row);
+
+    if (!date) {
+      return;
+    }
+
+    const dateKey = formatDayKey(date);
+    if (hasRangeFilter && !rowMap.has(dateKey)) {
+      return;
+    }
+
+    rowMap.set(dateKey, (rowMap.get(dateKey) || 0) + 1);
+  });
+
+  return Array.from(rowMap.entries()).map(([dateKey, minutes]) => ({
+    dateKey,
+    minutes,
+  }));
+}
+
+function buildTransitionRows(rows = [], keyGetter = () => UNKNOWN_DIMENSION, limit = 8) {
+  const counts = new Map();
+  let previousKey = null;
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const currentKey = normalizeDimension(keyGetter(row), UNKNOWN_DIMENSION);
+
+    if (previousKey !== null && previousKey !== currentKey) {
+      const key = `${previousKey}\u0000${currentKey}`;
+      const existing = counts.get(key) || {
+        from: previousKey,
+        to: currentKey,
+        count: 0,
+      };
+      existing.count += 1;
+      counts.set(key, existing);
+    }
+
+    previousKey = currentKey;
+  });
+
+  return Array.from(counts.values())
+    .sort((left, right) => right.count - left.count || left.from.localeCompare(right.from) || left.to.localeCompare(right.to))
+    .slice(0, limit);
+}
+
+function buildQuietGapSummary(rows = []) {
+  let longestGapMinutes = 0;
+  let longestGapStart = null;
+  let longestGapEnd = null;
+
+  for (let index = 1; index < rows.length; index += 1) {
+    const previous = getSafeRequestDate(rows[index - 1]);
+    const current = getSafeRequestDate(rows[index]);
+
+    if (!previous || !current) {
+      continue;
+    }
+
+    const gapMinutes = Math.max(0, Math.round((current.getTime() - previous.getTime()) / 60000) - 1);
+
+    if (gapMinutes > longestGapMinutes) {
+      longestGapMinutes = gapMinutes;
+      longestGapStart = previous;
+      longestGapEnd = current;
+    }
+  }
+
+  return {
+    longestGapMinutes,
+    longestGapStart,
+    longestGapEnd,
+  };
+}
+
+function buildDevicePackageMatrix(rows = [], limit = 10) {
+  const deviceMap = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const deviceId = normalizeDimension(row.deviceId, UNKNOWN_DIMENSION);
+    const packageName = normalizeDimension(row.package, UNKNOWN_DIMENSION);
+
+    if (!deviceMap.has(deviceId)) {
+      deviceMap.set(deviceId, {
+        deviceId,
+        minutes: 0,
+        packages: new Map(),
+      });
+    }
+
+    const device = deviceMap.get(deviceId);
+    device.minutes += 1;
+    device.packages.set(packageName, (device.packages.get(packageName) || 0) + 1);
+  });
+
+  return Array.from(deviceMap.values())
+    .map((device) => ({
+      deviceId: device.deviceId,
+      minutes: device.minutes,
+      packages: Array.from(device.packages.entries())
+        .map(([name, minutes]) => ({ name, minutes }))
+        .sort((left, right) => right.minutes - left.minutes || left.name.localeCompare(right.name))
+        .slice(0, 5),
+    }))
+    .sort((left, right) => right.minutes - left.minutes || left.deviceId.localeCompare(right.deviceId))
+    .slice(0, limit);
+}
+
+function buildLocationGroupSummaries(rows = [], settingsByKey = new Map(), options = {}) {
+  const groupsByKey = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    if (!hasValidRequestLocation(row)) {
+      return;
+    }
+
+    const groupKey = getRequestLocationGroupKey(row);
+    const latitude = getRequestLatitude(row);
+    const longitude = getRequestLongitude(row);
+
+    if (!groupKey || latitude === null || longitude === null) {
+      return;
+    }
+
+    if (!groupsByKey.has(groupKey)) {
+      groupsByKey.set(groupKey, {
+        groupKey,
+        minutes: 0,
+        latitudeTotal: 0,
+        longitudeTotal: 0,
+        devices: new Set(),
+        packages: new Set(),
+        firstSeen: null,
+        lastSeen: null,
+        pointSamples: [],
+      });
+    }
+
+    const group = groupsByKey.get(groupKey);
+    group.minutes += 1;
+    group.latitudeTotal += latitude;
+    group.longitudeTotal += longitude;
+    group.devices.add(normalizeDimension(row.deviceId, UNKNOWN_DIMENSION));
+    group.packages.add(normalizeDimension(row.package, UNKNOWN_DIMENSION));
+    group.pointSamples.push({
+      latitude,
+      longitude,
+      receivedAt: row.receivedAt || null,
+    });
+    updateSeenRange(group, row.receivedAt);
+  });
+
+  const sampleLimit = Number.isInteger(options.pointSampleLimit) && options.pointSampleLimit > 0
+    ? options.pointSampleLimit
+    : MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT;
+
+  return Array.from(groupsByKey.values())
+    .map((group) => {
+      const setting = settingsByKey.get(group.groupKey) || {};
+
+      return {
+        groupKey: group.groupKey,
+        latitude: group.minutes > 0 ? group.latitudeTotal / group.minutes : null,
+        longitude: group.minutes > 0 ? group.longitudeTotal / group.minutes : null,
+        minutes: group.minutes,
+        deviceCount: group.devices.size,
+        packageCount: group.packages.size,
+        firstSeen: group.firstSeen,
+        lastSeen: group.lastSeen,
+        pointSamples: sampleEvenly(group.pointSamples, sampleLimit),
+        name: setting.name || '',
+        hideCoordinates: Boolean(setting.hideCoordinates),
+      };
+    })
+    .sort((left, right) => {
+      if (right.minutes !== left.minutes) {
+        return right.minutes - left.minutes;
+      }
+
+      return String(left.groupKey).localeCompare(String(right.groupKey));
+    });
+}
+
 function buildRequestRecord(req, options = {}) {
   const now = new Date(options.now || Date.now());
   const endpointPath = options.endpointPath || req?.baseUrl || '';
@@ -823,6 +1263,33 @@ async function getMinuteLoggerLocationGroupSettings(endpointPath, groupKeys = []
   return settingsByKey;
 }
 
+async function fetchNamedLocationGroupSettings(endpointPath, options = {}) {
+  const settingsModel = options.settingsModel || MinuteLoggerLocationGroup;
+
+  if (!endpointPath) {
+    return [];
+  }
+
+  const rows = await leanExec(settingsModel.find({
+    endpointPath,
+    name: { $type: 'string', $ne: '' },
+  })
+    .sort({ name: 1, groupKey: 1 }));
+
+  return (Array.isArray(rows) ? rows : [])
+    .map(normalizeLocationGroupSetting)
+    .filter((row) => row.name)
+    .map((row) => {
+      const center = parseLocationGroupKeyCenter(row.groupKey);
+
+      return {
+        ...row,
+        latitude: center ? center.latitude : null,
+        longitude: center ? center.longitude : null,
+      };
+    });
+}
+
 function getRequestLocationGroupKey(request = {}) {
   const explicitGroupKey = String(request?.location?.groupKey || '').trim();
   if (explicitGroupKey) {
@@ -1090,6 +1557,360 @@ async function fetchLocationStats(endpointPath, options = {}) {
   return summary;
 }
 
+function buildNamedLocationLabels(namedSettings = [], bounds = null) {
+  return (Array.isArray(namedSettings) ? namedSettings : [])
+    .filter((setting) => {
+      return setting.name
+        && isValidLatitude(Number(setting.latitude))
+        && isValidLongitude(Number(setting.longitude))
+        && isPointWithinBounds(setting, bounds);
+    })
+    .map((setting) => ({
+      name: setting.name,
+      groupKey: setting.groupKey,
+      latitude: Number(setting.latitude),
+      longitude: Number(setting.longitude),
+      hideCoordinates: Boolean(setting.hideCoordinates),
+    }));
+}
+
+function buildActiveNamedTimelineLabels(points = [], bounds = null) {
+  const labelsByKey = new Map();
+
+  (Array.isArray(points) ? points : []).forEach((point) => {
+    if (!point.name) {
+      return;
+    }
+
+    const key = `${point.name}\u0000${point.groupKey || ''}`;
+
+    if (!labelsByKey.has(key)) {
+      labelsByKey.set(key, {
+        name: point.name,
+        groupKey: point.groupKey || '',
+        latitudeTotal: 0,
+        longitudeTotal: 0,
+        count: 0,
+      });
+    }
+
+    const label = labelsByKey.get(key);
+    label.latitudeTotal += Number(point.latitude);
+    label.longitudeTotal += Number(point.longitude);
+    label.count += 1;
+  });
+
+  return Array.from(labelsByKey.values())
+    .map((label) => ({
+      name: label.name,
+      groupKey: label.groupKey,
+      latitude: label.latitudeTotal / label.count,
+      longitude: label.longitudeTotal / label.count,
+    }))
+    .filter((label) => isPointWithinBounds(label, bounds));
+}
+
+function buildLocationTimeline(rows = [], settingsByKey = new Map(), namedSettings = []) {
+  const points = (Array.isArray(rows) ? rows : [])
+    .filter(hasValidRequestLocation)
+    .map((row) => {
+      const groupKey = getRequestLocationGroupKey(row);
+      const setting = settingsByKey.get(groupKey) || {};
+      const latitude = getRequestLatitude(row);
+      const longitude = getRequestLongitude(row);
+      const receivedAt = getSafeRequestDate(row);
+
+      if (!receivedAt || latitude === null || longitude === null) {
+        return null;
+      }
+
+      return {
+        latitude,
+        longitude,
+        groupKey,
+        name: setting.name || '',
+        deviceId: normalizeDimension(row.deviceId, UNKNOWN_DIMENSION),
+        package: normalizeDimension(row.package, UNKNOWN_DIMENSION),
+        receivedAt,
+        minuteOfDay: getMinuteOfDay(receivedAt),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.receivedAt - right.receivedAt);
+  const bounds = buildLocationBounds(points);
+  const labelsByKey = new Map();
+
+  [
+    ...buildNamedLocationLabels(namedSettings, bounds),
+    ...buildActiveNamedTimelineLabels(points, bounds),
+  ].forEach((label) => {
+    labelsByKey.set(`${label.name}\u0000${label.groupKey || ''}`, label);
+  });
+
+  return {
+    bounds,
+    labels: Array.from(labelsByKey.values()),
+    points,
+    defaultMinute: points.length ? points[points.length - 1].minuteOfDay : 720,
+  };
+}
+
+async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
+  const range = buildDayRangeFromDateKey(dateKey);
+
+  if (!range) {
+    return null;
+  }
+
+  const rows = await leanExec(requestModel.find({
+    endpointPath,
+    receivedAt: {
+      $gte: range.start,
+      $lt: range.end,
+    },
+  })
+    .sort({ receivedAt: 1 })
+    .select({
+      deviceId: 1,
+      package: 1,
+      location: 1,
+      receivedAt: 1,
+      ip: 1,
+      requestPath: 1,
+      userAgent: 1,
+      body: 1,
+    }));
+  const requests = Array.isArray(rows) ? rows : [];
+  const locatedRequests = requests.filter(hasValidRequestLocation);
+  const locationGroupKeys = Array.from(new Set(locatedRequests
+    .map(getRequestLocationGroupKey)
+    .filter(Boolean)));
+  const [
+    settingsByKey,
+    namedSettings,
+  ] = await Promise.all([
+    getMinuteLoggerLocationGroupSettings(endpointPath, locationGroupKeys, {
+      settingsModel: options.locationGroupSettingsModel,
+    }),
+    fetchNamedLocationGroupSettings(endpointPath, {
+      settingsModel: options.locationGroupSettingsModel,
+    }),
+  ]);
+  const hourlySpread = buildHourlyCounts(requests);
+  const timeBucketSummary = summarizeTimeBuckets(hourlySpread, 1);
+  const firstRequest = requests[0] || null;
+  const lastRequest = requests[requests.length - 1] || null;
+  const namedLocationMinutes = locatedRequests.reduce((sum, row) => {
+    const groupKey = getRequestLocationGroupKey(row);
+    const setting = settingsByKey.get(groupKey);
+    return sum + (setting?.name ? 1 : 0);
+  }, 0);
+
+  return {
+    endpointPath,
+    generatedAt: new Date(options.now || Date.now()),
+    dateKey: range.dateKey,
+    dayStart: range.start,
+    dayEnd: range.end,
+    totalMinutes: requests.length,
+    locatedMinutes: locatedRequests.length,
+    unlocatedMinutes: requests.length - locatedRequests.length,
+    namedLocationMinutes,
+    deviceCount: new Set(requests.map((row) => normalizeDimension(row.deviceId, UNKNOWN_DIMENSION))).size,
+    packageCount: new Set(requests.map((row) => normalizeDimension(row.package, UNKNOWN_DIMENSION))).size,
+    firstSeen: firstRequest?.receivedAt || null,
+    lastSeen: lastRequest?.receivedAt || null,
+    quietGap: buildQuietGapSummary(requests),
+    packageStats: buildRequestBreakdown(requests, (row) => row.package),
+    deviceStats: buildRequestBreakdown(requests, (row) => row.deviceId),
+    devicePackageMatrix: buildDevicePackageMatrix(requests),
+    locationGroups: buildLocationGroupSummaries(locatedRequests, settingsByKey, {
+      pointSampleLimit: options.pointSampleLimit,
+    }),
+    hourlySpread,
+    timeBucketStats: timeBucketSummary.buckets,
+    busiestTimeBucket: timeBucketSummary.busiest,
+    packageTransitions: buildTransitionRows(requests, (row) => row.package),
+    namedLocationTransitions: buildTransitionRows(locatedRequests, (row) => {
+      const groupKey = getRequestLocationGroupKey(row);
+      const setting = settingsByKey.get(groupKey);
+      return setting?.name || groupKey || UNKNOWN_DIMENSION;
+    }),
+    locationTimeline: buildLocationTimeline(locatedRequests, settingsByKey, namedSettings),
+    recentRequests: requests.slice(-25).reverse(),
+  };
+}
+
+function getNamedLocationNameMap(namedSettings = []) {
+  const map = new Map();
+
+  (Array.isArray(namedSettings) ? namedSettings : []).forEach((setting) => {
+    const name = normalizeLocationGroupName(setting.name);
+
+    if (!name) {
+      return;
+    }
+
+    if (!map.has(name)) {
+      map.set(name, {
+        name,
+        settings: [],
+        groupKeys: [],
+      });
+    }
+
+    const group = map.get(name);
+    group.settings.push(setting);
+    group.groupKeys.push(setting.groupKey);
+  });
+
+  return map;
+}
+
+function buildNamedLocationGroups(namedSettings = [], requests = [], options = {}) {
+  const namedByName = getNamedLocationNameMap(namedSettings);
+  const nameByGroupKey = new Map();
+
+  namedByName.forEach((group) => {
+    group.groupKeys.forEach((groupKey) => {
+      nameByGroupKey.set(groupKey, group.name);
+    });
+  });
+
+  const rowsByName = new Map(Array.from(namedByName.keys()).map((name) => [name, []]));
+  (Array.isArray(requests) ? requests : []).forEach((row) => {
+    const groupKey = getRequestLocationGroupKey(row);
+    const name = nameByGroupKey.get(groupKey);
+
+    if (name) {
+      rowsByName.get(name).push(row);
+    }
+  });
+
+  const dayRanges = buildCompleteDayRanges(options.now || new Date(), 14);
+
+  return Array.from(namedByName.values())
+    .map((group) => {
+      const rows = rowsByName.get(group.name) || [];
+      const locatedRows = rows.filter(hasValidRequestLocation);
+      const settingsByKey = new Map(group.settings.map((setting) => [setting.groupKey, setting]));
+      const points = sampleEvenly(locatedRows
+        .map((row) => {
+          const latitude = getRequestLatitude(row);
+          const longitude = getRequestLongitude(row);
+          const receivedAt = getSafeRequestDate(row);
+
+          if (latitude === null || longitude === null || !receivedAt) {
+            return null;
+          }
+
+          return {
+            latitude,
+            longitude,
+            receivedAt,
+            groupKey: getRequestLocationGroupKey(row),
+            deviceId: normalizeDimension(row.deviceId, UNKNOWN_DIMENSION),
+            package: normalizeDimension(row.package, UNKNOWN_DIMENSION),
+          };
+        })
+        .filter(Boolean), options.pointSampleLimit || MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT);
+      const bounds = buildLocationBounds(points, group.settings);
+      const locationGroups = buildLocationGroupSummaries(locatedRows, settingsByKey, {
+        pointSampleLimit: options.pointSampleLimit,
+      });
+      const deviceSet = new Set(rows.map((row) => normalizeDimension(row.deviceId, UNKNOWN_DIMENSION)));
+      const packageSet = new Set(rows.map((row) => normalizeDimension(row.package, UNKNOWN_DIMENSION)));
+      const firstSeen = rows.reduce((first, row) => {
+        const date = getSafeRequestDate(row);
+        if (!date) return first;
+        return !first || date < first ? date : first;
+      }, null);
+      const lastSeen = rows.reduce((last, row) => {
+        const date = getSafeRequestDate(row);
+        if (!date) return last;
+        return !last || date > last ? date : last;
+      }, null);
+      const hourlySpread = buildHourlyCounts(rows);
+      const timeBucketSummary = summarizeTimeBuckets(hourlySpread, MINUTE_LOGGER_RAW_RETENTION_DAYS);
+
+      return {
+        name: group.name,
+        groupKeys: group.groupKeys,
+        settings: group.settings,
+        totalMinutes: rows.length,
+        locatedMinutes: locatedRows.length,
+        deviceCount: deviceSet.size,
+        packageCount: packageSet.size,
+        firstSeen,
+        lastSeen,
+        packageStats: buildRequestBreakdown(rows, (row) => row.package).slice(0, 8),
+        deviceStats: buildRequestBreakdown(rows, (row) => row.deviceId).slice(0, 8),
+        locationGroups,
+        hourlySpread,
+        timeBucketStats: timeBucketSummary.buckets,
+        busiestTimeBucket: timeBucketSummary.busiest,
+        dailyTrend: buildDailyCounts(rows, dayRanges),
+        pointCloud: {
+          bounds,
+          points,
+          labels: buildNamedLocationLabels(group.settings, bounds),
+        },
+      };
+    })
+    .sort((left, right) => right.totalMinutes - left.totalMinutes || left.name.localeCompare(right.name));
+}
+
+async function getMinuteLoggerNamedLocationAnalytics(options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
+  const now = new Date(options.now || Date.now());
+  const since = new Date(now.getTime() - (MINUTE_LOGGER_RAW_RETENTION_DAYS * DAY_MS));
+  const namedSettings = await fetchNamedLocationGroupSettings(endpointPath, {
+    settingsModel: options.locationGroupSettingsModel,
+  });
+  const groupKeys = Array.from(new Set(namedSettings.map((setting) => setting.groupKey).filter(Boolean)));
+  const requests = groupKeys.length
+    ? await leanExec(requestModel.find({
+      endpointPath,
+      receivedAt: { $gte: since },
+      'location.groupKey': { $in: groupKeys },
+    })
+      .sort({ receivedAt: 1 })
+      .select({
+        deviceId: 1,
+        package: 1,
+        location: 1,
+        receivedAt: 1,
+      }))
+    : [];
+  const rows = Array.isArray(requests) ? requests : [];
+  const groups = buildNamedLocationGroups(namedSettings, rows, {
+    now,
+    pointSampleLimit: options.pointSampleLimit,
+  });
+  const locatedMinutes = rows.filter(hasValidRequestLocation).length;
+  const totalMinutes = groups.reduce((sum, group) => sum + group.totalMinutes, 0);
+  const activeGroups = groups.filter((group) => group.totalMinutes > 0);
+
+  return {
+    endpointPath,
+    generatedAt: now,
+    since,
+    rawRetentionDays: MINUTE_LOGGER_RAW_RETENTION_DAYS,
+    namedLocationCount: groups.length,
+    namedLocationGroupCount: groupKeys.length,
+    activeNamedLocationCount: activeGroups.length,
+    totalMinutes,
+    locatedMinutes,
+    deviceCount: new Set(rows.map((row) => normalizeDimension(row.deviceId, UNKNOWN_DIMENSION))).size,
+    packageCount: new Set(rows.map((row) => normalizeDimension(row.package, UNKNOWN_DIMENSION))).size,
+    busiestLocation: groups[0] || null,
+    groups,
+  };
+}
+
 async function fetchHourlySpread(endpointPath, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const since = options.since;
@@ -1269,6 +2090,7 @@ async function getMinuteLoggerDashboard(options = {}) {
 
 module.exports = {
   MinuteLoggerLocationGroupSettingsError,
+  MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT,
   MINUTE_LOGGER_RAW_RETENTION_DAYS,
   MINUTE_LOGGER_LOCATION_GROUP_LIMIT,
   MINUTE_LOGGER_LOCATION_GROUP_NAME_MAX_LENGTH,
@@ -1283,6 +2105,7 @@ module.exports = {
   TIME_BUCKETS,
   UNKNOWN_DIMENSION,
   buildCompleteDayRanges,
+  buildDayRangeFromDateKey,
   buildLocationGroupKey,
   buildMonthRanges,
   buildPeriodInfo,
@@ -1293,11 +2116,14 @@ module.exports = {
   fetchLastKnownNamedLocation,
   fetchLocationStats,
   fetchMonthlyMinuteStats,
+  fetchNamedLocationGroupSettings,
   fetchPackageStats,
   getMinuteLoggerLocationGroupSettings,
   getDeviceId,
   getLocation,
+  getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
   incrementMinuteLoggerStats,
   normalizeDimension,
