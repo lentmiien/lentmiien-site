@@ -301,13 +301,15 @@ body,
 }
 
 .minute-logger-hour-chart-wrap {
-  overflow-x: auto;
+  overflow: hidden;
 }
 
 .minute-logger-hour-chart {
   display: block;
   width: 100%;
-  min-width: 640px;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
 }
 
 .minute-logger-month-chart {
@@ -369,6 +371,13 @@ body,
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.minute-logger-days {
+  max-height: 30rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+  scrollbar-gutter: stable;
 }
 
 .minute-logger-bucket {

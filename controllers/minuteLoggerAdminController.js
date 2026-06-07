@@ -410,6 +410,10 @@ function mapMonthlyStat(row) {
   };
 }
 
+function mapDailyMinuteStatsLatestFirst(rows = []) {
+  return mapDailyMinuteStats(rows).slice().reverse();
+}
+
 function mapRecentRequest(row) {
   const latitude = Number(row?.location?.latitude);
   const longitude = Number(row?.location?.longitude);
@@ -445,7 +449,7 @@ exports.dashboard = async (req, res) => {
       statsRetentionYears: MINUTE_LOGGER_STATS_RETENTION_YEARS,
       recentLimit: MINUTE_LOGGER_RECENT_LIMIT,
       overviewCards: buildOverviewCards(dashboard),
-      dailyMinuteStats: mapDailyMinuteStats(dashboard.dailyMinuteStats),
+      dailyMinuteStats: mapDailyMinuteStatsLatestFirst(dashboard.dailyMinuteStats),
       monthlyMinuteStats: dashboard.monthlyMinuteStats.map(mapMonthlyStat),
       packageStats: dashboard.packageStats.slice(0, 12).map(mapPackageStat),
       deviceStats: dashboard.deviceStats.slice(0, 12).map(mapDeviceStat),

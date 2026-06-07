@@ -243,6 +243,32 @@ describe('minuteLoggerAdminController.dashboard', () => {
     );
   });
 
+  test('renders daily minute stats newest first', async () => {
+    getMinuteLoggerDashboard.mockResolvedValue(createDashboard({
+      dailyMinuteStats: [
+        {
+          dateKey: '2026-06-04',
+          totalMinutes: 5,
+          categories: [{ name: 'com.example.old', minutes: 5 }],
+        },
+        {
+          dateKey: '2026-06-05',
+          totalMinutes: 8,
+          categories: [{ name: 'com.example.new', minutes: 8 }],
+        },
+      ],
+    }));
+    const res = createResponse();
+
+    await controller.dashboard({ query: {} }, res);
+
+    const viewModel = res.render.mock.calls[0][1];
+    expect(viewModel.dailyMinuteStats.map((day) => day.dateKey)).toEqual([
+      '2026-06-05',
+      '2026-06-04',
+    ]);
+  });
+
   test('saves a location group display name', async () => {
     updateMinuteLoggerLocationGroupSettings.mockResolvedValue({
       groupKey: '35.460,139.540',
