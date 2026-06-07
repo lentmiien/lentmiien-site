@@ -11,6 +11,20 @@ const createLeanQuery = (payload) => ({
   lean: jest.fn().mockResolvedValue(payload)
 });
 
+const reminderTask = (overrides = {}) => ({
+  _id: overrides._id || 'task-id',
+  userId: 'user-123',
+  type: 'todo',
+  title: 'Task',
+  description: '',
+  start: null,
+  end: null,
+  done: false,
+  createdAt: new Date('2026-06-08T00:00:00Z'),
+  updatedAt: new Date('2026-06-08T00:00:00Z'),
+  ...overrides,
+});
+
 describe('ScheduleTaskService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -49,6 +63,104 @@ describe('ScheduleTaskService', () => {
     });
 
     expect(result).toEqual({ presences, tasks: todos });
+  });
+
+  test('getTaskReminderBuckets queries todo/tobuy candidates for the reminder windows', async () => {
+    const userId = 'user-123';
+    const now = new Date('2026-06-08T09:00:00Z');
+    const expiringSoonUntil = new Date('2026-06-08T10:00:00Z');
+    const startingSoonUntil = new Date('2026-06-08T12:00:00Z');
+
+    Task.find.mockImplementationOnce(() => createLeanQuery([]));
+
+    await ScheduleTaskService.getTaskReminderBuckets(userId, { now });
+
+    expect(Task.find).toHaveBeenCalledWith({
+      userId,
+      type: { $in: ['todo', 'tobuy'] },
+      done: { $ne: true },
+      $or: [
+        { end: { $lte: now } },
+        { end: { $gt: now, $lte: expiringSoonUntil } },
+        { start: { $gt: now, $lte: startingSoonUntil } },
+        {
+          $and: [
+            { end: null },
+            { $or: [{ start: null }, { start: { $lte: now } }] },
+          ],
+        },
+      ],
+    });
+  });
+
+  test('getTaskReminderBuckets classifies reminders with priority c, b, a, d', async () => {
+    const now = new Date('2026-06-08T09:00:00Z');
+    const docs = [
+      reminderTask({
+        _id: 'starts-soon',
+        title: 'Starts Soon',
+        start: new Date('2026-06-08T11:00:00Z'),
+        end: null,
+      }),
+      reminderTask({
+        _id: 'expiring-and-starting',
+        title: 'Expiring and Starting',
+        start: new Date('2026-06-08T09:15:00Z'),
+        end: new Date('2026-06-08T09:45:00Z'),
+      }),
+      reminderTask({
+        _id: 'expired-and-starting',
+        title: 'Expired and Starting',
+        start: new Date('2026-06-08T09:30:00Z'),
+        end: new Date('2026-06-08T08:00:00Z'),
+      }),
+      reminderTask({
+        _id: 'started-no-deadline',
+        title: 'Started No Deadline',
+        start: new Date('2026-06-08T08:00:00Z'),
+        end: null,
+      }),
+      reminderTask({
+        _id: 'no-dates',
+        title: 'No Dates',
+        start: null,
+        end: null,
+        createdAt: new Date('2026-06-08T08:30:00Z'),
+      }),
+      reminderTask({
+        _id: 'completed-expired',
+        title: 'Completed Expired',
+        end: new Date('2026-06-08T08:30:00Z'),
+        done: true,
+      }),
+    ];
+    Task.find.mockImplementationOnce(() => createLeanQuery(docs));
+
+    const result = await ScheduleTaskService.getTaskReminderBuckets('user-123', { now });
+
+    expect(result.generatedAt).toBe('2026-06-08T09:00:00.000Z');
+    expect(result.windows).toEqual({
+      startingSoonHours: 3,
+      expiringSoonHours: 1,
+      startingSoonUntil: '2026-06-08T12:00:00.000Z',
+      expiringSoonUntil: '2026-06-08T10:00:00.000Z',
+    });
+    expect(result.counts).toEqual({
+      expired: 1,
+      expiringSoon: 1,
+      startingSoon: 1,
+      ongoingWithoutDeadline: 2,
+    });
+    expect(result.reminders.expired.map((task) => task.id)).toEqual(['expired-and-starting']);
+    expect(result.reminders.expiringSoon.map((task) => task.id)).toEqual(['expiring-and-starting']);
+    expect(result.reminders.startingSoon.map((task) => task.id)).toEqual(['starts-soon']);
+    expect(result.reminders.ongoingWithoutDeadline.map((task) => task.id)).toEqual(['started-no-deadline', 'no-dates']);
+    expect(result.reminders.expiringSoon[0]).toMatchObject({
+      id: 'expiring-and-starting',
+      category: 'expiringSoon',
+      start: '2026-06-08T09:15:00.000Z',
+      end: '2026-06-08T09:45:00.000Z',
+    });
   });
 
   test('detectPresenceConflict delegates to Task.find', async () => {

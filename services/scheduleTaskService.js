@@ -1,5 +1,101 @@
 const { Task, Palette } = require('../database');
 
+const HOUR_MS = 60 * 60 * 1000;
+const REMINDER_STARTING_SOON_HOURS = 3;
+const REMINDER_EXPIRING_SOON_HOURS = 1;
+const TASK_REMINDER_CATEGORIES = [
+  'expired',
+  'expiringSoon',
+  'startingSoon',
+  'ongoingWithoutDeadline',
+];
+
+function toValidDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+function toIsoString(value) {
+  const date = toValidDate(value);
+  return date ? date.toISOString() : null;
+}
+
+function buildTaskReminderBuckets() {
+  return TASK_REMINDER_CATEGORIES.reduce((buckets, category) => {
+    buckets[category] = [];
+    return buckets;
+  }, {});
+}
+
+function serializeReminderTask(task, category) {
+  return {
+    id: task && task._id ? task._id.toString() : '',
+    userId: task && task.userId ? task.userId : '',
+    type: task && task.type ? task.type : '',
+    title: task && task.title ? task.title : '',
+    description: task && task.description ? task.description : '',
+    start: toIsoString(task ? task.start : null),
+    end: toIsoString(task ? task.end : null),
+    done: Boolean(task && task.done),
+    meta: task && task.meta ? task.meta : null,
+    createdAt: toIsoString(task ? task.createdAt : null),
+    updatedAt: toIsoString(task ? task.updatedAt : null),
+    category,
+  };
+}
+
+function classifyReminderTask(task, now, startingSoonUntil, expiringSoonUntil) {
+  const start = toValidDate(task ? task.start : null);
+  const end = toValidDate(task ? task.end : null);
+
+  if (end && end <= now) {
+    return 'expired';
+  }
+  if (end && end > now && end <= expiringSoonUntil) {
+    return 'expiringSoon';
+  }
+  if (start && start > now && start <= startingSoonUntil) {
+    return 'startingSoon';
+  }
+  if (!end && (!start || start <= now)) {
+    return 'ongoingWithoutDeadline';
+  }
+
+  return null;
+}
+
+function sortReminderTasks(category, tasks) {
+  const dateField = {
+    expired: 'end',
+    expiringSoon: 'end',
+    startingSoon: 'start',
+    ongoingWithoutDeadline: 'start',
+  }[category];
+
+  tasks.sort((left, right) => {
+    const leftDate = toValidDate(left[dateField]) || toValidDate(left.createdAt) || toValidDate(left.updatedAt);
+    const rightDate = toValidDate(right[dateField]) || toValidDate(right.createdAt) || toValidDate(right.updatedAt);
+
+    if (leftDate && rightDate && leftDate.getTime() !== rightDate.getTime()) {
+      return leftDate.getTime() - rightDate.getTime();
+    }
+    if (leftDate && !rightDate) {
+      return -1;
+    }
+    if (!leftDate && rightDate) {
+      return 1;
+    }
+    return (left.title || '').localeCompare(right.title || '');
+  });
+}
+
 class ScheduleTaskService {
   static SLOT_MINUTES = 15;
 
@@ -71,6 +167,62 @@ class ScheduleTaskService {
     const custom = {};
     docs.forEach(c => custom[c.key] = { bgColor: c.bgColor, border: c.border });
     return {...defaults, ...custom};
+  }
+
+  static async getTaskReminderBuckets(userId, options = {}) {
+    const now = options.now ? toValidDate(options.now) : new Date();
+    if (!now) {
+      throw new Error('now must be a valid date.');
+    }
+
+    const startingSoonUntil = new Date(now.getTime() + REMINDER_STARTING_SOON_HOURS * HOUR_MS);
+    const expiringSoonUntil = new Date(now.getTime() + REMINDER_EXPIRING_SOON_HOURS * HOUR_MS);
+
+    const docs = await Task.find({
+      userId,
+      type: { $in: ['todo', 'tobuy'] },
+      done: { $ne: true },
+      $or: [
+        { end: { $lte: now } },
+        { end: { $gt: now, $lte: expiringSoonUntil } },
+        { start: { $gt: now, $lte: startingSoonUntil } },
+        {
+          $and: [
+            { end: null },
+            { $or: [{ start: null }, { start: { $lte: now } }] },
+          ],
+        },
+      ],
+    }).lean();
+
+    const reminders = buildTaskReminderBuckets();
+    (docs || []).forEach((task) => {
+      if (task && task.done === true) {
+        return;
+      }
+      const category = classifyReminderTask(task, now, startingSoonUntil, expiringSoonUntil);
+      if (category) {
+        reminders[category].push(serializeReminderTask(task, category));
+      }
+    });
+
+    TASK_REMINDER_CATEGORIES.forEach((category) => sortReminderTasks(category, reminders[category]));
+
+    return {
+      userId,
+      generatedAt: now.toISOString(),
+      windows: {
+        startingSoonHours: REMINDER_STARTING_SOON_HOURS,
+        expiringSoonHours: REMINDER_EXPIRING_SOON_HOURS,
+        startingSoonUntil: startingSoonUntil.toISOString(),
+        expiringSoonUntil: expiringSoonUntil.toISOString(),
+      },
+      counts: TASK_REMINDER_CATEGORIES.reduce((counts, category) => {
+        counts[category] = reminders[category].length;
+        return counts;
+      }, {}),
+      reminders,
+    };
   }
 
   static roundToSlot(date) {

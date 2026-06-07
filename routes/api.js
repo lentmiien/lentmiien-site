@@ -62,6 +62,7 @@ router.get('/chat5/fetchLastMessage', controller.fetchLastMessage);
 /* External */
 router.get('/testConnect', controller.testConnect);
 router.get('/fetchFeedback', controller.fetchFeedback);
+router.get('/taskReminders', controller.getTaskReminders);
 router.post('/setTask', controller.setTask);
 
 /* Records */

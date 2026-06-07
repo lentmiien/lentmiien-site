@@ -225,6 +225,28 @@ paths:
                 properties:
                   message:
                     type: string
+  /api/taskReminders:
+    get:
+      summary: Fetch open todo/tobuy reminder buckets
+      description: >
+        Returns incomplete `todo` and `tobuy` tasks grouped into four reminder categories:
+        expired deadlines, deadlines within the next hour, starts within the next three hours,
+        and ongoing no-deadline tasks. A task appears in only one category using priority
+        `expired`, `expiringSoon`, `startingSoon`, then `ongoingWithoutDeadline`.
+      tags: [Automation]
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: string
+          description: Optional task owner. Defaults to the session user, or `Lennart` for API-key calls.
+      responses:
+        '200':
+          description: Reminder buckets for open todo/tobuy tasks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskReminderResponse'
   /api/setTask:
     post:
       summary: Create a lightweight schedule task
@@ -788,6 +810,100 @@ components:
         doc:
           type: object
           description: Newly created `Task` document when available.
+    TaskReminderResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [OK]
+        userId:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        windows:
+          type: object
+          properties:
+            startingSoonHours:
+              type: number
+              example: 3
+            expiringSoonHours:
+              type: number
+              example: 1
+            startingSoonUntil:
+              type: string
+              format: date-time
+            expiringSoonUntil:
+              type: string
+              format: date-time
+        counts:
+          type: object
+          properties:
+            expired:
+              type: integer
+            expiringSoon:
+              type: integer
+            startingSoon:
+              type: integer
+            ongoingWithoutDeadline:
+              type: integer
+        reminders:
+          type: object
+          properties:
+            expired:
+              type: array
+              items:
+                $ref: '#/components/schemas/TaskReminder'
+            expiringSoon:
+              type: array
+              items:
+                $ref: '#/components/schemas/TaskReminder'
+            startingSoon:
+              type: array
+              items:
+                $ref: '#/components/schemas/TaskReminder'
+            ongoingWithoutDeadline:
+              type: array
+              items:
+                $ref: '#/components/schemas/TaskReminder'
+    TaskReminder:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        type:
+          type: string
+          enum: [todo, tobuy]
+        title:
+          type: string
+        description:
+          type: string
+        start:
+          type: string
+          format: date-time
+          nullable: true
+        end:
+          type: string
+          format: date-time
+          nullable: true
+        done:
+          type: boolean
+        meta:
+          type: object
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        category:
+          type: string
+          enum: [expired, expiringSoon, startingSoon, ongoingWithoutDeadline]
     EncryptedFieldEnvelope:
       type: object
       required: [v, alg, kid, iv, tag, ct]
@@ -965,7 +1081,7 @@ x-yaml-viewer:
   highlights:
     - Health metrics ingestion & diary exports for the analytics notebooks.
     - Bin packing helper shared with the Vue dashboard and CLI runners.
-    - Automation-friendly task creator used by calendar agents.
+    - Automation-friendly task creation and reminder buckets used by calendar agents.
     - Tiered `/api/records` storage with encrypted field redaction for Tier 1 callers.
   examples:
     - label: Fetch health entries

@@ -263,6 +263,18 @@ exports.fetchLastMessage = async (req, res) => {
  */
 const ScheduleTaskService = require('../services/scheduleTaskService');
 const { ExchangeRate } = require('../database');
+const DEFAULT_TASK_USER_ID = 'Lennart';
+
+function getTaskRequestUserId(req) {
+  const queryUserId = typeof req.query?.userId === 'string' ? req.query.userId.trim() : '';
+  if (queryUserId) {
+    return queryUserId;
+  }
+  if (req.user && req.user.name) {
+    return req.user.name;
+  }
+  return DEFAULT_TASK_USER_ID;
+}
 
 exports.testConnect = async (req, res) => {
   res.json({status: "OK"});
@@ -272,6 +284,16 @@ exports.fetchFeedback = async (req, res) => {
   const {conv, msg} = await conversationService.loadConversation("689d3d435f68766cf42f085f");
   res.json({message: msg[msg.length-1].content.text});
 }
+
+exports.getTaskReminders = async (req, res) => {
+  try {
+    const userId = getTaskRequestUserId(req);
+    const result = await ScheduleTaskService.getTaskReminderBuckets(userId);
+    return res.json({ status: 'OK', ...result });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+};
 
 exports.setTask = async (req, res) => {
   try {
