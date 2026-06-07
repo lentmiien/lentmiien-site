@@ -25,6 +25,8 @@ block content
     const maxMonthMinutes = Math.max(1, ...months.map((month) => Number(month.totalMinutes) || 0));
     const maxPackageMinutes = Math.max(1, ...(packageStats || []).map((row) => Number(row.minutes) || 0));
     const maxDeviceMinutes = Math.max(1, ...(deviceStats || []).map((row) => Number(row.minutes) || 0));
+    const locationGroups = locationStats && Array.isArray(locationStats.groups) ? locationStats.groups : [];
+    const maxLocationMinutes = Math.max(1, ...locationGroups.map((row) => Number(row.minutes) || 0));
 
   .minute-logger-admin
     header.minute-logger-hero
@@ -202,6 +204,48 @@ block content
         else
           p.minute-logger-empty No complete days are available in raw retention.
 
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Location Groups
+            span Last #{rawRetentionDays} days, #{locationStats.noiseThresholdDisplay} minimum
+        if locationStats
+          dl.minute-logger-location-summary
+            div
+              dt Located minutes
+              dd= locationStats.totalLocationMinutesDisplay
+            div
+              dt Grouped minutes
+              dd= locationStats.groupedLocationMinutesDisplay
+            div
+              dt Noise filtered
+              dd #{locationStats.noiseLocationMinutesDisplay} across #{locationStats.noiseGroupCountDisplay} groups
+            div
+              dt Group precision
+              dd= locationStats.precisionDisplay
+        if locationGroups.length
+          .minute-logger-location-list
+            each group in locationGroups
+              .minute-logger-rank.minute-logger-location
+                .minute-logger-rank__top
+                  strong= group.groupKey
+                  span= group.minutesDisplay
+                .minute-logger-rank__bar.minute-logger-rank__bar--location
+                  span(style=`--rank-width: ${(group.minutes / maxLocationMinutes) * 100}%;`)
+                .minute-logger-rank__meta
+                  span #{group.deviceCountDisplay} devices
+                  span #{group.packageCountDisplay} packages
+                  span= group.shareDisplay
+                  span Last #{group.lastSeenDisplay}
+                .minute-logger-location__detail
+                  span Center #{group.coordinateDisplay}
+                  if group.mapUrl
+                    a.minute-logger-location-link(href=group.mapUrl, target='_blank', rel='noopener noreferrer') Map
+        else if locationStats && locationStats.totalLocationMinutes
+          p.minute-logger-empty All parsed location points are below the #{locationStats.noiseThresholdDisplay} group threshold.
+        else
+          p.minute-logger-empty No parsed location data yet.
+
       section.minute-logger-grid
         article.minute-logger-panel
           header.minute-logger-panel__header
@@ -256,6 +300,7 @@ block content
                   th Time
                   th Device
                   th Package
+                  th Location
                   th IP
                   th Path
                   th User Agent
@@ -268,6 +313,11 @@ block content
                       code= request.deviceId
                     td
                       code= request.packageName
+                    td
+                      if request.locationMapUrl
+                        a.minute-logger-location-link(href=request.locationMapUrl, target='_blank', rel='noopener noreferrer')= request.locationDisplay
+                      else
+                        = request.locationDisplay
                     td= request.ip
                     td= request.requestPath
                     td= request.userAgent

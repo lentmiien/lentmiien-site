@@ -346,6 +346,7 @@ body,
 
 .minute-logger-buckets,
 .minute-logger-rank-list,
+.minute-logger-location-list,
 .minute-logger-days {
   display: grid;
   gap: 0.8rem;
@@ -386,6 +387,34 @@ body,
   display: grid;
   gap: 0.75rem;
   margin: 0;
+}
+
+.minute-logger-location-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.minute-logger-location-summary div {
+  min-width: 0;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: rgba(14, 15, 19, 0.36);
+}
+
+.minute-logger-location-summary dt {
+  color: var(--ml-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.minute-logger-location-summary dd {
+  margin: 0.3rem 0 0;
+  color: var(--ml-text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .minute-logger-day {
@@ -520,9 +549,34 @@ body,
   background: linear-gradient(90deg, var(--ml-info), var(--ml-success));
 }
 
+.minute-logger-rank__bar--location span {
+  background: linear-gradient(90deg, var(--ml-coral), var(--ml-info));
+}
+
 .minute-logger-rank__meta {
+  flex-wrap: wrap;
   color: var(--ml-text-muted);
   font-size: 0.82rem;
+}
+
+.minute-logger-location__detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  color: var(--ml-text-muted);
+  font-size: 0.84rem;
+}
+
+.minute-logger-location-link {
+  color: var(--ml-accent);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.minute-logger-location-link:hover,
+.minute-logger-location-link:focus {
+  color: var(--ml-accent-hover);
+  text-decoration: underline;
 }
 
 .minute-logger-empty {
@@ -542,7 +596,7 @@ body,
 
 .minute-logger-table {
   width: 100%;
-  min-width: 1120px;
+  min-width: 1240px;
   border-collapse: collapse;
 }
 

@@ -8,6 +8,9 @@ const MINUTE_LOGGER_RECENT_LIMIT = 50;
 const UNKNOWN_DIMENSION = 'unknown';
 const MINUTE_LOGGER_RESPONSE_BODY = { message: 'OK' };
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MINUTE_LOGGER_LOCATION_GROUP_PRECISION = 3;
+const MINUTE_LOGGER_LOCATION_NOISE_MINUTES = 3;
+const MINUTE_LOGGER_LOCATION_GROUP_LIMIT = 20;
 
 const TIME_BUCKETS = [
   { key: 'morning', label: 'Morning', startHour: 5, endHour: 11 },
@@ -152,6 +155,40 @@ function getInputValue(req, names = [], headerNames = []) {
   return undefined;
 }
 
+function isPresentInputValue(value) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => isPresentInputValue(item));
+  }
+
+  if (typeof value === 'string') {
+    return value.trim() !== '';
+  }
+
+  return true;
+}
+
+function getRawInputValue(req, names = []) {
+  const sources = [req?.body, req?.query];
+
+  for (const source of sources) {
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      continue;
+    }
+
+    for (const name of names) {
+      if (Object.prototype.hasOwnProperty.call(source, name) && isPresentInputValue(source[name])) {
+        return source[name];
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function getPackageName(req) {
   return normalizeDimension(
     getInputValue(req, ['package'], ['x-package']),
@@ -163,6 +200,160 @@ function getDeviceId(req) {
   return normalizeDimension(
     getInputValue(req, ['deviceId', 'device_id', 'deviceID', 'device'], ['x-device-id']),
     UNKNOWN_DIMENSION
+  );
+}
+
+function parseCoordinateNumber(value) {
+  const candidate = firstPresentValue(value);
+
+  if (candidate === undefined || candidate === null) {
+    return null;
+  }
+
+  if (typeof candidate === 'number') {
+    return Number.isFinite(candidate) ? candidate : null;
+  }
+
+  const text = String(candidate).trim();
+  if (!text) {
+    return null;
+  }
+
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+}
+
+function isValidLatitude(value) {
+  return Number.isFinite(value) && value >= -90 && value <= 90;
+}
+
+function isValidLongitude(value) {
+  return Number.isFinite(value) && value >= -180 && value <= 180;
+}
+
+function formatLocationRaw(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().slice(0, 240) || null;
+  }
+
+  try {
+    return JSON.stringify(serializeValue(value)).slice(0, 240);
+  } catch (error) {
+    return String(value).slice(0, 240);
+  }
+}
+
+function roundCoordinate(value, precision = MINUTE_LOGGER_LOCATION_GROUP_PRECISION) {
+  const factor = 10 ** precision;
+  return Math.round(Number(value) * factor) / factor;
+}
+
+function buildLocationGroupKey(latitude, longitude, precision = MINUTE_LOGGER_LOCATION_GROUP_PRECISION) {
+  return [
+    roundCoordinate(latitude, precision).toFixed(precision),
+    roundCoordinate(longitude, precision).toFixed(precision),
+  ].join(',');
+}
+
+function buildLocationObject(latitude, longitude, raw, options = {}) {
+  const precision = Number.isInteger(options.precision)
+    ? options.precision
+    : MINUTE_LOGGER_LOCATION_GROUP_PRECISION;
+
+  if (!isValidLatitude(latitude) || !isValidLongitude(longitude)) {
+    return null;
+  }
+
+  return {
+    raw: formatLocationRaw(raw) || `${latitude},${longitude}`,
+    latitude,
+    longitude,
+    groupKey: buildLocationGroupKey(latitude, longitude, precision),
+  };
+}
+
+function parseCoordinatePair(firstValue, secondValue, raw, options = {}) {
+  let latitude = parseCoordinateNumber(firstValue);
+  let longitude = parseCoordinateNumber(secondValue);
+
+  if (isValidLatitude(latitude) && isValidLongitude(longitude)) {
+    return buildLocationObject(latitude, longitude, raw, options);
+  }
+
+  if (isValidLatitude(longitude) && isValidLongitude(latitude)) {
+    return buildLocationObject(longitude, latitude, raw, options);
+  }
+
+  return null;
+}
+
+function getObjectCoordinateValue(value, names = []) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(value, name)) {
+      return value[name];
+    }
+  }
+
+  return undefined;
+}
+
+function parseLocationValue(value, options = {}) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (Array.isArray(value) && value.length >= 2) {
+    return parseCoordinatePair(value[0], value[1], value, options);
+  }
+
+  if (typeof value === 'string') {
+    const parts = value.trim().split(/[,\s;]+/u).filter(Boolean);
+    if (parts.length >= 2) {
+      return parseCoordinatePair(parts[0], parts[1], value, options);
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    const latitude = getObjectCoordinateValue(value, ['latitude', 'lat']);
+    const longitude = getObjectCoordinateValue(value, ['longitude', 'lng', 'lon']);
+    const explicit = parseCoordinatePair(latitude, longitude, value, options);
+    if (explicit) {
+      return explicit;
+    }
+
+    const nestedCoordinates = getObjectCoordinateValue(value, ['coordinates', 'coords']);
+    if (Array.isArray(nestedCoordinates) && nestedCoordinates.length >= 2) {
+      return parseCoordinatePair(nestedCoordinates[0], nestedCoordinates[1], value, options);
+    }
+  }
+
+  return null;
+}
+
+function getLocation(req) {
+  const explicitLatitude = getInputValue(req, ['latitude', 'lat'], ['x-latitude']);
+  const explicitLongitude = getInputValue(req, ['longitude', 'lng', 'lon'], ['x-longitude']);
+  const explicitLocation = parseCoordinatePair(
+    explicitLatitude,
+    explicitLongitude,
+    `${explicitLatitude},${explicitLongitude}`
+  );
+
+  if (explicitLocation) {
+    return explicitLocation;
+  }
+
+  return parseLocationValue(
+    getRawInputValue(req, ['location', 'coordinates', 'coords'])
   );
 }
 
@@ -259,6 +450,7 @@ function buildRequestRecord(req, options = {}) {
   const endpointPath = options.endpointPath || req?.baseUrl || '';
   const packageName = getPackageName(req);
   const deviceId = getDeviceId(req);
+  const location = getLocation(req);
 
   return {
     endpointPath,
@@ -270,6 +462,7 @@ function buildRequestRecord(req, options = {}) {
     referer: getHeader(req, 'referer') || getHeader(req, 'referrer'),
     deviceId,
     package: packageName,
+    location,
     query: serializeValue(req?.query || {}),
     body: serializeValue(req?.body === undefined ? {} : req.body),
     receivedAt: now,
@@ -540,6 +733,105 @@ async function fetchDeviceStats(endpointPath, options = {}) {
   return Array.isArray(rows) ? rows : [];
 }
 
+function normalizeLocationStatRow(row = {}) {
+  const latitude = row.latitude === null || row.latitude === undefined ? NaN : Number(row.latitude);
+  const longitude = row.longitude === null || row.longitude === undefined ? NaN : Number(row.longitude);
+  const minutes = Number(row.minutes) || 0;
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  return {
+    groupKey: row.groupKey || row.locationGroupKey || row._id || (hasCoordinates ? buildLocationGroupKey(latitude, longitude) : ''),
+    latitude: hasCoordinates ? latitude : null,
+    longitude: hasCoordinates ? longitude : null,
+    minutes,
+    deviceCount: Number(row.deviceCount) || 0,
+    packageCount: Number(row.packageCount) || 0,
+    firstSeen: row.firstSeen || null,
+    lastSeen: row.lastSeen || null,
+  };
+}
+
+function summarizeLocationGroups(rows = [], options = {}) {
+  const minMinutes = Number.isInteger(options.minMinutes) && options.minMinutes > 0
+    ? options.minMinutes
+    : MINUTE_LOGGER_LOCATION_NOISE_MINUTES;
+  const limit = Number.isInteger(options.limit) && options.limit > 0
+    ? options.limit
+    : MINUTE_LOGGER_LOCATION_GROUP_LIMIT;
+  const normalizedRows = (Array.isArray(rows) ? rows : [])
+    .map(normalizeLocationStatRow)
+    .filter((row) => row.minutes > 0 && row.latitude !== null && row.longitude !== null);
+  const groups = normalizedRows
+    .filter((row) => row.minutes >= minMinutes)
+    .sort((a, b) => {
+      if (b.minutes !== a.minutes) {
+        return b.minutes - a.minutes;
+      }
+      return String(a.groupKey).localeCompare(String(b.groupKey));
+    });
+  const noiseRows = normalizedRows.filter((row) => row.minutes < minMinutes);
+  const totalLocationMinutes = normalizedRows.reduce((sum, row) => sum + row.minutes, 0);
+  const groupedLocationMinutes = groups.reduce((sum, row) => sum + row.minutes, 0);
+
+  return {
+    groups: groups.slice(0, limit),
+    totalLocationMinutes,
+    groupedLocationMinutes,
+    noiseLocationMinutes: noiseRows.reduce((sum, row) => sum + row.minutes, 0),
+    noiseGroupCount: noiseRows.length,
+    totalGroupCount: groups.length,
+    noiseThresholdMinutes: minMinutes,
+    precisionDecimals: MINUTE_LOGGER_LOCATION_GROUP_PRECISION,
+  };
+}
+
+async function fetchLocationStats(endpointPath, options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const since = options.since;
+  const rows = await requestModel.aggregate([
+    {
+      $match: {
+        endpointPath,
+        receivedAt: { $gte: since },
+        'location.latitude': { $gte: -90, $lte: 90 },
+        'location.longitude': { $gte: -180, $lte: 180 },
+        'location.groupKey': { $type: 'string', $ne: '' },
+      },
+    },
+    {
+      $group: {
+        _id: '$location.groupKey',
+        minutes: { $sum: 1 },
+        latitude: { $avg: '$location.latitude' },
+        longitude: { $avg: '$location.longitude' },
+        devices: { $addToSet: '$deviceId' },
+        packages: { $addToSet: '$package' },
+        firstSeen: { $min: '$receivedAt' },
+        lastSeen: { $max: '$receivedAt' },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        groupKey: '$_id',
+        latitude: 1,
+        longitude: 1,
+        minutes: 1,
+        deviceCount: { $size: '$devices' },
+        packageCount: { $size: '$packages' },
+        firstSeen: 1,
+        lastSeen: 1,
+      },
+    },
+    { $sort: { minutes: -1, lastSeen: -1, groupKey: 1 } },
+  ]);
+
+  return summarizeLocationGroups(rows, {
+    minMinutes: options.minMinutes,
+    limit: options.limit,
+  });
+}
+
 async function fetchHourlySpread(endpointPath, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const since = options.since;
@@ -660,6 +952,7 @@ async function getMinuteLoggerDashboard(options = {}) {
     recentRequests,
     packageStats,
     deviceStats,
+    locationStats,
     hourlySpread,
     dailyMinuteStats,
     monthlyMinuteStats,
@@ -679,6 +972,7 @@ async function getMinuteLoggerDashboard(options = {}) {
       .limit(recentLimit)),
     fetchPackageStats(endpointPath, { requestModel, since: rawWindowStart }),
     fetchDeviceStats(endpointPath, { requestModel, since: rawWindowStart }),
+    fetchLocationStats(endpointPath, { requestModel, since: rawWindowStart }),
     fetchHourlySpread(endpointPath, { requestModel, since: rawWindowStart }),
     fetchDailyMinuteStats(endpointPath, { statModel, now }),
     fetchMonthlyMinuteStats(endpointPath, { statModel, now }),
@@ -698,6 +992,7 @@ async function getMinuteLoggerDashboard(options = {}) {
     recentRequests: Array.isArray(recentRequests) ? recentRequests : [],
     packageStats,
     deviceStats,
+    locationStats,
     hourlySpread,
     timeBucketStats: timeBucketSummary.buckets,
     busiestTimeBucket: timeBucketSummary.busiest,
@@ -708,6 +1003,9 @@ async function getMinuteLoggerDashboard(options = {}) {
 
 module.exports = {
   MINUTE_LOGGER_RAW_RETENTION_DAYS,
+  MINUTE_LOGGER_LOCATION_GROUP_LIMIT,
+  MINUTE_LOGGER_LOCATION_GROUP_PRECISION,
+  MINUTE_LOGGER_LOCATION_NOISE_MINUTES,
   MINUTE_LOGGER_RECENT_LIMIT,
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME: MinuteLoggerRequest.collection.collectionName,
   MINUTE_LOGGER_RESPONSE_BODY,
@@ -716,20 +1014,25 @@ module.exports = {
   TIME_BUCKETS,
   UNKNOWN_DIMENSION,
   buildCompleteDayRanges,
+  buildLocationGroupKey,
   buildMonthRanges,
   buildPeriodInfo,
   buildRequestRecord,
   fetchDailyMinuteStats,
   fetchDeviceStats,
   fetchHourlySpread,
+  fetchLocationStats,
   fetchMonthlyMinuteStats,
   fetchPackageStats,
   getDeviceId,
+  getLocation,
   getMinuteLoggerDashboard,
   getPackageName,
   incrementMinuteLoggerStats,
   normalizeDimension,
+  parseLocationValue,
   recordMinuteLoggerRequest,
   serializeValue,
+  summarizeLocationGroups,
   summarizeTimeBuckets,
 };

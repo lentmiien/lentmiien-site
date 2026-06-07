@@ -3,7 +3,9 @@ const {
   buildRequestRecord,
   fetchDailyMinuteStats,
   getPackageName,
+  parseLocationValue,
   recordMinuteLoggerRequest,
+  summarizeLocationGroups,
   summarizeTimeBuckets,
 } = require('../../services/minuteLoggerService');
 
@@ -24,6 +26,7 @@ function createRequest(overrides = {}) {
     body: {
       package: 'com.example.app',
       deviceId: 'tablet-01',
+      location: '35.4602514,139.54049637',
       extra: { value: 42 },
     },
     headers: {
@@ -60,10 +63,17 @@ describe('minuteLoggerService', () => {
       referer: 'https://example.test/',
       deviceId: 'tablet-01',
       package: 'com.example.app',
+      location: {
+        raw: '35.4602514,139.54049637',
+        latitude: 35.4602514,
+        longitude: 139.54049637,
+        groupKey: '35.460,139.540',
+      },
       query: { source: 'unit' },
       body: {
         package: 'com.example.app',
         deviceId: 'tablet-01',
+        location: '35.4602514,139.54049637',
         extra: { value: 42 },
       },
       receivedAt: now,
@@ -85,6 +95,18 @@ describe('minuteLoggerService', () => {
         package: 'correct-package',
       },
     }))).toBe('correct-package');
+  });
+
+  test('parses location strings and ignores invalid coordinates', () => {
+    expect(parseLocationValue('35.4602514,139.54049637')).toMatchObject({
+      raw: '35.4602514,139.54049637',
+      latitude: 35.4602514,
+      longitude: 139.54049637,
+      groupKey: '35.460,139.540',
+    });
+
+    expect(parseLocationValue('not-a-location')).toBeNull();
+    expect(parseLocationValue('95,139')).toBeNull();
   });
 
   test('records a raw request and increments day and month rollups', async () => {
@@ -111,6 +133,11 @@ describe('minuteLoggerService', () => {
       endpointPath: '/secret-minute-logger',
       deviceId: 'tablet-01',
       package: 'com.example.app',
+      location: expect.objectContaining({
+        latitude: 35.4602514,
+        longitude: 139.54049637,
+        groupKey: '35.460,139.540',
+      }),
       body: expect.objectContaining({
         package: 'com.example.app',
         deviceId: 'tablet-01',
@@ -184,6 +211,44 @@ describe('minuteLoggerService', () => {
           { name: 'com.example.other', minutes: 3 },
         ],
       },
+    ]);
+  });
+
+  test('summarizeLocationGroups filters low-count location noise', () => {
+    const summary = summarizeLocationGroups([
+      {
+        groupKey: '35.460,139.540',
+        latitude: 35.4602,
+        longitude: 139.5404,
+        minutes: 8,
+        deviceCount: 1,
+        packageCount: 2,
+      },
+      {
+        groupKey: '35.461,139.541',
+        latitude: 35.461,
+        longitude: 139.541,
+        minutes: 2,
+        deviceCount: 1,
+        packageCount: 1,
+      },
+    ], {
+      minMinutes: 3,
+    });
+
+    expect(summary).toMatchObject({
+      totalLocationMinutes: 10,
+      groupedLocationMinutes: 8,
+      noiseLocationMinutes: 2,
+      noiseGroupCount: 1,
+      totalGroupCount: 1,
+      noiseThresholdMinutes: 3,
+    });
+    expect(summary.groups).toEqual([
+      expect.objectContaining({
+        groupKey: '35.460,139.540',
+        minutes: 8,
+      }),
     ]);
   });
 

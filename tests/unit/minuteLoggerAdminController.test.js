@@ -49,6 +49,11 @@ function createDashboard(overrides = {}) {
         method: 'POST',
         deviceId: 'tablet-01',
         package: 'com.example.app',
+        location: {
+          latitude: 35.4602514,
+          longitude: 139.54049637,
+          groupKey: '35.460,139.540',
+        },
         ip: '203.0.113.50',
         requestPath: '/secret-minute-logger',
         userAgent: 'minute-client/1.0',
@@ -71,6 +76,27 @@ function createDashboard(overrides = {}) {
         lastSeen: new Date('2026-06-07T02:58:00.000Z'),
       },
     ],
+    locationStats: {
+      groups: [
+        {
+          groupKey: '35.460,139.540',
+          latitude: 35.4602514,
+          longitude: 139.54049637,
+          minutes: 24,
+          deviceCount: 1,
+          packageCount: 2,
+          firstSeen: new Date('2026-06-06T04:00:00.000Z'),
+          lastSeen: new Date('2026-06-07T02:58:00.000Z'),
+        },
+      ],
+      totalLocationMinutes: 26,
+      groupedLocationMinutes: 24,
+      noiseLocationMinutes: 2,
+      noiseGroupCount: 1,
+      totalGroupCount: 1,
+      noiseThresholdMinutes: 3,
+      precisionDecimals: 3,
+    },
     hourlySpread: Array.from({ length: 24 }, (_, hour) => ({
       hour,
       minutes: hour === 18 ? 20 : 0,
@@ -132,7 +158,22 @@ describe('minuteLoggerAdminController.dashboard', () => {
             label: 'Busiest Time',
             value: 'Evening',
           }),
+          expect.objectContaining({
+            label: 'Location Groups',
+            value: '1',
+          }),
         ]),
+        locationStats: expect.objectContaining({
+          totalLocationMinutesDisplay: '26 min',
+          noiseLocationMinutesDisplay: '2 min',
+          groups: [
+            expect.objectContaining({
+              groupKey: '35.460,139.540',
+              minutes: 24,
+              coordinateDisplay: '35.46025, 139.54050',
+            }),
+          ],
+        }),
         packageStats: [
           expect.objectContaining({
             packageName: 'com.example.app',
@@ -150,6 +191,7 @@ describe('minuteLoggerAdminController.dashboard', () => {
           expect.objectContaining({
             deviceId: 'tablet-01',
             packageName: 'com.example.app',
+            locationDisplay: '35.46025, 139.54050',
           }),
         ],
       })

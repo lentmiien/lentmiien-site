@@ -19,6 +19,22 @@ function formatDecimal(value, digits = 1) {
   return Number.isFinite(number) ? number.toFixed(digits) : '0.0';
 }
 
+function formatCoordinate(value, digits = 5) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(digits) : 'N/A';
+}
+
+function buildMapUrl(latitude, longitude) {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
+}
+
 function formatPayload(payload) {
   if (payload === null || payload === undefined) {
     return 'null';
@@ -34,6 +50,10 @@ function formatPayload(payload) {
 
 function buildOverviewCards(dashboard) {
   const busiest = dashboard.busiestTimeBucket || {};
+  const locationStats = dashboard.locationStats || {};
+  const locationGroupCount = Number(locationStats.totalGroupCount)
+    || (Array.isArray(locationStats.groups) ? locationStats.groups.length : 0);
+  const locatedMinutes = Number(locationStats.totalLocationMinutes) || 0;
 
   return [
     {
@@ -56,6 +76,13 @@ function buildOverviewCards(dashboard) {
       label: 'Busiest Time',
       value: busiest.label || 'N/A',
       helper: `${formatDecimal(busiest.averagePerDay || 0)} min/day average`,
+    },
+    {
+      label: 'Location Groups',
+      value: formatNumber(locationGroupCount),
+      helper: locatedMinutes > 0
+        ? `${formatNumber(locationStats.groupedLocationMinutes)} grouped min, ${formatNumber(locationStats.noiseLocationMinutes)} noise min`
+        : 'No location points yet',
     },
     {
       label: 'Rollup Retention',
@@ -82,6 +109,50 @@ function mapDeviceStat(row) {
     minutesDisplay: `${formatNumber(row.minutes)} min`,
     packageCountDisplay: formatNumber(row.packageCount),
     lastSeenDisplay: formatDateTime(row.lastSeen),
+  };
+}
+
+function mapLocationStats(stats = {}) {
+  const groups = Array.isArray(stats.groups) ? stats.groups : [];
+  const maxMinutes = Math.max(1, ...groups.map((row) => Number(row.minutes) || 0));
+  const totalLocationMinutes = Number(stats.totalLocationMinutes) || 0;
+  const groupedLocationMinutes = Number(stats.groupedLocationMinutes) || 0;
+  const noiseLocationMinutes = Number(stats.noiseLocationMinutes) || 0;
+  const noiseThresholdMinutes = Number(stats.noiseThresholdMinutes) || 0;
+
+  return {
+    totalLocationMinutes,
+    totalLocationMinutesDisplay: `${formatNumber(totalLocationMinutes)} min`,
+    groupedLocationMinutes,
+    groupedLocationMinutesDisplay: `${formatNumber(groupedLocationMinutes)} min`,
+    noiseLocationMinutes,
+    noiseLocationMinutesDisplay: `${formatNumber(noiseLocationMinutes)} min`,
+    noiseGroupCountDisplay: formatNumber(stats.noiseGroupCount),
+    noiseThresholdMinutes,
+    noiseThresholdDisplay: `${formatNumber(noiseThresholdMinutes)} min`,
+    totalGroupCountDisplay: formatNumber(stats.totalGroupCount),
+    precisionDisplay: `${formatNumber(stats.precisionDecimals)} decimals`,
+    groups: groups.map((row) => {
+      const latitude = Number(row.latitude);
+      const longitude = Number(row.longitude);
+      const minutes = Number(row.minutes) || 0;
+
+      return {
+        groupKey: row.groupKey,
+        minutes,
+        minutesDisplay: `${formatNumber(minutes)} min`,
+        percent: Math.round((minutes / maxMinutes) * 100),
+        shareDisplay: totalLocationMinutes > 0
+          ? `${formatDecimal((minutes / totalLocationMinutes) * 100)}% of located minutes`
+          : '0.0% of located minutes',
+        deviceCountDisplay: formatNumber(row.deviceCount),
+        packageCountDisplay: formatNumber(row.packageCount),
+        firstSeenDisplay: formatDateTime(row.firstSeen),
+        lastSeenDisplay: formatDateTime(row.lastSeen),
+        coordinateDisplay: `${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`,
+        mapUrl: buildMapUrl(latitude, longitude),
+      };
+    }),
   };
 }
 
@@ -123,6 +194,10 @@ function mapMonthlyStat(row) {
 }
 
 function mapRecentRequest(row) {
+  const latitude = Number(row?.location?.latitude);
+  const longitude = Number(row?.location?.longitude);
+  const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
+
   return {
     id: row._id ? String(row._id) : '',
     receivedAtDisplay: formatDateTime(row.receivedAt),
@@ -132,6 +207,8 @@ function mapRecentRequest(row) {
     ip: row.ip || 'N/A',
     requestPath: row.requestPath || 'N/A',
     userAgent: row.userAgent || 'N/A',
+    locationDisplay: hasLocation ? `${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}` : 'N/A',
+    locationMapUrl: hasLocation ? buildMapUrl(latitude, longitude) : null,
     bodyJson: formatPayload(row.body || {}),
   };
 }
@@ -154,6 +231,7 @@ exports.dashboard = async (req, res) => {
       monthlyMinuteStats: dashboard.monthlyMinuteStats.map(mapMonthlyStat),
       packageStats: dashboard.packageStats.slice(0, 12).map(mapPackageStat),
       deviceStats: dashboard.deviceStats.slice(0, 12).map(mapDeviceStat),
+      locationStats: mapLocationStats(dashboard.locationStats),
       hourlySpread: mapHourlySpread(dashboard.hourlySpread),
       timeBucketStats: dashboard.timeBucketStats.map(mapTimeBucket),
       recentRequests: dashboard.recentRequests.map(mapRecentRequest),
@@ -178,6 +256,7 @@ exports.dashboard = async (req, res) => {
       monthlyMinuteStats: [],
       packageStats: [],
       deviceStats: [],
+      locationStats: mapLocationStats(),
       hourlySpread: [],
       timeBucketStats: [],
       recentRequests: [],
