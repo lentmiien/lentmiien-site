@@ -1,4 +1,5 @@
 const {
+  MinuteLoggerLocationGroupSettingsError,
   MINUTE_LOGGER_RESPONSE_BODY,
   buildRequestRecord,
   fetchDailyMinuteStats,
@@ -7,6 +8,7 @@ const {
   recordMinuteLoggerRequest,
   summarizeLocationGroups,
   summarizeTimeBuckets,
+  updateMinuteLoggerLocationGroupSettings,
 } = require('../../services/minuteLoggerService');
 
 function createLeanQuery(result) {
@@ -250,6 +252,68 @@ describe('minuteLoggerService', () => {
         minutes: 8,
       }),
     ]);
+  });
+
+  test('updateMinuteLoggerLocationGroupSettings validates and persists display names', async () => {
+    const settingsModel = {
+      findOneAndUpdate: jest.fn().mockReturnValue(createLeanQuery({
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        hideCoordinates: true,
+        updatedBy: 'admin-user',
+      })),
+    };
+
+    const result = await updateMinuteLoggerLocationGroupSettings({
+      groupKey: '35.460,139.540',
+      name: '  Home  ',
+      hideCoordinates: 'on',
+    }, {
+      settingsModel,
+      endpointPath: '/secret-minute-logger',
+      updatedBy: 'admin-user',
+    });
+
+    expect(settingsModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.460,139.540',
+      },
+      {
+        $set: {
+          name: 'Home',
+          hideCoordinates: true,
+          updatedBy: 'admin-user',
+        },
+        $setOnInsert: {
+          endpointPath: '/secret-minute-logger',
+          groupKey: '35.460,139.540',
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+    expect(result).toMatchObject({
+      groupKey: '35.460,139.540',
+      name: 'Home',
+      hideCoordinates: true,
+      updatedBy: 'admin-user',
+    });
+  });
+
+  test('updateMinuteLoggerLocationGroupSettings rejects invalid group keys', async () => {
+    await expect(updateMinuteLoggerLocationGroupSettings({
+      groupKey: 'not-a-location',
+      name: 'Home',
+    }, {
+      settingsModel: {},
+      endpointPath: '/secret-minute-logger',
+    })).rejects.toBeInstanceOf(MinuteLoggerLocationGroupSettingsError);
   });
 
   test('summarizeTimeBuckets identifies the busiest local period', () => {

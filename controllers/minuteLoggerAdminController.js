@@ -1,11 +1,13 @@
 const logger = require('../utils/logger');
 const {
+  MinuteLoggerLocationGroupSettingsError,
   MINUTE_LOGGER_RAW_RETENTION_DAYS,
   MINUTE_LOGGER_RECENT_LIMIT,
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME,
   MINUTE_LOGGER_STAT_COLLECTION_NAME,
   MINUTE_LOGGER_STATS_RETENTION_YEARS,
   getMinuteLoggerDashboard,
+  updateMinuteLoggerLocationGroupSettings,
 } = require('../services/minuteLoggerService');
 const {
   formatDateTime,
@@ -15,6 +17,11 @@ const {
 } = require('../utils/requestCounterDashboardView');
 
 const METERS_PER_LATITUDE_DEGREE = 111320;
+const LOCATION_PREVIEW_WIDTH = 160;
+const LOCATION_PREVIEW_HEIGHT = 120;
+const LOCATION_PREVIEW_CELL_HEIGHT = 86;
+const LOCATION_PREVIEW_MIN_CELL_WIDTH = 36;
+const LOCATION_PREVIEW_PADDING_Y = 14;
 
 function formatDecimal(value, digits = 1) {
   const number = Number(value);
@@ -35,6 +42,34 @@ function buildMapUrl(latitude, longitude) {
   }
 
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lon}`)}`;
+}
+
+function parseFeedback(query = {}) {
+  const status = typeof query.status === 'string' ? query.status : '';
+  const message = typeof query.message === 'string' ? query.message : '';
+  if (!status || !message) {
+    return null;
+  }
+
+  return {
+    status: status === 'success' ? 'success' : 'error',
+    message,
+  };
+}
+
+function redirectWithFeedback(res, status, message) {
+  return res.redirect(
+    `/admin/minute-logger?status=${encodeURIComponent(status)}&message=${encodeURIComponent(message)}`
+  );
+}
+
+function clamp(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return min;
+  }
+
+  return Math.min(max, Math.max(min, number));
 }
 
 function roundToNearest(value, nearest = 1) {
@@ -161,6 +196,96 @@ function mapDeviceStat(row) {
   };
 }
 
+function parseGroupKeyCenter(groupKey) {
+  const parts = String(groupKey || '').split(',');
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const latitude = Number(parts[0]);
+  const longitude = Number(parts[1]);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+function buildLocationGroupTitle(row, coordinateLabel) {
+  const name = String(row.name || '').trim();
+  const hideCoordinates = Boolean(name && row.hideCoordinates);
+
+  if (!name) {
+    return coordinateLabel;
+  }
+
+  return hideCoordinates ? name : `${name} (${coordinateLabel})`;
+}
+
+function projectLocationPoint(point, bounds, rect) {
+  const latitude = Number(point?.latitude);
+  const longitude = Number(point?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  const xRatio = clamp((longitude - bounds.minLongitude) / (bounds.maxLongitude - bounds.minLongitude), 0, 1);
+  const yRatio = clamp((bounds.maxLatitude - latitude) / (bounds.maxLatitude - bounds.minLatitude), 0, 1);
+
+  return {
+    x: Number((rect.x + (xRatio * rect.width)).toFixed(2)),
+    y: Number((rect.y + (yRatio * rect.height)).toFixed(2)),
+  };
+}
+
+function buildLocationGroupPreview(row, precisionDecimals) {
+  const groupCenter = parseGroupKeyCenter(row.groupKey);
+  const fallbackLatitude = Number(row.latitude);
+  const fallbackLongitude = Number(row.longitude);
+  const latitude = groupCenter?.latitude ?? (Number.isFinite(fallbackLatitude) ? fallbackLatitude : null);
+  const longitude = groupCenter?.longitude ?? (Number.isFinite(fallbackLongitude) ? fallbackLongitude : null);
+  const precision = Number.isInteger(Number(precisionDecimals)) && Number(precisionDecimals) >= 0
+    ? Number(precisionDecimals)
+    : 3;
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  const degreeStep = 10 ** -precision;
+  const cellWidthRatio = Math.max(
+    LOCATION_PREVIEW_MIN_CELL_WIDTH / LOCATION_PREVIEW_CELL_HEIGHT,
+    Math.abs(Math.cos(Math.abs(latitude) * Math.PI / 180))
+  );
+  const rect = {
+    width: Number((LOCATION_PREVIEW_CELL_HEIGHT * cellWidthRatio).toFixed(2)),
+    height: LOCATION_PREVIEW_CELL_HEIGHT,
+  };
+  rect.x = Number(((LOCATION_PREVIEW_WIDTH - rect.width) / 2).toFixed(2));
+  rect.y = LOCATION_PREVIEW_PADDING_Y;
+
+  const bounds = {
+    minLatitude: latitude - (degreeStep / 2),
+    maxLatitude: latitude + (degreeStep / 2),
+    minLongitude: longitude - (degreeStep / 2),
+    maxLongitude: longitude + (degreeStep / 2),
+  };
+  const pointSamples = Array.isArray(row.pointSamples) ? row.pointSamples : [];
+  const points = pointSamples
+    .map((point) => projectLocationPoint(point, bounds, rect))
+    .filter(Boolean);
+  const centerPoint = projectLocationPoint({ latitude, longitude }, bounds, rect);
+
+  return {
+    width: LOCATION_PREVIEW_WIDTH,
+    height: LOCATION_PREVIEW_HEIGHT,
+    rect,
+    points,
+    pointCount: points.length,
+    centerPoint,
+  };
+}
+
 function mapLocationStats(stats = {}) {
   const groups = Array.isArray(stats.groups) ? stats.groups : [];
   const maxMinutes = Math.max(1, ...groups.map((row) => Number(row.minutes) || 0));
@@ -187,9 +312,18 @@ function mapLocationStats(stats = {}) {
       const latitude = Number(row.latitude);
       const longitude = Number(row.longitude);
       const minutes = Number(row.minutes) || 0;
+      const coordinateLabel = row.groupKey || `${formatCoordinate(latitude, 3)},${formatCoordinate(longitude, 3)}`;
+      const pointSamples = Array.isArray(row.pointSamples) ? row.pointSamples : [];
+      const preview = buildLocationGroupPreview(row, stats.precisionDecimals);
+      const name = String(row.name || '').trim();
+      const hideCoordinates = Boolean(name && row.hideCoordinates);
 
       return {
         groupKey: row.groupKey,
+        name,
+        hideCoordinates,
+        titleDisplay: buildLocationGroupTitle({ name, hideCoordinates }, coordinateLabel),
+        coordinateLabel,
         minutes,
         minutesDisplay: `${formatNumber(minutes)} min`,
         percent: Math.round((minutes / maxMinutes) * 100),
@@ -202,6 +336,8 @@ function mapLocationStats(stats = {}) {
         lastSeenDisplay: formatDateTime(row.lastSeen),
         coordinateDisplay: `${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`,
         mapUrl: buildMapUrl(latitude, longitude),
+        pointSampleCountDisplay: formatNumber(pointSamples.length),
+        preview,
       };
     }),
   };
@@ -269,6 +405,7 @@ exports.dashboard = async (req, res) => {
     const dashboard = await getMinuteLoggerDashboard();
 
     return res.render('admin_minute_logger', {
+      feedback: parseFeedback(req.query),
       loadError: null,
       generatedAtDisplay: formatDateTime(dashboard.generatedAt),
       endpointPath: dashboard.endpointPath,
@@ -294,6 +431,7 @@ exports.dashboard = async (req, res) => {
     });
 
     return res.status(500).render('admin_minute_logger', {
+      feedback: null,
       loadError: 'Unable to load minute logger data right now.',
       generatedAtDisplay: formatDateTime(new Date()),
       endpointPath: 'N/A',
@@ -312,5 +450,39 @@ exports.dashboard = async (req, res) => {
       timeBucketStats: [],
       recentRequests: [],
     });
+  }
+};
+
+exports.updateLocationGroupSettings = async (req, res) => {
+  try {
+    const settings = await updateMinuteLoggerLocationGroupSettings(req.body || {}, {
+      updatedBy: req.user?.name || null,
+    });
+
+    logger.notice('Minute logger location group settings updated by admin', {
+      category: 'minute-logger',
+      metadata: {
+        groupKey: settings.groupKey,
+        hasName: Boolean(settings.name),
+        hideCoordinates: settings.hideCoordinates,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return redirectWithFeedback(
+      res,
+      'success',
+      settings.name ? 'Location group saved.' : 'Location group label cleared.'
+    );
+  } catch (error) {
+    if (error instanceof MinuteLoggerLocationGroupSettingsError) {
+      return redirectWithFeedback(res, 'error', error.message);
+    }
+
+    logger.error('Failed to update minute logger location group settings', {
+      category: 'minute-logger',
+      metadata: { error: error.message },
+    });
+    return redirectWithFeedback(res, 'error', 'Unable to save location group.');
   }
 };

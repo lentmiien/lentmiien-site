@@ -65,6 +65,9 @@ block content
         span Last updated #{generatedAtDisplay}
         a.minute-logger-refresh(href='/admin/minute-logger') Refresh
 
+    if feedback
+      .minute-logger-alert(class=`minute-logger-alert--${feedback.status}`)= feedback.message
+
     if loadError
       .minute-logger-alert.minute-logger-alert--error= loadError
     else
@@ -232,20 +235,50 @@ block content
           .minute-logger-location-list
             each group in locationGroups
               .minute-logger-rank.minute-logger-location
-                .minute-logger-rank__top
-                  strong= group.groupKey
-                  span= group.minutesDisplay
-                .minute-logger-rank__bar.minute-logger-rank__bar--location
-                  span(style=`--rank-width: ${(group.minutes / maxLocationMinutes) * 100}%;`)
-                .minute-logger-rank__meta
-                  span #{group.deviceCountDisplay} devices
-                  span #{group.packageCountDisplay} packages
-                  span= group.shareDisplay
-                  span Last #{group.lastSeenDisplay}
-                .minute-logger-location__detail
-                  span Center #{group.coordinateDisplay}
-                  if group.mapUrl
-                    a.minute-logger-location-link(href=group.mapUrl, target='_blank', rel='noopener noreferrer') Map
+                if group.preview
+                  .minute-logger-location__preview
+                    svg.minute-logger-location-map(viewBox=`0 0 ${group.preview.width} ${group.preview.height}`, role='img', aria-label=`Location point cloud for ${group.titleDisplay}`)
+                      rect.minute-logger-location-map__frame(x='1', y='1', width=(group.preview.width - 2), height=(group.preview.height - 2), rx='7')
+                      rect.minute-logger-location-map__cell(
+                        x=group.preview.rect.x
+                        y=group.preview.rect.y
+                        width=group.preview.rect.width
+                        height=group.preview.rect.height
+                        rx='5'
+                      )
+                      line.minute-logger-location-map__axis(x1=(group.preview.rect.x + (group.preview.rect.width / 2)), y1=group.preview.rect.y, x2=(group.preview.rect.x + (group.preview.rect.width / 2)), y2=(group.preview.rect.y + group.preview.rect.height))
+                      line.minute-logger-location-map__axis(x1=group.preview.rect.x, y1=(group.preview.rect.y + (group.preview.rect.height / 2)), x2=(group.preview.rect.x + group.preview.rect.width), y2=(group.preview.rect.y + (group.preview.rect.height / 2)))
+                      each point in group.preview.points
+                        circle.minute-logger-location-map__point(cx=point.x, cy=point.y, r='1.8')
+                      if group.preview.centerPoint
+                        circle.minute-logger-location-map__center(cx=group.preview.centerPoint.x, cy=group.preview.centerPoint.y, r='3.2')
+                .minute-logger-location__content
+                  .minute-logger-rank__top
+                    strong= group.titleDisplay
+                    span= group.minutesDisplay
+                  .minute-logger-rank__bar.minute-logger-rank__bar--location
+                    span(style=`--rank-width: ${(group.minutes / maxLocationMinutes) * 100}%;`)
+                  .minute-logger-rank__meta
+                    span #{group.deviceCountDisplay} devices
+                    span #{group.packageCountDisplay} packages
+                    span= group.shareDisplay
+                    span Last #{group.lastSeenDisplay}
+                    if group.preview
+                      span #{group.pointSampleCountDisplay} plotted
+                  .minute-logger-location__detail
+                    if !group.hideCoordinates
+                      span Center #{group.coordinateDisplay}
+                    if group.mapUrl
+                      a.minute-logger-location-link(href=group.mapUrl, target='_blank', rel='noopener noreferrer') Map
+                  form.minute-logger-location-form(method='post', action='/admin/minute-logger/location-groups')
+                    input(type='hidden', name='groupKey', value=group.groupKey)
+                    label.minute-logger-location-form__field
+                      span Name
+                      input(type='text', name='name', value=group.name, maxlength='80', placeholder=group.coordinateLabel)
+                    label.minute-logger-location-form__check
+                      input(type='checkbox', name='hideCoordinates', value='on', checked=group.hideCoordinates)
+                      span Hide coordinates
+                    button.minute-logger-location-form__button(type='submit') Save
         else if locationStats && locationStats.totalLocationMinutes
           p.minute-logger-empty All parsed location points are below the #{locationStats.noiseThresholdDisplay} group threshold.
         else

@@ -1,14 +1,17 @@
 jest.mock('../../services/minuteLoggerService', () => ({
+  MinuteLoggerLocationGroupSettingsError: class MinuteLoggerLocationGroupSettingsError extends Error {},
   MINUTE_LOGGER_RAW_RETENTION_DAYS: 60,
   MINUTE_LOGGER_RECENT_LIMIT: 50,
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME: 'minute_logger_requests',
   MINUTE_LOGGER_STAT_COLLECTION_NAME: 'minute_logger_stats',
   MINUTE_LOGGER_STATS_RETENTION_YEARS: 10,
   getMinuteLoggerDashboard: jest.fn(),
+  updateMinuteLoggerLocationGroupSettings: jest.fn(),
 }));
 
 jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
+  notice: jest.fn(),
 }));
 
 jest.mock('../../services/incomingRequestCounterService', () => ({
@@ -21,12 +24,14 @@ jest.mock('../../services/incomingRequestCounterService', () => ({
 
 const {
   getMinuteLoggerDashboard,
+  updateMinuteLoggerLocationGroupSettings,
 } = require('../../services/minuteLoggerService');
 const controller = require('../../controllers/minuteLoggerAdminController');
 
 function createResponse() {
   return {
     render: jest.fn(),
+    redirect: jest.fn(),
     status: jest.fn().mockReturnThis(),
   };
 }
@@ -87,6 +92,12 @@ function createDashboard(overrides = {}) {
           packageCount: 2,
           firstSeen: new Date('2026-06-06T04:00:00.000Z'),
           lastSeen: new Date('2026-06-07T02:58:00.000Z'),
+          name: 'Home',
+          hideCoordinates: false,
+          pointSamples: [
+            { latitude: 35.4601, longitude: 139.5399 },
+            { latitude: 35.4604, longitude: 139.5402 },
+          ],
         },
       ],
       totalLocationMinutes: 26,
@@ -173,8 +184,23 @@ describe('minuteLoggerAdminController.dashboard', () => {
           groups: [
             expect.objectContaining({
               groupKey: '35.460,139.540',
+              name: 'Home',
+              hideCoordinates: false,
+              titleDisplay: 'Home (35.460,139.540)',
               minutes: 24,
               coordinateDisplay: '35.46025, 139.54050',
+              pointSampleCountDisplay: '2',
+              preview: expect.objectContaining({
+                width: 160,
+                height: 120,
+                pointCount: 2,
+                points: expect.arrayContaining([
+                  expect.objectContaining({
+                    x: expect.any(Number),
+                    y: expect.any(Number),
+                  }),
+                ]),
+              }),
             }),
           ],
         }),
@@ -199,6 +225,38 @@ describe('minuteLoggerAdminController.dashboard', () => {
           }),
         ],
       })
+    );
+  });
+
+  test('saves a location group display name', async () => {
+    updateMinuteLoggerLocationGroupSettings.mockResolvedValue({
+      groupKey: '35.460,139.540',
+      name: 'Home',
+      hideCoordinates: true,
+    });
+    const res = createResponse();
+
+    await controller.updateLocationGroupSettings({
+      body: {
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        hideCoordinates: 'on',
+      },
+      user: { name: 'admin-user' },
+    }, res);
+
+    expect(updateMinuteLoggerLocationGroupSettings).toHaveBeenCalledWith(
+      {
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        hideCoordinates: 'on',
+      },
+      {
+        updatedBy: 'admin-user',
+      }
+    );
+    expect(res.redirect).toHaveBeenCalledWith(
+      '/admin/minute-logger?status=success&message=Location%20group%20saved.'
     );
   });
 });

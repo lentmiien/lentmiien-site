@@ -227,6 +227,7 @@ router.get('/performance', controller.performance_dashboard);
 router.get('/request-counter', requestCounterAdminController.dashboard);
 router.post('/request-counter/settings', requestCounterAdminController.updateSettings);
 router.get('/minute-logger', minuteLoggerAdminController.dashboard);
+router.post('/minute-logger/location-groups', minuteLoggerAdminController.updateLocationGroupSettings);
 router.get('/database_usage', controller.database_usage);
 router.get('/database-viewer', controller.database_viewer_page);
 router.get('/database-viewer/data', controller.database_viewer_data);

@@ -163,6 +163,7 @@ const IncomingRequest = require('./models/incoming_request');
 const RequestCounterSettings = require('./models/request_counter_settings');
 const MinuteLoggerRequest = require('./models/minute_logger_request');
 const MinuteLoggerStat = require('./models/minute_logger_stat');
+const MinuteLoggerLocationGroup = require('./models/minute_logger_location_group');
 const DummyApiRequestLog = require('./models/dummy_api_request_log');
 const DummyApiEndpointSetting = require('./models/dummy_api_endpoint_setting');
 
@@ -272,6 +273,7 @@ module.exports = {
   RequestCounterSettings,
   MinuteLoggerRequest,
   MinuteLoggerStat,
+  MinuteLoggerLocationGroup,
   DummyApiRequestLog,
   DummyApiEndpointSetting,
 };
