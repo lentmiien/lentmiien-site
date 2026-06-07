@@ -298,11 +298,18 @@ body,
   overflow-x: auto;
 }
 
-.minute-logger-hour-chart,
-.minute-logger-month-chart {
+.minute-logger-hour-chart {
   display: block;
   width: 100%;
   min-width: 640px;
+}
+
+.minute-logger-month-chart {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
 }
 
 .minute-logger-hour-chart__grid {
