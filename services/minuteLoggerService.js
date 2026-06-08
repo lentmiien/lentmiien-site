@@ -7,6 +7,7 @@ const MINUTE_LOGGER_RAW_RETENTION_DAYS = 60;
 const MINUTE_LOGGER_STATS_RETENTION_YEARS = 10;
 const MINUTE_LOGGER_RECENT_LIMIT = 50;
 const UNKNOWN_DIMENSION = 'unknown';
+const MINUTE_LOGGER_UNUSED_PACKAGE = 'unused';
 const MINUTE_LOGGER_RESPONSE_BODY = { message: 'OK' };
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_LOGGER_LOCATION_GROUP_PRECISION = 3;
@@ -88,6 +89,29 @@ function parseBooleanInput(value) {
 
   const text = String(value ?? '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'on'].includes(text);
+}
+
+function parseActiveInput(value) {
+  const candidate = firstPresentValue(value);
+
+  if (candidate === undefined || candidate === null) {
+    return true;
+  }
+
+  if (typeof candidate === 'boolean') {
+    return candidate;
+  }
+
+  if (typeof candidate === 'number') {
+    return candidate !== 0;
+  }
+
+  const text = String(candidate).trim().toLowerCase();
+  if (!text) {
+    return true;
+  }
+
+  return !['0', 'false', 'no', 'off', 'inactive', 'unused', 'idle'].includes(text);
 }
 
 function normalizeLocationGroupSetting(raw = {}) {
@@ -269,6 +293,25 @@ function getDeviceId(req) {
     getInputValue(req, ['deviceId', 'device_id', 'deviceID', 'device'], ['x-device-id']),
     UNKNOWN_DIMENSION
   );
+}
+
+function getRequestActive(req) {
+  return parseActiveInput(
+    getInputValue(req, ['active', 'isActive', 'deviceActive'], ['x-active', 'x-device-active'])
+  );
+}
+
+function isActiveUsageRequest(row = {}) {
+  return row.active !== false
+    && String(row.package || '').trim().toLowerCase() !== MINUTE_LOGGER_UNUSED_PACKAGE;
+}
+
+function buildActiveUsageMatch(match = {}) {
+  return {
+    ...match,
+    active: { $ne: false },
+    package: { $ne: MINUTE_LOGGER_UNUSED_PACKAGE },
+  };
 }
 
 function parseNumericInput(value) {
@@ -1347,7 +1390,8 @@ function buildLocationGroupSummaries(rows = [], settingsByKey = new Map(), optio
 function buildRequestRecord(req, options = {}) {
   const now = new Date(options.now || Date.now());
   const endpointPath = options.endpointPath || req?.baseUrl || '';
-  const packageName = getPackageName(req);
+  const active = getRequestActive(req);
+  const packageName = active ? getPackageName(req) : MINUTE_LOGGER_UNUSED_PACKAGE;
   const deviceId = getDeviceId(req);
   const location = getLocation(req);
   const battery = getBatteryPercent(req);
@@ -1363,6 +1407,7 @@ function buildRequestRecord(req, options = {}) {
     referer: getHeader(req, 'referer') || getHeader(req, 'referrer'),
     deviceId,
     package: packageName,
+    active,
     location,
     battery,
     batteryTempC,
@@ -1433,17 +1478,20 @@ async function recordMinuteLoggerRequest(req, options = {}) {
   });
 
   const log = await requestModel.create(record);
-  await incrementMinuteLoggerStats({
-    now,
-    endpointPath: record.endpointPath,
-    deviceId: record.deviceId,
-    package: record.package,
-  }, {
-    statModel,
-  });
+  if (isActiveUsageRequest(record)) {
+    await incrementMinuteLoggerStats({
+      now,
+      endpointPath: record.endpointPath,
+      deviceId: record.deviceId,
+      package: record.package,
+    }, {
+      statModel,
+    });
+  }
 
   return {
     logged: true,
+    active: record.active,
     log,
     responseBody: MINUTE_LOGGER_RESPONSE_BODY,
   };
@@ -1462,6 +1510,7 @@ async function fetchDailyMinuteStats(endpointPath, options = {}) {
       $match: {
         endpointPath,
         periodType: 'day',
+        package: { $ne: MINUTE_LOGGER_UNUSED_PACKAGE },
         periodStart: {
           $gte: ranges[0].start,
           $lt: ranges[ranges.length - 1].end,
@@ -1525,6 +1574,7 @@ async function fetchMonthlyMinuteStats(endpointPath, options = {}) {
       $match: {
         endpointPath,
         periodType: 'month',
+        package: { $ne: MINUTE_LOGGER_UNUSED_PACKAGE },
         periodStart: {
           $gte: ranges[0].start,
           $lt: ranges[ranges.length - 1].end,
@@ -1573,12 +1623,15 @@ function getDashboardTimeZone() {
 async function fetchPackageStats(endpointPath, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const since = options.since;
+  const match = buildActiveUsageMatch({ endpointPath });
+
+  if (since) {
+    match.receivedAt = { $gte: since };
+  }
+
   const rows = await requestModel.aggregate([
     {
-      $match: {
-        endpointPath,
-        receivedAt: { $gte: since },
-      },
+      $match: match,
     },
     {
       $group: {
@@ -1606,12 +1659,15 @@ async function fetchPackageStats(endpointPath, options = {}) {
 async function fetchDeviceStats(endpointPath, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const since = options.since;
+  const match = buildActiveUsageMatch({ endpointPath });
+
+  if (since) {
+    match.receivedAt = { $gte: since };
+  }
+
   const rows = await requestModel.aggregate([
     {
-      $match: {
-        endpointPath,
-        receivedAt: { $gte: since },
-      },
+      $match: match,
     },
     {
       $group: {
@@ -2122,6 +2178,7 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
     .select({
       deviceId: 1,
       package: 1,
+      active: 1,
       location: 1,
       battery: 1,
       batteryTempC: 1,
@@ -2132,7 +2189,10 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
       body: 1,
     }));
   const requests = Array.isArray(rows) ? rows : [];
+  const activeRequests = requests.filter(isActiveUsageRequest);
+  const inactiveRequests = requests.filter((row) => !isActiveUsageRequest(row));
   const locatedRequests = requests.filter(hasValidRequestLocation);
+  const activeLocatedRequests = activeRequests.filter(hasValidRequestLocation);
   const locationGroupKeys = Array.from(new Set(locatedRequests
     .map(getRequestLocationGroupKey)
     .filter(Boolean)));
@@ -2151,10 +2211,10 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
     requestModel,
     since: rawWindowStart,
   });
-  const hourlySpread = buildHourlyCounts(requests);
+  const hourlySpread = buildHourlyCounts(activeRequests);
   const timeBucketSummary = summarizeTimeBuckets(hourlySpread, 1);
-  const firstRequest = requests[0] || null;
-  const lastRequest = requests[requests.length - 1] || null;
+  const firstRequest = activeRequests[0] || null;
+  const lastRequest = activeRequests[activeRequests.length - 1] || null;
   const namedLocationMinutes = locatedRequests.reduce((sum, row) => {
     const groupKey = getRequestLocationGroupKey(row);
     const setting = settingsByKey.get(groupKey);
@@ -2167,18 +2227,21 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
     dateKey: range.dateKey,
     dayStart: range.start,
     dayEnd: range.end,
-    totalMinutes: requests.length,
+    totalMinutes: activeRequests.length,
+    totalRawRequests: requests.length,
+    inactiveRequests: inactiveRequests.length,
     locatedMinutes: locatedRequests.length,
+    activeLocatedMinutes: activeLocatedRequests.length,
     unlocatedMinutes: requests.length - locatedRequests.length,
     namedLocationMinutes,
-    deviceCount: new Set(requests.map((row) => normalizeDimension(row.deviceId, UNKNOWN_DIMENSION))).size,
-    packageCount: new Set(requests.map((row) => normalizeDimension(row.package, UNKNOWN_DIMENSION))).size,
+    deviceCount: new Set(activeRequests.map((row) => normalizeDimension(row.deviceId, UNKNOWN_DIMENSION))).size,
+    packageCount: new Set(activeRequests.map((row) => normalizeDimension(row.package, UNKNOWN_DIMENSION))).size,
     firstSeen: firstRequest?.receivedAt || null,
     lastSeen: lastRequest?.receivedAt || null,
-    quietGap: buildQuietGapSummary(requests),
-    packageStats: buildRequestBreakdown(requests, (row) => row.package),
-    deviceStats: buildRequestBreakdown(requests, (row) => row.deviceId),
-    devicePackageMatrix: buildDevicePackageMatrix(requests),
+    quietGap: buildQuietGapSummary(activeRequests),
+    packageStats: buildRequestBreakdown(activeRequests, (row) => row.package),
+    deviceStats: buildRequestBreakdown(activeRequests, (row) => row.deviceId),
+    devicePackageMatrix: buildDevicePackageMatrix(activeRequests),
     batteryStats: summarizeBatteryReadings(requests),
     locationGroups: buildLocationGroupSummaries(locatedRequests, settingsByKey, {
       pointSampleLimit: options.pointSampleLimit,
@@ -2186,7 +2249,7 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
     hourlySpread,
     timeBucketStats: timeBucketSummary.buckets,
     busiestTimeBucket: timeBucketSummary.busiest,
-    packageTransitions: buildTransitionRows(requests, (row) => row.package),
+    packageTransitions: buildTransitionRows(activeRequests, (row) => row.package),
     namedLocationTransitions: buildTransitionRows(locatedRequests, (row) => {
       const groupKey = getRequestLocationGroupKey(row);
       const setting = settingsByKey.get(groupKey);
@@ -2370,12 +2433,15 @@ async function fetchHourlySpread(endpointPath, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const since = options.since;
   const timezone = options.timezone || getDashboardTimeZone();
+  const match = buildActiveUsageMatch({ endpointPath });
+
+  if (since) {
+    match.receivedAt = { $gte: since };
+  }
+
   const rows = await requestModel.aggregate([
     {
-      $match: {
-        endpointPath,
-        receivedAt: { $gte: since },
-      },
+      $match: match,
     },
     {
       $project: {
@@ -2477,6 +2543,11 @@ async function getMinuteLoggerDashboard(options = {}) {
     endpointPath,
     receivedAt: { $gte: rawWindowStart },
   };
+  const active24hMatch = buildActiveUsageMatch({
+    endpointPath,
+    receivedAt: { $gte: since24h },
+  });
+  const activeRawWindowMatch = buildActiveUsageMatch(rawWindowMatch);
 
   const [
     totalRawRequests,
@@ -2493,15 +2564,9 @@ async function getMinuteLoggerDashboard(options = {}) {
     monthlyMinuteStats,
   ] = await Promise.all([
     requestModel.countDocuments(rawMatch),
-    requestModel.countDocuments({
-      endpointPath,
-      receivedAt: { $gte: since24h },
-    }),
-    getDistinctCount(requestModel, 'deviceId', {
-      endpointPath,
-      receivedAt: { $gte: since24h },
-    }),
-    getDistinctCount(requestModel, 'package', rawWindowMatch),
+    requestModel.countDocuments(active24hMatch),
+    getDistinctCount(requestModel, 'deviceId', active24hMatch),
+    getDistinctCount(requestModel, 'package', activeRawWindowMatch),
     leanExec(requestModel.find(rawMatch)
       .sort({ receivedAt: -1 })
       .limit(recentLimit)),
@@ -2560,8 +2625,10 @@ module.exports = {
   MINUTE_LOGGER_RESPONSE_BODY,
   MINUTE_LOGGER_STAT_COLLECTION_NAME: MinuteLoggerStat.collection.collectionName,
   MINUTE_LOGGER_STATS_RETENTION_YEARS,
+  MINUTE_LOGGER_UNUSED_PACKAGE,
   TIME_BUCKETS,
   UNKNOWN_DIMENSION,
+  buildActiveUsageMatch,
   buildCompleteDayRanges,
   buildDayRangeFromDateKey,
   buildLocationGroupKey,
@@ -2584,10 +2651,13 @@ module.exports = {
   getMinuteLoggerDashboard,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
+  getRequestActive,
   getBatteryPercent,
   getBatteryTempC,
   incrementMinuteLoggerStats,
+  isActiveUsageRequest,
   normalizeDimension,
+  parseActiveInput,
   parseBatteryPercent,
   parseBatteryTempC,
   parseLocationValue,

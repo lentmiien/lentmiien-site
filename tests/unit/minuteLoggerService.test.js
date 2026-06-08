@@ -1,12 +1,15 @@
 const {
   MinuteLoggerLocationGroupSettingsError,
+  MINUTE_LOGGER_UNUSED_PACKAGE,
   MINUTE_LOGGER_RESPONSE_BODY,
   buildRequestRecord,
   fetchDailyMinuteStats,
   fetchLastKnownNamedLocation,
+  getRequestActive,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
+  parseActiveInput,
   parseLocationValue,
   recordMinuteLoggerRequest,
   summarizeBatteryReadings,
@@ -84,6 +87,7 @@ describe('minuteLoggerService', () => {
       referer: 'https://example.test/',
       deviceId: 'tablet-01',
       package: 'com.example.app',
+      active: true,
       battery: 72,
       batteryTempC: 32.2,
       location: {
@@ -120,6 +124,57 @@ describe('minuteLoggerService', () => {
         package: 'correct-package',
       },
     }))).toBe('correct-package');
+  });
+
+  test('defaults active to true and parses inactive inputs', () => {
+    expect(getRequestActive(createRequest())).toBe(true);
+    expect(getRequestActive(createRequest({
+      body: {
+        active: 'True',
+      },
+    }))).toBe(true);
+    expect(parseActiveInput(undefined)).toBe(true);
+    expect(parseActiveInput('True')).toBe(true);
+    expect(parseActiveInput('true')).toBe(true);
+    expect(parseActiveInput('false')).toBe(false);
+    expect(parseActiveInput('0')).toBe(false);
+    expect(parseActiveInput(false)).toBe(false);
+  });
+
+  test('active false stores an unused package while retaining location and battery data', () => {
+    const now = new Date('2026-06-07T03:01:00.000Z');
+    const record = buildRequestRecord(createRequest({
+      body: {
+        active: 'false',
+        package: 'com.example.foreground',
+        deviceId: 'tablet-01',
+        location: '35.4602514,139.54049637',
+        battery: '72',
+        battery_temp: '32.2',
+      },
+    }), {
+      now,
+      endpointPath: '/secret-minute-logger',
+    });
+
+    expect(record).toMatchObject({
+      endpointPath: '/secret-minute-logger',
+      deviceId: 'tablet-01',
+      package: MINUTE_LOGGER_UNUSED_PACKAGE,
+      active: false,
+      battery: 72,
+      batteryTempC: 32.2,
+      location: {
+        latitude: 35.4602514,
+        longitude: 139.54049637,
+        groupKey: '35.460,139.540',
+      },
+      body: {
+        active: 'false',
+        package: 'com.example.foreground',
+      },
+      receivedAt: now,
+    });
   });
 
   test('parses location strings and ignores invalid coordinates', () => {
@@ -208,6 +263,7 @@ describe('minuteLoggerService', () => {
       endpointPath: '/secret-minute-logger',
       deviceId: 'tablet-01',
       package: 'com.example.app',
+      active: true,
       battery: 72,
       batteryTempC: 32.2,
       location: expect.objectContaining({
@@ -255,6 +311,47 @@ describe('minuteLoggerService', () => {
         upsert: true,
       })
     );
+  });
+
+  test('records inactive raw requests without incrementing usage rollups', async () => {
+    const requestModel = {
+      create: jest.fn().mockResolvedValue({ _id: 'request-2' }),
+    };
+    const statModel = {
+      findOneAndUpdate: jest.fn(),
+    };
+    const now = new Date('2026-06-07T03:05:00.000Z');
+
+    const result = await recordMinuteLoggerRequest(createRequest({
+      body: {
+        active: 'false',
+        package: 'com.example.app',
+        deviceId: 'tablet-01',
+        location: '35.4602514,139.54049637',
+        battery: '72',
+      },
+    }), {
+      requestModel,
+      statModel,
+      endpointPath: '/secret-minute-logger',
+      now,
+    });
+
+    expect(result).toMatchObject({
+      logged: true,
+      active: false,
+    });
+    expect(requestModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      endpointPath: '/secret-minute-logger',
+      deviceId: 'tablet-01',
+      package: MINUTE_LOGGER_UNUSED_PACKAGE,
+      active: false,
+      battery: 72,
+      location: expect.objectContaining({
+        groupKey: '35.460,139.540',
+      }),
+    }));
+    expect(statModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test('fetchDailyMinuteStats groups rollups by package', async () => {
@@ -559,6 +656,101 @@ describe('minuteLoggerService', () => {
     ]);
     expect(result.locationTimeline.labels[0].latitude).toBeCloseTo(35.46075);
     expect(result.locationTimeline.labels[0].longitude).toBeCloseTo(139.54095);
+  });
+
+  test('getMinuteLoggerDailyAnalytics excludes inactive rows from usage while retaining location and battery points', async () => {
+    const requestRows = [
+      {
+        receivedAt: new Date('2026-06-06T09:00:00.000Z'),
+        active: true,
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        location: {
+          latitude: 35.4602,
+          longitude: 139.5404,
+          groupKey: '35.460,139.540',
+        },
+        battery: 80,
+      },
+      {
+        receivedAt: new Date('2026-06-06T09:01:00.000Z'),
+        active: false,
+        deviceId: 'tablet-01',
+        package: MINUTE_LOGGER_UNUSED_PACKAGE,
+        location: {
+          latitude: 35.4603,
+          longitude: 139.5405,
+          groupKey: '35.460,139.540',
+        },
+        battery: 79,
+      },
+      {
+        receivedAt: new Date('2026-06-06T09:02:00.000Z'),
+        active: true,
+        deviceId: 'tablet-01',
+        package: 'com.example.other',
+        location: null,
+        battery: 78,
+      },
+    ];
+    const requestModel = {
+      find: jest.fn().mockReturnValue(createChainQuery(requestRows)),
+      aggregate: jest.fn(),
+    };
+    const settingsModel = {
+      find: jest.fn()
+        .mockReturnValueOnce(createLeanQuery([
+          {
+            endpointPath: '/secret-minute-logger',
+            groupKey: '35.460,139.540',
+            name: 'Home',
+            hideCoordinates: false,
+          },
+        ]))
+        .mockReturnValueOnce(createChainQuery([])),
+    };
+
+    const result = await getMinuteLoggerDailyAnalytics('2026-06-06', {
+      requestModel,
+      locationGroupSettingsModel: settingsModel,
+      endpointPath: '/secret-minute-logger',
+      now: new Date('2026-06-07T03:00:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      totalMinutes: 2,
+      totalRawRequests: 3,
+      inactiveRequests: 1,
+      locatedMinutes: 2,
+      activeLocatedMinutes: 1,
+      namedLocationMinutes: 2,
+      deviceCount: 1,
+      packageCount: 2,
+    });
+    expect(result.packageStats.map((row) => row.name)).toEqual([
+      'com.example.app',
+      'com.example.other',
+    ]);
+    const activeHour = new Date('2026-06-06T09:00:00.000Z').getHours();
+    expect(result.hourlySpread[activeHour].minutes).toBe(2);
+    expect(result.batteryStats.battery).toMatchObject({
+      count: 3,
+      min: 78,
+      max: 80,
+      latest: 78,
+    });
+    expect(result.locationGroups).toEqual([
+      expect.objectContaining({
+        groupKey: '35.460,139.540',
+        minutes: 2,
+        packageCount: 2,
+      }),
+    ]);
+    expect(result.locationTimeline.points).toEqual([
+      expect.objectContaining({ package: 'com.example.app' }),
+      expect.objectContaining({ package: MINUTE_LOGGER_UNUSED_PACKAGE }),
+    ]);
+    expect(result.recentRequests).toHaveLength(3);
   });
 
   test('getMinuteLoggerDailyAnalytics returns null for invalid dates', async () => {

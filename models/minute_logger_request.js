@@ -23,6 +23,7 @@ const MinuteLoggerRequestSchema = new Schema({
   referer: { type: String, default: null },
   deviceId: { type: String, default: 'unknown', index: true },
   package: { type: String, default: 'unknown', index: true },
+  active: { type: Boolean, default: true, index: true },
   location: { type: MinuteLoggerLocationSchema, default: null },
   battery: { type: Number, default: null, min: 0, max: 100 },
   batteryTempC: { type: Number, default: null, min: -50, max: 120 },
@@ -41,6 +42,7 @@ MinuteLoggerRequestSchema.index(
   { expireAfterSeconds: MINUTE_LOGGER_REQUEST_RETENTION_SECONDS }
 );
 MinuteLoggerRequestSchema.index({ endpointPath: 1, receivedAt: -1 });
+MinuteLoggerRequestSchema.index({ endpointPath: 1, active: 1, receivedAt: -1 });
 MinuteLoggerRequestSchema.index({ endpointPath: 1, deviceId: 1, receivedAt: -1 });
 MinuteLoggerRequestSchema.index({ endpointPath: 1, package: 1, receivedAt: -1 });
 MinuteLoggerRequestSchema.index({ endpointPath: 1, deviceId: 1, package: 1, receivedAt: -1 });

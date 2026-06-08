@@ -339,6 +339,7 @@ block content
               thead
                 tr
                   th Time
+                  th Status
                   th Device
                   th Package
                   th Location
@@ -352,6 +353,7 @@ block content
                 each request in recentRequests
                   tr
                     td= request.receivedAtDisplay
+                    td= request.activeDisplay
                     td
                       code= request.deviceId
                     td

@@ -278,14 +278,14 @@ function buildOverviewCards(dashboard) {
 
   cards.push(
     {
-      label: 'Raw Retained Minutes',
+      label: 'Raw Retained Pings',
       value: formatNumber(dashboard.totalRawRequests),
       helper: `${dashboard.rawRetentionDays}-day raw retention`,
     },
     {
       label: 'Packages',
       value: formatNumber(dashboard.packageCountLast60d),
-      helper: `Seen in the last ${dashboard.rawRetentionDays} days`,
+      helper: `Active in the last ${dashboard.rawRetentionDays} days`,
     },
     {
       label: 'Busiest Time',
@@ -296,7 +296,7 @@ function buildOverviewCards(dashboard) {
       label: 'Location Groups',
       value: formatNumber(locationGroupCount),
       helper: locatedMinutes > 0
-        ? `${formatNumber(locationStats.groupedLocationMinutes)} grouped min, ${formatNumber(locationStats.noiseLocationMinutes)} noise min`
+        ? `${formatNumber(locationStats.groupedLocationMinutes)} grouped points, ${formatNumber(locationStats.noiseLocationMinutes)} noise points`
         : 'No location points yet',
     },
     {
@@ -571,6 +571,7 @@ function mapRecentRequest(row) {
   return {
     id: row._id ? String(row._id) : '',
     receivedAtDisplay: formatDateTime(row.receivedAt),
+    activeDisplay: row.active === false ? 'Background' : 'Active',
     method: row.method || 'POST',
     deviceId: row.deviceId || 'unknown',
     packageName: row.package || 'unknown',
@@ -642,6 +643,8 @@ function buildRawLocationStats(groups = [], totalLocationMinutes = 0) {
 
 function buildDailyOverviewCards(analytics = {}) {
   const totalMinutes = Number(analytics.totalMinutes) || 0;
+  const totalRawRequests = Number(analytics.totalRawRequests) || totalMinutes;
+  const inactiveRequests = Number(analytics.inactiveRequests) || Math.max(0, totalRawRequests - totalMinutes);
   const locatedMinutes = Number(analytics.locatedMinutes) || 0;
   const namedLocationMinutes = Number(analytics.namedLocationMinutes) || 0;
   const quietGapMinutes = Number(analytics.quietGap?.longestGapMinutes) || 0;
@@ -649,27 +652,27 @@ function buildDailyOverviewCards(analytics = {}) {
     ? Math.max(1, Math.round((new Date(analytics.lastSeen).getTime() - new Date(analytics.firstSeen).getTime()) / 60000) + 1)
     : 0;
 
-  return [
+  const cards = [
     {
       label: 'Total Minutes',
       value: `${formatNumber(totalMinutes)} min`,
-      helper: `${formatDecimal(totalMinutes / 60)} hours logged`,
+      helper: `${formatDecimal(totalMinutes / 60)} active hours logged`,
       tone: totalMinutes > 0 ? 'ok' : '',
     },
     {
-      label: 'Located Minutes',
-      value: `${formatNumber(locatedMinutes)} min`,
-      helper: `${formatShare(locatedMinutes, totalMinutes)} of the day`,
+      label: 'Located Points',
+      value: formatNumber(locatedMinutes),
+      helper: `${formatShare(locatedMinutes, totalRawRequests)} of logged pings`,
     },
     {
       label: 'Named Locations',
-      value: `${formatNumber(namedLocationMinutes)} min`,
-      helper: `${formatShare(namedLocationMinutes, locatedMinutes)} of located minutes`,
+      value: formatNumber(namedLocationMinutes),
+      helper: `${formatShare(namedLocationMinutes, locatedMinutes)} of located points`,
     },
     {
-      label: 'Devices',
+      label: 'Active Devices',
       value: formatNumber(analytics.deviceCount),
-      helper: `${formatNumber(analytics.packageCount)} packages seen`,
+      helper: `${formatNumber(analytics.packageCount)} active packages seen`,
     },
     {
       label: 'Active Span',
@@ -685,6 +688,16 @@ function buildDailyOverviewCards(analytics = {}) {
     },
     ...buildBatteryOverviewCards(analytics.batteryStats),
   ];
+
+  if (inactiveRequests > 0) {
+    cards.splice(1, 0, {
+      label: 'Background Pings',
+      value: formatNumber(inactiveRequests),
+      helper: `${formatShare(inactiveRequests, totalRawRequests)} of logged pings`,
+    });
+  }
+
+  return cards;
 }
 
 function buildNamedLocationOverviewCards(analytics = {}) {

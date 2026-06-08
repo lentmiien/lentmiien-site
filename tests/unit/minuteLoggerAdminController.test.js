@@ -477,7 +477,8 @@ describe('minuteLoggerAdminController.dailyAnalytics', () => {
         dateKey: '2026-06-06',
         overviewCards: expect.arrayContaining([
           expect.objectContaining({ label: 'Total Minutes', value: '3 min' }),
-          expect.objectContaining({ label: 'Named Locations', value: '2 min' }),
+          expect.objectContaining({ label: 'Located Points', value: '2' }),
+          expect.objectContaining({ label: 'Named Locations', value: '2' }),
           expect.objectContaining({ label: 'Battery Left', value: '72%' }),
           expect.objectContaining({ label: 'Battery Temp', value: '32.5 C' }),
         ]),
