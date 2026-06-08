@@ -883,6 +883,195 @@ function isPointWithinBounds(point, bounds) {
     && longitude <= bounds.maxLongitude;
 }
 
+function ensureNamedLocationLabelBucket(bucketsByName, name) {
+  const normalizedName = normalizeLocationGroupName(name);
+
+  if (!normalizedName) {
+    return null;
+  }
+
+  if (!bucketsByName.has(normalizedName)) {
+    bucketsByName.set(normalizedName, {
+      name: normalizedName,
+      groupKeys: new Set(),
+      latitudeTotal: 0,
+      longitudeTotal: 0,
+      pointCount: 0,
+      fallbackLatitudeTotal: 0,
+      fallbackLongitudeTotal: 0,
+      fallbackCount: 0,
+      hideCoordinates: true,
+    });
+  }
+
+  return bucketsByName.get(normalizedName);
+}
+
+function addNamedLocationLabelCoordinate(bucket, latitude, longitude, weight = 1, fallback = false) {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  const count = Number(weight) || 0;
+
+  if (!bucket || !isValidLatitude(lat) || !isValidLongitude(lon) || count <= 0) {
+    return;
+  }
+
+  if (fallback) {
+    bucket.fallbackLatitudeTotal += lat * count;
+    bucket.fallbackLongitudeTotal += lon * count;
+    bucket.fallbackCount += count;
+    return;
+  }
+
+  bucket.latitudeTotal += lat * count;
+  bucket.longitudeTotal += lon * count;
+  bucket.pointCount += count;
+}
+
+function createNamedLocationLabelBuckets(namedSettings = []) {
+  const bucketsByName = new Map();
+
+  (Array.isArray(namedSettings) ? namedSettings : []).forEach((setting) => {
+    const bucket = ensureNamedLocationLabelBucket(bucketsByName, setting?.name);
+
+    if (!bucket) {
+      return;
+    }
+
+    const groupKey = String(setting.groupKey || '').trim();
+    if (groupKey) {
+      bucket.groupKeys.add(groupKey);
+    }
+    bucket.hideCoordinates = bucket.hideCoordinates && Boolean(setting.hideCoordinates);
+
+    const latitude = Number(setting.latitude);
+    const longitude = Number(setting.longitude);
+    const center = isValidLatitude(latitude) && isValidLongitude(longitude)
+      ? { latitude, longitude }
+      : parseLocationGroupKeyCenter(groupKey);
+
+    if (center) {
+      addNamedLocationLabelCoordinate(bucket, center.latitude, center.longitude, 1, true);
+    }
+  });
+
+  return bucketsByName;
+}
+
+function buildNamedLocationNameLookup(namedSettings = []) {
+  const nameByGroupKey = new Map();
+
+  (Array.isArray(namedSettings) ? namedSettings : []).forEach((setting) => {
+    const groupKey = String(setting?.groupKey || '').trim();
+    const name = normalizeLocationGroupName(setting?.name);
+
+    if (groupKey && name) {
+      nameByGroupKey.set(groupKey, name);
+    }
+  });
+
+  return nameByGroupKey;
+}
+
+function getLocationPointLatitude(point = {}) {
+  const latitude = Number(point?.latitude ?? point?.location?.latitude);
+  return isValidLatitude(latitude) ? latitude : null;
+}
+
+function getLocationPointLongitude(point = {}) {
+  const longitude = Number(point?.longitude ?? point?.location?.longitude);
+  return isValidLongitude(longitude) ? longitude : null;
+}
+
+function getLocationPointGroupKey(point = {}) {
+  const explicitGroupKey = String(point?.groupKey || point?.location?.groupKey || '').trim();
+  if (explicitGroupKey) {
+    return explicitGroupKey;
+  }
+
+  const latitude = getLocationPointLatitude(point);
+  const longitude = getLocationPointLongitude(point);
+
+  if (latitude !== null && longitude !== null) {
+    return buildLocationGroupKey(latitude, longitude);
+  }
+
+  return '';
+}
+
+function addNamedLocationLabelPoint(bucketsByName, nameByGroupKey, point = {}) {
+  const groupKey = getLocationPointGroupKey(point);
+  const name = normalizeLocationGroupName(point?.name) || nameByGroupKey.get(groupKey);
+  const bucket = ensureNamedLocationLabelBucket(bucketsByName, name);
+  const latitude = getLocationPointLatitude(point);
+  const longitude = getLocationPointLongitude(point);
+
+  if (!bucket || latitude === null || longitude === null) {
+    return;
+  }
+
+  if (groupKey) {
+    bucket.groupKeys.add(groupKey);
+  }
+  addNamedLocationLabelCoordinate(bucket, latitude, longitude);
+}
+
+function addNamedLocationAggregateRow(bucketsByName, nameByGroupKey, row = {}) {
+  const groupKey = String(row.groupKey || row._id || '').trim();
+  const name = nameByGroupKey.get(groupKey);
+  const bucket = ensureNamedLocationLabelBucket(bucketsByName, name);
+  const latitude = Number(row.latitude);
+  const longitude = Number(row.longitude);
+  const count = Number(row.count || row.minutes) || 0;
+
+  if (!bucket || !groupKey || !isValidLatitude(latitude) || !isValidLongitude(longitude) || count <= 0) {
+    return;
+  }
+
+  bucket.groupKeys.add(groupKey);
+  addNamedLocationLabelCoordinate(bucket, latitude, longitude, count);
+}
+
+function finalizeNamedLocationLabelBuckets(bucketsByName, bounds = null) {
+  return Array.from(bucketsByName.values())
+    .map((bucket) => {
+      const pointCount = Number(bucket.pointCount) || 0;
+      const fallbackCount = Number(bucket.fallbackCount) || 0;
+      const count = pointCount || fallbackCount;
+
+      if (count <= 0) {
+        return null;
+      }
+
+      const latitudeTotal = pointCount ? bucket.latitudeTotal : bucket.fallbackLatitudeTotal;
+      const longitudeTotal = pointCount ? bucket.longitudeTotal : bucket.fallbackLongitudeTotal;
+
+      return {
+        name: bucket.name,
+        groupKey: Array.from(bucket.groupKeys).sort().join('|'),
+        groupKeys: Array.from(bucket.groupKeys).sort(),
+        latitude: latitudeTotal / count,
+        longitude: longitudeTotal / count,
+        pointCount,
+        hideCoordinates: Boolean(bucket.hideCoordinates),
+      };
+    })
+    .filter(Boolean)
+    .filter((label) => !bounds || isPointWithinBounds(label, bounds))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function buildNamedLocationLabels(namedSettings = [], bounds = null, points = []) {
+  const bucketsByName = createNamedLocationLabelBuckets(namedSettings);
+  const nameByGroupKey = buildNamedLocationNameLookup(namedSettings);
+
+  (Array.isArray(points) ? points : []).forEach((point) => {
+    addNamedLocationLabelPoint(bucketsByName, nameByGroupKey, point);
+  });
+
+  return finalizeNamedLocationLabelBuckets(bucketsByName, bounds);
+}
+
 function sampleEvenly(rows = [], limit = MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT) {
   const source = Array.isArray(rows) ? rows : [];
   const safeLimit = Number.isInteger(limit) && limit > 0
@@ -1539,6 +1728,58 @@ async function fetchNamedLocationGroupSettings(endpointPath, options = {}) {
     });
 }
 
+async function fetchNamedLocationCenterLabels(endpointPath, namedSettings = [], options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const groupKeys = Array.from(new Set((Array.isArray(namedSettings) ? namedSettings : [])
+    .map((setting) => String(setting?.groupKey || '').trim())
+    .filter(Boolean)));
+
+  if (!endpointPath || !groupKeys.length || typeof requestModel.aggregate !== 'function') {
+    return [];
+  }
+
+  const match = {
+    endpointPath,
+    'location.groupKey': { $in: groupKeys },
+    'location.latitude': { $gte: -90, $lte: 90 },
+    'location.longitude': { $gte: -180, $lte: 180 },
+  };
+
+  if (options.since) {
+    match.receivedAt = { $gte: options.since };
+  }
+
+  const rows = await requestModel.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$location.groupKey',
+        count: { $sum: 1 },
+        latitude: { $avg: '$location.latitude' },
+        longitude: { $avg: '$location.longitude' },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        groupKey: '$_id',
+        count: 1,
+        latitude: 1,
+        longitude: 1,
+      },
+    },
+  ]);
+  const bucketsByName = createNamedLocationLabelBuckets(namedSettings);
+  const nameByGroupKey = buildNamedLocationNameLookup(namedSettings);
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    addNamedLocationAggregateRow(bucketsByName, nameByGroupKey, row);
+  });
+
+  return finalizeNamedLocationLabelBuckets(bucketsByName)
+    .filter((label) => label.pointCount > 0);
+}
+
 function getRequestLocationGroupKey(request = {}) {
   const explicitGroupKey = String(request?.location?.groupKey || '').trim();
   if (explicitGroupKey) {
@@ -1806,60 +2047,7 @@ async function fetchLocationStats(endpointPath, options = {}) {
   return summary;
 }
 
-function buildNamedLocationLabels(namedSettings = [], bounds = null) {
-  return (Array.isArray(namedSettings) ? namedSettings : [])
-    .filter((setting) => {
-      return setting.name
-        && isValidLatitude(Number(setting.latitude))
-        && isValidLongitude(Number(setting.longitude))
-        && isPointWithinBounds(setting, bounds);
-    })
-    .map((setting) => ({
-      name: setting.name,
-      groupKey: setting.groupKey,
-      latitude: Number(setting.latitude),
-      longitude: Number(setting.longitude),
-      hideCoordinates: Boolean(setting.hideCoordinates),
-    }));
-}
-
-function buildActiveNamedTimelineLabels(points = [], bounds = null) {
-  const labelsByKey = new Map();
-
-  (Array.isArray(points) ? points : []).forEach((point) => {
-    if (!point.name) {
-      return;
-    }
-
-    const key = `${point.name}\u0000${point.groupKey || ''}`;
-
-    if (!labelsByKey.has(key)) {
-      labelsByKey.set(key, {
-        name: point.name,
-        groupKey: point.groupKey || '',
-        latitudeTotal: 0,
-        longitudeTotal: 0,
-        count: 0,
-      });
-    }
-
-    const label = labelsByKey.get(key);
-    label.latitudeTotal += Number(point.latitude);
-    label.longitudeTotal += Number(point.longitude);
-    label.count += 1;
-  });
-
-  return Array.from(labelsByKey.values())
-    .map((label) => ({
-      name: label.name,
-      groupKey: label.groupKey,
-      latitude: label.latitudeTotal / label.count,
-      longitude: label.longitudeTotal / label.count,
-    }))
-    .filter((label) => isPointWithinBounds(label, bounds));
-}
-
-function buildLocationTimeline(rows = [], settingsByKey = new Map(), namedSettings = []) {
+function buildLocationTimeline(rows = [], settingsByKey = new Map(), namedSettings = [], realNamedLocationLabels = []) {
   const points = (Array.isArray(rows) ? rows : [])
     .filter(hasValidRequestLocation)
     .map((row) => {
@@ -1886,19 +2074,27 @@ function buildLocationTimeline(rows = [], settingsByKey = new Map(), namedSettin
     })
     .filter(Boolean)
     .sort((left, right) => left.receivedAt - right.receivedAt);
-  const bounds = buildLocationBounds(points);
-  const labelsByKey = new Map();
+  const activeNameByGroupKey = buildNamedLocationNameLookup(namedSettings);
+  const activeNames = new Set(points
+    .map((point) => normalizeLocationGroupName(point.name) || activeNameByGroupKey.get(point.groupKey))
+    .filter(Boolean));
+  const activeRealLabels = (Array.isArray(realNamedLocationLabels) ? realNamedLocationLabels : [])
+    .filter((label) => activeNames.has(normalizeLocationGroupName(label.name)));
+  const labelsByName = new Map(activeRealLabels.map((label) => [normalizeLocationGroupName(label.name), label]));
 
-  [
-    ...buildNamedLocationLabels(namedSettings, bounds),
-    ...buildActiveNamedTimelineLabels(points, bounds),
-  ].forEach((label) => {
-    labelsByKey.set(`${label.name}\u0000${label.groupKey || ''}`, label);
+  buildNamedLocationLabels(namedSettings, null, points).forEach((label) => {
+    const name = normalizeLocationGroupName(label.name);
+    if (activeNames.has(name) && !labelsByName.has(name)) {
+      labelsByName.set(name, label);
+    }
   });
+
+  const labels = Array.from(labelsByName.values());
+  const bounds = buildLocationBounds([...points, ...labels]);
 
   return {
     bounds,
-    labels: Array.from(labelsByKey.values()),
+    labels: labels.filter((label) => !bounds || isPointWithinBounds(label, bounds)),
     points,
     defaultMinute: points.length ? points[points.length - 1].minuteOfDay : 720,
   };
@@ -1908,6 +2104,8 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
   const range = buildDayRangeFromDateKey(dateKey);
+  const now = new Date(options.now || Date.now());
+  const rawWindowStart = new Date(now.getTime() - (MINUTE_LOGGER_RAW_RETENTION_DAYS * DAY_MS));
 
   if (!range) {
     return null;
@@ -1949,6 +2147,10 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
       settingsModel: options.locationGroupSettingsModel,
     }),
   ]);
+  const realNamedLocationLabels = await fetchNamedLocationCenterLabels(endpointPath, namedSettings, {
+    requestModel,
+    since: rawWindowStart,
+  });
   const hourlySpread = buildHourlyCounts(requests);
   const timeBucketSummary = summarizeTimeBuckets(hourlySpread, 1);
   const firstRequest = requests[0] || null;
@@ -1961,7 +2163,7 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
 
   return {
     endpointPath,
-    generatedAt: new Date(options.now || Date.now()),
+    generatedAt: now,
     dateKey: range.dateKey,
     dayStart: range.start,
     dayEnd: range.end,
@@ -1990,7 +2192,7 @@ async function getMinuteLoggerDailyAnalytics(dateKey, options = {}) {
       const setting = settingsByKey.get(groupKey);
       return setting?.name || groupKey || UNKNOWN_DIMENSION;
     }),
-    locationTimeline: buildLocationTimeline(locatedRequests, settingsByKey, namedSettings),
+    locationTimeline: buildLocationTimeline(locatedRequests, settingsByKey, namedSettings, realNamedLocationLabels),
     recentRequests: requests.slice(-25).reverse(),
   };
 }
@@ -2048,7 +2250,7 @@ function buildNamedLocationGroups(namedSettings = [], requests = [], options = {
       const rows = rowsByName.get(group.name) || [];
       const locatedRows = rows.filter(hasValidRequestLocation);
       const settingsByKey = new Map(group.settings.map((setting) => [setting.groupKey, setting]));
-      const points = sampleEvenly(locatedRows
+      const locationPoints = locatedRows
         .map((row) => {
           const latitude = getRequestLatitude(row);
           const longitude = getRequestLongitude(row);
@@ -2067,8 +2269,9 @@ function buildNamedLocationGroups(namedSettings = [], requests = [], options = {
             package: normalizeDimension(row.package, UNKNOWN_DIMENSION),
           };
         })
-        .filter(Boolean), options.pointSampleLimit || MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT);
-      const bounds = buildLocationBounds(points, group.settings);
+        .filter(Boolean);
+      const points = sampleEvenly(locationPoints, options.pointSampleLimit || MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT);
+      const bounds = buildLocationBounds(locationPoints, group.settings);
       const locationGroups = buildLocationGroupSummaries(locatedRows, settingsByKey, {
         pointSampleLimit: options.pointSampleLimit,
       });
@@ -2107,7 +2310,7 @@ function buildNamedLocationGroups(namedSettings = [], requests = [], options = {
         pointCloud: {
           bounds,
           points,
-          labels: buildNamedLocationLabels(group.settings, bounds),
+          labels: buildNamedLocationLabels(group.settings, bounds, locationPoints),
         },
       };
     })

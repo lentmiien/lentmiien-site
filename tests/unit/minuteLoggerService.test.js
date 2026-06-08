@@ -452,6 +452,20 @@ describe('minuteLoggerService', () => {
     ];
     const requestModel = {
       find: jest.fn().mockReturnValue(createChainQuery(requestRows)),
+      aggregate: jest.fn().mockResolvedValue([
+        {
+          groupKey: '35.460,139.540',
+          count: 2,
+          latitude: 35.46025,
+          longitude: 139.54045,
+        },
+        {
+          groupKey: '35.461,139.541',
+          count: 2,
+          latitude: 35.46125,
+          longitude: 139.54145,
+        },
+      ]),
     };
     const settingsModel = {
       find: jest.fn()
@@ -467,6 +481,12 @@ describe('minuteLoggerService', () => {
           {
             endpointPath: '/secret-minute-logger',
             groupKey: '35.460,139.540',
+            name: 'Home',
+            hideCoordinates: false,
+          },
+          {
+            endpointPath: '/secret-minute-logger',
+            groupKey: '35.461,139.541',
             name: 'Home',
             hideCoordinates: false,
           },
@@ -535,8 +555,10 @@ describe('minuteLoggerService', () => {
       }),
     ]);
     expect(result.locationTimeline.labels).toEqual([
-      expect.objectContaining({ name: 'Home' }),
+      expect.objectContaining({ name: 'Home', pointCount: 4 }),
     ]);
+    expect(result.locationTimeline.labels[0].latitude).toBeCloseTo(35.46075);
+    expect(result.locationTimeline.labels[0].longitude).toBeCloseTo(139.54095);
   });
 
   test('getMinuteLoggerDailyAnalytics returns null for invalid dates', async () => {
@@ -645,6 +667,13 @@ describe('minuteLoggerService', () => {
       expect.objectContaining({ groupKey: '35.460,139.540' }),
       expect.objectContaining({ groupKey: '35.461,139.541' }),
     ]);
+    expect(result.groups[0].pointCloud.labels).toHaveLength(1);
+    expect(result.groups[0].pointCloud.labels[0]).toMatchObject({
+      name: 'Home',
+      pointCount: 2,
+    });
+    expect(result.groups[0].pointCloud.labels[0].latitude).toBeCloseTo(35.4606);
+    expect(result.groups[0].pointCloud.labels[0].longitude).toBeCloseTo(139.5409);
   });
 
   test('updateMinuteLoggerLocationGroupSettings validates and persists display names', async () => {
