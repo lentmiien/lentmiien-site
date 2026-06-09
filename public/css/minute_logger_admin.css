@@ -1133,7 +1133,7 @@ body,
 
 .minute-logger-timeline__controls {
   display: grid;
-  grid-template-columns: auto minmax(12rem, 1fr) auto;
+  grid-template-columns: auto minmax(12rem, 1fr);
   gap: 0.85rem;
   align-items: center;
 }
@@ -1146,11 +1146,14 @@ body,
 }
 
 .minute-logger-timeline__slider {
+  min-width: 0;
   width: 100%;
   accent-color: var(--ml-accent);
 }
 
 .minute-logger-timeline__summary {
+  display: block;
+  min-height: 1.35em;
   color: var(--ml-text-muted);
   font-size: 0.9rem;
   white-space: nowrap;
