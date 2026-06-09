@@ -253,7 +253,7 @@
         fill,
       });
       const title = appendSvg(rect, 'title');
-      title.textContent = packageEntry ? packageEntry.name : 'No active package';
+      title.textContent = packageEntry ? packageEntry.name : 'No package context';
     }
   }
 
@@ -388,10 +388,10 @@
     const windowPoints = points.filter((point) => point.t >= clampedStart && point.t <= windowEnd);
     const chargeCount = windowPoints.filter((point) => Number.isFinite(point.b)).length;
     const tempCount = windowPoints.filter((point) => Number.isFinite(point.c)).length;
-    const activePackageCount = new Set(windowPoints
+    const packageCount = new Set(windowPoints
       .map((point) => point.p)
       .filter((packageIndex) => Number.isInteger(packageIndex))).size;
-    const noActiveCount = windowPoints.filter((point) => point.p === null).length;
+    const noPackageCount = windowPoints.filter((point) => point.p === null).length;
     const tempDomain = buildTempDomain(windowPoints);
 
     clearNode(svg);
@@ -451,7 +451,7 @@
     }
 
     if (summary) {
-      summary.textContent = `${formatCount(windowPoints.length)} points, ${formatCount(chargeCount)} charge, ${formatCount(tempCount)} temp, ${formatCount(activePackageCount)} packages, ${formatCount(noActiveCount)} no active`;
+      summary.textContent = `${formatCount(windowPoints.length)} points, ${formatCount(chargeCount)} charge, ${formatCount(tempCount)} temp, ${formatCount(packageCount)} packages, ${formatCount(noPackageCount)} no package`;
     }
 
     if (slider) {

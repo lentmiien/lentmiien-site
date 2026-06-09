@@ -47,7 +47,7 @@ block content
         header.minute-logger-panel__header
           div
             h2 Battery Timeline
-            span #{pointCountDisplay} retained points, #{packageCountDisplay} active packages
+            span #{pointCountDisplay} retained points, #{packageCountDisplay} packages
         .minute-logger-battery-chart(data-minute-logger-battery)
           .minute-logger-battery-chart__stage
             svg.minute-logger-battery-chart__svg(viewBox='0 0 960 430', role='img', aria-label='Battery charge and temperature over time', data-minute-logger-battery-svg)
@@ -91,7 +91,7 @@ block content
               dt Latest
               dd= retentionEndDisplay
             div
-              dt No Active Package
+              dt No Package Context
               dd #{noActivePointCountDisplay} pings
             div
               dt Chart Lines

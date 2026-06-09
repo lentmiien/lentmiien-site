@@ -218,13 +218,14 @@ function createBatteryDashboard(overrides = {}) {
     retentionEnd: new Date('2026-06-07T03:00:00.000Z'),
     windowHours: 12,
     pointCount: 3,
-    noActivePointCount: 2,
+    noActivePointCount: 1,
     packages: [
       { name: 'com.example.app', color: '#FF6A1F', count: 1 },
+      { name: 'unused', color: '#717A88', count: 1 },
     ],
     points: [
       { t: firstPointAt.getTime(), b: 72, c: 32.2, p: 0 },
-      { t: secondPointAt.getTime(), b: 71, c: 32.4, p: null },
+      { t: secondPointAt.getTime(), b: 71, c: 32.4, p: 1 },
       { t: thirdPointAt.getTime(), b: null, c: null, p: null },
     ],
     batteryStats: {
@@ -433,13 +434,13 @@ describe('minuteLoggerAdminController.batteryDashboard', () => {
         rawRetentionDays: 60,
         windowHours: 12,
         pointCountDisplay: '3',
-        noActivePointCountDisplay: '2',
-        packageCountDisplay: '1',
+        noActivePointCountDisplay: '1',
+        packageCountDisplay: '2',
         overviewCards: expect.arrayContaining([
           expect.objectContaining({ label: 'Battery Left', value: '71%' }),
           expect.objectContaining({ label: 'Battery Temp', value: '32.4 C' }),
           expect.objectContaining({ label: 'Retained Points', value: '3' }),
-          expect.objectContaining({ label: 'Active Packages', value: '1' }),
+          expect.objectContaining({ label: 'Packages', value: '2' }),
         ]),
         packageLegend: [
           {
@@ -448,13 +449,19 @@ describe('minuteLoggerAdminController.batteryDashboard', () => {
             count: 1,
             countDisplay: '1',
           },
+          {
+            name: 'unused',
+            color: '#717A88',
+            count: 1,
+            countDisplay: '1',
+          },
         ],
         noActivePackageLegend: expect.objectContaining({
-          name: 'No active package',
-          count: 2,
-          countDisplay: '2',
+          name: 'No package context',
+          count: 1,
+          countDisplay: '1',
         }),
-        batteryTrackerJson: expect.stringContaining('"packages":[{"name":"com.example.app","color":"#FF6A1F"}]'),
+        batteryTrackerJson: expect.stringContaining('"packages":[{"name":"com.example.app","color":"#FF6A1F"},{"name":"unused","color":"#717A88"}]'),
       })
     );
     expect(res.render.mock.calls[0][1].batteryTrackerJson).toContain('"b":null,"c":null');

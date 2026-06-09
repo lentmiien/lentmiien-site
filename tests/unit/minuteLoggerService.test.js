@@ -308,7 +308,7 @@ describe('minuteLoggerService', () => {
       retentionEnd: now,
       windowHours: 12,
       pointCount: 3,
-      noActivePointCount: 1,
+      noActivePointCount: 0,
     });
     expect(result.packages).toEqual([
       expect.objectContaining({
@@ -321,10 +321,15 @@ describe('minuteLoggerService', () => {
         count: 1,
         color: expect.any(String),
       }),
+      expect.objectContaining({
+        name: MINUTE_LOGGER_UNUSED_PACKAGE,
+        count: 1,
+        color: expect.any(String),
+      }),
     ]);
     expect(result.points).toEqual([
       { t: firstPointAt.getTime(), b: 80, c: 31.5, p: 0 },
-      { t: inactivePointAt.getTime(), b: 79, c: 31.7, p: null },
+      { t: inactivePointAt.getTime(), b: 79, c: 31.7, p: 2 },
       { t: bodyPointAt.getTime(), b: 68, c: 33, p: 1 },
     ]);
     expect(result.batteryStats.battery).toMatchObject({

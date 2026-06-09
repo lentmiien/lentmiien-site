@@ -884,15 +884,32 @@ function getBatteryPackageColor(packageName) {
   return MINUTE_LOGGER_BATTERY_PACKAGE_COLORS[safeIndex % MINUTE_LOGGER_BATTERY_PACKAGE_COLORS.length];
 }
 
+function isExplicitUnusedPackage(row = {}) {
+  return normalizeDimension(row.package, UNKNOWN_DIMENSION).toLowerCase() === MINUTE_LOGGER_UNUSED_PACKAGE;
+}
+
+function getBatteryDashboardPackageName(row = {}) {
+  if (isExplicitUnusedPackage(row)) {
+    return MINUTE_LOGGER_UNUSED_PACKAGE;
+  }
+
+  if (isActiveUsageRequest(row)) {
+    return normalizeDimension(row.package, UNKNOWN_DIMENSION);
+  }
+
+  return null;
+}
+
 function buildBatteryDashboardPackageRows(rows = []) {
   const packageCounts = new Map();
 
   (Array.isArray(rows) ? rows : []).forEach((row) => {
-    if (!isActiveUsageRequest(row)) {
+    const packageName = getBatteryDashboardPackageName(row);
+
+    if (!packageName) {
       return;
     }
 
-    const packageName = normalizeDimension(row.package, UNKNOWN_DIMENSION);
     packageCounts.set(packageName, (packageCounts.get(packageName) || 0) + 1);
   });
 
@@ -917,9 +934,7 @@ function buildBatteryDashboardPoints(rows = [], packages = []) {
         return null;
       }
 
-      const packageName = isActiveUsageRequest(row)
-        ? normalizeDimension(row.package, UNKNOWN_DIMENSION)
-        : null;
+      const packageName = getBatteryDashboardPackageName(row);
       const packageIndex = packageName && packageIndexByName.has(packageName)
         ? packageIndexByName.get(packageName)
         : null;
@@ -2537,8 +2552,8 @@ async function getMinuteLoggerBatteryDashboard(options = {}) {
   const requests = Array.isArray(rows) ? rows : [];
   const packages = buildBatteryDashboardPackageRows(requests);
   const points = buildBatteryDashboardPoints(requests, packages);
-  const noActivePointCount = requests.reduce((count, row) => {
-    return count + (isActiveUsageRequest(row) ? 0 : 1);
+  const noActivePointCount = points.reduce((count, point) => {
+    return count + (Number.isInteger(point.p) ? 0 : 1);
   }, 0);
 
   return {

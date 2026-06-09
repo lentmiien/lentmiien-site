@@ -751,11 +751,11 @@ function buildBatteryDashboardOverviewCards(dashboard = {}) {
       tone: points.length > 0 ? 'ok' : '',
     },
     {
-      label: 'Active Packages',
+      label: 'Packages',
       value: formatNumber(packages.length),
       helper: noActivePointCount > 0
-        ? `${formatNumber(noActivePointCount)} pings with no active package`
-        : 'Every retained ping has an active package',
+        ? `${formatNumber(noActivePointCount)} pings without package context`
+        : 'Explicit unused pings are included',
     },
     {
       label: 'Window',
@@ -826,7 +826,7 @@ function buildBatteryDashboardViewModel(dashboard = {}, options = {}) {
     overviewCards: dashboard.generatedAt ? buildBatteryDashboardOverviewCards(dashboard) : [],
     packageLegend: mapBatteryPackageLegend(packages),
     noActivePackageLegend: {
-      name: 'No active package',
+      name: 'No package context',
       color: 'rgba(154, 163, 178, 0.22)',
       count: noActivePointCount,
       countDisplay: formatNumber(noActivePointCount),
