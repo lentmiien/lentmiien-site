@@ -339,6 +339,135 @@ describe('minuteLoggerService', () => {
       latest: 68,
       latestDeviceId: 'phone-01',
     });
+    expect(result.batteryAnalytics).toMatchObject({
+      inferredUnusedMinutes: 0,
+      totalChargeDropPercent: 1,
+      chargeDropSamples: 1,
+      charging: {
+        intervalCount: 0,
+      },
+    });
+    expect(result.batteryAnalytics.packageStats).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: MINUTE_LOGGER_UNUSED_PACKAGE,
+        observedPoints: 1,
+        inferredMinutes: 0,
+        chargeDropPercent: 1,
+      }),
+      expect.objectContaining({
+        name: 'com.example.app',
+        observedPoints: 1,
+        batteryTempC: expect.objectContaining({ average: 31.5 }),
+      }),
+    ]));
+  });
+
+  test('getMinuteLoggerBatteryDashboard infers empty minutes before unused without adding chart points', async () => {
+    const firstPointAt = new Date('2026-06-07T01:00:00.000Z');
+    const inactivePointAt = new Date('2026-06-07T01:10:00.000Z');
+    const rows = [
+      {
+        receivedAt: firstPointAt,
+        active: true,
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        battery: 80,
+        batteryTempC: 31,
+      },
+      {
+        receivedAt: inactivePointAt,
+        active: false,
+        deviceId: 'tablet-01',
+        package: MINUTE_LOGGER_UNUSED_PACKAGE,
+        battery: 78,
+        batteryTempC: 32,
+      },
+    ];
+    const requestModel = {
+      find: jest.fn().mockReturnValue(createChainQuery(rows)),
+    };
+
+    const result = await getMinuteLoggerBatteryDashboard({
+      requestModel,
+      endpointPath: '/secret-minute-logger',
+      now: new Date('2026-06-07T03:00:00.000Z'),
+    });
+
+    expect(result.points).toEqual([
+      { t: firstPointAt.getTime(), b: 80, c: 31, p: 0 },
+      { t: inactivePointAt.getTime(), b: 78, c: 32, p: 1 },
+    ]);
+    expect(result.pointCount).toBe(2);
+    expect(result.inferredUnusedMinutes).toBe(9);
+    expect(result.batteryAnalytics).toMatchObject({
+      inferredUnusedMinutes: 9,
+      totalChargeDropPercent: 2,
+      chargeDropSamples: 1,
+    });
+    expect(result.batteryAnalytics.packageStats).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: MINUTE_LOGGER_UNUSED_PACKAGE,
+        observedPoints: 1,
+        inferredMinutes: 9,
+        totalMinutes: 10,
+        chargeDropPercent: 2,
+        chargeDropMinutes: 10,
+        drainRatePercentPerHour: 12,
+      }),
+    ]));
+  });
+
+  test('getMinuteLoggerBatteryDashboard summarizes charging intervals', async () => {
+    const firstPointAt = new Date('2026-06-07T01:00:00.000Z');
+    const chargingPointAt = new Date('2026-06-07T01:30:00.000Z');
+    const rows = [
+      {
+        receivedAt: firstPointAt,
+        active: true,
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        battery: 50,
+        batteryTempC: 30,
+      },
+      {
+        receivedAt: chargingPointAt,
+        active: true,
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        battery: 55,
+        batteryTempC: 35,
+      },
+    ];
+    const requestModel = {
+      find: jest.fn().mockReturnValue(createChainQuery(rows)),
+    };
+
+    const result = await getMinuteLoggerBatteryDashboard({
+      requestModel,
+      endpointPath: '/secret-minute-logger',
+      now: new Date('2026-06-07T03:00:00.000Z'),
+    });
+
+    expect(result.batteryAnalytics.charging).toMatchObject({
+      intervalCount: 1,
+      totalGainPercent: 5,
+      totalMinutes: 30,
+      averageSpeedPercentPerHour: 10,
+      maxSpeedPercentPerHour: 10,
+      batteryTempC: expect.objectContaining({
+        count: 1,
+        average: 35,
+        max: 35,
+      }),
+      packageStats: [
+        expect.objectContaining({
+          name: 'com.example.app',
+          totalGainPercent: 5,
+          totalMinutes: 30,
+          averageSpeedPercentPerHour: 10,
+        }),
+      ],
+    });
   });
 
   test('records a raw request and increments day and month rollups', async () => {

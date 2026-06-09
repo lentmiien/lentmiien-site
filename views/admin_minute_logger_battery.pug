@@ -7,6 +7,9 @@ block content
   -
     const hasPackageLegend = Array.isArray(packageLegend) && packageLegend.length;
     const showNoActiveLegend = noActivePackageLegend && Number(noActivePackageLegend.count) > 0;
+    const hasBatteryPackageStats = Array.isArray(batteryPackageStats) && batteryPackageStats.length;
+    const hasCharging = chargingSummary && chargingSummary.hasCharging;
+    const hasChargingPackageStats = Array.isArray(chargingPackageStats) && chargingPackageStats.length;
 
   .minute-logger-admin
     header.minute-logger-hero.minute-logger-hero--compact
@@ -57,6 +60,45 @@ block content
             output#minuteLoggerBatteryWindowEnd.minute-logger-battery-chart__time(for='minuteLoggerBatterySlider', data-minute-logger-battery-end)= retentionEndDisplay
           .minute-logger-battery-chart__summary(data-minute-logger-battery-summary) #{pointCountDisplay} retained points
 
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Package Battery Stats
+            span Observed readings plus inferred unused minutes
+        if hasBatteryPackageStats
+          .minute-logger-table-wrap
+            table.minute-logger-table.minute-logger-table--battery
+              thead
+                tr
+                  th Package
+                  th Minutes
+                  th Pings
+                  th Inferred
+                  th Avg Temp
+                  th Max Temp
+                  th Avg Charge
+                  th Drop
+                  th Drain
+                  th Devices
+              tbody
+                each pkg in batteryPackageStats
+                  tr
+                    td
+                      .minute-logger-battery-package-cell(style=`--package-color: ${pkg.color};`)
+                        span.minute-logger-package-legend__swatch
+                        code= pkg.name
+                    td= pkg.totalMinutesDisplay
+                    td= pkg.observedPointsDisplay
+                    td= pkg.inferredMinutesDisplay
+                    td= pkg.averageTempDisplay
+                    td= pkg.maxTempDisplay
+                    td= pkg.averageChargeDisplay
+                    td= pkg.chargeDropDisplay
+                    td= pkg.drainRateDisplay
+                    td= pkg.deviceCountDisplay
+        else
+          p.minute-logger-empty No package battery analytics in retained minute logs.
+
       section.minute-logger-grid
         article.minute-logger-panel
           header.minute-logger-panel__header
@@ -94,8 +136,66 @@ block content
               dt No Package Context
               dd #{noActivePointCountDisplay} pings
             div
+              dt Inferred Unused
+              dd= inferredUnusedMinutesDisplay
+            div
               dt Chart Lines
               dd Charge left and battery temperature
+
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Charging Stats
+              span Battery increases
+          if hasCharging
+            dl.minute-logger-details
+              div
+                dt Intervals
+                dd= chargingSummary.intervalCountDisplay
+              div
+                dt Charge Gained
+                dd= chargingSummary.totalGainDisplay
+              div
+                dt Charging Time
+                dd= chargingSummary.totalDurationDisplay
+              div
+                dt Avg Speed
+                dd= chargingSummary.averageSpeedDisplay
+              div
+                dt Max Speed
+                dd= chargingSummary.maxSpeedDisplay
+              div
+                dt Avg Temp
+                dd= chargingSummary.averageTempDisplay
+              div
+                dt Max Temp
+                dd= chargingSummary.maxTempDisplay
+              div
+                dt Devices
+                dd= chargingSummary.deviceCountDisplay
+          else
+            p.minute-logger-empty No charging intervals detected in retained battery readings.
+
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Charging Packages
+              span Foreground during increases
+          if hasChargingPackageStats
+            .minute-logger-battery-stat-list
+              each pkg in chargingPackageStats
+                .minute-logger-battery-stat(style=`--package-color: ${pkg.color};`)
+                  .minute-logger-battery-stat__top
+                    span.minute-logger-package-legend__swatch
+                    code= pkg.name
+                    strong= pkg.totalGainDisplay
+                  .minute-logger-battery-stat__meta
+                    span #{pkg.averageSpeedDisplay} avg
+                    span #{pkg.maxSpeedDisplay} max
+                    span #{pkg.averageTempDisplay} temp
+                    span #{pkg.intervalCountDisplay} intervals
+          else
+            p.minute-logger-empty No package context for charging intervals.
 
 block script
   script(type='application/json', id='minuteLoggerBatteryData')!= batteryTrackerJson

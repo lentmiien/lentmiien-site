@@ -1,10 +1,12 @@
 jest.mock('../../services/minuteLoggerService', () => ({
   MinuteLoggerLocationGroupSettingsError: class MinuteLoggerLocationGroupSettingsError extends Error {},
+  MINUTE_LOGGER_BATTERY_INTERPOLATION_GAP_MINUTES: 3,
   MINUTE_LOGGER_RAW_RETENTION_DAYS: 60,
   MINUTE_LOGGER_RECENT_LIMIT: 50,
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME: 'minute_logger_requests',
   MINUTE_LOGGER_STAT_COLLECTION_NAME: 'minute_logger_stats',
   MINUTE_LOGGER_STATS_RETENTION_YEARS: 10,
+  MINUTE_LOGGER_UNUSED_PACKAGE: 'unused',
   getMinuteLoggerBatteryDashboard: jest.fn(),
   getMinuteLoggerDailyAnalytics: jest.fn(),
   getMinuteLoggerDashboard: jest.fn(),
@@ -249,6 +251,107 @@ function createBatteryDashboard(overrides = {}) {
       },
       deviceStats: [],
     },
+    inferredUnusedMinutes: 4,
+    batteryAnalytics: {
+      inferredUnusedMinutes: 4,
+      totalChargeDropPercent: 1,
+      chargeDropSamples: 1,
+      packageStats: [
+        {
+          name: 'unused',
+          color: '#717A88',
+          observedPoints: 1,
+          inferredMinutes: 4,
+          totalMinutes: 5,
+          deviceCount: 1,
+          battery: {
+            count: 1,
+            average: 71,
+            min: 71,
+            max: 71,
+            latest: 71,
+            latestAt: secondPointAt,
+            latestDeviceId: 'tablet-01',
+          },
+          batteryTempC: {
+            count: 1,
+            average: 32.4,
+            min: 32.4,
+            max: 32.4,
+            latest: 32.4,
+            latestAt: secondPointAt,
+            latestDeviceId: 'tablet-01',
+          },
+          chargeDropPercent: 1,
+          chargeDropSamples: 1,
+          chargeDropMinutes: 5,
+          drainRatePercentPerHour: 12,
+        },
+        {
+          name: 'com.example.app',
+          color: '#FF6A1F',
+          observedPoints: 1,
+          inferredMinutes: 0,
+          totalMinutes: 1,
+          deviceCount: 1,
+          battery: {
+            count: 1,
+            average: 72,
+            min: 72,
+            max: 72,
+            latest: 72,
+            latestAt: firstPointAt,
+            latestDeviceId: 'tablet-01',
+          },
+          batteryTempC: {
+            count: 1,
+            average: 32.2,
+            min: 32.2,
+            max: 32.2,
+            latest: 32.2,
+            latestAt: firstPointAt,
+            latestDeviceId: 'tablet-01',
+          },
+          chargeDropPercent: 0,
+          chargeDropSamples: 0,
+          chargeDropMinutes: 0,
+          drainRatePercentPerHour: null,
+        },
+      ],
+      charging: {
+        intervalCount: 1,
+        totalGainPercent: 3,
+        totalMinutes: 30,
+        averageSpeedPercentPerHour: 6,
+        maxSpeedPercentPerHour: 6,
+        batteryTempC: {
+          count: 1,
+          average: 33.1,
+          min: 33.1,
+          max: 33.1,
+          latest: 33.1,
+          latestAt: secondPointAt,
+          latestDeviceId: 'tablet-01',
+        },
+        deviceCount: 1,
+        packageStats: [
+          {
+            name: 'com.example.app',
+            color: '#FF6A1F',
+            intervalCount: 1,
+            totalGainPercent: 3,
+            totalMinutes: 30,
+            averageSpeedPercentPerHour: 6,
+            maxSpeedPercentPerHour: 6,
+            batteryTempC: {
+              count: 1,
+              average: 33.1,
+            },
+            deviceCount: 1,
+          },
+        ],
+      },
+    },
     ...overrides,
   };
 }
@@ -441,7 +544,43 @@ describe('minuteLoggerAdminController.batteryDashboard', () => {
           expect.objectContaining({ label: 'Battery Temp', value: '32.4 C' }),
           expect.objectContaining({ label: 'Retained Points', value: '3' }),
           expect.objectContaining({ label: 'Packages', value: '2' }),
+          expect.objectContaining({ label: 'Inferred Unused', value: '4 minutes' }),
+          expect.objectContaining({ label: 'Charge Drop', value: '1.0%' }),
+          expect.objectContaining({ label: 'Charging', value: '3.0%' }),
+          expect.objectContaining({ label: 'Charging Temp', value: '33.1 C' }),
         ]),
+        inferredUnusedMinutesDisplay: '4 minutes',
+        batteryPackageStats: [
+          expect.objectContaining({
+            name: 'unused',
+            totalMinutesDisplay: '5 minutes',
+            observedPointsDisplay: '1',
+            inferredMinutesDisplay: '4 minutes',
+            averageTempDisplay: '32.4 C',
+            chargeDropDisplay: '1.0%',
+            drainRateDisplay: '12.0%/hr',
+          }),
+          expect.objectContaining({
+            name: 'com.example.app',
+            totalMinutesDisplay: '1 minute',
+            chargeDropDisplay: '0.0%',
+            drainRateDisplay: 'N/A',
+          }),
+        ],
+        chargingSummary: expect.objectContaining({
+          hasCharging: true,
+          intervalCountDisplay: '1',
+          totalGainDisplay: '3.0%',
+          averageSpeedDisplay: '6.0%/hr',
+          averageTempDisplay: '33.1 C',
+        }),
+        chargingPackageStats: [
+          expect.objectContaining({
+            name: 'com.example.app',
+            totalGainDisplay: '3.0%',
+            averageSpeedDisplay: '6.0%/hr',
+          }),
+        ],
         packageLegend: [
           {
             name: 'com.example.app',
@@ -464,6 +603,8 @@ describe('minuteLoggerAdminController.batteryDashboard', () => {
         batteryTrackerJson: expect.stringContaining('"packages":[{"name":"com.example.app","color":"#FF6A1F"},{"name":"unused","color":"#717A88"}]'),
       })
     );
+    expect(res.render.mock.calls[0][1].batteryTrackerJson).toContain('"unusedPackageName":"unused"');
+    expect(res.render.mock.calls[0][1].batteryTrackerJson).toContain('"interpolationGapMinutes":3');
     expect(res.render.mock.calls[0][1].batteryTrackerJson).toContain('"b":null,"c":null');
   });
 });

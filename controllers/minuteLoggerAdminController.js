@@ -1,11 +1,13 @@
 const logger = require('../utils/logger');
 const {
   MinuteLoggerLocationGroupSettingsError,
+  MINUTE_LOGGER_BATTERY_INTERPOLATION_GAP_MINUTES,
   MINUTE_LOGGER_RAW_RETENTION_DAYS,
   MINUTE_LOGGER_RECENT_LIMIT,
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME,
   MINUTE_LOGGER_STAT_COLLECTION_NAME,
   MINUTE_LOGGER_STATS_RETENTION_YEARS,
+  MINUTE_LOGGER_UNUSED_PACKAGE,
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
@@ -61,6 +63,16 @@ function formatBatteryTempC(value) {
 
   const number = Number(value);
   return Number.isFinite(number) ? `${formatDecimal(number, 1)} C` : 'N/A';
+}
+
+function formatBatteryDeltaPercent(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${formatDecimal(Math.max(0, number), 1)}%` : '0.0%';
+}
+
+function formatBatteryRate(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? `${formatDecimal(number, 1)}%/hr` : 'N/A';
 }
 
 function formatTimeOfDay(value) {
@@ -735,14 +747,79 @@ function buildNamedLocationOverviewCards(analytics = {}) {
   ];
 }
 
+function mapBatteryPackageAnalytics(packageStats = []) {
+  return (Array.isArray(packageStats) ? packageStats : []).map((entry) => {
+    const observedPoints = Number(entry.observedPoints) || 0;
+    const inferredMinutes = Number(entry.inferredMinutes) || 0;
+    const totalMinutes = Number(entry.totalMinutes) || observedPoints + inferredMinutes;
+    const battery = entry.battery || {};
+    const batteryTempC = entry.batteryTempC || {};
+
+    return {
+      name: entry.name || 'unknown',
+      color: entry.color || '#19E3E3',
+      observedPoints,
+      inferredMinutes,
+      totalMinutes,
+      observedPointsDisplay: formatNumber(observedPoints),
+      inferredMinutesDisplay: inferredMinutes > 0 ? formatMinuteDuration(inferredMinutes) : '0 minutes',
+      totalMinutesDisplay: formatMinuteDuration(totalMinutes),
+      deviceCountDisplay: formatNumber(entry.deviceCount),
+      averageChargeDisplay: formatBatteryPercent(battery.average),
+      averageTempDisplay: formatBatteryTempC(batteryTempC.average),
+      maxTempDisplay: formatBatteryTempC(batteryTempC.max),
+      chargeDropDisplay: formatBatteryDeltaPercent(entry.chargeDropPercent),
+      chargeDropSamplesDisplay: formatNumber(entry.chargeDropSamples),
+      drainRateDisplay: formatBatteryRate(entry.drainRatePercentPerHour),
+    };
+  });
+}
+
+function mapBatteryChargingPackageStats(packageStats = []) {
+  return (Array.isArray(packageStats) ? packageStats : []).map((entry) => ({
+    name: entry.name || 'unknown',
+    color: entry.color || '#19E3E3',
+    intervalCountDisplay: formatNumber(entry.intervalCount),
+    totalGainDisplay: formatBatteryDeltaPercent(entry.totalGainPercent),
+    totalDurationDisplay: formatMinuteDuration(entry.totalMinutes),
+    averageSpeedDisplay: formatBatteryRate(entry.averageSpeedPercentPerHour),
+    maxSpeedDisplay: formatBatteryRate(entry.maxSpeedPercentPerHour),
+    averageTempDisplay: formatBatteryTempC(entry.batteryTempC?.average),
+    deviceCountDisplay: formatNumber(entry.deviceCount),
+  }));
+}
+
+function mapBatteryChargingSummary(charging = {}) {
+  const intervalCount = Number(charging.intervalCount) || 0;
+  const tempCount = Number(charging.batteryTempC?.count) || 0;
+
+  return {
+    hasCharging: intervalCount > 0,
+    intervalCount,
+    intervalCountDisplay: formatNumber(intervalCount),
+    totalGainDisplay: formatBatteryDeltaPercent(charging.totalGainPercent),
+    totalDurationDisplay: formatMinuteDuration(charging.totalMinutes),
+    averageSpeedDisplay: formatBatteryRate(charging.averageSpeedPercentPerHour),
+    maxSpeedDisplay: formatBatteryRate(charging.maxSpeedPercentPerHour),
+    averageTempDisplay: formatBatteryTempC(charging.batteryTempC?.average),
+    maxTempDisplay: formatBatteryTempC(charging.batteryTempC?.max),
+    tempCountDisplay: formatNumber(tempCount),
+    deviceCountDisplay: formatNumber(charging.deviceCount),
+  };
+}
+
 function buildBatteryDashboardOverviewCards(dashboard = {}) {
   const windowHours = Number(dashboard.windowHours) || 12;
   const rawRetentionDays = Number(dashboard.rawRetentionDays) || MINUTE_LOGGER_RAW_RETENTION_DAYS;
   const packages = Array.isArray(dashboard.packages) ? dashboard.packages : [];
   const points = Array.isArray(dashboard.points) ? dashboard.points : [];
   const noActivePointCount = Number(dashboard.noActivePointCount) || 0;
-
-  return [
+  const batteryAnalytics = dashboard.batteryAnalytics || {};
+  const charging = batteryAnalytics.charging || {};
+  const inferredUnusedMinutes = Number(batteryAnalytics.inferredUnusedMinutes)
+    || Number(dashboard.inferredUnusedMinutes)
+    || 0;
+  const cards = [
     ...buildBatteryOverviewCards(dashboard.batteryStats),
     {
       label: 'Retained Points',
@@ -757,12 +834,47 @@ function buildBatteryDashboardOverviewCards(dashboard = {}) {
         ? `${formatNumber(noActivePointCount)} pings without package context`
         : 'Explicit unused pings are included',
     },
-    {
-      label: 'Window',
-      value: `${formatNumber(windowHours)} hr`,
-      helper: `Slider range covers ${rawRetentionDays} days`,
-    },
   ];
+
+  if (inferredUnusedMinutes > 0) {
+    cards.push({
+      label: 'Inferred Unused',
+      value: formatMinuteDuration(inferredUnusedMinutes),
+      helper: `Empty minutes before ${MINUTE_LOGGER_UNUSED_PACKAGE} pings`,
+    });
+  }
+
+  if (Number(batteryAnalytics.totalChargeDropPercent) > 0) {
+    cards.push({
+      label: 'Charge Drop',
+      value: formatBatteryDeltaPercent(batteryAnalytics.totalChargeDropPercent),
+      helper: `${formatNumber(batteryAnalytics.chargeDropSamples)} decreases, charging ignored`,
+    });
+  }
+
+  if (Number(charging.intervalCount) > 0) {
+    cards.push({
+      label: 'Charging',
+      value: formatBatteryDeltaPercent(charging.totalGainPercent),
+      helper: `${formatBatteryRate(charging.averageSpeedPercentPerHour)} over ${formatMinuteDuration(charging.totalMinutes)}`,
+    });
+  }
+
+  if (Number(charging.batteryTempC?.count) > 0) {
+    cards.push({
+      label: 'Charging Temp',
+      value: formatBatteryTempC(charging.batteryTempC.average),
+      helper: `max ${formatBatteryTempC(charging.batteryTempC.max)}`,
+    });
+  }
+
+  cards.push({
+    label: 'Window',
+    value: `${formatNumber(windowHours)} hr`,
+    helper: `Slider range covers ${rawRetentionDays} days`,
+  });
+
+  return cards;
 }
 
 function normalizeOptionalNumber(value) {
@@ -783,6 +895,8 @@ function buildBatteryDashboardPayload(dashboard = {}) {
     retentionEndMs: Number.isNaN(retentionEnd.getTime()) ? Date.now() : retentionEnd.getTime(),
     rawRetentionDays: dashboard.rawRetentionDays || MINUTE_LOGGER_RAW_RETENTION_DAYS,
     windowHours: Number(dashboard.windowHours) || 12,
+    unusedPackageName: MINUTE_LOGGER_UNUSED_PACKAGE,
+    interpolationGapMinutes: MINUTE_LOGGER_BATTERY_INTERPOLATION_GAP_MINUTES,
     packages: (Array.isArray(dashboard.packages) ? dashboard.packages : []).map((entry) => ({
       name: entry.name || 'unknown',
       color: entry.color || '#19E3E3',
@@ -810,6 +924,10 @@ function buildBatteryDashboardViewModel(dashboard = {}, options = {}) {
   const retentionEnd = dashboard.retentionEnd || dashboard.generatedAt || new Date();
   const packages = Array.isArray(dashboard.packages) ? dashboard.packages : [];
   const noActivePointCount = Number(dashboard.noActivePointCount) || 0;
+  const batteryAnalytics = dashboard.batteryAnalytics || {};
+  const inferredUnusedMinutes = Number(batteryAnalytics.inferredUnusedMinutes)
+    || Number(dashboard.inferredUnusedMinutes)
+    || 0;
 
   return {
     pageTitle: 'Minute Logger Battery Tracker',
@@ -822,8 +940,12 @@ function buildBatteryDashboardViewModel(dashboard = {}, options = {}) {
     windowHours: Number(dashboard.windowHours) || 12,
     pointCountDisplay: formatNumber(dashboard.pointCount || (dashboard.points || []).length),
     noActivePointCountDisplay: formatNumber(noActivePointCount),
+    inferredUnusedMinutesDisplay: formatMinuteDuration(inferredUnusedMinutes),
     packageCountDisplay: formatNumber(packages.length),
     overviewCards: dashboard.generatedAt ? buildBatteryDashboardOverviewCards(dashboard) : [],
+    batteryPackageStats: mapBatteryPackageAnalytics(batteryAnalytics.packageStats),
+    chargingSummary: mapBatteryChargingSummary(batteryAnalytics.charging),
+    chargingPackageStats: mapBatteryChargingPackageStats(batteryAnalytics.charging?.packageStats),
     packageLegend: mapBatteryPackageLegend(packages),
     noActivePackageLegend: {
       name: 'No package context',

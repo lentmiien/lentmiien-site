@@ -9,6 +9,7 @@ const MINUTE_LOGGER_RECENT_LIMIT = 50;
 const UNKNOWN_DIMENSION = 'unknown';
 const MINUTE_LOGGER_UNUSED_PACKAGE = 'unused';
 const MINUTE_LOGGER_RESPONSE_BODY = { message: 'OK' };
+const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_LOGGER_LOCATION_GROUP_PRECISION = 3;
 const MINUTE_LOGGER_LOCATION_NOISE_MINUTES = 3;
@@ -17,6 +18,8 @@ const MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT = 180;
 const MINUTE_LOGGER_LOCATION_GROUP_NAME_MAX_LENGTH = 80;
 const MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT = 420;
 const MINUTE_LOGGER_BATTERY_WINDOW_HOURS = 12;
+const MINUTE_LOGGER_BATTERY_INTERPOLATION_GAP_MINUTES = 3;
+const MINUTE_LOGGER_BATTERY_CHARGING_INTERVAL_MAX_MINUTES = 12 * 60;
 const MINUTE_LOGGER_BATTERY_MIN = 0;
 const MINUTE_LOGGER_BATTERY_MAX = 100;
 const MINUTE_LOGGER_BATTERY_TEMP_C_MIN = -50;
@@ -948,6 +951,304 @@ function buildBatteryDashboardPoints(rows = [], packages = []) {
     })
     .filter(Boolean)
     .sort((left, right) => left.t - right.t);
+}
+
+function getRoundedMinuteInterval(startMs, endMs) {
+  const diffMs = Number(endMs) - Number(startMs);
+
+  if (!Number.isFinite(diffMs) || diffMs <= 0) {
+    return 0;
+  }
+
+  return Math.max(1, Math.round(diffMs / MINUTE_MS));
+}
+
+function getEmptyMinutesBeforeEntry(previousEntry, currentEntry) {
+  if (!previousEntry || !currentEntry) {
+    return 0;
+  }
+
+  const intervalMinutes = getRoundedMinuteInterval(previousEntry.t, currentEntry.t);
+  return Math.max(0, intervalMinutes - 1);
+}
+
+function buildBatteryDashboardEntries(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const receivedAt = getSafeRequestDate(row);
+
+      if (!receivedAt) {
+        return null;
+      }
+
+      return {
+        row,
+        t: receivedAt.getTime(),
+        receivedAt,
+        deviceId: normalizeDimension(row.deviceId, UNKNOWN_DIMENSION),
+        packageName: getBatteryDashboardPackageName(row),
+        battery: getRowBatteryPercent(row),
+        batteryTempC: getRowBatteryTempC(row),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.t - right.t);
+}
+
+function createBatteryPackageAnalyticsAccumulator(name, color) {
+  return {
+    name,
+    color,
+    observedPoints: 0,
+    inferredMinutes: 0,
+    chargeDropPercent: 0,
+    chargeDropSamples: 0,
+    chargeDropMinutes: 0,
+    battery: createReadingAccumulator(),
+    batteryTempC: createReadingAccumulator(),
+    deviceIds: new Set(),
+  };
+}
+
+function createChargingAnalyticsAccumulator() {
+  return {
+    intervalCount: 0,
+    totalGainPercent: 0,
+    totalMinutes: 0,
+    maxSpeedPercentPerHour: null,
+    batteryTempC: createReadingAccumulator(),
+    deviceIds: new Set(),
+  };
+}
+
+function getBatteryPackageAnalyticsAccumulator(packageMap, packageName, colorByPackageName) {
+  if (!packageName) {
+    return null;
+  }
+
+  if (!packageMap.has(packageName)) {
+    packageMap.set(packageName, createBatteryPackageAnalyticsAccumulator(
+      packageName,
+      colorByPackageName.get(packageName) || getBatteryPackageColor(packageName)
+    ));
+  }
+
+  return packageMap.get(packageName);
+}
+
+function getChargingPackageAnalyticsAccumulator(packageMap, packageName, colorByPackageName) {
+  if (!packageName) {
+    return null;
+  }
+
+  if (!packageMap.has(packageName)) {
+    packageMap.set(packageName, {
+      ...createChargingAnalyticsAccumulator(),
+      name: packageName,
+      color: colorByPackageName.get(packageName) || getBatteryPackageColor(packageName),
+    });
+  }
+
+  return packageMap.get(packageName);
+}
+
+function addChargingInterval(accumulator, entry, gainPercent, intervalMinutes, speedPercentPerHour) {
+  if (!accumulator || !Number.isFinite(gainPercent) || gainPercent <= 0 || intervalMinutes <= 0) {
+    return;
+  }
+
+  accumulator.intervalCount += 1;
+  accumulator.totalGainPercent += gainPercent;
+  accumulator.totalMinutes += intervalMinutes;
+  accumulator.deviceIds.add(entry.deviceId);
+
+  if (Number.isFinite(speedPercentPerHour)) {
+    accumulator.maxSpeedPercentPerHour = accumulator.maxSpeedPercentPerHour === null
+      ? speedPercentPerHour
+      : Math.max(accumulator.maxSpeedPercentPerHour, speedPercentPerHour);
+  }
+
+  addReading(accumulator.batteryTempC, entry.batteryTempC, entry.row);
+}
+
+function finalizeBatteryPackageAnalyticsAccumulator(accumulator) {
+  const totalMinutes = accumulator.observedPoints + accumulator.inferredMinutes;
+  const drainRatePercentPerHour = accumulator.chargeDropMinutes > 0
+    ? accumulator.chargeDropPercent / (accumulator.chargeDropMinutes / 60)
+    : null;
+
+  return {
+    name: accumulator.name,
+    color: accumulator.color,
+    observedPoints: accumulator.observedPoints,
+    inferredMinutes: accumulator.inferredMinutes,
+    totalMinutes,
+    deviceCount: accumulator.deviceIds.size,
+    battery: finalizeReadingAccumulator(accumulator.battery),
+    batteryTempC: finalizeReadingAccumulator(accumulator.batteryTempC),
+    chargeDropPercent: accumulator.chargeDropPercent,
+    chargeDropSamples: accumulator.chargeDropSamples,
+    chargeDropMinutes: accumulator.chargeDropMinutes,
+    drainRatePercentPerHour,
+  };
+}
+
+function finalizeChargingAnalyticsAccumulator(accumulator, extra = {}) {
+  const averageSpeedPercentPerHour = accumulator.totalMinutes > 0
+    ? accumulator.totalGainPercent / (accumulator.totalMinutes / 60)
+    : null;
+
+  return {
+    ...extra,
+    intervalCount: accumulator.intervalCount,
+    totalGainPercent: accumulator.totalGainPercent,
+    totalMinutes: accumulator.totalMinutes,
+    averageSpeedPercentPerHour,
+    maxSpeedPercentPerHour: accumulator.maxSpeedPercentPerHour,
+    batteryTempC: finalizeReadingAccumulator(accumulator.batteryTempC),
+    deviceCount: accumulator.deviceIds.size,
+  };
+}
+
+function shouldAssignBatteryIntervalToPackage(packageName, intervalMinutes) {
+  if (!packageName) {
+    return false;
+  }
+
+  if (packageName === MINUTE_LOGGER_UNUSED_PACKAGE) {
+    return true;
+  }
+
+  return intervalMinutes <= MINUTE_LOGGER_BATTERY_INTERPOLATION_GAP_MINUTES;
+}
+
+function buildBatteryDashboardAnalytics(rows = [], packages = []) {
+  const entries = buildBatteryDashboardEntries(rows);
+  const colorByPackageName = new Map((Array.isArray(packages) ? packages : [])
+    .map((entry) => [entry.name, entry.color]));
+  const packageMap = new Map();
+  const chargingPackageMap = new Map();
+  const charging = createChargingAnalyticsAccumulator();
+  const previousEntryByDevice = new Map();
+  const previousBatteryEntryByDevice = new Map();
+  let inferredUnusedMinutes = 0;
+  let totalChargeDropPercent = 0;
+  let chargeDropSamples = 0;
+
+  entries.forEach((entry) => {
+    const packageAccumulator = getBatteryPackageAnalyticsAccumulator(
+      packageMap,
+      entry.packageName,
+      colorByPackageName
+    );
+    const previousEntry = previousEntryByDevice.get(entry.deviceId) || null;
+
+    if (packageAccumulator) {
+      const emptyMinutes = entry.packageName === MINUTE_LOGGER_UNUSED_PACKAGE
+        ? getEmptyMinutesBeforeEntry(previousEntry, entry)
+        : 0;
+
+      packageAccumulator.observedPoints += 1;
+      packageAccumulator.inferredMinutes += emptyMinutes;
+      packageAccumulator.deviceIds.add(entry.deviceId);
+      addReading(packageAccumulator.battery, entry.battery, entry.row);
+      addReading(packageAccumulator.batteryTempC, entry.batteryTempC, entry.row);
+      inferredUnusedMinutes += emptyMinutes;
+    }
+
+    if (Number.isFinite(entry.battery)) {
+      const previousBatteryEntry = previousBatteryEntryByDevice.get(entry.deviceId) || null;
+
+      if (previousBatteryEntry) {
+        const intervalMinutes = getRoundedMinuteInterval(previousBatteryEntry.t, entry.t);
+        const delta = entry.battery - previousBatteryEntry.battery;
+
+        if (intervalMinutes > 0 && delta < 0) {
+          const intervalPackageName = entry.packageName || previousBatteryEntry.packageName;
+
+          if (shouldAssignBatteryIntervalToPackage(intervalPackageName, intervalMinutes)) {
+            const dropPercent = Math.abs(delta);
+            const dropAccumulator = getBatteryPackageAnalyticsAccumulator(
+              packageMap,
+              intervalPackageName,
+              colorByPackageName
+            );
+
+            if (dropAccumulator) {
+              dropAccumulator.chargeDropPercent += dropPercent;
+              dropAccumulator.chargeDropSamples += 1;
+              dropAccumulator.chargeDropMinutes += intervalMinutes;
+            }
+
+            totalChargeDropPercent += dropPercent;
+            chargeDropSamples += 1;
+          }
+        } else if (
+          intervalMinutes > 0
+          && intervalMinutes <= MINUTE_LOGGER_BATTERY_CHARGING_INTERVAL_MAX_MINUTES
+          && delta > 0
+        ) {
+          const gainPercent = delta;
+          const speedPercentPerHour = gainPercent / (intervalMinutes / 60);
+          const chargingPackageName = entry.packageName || previousBatteryEntry.packageName;
+
+          addChargingInterval(charging, entry, gainPercent, intervalMinutes, speedPercentPerHour);
+          addChargingInterval(
+            getChargingPackageAnalyticsAccumulator(
+              chargingPackageMap,
+              chargingPackageName,
+              colorByPackageName
+            ),
+            entry,
+            gainPercent,
+            intervalMinutes,
+            speedPercentPerHour
+          );
+        }
+      }
+
+      previousBatteryEntryByDevice.set(entry.deviceId, entry);
+    }
+
+    previousEntryByDevice.set(entry.deviceId, entry);
+  });
+
+  const packageStats = Array.from(packageMap.values())
+    .map(finalizeBatteryPackageAnalyticsAccumulator)
+    .sort((left, right) => {
+      if (right.chargeDropPercent !== left.chargeDropPercent) {
+        return right.chargeDropPercent - left.chargeDropPercent;
+      }
+
+      if (right.totalMinutes !== left.totalMinutes) {
+        return right.totalMinutes - left.totalMinutes;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+  const chargingPackageStats = Array.from(chargingPackageMap.values())
+    .map((accumulator) => finalizeChargingAnalyticsAccumulator(accumulator, {
+      name: accumulator.name,
+      color: accumulator.color,
+    }))
+    .sort((left, right) => {
+      if (right.totalGainPercent !== left.totalGainPercent) {
+        return right.totalGainPercent - left.totalGainPercent;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+
+  return {
+    inferredUnusedMinutes,
+    totalChargeDropPercent,
+    chargeDropSamples,
+    packageStats,
+    charging: {
+      ...finalizeChargingAnalyticsAccumulator(charging),
+      packageStats: chargingPackageStats,
+    },
+  };
 }
 
 function parseLocationGroupKeyCenter(groupKey) {
@@ -2552,6 +2853,7 @@ async function getMinuteLoggerBatteryDashboard(options = {}) {
   const requests = Array.isArray(rows) ? rows : [];
   const packages = buildBatteryDashboardPackageRows(requests);
   const points = buildBatteryDashboardPoints(requests, packages);
+  const batteryAnalytics = buildBatteryDashboardAnalytics(requests, packages);
   const noActivePointCount = points.reduce((count, point) => {
     return count + (Number.isInteger(point.p) ? 0 : 1);
   }, 0);
@@ -2565,9 +2867,11 @@ async function getMinuteLoggerBatteryDashboard(options = {}) {
     windowHours,
     pointCount: points.length,
     noActivePointCount,
+    inferredUnusedMinutes: batteryAnalytics.inferredUnusedMinutes,
     packages,
     points,
     batteryStats: summarizeBatteryReadings(requests),
+    batteryAnalytics,
   };
 }
 
@@ -2762,6 +3066,7 @@ module.exports = {
   MINUTE_LOGGER_LOCATION_GROUP_PRECISION,
   MINUTE_LOGGER_LOCATION_NOISE_MINUTES,
   MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT,
+  MINUTE_LOGGER_BATTERY_INTERPOLATION_GAP_MINUTES,
   MINUTE_LOGGER_BATTERY_WINDOW_HOURS,
   MINUTE_LOGGER_RECENT_LIMIT,
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME: MinuteLoggerRequest.collection.collectionName,

@@ -21,6 +21,7 @@
   const summary = root.querySelector('[data-minute-logger-battery-summary]');
   const packages = Array.isArray(data.packages) ? data.packages : [];
   const rawPoints = Array.isArray(data.points) ? data.points : [];
+  const unusedPackageName = String(data.unusedPackageName || 'unused').trim().toLowerCase();
 
   function normalizeOptionalNumber(value) {
     if (value === null || value === undefined || value === '') {
@@ -50,7 +51,9 @@
   const windowHours = Math.max(1, Number(data.windowHours) || 12);
   const minuteMs = 60 * 1000;
   const windowMs = windowHours * 60 * minuteMs;
-  const maxBandGapMs = 3 * minuteMs;
+  const interpolationGapMinutes = Math.max(1, Number(data.interpolationGapMinutes) || 3);
+  const maxBandGapMs = interpolationGapMinutes * minuteMs;
+  const emptyMinuteGapMs = minuteMs * 1.5;
   const chartWidth = 960;
   const chartHeight = 430;
   const padding = {
@@ -166,6 +169,28 @@
     return Math.min(max, Math.max(min, value));
   }
 
+  function getPointPackageEntry(point) {
+    return point && Number.isInteger(point.p) ? packages[point.p] || null : null;
+  }
+
+  function isUnusedPackageEntry(packageEntry) {
+    return String(packageEntry?.name || '').trim().toLowerCase() === unusedPackageName;
+  }
+
+  function isUnusedPoint(point) {
+    return isUnusedPackageEntry(getPointPackageEntry(point));
+  }
+
+  function hasEmptyGapBeforeUnused(point, next) {
+    return Boolean(
+      point
+      && next
+      && next.t > point.t
+      && next.t - point.t > emptyMinuteGapMs
+      && isUnusedPoint(next)
+    );
+  }
+
   function buildTempDomain(windowPoints) {
     const values = windowPoints
       .map((point) => point.c)
@@ -205,6 +230,30 @@
     return plot.y + ((1 - clamp((value - domain.min) / span, 0, 1)) * plot.height);
   }
 
+  function drawPackageBand(group, packageEntry, bandStart, bandEnd, windowStart, effectiveWindowMs, titlePrefix = '') {
+    if (bandEnd <= bandStart) {
+      return;
+    }
+
+    const fill = packageEntry
+      ? hexToRgba(packageEntry.color, 0.24)
+      : 'rgba(154, 163, 178, 0.14)';
+    const rect = appendSvg(group, 'rect', {
+      class: packageEntry
+        ? 'minute-logger-battery-chart__band'
+        : 'minute-logger-battery-chart__band minute-logger-battery-chart__band--empty',
+      x: projectX(bandStart, windowStart, effectiveWindowMs).toFixed(2),
+      y: plot.y,
+      width: Math.max(1, projectX(bandEnd, windowStart, effectiveWindowMs) - projectX(bandStart, windowStart, effectiveWindowMs)).toFixed(2),
+      height: plot.height,
+      fill,
+    });
+    const title = appendSvg(rect, 'title');
+    title.textContent = packageEntry
+      ? `${titlePrefix}${packageEntry.name}`
+      : `${titlePrefix}No package context`;
+  }
+
   function drawPackageBands(group, windowStart, windowEnd, effectiveWindowMs) {
     const startIndex = Math.max(0, lowerBoundByTime(points, windowStart) - 1);
 
@@ -216,44 +265,43 @@
         break;
       }
 
+      const hasUnusedGap = hasEmptyGapBeforeUnused(point, next);
       if (
         point.t < windowStart
-        && (!next || next.t <= windowStart || next.t - point.t > maxBandGapMs)
+        && (!next || next.t <= windowStart || (next.t - point.t > maxBandGapMs && !hasUnusedGap))
       ) {
         continue;
       }
 
+      const packageEntry = getPointPackageEntry(point);
       const bandStart = Math.max(point.t, windowStart);
       let bandEnd = Math.min(point.t + minuteMs, windowEnd);
 
-      if (next && next.t > point.t && next.t - point.t <= maxBandGapMs) {
+      if (next && next.t > point.t && next.t - point.t <= maxBandGapMs && !hasUnusedGap) {
         bandEnd = Math.min(next.t, windowEnd);
       }
 
-      if (point.t < windowStart && next) {
+      if (point.t < windowStart && next && next.t - point.t <= maxBandGapMs && !hasUnusedGap) {
         bandEnd = Math.min(next.t, windowEnd);
       }
 
-      if (bandEnd <= bandStart) {
-        continue;
-      }
+      drawPackageBand(group, packageEntry, bandStart, bandEnd, windowStart, effectiveWindowMs);
 
-      const packageEntry = Number.isInteger(point.p) ? packages[point.p] : null;
-      const fill = packageEntry
-        ? hexToRgba(packageEntry.color, 0.24)
-        : 'rgba(154, 163, 178, 0.14)';
-      const rect = appendSvg(group, 'rect', {
-        class: packageEntry
-          ? 'minute-logger-battery-chart__band'
-          : 'minute-logger-battery-chart__band minute-logger-battery-chart__band--empty',
-        x: projectX(bandStart, windowStart, effectiveWindowMs).toFixed(2),
-        y: plot.y,
-        width: Math.max(1, projectX(bandEnd, windowStart, effectiveWindowMs) - projectX(bandStart, windowStart, effectiveWindowMs)).toFixed(2),
-        height: plot.height,
-        fill,
-      });
-      const title = appendSvg(rect, 'title');
-      title.textContent = packageEntry ? packageEntry.name : 'No package context';
+      if (hasUnusedGap) {
+        const unusedPackageEntry = getPointPackageEntry(next);
+        const inferredStart = Math.max(point.t + minuteMs, windowStart);
+        const inferredEnd = Math.min(next.t, windowEnd);
+
+        drawPackageBand(
+          group,
+          unusedPackageEntry,
+          inferredStart,
+          inferredEnd,
+          windowStart,
+          effectiveWindowMs,
+          'Inferred '
+        );
+      }
     }
   }
 
@@ -342,7 +390,10 @@
 
       const x = projectX(point.t, windowStart, effectiveWindowMs);
       const y = yProjector(value);
-      const command = previousTime !== null && point.t - previousTime <= maxBandGapMs ? 'L' : 'M';
+      const connectsToUnusedPoint = previousTime !== null && isUnusedPoint(point);
+      const command = previousTime !== null && (point.t - previousTime <= maxBandGapMs || connectsToUnusedPoint)
+        ? 'L'
+        : 'M';
       path += `${command}${x.toFixed(2)} ${y.toFixed(2)} `;
       previousTime = point.t;
     });
@@ -377,6 +428,24 @@
     }, message);
   }
 
+  function getLinePoints(windowPoints, windowStart, field) {
+    const startIndex = lowerBoundByTime(points, windowStart);
+    const previous = startIndex > 0 ? points[startIndex - 1] : null;
+    const firstMeasuredWindowPoint = windowPoints.find((point) => Number.isFinite(point[field]));
+
+    if (
+      previous
+      && firstMeasuredWindowPoint
+      && Number.isFinite(previous[field])
+      && isUnusedPoint(firstMeasuredWindowPoint)
+      && firstMeasuredWindowPoint.t - previous.t > maxBandGapMs
+    ) {
+      return [previous, ...windowPoints];
+    }
+
+    return windowPoints;
+  }
+
   function render(windowStart) {
     if (!svg) {
       return;
@@ -392,7 +461,9 @@
       .map((point) => point.p)
       .filter((packageIndex) => Number.isInteger(packageIndex))).size;
     const noPackageCount = windowPoints.filter((point) => point.p === null).length;
-    const tempDomain = buildTempDomain(windowPoints);
+    const chargeLinePoints = getLinePoints(windowPoints, clampedStart, 'b');
+    const tempLinePoints = getLinePoints(windowPoints, clampedStart, 'c');
+    const tempDomain = buildTempDomain(tempLinePoints);
 
     clearNode(svg);
     setAttributes(svg, {
@@ -408,7 +479,7 @@
     drawPackageBands(svg, clampedStart, windowEnd, effectiveWindowMs);
     drawAxes(svg, clampedStart, effectiveWindowMs, tempDomain);
 
-    const chargePath = buildLinePath(windowPoints, 'b', projectChargeY, clampedStart, effectiveWindowMs);
+    const chargePath = buildLinePath(chargeLinePoints, 'b', projectChargeY, clampedStart, effectiveWindowMs);
     if (chargePath) {
       appendSvg(svg, 'path', {
         class: 'minute-logger-battery-chart__line minute-logger-battery-chart__line--charge',
@@ -417,7 +488,7 @@
       drawLatestMarker(svg, windowPoints, 'b', projectChargeY, clampedStart, effectiveWindowMs, 'minute-logger-battery-chart__marker--charge');
     }
 
-    const tempPath = buildLinePath(windowPoints, 'c', (value) => projectTempY(value, tempDomain), clampedStart, effectiveWindowMs);
+    const tempPath = buildLinePath(tempLinePoints, 'c', (value) => projectTempY(value, tempDomain), clampedStart, effectiveWindowMs);
     if (tempPath) {
       appendSvg(svg, 'path', {
         class: 'minute-logger-battery-chart__line minute-logger-battery-chart__line--temp',
