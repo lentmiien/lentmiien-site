@@ -839,6 +839,175 @@ body,
   font-size: 0.78rem;
 }
 
+.minute-logger-battery-chart {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.minute-logger-battery-chart__stage {
+  overflow: hidden;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 194, 71, 0.06), transparent),
+    var(--ml-bg);
+}
+
+.minute-logger-battery-chart__svg {
+  display: block;
+  width: 100%;
+  min-height: 28rem;
+}
+
+.minute-logger-battery-chart__background {
+  fill: var(--ml-bg);
+}
+
+.minute-logger-battery-chart__band {
+  shape-rendering: crispEdges;
+}
+
+.minute-logger-battery-chart__band--empty {
+  opacity: 0.86;
+}
+
+.minute-logger-battery-chart__plot-frame {
+  fill: rgba(14, 15, 19, 0.18);
+  stroke: var(--ml-divider);
+  stroke-width: 1;
+}
+
+.minute-logger-battery-chart__grid {
+  stroke: rgba(154, 163, 178, 0.28);
+  stroke-width: 1;
+}
+
+.minute-logger-battery-chart__grid--time {
+  stroke-dasharray: 3 6;
+  opacity: 0.7;
+}
+
+.minute-logger-battery-chart__axis-label {
+  fill: var(--ml-text-muted);
+  font-size: 12px;
+}
+
+.minute-logger-battery-chart__axis-label--temp {
+  fill: #FFB4B5;
+}
+
+.minute-logger-battery-chart__axis-title {
+  fill: var(--ml-accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.minute-logger-battery-chart__axis-title--temp {
+  fill: var(--ml-coral);
+}
+
+.minute-logger-battery-chart__line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.minute-logger-battery-chart__line--charge {
+  stroke: var(--ml-accent);
+}
+
+.minute-logger-battery-chart__line--temp {
+  stroke: var(--ml-coral);
+}
+
+.minute-logger-battery-chart__marker {
+  fill: var(--ml-bg);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.minute-logger-battery-chart__marker--charge {
+  stroke: var(--ml-accent);
+}
+
+.minute-logger-battery-chart__marker--temp {
+  stroke: var(--ml-coral);
+}
+
+.minute-logger-battery-chart__empty {
+  fill: var(--ml-text-muted);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.minute-logger-battery-chart__controls {
+  display: grid;
+  grid-template-columns: minmax(9rem, auto) minmax(12rem, 1fr) minmax(9rem, auto);
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.minute-logger-battery-chart__time {
+  color: var(--ml-accent);
+  font-size: 0.94rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.minute-logger-battery-chart__time:last-child {
+  text-align: right;
+}
+
+.minute-logger-battery-chart__slider {
+  width: 100%;
+  accent-color: var(--ml-accent);
+}
+
+.minute-logger-battery-chart__summary {
+  color: var(--ml-text-muted);
+  font-size: 0.9rem;
+}
+
+.minute-logger-package-legend {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.minute-logger-package-legend__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: rgba(14, 15, 19, 0.32);
+}
+
+.minute-logger-package-legend__swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  background: var(--package-color);
+}
+
+.minute-logger-package-legend__item code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ml-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.minute-logger-package-legend__item span:last-child {
+  color: var(--ml-text-muted);
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
 .minute-logger-timeline {
   display: grid;
   gap: 0.85rem;
@@ -1239,13 +1408,22 @@ body,
     white-space: normal;
   }
 
+  .minute-logger-battery-chart__svg {
+    min-height: 22rem;
+  }
+
   .minute-logger-action-stack {
     justify-content: flex-start;
   }
 
+  .minute-logger-battery-chart__controls,
   .minute-logger-timeline__controls,
   .minute-logger-matrix__row {
     grid-template-columns: 1fr;
+  }
+
+  .minute-logger-battery-chart__time:last-child {
+    text-align: left;
   }
 
   .minute-logger-timeline__summary {

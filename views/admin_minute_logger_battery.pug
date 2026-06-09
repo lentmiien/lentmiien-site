@@ -1,0 +1,102 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/minute_logger_admin.css')
+
+block content
+  -
+    const hasPackageLegend = Array.isArray(packageLegend) && packageLegend.length;
+    const showNoActiveLegend = noActivePackageLegend && Number(noActivePackageLegend.count) > 0;
+
+  .minute-logger-admin
+    header.minute-logger-hero.minute-logger-hero--compact
+      .minute-logger-hero__content
+        p.minute-logger-eyebrow Battery Stats Tracker
+        h1.minute-logger-title Battery Tracker
+        p.minute-logger-subtitle Charge level, battery temperature, and foreground package context across retained minute logs.
+        dl.minute-logger-hero__meta
+          div
+            dt Endpoint
+            dd
+              code= endpointPath
+          div
+            dt Retention
+            dd Last #{rawRetentionDays} days
+          div
+            dt Window
+            dd #{windowHours} hours
+      .minute-logger-hero__actions
+        span Last updated #{generatedAtDisplay}
+        .minute-logger-action-stack
+          a.minute-logger-refresh(href='/admin/minute-logger') Dashboard
+          a.minute-logger-refresh(href='/admin/minute-logger/locations') Locations
+          a.minute-logger-refresh(href='/admin/minute-logger/battery') Refresh
+
+    if loadError
+      .minute-logger-alert.minute-logger-alert--error= loadError
+    else
+      section.minute-logger-cards
+        each card in overviewCards
+          article.minute-logger-card(class=card.tone ? `minute-logger-card--${card.tone}` : '')
+            p.minute-logger-card__label= card.label
+            strong.minute-logger-card__value= card.value
+            if card.helper
+              p.minute-logger-card__helper= card.helper
+
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Battery Timeline
+            span #{pointCountDisplay} retained points, #{packageCountDisplay} active packages
+        .minute-logger-battery-chart(data-minute-logger-battery)
+          .minute-logger-battery-chart__stage
+            svg.minute-logger-battery-chart__svg(viewBox='0 0 960 430', role='img', aria-label='Battery charge and temperature over time', data-minute-logger-battery-svg)
+          .minute-logger-battery-chart__controls
+            output#minuteLoggerBatteryWindowStart.minute-logger-battery-chart__time(for='minuteLoggerBatterySlider', data-minute-logger-battery-start)= retentionStartDisplay
+            input#minuteLoggerBatterySlider.minute-logger-battery-chart__slider(type='range', min='0', max='0', step='60', value='0', aria-label='Battery tracker window start', data-minute-logger-battery-slider)
+            output#minuteLoggerBatteryWindowEnd.minute-logger-battery-chart__time(for='minuteLoggerBatterySlider', data-minute-logger-battery-end)= retentionEndDisplay
+          .minute-logger-battery-chart__summary(data-minute-logger-battery-summary) #{pointCountDisplay} retained points
+
+      section.minute-logger-grid
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Package Colors
+              span Background bands
+          if hasPackageLegend || showNoActiveLegend
+            .minute-logger-package-legend
+              if showNoActiveLegend
+                .minute-logger-package-legend__item(style=`--package-color: ${noActivePackageLegend.color};`)
+                  span.minute-logger-package-legend__swatch
+                  code= noActivePackageLegend.name
+                  span #{noActivePackageLegend.countDisplay} pings
+              each pkg in packageLegend
+                .minute-logger-package-legend__item(style=`--package-color: ${pkg.color};`)
+                  span.minute-logger-package-legend__swatch
+                  code= pkg.name
+                  span #{pkg.countDisplay} pings
+          else
+            p.minute-logger-empty No active packages in retained minute logs.
+
+        article.minute-logger-panel
+          header.minute-logger-panel__header
+            div
+              h2 Data Window
+              span Raw retention range
+          dl.minute-logger-details
+            div
+              dt Earliest
+              dd= retentionStartDisplay
+            div
+              dt Latest
+              dd= retentionEndDisplay
+            div
+              dt No Active Package
+              dd #{noActivePointCountDisplay} pings
+            div
+              dt Chart Lines
+              dd Charge left and battery temperature
+
+block script
+  script(type='application/json', id='minuteLoggerBatteryData')!= batteryTrackerJson
+  script(src='/js/minute_logger_battery.js', defer)

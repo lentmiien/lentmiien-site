@@ -16,10 +16,25 @@ const MINUTE_LOGGER_LOCATION_GROUP_LIMIT = 20;
 const MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT = 180;
 const MINUTE_LOGGER_LOCATION_GROUP_NAME_MAX_LENGTH = 80;
 const MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT = 420;
+const MINUTE_LOGGER_BATTERY_WINDOW_HOURS = 12;
 const MINUTE_LOGGER_BATTERY_MIN = 0;
 const MINUTE_LOGGER_BATTERY_MAX = 100;
 const MINUTE_LOGGER_BATTERY_TEMP_C_MIN = -50;
 const MINUTE_LOGGER_BATTERY_TEMP_C_MAX = 120;
+const MINUTE_LOGGER_BATTERY_PACKAGE_COLORS = [
+  '#FF6A1F',
+  '#19E3E3',
+  '#17C696',
+  '#FFC247',
+  '#FF7E79',
+  '#7C8CFF',
+  '#B86BFF',
+  '#33B1FF',
+  '#B9E769',
+  '#FF9F45',
+  '#55D6BE',
+  '#F45B69',
+];
 
 const TIME_BUCKETS = [
   { key: 'morning', label: 'Morning', startHour: 5, endHour: 11 },
@@ -856,6 +871,68 @@ function summarizeBatteryReadings(rows = []) {
     batteryTempC: finalizeReadingAccumulator(batteryTempC),
     deviceStats,
   };
+}
+
+function hashString(value) {
+  return String(value || '').split('').reduce((hash, character) => {
+    return ((hash << 5) - hash) + character.charCodeAt(0);
+  }, 0);
+}
+
+function getBatteryPackageColor(packageName) {
+  const safeIndex = Math.abs(hashString(packageName)) % MINUTE_LOGGER_BATTERY_PACKAGE_COLORS.length;
+  return MINUTE_LOGGER_BATTERY_PACKAGE_COLORS[safeIndex % MINUTE_LOGGER_BATTERY_PACKAGE_COLORS.length];
+}
+
+function buildBatteryDashboardPackageRows(rows = []) {
+  const packageCounts = new Map();
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    if (!isActiveUsageRequest(row)) {
+      return;
+    }
+
+    const packageName = normalizeDimension(row.package, UNKNOWN_DIMENSION);
+    packageCounts.set(packageName, (packageCounts.get(packageName) || 0) + 1);
+  });
+
+  return Array.from(packageCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+    .map((entry) => ({
+      ...entry,
+      color: getBatteryPackageColor(entry.name),
+    }));
+}
+
+function buildBatteryDashboardPoints(rows = [], packages = []) {
+  const packageIndexByName = new Map((Array.isArray(packages) ? packages : [])
+    .map((entry, index) => [entry.name, index]));
+
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const receivedAt = getSafeRequestDate(row);
+
+      if (!receivedAt) {
+        return null;
+      }
+
+      const packageName = isActiveUsageRequest(row)
+        ? normalizeDimension(row.package, UNKNOWN_DIMENSION)
+        : null;
+      const packageIndex = packageName && packageIndexByName.has(packageName)
+        ? packageIndexByName.get(packageName)
+        : null;
+
+      return {
+        t: receivedAt.getTime(),
+        b: getRowBatteryPercent(row),
+        c: getRowBatteryTempC(row),
+        p: packageIndex,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.t - right.t);
 }
 
 function parseLocationGroupKeyCenter(groupKey) {
@@ -2429,6 +2506,56 @@ async function getMinuteLoggerNamedLocationAnalytics(options = {}) {
   };
 }
 
+async function getMinuteLoggerBatteryDashboard(options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
+  const now = new Date(options.now || Date.now());
+  const rawRetentionDays = Number.isInteger(options.rawRetentionDays) && options.rawRetentionDays > 0
+    ? options.rawRetentionDays
+    : MINUTE_LOGGER_RAW_RETENTION_DAYS;
+  const windowHours = Number.isInteger(options.windowHours) && options.windowHours > 0
+    ? options.windowHours
+    : MINUTE_LOGGER_BATTERY_WINDOW_HOURS;
+  const retentionStart = new Date(now.getTime() - (rawRetentionDays * DAY_MS));
+  const rows = await leanExec(requestModel.find({
+    endpointPath,
+    receivedAt: {
+      $gte: retentionStart,
+      $lte: now,
+    },
+  })
+    .sort({ receivedAt: 1 })
+    .select({
+      deviceId: 1,
+      package: 1,
+      active: 1,
+      battery: 1,
+      batteryTempC: 1,
+      body: 1,
+      receivedAt: 1,
+    }));
+  const requests = Array.isArray(rows) ? rows : [];
+  const packages = buildBatteryDashboardPackageRows(requests);
+  const points = buildBatteryDashboardPoints(requests, packages);
+  const noActivePointCount = requests.reduce((count, row) => {
+    return count + (isActiveUsageRequest(row) ? 0 : 1);
+  }, 0);
+
+  return {
+    endpointPath,
+    generatedAt: now,
+    rawRetentionDays,
+    retentionStart,
+    retentionEnd: now,
+    windowHours,
+    pointCount: points.length,
+    noActivePointCount,
+    packages,
+    points,
+    batteryStats: summarizeBatteryReadings(requests),
+  };
+}
+
 async function fetchHourlySpread(endpointPath, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const since = options.since;
@@ -2620,6 +2747,7 @@ module.exports = {
   MINUTE_LOGGER_LOCATION_GROUP_PRECISION,
   MINUTE_LOGGER_LOCATION_NOISE_MINUTES,
   MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT,
+  MINUTE_LOGGER_BATTERY_WINDOW_HOURS,
   MINUTE_LOGGER_RECENT_LIMIT,
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME: MinuteLoggerRequest.collection.collectionName,
   MINUTE_LOGGER_RESPONSE_BODY,
@@ -2647,6 +2775,7 @@ module.exports = {
   getMinuteLoggerLocationGroupSettings,
   getDeviceId,
   getLocation,
+  getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
   getMinuteLoggerNamedLocationAnalytics,

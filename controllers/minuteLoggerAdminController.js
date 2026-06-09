@@ -6,6 +6,7 @@ const {
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME,
   MINUTE_LOGGER_STAT_COLLECTION_NAME,
   MINUTE_LOGGER_STATS_RETENTION_YEARS,
+  getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
   getMinuteLoggerNamedLocationAnalytics,
@@ -734,6 +735,106 @@ function buildNamedLocationOverviewCards(analytics = {}) {
   ];
 }
 
+function buildBatteryDashboardOverviewCards(dashboard = {}) {
+  const windowHours = Number(dashboard.windowHours) || 12;
+  const rawRetentionDays = Number(dashboard.rawRetentionDays) || MINUTE_LOGGER_RAW_RETENTION_DAYS;
+  const packages = Array.isArray(dashboard.packages) ? dashboard.packages : [];
+  const points = Array.isArray(dashboard.points) ? dashboard.points : [];
+  const noActivePointCount = Number(dashboard.noActivePointCount) || 0;
+
+  return [
+    ...buildBatteryOverviewCards(dashboard.batteryStats),
+    {
+      label: 'Retained Points',
+      value: formatNumber(points.length),
+      helper: `${rawRetentionDays}-day raw retention`,
+      tone: points.length > 0 ? 'ok' : '',
+    },
+    {
+      label: 'Active Packages',
+      value: formatNumber(packages.length),
+      helper: noActivePointCount > 0
+        ? `${formatNumber(noActivePointCount)} pings with no active package`
+        : 'Every retained ping has an active package',
+    },
+    {
+      label: 'Window',
+      value: `${formatNumber(windowHours)} hr`,
+      helper: `Slider range covers ${rawRetentionDays} days`,
+    },
+  ];
+}
+
+function normalizeOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function buildBatteryDashboardPayload(dashboard = {}) {
+  const retentionStart = new Date(dashboard.retentionStart);
+  const retentionEnd = new Date(dashboard.retentionEnd || dashboard.generatedAt || Date.now());
+
+  return {
+    retentionStartMs: Number.isNaN(retentionStart.getTime()) ? null : retentionStart.getTime(),
+    retentionEndMs: Number.isNaN(retentionEnd.getTime()) ? Date.now() : retentionEnd.getTime(),
+    rawRetentionDays: dashboard.rawRetentionDays || MINUTE_LOGGER_RAW_RETENTION_DAYS,
+    windowHours: Number(dashboard.windowHours) || 12,
+    packages: (Array.isArray(dashboard.packages) ? dashboard.packages : []).map((entry) => ({
+      name: entry.name || 'unknown',
+      color: entry.color || '#19E3E3',
+    })),
+    points: (Array.isArray(dashboard.points) ? dashboard.points : []).map((point) => ({
+      t: Number(point.t),
+      b: normalizeOptionalNumber(point.b),
+      c: normalizeOptionalNumber(point.c),
+      p: Number.isInteger(point.p) ? point.p : null,
+    })).filter((point) => Number.isFinite(point.t)),
+  };
+}
+
+function mapBatteryPackageLegend(packages = []) {
+  return (Array.isArray(packages) ? packages : []).map((entry) => ({
+    name: entry.name || 'unknown',
+    color: entry.color || '#19E3E3',
+    count: Number(entry.count) || 0,
+    countDisplay: formatNumber(entry.count),
+  }));
+}
+
+function buildBatteryDashboardViewModel(dashboard = {}, options = {}) {
+  const retentionStart = dashboard.retentionStart || null;
+  const retentionEnd = dashboard.retentionEnd || dashboard.generatedAt || new Date();
+  const packages = Array.isArray(dashboard.packages) ? dashboard.packages : [];
+  const noActivePointCount = Number(dashboard.noActivePointCount) || 0;
+
+  return {
+    pageTitle: 'Minute Logger Battery Tracker',
+    loadError: options.loadError || null,
+    generatedAtDisplay: formatDateTime(dashboard.generatedAt || new Date()),
+    endpointPath: dashboard.endpointPath || 'N/A',
+    rawRetentionDays: dashboard.rawRetentionDays || MINUTE_LOGGER_RAW_RETENTION_DAYS,
+    retentionStartDisplay: formatDateTime(retentionStart),
+    retentionEndDisplay: formatDateTime(retentionEnd),
+    windowHours: Number(dashboard.windowHours) || 12,
+    pointCountDisplay: formatNumber(dashboard.pointCount || (dashboard.points || []).length),
+    noActivePointCountDisplay: formatNumber(noActivePointCount),
+    packageCountDisplay: formatNumber(packages.length),
+    overviewCards: dashboard.generatedAt ? buildBatteryDashboardOverviewCards(dashboard) : [],
+    packageLegend: mapBatteryPackageLegend(packages),
+    noActivePackageLegend: {
+      name: 'No active package',
+      color: 'rgba(154, 163, 178, 0.22)',
+      count: noActivePointCount,
+      countDisplay: formatNumber(noActivePointCount),
+    },
+    batteryTrackerJson: safeJson(buildBatteryDashboardPayload(dashboard)),
+  };
+}
+
 function buildLocationPointCloud(pointCloud = {}) {
   const bounds = pointCloud.bounds;
 
@@ -986,6 +1087,23 @@ exports.dashboard = async (req, res) => {
       timeBucketStats: [],
       recentRequests: [],
     });
+  }
+};
+
+exports.batteryDashboard = async (req, res) => {
+  try {
+    const dashboard = await getMinuteLoggerBatteryDashboard();
+
+    return res.render('admin_minute_logger_battery', buildBatteryDashboardViewModel(dashboard));
+  } catch (error) {
+    logger.error('Failed to load minute logger battery dashboard', {
+      category: 'minute-logger',
+      metadata: { error: error.message },
+    });
+
+    return res.status(500).render('admin_minute_logger_battery', buildBatteryDashboardViewModel({}, {
+      loadError: 'Unable to load minute logger battery data right now.',
+    }));
   }
 };
 

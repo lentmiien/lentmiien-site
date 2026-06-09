@@ -5,6 +5,7 @@ jest.mock('../../services/minuteLoggerService', () => ({
   MINUTE_LOGGER_REQUEST_COLLECTION_NAME: 'minute_logger_requests',
   MINUTE_LOGGER_STAT_COLLECTION_NAME: 'minute_logger_stats',
   MINUTE_LOGGER_STATS_RETENTION_YEARS: 10,
+  getMinuteLoggerBatteryDashboard: jest.fn(),
   getMinuteLoggerDailyAnalytics: jest.fn(),
   getMinuteLoggerDashboard: jest.fn(),
   getMinuteLoggerNamedLocationAnalytics: jest.fn(),
@@ -43,6 +44,7 @@ jest.mock('../../services/incomingRequestCounterService', () => ({
 }));
 
 const {
+  getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
   getMinuteLoggerNamedLocationAnalytics,
@@ -199,6 +201,53 @@ function createDashboard(overrides = {}) {
         packageCount: 5,
       },
     ],
+    ...overrides,
+  };
+}
+
+function createBatteryDashboard(overrides = {}) {
+  const firstPointAt = new Date('2026-06-06T15:00:00.000Z');
+  const secondPointAt = new Date('2026-06-06T15:01:00.000Z');
+  const thirdPointAt = new Date('2026-06-06T15:02:00.000Z');
+
+  return {
+    endpointPath: '/secret-minute-logger',
+    generatedAt: new Date('2026-06-07T03:00:00.000Z'),
+    rawRetentionDays: 60,
+    retentionStart: new Date('2026-04-08T03:00:00.000Z'),
+    retentionEnd: new Date('2026-06-07T03:00:00.000Z'),
+    windowHours: 12,
+    pointCount: 3,
+    noActivePointCount: 2,
+    packages: [
+      { name: 'com.example.app', color: '#FF6A1F', count: 1 },
+    ],
+    points: [
+      { t: firstPointAt.getTime(), b: 72, c: 32.2, p: 0 },
+      { t: secondPointAt.getTime(), b: 71, c: 32.4, p: null },
+      { t: thirdPointAt.getTime(), b: null, c: null, p: null },
+    ],
+    batteryStats: {
+      battery: {
+        count: 2,
+        average: 71.5,
+        min: 71,
+        max: 72,
+        latest: 71,
+        latestAt: secondPointAt,
+        latestDeviceId: 'tablet-01',
+      },
+      batteryTempC: {
+        count: 2,
+        average: 32.3,
+        min: 32.2,
+        max: 32.4,
+        latest: 32.4,
+        latestAt: secondPointAt,
+        latestDeviceId: 'tablet-01',
+      },
+      deviceStats: [],
+    },
     ...overrides,
   };
 }
@@ -362,6 +411,53 @@ describe('minuteLoggerAdminController.dashboard', () => {
     expect(res.redirect).toHaveBeenCalledWith(
       '/admin/minute-logger?status=success&message=Location%20group%20saved.'
     );
+  });
+});
+
+describe('minuteLoggerAdminController.batteryDashboard', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('renders battery tracker data and package colors', async () => {
+    getMinuteLoggerBatteryDashboard.mockResolvedValue(createBatteryDashboard());
+    const res = createResponse();
+
+    await controller.batteryDashboard({}, res);
+
+    expect(getMinuteLoggerBatteryDashboard).toHaveBeenCalledWith();
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_minute_logger_battery',
+      expect.objectContaining({
+        endpointPath: '/secret-minute-logger',
+        rawRetentionDays: 60,
+        windowHours: 12,
+        pointCountDisplay: '3',
+        noActivePointCountDisplay: '2',
+        packageCountDisplay: '1',
+        overviewCards: expect.arrayContaining([
+          expect.objectContaining({ label: 'Battery Left', value: '71%' }),
+          expect.objectContaining({ label: 'Battery Temp', value: '32.4 C' }),
+          expect.objectContaining({ label: 'Retained Points', value: '3' }),
+          expect.objectContaining({ label: 'Active Packages', value: '1' }),
+        ]),
+        packageLegend: [
+          {
+            name: 'com.example.app',
+            color: '#FF6A1F',
+            count: 1,
+            countDisplay: '1',
+          },
+        ],
+        noActivePackageLegend: expect.objectContaining({
+          name: 'No active package',
+          count: 2,
+          countDisplay: '2',
+        }),
+        batteryTrackerJson: expect.stringContaining('"packages":[{"name":"com.example.app","color":"#FF6A1F"}]'),
+      })
+    );
+    expect(res.render.mock.calls[0][1].batteryTrackerJson).toContain('"b":null,"c":null');
   });
 });
 

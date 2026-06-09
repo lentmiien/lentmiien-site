@@ -6,6 +6,7 @@ const {
   fetchDailyMinuteStats,
   fetchLastKnownNamedLocation,
   getRequestActive,
+  getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
@@ -237,6 +238,102 @@ describe('minuteLoggerService', () => {
         batteryTempC: expect.objectContaining({ count: 2 }),
       }),
     ]);
+  });
+
+  test('getMinuteLoggerBatteryDashboard maps retained rows to package-colored chart points', async () => {
+    const firstPointAt = new Date('2026-06-07T01:00:00.000Z');
+    const inactivePointAt = new Date('2026-06-07T01:01:00.000Z');
+    const bodyPointAt = new Date('2026-06-07T01:02:00.000Z');
+    const rows = [
+      {
+        receivedAt: firstPointAt,
+        active: true,
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        battery: 80,
+        batteryTempC: 31.5,
+      },
+      {
+        receivedAt: inactivePointAt,
+        active: false,
+        deviceId: 'tablet-01',
+        package: MINUTE_LOGGER_UNUSED_PACKAGE,
+        battery: 79,
+        batteryTempC: 31.7,
+      },
+      {
+        receivedAt: bodyPointAt,
+        active: true,
+        deviceId: 'phone-01',
+        package: 'com.example.other',
+        body: {
+          battery: '68%',
+          battery_temp: '33 C',
+        },
+      },
+    ];
+    const requestModel = {
+      find: jest.fn().mockReturnValue(createChainQuery(rows)),
+    };
+    const now = new Date('2026-06-07T03:00:00.000Z');
+
+    const result = await getMinuteLoggerBatteryDashboard({
+      requestModel,
+      endpointPath: '/secret-minute-logger',
+      now,
+    });
+
+    expect(requestModel.find).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      receivedAt: {
+        $gte: new Date('2026-04-08T03:00:00.000Z'),
+        $lte: now,
+      },
+    });
+    const query = requestModel.find.mock.results[0].value;
+    expect(query.sort).toHaveBeenCalledWith({ receivedAt: 1 });
+    expect(query.select).toHaveBeenCalledWith(expect.objectContaining({
+      package: 1,
+      active: 1,
+      battery: 1,
+      batteryTempC: 1,
+      body: 1,
+      receivedAt: 1,
+    }));
+    expect(result).toMatchObject({
+      endpointPath: '/secret-minute-logger',
+      generatedAt: now,
+      rawRetentionDays: 60,
+      retentionStart: new Date('2026-04-08T03:00:00.000Z'),
+      retentionEnd: now,
+      windowHours: 12,
+      pointCount: 3,
+      noActivePointCount: 1,
+    });
+    expect(result.packages).toEqual([
+      expect.objectContaining({
+        name: 'com.example.app',
+        count: 1,
+        color: expect.any(String),
+      }),
+      expect.objectContaining({
+        name: 'com.example.other',
+        count: 1,
+        color: expect.any(String),
+      }),
+    ]);
+    expect(result.points).toEqual([
+      { t: firstPointAt.getTime(), b: 80, c: 31.5, p: 0 },
+      { t: inactivePointAt.getTime(), b: 79, c: 31.7, p: null },
+      { t: bodyPointAt.getTime(), b: 68, c: 33, p: 1 },
+    ]);
+    expect(result.batteryStats.battery).toMatchObject({
+      count: 3,
+      min: 68,
+      max: 80,
+      latest: 68,
+      latestDeviceId: 'phone-01',
+    });
   });
 
   test('records a raw request and increments day and month rollups', async () => {
