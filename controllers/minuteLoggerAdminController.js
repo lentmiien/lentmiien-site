@@ -169,6 +169,22 @@ function formatMeters(value, nearest = 1) {
   return `${formatNumber(roundToNearest(value, nearest))} m`;
 }
 
+function formatApproxDistance(value) {
+  const meters = Number(value);
+
+  if (!Number.isFinite(meters) || meters < 0) {
+    return null;
+  }
+
+  if (meters >= 1000) {
+    const kilometers = meters / 1000;
+    const digits = kilometers >= 10 ? 1 : 2;
+    return `${formatDecimal(kilometers, digits)} km`;
+  }
+
+  return `${formatNumber(Math.round(meters))} m`;
+}
+
 function getRepresentativeLatitude(stats = {}, groups = []) {
   const explicitLatitude = Number(stats.representativeLatitude);
   if (Number.isFinite(explicitLatitude)) {
@@ -222,14 +238,17 @@ function buildLastKnownLocationCard(location) {
 
   const deviceId = String(location.deviceId || '').trim();
   const receivedAtDisplay = formatDateTime(location.receivedAt);
+  const distanceDisplay = formatApproxDistance(location.nearestDistanceMeters);
+  const isApproximate = Boolean(location.isApproximate && distanceDisplay);
   const helperParts = [
+    isApproximate ? `About ${distanceDisplay} away` : '',
     deviceId ? `Device ${deviceId}` : '',
     receivedAtDisplay && receivedAtDisplay !== 'N/A' ? receivedAtDisplay : '',
   ].filter(Boolean);
 
   return {
     label: 'Last Known Location',
-    value: name,
+    value: isApproximate ? `Near ${name}` : name,
     helper: helperParts.length ? helperParts.join(' - ') : 'Latest incoming request',
   };
 }

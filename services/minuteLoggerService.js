@@ -38,6 +38,7 @@ const MINUTE_LOGGER_BATTERY_PACKAGE_COLORS = [
   '#55D6BE',
   '#F45B69',
 ];
+const EARTH_RADIUS_METERS = 6371000;
 
 const TIME_BUCKETS = [
   { key: 'morning', label: 'Morning', startHour: 5, endHour: 11 },
@@ -1268,6 +1269,73 @@ function parseLocationGroupKeyCenter(groupKey) {
   return { latitude, longitude };
 }
 
+function toRadians(value) {
+  return Number(value) * Math.PI / 180;
+}
+
+function calculateLocationDistanceMeters(first, second) {
+  const firstLatitude = Number(first?.latitude);
+  const firstLongitude = Number(first?.longitude);
+  const secondLatitude = Number(second?.latitude);
+  const secondLongitude = Number(second?.longitude);
+
+  if (!isValidLatitude(firstLatitude)
+    || !isValidLongitude(firstLongitude)
+    || !isValidLatitude(secondLatitude)
+    || !isValidLongitude(secondLongitude)) {
+    return null;
+  }
+
+  const firstLatRad = toRadians(firstLatitude);
+  const secondLatRad = toRadians(secondLatitude);
+  const latitudeDelta = toRadians(secondLatitude - firstLatitude);
+  const longitudeDelta = toRadians(secondLongitude - firstLongitude);
+  const a = (Math.sin(latitudeDelta / 2) ** 2)
+    + Math.cos(firstLatRad) * Math.cos(secondLatRad) * (Math.sin(longitudeDelta / 2) ** 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return EARTH_RADIUS_METERS * c;
+}
+
+function hasValidLocationCoordinates(point) {
+  return isValidLatitude(Number(point?.latitude)) && isValidLongitude(Number(point?.longitude));
+}
+
+function findNearestNamedLocation(latitude, longitude, namedSettings = []) {
+  const source = { latitude, longitude };
+
+  if (!hasValidLocationCoordinates(source)) {
+    return null;
+  }
+
+  return (Array.isArray(namedSettings) ? namedSettings : []).reduce((nearest, setting) => {
+    const name = normalizeLocationGroupName(setting?.name);
+    const settingLatitude = Number(setting?.latitude);
+    const settingLongitude = Number(setting?.longitude);
+    const center = isValidLatitude(settingLatitude) && isValidLongitude(settingLongitude)
+      ? { latitude: settingLatitude, longitude: settingLongitude }
+      : parseLocationGroupKeyCenter(setting?.groupKey);
+    const distanceMeters = calculateLocationDistanceMeters(source, center);
+
+    if (!name || distanceMeters === null) {
+      return nearest;
+    }
+
+    if (nearest && nearest.distanceMeters <= distanceMeters) {
+      return nearest;
+    }
+
+    return {
+      name,
+      groupKey: String(setting.groupKey || '').trim(),
+      hideCoordinates: Boolean(setting.hideCoordinates),
+      latitude: center.latitude,
+      longitude: center.longitude,
+      distanceMeters,
+    };
+  }, null);
+}
+
 function buildLocationBounds(points = [], fallbackSettings = []) {
   const coordinates = [];
 
@@ -2257,23 +2325,49 @@ async function fetchLastKnownNamedLocation(endpointPath, recentRequests = [], op
   });
   const setting = settingsByKey.get(groupKey);
   const name = normalizeLocationGroupName(setting?.name);
-
-  if (!name) {
-    return null;
-  }
-
   const latitude = Number(latestRequest?.location?.latitude);
   const longitude = Number(latestRequest?.location?.longitude);
 
+  if (name) {
+    return {
+      name,
+      groupKey,
+      hideCoordinates: Boolean(setting.hideCoordinates),
+      deviceId: normalizeDimension(latestRequest.deviceId, UNKNOWN_DIMENSION),
+      package: normalizeDimension(latestRequest.package, UNKNOWN_DIMENSION),
+      receivedAt: latestRequest.receivedAt || null,
+      latitude: isValidLatitude(latitude) ? latitude : null,
+      longitude: isValidLongitude(longitude) ? longitude : null,
+    };
+  }
+
+  if (!isValidLatitude(latitude) || !isValidLongitude(longitude)) {
+    return null;
+  }
+
+  const namedSettings = await fetchNamedLocationGroupSettings(endpointPath, {
+    settingsModel: options.settingsModel,
+  });
+  const nearest = findNearestNamedLocation(latitude, longitude, namedSettings);
+
+  if (!nearest) {
+    return null;
+  }
+
   return {
-    name,
+    name: nearest.name,
     groupKey,
-    hideCoordinates: Boolean(setting.hideCoordinates),
+    hideCoordinates: Boolean(nearest.hideCoordinates),
+    isApproximate: true,
+    nearestGroupKey: nearest.groupKey,
+    nearestLatitude: nearest.latitude,
+    nearestLongitude: nearest.longitude,
+    nearestDistanceMeters: nearest.distanceMeters,
     deviceId: normalizeDimension(latestRequest.deviceId, UNKNOWN_DIMENSION),
     package: normalizeDimension(latestRequest.package, UNKNOWN_DIMENSION),
     receivedAt: latestRequest.receivedAt || null,
-    latitude: isValidLatitude(latitude) ? latitude : null,
-    longitude: isValidLongitude(longitude) ? longitude : null,
+    latitude,
+    longitude,
   };
 }
 

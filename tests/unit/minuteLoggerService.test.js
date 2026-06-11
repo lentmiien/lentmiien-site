@@ -711,6 +711,70 @@ describe('minuteLoggerService', () => {
     });
   });
 
+  test('fetchLastKnownNamedLocation returns the nearest named group for outside locations', async () => {
+    const receivedAt = new Date('2026-06-07T02:59:00.000Z');
+    const namedSettingsQuery = createChainQuery([
+      {
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        hideCoordinates: true,
+      },
+      {
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.470,139.550',
+        name: 'Office',
+        hideCoordinates: false,
+      },
+    ]);
+    const settingsModel = {
+      find: jest.fn()
+        .mockReturnValueOnce(createLeanQuery([]))
+        .mockReturnValueOnce(namedSettingsQuery),
+    };
+
+    const result = await fetchLastKnownNamedLocation('/secret-minute-logger', [
+      {
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        receivedAt,
+        location: {
+          latitude: 35.461,
+          longitude: 139.541,
+          groupKey: '35.461,139.541',
+        },
+      },
+    ], {
+      settingsModel,
+    });
+
+    expect(settingsModel.find).toHaveBeenNthCalledWith(1, {
+      endpointPath: '/secret-minute-logger',
+      groupKey: { $in: ['35.461,139.541'] },
+    });
+    expect(settingsModel.find).toHaveBeenNthCalledWith(2, {
+      endpointPath: '/secret-minute-logger',
+      name: { $type: 'string', $ne: '' },
+    });
+    expect(namedSettingsQuery.sort).toHaveBeenCalledWith({ name: 1, groupKey: 1 });
+    expect(result).toMatchObject({
+      name: 'Home',
+      groupKey: '35.461,139.541',
+      hideCoordinates: true,
+      isApproximate: true,
+      nearestGroupKey: '35.460,139.540',
+      nearestLatitude: 35.46,
+      nearestLongitude: 139.54,
+      deviceId: 'tablet-01',
+      package: 'com.example.app',
+      receivedAt,
+      latitude: 35.461,
+      longitude: 139.541,
+    });
+    expect(result.nearestDistanceMeters).toBeGreaterThan(100);
+    expect(result.nearestDistanceMeters).toBeLessThan(200);
+  });
+
   test('fetchLastKnownNamedLocation ignores older located requests when the newest request is unlocated', async () => {
     const settingsModel = {
       find: jest.fn(),

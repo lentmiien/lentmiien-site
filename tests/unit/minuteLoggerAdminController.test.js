@@ -485,6 +485,35 @@ describe('minuteLoggerAdminController.dashboard', () => {
     expect(viewModel.dailyMinuteStats[0].detailsUrl).toBe('/admin/minute-logger/daily/2026-06-05');
   });
 
+  test('renders the nearest named location when the last known location is outside named groups', async () => {
+    getMinuteLoggerDashboard.mockResolvedValue(createDashboard({
+      lastKnownLocation: {
+        name: 'Home',
+        groupKey: '35.461,139.541',
+        hideCoordinates: true,
+        isApproximate: true,
+        nearestGroupKey: '35.460,139.540',
+        nearestDistanceMeters: 1425,
+        deviceId: 'tablet-01',
+        package: 'com.example.app',
+        receivedAt: new Date('2026-06-07T02:59:00.000Z'),
+        latitude: 35.461,
+        longitude: 139.541,
+      },
+    }));
+    const res = createResponse();
+
+    await controller.dashboard({ query: {} }, res);
+
+    const viewModel = res.render.mock.calls[0][1];
+    const card = viewModel.overviewCards.find((entry) => entry.label === 'Last Known Location');
+    expect(card).toMatchObject({
+      value: 'Near Home',
+      helper: expect.stringContaining('About 1.43 km away'),
+    });
+    expect(card.helper).toContain('Device tablet-01');
+  });
+
   test('saves a location group display name', async () => {
     updateMinuteLoggerLocationGroupSettings.mockResolvedValue({
       groupKey: '35.460,139.540',
