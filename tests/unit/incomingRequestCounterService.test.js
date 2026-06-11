@@ -25,6 +25,12 @@ function createFindChain(result) {
   return { sort, select, leanQuery };
 }
 
+function createFindOneChain(result) {
+  const leanQuery = createLeanQuery(result);
+  const sort = jest.fn().mockReturnValue(leanQuery);
+  return { sort, leanQuery };
+}
+
 function createRequest(overrides = {}) {
   return {
     baseUrl: '/secret-counter',
@@ -46,7 +52,9 @@ function createRequest(overrides = {}) {
 
 describe('incoming request counter service', () => {
   test('allows the request while the previous 90-minute count is below 60', async () => {
+    const findOneChain = createFindOneChain(null);
     const model = {
+      findOne: jest.fn().mockReturnValue({ sort: findOneChain.sort }),
       countDocuments: jest.fn().mockResolvedValue(59),
       create: jest.fn().mockResolvedValue({}),
     };
@@ -65,6 +73,15 @@ describe('incoming request counter service', () => {
       windowMs: REQUEST_COUNTER_WINDOW_MS,
       responseStatusCode: 200,
       responseText: 'OK',
+      duplicate: false,
+      logged: true,
+    });
+    expect(model.findOne).toHaveBeenCalledWith({
+      endpointPath: '/secret-counter',
+      receivedAt: {
+        $gte: new Date('2026-05-27T00:00:00.000Z'),
+        $lt: new Date('2026-05-27T00:01:00.000Z'),
+      },
     });
     expect(model.countDocuments).toHaveBeenCalledWith({
       endpointPath: '/secret-counter',
@@ -80,6 +97,7 @@ describe('incoming request counter service', () => {
       category: 'unknown',
       query: { source: 'test' },
       receivedAt: now,
+      minuteBucket: new Date('2026-05-27T00:00:00.000Z'),
       countInWindow: 60,
       allowed: true,
       responseStatusCode: 200,
@@ -88,7 +106,9 @@ describe('incoming request counter service', () => {
   });
 
   test('categorizes requests by the package query parameter', async () => {
+    const findOneChain = createFindOneChain(null);
     const model = {
+      findOne: jest.fn().mockReturnValue({ sort: findOneChain.sort }),
       countDocuments: jest.fn().mockResolvedValue(4),
       create: jest.fn().mockResolvedValue({}),
     };
@@ -115,7 +135,9 @@ describe('incoming request counter service', () => {
   });
 
   test('blocks the request once 60 requests already exist in the window', async () => {
+    const findOneChain = createFindOneChain(null);
     const model = {
+      findOne: jest.fn().mockReturnValue({ sort: findOneChain.sort }),
       countDocuments: jest.fn().mockResolvedValue(60),
       create: jest.fn().mockResolvedValue({}),
     };
@@ -131,6 +153,8 @@ describe('incoming request counter service', () => {
       countInWindow: 61,
       responseStatusCode: 429,
       responseText: 'NG',
+      duplicate: false,
+      logged: true,
     });
     expect(model.create).toHaveBeenCalledWith(expect.objectContaining({
       countInWindow: 61,
@@ -141,7 +165,9 @@ describe('incoming request counter service', () => {
   });
 
   test('uses live settings for the limit and rolling window length', async () => {
+    const findOneChain = createFindOneChain(null);
     const model = {
+      findOne: jest.fn().mockReturnValue({ sort: findOneChain.sort }),
       countDocuments: jest.fn().mockResolvedValue(119),
       create: jest.fn().mockResolvedValue({}),
     };
@@ -160,11 +186,84 @@ describe('incoming request counter service', () => {
       windowMinutes: 45,
       responseStatusCode: 200,
       responseText: 'OK',
+      duplicate: false,
+      logged: true,
     });
     expect(model.countDocuments).toHaveBeenCalledWith({
       endpointPath: '/secret-counter',
       receivedAt: { $gte: new Date('2026-05-26T23:15:00.000Z') },
     });
+  });
+
+  test('returns the first logged response without saving another request in the same minute', async () => {
+    const findOneChain = createFindOneChain({
+      endpointPath: '/secret-counter',
+      receivedAt: new Date('2026-05-27T00:00:10.000Z'),
+      countInWindow: 12,
+      allowed: true,
+      responseStatusCode: 200,
+      responseText: 'OK',
+    });
+    const model = {
+      findOne: jest.fn().mockReturnValue({ sort: findOneChain.sort }),
+      countDocuments: jest.fn(),
+      create: jest.fn(),
+    };
+
+    const result = await recordAndEvaluateRequest(createRequest(), {
+      model,
+      now: new Date('2026-05-27T00:00:45.000Z'),
+      settings: { maxRequests: 60, windowMinutes: 90 },
+    });
+
+    expect(result).toMatchObject({
+      allowed: true,
+      countInWindow: 12,
+      responseStatusCode: 200,
+      responseText: 'OK',
+      duplicate: true,
+      logged: false,
+    });
+    expect(model.countDocuments).not.toHaveBeenCalled();
+    expect(model.create).not.toHaveBeenCalled();
+  });
+
+  test('returns the existing response when a concurrent same-minute create hits the unique guardrail', async () => {
+    const emptyMinuteChain = createFindOneChain(null);
+    const duplicateMinuteChain = createFindOneChain({
+      endpointPath: '/secret-counter',
+      receivedAt: new Date('2026-05-27T00:00:10.000Z'),
+      countInWindow: 60,
+      allowed: false,
+      responseStatusCode: 429,
+      responseText: 'NG',
+    });
+    const duplicateError = new Error('duplicate key');
+    duplicateError.code = 11000;
+    const model = {
+      findOne: jest.fn()
+        .mockReturnValueOnce({ sort: emptyMinuteChain.sort })
+        .mockReturnValueOnce({ sort: duplicateMinuteChain.sort }),
+      countDocuments: jest.fn().mockResolvedValue(59),
+      create: jest.fn().mockRejectedValue(duplicateError),
+    };
+
+    const result = await recordAndEvaluateRequest(createRequest(), {
+      model,
+      now: new Date('2026-05-27T00:00:45.000Z'),
+      settings: { maxRequests: 60, windowMinutes: 90 },
+    });
+
+    expect(result).toMatchObject({
+      allowed: false,
+      countInWindow: 60,
+      responseStatusCode: 429,
+      responseText: 'NG',
+      duplicate: true,
+      logged: false,
+    });
+    expect(model.findOne).toHaveBeenCalledTimes(2);
+    expect(model.create).toHaveBeenCalledTimes(1);
   });
 
   test('updateRequestCounterSettings validates and persists admin changes', async () => {

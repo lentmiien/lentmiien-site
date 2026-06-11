@@ -197,6 +197,51 @@ function floorToMinute(date) {
   return value;
 }
 
+function isDuplicateKeyError(error) {
+  if (!error) {
+    return false;
+  }
+  if (error.code === 11000) {
+    return true;
+  }
+  return Array.isArray(error.writeErrors) && error.writeErrors.some((item) => item && item.code === 11000);
+}
+
+async function findExistingMinuteRequest(model, endpointPath, minuteStart, minuteEnd) {
+  const query = model.findOne({
+    endpointPath,
+    receivedAt: {
+      $gte: minuteStart,
+      $lt: minuteEnd,
+    },
+  });
+  const sortedQuery = query && typeof query.sort === 'function'
+    ? query.sort({ receivedAt: 1 })
+    : query;
+
+  return leanExec(sortedQuery);
+}
+
+function mapStoredRequestResult(storedRequest, settings, duplicate = true) {
+  const allowed = typeof storedRequest.allowed === 'boolean'
+    ? storedRequest.allowed
+    : storedRequest.responseText !== 'NG';
+  const responseText = storedRequest.responseText || (allowed ? 'OK' : 'NG');
+  const responseStatusCode = storedRequest.responseStatusCode || (allowed ? 200 : 429);
+
+  return {
+    allowed,
+    countInWindow: Number(storedRequest.countInWindow) || 0,
+    limit: settings.maxRequests,
+    windowMinutes: settings.windowMinutes,
+    windowMs: settings.windowMs,
+    responseStatusCode,
+    responseText,
+    duplicate,
+    logged: !duplicate,
+  };
+}
+
 function startOfLocalDay(date) {
   const value = new Date(date);
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -533,6 +578,14 @@ async function recordAndEvaluateRequest(req, options = {}) {
   const settings = await getRequestCounterSettings(options);
   const now = new Date(options.now || Date.now());
   const endpointPath = getEndpointPath(req, options.endpointPath);
+  const minuteStart = floorToMinute(now);
+  const minuteEnd = new Date(minuteStart.getTime() + MINUTE_MS);
+  const existingMinuteRequest = await findExistingMinuteRequest(model, endpointPath, minuteStart, minuteEnd);
+
+  if (existingMinuteRequest) {
+    return mapStoredRequestResult(existingMinuteRequest, settings, true);
+  }
+
   const windowStart = new Date(now.getTime() - settings.windowMs);
   const recentCount = await model.countDocuments({
     endpointPath,
@@ -544,25 +597,7 @@ async function recordAndEvaluateRequest(req, options = {}) {
   const responseStatusCode = allowed ? 200 : 429;
   const category = normalizeRequestCategory(req.query?.package);
 
-  await model.create({
-    endpointPath,
-    requestPath: getRequestPath(req),
-    method: req.method || 'GET',
-    ip: req.ip || null,
-    ips: Array.isArray(req.ips) ? req.ips : [],
-    userAgent: getHeader(req, 'user-agent'),
-    referer: getHeader(req, 'referer') || getHeader(req, 'referrer'),
-    category,
-    query: req.query || {},
-    receivedAt: now,
-    windowStart,
-    countInWindow,
-    allowed,
-    responseStatusCode,
-    responseText,
-  });
-
-  return {
+  const requestLog = {
     allowed,
     countInWindow,
     limit: settings.maxRequests,
@@ -570,7 +605,43 @@ async function recordAndEvaluateRequest(req, options = {}) {
     windowMs: settings.windowMs,
     responseStatusCode,
     responseText,
+    duplicate: false,
+    logged: true,
   };
+
+  try {
+    await model.create({
+      endpointPath,
+      requestPath: getRequestPath(req),
+      method: req.method || 'GET',
+      ip: req.ip || null,
+      ips: Array.isArray(req.ips) ? req.ips : [],
+      userAgent: getHeader(req, 'user-agent'),
+      referer: getHeader(req, 'referer') || getHeader(req, 'referrer'),
+      category,
+      query: req.query || {},
+      receivedAt: now,
+      minuteBucket: minuteStart,
+      windowStart,
+      countInWindow,
+      allowed,
+      responseStatusCode,
+      responseText,
+    });
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+
+    const duplicateRequest = await findExistingMinuteRequest(model, endpointPath, minuteStart, minuteEnd);
+    if (!duplicateRequest) {
+      throw error;
+    }
+
+    return mapStoredRequestResult(duplicateRequest, settings, true);
+  }
+
+  return requestLog;
 }
 
 module.exports = {

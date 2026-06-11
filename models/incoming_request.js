@@ -15,6 +15,7 @@ const IncomingRequestSchema = new Schema({
   category: { type: String, default: 'unknown', index: true },
   query: { type: Schema.Types.Mixed, default: {} },
   receivedAt: { type: Date, default: Date.now },
+  minuteBucket: { type: Date, default: undefined },
   windowStart: { type: Date, required: true },
   countInWindow: { type: Number, required: true },
   allowed: { type: Boolean, required: true, index: true },
@@ -27,5 +28,9 @@ const IncomingRequestSchema = new Schema({
 IncomingRequestSchema.index({ receivedAt: 1 }, { expireAfterSeconds: INCOMING_REQUEST_RETENTION_SECONDS });
 IncomingRequestSchema.index({ endpointPath: 1, receivedAt: -1 });
 IncomingRequestSchema.index({ endpointPath: 1, category: 1, receivedAt: -1 });
+IncomingRequestSchema.index(
+  { endpointPath: 1, minuteBucket: 1 },
+  { unique: true, partialFilterExpression: { minuteBucket: { $exists: true } } }
+);
 
 module.exports = mongoose.model('incoming_request', IncomingRequestSchema);
