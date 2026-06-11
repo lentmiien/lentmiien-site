@@ -12,6 +12,10 @@ const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const DEFAULT_TOP_K = 10;
 const MAX_TOP_K = 50;
 const CHAT_MESSAGE_COLLECTION = 'chat_message';
+const DEFAULT_STANDARD_EMBEDDING_RETENTION_DAYS = 90;
+const MIN_STANDARD_EMBEDDING_RETENTION_DAYS = 1;
+const MAX_STANDARD_EMBEDDING_RETENTION_DAYS = 3650;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const SEARCH_MODES = {
   DEFAULT: 'default',
   HIGH_QUALITY: 'high_quality',
@@ -269,6 +273,69 @@ class EmbeddingApiService {
 
   async deleteHighQualityEmbeddings(metadataInput) {
     return this.deleteEmbeddings(metadataInput, { mode: SEARCH_MODES.HIGH_QUALITY });
+  }
+
+  async cleanupOldDefaultEmbeddings({
+    retentionDays = DEFAULT_STANDARD_EMBEDDING_RETENTION_DAYS,
+    dryRun = true,
+    now = new Date(),
+  } = {}) {
+    const normalizedDays = normalizeRetentionDays(
+      retentionDays,
+      DEFAULT_STANDARD_EMBEDDING_RETENTION_DAYS,
+    );
+    const referenceDate = normalizeDate(now) || new Date();
+    const cutoff = new Date(referenceDate.getTime() - normalizedDays * MS_PER_DAY);
+    const filter = buildDefaultEmbeddingRetentionFilter(cutoff);
+    const collectionName = VectorEmbedding.collection?.name || 'vector_embeddings';
+
+    if (dryRun) {
+      const matchedCount = await VectorEmbedding.countDocuments(filter);
+      logger.notice('Previewed old standard embedding cleanup', {
+        category: 'embedding_api',
+        metadata: {
+          collectionName,
+          retentionDays: normalizedDays,
+          cutoff: cutoff.toISOString(),
+          matchedCount,
+          dryRun: true,
+          highQualityCollectionTouched: false,
+        },
+      });
+
+      return {
+        collectionName,
+        retentionDays: normalizedDays,
+        cutoff,
+        dryRun: true,
+        matchedCount,
+        deletedCount: 0,
+      };
+    }
+
+    const result = await VectorEmbedding.deleteMany(filter);
+    const deletedCount = result?.deletedCount || 0;
+
+    logger.notice('Deleted old standard embeddings', {
+      category: 'embedding_api',
+      metadata: {
+        collectionName,
+        retentionDays: normalizedDays,
+        cutoff: cutoff.toISOString(),
+        deletedCount,
+        dryRun: false,
+        highQualityCollectionTouched: false,
+      },
+    });
+
+    return {
+      collectionName,
+      retentionDays: normalizedDays,
+      cutoff,
+      dryRun: false,
+      matchedCount: deletedCount,
+      deletedCount,
+    };
   }
 
   async health({ mode = SEARCH_MODES.DEFAULT } = {}) {
@@ -902,6 +969,37 @@ function normalizeCandidateLimit(value) {
     return Math.min(parsed, MAX_COMBINED_CANDIDATES);
   }
   return MAX_COMBINED_CANDIDATES;
+}
+
+function normalizeRetentionDays(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isFinite(parsed) && parsed >= MIN_STANDARD_EMBEDDING_RETENTION_DAYS) {
+    return Math.min(parsed, MAX_STANDARD_EMBEDDING_RETENTION_DAYS);
+  }
+  return fallback;
+}
+
+function normalizeDate(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = new Date(value.trim());
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function buildDefaultEmbeddingRetentionFilter(cutoff) {
+  return {
+    $or: [
+      { updatedAt: { $lt: cutoff } },
+      {
+        updatedAt: { $exists: false },
+        createdAt: { $lt: cutoff },
+      },
+    ],
+  };
 }
 
 function extractQueryVector(response) {

@@ -246,6 +246,21 @@ block content
           else
             p.text-muted.mb-0 No health data yet.
 
+      .card.mb-3
+        .card-body
+          h5.mb-2 Standard retention cleanup
+          if cleanupFeedback
+            - const cleanupAlertClass = cleanupFeedback.status === 'success' ? 'alert-success' : cleanupFeedback.status === 'info' ? 'alert-info' : 'alert-danger';
+            .alert.mb-3(class=cleanupAlertClass, role="alert")= cleanupFeedback.message
+          form(method="post", action="/admin/embedding-test/cleanup")
+            .mb-3
+              label.form-label(for="retention_days") Retention days
+              input#retention_days.form-control(type="number", name="retention_days", min=cleanupLimits && cleanupLimits.minRetentionDays ? cleanupLimits.minRetentionDays : 1, max=cleanupLimits && cleanupLimits.maxRetentionDays ? cleanupLimits.maxRetentionDays : 3650, step="1", value=cleanupForm && cleanupForm.retentionDays ? cleanupForm.retentionDays : 90)
+            .d-flex.flex-wrap.gap-2
+              button.btn.btn-outline-secondary(type="submit", name="dry_run", value="true") Preview cleanup
+              button.btn.btn-outline-danger(type="submit", name="execute", value="true", onclick="return confirm('Delete old standard embeddings from vector_embeddings? High-quality embeddings will not be touched.');") Delete old embeddings
+          p.text-muted.small.mt-3.mb-0 Keeps the standard vector_embeddings collection within the selected retention window.
+
       details.card.mb-3(open=result || error || info)
         summary.p-3.mb-0.fw-semibold Manual embedding test
         .card-body

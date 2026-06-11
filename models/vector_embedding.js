@@ -39,5 +39,8 @@ VectorEmbeddingSchema.index({
 });
 
 VectorEmbeddingSchema.index({ dim: 1 });
+VectorEmbeddingSchema.index({ createdAt: 1 });
+VectorEmbeddingSchema.index({ updatedAt: 1 });
+VectorEmbeddingSchema.index({ dim: 1, updatedAt: -1 });
 
 module.exports = mongoose.model('vector_embedding', VectorEmbeddingSchema);

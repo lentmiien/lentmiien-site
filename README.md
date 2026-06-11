@@ -178,6 +178,8 @@ The summary object contains section-level timings and statuses (`ok`, `warning`,
 | --- | --- |
 | `npm start` | Runs `setup.js` (cache prep, cleanup, usage sync) and then launches `node app`. |
 | `npm test` | Executes the Jest suite (`tests/**/*.test.js`) and writes coverage to `coverage/`. |
+| `npm run cleanup:vector-embeddings` | Dry-runs the standard `vector_embeddings` cleanup using a 90-day retention window. |
+| `npm run cleanup:vector-embeddings:execute` | Deletes standard `vector_embeddings` entries older than 90 days; high-quality embeddings are not touched. |
 | `npm run test:ollama:gemma4` | Runs the standalone Gemma 4/Ollama tool-calling smoke test. |
 | `npm run lint:openapi` | Validates curated YAML specs with `@apidevtools/swagger-parser`. |
 | `npm run git_test` | Runs a local `git_test.js` ad-hoc GitHub automation script when that ignored file exists. |

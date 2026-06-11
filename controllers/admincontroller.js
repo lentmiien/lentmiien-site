@@ -426,6 +426,9 @@ const EMBEDDING_SEARCH_MAX_TOP_K = 50;
 const EMBEDDING_RECENT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const EMBEDDING_RECENT_FETCH_LIMIT = 500;
 const EMBEDDING_CHUNK_SAMPLE_LIMIT = 5;
+const EMBEDDING_CLEANUP_DEFAULT_RETENTION_DAYS = 90;
+const EMBEDDING_CLEANUP_MIN_RETENTION_DAYS = 1;
+const EMBEDDING_CLEANUP_MAX_RETENTION_DAYS = 3650;
 const EMBEDDING_SEARCH_TYPES = [
   { value: 'default', label: 'Fast (default)' },
   { value: 'high_quality', label: 'High-quality model' },
@@ -4477,6 +4480,32 @@ function normalizeSearchForm(form = {}) {
   };
 }
 
+function defaultEmbeddingCleanupForm() {
+  return {
+    retentionDays: EMBEDDING_CLEANUP_DEFAULT_RETENTION_DAYS,
+  };
+}
+
+function parseEmbeddingCleanupRetentionDays(raw) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { value: EMBEDDING_CLEANUP_DEFAULT_RETENTION_DAYS };
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < EMBEDDING_CLEANUP_MIN_RETENTION_DAYS) {
+    return {
+      error: `Retention days must be ${EMBEDDING_CLEANUP_MIN_RETENTION_DAYS} or greater.`,
+    };
+  }
+  if (parsed > EMBEDDING_CLEANUP_MAX_RETENTION_DAYS) {
+    return {
+      error: `Retention days must be ${EMBEDDING_CLEANUP_MAX_RETENTION_DAYS} or less.`,
+    };
+  }
+
+  return { value: parsed };
+}
+
 function buildSearchDateRange(startRaw, endRaw) {
   const parseDate = (value) => {
     if (!value) return null;
@@ -4838,9 +4867,15 @@ function renderEmbeddingTestPage(res, {
   search = {},
   recentEmbeddings = null,
   deleteFeedback = null,
+  cleanupForm = defaultEmbeddingCleanupForm(),
+  cleanupFeedback = null,
 }) {
   const normalizedForm = normalizeEmbeddingForm(form);
   const normalizedSearchForm = normalizeSearchForm(search?.form || search);
+  const normalizedCleanupForm = {
+    retentionDays: parseEmbeddingCleanupRetentionDays(cleanupForm?.retentionDays).value
+      || EMBEDDING_CLEANUP_DEFAULT_RETENTION_DAYS,
+  };
   const searchResult = search?.result
     ? {
       ...search.result,
@@ -4878,6 +4913,13 @@ function renderEmbeddingTestPage(res, {
     recentEmbeddings,
     recentHours: EMBEDDING_RECENT_LOOKBACK_MS / (60 * 60 * 1000),
     deleteFeedback,
+    cleanupForm: normalizedCleanupForm,
+    cleanupFeedback,
+    cleanupLimits: {
+      defaultRetentionDays: EMBEDDING_CLEANUP_DEFAULT_RETENTION_DAYS,
+      minRetentionDays: EMBEDDING_CLEANUP_MIN_RETENTION_DAYS,
+      maxRetentionDays: EMBEDDING_CLEANUP_MAX_RETENTION_DAYS,
+    },
   });
 }
 
@@ -5134,6 +5176,90 @@ exports.embedding_test_delete = async (req, res) => {
       recentEmbeddings,
       search,
       deleteFeedback: { status: 'error', message: error?.message || 'Unable to delete embeddings right now.' },
+    });
+  }
+};
+
+exports.embedding_test_cleanup = async (req, res) => {
+  const form = defaultEmbeddingForm();
+  const retentionRaw = req.body.retention_days ?? req.body.retentionDays;
+  const retentionResult = parseEmbeddingCleanupRetentionDays(retentionRaw);
+  const cleanupForm = {
+    retentionDays: retentionRaw || EMBEDDING_CLEANUP_DEFAULT_RETENTION_DAYS,
+  };
+  const dryRun = req.body.execute !== 'true';
+  const { health, healthError } = await fetchEmbeddingHealth();
+
+  if (retentionResult.error) {
+    const recentEmbeddings = await loadRecentEmbeddings();
+    res.status(400);
+    return renderEmbeddingTestPage(res, {
+      form,
+      submittedTexts: [],
+      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+      health,
+      healthError,
+      recentEmbeddings,
+      cleanupForm,
+      cleanupFeedback: { status: 'error', message: retentionResult.error },
+    });
+  }
+
+  try {
+    const cleanupResult = await embeddingApiService.cleanupOldDefaultEmbeddings({
+      retentionDays: retentionResult.value,
+      dryRun,
+    });
+    const recentEmbeddings = await loadRecentEmbeddings();
+    const affectedCount = dryRun ? cleanupResult.matchedCount : cleanupResult.deletedCount;
+    const cutoffLabel = cleanupResult.cutoff
+      ? new Date(cleanupResult.cutoff).toLocaleString()
+      : 'unknown cutoff';
+    const message = dryRun
+      ? `Preview: ${formatNumber(affectedCount || 0)} standard embedding${affectedCount === 1 ? '' : 's'} older than ${cutoffLabel} would be deleted. High-quality embeddings were not touched.`
+      : `Deleted ${formatNumber(affectedCount || 0)} standard embedding${affectedCount === 1 ? '' : 's'} older than ${cutoffLabel}. High-quality embeddings were not touched.`;
+
+    logger.notice('Admin ran standard embedding cleanup', {
+      category: 'admin_embedding_test',
+      metadata: {
+        dryRun,
+        retentionDays: cleanupResult.retentionDays,
+        cutoff: cleanupResult.cutoff ? cleanupResult.cutoff.toISOString() : null,
+        matchedCount: cleanupResult.matchedCount,
+        deletedCount: cleanupResult.deletedCount,
+      },
+    });
+
+    return renderEmbeddingTestPage(res, {
+      form,
+      submittedTexts: [],
+      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+      health,
+      healthError,
+      recentEmbeddings,
+      cleanupForm: { retentionDays: cleanupResult.retentionDays },
+      cleanupFeedback: { status: dryRun ? 'info' : 'success', message },
+    });
+  } catch (error) {
+    const recentEmbeddings = await loadRecentEmbeddings();
+    logger.error('Failed to run standard embedding cleanup', {
+      category: 'admin_embedding_test',
+      metadata: {
+        dryRun,
+        retentionDays: retentionResult.value,
+        message: error?.message,
+      },
+    });
+    res.status(error?.status || 500);
+    return renderEmbeddingTestPage(res, {
+      form,
+      submittedTexts: [],
+      requestOptions: { autoChunk: true, overlapTokens: EMBEDDING_DEFAULT_OVERLAP },
+      health,
+      healthError,
+      recentEmbeddings,
+      cleanupForm,
+      cleanupFeedback: { status: 'error', message: error?.message || 'Unable to clean up embeddings right now.' },
     });
   }
 };

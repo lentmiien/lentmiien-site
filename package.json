@@ -10,6 +10,8 @@
     "test": "jest --coverage",
     "test:ollama:gemma4": "node test_ollama_gemma4.js",
     "lint:openapi": "node scripts/validate-openapi.js",
+    "cleanup:vector-embeddings": "node scripts/cleanup-vector-embeddings.js --days=90 --dry-run",
+    "cleanup:vector-embeddings:execute": "node scripts/cleanup-vector-embeddings.js --days=90 --execute",
     "codex": "codex",
     "codex-update": "npm install -g @openai/codex@latest",
     "codex-todo": "codex --yolo \"In 'todo.txt', I've listed an update I want to do for this project, please check the 'todo.txt' and start coding the changes.\"",
