@@ -211,6 +211,14 @@ const MYPAGE_ICON_DEFINITIONS = [
     adminOnly: true,
   },
   {
+    id: 'device_usage',
+    href: '/admin/device-usage',
+    src: '/i/device_usage.svg',
+    alt: 'Device usage admin dashboard',
+    label: 'Device Usage',
+    adminOnly: true,
+  },
+  {
     id: 'minute_logger',
     href: '/admin/minute-logger',
     src: '/i/minute_logger.svg',

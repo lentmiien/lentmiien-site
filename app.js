@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const { ensurePublicTobuyListPath } = require('./utils/publicTobuyList');
 const { ensureRequestCounterPath } = require('./utils/requestCounterPath');
 const { ensureMinuteLoggerPath } = require('./utils/minuteLoggerPath');
+const { ensureDeviceUsagePath } = require('./utils/deviceUsagePath');
 
 // Database models
 const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
@@ -68,6 +69,11 @@ app.use('/apphealth', (req, res) => res.json({status: "ok"}));
 const requestCounterRouter = require('./routes/request_counter');
 const requestCounterPath = ensureRequestCounterPath();
 app.use(requestCounterPath, requestCounterRouter);
+
+// Public hidden device usage endpoint
+const deviceUsageRouter = require('./routes/device_usage');
+const deviceUsagePath = ensureDeviceUsagePath();
+app.use(deviceUsagePath, deviceUsageRouter);
 
 // Public hidden minute logger endpoint
 const minuteLoggerRouter = require('./routes/minute_logger');

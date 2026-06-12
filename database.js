@@ -161,6 +161,11 @@ const ClusterNodeType = require('./models/cluster_node_type');
 const ClusterHardwareCatalogItem = require('./models/cluster_hardware_catalog_item');
 const IncomingRequest = require('./models/incoming_request');
 const RequestCounterSettings = require('./models/request_counter_settings');
+const DeviceUsageRequest = require('./models/device_usage_request');
+const DeviceUsageSettings = require('./models/device_usage_settings');
+const DeviceUsagePackageRule = require('./models/device_usage_package_rule');
+const DeviceUsageReward = require('./models/device_usage_reward');
+const DeviceUsageRewardSuggestion = require('./models/device_usage_reward_suggestion');
 const MinuteLoggerRequest = require('./models/minute_logger_request');
 const MinuteLoggerStat = require('./models/minute_logger_stat');
 const MinuteLoggerLocationGroup = require('./models/minute_logger_location_group');
@@ -271,6 +276,11 @@ module.exports = {
   ClusterHardwareCatalogItem,
   IncomingRequest,
   RequestCounterSettings,
+  DeviceUsageRequest,
+  DeviceUsageSettings,
+  DeviceUsagePackageRule,
+  DeviceUsageReward,
+  DeviceUsageRewardSuggestion,
   MinuteLoggerRequest,
   MinuteLoggerStat,
   MinuteLoggerLocationGroup,

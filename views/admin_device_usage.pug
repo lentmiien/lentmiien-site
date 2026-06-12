@@ -1,0 +1,320 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/device_usage_admin.css')
+
+block content
+  .device-usage-admin
+    header.device-usage-header
+      div
+        p.device-usage-eyebrow Device Usage
+        h1.device-usage-title Learning Gate
+        p.device-usage-subtitle Category limits, package rules, rewards, and recent device minutes.
+      .device-usage-header__meta
+        span Last updated #{generatedAtDisplay}
+        a.device-usage-button.device-usage-button--ghost(href='/admin/device-usage') Refresh
+
+    if feedback
+      .device-usage-alert(class=`device-usage-alert--${feedback.status}`)= feedback.message
+
+    if loadError
+      .device-usage-alert.device-usage-alert--error= loadError
+    else
+      section.device-usage-cards
+        each card in overviewCards
+          article.device-usage-card(class=card.tone ? `device-usage-card--${card.tone}` : '')
+            p.device-usage-card__label= card.label
+            strong.device-usage-card__value= card.value
+            if card.helper
+              p.device-usage-card__helper= card.helper
+
+      section.device-usage-grid.device-usage-grid--primary
+        article.device-usage-panel.device-usage-panel--wide
+          header.device-usage-panel__header
+            div
+              h2 Rolling Counted Minutes
+              p #{settings.rollingWindowDisplay} window, allowed entertainment plus post-free learning
+          #deviceUsageChart.device-usage-chart
+
+        article.device-usage-panel
+          header.device-usage-panel__header
+            div
+              h2 Settings
+              p Live device rules
+          form.device-usage-form(method='post', action='/admin/device-usage/settings')
+            label.device-usage-field(for='rollingLimitMinutes')
+              span Rolling limit
+              input#rollingLimitMinutes(type='number', name='rollingLimitMinutes', min='1', max='100000', step='1', value=settings.rollingLimitMinutes, required)
+            label.device-usage-field(for='rollingWindowMinutes')
+              span Rolling window
+              input#rollingWindowMinutes(type='number', name='rollingWindowMinutes', min='1', max='10080', step='1', value=settings.rollingWindowMinutes, required)
+            label.device-usage-field(for='learningRequiredMinutes')
+              span Learning required
+              input#learningRequiredMinutes(type='number', name='learningRequiredMinutes', min='0', max='1440', step='1', value=settings.learningRequiredMinutes, required)
+            label.device-usage-field(for='learningFreeMinutes')
+              span Free learning
+              input#learningFreeMinutes(type='number', name='learningFreeMinutes', min='0', max='1440', step='1', value=settings.learningFreeMinutes, required)
+            button.device-usage-button(type='submit') Save
+          dl.device-usage-details
+            div
+              dt Endpoint
+              dd= endpointPath
+            div
+              dt Updated
+              dd= settings.updatedAtDisplay
+            div
+              dt Updated By
+              dd= settings.updatedByDisplay
+
+      section.device-usage-panel
+        header.device-usage-panel__header
+          div
+            h2 Category Rules
+            p Today #{todayDateKey}
+        .device-usage-rules
+          each rule in categoryRules
+            article.device-usage-rule(style=`--category-color: ${rule.color};`)
+              span.device-usage-rule__swatch
+              div
+                strong= rule.label
+                p= rule.rule
+
+      section.device-usage-panel
+        header.device-usage-panel__header
+          div
+            h2 Daily Category Minutes
+            p Recent local days
+          .device-usage-panel__stats
+            span Total today #{todayStats.totalDurationDisplay}
+            span Counted #{todayStats.countedDurationDisplay}
+            span Blocked #{todayStats.blockedDurationDisplay}
+        if dailyStats && dailyStats.length
+          .device-usage-days
+            each day in dailyStats
+              .device-usage-day
+                .device-usage-day__top
+                  span.device-usage-day__date= day.isToday ? `${day.dateKey} (today)` : day.dateKey
+                  strong= day.totalDurationDisplay
+                .device-usage-day__bar(style=`--total-percent: ${day.totalPercent}%;`)
+                  span.device-usage-day__bar-total
+                    each category in day.categories
+                      span.device-usage-day__bar-category(
+                        style=`--category-width: ${category.percent}%; --category-color: ${category.color};`
+                        title=`${category.label}: ${category.durationDisplay}`
+                      )
+                if day.categories && day.categories.length
+                  ul.device-usage-day__categories
+                    each category in day.categories
+                      li.device-usage-day__category(style=`--category-color: ${category.color};`)
+                        span.device-usage-day__category-swatch
+                        span.device-usage-day__category-name= category.label
+                        span.device-usage-day__category-duration= category.durationDisplay
+        else
+          p.device-usage-empty No device minutes yet.
+
+      section.device-usage-grid
+        article.device-usage-panel
+          header.device-usage-panel__header
+            div
+              h2 Today By Package
+              p Top packages
+          if packageStats && packageStats.length
+            .device-usage-rank-list
+              each item in packageStats
+                .device-usage-rank(style=`--rank-percent: ${item.percent}%; --category-color: ${item.categoryColor};`)
+                  .device-usage-rank__top
+                    strong= item.packageName
+                    span= item.totalDurationDisplay
+                  .device-usage-rank__bar
+                    span
+                  .device-usage-rank__meta
+                    span= item.categoryLabel
+                    span Counted #{item.countedDurationDisplay}
+                    span Blocked #{item.blockedDurationDisplay}
+          else
+            p.device-usage-empty No package data for today.
+
+        article.device-usage-panel
+          header.device-usage-panel__header
+            div
+              h2 Rewards
+              p Manual points and comments
+          form.device-usage-form(method='post', action='/admin/device-usage/rewards')
+            label.device-usage-field(for='rewardSuggestion')
+              span Suggestion
+              select#rewardSuggestion(name='suggestionId')
+                option(value='') Custom reward
+                each suggestion in rewardSuggestions
+                  if suggestion.active
+                    option(
+                      value=suggestion.id,
+                      data-title-en=suggestion.titleEn,
+                      data-title-ja=suggestion.titleJa,
+                      data-points=suggestion.defaultPoints
+                    ) #{suggestion.titleEn} | #{suggestion.defaultPoints} pts
+            label.device-usage-field(for='rewardTitleEn')
+              span Title EN
+              input#rewardTitleEn(type='text', name='titleEn', maxlength='160', required)
+            label.device-usage-field(for='rewardTitleJa')
+              span Title JA
+              input#rewardTitleJa(type='text', name='titleJa', maxlength='160')
+            label.device-usage-field(for='rewardPoints')
+              span Points
+              input#rewardPoints(type='number', name='points', min='0', max='100000', step='1', value='1', required)
+            label.device-usage-field(for='rewardComment')
+              span Comment
+              textarea#rewardComment(name='comment', rows='3', maxlength='1000')
+            button.device-usage-button(type='submit') Add Reward
+          if recentRewards && recentRewards.length
+            .device-usage-rewards
+              each reward in recentRewards
+                article.device-usage-reward
+                  .device-usage-reward__top
+                    strong= reward.titleDisplay
+                    span #{reward.points} pts
+                  p.device-usage-reward__meta #{reward.awardedAtDisplay} | #{reward.awardedBy || 'N/A'}
+                  if reward.titleJa
+                    p.device-usage-reward__ja= reward.titleJa
+                  if reward.commentDisplay
+                    p.device-usage-reward__comment= reward.commentDisplay
+          else
+            p.device-usage-empty No rewards yet.
+
+      section.device-usage-grid
+        article.device-usage-panel.device-usage-panel--wide
+          header.device-usage-panel__header
+            div
+              h2 Package Rules
+              p Known package category mapping
+          form.device-usage-form.device-usage-form--inline(method='post', action='/admin/device-usage/packages')
+            label.device-usage-field(for='packageName')
+              span Package
+              input#packageName(type='text', name='packageName', maxlength='240', placeholder='com.example.app', required)
+            label.device-usage-field(for='packageCategory')
+              span Category
+              select#packageCategory(name='category', required)
+                each category in categories
+                  option(value=category.value)= category.label
+            label.device-usage-field(for='packageLabelEn')
+              span Label EN
+              input#packageLabelEn(type='text', name='labelEn', maxlength='120')
+            label.device-usage-field(for='packageLabelJa')
+              span Label JA
+              input#packageLabelJa(type='text', name='labelJa', maxlength='120')
+            label.device-usage-field.device-usage-field--wide(for='packageNotes')
+              span Notes
+              input#packageNotes(type='text', name='notes', maxlength='1000')
+            input(type='hidden', name='active', value='true')
+            button.device-usage-button(type='submit') Save Rule
+          if packageRules && packageRules.length
+            .device-usage-table-wrap
+              table.device-usage-table
+                thead
+                  tr
+                    th Package
+                    th Category
+                    th Labels
+                    th Status
+                    th Updated
+                    th Action
+                tbody
+                  each rule in packageRules
+                    tr(class=rule.active ? '' : 'is-muted')
+                      td= rule.packageName
+                      td
+                        span.device-usage-chip(style=`--category-color: ${rule.categoryColor};`)= rule.categoryLabel
+                      td
+                        span= rule.labelEn || 'N/A'
+                        if rule.labelJa
+                          small= rule.labelJa
+                      td= rule.active ? 'Active' : 'Archived'
+                      td #{rule.updatedAtDisplay} | #{rule.updatedByDisplay}
+                      td
+                        if rule.active
+                          form(method='post', action='/admin/device-usage/packages/delete', data-confirm='Archive this package rule?')
+                            input(type='hidden', name='packageName', value=rule.packageName)
+                            button.device-usage-link-button(type='submit') Archive
+                        else
+                          span.device-usage-muted Archived
+          else
+            p.device-usage-empty No known packages yet. Unknown packages are treated as entertainment.
+
+        article.device-usage-panel
+          header.device-usage-panel__header
+            div
+              h2 Reward Suggestions
+              p Quick-select reward templates
+          form.device-usage-form(method='post', action='/admin/device-usage/reward-suggestions')
+            label.device-usage-field(for='suggestionTitleEn')
+              span Title EN
+              input#suggestionTitleEn(type='text', name='titleEn', maxlength='160', required)
+            label.device-usage-field(for='suggestionTitleJa')
+              span Title JA
+              input#suggestionTitleJa(type='text', name='titleJa', maxlength='160')
+            label.device-usage-field(for='suggestionPoints')
+              span Default points
+              input#suggestionPoints(type='number', name='defaultPoints', min='0', max='100000', step='1', value='1', required)
+            label.device-usage-field(for='suggestionNotes')
+              span Notes
+              textarea#suggestionNotes(name='notes', rows='2', maxlength='1000')
+            input(type='hidden', name='active', value='true')
+            button.device-usage-button(type='submit') Save Suggestion
+          if rewardSuggestions && rewardSuggestions.length
+            .device-usage-suggestions
+              each suggestion in rewardSuggestions
+                article.device-usage-suggestion(class=suggestion.active ? '' : 'is-muted')
+                  .device-usage-suggestion__top
+                    strong= suggestion.titleEn
+                    span #{suggestion.defaultPoints} pts
+                  if suggestion.titleJa
+                    p= suggestion.titleJa
+                  p.device-usage-suggestion__meta Used #{suggestion.usageCount} | Last #{suggestion.lastUsedDisplay}
+                  if suggestion.active
+                    form(method='post', action='/admin/device-usage/reward-suggestions/delete', data-confirm='Archive this reward suggestion?')
+                      input(type='hidden', name='id', value=suggestion.id)
+                      button.device-usage-link-button(type='submit') Archive
+          else
+            p.device-usage-empty No reward suggestions yet.
+
+      section.device-usage-panel.device-usage-panel--wide
+        header.device-usage-panel__header
+          div
+            h2 Recent Minutes
+            p Latest 30 device reports
+        if recentRequests && recentRequests.length
+          .device-usage-table-wrap
+            table.device-usage-table.device-usage-table--recent
+              thead
+                tr
+                  th Time
+                  th Result
+                  th Action
+                  th Package
+                  th Category
+                  th Counted
+                  th Learning
+                  th Rolling
+                  th IP
+                  th User Agent
+              tbody
+                each row in recentRequests
+                  tr
+                    td= row.receivedAtDisplay
+                    td
+                      span.device-usage-result(class=row.statusText === 'OK' ? 'device-usage-result--ok' : 'device-usage-result--ng')= row.statusText
+                    td= row.actionDisplay
+                    td= row.packageName
+                    td
+                      span.device-usage-chip(style=`--category-color: ${row.categoryColor};`)= row.categoryDisplay
+                    td= row.countedDisplay
+                    td= row.learningAfter
+                    td= row.rollingAfter
+                    td= row.ip
+                    td= row.userAgent
+        else
+          p.device-usage-empty No device reports yet.
+
+block script
+  script(src='https://d3js.org/d3.v7.min.js', defer)
+  script(type='application/json', id='deviceUsageChartData') !{chartJson}
+  script(src='/js/device_usage_admin.js', defer)
