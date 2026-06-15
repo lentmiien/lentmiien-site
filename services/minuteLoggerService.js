@@ -2867,6 +2867,41 @@ function buildNamedLocationGroups(namedSettings = [], requests = [], options = {
     .sort((left, right) => right.totalMinutes - left.totalMinutes || left.name.localeCompare(right.name));
 }
 
+function buildLocationOverviewMap(namedSettings = [], requests = []) {
+  const nameByGroupKey = buildNamedLocationNameLookup(namedSettings);
+  const points = (Array.isArray(requests) ? requests : [])
+    .map((row) => {
+      const latitude = getRequestLatitude(row);
+      const longitude = getRequestLongitude(row);
+      const receivedAt = getSafeRequestDate(row);
+
+      if (latitude === null || longitude === null || !receivedAt) {
+        return null;
+      }
+
+      const groupKey = getRequestLocationGroupKey(row);
+
+      return {
+        latitude,
+        longitude,
+        groupKey,
+        name: nameByGroupKey.get(groupKey) || '',
+        deviceId: normalizeDimension(row.deviceId, UNKNOWN_DIMENSION),
+        package: normalizeDimension(row.package, UNKNOWN_DIMENSION),
+        active: row.active !== false,
+        receivedAt,
+      };
+    })
+    .filter(Boolean);
+  const bounds = buildLocationBounds(points, namedSettings);
+
+  return {
+    bounds,
+    points,
+    labels: buildNamedLocationLabels(namedSettings, bounds, points),
+  };
+}
+
 async function getMinuteLoggerNamedLocationAnalytics(options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
@@ -2876,28 +2911,33 @@ async function getMinuteLoggerNamedLocationAnalytics(options = {}) {
     settingsModel: options.locationGroupSettingsModel,
   });
   const groupKeys = Array.from(new Set(namedSettings.map((setting) => setting.groupKey).filter(Boolean)));
-  const requests = groupKeys.length
-    ? await leanExec(requestModel.find({
-      endpointPath,
-      receivedAt: { $gte: since },
-      'location.groupKey': { $in: groupKeys },
-    })
-      .sort({ receivedAt: 1 })
-      .select({
-        deviceId: 1,
-        package: 1,
-        location: 1,
-        receivedAt: 1,
-      }))
-    : [];
+  const requests = await leanExec(requestModel.find({
+    endpointPath,
+    receivedAt: { $gte: since },
+    'location.latitude': { $gte: -90, $lte: 90 },
+    'location.longitude': { $gte: -180, $lte: 180 },
+  })
+    .sort({ receivedAt: 1 })
+    .select({
+      deviceId: 1,
+      package: 1,
+      active: 1,
+      location: 1,
+      receivedAt: 1,
+    }));
   const rows = Array.isArray(requests) ? requests : [];
-  const groups = buildNamedLocationGroups(namedSettings, rows, {
+  const namedGroupKeySet = new Set(groupKeys);
+  const namedRows = groupKeys.length
+    ? rows.filter((row) => namedGroupKeySet.has(getRequestLocationGroupKey(row)))
+    : [];
+  const groups = buildNamedLocationGroups(namedSettings, namedRows, {
     now,
     pointSampleLimit: options.pointSampleLimit,
   });
-  const locatedMinutes = rows.filter(hasValidRequestLocation).length;
+  const locatedMinutes = namedRows.filter(hasValidRequestLocation).length;
   const totalMinutes = groups.reduce((sum, group) => sum + group.totalMinutes, 0);
   const activeGroups = groups.filter((group) => group.totalMinutes > 0);
+  const locationMap = buildLocationOverviewMap(namedSettings, rows);
 
   return {
     endpointPath,
@@ -2909,9 +2949,12 @@ async function getMinuteLoggerNamedLocationAnalytics(options = {}) {
     activeNamedLocationCount: activeGroups.length,
     totalMinutes,
     locatedMinutes,
-    deviceCount: new Set(rows.map((row) => normalizeDimension(row.deviceId, UNKNOWN_DIMENSION))).size,
-    packageCount: new Set(rows.map((row) => normalizeDimension(row.package, UNKNOWN_DIMENSION))).size,
+    locationPointCount: locationMap.points.length,
+    namedLocationPointCount: namedRows.filter(hasValidRequestLocation).length,
+    deviceCount: new Set(namedRows.map((row) => normalizeDimension(row.deviceId, UNKNOWN_DIMENSION))).size,
+    packageCount: new Set(namedRows.map((row) => normalizeDimension(row.package, UNKNOWN_DIMENSION))).size,
     busiestLocation: groups[0] || null,
+    locationMap,
     groups,
   };
 }

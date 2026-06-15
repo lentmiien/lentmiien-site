@@ -734,6 +734,8 @@ function buildDailyOverviewCards(analytics = {}) {
 
 function buildNamedLocationOverviewCards(analytics = {}) {
   const totalMinutes = Number(analytics.totalMinutes) || 0;
+  const locationPointCount = Number(analytics.locationPointCount) || 0;
+  const namedLocationPointCount = Number(analytics.namedLocationPointCount) || 0;
   const busiest = analytics.busiestLocation || {};
 
   return [
@@ -747,6 +749,12 @@ function buildNamedLocationOverviewCards(analytics = {}) {
       label: 'Location Groups',
       value: formatNumber(analytics.namedLocationGroupCount),
       helper: 'Saved named coordinate cells',
+    },
+    {
+      label: 'Retained Points',
+      value: formatNumber(locationPointCount),
+      helper: `${formatShare(namedLocationPointCount, locationPointCount)} in named groups`,
+      tone: locationPointCount > 0 ? 'ok' : '',
     },
     {
       label: 'Named Minutes',
@@ -1032,6 +1040,75 @@ function buildLocationPointCloud(pointCloud = {}) {
   };
 }
 
+function normalizeLocationMapDateMs(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function buildLocationOverviewMapPayload(locationMap = {}) {
+  const bounds = locationMap.bounds || null;
+  const points = (Array.isArray(locationMap.points) ? locationMap.points : [])
+    .map((point) => {
+      const latitude = Number(point.latitude);
+      const longitude = Number(point.longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null;
+      }
+
+      return {
+        latitude,
+        longitude,
+        receivedAtMs: normalizeLocationMapDateMs(point.receivedAt),
+        name: point.name || '',
+        deviceId: point.deviceId || 'unknown',
+        package: point.package || 'unknown',
+        active: point.active !== false,
+      };
+    })
+    .filter(Boolean);
+  const labels = (Array.isArray(locationMap.labels) ? locationMap.labels : [])
+    .map((label) => {
+      const latitude = Number(label.latitude);
+      const longitude = Number(label.longitude);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return null;
+      }
+
+      return {
+        name: label.name || 'Named location',
+        latitude,
+        longitude,
+        pointCount: Number(label.pointCount) || 0,
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    bounds,
+    points,
+    labels,
+  };
+}
+
+function buildLocationOverviewMapView(locationMap = {}) {
+  const payload = buildLocationOverviewMapPayload(locationMap);
+  const pointCount = payload.points.length;
+  const namedPointCount = payload.points.filter((point) => point.name).length;
+  const labelCount = payload.labels.length;
+
+  return {
+    hasMap: Boolean(payload.bounds && (pointCount || labelCount)),
+    pointCount,
+    pointCountDisplay: formatNumber(pointCount),
+    namedPointCountDisplay: formatNumber(namedPointCount),
+    labelCountDisplay: formatNumber(labelCount),
+    boundsDisplay: formatBoundsDisplay(payload.bounds),
+    json: safeJson(payload),
+  };
+}
+
 function mapDailyTrend(rows = []) {
   const maxMinutes = Math.max(1, ...(Array.isArray(rows) ? rows : []).map((row) => Number(row.minutes) || 0));
 
@@ -1162,6 +1239,7 @@ function buildDailyAnalyticsViewModel(analytics = {}, options = {}) {
 function buildNamedLocationAnalyticsViewModel(analytics = {}, options = {}) {
   const totalNamedMinutes = Number(analytics.totalMinutes) || 0;
   const groups = (analytics.groups || []).map((group) => mapNamedLocationGroup(group, totalNamedMinutes));
+  const locationOverviewMap = buildLocationOverviewMapView(analytics.locationMap || {});
 
   return {
     pageTitle: 'Minute Logger Location Analytics',
@@ -1172,6 +1250,8 @@ function buildNamedLocationAnalyticsViewModel(analytics = {}, options = {}) {
     sinceDisplay: formatDateTime(analytics.since),
     overviewCards: analytics.generatedAt ? buildNamedLocationOverviewCards(analytics) : [],
     groups,
+    locationOverviewMap,
+    locationOverviewMapJson: locationOverviewMap.json,
     totalNamedMinutes,
     totalNamedMinutesDisplay: `${formatNumber(totalNamedMinutes)} min`,
     maxNamedLocationMinutes: Math.max(1, ...groups.map((group) => Number(group.totalMinutes) || 0)),

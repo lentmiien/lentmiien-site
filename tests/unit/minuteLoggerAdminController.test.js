@@ -800,9 +800,40 @@ describe('minuteLoggerAdminController.namedLocationAnalytics', () => {
       activeNamedLocationCount: 1,
       totalMinutes: 12,
       locatedMinutes: 12,
+      locationPointCount: 2,
+      namedLocationPointCount: 1,
       deviceCount: 1,
       packageCount: 2,
       busiestLocation: { name: 'Home', totalMinutes: 12 },
+      locationMap: {
+        bounds: {
+          minLatitude: 35.4602,
+          maxLatitude: 35.4652,
+          minLongitude: 139.5404,
+          maxLongitude: 139.5454,
+        },
+        points: [
+          {
+            latitude: 35.4602,
+            longitude: 139.5404,
+            receivedAt: new Date('2026-06-06T09:00:00.000Z'),
+            name: 'Home',
+            deviceId: 'tablet-01',
+            package: 'com.example.app',
+            active: true,
+          },
+          {
+            latitude: 35.4652,
+            longitude: 139.5454,
+            receivedAt: new Date('2026-06-06T09:10:00.000Z'),
+            name: '',
+            deviceId: 'tablet-01',
+            package: 'com.example.maps',
+            active: true,
+          },
+        ],
+        labels: [{ name: 'Home', latitude: 35.460, longitude: 139.540, pointCount: 1 }],
+      },
       groups: [
         {
           name: 'Home',
@@ -853,8 +884,17 @@ describe('minuteLoggerAdminController.namedLocationAnalytics', () => {
       expect.objectContaining({
         overviewCards: expect.arrayContaining([
           expect.objectContaining({ label: 'Named Locations', value: '1' }),
+          expect.objectContaining({ label: 'Retained Points', value: '2' }),
           expect.objectContaining({ label: 'Busiest Location', value: 'Home' }),
         ]),
+        locationOverviewMap: expect.objectContaining({
+          hasMap: true,
+          pointCountDisplay: '2',
+          namedPointCountDisplay: '1',
+          labelCountDisplay: '1',
+          boundsDisplay: '35.4602, 139.5404 to 35.4652, 139.5454',
+        }),
+        locationOverviewMapJson: expect.stringContaining('"package":"com.example.maps"'),
         groups: [
           expect.objectContaining({
             name: 'Home',

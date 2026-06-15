@@ -31,6 +31,33 @@ block content
     if loadError
       .minute-logger-alert.minute-logger-alert--error= loadError
     else
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Location Point Cloud
+            span #{locationOverviewMap.pointCountDisplay} retained points, #{locationOverviewMap.labelCountDisplay} named labels
+        if locationOverviewMap && locationOverviewMap.hasMap
+          .minute-logger-overview-map(data-minute-logger-locations-map)
+            .minute-logger-overview-map__stage
+              canvas.minute-logger-overview-map__canvas(
+                width='960'
+                height='520'
+                role='img'
+                aria-label='Retained location point cloud map'
+                data-minute-logger-locations-canvas
+              )
+            .minute-logger-overview-map__meta
+              span
+                i.minute-logger-overview-map__swatch.minute-logger-overview-map__swatch--point
+                | All points
+              span
+                i.minute-logger-overview-map__swatch.minute-logger-overview-map__swatch--named
+                | Named points
+              span #{locationOverviewMap.namedPointCountDisplay} points in named groups
+              span= locationOverviewMap.boundsDisplay
+        else
+          p.minute-logger-empty No retained location points are available for the point cloud.
+
       section.minute-logger-cards
         each card in overviewCards
           article.minute-logger-card(class=card.tone ? `minute-logger-card--${card.tone}` : '')
@@ -181,3 +208,7 @@ block content
                   p.minute-logger-empty This saved name has no retained raw location points.
         else
           p.minute-logger-empty No named location groups have been saved yet.
+
+block script
+  script(type='application/json', id='minuteLoggerLocationsMapData')!= locationOverviewMapJson
+  script(src='/js/minute_logger_locations.js', defer)

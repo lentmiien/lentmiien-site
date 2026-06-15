@@ -1159,6 +1159,60 @@ body,
   white-space: nowrap;
 }
 
+.minute-logger-overview-map {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.minute-logger-overview-map__stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--ml-divider);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 194, 71, 0.05), transparent),
+    var(--ml-bg);
+}
+
+.minute-logger-overview-map__canvas {
+  display: block;
+  width: 100%;
+  height: min(58vh, 34rem);
+  min-height: 25rem;
+}
+
+.minute-logger-overview-map__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1rem;
+  align-items: center;
+  color: var(--ml-text-muted);
+  font-size: 0.88rem;
+}
+
+.minute-logger-overview-map__meta span {
+  display: inline-flex;
+  min-width: 0;
+  gap: 0.38rem;
+  align-items: center;
+}
+
+.minute-logger-overview-map__swatch {
+  width: 0.78rem;
+  height: 0.78rem;
+  flex: 0 0 0.78rem;
+  border-radius: 3px;
+}
+
+.minute-logger-overview-map__swatch--point {
+  background: var(--ml-info);
+  opacity: 0.72;
+}
+
+.minute-logger-overview-map__swatch--named {
+  background: var(--ml-accent);
+}
+
 .minute-logger-transition-list,
 .minute-logger-matrix,
 .minute-logger-named-locations {
@@ -1472,6 +1526,11 @@ body,
   }
 
   .minute-logger-battery-chart__svg {
+    min-height: 22rem;
+  }
+
+  .minute-logger-overview-map__canvas {
+    height: 22rem;
     min-height: 22rem;
   }
 

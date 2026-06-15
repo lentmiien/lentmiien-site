@@ -1112,6 +1112,16 @@ describe('minuteLoggerService', () => {
             groupKey: '35.470,139.550',
           },
         },
+        {
+          receivedAt: new Date('2026-06-06T12:30:00.000Z'),
+          deviceId: 'phone-01',
+          package: 'com.example.maps',
+          location: {
+            latitude: 35.4652,
+            longitude: 139.5454,
+            groupKey: '35.465,139.545',
+          },
+        },
       ])),
     };
 
@@ -1129,18 +1139,33 @@ describe('minuteLoggerService', () => {
     expect(requestModel.find).toHaveBeenCalledWith({
       endpointPath: '/secret-minute-logger',
       receivedAt: { $gte: new Date('2026-04-08T03:00:00.000Z') },
-      'location.groupKey': {
-        $in: ['35.460,139.540', '35.461,139.541', '35.470,139.550'],
-      },
+      'location.latitude': { $gte: -90, $lte: 90 },
+      'location.longitude': { $gte: -180, $lte: 180 },
     });
+    const query = requestModel.find.mock.results[0].value;
+    expect(query.select).toHaveBeenCalledWith(expect.objectContaining({
+      active: 1,
+      location: 1,
+      receivedAt: 1,
+    }));
     expect(result).toMatchObject({
       namedLocationCount: 2,
       namedLocationGroupCount: 3,
       activeNamedLocationCount: 2,
       totalMinutes: 3,
+      locationPointCount: 4,
+      namedLocationPointCount: 3,
       deviceCount: 2,
       packageCount: 3,
     });
+    expect(result.locationMap.points).toHaveLength(4);
+    expect(result.locationMap.points).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        groupKey: '35.465,139.545',
+        name: '',
+      }),
+    ]));
+    expect(result.locationMap.labels.map((label) => label.name)).toEqual(['Home', 'Office']);
     expect(result.groups.map((group) => group.name)).toEqual(['Home', 'Office']);
     expect(result.groups[0]).toMatchObject({
       name: 'Home',
