@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Device usage tile illustration</title>
+  <desc id="desc">A compact dashboard showing learning, management, entertainment, and reward points.</desc>
+  <defs>
+    <linearGradient id="deviceUsageBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#101318"/>
+      <stop offset="58%" stop-color="#171C22"/>
+      <stop offset="100%" stop-color="#252C35"/>
+    </linearGradient>
+    <linearGradient id="deviceUsageLearning" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2BC8A4"/>
+      <stop offset="100%" stop-color="#62A8FF"/>
+    </linearGradient>
+    <linearGradient id="deviceUsageReward" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFB84D"/>
+      <stop offset="100%" stop-color="#E35757"/>
+    </linearGradient>
+    <filter id="deviceUsageGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.2 0 0 0 0 0.8 0 0 0 0 0.66 0 0 0 0.72 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#deviceUsageBg)"/>
+  <circle cx="112" cy="80" r="88" fill="#2BC8A4" fill-opacity="0.1"/>
+  <circle cx="536" cy="318" r="120" fill="#FFB84D" fill-opacity="0.1"/>
+  <path d="M76 304c62-52 118-68 168-48 48 19 91 18 130-4 62-34 126-22 192 38" fill="none" stroke="#303946" stroke-width="4"/>
+
+  <rect x="94" y="66" width="452" height="268" rx="30" fill="#171C22" stroke="#303946" stroke-width="4"/>
+  <rect x="122" y="94" width="396" height="212" rx="20" fill="#1E242C" stroke="#36404E" stroke-width="2"/>
+
+  <g transform="translate(152 124)">
+    <rect x="0" y="0" width="164" height="154" rx="22" fill="#101318" stroke="#303946" stroke-width="3"/>
+    <circle cx="82" cy="62" r="42" fill="none" stroke="#303946" stroke-width="12"/>
+    <path d="M47 62a35 35 0 0 1 61-23" fill="none" stroke="url(#deviceUsageLearning)" stroke-width="12" stroke-linecap="round" filter="url(#deviceUsageGlow)"/>
+    <path d="M82 62l24-24" stroke="#2BC8A4" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="82" cy="62" r="9" fill="#62A8FF"/>
+    <rect x="28" y="118" width="108" height="14" rx="7" fill="#252C35"/>
+    <rect x="28" y="118" width="70" height="14" rx="7" fill="#2BC8A4"/>
+  </g>
+
+  <g transform="translate(344 118)">
+    <rect x="0" y="0" width="126" height="32" rx="16" fill="#252C35" stroke="#2BC8A4" stroke-opacity="0.42" stroke-width="2"/>
+    <circle cx="22" cy="16" r="7" fill="#2BC8A4"/>
+    <rect x="40" y="11" width="62" height="10" rx="5" fill="#62A8FF"/>
+
+    <g transform="translate(0 56)">
+      <rect x="0" y="0" width="142" height="126" rx="18" fill="#101318" stroke="#303946" stroke-width="3"/>
+      <rect x="18" y="22" width="28" height="76" rx="9" fill="#2BC8A4"/>
+      <rect x="57" y="48" width="28" height="50" rx="9" fill="#62A8FF"/>
+      <rect x="96" y="30" width="28" height="68" rx="9" fill="#FFB84D"/>
+      <path d="M14 108h114" stroke="#36404E" stroke-width="6" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <g transform="translate(212 252)">
+    <path d="M52 0l12 28 30 3-23 20 7 29-26-15-26 15 7-29L10 31l30-3L52 0Z" fill="url(#deviceUsageReward)" filter="url(#deviceUsageGlow)"/>
+    <circle cx="52" cy="44" r="18" fill="#101318"/>
+    <path d="M43 45l7 7 14-18" fill="none" stroke="#FFB84D" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g transform="translate(330 260)">
+    <rect x="0" y="0" width="132" height="22" rx="11" fill="#252C35" stroke="#36404E" stroke-width="2"/>
+    <rect x="14" y="7" width="44" height="8" rx="4" fill="#2BC8A4"/>
+    <rect x="72" y="7" width="44" height="8" rx="4" fill="#FFB84D"/>
+  </g>
+</svg>
