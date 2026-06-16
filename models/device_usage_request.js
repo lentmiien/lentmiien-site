@@ -37,6 +37,7 @@ const DeviceUsageRequestSchema = new Schema({
   countedMinutesInWindowAfter: { type: Number, required: true, default: 0 },
   rollingLimitMinutes: { type: Number, required: true, default: 60 },
   rollingWindowMinutes: { type: Number, required: true, default: 90 },
+  maxVolume: { type: Number, required: true, default: 100 },
   countsTowardLimit: { type: Boolean, required: true, default: false, index: true },
   allowed: { type: Boolean, required: true, index: true },
   action: { type: String, required: true, default: 'allow', index: true },

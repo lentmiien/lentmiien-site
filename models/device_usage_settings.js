@@ -6,6 +6,17 @@ const DeviceUsageSettingsSchema = new mongoose.Schema({
   rollingWindowMinutes: { type: Number, required: true, min: 1, max: 10080, default: 90 },
   learningRequiredMinutes: { type: Number, required: true, min: 0, max: 1440, default: 30 },
   learningFreeMinutes: { type: Number, required: true, min: 0, max: 1440, default: 30 },
+  maxVolume: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100,
+    default: 100,
+    validate: {
+      validator: (value) => Number.isInteger(value) && value % 10 === 0,
+      message: 'maxVolume must use 10 step increments.',
+    },
+  },
   updatedBy: { type: String, default: null },
 }, {
   timestamps: true,

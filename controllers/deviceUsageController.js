@@ -1,5 +1,6 @@
 const logger = require('../utils/logger');
 const {
+  DEVICE_USAGE_DEFAULT_MAX_VOLUME,
   getCurrentDeviceUsageStatus,
   recordAndEvaluateDeviceUsage,
 } = require('../services/deviceUsageService');
@@ -29,6 +30,7 @@ async function check(req, res) {
         allowed: false,
         action: 'wait',
         reasonCode: 'server_error',
+        maxVolume: DEVICE_USAGE_DEFAULT_MAX_VOLUME,
         messages: {
           en: 'Device usage service failed.',
           ja: '端末利用サービスでエラーが発生しました。',
@@ -60,6 +62,7 @@ async function status(req, res) {
         allowed: false,
         action: 'wait',
         reasonCode: 'server_error',
+        maxVolume: DEVICE_USAGE_DEFAULT_MAX_VOLUME,
         messages: {
           en: 'Device usage service failed.',
           ja: '端末利用サービスでエラーが発生しました。',

@@ -51,6 +51,7 @@ function mapSettings(settings) {
     rollingLimitDisplay: `${formatNumber(settings.rollingLimitMinutes)} min`,
     learningRequiredDisplay: `${formatNumber(settings.learningRequiredMinutes)} min`,
     learningFreeDisplay: `${formatNumber(settings.learningFreeMinutes)} min`,
+    maxVolumeDisplay: `${formatNumber(settings.maxVolume)}%`,
     updatedAtDisplay: formatDateTime(settings.updatedAt),
     updatedByDisplay: settings.updatedBy || 'N/A',
   };
@@ -96,6 +97,7 @@ function buildFallbackDashboard() {
       rollingWindowMs: 90 * 60 * 1000,
       learningRequiredMinutes: 30,
       learningFreeMinutes: 30,
+      maxVolume: 100,
       updatedAt: null,
       updatedBy: null,
     },
@@ -216,6 +218,7 @@ exports.updateSettings = async (req, res) => {
         rollingWindowMinutes: settings.rollingWindowMinutes,
         learningRequiredMinutes: settings.learningRequiredMinutes,
         learningFreeMinutes: settings.learningFreeMinutes,
+        maxVolume: settings.maxVolume,
         user: req.user?.name || 'unknown',
       },
     });

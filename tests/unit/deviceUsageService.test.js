@@ -2,10 +2,13 @@ const {
   CATEGORY_ENTERTAINMENT,
   CATEGORY_LEARNING,
   CATEGORY_MANAGEMENT,
+  DEVICE_USAGE_DEFAULT_MAX_VOLUME,
   calculateDeviceUsageLimitTiming,
+  getDeviceUsageSettings,
   normalizeDevicePackageName,
   normalizeDeviceUsageCategory,
   recordAndEvaluateDeviceUsage,
+  updateDeviceUsageSettings,
 } = require('../../services/deviceUsageService');
 
 function createLeanQuery(result) {
@@ -86,6 +89,7 @@ const settings = {
   rollingWindowMinutes: 90,
   learningRequiredMinutes: 30,
   learningFreeMinutes: 30,
+  maxVolume: 100,
 };
 
 describe('device usage service', () => {
@@ -115,6 +119,7 @@ describe('device usage service', () => {
       allowed: false,
       action: 'learn_first',
       reasonCode: 'learning_required',
+      maxVolume: 100,
       package: {
         name: 'com.example.app',
         category: CATEGORY_ENTERTAINMENT,
@@ -136,6 +141,33 @@ describe('device usage service', () => {
       allowed: false,
       action: 'learn_first',
       reasonCode: 'learning_required',
+    }));
+  });
+
+  test('returns the configured max volume in device usage responses', async () => {
+    const now = new Date('2026-05-27T00:00:00.000Z');
+    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+      learningMinutes: 30,
+      countedRows: [],
+    });
+
+    const result = await recordAndEvaluateDeviceUsage(createRequest(), {
+      requestModel,
+      packageRuleModel,
+      rewardModel,
+      now,
+      settings: {
+        ...settings,
+        maxVolume: 70,
+      },
+    });
+
+    expect(result.responsePayload.maxVolume).toBe(70);
+    expect(requestModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      maxVolume: 70,
+      responsePayload: expect.objectContaining({
+        maxVolume: 70,
+      }),
     }));
   });
 
@@ -343,8 +375,62 @@ describe('device usage service', () => {
       logged: false,
     });
     expect(result.responsePayload.reasonCode).toBe('learning_required');
+    expect(result.responsePayload.maxVolume).toBe(100);
     expect(requestModel.countDocuments).not.toHaveBeenCalled();
     expect(requestModel.create).not.toHaveBeenCalled();
+  });
+
+  test('normalizes and updates max volume settings in 10 step increments', async () => {
+    expect((await getDeviceUsageSettings({
+      settings: {
+        ...settings,
+        maxVolume: 75,
+      },
+    })).maxVolume).toBe(DEVICE_USAGE_DEFAULT_MAX_VOLUME);
+
+    const settingsModel = {
+      findOneAndUpdate: jest.fn().mockReturnValue(createLeanQuery({
+        ...settings,
+        key: 'default',
+        maxVolume: 80,
+        updatedBy: 'admin-user',
+      })),
+    };
+
+    const result = await updateDeviceUsageSettings({
+      rollingLimitMinutes: '60',
+      rollingWindowMinutes: '90',
+      learningRequiredMinutes: '30',
+      learningFreeMinutes: '30',
+      maxVolume: '80',
+    }, {
+      settingsModel,
+      updatedBy: 'admin-user',
+    });
+
+    expect(result.maxVolume).toBe(80);
+    expect(settingsModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { key: 'default' },
+      {
+        $set: expect.objectContaining({
+          maxVolume: 80,
+          updatedBy: 'admin-user',
+        }),
+        $setOnInsert: { key: 'default' },
+      },
+      expect.objectContaining({
+        new: true,
+        upsert: true,
+      })
+    );
+
+    await expect(updateDeviceUsageSettings({
+      rollingLimitMinutes: '60',
+      rollingWindowMinutes: '90',
+      learningRequiredMinutes: '30',
+      learningFreeMinutes: '30',
+      maxVolume: '85',
+    }, { settingsModel })).rejects.toThrow('Max volume must use 10 step increments.');
   });
 
   test('calculateDeviceUsageLimitTiming reports time until below the rolling limit', () => {

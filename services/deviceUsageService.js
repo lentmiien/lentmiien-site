@@ -12,9 +12,12 @@ const DEVICE_USAGE_DEFAULT_LIMIT_MINUTES = 60;
 const DEVICE_USAGE_DEFAULT_WINDOW_MINUTES = 90;
 const DEVICE_USAGE_DEFAULT_LEARNING_REQUIRED_MINUTES = 30;
 const DEVICE_USAGE_DEFAULT_LEARNING_FREE_MINUTES = 30;
+const DEVICE_USAGE_DEFAULT_MAX_VOLUME = 100;
 const DEVICE_USAGE_MAX_WINDOW_MINUTES = 7 * 24 * 60;
 const DEVICE_USAGE_MAX_DAILY_MINUTES = 24 * 60;
 const DEVICE_USAGE_MAX_LIMIT_MINUTES = 100000;
+const DEVICE_USAGE_MAX_VOLUME = 100;
+const DEVICE_USAGE_MAX_VOLUME_STEP = 10;
 const DEVICE_USAGE_DASHBOARD_DAYS = 7;
 const UNKNOWN_PACKAGE_NAME = 'unknown';
 const PACKAGE_NAME_MAX_LENGTH = 240;
@@ -143,6 +146,11 @@ function normalizeStoredInteger(value, fallback, min, max) {
   return parsed;
 }
 
+function normalizeStoredSteppedInteger(value, fallback, min, max, step) {
+  const parsed = normalizeStoredInteger(value, fallback, min, max);
+  return parsed % step === 0 ? parsed : fallback;
+}
+
 function parseBoundedInteger(value, label, min, max) {
   const trimmed = String(value ?? '').trim();
   if (!/^\d+$/.test(trimmed)) {
@@ -152,6 +160,15 @@ function parseBoundedInteger(value, label, min, max) {
   const parsed = Number.parseInt(trimmed, 10);
   if (parsed < min || parsed > max) {
     throw new DeviceUsageSettingsError(`${label} must be between ${min} and ${max}.`);
+  }
+
+  return parsed;
+}
+
+function parseSteppedBoundedInteger(value, label, min, max, step) {
+  const parsed = parseBoundedInteger(value, label, min, max);
+  if (parsed % step !== 0) {
+    throw new DeviceUsageSettingsError(`${label} must use ${step} step increments.`);
   }
 
   return parsed;
@@ -216,6 +233,13 @@ function normalizeSettings(raw = {}) {
     0,
     DEVICE_USAGE_MAX_DAILY_MINUTES
   );
+  const maxVolume = normalizeStoredSteppedInteger(
+    raw.maxVolume,
+    DEVICE_USAGE_DEFAULT_MAX_VOLUME,
+    0,
+    DEVICE_USAGE_MAX_VOLUME,
+    DEVICE_USAGE_MAX_VOLUME_STEP
+  );
 
   return {
     key: raw.key || DEVICE_USAGE_SETTINGS_KEY,
@@ -224,6 +248,7 @@ function normalizeSettings(raw = {}) {
     rollingWindowMs: rollingWindowMinutes * MINUTE_MS,
     learningRequiredMinutes,
     learningFreeMinutes,
+    maxVolume,
     updatedAt: raw.updatedAt || raw.createdAt || null,
     updatedBy: raw.updatedBy || null,
   };
@@ -249,6 +274,7 @@ async function getDeviceUsageSettings(options = {}) {
         rollingWindowMinutes: DEVICE_USAGE_DEFAULT_WINDOW_MINUTES,
         learningRequiredMinutes: DEVICE_USAGE_DEFAULT_LEARNING_REQUIRED_MINUTES,
         learningFreeMinutes: DEVICE_USAGE_DEFAULT_LEARNING_FREE_MINUTES,
+        maxVolume: DEVICE_USAGE_DEFAULT_MAX_VOLUME,
         updatedBy: null,
       },
     },
@@ -288,6 +314,13 @@ async function updateDeviceUsageSettings(input = {}, options = {}) {
     0,
     DEVICE_USAGE_MAX_DAILY_MINUTES
   );
+  const maxVolume = parseSteppedBoundedInteger(
+    input.maxVolume,
+    'Max volume',
+    0,
+    DEVICE_USAGE_MAX_VOLUME,
+    DEVICE_USAGE_MAX_VOLUME_STEP
+  );
   const updatedBy = typeof options.updatedBy === 'string' && options.updatedBy.trim()
     ? options.updatedBy.trim()
     : null;
@@ -300,6 +333,7 @@ async function updateDeviceUsageSettings(input = {}, options = {}) {
         rollingWindowMinutes,
         learningRequiredMinutes,
         learningFreeMinutes,
+        maxVolume,
         updatedBy,
       },
       $setOnInsert: {
@@ -693,6 +727,7 @@ function buildDeviceUsageResponse({
     allowed: decision.allowed,
     action: decision.action,
     reasonCode: decision.reasonCode,
+    maxVolume: settings.maxVolume,
     messages: {
       en: DEVICE_USAGE_TEXT.en.reasons[decision.reasonCode] || DEVICE_USAGE_TEXT.en.reasons.allowed,
       ja: DEVICE_USAGE_TEXT.ja.reasons[decision.reasonCode] || DEVICE_USAGE_TEXT.ja.reasons.allowed,
@@ -736,7 +771,32 @@ function buildDeviceUsageResponse({
   };
 }
 
-function mapStoredDeviceUsageResult(storedRequest, duplicate = true) {
+function withMaxVolume(payload, settings = {}) {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  const fallback = normalizeStoredSteppedInteger(
+    settings.maxVolume,
+    DEVICE_USAGE_DEFAULT_MAX_VOLUME,
+    0,
+    DEVICE_USAGE_MAX_VOLUME,
+    DEVICE_USAGE_MAX_VOLUME_STEP
+  );
+
+  return {
+    ...payload,
+    maxVolume: normalizeStoredSteppedInteger(
+      payload.maxVolume,
+      fallback,
+      0,
+      DEVICE_USAGE_MAX_VOLUME,
+      DEVICE_USAGE_MAX_VOLUME_STEP
+    ),
+  };
+}
+
+function mapStoredDeviceUsageResult(storedRequest, duplicate = true, settings = {}) {
   const payload = storedRequest.responsePayload && typeof storedRequest.responsePayload === 'object'
     ? storedRequest.responsePayload
     : {
@@ -746,14 +806,15 @@ function mapStoredDeviceUsageResult(storedRequest, duplicate = true) {
       action: storedRequest.action || (storedRequest.allowed === false ? 'wait' : 'allow'),
       reasonCode: storedRequest.reasonCode || 'allowed',
     };
+  const responsePayload = withMaxVolume(payload, settings);
 
   return {
-    allowed: payload.allowed !== false,
-    statusText: payload.status || (payload.allowed === false ? 'NG' : 'OK'),
-    action: payload.action || 'allow',
-    reasonCode: payload.reasonCode || 'allowed',
+    allowed: responsePayload.allowed !== false,
+    statusText: responsePayload.status || (responsePayload.allowed === false ? 'NG' : 'OK'),
+    action: responsePayload.action || 'allow',
+    reasonCode: responsePayload.reasonCode || 'allowed',
     responseStatusCode: storedRequest.responseStatusCode || 200,
-    responsePayload: payload,
+    responsePayload,
     duplicate,
     logged: !duplicate,
   };
@@ -841,7 +902,8 @@ async function recordAndEvaluateDeviceUsage(req, options = {}) {
   const existingMinuteRequest = await findExistingMinuteRequest(requestModel, endpointPath, minuteStart, minuteEnd);
 
   if (existingMinuteRequest) {
-    return mapStoredDeviceUsageResult(existingMinuteRequest, true);
+    const settings = await getDeviceUsageSettings(options);
+    return mapStoredDeviceUsageResult(existingMinuteRequest, true, settings);
   }
 
   const evaluated = await evaluateDeviceUsageRequest(req, {
@@ -889,6 +951,7 @@ async function recordAndEvaluateDeviceUsage(req, options = {}) {
       countedMinutesInWindowAfter: evaluated.countedMinutesInWindowAfter,
       rollingLimitMinutes: evaluated.settings.rollingLimitMinutes,
       rollingWindowMinutes: evaluated.settings.rollingWindowMinutes,
+      maxVolume: evaluated.settings.maxVolume,
       countsTowardLimit: evaluated.decision.allowed && evaluated.decision.countsTowardLimit,
       allowed: evaluated.decision.allowed,
       action: evaluated.decision.action,
@@ -907,7 +970,7 @@ async function recordAndEvaluateDeviceUsage(req, options = {}) {
       throw error;
     }
 
-    return mapStoredDeviceUsageResult(duplicateRequest, true);
+    return mapStoredDeviceUsageResult(duplicateRequest, true, evaluated.settings);
   }
 
   return requestLog;
@@ -1395,6 +1458,7 @@ module.exports = {
   DEVICE_USAGE_DEFAULT_LEARNING_FREE_MINUTES,
   DEVICE_USAGE_DEFAULT_LEARNING_REQUIRED_MINUTES,
   DEVICE_USAGE_DEFAULT_LIMIT_MINUTES,
+  DEVICE_USAGE_DEFAULT_MAX_VOLUME,
   DEVICE_USAGE_DEFAULT_WINDOW_MINUTES,
   DEVICE_USAGE_SETTINGS_KEY,
   DEVICE_USAGE_TEXT,

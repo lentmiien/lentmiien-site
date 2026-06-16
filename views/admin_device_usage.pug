@@ -54,11 +54,19 @@ block content
             label.device-usage-field(for='learningFreeMinutes')
               span Free learning
               input#learningFreeMinutes(type='number', name='learningFreeMinutes', min='0', max='1440', step='1', value=settings.learningFreeMinutes, required)
+            label.device-usage-field(for='maxVolume')
+              span Max volume
+              select#maxVolume(name='maxVolume', required)
+                - for (let volume = 0; volume <= 100; volume += 10)
+                  option(value=volume, selected=settings.maxVolume === volume)= `${volume}%`
             button.device-usage-button(type='submit') Save
           dl.device-usage-details
             div
               dt Endpoint
               dd= endpointPath
+            div
+              dt Max Volume
+              dd= settings.maxVolumeDisplay
             div
               dt Updated
               dd= settings.updatedAtDisplay
