@@ -1181,6 +1181,38 @@ body,
   min-height: 25rem;
 }
 
+.minute-logger-overview-map__tooltip {
+  position: absolute;
+  z-index: 2;
+  max-width: min(16rem, calc(100% - 1rem));
+  border: 1px solid rgba(25, 227, 227, 0.38);
+  border-radius: 6px;
+  padding: 0.45rem 0.58rem;
+  background: rgba(14, 15, 19, 0.95);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+  color: var(--ml-text);
+  font-size: 0.82rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.minute-logger-overview-map__tooltip strong,
+.minute-logger-overview-map__tooltip span {
+  display: block;
+}
+
+.minute-logger-overview-map__tooltip strong {
+  font-weight: 800;
+}
+
+.minute-logger-overview-map__tooltip span {
+  margin-top: 0.14rem;
+  color: var(--ml-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .minute-logger-overview-map__meta {
   display: flex;
   flex-wrap: wrap;
