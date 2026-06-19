@@ -47,6 +47,7 @@ const TEXT = {
     noValue: 'N/A',
   },
 };
+const RESPONSE_PREVIEW_MAX_LENGTH = 180;
 
 function getText(locale) {
   return TEXT[locale] || TEXT.en;
@@ -141,6 +142,34 @@ function formatRollingTiming(dashboard, locale = 'en') {
 function getActionLabel(action, locale = 'en') {
   const actionText = (DEVICE_USAGE_TEXT[locale] || DEVICE_USAGE_TEXT.en).actions;
   return actionText[action] || action;
+}
+
+function stringifyResponsePayload(value, space = 2) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  try {
+    const json = JSON.stringify(value, null, space);
+    return typeof json === 'string' ? json : '';
+  } catch (error) {
+    return String(value);
+  }
+}
+
+function formatResponseBody(value) {
+  return stringifyResponsePayload(value, 2).trim();
+}
+
+function formatResponsePreview(value) {
+  const compact = stringifyResponsePayload(value, 0).replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return '';
+  }
+
+  return compact.length > RESPONSE_PREVIEW_MAX_LENGTH
+    ? `${compact.slice(0, RESPONSE_PREVIEW_MAX_LENGTH - 3)}...`
+    : compact;
 }
 
 function buildOverviewCards(dashboard, options = {}) {
@@ -277,6 +306,7 @@ function mapPackageStats(rows = [], options = {}) {
 function mapRecentRequest(entry, options = {}) {
   const locale = options.locale || 'en';
   const category = normalizeDeviceUsageCategory(entry.packageCategory);
+  const hasResponseBody = entry.responsePayload !== undefined && entry.responsePayload !== null;
 
   return {
     receivedAtDisplay: formatDateTime(entry.receivedAt, locale),
@@ -293,6 +323,9 @@ function mapRecentRequest(entry, options = {}) {
     rollingAfter: formatNumber(entry.countedMinutesInWindowAfter || 0, locale),
     ip: entry.ip || 'N/A',
     userAgent: entry.userAgent || 'N/A',
+    hasResponseBody,
+    responseBodyDisplay: hasResponseBody ? formatResponseBody(entry.responsePayload) : 'N/A',
+    responseBodyPreview: hasResponseBody ? formatResponsePreview(entry.responsePayload) : 'N/A',
   };
 }
 

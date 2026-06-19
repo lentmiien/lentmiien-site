@@ -296,6 +296,7 @@ block content
                 tr
                   th Time
                   th Result
+                  th Response
                   th Action
                   th Package
                   th Category
@@ -310,6 +311,15 @@ block content
                     td= row.receivedAtDisplay
                     td
                       span.device-usage-result(class=row.statusText === 'OK' ? 'device-usage-result--ok' : 'device-usage-result--ng')= row.statusText
+                    td
+                      if row.hasResponseBody
+                        details.device-usage-response-preview
+                          summary
+                            span.device-usage-response-preview__label Preview
+                            span.device-usage-response-preview__summary= row.responseBodyPreview
+                          pre= row.responseBodyDisplay
+                      else
+                        span.device-usage-muted N/A
                     td= row.actionDisplay
                     td= row.packageName
                     td
