@@ -6,13 +6,20 @@ const {
   CookbookRecipeModel,
 } = require('../database');
 const logger = require('../utils/logger');
-const { getRequestCounterDashboard } = require('../services/incomingRequestCounterService');
+const {
+  COMMENT_MAX_LENGTH,
+  DeviceUsageSettingsError,
+  REWARD_TITLE_MAX_LENGTH,
+  addDeviceUsageReward,
+  getDeviceUsageDashboard,
+} = require('../services/deviceUsageService');
 const CookingCalendarService = require('../services/cookingCalendarService');
 const {
   buildOverviewCards,
   formatDateTime,
-  mapDailyMinuteStats,
-} = require('../utils/requestCounterDashboardView');
+  formatNumber,
+  mapDailyStats,
+} = require('../utils/deviceUsageDashboardView');
 const {
   PUBLIC_TOBUY_LIST_OWNER,
   consumePublicTobuyAddQuota,
@@ -45,18 +52,68 @@ function getSubmitPath(req) {
   return req.baseUrl || req.path || '/';
 }
 
-function buildPublicCounterCard(dashboard) {
-  const currentMinutesCard = buildOverviewCards(dashboard, { locale: 'ja' })
-    .find((card) => card.key === 'currentMinutes');
+function joinPublicPath(req, suffix) {
+  const basePath = getSubmitPath(req).replace(/\/+$/, '') || '/';
+  const normalizedSuffix = String(suffix || '').replace(/^\/+/, '');
 
-  if (!currentMinutesCard) {
+  return basePath === '/'
+    ? `/${normalizedSuffix}`
+    : `${basePath}/${normalizedSuffix}`;
+}
+
+function findOverviewCard(cards, key) {
+  return (Array.isArray(cards) ? cards : []).find((card) => card.key === key) || null;
+}
+
+function buildPublicDeviceUsageCard(card, fallback = {}) {
+  if (!card && !fallback.value) {
     return null;
   }
 
   return {
-    key: 'currentLimitTiming',
-    value: currentMinutesCard.helper || currentMinutesCard.value,
-    tone: currentMinutesCard.tone,
+    key: fallback.key || card?.key || '',
+    label: fallback.label || card?.label || '',
+    value: fallback.value || card?.helper || card?.value || '',
+    helper: fallback.helper || card?.value || '',
+    tone: fallback.tone || card?.tone || '',
+  };
+}
+
+function mapPublicRewardSuggestions(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((suggestion) => suggestion && suggestion.active !== false)
+    .map((suggestion) => {
+      const titleEn = String(suggestion.titleEn || '').trim();
+      const titleJa = String(suggestion.titleJa || '').trim();
+      const defaultPoints = Number(suggestion.defaultPoints) || 0;
+
+      return {
+        id: suggestion.id || '',
+        titleEn,
+        titleJa,
+        displayTitle: titleJa || titleEn || 'ご褒美',
+        defaultPoints,
+        pointsDisplay: `${formatNumber(defaultPoints, 'ja')}点`,
+      };
+    })
+    .filter((suggestion) => suggestion.id && suggestion.titleEn);
+}
+
+function buildDefaultRewardForm() {
+  return {
+    suggestionId: '',
+    titleEn: '',
+    points: '1',
+    comment: '',
+  };
+}
+
+function mapRewardForm(input = {}) {
+  return {
+    suggestionId: String(input.suggestionId || '').trim(),
+    titleEn: String(input.titleEn || '').trim().slice(0, REWARD_TITLE_MAX_LENGTH),
+    points: String(input.points || '1').trim() || '1',
+    comment: String(input.comment || '').trim().slice(0, COMMENT_MAX_LENGTH),
   };
 }
 
@@ -73,27 +130,62 @@ async function fetchOpenTasks() {
   }));
 }
 
-async function fetchWifeRequestCounterStats() {
+async function fetchPublicDeviceUsageStats() {
   try {
-    const dashboard = await getRequestCounterDashboard();
+    const dashboard = await getDeviceUsageDashboard();
+    const overviewCards = buildOverviewCards(dashboard, { locale: 'ja' });
+    const rollingUsageCard = findOverviewCard(overviewCards, 'rollingUsage');
+    const learningGateCard = findOverviewCard(overviewCards, 'learningGate');
+    const rewardPoints = Number(dashboard.rewardSummary?.points) || 0;
+    const rewardCount = Number(dashboard.rewardSummary?.count) || 0;
 
     return {
       loadError: null,
       generatedAtDisplay: formatDateTime(dashboard.generatedAt, 'ja'),
-      currentMinutesCard: buildPublicCounterCard(dashboard),
-      dailyMinuteStats: mapDailyMinuteStats(dashboard.dailyMinuteStats, { locale: 'ja' }),
+      rollingUsageCard: buildPublicDeviceUsageCard(rollingUsageCard, {
+        key: 'rollingUsage',
+        label: 'ローリング利用',
+        value: rollingUsageCard?.helper || `残り ${formatNumber(dashboard.rollingRemainingMinutes, 'ja')}分`,
+        helper: rollingUsageCard?.value || '',
+      }),
+      learningGateCard: buildPublicDeviceUsageCard(learningGateCard, {
+        key: 'learningGate',
+        label: '学習条件',
+        value: learningGateCard?.helper || (
+          dashboard.entertainmentUnlocked
+            ? '娯楽を利用できます'
+            : `学習が残り ${formatNumber(dashboard.learningRemainingMinutes, 'ja')}分`
+        ),
+        helper: learningGateCard?.value || '',
+      }),
+      rewardSummary: {
+        points: rewardPoints,
+        count: rewardCount,
+        pointsDisplay: `${formatNumber(rewardPoints, 'ja')}点`,
+        countDisplay: `${formatNumber(rewardCount, 'ja')}件`,
+      },
+      dailyStats: mapDailyStats(dashboard.dailyStats, { locale: 'ja' }),
+      rewardSuggestions: mapPublicRewardSuggestions(dashboard.rewardSuggestions),
     };
   } catch (error) {
-    logger.error('Failed to load wife view request counter stats', {
+    logger.error('Failed to load public device usage stats', {
       category: 'public-tobuy',
       metadata: { error: error.message },
     });
 
     return {
-      loadError: '分カウンターを読み込めませんでした。',
+      loadError: '端末利用を読み込めませんでした。',
       generatedAtDisplay: null,
-      currentMinutesCard: null,
-      dailyMinuteStats: [],
+      rollingUsageCard: null,
+      learningGateCard: null,
+      rewardSummary: {
+        points: 0,
+        count: 0,
+        pointsDisplay: '0点',
+        countDisplay: '0件',
+      },
+      dailyStats: [],
+      rewardSuggestions: [],
     };
   }
 }
@@ -144,15 +236,15 @@ async function fetchTodayCookingCalendar() {
 }
 
 async function renderPage(req, res, options = {}) {
-  const [tasks, requestCounterStats, todayCooking] = await Promise.all([
+  const [tasks, deviceUsageStats, todayCooking] = await Promise.all([
     options.tasks ? Promise.resolve(options.tasks) : fetchOpenTasks(),
-    fetchWifeRequestCounterStats(),
+    fetchPublicDeviceUsageStats(),
     fetchTodayCookingCalendar(),
   ]);
   const errorMessage = options.errorMessage || null;
-  const successMessage = options.successMessage || (req.query && req.query.added === '1'
-    ? '追加しました。'
-    : null);
+  const successMessage = options.successMessage
+    || (req.query && req.query.reward === '1' ? 'ご褒美を追加しました。' : null)
+    || (req.query && req.query.added === '1' ? '追加しました。' : null);
   const statusCode = options.statusCode || 200;
 
   res.locals.pageLang = 'ja';
@@ -168,7 +260,9 @@ async function renderPage(req, res, options = {}) {
     successMessage,
     formTitle: options.formTitle || '',
     submitPath: getSubmitPath(req),
-    requestCounterStats,
+    rewardSubmitPath: joinPublicPath(req, 'rewards'),
+    rewardForm: options.rewardForm || buildDefaultRewardForm(),
+    deviceUsageStats,
     todayCooking,
   });
 }
@@ -243,6 +337,50 @@ exports.addPublicTask = async (req, res) => {
       });
     } catch (_) {
       return res.status(500).send('追加できません。');
+    }
+  }
+};
+
+function getRewardErrorMessage(error) {
+  if (error instanceof DeviceUsageSettingsError) {
+    if (/title/i.test(error.message)) {
+      return 'ご褒美の内容を入力してください。';
+    }
+
+    if (/points/i.test(error.message)) {
+      return 'ポイントは0から100000までの整数で入力してください。';
+    }
+  }
+
+  return 'ご褒美を追加できません。';
+}
+
+exports.addPublicDeviceUsageReward = async (req, res) => {
+  const rewardForm = mapRewardForm(req.body || {});
+
+  try {
+    await addDeviceUsageReward(req.body || {}, {
+      updatedBy: 'public-tobuy',
+    });
+
+    return res.redirect(`${getSubmitPath(req)}?reward=1`);
+  } catch (error) {
+    const isSettingsError = error instanceof DeviceUsageSettingsError;
+    if (!isSettingsError) {
+      logger.error('Failed to add public device usage reward', {
+        category: 'public-tobuy',
+        metadata: { error: error.message },
+      });
+    }
+
+    try {
+      return await renderPage(req, res, {
+        statusCode: isSettingsError ? error.status || 400 : 500,
+        errorMessage: getRewardErrorMessage(error),
+        rewardForm,
+      });
+    } catch (_) {
+      return res.status(500).send('ご褒美を追加できません。');
     }
   }
 };

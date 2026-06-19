@@ -22,17 +22,85 @@ block content
 
       section.public-tobuy-panel.public-tobuy-counter-panel
         .public-tobuy-section-head.public-tobuy-section-head--split
-          h2 分カウンター
-          if requestCounterStats && requestCounterStats.generatedAtDisplay
-            span.public-tobuy-section-meta= `最終更新 ${requestCounterStats.generatedAtDisplay}`
-        if requestCounterStats && requestCounterStats.loadError
-          p.public-tobuy-empty= requestCounterStats.loadError
-        else if requestCounterStats && requestCounterStats.currentMinutesCard
-          - const card = requestCounterStats.currentMinutesCard;
-          article.public-tobuy-counter-card(class=card.tone ? `public-tobuy-counter-card--${card.tone}` : '')
-            p.public-tobuy-counter-card__value.public-tobuy-counter-card__value--primary= card.value
+          h2 端末利用
+          if deviceUsageStats && deviceUsageStats.generatedAtDisplay
+            span.public-tobuy-section-meta= `最終更新 ${deviceUsageStats.generatedAtDisplay}`
+        if deviceUsageStats && deviceUsageStats.loadError
+          p.public-tobuy-empty= deviceUsageStats.loadError
+        else if deviceUsageStats && (deviceUsageStats.rollingUsageCard || deviceUsageStats.learningGateCard)
+          .public-tobuy-usage-cards
+            if deviceUsageStats.rollingUsageCard
+              - const rollingCard = deviceUsageStats.rollingUsageCard;
+              article.public-tobuy-counter-card(class=rollingCard.tone ? `public-tobuy-counter-card--${rollingCard.tone}` : '')
+                p.public-tobuy-counter-card__label= rollingCard.label
+                p.public-tobuy-counter-card__value.public-tobuy-counter-card__value--primary= rollingCard.value
+                if rollingCard.helper
+                  p.public-tobuy-counter-card__helper= rollingCard.helper
+            if deviceUsageStats.learningGateCard
+              - const learningCard = deviceUsageStats.learningGateCard;
+              article.public-tobuy-counter-card(class=learningCard.tone ? `public-tobuy-counter-card--${learningCard.tone}` : '')
+                p.public-tobuy-counter-card__label= learningCard.label
+                p.public-tobuy-counter-card__value.public-tobuy-counter-card__value--primary= learningCard.value
+                if learningCard.helper
+                  p.public-tobuy-counter-card__helper= learningCard.helper
         else
-          p.public-tobuy-empty 分カウンターはまだありません。
+          p.public-tobuy-empty 端末利用の記録はまだありません。
+
+      section.public-tobuy-panel.public-tobuy-rewards-panel
+        .public-tobuy-section-head.public-tobuy-section-head--split
+          h2 ご褒美
+          if deviceUsageStats && deviceUsageStats.rewardSummary
+            span.public-tobuy-section-meta= `今日 ${deviceUsageStats.rewardSummary.pointsDisplay}`
+        if deviceUsageStats && deviceUsageStats.loadError
+          p.public-tobuy-empty= deviceUsageStats.loadError
+        else
+          if deviceUsageStats && deviceUsageStats.rewardSummary
+            .public-tobuy-reward-summary
+              strong.public-tobuy-reward-summary__points= deviceUsageStats.rewardSummary.pointsDisplay
+              span.public-tobuy-reward-summary__meta= `今日の合計・${deviceUsageStats.rewardSummary.countDisplay}`
+          form.public-tobuy-form.public-tobuy-reward-form(method='post', action=rewardSubmitPath)
+            if deviceUsageStats && deviceUsageStats.rewardSuggestions && deviceUsageStats.rewardSuggestions.length
+              label.public-tobuy-label(for='publicRewardSuggestion') 候補
+              select#publicRewardSuggestion.public-tobuy-select(name='suggestionId')
+                option(value='') 自由入力
+                each suggestion in deviceUsageStats.rewardSuggestions
+                  option(
+                    value=suggestion.id,
+                    data-title-en=suggestion.titleEn,
+                    data-points=suggestion.defaultPoints,
+                    selected=rewardForm && rewardForm.suggestionId === suggestion.id
+                  ) #{suggestion.displayTitle}（#{suggestion.pointsDisplay}）
+            .public-tobuy-form-grid
+              label.public-tobuy-field(for='rewardTitleEn')
+                span ご褒美の内容
+                input#rewardTitleEn.public-tobuy-input(
+                  type='text'
+                  name='titleEn'
+                  value=rewardForm ? rewardForm.titleEn : ''
+                  maxlength='160'
+                  placeholder='読書をがんばった'
+                  autocomplete='off'
+                )
+              label.public-tobuy-field.public-tobuy-field--points(for='rewardPoints')
+                span ポイント
+                input#rewardPoints.public-tobuy-input(
+                  type='number'
+                  name='points'
+                  value=rewardForm ? rewardForm.points : '1'
+                  min='0'
+                  max='100000'
+                  step='1'
+                  inputmode='numeric'
+                )
+            label.public-tobuy-field(for='rewardComment')
+              span メモ
+              textarea#rewardComment.public-tobuy-textarea(
+                name='comment'
+                rows='3'
+                maxlength='1000'
+                placeholder='がんばったことなど'
+              )= rewardForm ? rewardForm.comment : ''
+            button.public-tobuy-button(type='submit') ご褒美を追加
 
       section.public-tobuy-panel.public-tobuy-cooking-panel
         .public-tobuy-section-head.public-tobuy-section-head--split
@@ -84,29 +152,32 @@ block content
       section.public-tobuy-panel.public-tobuy-daily-panel
         .public-tobuy-section-head.public-tobuy-section-head--split
           h2 日別の分数
-          span.public-tobuy-section-meta 保持期間内の完了日
-        if requestCounterStats && requestCounterStats.loadError
-          p.public-tobuy-empty= requestCounterStats.loadError
-        else if requestCounterStats && requestCounterStats.dailyMinuteStats && requestCounterStats.dailyMinuteStats.length
+          span.public-tobuy-section-meta カテゴリー別
+        if deviceUsageStats && deviceUsageStats.loadError
+          p.public-tobuy-empty= deviceUsageStats.loadError
+        else if deviceUsageStats && deviceUsageStats.dailyStats && deviceUsageStats.dailyStats.length
           .public-tobuy-days
-            each day in requestCounterStats.dailyMinuteStats
+            each day in deviceUsageStats.dailyStats
               .public-tobuy-day
                 .public-tobuy-day__top
-                  span.public-tobuy-day__date= day.dateKey
+                  span.public-tobuy-day__date= day.isToday ? `${day.dateKey}（今日）` : day.dateKey
                   strong= day.totalDurationDisplay
                 .public-tobuy-day__bar(style=`--total-percent: ${day.totalPercent}%;`)
                   span.public-tobuy-day__bar-total
                     each category in day.categories
                       span.public-tobuy-day__bar-category(
                         style=`--category-width: ${category.percent}%; --category-color: ${category.color};`
-                        title=`${category.displayName || category.name}: ${category.durationDisplay}`
+                        title=`${category.label}: ${category.durationDisplay}`
                       )
                 if day.categories && day.categories.length
                   ul.public-tobuy-day__categories
                     each category in day.categories
                       li.public-tobuy-day__category(style=`--category-color: ${category.color};`)
                         span.public-tobuy-day__category-swatch
-                        span.public-tobuy-day__category-name= category.displayName || category.name
+                        span.public-tobuy-day__category-name= category.label
                         span.public-tobuy-day__category-duration= category.durationDisplay
         else
-          p.public-tobuy-empty 7日間の保持期間に、完了した日はまだありません。
+          p.public-tobuy-empty 端末利用の分数はまだありません。
+
+block script
+  script(src='/js/public_tobuy_list.js', defer)
