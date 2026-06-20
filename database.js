@@ -70,6 +70,7 @@ const CookingCalendarV2Model = require('./models/CookingCalendarV2');
 // Health log
 const HealthEntry = require('./models/healthentry');
 const MyLifeLogEntry = require('./models/my_life_log_entry');
+const MyLifeLogImportState = require('./models/my_life_log_import_state');
 const MyLifeLogReminder = require('./models/my_life_log_reminder');
 // Exchange rates
 const ExchangeRate = require('./models/exchange_rate');
@@ -213,6 +214,7 @@ module.exports = {
   CookingCalendarV2Model,
   HealthEntry,
   MyLifeLogEntry,
+  MyLifeLogImportState,
   MyLifeLogReminder,
   ExchangeRate,
   AgentModel,

@@ -139,6 +139,7 @@ const parseCsvText = (text) => new Promise((resolve, reject) => {
 
   parseString(stripBom(text), {
     headers: (parsedHeaders) => parsedHeaders.map((header) => stripBom(header).trim()),
+    discardUnmappedColumns: true,
     ignoreEmpty: true,
     trim: true,
   })

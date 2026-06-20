@@ -48,15 +48,15 @@ block content
 
     .life-log-import-panel
       .life-log-import-heading
-        h2 CSV import
-        p.mb-0 Upload a measurement CSV, review detected columns, then map them to life log labels.
+        h2 Data import
+        p.mb-0 Upload a measurement CSV or Samsung Health ZIP, review the preview, then import into the basic life log category.
       form.life-log-import-upload(method="post", action=`${lifeLogPath}/import/preview`, enctype="multipart/form-data")
         .row.g-3.align-items-end
           .col-md-8
-            label(for="life-log-csv-file") CSV file
-            input#life-log-csv-file.form-control(type="file", name="csv_file", accept=".csv,text/csv", required)
+            label(for="life-log-csv-file") CSV or ZIP file
+            input#life-log-csv-file.form-control(type="file", name="csv_file", accept=".csv,.zip,text/csv,application/zip", required)
           .col-md-4.d-flex.justify-content-md-end
-            button.btn.btn-dark(type="submit") Preview mapping
+            button.btn.btn-dark(type="submit") Preview import
 
     if entries && entries.length
       .life-log-layout-controls

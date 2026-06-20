@@ -1,0 +1,96 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/my_life_log.css")
+
+block content
+  - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
+  - const supportedFiles = (preview.files || []).filter((file) => file.supported);
+  - const unsupportedFiles = preview.unsupportedFiles || [];
+  .life-log-page
+    .life-log-hero
+      h1.mb-2 Import Samsung Health ZIP
+      p.mb-0= fileName
+      .life-log-actions
+        a.btn.btn-outline-dark.btn-sm.mt-3(href=lifeLogPath) Back to timeline
+
+    .life-log-import-summary
+      .life-log-import-stat
+        span.life-log-import-stat-label Window start
+        strong= preview.windowStartDisplay
+      .life-log-import-stat
+        span.life-log-import-stat-label Window end
+        strong= preview.windowEndDisplay
+      .life-log-import-stat
+        span.life-log-import-stat-label Importable
+        strong #{preview.importableEntryCount} entries
+      .life-log-import-stat
+        span.life-log-import-stat-label Rows
+        strong #{preview.eligibleRowCount} eligible / #{preview.rowCount} total
+      .life-log-import-stat
+        span.life-log-import-stat-label CSV files
+        strong #{preview.supportedFileCount} supported / #{preview.csvFileCount} found
+      .life-log-import-stat
+        span.life-log-import-stat-label Date range
+        strong #{preview.firstDate || 'n/a'} - #{preview.lastDate || 'n/a'}
+
+    if preview.checkpointDisplay
+      .life-log-import-warning
+        | Previous Samsung Health imports are recorded through #{preview.checkpointDisplay}; older rows in this ZIP will be skipped.
+    if preview.afterWindowRows
+      .life-log-import-warning
+        | #{preview.afterWindowRows} rows are after the last full day and will wait for a future import.
+    if preview.invalidRows
+      .life-log-import-warning
+        | #{preview.invalidRows} supported rows have invalid or missing timestamps and will be skipped.
+
+    if supportedFiles.length
+      h2.life-log-import-section-title.mt-4 Supported Samsung Health data
+      .life-log-import-table-wrap.mt-2
+        table.life-log-import-table
+          thead
+            tr
+              th Dataset
+              th Eligible rows
+              th Entries
+              th Date range
+              th Labels
+          tbody
+            each file in supportedFiles
+              tr(class=file.entryCount ? '' : 'is-muted')
+                td
+                  strong= file.displayName
+                  .life-log-import-muted= file.datasetName
+                td #{file.eligibleRowCount} / #{file.rowCount}
+                td= file.entryCount
+                td #{file.firstDate || 'n/a'} - #{file.lastDate || 'n/a'}
+                td.life-log-import-samples
+                  if file.labels && file.labels.length
+                    = file.labels.join(', ')
+                  else
+                    span.life-log-import-muted n/a
+
+    if unsupportedFiles.length
+      h2.life-log-import-section-title.mt-4 Skipped data
+      .life-log-import-table-wrap.mt-2
+        table.life-log-import-table
+          thead
+            tr
+              th Dataset
+              th Rows
+              th Reason
+          tbody
+            each file in unsupportedFiles
+              tr.is-muted
+                td
+                  strong= file.displayName
+                  .life-log-import-muted= file.datasetName || file.fileName
+                td= file.rowCount
+                td= file.skipReason
+
+    form.life-log-import-map(method="post", action=`${lifeLogPath}/import/samsung-health`)
+      input(type="hidden", name="token", value=token)
+      input(type="hidden", name="file_name", value=fileName)
+      .life-log-import-actions
+        a.btn.btn-outline-dark(href=lifeLogPath) Cancel
+        button.btn.btn-dark(type="submit", disabled=!preview.importableEntryCount) Import Samsung Health data

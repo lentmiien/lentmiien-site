@@ -8,6 +8,9 @@ const MyLifeLogEntrySchema = new Schema({
   value: { type: String, trim: true, default: '' },
   text: { type: String, trim: true, default: '' },
   v_log_data: { type: String, default: '' },
+  source: { type: String, trim: true, default: '' },
+  sourceId: { type: String, trim: true, default: '' },
+  sourceFile: { type: String, trim: true, default: '' },
   timestamp: { type: Date, required: true },
 }, {
   timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
@@ -17,5 +20,7 @@ MyLifeLogEntrySchema.index({ timestamp: -1 });
 MyLifeLogEntrySchema.index({ label: 1 });
 MyLifeLogEntrySchema.index({ type: 1 });
 MyLifeLogEntrySchema.index({ type: 1, label: 1, timestamp: -1 });
+MyLifeLogEntrySchema.index({ source: 1, timestamp: -1 });
+MyLifeLogEntrySchema.index({ sourceId: 1 });
 
 module.exports = mongoose.model('my_life_log_entry', MyLifeLogEntrySchema);

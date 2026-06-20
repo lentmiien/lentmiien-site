@@ -1,0 +1,70 @@
+extends layout
+
+block styles
+  link(rel="stylesheet", href="/css/my_life_log.css")
+
+block content
+  - const lifeLogPath = lifeLogBasePath || '/admin/life_log';
+  - const supportedFiles = (parsedImport.files || []).filter((item) => item.supported);
+  .life-log-page
+    .life-log-hero
+      h1.mb-2 Samsung Health import result
+      p.mb-0= fileName
+      .life-log-actions
+        a.btn.btn-outline-dark.btn-sm.mt-3(href=lifeLogPath) Back to timeline
+
+    .life-log-import-summary
+      .life-log-import-stat
+        span.life-log-import-stat-label Imported
+        strong #{result.importedEntries} entries
+      .life-log-import-stat
+        span.life-log-import-stat-label Duplicates
+        strong #{result.duplicateEntries} entries
+      .life-log-import-stat
+        span.life-log-import-stat-label Window end
+        strong= parsedImport.windowEndDisplay
+      .life-log-import-stat
+        span.life-log-import-stat-label Source rows
+        strong #{parsedImport.eligibleRowCount} usable / #{parsedImport.rowCount} total
+      .life-log-import-stat
+        span.life-log-import-stat-label Supported CSV files
+        strong #{parsedImport.supportedFileCount} / #{parsedImport.csvFileCount}
+      .life-log-import-stat
+        span.life-log-import-stat-label New checkpoint
+        strong= parsedImport.windowEndDisplay
+
+    .life-log-import-result
+      if result.importedEntries
+        p #{result.importedEntries} Samsung Health entries were saved as basic life log entries.
+      else
+        p No new Samsung Health entries were saved.
+      if result.duplicateEntries
+        p #{result.duplicateEntries} values were skipped because their Samsung source IDs were already imported.
+      if parsedImport.beforeWindowRows
+        p #{parsedImport.beforeWindowRows} rows were skipped because they were before the import window.
+      if parsedImport.afterWindowRows
+        p #{parsedImport.afterWindowRows} rows were skipped because they were after the last full day.
+      if parsedImport.invalidRows
+        p #{parsedImport.invalidRows} rows had invalid or missing timestamps.
+      if parsedImport.emptyRows
+        p #{parsedImport.emptyRows} eligible rows had no supported values.
+
+    if supportedFiles.length
+      h2.life-log-import-section-title Supported data processed
+      .life-log-import-table-wrap.mt-2
+        table.life-log-import-table
+          thead
+            tr
+              th Dataset
+              th Eligible rows
+              th Entries considered
+              th Date range
+          tbody
+            each file in supportedFiles
+              tr(class=file.entryCount ? '' : 'is-muted')
+                td
+                  strong= file.displayName
+                  .life-log-import-muted= file.datasetName
+                td #{file.eligibleRowCount} / #{file.rowCount}
+                td= file.entryCount
+                td #{file.firstDate || 'n/a'} - #{file.lastDate || 'n/a'}

@@ -107,4 +107,65 @@ describe('MyLifeLogService CSV import', () => {
       skippedRows: 1,
     });
   });
+
+  test('deduplicates source-id imports without same-day label collapsing', async () => {
+    const firstTimestamp = new Date(2026, 5, 19, 8, 0, 0);
+    const secondTimestamp = new Date(2026, 5, 19, 9, 0, 0);
+    mockLifeLogEntry.find.mockReturnValueOnce(mockQuery([
+      { sourceId: 'samsung-health:heart-rate:existing:heart_rate_bpm' },
+    ]));
+    mockLifeLogEntry.insertMany.mockResolvedValueOnce([
+      { label: 'heart_rate_bpm', timestamp: secondTimestamp },
+    ]);
+
+    const result = await service.importCsvRecords({
+      records: [
+        {
+          sourceRow: 2,
+          timestamp: firstTimestamp,
+          dateKey: '2026-06-19',
+          values: [
+            {
+              label: 'heart_rate_bpm',
+              value: '70',
+              type: 'basic',
+              sourceId: 'samsung-health:heart-rate:existing:heart_rate_bpm',
+              importSource: 'samsung_health',
+            },
+          ],
+        },
+        {
+          sourceRow: 3,
+          timestamp: secondTimestamp,
+          dateKey: '2026-06-19',
+          values: [
+            {
+              label: 'heart_rate_bpm',
+              value: '72',
+              type: 'basic',
+              sourceId: 'samsung-health:heart-rate:new:heart_rate_bpm',
+              importSource: 'samsung_health',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(mockHealthEntry.find).not.toHaveBeenCalled();
+    expect(mockLifeLogEntry.insertMany).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: 'basic',
+        label: 'heart_rate_bpm',
+        value: '72',
+        source: 'samsung_health',
+        sourceId: 'samsung-health:heart-rate:new:heart_rate_bpm',
+        timestamp: secondTimestamp,
+      }),
+    ], { ordered: false });
+    expect(result).toMatchObject({
+      importedEntries: 1,
+      duplicateEntries: 1,
+      skippedRows: 1,
+    });
+  });
 });

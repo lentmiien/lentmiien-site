@@ -4,6 +4,7 @@ const path = require('path');
 const logger = require('../utils/logger');
 const myLifeLogService = require('../services/myLifeLogService');
 const myLifeLogCsvImportService = require('../services/myLifeLogCsvImportService');
+const myLifeLogSamsungHealthImportService = require('../services/myLifeLogSamsungHealthImportService');
 const ollama = require('../utils/Ollama_API');
 
 const LIFE_LOG_TYPES = ['basic', 'medical', 'diary', 'visual_log'];
@@ -137,25 +138,36 @@ const ensureLifeLogImportDir = async () => {
   await fs.promises.mkdir(LIFE_LOG_IMPORT_DIR, { recursive: true });
 };
 
-const getLifeLogImportPath = (token) => {
+const normalizeImportExtension = (extension = 'csv') => {
+  const normalized = String(extension || '').replace(/^\./, '').toLowerCase();
+  return ['csv', 'zip'].includes(normalized) ? normalized : 'csv';
+};
+
+const getLifeLogImportPath = (token, extension = 'csv') => {
   if (!LIFE_LOG_IMPORT_TOKEN_RE.test(String(token || ''))) {
     throw new Error('Invalid import token.');
   }
-  return path.join(LIFE_LOG_IMPORT_DIR, `${token}.csv`);
+  return path.join(LIFE_LOG_IMPORT_DIR, `${token}.${normalizeImportExtension(extension)}`);
 };
 
-const saveLifeLogImportFile = async (buffer) => {
+const saveLifeLogImportFile = async (buffer, extension = 'csv') => {
   await ensureLifeLogImportDir();
   const token = crypto.randomBytes(16).toString('hex');
-  await fs.promises.writeFile(getLifeLogImportPath(token), buffer);
+  await fs.promises.writeFile(getLifeLogImportPath(token, extension), buffer);
   return token;
 };
 
-const readLifeLogImportFile = async (token) => fs.promises.readFile(getLifeLogImportPath(token), 'utf8');
+const readLifeLogImportFile = async (token, extension = 'csv') => {
+  const normalizedExtension = normalizeImportExtension(extension);
+  if (normalizedExtension === 'csv') {
+    return fs.promises.readFile(getLifeLogImportPath(token, normalizedExtension), 'utf8');
+  }
+  return fs.promises.readFile(getLifeLogImportPath(token, normalizedExtension));
+};
 
-const removeLifeLogImportFile = async (token) => {
+const removeLifeLogImportFile = async (token, extension = 'csv') => {
   try {
-    await fs.promises.unlink(getLifeLogImportPath(token));
+    await fs.promises.unlink(getLifeLogImportPath(token, extension));
   } catch (error) {
     if (error?.code !== 'ENOENT') {
       logger.warning('Unable to remove life log import file', {
@@ -446,10 +458,19 @@ exports.life_log_delete_entry = async (req, res) => {
 
 exports.life_log_import_preview = async (req, res) => {
   if (!req.file || !req.file.buffer) {
-    return res.status(400).render('error_page', { error: 'Please choose a CSV file to import.' });
+    return res.status(400).render('error_page', { error: 'Please choose a CSV or ZIP file to import.' });
   }
 
   try {
+    const fileName = req.file.originalname || '';
+    const isZip = fileName.toLowerCase().endsWith('.zip')
+      || req.file.mimetype === 'application/zip'
+      || req.file.mimetype === 'application/x-zip-compressed';
+
+    if (isZip) {
+      return exports.life_log_samsung_health_import_preview(req, res);
+    }
+
     const csvText = req.file.buffer.toString('utf8');
     const labelOptions = myLifeLogService.getLabelSuggestions(new Date()).all;
     const preview = await myLifeLogCsvImportService.buildLifeLogImportPreview(csvText, {
@@ -472,6 +493,31 @@ exports.life_log_import_preview = async (req, res) => {
     });
     return res.status(400).render('error_page', {
       error: error?.message || 'Unable to preview this CSV file.',
+    });
+  }
+};
+
+exports.life_log_samsung_health_import_preview = async (req, res) => {
+  try {
+    const fileName = req.file?.originalname || 'Samsung Health.zip';
+    const preview = await myLifeLogSamsungHealthImportService.buildPreview(req.file.buffer, {
+      fileName,
+    });
+    const token = await saveLifeLogImportFile(req.file.buffer, 'zip');
+
+    return res.render('my_life_log_samsung_health_import', {
+      preview,
+      token,
+      fileName,
+      lifeLogBasePath: getLifeLogBasePath(req),
+    });
+  } catch (error) {
+    logger.error('Failed to preview Samsung Health life log import', {
+      category: 'life_log',
+      metadata: { message: error?.message || error },
+    });
+    return res.status(400).render('error_page', {
+      error: error?.message || 'Unable to preview this Samsung Health ZIP file.',
     });
   }
 };
@@ -509,6 +555,44 @@ exports.life_log_import = async (req, res) => {
     });
     return res.status(500).render('error_page', {
       error: error?.message || 'Unable to import this CSV file.',
+    });
+  }
+};
+
+exports.life_log_samsung_health_import = async (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+
+  if (!token) {
+    return res.status(400).render('error_page', { error: 'Missing import token.' });
+  }
+
+  try {
+    const zipBuffer = await readLifeLogImportFile(token, 'zip');
+    const parsedImport = await myLifeLogSamsungHealthImportService.buildImportRecords(zipBuffer);
+    const result = await myLifeLogService.importCsvRecords({
+      records: parsedImport.records,
+    });
+    await myLifeLogSamsungHealthImportService.markImportComplete({
+      importedThrough: parsedImport.windowEnd,
+      fileName: req.body?.file_name || 'Samsung Health ZIP',
+      result,
+    });
+    await removeLifeLogImportFile(token, 'zip');
+
+    return res.render('my_life_log_samsung_health_import_result', {
+      fileName: req.body?.file_name || 'Samsung Health ZIP',
+      parsedImport,
+      result,
+      lifeLogBasePath: getLifeLogBasePath(req),
+    });
+  } catch (error) {
+    await removeLifeLogImportFile(token, 'zip');
+    logger.error('Failed to import Samsung Health life log ZIP', {
+      category: 'life_log',
+      metadata: { message: error?.message || error },
+    });
+    return res.status(500).render('error_page', {
+      error: error?.message || 'Unable to import this Samsung Health ZIP file.',
     });
   }
 };

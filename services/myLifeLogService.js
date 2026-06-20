@@ -3,6 +3,8 @@ const { MyLifeLogEntry, HealthEntry } = require('../database');
 
 const MAX_LIST_LIMIT = 500;
 const SUGGESTION_LIMIT = 10;
+const SOURCE_ID_QUERY_BATCH_SIZE = 1000;
+const INSERT_BATCH_SIZE = 1000;
 
 const pad2 = (value) => String(value).padStart(2, '0');
 const formatDateLocal = (date) => {
@@ -42,6 +44,7 @@ const normalizeLabel = (label) => {
 const duplicateLabelKey = (label) => normalizeLabel(label).toLowerCase();
 
 const buildDateLabelKey = (dateKey, label) => `${dateKey}::${duplicateLabelKey(label)}`;
+const buildSourceKey = (sourceId) => `source::${String(sourceId || '').trim()}`;
 
 const extractMapEntries = (value) => {
   if (!value) return [];
@@ -262,6 +265,32 @@ class MyLifeLogService {
     return existingKeys;
   }
 
+  async collectExistingSourceKeys({ sourceIds = [] } = {}) {
+    const normalizedSourceIds = Array.from(new Set(
+      sourceIds.map((sourceId) => String(sourceId || '').trim()).filter(Boolean)
+    ));
+    const existingKeys = new Set();
+
+    if (!normalizedSourceIds.length) {
+      return existingKeys;
+    }
+
+    for (let index = 0; index < normalizedSourceIds.length; index += SOURCE_ID_QUERY_BATCH_SIZE) {
+      const batch = normalizedSourceIds.slice(index, index + SOURCE_ID_QUERY_BATCH_SIZE);
+      const entries = await this.LifeLogEntry.find(
+        { sourceId: { $in: batch } },
+        { sourceId: 1 }
+      ).lean();
+      entries.forEach((entry) => {
+        if (entry?.sourceId) {
+          existingKeys.add(buildSourceKey(entry.sourceId));
+        }
+      });
+    }
+
+    return existingKeys;
+  }
+
   async importCsvRecords({ records = [] } = {}) {
     const summary = {
       sourceRows: Array.isArray(records) ? records.length : 0,
@@ -282,6 +311,9 @@ class MyLifeLogService {
               value: value.value === undefined ? '' : String(value.value).trim(),
               type: ['basic', 'medical'].includes(value.type) ? value.type : 'basic',
               source: value.source || '',
+              importSource: value.importSource || record.importSource || '',
+              sourceId: value.sourceId ? String(value.sourceId).trim() : '',
+              sourceFile: value.sourceFile || record.sourceFile || '',
             }))
             .filter((value) => value.label && value.value)
           : [];
@@ -298,20 +330,34 @@ class MyLifeLogService {
       return summary;
     }
 
-    const dateKeys = normalizedRecords.map((record) => record.dateKey);
-    const labels = normalizedRecords.flatMap((record) => record.values.map((value) => value.label));
+    const dateLabelRecords = normalizedRecords.map((record) => ({
+      ...record,
+      values: record.values.filter((value) => !value.sourceId),
+    })).filter((record) => record.values.length);
+    const dateKeys = dateLabelRecords.map((record) => record.dateKey);
+    const labels = dateLabelRecords.flatMap((record) => record.values.map((value) => value.label));
+    const sourceIds = normalizedRecords.flatMap((record) => (
+      record.values.map((value) => value.sourceId).filter(Boolean)
+    ));
     const existingKeys = await this.collectExistingImportKeys({ dateKeys, labels });
+    const existingSourceKeys = await this.collectExistingSourceKeys({ sourceIds });
     const seenKeys = new Set(existingKeys);
+    const seenSourceKeys = new Set(existingSourceKeys);
     const duplicateRows = new Set();
     const documents = [];
 
     normalizedRecords.forEach((record) => {
       let rowImportCount = 0;
       record.values.forEach((value) => {
-        const key = buildDateLabelKey(record.dateKey, value.label);
-        if (seenKeys.has(key)) {
+        const hasSourceId = Boolean(value.sourceId);
+        const key = hasSourceId
+          ? buildSourceKey(value.sourceId)
+          : buildDateLabelKey(record.dateKey, value.label);
+        const keySet = hasSourceId ? seenSourceKeys : seenKeys;
+
+        if (keySet.has(key)) {
           summary.duplicateEntries += 1;
-          duplicateRows.add(record.sourceRow || record.dateKey);
+          duplicateRows.add(record.sourceRow || value.sourceId || record.dateKey);
           return;
         }
 
@@ -321,9 +367,12 @@ class MyLifeLogService {
           value: value.value,
           text: '',
           v_log_data: '',
+          source: value.importSource,
+          sourceId: value.sourceId,
+          sourceFile: value.sourceFile,
           timestamp: record.timestamp,
         });
-        seenKeys.add(key);
+        keySet.add(key);
         rowImportCount += 1;
       });
 
@@ -338,13 +387,16 @@ class MyLifeLogService {
       return summary;
     }
 
-    const inserted = await this.LifeLogEntry.insertMany(documents, { ordered: false });
-    summary.importedEntries = inserted.length;
-    inserted.forEach((entry) => {
-      if (entry.label) {
-        this.updateLabelCache(entry.label, entry.timestamp);
-      }
-    });
+    for (let index = 0; index < documents.length; index += INSERT_BATCH_SIZE) {
+      const batch = documents.slice(index, index + INSERT_BATCH_SIZE);
+      const inserted = await this.LifeLogEntry.insertMany(batch, { ordered: false });
+      summary.importedEntries += inserted.length;
+      inserted.forEach((entry) => {
+        if (entry.label) {
+          this.updateLabelCache(entry.label, entry.timestamp);
+        }
+      });
+    }
 
     return summary;
   }
