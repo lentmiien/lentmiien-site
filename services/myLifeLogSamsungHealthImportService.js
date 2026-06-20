@@ -730,12 +730,30 @@ const parseSamsungZip = async (buffer, {
     && entry.name.toLowerCase().endsWith('.csv')
     && !entry.name.includes('/jsons/')
   ));
+  const jsonFileCount = entries.filter((entry) => (
+    !entry.isDirectory
+    && entry.name.toLowerCase().endsWith('.json')
+  )).length;
+  const nestedZipFileCount = entries.filter((entry) => (
+    !entry.isDirectory
+    && entry.name.toLowerCase().endsWith('.zip')
+  )).length;
+  const otherFileCount = entries.filter((entry) => (
+    !entry.isDirectory
+    && !entry.name.toLowerCase().endsWith('.csv')
+    && !entry.name.toLowerCase().endsWith('.json')
+    && !entry.name.toLowerCase().endsWith('.zip')
+  )).length;
   const records = [];
   const summary = {
     formatId: 'samsung_health_zip',
     formatName: 'Samsung Health ZIP',
     source: SAMSUNG_SOURCE,
+    fileCount: entries.filter((entry) => !entry.isDirectory).length,
     csvFileCount: csvEntries.length,
+    jsonFileCount,
+    nestedZipFileCount,
+    otherFileCount,
     supportedFileCount: 0,
     skippedFileCount: 0,
     rowCount: 0,

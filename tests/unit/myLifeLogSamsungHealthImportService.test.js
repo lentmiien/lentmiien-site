@@ -81,6 +81,9 @@ describe('myLifeLogSamsungHealthImportService', () => {
     const zip = createStoredZip([{
       name: 'Samsung Health/samsunghealth_user_20260620/com.samsung.health.weight.20260620.csv',
       content: samsungWeightCsv,
+    }, {
+      name: 'Samsung Health/samsunghealth_user_20260620/jsons/com.samsung.health.weight/weight-1.extra_data.json',
+      content: '{"source":"sample"}',
     }]);
 
     const preview = await parseSamsungZip(zip, {
@@ -89,6 +92,8 @@ describe('myLifeLogSamsungHealthImportService', () => {
     });
 
     expect(preview.csvFileCount).toBe(1);
+    expect(preview.fileCount).toBe(2);
+    expect(preview.jsonFileCount).toBe(1);
     expect(preview.supportedFileCount).toBe(1);
     expect(preview.eligibleRowCount).toBe(1);
     expect(preview.afterWindowRows).toBe(1);

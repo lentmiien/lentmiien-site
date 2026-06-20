@@ -31,6 +31,9 @@ block content
         span.life-log-import-stat-label CSV files
         strong #{preview.supportedFileCount} supported / #{preview.csvFileCount} found
       .life-log-import-stat
+        span.life-log-import-stat-label JSON payloads
+        strong= preview.jsonFileCount || 0
+      .life-log-import-stat
         span.life-log-import-stat-label Date range
         strong #{preview.firstDate || 'n/a'} - #{preview.lastDate || 'n/a'}
 
@@ -43,6 +46,9 @@ block content
     if preview.invalidRows
       .life-log-import-warning
         | #{preview.invalidRows} supported rows have invalid or missing timestamps and will be skipped.
+    if preview.jsonFileCount
+      .life-log-import-warning
+        | #{preview.jsonFileCount} Samsung Health JSON payload files were found. The importer currently uses the CSV measurement exports and leaves these referenced payload attachments out of the life log import.
 
     if supportedFiles.length
       h2.life-log-import-section-title.mt-4 Supported Samsung Health data

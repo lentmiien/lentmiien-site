@@ -30,6 +30,9 @@ block content
         span.life-log-import-stat-label Supported CSV files
         strong #{parsedImport.supportedFileCount} / #{parsedImport.csvFileCount}
       .life-log-import-stat
+        span.life-log-import-stat-label JSON payloads
+        strong= parsedImport.jsonFileCount || 0
+      .life-log-import-stat
         span.life-log-import-stat-label New checkpoint
         strong= parsedImport.windowEndDisplay
 
@@ -48,6 +51,8 @@ block content
         p #{parsedImport.invalidRows} rows had invalid or missing timestamps.
       if parsedImport.emptyRows
         p #{parsedImport.emptyRows} eligible rows had no supported values.
+      if parsedImport.jsonFileCount
+        p #{parsedImport.jsonFileCount} Samsung Health JSON payload files were present and were not imported directly.
 
     if supportedFiles.length
       h2.life-log-import-section-title Supported data processed

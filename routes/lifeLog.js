@@ -5,10 +5,11 @@ const lifeLogController = require('../controllers/mylifelogcontroller');
 const lifeLogReminderController = require('../controllers/myLifeLogReminderController');
 
 const router = express.Router();
+const LIFE_LOG_IMPORT_FILE_SIZE_MB = 256;
 
 const lifeLogImportUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: LIFE_LOG_IMPORT_FILE_SIZE_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const name = file.originalname || '';
     const isCsv = name.toLowerCase().endsWith('.csv')
@@ -28,7 +29,7 @@ const lifeLogImportUploadMiddleware = (req, res, next) => {
   lifeLogImportUpload.single('csv_file')(req, res, (error) => {
     if (error) {
       const message = error.code === 'LIMIT_FILE_SIZE'
-        ? 'Life log import files must be 100 MB or smaller.'
+        ? `Life log import files must be ${LIFE_LOG_IMPORT_FILE_SIZE_MB} MB or smaller.`
         : error.message || 'Unable to upload this import file.';
       return res.status(400).render('error_page', { error: message });
     }
