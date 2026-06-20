@@ -151,6 +151,18 @@
   background: var(--error-soft);
 }
 
+.public-tobuy-counter-card--warning {
+  border-color: rgba(180, 83, 9, 0.26);
+  border-left-color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.public-tobuy-usage-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .public-tobuy-counter-card__label,
 .public-tobuy-counter-card__helper {
   margin: 0;
@@ -245,13 +257,30 @@
   gap: 12px;
 }
 
+.public-tobuy-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.28fr);
+  gap: 10px;
+}
+
 .public-tobuy-form-row {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
 }
 
-.public-tobuy-input {
+.public-tobuy-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.public-tobuy-input,
+.public-tobuy-select,
+.public-tobuy-textarea {
   min-height: 48px;
   width: 100%;
   border: 1px solid var(--border);
@@ -262,7 +291,20 @@
   font-size: 1rem;
 }
 
-.public-tobuy-input:focus {
+.public-tobuy-select {
+  appearance: auto;
+}
+
+.public-tobuy-textarea {
+  min-height: 92px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.public-tobuy-input:focus,
+.public-tobuy-select:focus,
+.public-tobuy-textarea:focus {
   border-color: rgba(37, 99, 235, 0.45);
   outline: 3px solid var(--accent-soft);
 }
@@ -293,6 +335,28 @@
   margin: 0;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.public-tobuy-reward-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: var(--teal-soft);
+}
+
+.public-tobuy-reward-summary__points {
+  color: var(--teal);
+  font-size: clamp(1.35rem, 4vw, 1.8rem);
+  line-height: 1.15;
+}
+
+.public-tobuy-reward-summary__meta {
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .public-tobuy-list {
@@ -460,6 +524,8 @@
     align-items: flex-start;
   }
 
+  .public-tobuy-usage-cards,
+  .public-tobuy-form-grid,
   .public-tobuy-form-row {
     grid-template-columns: 1fr;
   }

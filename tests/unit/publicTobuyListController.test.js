@@ -25,20 +25,79 @@ jest.mock('../../utils/publicTobuyList', () => ({
   consumePublicTobuyAddQuota: jest.fn(),
 }));
 
-jest.mock('../../services/incomingRequestCounterService', () => ({
-  UNKNOWN_REQUEST_CATEGORY: 'unknown',
-  getRequestCounterDashboard: jest.fn(),
-  normalizeRequestCategory: jest.fn((value) => {
-    const normalized = String(value ?? '').trim();
-    return normalized || 'unknown';
-  }),
-}));
+jest.mock('../../services/deviceUsageService', () => {
+  class DeviceUsageSettingsError extends Error {
+    constructor(message, status = 400) {
+      super(message);
+      this.name = 'DeviceUsageSettingsError';
+      this.status = status;
+    }
+  }
+
+  const DEVICE_USAGE_CATEGORIES = ['learning', 'management', 'entertainment'];
+  const DEVICE_USAGE_CATEGORY_LABELS = {
+    learning: {
+      color: '#2BC8A4',
+      en: 'Learning',
+      ja: '学習',
+      ruleEn: '',
+      ruleJa: '',
+    },
+    management: {
+      color: '#62A8FF',
+      en: 'Management',
+      ja: '管理',
+      ruleEn: '',
+      ruleJa: '',
+    },
+    entertainment: {
+      color: '#FFB84D',
+      en: 'Entertainment',
+      ja: '娯楽',
+      ruleEn: '',
+      ruleJa: '',
+    },
+  };
+
+  return {
+    COMMENT_MAX_LENGTH: 1000,
+    DEVICE_USAGE_CATEGORIES,
+    DEVICE_USAGE_CATEGORY_LABELS,
+    DEVICE_USAGE_TEXT: {
+      en: {
+        actions: {
+          allow: 'Allow',
+          learn_first: 'Learn first',
+          wait: 'Wait',
+        },
+      },
+      ja: {
+        actions: {
+          allow: '許可',
+          learn_first: '先に学習',
+          wait: '待機',
+        },
+      },
+    },
+    DeviceUsageSettingsError,
+    REWARD_TITLE_MAX_LENGTH: 160,
+    addDeviceUsageReward: jest.fn(),
+    getDeviceUsageDashboard: jest.fn(),
+    normalizeDeviceUsageCategory: jest.fn((value) => {
+      const normalized = String(value ?? '').trim().toLowerCase();
+      return DEVICE_USAGE_CATEGORIES.includes(normalized) ? normalized : 'entertainment';
+    }),
+  };
+});
 
 jest.mock('../../services/cookingCalendarService', () => jest.fn(() => mockCookingCalendarService));
 
 const { Task } = require('../../database');
 const { consumePublicTobuyAddQuota } = require('../../utils/publicTobuyList');
-const { getRequestCounterDashboard } = require('../../services/incomingRequestCounterService');
+const {
+  addDeviceUsageReward,
+  getDeviceUsageDashboard,
+} = require('../../services/deviceUsageService');
 const controller = require('../../controllers/publicTobuyListController');
 
 function createFindQuery(payload) {
@@ -49,29 +108,84 @@ function createFindQuery(payload) {
   };
 }
 
+function createDeviceUsageDashboard(overrides = {}) {
+  return {
+    endpointPath: '/secret-device-usage',
+    generatedAt: new Date('2026-05-28T00:00:00.000Z'),
+    localDateKey: '2026-05-28',
+    settings: {
+      rollingLimitMinutes: 60,
+      rollingWindowMinutes: 90,
+      rollingWindowMs: 90 * 60 * 1000,
+      learningRequiredMinutes: 30,
+      learningFreeMinutes: 30,
+      maxVolume: 100,
+      updatedAt: null,
+      updatedBy: null,
+    },
+    currentWindowStart: new Date('2026-05-27T22:30:00.000Z'),
+    currentCountedMinutes: 42,
+    currentLearningMinutes: 12,
+    learningRemainingMinutes: 18,
+    rollingRemainingMinutes: 18,
+    totalStored: 100,
+    blockedToday: 0,
+    limitTiming: { mode: 'until_limit', minutes: 18 },
+    entertainmentUnlocked: false,
+    nextEntertainmentAction: 'learn_first',
+    nextEntertainmentStatus: 'NG',
+    todayStats: {
+      totalMinutes: 17,
+      countedMinutes: 4,
+      blockedMinutes: 1,
+      learningMinutes: 12,
+      categories: [],
+    },
+    todayPackageStats: [],
+    chartSeries: [],
+    dailyStats: [
+      {
+        dateKey: '2026-05-28',
+        isToday: true,
+        totalMinutes: 17,
+        countedMinutes: 4,
+        blockedMinutes: 1,
+        learningMinutes: 12,
+        categories: [
+          {
+            category: 'learning',
+            totalMinutes: 12,
+            allowedMinutes: 12,
+            countedMinutes: 0,
+            blockedMinutes: 0,
+            freeLearningMinutes: 12,
+          },
+          {
+            category: 'entertainment',
+            totalMinutes: 5,
+            allowedMinutes: 4,
+            countedMinutes: 4,
+            blockedMinutes: 1,
+            freeLearningMinutes: 0,
+          },
+        ],
+      },
+    ],
+    packageRules: [],
+    rewardSuggestions: [],
+    recentRewards: [],
+    rewardSummary: { points: 5, count: 2 },
+    recentRequests: [],
+    ...overrides,
+  };
+}
+
 describe('publicTobuyListController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Task.__saveMock.mockReset();
-    getRequestCounterDashboard.mockResolvedValue({
-      endpointPath: '/secret-counter',
-      generatedAt: new Date('2026-05-28T00:00:00.000Z'),
-      settings: {
-        maxRequests: 120,
-        windowMinutes: 90,
-        windowMs: 90 * 60 * 1000,
-      },
-      currentWindowStart: new Date('2026-05-27T22:30:00.000Z'),
-      currentCount: 42,
-      totalStored: 100,
-      blockedInWindow: 3,
-      remaining: 78,
-      limitTiming: { mode: 'until_max', minutes: 78 },
-      nextDecision: 'OK',
-      chartSeries: [],
-      dailyMinuteStats: [],
-      recentRequests: [],
-    });
+    getDeviceUsageDashboard.mockResolvedValue(createDeviceUsageDashboard());
+    addDeviceUsageReward.mockResolvedValue({});
     mockCookingCalendarService.formatDate.mockReturnValue('2026-05-28');
     mockCookingCalendarService.getCalendarRange.mockResolvedValue({
       days: [
@@ -117,12 +231,41 @@ describe('publicTobuyListController', () => {
         { id: 'task-1', title: 'Milk' },
         { id: 'task-2', title: 'Rice' },
       ],
-      requestCounterStats: expect.objectContaining({
-        currentMinutesCard: expect.objectContaining({
-          key: 'currentLimitTiming',
-          value: '上限まで 78分',
+      rewardSubmitPath: '/hidden-path/rewards',
+      deviceUsageStats: expect.objectContaining({
+        rollingUsageCard: expect.objectContaining({
+          key: 'rollingUsage',
+          value: '残り 18分',
           tone: 'ok',
         }),
+        learningGateCard: expect.objectContaining({
+          key: 'learningGate',
+          value: '学習が残り 18分',
+          tone: 'warning',
+        }),
+        rewardSummary: expect.objectContaining({
+          pointsDisplay: '5点',
+          countDisplay: '2件',
+        }),
+        dailyStats: [
+          expect.objectContaining({
+            dateKey: '2026-05-28',
+            isToday: true,
+            totalDurationDisplay: '17分',
+            categories: expect.arrayContaining([
+              expect.objectContaining({
+                category: 'learning',
+                label: '学習',
+                durationDisplay: '12分',
+              }),
+              expect.objectContaining({
+                category: 'entertainment',
+                label: '娯楽',
+                durationDisplay: '5分',
+              }),
+            ]),
+          }),
+        ],
       }),
       todayCooking: expect.objectContaining({
         date: '2026-05-28',
@@ -181,6 +324,33 @@ describe('publicTobuyListController', () => {
         ],
       }),
     }));
+  });
+
+  test('addPublicDeviceUsageReward saves a reward and redirects back', async () => {
+    const body = {
+      suggestionId: '',
+      titleEn: 'Read aloud',
+      points: '3',
+      comment: 'Good effort',
+    };
+    const req = {
+      body,
+      baseUrl: '/hidden-path',
+      path: '/rewards',
+    };
+    const res = {
+      redirect: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      render: jest.fn(),
+      locals: {},
+    };
+
+    await controller.addPublicDeviceUsageReward(req, res);
+
+    expect(addDeviceUsageReward).toHaveBeenCalledWith(body, {
+      updatedBy: 'public-tobuy',
+    });
+    expect(res.redirect).toHaveBeenCalledWith('/hidden-path?reward=1');
   });
 
   test('addPublicTask saves a trimmed to-buy task for Lennart and redirects back', async () => {
