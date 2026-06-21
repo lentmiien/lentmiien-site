@@ -16,6 +16,7 @@ const MINUTE_LOGGER_LOCATION_NOISE_MINUTES = 3;
 const MINUTE_LOGGER_LOCATION_GROUP_LIMIT = 20;
 const MINUTE_LOGGER_LOCATION_POINT_SAMPLE_LIMIT = 180;
 const MINUTE_LOGGER_LOCATION_GROUP_NAME_MAX_LENGTH = 80;
+const MINUTE_LOGGER_LOCATION_NAME_SUGGESTION_MAX_METERS = 250;
 const MINUTE_LOGGER_ANALYTICS_POINT_SAMPLE_LIMIT = 420;
 const MINUTE_LOGGER_BATTERY_WINDOW_HOURS = 12;
 const MINUTE_LOGGER_BATTERY_INTERPOLATION_GAP_MINUTES = 3;
@@ -1336,6 +1337,24 @@ function findNearestNamedLocation(latitude, longitude, namedSettings = []) {
   }, null);
 }
 
+function getNamedLocationSuggestion(row = {}, namedSettings = [], maxDistanceMeters = MINUTE_LOGGER_LOCATION_NAME_SUGGESTION_MAX_METERS) {
+  const name = normalizeLocationGroupName(row.name);
+  const latitude = Number(row.latitude);
+  const longitude = Number(row.longitude);
+  const maxDistance = Number(maxDistanceMeters);
+
+  if (name || !isValidLatitude(latitude) || !isValidLongitude(longitude) || !Number.isFinite(maxDistance)) {
+    return null;
+  }
+
+  const nearest = findNearestNamedLocation(latitude, longitude, namedSettings);
+  if (!nearest || nearest.distanceMeters > maxDistance) {
+    return null;
+  }
+
+  return nearest;
+}
+
 function buildLocationBounds(points = [], fallbackSettings = []) {
   const coordinates = [];
 
@@ -2466,6 +2485,8 @@ function normalizeLocationStatRow(row = {}) {
   const latitude = row.latitude === null || row.latitude === undefined ? NaN : Number(row.latitude);
   const longitude = row.longitude === null || row.longitude === undefined ? NaN : Number(row.longitude);
   const minutes = Number(row.minutes) || 0;
+  const name = normalizeLocationGroupName(row.name);
+  const suggestionDistanceMeters = Number(row.suggestionDistanceMeters);
   const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
 
   return {
@@ -2473,13 +2494,18 @@ function normalizeLocationStatRow(row = {}) {
     latitude: hasCoordinates ? latitude : null,
     longitude: hasCoordinates ? longitude : null,
     minutes,
+    minutesLast24h: Number(row.minutesLast24h) || 0,
     deviceCount: Number(row.deviceCount) || 0,
     packageCount: Number(row.packageCount) || 0,
     firstSeen: row.firstSeen || null,
     lastSeen: row.lastSeen || null,
     pointSamples: Array.isArray(row.pointSamples) ? row.pointSamples : [],
-    name: normalizeLocationGroupName(row.name),
-    hideCoordinates: Boolean(row.hideCoordinates && row.name),
+    name,
+    hideCoordinates: Boolean(row.hideCoordinates && name),
+    suggestedName: normalizeLocationGroupName(row.suggestedName),
+    suggestedGroupKey: String(row.suggestedGroupKey || '').trim(),
+    suggestionDistanceMeters: Number.isFinite(suggestionDistanceMeters) ? suggestionDistanceMeters : null,
+    suggestedHideCoordinates: Boolean(row.suggestedHideCoordinates),
   };
 }
 
@@ -2501,25 +2527,115 @@ function summarizeLocationGroups(rows = [], options = {}) {
       }
       return String(a.groupKey).localeCompare(String(b.groupKey));
     });
+  const displayGroups = typeof options.groupFilter === 'function'
+    ? groups.filter(options.groupFilter)
+    : groups;
   const noiseRows = normalizedRows.filter((row) => row.minutes < minMinutes);
   const totalLocationMinutes = normalizedRows.reduce((sum, row) => sum + row.minutes, 0);
   const groupedLocationMinutes = groups.reduce((sum, row) => sum + row.minutes, 0);
+  const representative = normalizedRows.find((row) => row.latitude !== null && row.longitude !== null);
 
   return {
-    groups: groups.slice(0, limit),
+    groups: displayGroups.slice(0, limit),
     totalLocationMinutes,
     groupedLocationMinutes,
     noiseLocationMinutes: noiseRows.reduce((sum, row) => sum + row.minutes, 0),
     noiseGroupCount: noiseRows.length,
     totalGroupCount: groups.length,
+    displayGroupCount: displayGroups.length,
     noiseThresholdMinutes: minMinutes,
     precisionDecimals: MINUTE_LOGGER_LOCATION_GROUP_PRECISION,
+    representativeLatitude: representative ? representative.latitude : null,
   };
+}
+
+function decorateLocationStatRows(rows = [], settingsByKey = new Map()) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const groupKey = String(row.groupKey || row.locationGroupKey || row._id || '').trim();
+    const setting = settingsByKey.get(groupKey) || {};
+
+    return {
+      ...row,
+      groupKey,
+      name: setting.name || '',
+      hideCoordinates: Boolean(setting.hideCoordinates),
+    };
+  });
+}
+
+function buildNamedLocationMinuteSummaries(rows = [], namedSettings = [], options = {}) {
+  const dayCount = Math.max(1, Number(options.dayCount) || MINUTE_LOGGER_RAW_RETENTION_DAYS);
+  const bucketsByName = new Map();
+  const getBucket = (name) => {
+    const key = normalizeLocationGroupName(name);
+    if (!key) {
+      return null;
+    }
+
+    if (!bucketsByName.has(key)) {
+      bucketsByName.set(key, {
+        name: key,
+        totalMinutes: 0,
+        minutesLast24h: 0,
+        groupKeys: new Set(),
+      });
+    }
+
+    return bucketsByName.get(key);
+  };
+
+  (Array.isArray(namedSettings) ? namedSettings : []).forEach((setting) => {
+    const bucket = getBucket(setting.name);
+    const groupKey = String(setting.groupKey || '').trim();
+
+    if (bucket && groupKey) {
+      bucket.groupKeys.add(groupKey);
+    }
+  });
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const bucket = getBucket(row.name);
+    if (!bucket) {
+      return;
+    }
+
+    const groupKey = String(row.groupKey || '').trim();
+    if (groupKey) {
+      bucket.groupKeys.add(groupKey);
+    }
+
+    bucket.totalMinutes += Number(row.minutes) || 0;
+    bucket.minutesLast24h += Number(row.minutesLast24h) || 0;
+  });
+
+  return Array.from(bucketsByName.values())
+    .filter((bucket) => bucket.totalMinutes > 0 || bucket.minutesLast24h > 0)
+    .map((bucket) => ({
+      name: bucket.name,
+      totalMinutes: bucket.totalMinutes,
+      minutesLast24h: bucket.minutesLast24h,
+      averageDailyMinutes: bucket.totalMinutes / dayCount,
+      groupCount: bucket.groupKeys.size,
+    }))
+    .sort((left, right) => {
+      if (right.minutesLast24h !== left.minutesLast24h) {
+        return right.minutesLast24h - left.minutesLast24h;
+      }
+
+      if (right.totalMinutes !== left.totalMinutes) {
+        return right.totalMinutes - left.totalMinutes;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
 }
 
 async function fetchLocationStats(endpointPath, options = {}) {
   const requestModel = options.requestModel || MinuteLoggerRequest;
   const since = options.since;
+  const last24Since = options.last24Since instanceof Date && !Number.isNaN(options.last24Since.getTime())
+    ? options.last24Since
+    : new Date(Date.now() - DAY_MS);
   const rows = await requestModel.aggregate([
     {
       $match: {
@@ -2534,6 +2650,15 @@ async function fetchLocationStats(endpointPath, options = {}) {
       $group: {
         _id: '$location.groupKey',
         minutes: { $sum: 1 },
+        minutesLast24h: {
+          $sum: {
+            $cond: [
+              { $gte: ['$receivedAt', last24Since] },
+              1,
+              0,
+            ],
+          },
+        },
         latitude: { $avg: '$location.latitude' },
         longitude: { $avg: '$location.longitude' },
         devices: { $addToSet: '$deviceId' },
@@ -2549,6 +2674,7 @@ async function fetchLocationStats(endpointPath, options = {}) {
         latitude: 1,
         longitude: 1,
         minutes: 1,
+        minutesLast24h: 1,
         deviceCount: { $size: '$devices' },
         packageCount: { $size: '$packages' },
         firstSeen: 1,
@@ -2557,35 +2683,47 @@ async function fetchLocationStats(endpointPath, options = {}) {
     },
     { $sort: { minutes: -1, lastSeen: -1, groupKey: 1 } },
   ]);
-  const summary = summarizeLocationGroups(rows, {
+  const namedSettings = await fetchNamedLocationGroupSettings(endpointPath, {
+    settingsModel: options.locationGroupSettingsModel,
+  });
+  const settingsByKey = new Map(namedSettings
+    .map((setting) => [setting.groupKey, setting])
+    .filter(([groupKey]) => groupKey));
+  const decoratedRows = decorateLocationStatRows(rows, settingsByKey);
+  const summary = summarizeLocationGroups(decoratedRows, {
     minMinutes: options.minMinutes,
     limit: options.limit,
+    groupFilter: (group) => !normalizeLocationGroupName(group.name),
   });
   const groupKeys = summary.groups.map((group) => group.groupKey).filter(Boolean);
-  const [
-    pointSamplesByKey,
-    settingsByKey,
-  ] = await Promise.all([
-    fetchLocationPointSamples(endpointPath, groupKeys, {
-      requestModel,
-      since,
-      limit: options.pointSampleLimit,
-    }),
-    getMinuteLoggerLocationGroupSettings(endpointPath, groupKeys, {
-      settingsModel: options.locationGroupSettingsModel,
-    }),
-  ]);
+  const pointSamplesByKey = await fetchLocationPointSamples(endpointPath, groupKeys, {
+    requestModel,
+    since,
+    limit: options.pointSampleLimit,
+  });
 
   summary.groups = summary.groups.map((group) => {
-    const setting = settingsByKey.get(group.groupKey) || {};
+    const suggestion = getNamedLocationSuggestion(
+      group,
+      namedSettings,
+      options.nameSuggestionMaxMeters || MINUTE_LOGGER_LOCATION_NAME_SUGGESTION_MAX_METERS
+    );
 
     return {
       ...group,
       pointSamples: pointSamplesByKey.get(group.groupKey) || [],
-      name: setting.name || '',
-      hideCoordinates: Boolean(setting.hideCoordinates),
+      suggestedName: suggestion?.name || '',
+      suggestedGroupKey: suggestion?.groupKey || '',
+      suggestionDistanceMeters: suggestion?.distanceMeters ?? null,
+      suggestedHideCoordinates: Boolean(suggestion?.hideCoordinates),
     };
   });
+  summary.namedLocations = buildNamedLocationMinuteSummaries(decoratedRows, namedSettings, {
+    dayCount: options.dayCount || MINUTE_LOGGER_RAW_RETENTION_DAYS,
+  });
+  summary.namedLocationCount = summary.namedLocations.length;
+  summary.unnamedGroupCount = summary.displayGroupCount;
+  summary.nameSuggestionMaxMeters = options.nameSuggestionMaxMeters || MINUTE_LOGGER_LOCATION_NAME_SUGGESTION_MAX_METERS;
 
   return summary;
 }
@@ -3159,6 +3297,8 @@ async function getMinuteLoggerDashboard(options = {}) {
     fetchLocationStats(endpointPath, {
       requestModel,
       since: rawWindowStart,
+      last24Since: since24h,
+      dayCount: MINUTE_LOGGER_RAW_RETENTION_DAYS,
       locationGroupSettingsModel: options.locationGroupSettingsModel,
     }),
     fetchHourlySpread(endpointPath, { requestModel, since: rawWindowStart }),

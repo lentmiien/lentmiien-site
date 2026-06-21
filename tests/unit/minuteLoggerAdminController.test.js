@@ -146,6 +146,15 @@ function createDashboard(overrides = {}) {
       deviceStats: [],
     },
     locationStats: {
+      namedLocations: [
+        {
+          name: 'Home',
+          minutesLast24h: 15,
+          totalMinutes: 24,
+          averageDailyMinutes: 0.4,
+          groupCount: 1,
+        },
+      ],
       groups: [
         {
           groupKey: '35.460,139.540',
@@ -163,12 +172,33 @@ function createDashboard(overrides = {}) {
             { latitude: 35.4604, longitude: 139.5402 },
           ],
         },
+        {
+          groupKey: '35.461,139.541',
+          latitude: 35.4612514,
+          longitude: 139.54149637,
+          minutes: 12,
+          deviceCount: 1,
+          packageCount: 1,
+          firstSeen: new Date('2026-06-06T07:00:00.000Z'),
+          lastSeen: new Date('2026-06-07T02:55:00.000Z'),
+          name: '',
+          hideCoordinates: false,
+          suggestedName: 'Home',
+          suggestedHideCoordinates: true,
+          suggestionDistanceMeters: 84,
+          pointSamples: [
+            { latitude: 35.4611, longitude: 139.5409 },
+            { latitude: 35.4614, longitude: 139.5412 },
+          ],
+        },
       ],
-      totalLocationMinutes: 26,
-      groupedLocationMinutes: 24,
+      totalLocationMinutes: 38,
+      groupedLocationMinutes: 36,
       noiseLocationMinutes: 2,
       noiseGroupCount: 1,
-      totalGroupCount: 1,
+      totalGroupCount: 2,
+      displayGroupCount: 1,
+      unnamedGroupCount: 1,
       noiseThresholdMinutes: 3,
       precisionDecimals: 3,
     },
@@ -389,7 +419,7 @@ describe('minuteLoggerAdminController.dashboard', () => {
           }),
           expect.objectContaining({
             label: 'Location Groups',
-            value: '1',
+            value: '2',
           }),
           expect.objectContaining({
             label: 'Battery Left',
@@ -403,20 +433,32 @@ describe('minuteLoggerAdminController.dashboard', () => {
           }),
         ]),
         locationStats: expect.objectContaining({
-          totalLocationMinutesDisplay: '26 min',
+          totalLocationMinutesDisplay: '38 min',
           noiseLocationMinutesDisplay: '2 min',
           precisionDetails: {
             summary: '3 decimals = 0.001 degrees. Near latitude 35.46, one group cell is about 111 m x 91 m.',
             coverage: 'Rounded groups cover about +/-56 m north/south and +/-45 m east/west from center; corner-to-corner is about 140 m.',
           },
+          namedLocations: [
+            expect.objectContaining({
+              name: 'Home',
+              minutesLast24hDisplay: '15 min',
+              averageDailyMinutesDisplay: '0.4 min/day',
+              totalMinutesDisplay: '24 min retained',
+              groupCountDisplay: '1',
+            }),
+          ],
           groups: [
             expect.objectContaining({
-              groupKey: '35.460,139.540',
-              name: 'Home',
+              groupKey: '35.461,139.541',
+              name: '',
               hideCoordinates: false,
-              titleDisplay: 'Home (35.460,139.540)',
-              minutes: 24,
-              coordinateDisplay: '35.46025, 139.54050',
+              suggestedName: 'Home',
+              suggestedHideCoordinates: true,
+              suggestionDisplay: 'Suggested: Home - 84 m away',
+              titleDisplay: '35.461,139.541',
+              minutes: 12,
+              coordinateDisplay: '35.46125, 139.54150',
               pointSampleCountDisplay: '2',
               preview: expect.objectContaining({
                 width: 160,

@@ -26,6 +26,7 @@ block content
     const maxPackageMinutes = Math.max(1, ...(packageStats || []).map((row) => Number(row.minutes) || 0));
     const maxDeviceMinutes = Math.max(1, ...(deviceStats || []).map((row) => Number(row.minutes) || 0));
     const locationGroups = locationStats && Array.isArray(locationStats.groups) ? locationStats.groups : [];
+    const namedLocations = locationStats && Array.isArray(locationStats.namedLocations) ? locationStats.namedLocations : [];
     const maxLocationMinutes = Math.max(1, ...locationGroups.map((row) => Number(row.minutes) || 0));
 
   .minute-logger-admin
@@ -235,7 +236,27 @@ block content
               strong Precision scale
               span= locationStats.precisionDetails.summary
               span= locationStats.precisionDetails.coverage
+          if namedLocations.length
+            .minute-logger-location-table-block
+              h3 Named Locations
+              .minute-logger-table-wrap.minute-logger-table-wrap--compact
+                table.minute-logger-table.minute-logger-table--locations
+                  thead
+                    tr
+                      th Location
+                      th Last 24 Hours
+                      th Average Daily
+                  tbody
+                    each location in namedLocations
+                      tr
+                        td
+                          strong= location.name
+                          span.minute-logger-table-note #{location.groupCountDisplay} groups, #{location.totalMinutesDisplay}
+                        td= location.minutesLast24hDisplay
+                        td= location.averageDailyMinutesDisplay
         if locationGroups.length
+          .minute-logger-location-list-heading
+            h3 Unnamed Location Groups
           .minute-logger-location-list
             each group in locationGroups
               .minute-logger-rank.minute-logger-location
@@ -278,13 +299,18 @@ block content
                     input(type='hidden', name='groupKey', value=group.groupKey)
                     label.minute-logger-location-form__field
                       span Name
-                      input(type='text', name='name', value=group.name, maxlength='80', placeholder=group.coordinateLabel)
+                      input(type='text', name='name', value=(group.name || group.suggestedName), maxlength='80', placeholder=(group.suggestedName ? `Suggested: ${group.suggestedName}` : group.coordinateLabel))
+                      if group.suggestionDisplay
+                        small.minute-logger-location-form__suggestion= group.suggestionDisplay
                     label.minute-logger-location-form__check
-                      input(type='checkbox', name='hideCoordinates', value='on', checked=group.hideCoordinates)
+                      input(type='checkbox', name='hideCoordinates', value='on', checked=(group.hideCoordinates || group.suggestedHideCoordinates))
                       span Hide coordinates
                     button.minute-logger-location-form__button(type='submit') Save
         else if locationStats && locationStats.totalLocationMinutes
-          p.minute-logger-empty All parsed location points are below the #{locationStats.noiseThresholdDisplay} group threshold.
+          if namedLocations.length
+            p.minute-logger-empty No unnamed location groups are above the #{locationStats.noiseThresholdDisplay} group threshold.
+          else
+            p.minute-logger-empty All parsed location points are below the #{locationStats.noiseThresholdDisplay} group threshold.
         else
           p.minute-logger-empty No parsed location data yet.
 

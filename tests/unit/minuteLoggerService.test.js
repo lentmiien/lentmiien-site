@@ -647,12 +647,47 @@ describe('minuteLoggerService', () => {
       noiseLocationMinutes: 2,
       noiseGroupCount: 1,
       totalGroupCount: 1,
+      displayGroupCount: 1,
       noiseThresholdMinutes: 3,
     });
     expect(summary.groups).toEqual([
       expect.objectContaining({
         groupKey: '35.460,139.540',
         minutes: 8,
+      }),
+    ]);
+  });
+
+  test('summarizeLocationGroups can keep named groups out of the display list', () => {
+    const summary = summarizeLocationGroups([
+      {
+        groupKey: '35.460,139.540',
+        latitude: 35.4602,
+        longitude: 139.5404,
+        minutes: 8,
+        name: 'Home',
+      },
+      {
+        groupKey: '35.461,139.541',
+        latitude: 35.461,
+        longitude: 139.541,
+        minutes: 6,
+      },
+    ], {
+      minMinutes: 3,
+      groupFilter: (group) => !group.name,
+    });
+
+    expect(summary).toMatchObject({
+      totalLocationMinutes: 14,
+      groupedLocationMinutes: 14,
+      totalGroupCount: 2,
+      displayGroupCount: 1,
+    });
+    expect(summary.groups).toEqual([
+      expect.objectContaining({
+        groupKey: '35.461,139.541',
+        minutes: 6,
       }),
     ]);
   });

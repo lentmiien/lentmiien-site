@@ -486,6 +486,41 @@ body,
   color: var(--ml-info);
 }
 
+.minute-logger-location-table-block,
+.minute-logger-location-list-heading {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+}
+
+.minute-logger-location-table-block h3,
+.minute-logger-location-list-heading h3 {
+  margin: 0;
+  color: var(--ml-text);
+  font-size: 0.96rem;
+  font-weight: 800;
+}
+
+.minute-logger-table-wrap--compact {
+  max-width: 760px;
+}
+
+.minute-logger-table--locations {
+  min-width: 520px;
+}
+
+.minute-logger-table--locations td:not(:first-child),
+.minute-logger-table--locations th:not(:first-child) {
+  white-space: nowrap;
+}
+
+.minute-logger-table-note {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--ml-text-muted);
+  font-size: 0.8rem;
+}
+
 .minute-logger-day {
   display: grid;
   gap: 0.42rem;
@@ -729,6 +764,12 @@ body,
 
 .minute-logger-location-form__field input::placeholder {
   color: var(--ml-text-muted);
+}
+
+.minute-logger-location-form__suggestion {
+  color: var(--ml-info);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .minute-logger-location-form__field input:focus,

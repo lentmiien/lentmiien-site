@@ -458,13 +458,15 @@ function buildLocationGroupPreview(row, precisionDecimals) {
 }
 
 function mapLocationStats(stats = {}) {
-  const groups = Array.isArray(stats.groups) ? stats.groups : [];
+  const allGroups = Array.isArray(stats.groups) ? stats.groups : [];
+  const groups = allGroups.filter((row) => !String(row.name || '').trim());
+  const namedLocations = Array.isArray(stats.namedLocations) ? stats.namedLocations : [];
   const maxMinutes = Math.max(1, ...groups.map((row) => Number(row.minutes) || 0));
   const totalLocationMinutes = Number(stats.totalLocationMinutes) || 0;
   const groupedLocationMinutes = Number(stats.groupedLocationMinutes) || 0;
   const noiseLocationMinutes = Number(stats.noiseLocationMinutes) || 0;
   const noiseThresholdMinutes = Number(stats.noiseThresholdMinutes) || 0;
-  const representativeLatitude = getRepresentativeLatitude(stats, groups);
+  const representativeLatitude = getRepresentativeLatitude(stats, groups.length ? groups : allGroups);
 
   return {
     totalLocationMinutes,
@@ -477,8 +479,25 @@ function mapLocationStats(stats = {}) {
     noiseThresholdMinutes,
     noiseThresholdDisplay: `${formatNumber(noiseThresholdMinutes)} min`,
     totalGroupCountDisplay: formatNumber(stats.totalGroupCount),
+    unnamedGroupCountDisplay: formatNumber(stats.unnamedGroupCount ?? stats.displayGroupCount ?? groups.length),
     precisionDisplay: `${formatNumber(stats.precisionDecimals)} decimals`,
     precisionDetails: buildLocationPrecisionDetails(stats.precisionDecimals, representativeLatitude),
+    namedLocations: namedLocations.map((row) => {
+      const minutesLast24h = Number(row.minutesLast24h) || 0;
+      const averageDailyMinutes = Number(row.averageDailyMinutes) || 0;
+      const totalMinutes = Number(row.totalMinutes) || 0;
+
+      return {
+        name: String(row.name || '').trim() || 'Unnamed',
+        minutesLast24h,
+        minutesLast24hDisplay: `${formatNumber(minutesLast24h)} min`,
+        averageDailyMinutes,
+        averageDailyMinutesDisplay: `${formatDecimal(averageDailyMinutes)} min/day`,
+        totalMinutes,
+        totalMinutesDisplay: `${formatNumber(totalMinutes)} min retained`,
+        groupCountDisplay: formatNumber(row.groupCount),
+      };
+    }),
     groups: groups.map((row) => {
       const latitude = Number(row.latitude);
       const longitude = Number(row.longitude);
@@ -488,11 +507,24 @@ function mapLocationStats(stats = {}) {
       const preview = buildLocationGroupPreview(row, stats.precisionDecimals);
       const name = String(row.name || '').trim();
       const hideCoordinates = Boolean(name && row.hideCoordinates);
+      const suggestedName = String(row.suggestedName || '').trim();
+      const suggestionDistanceDisplay = formatApproxDistance(row.suggestionDistanceMeters);
+      const suggestionDisplay = suggestedName
+        ? [
+          `Suggested: ${suggestedName}`,
+          suggestionDistanceDisplay ? `${suggestionDistanceDisplay} away` : '',
+        ].filter(Boolean).join(' - ')
+        : '';
 
       return {
         groupKey: row.groupKey,
         name,
         hideCoordinates,
+        suggestedName,
+        suggestedHideCoordinates: Boolean(row.suggestedHideCoordinates),
+        suggestedGroupKey: String(row.suggestedGroupKey || '').trim(),
+        suggestionDistanceDisplay,
+        suggestionDisplay,
         titleDisplay: buildLocationGroupTitle({ name, hideCoordinates }, coordinateLabel),
         coordinateLabel,
         minutes,
