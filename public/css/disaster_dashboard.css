@@ -213,6 +213,7 @@ body,
 
 .disaster-stat,
 .disaster-focus,
+.disaster-local-band,
 .disaster-panel {
   border: 1px solid var(--disaster-border);
   border-radius: 8px;
@@ -239,6 +240,64 @@ body,
   color: var(--disaster-text);
   font-size: 1.45rem;
   line-height: 1.2;
+}
+
+.disaster-local-band {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background:
+    linear-gradient(90deg, rgba(255, 106, 31, 0.12), rgba(25, 227, 227, 0.08)),
+    var(--disaster-surface-1);
+}
+
+.disaster-local-band__art {
+  width: 132px;
+  height: 92px;
+}
+
+.disaster-local-band__art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.disaster-local-band__art path,
+.disaster-local-band__art circle {
+  fill: none;
+  stroke: var(--disaster-accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.disaster-local-band__art path:first-child {
+  stroke: var(--disaster-info);
+}
+
+.disaster-local-band__art circle:nth-of-type(2) {
+  opacity: 0.42;
+}
+
+.disaster-local-band h2 {
+  margin: 0 0 0.25rem;
+  color: var(--disaster-text);
+  font-size: 1.25rem;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.disaster-local-band p,
+.disaster-local-band__meta {
+  margin: 0;
+  color: var(--disaster-text-secondary);
+}
+
+.disaster-local-band__meta {
+  white-space: nowrap;
 }
 
 .disaster-focus-grid {
@@ -374,6 +433,96 @@ body,
   border-color: rgba(25, 227, 227, 0.45);
   background: rgba(25, 227, 227, 0.1);
   color: #A7FFFF;
+}
+
+.disaster-graph-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.disaster-timeline-chart,
+.disaster-weather-chart,
+.disaster-weather-history-chart {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(22px, 1fr);
+  align-items: end;
+  gap: 0.35rem;
+  min-height: 190px;
+  overflow-x: auto;
+  padding: 0.4rem 0 0;
+}
+
+.disaster-timeline-chart__bucket,
+.disaster-weather-chart__point,
+.disaster-weather-history-chart__point {
+  display: grid;
+  grid-template-rows: minmax(120px, 1fr) 42px;
+  align-items: end;
+  gap: 0.45rem;
+  min-width: 24px;
+}
+
+.disaster-timeline-chart__bucket small,
+.disaster-weather-chart__point small,
+.disaster-weather-history-chart__point small {
+  color: var(--disaster-text-muted);
+  font-size: 0.68rem;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  justify-self: center;
+  max-height: 42px;
+  overflow: hidden;
+}
+
+.disaster-timeline-chart__bar {
+  display: block;
+  width: 100%;
+  height: var(--bar-height);
+  min-height: 3px;
+  border-radius: 5px 5px 2px 2px;
+  background: var(--disaster-info);
+}
+
+.disaster-timeline-chart__bar--warning {
+  background: var(--disaster-warning);
+}
+
+.disaster-timeline-chart__bar--danger {
+  background: var(--disaster-danger);
+}
+
+.disaster-weather-chart__point,
+.disaster-weather-history-chart__point {
+  position: relative;
+}
+
+.disaster-weather-chart__temp,
+.disaster-weather-chart__rain,
+.disaster-weather-history-chart__temp,
+.disaster-weather-history-chart__rain {
+  display: block;
+  width: 48%;
+  min-height: 3px;
+  border-radius: 5px 5px 2px 2px;
+  align-self: end;
+}
+
+.disaster-weather-chart__temp,
+.disaster-weather-history-chart__temp {
+  height: var(--temp-height);
+  justify-self: start;
+  background: var(--disaster-accent);
+}
+
+.disaster-weather-chart__rain,
+.disaster-weather-history-chart__rain {
+  height: var(--rain-height);
+  justify-self: end;
+  background: var(--disaster-info);
+  grid-row: 1;
 }
 
 .disaster-main-grid {
@@ -661,8 +810,17 @@ body,
   }
 
   .disaster-focus-grid,
+  .disaster-graph-grid,
   .disaster-main-grid {
     grid-template-columns: 1fr;
+  }
+
+  .disaster-local-band {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+
+  .disaster-local-band__meta {
+    grid-column: 2;
   }
 }
 
@@ -689,8 +847,17 @@ body,
   }
 
   .disaster-alert-row__titleline,
-  .disaster-weather-summary {
+  .disaster-weather-summary,
+  .disaster-local-band {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .disaster-local-band {
+    display: flex;
+  }
+
+  .disaster-local-band__meta {
+    white-space: normal;
   }
 }

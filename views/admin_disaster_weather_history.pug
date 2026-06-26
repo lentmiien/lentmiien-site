@@ -1,0 +1,77 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/disaster_dashboard.css')
+
+block content
+  .disaster-admin
+    header.disaster-page-header
+      div
+        p.disaster-kicker Weather Archive
+        h1 Weather History
+        p.disaster-hero__meta Generated #{generatedAtDisplay}
+      .disaster-hero__actions
+        a.disaster-button.disaster-button--ghost(href='/admin/disasters')
+          svg(viewBox='0 0 24 24' aria-hidden='true')
+            path(d='M19 12H5')
+            path(d='M12 19 5 12 12 5')
+          span Dashboard
+
+    if loadError
+      .disaster-alert.disaster-alert--error= loadError
+    else
+      form.disaster-filter(method='get', action='/admin/disasters/weather-history')
+        label
+          span Hours
+          input(type='number', name='hours', min='24', max='720', step='24', value=hours)
+        button.disaster-button(type='submit')
+          svg(viewBox='0 0 24 24' aria-hidden='true')
+            path(d='M4 6h16')
+            path(d='M7 12h10')
+            path(d='M10 18h4')
+          span Filter
+
+      section.disaster-panel
+        .disaster-panel__header
+          h2 Temperature and Rain
+          span.disaster-panel__meta Last #{hours} hours
+        if weatherObservationChart && weatherObservationChart.length
+          .disaster-weather-history-chart
+            each point in weatherObservationChart
+              .disaster-weather-history-chart__point(title=`${point.timeDisplay}: ${point.temperatureDisplay}, ${point.rainDisplay}`)
+                span.disaster-weather-history-chart__temp(style=`--temp-height: ${point.tempPercent}%;`)
+                span.disaster-weather-history-chart__rain(style=`--rain-height: ${point.rainPercent}%;`)
+                small= point.timeDisplay
+        else
+          p.disaster-empty No hourly weather observations have been saved yet.
+
+      section.disaster-panel
+        .disaster-panel__header
+          h2 Hourly Observations
+          span.disaster-panel__meta #{observations.length} rows
+        if observations && observations.length
+          .disaster-table-wrap
+            table.disaster-table
+              thead
+                tr
+                  th Hour
+                  th Weather
+                  th Temp
+                  th Rain
+                  th Wind
+                  th Humidity
+                  th Pressure
+                  th Source
+              tbody
+                each observation in observations
+                  tr
+                    td= observation.bucketDisplay
+                    td= observation.description
+                    td= observation.temperatureDisplay
+                    td= observation.precipitationDisplay
+                    td= observation.windDisplay
+                    td= observation.humidityDisplay
+                    td= observation.pressureDisplay
+                    td= observation.source
+        else
+          p.disaster-empty No observations match the selected range.

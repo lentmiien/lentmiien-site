@@ -3,6 +3,7 @@ const logger = require('../utils/logger');
 const {
   DisasterAlert,
   DisasterIngestionState,
+  DisasterWeatherObservation,
   DisasterWeatherSnapshot,
 } = require('../database');
 const {
@@ -133,6 +134,12 @@ function dateOnly(date) {
   return date.toISOString().slice(0, 10);
 }
 
+function hourBucketStart(date = new Date()) {
+  const bucket = new Date(date);
+  bucket.setMinutes(0, 0, 0);
+  return bucket;
+}
+
 function weatherCodeDescription(code) {
   const normalized = String(code);
   const descriptions = {
@@ -195,6 +202,7 @@ class DisasterIngestionService {
     this.models = options.models || {
       DisasterAlert,
       DisasterIngestionState,
+      DisasterWeatherObservation,
       DisasterWeatherSnapshot,
     };
     this.running = false;
@@ -799,6 +807,28 @@ class DisasterIngestionService {
     };
   }
 
+  parseOpenWeatherObservation(data, location) {
+    const observedAt = data?.dt ? new Date(data.dt * 1000) : new Date();
+    return {
+      source: 'openweathermap-current',
+      locationName: location.name,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      observedAt,
+      temperatureC: data?.main?.temp ?? null,
+      feelsLikeC: data?.main?.feels_like ?? null,
+      precipitationMm: data?.rain?.['1h'] || data?.snow?.['1h'] || 0,
+      precipitationProbability: null,
+      windSpeedMs: data?.wind?.speed ?? null,
+      windGustMs: data?.wind?.gust ?? null,
+      humidityPercent: data?.main?.humidity ?? null,
+      pressureHpa: data?.main?.pressure ?? null,
+      weatherCode: data?.weather?.[0]?.id ? String(data.weather[0].id) : null,
+      description: data?.weather?.[0]?.description || null,
+      raw: data || {},
+    };
+  }
+
   parseOpenMeteoForecast(data, location) {
     const now = Date.now();
     const cutoff = now + 24 * 60 * 60 * 1000;
@@ -850,6 +880,98 @@ class DisasterIngestionService {
     };
   }
 
+  buildObservationFromSnapshot(snapshot) {
+    const hourly = Array.isArray(snapshot?.hourly) ? snapshot.hourly : [];
+    const now = Date.now();
+    const closest = hourly.reduce((best, entry) => {
+      if (!entry?.time) return best;
+      const entryTime = new Date(entry.time);
+      if (Number.isNaN(entryTime.getTime())) return best;
+      const distance = Math.abs(entryTime.getTime() - now);
+      if (!best || distance < best.distance) {
+        return { entry, distance };
+      }
+      return best;
+    }, null)?.entry;
+
+    if (!closest) {
+      return null;
+    }
+
+    return {
+      source: `${snapshot.source}-hourly`,
+      locationName: snapshot.locationName,
+      latitude: snapshot.latitude,
+      longitude: snapshot.longitude,
+      observedAt: new Date(closest.time),
+      temperatureC: closest.temperatureC ?? null,
+      feelsLikeC: closest.feelsLikeC ?? null,
+      precipitationMm: closest.precipitationMm ?? null,
+      precipitationProbability: closest.precipitationProbability ?? null,
+      windSpeedMs: closest.windSpeedMs ?? null,
+      windGustMs: closest.windGustMs ?? null,
+      humidityPercent: closest.humidityPercent ?? null,
+      pressureHpa: closest.pressureHpa ?? null,
+      weatherCode: closest.weatherCode || null,
+      description: closest.description || null,
+      raw: {
+        snapshotId: snapshot._id ? String(snapshot._id) : null,
+        entry: closest,
+      },
+    };
+  }
+
+  async saveWeatherObservation(observation) {
+    if (!observation || !observation.observedAt) {
+      return null;
+    }
+    const bucketStartAt = hourBucketStart(observation.observedAt);
+    const observationKey = `${observation.locationName}:${bucketStartAt.toISOString()}`;
+    const summary = buildForecastSummary([observation]);
+
+    return this.models.DisasterWeatherObservation.findOneAndUpdate(
+      { observationKey },
+      {
+        $setOnInsert: {
+          ...observation,
+          observationKey,
+          bucketStartAt,
+          summary,
+        },
+      },
+      { upsert: true, new: true }
+    );
+  }
+
+  async refreshWeatherObservation(location, snapshot = null) {
+    if (process.env.DISASTER_WEATHER_ENABLED === 'false') {
+      return null;
+    }
+
+    const apiKey = process.env.OPENWEATHER_API_KEY;
+    if (apiKey) {
+      try {
+        const data = await this.fetchJson('https://api.openweathermap.org/data/2.5/weather', {
+          params: {
+            lat: location.latitude,
+            lon: location.longitude,
+            appid: apiKey,
+            units: 'metric',
+            lang: process.env.DISASTER_WEATHER_LANG || 'en',
+          },
+        });
+        return this.saveWeatherObservation(this.parseOpenWeatherObservation(data, location));
+      } catch (error) {
+        this.logger.warning('OpenWeather current weather refresh failed, using forecast fallback', {
+          category: 'disaster_ingestion',
+          metadata: { error: compactError(error) },
+        });
+      }
+    }
+
+    return this.saveWeatherObservation(this.buildObservationFromSnapshot(snapshot));
+  }
+
   async refreshWeatherSnapshot() {
     if (process.env.DISASTER_WEATHER_ENABLED === 'false') {
       return null;
@@ -896,6 +1018,23 @@ class DisasterIngestionService {
             hourly,
             raw: data,
           });
+          await this.saveWeatherObservation({
+            source: 'openweathermap-onecall-current',
+            locationName: location.name,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            observedAt: data?.current?.dt ? new Date(data.current.dt * 1000) : new Date(),
+            temperatureC: data?.current?.temp ?? null,
+            feelsLikeC: data?.current?.feels_like ?? null,
+            precipitationMm: data?.current?.rain?.['1h'] || data?.current?.snow?.['1h'] || 0,
+            windSpeedMs: data?.current?.wind_speed ?? null,
+            windGustMs: data?.current?.wind_gust ?? null,
+            humidityPercent: data?.current?.humidity ?? null,
+            pressureHpa: data?.current?.pressure ?? null,
+            weatherCode: data?.current?.weather?.[0]?.id ? String(data.current.weather[0].id) : null,
+            description: data?.current?.weather?.[0]?.description || null,
+            raw: data?.current || {},
+          });
           return snapshot;
         }
 
@@ -908,7 +1047,9 @@ class DisasterIngestionService {
             lang: process.env.DISASTER_WEATHER_LANG || 'en',
           },
         });
-        return this.models.DisasterWeatherSnapshot.create(this.parseOpenWeatherForecast(data, location));
+        const snapshot = await this.models.DisasterWeatherSnapshot.create(this.parseOpenWeatherForecast(data, location));
+        await this.refreshWeatherObservation(location, snapshot);
+        return snapshot;
       } catch (error) {
         this.logger.warning('OpenWeather forecast refresh failed, trying Open-Meteo fallback', {
           category: 'disaster_ingestion',
@@ -935,7 +1076,9 @@ class DisasterIngestionService {
         timezone: DEFAULT_TIME_ZONE,
       },
     });
-    return this.models.DisasterWeatherSnapshot.create(this.parseOpenMeteoForecast(data, location));
+    const snapshot = await this.models.DisasterWeatherSnapshot.create(this.parseOpenMeteoForecast(data, location));
+    await this.refreshWeatherObservation(location, snapshot);
+    return snapshot;
   }
 
   async runOnce(options = {}) {
@@ -957,9 +1100,14 @@ class DisasterIngestionService {
       }
 
       let weatherSnapshotId = null;
+      let weatherObservationId = null;
       try {
         const weatherSnapshot = await this.refreshWeatherSnapshot();
         weatherSnapshotId = weatherSnapshot?._id ? String(weatherSnapshot._id) : null;
+        const latestObservation = weatherSnapshotId
+          ? await this.models.DisasterWeatherObservation.findOne({}).sort({ bucketStartAt: -1 })
+          : null;
+        weatherObservationId = latestObservation?._id ? String(latestObservation._id) : null;
       } catch (error) {
         this.logger.warning('Disaster weather snapshot refresh failed', {
           category: 'disaster_ingestion',
@@ -976,6 +1124,7 @@ class DisasterIngestionService {
         ...jmaResult.counters,
         backup: backupCounters,
         weatherSnapshotId,
+        weatherObservationId,
       };
       await state.save();
 

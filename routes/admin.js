@@ -252,6 +252,7 @@ router.post('/dummy-api-requests/settings', dummyApiAdminController.updateSettin
 router.post('/dummy-api-requests/clear', dummyApiAdminController.clearLogs);
 router.get('/disasters', disasterAdminController.dashboard);
 router.get('/disasters/history', disasterAdminController.history);
+router.get('/disasters/weather-history', disasterAdminController.weatherHistory);
 router.post('/disasters/refresh', disasterAdminController.refresh);
 router.get('/tools', toolManagerController.index);
 router.post('/tools/save', toolManagerController.save);

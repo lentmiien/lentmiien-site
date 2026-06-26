@@ -175,6 +175,7 @@ const DummyApiEndpointSetting = require('./models/dummy_api_endpoint_setting');
 const DisasterAlert = require('./models/disaster_alert');
 const DisasterIngestionState = require('./models/disaster_ingestion_state');
 const DisasterWeatherSnapshot = require('./models/disaster_weather_snapshot');
+const DisasterWeatherObservation = require('./models/disaster_weather_observation');
 
 // Export models
 module.exports = {
@@ -294,4 +295,5 @@ module.exports = {
   DisasterAlert,
   DisasterIngestionState,
   DisasterWeatherSnapshot,
+  DisasterWeatherObservation,
 };
