@@ -172,6 +172,9 @@ const MinuteLoggerStat = require('./models/minute_logger_stat');
 const MinuteLoggerLocationGroup = require('./models/minute_logger_location_group');
 const DummyApiRequestLog = require('./models/dummy_api_request_log');
 const DummyApiEndpointSetting = require('./models/dummy_api_endpoint_setting');
+const DisasterAlert = require('./models/disaster_alert');
+const DisasterIngestionState = require('./models/disaster_ingestion_state');
+const DisasterWeatherSnapshot = require('./models/disaster_weather_snapshot');
 
 // Export models
 module.exports = {
@@ -288,4 +291,7 @@ module.exports = {
   MinuteLoggerLocationGroup,
   DummyApiRequestLog,
   DummyApiEndpointSetting,
+  DisasterAlert,
+  DisasterIngestionState,
+  DisasterWeatherSnapshot,
 };

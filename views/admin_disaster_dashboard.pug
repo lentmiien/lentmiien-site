@@ -1,0 +1,172 @@
+extends layout
+
+mixin disasterIcon(kind)
+  if kind === 'earthquake'
+    svg.disaster-icon(viewBox='0 0 64 64' aria-hidden='true')
+      path(d='M10 42 L22 24 L31 37 L39 21 L54 42 Z')
+      path(d='M28 18 L24 28 L31 26 L27 39 L39 23 L31 25 Z')
+  else if kind === 'typhoon'
+    svg.disaster-icon(viewBox='0 0 64 64' aria-hidden='true')
+      path(d='M48 17 C39 8 22 10 17 22 C13 31 19 38 27 38 C20 34 21 25 28 21 C36 16 45 20 48 28 C51 38 42 48 31 47 C42 55 58 47 58 32 C58 26 55 20 48 17 Z')
+      path(d='M16 47 C25 56 42 54 47 42 C51 33 45 26 37 26 C44 30 43 39 36 43 C28 48 19 44 16 36 C13 26 22 16 33 17 C22 9 6 17 6 32 C6 38 9 44 16 47 Z')
+  else
+    svg.disaster-icon(viewBox='0 0 64 64' aria-hidden='true')
+      path(d='M18 44 H47 C53 44 57 40 57 35 C57 30 53 27 49 27 C47 18 40 13 31 13 C22 13 15 19 14 28 C9 29 6 33 6 38 C6 42 11 44 18 44 Z')
+      path(d='M22 48 L18 57 M33 48 L29 57 M44 48 L40 57')
+      path(d='M44 17 L51 10 M49 20 L58 18')
+
+block styles
+  link(rel='stylesheet', href='/css/disaster_dashboard.css')
+
+block content
+  .disaster-admin
+    header.disaster-hero
+      .disaster-hero__copy
+        p.disaster-kicker Japan Hazard Monitor
+        h1 Disaster Watch
+        p.disaster-hero__meta Updated #{generatedAtDisplay}
+      .disaster-hero__actions
+        form(method='post', action='/admin/disasters/refresh')
+          button.disaster-button(type='submit')
+            svg(viewBox='0 0 24 24' aria-hidden='true')
+              path(d='M20 12a8 8 0 1 1-2.34-5.66')
+              path(d='M20 4v6h-6')
+            span Refresh
+        a.disaster-button.disaster-button--ghost(href='/admin/disasters/history')
+          svg(viewBox='0 0 24 24' aria-hidden='true')
+            path(d='M4 5h16')
+            path(d='M4 12h16')
+            path(d='M4 19h16')
+          span History
+      .disaster-hero__art
+        svg(viewBox='0 0 260 150' aria-hidden='true')
+          path.map-line(d='M46 121 C62 91 60 58 83 42 C103 28 122 35 137 20 C156 44 189 31 203 58 C216 83 199 102 214 124')
+          path.wave-line(d='M21 111 C49 97 69 124 99 109 C127 95 151 121 179 105 C201 93 224 111 239 99')
+          circle.pulse(cx='132' cy='76' r='13')
+          circle.pulse.pulse--two(cx='132' cy='76' r='27')
+          path.bolt(d='M135 50 L124 78 H135 L127 105 L148 69 H136 Z')
+
+    if feedback
+      .disaster-alert(class=`disaster-alert--${feedback.status}`)= feedback.message
+
+    if loadError
+      .disaster-alert.disaster-alert--error= loadError
+    else
+      section.disaster-overview
+        each card in overviewCards
+          article.disaster-stat
+            span.disaster-stat__label= card.label
+            strong.disaster-stat__value= card.value
+            span.disaster-stat__helper= card.helper
+
+      section.disaster-focus-grid
+        each card in focusCards
+          article.disaster-focus(class=`disaster-focus--${card.key}`)
+            .disaster-focus__top
+              +disasterIcon(card.key)
+              div
+                h2= card.label
+                if card.alert
+                  span.disaster-pill(class=`disaster-pill--${card.alert.severity}`)= card.alert.severityLabel
+                else
+                  span.disaster-pill.disaster-pill--info No data
+            if card.alert
+              h3= card.alert.title
+              p.disaster-focus__headline= card.alert.headline || card.alert.summary
+              dl.disaster-meta
+                div
+                  dt Time
+                  dd= card.alert.timeDisplay
+                div
+                  dt Detail
+                  dd= card.alert.detail || 'N/A'
+                div
+                  dt Confidence
+                  dd= card.alert.confidenceDisplay
+            else
+              p.disaster-empty No matching alerts have been saved yet.
+
+      .disaster-main-grid
+        section.disaster-panel.disaster-panel--wide
+          .disaster-panel__header
+            h2 Latest Saved Bulletins
+            a(href='/admin/disasters/history') View all
+          if latestAlerts && latestAlerts.length
+            .disaster-alert-list
+              each alert in latestAlerts
+                article.disaster-alert-row(class=`disaster-alert-row--${alert.category}`)
+                  .disaster-alert-row__icon
+                    +disasterIcon(alert.category === 'earthquake' ? 'earthquake' : (alert.category === 'typhoon' ? 'typhoon' : 'weather'))
+                  .disaster-alert-row__body
+                    .disaster-alert-row__titleline
+                      h3= alert.title
+                      span.disaster-pill(class=`disaster-pill--${alert.severity}`)= alert.severityLabel
+                    p= alert.headline || alert.detail || alert.summary
+                    .disaster-alert-row__meta
+                      span= alert.categoryLabel
+                      span= alert.timeDisplay
+                      span= alert.source
+                      span Confidence #{alert.confidenceDisplay}
+                  if alert.sourceUrl
+                    a.disaster-row-link(href=alert.sourceUrl target='_blank' rel='noopener noreferrer' aria-label='Open source XML')
+                      svg(viewBox='0 0 24 24' aria-hidden='true')
+                        path(d='M7 17 17 7')
+                        path(d='M8 7h9v9')
+          else
+            p.disaster-empty No disaster bulletins have been saved yet.
+
+        aside.disaster-panel
+          .disaster-panel__header
+            h2 Category Mix
+          if categoryCounts && categoryCounts.length
+            .disaster-category-bars
+              each category in categoryCounts
+                .disaster-category-bar
+                  .disaster-category-bar__label
+                    span= category.label
+                    strong= category.count
+                  .disaster-category-bar__track
+                    span(style=`--bar-width: ${Math.min(100, category.count * 12)}%;`)
+          else
+            p.disaster-empty No category counts yet.
+
+      section.disaster-panel
+        .disaster-panel__header
+          h2 24 Hour Weather
+          if weatherSnapshot
+            span.disaster-panel__meta #{weatherSnapshot.source} · #{weatherSnapshot.fetchedAtDisplay}
+        if weatherSnapshot
+          .disaster-weather-summary
+            strong= weatherSnapshot.locationName
+            span= weatherSnapshot.summary
+          if weatherSnapshot.hourly && weatherSnapshot.hourly.length
+            .disaster-weather-strip
+              each hour in weatherSnapshot.hourly
+                .disaster-weather-hour
+                  span.disaster-weather-hour__time= hour.timeDisplay
+                  strong= hour.temperatureDisplay
+                  span= hour.description
+                  span= hour.precipitationDisplay
+                  span= hour.windDisplay
+        else
+          p.disaster-empty No weather snapshot has been saved yet.
+
+      section.disaster-panel
+        .disaster-panel__header
+          h2 Source Health
+          if state
+            span.disaster-panel__meta Last run #{state.lastRunAtDisplay}
+        if state
+          .disaster-source-grid
+            each feed in state.feeds
+              .disaster-source
+                .disaster-source__status(class=`disaster-source__status--${feed.lastStatus || 'unknown'}`)
+                div
+                  strong= feed.title || feed.url
+                  span #{feed.lastStatus || 'unknown'} · new #{feed.newEntries || 0}
+                  if feed.lastError
+                    small= feed.lastError
+          if state.lastError
+            p.disaster-source-error= state.lastError
+        else
+          p.disaster-empty The ingestion state will appear after the first scheduler run.

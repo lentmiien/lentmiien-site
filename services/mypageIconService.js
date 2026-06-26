@@ -235,6 +235,14 @@ const MYPAGE_ICON_DEFINITIONS = [
     adminOnly: true,
   },
   {
+    id: 'disaster_dashboard',
+    href: '/admin/disasters',
+    src: '/i/disaster.svg',
+    alt: 'Disaster dashboard',
+    label: 'Disaster Watch',
+    adminOnly: true,
+  },
+  {
     id: 'ai_gateway',
     href: '/admin/ai-gateway',
     src: '/i/ai_gateway.svg',

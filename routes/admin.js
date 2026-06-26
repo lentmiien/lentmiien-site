@@ -19,6 +19,7 @@ const requestCounterAdminController = require('../controllers/requestCounterAdmi
 const deviceUsageAdminController = require('../controllers/deviceUsageAdminController');
 const minuteLoggerAdminController = require('../controllers/minuteLoggerAdminController');
 const dummyApiAdminController = require('../controllers/dummyApiAdminController');
+const disasterAdminController = require('../controllers/disasterAdminController');
 const lifeLogRouter = require('./lifeLog');
 
 const htmlUpload = multer({
@@ -249,6 +250,9 @@ router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
 router.get('/dummy-api-requests', dummyApiAdminController.dashboard);
 router.post('/dummy-api-requests/settings', dummyApiAdminController.updateSettings);
 router.post('/dummy-api-requests/clear', dummyApiAdminController.clearLogs);
+router.get('/disasters', disasterAdminController.dashboard);
+router.get('/disasters/history', disasterAdminController.history);
+router.post('/disasters/refresh', disasterAdminController.refresh);
 router.get('/tools', toolManagerController.index);
 router.post('/tools/save', toolManagerController.save);
 router.post('/tools/seed', toolManagerController.seed);

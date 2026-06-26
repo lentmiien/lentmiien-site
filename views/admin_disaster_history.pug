@@ -1,0 +1,85 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/disaster_dashboard.css')
+
+block content
+  .disaster-admin
+    header.disaster-page-header
+      div
+        p.disaster-kicker Archive
+        h1 Disaster History
+      .disaster-hero__actions
+        a.disaster-button.disaster-button--ghost(href='/admin/disasters')
+          svg(viewBox='0 0 24 24' aria-hidden='true')
+            path(d='M19 12H5')
+            path(d='M12 19 5 12 12 5')
+          span Dashboard
+
+    if loadError
+      .disaster-alert.disaster-alert--error= loadError
+    else
+      form.disaster-filter(method='get', action='/admin/disasters/history')
+        label
+          span Category
+          select(name='category')
+            each category in categories
+              option(value=category[0], selected=filters.category === category[0])= category[1]
+        label
+          span Source
+          select(name='source')
+            each source in sources
+              option(value=source[0], selected=filters.source === source[0])= source[1]
+        label
+          span Limit
+          input(type='number', name='limit', min='10', max='100', step='10', value=filters.limit)
+        button.disaster-button(type='submit')
+          svg(viewBox='0 0 24 24' aria-hidden='true')
+            path(d='M4 6h16')
+            path(d='M7 12h10')
+            path(d='M10 18h4')
+          span Filter
+
+      section.disaster-panel
+        .disaster-panel__header
+          h2 Saved Alerts
+          span.disaster-panel__meta #{pagination.total} total
+        if alerts && alerts.length
+          .disaster-table-wrap
+            table.disaster-table
+              thead
+                tr
+                  th Time
+                  th Type
+                  th Severity
+                  th Title
+                  th Detail
+                  th Source
+                  th Confidence
+              tbody
+                each alert in alerts
+                  tr
+                    td= alert.timeDisplay
+                    td= alert.categoryLabel
+                    td
+                      span.disaster-pill(class=`disaster-pill--${alert.severity}`)= alert.severityLabel
+                    td
+                      strong= alert.title
+                      if alert.headline
+                        small= alert.headline
+                    td= alert.detail || alert.hazardsDisplay || alert.areasDisplay || 'N/A'
+                    td
+                      if alert.sourceUrl
+                        a(href=alert.sourceUrl target='_blank' rel='noopener noreferrer')= alert.source
+                      else
+                        span= alert.source
+                    td= alert.confidenceDisplay
+        else
+          p.disaster-empty No alerts match the selected filters.
+
+      nav.disaster-pagination(aria-label='Disaster history pages')
+        if pagination.previousPage
+          a.disaster-button.disaster-button--ghost(href=`/admin/disasters/history?category=${encodeURIComponent(filters.category)}&source=${encodeURIComponent(filters.source)}&limit=${filters.limit}&page=${pagination.previousPage}`) Previous
+        span Page #{pagination.page} of #{pagination.totalPages}
+        if pagination.nextPage
+          a.disaster-button.disaster-button--ghost(href=`/admin/disasters/history?category=${encodeURIComponent(filters.category)}&source=${encodeURIComponent(filters.source)}&limit=${filters.limit}&page=${pagination.nextPage}`) Next
