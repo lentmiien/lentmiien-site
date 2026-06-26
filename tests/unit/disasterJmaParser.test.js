@@ -1,5 +1,6 @@
 const {
   parseAtomFeed,
+  parseCoordinate,
   parseJmaAlert,
 } = require('../../utils/disasterJmaParser');
 
@@ -162,5 +163,73 @@ describe('disasterJmaParser', () => {
     expect(alert.typhoon.number).toBe('2608');
     expect(alert.typhoon.maxWindProbability).toBe(20);
     expect(alert.typhoon.maxWindProbabilityArea).toBe('横浜・川崎');
+  });
+
+  test('parses JMA typhoon coordinate arrays', () => {
+    const coordinate = parseCoordinate([
+      {
+        '#text': '+35.6+141.1/',
+        '@_description': '北緯３５．６度東経１４１．１度',
+        '@_type': '中心位置（度）',
+      },
+      {
+        '#text': '+3535+14105/',
+        '@_description': '北緯３５度３５分東経１４１度０５分',
+        '@_type': '中心位置（度分）',
+      },
+    ]);
+
+    expect(coordinate.latitude).toBeCloseTo(35.6, 3);
+    expect(coordinate.longitude).toBeCloseTo(141.1, 3);
+  });
+
+  test('extracts typhoon track center points', () => {
+    const alert = parseJmaAlert({
+      entry: {
+        id: 'typhoon-track-entry',
+        url: 'https://example.test/typhoon-track.xml',
+        title: '台風解析・予報情報（５日予報）（Ｈ３０）',
+      },
+      feed: { url: 'https://example.test/extra.xml', title: 'extra' },
+      xmlText: `<?xml version="1.0" encoding="UTF-8"?>
+        <Report xmlns="http://xml.kishou.go.jp/jmaxml1/">
+          <Control><Title>台風解析・予報情報（５日予報）（Ｈ３０）</Title><Status>通常</Status></Control>
+          <Head xmlns="http://xml.kishou.go.jp/jmaxml1/informationBasis1/">
+            <Title>台風解析・予報情報</Title>
+            <ReportDateTime>2026-06-27T07:45:00+09:00</ReportDateTime>
+            <TargetDateTime>2026-06-27T07:00:00+09:00</TargetDateTime>
+            <TargetDuration>PT120H</TargetDuration>
+            <EventID>TC2609</EventID>
+            <InfoKind>台風解析・予報情報（５日予報）</InfoKind>
+            <Headline><Text/></Headline>
+          </Head>
+          <Body xmlns="http://xml.kishou.go.jp/jmaxml1/body/meteorology1/" xmlns:jmx_eb="http://xml.kishou.go.jp/jmaxml1/elementBasis1/">
+            <MeteorologicalInfos type="台風情報">
+              <MeteorologicalInfo>
+                <DateTime type="実況">2026-06-27T07:00:00+09:00</DateTime>
+                <Item>
+                  <Kind><Property><Type>呼称</Type><TyphoonNamePart><Name>HIGOS</Name><NameKana>ヒーゴス</NameKana><Number>2608</Number></TyphoonNamePart></Property></Kind>
+                  <Kind><Property><Type>中心</Type><CenterPart>
+                    <jmx_eb:Coordinate description="北緯３５．６度東経１４１．１度" type="中心位置（度）">+35.6+141.1/</jmx_eb:Coordinate>
+                    <jmx_eb:Coordinate description="北緯３５度３５分東経１４１度０５分" type="中心位置（度分）">+3535+14105/</jmx_eb:Coordinate>
+                    <Location>銚子市の東南東約30km</Location>
+                    <jmx_eb:Direction unit="１６方位漢字" type="移動方向">北東</jmx_eb:Direction>
+                    <jmx_eb:Speed description="毎時１００キロ" unit="km/h" type="移動速度">100</jmx_eb:Speed>
+                    <jmx_eb:Pressure description="中心気圧９９８ヘクトパスカル" unit="hPa" type="中心気圧">998</jmx_eb:Pressure>
+                  </CenterPart></Property></Kind>
+                </Item>
+              </MeteorologicalInfo>
+            </MeteorologicalInfos>
+          </Body>
+        </Report>`,
+    });
+
+    expect(alert.category).toBe('typhoon');
+    expect(alert.typhoon.track).toHaveLength(1);
+    expect(alert.typhoon.track[0].latitude).toBeCloseTo(35.6, 3);
+    expect(alert.typhoon.track[0].longitude).toBeCloseTo(141.1, 3);
+    expect(alert.typhoon.track[0].location).toBe('銚子市の東南東約30km');
+    expect(alert.typhoon.track[0].pressureHpa).toBe(998);
+    expect(alert.typhoon.track[0].speedKmh).toBe(100);
   });
 });

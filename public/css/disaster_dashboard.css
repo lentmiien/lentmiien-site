@@ -296,6 +296,11 @@ body,
   color: var(--disaster-text-secondary);
 }
 
+.disaster-local-band__fallback {
+  padding-top: 0.2rem;
+  color: var(--disaster-text-muted);
+}
+
 .disaster-local-band__meta {
   white-space: nowrap;
 }

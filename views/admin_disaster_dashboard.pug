@@ -75,7 +75,8 @@ block content
               path(d='M79 20 V31 M79 79 V90 M44 55 H56 M102 55 H116')
           .disaster-local-band__copy
             h2 #{dashboardScope.scope} Watch
-            p Showing saved disaster bulletins from the last #{dashboardScope.windowHours} hours. Fallback order: #{dashboardScope.fallbackChain.map((entry) => `${entry.scope} (${entry.count})`).join(' -> ')}.
+            p Showing saved disaster bulletins from the last #{dashboardScope.windowHours} hours, including typhoon tracks within about #{dashboardScope.typhoonRadiusKm} km of #{dashboardScope.targetName} and nearby typhoon-effect weather.
+            p.disaster-local-band__fallback Fallback order: #{dashboardScope.fallbackChain.map((entry) => `${entry.scope} (${entry.count})`).join(' -> ')}.
           .disaster-local-band__meta
             span Since #{dashboardScope.sinceDisplay}
 

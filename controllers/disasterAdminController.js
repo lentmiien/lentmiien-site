@@ -12,6 +12,37 @@ const MAX_LIMIT = 100;
 const TIME_ZONE = 'Asia/Tokyo';
 const DASHBOARD_WINDOW_HOURS = 24;
 const DASHBOARD_SCOPE_CHAIN = ['横浜旭区', '横浜', '神奈川県'];
+const DASHBOARD_TARGET_LOCATION = {
+  name: '横浜旭区',
+  latitude: 35.4759,
+  longitude: 139.5443,
+};
+const DEFAULT_TYPHOON_WATCH_RADIUS_KM = 900;
+const TYPHOON_EFFECT_REGIONS = [
+  '神奈川県',
+  '横浜',
+  '東京都',
+  '千葉県',
+  '埼玉県',
+  '山梨県',
+  '静岡県',
+  '関東甲信',
+  '東京地方',
+  '伊豆諸島',
+];
+const TYPHOON_EFFECT_TERMS = [
+  '台風',
+  '暴風',
+  '強風',
+  '高波',
+  '大雨',
+  '土砂',
+  '浸水',
+  '河川',
+  '氾濫',
+  '竜巻',
+  '落雷',
+];
 
 const CATEGORY_LABELS = {
   earthquake: 'Earthquake',
@@ -95,6 +126,11 @@ function formatConfidence(value) {
   return Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'N/A';
 }
 
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function compactList(values, max = 4) {
   const normalized = Array.isArray(values) ? values.filter(Boolean) : [];
   if (normalized.length <= max) {
@@ -105,6 +141,53 @@ function compactList(values, max = 4) {
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function termsRegex(terms) {
+  return new RegExp(terms.map(escapeRegex).join('|'), 'i');
+}
+
+function typhoonWatchRadiusKm() {
+  return parsePositiveInteger(process.env.DISASTER_TYPHOON_WATCH_RADIUS_KM, DEFAULT_TYPHOON_WATCH_RADIUS_KM);
+}
+
+function coordinateBounds(center, radiusKm) {
+  const latitudeDelta = radiusKm / 111;
+  const longitudeDelta = radiusKm / (111 * Math.max(0.25, Math.cos(center.latitude * Math.PI / 180)));
+  return {
+    minLatitude: center.latitude - latitudeDelta,
+    maxLatitude: center.latitude + latitudeDelta,
+    minLongitude: center.longitude - longitudeDelta,
+    maxLongitude: center.longitude + longitudeDelta,
+  };
+}
+
+function distanceKm(from, to = DASHBOARD_TARGET_LOCATION) {
+  if (!Number.isFinite(from?.latitude) || !Number.isFinite(from?.longitude)) {
+    return null;
+  }
+  const earthRadiusKm = 6371;
+  const lat1 = from.latitude * Math.PI / 180;
+  const lat2 = to.latitude * Math.PI / 180;
+  const deltaLat = (to.latitude - from.latitude) * Math.PI / 180;
+  const deltaLon = (to.longitude - from.longitude) * Math.PI / 180;
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function closestTyphoonPoint(typhoon = {}) {
+  const points = Array.isArray(typhoon.track) ? typhoon.track : [];
+  return points.reduce((closest, point) => {
+    const distance = distanceKm(point);
+    if (!Number.isFinite(distance)) {
+      return closest;
+    }
+    if (!closest || distance < closest.distanceKm) {
+      return { ...point, distanceKm: distance };
+    }
+    return closest;
+  }, null);
 }
 
 function categoryLabel(category) {
@@ -133,10 +216,15 @@ function buildAlertDetail(alert) {
 
   if (alert.category === 'typhoon') {
     const typhoon = alert.typhoon || {};
+    const closest = closestTyphoonPoint(typhoon);
     return [
       typhoon.name ? `${typhoon.name}${typhoon.number ? ` ${typhoon.number}` : ''}` : null,
       Number.isFinite(typhoon.maxWindProbability) ? `${typhoon.maxWindProbability}% max storm-wind probability` : null,
       typhoon.maxWindProbabilityArea,
+      closest ? `${Math.round(closest.distanceKm)} km from ${DASHBOARD_TARGET_LOCATION.name}` : null,
+      closest?.location ? `center ${closest.location}` : null,
+      Number.isFinite(closest?.pressureHpa) ? `${formatNumber(closest.pressureHpa, 0)} hPa` : null,
+      Number.isFinite(closest?.speedKmh) ? `${formatNumber(closest.speedKmh, 0)} km/h` : null,
     ].filter(Boolean).join(' · ');
   }
 
@@ -263,11 +351,87 @@ function scopeFilter(scope) {
   return { $or: filters };
 }
 
+function typhoonTrackFilter(radiusKm = typhoonWatchRadiusKm()) {
+  const bounds = coordinateBounds(DASHBOARD_TARGET_LOCATION, radiusKm);
+  return {
+    category: 'typhoon',
+    'typhoon.track': {
+      $elemMatch: {
+        latitude: { $gte: bounds.minLatitude, $lte: bounds.maxLatitude },
+        longitude: { $gte: bounds.minLongitude, $lte: bounds.maxLongitude },
+      },
+    },
+  };
+}
+
+function typhoonEffectWeatherFilter() {
+  const regionRegex = termsRegex(TYPHOON_EFFECT_REGIONS);
+  const effectRegex = termsRegex(TYPHOON_EFFECT_TERMS);
+  return {
+    category: { $in: ['extreme_weather', 'flood', 'landslide', 'tornado'] },
+    $and: [
+      {
+        $or: [
+          { 'areas.name': regionRegex },
+          { 'areas.prefecture': regionRegex },
+          { 'weather.areaNames': regionRegex },
+          { title: regionRegex },
+          { headline: regionRegex },
+          { sourceEntryContent: regionRegex },
+        ],
+      },
+      {
+        $or: [
+          { 'hazards.name': effectRegex },
+          { 'weather.hazardNames': effectRegex },
+          { title: effectRegex },
+          { headline: effectRegex },
+          { sourceEntryContent: effectRegex },
+        ],
+      },
+    ],
+  };
+}
+
+function regionalTyphoonTextFilter() {
+  const regionRegex = termsRegex(TYPHOON_EFFECT_REGIONS);
+  const effectRegex = termsRegex(TYPHOON_EFFECT_TERMS);
+  return {
+    category: 'typhoon',
+    $and: [
+      {
+        $or: [
+          { 'areas.name': regionRegex },
+          { 'areas.prefecture': regionRegex },
+          { 'weather.areaNames': regionRegex },
+          { title: regionRegex },
+          { headline: regionRegex },
+          { sourceEntryContent: regionRegex },
+        ],
+      },
+      {
+        $or: [
+          { title: effectRegex },
+          { headline: effectRegex },
+          { sourceEntryContent: effectRegex },
+        ],
+      },
+    ],
+  };
+}
+
 function dashboardFilter(scope, since) {
   return {
     $and: [
       timeWindowFilter(since),
-      scopeFilter(scope),
+      {
+        $or: [
+          scopeFilter(scope),
+          typhoonTrackFilter(),
+          regionalTyphoonTextFilter(),
+          typhoonEffectWeatherFilter(),
+        ],
+      },
     ],
   };
 }
@@ -445,6 +609,8 @@ exports.dashboard = async (req, res) => {
       dashboardScope: {
         scope: selectedScope.scope,
         windowHours: DASHBOARD_WINDOW_HOURS,
+        targetName: DASHBOARD_TARGET_LOCATION.name,
+        typhoonRadiusKm: typhoonWatchRadiusKm(),
         fallbackChain: selectedScope.triedScopes,
         sinceDisplay: formatDateTime(dashboardSince),
       },

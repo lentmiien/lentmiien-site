@@ -13,6 +13,7 @@ const XML_OPTIONS = {
 const parser = new XMLParser(XML_OPTIONS);
 
 const EARTHQUAKE_TARGET_AREA = '横浜旭区';
+const PARSER_VERSION = 'jma-v2';
 
 function asArray(value) {
   if (value === null || value === undefined) {
@@ -145,6 +146,21 @@ function uniqueBy(items, keyBuilder) {
 }
 
 function parseCoordinate(coordinateNode) {
+  if (Array.isArray(coordinateNode)) {
+    for (const node of coordinateNode) {
+      const parsed = parseCoordinate(node);
+      if (Number.isFinite(parsed.latitude) && Number.isFinite(parsed.longitude)) {
+        return parsed;
+      }
+    }
+    return {
+      latitude: null,
+      longitude: null,
+      depthKm: null,
+      coordinateDescription: null,
+    };
+  }
+
   const rawValue = textValue(coordinateNode);
   const description = cleanString(coordinateNode?.['@_description']);
   if (!rawValue) {
@@ -167,12 +183,48 @@ function parseCoordinate(coordinateNode) {
   }
 
   const depthMeters = match[3] ? Number.parseFloat(match[3]) : null;
+  let latitude = parseSignedCoordinateComponent(match[1], true);
+  let longitude = parseSignedCoordinateComponent(match[2], false);
+
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90) {
+    latitude = null;
+  }
+  if (!Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+    longitude = null;
+  }
+
   return {
-    latitude: Number.parseFloat(match[1]),
-    longitude: Number.parseFloat(match[2]),
+    latitude,
+    longitude,
     depthKm: Number.isFinite(depthMeters) ? Math.abs(depthMeters) / 1000 : null,
     coordinateDescription: description,
   };
+}
+
+function parseSignedCoordinateComponent(value, isLatitude) {
+  const raw = String(value || '');
+  const sign = raw.startsWith('-') ? -1 : 1;
+  const numeric = raw.slice(1);
+  if (!numeric) {
+    return null;
+  }
+
+  if (numeric.includes('.')) {
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  const degreeDigits = isLatitude ? 2 : 3;
+  if (numeric.length > degreeDigits) {
+    const degrees = Number.parseInt(numeric.slice(0, degreeDigits), 10);
+    const minutes = Number.parseInt(numeric.slice(degreeDigits), 10);
+    if (Number.isFinite(degrees) && Number.isFinite(minutes) && minutes < 60) {
+      return sign * (degrees + (minutes / 60));
+    }
+  }
+
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function shindoScore(value) {
@@ -439,6 +491,32 @@ function extractTyphoon(report) {
     .filter((coordinate) => Number.isFinite(coordinate.latitude) && Number.isFinite(coordinate.longitude))
     .slice(0, 30);
 
+  collectByKey(body, 'CenterPart').forEach((centerPart, index) => {
+    const coordinate = parseCoordinate(centerPart.Coordinate);
+    if (!Number.isFinite(coordinate.latitude) || !Number.isFinite(coordinate.longitude)) {
+      return;
+    }
+    const existing = typhoon.track[index] || {};
+    typhoon.track[index] = {
+      ...existing,
+      latitude: coordinate.latitude,
+      longitude: coordinate.longitude,
+      depthKm: coordinate.depthKm,
+      description: coordinate.coordinateDescription,
+      location: textValue(centerPart.Location),
+      direction: textValue(centerPart.Direction),
+      pressureHpa: numberValue(centerPart.Pressure),
+      speedKmh: asArray(centerPart.Speed)
+        .filter((speed) => cleanString(speed?.['@_unit']) === 'km/h')
+        .map(numberValue)
+        .find(Number.isFinite) || null,
+    };
+  });
+
+  typhoon.track = typhoon.track
+    .filter((coordinate) => Number.isFinite(coordinate.latitude) && Number.isFinite(coordinate.longitude))
+    .slice(0, 30);
+
   return typhoon;
 }
 
@@ -573,12 +651,13 @@ function parseJmaAlert({ xmlText, entry = {}, feed = {} }) {
     weather: buildWeatherDetails(hazards, areas),
     rawXmlSizeBytes: Buffer.byteLength(xmlText || '', 'utf8'),
     raw: report,
-    parserVersion: 'jma-v1',
+    parserVersion: PARSER_VERSION,
   };
 }
 
 module.exports = {
   EARTHQUAKE_TARGET_AREA,
+  PARSER_VERSION,
   asArray,
   cleanString,
   collectByKey,

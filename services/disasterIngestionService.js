@@ -7,6 +7,7 @@ const {
   DisasterWeatherSnapshot,
 } = require('../database');
 const {
+  PARSER_VERSION,
   parseAtomFeed,
   parseJmaAlert,
   shindoScore,
@@ -261,6 +262,22 @@ class DisasterIngestionService {
     }
   }
 
+  shouldRefreshExistingJmaAlert(alert) {
+    return alert?.category === 'typhoon' && alert.parserVersion !== PARSER_VERSION;
+  }
+
+  async refreshExistingJmaAlert(existingAlert, parsedAlert) {
+    const alert = await this.models.DisasterAlert.findByIdAndUpdate(
+      existingAlert._id,
+      { $set: parsedAlert },
+      { new: true }
+    );
+    if (alert) {
+      await this.verifyAlert(alert);
+    }
+    return alert;
+  }
+
   async pollJmaFeed(feedUrl, state, runCounters) {
     const feedState = {
       url: feedUrl,
@@ -289,8 +306,23 @@ class DisasterIngestionService {
         }
         const sourceUrl = entry.url || entry.id;
         const dedupeKey = `jma:${sourceUrl}`;
-        const exists = await this.models.DisasterAlert.exists({ dedupeKey });
-        if (exists) {
+        const existingAlert = await this.models.DisasterAlert.findOne({ dedupeKey })
+          .select({ category: 1, parserVersion: 1 })
+          .lean();
+        if (existingAlert) {
+          if (this.shouldRefreshExistingJmaAlert(existingAlert)) {
+            if (runCounters.detailFetches >= maxNewDetails) {
+              runCounters.deferred += 1;
+              runCounters.duplicates += 1;
+              continue;
+            }
+            const detailXml = await this.fetchText(sourceUrl);
+            runCounters.detailFetches += 1;
+            const parsedAlert = parseJmaAlert({ xmlText: detailXml, entry, feed });
+            await this.refreshExistingJmaAlert(existingAlert, parsedAlert);
+            runCounters.updated += 1;
+            continue;
+          }
           runCounters.duplicates += 1;
           continue;
         }
@@ -330,6 +362,7 @@ class DisasterIngestionService {
     const counters = {
       inserted: 0,
       duplicates: 0,
+      updated: 0,
       skippedBeforeStart: 0,
       detailFetches: 0,
       deferred: 0,
