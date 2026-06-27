@@ -4,6 +4,7 @@ block styles
   link(rel='stylesheet', href='/css/qwen3_lora_admin.css')
 
 block content
+  - const qwenTrainingGroups = Array.isArray(trainingGroups) ? trainingGroups : [];
   .qwen-lora
     .qwen-lora__header
       div
@@ -61,6 +62,27 @@ block content
             input#datasetName.form-control(type='text', name='name', placeholder='support-reply-tone')
           button.btn.btn-primary(type='submit') Upload
         #uploadResult.qwen-lora__result
+
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Training Groups
+          span.qwen-lora__muted Export from chat5
+        .mb-3
+          label.form-label(for='trainingGroupExportSelect') Group
+          select#trainingGroupExportSelect.form-select(disabled=qwenTrainingGroups.length === 0)
+            if qwenTrainingGroups.length
+              each group in qwenTrainingGroups
+                option(value=group.groupId, data-entry-count=(group.stats && group.stats.entryCount) || 0)= `${group.groupId} (${(group.stats && group.stats.entryCount) || 0} entries)`
+            else
+              option(value='') No training groups found
+        .mb-3
+          label.form-label(for='trainingGroupDatasetName') Dataset name
+          input#trainingGroupDatasetName.form-control(type='text', placeholder='Defaults to group id', disabled=qwenTrainingGroups.length === 0)
+        .qwen-lora__actions
+          a#trainingGroupCsvLink.btn.btn-outline-primary.btn-sm(href=qwenTrainingGroups.length ? `/admin/qwen3-lora/training-groups/${encodeURIComponent(qwenTrainingGroups[0].groupId)}/export.csv` : '#', class={ disabled: qwenTrainingGroups.length === 0 }) Download CSV
+          button#trainingGroupUploadBtn.btn.btn-primary.btn-sm(type='button', disabled=qwenTrainingGroups.length === 0) Upload as dataset
+          a.btn.btn-outline-secondary.btn-sm(href='/admin/qwen3-lora/training-groups') Manage
+        #trainingGroupExportResult.qwen-lora__result
 
       section.qwen-lora__panel
         .qwen-lora__panel-head

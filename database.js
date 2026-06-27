@@ -176,6 +176,8 @@ const DisasterAlert = require('./models/disaster_alert');
 const DisasterIngestionState = require('./models/disaster_ingestion_state');
 const DisasterWeatherSnapshot = require('./models/disaster_weather_snapshot');
 const DisasterWeatherObservation = require('./models/disaster_weather_observation');
+const TrainingGroupModel = require('./models/training_group');
+const TrainingEntryModel = require('./models/training_entry');
 
 // Export models
 module.exports = {
@@ -296,4 +298,6 @@ module.exports = {
   DisasterIngestionState,
   DisasterWeatherSnapshot,
   DisasterWeatherObservation,
+  TrainingGroupModel,
+  TrainingEntryModel,
 };

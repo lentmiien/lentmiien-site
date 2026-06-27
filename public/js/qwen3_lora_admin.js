@@ -17,6 +17,8 @@
     modelUnload: '/admin/qwen3-lora/model/unload',
     container: (action) => `/admin/qwen3-lora/container/${action}`,
     dataset: (datasetId) => `/admin/qwen3-lora/datasets/${encodeURIComponent(datasetId)}`,
+    trainingGroupExport: (groupId) => `/admin/qwen3-lora/training-groups/${encodeURIComponent(groupId)}/export.csv`,
+    trainingGroupUpload: (groupId) => `/admin/qwen3-lora/training-groups/${encodeURIComponent(groupId)}/upload-dataset`,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -173,6 +175,29 @@
 
   function datasetById(datasetId) {
     return getDatasets().find((dataset) => dataset?.dataset_id === datasetId) || null;
+  }
+
+  function selectedTrainingGroupId() {
+    return $('trainingGroupExportSelect')?.value || '';
+  }
+
+  function updateTrainingGroupControls() {
+    const groupId = selectedTrainingGroupId();
+    const link = $('trainingGroupCsvLink');
+    const input = $('trainingGroupDatasetName');
+    const button = $('trainingGroupUploadBtn');
+    if (link) {
+      link.href = groupId ? endpoints.trainingGroupExport(groupId) : '#';
+      link.classList.toggle('disabled', !groupId);
+      link.setAttribute('aria-disabled', groupId ? 'false' : 'true');
+    }
+    if (input) {
+      input.placeholder = groupId || 'Defaults to group id';
+      input.disabled = !groupId;
+    }
+    if (button) {
+      button.disabled = !groupId;
+    }
   }
 
   function statusBadge(status) {
@@ -721,6 +746,26 @@
       });
     });
 
+    $('trainingGroupExportSelect')?.addEventListener('change', updateTrainingGroupControls);
+
+    $('trainingGroupUploadBtn')?.addEventListener('click', (event) => {
+      const button = event.currentTarget;
+      withButton(button, 'Uploading training group dataset...', async () => {
+        const groupId = selectedTrainingGroupId();
+        if (!groupId) {
+          throw new Error('Select a training group first.');
+        }
+        const name = $('trainingGroupDatasetName')?.value.trim() || groupId;
+        const result = await requestJson(endpoints.trainingGroupUpload(groupId), {
+          method: 'POST',
+          body: { name },
+        });
+        $('trainingGroupExportResult')?.replaceChildren(makeJsonToggle('Upload response', result));
+        setAlert(`Uploaded ${result?.name || result?.dataset_id || groupId}.`, 'success');
+        await loadState({ silent: true });
+      });
+    });
+
     $('columnPreset')?.addEventListener('change', () => {
       const textarea = $('columnJson');
       if (textarea) textarea.hidden = $('columnPreset')?.value !== 'custom';
@@ -780,6 +825,7 @@
   }
 
   bindEvents();
+  updateTrainingGroupControls();
   loadState().catch((error) => {
     setAlert(error.message || 'Unable to load Qwen3 LoRA state.', 'error');
   });

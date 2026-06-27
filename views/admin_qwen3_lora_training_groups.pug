@@ -1,0 +1,84 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/qwen3_lora_admin.css')
+
+block content
+  .qwen-lora
+    .qwen-lora__header
+      div
+        h1 Training Groups
+        p.text-muted.mb-0 Group chat5 training entries and export them for Qwen3 LoRA datasets.
+      .qwen-lora__meta
+        a.btn.btn-outline-light.btn-sm(href='/admin/qwen3-lora') Qwen3 LoRA
+
+    if status && status.error
+      .qwen-lora__alert.qwen-lora__alert--error= status.error
+    if status && status.success
+      .qwen-lora__alert.qwen-lora__alert--success= status.success
+
+    .qwen-lora__top-grid
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Create Group
+          span.qwen-lora__muted Used by chat5
+        form(method='post', action='/admin/qwen3-lora/training-groups')
+          .mb-3
+            label.form-label(for='groupId') Group id
+            input#groupId.form-control(type='text', name='group_id', maxlength='100', required, placeholder='support-tone-v1')
+          .mb-3
+            label.form-label(for='groupDescription') Description
+            textarea#groupDescription.form-control(name='description', rows='4', maxlength='2000', placeholder='What this training set is intended to teach.')
+          button.btn.btn-primary(type='submit') Create group
+
+      section.qwen-lora__panel
+        .qwen-lora__panel-head
+          h2 Summary
+          span.qwen-lora__muted #{trainingGroups.length} group#{trainingGroups.length === 1 ? '' : 's'}
+        - const totalEntries = trainingGroups.reduce((acc, group) => acc + ((group.stats && group.stats.entryCount) || 0), 0)
+        - const totalConversations = trainingGroups.reduce((acc, group) => acc + ((group.stats && group.stats.conversationCount) || 0), 0)
+        .qwen-lora__status-grid
+          .qwen-lora__status-item
+            span.qwen-lora__status-label Entries
+            strong= totalEntries
+          .qwen-lora__status-item
+            span.qwen-lora__status-label Conversation refs
+            strong= totalConversations
+          .qwen-lora__status-item
+            span.qwen-lora__status-label Active groups
+            strong= trainingGroups.filter((group) => group.isActive).length
+
+    section.qwen-lora__panel
+      .qwen-lora__panel-head
+        h2 Existing Groups
+        span.qwen-lora__muted Export CSV or edit descriptions
+      if trainingGroups.length
+        .qwen-lora__list
+          each group in trainingGroups
+            - const entryCount = group.stats && group.stats.entryCount ? group.stats.entryCount : 0
+            - const conversationCount = group.stats && group.stats.conversationCount ? group.stats.conversationCount : 0
+            - const latestEntryAt = group.stats && group.stats.latestEntryAt ? new Date(group.stats.latestEntryAt).toLocaleString() : 'No entries'
+            article.qwen-lora__item
+              .qwen-lora__item-head
+                div
+                  .qwen-lora__item-title= group.groupId
+                  .qwen-lora__item-meta= `${entryCount} entries | ${conversationCount} conversations | latest ${latestEntryAt}`
+                  if !group.isActive
+                    .qwen-lora__item-meta.text-warning Inactive
+                .qwen-lora__item-actions
+                  a.btn.btn-outline-primary.btn-sm(href=`/admin/qwen3-lora/training-groups/${encodeURIComponent(group.groupId)}/export.csv`) CSV
+                  form(method='post', action=`/admin/qwen3-lora/training-groups/${group._id.toString()}/delete`)
+                    button.btn.btn-outline-danger.btn-sm(type='submit', disabled=entryCount > 0) Delete
+              form.qwen-lora__group-edit(method='post', action='/admin/qwen3-lora/training-groups')
+                input(type='hidden', name='id', value=group._id.toString())
+                .row
+                  .col-md-9.mb-3
+                    label.form-label(for=`description-${group._id}`) Description
+                    textarea.form-control(id=`description-${group._id}`, name='description', rows='3', maxlength='2000')= group.description || ''
+                  .col-md-3.mb-3
+                    .form-check.mt-md-4
+                      input.form-check-input(type='checkbox', id=`active-${group._id}`, name='is_active', checked=group.isActive)
+                      label.form-check-label(for=`active-${group._id}`) Active
+                    button.btn.btn-primary.btn-sm.mt-3(type='submit') Save
+      else
+        p.text-muted.mb-0 No training groups have been created yet.

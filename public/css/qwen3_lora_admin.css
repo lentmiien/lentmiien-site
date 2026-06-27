@@ -159,6 +159,10 @@
   margin-top: 0.75rem;
 }
 
+.qwen-lora__group-edit {
+  margin-top: 0.75rem;
+}
+
 .qwen-lora__textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }

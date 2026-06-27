@@ -4,6 +4,9 @@ block content
   - const personaOptions = Array.isArray(personalities) ? personalities : [];
   - const responseTypeOptions = Array.isArray(responseTypes) ? responseTypes : [];
   - const availableToolOptions = typeof availableTools !== 'undefined' && Array.isArray(availableTools) ? availableTools : [];
+  - const trainingGroupOptions = typeof trainingGroups !== 'undefined' && Array.isArray(trainingGroups) ? trainingGroups : [];
+  - const trainingEntryOptions = typeof trainingEntries !== 'undefined' && Array.isArray(trainingEntries) ? trainingEntries : [];
+  - const trainingFlash = typeof trainingStatus !== 'undefined' && trainingStatus ? trainingStatus : {};
   h2#conversation_title.chat5-title= conversation.title
   p#id.chat5-meta(data-source=conversationSource)= conversation._id
   .chat5-header-actions.d-flex.gap-2.mb-3
@@ -25,6 +28,17 @@ block content
       } catch (err) {
         return dateValue.toISOString();
       }
+    };
+  -
+    const trainingText = (message) => {
+      const content = message && message.content && typeof message.content === 'object' ? message.content : {};
+      return typeof content.text === 'string' ? content.text.trim() : '';
+    };
+  -
+    const trainingPreview = (message) => {
+      const text = trainingText(message).replace(/\s+/g, ' ');
+      if (text.length <= 220) return text;
+      return `${text.slice(0, 217)}...`;
     };
   - 
     const parseJsonLikeString = (value) => {
@@ -271,12 +285,14 @@ block content
       +chat5RenderMessageList(visibleMessages, visibleState)
     else if !olderChunks.length
       p.text-muted.mb-0 No messages yet.
-  ul#pills-tab.nav.nav-pills.mb-3.chat5-tabs(role="tablist") 
-    li.nav-item(role="presentation") 
+  ul#pills-tab.nav.nav-pills.mb-3.chat5-tabs(role="tablist")
+    li.nav-item(role="presentation")
       button#pills-chat-tab.nav-link.active(data-bs-toggle="pill" data-bs-target="#pills-chat" type="button" role="tab" aria-controls="pills-chat" aria-selected="true") Chat
-    li.nav-item(role="presentation") 
+    li.nav-item(role="presentation")
       button#pills-settings-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-settings" type="button" role="tab" aria-controls="pills-settings" aria-selected="false") Settings
-    li.nav-item(role="presentation") 
+    li.nav-item(role="presentation")
+      button#pills-training-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-training" type="button" role="tab" aria-controls="pills-training" aria-selected="false") Add to training
+    li.nav-item(role="presentation")
       button#pills-raw-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-raw" type="button" role="tab" aria-controls="pills-raw" aria-selected="false") Raw
   #pills-tabContent.tab-content.chat5-tab-content
     #pills-chat.tab-pane.fade.show.active.chat5-pane(role="tabpanel" aria-labelledby="pills-chat-tab" tabindex="0")
@@ -396,6 +412,84 @@ block content
       input#members.form-control(type="text", value=conversation.members.join(", "))
       .chat5-update-actions.d-flex.justify-content-evenly.flex-wrap.gap-2
         button#updateSettingsButton.btn.btn-success(type="button", onclick="UpdateConversation()", disabled=conversationSource !== 'conversation5') Update
+    #pills-training.tab-pane.fade.chat5-pane(role="tabpanel" aria-labelledby="pills-training-tab" tabindex="0")
+      .chat5-training-toolbar
+        div
+          h3.mb-1 Add to training
+          p.text-muted.mb-0 Select one or more prompt messages and one output message for a training group.
+        a.btn.btn-outline-primary.btn-sm(href="/admin/qwen3-lora/training-groups") Manage groups
+      if trainingFlash.error
+        .alert.alert-danger.mt-3.mb-3= trainingFlash.error
+      if trainingFlash.success
+        .alert.alert-success.mt-3.mb-3= trainingFlash.success
+      if conversationSource !== 'conversation5'
+        p.text-muted.mb-0 Training entries can only be created from saved chat5 conversations.
+      else if conversation._id === 'NEW'
+        p.text-muted.mb-0 Save this conversation before adding training entries.
+      else
+        - const selectableTrainingMessages = Array.isArray(messages) ? messages.filter((msg) => trainingText(msg).length > 0) : [];
+        form.chat5-training-form(method="post", action="/chat5/training-entries")
+          input(type="hidden", name="conversation_id", value=conversation._id.toString())
+          .row
+            .col-md-6.mb-3
+              label.chat5-input-label.form-label(for="trainingGroupId") Training group
+              select#trainingGroupId.form-select(name="group_id", required, disabled=trainingGroupOptions.length === 0)
+                if trainingGroupOptions.length
+                  each group in trainingGroupOptions
+                    option(value=group.groupId)= `${group.groupId} (${group.stats && group.stats.entryCount ? group.stats.entryCount : 0} entries)`
+                else
+                  option(value="") Create a training group first
+            .col-md-6.mb-3
+              label.chat5-input-label.form-label(for="trainingNotes") Notes
+              input#trainingNotes.form-control(type="text", name="notes", maxlength="2000", placeholder="Optional note for this entry")
+          if selectableTrainingMessages.length
+            .chat5-training-message-list
+              each m, i in selectableTrainingMessages
+                - const messageId = m._id.toString();
+                - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
+                article.chat5-training-message-option
+                  .chat5-training-message-selectors
+                    .form-check
+                      input.form-check-input(type="checkbox", id=`trainingPrompt-${messageId}`, name="prompt_message_ids", value=messageId)
+                      label.form-check-label(for=`trainingPrompt-${messageId}`) Prompt
+                    .form-check
+                      input.form-check-input(type="radio", id=`trainingOutput-${messageId}`, name="output_message_id", value=messageId)
+                      label.form-check-label(for=`trainingOutput-${messageId}`) Output
+                  .chat5-training-message-preview
+                    .d-flex.flex-wrap.gap-2.align-items-center
+                      strong= `#${i} ${sender}`
+                      code= messageId
+                    p.mb-0= trainingPreview(m)
+          else
+            p.text-muted No text messages are available for training selection.
+          .chat5-update-actions.d-flex.justify-content-end.flex-wrap.gap-2
+            button.btn.btn-success(type="submit", disabled=trainingGroupOptions.length === 0 || selectableTrainingMessages.length < 2) Add entry
+
+        hr.chat5-divider
+        h3 Existing entries for this conversation
+        if trainingEntryOptions.length
+          .chat5-training-entry-list
+            each entry in trainingEntryOptions
+              article.chat5-training-entry
+                .chat5-training-entry-main
+                  .d-flex.flex-wrap.gap-2.align-items-center
+                    strong= entry.groupId
+                    span.badge.chat5-badge.chat5-badge--tag= `${entry.promptMessageIds.length} prompt${entry.promptMessageIds.length === 1 ? '' : 's'}`
+                    small.text-muted= formatTimestamp(entry.createdAt)
+                  .chat5-training-entry-ids
+                    div
+                      b Prompt:
+                      span= entry.promptMessageIds.join(', ')
+                    div
+                      b Output:
+                      span= entry.outputMessageId
+                  if entry.notes
+                    p.mb-0.text-muted= entry.notes
+                form(method="post", action=`/chat5/training-entries/${entry._id.toString()}/delete`)
+                  input(type="hidden", name="conversation_id", value=conversation._id.toString())
+                  button.btn.btn-outline-danger.btn-sm(type="submit") Delete
+        else
+          p.text-muted.mb-0 No training entries have been added for this conversation yet.
     #pills-raw.tab-pane.fade.chat5-pane(role="tabpanel" aria-labelledby="pills-raw-tab" tabindex="0")
       h3 Conversation 
       .row 
@@ -555,6 +649,12 @@ block content
     window.chatTemplates = !{JSON.stringify(templates)};
     window.chatModels = !{JSON.stringify(chat_models)};
     window.ttsVoices = !{JSON.stringify(ttsVoices || {})};
+    document.addEventListener('DOMContentLoaded', function(){
+      if (window.location.hash === '#pills-training' && window.bootstrap) {
+        var tab = document.getElementById('pills-training-tab');
+        if (tab) window.bootstrap.Tab.getOrCreateInstance(tab).show();
+      }
+    });
   // Wire template selectors to inputs
   script.
     (function(){

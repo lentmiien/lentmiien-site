@@ -295,6 +295,11 @@ router.get('/music-test/output', controller.music_test_output);
 
 router.get('/qwen3-lora', qwen3LoraAdminController.render);
 router.get('/qwen3-lora/state', qwen3LoraAdminController.state);
+router.get('/qwen3-lora/training-groups', qwen3LoraAdminController.trainingGroups);
+router.post('/qwen3-lora/training-groups', qwen3LoraAdminController.saveTrainingGroup);
+router.post('/qwen3-lora/training-groups/:id/delete', qwen3LoraAdminController.deleteTrainingGroup);
+router.get('/qwen3-lora/training-groups/:groupId/export.csv', qwen3LoraAdminController.exportTrainingGroupCsv);
+router.post('/qwen3-lora/training-groups/:groupId/upload-dataset', qwen3LoraAdminController.uploadTrainingGroupDataset);
 router.post('/qwen3-lora/container/:action', qwen3LoraAdminController.containerAction);
 router.post('/qwen3-lora/model/download', qwen3LoraAdminController.downloadModel);
 router.post('/qwen3-lora/model/unload', qwen3LoraAdminController.unloadModel);

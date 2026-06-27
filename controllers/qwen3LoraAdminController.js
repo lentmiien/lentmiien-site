@@ -1,8 +1,10 @@
 const logger = require('../utils/logger');
 const Qwen3LoraGatewayService = require('../services/qwen3LoraGatewayService');
 const { buildGatewayErrorMessage } = require('../services/qwen3LoraGatewayService');
+const TrainingDataService = require('../services/trainingDataService');
 
 const qwen3LoraGateway = new Qwen3LoraGatewayService();
+const trainingDataService = new TrainingDataService();
 const MAX_COMPARE_TARGETS = readPositiveInteger(process.env.QWEN3_LORA_MAX_COMPARE_TARGETS, 8);
 const MAX_UPLOAD_MB = readPositiveInteger(process.env.QWEN3_LORA_CSV_UPLOAD_MAX_MB, 100);
 const DEFAULT_TRAINING_PARAMS = Object.freeze({
@@ -253,6 +255,23 @@ function requestMetadata(req, extra = {}) {
   };
 }
 
+function redirectTrainingGroups(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const qs = query.toString();
+  return `/admin/qwen3-lora/training-groups${qs ? `?${qs}` : ''}`;
+}
+
+function csvFilename(groupId) {
+  const safeName = String(groupId || 'training-group')
+    .replace(/[^a-z0-9._-]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || 'training-group';
+  return `${safeName}.csv`;
+}
+
 function sendUnexpectedError(req, res, action, error) {
   logger.error('Unhandled Qwen3 LoRA admin route error', {
     category: 'qwen3_lora_admin',
@@ -299,7 +318,7 @@ function routeGuard(action, handler) {
   };
 }
 
-function renderQwen3LoraPage(req, res) {
+async function renderQwen3LoraPage(req, res) {
   logger.notice('Rendering Qwen3 LoRA admin page', {
     category: 'qwen3_lora_admin',
     metadata: requestMetadata(req, {
@@ -307,12 +326,15 @@ function renderQwen3LoraPage(req, res) {
     }),
   });
 
+  const trainingGroups = await trainingDataService.listGroupsWithStats({ includeInactive: false });
+
   return res.render('admin_qwen3_lora', {
     apiBase: qwen3LoraGateway.gatewayBaseUrl,
     servicePrefix: Qwen3LoraGatewayService.SERVICE_PREFIX,
     defaultTrainingParams: DEFAULT_TRAINING_PARAMS,
     maxCompareTargets: MAX_COMPARE_TARGETS,
     maxUploadMb: MAX_UPLOAD_MB,
+    trainingGroups,
   }, (error, html) => {
     if (error) {
       return sendUnexpectedError(req, res, 'render', error);
@@ -322,6 +344,104 @@ function renderQwen3LoraPage(req, res) {
 }
 
 exports.render = routeGuard('render', renderQwen3LoraPage);
+
+exports.trainingGroups = routeGuard('trainingGroups', async (req, res) => {
+  const trainingGroups = await trainingDataService.listGroupsWithStats({ includeInactive: true });
+  return res.render('admin_qwen3_lora_training_groups', {
+    trainingGroups,
+    status: {
+      success: req.query.success || '',
+      error: req.query.error || '',
+    },
+  }, (error, html) => {
+    if (error) {
+      return sendUnexpectedError(req, res, 'trainingGroups', error);
+    }
+    return res.send(html);
+  });
+});
+
+exports.saveTrainingGroup = routeGuard('saveTrainingGroup', async (req, res) => {
+  try {
+    if (req.body?.id) {
+      await trainingDataService.updateGroup({
+        id: req.body.id,
+        description: req.body.description,
+        isActive: parseBoolean(req.body.is_active, false),
+        updatedBy: req.user?.name || '',
+      });
+      return res.redirect(redirectTrainingGroups({ success: 'Training group updated.' }));
+    }
+
+    await trainingDataService.createGroup({
+      groupId: req.body?.group_id,
+      description: req.body?.description,
+      createdBy: req.user?.name || '',
+    });
+    return res.redirect(redirectTrainingGroups({ success: 'Training group created.' }));
+  } catch (error) {
+    return res.redirect(redirectTrainingGroups({ error: error?.message || 'Unable to save training group.' }));
+  }
+});
+
+exports.deleteTrainingGroup = routeGuard('deleteTrainingGroup', async (req, res) => {
+  try {
+    await trainingDataService.deleteGroup(req.params.id);
+    return res.redirect(redirectTrainingGroups({ success: 'Training group deleted.' }));
+  } catch (error) {
+    return res.redirect(redirectTrainingGroups({ error: error?.message || 'Unable to delete training group.' }));
+  }
+});
+
+exports.exportTrainingGroupCsv = routeGuard('exportTrainingGroupCsv', async (req, res) => {
+  const result = await trainingDataService.buildCsvForGroup(req.params.groupId);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${csvFilename(result.group.groupId)}"`);
+  res.setHeader('X-Training-Rows', String(result.rows.length));
+  res.setHeader('X-Training-Skipped', String(result.skipped.length));
+  return res.send(result.csv);
+});
+
+exports.uploadTrainingGroupDataset = routeGuard('uploadTrainingGroupDataset', async (req, res) => {
+  try {
+    const dataset = await trainingDataService.buildDatasetFileForGroup(req.params.groupId);
+    if (!dataset.rows.length) {
+      return res.status(400).json({ error: 'Training group has no exportable rows.' });
+    }
+    const requestedName = typeof req.body?.name === 'string' && req.body.name.trim()
+      ? req.body.name.trim()
+      : dataset.datasetName;
+    logger.notice('Qwen3 LoRA training group dataset upload requested', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        groupId: dataset.group.groupId,
+        rowCount: dataset.rows.length,
+        skippedCount: dataset.skipped.length,
+        name: requestedName,
+      }),
+    });
+    const result = await qwen3LoraGateway.uploadDataset({
+      file: dataset.file,
+      name: requestedName,
+    });
+    return res.json({
+      ...result,
+      training_group_id: dataset.group.groupId,
+      exported_rows: dataset.rows.length,
+      skipped_entries: dataset.skipped,
+    });
+  } catch (error) {
+    logger.warning('Qwen3 LoRA training group dataset upload failed', {
+      category: 'qwen3_lora_admin',
+      metadata: requestMetadata(req, {
+        groupId: req.params.groupId,
+        status: error?.response?.status || error?.statusCode || null,
+        message: error?.message || String(error),
+      }),
+    });
+    return sendControllerError(res, error, 'Unable to upload training group dataset.');
+  }
+});
 
 exports.state = routeGuard('state', async (req, res) => {
   logger.debug('Fetching Qwen3 LoRA admin state', {

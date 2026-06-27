@@ -2643,6 +2643,65 @@ label,
   gap: 12px;
 }
 
+.chat5-training-toolbar,
+.chat5-training-entry {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chat5-training-message-list,
+.chat5-training-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat5-training-message-option,
+.chat5-training-entry {
+  background: rgba(27, 32, 38, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.chat5-training-message-option {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.18fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.chat5-training-message-selectors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.chat5-training-message-preview,
+.chat5-training-entry-main {
+  min-width: 0;
+}
+
+.chat5-training-message-preview p,
+.chat5-training-entry-ids {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.chat5-training-entry-ids {
+  font-size: 0.9rem;
+  margin-top: 6px;
+}
+
+@media (max-width: 720px) {
+  .chat5-training-message-option {
+    grid-template-columns: 1fr;
+  }
+}
+
 .chat5-entry-card {
   background: var(--surface-1);
   border: 1px solid var(--border);

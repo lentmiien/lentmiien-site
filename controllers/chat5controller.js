@@ -12,12 +12,14 @@ const KnowledgeService = require('../services/knowledgeService');
 const TemplateService = require('../services/templateService');
 const TtsService = require('../services/ttsService');
 const ToolManagerService = require('../services/toolManagerService');
+const TrainingDataService = require('../services/trainingDataService');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const templateService = new TemplateService(Chat3TemplateModel);
 const ttsService = new TtsService();
 const toolManagerService = new ToolManagerService();
+const trainingDataService = new TrainingDataService();
 
 function slugify(value, fallbackPrefix = 'preset') {
   if (typeof value !== 'string') {
@@ -462,11 +464,16 @@ exports.view_chat5 = async (req, res) => {
 
   renderMessagesHtml(messages);
 
-  const [templates, personalities, responseTypes, availableTools] = await Promise.all([
+  const trainingEntriesPromise = id !== 'NEW' && conversationSource === 'conversation5'
+    ? trainingDataService.listEntriesForConversation(id)
+    : Promise.resolve([]);
+  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries] = await Promise.all([
     templateService.getTemplates(),
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
     toolManagerService.getAvailableTools(),
+    trainingDataService.listGroupsWithStats({ includeInactive: false }),
+    trainingEntriesPromise,
   ]);
   const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
@@ -479,6 +486,12 @@ exports.view_chat5 = async (req, res) => {
     availableTools,
     conversationSource,
     ttsVoices,
+    trainingGroups,
+    trainingEntries,
+    trainingStatus: {
+      success: req.query.training_success || '',
+      error: req.query.training_error || '',
+    },
   });
 };
 
@@ -577,11 +590,27 @@ exports.post_chat5 = async (req, res) => {
 
   renderMessagesHtml(messages);
 
-  const [templates, personalities, responseTypes, availableTools] = await Promise.all([
+  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries] = await Promise.all([
     templateService.getTemplates(),
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
     toolManagerService.getAvailableTools(),
+    trainingDataService.listGroupsWithStats({ includeInactive: false }),
+    trainingDataService.listEntriesForConversation(id),
   ]);
-  res.render("chat5_chat", {conversation, messages, chat_models, templates, personalities, responseTypes, availableTools});
+  const ttsVoices = await loadTtsVoicesSafe();
+  res.render("chat5_chat", {
+    conversation,
+    messages,
+    chat_models,
+    templates,
+    personalities,
+    responseTypes,
+    availableTools,
+    conversationSource: 'conversation5',
+    ttsVoices,
+    trainingGroups,
+    trainingEntries,
+    trainingStatus: { success: '', error: '' },
+  });
 };
