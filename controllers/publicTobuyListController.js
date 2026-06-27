@@ -13,6 +13,9 @@ const {
   addDeviceUsageReward,
   getDeviceUsageDashboard,
 } = require('../services/deviceUsageService');
+const {
+  getMinuteLoggerLastKnownLocation,
+} = require('../services/minuteLoggerService');
 const CookingCalendarService = require('../services/cookingCalendarService');
 const {
   buildOverviewCards,
@@ -108,6 +111,20 @@ function buildDefaultRewardForm() {
   };
 }
 
+function buildPublicLastKnownLocation(location) {
+  const name = String(location?.name || '').trim();
+
+  if (!name) {
+    return null;
+  }
+
+  return {
+    name,
+    isApproximate: Boolean(location.isApproximate),
+    display: location.isApproximate ? `${name}の近く` : name,
+  };
+}
+
 function mapRewardForm(input = {}) {
   return {
     suggestionId: String(input.suggestionId || '').trim(),
@@ -190,6 +207,19 @@ async function fetchPublicDeviceUsageStats() {
   }
 }
 
+async function fetchPublicLastKnownLocation() {
+  try {
+    return buildPublicLastKnownLocation(await getMinuteLoggerLastKnownLocation());
+  } catch (error) {
+    logger.error('Failed to load public last known location', {
+      category: 'public-tobuy',
+      metadata: { error: error.message },
+    });
+
+    return null;
+  }
+}
+
 function mapTodayCookingEntry(entry) {
   const source = entry || {};
   const recipe = source.recipe || null;
@@ -236,10 +266,11 @@ async function fetchTodayCookingCalendar() {
 }
 
 async function renderPage(req, res, options = {}) {
-  const [tasks, deviceUsageStats, todayCooking] = await Promise.all([
+  const [tasks, deviceUsageStats, todayCooking, lastKnownLocation] = await Promise.all([
     options.tasks ? Promise.resolve(options.tasks) : fetchOpenTasks(),
     fetchPublicDeviceUsageStats(),
     fetchTodayCookingCalendar(),
+    fetchPublicLastKnownLocation(),
   ]);
   const errorMessage = options.errorMessage || null;
   const successMessage = options.successMessage
@@ -264,6 +295,7 @@ async function renderPage(req, res, options = {}) {
     rewardForm: options.rewardForm || buildDefaultRewardForm(),
     deviceUsageStats,
     todayCooking,
+    lastKnownLocation,
   });
 }
 

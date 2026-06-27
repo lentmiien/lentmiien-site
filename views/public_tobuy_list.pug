@@ -20,6 +20,11 @@ block content
       if errorMessage
         .public-tobuy-alert.public-tobuy-alert--error= errorMessage
 
+      if lastKnownLocation
+        section.public-tobuy-panel.public-tobuy-location-panel(aria-label='最後にわかった場所')
+          p.public-tobuy-location-panel__label 最後にわかった場所
+          p.public-tobuy-location-panel__value= lastKnownLocation.display
+
       section.public-tobuy-panel.public-tobuy-counter-panel
         .public-tobuy-section-head.public-tobuy-section-head--split
           h2 端末利用

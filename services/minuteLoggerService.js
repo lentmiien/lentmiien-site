@@ -2390,6 +2390,29 @@ async function fetchLastKnownNamedLocation(endpointPath, recentRequests = [], op
   };
 }
 
+async function getMinuteLoggerLastKnownLocation(options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
+
+  if (!endpointPath) {
+    return null;
+  }
+
+  const recentRequests = await leanExec(requestModel.find({ endpointPath })
+    .sort({ receivedAt: -1 })
+    .select({
+      deviceId: 1,
+      package: 1,
+      receivedAt: 1,
+      location: 1,
+    })
+    .limit(1));
+
+  return fetchLastKnownNamedLocation(endpointPath, recentRequests, {
+    settingsModel: options.locationGroupSettingsModel,
+  });
+}
+
 async function updateMinuteLoggerLocationGroupSettings(input = {}, options = {}) {
   const settingsModel = options.settingsModel || MinuteLoggerLocationGroup;
   const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
@@ -3375,6 +3398,7 @@ module.exports = {
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerLastKnownLocation,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
   getRequestActive,

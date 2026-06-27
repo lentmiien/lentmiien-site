@@ -8,6 +8,7 @@ const {
   getRequestActive,
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
+  getMinuteLoggerLastKnownLocation,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
   parseActiveInput,
@@ -838,6 +839,60 @@ describe('minuteLoggerService', () => {
 
     expect(result).toBeNull();
     expect(settingsModel.find).not.toHaveBeenCalled();
+  });
+
+  test('getMinuteLoggerLastKnownLocation resolves the newest request through saved locations', async () => {
+    const receivedAt = new Date('2026-06-07T02:59:00.000Z');
+    const latestRequest = {
+      deviceId: 'phone-01',
+      package: 'com.example.app',
+      receivedAt,
+      location: {
+        latitude: 35.461,
+        longitude: 139.541,
+        groupKey: '35.461,139.541',
+      },
+    };
+    const requestQuery = createChainQuery([latestRequest]);
+    const requestModel = {
+      find: jest.fn().mockReturnValue(requestQuery),
+    };
+    const namedSettingsQuery = createChainQuery([
+      {
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        hideCoordinates: true,
+      },
+    ]);
+    const settingsModel = {
+      find: jest.fn()
+        .mockReturnValueOnce(createLeanQuery([]))
+        .mockReturnValueOnce(namedSettingsQuery),
+    };
+
+    const result = await getMinuteLoggerLastKnownLocation({
+      endpointPath: '/secret-minute-logger',
+      requestModel,
+      locationGroupSettingsModel: settingsModel,
+    });
+
+    expect(requestModel.find).toHaveBeenCalledWith({ endpointPath: '/secret-minute-logger' });
+    expect(requestQuery.sort).toHaveBeenCalledWith({ receivedAt: -1 });
+    expect(requestQuery.select).toHaveBeenCalledWith({
+      deviceId: 1,
+      package: 1,
+      receivedAt: 1,
+      location: 1,
+    });
+    expect(requestQuery.limit).toHaveBeenCalledWith(1);
+    expect(result).toMatchObject({
+      name: 'Home',
+      groupKey: '35.461,139.541',
+      isApproximate: true,
+      deviceId: 'phone-01',
+      receivedAt,
+    });
   });
 
   test('getMinuteLoggerDailyAnalytics builds raw daily timeline and breakdowns', async () => {

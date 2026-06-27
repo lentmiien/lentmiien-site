@@ -90,6 +90,10 @@ jest.mock('../../services/deviceUsageService', () => {
   };
 });
 
+jest.mock('../../services/minuteLoggerService', () => ({
+  getMinuteLoggerLastKnownLocation: jest.fn(),
+}));
+
 jest.mock('../../services/cookingCalendarService', () => jest.fn(() => mockCookingCalendarService));
 
 const { Task } = require('../../database');
@@ -98,6 +102,9 @@ const {
   addDeviceUsageReward,
   getDeviceUsageDashboard,
 } = require('../../services/deviceUsageService');
+const {
+  getMinuteLoggerLastKnownLocation,
+} = require('../../services/minuteLoggerService');
 const controller = require('../../controllers/publicTobuyListController');
 
 function createFindQuery(payload) {
@@ -186,6 +193,7 @@ describe('publicTobuyListController', () => {
     Task.__saveMock.mockReset();
     getDeviceUsageDashboard.mockResolvedValue(createDeviceUsageDashboard());
     addDeviceUsageReward.mockResolvedValue({});
+    getMinuteLoggerLastKnownLocation.mockResolvedValue(null);
     mockCookingCalendarService.formatDate.mockReturnValue('2026-05-28');
     mockCookingCalendarService.getCalendarRange.mockResolvedValue({
       days: [
@@ -324,6 +332,40 @@ describe('publicTobuyListController', () => {
         ],
       }),
     }));
+  });
+
+  test('renderPublicPage includes only redacted last known location details', async () => {
+    Task.find.mockReturnValueOnce(createFindQuery([]));
+    getMinuteLoggerLastKnownLocation.mockResolvedValueOnce({
+      name: 'Station',
+      isApproximate: true,
+      deviceId: 'phone-01',
+      receivedAt: new Date('2026-05-28T00:00:00.000Z'),
+      nearestDistanceMeters: 128,
+    });
+
+    const req = {
+      query: {},
+      baseUrl: '/hidden-path',
+      path: '/',
+    };
+    const res = {
+      locals: {},
+      status: jest.fn().mockReturnThis(),
+      render: jest.fn(),
+    };
+
+    await controller.renderPublicPage(req, res);
+
+    const renderModel = res.render.mock.calls[0][1];
+    expect(renderModel.lastKnownLocation).toEqual({
+      name: 'Station',
+      isApproximate: true,
+      display: 'Stationの近く',
+    });
+    expect(renderModel.lastKnownLocation).not.toHaveProperty('deviceId');
+    expect(renderModel.lastKnownLocation).not.toHaveProperty('receivedAt');
+    expect(renderModel.lastKnownLocation).not.toHaveProperty('nearestDistanceMeters');
   });
 
   test('addPublicDeviceUsageReward saves a reward and redirects back', async () => {
