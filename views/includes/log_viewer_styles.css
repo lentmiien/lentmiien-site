@@ -1,24 +1,24 @@
 ﻿:root {
-  color-scheme: light dark;
+  color-scheme: dark;
 }
 .log-viewer {
   max-width: 960px;
   margin: 2.5rem auto;
   padding: 2rem;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(23, 26, 32, 0.88);
   backdrop-filter: blur(6px);
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.28);
   transition: box-shadow 0.2s ease;
 }
 .log-viewer:hover {
-  box-shadow: 0 24px 55px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 24px 55px rgba(0, 0, 0, 0.34);
 }
 .log-viewer__title {
   font-size: 1.75rem;
   font-weight: 600;
   margin-bottom: 1.5rem;
-  color: #0f172a;
+  color: var(--text);
 }
 .log-viewer__filters {
   display: flex;
@@ -43,20 +43,20 @@
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: #475569;
+  color: var(--text-secondary);
 }
 .log-viewer__select {
   padding: 0.65rem 0.8rem;
   border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.6);
-  background: rgba(248, 250, 252, 0.9);
-  color: #0f172a;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
   font-size: 0.95rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .log-viewer__select:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--accent-tint);
   outline: none;
 }
 .log-viewer__submit {
@@ -64,16 +64,16 @@
   padding: 0.7rem 1.4rem;
   border-radius: 999px;
   border: none;
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
-  color: #fff;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  color: var(--text-inverse);
   font-weight: 600;
   letter-spacing: 0.04em;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 12px 24px rgba(255, 106, 31, 0.25);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .log-viewer__submit:hover {
   transform: translateY(-1px);
-  box-shadow: 0 16px 32px rgba(37, 99, 235, 0.28);
+  box-shadow: 0 16px 32px rgba(255, 106, 31, 0.28);
 }
 .log-viewer__summary {
   display: flex;
@@ -81,21 +81,21 @@
   gap: 0.75rem;
   align-items: baseline;
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--text-secondary);
   margin-bottom: 1.5rem;
 }
 .log-viewer__summary strong {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text);
   margin: 0 0.35rem;
 }
 .log-viewer__empty {
   padding: 1.75rem;
   border-radius: 14px;
-  background: rgba(241, 245, 249, 0.7);
-  color: #475569;
+  background: var(--surface-2);
+  color: var(--text-secondary);
   text-align: center;
-  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border: 1px dashed var(--divider);
 }
 .log-viewer__list {
   list-style: none;
@@ -108,9 +108,9 @@
 .log-viewer__item {
   border-radius: 14px;
   padding: 1.25rem 1.5rem;
-  background: rgba(248, 250, 252, 0.85);
+  background: var(--surface-2);
   border-left: 4px solid transparent;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 .log-viewer__item-header {
   display: flex;
@@ -119,11 +119,11 @@
   align-items: center;
   margin-bottom: 0.75rem;
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--text-secondary);
 }
 .log-viewer__timestamp {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text);
 }
 .log-viewer__level {
   display: inline-flex;
@@ -134,47 +134,47 @@
   font-weight: 700;
   border-radius: 999px;
   letter-spacing: 0.08em;
-  background: rgba(15, 23, 42, 0.08);
-  color: #0f172a;
+  background: var(--surface-3);
+  color: var(--text-secondary);
 }
 .log-viewer__category {
   padding: 0.25rem 0.6rem;
   border-radius: 999px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #1d4ed8;
+  background: var(--accent-tint);
+  color: var(--accent);
   font-size: 0.75rem;
 }
 .log-viewer__message {
   margin: 0;
   font-size: 0.95rem;
-  color: #0f172a;
+  color: var(--text);
   line-height: 1.55;
 }
 .log-viewer__metadata {
   margin-top: 0.9rem;
   padding: 0.9rem 1rem;
-  background: #0f172a;
-  color: #f8fafc;
+  background: var(--surface-1);
+  color: var(--text);
   border-radius: 12px;
   font-size: 0.8rem;
   line-height: 1.55;
   overflow-x: auto;
 }
 .log-viewer__item--error {
-  border-left-color: #ef4444;
-  background: rgba(254, 226, 226, 0.6);
+  border-left-color: var(--danger);
+  background: rgba(255, 77, 79, 0.12);
 }
 .log-viewer__item--warning {
-  border-left-color: #f59e0b;
-  background: rgba(254, 243, 199, 0.6);
+  border-left-color: var(--warning);
+  background: rgba(255, 198, 61, 0.12);
 }
 .log-viewer__item--notice {
-  border-left-color: #2563eb;
-  background: rgba(219, 234, 254, 0.6);
+  border-left-color: var(--accent);
+  background: var(--accent-tint);
 }
 .log-viewer__item--debug {
-  border-left-color: #6b7280;
-  background: rgba(226, 232, 240, 0.6);
+  border-left-color: var(--text-muted);
+  background: rgba(154, 163, 178, 0.12);
 }
 @media (max-width: 768px) {
   .log-viewer {

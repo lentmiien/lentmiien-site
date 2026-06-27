@@ -1,31 +1,9 @@
-:root {
-  --bg: #0E0F13;
-  --surface-1: #171A20;
-  --surface-2: #1B2026;
-  --surface-3: #20242A;
-  --border: #262B34;
-  --divider: #2B313C;
-  --text: #E8ECF2;
-  --text-secondary: #C1C7D3;
-  --text-muted: #9AA3B2;
-  --text-inverse: #111418;
-  --brand: #FF6A1F;
-  --brand-hover: #FF7C3B;
-  --brand-active: #E05F1C;
-  --brand-tint: rgba(255, 106, 31, 0.14);
-  --accent: #FFC247;
-  --accent-hover: #FFD36F;
-  --accent-active: #E6A92D;
-  --accent-tint: rgba(255, 194, 71, 0.18);
-  --focus: #FFC247;
-}
-
 body {
   background: var(--bg);
   color: var(--text);
   font-family: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
   min-height: 100vh;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 body a {
@@ -2864,8 +2842,8 @@ label,
 .voice-chat-card {
   max-width: 820px;
   margin: 0 auto;
-  background: #0f1115;
-  border: 1px solid #1c1f25;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
@@ -2876,25 +2854,25 @@ label,
 }
 
 .voice-message {
-  background: #14171d;
-  border: 1px solid #1f242c;
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
   border-radius: 12px;
   padding: 0.75rem 1rem;
 }
 
 .voice-message--bot {
-  border-color: #2e8bff;
-  box-shadow: 0 0 0 1px rgba(46, 139, 255, 0.15);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-tint);
 }
 
 .voice-message--user {
-  border-color: #4b5563;
+  border-color: var(--brand);
 }
 
 .voice-message__role {
   display: block;
   font-size: 0.82rem;
-  color: #9ca3af;
+  color: var(--text-muted);
   margin-bottom: 0.3rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2902,7 +2880,7 @@ label,
 
 .voice-message__text {
   margin: 0;
-  color: #e5e7eb;
+  color: var(--text);
   white-space: pre-wrap;
 }
 

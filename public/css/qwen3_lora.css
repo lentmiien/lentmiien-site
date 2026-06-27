@@ -1,8 +1,8 @@
 .qwen-user {
-  --qwen-success: #17C696;
-  --qwen-warning: #FFC63D;
-  --qwen-danger: #FF4D4F;
-  --qwen-info: #19E3E3;
+  --qwen-success: var(--success, #17C696);
+  --qwen-warning: var(--warning, #FFC63D);
+  --qwen-danger: var(--danger, #FF4D4F);
+  --qwen-info: var(--info, #19E3E3);
   padding: 1.5rem 0 3rem;
   color: var(--text);
 }

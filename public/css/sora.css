@@ -1,23 +1,23 @@
 :root {
-  --sora-bg: #0e0f13;
-  --sora-surface: #171a20;
-  --sora-surface-elevated: #1b2026;
-  --sora-surface-hero: #20242a;
-  --sora-border: #262b34;
-  --sora-divider: #2b313c;
-  --sora-text: #e8ecf2;
-  --sora-text-secondary: #c1c7d3;
-  --sora-text-muted: #9aa3b2;
-  --sora-text-inverse: #111418;
-  --sora-brand: #ff6a1f;
-  --sora-brand-hover: #ff7c3b;
-  --sora-brand-active: #e05f1c;
-  --sora-brand-tint: rgba(255, 106, 31, 0.14);
-  --sora-accent: #ffc247;
-  --sora-accent-hover: #ffd36f;
-  --sora-accent-active: #e6a92d;
-  --sora-accent-tint: rgba(255, 194, 71, 0.18);
-  --sora-focus: #ffc247;
+  --sora-bg: var(--bg, #0E0F13);
+  --sora-surface: var(--surface-1, #171A20);
+  --sora-surface-elevated: var(--surface-2, #1B2026);
+  --sora-surface-hero: var(--surface-3, #20242A);
+  --sora-border: var(--border, #262B34);
+  --sora-divider: var(--divider, #2B313C);
+  --sora-text: var(--text, #E8ECF2);
+  --sora-text-secondary: var(--text-secondary, #C1C7D3);
+  --sora-text-muted: var(--text-muted, #9AA3B2);
+  --sora-text-inverse: var(--text-inverse, #111418);
+  --sora-brand: var(--brand, #FF6A1F);
+  --sora-brand-hover: var(--brand-hover, #FF7C3B);
+  --sora-brand-active: var(--brand-active, #E05F1C);
+  --sora-brand-tint: var(--brand-tint, rgba(255, 106, 31, 0.14));
+  --sora-accent: var(--accent, #FFC247);
+  --sora-accent-hover: var(--accent-hover, #FFD36F);
+  --sora-accent-active: var(--accent-active, #E6A92D);
+  --sora-accent-tint: var(--accent-tint, rgba(255, 194, 71, 0.18));
+  --sora-focus: var(--focus, #FFC247);
 }
 
 .sora-app {

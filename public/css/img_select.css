@@ -1,13 +1,13 @@
 body {
   font-family: Arial, sans-serif;
-  background: #1a1a1a;
+  background: var(--bg);
   margin: 0;
   padding: 2em;
-  color: #eee;
+  color: var(--text);
 }
 .point-editor-container {
-  background: #181f18;
-  border: 1px solid #244;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
   border-radius: 8px;
   max-width: 500px;
   margin: 0 auto;
@@ -29,8 +29,8 @@ body {
   width: 350px;
   height: 200px;
   margin: 0 auto 1em auto;
-  background: #090b08;
-  border: 1px solid #244;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
   touch-action: none;
@@ -42,7 +42,7 @@ body {
   pointer-events: none;
   user-select: none;
   filter: brightness(1.5) saturate(0.7) hue-rotate(86deg) contrast(1.1);
-  background: #214f2a;
+  background: var(--surface-3);
 }
 .points-overlay {
   position: absolute;
@@ -63,7 +63,7 @@ body {
   transition: box-shadow 0.15s;
 }
 .points-overlay .point.selected {
-  box-shadow: 0 0 0 2px #f6cc0040, 0 0 3px #fff;
+  box-shadow: 0 0 0 2px var(--accent-tint), 0 0 3px var(--accent);
 }
 .slider-group {
   margin-bottom: 1em;
@@ -82,13 +82,13 @@ body {
   margin-bottom: 1em;
   border-radius: 5px;
   overflow: hidden;
-  border: 1px solid #222b22;
-  background: #171c14;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
 }
 .point-item, .point-item-add {
   padding: 0.5em 1em;
   cursor: pointer;
-  border-bottom: 1px solid #222b22;
+  border-bottom: 1px solid var(--divider);
   transition: background 0.19s;
   min-height: 30px;
   display: flex;
@@ -98,17 +98,17 @@ body {
 }
 .point-item:last-child { border-bottom: none; }
 .point-item.selected, .point-item-add.selected {
-  background: #223f20;
+  background: var(--brand-tint);
 }
 .point-item-add {
-  color: #59f;
+  color: var(--accent);
   font-weight: bold;
-  background: #162215;
+  background: var(--surface-2);
 }
 .point-item-add:before {
   content: "+";
   font-weight: bold;
-  color: #68f;
+  color: var(--accent);
   margin-right: 0.3em;
 }
 .editor-buttons {
@@ -120,8 +120,8 @@ body {
 }
 .editor-buttons button {
   border: none;
-  background: #368541;
-  color: #fff;
+  background: var(--brand);
+  color: var(--text-inverse);
   padding: 0.5em 1.3em;
   font-size: 1em;
   border-radius: 6px;
@@ -129,41 +129,41 @@ body {
   transition: background 0.18s;
 }
 .editor-buttons button:hover {
-  background: #235b29;
+  background: var(--brand-hover);
 }
 .editor-buttons button.clear {
-  background: #1a1a1a;
-  color: #bbb;
-  border: 1px solid #393939;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 .editor-buttons button.delete {
-  background: #b8203a;
-  color: #fff;
+  background: var(--danger);
+  color: var(--text-inverse);
   border: none;
 }
 .editor-buttons button.delete:disabled {
-  background: #442127;
-  color: #865e65;
+  background: var(--surface-2);
+  color: var(--text-muted);
   cursor: not-allowed;
 }
 .editor-buttons button.delete:hover:enabled {
-  background: #a11020;
+  background: rgba(255, 77, 79, 0.85);
 }
 .cat-dot {
   width: 1.1em;
   height: 1.1em;
   border-radius: 50%;
   margin-right: 0.5em;
-  border: 2px solid #0008;
-  box-shadow: 0 1px 2px #000b;
+  border: 2px solid rgba(14, 15, 19, 0.65);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
   flex-shrink: 0;
   display: inline-block;
 }
 select#pe-category {
   border-radius: 4px;
-  border: 1px solid #385c3a;
-  color: #e8ffeb;
-  background: #183c18;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: var(--surface-2);
   font-size: 1em;
   padding: 0.2em 0.6em;
 }

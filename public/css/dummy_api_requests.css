@@ -1,19 +1,19 @@
 :root {
-  --dummy-bg: #0E0F13;
-  --dummy-surface-1: #171A20;
-  --dummy-surface-2: #1B2026;
-  --dummy-surface-3: #20242A;
-  --dummy-border: #2B313C;
-  --dummy-text: #E8ECF2;
-  --dummy-text-secondary: #C1C7D3;
-  --dummy-text-muted: #9AA3B2;
-  --dummy-text-inverse: #111418;
-  --dummy-brand: #FF6A1F;
-  --dummy-brand-hover: #FF7C3B;
-  --dummy-accent: #FFC247;
-  --dummy-accent-tint: rgba(255, 194, 71, 0.16);
-  --dummy-success: #17C696;
-  --dummy-danger: #FF4D4F;
+  --dummy-bg: var(--bg, #0E0F13);
+  --dummy-surface-1: var(--surface-1, #171A20);
+  --dummy-surface-2: var(--surface-2, #1B2026);
+  --dummy-surface-3: var(--surface-3, #20242A);
+  --dummy-border: var(--divider, #2B313C);
+  --dummy-text: var(--text, #E8ECF2);
+  --dummy-text-secondary: var(--text-secondary, #C1C7D3);
+  --dummy-text-muted: var(--text-muted, #9AA3B2);
+  --dummy-text-inverse: var(--text-inverse, #111418);
+  --dummy-brand: var(--brand, #FF6A1F);
+  --dummy-brand-hover: var(--brand-hover, #FF7C3B);
+  --dummy-accent: var(--accent, #FFC247);
+  --dummy-accent-tint: var(--accent-tint, rgba(255, 194, 71, 0.18));
+  --dummy-success: var(--success, #17C696);
+  --dummy-danger: var(--danger, #FF4D4F);
 }
 
 body,

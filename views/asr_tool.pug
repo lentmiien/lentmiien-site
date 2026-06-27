@@ -3,16 +3,16 @@ extends layout
 block styles
   style.
     :root {
-      --asr-bg: #0c111a;
-      --asr-surface: #121926;
-      --asr-surface-2: #0f1724;
-      --asr-border: #1f2a3a;
-      --asr-text: #e6eef9;
-      --asr-muted: #8ca0c0;
-      --asr-accent: #f4a261;
-      --asr-accent-strong: #ff8f1f;
-      --asr-green: #2bd4a8;
-      --asr-red: #f47373;
+      --asr-bg: var(--bg);
+      --asr-surface: var(--surface-1);
+      --asr-surface-2: var(--surface-2);
+      --asr-border: var(--border);
+      --asr-text: var(--text);
+      --asr-muted: var(--text-muted);
+      --asr-accent: var(--accent);
+      --asr-accent-strong: var(--brand);
+      --asr-green: var(--success);
+      --asr-red: var(--danger);
     }
 
     .asr-page {

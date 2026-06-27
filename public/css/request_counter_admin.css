@@ -1,24 +1,24 @@
 :root {
-  --rc-bg: #0E0F13;
-  --rc-surface-1: #171A20;
-  --rc-surface-2: #1B2026;
-  --rc-surface-3: #20242A;
-  --rc-border: #262B34;
-  --rc-divider: #2B313C;
-  --rc-text: #E8ECF2;
-  --rc-text-secondary: #C1C7D3;
-  --rc-text-muted: #9AA3B2;
-  --rc-text-inverse: #111418;
-  --rc-brand: #FF6A1F;
-  --rc-brand-hover: #FF7C3B;
-  --rc-brand-active: #E05F1C;
-  --rc-brand-tint: rgba(255, 106, 31, 0.14);
-  --rc-accent: #FFC247;
-  --rc-accent-hover: #FFD36F;
-  --rc-accent-tint: rgba(255, 194, 71, 0.18);
-  --rc-success: #17C696;
-  --rc-danger: #FF4D4F;
-  --rc-info: #19E3E3;
+  --rc-bg: var(--bg, #0E0F13);
+  --rc-surface-1: var(--surface-1, #171A20);
+  --rc-surface-2: var(--surface-2, #1B2026);
+  --rc-surface-3: var(--surface-3, #20242A);
+  --rc-border: var(--border, #262B34);
+  --rc-divider: var(--divider, #2B313C);
+  --rc-text: var(--text, #E8ECF2);
+  --rc-text-secondary: var(--text-secondary, #C1C7D3);
+  --rc-text-muted: var(--text-muted, #9AA3B2);
+  --rc-text-inverse: var(--text-inverse, #111418);
+  --rc-brand: var(--brand, #FF6A1F);
+  --rc-brand-hover: var(--brand-hover, #FF7C3B);
+  --rc-brand-active: var(--brand-active, #E05F1C);
+  --rc-brand-tint: var(--brand-tint, rgba(255, 106, 31, 0.14));
+  --rc-accent: var(--accent, #FFC247);
+  --rc-accent-hover: var(--accent-hover, #FFD36F);
+  --rc-accent-tint: var(--accent-tint, rgba(255, 194, 71, 0.18));
+  --rc-success: var(--success, #17C696);
+  --rc-danger: var(--danger, #FF4D4F);
+  --rc-info: var(--info, #19E3E3);
 }
 
 body,

@@ -3,24 +3,24 @@ extends layout
 block styles
   style.
     :root {
-      --ocr-bg: #0E0F13;
-      --ocr-surface-1: #171A20;
-      --ocr-surface-2: #1B2026;
-      --ocr-surface-3: #20242A;
-      --ocr-border: #262B34;
-      --ocr-divider: #2B313C;
-      --ocr-text: #E8ECF2;
-      --ocr-text-secondary: #C1C7D3;
-      --ocr-text-muted: #9AA3B2;
-      --ocr-brand: #FF6A1F;
-      --ocr-brand-hover: #FF7C3B;
-      --ocr-brand-active: #E05F1C;
-      --ocr-accent: #FFC247;
-      --ocr-accent-hover: #FFD36F;
-      --ocr-success: #17C696;
-      --ocr-warning: #FFC63D;
-      --ocr-danger: #FF4D4F;
-      --ocr-focus: #FFC247;
+      --ocr-bg: var(--bg);
+      --ocr-surface-1: var(--surface-1);
+      --ocr-surface-2: var(--surface-2);
+      --ocr-surface-3: var(--surface-3);
+      --ocr-border: var(--border);
+      --ocr-divider: var(--divider);
+      --ocr-text: var(--text);
+      --ocr-text-secondary: var(--text-secondary);
+      --ocr-text-muted: var(--text-muted);
+      --ocr-brand: var(--brand);
+      --ocr-brand-hover: var(--brand-hover);
+      --ocr-brand-active: var(--brand-active);
+      --ocr-accent: var(--accent);
+      --ocr-accent-hover: var(--accent-hover);
+      --ocr-success: var(--success);
+      --ocr-warning: var(--warning);
+      --ocr-danger: var(--danger);
+      --ocr-focus: var(--focus);
     }
 
     .ocr-page {
@@ -140,7 +140,7 @@ block styles
       border-radius: 999px;
       padding: 0.85rem;
       background: var(--ocr-brand);
-      color: #111418;
+      color: var(--text-inverse);
       font-weight: 600;
       transition: background 0.2s ease;
     }
@@ -389,7 +389,7 @@ block styles
       position: relative;
       border-radius: 12px;
       overflow: hidden;
-      background: #020305;
+      background: var(--bg);
       border: 1px solid var(--ocr-border);
     }
 
@@ -566,7 +566,7 @@ block styles
     .save-edits-btn {
       border: none;
       background: var(--ocr-accent);
-      color: #111418;
+      color: var(--text-inverse);
       padding: 0.6rem 0.95rem;
       border-radius: 10px;
       cursor: pointer;
@@ -679,7 +679,7 @@ block styles
       border-radius: 999px;
       padding: 0.85rem 1rem;
       background: var(--ocr-accent);
-      color: #111418;
+      color: var(--text-inverse);
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;

@@ -1,19 +1,19 @@
 :root {
-  --du-bg: #101318;
-  --du-surface-1: #171C22;
-  --du-surface-2: #1E242C;
-  --du-surface-3: #252C35;
-  --du-border: #303946;
-  --du-divider: #36404E;
-  --du-text: #F0F4F8;
-  --du-text-secondary: #C8D1DC;
-  --du-text-muted: #96A3B3;
-  --du-text-inverse: #101318;
-  --du-green: #2BC8A4;
-  --du-blue: #62A8FF;
-  --du-yellow: #FFB84D;
-  --du-red: #E35757;
-  --du-red-soft: rgba(227, 87, 87, 0.14);
+  --du-bg: var(--bg, #0E0F13);
+  --du-surface-1: var(--surface-1, #171A20);
+  --du-surface-2: var(--surface-2, #1B2026);
+  --du-surface-3: var(--surface-3, #20242A);
+  --du-border: var(--border, #262B34);
+  --du-divider: var(--divider, #2B313C);
+  --du-text: var(--text, #E8ECF2);
+  --du-text-secondary: var(--text-secondary, #C1C7D3);
+  --du-text-muted: var(--text-muted, #9AA3B2);
+  --du-text-inverse: var(--text-inverse, #111418);
+  --du-green: var(--success, #17C696);
+  --du-blue: var(--info, #19E3E3);
+  --du-yellow: var(--warning, #FFC63D);
+  --du-red: var(--danger, #FF4D4F);
+  --du-red-soft: rgba(255, 77, 79, 0.14);
   --du-border-radius: 8px;
 }
 

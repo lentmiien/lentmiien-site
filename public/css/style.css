@@ -3,39 +3,39 @@
 }
 
 .article {
-  border: 1px dotted black;
+  border: 1px dotted var(--divider);
   border-radius: 5px;
   padding: 10px;
   margin: 5px;
 }
 
 .user {
-  border: 1px solid darkgreen;
-  background-color: rgb(220, 255, 220);
+  border: 1px solid rgba(23, 198, 150, 0.45);
+  background-color: rgba(23, 198, 150, 0.1);
   border-radius: 5px;
   padding: 10px;
   margin: 5px;
 }
 
 .assistant {
-  border: 1px dashed darkblue;
-  background-color: rgb(220, 220, 255);
+  border: 1px dashed rgba(255, 194, 71, 0.45);
+  background-color: rgba(255, 194, 71, 0.1);
   border-radius: 5px;
   padding: 10px;
   margin: 5px;
 }
 
 .system {
-  border: 1px dashed darkgray;
-  background-color: rgb(220, 220, 220);
+  border: 1px dashed var(--divider);
+  background-color: var(--surface-2);
   border-radius: 5px;
   padding: 10px;
   margin: 5px;
 }
 
 .system-small {
-  border: 1px dashed darkgray;
-  background-color: rgb(220, 220, 220);
+  border: 1px dashed var(--divider);
+  background-color: var(--surface-2);
   border-radius: 5px;
   padding: 10px;
   margin: 5px;
@@ -43,14 +43,14 @@
 }
 
 .fotter {
-  border-top: 1px solid darkblue;
-  color: rgb(100, 100, 100);
+  border-top: 1px solid var(--divider);
+  color: var(--text-muted);
   font-size: smaller;
 }
 
 .message > pre {
-  background-color: black;
-  color: white;
+  background-color: var(--surface-1);
+  color: var(--text);
   padding: 5px;
   margin-top: 10px;
   margin-bottom: 10px;
@@ -74,7 +74,7 @@
 .text_card {
   padding: 5px;
   margin: 5px;
-  border: 1px dashed rgb(201, 201, 201);
+  border: 1px dashed var(--divider);
 }
 
 .text_chunk {
@@ -91,13 +91,13 @@
 .openai_conversation {
   margin: 5px;
   padding: 10px;
-  border: 2px dashed black;
+  border: 2px dashed var(--divider);
   border-radius: 10px;
 }
 
 .openai_content pre {
-  background-color: rgb(51, 51, 51);
-  color: white;
+  background-color: var(--surface-1);
+  color: var(--text);
   padding: 5px;
   border-radius: 5px;
 }
@@ -131,17 +131,17 @@
 }
 
 .popup-content {
-  background-color: #fefefe;
+  background-color: var(--surface-1);
   margin: 50px auto; /* 15% from the top and centered */
   padding: 20px;
-  border: 1px solid #888;
+  border: 1px solid var(--border);
   width: 90%; /* Could be more or less, depending on screen size */
   max-height: 90vh; /* Adjust as needed based on header/footer size */
   overflow-y: auto; /* Enables scrolling within the .popup-content */
 }
 
 .close {
-  color: #aaa;
+  color: var(--text-muted);
   float: right;
   font-size: 28px;
   font-weight: bold;
@@ -149,7 +149,7 @@
 
 .close:hover,
 .close:focus {
-  color: black;
+  color: var(--text);
   text-decoration: none;
   cursor: pointer;
 }
@@ -186,12 +186,12 @@
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  color: white;
+  color: var(--text);
 }
 
 .loader {
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #3498db;
+  border: 5px solid var(--surface-3);
+  border-top: 5px solid var(--accent);
   border-radius: 50%;
   width: 50px;
   height: 50px;
@@ -229,7 +229,7 @@
 }
 
 .div-group {
-  background-color: rgba(255, 255, 255, 0.7);
+  background-color: rgba(23, 26, 32, 0.74);
 }
 
 /* Modal Content (image) */
@@ -247,7 +247,7 @@
   position: absolute;
   top: 10px;
   left: 15px;
-  color: black;
+  color: var(--text);
   font-size: 40px;
   font-weight: bold;
   cursor: pointer;
@@ -261,7 +261,7 @@
 }
 
 #content {
-  border: 1px dashed black;
+  border: 1px dashed var(--divider);
   padding: 5px;
   border-radius: 10px;
 }
@@ -280,22 +280,22 @@
 
 .a_disabled {
   pointer-events: none; /* Prevents clicking */
-  color: grey; /* Make it look disabled */
+  color: var(--text-muted); /* Make it look disabled */
   text-decoration: none; /* Remove underline */
   cursor: default; /* Change cursor to default instead of pointer */
 }
 
 .foodday {
-  border: 1px solid darkgoldenrod;
+  border: 1px solid var(--accent);
   margin-top: 10px;
   padding: 10px;
   border-radius: 10px;
 }
 
 .date-title{
-  background-color: lightgray;
+  background-color: var(--surface-2);
   font-weight: bolder;
-  border-bottom: 5px double darkblue;
+  border-bottom: 5px double var(--brand);
 }
 
 /* Profile */
@@ -311,8 +311,8 @@
   left: 50%;
   transform: translateX(-50%);
   display: none; /* Hidden initially */
-  background-color: #f8f9fa;
-  border: 1px solid #ddd;
+  background-color: var(--surface-1);
+  border: 1px solid var(--border);
   padding: 5px 10px;
   border-radius: 5px;
   z-index: 1000; /* Ensure it's above other content */
@@ -378,7 +378,7 @@
 }
 
 .header-row {
-  background-color: lightgray;
+  background-color: var(--surface-2);
 }
 
 .infobutton {
@@ -386,14 +386,14 @@
 }
 
 .append_message_container, .append_message_container2 {
-  border: 1px solid black;
+  border: 1px solid var(--border);
   padding: 10px;
   border-radius: 5px;
   margin-bottom: 10px;
 }
 
 #log_preview {
-  border: 1px dashed gray;
+  border: 1px dashed var(--divider);
   border-radius: 5px;
 }
 
@@ -406,7 +406,7 @@
 }
 
 .redact-item {
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   padding: 10px;
   margin-bottom: 10px;
   cursor: pointer;
@@ -416,8 +416,8 @@
 }
 
 .redact-item.selected {
-  background-color: #f99;
-  border-color: #f00;
+  background-color: rgba(255, 77, 79, 0.14);
+  border-color: var(--danger);
 }
 
 .redact-content {
@@ -447,36 +447,36 @@
   width: 100%;
   padding: 5px;
   margin-bottom: 10px;
-  border: 1px solid gray;
+  border: 1px solid var(--border);
   border-radius: 10px;
 }
 
 .pending {
-  background-color: lightblue;
+  background-color: rgba(25, 227, 227, 0.12);
 }
 
 .processing {
-  background-color: lightyellow;
+  background-color: rgba(255, 198, 61, 0.12);
 }
 
 .completed {
-  background-color: lightgreen;
+  background-color: rgba(23, 198, 150, 0.12);
 }
 
 .batch_status_pending {
-  background-color: lightblue;
+  background-color: rgba(25, 227, 227, 0.12);
 }
 
 .batch_status_completed {
-  background-color: lightyellow;
+  background-color: rgba(255, 198, 61, 0.12);
 }
 
 .batch_status_failed {
-  background-color: lightcoral;
+  background-color: rgba(255, 77, 79, 0.12);
 }
 
 .batch_status_DONE {
-  background-color: lightgreen;
+  background-color: rgba(23, 198, 150, 0.12);
 }
 
 /*********** TOOL **************/
@@ -488,15 +488,15 @@
 
 /****** quick-note ******/
 .quick-note {
-  border-top: 5px double black;
+  border-top: 5px double var(--divider);
   padding-top: 5px;
   margin-bottom: 20px;
 }
 
 /* Flash effect for copied <code> elements */
 code.copied {
-  background-color: #d4edda; /* Light green background */
-  color: #155724; /* Dark green text */
+  background-color: rgba(23, 198, 150, 0.18);
+  color: var(--success);
   transition: background-color 0.3s, color 0.3s;
 }
 
@@ -510,8 +510,8 @@ code::after {
   position: absolute;
   top: 0;
   left: 0;
-  background: #333;
-  color: #fff;
+  background: var(--surface-3);
+  color: var(--text);
   padding: 2px 5px;
   border-radius: 3px;
   font-size: 12px;
@@ -530,31 +530,31 @@ code:hover::after {
 
 /*OpenAI Usage*/
 .openaiusage-completions {
-  background-color: lightblue;
+  background-color: rgba(25, 227, 227, 0.12);
   border-radius: 15px;
   margin-bottom: 10px;
   padding: 10px;
 }
 .openaiusage-embeddings {
-  background-color: pink;
+  background-color: rgba(255, 126, 121, 0.14);
   border-radius: 15px;
   margin-bottom: 10px;
   padding: 10px;
 }
 .openaiusage-images {
-  background-color: lightgreen;
+  background-color: rgba(23, 198, 150, 0.12);
   border-radius: 15px;
   margin-bottom: 10px;
   padding: 10px;
 }
 .openaiusage-speeches {
-  background-color: lightcoral;
+  background-color: rgba(255, 77, 79, 0.12);
   border-radius: 15px;
   margin-bottom: 10px;
   padding: 10px;
 }
 .openaiusage-transcriptions {
-  background-color: lightseagreen;
+  background-color: rgba(255, 194, 71, 0.12);
   border-radius: 15px;
   margin-bottom: 10px;
   padding: 10px;

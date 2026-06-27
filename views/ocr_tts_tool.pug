@@ -3,16 +3,16 @@ extends layout
 block styles
   style.
     :root {
-      --ocrtts-bg: radial-gradient(circle at 20% 20%, rgba(255, 140, 66, 0.08), transparent 40%), #0b0f18;
-      --ocrtts-surface: #121826;
-      --ocrtts-surface-2: #0d131f;
-      --ocrtts-border: #1e2a3b;
-      --ocrtts-text: #e7eefb;
-      --ocrtts-muted: #93a6c6;
-      --ocrtts-accent: #ff8c42;
-      --ocrtts-accent-2: #ffc857;
-      --ocrtts-success: #2bd4a8;
-      --ocrtts-danger: #ff5f6d;
+      --ocrtts-bg: radial-gradient(circle at 20% 20%, var(--brand-tint), transparent 40%), var(--bg);
+      --ocrtts-surface: var(--surface-1);
+      --ocrtts-surface-2: var(--surface-2);
+      --ocrtts-border: var(--border);
+      --ocrtts-text: var(--text);
+      --ocrtts-muted: var(--text-muted);
+      --ocrtts-accent: var(--brand);
+      --ocrtts-accent-2: var(--accent);
+      --ocrtts-success: var(--success);
+      --ocrtts-danger: var(--danger);
     }
 
     .ocrtts-page {
@@ -105,7 +105,7 @@ block styles
       border-radius: 999px;
       padding: 0.65rem 0.95rem;
       font-weight: 600;
-      color: #0c111a;
+      color: var(--text-inverse);
       background: var(--ocrtts-accent);
       transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
     }
@@ -118,7 +118,7 @@ block styles
 
     .ocrtts-btn.danger {
       background: var(--ocrtts-danger);
-      color: #0b0f18;
+      color: var(--text-inverse);
     }
 
     .ocrtts-btn:disabled {
@@ -128,7 +128,7 @@ block styles
 
     .ocrtts-btn:hover:not(:disabled) {
       transform: translateY(-1px);
-      box-shadow: 0 10px 40px rgba(255, 140, 66, 0.25);
+      box-shadow: 0 10px 40px rgba(255, 106, 31, 0.25);
     }
 
     .job-row {
@@ -187,7 +187,7 @@ block styles
       position: relative;
       border-radius: 12px;
       overflow: hidden;
-      background: #05070d;
+      background: var(--bg);
       border: 1px solid var(--ocrtts-border);
     }
 
@@ -204,8 +204,8 @@ block styles
 
     .bounding-box {
       position: absolute;
-      border: 2px solid rgba(255, 140, 66, 0.9);
-      background: rgba(255, 140, 66, 0.14);
+      border: 2px solid rgba(255, 106, 31, 0.9);
+      background: var(--brand-tint);
       border-radius: 8px;
       pointer-events: auto;
       transition: border-color 0.2s ease, background 0.2s ease;
@@ -213,7 +213,7 @@ block styles
 
     .bounding-box:hover {
       border-color: var(--ocrtts-accent-2);
-      background: rgba(255, 200, 87, 0.16);
+      background: var(--accent-tint);
       z-index: 5;
     }
 
@@ -222,7 +222,7 @@ block styles
       top: 100%;
       left: 0;
       transform: translateY(6px);
-      background: rgba(18, 24, 38, 0.95);
+      background: rgba(23, 26, 32, 0.95);
       color: var(--ocrtts-text);
       padding: 0.35rem 0.5rem;
       border-radius: 6px;

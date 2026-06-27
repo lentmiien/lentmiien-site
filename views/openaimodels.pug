@@ -5,7 +5,7 @@ block content
   hr
   h3 Models 
   each model in models 
-    div(style="border: 1px solid black; padding: 5px; margin: 5px;")
+    div(style="border: 1px solid var(--border); background: var(--surface-1); padding: 5px; margin: 5px;")
       p 
         b= model.model_name
         button.btn.btn-primary(onclick=`SetDefault("${model.model_type}","${model.api_endpoint}")`) Set as default

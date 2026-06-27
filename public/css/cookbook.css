@@ -15,12 +15,12 @@
 }
 
 .cookbook-page .recipe-card .recipe-title-link {
-  color: #f3f4f6;
+  color: var(--text);
 }
 
 .cookbook-page .recipe-card .recipe-title-link:hover,
 .cookbook-page .recipe-card .recipe-title-link:focus {
-  color: #bfdbfe;
+  color: var(--accent);
 }
 
 .cookbook-page .recipe-card .recipe-tags {
@@ -56,7 +56,7 @@
 }
 
 .cookbook-view-page .variant-banner {
-  border: 2px solid #ffc107;
+  border: 2px solid var(--accent);
 }
 
 .cookbook-view-page .variant-list .card {
@@ -65,8 +65,8 @@
 
 .cookbook-view-page .variant-list .card.active-variant {
   border-width: 2px;
-  border-color: #fd7e14;
-  box-shadow: 0 0.5rem 1.2rem rgba(253, 126, 20, 0.15);
+  border-color: var(--brand);
+  box-shadow: 0 0.5rem 1.2rem rgba(255, 106, 31, 0.15);
 }
 
 .cookbook-view-page .rating-grid {
@@ -96,36 +96,39 @@
   border-radius: 999px;
   padding: 0.2rem 0.7rem;
   font-size: 0.85rem;
-  background: #f3f4f6;
-  color: #111827;
+  background: var(--surface-2);
+  color: var(--text-secondary);
 }
 
 .cookbook-view-page .nutrition-badge.high {
-  background: #d1fae5;
+  background: rgba(23, 198, 150, 0.16);
+  color: var(--success);
 }
 
 .cookbook-view-page .nutrition-badge.medium {
-  background: #fef3c7;
+  background: rgba(255, 198, 61, 0.16);
+  color: var(--warning);
 }
 
 .cookbook-view-page .nutrition-badge.low {
-  background: #fee2e2;
+  background: rgba(255, 77, 79, 0.16);
+  color: var(--danger);
 }
 
 .cookbook-view-page .ingredients-table {
-  color: #f3f4f6;
-  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  border-color: var(--divider);
   margin-bottom: 0;
 }
 
 .cookbook-view-page .ingredients-table > :not(caption) > * > * {
-  background-color: #1f2937;
-  color: #f3f4f6;
-  border-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--surface-1);
+  color: var(--text);
+  border-color: var(--divider);
 }
 
 .cookbook-view-page .ingredients-table > thead > tr > th {
-  background-color: #111827;
+  background-color: var(--surface-2);
 }
 
 .cookbook-view-page .portion-controls {

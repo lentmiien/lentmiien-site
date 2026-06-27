@@ -1,8 +1,8 @@
 :root {
-  --accounting-bg: var(--bs-body-bg, #0b0c10);
-  --accounting-card: rgba(255, 255, 255, 0.02);
-  --accounting-border: rgba(255, 255, 255, 0.08);
-  --accounting-highlight: #3f8bfd;
+  --accounting-bg: var(--bg, #0E0F13);
+  --accounting-card: rgba(23, 26, 32, 0.78);
+  --accounting-border: var(--border, #262B34);
+  --accounting-highlight: var(--accent, #FFC247);
 }
 
 .accounting-app {
@@ -15,7 +15,7 @@
   padding: 1.5rem;
   border-radius: 1rem;
   border: 1px solid var(--accounting-border);
-  background: linear-gradient(135deg, rgba(63, 139, 253, 0.1), rgba(59, 61, 255, 0.05));
+  background: linear-gradient(135deg, var(--brand-tint), rgba(255, 194, 71, 0.08));
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;

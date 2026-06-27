@@ -1,24 +1,24 @@
 :root {
-  --gpt-image-bg: #f4efe7;
-  --gpt-image-surface: rgba(255, 252, 247, 0.94);
-  --gpt-image-surface-strong: #fffaf2;
-  --gpt-image-border: rgba(114, 87, 53, 0.18);
-  --gpt-image-border-strong: rgba(114, 87, 53, 0.36);
-  --gpt-image-ink: #2c2318;
-  --gpt-image-muted: #6a5843;
-  --gpt-image-accent: #9f4f2c;
-  --gpt-image-accent-soft: #f4d8c3;
-  --gpt-image-liked: #b82f49;
-  --gpt-image-liked-soft: #fde6ed;
+  --gpt-image-bg: var(--bg);
+  --gpt-image-surface: rgba(23, 26, 32, 0.94);
+  --gpt-image-surface-strong: var(--surface-2);
+  --gpt-image-border: var(--border);
+  --gpt-image-border-strong: rgba(255, 194, 71, 0.36);
+  --gpt-image-ink: var(--text);
+  --gpt-image-muted: var(--text-secondary);
+  --gpt-image-accent: var(--brand);
+  --gpt-image-accent-soft: var(--brand-tint);
+  --gpt-image-liked: var(--danger);
+  --gpt-image-liked-soft: rgba(255, 77, 79, 0.14);
 }
 
 .gpt-image-page {
   color: var(--gpt-image-ink);
   padding: 24px 0 48px;
   background:
-    radial-gradient(circle at top right, rgba(226, 193, 156, 0.42), transparent 28rem),
-    radial-gradient(circle at bottom left, rgba(211, 108, 72, 0.16), transparent 24rem),
-    linear-gradient(180deg, #fbf6ee 0%, var(--gpt-image-bg) 100%);
+    radial-gradient(circle at top right, var(--accent-tint), transparent 28rem),
+    radial-gradient(circle at bottom left, var(--brand-tint), transparent 24rem),
+    var(--gpt-image-bg);
   min-height: calc(100vh - 120px);
 }
 
@@ -31,9 +31,9 @@
   border: 1px solid var(--gpt-image-border);
   border-radius: 24px;
   background:
-    linear-gradient(135deg, rgba(255, 246, 233, 0.96), rgba(250, 238, 221, 0.9)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
-  box-shadow: 0 20px 45px rgba(78, 55, 30, 0.08);
+    linear-gradient(135deg, rgba(255, 106, 31, 0.12), transparent 70%),
+    var(--surface-1);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.28);
 }
 
 .gpt-image-hero__eyebrow {
@@ -69,7 +69,7 @@
   padding: 18px 20px;
   border-radius: 18px;
   border: 1px solid var(--gpt-image-border);
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--surface-2);
 }
 
 .gpt-image-hero__metric-value {
@@ -101,7 +101,7 @@
 .gpt-image-empty {
   border: 1px solid var(--gpt-image-border);
   background: var(--gpt-image-surface);
-  box-shadow: 0 18px 36px rgba(88, 58, 24, 0.08);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.24);
 }
 
 .gpt-image-panel {
@@ -174,7 +174,7 @@
 
 .gpt-image-upload-summary {
   border-radius: 14px;
-  background: rgba(244, 216, 195, 0.55);
+  background: var(--brand-tint);
   padding: 12px 14px;
   color: var(--gpt-image-muted);
   font-size: 0.92rem;
@@ -185,7 +185,7 @@
   gap: 12px;
   padding: 16px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.62);
+  background: rgba(27, 32, 38, 0.7);
   border: 1px solid var(--gpt-image-border);
 }
 
@@ -204,7 +204,7 @@
 .gpt-image-selection__empty {
   padding: 14px;
   border-radius: 14px;
-  background: rgba(244, 239, 231, 0.9);
+  background: var(--surface-2);
   color: var(--gpt-image-muted);
 }
 
@@ -215,7 +215,7 @@
   align-items: center;
   padding: 10px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--surface-2);
   border: 1px solid var(--gpt-image-border);
 }
 
@@ -237,11 +237,11 @@
 }
 
 .gpt-image-status[data-tone='error'] {
-  color: #9d1f32;
+  color: var(--danger);
 }
 
 .gpt-image-status[data-tone='success'] {
-  color: #1c6a43;
+  color: var(--success);
 }
 
 .gpt-image-actions {
@@ -290,8 +290,8 @@
 }
 
 .gpt-image-card--highlight {
-  border-color: rgba(159, 79, 44, 0.7);
-  box-shadow: 0 20px 44px rgba(159, 79, 44, 0.16);
+  border-color: rgba(255, 106, 31, 0.7);
+  box-shadow: 0 20px 44px rgba(255, 106, 31, 0.16);
 }
 
 .gpt-image-card--liked {
@@ -301,7 +301,7 @@
 .gpt-image-card__media {
   position: relative;
   aspect-ratio: 1 / 1;
-  background: #ece2d7;
+  background: var(--surface-2);
 }
 
 .gpt-image-card__img {
@@ -328,7 +328,7 @@
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(14, 15, 19, 0.86);
 }
 
 .gpt-image-badge--recent {
@@ -362,7 +362,7 @@
 .gpt-image-card__meta div {
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--surface-2);
 }
 
 .gpt-image-card__meta dt {
