@@ -391,6 +391,19 @@ exports.addPublicDeviceUsageReward = async (req, res) => {
   const rewardForm = mapRewardForm(req.body || {});
 
   try {
+    const quota = consumePublicTobuyAddQuota();
+    if (!quota.allowed) {
+      const errorMessage = quota.reason === 'too_fast'
+        ? 'もう一度追加する前に1秒待ってください。'
+        : '今日の共有追加上限に達しました。';
+
+      return await renderPage(req, res, {
+        statusCode: 429,
+        errorMessage,
+        rewardForm,
+      });
+    }
+
     await addDeviceUsageReward(req.body || {}, {
       updatedBy: 'public-tobuy',
     });

@@ -194,6 +194,12 @@ describe('publicTobuyListController', () => {
     getDeviceUsageDashboard.mockResolvedValue(createDeviceUsageDashboard());
     addDeviceUsageReward.mockResolvedValue({});
     getMinuteLoggerLastKnownLocation.mockResolvedValue(null);
+    consumePublicTobuyAddQuota.mockReturnValue({
+      allowed: true,
+      reason: null,
+      retryAfterMs: 0,
+      remainingToday: 9,
+    });
     mockCookingCalendarService.formatDate.mockReturnValue('2026-05-28');
     mockCookingCalendarService.getCalendarRange.mockResolvedValue({
       days: [
@@ -389,10 +395,52 @@ describe('publicTobuyListController', () => {
 
     await controller.addPublicDeviceUsageReward(req, res);
 
+    expect(consumePublicTobuyAddQuota).toHaveBeenCalledTimes(1);
     expect(addDeviceUsageReward).toHaveBeenCalledWith(body, {
       updatedBy: 'public-tobuy',
     });
     expect(res.redirect).toHaveBeenCalledWith('/hidden-path?reward=1');
+  });
+
+  test('addPublicDeviceUsageReward rerenders with rate limit error when quota is exhausted', async () => {
+    consumePublicTobuyAddQuota.mockReturnValue({
+      allowed: false,
+      reason: 'too_fast',
+      retryAfterMs: 1000,
+      remainingToday: 9,
+    });
+    Task.find.mockReturnValueOnce(createFindQuery([{ _id: 'task-1', title: 'Milk' }]));
+
+    const req = {
+      body: {
+        suggestionId: '',
+        titleEn: 'Read aloud',
+        points: '3',
+        comment: 'Good effort',
+      },
+      query: {},
+      baseUrl: '/hidden-path',
+      path: '/rewards',
+    };
+    const res = {
+      redirect: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      render: jest.fn(),
+      locals: {},
+    };
+
+    await controller.addPublicDeviceUsageReward(req, res);
+
+    expect(addDeviceUsageReward).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.render).toHaveBeenCalledWith('public_tobuy_list', expect.objectContaining({
+      errorMessage: 'もう一度追加する前に1秒待ってください。',
+      rewardForm: expect.objectContaining({
+        titleEn: 'Read aloud',
+        points: '3',
+        comment: 'Good effort',
+      }),
+    }));
   });
 
   test('addPublicTask saves a trimmed to-buy task for Lennart and redirects back', async () => {

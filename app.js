@@ -12,6 +12,8 @@ const bodyParser = require('body-parser');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const expressSession = require('express-session');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const expressStaticGzip = require('express-static-gzip');
 const crypto = require('crypto');
@@ -31,11 +33,81 @@ const app = express();
 const server = http.createServer(app);
 app.set('logger', logger);
 
+function getPositiveIntegerEnv(name, fallback) {
+  const value = Number.parseInt(process.env[name], 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function getBooleanEnv(name, fallback = false) {
+  const rawValue = process.env[name];
+  if (rawValue === undefined) {
+    return fallback;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(String(rawValue).trim().toLowerCase());
+}
+
+function getTrustProxyValue(rawValue) {
+  if (rawValue === undefined || rawValue === '') {
+    return process.env.NODE_ENV === 'production' ? 1 : false;
+  }
+  if (rawValue === 'true') return 1;
+  if (rawValue === 'false') return false;
+  const numericValue = Number.parseInt(rawValue, 10);
+  return Number.isFinite(numericValue) ? numericValue : rawValue;
+}
+
+function isBcryptHash(value) {
+  return typeof value === 'string'
+    && /^\$2[aby]\$(0[4-9]|[12]\d|3[01])\$[./A-Za-z0-9]{53}$/.test(value);
+}
+
+const isProduction = process.env.NODE_ENV === 'production';
+const trustProxyValue = getTrustProxyValue(process.env.TRUST_PROXY);
+if (trustProxyValue !== false) {
+  app.set('trust proxy', trustProxyValue);
+}
+
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+
+const loginLimiter = rateLimit({
+  windowMs: getPositiveIntegerEnv('LOGIN_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  limit: getPositiveIntegerEnv('LOGIN_RATE_LIMIT_MAX', 10),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: 'Too many login attempts. Please try again later.',
+});
+
+const publicWriteLimiter = rateLimit({
+  windowMs: getPositiveIntegerEnv('PUBLIC_WRITE_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  limit: getPositiveIntegerEnv('PUBLIC_WRITE_RATE_LIMIT_MAX', 30),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skip: (req) => req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS',
+});
+
+const telemetryLimiter = rateLimit({
+  windowMs: getPositiveIntegerEnv('PUBLIC_TELEMETRY_RATE_LIMIT_WINDOW_MS', 60 * 1000),
+  limit: getPositiveIntegerEnv('PUBLIC_TELEMETRY_RATE_LIMIT_MAX', 120),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+});
+
 // Session middleware
 const sessionMiddleware = expressSession({
+  name: process.env.SESSION_COOKIE_NAME || 'lentmiien.sid',
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: process.env.SESSION_COOKIE_SAMESITE || 'lax',
+    secure: getBooleanEnv('SESSION_COOKIE_SECURE', isProduction),
+    maxAge: getPositiveIntegerEnv('SESSION_COOKIE_MAX_AGE_MS', 24 * 60 * 60 * 1000),
+  },
 });
 app.use(sessionMiddleware);
 
@@ -69,17 +141,17 @@ app.use('/apphealth', (req, res) => res.json({status: "ok"}));
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
 const requestCounterPath = ensureRequestCounterPath();
-app.use(requestCounterPath, requestCounterRouter);
+app.use(requestCounterPath, telemetryLimiter, requestCounterRouter);
 
 // Public hidden device usage endpoint
 const deviceUsageRouter = require('./routes/device_usage');
 const deviceUsagePath = ensureDeviceUsagePath();
-app.use(deviceUsagePath, deviceUsageRouter);
+app.use(deviceUsagePath, telemetryLimiter, deviceUsageRouter);
 
 // Public hidden minute logger endpoint
 const minuteLoggerRouter = require('./routes/minute_logger');
 const minuteLoggerPath = ensureMinuteLoggerPath();
-app.use(minuteLoggerPath, minuteLoggerRouter);
+app.use(minuteLoggerPath, telemetryLimiter, minuteLoggerRouter);
 
 // Passport setup
 app.use(passport.initialize());
@@ -92,10 +164,15 @@ passport.use(
         return done(null, false, { message: 'Incorrect username.' });
       }
 
-      // If password is not hashed, hash it
-      if (user.hash_password.length === 1) {
-        user.hash_password = bcrypt.hashSync(password, 10);
-        await user.save();
+      if (!isBcryptHash(user.hash_password)) {
+        logger.warning('Rejected login for account without a bcrypt password hash', {
+          category: 'auth',
+          metadata: {
+            userId: user._id ? user._id.toString() : null,
+            username: user.name,
+          },
+        });
+        return done(null, false, { message: 'Password reset required.' });
       }
 
       bcrypt.compare(password, user.hash_password, (err, isMatch) => {
@@ -321,7 +398,7 @@ const publicTobuyListPath = ensurePublicTobuyListPath();
 
 app.use('/', indexRouter);
 app.use('/', dummyDebugApiRouter);
-app.use(publicTobuyListPath, publicTobuyListRouter);
+app.use(publicTobuyListPath, publicWriteLimiter, publicTobuyListRouter);
 app.use('/api', isAuthenticated, apiRouter);
 app.use('/mydhlapi/test', dummyapiRouter);
 app.use('/webapi/servlet', dummyapiRouter);
@@ -368,6 +445,7 @@ app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(
   '/login',
+  loginLimiter,
   passport.authenticate('local', {
     successRedirect: '/mypage',
     failureRedirect: '/login',

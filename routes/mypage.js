@@ -2,7 +2,13 @@ const express = require('express');
 const router = express.Router();
 
 const multer = require('multer');
-const upload = multer({ dest: './tmp_data/' });
+const upload = multer({
+  dest: './tmp_data/',
+  limits: {
+    fileSize: 25 * 1024 * 1024,
+    files: 1,
+  },
+});
 
 // Require controller modules.
 const controller = require('../controllers/mypagecontroller');

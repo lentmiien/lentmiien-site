@@ -1,4 +1,5 @@
 const axios = require('axios');
+const bcrypt = require('bcryptjs');
 const FormData = require('form-data');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
@@ -44,6 +45,20 @@ const {
 } = require('../services/openaiSubscriptionPlanService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
+const TEMP_PASSWORD_BYTES = 18;
+const PASSWORD_HASH_ROUNDS = 10;
+
+function generateTemporaryPassword() {
+  return crypto.randomBytes(TEMP_PASSWORD_BYTES).toString('base64url');
+}
+
+function hashPassword(password) {
+  return bcrypt.hashSync(password, PASSWORD_HASH_ROUNDS);
+}
+
+function normalizeUserField(value, maxLength) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
 
 const routes = [
   "chat",
@@ -288,9 +303,14 @@ exports.reset_password = async (req, res) => {
   }
   const user = await UseraccountModel.findById(id);
   if (user) {
-    user.hash_password = "0";
+    const temporaryPassword = generateTemporaryPassword();
+    user.hash_password = hashPassword(temporaryPassword);
     await user.save();
-    return res.json({status:"Completed", message:"User updated."});
+    return res.json({
+      status: "Completed",
+      message: "Password reset. Copy the temporary password now.",
+      temporaryPassword,
+    });
   }
   return res.json({status:"Failed", message:"No user to update."});
 }
@@ -305,19 +325,37 @@ exports.delete_user = async (req, res) => {
 }
 
 exports.create_user = async (req, res) => {
-  const name = req.body.name;
-  const email = req.body.email;
-  const type_user = req.body.type_user;
+  const name = normalizeUserField(req.body.name, 100);
+  const email = normalizeUserField(req.body.email, 200);
+  const requestedType = normalizeUserField(req.body.type_user, 50);
+  const type_user = ['admin', 'family', 'user', 'other'].includes(requestedType)
+    ? requestedType
+    : 'user';
+
+  if (!name) {
+    return res.json({status:"Failed", message:"User name is required."});
+  }
+
+  const existingUser = await UseraccountModel.findOne({ name });
+  if (existingUser) {
+    return res.json({status:"Failed", message:"A user with that name already exists."});
+  }
+
+  const temporaryPassword = generateTemporaryPassword();
 
   const entry_data = {
     name,
     email,
     type_user,
-    hash_password: "0",
+    hash_password: hashPassword(temporaryPassword),
   };
   await new UseraccountModel(entry_data).save();
 
-  return res.json({status:"Completed", message:"User created."});
+  return res.json({
+    status:"Completed",
+    message:"User created. Copy the temporary password now.",
+    temporaryPassword,
+  });
 }
 
 exports.manage_roles = async (req, res) => {

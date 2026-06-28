@@ -5,11 +5,47 @@ const fs = require('fs');
 const logger = require('../utils/logger');
 // const os = require('os');
 
-const tempDir = path.join(__dirname, '..', 'github-repos');
+const tempDir = path.resolve(__dirname, '..', 'github-repos');
 const git = simpleGit();
+const REPO_NAME_PATTERN = /^[a-zA-Z0-9._-]+$/;
 
 // GitHub Personal Access Token
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+
+function isWithinDirectory(parentDir, targetPath) {
+  const relativePath = path.relative(parentDir, targetPath);
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+}
+
+function normalizeRepoName(repoName) {
+  const normalized = String(repoName || '').trim();
+  if (!normalized || normalized.includes('..') || !REPO_NAME_PATTERN.test(normalized)) {
+    throw new Error('Invalid repository name.');
+  }
+  return normalized;
+}
+
+function getRepoDir(repoName) {
+  const normalizedRepoName = normalizeRepoName(repoName);
+  const repoDir = path.resolve(tempDir, normalizedRepoName);
+  if (!isWithinDirectory(tempDir, repoDir)) {
+    throw new Error('Invalid repository path.');
+  }
+  return { normalizedRepoName, repoDir };
+}
+
+function getRepoFilePath(repoDir, filePath) {
+  const normalizedFilePath = String(filePath || '').trim();
+  if (!normalizedFilePath) {
+    throw new Error('Invalid file path.');
+  }
+
+  const fullPath = path.resolve(repoDir, normalizedFilePath);
+  if (fullPath === repoDir || !isWithinDirectory(repoDir, fullPath)) {
+    throw new Error('Invalid file path.');
+  }
+  return fullPath;
+}
 
 class GitHubService {
   constructor() {
@@ -99,10 +135,10 @@ class GitHubService {
   };
 
   async getRepositoryContents(repoName) {
-    const repoDir = path.join(tempDir, repoName);
+    const { normalizedRepoName, repoDir } = getRepoDir(repoName);
     try {
       if (!fs.existsSync(repoDir)) {
-        await git.clone(`https://github.com/lentmiien/${repoName}.git`, repoDir);
+        await git.clone(`https://github.com/lentmiien/${normalizedRepoName}.git`, repoDir);
         logger.notice(`Repository cloned: ${repoDir}`);
       } else {
         logger.notice(`Repository already exists: ${repoDir}`);
@@ -117,7 +153,7 @@ class GitHubService {
 
   async updateRepositoryContents(repoName, branch = 'main') {
     try {
-      const repoDir = path.join(tempDir, repoName);
+      const { repoDir } = getRepoDir(repoName);
       const git = simpleGit(repoDir);
       await git.pull('origin', branch);
       return await this.loadFolderStructure(repoDir, repoDir);
@@ -128,11 +164,14 @@ class GitHubService {
   }
 
   async getFileContent(repoName, filePath) {
-    const fullPath = path.join(tempDir, repoName, filePath);
+    const { repoDir } = getRepoDir(repoName);
+    const fullPath = getRepoFilePath(repoDir, filePath);
     try {
       // Check if it's a text-based file
       const textBasedExtensions = ['.txt', '.md', '.js', '.py', '.html', '.css', '.json', '.csv', '.xml', '.yml', '.ini', '.cfg', '.pug', '.gitignore'];
-      const fileExtension = '.' + filePath.split('.').pop().toLowerCase();
+      const fileExtension = path.basename(fullPath) === '.gitignore'
+        ? '.gitignore'
+        : path.extname(fullPath).toLowerCase();
   
       if (textBasedExtensions.includes(fileExtension)) {
         // It's a text-based file, so we can decode the content

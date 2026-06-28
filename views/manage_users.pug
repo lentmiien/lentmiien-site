@@ -67,10 +67,10 @@ block content
                 option(value="family", selected=user.type_user==="family") Family
                 option(value="user", selected=user.type_user==="user") User
             td
-              if user.hash_password.length > 1
+              if user.hash_password && user.hash_password.length > 1
                 button.btn.btn-danger(data-id=`${user._id.toString()}`, onclick="ResetPassword(this)") Reset
               else 
-                b - Not set -
+                b Needs reset
             td 
               button.btn.btn-danger(data-id=`${user._id.toString()}`, onclick="DeleteUser(this)") Delete
       tr
@@ -81,7 +81,7 @@ block content
         td 
           b User
         td 
-          b Set at first login
+          b Temporary password generated on create
         td 
           button.btn.btn-success(onclick="CreateUser()") Create user
   script(src="/js/manage_users.js") 

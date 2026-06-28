@@ -191,6 +191,11 @@ describe('GitHubService', () => {
     expect(result).toEqual(['structure']);
   });
 
+  test('getRepositoryContents rejects path traversal repo names', async () => {
+    await expect(service.getRepositoryContents('../secret')).rejects.toThrow('Invalid repository name.');
+    expect(fs.existsSync).not.toHaveBeenCalled();
+  });
+
   test('updateRepositoryContents pulls latest and returns tree', async () => {
     const loadSpy = jest.spyOn(service, 'loadFolderStructure').mockResolvedValue(['tree']);
 
@@ -216,6 +221,11 @@ describe('GitHubService', () => {
     const binary = await service.getFileContent('repo', 'image.png');
     expect(fs.readFileSync).not.toHaveBeenCalled();
     expect(binary).toBeNull();
+  });
+
+  test('getFileContent rejects paths outside the repository', async () => {
+    await expect(service.getFileContent('repo', '../secret.txt')).rejects.toThrow('Invalid file path.');
+    expect(fs.readFileSync).not.toHaveBeenCalled();
   });
 
   test('getFileContent logs and rethrows read errors', async () => {

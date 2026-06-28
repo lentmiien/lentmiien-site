@@ -5,7 +5,13 @@ const router = express.Router();
 // Require controller modules.
 const controller = require('../controllers/accountingController');
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 1,
+  },
+});
 
 /* GET home page */
 router.get('/', controller.dashboard);

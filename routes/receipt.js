@@ -3,6 +3,8 @@ const router = express.Router();
 
 const path = require('path');
 const multer = require('multer');
+const MAX_UPLOAD_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_UPLOAD_FILES = 10;
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, './tmp_data/');
@@ -13,7 +15,13 @@ const storage = multer.diskStorage({
     cb(null, file.fieldname + '-' + uniqueSuffix + extension);
   }
 });
-const upload = multer({ storage: storage });
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: MAX_UPLOAD_FILE_SIZE,
+    files: MAX_UPLOAD_FILES,
+  },
+});
 
 // Require controller modules.
 const controller = require('../controllers/receiptcontroller');
