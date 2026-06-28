@@ -7,6 +7,7 @@ block content
   - const trainingGroupOptions = typeof trainingGroups !== 'undefined' && Array.isArray(trainingGroups) ? trainingGroups : [];
   - const trainingEntryOptions = typeof trainingEntries !== 'undefined' && Array.isArray(trainingEntries) ? trainingEntries : [];
   - const trainingFlash = typeof trainingStatus !== 'undefined' && trainingStatus ? trainingStatus : {};
+  - const chat5MessageWindow = typeof messageWindow !== 'undefined' && messageWindow ? messageWindow : { batchSize: 25, initialLimit: 25, total: Array.isArray(messages) ? messages.length : 0, loadedStart: 0, loadedEnd: Array.isArray(messages) ? messages.length : 0, hasMoreOlder: false, source: conversationSource };
   h2#conversation_title.chat5-title= conversation.title
   p#id.chat5-meta(data-source=conversationSource)= conversation._id
   .chat5-header-actions.d-flex.gap-2.mb-3
@@ -276,6 +277,14 @@ block content
         span.chat5-chunk-range= rangeLabel
       .chat5-chunk-body
         +chat5RenderMessageList(chunk.messages, chunkState)
+  mixin chat5MessageLoadControls()
+    - const loadedCount = Math.max(0, (chat5MessageWindow.loadedEnd || 0) - (chat5MessageWindow.loadedStart || 0));
+    - const hasMoreOlder = !!chat5MessageWindow.hasMoreOlder;
+    .chat5-message-load-controls(data-chat5-load-controls, class={ 'd-none': chat5MessageWindow.source !== 'conversation5' || (!hasMoreOlder && chat5MessageWindow.total <= loadedCount) })
+      button.btn.btn-outline-primary.btn-sm(type="button", data-chat5-load-more, disabled=!hasMoreOlder)= `Load ${chat5MessageWindow.batchSize || 25} older`
+      button.btn.btn-outline-secondary.btn-sm(type="button", data-chat5-load-all, disabled=!hasMoreOlder) Load all
+      span.small.text-muted(data-chat5-load-status)= `Showing ${loadedCount} of ${chat5MessageWindow.total || loadedCount} messages`
+  +chat5MessageLoadControls()
   #conversationContainer.chat5-history
     if olderChunks.length
       each chunk, chunkIdx in olderChunks
@@ -284,7 +293,7 @@ block content
     if visibleMessages.length
       +chat5RenderMessageList(visibleMessages, visibleState)
     else if !olderChunks.length
-      p.text-muted.mb-0 No messages yet.
+      p#chat5EmptyMessages.text-muted.mb-0 No messages yet.
   ul#pills-tab.nav.nav-pills.mb-3.chat5-tabs(role="tablist")
     li.nav-item(role="presentation")
       button#pills-chat-tab.nav-link.active(data-bs-toggle="pill" data-bs-target="#pills-chat" type="button" role="tab" aria-controls="pills-chat" aria-selected="true") Chat
@@ -427,7 +436,7 @@ block content
       else if conversation._id === 'NEW'
         p.text-muted.mb-0 Save this conversation before adding training entries.
       else
-        - const selectableTrainingMessages = Array.isArray(messages) ? messages.filter((msg) => trainingText(msg).length > 0) : [];
+        - const selectableTrainingMessages = Array.isArray(messages) ? messages.map((msg, idx) => ({ msg, index: (chat5MessageWindow.loadedStart || 0) + idx })).filter((entry) => trainingText(entry.msg).length > 0) : [];
         form.chat5-training-form(method="post", action="/chat5/training-entries")
           input(type="hidden", name="conversation_id", value=conversation._id.toString())
           .row
@@ -442,28 +451,29 @@ block content
             .col-md-6.mb-3
               label.chat5-input-label.form-label(for="trainingNotes") Notes
               input#trainingNotes.form-control(type="text", name="notes", maxlength="2000", placeholder="Optional note for this entry")
-          if selectableTrainingMessages.length
-            .chat5-training-message-list
-              each m, i in selectableTrainingMessages
-                - const messageId = m._id.toString();
-                - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
-                article.chat5-training-message-option
-                  .chat5-training-message-selectors
-                    .form-check
-                      input.form-check-input(type="checkbox", id=`trainingPrompt-${messageId}`, name="prompt_message_ids", value=messageId)
-                      label.form-check-label(for=`trainingPrompt-${messageId}`) Prompt
-                    .form-check
-                      input.form-check-input(type="radio", id=`trainingOutput-${messageId}`, name="output_message_id", value=messageId)
-                      label.form-check-label(for=`trainingOutput-${messageId}`) Output
-                  .chat5-training-message-preview
-                    .d-flex.flex-wrap.gap-2.align-items-center
-                      strong= `#${i} ${sender}`
-                      code= messageId
-                    p.mb-0= trainingPreview(m)
-          else
-            p.text-muted No text messages are available for training selection.
+          +chat5MessageLoadControls()
+          p#chat5TrainingEmpty.text-muted(class={ 'd-none': selectableTrainingMessages.length > 0 }) No text messages are available for training selection.
+          .chat5-training-message-list#chat5TrainingMessageList
+            each entry in selectableTrainingMessages
+              - const m = entry.msg;
+              - const messageId = m._id.toString();
+              - const messageIndex = entry.index;
+              - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
+              article.chat5-training-message-option(data-message-id=messageId, data-message-index=messageIndex)
+                .chat5-training-message-selectors
+                  .form-check
+                    input.form-check-input(type="checkbox", id=`trainingPrompt-${messageId}`, name="prompt_message_ids", value=messageId)
+                    label.form-check-label(for=`trainingPrompt-${messageId}`) Prompt
+                  .form-check
+                    input.form-check-input(type="radio", id=`trainingOutput-${messageId}`, name="output_message_id", value=messageId)
+                    label.form-check-label(for=`trainingOutput-${messageId}`) Output
+                .chat5-training-message-preview
+                  .d-flex.flex-wrap.gap-2.align-items-center
+                    strong= `#${messageIndex} ${sender}`
+                    code= messageId
+                  p.mb-0= trainingPreview(m)
           .chat5-update-actions.d-flex.justify-content-end.flex-wrap.gap-2
-            button.btn.btn-success(type="submit", disabled=trainingGroupOptions.length === 0 || selectableTrainingMessages.length < 2) Add entry
+            button#chat5TrainingSubmit.btn.btn-success(type="submit", disabled=trainingGroupOptions.length === 0 || selectableTrainingMessages.length < 2) Add entry
 
         hr.chat5-divider
         h3 Existing entries for this conversation
@@ -539,63 +549,66 @@ block content
           div 
             b outputFormat: 
             span= conversation.metadata.outputFormat
-      each m, i in messages 
-        .chat5-raw-message(data-message-id=m._id)
-          h3= `Message#${i}`
-          .row 
-            .col-3 
-              div 
-                b _id: 
-                span= m._id
-              div 
-                b user_id: 
-                span= m.user_id
-              div 
-                b category: 
-                span= m.category
-              div 
-                b tags: 
-                span= m.tags.join(", ")
-              div 
-                b contentType: 
-                span= m.contentType
-              div 
-                b Hide from bot: 
-                input(type="checkbox", data-id=m._id, checked=m.hideFromBot, onchange="ToggleHideFromBot(this)")
-            .col-9
-              h4 Content 
-              div 
-                b text: 
-                  button.btn.btn-link(data-id=m._id, data-type="text", data-content=m.content.text, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}text`)= m.content.text
-              div 
-                b image: 
-                  button.btn.btn-link(data-id=m._id, data-type="image", data-content=m.content.image, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}image`)= m.content.image
-              div 
-                b audio: 
-                  button.btn.btn-link(data-id=m._id, data-type="audio", data-content=m.content.audio, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}audio`)= m.content.audio
-              div 
-                b tts: 
-                  button.btn.btn-link(data-id=m._id, data-type="tts", data-content=m.content.tts, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}tts`)= m.content.tts
-              div 
-                b transcript: 
-                  button.btn.btn-link(data-id=m._id, data-type="transcript", data-content=m.content.transcript, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}transcript`)= m.content.transcript
-              div 
-                b revisedPrompt: 
-                  button.btn.btn-link(data-id=m._id, data-type="revisedPrompt", data-content=m.content.revisedPrompt, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}revisedPrompt`)= m.content.revisedPrompt
-              div 
-                b imageQuality: 
-                  button.btn.btn-link(data-id=m._id, data-type="imageQuality", data-content=m.content.imageQuality, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}imageQuality`)= m.content.imageQuality
-              div 
-                b toolOutput: 
-                  button.btn.btn-link(data-id=m._id, data-type="toolOutput", data-content=m.content.toolOutput, onclick=`EditText(this)`) Edit
-                pre(id=`${m._id}toolOutput`)= m.content.toolOutput
+      +chat5MessageLoadControls()
+      .chat5-raw-message-list#chat5RawMessageList
+        each m, i in messages
+          - const rawMessageIndex = (chat5MessageWindow.loadedStart || 0) + i;
+          .chat5-raw-message(data-message-id=m._id, data-message-index=rawMessageIndex)
+            h3= `Message#${rawMessageIndex}`
+            .row
+              .col-3
+                div
+                  b _id:
+                  span= m._id
+                div
+                  b user_id:
+                  span= m.user_id
+                div
+                  b category:
+                  span= m.category
+                div
+                  b tags:
+                  span= m.tags.join(", ")
+                div
+                  b contentType:
+                  span= m.contentType
+                div
+                  b Hide from bot:
+                  input(type="checkbox", data-id=m._id, checked=m.hideFromBot, onchange="ToggleHideFromBot(this)")
+              .col-9
+                h4 Content
+                div
+                  b text:
+                    button.btn.btn-link(data-id=m._id, data-type="text", data-content=m.content.text, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}text`)= m.content.text
+                div
+                  b image:
+                    button.btn.btn-link(data-id=m._id, data-type="image", data-content=m.content.image, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}image`)= m.content.image
+                div
+                  b audio:
+                    button.btn.btn-link(data-id=m._id, data-type="audio", data-content=m.content.audio, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}audio`)= m.content.audio
+                div
+                  b tts:
+                    button.btn.btn-link(data-id=m._id, data-type="tts", data-content=m.content.tts, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}tts`)= m.content.tts
+                div
+                  b transcript:
+                    button.btn.btn-link(data-id=m._id, data-type="transcript", data-content=m.content.transcript, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}transcript`)= m.content.transcript
+                div
+                  b revisedPrompt:
+                    button.btn.btn-link(data-id=m._id, data-type="revisedPrompt", data-content=m.content.revisedPrompt, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}revisedPrompt`)= m.content.revisedPrompt
+                div
+                  b imageQuality:
+                    button.btn.btn-link(data-id=m._id, data-type="imageQuality", data-content=m.content.imageQuality, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}imageQuality`)= m.content.imageQuality
+                div
+                  b toolOutput:
+                    button.btn.btn-link(data-id=m._id, data-type="toolOutput", data-content=m.content.toolOutput, onclick=`EditText(this)`) Edit
+                  pre(id=`${m._id}toolOutput`)= m.content.toolOutput
   #loadingPopup.loading-popup
     span.close-btn(onclick="hideLoadingPopup()") &times;
     .loading-content
@@ -649,6 +662,7 @@ block content
     window.chatTemplates = !{JSON.stringify(templates)};
     window.chatModels = !{JSON.stringify(chat_models)};
     window.ttsVoices = !{JSON.stringify(ttsVoices || {})};
+    window.chat5MessageWindow = !{JSON.stringify(chat5MessageWindow)};
     document.addEventListener('DOMContentLoaded', function(){
       if (window.location.hash === '#pills-training' && window.bootstrap) {
         var tab = document.getElementById('pills-training-tab');

@@ -3,6 +3,7 @@ const path = require('path');
 const context = require('./chat5_5context');
 const logger = require('../../utils/logger');
 const AsrApiService = require('../../services/asrApiService');
+const { renderMessagesHtml } = require('../../utils/chat5Markdown');
 
 const asrApiService = new AsrApiService();
 
@@ -47,6 +48,8 @@ module.exports = async function registerChat5_5Handlers({
   const HISTORY_DEFAULT_DAYS = 30;
   const HISTORY_DEFAULT_LIMIT = 100;
   const HISTORY_MAX_LIMIT = 500;
+  const MESSAGE_BATCH_DEFAULT_LIMIT = 25;
+  const MESSAGE_BATCH_MAX_LIMIT = 250;
   const VOICE_MAX_BYTES = 12 * 1024 * 1024;
 
   function ensureDate(value) {
@@ -300,6 +303,53 @@ module.exports = async function registerChat5_5Handlers({
     return clampLimit(numeric);
   }
 
+  function normalizeMessageBatchLimit(value, adjustments) {
+    if (value === undefined || value === null || value === '') {
+      return MESSAGE_BATCH_DEFAULT_LIMIT;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      pushAdjustment(adjustments, 'limit', `Invalid message batch limit "${value}"; using default (${MESSAGE_BATCH_DEFAULT_LIMIT}).`, 'warning');
+      return MESSAGE_BATCH_DEFAULT_LIMIT;
+    }
+    if (numeric > MESSAGE_BATCH_MAX_LIMIT) {
+      pushAdjustment(adjustments, 'limit', `Message batch limit ${numeric} exceeds max ${MESSAGE_BATCH_MAX_LIMIT}; capping value.`, 'warning');
+    }
+    return Math.min(Math.floor(numeric), MESSAGE_BATCH_MAX_LIMIT);
+  }
+
+  function normalizeMessageIndex(value, fallback, max, field, adjustments) {
+    if (value === undefined || value === null || value === '') {
+      return fallback;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      pushAdjustment(adjustments, field, `Invalid index "${value}"; using ${fallback}.`, 'warning');
+      return fallback;
+    }
+    return Math.max(0, Math.min(Math.floor(numeric), max));
+  }
+
+  function serializeChat5Message(message) {
+    if (!message) return null;
+    const output = typeof message.toObject === 'function'
+      ? message.toObject({ depopulate: true })
+      : JSON.parse(JSON.stringify(message));
+    if (output._id && typeof output._id !== 'string') {
+      output._id = output._id.toString();
+    }
+    if (output.timestamp instanceof Date) {
+      output.timestamp = output.timestamp.toISOString();
+    }
+    if (!Array.isArray(output.tags)) {
+      output.tags = [];
+    }
+    if (!output.content || typeof output.content !== 'object') {
+      output.content = {};
+    }
+    return output;
+  }
+
   function normalizeConversationIds(value, adjustments) {
     if (value === undefined) {
       pushAdjustment(adjustments, 'conversationIds', 'No conversationIds provided; using full search.', 'info');
@@ -372,6 +422,69 @@ module.exports = async function registerChat5_5Handlers({
     } catch (error) {
       logger.error('Failed to leave conversation room', error);
       respondWithError(eventName, 'Failed to leave conversation.', { details: error.message, adjustments });
+    }
+  });
+
+  socket.on('chat5-load-messages', async (raw = {}, ack) => {
+    const eventName = 'chat5-load-messages';
+    const adjustments = [];
+    try {
+      if (!isPlainObject(raw)) {
+        respondWithError(eventName, 'Invalid payload for load-messages.', { ack });
+        return;
+      }
+
+      const conversationId = normalizeStringOption(raw.conversationId || raw.conversation_id, '', 'conversationId', adjustments);
+      if (!conversationId || conversationId === 'NEW') {
+        respondWithError(eventName, 'An existing conversationId is required.', { ack, adjustments });
+        return;
+      }
+
+      const conversation = await Conversation5Model.findById(conversationId);
+      if (!conversation) {
+        respondWithError(eventName, 'Conversation not found or not stored in chat5 format.', { ack, adjustments });
+        return;
+      }
+
+      const messageIds = Array.isArray(conversation.messages)
+        ? conversation.messages.map((id) => id.toString())
+        : [];
+      const total = messageIds.length;
+      const beforeIndex = normalizeMessageIndex(raw.beforeIndex, total, total, 'beforeIndex', adjustments);
+      const limit = normalizeMessageBatchLimit(raw.limit, adjustments);
+      const loadAll = normalizeBooleanOption(raw.loadAll, false, 'loadAll', adjustments);
+      const endIndex = beforeIndex;
+      const startIndex = loadAll ? 0 : Math.max(0, endIndex - limit);
+      const selectedIds = startIndex < endIndex ? messageIds.slice(startIndex, endIndex) : [];
+      const messages = selectedIds.length > 0
+        ? await messageService.loadMessagesInNewFormat(selectedIds, true)
+        : [];
+      renderMessagesHtml(messages);
+
+      const payload = {
+        ok: true,
+        conversationId,
+        messages: messages.map(serializeChat5Message).filter(Boolean),
+        meta: {
+          total,
+          startIndex,
+          endIndex,
+          count: messages.length,
+          hasMoreOlder: startIndex > 0,
+          limit,
+          loadAll,
+          adjustments,
+        },
+      };
+
+      if (typeof ack === 'function') {
+        ack(payload);
+      } else {
+        socket.emit('chat5-load-messages:result', payload);
+      }
+    } catch (error) {
+      logger.error('Failed to load chat5 message slice', error);
+      respondWithError(eventName, 'Failed to load older messages.', { ack, details: error.message, adjustments });
     }
   });
 

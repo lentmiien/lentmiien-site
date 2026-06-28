@@ -2390,6 +2390,17 @@ label,
   gap: 8px;
   width: 100%;
 }
+.chat5-message-load-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(27, 32, 38, 0.48);
+}
 .chat5-hidden-group,
 .chat5-history-chunk {
   border: 1px dashed var(--divider);
@@ -2631,14 +2642,16 @@ label,
 }
 
 .chat5-training-message-list,
-.chat5-training-entry-list {
+.chat5-training-entry-list,
+.chat5-raw-message-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .chat5-training-message-option,
-.chat5-training-entry {
+.chat5-training-entry,
+.chat5-raw-message {
   background: rgba(27, 32, 38, 0.55);
   border: 1px solid var(--border);
   border-radius: 8px;

@@ -1,4 +1,4 @@
-const { AIModelCards, Chat4Model, Conversation4Model, Chat5Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
+const { AIModelCards, Chat4Model, Conversation4Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
@@ -20,6 +20,56 @@ const templateService = new TemplateService(Chat3TemplateModel);
 const ttsService = new TtsService();
 const toolManagerService = new ToolManagerService();
 const trainingDataService = new TrainingDataService();
+const CHAT5_INITIAL_MESSAGE_LIMIT = 25;
+const CHAT5_MESSAGE_BATCH_SIZE = 25;
+
+function toPositiveInt(value, fallback) {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getChat5InitialMessageLimit(conversation) {
+  const configuredMaxMessages = toPositiveInt(conversation && conversation.metadata && conversation.metadata.maxMessages, CHAT5_INITIAL_MESSAGE_LIMIT);
+  return Math.min(CHAT5_INITIAL_MESSAGE_LIMIT, configuredMaxMessages);
+}
+
+function buildMessageWindow({ conversation, source, initialStart, initialEnd, initialLimit }) {
+  const allMessageIds = conversation && Array.isArray(conversation.messages)
+    ? conversation.messages.map((id) => id.toString())
+    : [];
+  return {
+    batchSize: CHAT5_MESSAGE_BATCH_SIZE,
+    initialLimit,
+    total: allMessageIds.length,
+    loadedStart: initialStart,
+    loadedEnd: initialEnd,
+    hasMoreOlder: source === 'conversation5' && initialStart > 0,
+    source,
+  };
+}
+
+async function loadInitialChat5Messages(conversation) {
+  const allMessageIds = conversation && Array.isArray(conversation.messages)
+    ? conversation.messages.map((id) => id.toString())
+    : [];
+  const initialLimit = getChat5InitialMessageLimit(conversation);
+  const initialStart = Math.max(0, allMessageIds.length - initialLimit);
+  const initialIds = allMessageIds.slice(initialStart);
+  const messages = initialIds.length > 0
+    ? await messageService.loadMessagesInNewFormat(initialIds, true)
+    : [];
+  renderMessagesHtml(messages);
+  return {
+    messages,
+    messageWindow: buildMessageWindow({
+      conversation,
+      source: 'conversation5',
+      initialStart,
+      initialEnd: allMessageIds.length,
+      initialLimit,
+    }),
+  };
+}
 
 function slugify(value, fallbackPrefix = 'preset') {
   if (typeof value !== 'string') {
@@ -448,21 +498,43 @@ exports.view_chat5 = async (req, res) => {
   const id = req.params.id;
 
   let conversation = undefined;
-  let messages = undefined;
+  let messages = [];
   let conversationSource = 'conversation5';
+  let messageWindow = buildMessageWindow({
+    conversation: DEFAULT_CONVERSATION,
+    source: 'unsaved',
+    initialStart: 0,
+    initialEnd: 0,
+    initialLimit: CHAT5_INITIAL_MESSAGE_LIMIT,
+  });
 
   if (id === "NEW") {
     conversation = null;
     messages = [];
     conversationSource = 'unsaved';
   } else {
-    const data = await conversationService.loadConversation(id);
-    conversation = data.conv;
-    messages = data.msg;
-    conversationSource = data.source || 'conversation5';
+    const conversation5 = await Conversation5Model.findById(id);
+    if (conversation5) {
+      conversation = conversation5;
+      conversationSource = 'conversation5';
+      const initial = await loadInitialChat5Messages(conversation5);
+      messages = initial.messages;
+      messageWindow = initial.messageWindow;
+    } else {
+      const data = await conversationService.loadConversation(id);
+      conversation = data.conv;
+      messages = data.msg;
+      conversationSource = data.source || 'conversation5';
+      renderMessagesHtml(messages);
+      messageWindow = buildMessageWindow({
+        conversation,
+        source: conversationSource,
+        initialStart: 0,
+        initialEnd: Array.isArray(messages) ? messages.length : 0,
+        initialLimit: CHAT5_INITIAL_MESSAGE_LIMIT,
+      });
+    }
   }
-
-  renderMessagesHtml(messages);
 
   const trainingEntriesPromise = id !== 'NEW' && conversationSource === 'conversation5'
     ? trainingDataService.listEntriesForConversation(id)
@@ -485,6 +557,7 @@ exports.view_chat5 = async (req, res) => {
     responseTypes,
     availableTools,
     conversationSource,
+    messageWindow,
     ttsVoices,
     trainingGroups,
     trainingEntries,
@@ -586,9 +659,7 @@ exports.post_chat5 = async (req, res) => {
   });
 
   const conversation = await Conversation5Model.findById(id);
-  const messages = await Chat5Model.find({_id: conversation.messages});
-
-  renderMessagesHtml(messages);
+  const initial = await loadInitialChat5Messages(conversation);
 
   const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries] = await Promise.all([
     templateService.getTemplates(),
@@ -601,13 +672,14 @@ exports.post_chat5 = async (req, res) => {
   const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
     conversation,
-    messages,
+    messages: initial.messages,
     chat_models,
     templates,
     personalities,
     responseTypes,
     availableTools,
     conversationSource: 'conversation5',
+    messageWindow: initial.messageWindow,
     ttsVoices,
     trainingGroups,
     trainingEntries,

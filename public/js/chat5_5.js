@@ -1,9 +1,11 @@
 // Create a socket connection
 const socket = io();
+window.socket = socket;
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const VOICE_MAX_BYTES = 12 * 1024 * 1024;
 const VOICE_MAX_DURATION_MS = 120000;
+const DEFAULT_CHAT5_MESSAGE_BATCH_SIZE = 25;
 
 // Setup markdown editor
 const editor = new toastui.Editor({
@@ -35,6 +37,25 @@ const voiceState = {
   timeout: null,
   busy: false,
 };
+const chat5MessageWindow = {
+  batchSize: DEFAULT_CHAT5_MESSAGE_BATCH_SIZE,
+  initialLimit: DEFAULT_CHAT5_MESSAGE_BATCH_SIZE,
+  total: 0,
+  loadedStart: 0,
+  loadedEnd: 0,
+  hasMoreOlder: false,
+  source: 'conversation5',
+  loading: false,
+  ...(window.chat5MessageWindow && typeof window.chat5MessageWindow === 'object' ? window.chat5MessageWindow : {}),
+};
+chat5MessageWindow.batchSize = Number.isFinite(Number(chat5MessageWindow.batchSize)) && Number(chat5MessageWindow.batchSize) > 0
+  ? Math.floor(Number(chat5MessageWindow.batchSize))
+  : DEFAULT_CHAT5_MESSAGE_BATCH_SIZE;
+chat5MessageWindow.total = Number.isFinite(Number(chat5MessageWindow.total)) ? Math.max(0, Math.floor(Number(chat5MessageWindow.total))) : 0;
+chat5MessageWindow.loadedStart = Number.isFinite(Number(chat5MessageWindow.loadedStart)) ? Math.max(0, Math.floor(Number(chat5MessageWindow.loadedStart))) : 0;
+chat5MessageWindow.loadedEnd = Number.isFinite(Number(chat5MessageWindow.loadedEnd)) ? Math.max(chat5MessageWindow.loadedStart, Math.floor(Number(chat5MessageWindow.loadedEnd))) : chat5MessageWindow.total;
+chat5MessageWindow.hasMoreOlder = chat5MessageWindow.source === 'conversation5' && chat5MessageWindow.loadedStart > 0;
+window.chat5MessageWindow = chat5MessageWindow;
 
 function getVoiceIdValue() {
   const value = ttsVoiceSelect ? ttsVoiceSelect.value : '';
@@ -477,23 +498,110 @@ function appendRenderErrorMessage(m, error) {
   container.append(messageWrapper);
 }
 
-function appendRawMessageToUI(m) {
+function getMessageId(m) {
+  return stringifyForDisplay(m && (m._id || m.id)).trim();
+}
+
+function getMessageContent(m) {
+  return m && m.content && typeof m.content === 'object' ? m.content : {};
+}
+
+function appendLabeledValue(parent, label, value) {
+  const row = document.createElement('div');
+  const bold = document.createElement('b');
+  bold.textContent = `${label}: `;
+  const span = document.createElement('span');
+  span.textContent = stringifyForDisplay(value);
+  row.append(bold, span);
+  parent.append(row);
+}
+
+function createRawContentRow(messageId, content, type) {
+  const row = document.createElement('div');
+  const label = document.createElement('b');
+  label.textContent = `${type}: `;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.classList.add('btn', 'btn-link');
+  button.dataset.id = messageId;
+  button.dataset.type = type;
+  button.dataset.content = stringifyForDisplay(content[type]);
+  button.textContent = 'Edit';
+  button.addEventListener('click', () => EditText(button));
+  label.append(button);
+
+  const pre = document.createElement('pre');
+  pre.id = `${messageId}${type}`;
+  pre.textContent = stringifyForDisplay(content[type]);
+
+  row.append(label, pre);
+  return row;
+}
+
+function createRawMessageElement(m, index) {
+  const messageId = getMessageId(m);
+  const wrapper = document.createElement('div');
+  wrapper.classList.add('chat5-raw-message');
+  if (messageId) wrapper.dataset.messageId = messageId;
+  if (Number.isFinite(index)) wrapper.dataset.messageIndex = String(index);
+
+  const title = document.createElement('h3');
+  title.textContent = Number.isFinite(index) ? `Message#${index}` : 'Message';
+  wrapper.append(title);
+
+  const row = document.createElement('div');
+  row.classList.add('row');
+  const metaCol = document.createElement('div');
+  metaCol.classList.add('col-3');
+  const contentCol = document.createElement('div');
+  contentCol.classList.add('col-9');
+
+  appendLabeledValue(metaCol, '_id', messageId);
+  appendLabeledValue(metaCol, 'user_id', m && m.user_id);
+  appendLabeledValue(metaCol, 'category', m && m.category);
+  appendLabeledValue(metaCol, 'tags', Array.isArray(m && m.tags) ? m.tags.join(', ') : '');
+  appendLabeledValue(metaCol, 'contentType', m && m.contentType);
+
+  const hiddenRow = document.createElement('div');
+  const hiddenLabel = document.createElement('b');
+  hiddenLabel.textContent = 'Hide from bot: ';
+  const hiddenInput = document.createElement('input');
+  hiddenInput.type = 'checkbox';
+  hiddenInput.dataset.id = messageId;
+  hiddenInput.checked = !!(m && m.hideFromBot);
+  hiddenInput.addEventListener('change', () => ToggleHideFromBot(hiddenInput));
+  hiddenRow.append(hiddenLabel, hiddenInput);
+  metaCol.append(hiddenRow);
+
+  const contentTitle = document.createElement('h4');
+  contentTitle.textContent = 'Content';
+  contentCol.append(contentTitle);
+  const content = getMessageContent(m);
+  ['text', 'image', 'audio', 'tts', 'transcript', 'revisedPrompt', 'imageQuality', 'toolOutput'].forEach((type) => {
+    contentCol.append(createRawContentRow(messageId, content, type));
+  });
+
+  row.append(metaCol, contentCol);
+  wrapper.append(row);
+  return wrapper;
+}
+
+function appendRawMessageToUI(m, { prepend = false, index } = {}) {
+  const rawList = document.getElementById('chat5RawMessageList');
   const rawPane = document.getElementById("pills-raw");
-  if (!rawPane) return;
-
-  const pre = document.createElement("pre");
-  pre.classList.add('chat5-raw-message');
-  if (m && m._id) {
-    pre.dataset.messageId = m._id;
+  const target = rawList || rawPane;
+  if (!target) return;
+  const messageId = getMessageId(m);
+  if (messageId && target.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`)) {
+    return;
   }
-
-  try {
-    pre.innerText = JSON.stringify(m, null, 2);
-  } catch (error) {
-    pre.innerText = `Unable to stringify live message payload: ${error.message || error}`;
+  const card = createRawMessageElement(m, index);
+  if (prepend) {
+    target.prepend(card);
+  } else {
+    target.append(card);
   }
-
-  rawPane.append(pre);
 }
 
 function splitInputList(value) {
@@ -576,6 +684,134 @@ function requireExistingConversation(actionLabel) {
   return conversationId;
 }
 
+function getLoadedMessageCount() {
+  return Math.max(0, (chat5MessageWindow.loadedEnd || 0) - (chat5MessageWindow.loadedStart || 0));
+}
+
+function updateMessageLoadControls() {
+  chat5MessageWindow.hasMoreOlder = chat5MessageWindow.source === 'conversation5' && chat5MessageWindow.loadedStart > 0;
+  const loadedCount = getLoadedMessageCount();
+  const controls = document.querySelectorAll('[data-chat5-load-controls]');
+  controls.forEach((control) => {
+    const shouldHide = chat5MessageWindow.source !== 'conversation5'
+      || (!chat5MessageWindow.hasMoreOlder && chat5MessageWindow.total <= loadedCount);
+    control.classList.toggle('d-none', shouldHide);
+  });
+
+  const moreButtons = document.querySelectorAll('[data-chat5-load-more]');
+  moreButtons.forEach((btn) => {
+    btn.disabled = chat5MessageWindow.loading || !chat5MessageWindow.hasMoreOlder;
+    btn.textContent = chat5MessageWindow.loading
+      ? 'Loading...'
+      : `Load ${chat5MessageWindow.batchSize || DEFAULT_CHAT5_MESSAGE_BATCH_SIZE} older`;
+  });
+
+  const allButtons = document.querySelectorAll('[data-chat5-load-all]');
+  allButtons.forEach((btn) => {
+    btn.disabled = chat5MessageWindow.loading || !chat5MessageWindow.hasMoreOlder;
+  });
+
+  const statusText = chat5MessageWindow.loading
+    ? `Loading older messages... showing ${loadedCount} of ${chat5MessageWindow.total || loadedCount}`
+    : `Showing ${loadedCount} of ${chat5MessageWindow.total || loadedCount} messages`;
+  document.querySelectorAll('[data-chat5-load-status]').forEach((status) => {
+    status.textContent = statusText;
+  });
+}
+
+function updateMessageWindowFromMeta(meta) {
+  if (!meta || typeof meta !== 'object') return;
+  const total = Number(meta.total);
+  const startIndex = Number(meta.startIndex);
+  const endIndex = Number(meta.endIndex);
+  if (Number.isFinite(total)) {
+    chat5MessageWindow.total = Math.max(0, Math.floor(total));
+  }
+  if (Number.isFinite(startIndex)) {
+    chat5MessageWindow.loadedStart = Math.max(0, Math.floor(startIndex));
+  }
+  if (Number.isFinite(endIndex)) {
+    chat5MessageWindow.loadedEnd = Math.max(chat5MessageWindow.loadedEnd || 0, Math.floor(endIndex));
+  }
+  chat5MessageWindow.hasMoreOlder = !!meta.hasMoreOlder;
+}
+
+function appendMessageIdToHistory(messageId) {
+  const id = stringifyForDisplay(messageId).trim();
+  if (!id) return;
+  const history = document.getElementById('message_history');
+  if (!history) return;
+  const existing = splitInputList((history.value || '').replace(/\n/g, ','));
+  if (existing.indexOf(id) >= 0) return;
+  history.value = history.value && history.value.trim().length > 0
+    ? `${history.value.trim()}\n${id}`
+    : id;
+}
+
+function removeMessageIdFromHistory(messageId) {
+  const id = stringifyForDisplay(messageId).trim();
+  if (!id) return;
+  const history = document.getElementById('message_history');
+  if (!history) return;
+  const next = (history.value || '')
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && entry !== id);
+  history.value = next.join('\n');
+}
+
+function registerLiveMessageInWindow(messageId) {
+  if (!messageId || chat5MessageWindow.source !== 'conversation5') return;
+  chat5MessageWindow.total += 1;
+  chat5MessageWindow.loadedEnd += 1;
+  if (chat5MessageWindow.total < chat5MessageWindow.loadedEnd) {
+    chat5MessageWindow.total = chat5MessageWindow.loadedEnd;
+  }
+  updateMessageLoadControls();
+}
+
+function loadOlderMessages(loadAll = false) {
+  const conversationId = requireExistingConversation('load older messages');
+  if (!conversationId || chat5MessageWindow.loading || !chat5MessageWindow.hasMoreOlder) return;
+
+  chat5MessageWindow.loading = true;
+  updateMessageLoadControls();
+  socket.emit('chat5-load-messages', {
+    conversationId,
+    beforeIndex: chat5MessageWindow.loadedStart,
+    limit: chat5MessageWindow.batchSize || DEFAULT_CHAT5_MESSAGE_BATCH_SIZE,
+    loadAll: !!loadAll,
+  }, (resp) => {
+    chat5MessageWindow.loading = false;
+    if (!resp || resp.ok !== true) {
+      updateMessageLoadControls();
+      alert(resp && resp.message ? resp.message : 'Unable to load older messages.');
+      return;
+    }
+    const messages = Array.isArray(resp.messages) ? resp.messages : [];
+    const startIndex = resp.meta && Number.isFinite(Number(resp.meta.startIndex))
+      ? Math.max(0, Math.floor(Number(resp.meta.startIndex)))
+      : 0;
+    prependLoadedMessages(messages, startIndex);
+    updateMessageWindowFromMeta(resp.meta);
+    updateMessageLoadControls();
+  });
+}
+
+function bindMessageLoadControls() {
+  document.querySelectorAll('[data-chat5-load-more]').forEach((btn) => {
+    if (btn.dataset.bound === 'true') return;
+    btn.dataset.bound = 'true';
+    btn.addEventListener('click', () => loadOlderMessages(false));
+  });
+  document.querySelectorAll('[data-chat5-load-all]').forEach((btn) => {
+    if (btn.dataset.bound === 'true') return;
+    btn.dataset.bound = 'true';
+    btn.addEventListener('click', () => loadOlderMessages(true));
+  });
+  updateMessageLoadControls();
+}
+
 function SwitchConversation(new_id) {
   if (document.getElementById("id").innerHTML === new_id) return;
 
@@ -585,7 +821,9 @@ function SwitchConversation(new_id) {
   }
   socket.emit('chat5-joinConversation', {conversationId: new_id});
   document.getElementById("id").innerHTML = new_id;
+  chat5MessageWindow.source = 'conversation5';
   updateBatchButtons();
+  updateMessageLoadControls();
 }
 
 function Append(send, resp, userId) {
@@ -1081,30 +1319,256 @@ socket.on('chat5-conversation-settings-updated', (data) => {
   setUpdateButtonState();
 });
 
+function getMessageSender(m) {
+  return stringifyForDisplay(m && m.user_id).trim() || 'Unknown';
+}
+
+function createUserLabelNodes(sender) {
+  const hr = document.createElement('hr');
+  hr.classList.add('chat5-divider');
+  const div = document.createElement('div');
+  div.classList.add('userlabel', 'chat5-user-label');
+  div.dataset.user = sender;
+  const b = document.createElement('b');
+  b.innerText = sender;
+  div.append(b);
+  return [hr, div];
+}
+
+function getLastRenderedUser() {
+  const labels = document.querySelectorAll('#conversationContainer .userlabel');
+  if (!labels.length) return null;
+  return labels[labels.length - 1].dataset.user || null;
+}
+
+function appendUserLabelIfNeeded(target, sender, state) {
+  if (!target || !state) return;
+  if (state.lastUser === sender) return;
+  const nodes = createUserLabelNodes(sender);
+  target.append(...nodes);
+  state.lastUser = sender;
+}
+
+function formatMessageTimestamp(value) {
+  if (!value) return 'Unknown';
+  const dateValue = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(dateValue.getTime())) return String(value);
+  try {
+    return dateValue.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
+  } catch (error) {
+    return dateValue.toISOString();
+  }
+}
+
+function createHiddenMessageGroup(group, state) {
+  const details = document.createElement('details');
+  details.classList.add('chat5-hidden-group');
+  const firstHidden = group[0];
+  const lastHidden = group[group.length - 1];
+  const firstTime = formatMessageTimestamp(firstHidden && firstHidden.timestamp);
+  const lastTime = formatMessageTimestamp(lastHidden && lastHidden.timestamp);
+  const timeRange = firstTime === lastTime ? firstTime : `${firstTime} - ${lastTime}`;
+
+  const summary = document.createElement('summary');
+  summary.classList.add('chat5-hidden-summary');
+  const label = document.createElement('span');
+  label.classList.add('chat5-hidden-summary-label');
+  label.textContent = group.length === 1 ? '1 hidden message' : `${group.length} hidden messages`;
+  const time = document.createElement('span');
+  time.classList.add('chat5-hidden-summary-time');
+  time.textContent = timeRange;
+  summary.append(label, time);
+
+  const body = document.createElement('div');
+  body.classList.add('chat5-hidden-body');
+  group.forEach((msg) => appendSingleMessageToTarget(msg, body, state));
+  details.append(summary, body);
+  return details;
+}
+
+function appendSingleMessageToTarget(m, target, state) {
+  if (!m || typeof m !== 'object') {
+    throw new Error('Message payload is not an object.');
+  }
+  const sender = getMessageSender(m);
+  appendUserLabelIfNeeded(target, sender, state);
+  const element = createMessageElement(m);
+  target.append(element);
+  registerCodeCopyHandlers(element);
+  enhanceTables(element);
+}
+
+function appendMessageListToTarget(messages, target, state) {
+  if (!Array.isArray(messages) || !target) return;
+  let hiddenBuffer = [];
+  messages.forEach((msg, index) => {
+    if (msg && msg.hideFromBot) {
+      hiddenBuffer.push(msg);
+      const next = messages[index + 1];
+      if (!(next && next.hideFromBot)) {
+        target.append(createHiddenMessageGroup(hiddenBuffer, state));
+        hiddenBuffer = [];
+      }
+      return;
+    }
+    if (hiddenBuffer.length > 0) {
+      target.append(createHiddenMessageGroup(hiddenBuffer, state));
+      hiddenBuffer = [];
+    }
+    appendSingleMessageToTarget(msg, target, state);
+  });
+  if (hiddenBuffer.length > 0) {
+    target.append(createHiddenMessageGroup(hiddenBuffer, state));
+  }
+}
+
+function trainingText(m) {
+  const content = getMessageContent(m);
+  return typeof content.text === 'string' ? content.text.trim() : '';
+}
+
+function trainingPreview(m) {
+  const text = trainingText(m).replace(/\s+/g, ' ');
+  if (text.length <= 220) return text;
+  return `${text.slice(0, 217)}...`;
+}
+
+function createTrainingMessageOption(m, index) {
+  const messageId = getMessageId(m);
+  const sender = getMessageSender(m);
+  const article = document.createElement('article');
+  article.classList.add('chat5-training-message-option');
+  if (messageId) article.dataset.messageId = messageId;
+  if (Number.isFinite(index)) article.dataset.messageIndex = String(index);
+
+  const selectors = document.createElement('div');
+  selectors.classList.add('chat5-training-message-selectors');
+  const promptCheck = document.createElement('div');
+  promptCheck.classList.add('form-check');
+  const promptInput = document.createElement('input');
+  promptInput.classList.add('form-check-input');
+  promptInput.type = 'checkbox';
+  promptInput.id = `trainingPrompt-${messageId}`;
+  promptInput.name = 'prompt_message_ids';
+  promptInput.value = messageId;
+  const promptLabel = document.createElement('label');
+  promptLabel.classList.add('form-check-label');
+  promptLabel.setAttribute('for', promptInput.id);
+  promptLabel.textContent = 'Prompt';
+  promptCheck.append(promptInput, promptLabel);
+
+  const outputCheck = document.createElement('div');
+  outputCheck.classList.add('form-check');
+  const outputInput = document.createElement('input');
+  outputInput.classList.add('form-check-input');
+  outputInput.type = 'radio';
+  outputInput.id = `trainingOutput-${messageId}`;
+  outputInput.name = 'output_message_id';
+  outputInput.value = messageId;
+  const outputLabel = document.createElement('label');
+  outputLabel.classList.add('form-check-label');
+  outputLabel.setAttribute('for', outputInput.id);
+  outputLabel.textContent = 'Output';
+  outputCheck.append(outputInput, outputLabel);
+  selectors.append(promptCheck, outputCheck);
+
+  const preview = document.createElement('div');
+  preview.classList.add('chat5-training-message-preview');
+  const header = document.createElement('div');
+  header.classList.add('d-flex', 'flex-wrap', 'gap-2', 'align-items-center');
+  const strong = document.createElement('strong');
+  strong.textContent = Number.isFinite(index) ? `#${index} ${sender}` : sender;
+  const code = document.createElement('code');
+  code.textContent = messageId;
+  header.append(strong, code);
+  const p = document.createElement('p');
+  p.classList.add('mb-0');
+  p.textContent = trainingPreview(m);
+  preview.append(header, p);
+
+  article.append(selectors, preview);
+  return article;
+}
+
+function updateTrainingFormState() {
+  const list = document.getElementById('chat5TrainingMessageList');
+  const empty = document.getElementById('chat5TrainingEmpty');
+  const submit = document.getElementById('chat5TrainingSubmit');
+  const groupSelect = document.getElementById('trainingGroupId');
+  const count = list ? list.querySelectorAll('.chat5-training-message-option').length : 0;
+  if (empty) {
+    empty.classList.toggle('d-none', count > 0);
+  }
+  if (submit) {
+    submit.disabled = !groupSelect || groupSelect.disabled || count < 2;
+  }
+}
+
+function appendTrainingMessages(messages, { prepend = false, startIndex = 0 } = {}) {
+  const list = document.getElementById('chat5TrainingMessageList');
+  if (!list || !Array.isArray(messages)) return;
+  const fragment = document.createDocumentFragment();
+  messages.forEach((m, offset) => {
+    const messageId = getMessageId(m);
+    if (!messageId || trainingText(m).length === 0) return;
+    if (list.querySelector(`.chat5-training-message-option[data-message-id="${messageId}"]`)) return;
+    fragment.append(createTrainingMessageOption(m, startIndex + offset));
+  });
+  if (prepend) {
+    list.prepend(fragment);
+  } else {
+    list.append(fragment);
+  }
+  updateTrainingFormState();
+}
+
+function prependLoadedMessages(messages, startIndex) {
+  if (!Array.isArray(messages) || messages.length === 0) return;
+  const container = document.getElementById('conversationContainer');
+  if (!container) return;
+
+  const empty = document.getElementById('chat5EmptyMessages');
+  if (empty) empty.remove();
+
+  const anchor = container.firstElementChild;
+  const anchorTop = anchor ? anchor.getBoundingClientRect().top : null;
+  const fragment = document.createDocumentFragment();
+  appendMessageListToTarget(messages, fragment, { lastUser: null });
+  container.prepend(fragment);
+  if (anchor && anchorTop !== null) {
+    const nextTop = anchor.getBoundingClientRect().top;
+    window.scrollBy(0, nextTop - anchorTop);
+  }
+
+  appendTrainingMessages(messages, { prepend: true, startIndex });
+  const rawList = document.getElementById('chat5RawMessageList');
+  if (rawList) {
+    const rawFragment = document.createDocumentFragment();
+    messages.forEach((m, offset) => {
+      const messageId = getMessageId(m);
+      if (!messageId || rawList.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`)) return;
+      rawFragment.append(createRawMessageElement(m, startIndex + offset));
+    });
+    rawList.prepend(rawFragment);
+  }
+}
+
 function AddMessageToUI(m) {
   if (!m || typeof m !== 'object') {
     throw new Error('Message payload is not an object.');
   }
-  const sender = stringifyForDisplay(m.user_id).trim() || 'Unknown';
-  const ul = document.getElementsByClassName("userlabel");
-  if (ul.length > 0 && ul[ul.length-1].dataset.user === sender) {
-    // Simply append message
-    message(m);
-  } else {
-    // Create new userlabel
-    const hr = document.createElement("hr");
-    const div = document.createElement("div");
-    div.classList.add("userlabel");
-    div.dataset.user = sender;
-    const b = document.createElement("b");
-    b.innerText = sender;
-    div.append(b);
-    document.getElementById("conversationContainer").append(hr, div);
-    // Append message
-    message(m);
-  }
-  // Add raw data
-  appendRawMessageToUI(m);
+  const container = document.getElementById('conversationContainer');
+  if (!container) return;
+  const empty = document.getElementById('chat5EmptyMessages');
+  if (empty) empty.remove();
+
+  const fragment = document.createDocumentFragment();
+  appendMessageListToTarget([m], fragment, { lastUser: getLastRenderedUser() });
+  container.append(fragment);
+  appendRawMessageToUI(m, { index: chat5MessageWindow.loadedEnd });
+  appendTrainingMessages([m], { prepend: false, startIndex: chat5MessageWindow.loadedEnd });
+  appendMessageIdToHistory(getMessageId(m));
+  registerLiveMessageInWindow(getMessageId(m));
 }
 
 function removeMessageFromUI(messageId) {
@@ -1126,6 +1590,17 @@ function removeMessageFromUI(messageId) {
   const rawEntry = document.querySelector(`.chat5-raw-message[data-message-id="${messageId}"]`);
   if (rawEntry) {
     rawEntry.remove();
+  }
+  const trainingEntry = document.querySelector(`.chat5-training-message-option[data-message-id="${messageId}"]`);
+  if (trainingEntry) {
+    trainingEntry.remove();
+    updateTrainingFormState();
+  }
+  removeMessageIdFromHistory(messageId);
+  if (chat5MessageWindow.source === 'conversation5' && chat5MessageWindow.total > 0) {
+    chat5MessageWindow.total -= 1;
+    chat5MessageWindow.loadedEnd = Math.max(chat5MessageWindow.loadedStart, chat5MessageWindow.loadedEnd - 1);
+    updateMessageLoadControls();
   }
 }
 
@@ -1155,9 +1630,7 @@ function markMessageHiddenInUI(messageId) {
   setRawMessageHiddenState(messageId, true);
 }
 
-function message(m) {
-  const container = document.getElementById("conversationContainer");
-  if (!container) return;
+function createMessageElement(m) {
   if (!m || typeof m !== 'object') {
     throw new Error('Message payload is not an object.');
   }
@@ -1336,9 +1809,7 @@ function message(m) {
   }
 
   messageWrapper.appendChild(body);
-  container.append(messageWrapper);
-  registerCodeCopyHandlers(body);
-  enhanceTables(body);
+  return messageWrapper;
 }
 
 const loadingPopup = document.getElementById("loadingPopup");
@@ -1486,6 +1957,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeEmbedButtons(container);
   registerCodeCopyHandlers(container);
   enhanceTables(container);
+  bindMessageLoadControls();
+  updateTrainingFormState();
 });
 document.addEventListener('DOMContentLoaded', initializeDraftingTool);
 document.addEventListener('DOMContentLoaded', () => {
