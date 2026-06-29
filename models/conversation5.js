@@ -7,6 +7,7 @@ const Conversation5 = new mongoose.Schema({
   tags: [{ type: String, max: 100 }],
 
   messages: [{ type: String, required: true, max: 100 }],
+  lastCleanupAt: { type: Date, index: true },
 
   metadata: {
     contextPrompt: { type: String, default: "" },
@@ -21,5 +22,18 @@ const Conversation5 = new mongoose.Schema({
 
   members: [{ type: String, required: true, max: 100 }],
 }, { timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' } });
+
+Conversation5.index({ category: 1, updatedAt: 1 });
+Conversation5.index({ lastCleanupAt: 1, updatedAt: 1 });
+Conversation5.index({ messages: 1 });
+
+Conversation5.pre('validate', function setInitialCleanupDate(next) {
+  if (this.isNew && !this.lastCleanupAt) {
+    const createdAt = this.createdAt instanceof Date ? this.createdAt : new Date();
+    if (!this.createdAt) this.createdAt = createdAt;
+    this.lastCleanupAt = createdAt;
+  }
+  next();
+});
 
 module.exports = mongoose.model('conversation5', Conversation5);

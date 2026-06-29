@@ -22,6 +22,7 @@ const {
 } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
+const chat5CleanupService = require('../services/chat5CleanupService');
 const performanceMetricsService = require('../services/performanceMetricsService');
 const { formatBytes, formatNumber, formatPercent, calculatePercent } = require('../utils/metricsFormatter');
 const EmbeddingApiService = require('../services/embeddingApiService');
@@ -591,6 +592,35 @@ function redirectDatabaseUsageWithFeedback(res, status, message) {
   const text = message ? String(message) : '';
   const location = `/admin/database_usage?status=${encodeURIComponent(normalizedStatus)}${text ? `&message=${encodeURIComponent(text)}` : ''}`;
   return res.redirect(location);
+}
+
+function findCollectionStats(collections, model, fallbackNames = []) {
+  const collectionName = model?.collection?.collectionName;
+  const names = [collectionName, ...fallbackNames].filter(Boolean);
+  return collections.find((collection) => names.includes(collection.name)) || null;
+}
+
+function buildCollectionUsageSummary(collection, totalStorageBytes) {
+  if (!collection) return null;
+  const percent = calculatePercent(totalStorageBytes, collection.storageSizeBytes || 0);
+  return {
+    name: collection.name,
+    documentsDisplay: formatNumber(collection.count || 0),
+    storageSizeDisplay: formatBytes(collection.storageSizeBytes || 0),
+    dataSizeDisplay: formatBytes(collection.sizeBytes || 0),
+    indexSizeDisplay: formatBytes(collection.totalIndexSizeBytes || 0),
+    percentDisplay: formatPercent(percent),
+  };
+}
+
+function buildChat5CleanupFeedback(result) {
+  return [
+    `deleted ${formatNumber(result.deletedTestConversations || 0)} Test conversation(s)`,
+    `deleted ${formatNumber(result.deletedOldChat5Conversations || 0)} stale Chat5 conversation(s)`,
+    `checked ${formatNumber(result.conversationsChecked || 0)} conversation(s)`,
+    `removed ${formatNumber(result.hiddenMessageReferencesRemoved || 0)} hidden message reference(s)`,
+    `deleted ${formatNumber(result.unreferencedMessagesDeleted || 0)} orphan message(s)`,
+  ].join(', ');
 }
 
 function normalizePerformanceRange(rawRange) {
@@ -4288,6 +4318,12 @@ exports.database_usage = async (req, res) => {
     ) || sortedCollections.find(
       (collection) => typeof collection.name === 'string' && collection.name.includes('api_debug'),
     );
+    const conversation5Collection = findCollectionStats(sortedCollections, Conversation5Model, ['conversation5']);
+    const chat5Collection = findCollectionStats(sortedCollections, Chat5Model, ['chat5']);
+    const chat5CleanupCollections = [
+      buildCollectionUsageSummary(conversation5Collection, totalStorageBytes),
+      buildCollectionUsageSummary(chat5Collection, totalStorageBytes),
+    ].filter(Boolean);
     const topCollections = sortedCollections.slice(0, 8).map((collection) => {
       const percent = calculatePercent(totalStorageBytes, collection.storageSizeBytes || 0);
       return {
@@ -4377,6 +4413,7 @@ exports.database_usage = async (req, res) => {
             percentDisplay: formatPercent(calculatePercent(totalStorageBytes, apiDebugCollection.storageSizeBytes || 0)),
           }
         : null,
+      chat5CleanupCollections,
       alerts,
       feedbackStatus: feedback.feedbackStatus,
       feedbackMessage: feedback.feedbackMessage,
@@ -4392,6 +4429,7 @@ exports.database_usage = async (req, res) => {
       feedbackStatus: feedback.feedbackStatus,
       feedbackMessage: feedback.feedbackMessage,
       pruneDefaults,
+      chat5CleanupCollections: [],
     });
   }
 };
@@ -4432,6 +4470,39 @@ exports.prune_api_debug_logs = async (req, res) => {
       res,
       'error',
       'Unable to prune API debug logs right now.',
+    );
+  }
+};
+
+exports.cleanup_chat5_databases = async (req, res) => {
+  try {
+    const result = await chat5CleanupService.cleanupChat5Databases();
+    logger.notice('Chat5 databases cleaned by admin', {
+      category: 'admin_database_usage',
+      metadata: {
+        deletedTestConversations: result.deletedTestConversations,
+        deletedOldChat5Conversations: result.deletedOldChat5Conversations,
+        conversationsChecked: result.conversationsChecked,
+        conversationUpdatesSkipped: result.conversationUpdatesSkipped,
+        hiddenMessageReferencesRemoved: result.hiddenMessageReferencesRemoved,
+        unreferencedMessagesDeleted: result.unreferencedMessagesDeleted,
+        durationMs: result.durationMs,
+      },
+    });
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'success',
+      `Chat5 cleanup finished: ${buildChat5CleanupFeedback(result)}.`,
+    );
+  } catch (error) {
+    logger.error('Failed to clean Chat5 databases', {
+      category: 'admin_database_usage',
+      metadata: { error: error.message },
+    });
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'error',
+      'Unable to clean Chat5 databases right now.',
     );
   }
 };

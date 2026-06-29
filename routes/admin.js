@@ -241,6 +241,7 @@ router.get('/minute-logger/battery', minuteLoggerAdminController.batteryDashboar
 router.get('/minute-logger', minuteLoggerAdminController.dashboard);
 router.post('/minute-logger/location-groups', minuteLoggerAdminController.updateLocationGroupSettings);
 router.get('/database_usage', controller.database_usage);
+router.post('/chat5-cleanup', controller.cleanup_chat5_databases);
 router.get('/database-viewer', controller.database_viewer_page);
 router.get('/database-viewer/data', controller.database_viewer_data);
 router.post('/database-viewer/delete', controller.database_viewer_delete);

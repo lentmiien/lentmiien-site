@@ -310,6 +310,61 @@ body,
   color: var(--db-text);
 }
 
+.db-usage__collection-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.db-usage__mini-card {
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--db-surface-1);
+  box-shadow: inset 3px 0 0 var(--db-accent);
+}
+
+.db-usage__mini-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.db-usage__mini-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--db-text);
+}
+
+.db-usage__mini-card header span {
+  color: var(--db-accent);
+  font-weight: 700;
+}
+
+.db-usage__mini-card dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.db-usage__mini-card dt {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--db-text-muted);
+}
+
+.db-usage__mini-card dd {
+  margin: 0.3rem 0 0;
+  color: var(--db-text);
+  font-weight: 700;
+}
+
 .db-usage__top-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

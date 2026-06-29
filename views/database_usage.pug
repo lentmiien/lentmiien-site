@@ -8,7 +8,7 @@ block content
     header.db-usage__header
       div
         h1.db-usage__title Database Usage
-        p.db-usage__subtitle Track MongoDB storage, spot large collections, and keep `api_debug_logs` in check.
+        p.db-usage__subtitle Track MongoDB storage, spot large collections, and keep chat cleanup jobs in check.
       if generatedAtDisplay
         p.db-usage__timestamp Last updated #{generatedAtDisplay}
 
@@ -45,6 +45,39 @@ block content
                 p.db-usage__card-value= card.value
                 if card.helper
                   p.db-usage__card-helper= card.helper
+
+      section.db-usage__section
+        header.db-usage__section-header
+          h2.db-usage__section-title Chat5 Cleanup
+          p.db-usage__section-copy Remove test and stale conversations, strip hidden messages from old active conversations, and delete orphaned chat5 messages.
+        if chat5CleanupCollections && chat5CleanupCollections.length
+          .db-usage__collection-pair
+            each collection in chat5CleanupCollections
+              article.db-usage__mini-card
+                header
+                  h3= collection.name
+                  span= collection.percentDisplay
+                dl
+                  div
+                    dt Documents
+                    dd= collection.documentsDisplay
+                  div
+                    dt Storage
+                    dd= collection.storageSizeDisplay
+                  div
+                    dt Data
+                    dd= collection.dataSizeDisplay
+                  div
+                    dt Indexes
+                    dd= collection.indexSizeDisplay
+        else
+          .db-usage__focus.db-usage__focus--empty
+            p No stats available for conversation5/chat5 yet.
+        form.db-usage__prune-form(method='post', action='/admin/chat5-cleanup')
+          label.db-usage__prune-label(for='chat5CleanupButton') Clean conversation5 and chat5
+          .db-usage__prune-controls
+            button#chat5CleanupButton.db-usage__button(type='submit') Run cleanup now
+          p.db-usage__prune-hint Deletes Test conversations, Chat5 conversations not updated in over one year, hidden message references eligible for cleanup, and unreferenced chat5 messages. Conversation updatedAt values are not changed.
 
       section.db-usage__section
         header.db-usage__section-header
