@@ -6,6 +6,52 @@ block content
   - const availableToolOptions = typeof availableTools !== 'undefined' && Array.isArray(availableTools) ? availableTools : [];
   - const trainingGroupOptions = typeof trainingGroups !== 'undefined' && Array.isArray(trainingGroups) ? trainingGroups : [];
   - const trainingEntryOptions = typeof trainingEntries !== 'undefined' && Array.isArray(trainingEntries) ? trainingEntries : [];
+  -
+    const trainingUsageByMessage = {};
+    const ensureTrainingUsage = (messageId) => {
+      const id = messageId ? messageId.toString() : '';
+      if (!id) return null;
+      if (!trainingUsageByMessage[id]) {
+        trainingUsageByMessage[id] = {
+          promptCount: 0,
+          outputCount: 0,
+          entryIds: [],
+          groupIds: [],
+        };
+      }
+      return trainingUsageByMessage[id];
+    };
+    trainingEntryOptions.forEach((entry) => {
+      const entryId = entry && entry._id ? entry._id.toString() : '';
+      const groupId = entry && entry.groupId ? entry.groupId.toString() : '';
+      const promptIds = Array.isArray(entry && entry.promptMessageIds) ? entry.promptMessageIds : [];
+      promptIds.forEach((promptId) => {
+        const usage = ensureTrainingUsage(promptId);
+        if (!usage) return;
+        usage.promptCount += 1;
+        if (entryId && usage.entryIds.indexOf(entryId) < 0) usage.entryIds.push(entryId);
+        if (groupId && usage.groupIds.indexOf(groupId) < 0) usage.groupIds.push(groupId);
+      });
+      const usage = ensureTrainingUsage(entry && entry.outputMessageId);
+      if (!usage) return;
+      usage.outputCount += 1;
+      if (entryId && usage.entryIds.indexOf(entryId) < 0) usage.entryIds.push(entryId);
+      if (groupId && usage.groupIds.indexOf(groupId) < 0) usage.groupIds.push(groupId);
+    });
+    const trainingUsageLabel = (usage) => {
+      if (!usage) return '';
+      const roles = [];
+      if (usage.promptCount > 0) roles.push('prompt');
+      if (usage.outputCount > 0) roles.push('output');
+      const entryCount = Array.isArray(usage.entryIds) ? usage.entryIds.length : 0;
+      const countText = entryCount > 1 ? ` (${entryCount} entries)` : '';
+      return `In training: ${roles.join(' + ')}${countText}`;
+    };
+    const trainingUsageTitle = (usage) => {
+      if (!usage) return '';
+      const groups = Array.isArray(usage.groupIds) && usage.groupIds.length ? ` Groups: ${usage.groupIds.join(', ')}.` : '';
+      return `${trainingUsageLabel(usage)}.${groups}`;
+    };
   - const trainingFlash = typeof trainingStatus !== 'undefined' && trainingStatus ? trainingStatus : {};
   - const chat5MessageWindow = typeof messageWindow !== 'undefined' && messageWindow ? messageWindow : { batchSize: 25, initialLimit: 25, total: Array.isArray(messages) ? messages.length : 0, loadedStart: 0, loadedEnd: Array.isArray(messages) ? messages.length : 0, hasMoreOlder: false, source: conversationSource };
   h2#conversation_title.chat5-title= conversation.title
@@ -459,7 +505,8 @@ block content
               - const messageId = m._id.toString();
               - const messageIndex = entry.index;
               - const sender = typeof m.user_id === 'string' && m.user_id.trim().length > 0 ? m.user_id : 'Unknown';
-              article.chat5-training-message-option(data-message-id=messageId, data-message-index=messageIndex)
+              - const trainingUsage = trainingUsageByMessage[messageId] || null;
+              article.chat5-training-message-option(data-message-id=messageId, data-message-index=messageIndex, class={ 'chat5-training-message-option--in-training': !!trainingUsage })
                 .chat5-training-message-selectors
                   .form-check
                     input.form-check-input(type="checkbox", id=`trainingPrompt-${messageId}`, name="prompt_message_ids", value=messageId)
@@ -471,6 +518,8 @@ block content
                   .d-flex.flex-wrap.gap-2.align-items-center
                     strong= `#${messageIndex} ${sender}`
                     code= messageId
+                    if trainingUsage
+                      span.chat5-training-usage-badge(title=trainingUsageTitle(trainingUsage))= trainingUsageLabel(trainingUsage)
                   p.mb-0= trainingPreview(m)
           .chat5-update-actions.d-flex.justify-content-end.flex-wrap.gap-2
             button#chat5TrainingSubmit.btn.btn-success(type="submit", disabled=trainingGroupOptions.length === 0 || selectableTrainingMessages.length < 2) Add entry
@@ -663,6 +712,7 @@ block content
     window.chatModels = !{JSON.stringify(chat_models)};
     window.ttsVoices = !{JSON.stringify(ttsVoices || {})};
     window.chat5MessageWindow = !{JSON.stringify(chat5MessageWindow)};
+    window.chat5TrainingUsage = !{JSON.stringify(trainingUsageByMessage)};
     document.addEventListener('DOMContentLoaded', function(){
       if (window.location.hash === '#pills-training' && window.bootstrap) {
         var tab = document.getElementById('pills-training-tab');

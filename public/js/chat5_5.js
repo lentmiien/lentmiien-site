@@ -56,6 +56,9 @@ chat5MessageWindow.loadedStart = Number.isFinite(Number(chat5MessageWindow.loade
 chat5MessageWindow.loadedEnd = Number.isFinite(Number(chat5MessageWindow.loadedEnd)) ? Math.max(chat5MessageWindow.loadedStart, Math.floor(Number(chat5MessageWindow.loadedEnd))) : chat5MessageWindow.total;
 chat5MessageWindow.hasMoreOlder = chat5MessageWindow.source === 'conversation5' && chat5MessageWindow.loadedStart > 0;
 window.chat5MessageWindow = chat5MessageWindow;
+const chat5TrainingUsage = window.chat5TrainingUsage && typeof window.chat5TrainingUsage === 'object'
+  ? window.chat5TrainingUsage
+  : {};
 
 function getVoiceIdValue() {
   const value = ttsVoiceSelect ? ttsVoiceSelect.value : '';
@@ -1433,11 +1436,59 @@ function trainingPreview(m) {
   return `${text.slice(0, 217)}...`;
 }
 
+function normalizeTrainingUsage(usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const promptCount = Number.isFinite(Number(usage.promptCount)) ? Math.max(0, Math.floor(Number(usage.promptCount))) : 0;
+  const outputCount = Number.isFinite(Number(usage.outputCount)) ? Math.max(0, Math.floor(Number(usage.outputCount))) : 0;
+  if (promptCount === 0 && outputCount === 0) return null;
+  return {
+    promptCount,
+    outputCount,
+    entryIds: Array.isArray(usage.entryIds) ? usage.entryIds.map(String).filter(Boolean) : [],
+    groupIds: Array.isArray(usage.groupIds) ? usage.groupIds.map(String).filter(Boolean) : [],
+  };
+}
+
+function getTrainingUsage(messageId) {
+  const id = String(messageId || '').trim();
+  if (!id || !Object.prototype.hasOwnProperty.call(chat5TrainingUsage, id)) return null;
+  return normalizeTrainingUsage(chat5TrainingUsage[id]);
+}
+
+function formatTrainingUsageLabel(usage) {
+  if (!usage) return '';
+  const roles = [];
+  if (usage.promptCount > 0) roles.push('prompt');
+  if (usage.outputCount > 0) roles.push('output');
+  const countText = usage.entryIds.length > 1 ? ` (${usage.entryIds.length} entries)` : '';
+  return `In training: ${roles.join(' + ')}${countText}`;
+}
+
+function formatTrainingUsageTitle(usage) {
+  const label = formatTrainingUsageLabel(usage);
+  if (!label) return '';
+  const groupText = usage.groupIds.length ? ` Groups: ${usage.groupIds.join(', ')}.` : '';
+  return `${label}.${groupText}`;
+}
+
+function createTrainingUsageBadge(usage) {
+  const badge = document.createElement('span');
+  badge.classList.add('chat5-training-usage-badge');
+  badge.textContent = formatTrainingUsageLabel(usage);
+  badge.title = formatTrainingUsageTitle(usage);
+  return badge;
+}
+
 function createTrainingMessageOption(m, index) {
   const messageId = getMessageId(m);
   const sender = getMessageSender(m);
+  const trainingUsage = getTrainingUsage(messageId);
   const article = document.createElement('article');
   article.classList.add('chat5-training-message-option');
+  if (trainingUsage) {
+    article.classList.add('chat5-training-message-option--in-training');
+    article.dataset.trainingUsage = formatTrainingUsageLabel(trainingUsage);
+  }
   if (messageId) article.dataset.messageId = messageId;
   if (Number.isFinite(index)) article.dataset.messageIndex = String(index);
 
@@ -1481,6 +1532,9 @@ function createTrainingMessageOption(m, index) {
   const code = document.createElement('code');
   code.textContent = messageId;
   header.append(strong, code);
+  if (trainingUsage) {
+    header.append(createTrainingUsageBadge(trainingUsage));
+  }
   const p = document.createElement('p');
   p.classList.add('mb-0');
   p.textContent = trainingPreview(m);

@@ -2665,6 +2665,12 @@ label,
   align-items: start;
 }
 
+.chat5-training-message-option--in-training {
+  background: linear-gradient(90deg, var(--accent-tint), var(--surface-2) 44%);
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px var(--accent-tint);
+}
+
 .chat5-training-message-selectors {
   display: flex;
   flex-wrap: wrap;
@@ -2685,6 +2691,21 @@ label,
 .chat5-training-entry-ids {
   font-size: 0.9rem;
   margin-top: 6px;
+}
+
+.chat5-training-usage-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-tint);
+  color: var(--accent-hover);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 @media (max-width: 720px) {
