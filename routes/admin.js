@@ -233,6 +233,8 @@ router.post('/device-usage/settings', deviceUsageAdminController.updateSettings)
 router.post('/device-usage/packages', deviceUsageAdminController.savePackageRule);
 router.post('/device-usage/packages/delete', deviceUsageAdminController.deletePackageRule);
 router.post('/device-usage/rewards', deviceUsageAdminController.addReward);
+router.post('/device-usage/study-minutes', deviceUsageAdminController.addStudyMinutes);
+router.post('/device-usage/homework-gate', deviceUsageAdminController.updateHomeworkGate);
 router.post('/device-usage/reward-suggestions', deviceUsageAdminController.saveRewardSuggestion);
 router.post('/device-usage/reward-suggestions/delete', deviceUsageAdminController.deleteRewardSuggestion);
 router.get('/minute-logger/daily/:dateKey', minuteLoggerAdminController.dailyAnalytics);

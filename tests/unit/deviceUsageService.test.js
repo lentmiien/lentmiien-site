@@ -3,6 +3,7 @@ const {
   CATEGORY_LEARNING,
   CATEGORY_MANAGEMENT,
   DEVICE_USAGE_DEFAULT_MAX_VOLUME,
+  addManualStudyMinutes,
   calculateDeviceUsageLimitTiming,
   getDeviceUsageSettings,
   normalizeDevicePackageName,
@@ -54,9 +55,11 @@ function buildModels({
   learningMinutes = 0,
   countedRows = [],
   existingMinute = null,
+  gateState = null,
 } = {}) {
   const existingMinuteChain = createFindOneChain(existingMinute);
   const countedChain = createFindChain(countedRows);
+  const resolvedGateState = gateState || null;
 
   return {
     requestModel: {
@@ -70,6 +73,10 @@ function buildModels({
     },
     rewardModel: {
       aggregate: jest.fn().mockResolvedValue([]),
+    },
+    gateStateModel: {
+      findOne: jest.fn().mockReturnValue(createLeanQuery(resolvedGateState)),
+      findOneAndUpdate: jest.fn(),
     },
     chains: {
       countedChain,
@@ -89,6 +96,7 @@ const settings = {
   rollingWindowMinutes: 90,
   learningRequiredMinutes: 30,
   learningFreeMinutes: 30,
+  homeworkGateEnabled: false,
   maxVolume: 100,
 };
 
@@ -101,7 +109,7 @@ describe('device usage service', () => {
 
   test('blocks entertainment until the daily learning requirement is complete', async () => {
     const now = new Date('2026-05-27T00:00:00.000Z');
-    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
       learningMinutes: 29,
       countedRows: [],
     });
@@ -110,6 +118,7 @@ describe('device usage service', () => {
       requestModel,
       packageRuleModel,
       rewardModel,
+      gateStateModel,
       now,
       settings,
     });
@@ -144,9 +153,146 @@ describe('device usage service', () => {
     }));
   });
 
+  test('counts manual study minutes toward the learning gate', async () => {
+    const now = new Date('2026-05-27T00:00:00.000Z');
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
+      learningMinutes: 20,
+      countedRows: [],
+      gateState: {
+        localDateKey: '2026-05-27',
+        manualStudyMinutes: 10,
+      },
+    });
+
+    const result = await recordAndEvaluateDeviceUsage(createRequest(), {
+      requestModel,
+      packageRuleModel,
+      rewardModel,
+      gateStateModel,
+      now,
+      settings,
+    });
+
+    expect(result.responsePayload).toMatchObject({
+      status: 'OK',
+      allowed: true,
+      action: 'allow',
+      reasonCode: 'allowed',
+      usage: {
+        countsTowardLimit: true,
+        learning: {
+          todayMinutesBefore: 30,
+          todayMinutes: 30,
+          loggedMinutesBefore: 20,
+          loggedMinutes: 20,
+          manualStudyMinutes: 10,
+          remainingMinutes: 0,
+          entertainmentUnlocked: true,
+        },
+      },
+    });
+    expect(requestModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      allowed: true,
+      countsTowardLimit: true,
+      learningMinutesTodayBefore: 30,
+      learningMinutesTodayAfter: 30,
+    }));
+  });
+
+  test('blocks entertainment on homework gate after study minutes are complete', async () => {
+    const now = new Date('2026-05-27T00:00:00.000Z');
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
+      learningMinutes: 30,
+      countedRows: [],
+      gateState: {
+        localDateKey: '2026-05-27',
+        manualStudyMinutes: 0,
+        homeworkCleared: false,
+      },
+    });
+
+    const result = await recordAndEvaluateDeviceUsage(createRequest(), {
+      requestModel,
+      packageRuleModel,
+      rewardModel,
+      gateStateModel,
+      now,
+      settings: {
+        ...settings,
+        homeworkGateEnabled: true,
+      },
+    });
+
+    expect(result.responsePayload).toMatchObject({
+      status: 'NG',
+      allowed: false,
+      action: 'finish_homework',
+      reasonCode: 'homework_required',
+      usage: {
+        learning: {
+          todayMinutes: 30,
+          remainingMinutes: 0,
+          entertainmentUnlocked: false,
+        },
+        homework: {
+          gateEnabled: true,
+          cleared: false,
+          remaining: true,
+        },
+      },
+    });
+    expect(requestModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      allowed: false,
+      countsTowardLimit: false,
+      reasonCode: 'homework_required',
+    }));
+  });
+
+  test('allows entertainment when homework gate is enabled and cleared', async () => {
+    const now = new Date('2026-05-27T00:00:00.000Z');
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
+      learningMinutes: 30,
+      countedRows: [],
+      gateState: {
+        localDateKey: '2026-05-27',
+        homeworkCleared: true,
+        homeworkClearedAt: new Date('2026-05-27T00:00:00.000Z'),
+      },
+    });
+
+    const result = await recordAndEvaluateDeviceUsage(createRequest(), {
+      requestModel,
+      packageRuleModel,
+      rewardModel,
+      gateStateModel,
+      now,
+      settings: {
+        ...settings,
+        homeworkGateEnabled: true,
+      },
+    });
+
+    expect(result.responsePayload).toMatchObject({
+      status: 'OK',
+      allowed: true,
+      action: 'allow',
+      reasonCode: 'allowed',
+      usage: {
+        learning: {
+          entertainmentUnlocked: true,
+        },
+        homework: {
+          gateEnabled: true,
+          cleared: true,
+          remaining: false,
+        },
+      },
+    });
+  });
+
   test('returns the configured max volume in device usage responses', async () => {
     const now = new Date('2026-05-27T00:00:00.000Z');
-    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
       learningMinutes: 30,
       countedRows: [],
     });
@@ -155,6 +301,7 @@ describe('device usage service', () => {
       requestModel,
       packageRuleModel,
       rewardModel,
+      gateStateModel,
       now,
       settings: {
         ...settings,
@@ -173,7 +320,7 @@ describe('device usage service', () => {
 
   test('allows the first 30 learning minutes outside the rolling limit', async () => {
     const now = new Date('2026-05-27T00:00:00.000Z');
-    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
       packageRule: {
         packageName: 'com.learning.app',
         category: CATEGORY_LEARNING,
@@ -190,6 +337,7 @@ describe('device usage service', () => {
       requestModel,
       packageRuleModel,
       rewardModel,
+      gateStateModel,
       now,
       settings,
     });
@@ -224,7 +372,7 @@ describe('device usage service', () => {
 
   test('counts learning after the free daily learning block', async () => {
     const now = new Date('2026-05-27T00:00:00.000Z');
-    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
       packageRule: {
         packageName: 'com.learning.app',
         category: CATEGORY_LEARNING,
@@ -241,6 +389,7 @@ describe('device usage service', () => {
       requestModel,
       packageRuleModel,
       rewardModel,
+      gateStateModel,
       now,
       settings,
     });
@@ -267,7 +416,7 @@ describe('device usage service', () => {
 
   test('blocks entertainment when the counted rolling window is full', async () => {
     const now = new Date('2026-05-27T00:00:00.000Z');
-    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
       learningMinutes: 30,
       countedRows: buildCountedRows(60, now),
     });
@@ -276,6 +425,7 @@ describe('device usage service', () => {
       requestModel,
       packageRuleModel,
       rewardModel,
+      gateStateModel,
       now,
       settings,
     });
@@ -303,7 +453,7 @@ describe('device usage service', () => {
 
   test('allows management packages regardless of learning and rolling limits', async () => {
     const now = new Date('2026-05-27T00:00:00.000Z');
-    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
       packageRule: {
         packageName: 'com.parent.settings',
         category: CATEGORY_MANAGEMENT,
@@ -321,6 +471,7 @@ describe('device usage service', () => {
       requestModel,
       packageRuleModel,
       rewardModel,
+      gateStateModel,
       now,
       settings,
     });
@@ -345,7 +496,7 @@ describe('device usage service', () => {
   });
 
   test('returns the first logged response without saving another same-minute report', async () => {
-    const { requestModel, packageRuleModel, rewardModel } = buildModels({
+    const { requestModel, packageRuleModel, rewardModel, gateStateModel } = buildModels({
       existingMinute: {
         allowed: false,
         responseStatusCode: 200,
@@ -364,6 +515,7 @@ describe('device usage service', () => {
       requestModel,
       packageRuleModel,
       rewardModel,
+      gateStateModel,
       now: new Date('2026-05-27T00:00:30.000Z'),
       settings,
     });
@@ -402,6 +554,7 @@ describe('device usage service', () => {
       rollingWindowMinutes: '90',
       learningRequiredMinutes: '30',
       learningFreeMinutes: '30',
+      homeworkGateEnabled: 'on',
       maxVolume: '80',
     }, {
       settingsModel,
@@ -414,6 +567,7 @@ describe('device usage service', () => {
       {
         $set: expect.objectContaining({
           maxVolume: 80,
+          homeworkGateEnabled: true,
           updatedBy: 'admin-user',
         }),
         $setOnInsert: { key: 'default' },
@@ -431,6 +585,51 @@ describe('device usage service', () => {
       learningFreeMinutes: '30',
       maxVolume: '85',
     }, { settingsModel })).rejects.toThrow('Max volume must use 10 step increments.');
+  });
+
+  test('adds manual study minutes to the current local day', async () => {
+    const now = new Date('2026-05-27T00:00:00.000Z');
+    const gateStateModel = {
+      findOne: jest.fn().mockReturnValue(createLeanQuery({
+        localDateKey: '2026-05-27',
+        manualStudyMinutes: 5,
+      })),
+      findOneAndUpdate: jest.fn().mockReturnValue(createLeanQuery({
+        localDateKey: '2026-05-27',
+        manualStudyMinutes: 15,
+        manualStudyNote: 'Reading',
+        manualStudyUpdatedAt: now,
+        manualStudyUpdatedBy: 'admin-user',
+      })),
+    };
+
+    const result = await addManualStudyMinutes({
+      minutes: '10',
+      note: 'Reading',
+    }, {
+      gateStateModel,
+      now,
+      updatedBy: 'admin-user',
+    });
+
+    expect(result.manualStudyMinutes).toBe(15);
+    expect(gateStateModel.findOneAndUpdate).toHaveBeenCalledWith(
+      { localDateKey: '2026-05-27' },
+      {
+        $set: expect.objectContaining({
+          manualStudyMinutes: 15,
+          manualStudyNote: 'Reading',
+          manualStudyUpdatedBy: 'admin-user',
+        }),
+        $setOnInsert: {
+          localDateKey: '2026-05-27',
+        },
+      },
+      expect.objectContaining({
+        new: true,
+        upsert: true,
+      })
+    );
   });
 
   test('calculateDeviceUsageLimitTiming reports time until below the rolling limit', () => {

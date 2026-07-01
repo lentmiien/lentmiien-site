@@ -1,5 +1,6 @@
 const DeviceUsageRequest = require('../models/device_usage_request');
 const DeviceUsageSettings = require('../models/device_usage_settings');
+const DeviceUsageGateState = require('../models/device_usage_gate_state');
 const DeviceUsagePackageRule = require('../models/device_usage_package_rule');
 const DeviceUsageReward = require('../models/device_usage_reward');
 const DeviceUsageRewardSuggestion = require('../models/device_usage_reward_suggestion');
@@ -12,6 +13,7 @@ const DEVICE_USAGE_DEFAULT_LIMIT_MINUTES = 60;
 const DEVICE_USAGE_DEFAULT_WINDOW_MINUTES = 90;
 const DEVICE_USAGE_DEFAULT_LEARNING_REQUIRED_MINUTES = 30;
 const DEVICE_USAGE_DEFAULT_LEARNING_FREE_MINUTES = 30;
+const DEVICE_USAGE_DEFAULT_HOMEWORK_GATE_ENABLED = false;
 const DEVICE_USAGE_DEFAULT_MAX_VOLUME = 100;
 const DEVICE_USAGE_MAX_WINDOW_MINUTES = 7 * 24 * 60;
 const DEVICE_USAGE_MAX_DAILY_MINUTES = 24 * 60;
@@ -39,8 +41,8 @@ const DEVICE_USAGE_CATEGORY_LABELS = {
     color: '#2BC8A4',
     en: 'Learning',
     ja: '学習',
-    ruleEn: 'First learning block unlocks entertainment and is free from the rolling limit.',
-    ruleJa: '最初の学習時間で娯楽を解放し、ローリング上限には入りません。',
+    ruleEn: 'Logged learning and manual study count toward the required block; the first learning minutes are free from the rolling limit.',
+    ruleJa: '記録された学習と手入力の学習時間が条件に入り、最初の学習時間はローリング上限に入りません。',
   },
   management: {
     color: '#62A8FF',
@@ -53,8 +55,8 @@ const DEVICE_USAGE_CATEGORY_LABELS = {
     color: '#FFB84D',
     en: 'Entertainment',
     ja: '娯楽',
-    ruleEn: 'Unknown packages default here and require the daily learning gate first.',
-    ruleJa: '不明なパッケージはここに入り、当日の学習条件が必要です。',
+    ruleEn: 'Unknown packages default here and require today\'s learning gate plus homework when enabled.',
+    ruleJa: '不明なパッケージはここに入り、当日の学習条件と有効時の宿題条件が必要です。',
   },
 };
 
@@ -65,11 +67,13 @@ const DEVICE_USAGE_TEXT = {
       free_learning: 'Learning minute allowed and kept outside the rolling limit.',
       management_ignored: 'Management app logged and ignored by limits.',
       learning_required: 'Entertainment is locked until today\'s learning requirement is complete.',
+      homework_required: 'Entertainment is locked until today\'s homework is cleared.',
       rolling_limit: 'Rolling usage limit reached.',
     },
     actions: {
       allow: 'Allow',
       learn_first: 'Learn first',
+      finish_homework: 'Finish homework',
       wait: 'Wait',
     },
   },
@@ -79,11 +83,13 @@ const DEVICE_USAGE_TEXT = {
       free_learning: '学習時間として許可され、ローリング上限には入りません。',
       management_ignored: '管理アプリとして記録し、制限には入りません。',
       learning_required: '今日の学習条件が終わるまで娯楽はロックされています。',
+      homework_required: '今日の宿題が完了するまで娯楽はロックされています。',
       rolling_limit: 'ローリング利用上限に達しています。',
     },
     actions: {
       allow: '許可',
       learn_first: '先に学習',
+      finish_homework: '宿題を完了',
       wait: '待機',
     },
   },
@@ -149,6 +155,31 @@ function normalizeStoredInteger(value, fallback, min, max) {
 function normalizeStoredSteppedInteger(value, fallback, min, max, step) {
   const parsed = normalizeStoredInteger(value, fallback, min, max);
   return parsed % step === 0 ? parsed : fallback;
+}
+
+function normalizeStoredBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (value === 1 || value === '1') {
+    return true;
+  }
+
+  if (value === 0 || value === '0') {
+    return false;
+  }
+
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (['true', 'on', 'yes'].includes(normalized)) {
+    return true;
+  }
+
+  if (['false', 'off', 'no'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
 }
 
 function parseBoundedInteger(value, label, min, max) {
@@ -233,6 +264,10 @@ function normalizeSettings(raw = {}) {
     0,
     DEVICE_USAGE_MAX_DAILY_MINUTES
   );
+  const homeworkGateEnabled = normalizeStoredBoolean(
+    raw.homeworkGateEnabled,
+    DEVICE_USAGE_DEFAULT_HOMEWORK_GATE_ENABLED
+  );
   const maxVolume = normalizeStoredSteppedInteger(
     raw.maxVolume,
     DEVICE_USAGE_DEFAULT_MAX_VOLUME,
@@ -248,6 +283,7 @@ function normalizeSettings(raw = {}) {
     rollingWindowMs: rollingWindowMinutes * MINUTE_MS,
     learningRequiredMinutes,
     learningFreeMinutes,
+    homeworkGateEnabled,
     maxVolume,
     updatedAt: raw.updatedAt || raw.createdAt || null,
     updatedBy: raw.updatedBy || null,
@@ -274,6 +310,7 @@ async function getDeviceUsageSettings(options = {}) {
         rollingWindowMinutes: DEVICE_USAGE_DEFAULT_WINDOW_MINUTES,
         learningRequiredMinutes: DEVICE_USAGE_DEFAULT_LEARNING_REQUIRED_MINUTES,
         learningFreeMinutes: DEVICE_USAGE_DEFAULT_LEARNING_FREE_MINUTES,
+        homeworkGateEnabled: DEVICE_USAGE_DEFAULT_HOMEWORK_GATE_ENABLED,
         maxVolume: DEVICE_USAGE_DEFAULT_MAX_VOLUME,
         updatedBy: null,
       },
@@ -314,6 +351,7 @@ async function updateDeviceUsageSettings(input = {}, options = {}) {
     0,
     DEVICE_USAGE_MAX_DAILY_MINUTES
   );
+  const homeworkGateEnabled = normalizeStoredBoolean(input.homeworkGateEnabled, false);
   const maxVolume = parseSteppedBoundedInteger(
     input.maxVolume,
     'Max volume',
@@ -333,6 +371,7 @@ async function updateDeviceUsageSettings(input = {}, options = {}) {
         rollingWindowMinutes,
         learningRequiredMinutes,
         learningFreeMinutes,
+        homeworkGateEnabled,
         maxVolume,
         updatedBy,
       },
@@ -373,6 +412,113 @@ function formatLocalDateKey(date) {
   const month = String(value.getMonth() + 1).padStart(2, '0');
   const day = String(value.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function normalizeGateState(raw = {}, localDateKey = formatLocalDateKey(new Date())) {
+  return {
+    id: raw._id ? String(raw._id) : '',
+    localDateKey: raw.localDateKey || localDateKey,
+    manualStudyMinutes: normalizeStoredInteger(
+      raw.manualStudyMinutes,
+      0,
+      0,
+      DEVICE_USAGE_MAX_DAILY_MINUTES
+    ),
+    manualStudyNote: normalizeMultilineText(raw.manualStudyNote, NOTE_MAX_LENGTH),
+    manualStudyUpdatedAt: raw.manualStudyUpdatedAt || null,
+    manualStudyUpdatedBy: raw.manualStudyUpdatedBy || null,
+    homeworkCleared: normalizeStoredBoolean(raw.homeworkCleared, false),
+    homeworkClearedAt: raw.homeworkClearedAt || null,
+    homeworkClearedBy: raw.homeworkClearedBy || null,
+    homeworkUpdatedAt: raw.homeworkUpdatedAt || null,
+    homeworkUpdatedBy: raw.homeworkUpdatedBy || null,
+    updatedAt: raw.updatedAt || raw.createdAt || null,
+  };
+}
+
+async function fetchGateStateForDate(localDateKey, options = {}) {
+  const gateStateModel = options.gateStateModel || DeviceUsageGateState;
+  const rawState = await leanExec(gateStateModel.findOne({ localDateKey }));
+
+  return normalizeGateState(rawState || {}, localDateKey);
+}
+
+async function addManualStudyMinutes(input = {}, options = {}) {
+  const gateStateModel = options.gateStateModel || DeviceUsageGateState;
+  const now = new Date(options.now || Date.now());
+  const localDateKey = formatLocalDateKey(now);
+  const minutes = parseBoundedInteger(
+    input.minutes,
+    'Study minutes',
+    1,
+    DEVICE_USAGE_MAX_DAILY_MINUTES
+  );
+  const currentState = await fetchGateStateForDate(localDateKey, { ...options, gateStateModel });
+  const manualStudyMinutes = currentState.manualStudyMinutes + minutes;
+
+  if (manualStudyMinutes > DEVICE_USAGE_MAX_DAILY_MINUTES) {
+    throw new DeviceUsageSettingsError(`Study minutes for a day cannot exceed ${DEVICE_USAGE_MAX_DAILY_MINUTES}.`);
+  }
+
+  const updatedBy = typeof options.updatedBy === 'string' && options.updatedBy.trim()
+    ? options.updatedBy.trim()
+    : null;
+  const manualStudyNote = normalizeMultilineText(input.note, NOTE_MAX_LENGTH);
+  const updated = await leanExec(gateStateModel.findOneAndUpdate(
+    { localDateKey },
+    {
+      $set: {
+        manualStudyMinutes,
+        manualStudyNote,
+        manualStudyUpdatedAt: now,
+        manualStudyUpdatedBy: updatedBy,
+      },
+      $setOnInsert: {
+        localDateKey,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      runValidators: true,
+      setDefaultsOnInsert: true,
+    }
+  ));
+
+  return normalizeGateState(updated, localDateKey);
+}
+
+async function updateHomeworkGateForToday(input = {}, options = {}) {
+  const gateStateModel = options.gateStateModel || DeviceUsageGateState;
+  const now = new Date(options.now || Date.now());
+  const localDateKey = formatLocalDateKey(now);
+  const homeworkCleared = normalizeStoredBoolean(input.cleared, true);
+  const updatedBy = typeof options.updatedBy === 'string' && options.updatedBy.trim()
+    ? options.updatedBy.trim()
+    : null;
+  const updated = await leanExec(gateStateModel.findOneAndUpdate(
+    { localDateKey },
+    {
+      $set: {
+        homeworkCleared,
+        homeworkClearedAt: homeworkCleared ? now : null,
+        homeworkClearedBy: homeworkCleared ? updatedBy : null,
+        homeworkUpdatedAt: now,
+        homeworkUpdatedBy: updatedBy,
+      },
+      $setOnInsert: {
+        localDateKey,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      runValidators: true,
+      setDefaultsOnInsert: true,
+    }
+  ));
+
+  return normalizeGateState(updated, localDateKey);
 }
 
 function buildRecentDayRanges(now = new Date(), dayCount = DEVICE_USAGE_DASHBOARD_DAYS) {
@@ -661,6 +807,7 @@ function getDecisionForUsage({
   settings,
   learningMinutesTodayBefore,
   countedMinutesInWindowBefore,
+  homeworkCleared,
 }) {
   if (category === CATEGORY_MANAGEMENT) {
     return {
@@ -692,6 +839,16 @@ function getDecisionForUsage({
     };
   }
 
+  if (category === CATEGORY_ENTERTAINMENT && settings.homeworkGateEnabled && !homeworkCleared) {
+    return {
+      allowed: false,
+      action: 'finish_homework',
+      reasonCode: 'homework_required',
+      countsTowardLimit: false,
+      freeLearningMinute: false,
+    };
+  }
+
   const withinRollingLimit = countedMinutesInWindowBefore < settings.rollingLimitMinutes;
   return {
     allowed: withinRollingLimit,
@@ -715,11 +872,17 @@ function buildDeviceUsageResponse({
   countedMinutesInWindowAfter,
   limitTiming,
   rewardSummary,
+  loggedLearningMinutesTodayBefore,
+  manualStudyMinutes,
+  gateState,
 }) {
   const statusText = decision.allowed ? 'OK' : 'NG';
   const learningRemaining = Math.max(0, settings.learningRequiredMinutes - learningMinutesTodayAfter);
   const freeLearningRemaining = Math.max(0, settings.learningFreeMinutes - learningMinutesTodayAfter);
   const rollingRemaining = Math.max(0, settings.rollingLimitMinutes - countedMinutesInWindowAfter);
+  const homeworkCleared = Boolean(gateState?.homeworkCleared);
+  const homeworkGateSatisfied = !settings.homeworkGateEnabled || homeworkCleared;
+  const entertainmentUnlocked = learningRemaining === 0 && homeworkGateSatisfied;
 
   return {
     version: 1,
@@ -748,11 +911,22 @@ function buildDeviceUsageResponse({
       learning: {
         todayMinutesBefore: learningMinutesTodayBefore,
         todayMinutes: learningMinutesTodayAfter,
+        loggedMinutesBefore: loggedLearningMinutesTodayBefore,
+        loggedMinutes: loggedLearningMinutesTodayBefore
+          + (decision.allowed && packageRule.category === CATEGORY_LEARNING ? 1 : 0),
+        manualStudyMinutes,
         requiredMinutes: settings.learningRequiredMinutes,
         remainingMinutes: learningRemaining,
         freeMinutes: settings.learningFreeMinutes,
         freeRemainingMinutes: freeLearningRemaining,
-        entertainmentUnlocked: learningRemaining === 0,
+        entertainmentUnlocked,
+      },
+      homework: {
+        gateEnabled: settings.homeworkGateEnabled,
+        cleared: homeworkCleared,
+        clearedAt: gateState?.homeworkClearedAt || null,
+        clearedBy: gateState?.homeworkClearedBy || null,
+        remaining: settings.homeworkGateEnabled && !homeworkCleared,
       },
       rolling: {
         countedMinutesBefore: countedMinutesInWindowBefore,
@@ -832,20 +1006,25 @@ async function evaluateDeviceUsageRequest(req, options = {}) {
   const rollingWindowStart = new Date(now.getTime() - settings.rollingWindowMs);
 
   const [
-    learningMinutesTodayBefore,
+    loggedLearningMinutesTodayBefore,
+    gateState,
     countedEventTimes,
     rewardSummary,
   ] = await Promise.all([
     fetchTodayLearningMinutes(endpointPath, localDateKey, { ...options, requestModel }),
+    fetchGateStateForDate(localDateKey, options),
     fetchCurrentCountedEventTimes(endpointPath, settings, { ...options, requestModel, now }),
     fetchRewardSummaryForDate(localDateKey, options),
   ]);
+  const manualStudyMinutes = gateState.manualStudyMinutes;
+  const learningMinutesTodayBefore = loggedLearningMinutesTodayBefore + manualStudyMinutes;
   const countedMinutesInWindowBefore = countedEventTimes.length;
   const decision = getDecisionForUsage({
     category: packageRule.category,
     settings,
     learningMinutesTodayBefore,
     countedMinutesInWindowBefore,
+    homeworkCleared: gateState.homeworkCleared,
   });
   const learningMinutesTodayAfter = learningMinutesTodayBefore
     + (decision.allowed && packageRule.category === CATEGORY_LEARNING ? 1 : 0);
@@ -865,6 +1044,9 @@ async function evaluateDeviceUsageRequest(req, options = {}) {
     countedMinutesInWindowAfter,
     limitTiming,
     rewardSummary,
+    loggedLearningMinutesTodayBefore,
+    manualStudyMinutes,
+    gateState,
   });
 
   return {
@@ -1252,6 +1434,7 @@ async function getDeviceUsageDashboard(options = {}) {
     rewardSuggestions,
     recentRewards,
     rewardSummary,
+    gateState,
   ] = await Promise.all([
     fetchCurrentCountedEventTimes(endpointPath, settings, { ...options, requestModel, now }),
     requestModel.countDocuments({ endpointPath }),
@@ -1270,6 +1453,7 @@ async function getDeviceUsageDashboard(options = {}) {
     listRewardSuggestions(options),
     listRecentRewards(options),
     fetchRewardSummaryForDate(localDateKey, options),
+    fetchGateStateForDate(localDateKey, options),
   ]);
   const todayStats = dailyStats.find((row) => row.dateKey === localDateKey) || {
     learningMinutes: 0,
@@ -1279,11 +1463,16 @@ async function getDeviceUsageDashboard(options = {}) {
     categories: [],
   };
   const currentCountedMinutes = countedEventTimes.length;
+  const loggedLearningMinutes = todayStats.learningMinutes;
+  const manualStudyMinutes = gateState.manualStudyMinutes;
+  const currentLearningMinutes = loggedLearningMinutes + manualStudyMinutes;
   const limitTiming = calculateDeviceUsageLimitTiming(countedEventTimes, settings, now);
-  const entertainmentUnlocked = todayStats.learningMinutes >= settings.learningRequiredMinutes;
+  const learningRequirementMet = currentLearningMinutes >= settings.learningRequiredMinutes;
+  const homeworkGateMet = !settings.homeworkGateEnabled || gateState.homeworkCleared;
+  const entertainmentUnlocked = learningRequirementMet && homeworkGateMet;
   const rollingAvailable = currentCountedMinutes < settings.rollingLimitMinutes;
   const nextEntertainmentAction = !entertainmentUnlocked
-    ? 'learn_first'
+    ? (learningRequirementMet ? 'finish_homework' : 'learn_first')
     : (rollingAvailable ? 'allow' : 'wait');
   const nextEntertainmentStatus = nextEntertainmentAction === 'allow' ? 'OK' : 'NG';
 
@@ -1292,10 +1481,20 @@ async function getDeviceUsageDashboard(options = {}) {
     generatedAt: now,
     localDateKey,
     settings,
+    gateState: {
+      ...gateState,
+      loggedLearningMinutes,
+      manualStudyMinutes,
+      totalStudyMinutes: currentLearningMinutes,
+      learningRequirementMet,
+      homeworkGateEnabled: settings.homeworkGateEnabled,
+      homeworkGateMet,
+      entertainmentUnlocked,
+    },
     currentWindowStart,
     currentCountedMinutes,
-    currentLearningMinutes: todayStats.learningMinutes,
-    learningRemainingMinutes: Math.max(0, settings.learningRequiredMinutes - todayStats.learningMinutes),
+    currentLearningMinutes,
+    learningRemainingMinutes: Math.max(0, settings.learningRequiredMinutes - currentLearningMinutes),
     rollingRemainingMinutes: Math.max(0, settings.rollingLimitMinutes - currentCountedMinutes),
     totalStored,
     blockedToday,
@@ -1457,6 +1656,7 @@ module.exports = {
   DEVICE_USAGE_DASHBOARD_DAYS,
   DEVICE_USAGE_DEFAULT_LEARNING_FREE_MINUTES,
   DEVICE_USAGE_DEFAULT_LEARNING_REQUIRED_MINUTES,
+  DEVICE_USAGE_DEFAULT_HOMEWORK_GATE_ENABLED,
   DEVICE_USAGE_DEFAULT_LIMIT_MINUTES,
   DEVICE_USAGE_DEFAULT_MAX_VOLUME,
   DEVICE_USAGE_DEFAULT_WINDOW_MINUTES,
@@ -1467,10 +1667,12 @@ module.exports = {
   REWARD_TITLE_MAX_LENGTH,
   UNKNOWN_PACKAGE_NAME,
   addDeviceUsageReward,
+  addManualStudyMinutes,
   buildRecentDayRanges,
   calculateDeviceUsageLimitTiming,
   fetchCurrentCountedEventTimes,
   fetchDailyDeviceUsageStats,
+  fetchGateStateForDate,
   fetchRollingDeviceUsageSeries,
   formatLocalDateKey,
   getCurrentDeviceUsageStatus,
@@ -1484,5 +1686,6 @@ module.exports = {
   saveRewardSuggestion,
   deleteDeviceUsagePackageRule,
   deleteRewardSuggestion,
+  updateHomeworkGateForToday,
   updateDeviceUsageSettings,
 };

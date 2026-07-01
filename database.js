@@ -164,6 +164,7 @@ const IncomingRequest = require('./models/incoming_request');
 const RequestCounterSettings = require('./models/request_counter_settings');
 const DeviceUsageRequest = require('./models/device_usage_request');
 const DeviceUsageSettings = require('./models/device_usage_settings');
+const DeviceUsageGateState = require('./models/device_usage_gate_state');
 const DeviceUsagePackageRule = require('./models/device_usage_package_rule');
 const DeviceUsageReward = require('./models/device_usage_reward');
 const DeviceUsageRewardSuggestion = require('./models/device_usage_reward_suggestion');
@@ -286,6 +287,7 @@ module.exports = {
   RequestCounterSettings,
   DeviceUsageRequest,
   DeviceUsageSettings,
+  DeviceUsageGateState,
   DeviceUsagePackageRule,
   DeviceUsageReward,
   DeviceUsageRewardSuggestion,

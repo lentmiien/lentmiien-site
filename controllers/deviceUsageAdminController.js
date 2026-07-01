@@ -3,12 +3,14 @@ const {
   DEVICE_USAGE_CATEGORIES,
   DeviceUsageSettingsError,
   addDeviceUsageReward,
+  addManualStudyMinutes,
   deleteDeviceUsagePackageRule,
   deleteRewardSuggestion,
   getDeviceUsageDashboard,
   normalizeDeviceUsageCategory,
   saveDeviceUsagePackageRule,
   saveRewardSuggestion,
+  updateHomeworkGateForToday,
   updateDeviceUsageSettings,
 } = require('../services/deviceUsageService');
 const {
@@ -51,6 +53,7 @@ function mapSettings(settings) {
     rollingLimitDisplay: `${formatNumber(settings.rollingLimitMinutes)} min`,
     learningRequiredDisplay: `${formatNumber(settings.learningRequiredMinutes)} min`,
     learningFreeDisplay: `${formatNumber(settings.learningFreeMinutes)} min`,
+    homeworkGateDisplay: settings.homeworkGateEnabled ? 'Enabled' : 'Disabled',
     maxVolumeDisplay: `${formatNumber(settings.maxVolume)}%`,
     updatedAtDisplay: formatDateTime(settings.updatedAt),
     updatedByDisplay: settings.updatedBy || 'N/A',
@@ -86,6 +89,35 @@ function mapReward(reward) {
   };
 }
 
+function mapGateState(gateState = {}, settings = {}) {
+  const totalStudyMinutes = Number(gateState.totalStudyMinutes) || 0;
+  const manualStudyMinutes = Number(gateState.manualStudyMinutes) || 0;
+  const loggedLearningMinutes = Number(gateState.loggedLearningMinutes) || 0;
+  const learningRequiredMinutes = Number(settings.learningRequiredMinutes) || 0;
+  const homeworkCleared = Boolean(gateState.homeworkCleared);
+  const homeworkGateEnabled = Boolean(settings.homeworkGateEnabled);
+
+  return {
+    ...gateState,
+    manualStudyMinutes,
+    loggedLearningMinutes,
+    totalStudyMinutes,
+    manualStudyDisplay: `${formatNumber(manualStudyMinutes)} min`,
+    loggedLearningDisplay: `${formatNumber(loggedLearningMinutes)} min`,
+    totalStudyDisplay: `${formatNumber(totalStudyMinutes)} / ${formatNumber(learningRequiredMinutes)} min`,
+    learningRemainingDisplay: `${formatNumber(Math.max(0, learningRequiredMinutes - totalStudyMinutes))} min`,
+    homeworkStatusDisplay: homeworkGateEnabled
+      ? (homeworkCleared ? 'Cleared' : 'Waiting')
+      : 'Disabled',
+    homeworkAction: homeworkCleared ? 'Reset Homework' : 'Clear Homework',
+    homeworkNextValue: homeworkCleared ? 'false' : 'true',
+    homeworkClearedAtDisplay: formatDateTime(gateState.homeworkClearedAt),
+    homeworkClearedByDisplay: gateState.homeworkClearedBy || 'N/A',
+    manualStudyUpdatedAtDisplay: formatDateTime(gateState.manualStudyUpdatedAt),
+    manualStudyUpdatedByDisplay: gateState.manualStudyUpdatedBy || 'N/A',
+  };
+}
+
 function buildFallbackDashboard() {
   return {
     endpointPath: 'N/A',
@@ -97,6 +129,7 @@ function buildFallbackDashboard() {
       rollingWindowMs: 90 * 60 * 1000,
       learningRequiredMinutes: 30,
       learningFreeMinutes: 30,
+      homeworkGateEnabled: false,
       maxVolume: 100,
       updatedAt: null,
       updatedBy: null,
@@ -126,6 +159,17 @@ function buildFallbackDashboard() {
     rewardSuggestions: [],
     recentRewards: [],
     rewardSummary: { points: 0, count: 0 },
+    gateState: {
+      localDateKey: '',
+      manualStudyMinutes: 0,
+      loggedLearningMinutes: 0,
+      totalStudyMinutes: 0,
+      homeworkCleared: false,
+      homeworkClearedAt: null,
+      homeworkClearedBy: null,
+      manualStudyUpdatedAt: null,
+      manualStudyUpdatedBy: null,
+    },
     recentRequests: [],
   };
 }
@@ -164,6 +208,7 @@ exports.dashboard = async (req, res) => {
       packageRules: dashboard.packageRules.map(mapPackageRule),
       rewardSuggestions: dashboard.rewardSuggestions.map(mapRewardSuggestion),
       recentRewards: dashboard.recentRewards.map(mapReward),
+      gateState: mapGateState(dashboard.gateState, dashboard.settings),
       recentRequests: dashboard.recentRequests.map(mapRecentRequest),
       chartJson: JSON.stringify(chartPayload),
     });
@@ -199,6 +244,7 @@ exports.dashboard = async (req, res) => {
       packageRules: [],
       rewardSuggestions: [],
       recentRewards: [],
+      gateState: mapGateState(dashboard.gateState, dashboard.settings),
       recentRequests: [],
       chartJson: JSON.stringify({ points: [], limit: 60, windowMinutes: 90 }),
     });
@@ -218,6 +264,7 @@ exports.updateSettings = async (req, res) => {
         rollingWindowMinutes: settings.rollingWindowMinutes,
         learningRequiredMinutes: settings.learningRequiredMinutes,
         learningFreeMinutes: settings.learningFreeMinutes,
+        homeworkGateEnabled: settings.homeworkGateEnabled,
         maxVolume: settings.maxVolume,
         user: req.user?.name || 'unknown',
       },
@@ -234,6 +281,48 @@ exports.updateSettings = async (req, res) => {
       metadata: { error: error.message },
     });
     return redirectWithFeedback(res, 'error', 'Unable to save device usage settings.');
+  }
+};
+
+exports.addStudyMinutes = async (req, res) => {
+  try {
+    const gateState = await addManualStudyMinutes(req.body || {}, {
+      updatedBy: req.user?.name || null,
+    });
+    return redirectWithFeedback(res, 'success', `Added study minutes. Manual study today is now ${gateState.manualStudyMinutes} min.`);
+  } catch (error) {
+    if (error instanceof DeviceUsageSettingsError) {
+      return redirectWithFeedback(res, 'error', error.message);
+    }
+
+    logger.error('Failed to add manual device usage study minutes', {
+      category: 'device-usage',
+      metadata: { error: error.message },
+    });
+    return redirectWithFeedback(res, 'error', 'Unable to add study minutes.');
+  }
+};
+
+exports.updateHomeworkGate = async (req, res) => {
+  try {
+    const gateState = await updateHomeworkGateForToday(req.body || {}, {
+      updatedBy: req.user?.name || null,
+    });
+    return redirectWithFeedback(
+      res,
+      'success',
+      gateState.homeworkCleared ? 'Homework cleared for today.' : 'Homework gate reset for today.'
+    );
+  } catch (error) {
+    if (error instanceof DeviceUsageSettingsError) {
+      return redirectWithFeedback(res, 'error', error.message);
+    }
+
+    logger.error('Failed to update device usage homework gate', {
+      category: 'device-usage',
+      metadata: { error: error.message },
+    });
+    return redirectWithFeedback(res, 'error', 'Unable to update homework gate.');
   }
 };
 

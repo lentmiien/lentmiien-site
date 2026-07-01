@@ -6,6 +6,7 @@ const DeviceUsageSettingsSchema = new mongoose.Schema({
   rollingWindowMinutes: { type: Number, required: true, min: 1, max: 10080, default: 90 },
   learningRequiredMinutes: { type: Number, required: true, min: 0, max: 1440, default: 30 },
   learningFreeMinutes: { type: Number, required: true, min: 0, max: 1440, default: 30 },
+  homeworkGateEnabled: { type: Boolean, required: true, default: false },
   maxVolume: {
     type: Number,
     required: true,

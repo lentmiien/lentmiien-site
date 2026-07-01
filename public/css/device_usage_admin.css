@@ -124,6 +124,7 @@ body,
 
 .device-usage-button:focus,
 .device-usage-link-button:focus,
+.device-usage-toggle input:focus,
 .device-usage-field input:focus,
 .device-usage-field select:focus,
 .device-usage-field textarea:focus {
@@ -222,6 +223,10 @@ body,
 .device-usage-grid--primary {
   grid-template-columns: minmax(0, 2fr) minmax(300px, 0.8fr);
   margin-top: 0;
+}
+
+.device-usage-grid--gate {
+  grid-template-columns: minmax(0, 1.12fr) minmax(300px, 0.86fr) minmax(260px, 0.62fr);
 }
 
 .device-usage-panel {
@@ -349,6 +354,42 @@ body,
   font-weight: 750;
 }
 
+.device-usage-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--du-border);
+  border-radius: 6px;
+  padding: 0.6rem;
+  background: var(--du-surface-2);
+  color: var(--du-text-secondary);
+  cursor: pointer;
+}
+
+.device-usage-toggle input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--du-green);
+}
+
+.device-usage-toggle strong,
+.device-usage-toggle small {
+  display: block;
+}
+
+.device-usage-toggle strong {
+  color: var(--du-text);
+  font-size: 0.9rem;
+}
+
+.device-usage-toggle small {
+  margin-top: 0.12rem;
+  color: var(--du-text-muted);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
 .device-usage-field input,
 .device-usage-field select,
 .device-usage-field textarea {
@@ -387,6 +428,15 @@ body,
   margin: 0.18rem 0 0;
   color: var(--du-text-secondary);
   overflow-wrap: anywhere;
+}
+
+.device-usage-details--compact {
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.device-usage-form--compact {
+  margin-top: 0.85rem;
 }
 
 .device-usage-rules {
@@ -512,18 +562,42 @@ body,
 
 .device-usage-rank-list,
 .device-usage-rewards,
-.device-usage-suggestions {
+.device-usage-suggestions,
+.device-usage-gate-summary {
   display: grid;
   gap: 0.75rem;
 }
 
 .device-usage-rank,
 .device-usage-reward,
-.device-usage-suggestion {
+.device-usage-suggestion,
+.device-usage-gate-summary div {
   border: 1px solid var(--du-border);
   border-radius: var(--du-border-radius);
   padding: 0.78rem;
   background: var(--du-surface-2);
+}
+
+.device-usage-gate-summary {
+  margin-bottom: 0.85rem;
+}
+
+.device-usage-gate-summary div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.device-usage-gate-summary span {
+  color: var(--du-text-muted);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
+.device-usage-gate-summary strong {
+  color: var(--du-yellow);
+  text-align: right;
 }
 
 .device-usage-rank__top,
@@ -733,6 +807,7 @@ body,
 @media (max-width: 1100px) {
   .device-usage-grid,
   .device-usage-grid--primary,
+  .device-usage-grid--gate,
   .device-usage-rules {
     grid-template-columns: 1fr;
   }

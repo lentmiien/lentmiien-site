@@ -54,6 +54,11 @@ block content
             label.device-usage-field(for='learningFreeMinutes')
               span Free learning
               input#learningFreeMinutes(type='number', name='learningFreeMinutes', min='0', max='1440', step='1', value=settings.learningFreeMinutes, required)
+            label.device-usage-toggle(for='homeworkGateEnabled')
+              input#homeworkGateEnabled(type='checkbox', name='homeworkGateEnabled', value='true', checked=settings.homeworkGateEnabled)
+              span
+                strong Homework gate
+                small Require homework clearance before entertainment unlocks.
             label.device-usage-field(for='maxVolume')
               span Max volume
               select#maxVolume(name='maxVolume', required)
@@ -67,6 +72,9 @@ block content
             div
               dt Max Volume
               dd= settings.maxVolumeDisplay
+            div
+              dt Homework Gate
+              dd= settings.homeworkGateDisplay
             div
               dt Updated
               dd= settings.updatedAtDisplay
@@ -120,7 +128,7 @@ block content
         else
           p.device-usage-empty No device minutes yet.
 
-      section.device-usage-grid
+      section.device-usage-grid.device-usage-grid--gate
         article.device-usage-panel
           header.device-usage-panel__header
             div
@@ -187,6 +195,43 @@ block content
                     p.device-usage-reward__comment= reward.commentDisplay
           else
             p.device-usage-empty No rewards yet.
+
+        article.device-usage-panel
+          header.device-usage-panel__header
+            div
+              h2 Gate Controls
+              p Manual study and homework
+          .device-usage-gate-summary
+            div
+              span Manual study
+              strong= gateState.manualStudyDisplay
+            div
+              span Learning gate
+              strong= gateState.totalStudyDisplay
+            div
+              span Homework
+              strong= gateState.homeworkStatusDisplay
+          form.device-usage-form(method='post', action='/admin/device-usage/study-minutes')
+            label.device-usage-field(for='studyMinutes')
+              span Add study minutes
+              input#studyMinutes(type='number', name='minutes', min='1', max='1440', step='1', value='10', required)
+            label.device-usage-field(for='studyNote')
+              span Note
+              textarea#studyNote(name='note', rows='2', maxlength='1000', placeholder='Reading, worksheet, workbook...')
+            button.device-usage-button(type='submit') Add Study
+          form.device-usage-form.device-usage-form--compact(method='post', action='/admin/device-usage/homework-gate')
+            input(type='hidden', name='cleared', value=gateState.homeworkNextValue)
+            button.device-usage-button.device-usage-button--ghost(type='submit')= gateState.homeworkAction
+          dl.device-usage-details.device-usage-details--compact
+            div
+              dt Logged Learning
+              dd= gateState.loggedLearningDisplay
+            div
+              dt Remaining Study
+              dd= gateState.learningRemainingDisplay
+            div
+              dt Homework Cleared
+              dd #{gateState.homeworkClearedAtDisplay} | #{gateState.homeworkClearedByDisplay}
 
       section.device-usage-grid
         article.device-usage-panel.device-usage-panel--wide

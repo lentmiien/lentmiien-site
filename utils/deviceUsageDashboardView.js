@@ -9,6 +9,7 @@ const TEXT = {
   en: {
     rollingUsage: 'Rolling Usage',
     learningGate: 'Learning Gate',
+    homeworkGate: 'Homework Gate',
     nextEntertainment: 'Next Entertainment',
     rewardsToday: 'Rewards Today',
     blockedToday: 'Blocked Today',
@@ -16,6 +17,9 @@ const TEXT = {
     minUnit: 'min',
     pointsUnit: 'pts',
     unlocked: 'Entertainment unlocked',
+    homeworkCleared: 'Homework cleared',
+    homeworkRequired: 'Homework clearance required',
+    homeworkDisabled: 'Disabled',
     remainingLearning: (minutes) => `${minutes} min learning remaining`,
     remainingRolling: (minutes) => `${minutes} min remaining`,
     waitMinutes: (minutes) => `${minutes} min until below limit`,
@@ -29,6 +33,7 @@ const TEXT = {
   ja: {
     rollingUsage: 'ローリング利用',
     learningGate: '学習条件',
+    homeworkGate: '宿題条件',
     nextEntertainment: '次の娯楽',
     rewardsToday: '今日のご褒美',
     blockedToday: '今日のブロック',
@@ -36,6 +41,9 @@ const TEXT = {
     minUnit: '分',
     pointsUnit: '点',
     unlocked: '娯楽を利用できます',
+    homeworkCleared: '宿題完了',
+    homeworkRequired: '宿題の確認が必要',
+    homeworkDisabled: '無効',
     remainingLearning: (minutes) => `学習が残り ${minutes}分`,
     remainingRolling: (minutes) => `残り ${minutes}分`,
     waitMinutes: (minutes) => `上限未満まで ${minutes}分`,
@@ -178,8 +186,14 @@ function buildOverviewCards(dashboard, options = {}) {
   const settings = dashboard.settings;
   const learningRemaining = dashboard.learningRemainingMinutes || 0;
   const rollingBlocked = dashboard.currentCountedMinutes >= settings.rollingLimitMinutes;
-
-  return [
+  const homeworkGateEnabled = Boolean(settings.homeworkGateEnabled);
+  const homeworkCleared = Boolean(dashboard.gateState?.homeworkCleared);
+  const learningHelper = dashboard.entertainmentUnlocked
+    ? text.unlocked
+    : (learningRemaining > 0
+      ? text.remainingLearning(formatNumber(learningRemaining, locale))
+      : text.homeworkRequired);
+  const cards = [
     {
       key: 'rollingUsage',
       label: text.rollingUsage,
@@ -191,11 +205,24 @@ function buildOverviewCards(dashboard, options = {}) {
       key: 'learningGate',
       label: text.learningGate,
       value: `${formatNumber(dashboard.currentLearningMinutes, locale)} / ${formatNumber(settings.learningRequiredMinutes, locale)} ${text.minUnit}`,
-      helper: dashboard.entertainmentUnlocked
-        ? text.unlocked
-        : text.remainingLearning(formatNumber(learningRemaining, locale)),
+      helper: learningHelper,
       tone: dashboard.entertainmentUnlocked ? 'ok' : 'warning',
     },
+  ];
+
+  if (homeworkGateEnabled) {
+    cards.push({
+      key: 'homeworkGate',
+      label: text.homeworkGate,
+      value: homeworkCleared ? text.homeworkCleared : text.homeworkRequired,
+      helper: homeworkCleared
+        ? formatDateTime(dashboard.gateState?.homeworkClearedAt, locale)
+        : text.homeworkRequired,
+      tone: homeworkCleared ? 'ok' : 'warning',
+    });
+  }
+
+  cards.push(
     {
       key: 'nextEntertainment',
       label: text.nextEntertainment,
@@ -224,7 +251,9 @@ function buildOverviewCards(dashboard, options = {}) {
       helper: text.retention,
       tone: '',
     },
-  ];
+  );
+
+  return cards;
 }
 
 function getCategoryLabel(category, locale = 'en') {
