@@ -326,6 +326,13 @@ app.use(async (req, res, next) => {
   next();
 });
 
+app.get('/', (req, res, next) => {
+  if (typeof req.isAuthenticated === 'function' && req.isAuthenticated()) {
+    return res.redirect('/mypage');
+  }
+  return next();
+});
+
 // ----- VUE APP -----
 app.use((req, res, next) => {
   if ("VUE_PATH" in process.env && req.isAuthenticated && req.isAuthenticated()) {
