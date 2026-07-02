@@ -741,7 +741,7 @@ block content
       .mypage-grid(data-mypage-icon-grid)
         each pageTile in (mypageTiles || [])
           +tile(pageTile)
-  if new_openai_models.length > 0
+  if admin && new_openai_models.length > 0
     .row 
       .col
         h3.mypage-section-title New OpenAI models (last 30 days)
@@ -754,7 +754,7 @@ block content
             else
               a(href=m.manageUrl)= `${m.model} (${openaiCreatedDate})`
               span.model-tag__status(title="Not saved in AI model cards - click to add")= ' - missing'
-  if new_anthropic_models.length > 0
+  if admin && new_anthropic_models.length > 0
     .row 
       .col
         h3.mypage-section-title New Anthropic models (last 30 days)
