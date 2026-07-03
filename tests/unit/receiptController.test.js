@@ -6,6 +6,7 @@ const mockReceipt = {
 
 const mockReceiptMappingRule = {
   find: jest.fn(),
+  findById: jest.fn(),
   findByIdAndDelete: jest.fn(),
 };
 
@@ -111,6 +112,166 @@ describe('receiptcontroller history filters', () => {
     expect(receipt.method).toBe('cash');
     expect(receipt.layout_text).toBe('OCR text');
     expect(res.redirect).toHaveBeenCalledWith('/receipt?history=2025-12');
+  });
+});
+
+describe('receiptcontroller mapping rules', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('renders the mapping edit form for an existing rule', async () => {
+    const rules = [{
+      _id: toObjectId('rule-1'),
+      name: 'Shop rule',
+      target: 'budget',
+      priority: 4,
+      active: true,
+      conditions: [{ field: 'business_name', operator: 'icontains', value: 'shop' }],
+      updatedAt: new Date('2026-04-22T00:00:00.000Z'),
+    }];
+    const editRule = {
+      _id: toObjectId('rule-1'),
+      name: 'Shop rule',
+      description: 'Use saved defaults',
+      target: 'budget',
+      priority: 4,
+      active: true,
+      conditions: [{ field: 'business_name', operator: 'icontains', value: 'shop' }],
+      budgetPrefill: { from_account: 'cash', to_account: 'EXT', type: 'expense' },
+      creditPrefill: { label: 'Shop card', external: false, externalMultiplier: 1 },
+    };
+    const sortRules = jest.fn().mockResolvedValue(rules);
+    const res = { render: jest.fn() };
+
+    mockReceiptMappingRule.findById.mockResolvedValue(editRule);
+    mockReceiptMappingRule.find.mockReturnValue({ sort: sortRules });
+
+    await controller.edit_mapping_rule_page({ params: { id: 'rule-1' } }, res);
+
+    expect(mockReceiptMappingRule.findById).toHaveBeenCalledWith('rule-1');
+    expect(sortRules).toHaveBeenCalledWith({ priority: -1, updatedAt: -1 });
+    expect(res.render).toHaveBeenCalledWith('receipt_mappings', expect.objectContaining({
+      rules,
+      editRule: expect.objectContaining({
+        id: 'rule-1',
+        name: 'Shop rule',
+        priority: 4,
+        budgetPrefill: expect.objectContaining({ from_account: 'cash' }),
+        creditPrefill: expect.objectContaining({ label: 'Shop card' }),
+      }),
+    }));
+  });
+
+  test('updates an existing mapping rule from the edit form', async () => {
+    const rule = {
+      _id: toObjectId('rule-1'),
+      save: jest.fn().mockResolvedValue(),
+    };
+    const res = { redirect: jest.fn() };
+    mockReceiptMappingRule.findById.mockResolvedValue(rule);
+
+    await controller.update_mapping_rule({
+      params: { id: 'rule-1' },
+      body: {
+        name: 'Updated rule',
+        description: 'Updated note',
+        target: 'credit',
+        priority: '12',
+        active: 'true',
+        condition_field: ['business_name', 'layout_text'],
+        condition_operator: ['icontains', 'regex'],
+        condition_value: ['shop', 'total\\s+1200'],
+        from_account_prefill: 'cash',
+        to_account_prefill: 'EXT',
+        transaction_business_prefill: 'Shop',
+        categories_prefill: 'food',
+        tags_prefill: 'receipt|daily',
+        type_prefill: 'expense',
+        from_fee_prefill: '0',
+        to_fee_prefill: '10',
+        cardId_prefill: '',
+        label_prefill: 'Card label',
+        external_prefill: 'true',
+        externalMultiplier_prefill: '2.5',
+      },
+    }, res);
+
+    expect(rule.name).toBe('Updated rule');
+    expect(rule.target).toBe('credit');
+    expect(rule.priority).toBe(12);
+    expect(rule.active).toBe(true);
+    expect(rule.conditions).toEqual([
+      { field: 'business_name', operator: 'icontains', value: 'shop' },
+      { field: 'layout_text', operator: 'regex', value: 'total\\s+1200' },
+    ]);
+    expect(rule.budgetPrefill).toEqual(expect.objectContaining({
+      from_account: 'cash',
+      to_account: 'EXT',
+      to_fee: 10,
+    }));
+    expect(rule.creditPrefill).toEqual({
+      label: 'Card label',
+      external: true,
+      externalMultiplier: 2.5,
+    });
+    expect(rule.save).toHaveBeenCalledTimes(1);
+    expect(res.redirect).toHaveBeenCalledWith('/receipt/mappings');
+  });
+
+  test('quick-updates only mapping priority', async () => {
+    const rule = {
+      _id: toObjectId('rule-1'),
+      name: 'Shop rule',
+      priority: 0,
+      save: jest.fn().mockResolvedValue(),
+    };
+    const res = { redirect: jest.fn() };
+    mockReceiptMappingRule.findById.mockResolvedValue(rule);
+
+    await controller.update_mapping_rule_priority({
+      params: { id: 'rule-1' },
+      body: { priority: '9' },
+    }, res);
+
+    expect(rule.priority).toBe(9);
+    expect(rule.name).toBe('Shop rule');
+    expect(rule.save).toHaveBeenCalledTimes(1);
+    expect(res.redirect).toHaveBeenCalledWith('/receipt/mappings');
+  });
+
+  test('receipt mapping view renders edit and quick priority controls', () => {
+    const html = pug.renderFile(path.join(process.cwd(), 'views/receipt_mappings.pug'), {
+      rules: [{
+        _id: toObjectId('rule-1'),
+        name: 'Shop rule',
+        target: 'credit',
+        priority: 8,
+        active: true,
+        conditions: [{ field: 'business_name', operator: 'icontains', value: 'shop' }],
+        updatedAt: new Date('2026-04-22T00:00:00.000Z'),
+      }],
+      editRule: {
+        id: 'rule-1',
+        name: 'Shop rule',
+        description: 'Use card',
+        target: 'credit',
+        priority: 8,
+        active: true,
+        conditions: [{ field: 'business_name', operator: 'icontains', value: 'shop' }],
+        budgetPrefill: { transaction_business: 'Shop', type: 'expense' },
+        creditPrefill: { label: 'Card label', external: true, externalMultiplier: 2 },
+      },
+      errorMessage: null,
+    });
+
+    expect(html).toContain('Higher priority numbers are selected first');
+    expect(html).toContain('action="/receipt/mappings/rule-1/priority"');
+    expect(html).toContain('href="/receipt/mappings/rule-1/edit"');
+    expect(html).toContain('Edit rule: Shop rule');
+    expect(html).toContain('action="/receipt/mappings/rule-1"');
+    expect(html).toContain('value="Card label"');
+    expect(html).toContain('id="external_prefill" type="checkbox" name="external_prefill" value="true" checked');
   });
 });
 

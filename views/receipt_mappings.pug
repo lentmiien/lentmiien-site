@@ -1,12 +1,51 @@
 extends layout
 
+mixin conditionRow(condition, index)
+  - const row = condition || {};
+  - const field = row.field || '';
+  - const operator = row.operator || 'icontains';
+  .condition-row
+    .form-grid.mapping-condition-grid
+      .form-field
+        label(for=`condition_field_${index}`) Field
+        select.form-select(id=`condition_field_${index}`, name="condition_field")
+          option(value="", selected=field === '') Select
+          option(value="business_name", selected=field === 'business_name') business_name
+          option(value="business_address", selected=field === 'business_address') business_address
+          option(value="layout_text", selected=field === 'layout_text') layout_text
+          option(value="method", selected=field === 'method') method
+          option(value="amount", selected=field === 'amount') amount
+      .form-field
+        label(for=`condition_operator_${index}`) Operator
+        select.form-select(id=`condition_operator_${index}`, name="condition_operator")
+          option(value="icontains", selected=operator === 'icontains') icontains
+          option(value="equals", selected=operator === 'equals') equals
+          option(value="not_contains", selected=operator === 'not_contains') not_contains
+          option(value="regex", selected=operator === 'regex') regex
+      .form-field
+        label(for=`condition_value_${index}`) Value
+        input.form-control(id=`condition_value_${index}`, type="text", name="condition_value", placeholder="Value to match", value=row.value || '')
+      .form-field.condition-remove-field
+        button.btn.btn-outline-secondary.btn-sm(type="button", data-remove-condition) Remove
+
 block content
+  - const isEditing = Boolean(editRule && editRule.id);
+  - const selectedRule = editRule || {};
+  - const selectedBudgetPrefill = selectedRule.budgetPrefill || {};
+  - const selectedCreditPrefill = selectedRule.creditPrefill || {};
+  - const conditionRows = selectedRule.conditions && selectedRule.conditions.length ? selectedRule.conditions : [{}];
+  - const selectedTarget = selectedRule.target || 'budget';
+  - const formAction = isEditing ? `/receipt/mappings/${selectedRule.id}` : '/receipt/mappings';
   .receipt-entry-page
     h1 Receipt mapping rules
-    p.page-intro Create or edit simple condition-based rules that prefill the receipt entry form for budget or credit card flows.
+    p.page-intro Create or edit simple condition-based rules that prefill the receipt entry form for budget or credit card flows. Higher priority numbers are selected first when multiple rules match; newest updated rule wins ties.
+
+    if errorMessage
+      .alert.alert-warning(role="alert")= errorMessage
 
     section.section-card
       h2 Existing rules
+      p.text-muted.small.mb-3 Higher number wins. Use the priority field here for a quick priority-only edit.
       if rules && rules.length
         .table-responsive
           table.table.table-sm.table-striped
@@ -21,10 +60,18 @@ block content
                 th Actions
             tbody
               each rule in rules
-                tr
-                  td= rule.name
+                - const ruleId = rule._id && typeof rule._id.toString === 'function' ? rule._id.toString() : String(rule._id || '');
+                - const isCurrentRule = isEditing && ruleId === selectedRule.id;
+                tr(class=isCurrentRule ? 'table-warning' : '')
+                  td
+                    strong= rule.name
+                    if isCurrentRule
+                      span.text-muted.small.ms-2 Editing
                   td= rule.target === 'credit' ? 'Credit card' : 'Budget'
-                  td= rule.priority || 0
+                  td
+                    form.rule-priority-form(action=`/receipt/mappings/${ruleId}/priority`, method="post")
+                      input.form-control.form-control-sm.rule-priority-input(type="number", name="priority", value=rule.priority || 0, aria-label=`Priority for ${rule.name}`)
+                      button.btn.btn-sm.btn-outline-primary(type="submit") Save
                   td= rule.active ? 'Yes' : 'No'
                   td
                     if rule.conditions && rule.conditions.length
@@ -35,105 +82,93 @@ block content
                       span.text-muted None
                   td= rule.updatedAt ? new Date(rule.updatedAt).toLocaleString() : '—'
                   td
-                    form(action=`/receipt/mappings/${rule._id.toString()}/delete`, method="post", onsubmit="return confirm('Delete this rule?');")
-                      button.btn.btn-sm.btn-outline-danger(type="submit") Delete
+                    .rule-actions
+                      a.btn.btn-sm.btn-outline-secondary(href=`/receipt/mappings/${ruleId}/edit`) Edit
+                      form(action=`/receipt/mappings/${ruleId}/delete`, method="post", onsubmit="return confirm('Delete this rule?');")
+                        button.btn.btn-sm.btn-outline-danger(type="submit") Delete
       else
         p.text-muted No rules yet. Use the form below to create one.
 
-    section.section-card
-      h2 New rule
-      form#ruleForm.form(action="/receipt/mappings", method="post")
+    section#rule-editor.section-card
+      h2= isEditing ? `Edit rule: ${selectedRule.name}` : 'New rule'
+      if isEditing
+        p.text-muted.small Update the full rule below, or use the priority input above when priority is the only change.
+      form#ruleForm.form(action=formAction, method="post")
         .form-grid
           .form-field
             label(for="name") Name
-            input#name.form-control(type="text", name="name", required)
+            input#name.form-control(type="text", name="name", value=selectedRule.name || '', required)
           .form-field
             label(for="description") Description
-            input#description.form-control(type="text", name="description", placeholder="Optional short note")
+            input#description.form-control(type="text", name="description", value=selectedRule.description || '', placeholder="Optional short note")
           .form-field
             label(for="target") Target ledger
             select#target.form-select(name="target")
-              option(value="budget") Budget
-              option(value="credit") Credit card
+              option(value="budget", selected=selectedTarget === 'budget') Budget
+              option(value="credit", selected=selectedTarget === 'credit') Credit card
           .form-field
             label(for="priority") Priority
-            input#priority.form-control(type="number", name="priority", value="0")
+            input#priority.form-control(type="number", name="priority", value=selectedRule.priority || 0)
+            small.text-muted Higher numbers apply before lower numbers.
           .form-field
             .form-check.mt-4
-              input#active.form-check-input(type="checkbox", name="active", value="true", checked)
+              input#active.form-check-input(type="checkbox", name="active", value="true", checked=isEditing ? selectedRule.active !== false : true)
               label.form-check-label(for="active") Active
 
         h3.mt-3 Conditions (all must match)
         p.text-muted.small Provide one or more conditions; empty rows are ignored.
         .mapping-conditions(data-container)
-          .condition-row
-            .form-grid
-              .form-field
-                label Field
-                select.form-select(name="condition_field")
-                  option(value="") Select
-                  option(value="business_name") business_name
-                  option(value="business_address") business_address
-                  option(value="layout_text") layout_text
-                  option(value="method") method
-                  option(value="amount") amount
-              .form-field
-                label Operator
-                select.form-select(name="condition_operator")
-                  option(value="icontains") icontains
-                  option(value="equals") equals
-                  option(value="not_contains") not_contains
-                  option(value="regex") regex
-              .form-field
-                label Value
-                input.form-control(type="text", name="condition_value", placeholder="Value to match")
+          each condition, index in conditionRows
+            +conditionRow(condition, index)
         button.btn.btn-outline-secondary.btn-sm.mt-2(type="button", data-add-condition) + Add condition
 
         h3.mt-4 Budget prefill
         .form-grid
           .form-field
             label(for="from_account_prefill") From account
-            input#from_account_prefill.form-control(type="text", name="from_account_prefill", placeholder="Account id or EXT")
+            input#from_account_prefill.form-control(type="text", name="from_account_prefill", value=selectedBudgetPrefill.from_account || '', placeholder="Account id or EXT")
           .form-field
             label(for="to_account_prefill") To account
-            input#to_account_prefill.form-control(type="text", name="to_account_prefill", placeholder="Account id or EXT")
+            input#to_account_prefill.form-control(type="text", name="to_account_prefill", value=selectedBudgetPrefill.to_account || '', placeholder="Account id or EXT")
           .form-field
             label(for="transaction_business_prefill") Business
-            input#transaction_business_prefill.form-control(type="text", name="transaction_business_prefill", placeholder="Business name")
+            input#transaction_business_prefill.form-control(type="text", name="transaction_business_prefill", value=selectedBudgetPrefill.transaction_business || '', placeholder="Business name")
           .form-field
             label(for="categories_prefill") Categories
-            input#categories_prefill.form-control(type="text", name="categories_prefill", placeholder="Category id(s)")
+            input#categories_prefill.form-control(type="text", name="categories_prefill", value=selectedBudgetPrefill.categories || '', placeholder="Category id(s)")
           .form-field
             label(for="tags_prefill") Tags
-            input#tags_prefill.form-control(type="text", name="tags_prefill", placeholder="Pipe separated tags")
+            input#tags_prefill.form-control(type="text", name="tags_prefill", value=selectedBudgetPrefill.tags || '', placeholder="Pipe separated tags")
           .form-field
             label(for="type_prefill") Type
-            input#type_prefill.form-control(type="text", name="type_prefill", placeholder="expense/income/saving")
+            input#type_prefill.form-control(type="text", name="type_prefill", value=selectedBudgetPrefill.type || '', placeholder="expense/income/saving")
           .form-field
             label(for="from_fee_prefill") From fee
-            input#from_fee_prefill.form-control(type="number", step="0.01", name="from_fee_prefill", value="0")
+            input#from_fee_prefill.form-control(type="number", step="0.01", name="from_fee_prefill", value=selectedBudgetPrefill.from_fee || 0)
           .form-field
             label(for="to_fee_prefill") To fee
-            input#to_fee_prefill.form-control(type="number", step="0.01", name="to_fee_prefill", value="0")
+            input#to_fee_prefill.form-control(type="number", step="0.01", name="to_fee_prefill", value=selectedBudgetPrefill.to_fee || 0)
 
         h3.mt-4 Credit card prefill
         .form-grid
           .form-field
             label(for="cardId_prefill") Card id
-            input#cardId_prefill.form-control(type="text", name="cardId_prefill", placeholder="credit_card _id")
+            input#cardId_prefill.form-control(type="text", name="cardId_prefill", value=selectedCreditPrefill.cardId || '', placeholder="credit_card _id")
           .form-field
             label(for="label_prefill") Label
-            input#label_prefill.form-control(type="text", name="label_prefill", placeholder="Statement label")
+            input#label_prefill.form-control(type="text", name="label_prefill", value=selectedCreditPrefill.label || '', placeholder="Statement label")
           .form-field
             .form-check.mt-4
-              input#external_prefill.form-check-input(type="checkbox", name="external_prefill", value="true")
+              input#external_prefill.form-check-input(type="checkbox", name="external_prefill", value="true", checked=Boolean(selectedCreditPrefill.external))
               label.form-check-label(for="external_prefill") External
           .form-field
             label(for="externalMultiplier_prefill") External multiplier (%)
-            input#externalMultiplier_prefill.form-control(type="number", step="0.1", min="0", name="externalMultiplier_prefill", value="1")
+            input#externalMultiplier_prefill.form-control(type="number", step="0.1", min="0", name="externalMultiplier_prefill", value=selectedCreditPrefill.externalMultiplier === undefined ? 1 : selectedCreditPrefill.externalMultiplier)
 
         .form-actions
-          button.btn.btn-primary(type="submit") Save rule
+          button.btn.btn-primary(type="submit")= isEditing ? 'Update rule' : 'Save rule'
+          if isEditing
+            a.btn.btn-outline-secondary(href="/receipt/mappings") Cancel edit
           a.btn.btn-outline-secondary(href="/receipt") Back to receipts
 
 block script
@@ -143,13 +178,14 @@ block script
       const addBtn = document.querySelector('[data-add-condition]');
       if (!container || !addBtn) return;
       const createRow = function () {
+        const index = container.querySelectorAll('.condition-row').length;
         const template = document.createElement('div');
         template.className = 'condition-row';
         template.innerHTML = `
-          <div class="form-grid">
+          <div class="form-grid mapping-condition-grid">
             <div class="form-field">
-              <label>Field</label>
-              <select class="form-select" name="condition_field">
+              <label for="condition_field_${index}">Field</label>
+              <select class="form-select" id="condition_field_${index}" name="condition_field">
                 <option value="">Select</option>
                 <option value="business_name">business_name</option>
                 <option value="business_address">business_address</option>
@@ -159,8 +195,8 @@ block script
               </select>
             </div>
             <div class="form-field">
-              <label>Operator</label>
-              <select class="form-select" name="condition_operator">
+              <label for="condition_operator_${index}">Operator</label>
+              <select class="form-select" id="condition_operator_${index}" name="condition_operator">
                 <option value="icontains">icontains</option>
                 <option value="equals">equals</option>
                 <option value="not_contains">not_contains</option>
@@ -168,14 +204,37 @@ block script
               </select>
             </div>
             <div class="form-field">
-              <label>Value</label>
-              <input class="form-control" type="text" name="condition_value" placeholder="Value to match">
+              <label for="condition_value_${index}">Value</label>
+              <input class="form-control" id="condition_value_${index}" type="text" name="condition_value" placeholder="Value to match">
+            </div>
+            <div class="form-field condition-remove-field">
+              <button class="btn btn-outline-secondary btn-sm" type="button" data-remove-condition>Remove</button>
             </div>
           </div>
         `;
         container.appendChild(template);
       };
+      const clearRow = function (row) {
+        const field = row.querySelector('[name="condition_field"]');
+        const operator = row.querySelector('[name="condition_operator"]');
+        const value = row.querySelector('[name="condition_value"]');
+        if (field) field.value = '';
+        if (operator) operator.value = 'icontains';
+        if (value) value.value = '';
+      };
       addBtn.addEventListener('click', function () {
         createRow();
+      });
+      container.addEventListener('click', function (event) {
+        const removeBtn = event.target.closest('[data-remove-condition]');
+        if (!removeBtn) return;
+        const row = removeBtn.closest('.condition-row');
+        if (!row) return;
+        const rows = container.querySelectorAll('.condition-row');
+        if (rows.length <= 1) {
+          clearRow(row);
+          return;
+        }
+        row.remove();
       });
     }());

@@ -1585,6 +1585,33 @@ code {
   color: var(--text);
 }
 
+.rule-priority-form,
+.rule-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rule-priority-form,
+.rule-actions form {
+  margin: 0;
+}
+
+.rule-priority-input {
+  width: 5.5rem;
+  min-width: 5.5rem;
+}
+
+.mapping-condition-grid {
+  align-items: end;
+  margin-bottom: 0.75rem;
+}
+
+.condition-remove-field {
+  justify-content: flex-end;
+}
+
 .receipt-autocomplete-field {
   position: relative;
 }

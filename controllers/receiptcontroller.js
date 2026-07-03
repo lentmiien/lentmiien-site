@@ -286,6 +286,54 @@ const parseCreditPrefillFromBody = (body) => sanitizeCreditPrefill({
   externalMultiplier: body.externalMultiplier_prefill,
 });
 
+const normalizeCreditPrefillForPersistence = (creditPrefill) => {
+  const normalized = sanitizeCreditPrefill(creditPrefill);
+  if (!normalized.cardId) delete normalized.cardId;
+  return normalized;
+};
+
+const parseMappingRuleFromBody = (body) => {
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) throw new Error('Rule name is required.');
+  const priority = Number.parseInt(body.priority, 10);
+  return {
+    name,
+    description: typeof body.description === 'string' ? body.description.trim() : '',
+    target: body.target === 'credit' ? 'credit' : 'budget',
+    priority: Number.isFinite(priority) ? priority : 0,
+    active: toBoolean(body.active),
+    conditions: parseConditionsFromBody(body),
+    budgetPrefill: parseBudgetPrefillFromBody(body),
+    creditPrefill: normalizeCreditPrefillForPersistence(parseCreditPrefillFromBody(body)),
+  };
+};
+
+const serializeMappingRuleForForm = (rule) => {
+  if (!rule) return null;
+  const plain = typeof rule.toObject === 'function' ? rule.toObject() : rule;
+  const id = plain._id && typeof plain._id.toString === 'function' ? plain._id.toString() : String(plain._id || '');
+  return {
+    ...plain,
+    id,
+    priority: plain.priority || 0,
+    active: plain.active !== false,
+    conditions: Array.isArray(plain.conditions) ? plain.conditions : [],
+    budgetPrefill: sanitizeBudgetPrefill(plain.budgetPrefill || {}),
+    creditPrefill: sanitizeCreditPrefill(plain.creditPrefill || {}, plain),
+  };
+};
+
+const fetchMappingRules = () => ReceiptMappingRule.find({}).sort({ priority: -1, updatedAt: -1 });
+
+const renderMappingRulesPage = async (res, options = {}) => {
+  const rules = await fetchMappingRules();
+  res.render('receipt_mappings', {
+    rules,
+    editRule: serializeMappingRuleForForm(options.editRule),
+    errorMessage: options.errorMessage || null,
+  });
+};
+
 const fetchReceiptHistoryState = async (requestedHistory) => {
   const historyState = getReceiptHistoryConfig(requestedHistory);
   const receipts = await Receipt.find(historyState.query).sort('-date');
@@ -317,8 +365,7 @@ exports.receipt_history = async (req, res, next) => {
 
 exports.mapping_rules_page = async (req, res, next) => {
   try {
-    const rules = await ReceiptMappingRule.find({}).sort({ priority: -1, updatedAt: -1 });
-    res.render('receipt_mappings', { rules });
+    await renderMappingRulesPage(res);
   } catch (error) {
     if (typeof next === 'function') return next(error);
     return res.status(500).json({ error: error.message });
@@ -327,26 +374,55 @@ exports.mapping_rules_page = async (req, res, next) => {
 
 exports.create_mapping_rule = async (req, res, next) => {
   try {
-    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
-    if (!name) throw new Error('Rule name is required.');
-    const target = req.body.target === 'credit' ? 'credit' : 'budget';
-    const priority = Number.parseInt(req.body.priority, 10);
-    const active = toBoolean(req.body.active);
-    const description = typeof req.body.description === 'string' ? req.body.description.trim() : '';
-    const conditions = parseConditionsFromBody(req.body);
-    const budgetPrefill = parseBudgetPrefillFromBody(req.body);
-    const creditPrefill = parseCreditPrefillFromBody(req.body);
+    const rule = new ReceiptMappingRule(parseMappingRuleFromBody(req.body));
+    await rule.save();
+    res.redirect('/receipt/mappings');
+  } catch (error) {
+    if (typeof next === 'function') return next(error);
+    return res.status(400).json({ error: error.message });
+  }
+};
 
-    const rule = new ReceiptMappingRule({
-      name,
-      description,
-      target,
-      priority: Number.isFinite(priority) ? priority : 0,
-      active,
-      conditions,
-      budgetPrefill,
-      creditPrefill,
-    });
+exports.edit_mapping_rule_page = async (req, res, next) => {
+  try {
+    const editRule = await ReceiptMappingRule.findById(req.params.id);
+    if (!editRule) {
+      res.status(404);
+      return renderMappingRulesPage(res, { errorMessage: 'Mapping rule not found.' });
+    }
+    return renderMappingRulesPage(res, { editRule });
+  } catch (error) {
+    if (typeof next === 'function') return next(error);
+    return res.status(400).json({ error: error.message });
+  }
+};
+
+exports.update_mapping_rule = async (req, res, next) => {
+  try {
+    const rule = await ReceiptMappingRule.findById(req.params.id);
+    if (!rule) {
+      res.status(404);
+      return renderMappingRulesPage(res, { errorMessage: 'Mapping rule not found.' });
+    }
+    Object.assign(rule, parseMappingRuleFromBody(req.body));
+    await rule.save();
+    res.redirect('/receipt/mappings');
+  } catch (error) {
+    if (typeof next === 'function') return next(error);
+    return res.status(400).json({ error: error.message });
+  }
+};
+
+exports.update_mapping_rule_priority = async (req, res, next) => {
+  try {
+    const priority = Number.parseInt(req.body.priority, 10);
+    if (!Number.isFinite(priority)) throw new Error('Priority must be a number.');
+    const rule = await ReceiptMappingRule.findById(req.params.id);
+    if (!rule) {
+      res.status(404);
+      return renderMappingRulesPage(res, { errorMessage: 'Mapping rule not found.' });
+    }
+    rule.priority = priority;
     await rule.save();
     res.redirect('/receipt/mappings');
   } catch (error) {
