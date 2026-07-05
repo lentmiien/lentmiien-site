@@ -110,7 +110,15 @@
     const permission = form.querySelector('[name="permissionMode"]');
     const yoloConfirm = form.querySelector('.codex-yolo-confirm');
     if (!permission || !yoloConfirm) return;
-    yoloConfirm.hidden = permission.value !== 'yolo';
+    const yoloSelected = permission.value === 'yolo';
+    const confirmInput = yoloConfirm.querySelector('input[type="checkbox"]');
+    yoloConfirm.hidden = !yoloSelected;
+    if (confirmInput) {
+      confirmInput.required = yoloSelected;
+      if (!yoloSelected) {
+        confirmInput.checked = false;
+      }
+    }
   }
 
   function bindPermissionControls(scope) {
@@ -121,6 +129,15 @@
         permission.addEventListener('change', () => syncPermissionVisibility(form));
       }
     });
+  }
+
+  function clearYoloConfirmation(form) {
+    if (!form) return;
+    const confirmInput = form.querySelector('.codex-yolo-confirm input[type="checkbox"]');
+    if (confirmInput) {
+      confirmInput.checked = false;
+    }
+    syncPermissionVisibility(form);
   }
 
   function renderTurnRow(turn) {
@@ -483,6 +500,7 @@
           });
           setStatus(status, `Accepted. Turn ${payload.turn.id} is queued.`, 'success');
           form.querySelector('[name="prompt"]').value = '';
+          clearYoloConfirmation(form);
           await refreshDashboard();
         } catch (error) {
           setStatus(status, error.message, 'error');
@@ -512,6 +530,7 @@
           });
           setStatus(status, `Accepted. Turn ${payload.turn.id} is queued.`, 'success');
           form.querySelector('[name="prompt"]').value = '';
+          clearYoloConfirmation(form);
           await refreshSession();
         } catch (error) {
           setStatus(status, error.message, 'error');

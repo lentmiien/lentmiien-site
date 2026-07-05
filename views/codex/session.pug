@@ -88,12 +88,11 @@ block content
                 option(value='auto') Auto
                 option(value='read-only') Read only
                 option(value='workspace-write') Workspace write
-                if config.yoloEnabled
-                  option(value='yolo') Dangerous
+                option(value='yolo') Yolo (dangerous)
             .codex-field.codex-yolo-confirm(hidden)
               label.codex-check
                 input(type='checkbox', name='confirmYolo', value='1')
-                span Confirm dangerous mode for this turn
+                span Confirm yolo mode for this turn
             .codex-field
               label(for='codex-followup-prompt') Prompt
               textarea#codex-followup-prompt(name='prompt', rows='5', maxlength=config.maxPromptChars || 20000, required)
