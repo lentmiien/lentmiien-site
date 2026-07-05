@@ -64,4 +64,13 @@ describe('mypageIconService', () => {
     expect(tile).toBeDefined();
     expect(tile.href).toBe('/qwen3-lora');
   });
+
+  test('Codex tile is available to regular logged-in users', () => {
+    const regularTiles = buildMypageTiles();
+    const tile = regularTiles.find((entry) => entry.id === 'codex');
+
+    expect(tile).toBeDefined();
+    expect(tile.href).toBe('/codex');
+    expect(tile.src).toBe('/i/codex.svg');
+  });
 });

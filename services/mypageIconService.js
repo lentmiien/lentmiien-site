@@ -38,6 +38,13 @@ const MYPAGE_ICON_DEFINITIONS = [
     permissions: ['chat5'],
   },
   {
+    id: 'codex',
+    href: '/codex',
+    src: '/i/codex.svg',
+    alt: 'Codex workspace assistant',
+    label: 'Codex',
+  },
+  {
     id: 'knowledge',
     href: '/chat4/knowledgelist',
     src: '/i/knowledge.svg',

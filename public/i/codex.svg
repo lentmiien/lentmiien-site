@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Codex workspace assistant tile illustration</title>
+  <desc id="desc">A graphite coding workspace with amber command paths and an ember Codex prompt.</desc>
+  <defs>
+    <linearGradient id="codexBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0F13"/>
+      <stop offset="56%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="codexPanel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#20242A"/>
+      <stop offset="100%" stop-color="#1B2026"/>
+    </linearGradient>
+    <linearGradient id="codexSpark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="100%" stop-color="#FF6A1F"/>
+    </linearGradient>
+    <filter id="codexGlow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 1 0 0.58 0 0 0.46 0 0 0.12 0 0.14 0 0 0 0.82 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#codexBg)"/>
+  <circle cx="542" cy="82" r="100" fill="#FF6A1F" fill-opacity="0.12"/>
+  <circle cx="98" cy="322" r="126" fill="#FFC247" fill-opacity="0.1"/>
+  <path d="M76 304c70-54 132-66 186-34 48 28 90 26 128-5 52-42 110-34 174 24" fill="none" stroke="#2B313C" stroke-width="4"/>
+
+  <g transform="translate(92 70)">
+    <rect x="0" y="0" width="456" height="264" rx="30" fill="#171A20" stroke="#262B34" stroke-width="4"/>
+    <rect x="24" y="38" width="408" height="200" rx="18" fill="url(#codexPanel)" stroke="#2B313C" stroke-width="2"/>
+    <g transform="translate(28 16)">
+      <circle cx="0" cy="0" r="7" fill="#FF6A1F"/>
+      <circle cx="24" cy="0" r="7" fill="#FFC247"/>
+      <circle cx="48" cy="0" r="7" fill="#17C696"/>
+    </g>
+  </g>
+
+  <g transform="translate(140 138)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M56 22L20 58l36 36" fill="none" stroke="#FFC247" stroke-width="14"/>
+    <path d="M198 22l36 36-36 36" fill="none" stroke="#FFC247" stroke-width="14"/>
+    <path d="M158 14l-62 96" fill="none" stroke="#FF6A1F" stroke-width="14" filter="url(#codexGlow)"/>
+  </g>
+
+  <g transform="translate(378 116)">
+    <rect x="0" y="0" width="126" height="134" rx="20" fill="#0E0F13" stroke="#FFC247" stroke-opacity="0.38" stroke-width="3"/>
+    <path d="M24 34h78M24 60h56M24 86h70" stroke="#C1C7D3" stroke-opacity="0.8" stroke-width="8" stroke-linecap="round"/>
+    <path d="M24 110h34" stroke="#FFC247" stroke-width="8" stroke-linecap="round"/>
+    <rect x="70" y="102" width="28" height="16" rx="8" fill="#FF6A1F"/>
+  </g>
+
+  <g transform="translate(142 272)" filter="url(#codexGlow)">
+    <rect x="0" y="0" width="268" height="38" rx="19" fill="#20242A" stroke="#FF6A1F" stroke-width="3"/>
+    <path d="M30 19h52M104 19h72" stroke="#FFC247" stroke-width="8" stroke-linecap="round"/>
+    <rect x="200" y="11" width="34" height="16" rx="8" fill="#17C696"/>
+  </g>
+
+  <g stroke="#FFC247" stroke-width="7" stroke-linecap="round" opacity="0.78">
+    <path d="M294 106v-30h82"/>
+    <path d="M326 310v34h126"/>
+    <path d="M504 182h44"/>
+  </g>
+
+  <g fill="url(#codexSpark)">
+    <path d="M120 98l8 18 18 8-18 8-8 18-8-18-18-8 18-8Z"/>
+    <path d="M528 282l7 15 15 7-15 7-7 15-7-15-15-7 15-7Z"/>
+    <path d="M464 72l5 11 11 5-11 5-5 11-5-11-11-5 11-5Z"/>
+  </g>
+</svg>
