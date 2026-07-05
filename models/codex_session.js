@@ -12,7 +12,7 @@ const CodexSessionSchema = new Schema({
   _id: { type: String, default: () => randomUUID() },
   workspaceId: { type: String, required: true, index: true },
   targetId: { type: String, required: true, index: true },
-  codexThreadId: { type: String, default: null, unique: true, sparse: true },
+  codexThreadId: { type: String, default: undefined },
   title: { type: String, required: true, trim: true, maxlength: 180 },
   summary: { type: String, default: '', trim: true, maxlength: 2000 },
   status: {
@@ -30,10 +30,21 @@ const CodexSessionSchema = new Schema({
 }, {
   timestamps: true,
   versionKey: false,
+  autoIndex: false,
 });
 
 CodexSessionSchema.index({ workspaceId: 1, updatedAt: -1 });
 CodexSessionSchema.index({ 'createdBy.id': 1, updatedAt: -1 });
 CodexSessionSchema.index({ status: 1, updatedAt: -1 });
+CodexSessionSchema.index(
+  { codexThreadId: 1 },
+  {
+    unique: true,
+    name: 'codexThreadId_1',
+    partialFilterExpression: {
+      codexThreadId: { $type: 'string' },
+    },
+  }
+);
 
 module.exports = mongoose.model('codex_session', CodexSessionSchema);

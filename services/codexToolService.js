@@ -17,6 +17,7 @@ const TERMINAL_TURN_STATUSES = new Set(['succeeded', 'failed', 'timed_out', 'can
 const ACTIVE_TURN_STATUSES = ['queued', 'running'];
 const VALID_MODES = new Set(['question', 'action']);
 const VALID_PERMISSION_MODES = new Set(['read-only', 'workspace-write', 'yolo']);
+const CODEX_THREAD_INDEX_NAME = 'codexThreadId_1';
 
 let defaultDataPromise = null;
 
@@ -169,12 +170,102 @@ async function assertLocalDirectory(rootPath) {
   }
 }
 
+function isIndexNotFoundError(error) {
+  return error && (
+    error.code === 27 ||
+    error.codeName === 'IndexNotFound' ||
+    /index not found/i.test(String(error.message || ''))
+  );
+}
+
+function isNamespaceMissingError(error) {
+  return error && (
+    error.code === 26 ||
+    error.codeName === 'NamespaceNotFound' ||
+    /ns not found|namespace.*not found/i.test(String(error.message || ''))
+  );
+}
+
+function isCorrectCodexThreadIndex(index) {
+  const partial = index && index.partialFilterExpression;
+  return Boolean(
+    index &&
+    index.unique === true &&
+    partial &&
+    partial.codexThreadId &&
+    partial.codexThreadId.$type === 'string'
+  );
+}
+
+function isCodexThreadIndex(index) {
+  return Boolean(
+    index &&
+    index.key &&
+    Number(index.key.codexThreadId) === 1 &&
+    Object.keys(index.key).length === 1
+  );
+}
+
+async function ensureCodexSessionIndexes() {
+  let indexes = [];
+  try {
+    indexes = await CodexSession.collection.indexes();
+  } catch (error) {
+    if (!isNamespaceMissingError(error)) {
+      throw error;
+    }
+  }
+
+  const existingThreadIndex = indexes.find((index) => (
+    index.name === CODEX_THREAD_INDEX_NAME ||
+    isCodexThreadIndex(index)
+  ));
+
+  if (existingThreadIndex && !isCorrectCodexThreadIndex(existingThreadIndex)) {
+    await CodexSession.collection.dropIndex(existingThreadIndex.name).catch((error) => {
+      if (!isIndexNotFoundError(error)) {
+        throw error;
+      }
+    });
+  }
+
+  if (!existingThreadIndex || !isCorrectCodexThreadIndex(existingThreadIndex)) {
+    await CodexSession.collection.createIndex(
+      { codexThreadId: 1 },
+      {
+        unique: true,
+        name: CODEX_THREAD_INDEX_NAME,
+        partialFilterExpression: {
+          codexThreadId: { $type: 'string' },
+        },
+      }
+    );
+  }
+
+  await Promise.all([
+    CodexSession.collection.createIndex(
+      { workspaceId: 1, updatedAt: -1 },
+      { name: 'workspaceId_1_updatedAt_-1' }
+    ),
+    CodexSession.collection.createIndex(
+      { 'createdBy.id': 1, updatedAt: -1 },
+      { name: 'createdBy.id_1_updatedAt_-1' }
+    ),
+    CodexSession.collection.createIndex(
+      { status: 1, updatedAt: -1 },
+      { name: 'status_1_updatedAt_-1' }
+    ),
+  ]);
+}
+
 async function ensureDefaultData() {
   if (defaultDataPromise) {
     return defaultDataPromise;
   }
 
   defaultDataPromise = (async () => {
+    await ensureCodexSessionIndexes();
+
     const localDefaults = getLocalTargetDefaults();
     let target = await CodexExecutionTarget.findOne({
       type: localDefaults.type,
