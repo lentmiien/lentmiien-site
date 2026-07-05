@@ -154,6 +154,11 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `VUE_PATH` | Optional absolute path to a built Vue frontend served to authenticated users. |
 | `API_KEY` | Bearer token required for `/api` automation routes. |
 | `API_TIER1_USER_ID`, `API_TIER2_USER_ID` | User IDs required by `/api/records` endpoints after bearer-token authentication. |
+| `CODEX_BINARY_PATH` | Optional absolute path to the Codex CLI executable used by the Codex queue worker. |
+| `CODEX_HOME` | Optional Codex state directory for auth/config when the worker runs under a service or scheduled task. |
+| `CODEX_WORKER_ENABLED` | Enables the Codex queue worker for worker processes (defaults to `true`). |
+| `CODEX_WEB_WORKER_ENABLED` | Enables the embedded Codex worker inside `app.js` (defaults to `CODEX_WORKER_ENABLED`). Set this to `false` when running the worker as a separate user-login process. |
+| `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
 | `PUBLIC_TOBUY_LIST_PATH` | Hidden public route for the shared to-buy form; generated and persisted to `.env` if omitted. |
 | `REQUEST_COUNTER_PATH` | Hidden public GET endpoint for the request counter; `GET <path>?package=<name>` records and evaluates by package category, missing packages are stored as `unknown`, and `GET <path>/status` returns the same plain `OK`/`NG` format without recording. Generated and persisted to `.env` if omitted. |
 | `employeeNo`, `employeeName`, `department` | Default payroll metadata injected into forms. |
@@ -184,11 +189,26 @@ The summary object contains section-level timings and statuses (`ok`, `warning`,
 | `npm run lint:openapi` | Validates curated YAML specs with `@apidevtools/swagger-parser`. |
 | `npm run git_test` | Runs a local `git_test.js` ad-hoc GitHub automation script when that ignored file exists. |
 | `npm run codex` | Launches the Codex CLI helper. |
+| `npm run codex-worker` | Runs only the Codex queue worker without starting the Express web server. |
 | `npm run codex-update` | Installs the latest `@openai/codex` globally. |
 | `npm run codex-todo` | Directs Codex to action tasks from `todo.txt`. |
 | `npm run codex-commit` | Runs Codex in commit mode to create a commit for pending changes. |
 
 > `npm run git_test` expects a local `git_test.js` (ignored by git), so it will fail on a fresh clone unless you create that script.
+
+### Codex Worker Split on Windows
+
+When the Express web server runs as a Windows service, keep it from claiming Codex jobs and run the Codex worker from the interactive Windows user instead.
+
+1. In the service environment, set `CODEX_WEB_WORKER_ENABLED=false`.
+2. Leave `CODEX_WORKER_ENABLED=true` or unset for the scheduled worker process.
+3. Create a Windows Task Scheduler task that runs only when your user is logged on:
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "cd C:\Projects\lentmiien-site; npm run codex-worker"
+   ```
+4. Make sure that scheduled task runs as the same Windows account that owns `CODEX_HOME` and can run `codex doctor`.
+
+The web UI still creates and displays Codex turns through MongoDB. The separate user-login worker is the only process that should execute queued turns.
 
 ## Feature Deep Dive
 

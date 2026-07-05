@@ -652,7 +652,13 @@ scheduleDatabaseUsageMonitor();
 scheduleAgent5Runner();
 scheduleOpenAIResponseRecovery(app);
 scheduleDisasterIngestion();
-codexQueueWorker.start();
+if (getBooleanEnv('CODEX_WEB_WORKER_ENABLED', getBooleanEnv('CODEX_WORKER_ENABLED', true))) {
+  codexQueueWorker.start();
+} else {
+  logger.notice('Embedded Codex queue worker disabled by configuration', {
+    category: 'codex_tool',
+  });
+}
 audioWorkflowService.start().catch((error) => {
   logger.error('Failed to start audio workflow service', {
     category: 'audio_workflow',
