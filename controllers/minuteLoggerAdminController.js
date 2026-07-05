@@ -11,9 +11,11 @@ const {
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerIgnoredLocationGroups,
   getMinuteLoggerNamedLocationAnalytics,
   parseBatteryPercent,
   parseBatteryTempC,
+  updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../services/minuteLoggerService');
 const {
@@ -139,9 +141,9 @@ function parseFeedback(query = {}) {
   };
 }
 
-function redirectWithFeedback(res, status, message) {
+function redirectWithFeedback(res, status, message, path = '/admin/minute-logger') {
   return res.redirect(
-    `/admin/minute-logger?status=${encodeURIComponent(status)}&message=${encodeURIComponent(message)}`
+    `${path}?status=${encodeURIComponent(status)}&message=${encodeURIComponent(message)}`
   );
 }
 
@@ -480,6 +482,7 @@ function mapLocationStats(stats = {}) {
     noiseThresholdDisplay: `${formatNumber(noiseThresholdMinutes)} min`,
     totalGroupCountDisplay: formatNumber(stats.totalGroupCount),
     unnamedGroupCountDisplay: formatNumber(stats.unnamedGroupCount ?? stats.displayGroupCount ?? groups.length),
+    ignoredGroupCountDisplay: formatNumber(stats.ignoredGroupCount),
     precisionDisplay: `${formatNumber(stats.precisionDecimals)} decimals`,
     precisionDetails: buildLocationPrecisionDetails(stats.precisionDecimals, representativeLatitude),
     namedLocations: namedLocations.map((row) => {
@@ -520,6 +523,7 @@ function mapLocationStats(stats = {}) {
         groupKey: row.groupKey,
         name,
         hideCoordinates,
+        ignored: Boolean(row.ignored),
         suggestedName,
         suggestedHideCoordinates: Boolean(row.suggestedHideCoordinates),
         suggestedGroupKey: String(row.suggestedGroupKey || '').trim(),
@@ -543,6 +547,47 @@ function mapLocationStats(stats = {}) {
         preview,
       };
     }),
+  };
+}
+
+function mapIgnoredLocationGroup(row = {}) {
+  const center = parseGroupKeyCenter(row.groupKey);
+  const rawLatitude = row.latitude === null || row.latitude === undefined ? NaN : Number(row.latitude);
+  const rawLongitude = row.longitude === null || row.longitude === undefined ? NaN : Number(row.longitude);
+  const latitude = Number.isFinite(rawLatitude) ? rawLatitude : center?.latitude ?? null;
+  const longitude = Number.isFinite(rawLongitude) ? rawLongitude : center?.longitude ?? null;
+  const minutes = Number(row.minutes) || 0;
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  return {
+    groupKey: String(row.groupKey || '').trim(),
+    coordinateDisplay: hasCoordinates
+      ? `${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}`
+      : 'N/A',
+    minutes,
+    minutesDisplay: `${formatNumber(minutes)} min`,
+    deviceCountDisplay: formatNumber(row.deviceCount),
+    packageCountDisplay: formatNumber(row.packageCount),
+    firstSeenDisplay: formatDateTime(row.firstSeen),
+    lastSeenDisplay: formatDateTime(row.lastSeen),
+    updatedAtDisplay: formatDateTime(row.updatedAt),
+    updatedByDisplay: String(row.updatedBy || '').trim() || 'N/A',
+    mapUrl: hasCoordinates ? buildMapUrl(latitude, longitude) : null,
+  };
+}
+
+function buildIgnoredLocationGroupsViewModel(data = {}, options = {}) {
+  const groups = (Array.isArray(data.groups) ? data.groups : []).map(mapIgnoredLocationGroup);
+
+  return {
+    pageTitle: 'Minute Logger Ignored Location Groups',
+    feedback: options.feedback || null,
+    loadError: options.loadError || null,
+    generatedAtDisplay: formatDateTime(data.generatedAt || new Date()),
+    endpointPath: data.endpointPath || 'N/A',
+    rawRetentionDays: data.rawRetentionDays || MINUTE_LOGGER_RAW_RETENTION_DAYS,
+    ignoredGroupCountDisplay: formatNumber(data.ignoredGroupCount ?? groups.length),
+    groups,
   };
 }
 
@@ -1343,6 +1388,26 @@ exports.dashboard = async (req, res) => {
   }
 };
 
+exports.ignoredLocationGroups = async (req, res) => {
+  try {
+    const ignoredGroups = await getMinuteLoggerIgnoredLocationGroups();
+
+    return res.render('admin_minute_logger_ignored_locations', buildIgnoredLocationGroupsViewModel(ignoredGroups, {
+      feedback: parseFeedback(req.query),
+    }));
+  } catch (error) {
+    logger.error('Failed to load minute logger ignored location groups', {
+      category: 'minute-logger',
+      metadata: { error: error.message },
+    });
+
+    return res.status(500).render('admin_minute_logger_ignored_locations', buildIgnoredLocationGroupsViewModel({}, {
+      feedback: null,
+      loadError: 'Unable to load ignored location groups right now.',
+    }));
+  }
+};
+
 exports.batteryDashboard = async (req, res) => {
   try {
     const dashboard = await getMinuteLoggerBatteryDashboard();
@@ -1357,6 +1422,70 @@ exports.batteryDashboard = async (req, res) => {
     return res.status(500).render('admin_minute_logger_battery', buildBatteryDashboardViewModel({}, {
       loadError: 'Unable to load minute logger battery data right now.',
     }));
+  }
+};
+
+exports.ignoreLocationGroup = async (req, res) => {
+  try {
+    const settings = await updateMinuteLoggerLocationGroupIgnoredStatus({
+      groupKey: req.body?.groupKey,
+      ignored: true,
+    }, {
+      updatedBy: req.user?.name || null,
+    });
+
+    logger.notice('Minute logger location group ignored by admin', {
+      category: 'minute-logger',
+      metadata: {
+        groupKey: settings.groupKey,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return redirectWithFeedback(res, 'success', 'Location group ignored.');
+  } catch (error) {
+    if (error instanceof MinuteLoggerLocationGroupSettingsError) {
+      return redirectWithFeedback(res, 'error', error.message);
+    }
+
+    logger.error('Failed to ignore minute logger location group', {
+      category: 'minute-logger',
+      metadata: { error: error.message },
+    });
+    return redirectWithFeedback(res, 'error', 'Unable to ignore location group.');
+  }
+};
+
+exports.unignoreLocationGroup = async (req, res) => {
+  const redirectPath = '/admin/minute-logger/ignored';
+
+  try {
+    const settings = await updateMinuteLoggerLocationGroupIgnoredStatus({
+      groupKey: req.body?.groupKey,
+      ignored: false,
+    }, {
+      updatedBy: req.user?.name || null,
+    });
+
+    logger.notice('Minute logger location group removed from ignore list by admin', {
+      category: 'minute-logger',
+      metadata: {
+        groupKey: settings.groupKey,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return redirectWithFeedback(res, 'success', 'Location group removed from ignore list.', redirectPath);
+  } catch (error) {
+    if (error instanceof MinuteLoggerLocationGroupSettingsError) {
+      return redirectWithFeedback(res, 'error', error.message, redirectPath);
+    }
+
+    logger.error('Failed to remove minute logger location group from ignore list', {
+      category: 'minute-logger',
+      metadata: { error: error.message },
+    });
+    return redirectWithFeedback(res, 'error', 'Unable to update ignore list.', redirectPath);
   }
 };
 

@@ -67,6 +67,7 @@ block content
         .minute-logger-action-stack
           a.minute-logger-refresh(href='/admin/minute-logger/battery') Battery Tracker
           a.minute-logger-refresh(href='/admin/minute-logger/locations') Location Analytics
+          a.minute-logger-refresh(href='/admin/minute-logger/ignored') Ignored Groups
           a.minute-logger-refresh(href='/admin/minute-logger') Refresh
 
     if feedback
@@ -216,7 +217,9 @@ block content
           div
             h2 Location Groups
             span Last #{rawRetentionDays} days, #{locationStats.noiseThresholdDisplay} minimum
-          a.minute-logger-panel-link(href='/admin/minute-logger/locations') Named analytics
+          .minute-logger-panel__links
+            a.minute-logger-panel-link(href='/admin/minute-logger/locations') Named analytics
+            a.minute-logger-panel-link(href='/admin/minute-logger/ignored') Ignored groups
         if locationStats
           dl.minute-logger-location-summary
             div
@@ -228,6 +231,9 @@ block content
             div
               dt Noise filtered
               dd #{locationStats.noiseLocationMinutesDisplay} across #{locationStats.noiseGroupCountDisplay} groups
+            div
+              dt Ignored
+              dd #{locationStats.ignoredGroupCountDisplay} unnamed groups
             div
               dt Group precision
               dd= locationStats.precisionDisplay
@@ -306,6 +312,7 @@ block content
                       input(type='checkbox', name='hideCoordinates', value='on', checked=(group.hideCoordinates || group.suggestedHideCoordinates))
                       span Hide coordinates
                     button.minute-logger-location-form__button(type='submit') Save
+                    button.minute-logger-location-form__button.minute-logger-location-form__button--muted(type='submit', formaction='/admin/minute-logger/location-groups/ignore') Ignore
         else if locationStats && locationStats.totalLocationMinutes
           if namedLocations.length
             p.minute-logger-empty No unnamed location groups are above the #{locationStats.noiseThresholdDisplay} group threshold.

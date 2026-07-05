@@ -1,0 +1,80 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/minute_logger_admin.css')
+
+block content
+  -
+    const ignoredGroups = Array.isArray(groups) ? groups : [];
+
+  .minute-logger-admin
+    header.minute-logger-hero.minute-logger-hero--compact
+      .minute-logger-hero__content
+        p.minute-logger-eyebrow Location Groups
+        h1.minute-logger-title Ignored Groups
+        p.minute-logger-subtitle Dashboard-hidden unnamed location groups.
+        dl.minute-logger-hero__meta
+          div
+            dt Endpoint
+            dd
+              code= endpointPath
+          div
+            dt Ignored
+            dd= ignoredGroupCountDisplay
+          div
+            dt Raw Window
+            dd #{rawRetentionDays} days
+      .minute-logger-hero__actions
+        span Last updated #{generatedAtDisplay}
+        .minute-logger-action-stack
+          a.minute-logger-refresh(href='/admin/minute-logger') Dashboard
+          a.minute-logger-refresh(href='/admin/minute-logger/locations') Location Analytics
+          a.minute-logger-refresh(href='/admin/minute-logger/battery') Battery Tracker
+
+    if feedback
+      .minute-logger-alert(class=`minute-logger-alert--${feedback.status}`)= feedback.message
+
+    if loadError
+      .minute-logger-alert.minute-logger-alert--error= loadError
+    else
+      section.minute-logger-panel.minute-logger-panel--wide
+        header.minute-logger-panel__header
+          div
+            h2 Ignored Location Groups
+            span Hidden from the main minute logger dashboard
+        if ignoredGroups.length
+          .minute-logger-table-wrap
+            table.minute-logger-table.minute-logger-table--ignored
+              thead
+                tr
+                  th Group
+                  th Center
+                  th Retained
+                  th Devices
+                  th Packages
+                  th Last Seen
+                  th Ignored At
+                  th Ignored By
+                  th Actions
+              tbody
+                each group in ignoredGroups
+                  tr
+                    td
+                      code= group.groupKey
+                    td
+                      if group.mapUrl
+                        a.minute-logger-location-link(href=group.mapUrl, target='_blank', rel='noopener noreferrer')= group.coordinateDisplay
+                      else
+                        = group.coordinateDisplay
+                    td= group.minutesDisplay
+                    td= group.deviceCountDisplay
+                    td= group.packageCountDisplay
+                    td= group.lastSeenDisplay
+                    td= group.updatedAtDisplay
+                    td= group.updatedByDisplay
+                    td
+                      form.minute-logger-inline-form(method='post', action='/admin/minute-logger/location-groups/unignore')
+                        input(type='hidden', name='groupKey', value=group.groupKey)
+                        button.minute-logger-location-form__button(type='submit') Remove
+        else
+          p.minute-logger-empty No ignored location groups.

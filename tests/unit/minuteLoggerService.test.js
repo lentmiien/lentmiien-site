@@ -4,7 +4,9 @@ const {
   MINUTE_LOGGER_RESPONSE_BODY,
   buildRequestRecord,
   fetchDailyMinuteStats,
+  fetchLocationStats,
   fetchLastKnownNamedLocation,
+  getMinuteLoggerIgnoredLocationGroups,
   getRequestActive,
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
@@ -17,6 +19,7 @@ const {
   summarizeBatteryReadings,
   summarizeLocationGroups,
   summarizeTimeBuckets,
+  updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../../services/minuteLoggerService');
 
@@ -693,6 +696,122 @@ describe('minuteLoggerService', () => {
     ]);
   });
 
+  test('fetchLocationStats hides ignored unnamed groups from the dashboard display list', async () => {
+    const since = new Date('2026-04-08T03:00:00.000Z');
+    const last24Since = new Date('2026-06-06T03:00:00.000Z');
+    const requestModel = {
+      aggregate: jest.fn().mockResolvedValue([
+        {
+          groupKey: '35.460,139.540',
+          latitude: 35.4602,
+          longitude: 139.5404,
+          minutes: 8,
+          minutesLast24h: 2,
+          deviceCount: 1,
+          packageCount: 1,
+          firstSeen: new Date('2026-06-01T00:00:00.000Z'),
+          lastSeen: new Date('2026-06-07T00:00:00.000Z'),
+        },
+        {
+          groupKey: '35.461,139.541',
+          latitude: 35.4612,
+          longitude: 139.5414,
+          minutes: 7,
+          minutesLast24h: 3,
+          deviceCount: 1,
+          packageCount: 1,
+          firstSeen: new Date('2026-06-01T00:00:00.000Z'),
+          lastSeen: new Date('2026-06-07T00:00:00.000Z'),
+        },
+        {
+          groupKey: '35.462,139.542',
+          latitude: 35.4622,
+          longitude: 139.5424,
+          minutes: 6,
+          minutesLast24h: 1,
+          deviceCount: 1,
+          packageCount: 1,
+          firstSeen: new Date('2026-06-01T00:00:00.000Z'),
+          lastSeen: new Date('2026-06-07T00:00:00.000Z'),
+        },
+      ]),
+      find: jest.fn().mockReturnValue(createChainQuery([
+        {
+          location: {
+            latitude: 35.4622,
+            longitude: 139.5424,
+          },
+          receivedAt: new Date('2026-06-07T00:00:00.000Z'),
+        },
+      ])),
+    };
+    const namedSettingsQuery = createChainQuery([
+      {
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        hideCoordinates: false,
+      },
+    ]);
+    const settingsModel = {
+      find: jest.fn()
+        .mockReturnValueOnce(namedSettingsQuery)
+        .mockReturnValueOnce(createLeanQuery([
+          {
+            endpointPath: '/secret-minute-logger',
+            groupKey: '35.460,139.540',
+            name: 'Home',
+            hideCoordinates: false,
+          },
+          {
+            endpointPath: '/secret-minute-logger',
+            groupKey: '35.461,139.541',
+            ignored: true,
+          },
+        ])),
+    };
+
+    const result = await fetchLocationStats('/secret-minute-logger', {
+      requestModel,
+      locationGroupSettingsModel: settingsModel,
+      since,
+      last24Since,
+      minMinutes: 3,
+      limit: 10,
+    });
+
+    expect(settingsModel.find).toHaveBeenNthCalledWith(1, {
+      endpointPath: '/secret-minute-logger',
+      name: { $type: 'string', $ne: '' },
+    });
+    expect(settingsModel.find).toHaveBeenNthCalledWith(2, {
+      endpointPath: '/secret-minute-logger',
+      groupKey: {
+        $in: ['35.460,139.540', '35.461,139.541', '35.462,139.542'],
+      },
+    });
+    expect(result).toMatchObject({
+      totalLocationMinutes: 21,
+      groupedLocationMinutes: 21,
+      totalGroupCount: 3,
+      displayGroupCount: 1,
+      unnamedGroupCount: 1,
+      ignoredGroupCount: 1,
+    });
+    expect(result.groups).toEqual([
+      expect.objectContaining({
+        groupKey: '35.462,139.542',
+        minutes: 6,
+      }),
+    ]);
+    expect(result.namedLocations).toEqual([
+      expect.objectContaining({
+        name: 'Home',
+        totalMinutes: 8,
+      }),
+    ]);
+  });
+
   test('fetchLastKnownNamedLocation returns the named group for the newest request', async () => {
     const receivedAt = new Date('2026-06-07T02:59:00.000Z');
     const settingsModel = {
@@ -1308,6 +1427,7 @@ describe('minuteLoggerService', () => {
         $set: {
           name: 'Home',
           hideCoordinates: true,
+          ignored: false,
           updatedBy: 'admin-user',
         },
         $setOnInsert: {
@@ -1327,6 +1447,184 @@ describe('minuteLoggerService', () => {
       name: 'Home',
       hideCoordinates: true,
       updatedBy: 'admin-user',
+    });
+  });
+
+  test('updateMinuteLoggerLocationGroupSettings clears ignored status when saving a name', async () => {
+    const settingsModel = {
+      findOneAndUpdate: jest.fn().mockReturnValue(createLeanQuery({
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.460,139.540',
+        name: 'Home',
+        hideCoordinates: false,
+        ignored: false,
+      })),
+    };
+
+    await updateMinuteLoggerLocationGroupSettings({
+      groupKey: '35.460,139.540',
+      name: 'Home',
+    }, {
+      settingsModel,
+      endpointPath: '/secret-minute-logger',
+    });
+
+    expect(settingsModel.findOneAndUpdate.mock.calls[0][1].$set).toMatchObject({
+      name: 'Home',
+      hideCoordinates: false,
+      ignored: false,
+    });
+  });
+
+  test('updateMinuteLoggerLocationGroupIgnoredStatus persists ignored unnamed groups', async () => {
+    const settingsModel = {
+      findOneAndUpdate: jest.fn().mockReturnValue(createLeanQuery({
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.461,139.541',
+        name: '',
+        hideCoordinates: false,
+        ignored: true,
+        updatedBy: 'admin-user',
+      })),
+    };
+
+    const result = await updateMinuteLoggerLocationGroupIgnoredStatus({
+      groupKey: '35.461,139.541',
+      ignored: true,
+    }, {
+      settingsModel,
+      endpointPath: '/secret-minute-logger',
+      updatedBy: 'admin-user',
+    });
+
+    expect(settingsModel.findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.461,139.541',
+      },
+      {
+        $set: {
+          name: '',
+          hideCoordinates: false,
+          ignored: true,
+          updatedBy: 'admin-user',
+        },
+        $setOnInsert: {
+          endpointPath: '/secret-minute-logger',
+          groupKey: '35.461,139.541',
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+    expect(result).toMatchObject({
+      groupKey: '35.461,139.541',
+      name: '',
+      ignored: true,
+    });
+  });
+
+  test('updateMinuteLoggerLocationGroupIgnoredStatus deletes ignore-only records when removed', async () => {
+    const settingsModel = {
+      findOne: jest.fn().mockReturnValue(createLeanQuery({
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.461,139.541',
+        ignored: true,
+      })),
+      deleteOne: jest.fn().mockReturnValue(createLeanQuery({ deletedCount: 1 })),
+      findOneAndUpdate: jest.fn(),
+    };
+
+    const result = await updateMinuteLoggerLocationGroupIgnoredStatus({
+      groupKey: '35.461,139.541',
+      ignored: false,
+    }, {
+      settingsModel,
+      endpointPath: '/secret-minute-logger',
+    });
+
+    expect(settingsModel.findOne).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      groupKey: '35.461,139.541',
+    });
+    expect(settingsModel.deleteOne).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      groupKey: '35.461,139.541',
+    });
+    expect(settingsModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      groupKey: '35.461,139.541',
+      ignored: false,
+    });
+  });
+
+  test('getMinuteLoggerIgnoredLocationGroups returns ignored groups with retained stats', async () => {
+    const settingsQuery = createChainQuery([
+      {
+        endpointPath: '/secret-minute-logger',
+        groupKey: '35.461,139.541',
+        ignored: true,
+        updatedAt: new Date('2026-06-07T02:00:00.000Z'),
+        updatedBy: 'admin-user',
+      },
+    ]);
+    const settingsModel = {
+      find: jest.fn().mockReturnValue(settingsQuery),
+    };
+    const requestModel = {
+      aggregate: jest.fn().mockResolvedValue([
+        {
+          groupKey: '35.461,139.541',
+          latitude: 35.46125,
+          longitude: 139.54145,
+          minutes: 12,
+          deviceCount: 2,
+          packageCount: 3,
+          firstSeen: new Date('2026-06-06T00:00:00.000Z'),
+          lastSeen: new Date('2026-06-07T00:00:00.000Z'),
+        },
+      ]),
+    };
+
+    const result = await getMinuteLoggerIgnoredLocationGroups({
+      settingsModel,
+      requestModel,
+      endpointPath: '/secret-minute-logger',
+      now: new Date('2026-06-07T03:00:00.000Z'),
+    });
+
+    expect(settingsModel.find).toHaveBeenCalledWith({
+      endpointPath: '/secret-minute-logger',
+      ignored: true,
+    });
+    expect(settingsQuery.sort).toHaveBeenCalledWith({ updatedAt: -1, groupKey: 1 });
+    expect(requestModel.aggregate).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({
+        $match: expect.objectContaining({
+          endpointPath: '/secret-minute-logger',
+          'location.groupKey': { $in: ['35.461,139.541'] },
+        }),
+      }),
+    ]));
+    expect(result).toMatchObject({
+      endpointPath: '/secret-minute-logger',
+      ignoredGroupCount: 1,
+      groups: [
+        expect.objectContaining({
+          groupKey: '35.461,139.541',
+          ignored: true,
+          latitude: 35.46125,
+          longitude: 139.54145,
+          minutes: 12,
+          deviceCount: 2,
+          packageCount: 3,
+          updatedBy: 'admin-user',
+        }),
+      ],
     });
   });
 

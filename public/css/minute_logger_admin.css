@@ -316,6 +316,13 @@ body,
   font-size: 0.88rem;
 }
 
+.minute-logger-panel__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem 0.85rem;
+}
+
 .minute-logger-panel-link {
   color: var(--ml-accent);
   font-size: 0.88rem;
@@ -732,7 +739,7 @@ body,
 
 .minute-logger-location-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto;
   gap: 0.55rem;
   align-items: end;
   margin-top: 0.15rem;
@@ -808,6 +815,18 @@ body,
   background: var(--ml-accent-hover);
 }
 
+.minute-logger-location-form__button--muted {
+  border-color: var(--ml-divider);
+  color: var(--ml-text-secondary);
+  background: var(--ml-surface-3);
+}
+
+.minute-logger-location-form__button--muted:hover {
+  border-color: var(--ml-warning);
+  color: var(--ml-text);
+  background: rgba(255, 198, 61, 0.14);
+}
+
 .minute-logger-location-link {
   color: var(--ml-accent);
   font-weight: 800;
@@ -839,6 +858,10 @@ body,
   width: 100%;
   min-width: 1240px;
   border-collapse: collapse;
+}
+
+.minute-logger-table--ignored {
+  min-width: 920px;
 }
 
 .minute-logger-table th,
@@ -878,6 +901,10 @@ body,
   background: var(--ml-bg);
   color: var(--ml-text-secondary);
   font-size: 0.78rem;
+}
+
+.minute-logger-inline-form {
+  margin: 0;
 }
 
 .minute-logger-battery-chart {
@@ -1586,6 +1613,7 @@ body,
 
   .minute-logger-hero__actions,
   .minute-logger-panel__header,
+  .minute-logger-panel__links,
   .minute-logger-day__top,
   .minute-logger-day__categories,
   .minute-logger-rank__top,

@@ -142,6 +142,7 @@ function normalizeLocationGroupSetting(raw = {}) {
     groupKey: raw.groupKey || '',
     name,
     hideCoordinates: Boolean(raw.hideCoordinates && name),
+    ignored: Boolean(raw.ignored),
     updatedAt: raw.updatedAt || raw.createdAt || null,
     updatedBy: raw.updatedBy || null,
   };
@@ -2434,6 +2435,7 @@ async function updateMinuteLoggerLocationGroupSettings(input = {}, options = {})
       $set: {
         name,
         hideCoordinates,
+        ignored: false,
         updatedBy,
       },
       $setOnInsert: {
@@ -2446,6 +2448,71 @@ async function updateMinuteLoggerLocationGroupSettings(input = {}, options = {})
       upsert: true,
       runValidators: true,
       setDefaultsOnInsert: true,
+    }
+  ));
+
+  return normalizeLocationGroupSetting(updated);
+}
+
+async function updateMinuteLoggerLocationGroupIgnoredStatus(input = {}, options = {}) {
+  const settingsModel = options.settingsModel || MinuteLoggerLocationGroup;
+  const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
+  const groupKey = normalizeLocationGroupKey(input.groupKey);
+  const ignored = input.ignored === undefined ? true : parseBooleanInput(input.ignored);
+  const updatedBy = typeof options.updatedBy === 'string' && options.updatedBy.trim()
+    ? options.updatedBy.trim()
+    : null;
+
+  if (ignored) {
+    const updated = await leanExec(settingsModel.findOneAndUpdate(
+      { endpointPath, groupKey },
+      {
+        $set: {
+          name: '',
+          hideCoordinates: false,
+          ignored: true,
+          updatedBy,
+        },
+        $setOnInsert: {
+          endpointPath,
+          groupKey,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    ));
+
+    return normalizeLocationGroupSetting(updated);
+  }
+
+  const existing = typeof settingsModel.findOne === 'function'
+    ? await leanExec(settingsModel.findOne({ endpointPath, groupKey }))
+    : null;
+  const existingName = normalizeLocationGroupName(existing?.name);
+  const existingHideCoordinates = Boolean(existing?.hideCoordinates && existingName);
+
+  if (!existing || (!existingName && !existingHideCoordinates)) {
+    if (typeof settingsModel.deleteOne === 'function') {
+      await leanExec(settingsModel.deleteOne({ endpointPath, groupKey }));
+    }
+    return normalizeLocationGroupSetting({ endpointPath, groupKey });
+  }
+
+  const updated = await leanExec(settingsModel.findOneAndUpdate(
+    { endpointPath, groupKey },
+    {
+      $set: {
+        ignored: false,
+        updatedBy,
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
     }
   ));
 
@@ -2504,6 +2571,117 @@ async function fetchLocationPointSamples(endpointPath, groupKeys = [], options =
   return samplesByKey;
 }
 
+async function fetchLocationGroupRetainedStats(endpointPath, groupKeys = [], options = {}) {
+  const requestModel = options.requestModel || MinuteLoggerRequest;
+  const since = options.since;
+  const keys = Array.from(new Set((Array.isArray(groupKeys) ? groupKeys : [])
+    .map((key) => String(key || '').trim())
+    .filter(Boolean)));
+
+  if (!endpointPath || !keys.length || typeof requestModel.aggregate !== 'function') {
+    return new Map();
+  }
+
+  const rows = await requestModel.aggregate([
+    {
+      $match: {
+        endpointPath,
+        receivedAt: { $gte: since },
+        'location.groupKey': { $in: keys },
+        'location.latitude': { $gte: -90, $lte: 90 },
+        'location.longitude': { $gte: -180, $lte: 180 },
+      },
+    },
+    {
+      $group: {
+        _id: '$location.groupKey',
+        minutes: { $sum: 1 },
+        latitude: { $avg: '$location.latitude' },
+        longitude: { $avg: '$location.longitude' },
+        devices: { $addToSet: '$deviceId' },
+        packages: { $addToSet: '$package' },
+        firstSeen: { $min: '$receivedAt' },
+        lastSeen: { $max: '$receivedAt' },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        groupKey: '$_id',
+        latitude: 1,
+        longitude: 1,
+        minutes: 1,
+        deviceCount: { $size: '$devices' },
+        packageCount: { $size: '$packages' },
+        firstSeen: 1,
+        lastSeen: 1,
+      },
+    },
+  ]);
+
+  return new Map((Array.isArray(rows) ? rows : [])
+    .map((row) => [String(row.groupKey || '').trim(), row])
+    .filter(([groupKey]) => groupKey));
+}
+
+async function getMinuteLoggerIgnoredLocationGroups(options = {}) {
+  const settingsModel = options.settingsModel || MinuteLoggerLocationGroup;
+  const endpointPath = options.endpointPath || ensureMinuteLoggerPath();
+  const now = new Date(options.now || Date.now());
+  const rawWindowStart = new Date(now.getTime() - (MINUTE_LOGGER_RAW_RETENTION_DAYS * DAY_MS));
+
+  if (!endpointPath || typeof settingsModel.find !== 'function') {
+    return {
+      endpointPath,
+      generatedAt: now,
+      rawRetentionDays: MINUTE_LOGGER_RAW_RETENTION_DAYS,
+      groups: [],
+    };
+  }
+
+  const rows = await leanExec(settingsModel.find({
+    endpointPath,
+    ignored: true,
+  })
+    .sort({ updatedAt: -1, groupKey: 1 }));
+  const settings = (Array.isArray(rows) ? rows : [])
+    .map(normalizeLocationGroupSetting)
+    .filter((row) => row.ignored && row.groupKey);
+  const groupKeys = settings.map((row) => row.groupKey);
+  const statsByKey = await fetchLocationGroupRetainedStats(endpointPath, groupKeys, {
+    requestModel: options.requestModel,
+    since: rawWindowStart,
+  });
+
+  return {
+    endpointPath,
+    generatedAt: now,
+    rawRetentionDays: MINUTE_LOGGER_RAW_RETENTION_DAYS,
+    ignoredGroupCount: settings.length,
+    groups: settings.map((setting) => {
+      const stats = statsByKey.get(setting.groupKey) || {};
+      const center = parseLocationGroupKeyCenter(setting.groupKey);
+      const latitude = isValidLatitude(Number(stats.latitude))
+        ? Number(stats.latitude)
+        : center?.latitude ?? null;
+      const longitude = isValidLongitude(Number(stats.longitude))
+        ? Number(stats.longitude)
+        : center?.longitude ?? null;
+
+      return {
+        ...setting,
+        latitude,
+        longitude,
+        minutes: Number(stats.minutes) || 0,
+        deviceCount: Number(stats.deviceCount) || 0,
+        packageCount: Number(stats.packageCount) || 0,
+        firstSeen: stats.firstSeen || null,
+        lastSeen: stats.lastSeen || null,
+      };
+    }),
+  };
+}
+
 function normalizeLocationStatRow(row = {}) {
   const latitude = row.latitude === null || row.latitude === undefined ? NaN : Number(row.latitude);
   const longitude = row.longitude === null || row.longitude === undefined ? NaN : Number(row.longitude);
@@ -2525,6 +2703,7 @@ function normalizeLocationStatRow(row = {}) {
     pointSamples: Array.isArray(row.pointSamples) ? row.pointSamples : [],
     name,
     hideCoordinates: Boolean(row.hideCoordinates && name),
+    ignored: Boolean(row.ignored),
     suggestedName: normalizeLocationGroupName(row.suggestedName),
     suggestedGroupKey: String(row.suggestedGroupKey || '').trim(),
     suggestionDistanceMeters: Number.isFinite(suggestionDistanceMeters) ? suggestionDistanceMeters : null,
@@ -2582,6 +2761,7 @@ function decorateLocationStatRows(rows = [], settingsByKey = new Map()) {
       groupKey,
       name: setting.name || '',
       hideCoordinates: Boolean(setting.hideCoordinates),
+      ignored: Boolean(setting.ignored),
     };
   });
 }
@@ -2709,14 +2889,17 @@ async function fetchLocationStats(endpointPath, options = {}) {
   const namedSettings = await fetchNamedLocationGroupSettings(endpointPath, {
     settingsModel: options.locationGroupSettingsModel,
   });
-  const settingsByKey = new Map(namedSettings
-    .map((setting) => [setting.groupKey, setting])
-    .filter(([groupKey]) => groupKey));
+  const rowGroupKeys = (Array.isArray(rows) ? rows : [])
+    .map((row) => String(row?.groupKey || '').trim())
+    .filter(Boolean);
+  const settingsByKey = await getMinuteLoggerLocationGroupSettings(endpointPath, rowGroupKeys, {
+    settingsModel: options.locationGroupSettingsModel,
+  });
   const decoratedRows = decorateLocationStatRows(rows, settingsByKey);
   const summary = summarizeLocationGroups(decoratedRows, {
     minMinutes: options.minMinutes,
     limit: options.limit,
-    groupFilter: (group) => !normalizeLocationGroupName(group.name),
+    groupFilter: (group) => !normalizeLocationGroupName(group.name) && !group.ignored,
   });
   const groupKeys = summary.groups.map((group) => group.groupKey).filter(Boolean);
   const pointSamplesByKey = await fetchLocationPointSamples(endpointPath, groupKeys, {
@@ -2746,6 +2929,10 @@ async function fetchLocationStats(endpointPath, options = {}) {
   });
   summary.namedLocationCount = summary.namedLocations.length;
   summary.unnamedGroupCount = summary.displayGroupCount;
+  summary.ignoredGroupCount = decoratedRows
+    .map(normalizeLocationStatRow)
+    .filter((row) => row.ignored && !normalizeLocationGroupName(row.name) && row.minutes >= summary.noiseThresholdMinutes)
+    .length;
   summary.nameSuggestionMaxMeters = options.nameSuggestionMaxMeters || MINUTE_LOGGER_LOCATION_NAME_SUGGESTION_MAX_METERS;
 
   return summary;
@@ -3398,6 +3585,7 @@ module.exports = {
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerIgnoredLocationGroups,
   getMinuteLoggerLastKnownLocation,
   getMinuteLoggerNamedLocationAnalytics,
   getPackageName,
@@ -3416,5 +3604,6 @@ module.exports = {
   summarizeBatteryReadings,
   summarizeLocationGroups,
   summarizeTimeBuckets,
+  updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 };

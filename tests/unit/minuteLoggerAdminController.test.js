@@ -10,6 +10,7 @@ jest.mock('../../services/minuteLoggerService', () => ({
   getMinuteLoggerBatteryDashboard: jest.fn(),
   getMinuteLoggerDailyAnalytics: jest.fn(),
   getMinuteLoggerDashboard: jest.fn(),
+  getMinuteLoggerIgnoredLocationGroups: jest.fn(),
   getMinuteLoggerNamedLocationAnalytics: jest.fn(),
   parseBatteryPercent: jest.fn((value) => {
     const candidate = Array.isArray(value)
@@ -29,6 +30,7 @@ jest.mock('../../services/minuteLoggerService', () => ({
     const number = Number(match[0]);
     return Number.isFinite(number) && number >= -50 && number <= 120 ? number : null;
   }),
+  updateMinuteLoggerLocationGroupIgnoredStatus: jest.fn(),
   updateMinuteLoggerLocationGroupSettings: jest.fn(),
 }));
 
@@ -49,7 +51,9 @@ const {
   getMinuteLoggerBatteryDashboard,
   getMinuteLoggerDailyAnalytics,
   getMinuteLoggerDashboard,
+  getMinuteLoggerIgnoredLocationGroups,
   getMinuteLoggerNamedLocationAnalytics,
+  updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../../services/minuteLoggerService');
 const controller = require('../../controllers/minuteLoggerAdminController');
@@ -199,6 +203,7 @@ function createDashboard(overrides = {}) {
       totalGroupCount: 2,
       displayGroupCount: 1,
       unnamedGroupCount: 1,
+      ignoredGroupCount: 0,
       noiseThresholdMinutes: 3,
       precisionDecimals: 3,
     },
@@ -435,6 +440,7 @@ describe('minuteLoggerAdminController.dashboard', () => {
         locationStats: expect.objectContaining({
           totalLocationMinutesDisplay: '38 min',
           noiseLocationMinutesDisplay: '2 min',
+          ignoredGroupCountDisplay: '0',
           precisionDetails: {
             summary: '3 decimals = 0.001 degrees. Near latitude 35.46, one group cell is about 111 m x 91 m.',
             coverage: 'Rounded groups cover about +/-56 m north/south and +/-45 m east/west from center; corner-to-corner is about 140 m.',
@@ -585,6 +591,113 @@ describe('minuteLoggerAdminController.dashboard', () => {
     );
     expect(res.redirect).toHaveBeenCalledWith(
       '/admin/minute-logger?status=success&message=Location%20group%20saved.'
+    );
+  });
+});
+
+describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('renders ignored location groups for review', async () => {
+    getMinuteLoggerIgnoredLocationGroups.mockResolvedValue({
+      endpointPath: '/secret-minute-logger',
+      generatedAt: new Date('2026-06-07T03:00:00.000Z'),
+      rawRetentionDays: 60,
+      ignoredGroupCount: 1,
+      groups: [
+        {
+          groupKey: '35.461,139.541',
+          latitude: 35.46125,
+          longitude: 139.54145,
+          minutes: 12,
+          deviceCount: 2,
+          packageCount: 3,
+          lastSeen: new Date('2026-06-07T02:00:00.000Z'),
+          updatedAt: new Date('2026-06-07T02:30:00.000Z'),
+          updatedBy: 'admin-user',
+        },
+      ],
+    });
+    const res = createResponse();
+
+    await controller.ignoredLocationGroups({ query: {} }, res);
+
+    expect(getMinuteLoggerIgnoredLocationGroups).toHaveBeenCalledWith();
+    expect(res.render).toHaveBeenCalledWith(
+      'admin_minute_logger_ignored_locations',
+      expect.objectContaining({
+        endpointPath: '/secret-minute-logger',
+        ignoredGroupCountDisplay: '1',
+        groups: [
+          expect.objectContaining({
+            groupKey: '35.461,139.541',
+            coordinateDisplay: '35.46125, 139.54145',
+            minutesDisplay: '12 min',
+            deviceCountDisplay: '2',
+            packageCountDisplay: '3',
+            updatedByDisplay: 'admin-user',
+            mapUrl: expect.stringContaining('35.46125%2C139.54145'),
+          }),
+        ],
+      })
+    );
+  });
+
+  test('ignores a dashboard location group', async () => {
+    updateMinuteLoggerLocationGroupIgnoredStatus.mockResolvedValue({
+      groupKey: '35.461,139.541',
+      ignored: true,
+    });
+    const res = createResponse();
+
+    await controller.ignoreLocationGroup({
+      body: {
+        groupKey: '35.461,139.541',
+      },
+      user: { name: 'admin-user' },
+    }, res);
+
+    expect(updateMinuteLoggerLocationGroupIgnoredStatus).toHaveBeenCalledWith(
+      {
+        groupKey: '35.461,139.541',
+        ignored: true,
+      },
+      {
+        updatedBy: 'admin-user',
+      }
+    );
+    expect(res.redirect).toHaveBeenCalledWith(
+      '/admin/minute-logger?status=success&message=Location%20group%20ignored.'
+    );
+  });
+
+  test('removes a group from the ignored list', async () => {
+    updateMinuteLoggerLocationGroupIgnoredStatus.mockResolvedValue({
+      groupKey: '35.461,139.541',
+      ignored: false,
+    });
+    const res = createResponse();
+
+    await controller.unignoreLocationGroup({
+      body: {
+        groupKey: '35.461,139.541',
+      },
+      user: { name: 'admin-user' },
+    }, res);
+
+    expect(updateMinuteLoggerLocationGroupIgnoredStatus).toHaveBeenCalledWith(
+      {
+        groupKey: '35.461,139.541',
+        ignored: false,
+      },
+      {
+        updatedBy: 'admin-user',
+      }
+    );
+    expect(res.redirect).toHaveBeenCalledWith(
+      '/admin/minute-logger/ignored?status=success&message=Location%20group%20removed%20from%20ignore%20list.'
     );
   });
 });
