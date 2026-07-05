@@ -1,0 +1,103 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/codex.css')
+
+block content
+  - const state = codexState || {};
+  - const workspaces = state.workspaces || [];
+  - const targets = state.targets || [];
+  section.codex-page(data-codex-page='workspaces')
+    .codex-shell
+      .codex-topbar
+        div
+          a.codex-back-link(href='/codex') Back to Codex
+          h1.codex-title Codex Workspaces
+          p.codex-subtitle Manage the allowlist used by the Codex runner.
+
+      section.codex-panel
+        .codex-panel__header
+          h2 Add Workspace
+          span.codex-chip= targets.length + ' target' + (targets.length === 1 ? '' : 's')
+        form#codex-workspace-create.codex-form.codex-form--workspace
+          .codex-field
+            label(for='workspace-name') Name
+            input#workspace-name(type='text', name='name', maxlength='140', required)
+          .codex-field
+            label(for='workspace-target') Target
+            select#workspace-target(name='targetId', required)
+              each target in targets
+                option(value=target.id)= target.name + ' (' + target.platform + ')'
+          .codex-field.codex-field--wide
+            label(for='workspace-root') Root path
+            input#workspace-root(type='text', name='rootPath', required)
+          .codex-field
+            label(for='workspace-question-permission') Question default
+            select#workspace-question-permission(name='defaultQuestionPermission')
+              option(value='read-only') Read only
+              option(value='workspace-write') Workspace write
+          .codex-field
+            label(for='workspace-action-permission') Action default
+            select#workspace-action-permission(name='defaultActionPermission')
+              option(value='workspace-write') Workspace write
+              option(value='read-only') Read only
+          .codex-field
+            label.codex-check
+              input(type='checkbox', name='enabled', value='1', checked)
+              span Enabled
+          .codex-field
+            label.codex-check
+              input(type='checkbox', name='allowYolo', value='1')
+              span Allow dangerous mode
+          .codex-actions
+            button.codex-button(type='submit') Add
+            span#codex-workspace-status.codex-form-status(aria-live='polite')
+
+      section.codex-panel.codex-panel--wide
+        .codex-panel__header
+          h2 Workspace Allowlist
+          span.codex-chip= workspaces.length
+        .codex-workspace-list
+          if workspaces.length
+            each workspace in workspaces
+              form.codex-workspace-row(data-workspace-form=workspace.id)
+                input(type='hidden', name='id', value=workspace.id)
+                .codex-workspace-row__main
+                  .codex-field
+                    label Name
+                    input(type='text', name='name', value=workspace.name, maxlength='140', required)
+                  .codex-field.codex-field--wide
+                    label Root path
+                    input(type='text', name='rootPath', value=workspace.rootPath, required)
+                  .codex-field
+                    label Question
+                    select(name='defaultQuestionPermission')
+                      option(value='read-only', selected=workspace.defaultQuestionPermission === 'read-only') Read only
+                      option(value='workspace-write', selected=workspace.defaultQuestionPermission === 'workspace-write') Workspace write
+                  .codex-field
+                    label Action
+                    select(name='defaultActionPermission')
+                      option(value='workspace-write', selected=workspace.defaultActionPermission === 'workspace-write') Workspace write
+                      option(value='read-only', selected=workspace.defaultActionPermission === 'read-only') Read only
+                  .codex-field
+                    label Model
+                    input(type='text', name='defaultModel', value=workspace.defaultModel, maxlength='120')
+                  .codex-field
+                    label Profile
+                    input(type='text', name='defaultProfile', value=workspace.defaultProfile, maxlength='120')
+                  label.codex-check
+                    input(type='checkbox', name='enabled', value='1', checked=workspace.enabled)
+                    span Enabled
+                  label.codex-check
+                    input(type='checkbox', name='allowYolo', value='1', checked=workspace.allowYolo)
+                    span Dangerous
+                .codex-workspace-row__actions
+                  span(class=workspace.enabled ? 'codex-status codex-status--active' : 'codex-status codex-status--blocked')= workspace.enabled ? 'enabled' : 'disabled'
+                  button.codex-small-button(type='submit') Save
+                  button.codex-small-button(type='button', data-action='disable-workspace', data-workspace-id=workspace.id) Disable
+          else
+            p.codex-empty No workspaces configured.
+
+block script
+  script#codex-page-data(type='application/json')!= codexStateJson
+  script(src='/js/codex.js', defer)

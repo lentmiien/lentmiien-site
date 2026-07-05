@@ -1,0 +1,134 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/codex.css')
+
+block content
+  - const state = codexState || {};
+  - const config = state.config || {};
+  - const workspaces = state.workspaces || [];
+  - const runningTurns = state.runningTurns || [];
+  - const queuedTurns = state.queuedTurns || [];
+  - const recentSessions = state.recentSessions || [];
+  - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  - const statusClass = (status) => `codex-status codex-status--${String(status || '').replace(/_/g, '-')}`;
+  section.codex-page(data-codex-page='dashboard')
+    .codex-shell
+      .codex-topbar
+        div
+          h1.codex-title Codex Workspace Assistant
+          p.codex-subtitle Submit workspace-scoped Codex turns and review the stored session history.
+        .codex-topbar__actions
+          if admin
+            a.codex-button.codex-button--secondary(href='/codex/workspaces') Workspaces
+          a.codex-button.codex-button--secondary(href='/codex/api/health', target='_blank', rel='noopener noreferrer') Health
+
+      .codex-dashboard
+        section.codex-panel.codex-panel--form
+          .codex-panel__header
+            h2 New Request
+            span.codex-chip= workspaces.length + ' workspace' + (workspaces.length === 1 ? '' : 's')
+          form#codex-new-session-form.codex-form
+            .codex-field
+              label(for='codex-workspace') Workspace
+              select#codex-workspace(name='workspaceId', required, disabled=!workspaces.length)
+                if workspaces.length
+                  each workspace in workspaces
+                    option(value=workspace.id)= workspace.name + ' - ' + workspace.rootPath
+                else
+                  option(value='') No workspaces configured
+            .codex-mode-group(role='radiogroup', aria-label='Request mode')
+              label.codex-mode-option
+                input(type='radio', name='mode', value='question', checked)
+                span Question
+              label.codex-mode-option
+                input(type='radio', name='mode', value='action')
+                span Action
+            .codex-field
+              label(for='codex-permission') Permission
+              select#codex-permission(name='permissionMode')
+                option(value='auto') Auto
+                option(value='read-only') Read only
+                option(value='workspace-write') Workspace write
+                if config.yoloEnabled
+                  option(value='yolo') Dangerous
+            .codex-field.codex-yolo-confirm(hidden)
+              label.codex-check
+                input(type='checkbox', name='confirmYolo', value='1')
+                span Confirm dangerous mode for this turn
+            .codex-field
+              label(for='codex-model') Model
+              input#codex-model(type='text', name='model', maxlength='120', placeholder='Default')
+            .codex-field
+              label(for='codex-profile') Profile
+              input#codex-profile(type='text', name='profile', maxlength='120', placeholder='Default')
+            .codex-field
+              label(for='codex-prompt') Prompt
+              textarea#codex-prompt(name='prompt', rows='8', maxlength=config.maxPromptChars || 20000, required, placeholder='Ask a question or request a change...')
+            .codex-actions
+              button.codex-button(type='submit', disabled=!workspaces.length) Submit
+              span#codex-new-session-status.codex-form-status(aria-live='polite')
+
+        section.codex-panel
+          .codex-panel__header
+            h2 Running
+            span.codex-chip(data-codex-running-count)= runningTurns.length
+          .codex-list(data-codex-running-list)
+            if runningTurns.length
+              each turn in runningTurns
+                article.codex-job-row
+                  .codex-job-row__main
+                    span(class=statusClass(turn.status))= turn.status
+                    a(href=`/codex/turns/${turn.id}`)= turn.workspace ? turn.workspace.name : 'Workspace'
+                    small= 'Started ' + fmt(turn.startedAt)
+                  button.codex-icon-button(type='button', data-action='cancel-turn', data-turn-id=turn.id, title='Cancel') Cancel
+            else
+              p.codex-empty No running requests.
+
+        section.codex-panel
+          .codex-panel__header
+            h2 Queued
+            span.codex-chip(data-codex-queued-count)= queuedTurns.length
+          .codex-list(data-codex-queued-list)
+            if queuedTurns.length
+              each turn in queuedTurns
+                article.codex-job-row
+                  .codex-job-row__main
+                    span(class=statusClass(turn.status))= turn.status
+                    a(href=`/codex/turns/${turn.id}`)= turn.workspace ? turn.workspace.name : 'Workspace'
+                    small= 'Queued ' + fmt(turn.queuedAt)
+                  button.codex-icon-button(type='button', data-action='cancel-turn', data-turn-id=turn.id, title='Cancel') Cancel
+            else
+              p.codex-empty No queued requests.
+
+        section.codex-panel.codex-panel--wide
+          .codex-panel__header
+            h2 Recent Sessions
+            span.codex-chip(data-codex-session-count)= recentSessions.length
+          .codex-table-wrap
+            table.codex-table(data-codex-session-table)
+              thead
+                tr
+                  th Title
+                  th Workspace
+                  th Status
+                  th Updated
+              tbody
+                if recentSessions.length
+                  each session in recentSessions
+                    tr
+                      td
+                        a(href=`/codex/sessions/${session.id}`)= session.title
+                        if session.lastResponsePreview
+                          small= session.lastResponsePreview
+                      td= session.workspace ? session.workspace.name : '-'
+                      td
+                        span(class=statusClass(session.status))= session.status
+                      td= fmt(session.updatedAt)
+                else
+                  tr
+                    td(colspan='4') No Codex sessions yet.
+
+block script
+  script#codex-page-data(type='application/json')!= codexStateJson
+  script(src='/js/codex.js', defer)

@@ -1,0 +1,108 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/codex.css')
+
+block content
+  - const state = codexState || {};
+  - const session = state.session || {};
+  - const workspace = state.workspace || {};
+  - const turns = state.turns || [];
+  - const config = state.config || {};
+  - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  - const duration = (ms) => Number.isFinite(ms) ? `${Math.round(ms / 1000)}s` : '-';
+  - const statusClass = (status) => `codex-status codex-status--${String(status || '').replace(/_/g, '-')}`;
+  section.codex-page(data-codex-page='session', data-session-id=session.id)
+    .codex-shell
+      .codex-topbar
+        div
+          a.codex-back-link(href='/codex') Back to Codex
+          h1.codex-title= session.title || 'Codex session'
+          p.codex-subtitle
+            span= workspace.name || 'Workspace'
+            span= ' / '
+            span= session.codexThreadId ? session.codexThreadId : 'waiting for Codex session id'
+        .codex-topbar__actions
+          a.codex-button.codex-button--secondary(href=`/codex/turns/${session.lastTurnId}`) Latest turn
+          button.codex-button.codex-button--secondary(type='button', data-action='archive-session', data-session-id=session.id) Archive
+
+      .codex-session-meta
+        span(class=statusClass(session.status))= session.status
+        span= 'Turns: ' + (session.turnCount || turns.length)
+        span= 'Updated: ' + fmt(session.updatedAt)
+
+      .codex-timeline(data-codex-timeline)
+        if turns.length
+          each turn in turns
+            article.codex-turn-card(data-turn-id=turn.id)
+              .codex-turn-card__header
+                div
+                  span(class=statusClass(turn.status))= turn.status
+                  strong= 'Turn ' + turn.sequence
+                  span= turn.kind.replace(/_/g, ' ')
+                .codex-turn-card__actions
+                  a.codex-small-link(href=`/codex/turns/${turn.id}`) Open
+                  if turn.status === 'queued' || turn.status === 'running'
+                    button.codex-small-button(type='button', data-action='cancel-turn', data-turn-id=turn.id) Cancel
+                  if ['failed', 'timed_out', 'cancelled', 'blocked'].includes(turn.status)
+                    button.codex-small-button(type='button', data-action='retry-turn', data-turn-id=turn.id) Retry
+              .codex-turn-meta
+                span= workspace.name || '-'
+                span= turn.permissionMode
+                span= 'Queued ' + fmt(turn.queuedAt)
+                span= 'Duration ' + duration(turn.durationMs)
+              .codex-transcript
+                .codex-transcript__block
+                  h3 Prompt
+                  pre= turn.prompt
+                .codex-transcript__block
+                  h3 Response
+                  if turn.finalResponse
+                    pre= turn.finalResponse
+                  else if turn.errorMessage
+                    p.codex-error-text= turn.errorMessage
+                  else
+                    p.codex-empty Response pending.
+              .codex-event-panel
+                button.codex-small-button(type='button', data-action='toggle-events', data-turn-id=turn.id) Process details
+                .codex-events(hidden, data-events-for=turn.id)
+        else
+          p.codex-empty No turns found.
+
+      section.codex-panel.codex-followup-panel
+        .codex-panel__header
+          h2 Follow-up
+          span.codex-chip= session.codexThreadId ? 'Ready' : 'Waiting'
+        if session.codexThreadId
+          form#codex-followup-form.codex-form(data-session-id=session.id)
+            .codex-mode-group(role='radiogroup', aria-label='Follow-up mode')
+              label.codex-mode-option
+                input(type='radio', name='mode', value='question', checked)
+                span Question
+              label.codex-mode-option
+                input(type='radio', name='mode', value='action')
+                span Action
+            .codex-field
+              label(for='codex-followup-permission') Permission
+              select#codex-followup-permission(name='permissionMode')
+                option(value='auto') Auto
+                option(value='read-only') Read only
+                option(value='workspace-write') Workspace write
+                if config.yoloEnabled
+                  option(value='yolo') Dangerous
+            .codex-field.codex-yolo-confirm(hidden)
+              label.codex-check
+                input(type='checkbox', name='confirmYolo', value='1')
+                span Confirm dangerous mode for this turn
+            .codex-field
+              label(for='codex-followup-prompt') Prompt
+              textarea#codex-followup-prompt(name='prompt', rows='5', maxlength=config.maxPromptChars || 20000, required)
+            .codex-actions
+              button.codex-button(type='submit') Submit follow-up
+              span#codex-followup-status.codex-form-status(aria-live='polite')
+        else
+          p.codex-empty Follow-up is unavailable until the first turn starts and Codex reports a session id.
+
+block script
+  script#codex-page-data(type='application/json')!= codexStateJson
+  script(src='/js/codex.js', defer)

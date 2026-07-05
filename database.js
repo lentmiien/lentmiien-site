@@ -179,6 +179,12 @@ const DisasterWeatherSnapshot = require('./models/disaster_weather_snapshot');
 const DisasterWeatherObservation = require('./models/disaster_weather_observation');
 const TrainingGroupModel = require('./models/training_group');
 const TrainingEntryModel = require('./models/training_entry');
+const CodexExecutionTarget = require('./models/codex_execution_target');
+const CodexWorkspace = require('./models/codex_workspace');
+const CodexSession = require('./models/codex_session');
+const CodexTurn = require('./models/codex_turn');
+const CodexEvent = require('./models/codex_event');
+const CodexWorkspaceLock = require('./models/codex_workspace_lock');
 
 // Export models
 module.exports = {
@@ -302,4 +308,10 @@ module.exports = {
   DisasterWeatherObservation,
   TrainingGroupModel,
   TrainingEntryModel,
+  CodexExecutionTarget,
+  CodexWorkspace,
+  CodexSession,
+  CodexTurn,
+  CodexEvent,
+  CodexWorkspaceLock,
 };

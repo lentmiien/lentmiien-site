@@ -1,0 +1,82 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/codex.css')
+
+block content
+  - const state = codexState || {};
+  - const turn = state.turn || {};
+  - const session = state.session || {};
+  - const workspace = state.workspace || {};
+  - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  - const duration = (ms) => Number.isFinite(ms) ? `${Math.round(ms / 1000)}s` : '-';
+  - const statusClass = (status) => `codex-status codex-status--${String(status || '').replace(/_/g, '-')}`;
+  section.codex-page(data-codex-page='turn', data-turn-id=turn.id)
+    .codex-shell
+      .codex-topbar
+        div
+          a.codex-back-link(href=`/codex/sessions/${session.id}`) Back to session
+          h1.codex-title= `Turn ${turn.sequence || ''}`
+          p.codex-subtitle
+            span= session.title || 'Codex session'
+            span= ' / '
+            span= workspace.name || 'Workspace'
+        .codex-topbar__actions(data-turn-actions)
+          if turn.status === 'queued' || turn.status === 'running'
+            button.codex-button.codex-button--secondary(type='button', data-action='cancel-turn', data-turn-id=turn.id) Cancel
+          if ['failed', 'timed_out', 'cancelled', 'blocked'].includes(turn.status)
+            button.codex-button.codex-button--secondary(type='button', data-action='retry-turn', data-turn-id=turn.id) Retry
+
+      .codex-turn-detail(data-codex-turn-detail)
+        .codex-panel
+          .codex-panel__header
+            h2 Status
+            span(class=statusClass(turn.status))= turn.status
+          .codex-detail-grid
+            div
+              small Workspace
+              strong= workspace.name || '-'
+            div
+              small Mode
+              strong= turn.kind ? turn.kind.replace(/_/g, ' ') : '-'
+            div
+              small Permission
+              strong= turn.permissionMode || '-'
+            div
+              small Queued
+              strong= fmt(turn.queuedAt)
+            div
+              small Started
+              strong= fmt(turn.startedAt)
+            div
+              small Completed
+              strong= fmt(turn.completedAt)
+            div
+              small Duration
+              strong= duration(turn.durationMs)
+            div
+              small Exit
+              strong= turn.exitCode === null || turn.exitCode === undefined ? '-' : turn.exitCode
+          if turn.errorMessage
+            p.codex-error-text= turn.errorMessage
+
+        .codex-transcript.codex-transcript--detail
+          .codex-transcript__block
+            h2 Prompt
+            pre= turn.prompt
+          .codex-transcript__block
+            h2 Response
+            if turn.finalResponse
+              pre= turn.finalResponse
+            else
+              p.codex-empty Response pending.
+
+        .codex-panel
+          .codex-panel__header
+            h2 Process Details
+            button.codex-small-button(type='button', data-action='toggle-events', data-turn-id=turn.id) Load events
+          .codex-events(hidden=false, data-events-for=turn.id)
+
+block script
+  script#codex-page-data(type='application/json')!= codexStateJson
+  script(src='/js/codex.js', defer)

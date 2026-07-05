@@ -119,6 +119,7 @@ const scheduleAgent5Runner = require('./schedulers/agent5');
 const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecovery');
 const scheduleDisasterIngestion = require('./schedulers/disasterIngestion');
 const audioWorkflowService = require('./services/audioWorkflowInstance');
+const codexQueueWorker = require('./services/codexQueueWorker');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
 
@@ -394,6 +395,7 @@ const ocrTtsRouter = require('./routes/ocr_tts');
 const asrRouter = require('./routes/asr');
 const soraRouter = require('./routes/sora');
 const qwen3LoraRouter = require('./routes/qwen3_lora');
+const codexRouter = require('./routes/codex');
 const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
@@ -447,6 +449,7 @@ app.use('/ocr-tts', isAuthenticated, authorize("ocr"), ocrTtsRouter);
 app.use('/asr', isAuthenticated, authorize("asr"), asrRouter);
 app.use('/sora', isAuthenticated, authorize("sora"), soraRouter);
 app.use('/qwen3-lora', isAuthenticated, qwen3LoraRouter);
+app.use('/codex', isAuthenticated, codexRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
@@ -649,6 +652,7 @@ scheduleDatabaseUsageMonitor();
 scheduleAgent5Runner();
 scheduleOpenAIResponseRecovery(app);
 scheduleDisasterIngestion();
+codexQueueWorker.start();
 audioWorkflowService.start().catch((error) => {
   logger.error('Failed to start audio workflow service', {
     category: 'audio_workflow',
