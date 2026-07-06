@@ -9,6 +9,7 @@ const CodexSession = require('../models/codex_session');
 const CodexTurn = require('../models/codex_turn');
 const CodexEvent = require('../models/codex_event');
 const CodexWorkspaceLock = require('../models/codex_workspace_lock');
+const CodexTokenPrice = require('../models/codex_token_price');
 const logger = require('../utils/logger');
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +19,21 @@ const ACTIVE_TURN_STATUSES = ['queued', 'running'];
 const VALID_MODES = new Set(['question', 'action']);
 const VALID_PERMISSION_MODES = new Set(['read-only', 'workspace-write', 'yolo']);
 const CODEX_THREAD_INDEX_NAME = 'codexThreadId_1';
+const DEFAULT_TOKEN_PRICE_ID = 'default';
+const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
+const TERMINAL_STATUS_LABELS = {
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  timed_out: 'Timed out',
+  cancelled: 'Cancelled',
+  blocked: 'Blocked',
+};
+const KIND_LABELS = {
+  question: 'Question',
+  action: 'Action',
+  followup_question: 'Follow-up question',
+  followup_action: 'Follow-up action',
+};
 
 let defaultDataPromise = null;
 
@@ -41,6 +57,352 @@ function getBooleanEnv(name, fallback = false) {
     return fallback;
   }
   return ['1', 'true', 'yes', 'on'].includes(String(rawValue).trim().toLowerCase());
+}
+
+function getFiniteNumber(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return number;
+}
+
+function getNonNegativeNumber(value, fallback = 0) {
+  return Math.max(0, getFiniteNumber(value, fallback));
+}
+
+function getPathValue(source, pathExpression) {
+  return String(pathExpression || '').split('.').reduce((current, part) => {
+    if (!current || typeof current !== 'object') {
+      return undefined;
+    }
+    return current[part];
+  }, source);
+}
+
+function firstNonNegativeNumber(source, pathExpressions) {
+  for (const pathExpression of pathExpressions) {
+    const value = getPathValue(source, pathExpression);
+    const number = Number(value);
+    if (Number.isFinite(number) && number >= 0) {
+      return Math.round(number);
+    }
+  }
+  return 0;
+}
+
+function zeroTokenUsage() {
+  return TOKEN_TYPES.reduce((tokens, type) => {
+    tokens[type] = 0;
+    return tokens;
+  }, { total: 0 });
+}
+
+function normalizeTokenUsage(usage = {}) {
+  if (!usage || typeof usage !== 'object') {
+    return zeroTokenUsage();
+  }
+
+  const input = firstNonNegativeNumber(usage, [
+    'input_tokens',
+    'prompt_tokens',
+    'input',
+    'prompt',
+    'tokens.input',
+    'tokens.prompt',
+  ]);
+  const cached = firstNonNegativeNumber(usage, [
+    'cached',
+    'cached_tokens',
+    'cached_input_tokens',
+    'input_cached_tokens',
+    'prompt_cached_tokens',
+    'input_tokens_details.cached_tokens',
+    'prompt_tokens_details.cached_tokens',
+    'cache_read_input_tokens',
+  ]);
+  const output = firstNonNegativeNumber(usage, [
+    'output_tokens',
+    'completion_tokens',
+    'output',
+    'completion',
+    'tokens.output',
+    'tokens.completion',
+  ]);
+  const reasoning = firstNonNegativeNumber(usage, [
+    'reasoning',
+    'reasoning_tokens',
+    'output_reasoning_tokens',
+    'completion_reasoning_tokens',
+    'output_tokens_details.reasoning_tokens',
+    'completion_tokens_details.reasoning_tokens',
+    'reasoning.output_tokens',
+    'tokens.reasoning',
+  ]);
+  const providedTotal = firstNonNegativeNumber(usage, [
+    'total_tokens',
+    'total',
+    'tokens.total',
+  ]);
+
+  return {
+    input,
+    cached,
+    output,
+    reasoning,
+    total: providedTotal || (Math.max(input, cached) + Math.max(output, reasoning)),
+  };
+}
+
+function addTokenUsage(target, usage) {
+  const normalized = normalizeTokenUsage(usage);
+  TOKEN_TYPES.forEach((type) => {
+    target[type] = (target[type] || 0) + normalized[type];
+  });
+  target.total = (target.total || 0) + normalized.total;
+  return target;
+}
+
+function serializeTokenPricing(pricing) {
+  const prices = pricing && pricing.prices ? pricing.prices : {};
+  return {
+    id: pricing && pricing._id ? String(pricing._id) : DEFAULT_TOKEN_PRICE_ID,
+    currency: pricing && pricing.currency ? String(pricing.currency) : 'USD',
+    unitTokens: Math.max(1, Number(pricing && pricing.unitTokens) || 1000000),
+    prices: TOKEN_TYPES.reduce((result, type) => {
+      result[type] = getNonNegativeNumber(prices[type], 0);
+      return result;
+    }, {}),
+    updatedBy: pricing && pricing.updatedBy ? pricing.updatedBy : {},
+    updatedAt: pricing && pricing.updatedAt ? pricing.updatedAt : null,
+    createdAt: pricing && pricing.createdAt ? pricing.createdAt : null,
+  };
+}
+
+function normalizeTokenPricingPayload(payload = {}) {
+  const source = payload.prices && typeof payload.prices === 'object' ? payload.prices : payload;
+  const prices = {};
+  TOKEN_TYPES.forEach((type) => {
+    const number = Number(source[type]);
+    if (!Number.isFinite(number) || number < 0) {
+      throw createHttpError(400, `Token price for ${type} must be a non-negative number.`);
+    }
+    prices[type] = number;
+  });
+  return {
+    currency: 'USD',
+    unitTokens: 1000000,
+    prices,
+  };
+}
+
+function estimateTokenCost(tokensInput, pricingInput) {
+  const tokens = normalizeTokenUsage(tokensInput);
+  const pricing = serializeTokenPricing(pricingInput);
+  const unitTokens = pricing.unitTokens || 1000000;
+  const billableTokens = {
+    input: Math.max(tokens.input - tokens.cached, 0),
+    cached: tokens.cached,
+    output: Math.max(tokens.output - tokens.reasoning, 0),
+    reasoning: tokens.reasoning,
+  };
+  const breakdown = TOKEN_TYPES.reduce((result, type) => {
+    result[type] = (billableTokens[type] * (pricing.prices[type] || 0)) / unitTokens;
+    return result;
+  }, {});
+  const total = TOKEN_TYPES.reduce((sum, type) => sum + breakdown[type], 0);
+  return {
+    currency: pricing.currency,
+    unitTokens,
+    billableTokens,
+    breakdown,
+    total,
+  };
+}
+
+function startOfMonth(date) {
+  const value = date ? new Date(date) : new Date();
+  return new Date(value.getFullYear(), value.getMonth(), 1);
+}
+
+function addMonths(date, offset) {
+  return new Date(date.getFullYear(), date.getMonth() + offset, 1);
+}
+
+function monthKey(date) {
+  const value = new Date(date);
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  return `${value.getFullYear()}-${month}`;
+}
+
+function dayKey(date) {
+  const value = new Date(date);
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
+function monthLabel(date) {
+  return new Date(date).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
+function getTurnStartedDate(turn) {
+  return turn && (turn.startedAt || turn.queuedAt || turn.createdAt || turn.updatedAt);
+}
+
+function incrementMap(map, key, amount = 1) {
+  const normalizedKey = String(key || '').trim() || 'unknown';
+  map.set(normalizedKey, (map.get(normalizedKey) || 0) + amount);
+}
+
+function serializeDistribution(map, total, labels = {}) {
+  return Array.from(map.entries())
+    .map(([key, count]) => ({
+      key,
+      label: labels[key] || key.replace(/_/g, ' '),
+      count,
+      share: total ? (count / total) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function calculateNumberStats(values = []) {
+  const numbers = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value >= 0)
+    .sort((a, b) => a - b);
+  if (!numbers.length) {
+    return { count: 0, min: null, max: null, avg: null, median: null, p95: null };
+  }
+  const sum = numbers.reduce((total, value) => total + value, 0);
+  const middle = Math.floor(numbers.length / 2);
+  const median = numbers.length % 2
+    ? numbers[middle]
+    : (numbers[middle - 1] + numbers[middle]) / 2;
+  const p95Index = Math.min(numbers.length - 1, Math.ceil(numbers.length * 0.95) - 1);
+  return {
+    count: numbers.length,
+    min: numbers[0],
+    max: numbers[numbers.length - 1],
+    avg: sum / numbers.length,
+    median,
+    p95: numbers[p95Index],
+  };
+}
+
+function createActivityBucket(seed = {}) {
+  return {
+    key: seed.key || '',
+    label: seed.label || '',
+    start: seed.start || null,
+    end: seed.end || null,
+    sessionCount: 0,
+    sessionIds: new Set(),
+    turnCount: 0,
+    completedTurnCount: 0,
+    terminalTurnCount: 0,
+    successfulTurnCount: 0,
+    totalDurationMs: 0,
+    durations: [],
+    tokenTotals: zeroTokenUsage(),
+    tokenValues: [],
+    cost: 0,
+    kindMap: new Map(),
+    statusMap: new Map(),
+    modelMap: new Map(),
+    dayMap: new Map(),
+    lastStartedAt: null,
+  };
+}
+
+function recordSessionInBucket(bucket, session) {
+  if (!bucket || !session) {
+    return;
+  }
+  const sessionId = String(session.sessionId || session._id || session.id || '');
+  if (sessionId && !bucket.sessionIds.has(sessionId)) {
+    bucket.sessionIds.add(sessionId);
+    bucket.sessionCount += 1;
+  }
+}
+
+function recordTurnInBucket(bucket, turn, pricing) {
+  if (!bucket || !turn) {
+    return;
+  }
+  bucket.turnCount += 1;
+  const tokens = normalizeTokenUsage(turn.usage);
+  addTokenUsage(bucket.tokenTotals, tokens);
+  bucket.tokenValues.push(tokens.total);
+  bucket.cost += estimateTokenCost(tokens, pricing).total;
+
+  const status = turn.status || 'unknown';
+  incrementMap(bucket.statusMap, status);
+  incrementMap(bucket.kindMap, turn.kind || 'unknown');
+  incrementMap(bucket.modelMap, turn.model || 'default');
+  recordSessionInBucket(bucket, turn);
+
+  if (TERMINAL_TURN_STATUSES.has(status)) {
+    bucket.terminalTurnCount += 1;
+  }
+  if (status === 'succeeded') {
+    bucket.successfulTurnCount += 1;
+  }
+  const durationMs = Number(turn.durationMs);
+  if (Number.isFinite(durationMs) && durationMs >= 0) {
+    bucket.completedTurnCount += 1;
+    bucket.totalDurationMs += durationMs;
+    bucket.durations.push(durationMs);
+  }
+  const startedAt = getTurnStartedDate(turn);
+  if (startedAt) {
+    const startedDate = new Date(startedAt);
+    if (!Number.isNaN(startedDate.getTime())) {
+      incrementMap(bucket.dayMap, dayKey(startedDate));
+      if (!bucket.lastStartedAt || startedDate > new Date(bucket.lastStartedAt)) {
+        bucket.lastStartedAt = startedAt;
+      }
+    }
+  }
+}
+
+function getTopDay(dayMap) {
+  const [date, turnCount] = Array.from(dayMap.entries())
+    .sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0] || [];
+  return date ? { date, turnCount } : null;
+}
+
+function finalizeActivityBucket(bucket, pricing) {
+  const durationStats = calculateNumberStats(bucket.durations);
+  const tokenStats = calculateNumberStats(bucket.tokenValues);
+  const tokenCost = estimateTokenCost(bucket.tokenTotals, pricing);
+  return {
+    key: bucket.key,
+    label: bucket.label,
+    start: bucket.start,
+    end: bucket.end,
+    sessionCount: bucket.sessionCount,
+    turnCount: bucket.turnCount,
+    completedTurnCount: bucket.completedTurnCount,
+    terminalTurnCount: bucket.terminalTurnCount,
+    successfulTurnCount: bucket.successfulTurnCount,
+    successRate: bucket.terminalTurnCount ? (bucket.successfulTurnCount / bucket.terminalTurnCount) * 100 : null,
+    totalDurationMs: bucket.totalDurationMs,
+    avgDurationMs: durationStats.avg,
+    durationStats,
+    tokenStats,
+    tokens: normalizeTokenUsage(bucket.tokenTotals),
+    averageTokensPerTurn: bucket.turnCount ? bucket.tokenTotals.total / bucket.turnCount : 0,
+    cacheShare: bucket.tokenTotals.input ? (bucket.tokenTotals.cached / bucket.tokenTotals.input) * 100 : 0,
+    reasoningShare: bucket.tokenTotals.output ? (bucket.tokenTotals.reasoning / bucket.tokenTotals.output) * 100 : 0,
+    cost: tokenCost.total,
+    costBreakdown: tokenCost.breakdown,
+    kindDistribution: serializeDistribution(bucket.kindMap, bucket.turnCount, KIND_LABELS),
+    statusDistribution: serializeDistribution(bucket.statusMap, bucket.turnCount, TERMINAL_STATUS_LABELS),
+    modelDistribution: serializeDistribution(bucket.modelMap, bucket.turnCount),
+    busiestDay: getTopDay(bucket.dayMap),
+    lastStartedAt: bucket.lastStartedAt,
+  };
 }
 
 function getRuntimeConfig() {
@@ -597,20 +959,188 @@ async function listSessions(options = {}) {
   return sessions.map((session) => serializeSession(session, { workspace: workspaceById.get(String(session.workspaceId)) }));
 }
 
+async function getTokenPricing() {
+  const pricing = await CodexTokenPrice.findById(DEFAULT_TOKEN_PRICE_ID).lean().exec();
+  return serializeTokenPricing(pricing);
+}
+
+async function updateTokenPricing(payload = {}, user) {
+  const normalized = normalizeTokenPricingPayload(payload);
+  const updatedBy = makeOwner(user);
+  const pricing = await CodexTokenPrice.findByIdAndUpdate(
+    DEFAULT_TOKEN_PRICE_ID,
+    {
+      $set: {
+        ...normalized,
+        updatedBy,
+      },
+      $setOnInsert: {
+        _id: DEFAULT_TOKEN_PRICE_ID,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+    }
+  ).lean().exec();
+  return serializeTokenPricing(pricing);
+}
+
+function buildSessionStats(turns = [], pricing) {
+  const bucket = createActivityBucket({ key: 'session', label: 'Session' });
+  let firstStartedAt = null;
+  let lastCompletedAt = null;
+
+  turns.forEach((turn) => {
+    recordTurnInBucket(bucket, turn, pricing);
+    const startedAt = getTurnStartedDate(turn);
+    if (startedAt) {
+      const startedDate = new Date(startedAt);
+      if (!Number.isNaN(startedDate.getTime()) && (!firstStartedAt || startedDate < new Date(firstStartedAt))) {
+        firstStartedAt = startedAt;
+      }
+    }
+    if (turn.completedAt) {
+      const completedDate = new Date(turn.completedAt);
+      if (!Number.isNaN(completedDate.getTime()) && (!lastCompletedAt || completedDate > new Date(lastCompletedAt))) {
+        lastCompletedAt = turn.completedAt;
+      }
+    }
+  });
+
+  const stats = finalizeActivityBucket(bucket, pricing);
+  stats.firstStartedAt = firstStartedAt;
+  stats.lastCompletedAt = lastCompletedAt;
+  stats.elapsedMs = firstStartedAt && lastCompletedAt
+    ? Math.max(0, new Date(lastCompletedAt).getTime() - new Date(firstStartedAt).getTime())
+    : null;
+  return stats;
+}
+
+async function getDashboardStats(options = {}) {
+  const pricing = options.pricing || await getTokenPricing();
+  const currentMonthStart = startOfMonth(new Date());
+  const oldestStart = addMonths(currentMonthStart, -2);
+  const nextMonthStart = addMonths(currentMonthStart, 1);
+  const monthSeeds = [0, -1, -2].map((offset) => {
+    const start = addMonths(currentMonthStart, offset);
+    return {
+      key: monthKey(start),
+      label: monthLabel(start),
+      start,
+      end: addMonths(start, 1),
+    };
+  });
+  const monthBuckets = new Map(monthSeeds.map((seed) => [seed.key, createActivityBucket(seed)]));
+  const summaryBucket = createActivityBucket({
+    key: 'last_3_months',
+    label: `${monthSeeds[2].label} - ${monthSeeds[0].label}`,
+    start: oldestStart,
+    end: nextMonthStart,
+  });
+
+  const [turns, sessions, workspaces] = await Promise.all([
+    CodexTurn.find({
+      $or: [
+        { startedAt: { $gte: oldestStart, $lt: nextMonthStart } },
+        { startedAt: null, queuedAt: { $gte: oldestStart, $lt: nextMonthStart } },
+        { startedAt: { $exists: false }, queuedAt: { $gte: oldestStart, $lt: nextMonthStart } },
+        { startedAt: null, queuedAt: null, createdAt: { $gte: oldestStart, $lt: nextMonthStart } },
+      ],
+    }).lean().exec(),
+    CodexSession.find({ createdAt: { $gte: oldestStart, $lt: nextMonthStart } }).lean().exec(),
+    CodexWorkspace.find({}).lean().exec(),
+  ]);
+
+  const workspaceById = new Map(workspaces.map((workspace) => [String(workspace._id), workspace]));
+  const workspaceBuckets = new Map();
+  const getWorkspaceBucket = (workspaceId) => {
+    const id = String(workspaceId || '');
+    if (!workspaceBuckets.has(id)) {
+      const workspace = workspaceById.get(id);
+      workspaceBuckets.set(id, createActivityBucket({
+        key: id,
+        label: workspace ? workspace.name : 'Unknown workspace',
+      }));
+    }
+    return workspaceBuckets.get(id);
+  };
+
+  sessions.forEach((session) => {
+    const createdAt = session.createdAt ? new Date(session.createdAt) : null;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) {
+      return;
+    }
+    const key = monthKey(createdAt);
+    const monthBucket = monthBuckets.get(key);
+    if (monthBucket) {
+      recordSessionInBucket(monthBucket, session);
+    }
+    recordSessionInBucket(summaryBucket, session);
+    recordSessionInBucket(getWorkspaceBucket(session.workspaceId), session);
+  });
+
+  turns.forEach((turn) => {
+    const startedAt = getTurnStartedDate(turn);
+    const startedDate = startedAt ? new Date(startedAt) : null;
+    if (!startedDate || Number.isNaN(startedDate.getTime())) {
+      return;
+    }
+    const key = monthKey(startedDate);
+    const monthBucket = monthBuckets.get(key);
+    if (monthBucket) {
+      recordTurnInBucket(monthBucket, turn, pricing);
+    }
+    recordTurnInBucket(summaryBucket, turn, pricing);
+    recordTurnInBucket(getWorkspaceBucket(turn.workspaceId), turn, pricing);
+  });
+
+  const workspaceActivity = Array.from(workspaceBuckets.entries())
+    .map(([workspaceId, bucket]) => {
+      const stats = finalizeActivityBucket(bucket, pricing);
+      const workspace = workspaceById.get(workspaceId);
+      return {
+        ...stats,
+        workspaceId,
+        workspaceName: workspace ? workspace.name : stats.label,
+        rootPath: workspace ? workspace.rootPath : '',
+      };
+    })
+    .filter((workspace) => workspace.turnCount || workspace.sessionCount)
+    .sort((a, b) => b.tokens.total - a.tokens.total || b.turnCount - a.turnCount || a.workspaceName.localeCompare(b.workspaceName))
+    .slice(0, 12);
+
+  return {
+    period: {
+      start: oldestStart,
+      end: nextMonthStart,
+      label: summaryBucket.label,
+    },
+    summary: finalizeActivityBucket(summaryBucket, pricing),
+    months: monthSeeds.map((seed) => finalizeActivityBucket(monthBuckets.get(seed.key), pricing)),
+    workspaceActivity,
+  };
+}
+
 async function getDashboardState() {
   await ensureDefaultData();
-  const [workspaces, queuedTurns, runningTurns, sessions] = await Promise.all([
+  const [workspaces, queuedTurns, runningTurns, sessions, pricing] = await Promise.all([
     listWorkspaces(),
     CodexTurn.find({ status: 'queued' }).sort({ queuedAt: 1 }).limit(20).lean().exec(),
     CodexTurn.find({ status: 'running' }).sort({ startedAt: 1 }).limit(20).lean().exec(),
     listSessions({ limit: 12 }),
+    getTokenPricing(),
   ]);
+  const stats = await getDashboardStats({ pricing });
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
   return {
     config: publicConfig(),
+    pricing,
+    stats,
     workspaces,
-    queuedTurns: queuedTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)) })),
-    runningTurns: runningTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)) })),
+    queuedTurns: queuedTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricing })),
+    runningTurns: runningTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricing })),
     recentSessions: sessions,
   };
 }
@@ -620,16 +1150,19 @@ async function getSessionDetail(sessionId) {
   if (!session) {
     throw createHttpError(404, 'Session not found.');
   }
-  const [workspace, target, turns] = await Promise.all([
+  const [workspace, target, turns, pricing] = await Promise.all([
     CodexWorkspace.findById(session.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(session.targetId).lean().exec(),
     CodexTurn.find({ sessionId }).sort({ sequence: 1 }).lean().exec(),
+    getTokenPricing(),
   ]);
   return {
     session: serializeSession(session, { workspace, target }),
     workspace: serializeWorkspace(workspace, { target }),
     target: serializeTarget(target),
-    turns: turns.map((turn) => serializeTurn(turn, { workspace })),
+    turns: turns.map((turn) => serializeTurn(turn, { workspace, pricing })),
+    stats: buildSessionStats(turns, pricing),
+    pricing,
     config: publicConfig(),
   };
 }
@@ -639,16 +1172,18 @@ async function getTurnDetail(turnId) {
   if (!turn) {
     throw createHttpError(404, 'Turn not found.');
   }
-  const [session, workspace, target] = await Promise.all([
+  const [session, workspace, target, pricing] = await Promise.all([
     CodexSession.findById(turn.sessionId).lean().exec(),
     CodexWorkspace.findById(turn.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(turn.targetId).lean().exec(),
+    getTokenPricing(),
   ]);
   return {
-    turn: serializeTurn(turn, { workspace }),
+    turn: serializeTurn(turn, { workspace, pricing }),
     session: serializeSession(session, { workspace, target }),
     workspace: serializeWorkspace(workspace, { target }),
     target: serializeTarget(target),
+    pricing,
     config: publicConfig(),
   };
 }
@@ -933,6 +1468,8 @@ function serializeTurn(turn, extras = {}) {
   if (!turn) {
     return null;
   }
+  const tokenUsage = normalizeTokenUsage(turn.usage || {});
+  const costEstimate = extras.pricing ? estimateTokenCost(tokenUsage, extras.pricing) : null;
   return {
     id: String(turn._id),
     sessionId: String(turn.sessionId || ''),
@@ -955,6 +1492,8 @@ function serializeTurn(turn, extras = {}) {
     exitSignal: turn.exitSignal || '',
     errorMessage: turn.errorMessage || '',
     usage: turn.usage || {},
+    tokenUsage,
+    costEstimate,
     eventCount: turn.eventCount || 0,
     artifactRefs: turn.artifactRefs || [],
     createdBy: turn.createdBy || {},
@@ -1023,11 +1562,14 @@ module.exports = {
   createWorkspace,
   deleteWorkspace,
   ensureDefaultData,
+  estimateTokenCost,
   getDashboardState,
+  getDashboardStats,
   getHealth,
   getQueueState,
   getRuntimeConfig,
   getSessionDetail,
+  getTokenPricing,
   getTurnDetail,
   getWorkspaceBundle,
   listSessions,
@@ -1035,6 +1577,7 @@ module.exports = {
   listTurnEvents,
   listWorkspaces,
   logServiceWarning,
+  normalizeTokenUsage,
   previewFromText,
   publicConfig,
   retryTurn,
@@ -1044,6 +1587,7 @@ module.exports = {
   serializeTarget,
   serializeTurn,
   serializeWorkspace,
+  updateTokenPricing,
   updateSessionAfterTurn,
   updateWorkspace,
 };

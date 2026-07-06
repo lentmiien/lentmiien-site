@@ -185,6 +185,7 @@ const CodexSession = require('./models/codex_session');
 const CodexTurn = require('./models/codex_turn');
 const CodexEvent = require('./models/codex_event');
 const CodexWorkspaceLock = require('./models/codex_workspace_lock');
+const CodexTokenPrice = require('./models/codex_token_price');
 
 // Export models
 module.exports = {
@@ -314,4 +315,5 @@ module.exports = {
   CodexTurn,
   CodexEvent,
   CodexWorkspaceLock,
+  CodexTokenPrice,
 };

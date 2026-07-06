@@ -1,5 +1,14 @@
 const { buildAsrQuality } = require('../../utils/asrQuality');
 
+const TEST_THRESHOLDS = {
+  avgLogprobMin: -1.75,
+  avgLogprobMax: -0.1,
+  noSpeechProbMin: 0,
+  noSpeechProbMax: 0.3,
+  compressionRatioMin: 0.6,
+  compressionRatioMax: 1.15,
+};
+
 describe('ASR quality helpers', () => {
   test('normalizes Whisper segment metrics and keeps accurate audio unflagged', () => {
     const { segments, quality } = buildAsrQuality({
@@ -12,7 +21,7 @@ describe('ASR quality helpers', () => {
         no_speech_prob: 0.11265980452299118,
         compression_ratio: 0.9672131147540983,
       }],
-    });
+    }, TEST_THRESHOLDS);
 
     expect(segments).toHaveLength(1);
     expect(segments[0]).toMatchObject({
@@ -52,7 +61,7 @@ describe('ASR quality helpers', () => {
         no_speech_prob: 0.2,
         compression_ratio: 0.85,
       }],
-    });
+    }, TEST_THRESHOLDS);
 
     expect(quality.possibleGarbage).toBe(true);
     expect(quality.garbageReasons).toEqual(['avg_logprob_below_threshold']);
@@ -74,7 +83,7 @@ describe('ASR quality helpers', () => {
           compression_ratio: 1.16,
         },
       ],
-    });
+    }, TEST_THRESHOLDS);
 
     expect(quality.possibleGarbage).toBe(true);
     expect(quality.garbageReasons).toEqual([

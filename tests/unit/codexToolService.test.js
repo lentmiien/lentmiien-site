@@ -51,3 +51,52 @@ describe('codexToolService.listTurnEvents', () => {
     expect(query.limit).toHaveBeenCalledWith(25);
   });
 });
+
+describe('codexToolService token usage helpers', () => {
+  test('normalizes OpenAI-style token details into separated buckets', () => {
+    const usage = codexToolService.normalizeTokenUsage({
+      input_tokens: 1200,
+      input_tokens_details: { cached_tokens: 800 },
+      output_tokens: 300,
+      output_tokens_details: { reasoning_tokens: 75 },
+      total_tokens: 1500,
+    });
+
+    expect(usage).toEqual({
+      input: 1200,
+      cached: 800,
+      output: 300,
+      reasoning: 75,
+      total: 1500,
+    });
+  });
+
+  test('estimates costs without double-counting cached or reasoning tokens', () => {
+    const cost = codexToolService.estimateTokenCost(
+      {
+        input: 1200,
+        cached: 800,
+        output: 300,
+        reasoning: 75,
+      },
+      {
+        currency: 'USD',
+        unitTokens: 1000000,
+        prices: {
+          input: 2,
+          cached: 0.5,
+          output: 8,
+          reasoning: 8,
+        },
+      }
+    );
+
+    expect(cost.billableTokens).toEqual({
+      input: 400,
+      cached: 800,
+      output: 225,
+      reasoning: 75,
+    });
+    expect(cost.total).toBeCloseTo(0.0036, 8);
+  });
+});

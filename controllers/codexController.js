@@ -206,6 +206,26 @@ exports.getQueue = async (req, res) => {
   }
 };
 
+exports.getStats = async (req, res) => {
+  try {
+    const pricing = await codexToolService.getTokenPricing();
+    const stats = await codexToolService.getDashboardStats({ pricing });
+    return res.json({ ok: true, pricing, stats });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to load Codex statistics.');
+  }
+};
+
+exports.updatePricing = async (req, res) => {
+  try {
+    const pricing = await codexToolService.updateTokenPricing(req.body || {}, req.user);
+    const stats = await codexToolService.getDashboardStats({ pricing });
+    return res.json({ ok: true, pricing, stats });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to update Codex token prices.');
+  }
+};
+
 exports.getHealth = async (req, res) => {
   try {
     const health = await codexToolService.getHealth(codexQueueWorker.getStatus());

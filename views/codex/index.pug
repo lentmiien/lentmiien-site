@@ -10,7 +10,16 @@ block content
   - const runningTurns = state.runningTurns || [];
   - const queuedTurns = state.queuedTurns || [];
   - const recentSessions = state.recentSessions || [];
+  - const stats = state.stats || {};
+  - const summary = stats.summary || {};
+  - const pricing = state.pricing || {};
+  - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
+  - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  - const num = (value) => Number.isFinite(Number(value)) ? Math.round(Number(value)).toLocaleString() : '0';
+  - const money = (value) => '$' + (Number(value) || 0).toFixed(4);
+  - const pct = (value) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '-';
+  - const duration = (ms) => Number.isFinite(Number(ms)) && Number(ms) > 0 ? (Number(ms) < 60000 ? `${Math.round(Number(ms) / 1000)}s` : `${Math.round(Number(ms) / 60000)}m`) : '-';
   - const statusClass = (status) => `codex-status codex-status--${String(status || '').replace(/_/g, '-')}`;
   section.codex-page(data-codex-page='dashboard')
     .codex-shell
@@ -100,7 +109,165 @@ block content
             else
               p.codex-empty No queued requests.
 
-        section.codex-panel.codex-panel--wide
+        section.codex-panel.codex-panel--wide(data-codex-stats-summary)
+          .codex-panel__header
+            h2 Usage Overview
+            span.codex-chip= stats.period ? stats.period.label : 'Last 3 months'
+          .codex-stat-grid
+            .codex-stat-card
+              small Turns
+              strong= num(summary.turnCount)
+              span= num(summary.sessionCount) + ' sessions'
+            .codex-stat-card
+              small Tokens
+              strong= num(summary.tokens && summary.tokens.total)
+              span= 'Avg ' + num(summary.averageTokensPerTurn) + ' / turn'
+            .codex-stat-card
+              small Estimated Cost
+              strong= money(summary.cost)
+              span= pricing.currency || 'USD'
+            .codex-stat-card
+              small Avg Time
+              strong= duration(summary.durationStats && summary.durationStats.avg)
+              span= 'Max ' + duration(summary.durationStats && summary.durationStats.max)
+            .codex-stat-card
+              small Success
+              strong= pct(summary.successRate)
+              span= num(summary.successfulTurnCount) + ' completed'
+            .codex-stat-card
+              small Cache Share
+              strong= pct(summary.cacheShare)
+              span= 'Reasoning ' + pct(summary.reasoningShare)
+          .codex-stats-split
+            .codex-mini-stat
+              h3 Completion Time
+              dl.codex-inline-stats
+                dt Min
+                dd= duration(summary.durationStats && summary.durationStats.min)
+                dt Avg
+                dd= duration(summary.durationStats && summary.durationStats.avg)
+                dt Median
+                dd= duration(summary.durationStats && summary.durationStats.median)
+                dt P95
+                dd= duration(summary.durationStats && summary.durationStats.p95)
+                dt Max
+                dd= duration(summary.durationStats && summary.durationStats.max)
+            .codex-mini-stat
+              h3 Tokens / Turn
+              dl.codex-inline-stats
+                dt Min
+                dd= num(summary.tokenStats && summary.tokenStats.min)
+                dt Avg
+                dd= num(summary.tokenStats && summary.tokenStats.avg)
+                dt Median
+                dd= num(summary.tokenStats && summary.tokenStats.median)
+                dt P95
+                dd= num(summary.tokenStats && summary.tokenStats.p95)
+                dt Max
+                dd= num(summary.tokenStats && summary.tokenStats.max)
+            .codex-mini-stat
+              h3 Type Distribution
+              .codex-distribution-list
+                if summary.kindDistribution && summary.kindDistribution.length
+                  each item in summary.kindDistribution
+                    div
+                      span= item.label
+                      strong= num(item.count) + ' / ' + pct(item.share)
+                else
+                  p.codex-empty No turn types yet.
+            .codex-mini-stat
+              h3 Status Distribution
+              .codex-distribution-list
+                if summary.statusDistribution && summary.statusDistribution.length
+                  each item in summary.statusDistribution
+                    div
+                      span= item.label
+                      strong= num(item.count) + ' / ' + pct(item.share)
+                else
+                  p.codex-empty No statuses yet.
+
+        if admin
+          section.codex-panel.codex-panel--full
+            .codex-panel__header
+              h2 Token Prices
+              span.codex-chip USD / 1M tokens
+            form#codex-pricing-form.codex-form.codex-form--pricing
+              each type in tokenTypes
+                .codex-field
+                  label(for=`codex-price-${type}`)= tokenLabels[type]
+                  input(id=`codex-price-${type}`, type='number', name=type, min='0', step='0.000001', value=(pricing.prices && pricing.prices[type]) || 0)
+              .codex-actions
+                button.codex-button(type='submit') Save Prices
+                span#codex-pricing-status.codex-form-status(aria-live='polite')
+
+        section.codex-panel.codex-panel--full
+          .codex-panel__header
+            h2 Monthly Tokens
+            span.codex-chip Current + 2 previous
+          .codex-table-wrap
+            table.codex-table(data-codex-monthly-table)
+              thead
+                tr
+                  th Month
+                  th Turns
+                  th Sessions
+                  each type in tokenTypes
+                    th= tokenLabels[type]
+                  th Cost
+              tbody(data-codex-monthly-body)
+                if stats.months && stats.months.length
+                  each month in stats.months
+                    tr
+                      td= month.label
+                      td= num(month.turnCount)
+                      td= num(month.sessionCount)
+                      each type in tokenTypes
+                        td= num(month.tokens && month.tokens[type])
+                      td= money(month.cost)
+                else
+                  tr
+                    td(colspan='8') No token usage recorded for the last 3 months.
+
+        section.codex-panel.codex-panel--full
+          .codex-panel__header
+            h2 Workspace Activity
+            span.codex-chip= (stats.workspaceActivity || []).length
+          .codex-table-wrap
+            table.codex-table(data-codex-workspace-table)
+              thead
+                tr
+                  th Workspace
+                  th Turns
+                  th Sessions
+                  th Input
+                  th Cached
+                  th Output
+                  th Reasoning
+                  th Avg Time
+                  th Success
+                  th Cost
+              tbody(data-codex-workspace-body)
+                if stats.workspaceActivity && stats.workspaceActivity.length
+                  each workspaceStat in stats.workspaceActivity
+                    tr
+                      td
+                        strong= workspaceStat.workspaceName || workspaceStat.label
+                        if workspaceStat.rootPath
+                          small= workspaceStat.rootPath
+                      td= num(workspaceStat.turnCount)
+                      td= num(workspaceStat.sessionCount)
+                      td= num(workspaceStat.tokens && workspaceStat.tokens.input)
+                      td= num(workspaceStat.tokens && workspaceStat.tokens.cached)
+                      td= num(workspaceStat.tokens && workspaceStat.tokens.output)
+                      td= num(workspaceStat.tokens && workspaceStat.tokens.reasoning)
+                      td= duration(workspaceStat.avgDurationMs)
+                      td= pct(workspaceStat.successRate)
+                      td= money(workspaceStat.cost)
+                else
+                  tr
+                    td(colspan='10') No workspace activity recorded for the last 3 months.
+
+        section.codex-panel.codex-panel--full
           .codex-panel__header
             h2 Recent Sessions
             span.codex-chip(data-codex-session-count)= recentSessions.length

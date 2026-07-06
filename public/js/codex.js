@@ -15,6 +15,13 @@
 
   const ACTIVE_TURN_STATUSES = new Set(['queued', 'running']);
   const RETRYABLE_STATUSES = new Set(['failed', 'timed_out', 'cancelled', 'blocked']);
+  const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
+  const TOKEN_LABELS = {
+    input: 'Input',
+    cached: 'Cached',
+    output: 'Output',
+    reasoning: 'Reasoning',
+  };
   let syncPageAutoRefresh = null;
 
   function formatDate(value) {
@@ -25,9 +32,38 @@
   }
 
   function formatDuration(ms) {
-    if (!Number.isFinite(ms)) return '-';
-    if (ms < 1000) return `${ms}ms`;
-    return `${Math.round(ms / 1000)}s`;
+    const value = Number(ms);
+    if (!Number.isFinite(value) || value <= 0) return '-';
+    if (value < 1000) return `${Math.round(value)}ms`;
+    if (value < 60000) return `${Math.round(value / 1000)}s`;
+    if (value < 3600000) return `${Math.round(value / 60000)}m`;
+    return `${(value / 3600000).toFixed(1)}h`;
+  }
+
+  function formatNumber(value, fractionDigits) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '0';
+    return number.toLocaleString(undefined, {
+      maximumFractionDigits: fractionDigits === undefined ? 0 : fractionDigits,
+    });
+  }
+
+  function formatMoney(value) {
+    const number = Number(value) || 0;
+    return `$${number.toFixed(4)}`;
+  }
+
+  function formatPercent(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '-';
+    return `${number.toFixed(1)}%`;
+  }
+
+  function normalizeTokens(tokens) {
+    return TOKEN_TYPES.reduce((result, type) => {
+      result[type] = Number(tokens && tokens[type]) || 0;
+      return result;
+    }, { total: Number(tokens && tokens.total) || 0 });
   }
 
   function statusClass(status) {
@@ -185,6 +221,175 @@
     turns.forEach((turn) => container.appendChild(renderTurnRow(turn)));
   }
 
+  function renderMetricCard(label, value, helper) {
+    const card = createEl('div', { className: 'codex-stat-card' });
+    card.appendChild(createEl('small', { text: label }));
+    card.appendChild(createEl('strong', { text: value }));
+    if (helper) {
+      card.appendChild(createEl('span', { text: helper }));
+    }
+    return card;
+  }
+
+  function renderInlineStats(title, rows) {
+    const wrapper = createEl('div', { className: 'codex-mini-stat' });
+    wrapper.appendChild(createEl('h3', { text: title }));
+    const dl = createEl('dl', { className: 'codex-inline-stats' });
+    rows.forEach(([label, value]) => {
+      dl.appendChild(createEl('dt', { text: label }));
+      dl.appendChild(createEl('dd', { text: value }));
+    });
+    wrapper.appendChild(dl);
+    return wrapper;
+  }
+
+  function renderDistribution(title, distribution, emptyText) {
+    const wrapper = createEl('div', { className: 'codex-mini-stat' });
+    wrapper.appendChild(createEl('h3', { text: title }));
+    const list = createEl('div', { className: 'codex-distribution-list' });
+    if (!distribution || distribution.length === 0) {
+      list.appendChild(createEl('p', { className: 'codex-empty', text: emptyText }));
+    } else {
+      distribution.forEach((item) => {
+        const row = createEl('div');
+        row.appendChild(createEl('span', { text: item.label || item.key }));
+        row.appendChild(createEl('strong', {
+          text: `${formatNumber(item.count)} / ${formatPercent(item.share)}`,
+        }));
+        list.appendChild(row);
+      });
+    }
+    wrapper.appendChild(list);
+    return wrapper;
+  }
+
+  function renderTokenStrip(tokensInput) {
+    const tokens = normalizeTokens(tokensInput);
+    const strip = createEl('div', { className: 'codex-token-strip' });
+    TOKEN_TYPES.forEach((type) => {
+      const pill = createEl('span', { className: 'codex-token-pill' });
+      pill.appendChild(createEl('small', { text: TOKEN_LABELS[type] }));
+      pill.appendChild(createEl('strong', { text: formatNumber(tokens[type]) }));
+      strip.appendChild(pill);
+    });
+    return strip;
+  }
+
+  function renderDashboardStats(stats, pricing) {
+    const summary = stats && stats.summary ? stats.summary : {};
+    const summarySection = root.querySelector('[data-codex-stats-summary]');
+    if (summarySection) {
+      summarySection.innerHTML = '';
+      const header = createEl('div', { className: 'codex-panel__header' });
+      header.appendChild(createEl('h2', { text: 'Usage Overview' }));
+      header.appendChild(createEl('span', {
+        className: 'codex-chip',
+        text: stats && stats.period ? stats.period.label : 'Last 3 months',
+      }));
+      summarySection.appendChild(header);
+
+      const grid = createEl('div', { className: 'codex-stat-grid' });
+      grid.appendChild(renderMetricCard('Turns', formatNumber(summary.turnCount), `${formatNumber(summary.sessionCount)} sessions`));
+      grid.appendChild(renderMetricCard('Tokens', formatNumber(summary.tokens && summary.tokens.total), `Avg ${formatNumber(summary.averageTokensPerTurn)} / turn`));
+      grid.appendChild(renderMetricCard('Estimated Cost', formatMoney(summary.cost), (pricing && pricing.currency) || 'USD'));
+      grid.appendChild(renderMetricCard('Avg Time', formatDuration(summary.durationStats && summary.durationStats.avg), `Max ${formatDuration(summary.durationStats && summary.durationStats.max)}`));
+      grid.appendChild(renderMetricCard('Success', formatPercent(summary.successRate), `${formatNumber(summary.successfulTurnCount)} completed`));
+      grid.appendChild(renderMetricCard('Cache Share', formatPercent(summary.cacheShare), `Reasoning ${formatPercent(summary.reasoningShare)}`));
+      summarySection.appendChild(grid);
+
+      const split = createEl('div', { className: 'codex-stats-split' });
+      const durationStats = summary.durationStats || {};
+      split.appendChild(renderInlineStats('Completion Time', [
+        ['Min', formatDuration(durationStats.min)],
+        ['Avg', formatDuration(durationStats.avg)],
+        ['Median', formatDuration(durationStats.median)],
+        ['P95', formatDuration(durationStats.p95)],
+        ['Max', formatDuration(durationStats.max)],
+      ]));
+      const tokenStats = summary.tokenStats || {};
+      split.appendChild(renderInlineStats('Tokens / Turn', [
+        ['Min', formatNumber(tokenStats.min)],
+        ['Avg', formatNumber(tokenStats.avg)],
+        ['Median', formatNumber(tokenStats.median)],
+        ['P95', formatNumber(tokenStats.p95)],
+        ['Max', formatNumber(tokenStats.max)],
+      ]));
+      split.appendChild(renderDistribution('Type Distribution', summary.kindDistribution, 'No turn types yet.'));
+      split.appendChild(renderDistribution('Status Distribution', summary.statusDistribution, 'No statuses yet.'));
+      summarySection.appendChild(split);
+    }
+
+    const monthlyBody = root.querySelector('[data-codex-monthly-body]');
+    if (monthlyBody) {
+      monthlyBody.innerHTML = '';
+      const months = stats && Array.isArray(stats.months) ? stats.months : [];
+      if (!months.length) {
+        const row = createEl('tr');
+        row.appendChild(createEl('td', { colspan: '8', text: 'No token usage recorded for the last 3 months.' }));
+        monthlyBody.appendChild(row);
+      } else {
+        months.forEach((month) => {
+          const row = createEl('tr');
+          row.appendChild(createEl('td', { text: month.label || month.key || '-' }));
+          row.appendChild(createEl('td', { text: formatNumber(month.turnCount) }));
+          row.appendChild(createEl('td', { text: formatNumber(month.sessionCount) }));
+          const tokens = normalizeTokens(month.tokens);
+          TOKEN_TYPES.forEach((type) => row.appendChild(createEl('td', { text: formatNumber(tokens[type]) })));
+          row.appendChild(createEl('td', { text: formatMoney(month.cost) }));
+          monthlyBody.appendChild(row);
+        });
+      }
+    }
+
+    const workspaceBody = root.querySelector('[data-codex-workspace-body]');
+    if (workspaceBody) {
+      workspaceBody.innerHTML = '';
+      const workspaces = stats && Array.isArray(stats.workspaceActivity) ? stats.workspaceActivity : [];
+      if (!workspaces.length) {
+        const row = createEl('tr');
+        row.appendChild(createEl('td', { colspan: '10', text: 'No workspace activity recorded for the last 3 months.' }));
+        workspaceBody.appendChild(row);
+      } else {
+        workspaces.forEach((workspace) => {
+          const row = createEl('tr');
+          const nameCell = createEl('td');
+          nameCell.appendChild(createEl('strong', { text: workspace.workspaceName || workspace.label || 'Workspace' }));
+          if (workspace.rootPath) {
+            nameCell.appendChild(createEl('small', { text: workspace.rootPath }));
+          }
+          row.appendChild(nameCell);
+          row.appendChild(createEl('td', { text: formatNumber(workspace.turnCount) }));
+          row.appendChild(createEl('td', { text: formatNumber(workspace.sessionCount) }));
+          const tokens = normalizeTokens(workspace.tokens);
+          TOKEN_TYPES.forEach((type) => row.appendChild(createEl('td', { text: formatNumber(tokens[type]) })));
+          row.appendChild(createEl('td', { text: formatDuration(workspace.avgDurationMs) }));
+          row.appendChild(createEl('td', { text: formatPercent(workspace.successRate) }));
+          row.appendChild(createEl('td', { text: formatMoney(workspace.cost) }));
+          workspaceBody.appendChild(row);
+        });
+      }
+    }
+  }
+
+  function renderSessionStats(stats) {
+    const container = root.querySelector('[data-codex-session-stats]');
+    if (!container) return;
+    const current = stats || {};
+    container.innerHTML = '';
+    const header = createEl('div', { className: 'codex-panel__header' });
+    header.appendChild(createEl('h2', { text: 'Session Totals' }));
+    header.appendChild(createEl('span', { className: 'codex-chip', text: formatMoney(current.cost) }));
+    container.appendChild(header);
+    const grid = createEl('div', { className: 'codex-stat-grid codex-stat-grid--compact' });
+    grid.appendChild(renderMetricCard('Total Time', formatDuration(current.totalDurationMs), `Elapsed ${formatDuration(current.elapsedMs)}`));
+    grid.appendChild(renderMetricCard('Turns', formatNumber(current.turnCount), `${formatNumber(current.completedTurnCount)} timed`));
+    const tokens = normalizeTokens(current.tokens);
+    TOKEN_TYPES.forEach((type) => {
+      grid.appendChild(renderMetricCard(TOKEN_LABELS[type], formatNumber(tokens[type]), 'tokens'));
+    });
+    container.appendChild(grid);
+  }
+
   function renderSessionsTable(table, sessions) {
     if (!table) return;
     const tbody = table.querySelector('tbody') || table.appendChild(document.createElement('tbody'));
@@ -216,13 +421,15 @@
   }
 
   async function refreshDashboard() {
-    const [queue, sessions] = await Promise.all([
+    const [queue, sessions, statsPayload] = await Promise.all([
       requestJson('/codex/api/queue'),
       requestJson('/codex/api/sessions?limit=12'),
+      requestJson('/codex/api/stats'),
     ]);
     renderTurnList(root.querySelector('[data-codex-running-list]'), queue.runningTurns || [], 'No running requests.');
     renderTurnList(root.querySelector('[data-codex-queued-list]'), queue.queuedTurns || [], 'No queued requests.');
     renderSessionsTable(root.querySelector('[data-codex-session-table]'), sessions.sessions || []);
+    renderDashboardStats(statsPayload.stats, statsPayload.pricing);
     const runningCount = root.querySelector('[data-codex-running-count]');
     const queuedCount = root.querySelector('[data-codex-queued-count]');
     const sessionCount = root.querySelector('[data-codex-session-count]');
@@ -283,8 +490,10 @@
       turn.permissionMode,
       `Queued ${formatDate(turn.queuedAt)}`,
       `Duration ${formatDuration(turn.durationMs)}`,
+      `Cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
     ].forEach((text) => meta.appendChild(createEl('span', { text })));
     card.appendChild(meta);
+    card.appendChild(renderTokenStrip(turn.tokenUsage));
 
     const transcript = createEl('div', { className: 'codex-transcript' });
     transcript.appendChild(renderTranscriptBlock('Prompt', turn.prompt, 'Prompt unavailable.'));
@@ -328,6 +537,7 @@
     if (!sessionId) return null;
     const payload = await requestJson(`/codex/api/sessions/${encodeURIComponent(sessionId)}`);
     renderTimeline(payload.turns || [], payload.workspace);
+    renderSessionStats(payload.stats);
     return payload;
   }
 
@@ -376,6 +586,7 @@
     }
     const detailGrid = root.querySelector('.codex-detail-grid');
     if (detailGrid) {
+      const tokens = normalizeTokens(turn.tokenUsage);
       const values = [
         ['Workspace', workspace ? workspace.name : '-'],
         ['Mode', String(turn.kind || '').replace(/_/g, ' ') || '-'],
@@ -384,6 +595,11 @@
         ['Started', formatDate(turn.startedAt)],
         ['Completed', formatDate(turn.completedAt)],
         ['Duration', formatDuration(turn.durationMs)],
+        ['Input Tokens', formatNumber(tokens.input)],
+        ['Cached Tokens', formatNumber(tokens.cached)],
+        ['Output Tokens', formatNumber(tokens.output)],
+        ['Reasoning Tokens', formatNumber(tokens.reasoning)],
+        ['Estimated Cost', formatMoney(turn.costEstimate && turn.costEstimate.total)],
         ['Exit', turn.exitCode === null || turn.exitCode === undefined ? '-' : String(turn.exitCode)],
       ];
       detailGrid.innerHTML = '';
@@ -520,6 +736,33 @@
           await refreshDashboard();
         } catch (error) {
           setStatus(status, error.message, 'error');
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    }
+    const pricingForm = document.getElementById('codex-pricing-form');
+    const pricingStatus = document.getElementById('codex-pricing-status');
+    if (pricingForm) {
+      pricingForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submit = pricingForm.querySelector('[type="submit"]');
+        setStatus(pricingStatus, 'Saving...', '');
+        submit.disabled = true;
+        try {
+          const payload = {};
+          TOKEN_TYPES.forEach((type) => {
+            const input = pricingForm.querySelector(`[name="${type}"]`);
+            payload[type] = input ? input.value : 0;
+          });
+          const response = await requestJson('/codex/api/pricing', {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+          });
+          setStatus(pricingStatus, 'Prices saved.', 'success');
+          renderDashboardStats(response.stats, response.pricing);
+        } catch (error) {
+          setStatus(pricingStatus, error.message, 'error');
         } finally {
           submit.disabled = false;
         }

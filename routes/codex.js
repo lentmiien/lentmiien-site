@@ -40,6 +40,8 @@ router.post('/api/turns/:turnId/retry', controller.retryTurn);
 router.get('/api/turns/:turnId/events', controller.getTurnEvents);
 
 router.get('/api/queue', controller.getQueue);
+router.get('/api/stats', controller.getStats);
+router.patch('/api/pricing', requireAdmin, controller.updatePricing);
 router.get('/api/health', controller.getHealth);
 
 module.exports = router;

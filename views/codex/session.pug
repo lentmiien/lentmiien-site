@@ -8,8 +8,13 @@ block content
   - const session = state.session || {};
   - const workspace = state.workspace || {};
   - const turns = state.turns || [];
+  - const stats = state.stats || {};
+  - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
+  - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const config = state.config || {};
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  - const num = (value) => Number.isFinite(Number(value)) ? Math.round(Number(value)).toLocaleString() : '0';
+  - const money = (value) => '$' + (Number(value) || 0).toFixed(4);
   - const duration = (ms) => Number.isFinite(ms) ? `${Math.round(ms / 1000)}s` : '-';
   - const statusClass = (status) => `codex-status codex-status--${String(status || '').replace(/_/g, '-')}`;
   section.codex-page(data-codex-page='session', data-session-id=session.id)
@@ -31,6 +36,25 @@ block content
         span= 'Turns: ' + (session.turnCount || turns.length)
         span= 'Updated: ' + fmt(session.updatedAt)
 
+      section.codex-panel.codex-session-stats(data-codex-session-stats)
+        .codex-panel__header
+          h2 Session Totals
+          span.codex-chip= money(stats.cost)
+        .codex-stat-grid.codex-stat-grid--compact
+          .codex-stat-card
+            small Total Time
+            strong= duration(stats.totalDurationMs)
+            span= 'Elapsed ' + duration(stats.elapsedMs)
+          .codex-stat-card
+            small Turns
+            strong= num(stats.turnCount || turns.length)
+            span= num(stats.completedTurnCount) + ' timed'
+          each type in tokenTypes
+            .codex-stat-card
+              small= tokenLabels[type]
+              strong= num(stats.tokens && stats.tokens[type])
+              span tokens
+
       .codex-timeline(data-codex-timeline)
         if turns.length
           each turn in turns
@@ -51,6 +75,12 @@ block content
                 span= turn.permissionMode
                 span= 'Queued ' + fmt(turn.queuedAt)
                 span= 'Duration ' + duration(turn.durationMs)
+                span= 'Cost ' + money(turn.costEstimate && turn.costEstimate.total)
+              .codex-token-strip
+                each type in tokenTypes
+                  span.codex-token-pill
+                    small= tokenLabels[type]
+                    strong= num(turn.tokenUsage && turn.tokenUsage[type])
               .codex-transcript
                 .codex-transcript__block
                   h3 Prompt

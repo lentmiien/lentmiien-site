@@ -8,7 +8,11 @@ block content
   - const turn = state.turn || {};
   - const session = state.session || {};
   - const workspace = state.workspace || {};
+  - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
+  - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  - const num = (value) => Number.isFinite(Number(value)) ? Math.round(Number(value)).toLocaleString() : '0';
+  - const money = (value) => '$' + (Number(value) || 0).toFixed(4);
   - const duration = (ms) => Number.isFinite(ms) ? `${Math.round(ms / 1000)}s` : '-';
   - const statusClass = (status) => `codex-status codex-status--${String(status || '').replace(/_/g, '-')}`;
   section.codex-page(data-codex-page='turn', data-turn-id=turn.id)
@@ -54,6 +58,21 @@ block content
             div
               small Duration
               strong= duration(turn.durationMs)
+            div
+              small Input Tokens
+              strong= num(turn.tokenUsage && turn.tokenUsage.input)
+            div
+              small Cached Tokens
+              strong= num(turn.tokenUsage && turn.tokenUsage.cached)
+            div
+              small Output Tokens
+              strong= num(turn.tokenUsage && turn.tokenUsage.output)
+            div
+              small Reasoning Tokens
+              strong= num(turn.tokenUsage && turn.tokenUsage.reasoning)
+            div
+              small Estimated Cost
+              strong= money(turn.costEstimate && turn.costEstimate.total)
             div
               small Exit
               strong= turn.exitCode === null || turn.exitCode === undefined ? '-' : turn.exitCode
