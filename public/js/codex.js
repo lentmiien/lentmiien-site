@@ -13,7 +13,9 @@
     return;
   }
 
+  const ACTIVE_TURN_STATUSES = new Set(['queued', 'running']);
   const RETRYABLE_STATUSES = new Set(['failed', 'timed_out', 'cancelled', 'blocked']);
+  let syncPageAutoRefresh = null;
 
   function formatDate(value) {
     if (!value) return '-';
@@ -30,6 +32,14 @@
 
   function statusClass(status) {
     return `codex-status codex-status--${String(status || '').replace(/_/g, '-')}`;
+  }
+
+  function isActiveTurn(turn) {
+    return Boolean(turn && ACTIVE_TURN_STATUSES.has(turn.status));
+  }
+
+  function hasActiveTurns(turns) {
+    return Array.isArray(turns) && turns.some(isActiveTurn);
   }
 
   function createEl(tag, attrs, children) {
@@ -427,7 +437,7 @@
     container.innerHTML = '';
     container.appendChild(createEl('p', { className: 'codex-empty', text: 'Loading events...' }));
     try {
-      const payload = await requestJson(`/codex/api/turns/${encodeURIComponent(turnId)}/events?limit=200`);
+      const payload = await requestJson(`/codex/api/turns/${encodeURIComponent(turnId)}/events`);
       renderEvents(container, payload.events || []);
       container.hidden = false;
     } catch (error) {
@@ -442,9 +452,15 @@
     if (root.dataset.codexPage === 'dashboard') {
       await refreshDashboard();
     } else if (root.dataset.codexPage === 'session') {
-      await refreshSession();
+      const payload = await refreshSession();
+      if (syncPageAutoRefresh) {
+        syncPageAutoRefresh(payload);
+      }
     } else if (root.dataset.codexPage === 'turn') {
-      await refreshTurn();
+      const payload = await refreshTurn();
+      if (syncPageAutoRefresh) {
+        syncPageAutoRefresh(payload);
+      }
     }
   }
 
@@ -517,6 +533,32 @@
   function initSession() {
     const form = document.getElementById('codex-followup-form');
     const status = document.getElementById('codex-followup-status');
+    let refreshTimer = null;
+
+    function stopAutoRefresh() {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+    }
+
+    function startAutoRefresh() {
+      if (refreshTimer) return;
+      refreshTimer = setInterval(() => {
+        refreshSession()
+          .then(syncAutoRefresh)
+          .catch(() => {});
+      }, 10000);
+    }
+
+    function syncAutoRefresh(payload) {
+      if (hasActiveTurns(payload && payload.turns)) {
+        startAutoRefresh();
+      } else {
+        stopAutoRefresh();
+      }
+    }
+
     if (form) {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -531,7 +573,8 @@
           setStatus(status, `Accepted. Turn ${payload.turn.id} is queued.`, 'success');
           form.querySelector('[name="prompt"]').value = '';
           clearYoloConfirmation(form);
-          await refreshSession();
+          const state = await refreshSession();
+          syncAutoRefresh(state);
         } catch (error) {
           setStatus(status, error.message, 'error');
         } finally {
@@ -539,15 +582,39 @@
         }
       });
     }
-    setInterval(() => {
-      refreshSession().catch(() => {});
-    }, 10000);
+    syncPageAutoRefresh = syncAutoRefresh;
+    syncAutoRefresh({ turns: bootstrap.turns });
   }
 
   function initTurn() {
-    setInterval(() => {
-      refreshTurn().catch(() => {});
-    }, 10000);
+    let refreshTimer = null;
+
+    function startAutoRefresh() {
+      if (refreshTimer) return;
+      refreshTimer = setInterval(() => {
+        refreshTurn()
+          .then(syncAutoRefresh)
+          .catch(() => {});
+      }, 10000);
+    }
+
+    function stopAutoRefresh() {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+    }
+
+    function syncAutoRefresh(payload) {
+      if (isActiveTurn(payload && payload.turn)) {
+        startAutoRefresh();
+      } else {
+        stopAutoRefresh();
+      }
+    }
+
+    syncPageAutoRefresh = syncAutoRefresh;
+    syncAutoRefresh({ turn: bootstrap.turn });
   }
 
   function initWorkspaces() {

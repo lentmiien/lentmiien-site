@@ -655,11 +655,22 @@ async function getTurnDetail(turnId) {
 
 async function listTurnEvents(turnId, options = {}) {
   const afterSeq = Math.max(Number.parseInt(options.afterSeq, 10) || 0, 0);
-  const limit = Math.max(1, Math.min(Number.parseInt(options.limit, 10) || 100, 500));
-  const events = await CodexEvent.find({
+  const eventQuery = CodexEvent.find({
     turnId,
     seq: { $gt: afterSeq },
-  }).sort({ seq: 1 }).limit(limit).lean().exec();
+  }).sort({ seq: 1 });
+  const requestedLimit = options.limit;
+  const hasLimit = requestedLimit !== undefined &&
+    requestedLimit !== null &&
+    String(requestedLimit).trim() !== '' &&
+    String(requestedLimit).trim().toLowerCase() !== 'all';
+  if (hasLimit) {
+    const config = getRuntimeConfig();
+    const parsedLimit = Number.parseInt(requestedLimit, 10);
+    const limit = Math.max(1, Math.min(parsedLimit || 100, config.maxEventsPerTurn));
+    eventQuery.limit(limit);
+  }
+  const events = await eventQuery.lean().exec();
   return events.map(serializeEvent);
 }
 

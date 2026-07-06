@@ -1,0 +1,53 @@
+jest.mock('../../models/codex_event', () => ({
+  find: jest.fn(),
+}));
+
+const CodexEvent = require('../../models/codex_event');
+const codexToolService = require('../../services/codexToolService');
+
+function createEventQuery(events) {
+  const query = {
+    sort: jest.fn(() => query),
+    limit: jest.fn(() => query),
+    lean: jest.fn(() => query),
+    exec: jest.fn().mockResolvedValue(events),
+  };
+  return query;
+}
+
+describe('codexToolService.listTurnEvents', () => {
+  beforeEach(() => {
+    CodexEvent.find.mockReset();
+  });
+
+  test('returns all events when no limit is requested', async () => {
+    const query = createEventQuery([
+      { _id: 'event-1', turnId: 'turn-1', seq: 1, eventType: 'turn.started' },
+      { _id: 'event-2', turnId: 'turn-1', seq: 2, eventType: 'turn.completed' },
+    ]);
+    CodexEvent.find.mockReturnValue(query);
+
+    const events = await codexToolService.listTurnEvents('turn-1');
+
+    expect(CodexEvent.find).toHaveBeenCalledWith({
+      turnId: 'turn-1',
+      seq: { $gt: 0 },
+    });
+    expect(query.sort).toHaveBeenCalledWith({ seq: 1 });
+    expect(query.limit).not.toHaveBeenCalled();
+    expect(events).toHaveLength(2);
+  });
+
+  test('honors explicit limits for callers that request one', async () => {
+    const query = createEventQuery([]);
+    CodexEvent.find.mockReturnValue(query);
+
+    await codexToolService.listTurnEvents('turn-1', { afterSeq: 5, limit: 25 });
+
+    expect(CodexEvent.find).toHaveBeenCalledWith({
+      turnId: 'turn-1',
+      seq: { $gt: 5 },
+    });
+    expect(query.limit).toHaveBeenCalledWith(25);
+  });
+});
