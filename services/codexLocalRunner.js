@@ -1,9 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
-const { spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
+const { promisify } = require('util');
 
 const codexToolService = require('./codexToolService');
+const {
+  buildRemoteShellCommand,
+  buildSshArgs,
+  getRemoteCodexInvocation,
+  getRemoteTempDir,
+  getSshBinary,
+  getSshDestination,
+  quotePosixShellArg,
+} = require('./codexSsh');
+
+const execFileAsync = promisify(execFile);
 
 function clipText(value, maxLength) {
   const text = String(value || '');
@@ -70,6 +82,57 @@ function extractUsage(event) {
   return event.usage || payload.usage || payload.token_usage || null;
 }
 
+function isRemoteSshTarget(target) {
+  return target && target.type === 'remote-ssh-linux';
+}
+
+function createLocalOutputPath(turnId) {
+  return path.join(
+    path.resolve(__dirname, '..', 'tmp_data'),
+    `codex-last-message-${turnId}-${randomUUID()}.txt`
+  );
+}
+
+function createRemoteOutputPath(target, turnId) {
+  const tempDir = getRemoteTempDir(target && target.connection);
+  const trimmedTempDir = tempDir.endsWith('/') && tempDir !== '/' ? tempDir.slice(0, -1) : tempDir;
+  return `${trimmedTempDir}/codex-last-message-${turnId}-${randomUUID()}.txt`;
+}
+
+function buildCodexArgs({ turn, session, workspace, outputPath }) {
+  const args = [
+    'exec',
+    '--json',
+    '--color',
+    'never',
+    '--cd',
+    workspace.rootPath,
+    '-o',
+    outputPath,
+  ];
+
+  if (turn.model) {
+    args.push('-m', turn.model);
+  }
+  if (turn.profile) {
+    args.push('-p', turn.profile);
+  }
+  if (turn.permissionMode === 'yolo') {
+    args.push('--dangerously-bypass-approvals-and-sandbox');
+  } else {
+    args.push('--sandbox', turn.permissionMode || 'read-only');
+  }
+
+  const isFollowup = String(turn.kind || '').startsWith('followup_');
+  if (isFollowup) {
+    args.push('resume', session.codexThreadId, '-');
+  } else {
+    args.push('-');
+  }
+
+  return { args, isFollowup };
+}
+
 class CodexLocalRunner {
   constructor(config = {}) {
     this.config = config;
@@ -82,52 +145,67 @@ class CodexLocalRunner {
     };
   }
 
-  buildCommand({ turn, session, workspace }) {
+  buildCommand({ turn, session, workspace, target }) {
     const config = this.getConfig();
-    const outputPath = path.join(
-      path.resolve(__dirname, '..', 'tmp_data'),
-      `codex-last-message-${turn._id}-${randomUUID()}.txt`
-    );
-    const args = [
-      'exec',
-      '--json',
-      '--color',
-      'never',
-      '--cd',
-      workspace.rootPath,
-      '-o',
-      outputPath,
-    ];
+    const remote = isRemoteSshTarget(target);
+    const outputPath = remote ? createRemoteOutputPath(target, turn._id) : createLocalOutputPath(turn._id);
+    const { args: codexArgs, isFollowup } = buildCodexArgs({ turn, session, workspace, outputPath });
 
-    if (turn.model) {
-      args.push('-m', turn.model);
-    }
-    if (turn.profile) {
-      args.push('-p', turn.profile);
-    }
-    if (turn.permissionMode === 'yolo') {
-      args.push('--dangerously-bypass-approvals-and-sandbox');
-    } else {
-      args.push('--sandbox', turn.permissionMode || 'read-only');
-    }
+    if (remote) {
+      const connection = target.connection || {};
+      const remoteCodexInvocation = getRemoteCodexInvocation(connection);
+      const remoteCommand = buildRemoteShellCommand(
+        `exec ${[...remoteCodexInvocation, ...codexArgs].map(quotePosixShellArg).join(' ')}`,
+        connection
+      );
+      const sshArgs = buildSshArgs(connection, remoteCommand);
+      const destination = getSshDestination(connection);
 
-    const isFollowup = String(turn.kind || '').startsWith('followup_');
-    if (isFollowup) {
-      args.push('resume', session.codexThreadId, '-');
-    } else {
-      args.push('-');
+      return {
+        binary: getSshBinary(connection),
+        args: sshArgs,
+        cwd: path.resolve(__dirname, '..'),
+        outputPath,
+        outputLocation: 'remote',
+        remoteRead: {
+          binary: getSshBinary(connection),
+          args: buildSshArgs(
+            connection,
+            buildRemoteShellCommand(
+              `if [ -f ${quotePosixShellArg(outputPath)} ]; then cat ${quotePosixShellArg(outputPath)}; rm -f ${quotePosixShellArg(outputPath)}; fi`,
+              connection
+            )
+          ),
+        },
+        timeoutMs: config.timeoutMs,
+        commandSummary: {
+          binary: getSshBinary(connection),
+          args: sshArgs,
+          cwd: workspace.rootPath,
+          outputLocation: 'remote',
+          remoteCodexCommand: remoteCodexInvocation,
+          sshDestination: destination,
+          targetType: target.type,
+          resume: isFollowup,
+          permissionMode: turn.permissionMode,
+          model: turn.model || '',
+          profile: turn.profile || '',
+        },
+      };
     }
 
     return {
       binary: config.binaryPath,
-      args,
+      args: codexArgs,
       cwd: workspace.rootPath,
       outputPath,
+      outputLocation: 'local',
       timeoutMs: config.timeoutMs,
       commandSummary: {
         binary: config.binaryPath,
-        args,
+        args: codexArgs,
         cwd: workspace.rootPath,
+        outputLocation: 'local',
         resume: isFollowup,
         permissionMode: turn.permissionMode,
         model: turn.model || '',
@@ -136,9 +214,31 @@ class CodexLocalRunner {
     };
   }
 
-  async runTurn({ turn, session, workspace, onEvent, onCommand, isCancellationRequested }) {
-    const command = this.buildCommand({ turn, session, workspace });
-    await fs.promises.mkdir(path.dirname(command.outputPath), { recursive: true });
+  async readFinalResponse(command, assistantMessages) {
+    if (command.outputLocation === 'remote') {
+      try {
+        const result = await execFileAsync(command.remoteRead.binary, command.remoteRead.args, {
+          timeout: 15000,
+          maxBuffer: 1024 * 1024 * 5,
+        });
+        return String(result.stdout || '').trim();
+      } catch (_error) {
+        return assistantMessages.join('\n\n');
+      }
+    }
+
+    try {
+      return await fs.promises.readFile(command.outputPath, 'utf8');
+    } catch (_error) {
+      return assistantMessages.join('\n\n');
+    }
+  }
+
+  async runTurn({ turn, session, workspace, target, onEvent, onCommand, isCancellationRequested }) {
+    const command = this.buildCommand({ turn, session, workspace, target });
+    if (command.outputLocation !== 'remote') {
+      await fs.promises.mkdir(path.dirname(command.outputPath), { recursive: true });
+    }
     if (typeof onCommand === 'function') {
       await onCommand(command.commandSummary);
     }
@@ -262,13 +362,10 @@ class CodexLocalRunner {
           });
         }
 
-        let finalResponse = '';
-        try {
-          finalResponse = await fs.promises.readFile(command.outputPath, 'utf8');
-        } catch (_error) {
-          finalResponse = assistantMessages.join('\n\n');
+        const finalResponse = await this.readFinalResponse(command, assistantMessages);
+        if (command.outputLocation !== 'remote') {
+          fs.promises.unlink(command.outputPath).catch(() => {});
         }
-        fs.promises.unlink(command.outputPath).catch(() => {});
 
         const durationMs = Date.now() - startedAt;
         const stderrText = stderrChunks.join('').trim();

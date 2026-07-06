@@ -11,6 +11,12 @@ const CodexEvent = require('../models/codex_event');
 const CodexWorkspaceLock = require('../models/codex_workspace_lock');
 const CodexTokenPrice = require('../models/codex_token_price');
 const logger = require('../utils/logger');
+const {
+  buildRemoteShellCommand,
+  buildSshArgs,
+  getSshBinary,
+  quotePosixShellArg,
+} = require('./codexSsh');
 
 const execFileAsync = promisify(execFile);
 
@@ -417,6 +423,7 @@ function getRuntimeConfig() {
     maxPromptChars: getPositiveIntegerEnv('CODEX_MAX_PROMPT_CHARS', 20000, 1000, 500000),
     maxEventsPerTurn: getPositiveIntegerEnv('CODEX_MAX_EVENTS_PER_TURN', 1000, 20, 100000),
     maxEventTextChars: getPositiveIntegerEnv('CODEX_MAX_EVENT_TEXT_CHARS', 12000, 1000, 100000),
+    remoteValidationTimeoutMs: getPositiveIntegerEnv('CODEX_REMOTE_VALIDATION_TIMEOUT_MS', 15000, 1000, 120000),
     yoloEnabled: getBooleanEnv('CODEX_YOLO_ENABLED', false),
   };
 }
@@ -429,6 +436,131 @@ function getLocalTargetDefaults() {
     return { type: 'local-darwin', platform: 'darwin', pathStyle: 'posix' };
   }
   return { type: 'local-linux', platform: 'linux', pathStyle: 'posix' };
+}
+
+function parseSshOptions(value) {
+  if (!value || !String(value).trim()) {
+    return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new'];
+  }
+
+  const rawValue = String(value).trim();
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (Array.isArray(parsed)) {
+      return parsed.map((entry) => String(entry)).filter(Boolean);
+    }
+  } catch (_error) {
+    // Fall back to shell-like whitespace splitting for simple option lists.
+  }
+
+  return rawValue.split(/\s+/).filter(Boolean);
+}
+
+function getRemoteSshSeedConfig() {
+  const enabled = getBooleanEnv('CODEX_REMOTE_SSH_ENABLED', false);
+  const destination = normalizeOptionalString(process.env.CODEX_REMOTE_SSH_DESTINATION, 240);
+  const host = normalizeOptionalString(process.env.CODEX_REMOTE_SSH_HOST, 240);
+  const user = normalizeOptionalString(process.env.CODEX_REMOTE_SSH_USER, 120);
+
+  if (!enabled && !destination && !host) {
+    return null;
+  }
+  if (!destination && !host) {
+    throw new Error('CODEX_REMOTE_SSH_DESTINATION or CODEX_REMOTE_SSH_HOST is required when CODEX_REMOTE_SSH_ENABLED is true.');
+  }
+
+  const port = Number.parseInt(process.env.CODEX_REMOTE_SSH_PORT, 10);
+  const connection = {
+    destination: destination || (user ? `${user}@${host}` : host),
+    host,
+    user,
+    codexBinaryPath: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_CODEX_BINARY, 500) || 'codex',
+    envWrapperPath: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_ENV_WRAPPER, 500),
+    tempDir: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_TEMP_DIR, 500) || '/tmp',
+    shell: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_SHELL, 500) || '/bin/sh',
+    options: parseSshOptions(process.env.CODEX_REMOTE_SSH_OPTIONS),
+  };
+  if (Number.isFinite(port) && port > 0) {
+    connection.port = port;
+  }
+
+  return {
+    name: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_NAME, 140) || `Linux Codex (${connection.destination})`,
+    description: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_DESCRIPTION, 1000) || 'Codex runs on a Linux machine over SSH.',
+    connection,
+    workspaceName: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_WORKSPACE_NAME, 140),
+    workspacePath: normalizeOptionalString(process.env.CODEX_REMOTE_SSH_WORKSPACE_PATH, 1200),
+    workspaceAllowYolo: getBooleanEnv('CODEX_REMOTE_SSH_WORKSPACE_ALLOW_YOLO', false),
+  };
+}
+
+async function ensureRemoteSshSeedData() {
+  const config = getRemoteSshSeedConfig();
+  if (!config) {
+    return;
+  }
+
+  let target = await CodexExecutionTarget.findOne({
+    type: 'remote-ssh-linux',
+    'connection.destination': config.connection.destination,
+  }).sort({ createdAt: 1 }).exec();
+
+  if (!target) {
+    target = await CodexExecutionTarget.create({
+      name: config.name,
+      type: 'remote-ssh-linux',
+      platform: 'remote-linux',
+      enabled: true,
+      description: config.description,
+      connection: config.connection,
+    });
+  } else {
+    target.name = config.name;
+    target.platform = 'remote-linux';
+    target.enabled = true;
+    target.description = config.description;
+    target.connection = config.connection;
+    await target.save();
+  }
+
+  if (!config.workspacePath) {
+    return;
+  }
+
+  const rootPath = normalizeWorkspaceRootPathForTarget(config.workspacePath, target);
+  let workspace = await CodexWorkspace.findOne({
+    targetId: target._id,
+    rootPath,
+  }).exec();
+
+  if (!workspace) {
+    workspace = await CodexWorkspace.create({
+      targetId: target._id,
+      name: config.workspaceName || 'Lentmiien Site',
+      rootPath,
+      pathStyle: 'posix',
+      enabled: true,
+      description: 'Default remote workspace seeded for the Codex web tool.',
+      defaultQuestionPermission: 'read-only',
+      defaultActionPermission: 'workspace-write',
+      allowYolo: config.workspaceAllowYolo,
+      maxConcurrentTurns: 1,
+    }).catch((error) => {
+      if (error && error.code === 11000) {
+        return null;
+      }
+      throw error;
+    });
+    return;
+  }
+
+  workspace.name = config.workspaceName || workspace.name;
+  workspace.pathStyle = 'posix';
+  workspace.enabled = true;
+  workspace.defaultQuestionPermission = 'read-only';
+  workspace.defaultActionPermission = 'workspace-write';
+  workspace.allowYolo = config.workspaceAllowYolo;
+  await workspace.save();
 }
 
 function normalizeBoolean(value) {
@@ -530,6 +662,59 @@ async function assertLocalDirectory(rootPath) {
   if (!stat.isDirectory()) {
     throw createHttpError(400, 'Workspace path must be a directory.');
   }
+}
+
+function isRemoteSshTarget(target) {
+  return target && target.type === 'remote-ssh-linux';
+}
+
+function getTargetPathStyle(target) {
+  if (target && target.platform === 'windows') {
+    return 'windows';
+  }
+  return 'posix';
+}
+
+function normalizeWorkspaceRootPathForTarget(rootPath, target) {
+  const submittedRootPath = String(rootPath || '').trim();
+  if (!submittedRootPath) {
+    throw createHttpError(400, 'Workspace root path is required.');
+  }
+
+  if (!isRemoteSshTarget(target)) {
+    return path.resolve(submittedRootPath);
+  }
+
+  if (!submittedRootPath.startsWith('/')) {
+    throw createHttpError(400, 'Remote Linux workspace paths must be absolute POSIX paths.');
+  }
+
+  const normalizedPath = path.posix.normalize(submittedRootPath);
+  return normalizedPath === '.' ? '/' : normalizedPath;
+}
+
+async function assertRemoteDirectory(target, rootPath) {
+  const connection = target && target.connection ? target.connection : {};
+  const command = buildRemoteShellCommand(
+    `test -d ${quotePosixShellArg(rootPath)}`,
+    connection
+  );
+  try {
+    await execFileAsync(getSshBinary(connection), buildSshArgs(connection, command), {
+      timeout: getRuntimeConfig().remoteValidationTimeoutMs,
+      maxBuffer: 1024 * 1024,
+    });
+  } catch (error) {
+    throw createHttpError(400, `Remote workspace path is not reachable over SSH: ${error.message}`);
+  }
+}
+
+async function assertWorkspaceDirectoryForTarget(target, rootPath) {
+  if (isRemoteSshTarget(target)) {
+    await assertRemoteDirectory(target, rootPath);
+    return;
+  }
+  await assertLocalDirectory(rootPath);
 }
 
 function isIndexNotFoundError(error) {
@@ -666,6 +851,8 @@ async function ensureDefaultData() {
         throw error;
       });
     }
+
+    await ensureRemoteSshSeedData();
   })().catch((error) => {
     defaultDataPromise = null;
     throw error;
@@ -693,13 +880,12 @@ async function getWorkspaceBundle(workspaceId, options = {}) {
     throw createHttpError(403, 'Workspace execution target is disabled.');
   }
 
-  if (String(target.type || '').startsWith('local-')) {
-    const normalizedPath = path.resolve(workspace.rootPath);
-    await assertLocalDirectory(normalizedPath);
-    if (workspace.rootPath !== normalizedPath) {
-      workspace.rootPath = normalizedPath;
-      await workspace.save();
-    }
+  const normalizedPath = normalizeWorkspaceRootPathForTarget(workspace.rootPath, target);
+  await assertWorkspaceDirectoryForTarget(target, normalizedPath);
+  if (workspace.rootPath !== normalizedPath || workspace.pathStyle !== getTargetPathStyle(target)) {
+    workspace.rootPath = normalizedPath;
+    workspace.pathStyle = getTargetPathStyle(target);
+    await workspace.save();
   }
 
   return { workspace, target };
@@ -847,19 +1033,14 @@ async function createWorkspace(payload = {}) {
     throw createHttpError(400, 'Execution target is required.');
   }
 
-  const submittedRootPath = String(payload.rootPath || '').trim();
-  if (!submittedRootPath) {
-    throw createHttpError(400, 'Workspace root path is required.');
-  }
-  const rootPath = path.resolve(submittedRootPath);
-  await assertLocalDirectory(rootPath);
-  const localDefaults = getLocalTargetDefaults();
+  const rootPath = normalizeWorkspaceRootPathForTarget(payload.rootPath, target);
+  await assertWorkspaceDirectoryForTarget(target, rootPath);
 
   const workspace = await CodexWorkspace.create({
     targetId: target._id,
     name,
     rootPath,
-    pathStyle: payload.pathStyle || localDefaults.pathStyle,
+    pathStyle: payload.pathStyle || getTargetPathStyle(target),
     enabled: payload.enabled === undefined ? true : normalizeBoolean(payload.enabled),
     description: normalizeOptionalString(payload.description, 1000),
     defaultModel: normalizeOptionalString(payload.defaultModel),
@@ -888,13 +1069,14 @@ async function updateWorkspace(workspaceId, payload = {}) {
     workspace.name = name;
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'rootPath')) {
-    const submittedRootPath = String(payload.rootPath || '').trim();
-    if (!submittedRootPath) {
-      throw createHttpError(400, 'Workspace root path is required.');
+    const target = await CodexExecutionTarget.findById(workspace.targetId).exec();
+    if (!target) {
+      throw createHttpError(400, 'Workspace execution target is missing.');
     }
-    const rootPath = path.resolve(submittedRootPath);
-    await assertLocalDirectory(rootPath);
+    const rootPath = normalizeWorkspaceRootPathForTarget(payload.rootPath, target);
+    await assertWorkspaceDirectoryForTarget(target, rootPath);
     workspace.rootPath = rootPath;
+    workspace.pathStyle = getTargetPathStyle(target);
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'enabled')) {
     workspace.enabled = normalizeBoolean(payload.enabled);

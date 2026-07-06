@@ -159,6 +159,12 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `CODEX_WORKER_ENABLED` | Enables the Codex queue worker for worker processes (defaults to `true`). |
 | `CODEX_WEB_WORKER_ENABLED` | Enables the embedded Codex worker inside `app.js` (defaults to `CODEX_WORKER_ENABLED`). Set this to `false` when running the worker as a separate user-login process. |
 | `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
+| `CODEX_REMOTE_SSH_ENABLED` | Seeds an SSH-backed Linux Codex execution target when set to `true`. |
+| `CODEX_REMOTE_SSH_DESTINATION` | SSH destination for the seeded target, such as `user@host`. |
+| `CODEX_REMOTE_SSH_CODEX_BINARY` | Codex command on the remote machine. Defaults to `codex`. |
+| `CODEX_REMOTE_SSH_ENV_WRAPPER` | Optional remote environment wrapper prepended before the Codex command, such as `/home/lennart/bin/codex-env`. |
+| `CODEX_REMOTE_SSH_WORKSPACE_PATH` | First remote workspace folder to seed for the SSH target. Additional folders can be added from `/codex/workspaces`. |
+| `CODEX_REMOTE_SSH_WORKSPACE_ALLOW_YOLO` | Allows dangerous mode for the seeded remote workspace when global `CODEX_YOLO_ENABLED` is also enabled. |
 | `PUBLIC_TOBUY_LIST_PATH` | Hidden public route for the shared to-buy form; generated and persisted to `.env` if omitted. |
 | `REQUEST_COUNTER_PATH` | Hidden public GET endpoint for the request counter; `GET <path>?package=<name>` records and evaluates by package category, missing packages are stored as `unknown`, and `GET <path>/status` returns the same plain `OK`/`NG` format without recording. Generated and persisted to `.env` if omitted. |
 | `employeeNo`, `employeeName`, `department` | Default payroll metadata injected into forms. |
