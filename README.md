@@ -163,6 +163,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `CODEX_REMOTE_SSH_DESTINATION` | SSH destination for the seeded target, such as `user@host`. |
 | `CODEX_REMOTE_SSH_CODEX_BINARY` | Codex command on the remote machine. Defaults to `codex`. |
 | `CODEX_REMOTE_SSH_ENV_WRAPPER` | Optional remote environment wrapper prepended before the Codex command, such as `/home/lennart/bin/codex-env`. |
+| `CODEX_REMOTE_SSH_OPTIONS` | Optional SSH options. Use a JSON array for values with spaces, for example `["-i","C:/Users/Lennart/.ssh/id_ed25519"]`. |
 | `CODEX_REMOTE_SSH_WORKSPACE_PATH` | First remote workspace folder to seed for the SSH target. Additional folders can be added from `/codex/workspaces`. |
 | `CODEX_REMOTE_SSH_WORKSPACE_ALLOW_YOLO` | Allows dangerous mode for the seeded remote workspace when global `CODEX_YOLO_ENABLED` is also enabled. |
 | `PUBLIC_TOBUY_LIST_PATH` | Hidden public route for the shared to-buy form; generated and persisted to `.env` if omitted. |
@@ -215,6 +216,12 @@ When the Express web server runs as a Windows service, keep it from claiming Cod
 4. Make sure that scheduled task runs as the same Windows account that owns `CODEX_HOME` and can run `codex doctor`.
 
 The web UI still creates and displays Codex turns through MongoDB. The separate user-login worker is the only process that should execute queued turns.
+
+For SSH-backed Linux targets, make sure the worker account can run a non-interactive SSH command such as:
+```powershell
+ssh -o BatchMode=yes lennart@192.168.0.20 "test -d /home/lennart/Programming/lentmiien-site && /home/lennart/bin/codex-env codex --version"
+```
+The web process stores remote workspace paths as allowlist metadata; the worker validates the path over SSH when it claims a queued turn.
 
 ## Feature Deep Dive
 

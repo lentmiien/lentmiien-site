@@ -717,6 +717,16 @@ async function assertWorkspaceDirectoryForTarget(target, rootPath) {
   await assertLocalDirectory(rootPath);
 }
 
+function shouldValidateWorkspaceDirectory(target, options = {}) {
+  if (options.validateDirectory === false) {
+    return false;
+  }
+  if (isRemoteSshTarget(target) && options.validateRemoteDirectory === false) {
+    return false;
+  }
+  return true;
+}
+
 function isIndexNotFoundError(error) {
   return error && (
     error.code === 27 ||
@@ -881,7 +891,9 @@ async function getWorkspaceBundle(workspaceId, options = {}) {
   }
 
   const normalizedPath = normalizeWorkspaceRootPathForTarget(workspace.rootPath, target);
-  await assertWorkspaceDirectoryForTarget(target, normalizedPath);
+  if (shouldValidateWorkspaceDirectory(target, options)) {
+    await assertWorkspaceDirectoryForTarget(target, normalizedPath);
+  }
   if (workspace.rootPath !== normalizedPath || workspace.pathStyle !== getTargetPathStyle(target)) {
     workspace.rootPath = normalizedPath;
     workspace.pathStyle = getTargetPathStyle(target);
@@ -894,7 +906,7 @@ async function getWorkspaceBundle(workspaceId, options = {}) {
 async function createSession(payload = {}, user) {
   const prompt = normalizePrompt(payload.prompt);
   const mode = normalizeMode(payload.mode);
-  const { workspace, target } = await getWorkspaceBundle(payload.workspaceId);
+  const { workspace, target } = await getWorkspaceBundle(payload.workspaceId, { validateRemoteDirectory: false });
   const permission = resolvePermissionMode({
     mode,
     requestedPermissionMode: payload.permissionMode,
@@ -962,7 +974,7 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
 
   const prompt = normalizePrompt(payload.prompt);
   const mode = normalizeMode(payload.mode);
-  const { workspace, target } = await getWorkspaceBundle(session.workspaceId);
+  const { workspace, target } = await getWorkspaceBundle(session.workspaceId, { validateRemoteDirectory: false });
   const permission = resolvePermissionMode({
     mode,
     requestedPermissionMode: payload.permissionMode,
@@ -1034,7 +1046,9 @@ async function createWorkspace(payload = {}) {
   }
 
   const rootPath = normalizeWorkspaceRootPathForTarget(payload.rootPath, target);
-  await assertWorkspaceDirectoryForTarget(target, rootPath);
+  if (!isRemoteSshTarget(target)) {
+    await assertWorkspaceDirectoryForTarget(target, rootPath);
+  }
 
   const workspace = await CodexWorkspace.create({
     targetId: target._id,
@@ -1074,7 +1088,9 @@ async function updateWorkspace(workspaceId, payload = {}) {
       throw createHttpError(400, 'Workspace execution target is missing.');
     }
     const rootPath = normalizeWorkspaceRootPathForTarget(payload.rootPath, target);
-    await assertWorkspaceDirectoryForTarget(target, rootPath);
+    if (!isRemoteSshTarget(target)) {
+      await assertWorkspaceDirectoryForTarget(target, rootPath);
+    }
     workspace.rootPath = rootPath;
     workspace.pathStyle = getTargetPathStyle(target);
   }
@@ -1451,7 +1467,7 @@ async function retryTurn(turnId, user) {
     throw createHttpError(409, 'Archived sessions cannot be retried.');
   }
 
-  const { workspace, target } = await getWorkspaceBundle(originalTurn.workspaceId);
+  const { workspace, target } = await getWorkspaceBundle(originalTurn.workspaceId, { validateRemoteDirectory: false });
   if (originalTurn.kind.startsWith('followup_') && !session.codexThreadId) {
     throw createHttpError(409, 'Follow-up retry is unavailable because this session has no Codex session id.');
   }
