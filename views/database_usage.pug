@@ -8,7 +8,7 @@ block content
     header.db-usage__header
       div
         h1.db-usage__title Database Usage
-        p.db-usage__subtitle Track MongoDB storage, spot large collections, and keep chat cleanup jobs in check.
+        p.db-usage__subtitle Track MongoDB storage, spot large collections, and keep cleanup jobs in check.
       if generatedAtDisplay
         p.db-usage__timestamp Last updated #{generatedAtDisplay}
 
@@ -82,7 +82,7 @@ block content
       section.db-usage__section
         header.db-usage__section-header
           h2.db-usage__section-title API Debug Logs
-          p.db-usage__section-copy Monitor and prune the fastest-growing collection.
+          p.db-usage__section-copy Monitor and prune API request/response debug records.
         if apiDebugCollection
           article.db-usage__focus
             div
@@ -107,12 +107,47 @@ block content
           .db-usage__focus.db-usage__focus--empty
             p No stats available for api_debug logs yet.
         form.db-usage__prune-form(method='post', action='/admin/api-debug-logs/prune')
-          label.db-usage__prune-label(for='maxAgeDays') Prune records older than
+          label.db-usage__prune-label(for='apiDebugMaxAgeDays') Prune records older than
           .db-usage__prune-controls
-            input#maxAgeDays(type='number', name='maxAgeDays', required, min='1', max='365', value=pruneDefaults && pruneDefaults.maxAgeDays ? pruneDefaults.maxAgeDays : 30)
+            input#apiDebugMaxAgeDays(type='number', name='maxAgeDays', required, min='1', max='365', value=pruneDefaults && pruneDefaults.apiDebugMaxAgeDays ? pruneDefaults.apiDebugMaxAgeDays : 30)
             span days
             button.db-usage__button(type='submit') Prune now
           p.db-usage__prune-hint Removes matching documents immediately. Monitor the alert above to decide when to prune again.
+
+      section.db-usage__section
+        header.db-usage__section-header
+          h2.db-usage__section-title Disaster Alerts
+          p.db-usage__section-copy Monitor and prune ingested disaster alert records.
+        if disasterAlertCollection
+          article.db-usage__focus
+            div
+              h3.db-usage__focus-name= disasterAlertCollection.name
+              p.db-usage__focus-meta
+                span db share:
+                strong #{disasterAlertCollection.percentDisplay}
+            dl.db-usage__focus-stats
+              div
+                dt Documents
+                dd= disasterAlertCollection.documentsDisplay
+              div
+                dt Storage size
+                dd= disasterAlertCollection.storageSizeDisplay
+              div
+                dt Data size
+                dd= disasterAlertCollection.dataSizeDisplay
+              div
+                dt Indexes
+                dd= disasterAlertCollection.indexSizeDisplay
+        else
+          .db-usage__focus.db-usage__focus--empty
+            p No stats available for disaster_alerts yet.
+        form.db-usage__prune-form(method='post', action='/admin/disaster-alerts/prune')
+          label.db-usage__prune-label(for='disasterAlertMaxAgeDays') Prune records older than
+          .db-usage__prune-controls
+            input#disasterAlertMaxAgeDays(type='number', name='maxAgeDays', required, min='1', max='365', value=pruneDefaults && pruneDefaults.disasterAlertMaxAgeDays ? pruneDefaults.disasterAlertMaxAgeDays : 7)
+            span days
+            button.db-usage__button(type='submit') Prune now
+          p.db-usage__prune-hint Removes disaster alerts older than the selected age immediately. The default keeps the last 7 days.
 
       if topCollections && topCollections.length
         section.db-usage__section

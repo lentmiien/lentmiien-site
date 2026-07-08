@@ -11,6 +11,7 @@ const {
   RoleModel,
   OpenAIUsage,
   ApiDebugLog,
+  DisasterAlert,
   HtmlPageRating,
   Agent5Model,
   Agent5ConversationBehavior,
@@ -441,7 +442,8 @@ const PERFORMANCE_RANGE_OPTIONS = [
 const DB_VIEWER_DEFAULT_LIMIT = 25;
 const DB_VIEWER_MAX_LIMIT = 200;
 const DB_VIEWER_SYSTEM_PREFIX = 'system.';
-const DEFAULT_PRUNE_DAYS = 30;
+const API_DEBUG_PRUNE_DEFAULT_DAYS = 30;
+const DISASTER_ALERT_PRUNE_DEFAULT_DAYS = 7;
 const MIN_PRUNE_DAYS = 1;
 const MAX_PRUNE_DAYS = 365;
 const TEMP_AUDIO_DIR = path.resolve(__dirname, '..', 'public', 'temp');
@@ -4299,7 +4301,8 @@ exports.performance_dashboard = async (req, res) => {
 exports.database_usage = async (req, res) => {
   const feedback = parseDatabaseUsageFeedback(req.query || {});
   const pruneDefaults = {
-    maxAgeDays: DEFAULT_PRUNE_DAYS,
+    apiDebugMaxAgeDays: API_DEBUG_PRUNE_DEFAULT_DAYS,
+    disasterAlertMaxAgeDays: DISASTER_ALERT_PRUNE_DEFAULT_DAYS,
   };
   try {
     const usage = await databaseUsageService.fetchDatabaseUsage();
@@ -4318,6 +4321,10 @@ exports.database_usage = async (req, res) => {
     ) || sortedCollections.find(
       (collection) => typeof collection.name === 'string' && collection.name.includes('api_debug'),
     );
+    const disasterAlertCollection = findCollectionStats(sortedCollections, DisasterAlert, [
+      'disaster_alerts',
+      'disaster_alert',
+    ]);
     const conversation5Collection = findCollectionStats(sortedCollections, Conversation5Model, ['conversation5']);
     const chat5Collection = findCollectionStats(sortedCollections, Chat5Model, ['chat5']);
     const chat5CleanupCollections = [
@@ -4413,6 +4420,16 @@ exports.database_usage = async (req, res) => {
             percentDisplay: formatPercent(calculatePercent(totalStorageBytes, apiDebugCollection.storageSizeBytes || 0)),
           }
         : null,
+      disasterAlertCollection: disasterAlertCollection
+        ? {
+            name: disasterAlertCollection.name,
+            documentsDisplay: formatNumber(disasterAlertCollection.count || 0),
+            storageSizeDisplay: formatBytes(disasterAlertCollection.storageSizeBytes || 0),
+            dataSizeDisplay: formatBytes(disasterAlertCollection.sizeBytes || 0),
+            indexSizeDisplay: formatBytes(disasterAlertCollection.totalIndexSizeBytes || 0),
+            percentDisplay: formatPercent(calculatePercent(totalStorageBytes, disasterAlertCollection.storageSizeBytes || 0)),
+          }
+        : null,
       chat5CleanupCollections,
       alerts,
       feedbackStatus: feedback.feedbackStatus,
@@ -4470,6 +4487,46 @@ exports.prune_api_debug_logs = async (req, res) => {
       res,
       'error',
       'Unable to prune API debug logs right now.',
+    );
+  }
+};
+
+exports.prune_disaster_alerts = async (req, res) => {
+  const rawDays = req.body?.maxAgeDays;
+  const days = Number.parseInt(rawDays, 10);
+  if (!Number.isFinite(days) || days < MIN_PRUNE_DAYS || days > MAX_PRUNE_DAYS) {
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'error',
+      `Enter a value between ${MIN_PRUNE_DAYS} and ${MAX_PRUNE_DAYS} days.`,
+    );
+  }
+
+  const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  try {
+    const result = await DisasterAlert.deleteMany({ createdAt: { $lt: cutoffDate } });
+    logger.notice('Disaster alerts pruned by admin', {
+      category: 'admin_database_usage',
+      metadata: {
+        days,
+        cutoff: cutoffDate.toISOString(),
+        deletedCount: result.deletedCount,
+      },
+    });
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'success',
+      `Removed ${formatNumber(result.deletedCount || 0)} disaster alert(s) older than ${days} day(s).`,
+    );
+  } catch (error) {
+    logger.error('Failed to prune disaster alerts', {
+      category: 'admin_database_usage',
+      metadata: { error: error.message },
+    });
+    return redirectDatabaseUsageWithFeedback(
+      res,
+      'error',
+      'Unable to prune disaster alerts right now.',
     );
   }
 };

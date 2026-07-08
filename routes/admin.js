@@ -255,6 +255,7 @@ router.get('/amiami-items', amiamiItemsController.index);
 router.get('/tapo', tapoController.dashboard);
 router.get('/api-debug-logs', controller.api_debug_logs);
 router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);
+router.post('/disaster-alerts/prune', controller.prune_disaster_alerts);
 router.get('/dummy-api-requests', dummyApiAdminController.dashboard);
 router.post('/dummy-api-requests/settings', dummyApiAdminController.updateSettings);
 router.post('/dummy-api-requests/clear', dummyApiAdminController.clearLogs);
