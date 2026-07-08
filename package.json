@@ -82,5 +82,11 @@
   },
   "volta": {
     "node": "24.12.0"
+  },
+  "allowScripts": {
+    "@scarf/scarf@1.4.0": true,
+    "curl-cffi@0.1.50": true,
+    "sharp@0.33.5": true,
+    "unrs-resolver@1.12.2": true
   }
 }
