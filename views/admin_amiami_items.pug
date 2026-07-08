@@ -1,0 +1,143 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/amiami-items.css')
+
+block content
+  main.amiami-items
+    header.amiami-items__header
+      h1 AmiAmi Items
+      .amiami-items__meta
+        span #{totalItems} records
+        span Page #{page} of #{totalPages}
+
+    form.amiami-items__filters(method='get', action='/admin/amiami-items')
+      .amiami-items__field.amiami-items__field--wide
+        label(for='amiamiSearch') Search
+        input#amiamiSearch(type='search', name='q', value=query.q, placeholder='Gcode, name, brand, series, character, JAN')
+      .amiami-items__field
+        label(for='amiamiStatus') Detail status
+        select#amiamiStatus(name='detailStatus')
+          option(value='' selected=!query.detailStatus) Any
+          each status in ['pending', 'fetched', 'error']
+            option(value=status selected=query.detailStatus === status)= status
+      .amiami-items__field
+        label(for='amiamiBrand') Brand
+        input#amiamiBrand(type='text', name='brand', value=query.brand)
+      .amiami-items__field
+        label(for='amiamiSaleStatus') Sale status
+        input#amiamiSaleStatus(type='text', name='saleStatus', value=query.saleStatus, placeholder='Pre-order')
+      .amiami-items__field
+        label(for='amiamiTag') Tag
+        input#amiamiTag(type='text', name='tag', value=query.tag, placeholder='IMAGE UPDATE')
+      .amiami-items__field
+        label(for='amiamiSort') Sort
+        select#amiamiSort(name='sort')
+          each option in sortOptions
+            option(value=option.value selected=query.sort === option.value)= option.label
+      .amiami-items__field.amiami-items__field--small
+        label(for='amiamiLimit') Per page
+        input#amiamiLimit(type='number', name='limit', min='1', max='100', value=limit)
+      .amiami-items__checks
+        label
+          input(type='checkbox', name='changedOnly', value='1', checked=query.changedOnly === '1')
+          span Changed listing
+        label
+          input(type='checkbox', name='pendingOnly', value='1', checked=query.pendingOnly === '1')
+          span Needs details
+      .amiami-items__actions
+        button(type='submit') Apply
+        a(href='/admin/amiami-items') Reset
+
+    nav.amiami-items__pagination(aria-label='AmiAmi item pages')
+      if pagination.previousUrl
+        a(href=pagination.firstUrl) First
+        a(href=pagination.previousUrl) Prev
+      else
+        span First
+        span Prev
+      if pagination.nextUrl
+        a(href=pagination.nextUrl) Next
+        a(href=pagination.lastUrl) Last
+      else
+        span Next
+        span Last
+
+    if !items || items.length === 0
+      .amiami-items__empty No matching AmiAmi items.
+    else
+      .amiami-items__table-wrap
+        table.amiami-items__table
+          thead
+            tr
+              th Item
+              th Price
+              th Release
+              th Series / character
+              th Status
+              th Dates
+              th Images
+          tbody
+            each item in items
+              tr
+                td
+                  .amiami-items__name= item.itemName
+                  .amiami-items__subline
+                    a(href=item.url, target='_blank', rel='noopener noreferrer')= item.gcode
+                    if item.brand
+                      span= item.brand
+                  if item.janCode
+                    .amiami-items__muted JAN #{item.janCode}
+                td
+                  if item.currentPrice
+                    .amiami-items__price= item.currentPrice
+                  if item.comparisonPrice && item.comparisonPrice !== item.currentPrice
+                    .amiami-items__muted #{item.comparisonPrice}
+                td= item.releaseDate || '-'
+                td
+                  if item.seriesTitle
+                    .amiami-items__line= item.seriesTitle
+                  if item.characterName
+                    .amiami-items__muted= item.characterName
+                td
+                  .amiami-items__status= item.detailStatus || '-'
+                  if item.saleStatus
+                    .amiami-items__muted= item.saleStatus
+                  if item.tags && item.tags.length
+                    .amiami-items__tags
+                      each tag in item.tags
+                        span= tag
+                td
+                  dl.amiami-items__dates
+                    dt First
+                    dd= item.firstSeenAt || '-'
+                    dt Seen
+                    dd= item.lastSeenAt || '-'
+                    dt Changed
+                    dd= item.listingChangedAt || '-'
+                    dt Detail
+                    dd= item.detailFetchedAt || '-'
+                td
+                  if item.imageLinks && item.imageLinks.length
+                    details.amiami-items__images
+                      summary #{item.imageLinks.length} links
+                      ol
+                        each link in item.imageLinks
+                          li
+                            a(href=link, target='_blank', rel='noopener noreferrer')= link
+                  else
+                    span -
+
+    nav.amiami-items__pagination(aria-label='AmiAmi item pages bottom')
+      if pagination.previousUrl
+        a(href=pagination.firstUrl) First
+        a(href=pagination.previousUrl) Prev
+      else
+        span First
+        span Prev
+      if pagination.nextUrl
+        a(href=pagination.nextUrl) Next
+        a(href=pagination.lastUrl) Last
+      else
+        span Next
+        span Last

@@ -20,6 +20,7 @@ const deviceUsageAdminController = require('../controllers/deviceUsageAdminContr
 const minuteLoggerAdminController = require('../controllers/minuteLoggerAdminController');
 const dummyApiAdminController = require('../controllers/dummyApiAdminController');
 const disasterAdminController = require('../controllers/disasterAdminController');
+const amiamiItemsController = require('../controllers/amiamiItemsController');
 const lifeLogRouter = require('./lifeLog');
 
 const htmlUpload = multer({
@@ -250,6 +251,7 @@ router.post('/chat5-cleanup', controller.cleanup_chat5_databases);
 router.get('/database-viewer', controller.database_viewer_page);
 router.get('/database-viewer/data', controller.database_viewer_data);
 router.post('/database-viewer/delete', controller.database_viewer_delete);
+router.get('/amiami-items', amiamiItemsController.index);
 router.get('/tapo', tapoController.dashboard);
 router.get('/api-debug-logs', controller.api_debug_logs);
 router.post('/api-debug-logs/prune', controller.prune_api_debug_logs);

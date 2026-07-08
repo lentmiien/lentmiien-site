@@ -1,0 +1,345 @@
+.amiami-items {
+  padding: 24px 0 48px;
+  color: var(--text);
+}
+
+.amiami-items__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.amiami-items__header h1 {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.amiami-items__meta {
+  display: flex;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.amiami-items__filters {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(140px, 1fr)) minmax(190px, 1fr) minmax(90px, 0.5fr);
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  margin-bottom: 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.amiami-items__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.amiami-items__field label,
+.amiami-items__checks label {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.amiami-items__field input,
+.amiami-items__field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.amiami-items__field input:focus,
+.amiami-items__field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 194, 71, 0.16);
+}
+
+.amiami-items__checks {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  grid-column: 1 / -2;
+}
+
+.amiami-items__checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.amiami-items__checks input {
+  accent-color: var(--accent);
+}
+
+.amiami-items__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.amiami-items__actions button,
+.amiami-items__actions a,
+.amiami-items__pagination a,
+.amiami-items__pagination span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.amiami-items__actions button {
+  background: var(--brand);
+  color: var(--text-inverse);
+  border-color: var(--brand);
+  font-weight: 700;
+}
+
+.amiami-items__actions a,
+.amiami-items__pagination a {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.amiami-items__actions a:hover,
+.amiami-items__pagination a:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.amiami-items__pagination {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin: 12px 0;
+}
+
+.amiami-items__pagination span {
+  color: var(--text-muted);
+  background: var(--surface-1);
+}
+
+.amiami-items__empty {
+  padding: 18px;
+  background: var(--surface-1);
+  border: 1px dashed var(--divider);
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+
+.amiami-items__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+
+.amiami-items__table {
+  width: 100%;
+  min-width: 1160px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.amiami-items__table th,
+.amiami-items__table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--divider);
+  vertical-align: top;
+}
+
+.amiami-items__table th {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--surface-2);
+}
+
+.amiami-items__table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.amiami-items__table th:nth-child(1),
+.amiami-items__table td:nth-child(1) {
+  width: 28%;
+}
+
+.amiami-items__table th:nth-child(2),
+.amiami-items__table td:nth-child(2) {
+  width: 10%;
+}
+
+.amiami-items__table th:nth-child(3),
+.amiami-items__table td:nth-child(3) {
+  width: 9%;
+}
+
+.amiami-items__table th:nth-child(4),
+.amiami-items__table td:nth-child(4) {
+  width: 18%;
+}
+
+.amiami-items__table th:nth-child(5),
+.amiami-items__table td:nth-child(5) {
+  width: 11%;
+}
+
+.amiami-items__table th:nth-child(6),
+.amiami-items__table td:nth-child(6) {
+  width: 12%;
+}
+
+.amiami-items__table th:nth-child(7),
+.amiami-items__table td:nth-child(7) {
+  width: 12%;
+}
+
+.amiami-items__name,
+.amiami-items__line {
+  overflow-wrap: anywhere;
+}
+
+.amiami-items__name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.amiami-items__subline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.amiami-items a {
+  color: var(--accent);
+}
+
+.amiami-items a:hover {
+  color: var(--text);
+}
+
+.amiami-items__muted {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.amiami-items__price {
+  font-weight: 700;
+}
+
+.amiami-items__status {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(255, 194, 71, 0.12);
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.amiami-items__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.amiami-items__tags span {
+  padding: 2px 6px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.amiami-items__dates {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 3px 8px;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.amiami-items__dates dt {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.amiami-items__dates dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.amiami-items__images summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.amiami-items__images ol {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.amiami-items__images li {
+  margin-bottom: 5px;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 1200px) {
+  .amiami-items__filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .amiami-items__checks,
+  .amiami-items__actions {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .amiami-items__header,
+  .amiami-items__meta,
+  .amiami-items__actions,
+  .amiami-items__pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .amiami-items__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .amiami-items__checks {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
