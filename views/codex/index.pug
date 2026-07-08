@@ -218,12 +218,12 @@ block content
                 if stats.months && stats.months.length
                   each month in stats.months
                     tr
-                      td= month.label
-                      td= num(month.turnCount)
-                      td= num(month.sessionCount)
+                      td(data-label='Month')= month.label
+                      td(data-label='Turns')= num(month.turnCount)
+                      td(data-label='Sessions')= num(month.sessionCount)
                       each type in tokenTypes
-                        td= num(month.tokens && month.tokens[type])
-                      td= money(month.cost)
+                        td(data-label=tokenLabels[type])= num(month.tokens && month.tokens[type])
+                      td(data-label='Cost')= money(month.cost)
                 else
                   tr
                     td(colspan='8') No token usage recorded for the last 3 months.
@@ -250,19 +250,19 @@ block content
                 if stats.workspaceActivity && stats.workspaceActivity.length
                   each workspaceStat in stats.workspaceActivity
                     tr
-                      td
+                      td(data-label='Workspace')
                         strong= workspaceStat.workspaceName || workspaceStat.label
                         if workspaceStat.rootPath
                           small= workspaceStat.rootPath
-                      td= num(workspaceStat.turnCount)
-                      td= num(workspaceStat.sessionCount)
-                      td= num(workspaceStat.tokens && workspaceStat.tokens.input)
-                      td= num(workspaceStat.tokens && workspaceStat.tokens.cached)
-                      td= num(workspaceStat.tokens && workspaceStat.tokens.output)
-                      td= num(workspaceStat.tokens && workspaceStat.tokens.reasoning)
-                      td= duration(workspaceStat.avgDurationMs)
-                      td= pct(workspaceStat.successRate)
-                      td= money(workspaceStat.cost)
+                      td(data-label='Turns')= num(workspaceStat.turnCount)
+                      td(data-label='Sessions')= num(workspaceStat.sessionCount)
+                      td(data-label='Input')= num(workspaceStat.tokens && workspaceStat.tokens.input)
+                      td(data-label='Cached')= num(workspaceStat.tokens && workspaceStat.tokens.cached)
+                      td(data-label='Output')= num(workspaceStat.tokens && workspaceStat.tokens.output)
+                      td(data-label='Reasoning')= num(workspaceStat.tokens && workspaceStat.tokens.reasoning)
+                      td(data-label='Avg Time')= duration(workspaceStat.avgDurationMs)
+                      td(data-label='Success')= pct(workspaceStat.successRate)
+                      td(data-label='Cost')= money(workspaceStat.cost)
                 else
                   tr
                     td(colspan='10') No workspace activity recorded for the last 3 months.
@@ -283,14 +283,14 @@ block content
                 if recentSessions.length
                   each session in recentSessions
                     tr
-                      td
+                      td(data-label='Title')
                         a(href=`/codex/sessions/${session.id}`)= session.title
                         if session.lastResponsePreview
                           small= session.lastResponsePreview
-                      td= session.workspace ? session.workspace.name : '-'
-                      td
+                      td(data-label='Workspace')= session.workspace ? session.workspace.name : '-'
+                      td(data-label='Status')
                         span(class=statusClass(session.status))= session.status
-                      td= fmt(session.updatedAt)
+                      td(data-label='Updated')= fmt(session.updatedAt)
                 else
                   tr
                     td(colspan='4') No Codex sessions yet.

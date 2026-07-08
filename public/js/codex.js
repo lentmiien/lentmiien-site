@@ -104,6 +104,14 @@
     return element;
   }
 
+  function tableCell(label, attrs, children) {
+    const cellAttrs = { ...(attrs || {}) };
+    if (label) {
+      cellAttrs['data-label'] = label;
+    }
+    return createEl('td', cellAttrs, children);
+  }
+
   async function readJsonResponse(response) {
     const text = await response.text();
     try {
@@ -330,12 +338,12 @@
       } else {
         months.forEach((month) => {
           const row = createEl('tr');
-          row.appendChild(createEl('td', { text: month.label || month.key || '-' }));
-          row.appendChild(createEl('td', { text: formatNumber(month.turnCount) }));
-          row.appendChild(createEl('td', { text: formatNumber(month.sessionCount) }));
+          row.appendChild(tableCell('Month', { text: month.label || month.key || '-' }));
+          row.appendChild(tableCell('Turns', { text: formatNumber(month.turnCount) }));
+          row.appendChild(tableCell('Sessions', { text: formatNumber(month.sessionCount) }));
           const tokens = normalizeTokens(month.tokens);
-          TOKEN_TYPES.forEach((type) => row.appendChild(createEl('td', { text: formatNumber(tokens[type]) })));
-          row.appendChild(createEl('td', { text: formatMoney(month.cost) }));
+          TOKEN_TYPES.forEach((type) => row.appendChild(tableCell(TOKEN_LABELS[type], { text: formatNumber(tokens[type]) })));
+          row.appendChild(tableCell('Cost', { text: formatMoney(month.cost) }));
           monthlyBody.appendChild(row);
         });
       }
@@ -352,19 +360,19 @@
       } else {
         workspaces.forEach((workspace) => {
           const row = createEl('tr');
-          const nameCell = createEl('td');
+          const nameCell = tableCell('Workspace');
           nameCell.appendChild(createEl('strong', { text: workspace.workspaceName || workspace.label || 'Workspace' }));
           if (workspace.rootPath) {
             nameCell.appendChild(createEl('small', { text: workspace.rootPath }));
           }
           row.appendChild(nameCell);
-          row.appendChild(createEl('td', { text: formatNumber(workspace.turnCount) }));
-          row.appendChild(createEl('td', { text: formatNumber(workspace.sessionCount) }));
+          row.appendChild(tableCell('Turns', { text: formatNumber(workspace.turnCount) }));
+          row.appendChild(tableCell('Sessions', { text: formatNumber(workspace.sessionCount) }));
           const tokens = normalizeTokens(workspace.tokens);
-          TOKEN_TYPES.forEach((type) => row.appendChild(createEl('td', { text: formatNumber(tokens[type]) })));
-          row.appendChild(createEl('td', { text: formatDuration(workspace.avgDurationMs) }));
-          row.appendChild(createEl('td', { text: formatPercent(workspace.successRate) }));
-          row.appendChild(createEl('td', { text: formatMoney(workspace.cost) }));
+          TOKEN_TYPES.forEach((type) => row.appendChild(tableCell(TOKEN_LABELS[type], { text: formatNumber(tokens[type]) })));
+          row.appendChild(tableCell('Avg Time', { text: formatDuration(workspace.avgDurationMs) }));
+          row.appendChild(tableCell('Success', { text: formatPercent(workspace.successRate) }));
+          row.appendChild(tableCell('Cost', { text: formatMoney(workspace.cost) }));
           workspaceBody.appendChild(row);
         });
       }
@@ -402,7 +410,7 @@
     }
     sessions.forEach((session) => {
       const row = createEl('tr');
-      const titleCell = createEl('td');
+      const titleCell = tableCell('Title');
       titleCell.appendChild(createEl('a', {
         href: `/codex/sessions/${encodeURIComponent(session.id)}`,
         text: session.title,
@@ -411,11 +419,11 @@
         titleCell.appendChild(createEl('small', { text: session.lastResponsePreview }));
       }
       row.appendChild(titleCell);
-      row.appendChild(createEl('td', { text: session.workspace ? session.workspace.name : '-' }));
-      const statusCell = createEl('td');
+      row.appendChild(tableCell('Workspace', { text: session.workspace ? session.workspace.name : '-' }));
+      const statusCell = tableCell('Status');
       statusCell.appendChild(createEl('span', { className: statusClass(session.status), text: session.status }));
       row.appendChild(statusCell);
-      row.appendChild(createEl('td', { text: formatDate(session.updatedAt) }));
+      row.appendChild(tableCell('Updated', { text: formatDate(session.updatedAt) }));
       tbody.appendChild(row);
     });
   }

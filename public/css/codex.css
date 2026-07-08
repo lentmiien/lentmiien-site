@@ -5,7 +5,7 @@
 }
 
 .codex-shell {
-  width: min(1500px, calc(100vw - 32px));
+  width: min(1500px, 100%);
   margin: 0 auto;
 }
 
@@ -321,6 +321,7 @@
 .codex-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
 }
 
 .codex-table th,
@@ -329,6 +330,7 @@
   padding: 10px 8px;
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .codex-table th {
@@ -687,7 +689,7 @@
 
 @media (max-width: 760px) {
   .codex-shell {
-    width: min(100vw - 20px, 100%);
+    width: 100%;
   }
 
   .codex-page {
@@ -718,8 +720,104 @@
     grid-column: auto;
   }
 
-  .codex-table th:nth-child(2),
-  .codex-table td:nth-child(2) {
+  .codex-table-wrap {
+    overflow-x: visible;
+  }
+
+  .codex-table,
+  .codex-table thead,
+  .codex-table tbody,
+  .codex-table tr,
+  .codex-table th,
+  .codex-table td {
+    display: block;
+  }
+
+  .codex-table {
+    border-collapse: separate;
+  }
+
+  .codex-table thead {
     display: none;
+  }
+
+  .codex-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .codex-table tr {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    padding: 8px 10px;
+  }
+
+  .codex-table td {
+    position: relative;
+    min-height: 36px;
+    min-width: 0;
+    border-bottom: 1px solid var(--divider);
+    padding: 8px 0 8px 7.75rem;
+  }
+
+  .codex-table td:first-child {
+    min-width: 0;
+  }
+
+  .codex-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .codex-table td::before {
+    content: attr(data-label);
+    position: absolute;
+    top: 8px;
+    left: 0;
+    width: 6.75rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-align: left;
+  }
+
+  .codex-table td[colspan] {
+    padding-left: 0;
+  }
+
+  .codex-table td[colspan]::before {
+    content: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .codex-panel {
+    padding: 12px;
+  }
+
+  .codex-title {
+    font-size: 1.5rem;
+  }
+
+  .codex-topbar__actions,
+  .codex-actions {
+    align-items: stretch;
+  }
+
+  .codex-topbar__actions > .codex-button,
+  .codex-actions > .codex-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .codex-table td {
+    padding: 8px 0;
+  }
+
+  .codex-table td::before {
+    position: static;
+    display: block;
+    width: auto;
+    margin-bottom: 4px;
   }
 }
