@@ -10,7 +10,7 @@
     "test": "jest --coverage",
     "test:ollama:gemma4": "node test_ollama_gemma4.js",
     "lint:openapi": "node scripts/validate-openapi.js",
-    "scrape:amiami": "node scripts/scrape-amiami-new-items.js",
+    "scrape:amiami": "node scripts/scrape-amiami-new-items.js --storage=db",
     "cleanup:vector-embeddings": "node scripts/cleanup-vector-embeddings.js --days=90 --dry-run",
     "cleanup:vector-embeddings:execute": "node scripts/cleanup-vector-embeddings.js --days=90 --execute",
     "codex": "codex",
