@@ -99,4 +99,193 @@ describe('codexToolService token usage helpers', () => {
     });
     expect(cost.total).toBeCloseTo(0.0036, 8);
   });
+
+  test('derives per-turn token usage from cumulative resumed Codex usage', () => {
+    const turns = codexToolService.annotateTurnsWithTokenUsage([
+      {
+        _id: 'turn-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        kind: 'action',
+        usage: {
+          input_tokens: 100,
+          input_tokens_details: { cached_tokens: 20 },
+          output_tokens: 40,
+          output_tokens_details: { reasoning_tokens: 10 },
+          total_tokens: 140,
+        },
+      },
+      {
+        _id: 'turn-2',
+        sessionId: 'session-1',
+        sequence: 2,
+        kind: 'followup_action',
+        usage: {
+          input_tokens: 260,
+          input_tokens_details: { cached_tokens: 70 },
+          output_tokens: 90,
+          output_tokens_details: { reasoning_tokens: 25 },
+          total_tokens: 350,
+        },
+      },
+      {
+        _id: 'turn-3',
+        sessionId: 'session-1',
+        sequence: 3,
+        kind: 'followup_question',
+        usage: {
+          input_tokens: 390,
+          input_tokens_details: { cached_tokens: 120 },
+          output_tokens: 130,
+          output_tokens_details: { reasoning_tokens: 40 },
+          total_tokens: 520,
+        },
+      },
+    ]);
+
+    expect(turns[0].tokenUsage).toEqual({
+      input: 100,
+      cached: 20,
+      output: 40,
+      reasoning: 10,
+      total: 140,
+    });
+    expect(turns[1].tokenUsage).toEqual({
+      input: 160,
+      cached: 50,
+      output: 50,
+      reasoning: 15,
+      total: 210,
+    });
+    expect(turns[2].tokenUsage).toEqual({
+      input: 130,
+      cached: 50,
+      output: 40,
+      reasoning: 15,
+      total: 170,
+    });
+    expect(turns[1].sessionTokenUsage).toEqual({
+      input: 260,
+      cached: 70,
+      output: 90,
+      reasoning: 25,
+      total: 350,
+    });
+  });
+
+  test('keeps non-resumed retry usage independent', () => {
+    const turns = codexToolService.annotateTurnsWithTokenUsage([
+      {
+        _id: 'turn-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        kind: 'question',
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+      },
+      {
+        _id: 'turn-2',
+        sessionId: 'session-1',
+        sequence: 2,
+        kind: 'question',
+        commandSummary: { resume: false },
+        usage: { input_tokens: 80, output_tokens: 20, total_tokens: 100 },
+      },
+    ]);
+
+    expect(turns[1].tokenUsage).toEqual({
+      input: 80,
+      cached: 0,
+      output: 20,
+      reasoning: 0,
+      total: 100,
+    });
+  });
+
+  test('builds session totals from turn deltas instead of summing cumulative usage', () => {
+    const stats = codexToolService.buildSessionStats([
+      {
+        _id: 'turn-1',
+        sessionId: 'session-1',
+        sequence: 1,
+        kind: 'action',
+        status: 'succeeded',
+        usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+      },
+      {
+        _id: 'turn-2',
+        sessionId: 'session-1',
+        sequence: 2,
+        kind: 'followup_action',
+        status: 'succeeded',
+        usage: { input_tokens: 260, output_tokens: 90, total_tokens: 350 },
+      },
+      {
+        _id: 'turn-3',
+        sessionId: 'session-1',
+        sequence: 3,
+        kind: 'followup_question',
+        status: 'succeeded',
+        usage: { input_tokens: 390, output_tokens: 130, total_tokens: 520 },
+      },
+    ], {
+      currency: 'USD',
+      unitTokens: 1000,
+      prices: {
+        input: 1,
+        cached: 1,
+        output: 1,
+        reasoning: 1,
+      },
+    });
+
+    expect(stats.tokens).toEqual({
+      input: 390,
+      cached: 0,
+      output: 130,
+      reasoning: 0,
+      total: 520,
+    });
+    expect(stats.cost).toBeCloseTo(0.52, 8);
+    expect(stats.averageTokensPerTurn).toBeCloseTo(520 / 3, 8);
+  });
+
+  test('serializes corrected turn cost while retaining cumulative session usage', () => {
+    const [, turn] = codexToolService.annotateTurnsWithTokenUsage([
+      {
+        _id: 'turn-1',
+        sessionId: 'session-1',
+        workspaceId: 'workspace-1',
+        targetId: 'target-1',
+        sequence: 1,
+        kind: 'action',
+        usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+      },
+      {
+        _id: 'turn-2',
+        sessionId: 'session-1',
+        workspaceId: 'workspace-1',
+        targetId: 'target-1',
+        sequence: 2,
+        kind: 'followup_action',
+        usage: { input_tokens: 260, output_tokens: 90, total_tokens: 350 },
+      },
+    ]);
+
+    const serialized = codexToolService.serializeTurn(turn, {
+      pricing: {
+        currency: 'USD',
+        unitTokens: 1000,
+        prices: {
+          input: 1,
+          cached: 1,
+          output: 1,
+          reasoning: 1,
+        },
+      },
+    });
+
+    expect(serialized.tokenUsage.total).toBe(210);
+    expect(serialized.sessionTokenUsage.total).toBe(350);
+    expect(serialized.costEstimate.total).toBeCloseTo(0.21, 8);
+  });
 });

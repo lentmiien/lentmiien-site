@@ -59,19 +59,19 @@ block content
               small Duration
               strong= duration(turn.durationMs)
             div
-              small Input Tokens
+              small Turn Input Tokens
               strong= num(turn.tokenUsage && turn.tokenUsage.input)
             div
-              small Cached Tokens
+              small Turn Cached Tokens
               strong= num(turn.tokenUsage && turn.tokenUsage.cached)
             div
-              small Output Tokens
+              small Turn Output Tokens
               strong= num(turn.tokenUsage && turn.tokenUsage.output)
             div
-              small Reasoning Tokens
+              small Turn Reasoning Tokens
               strong= num(turn.tokenUsage && turn.tokenUsage.reasoning)
             div
-              small Estimated Cost
+              small Turn Estimated Cost
               strong= money(turn.costEstimate && turn.costEstimate.total)
             div
               small Exit

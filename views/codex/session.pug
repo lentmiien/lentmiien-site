@@ -75,7 +75,7 @@ block content
                 span= turn.permissionMode
                 span= 'Queued ' + fmt(turn.queuedAt)
                 span= 'Duration ' + duration(turn.durationMs)
-                span= 'Cost ' + money(turn.costEstimate && turn.costEstimate.total)
+                span= 'Turn cost ' + money(turn.costEstimate && turn.costEstimate.total)
               .codex-token-strip
                 each type in tokenTypes
                   span.codex-token-pill

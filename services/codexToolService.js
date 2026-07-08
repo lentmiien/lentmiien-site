@@ -160,6 +160,96 @@ function normalizeTokenUsage(usage = {}) {
   };
 }
 
+function subtractTokenUsage(currentInput, previousInput) {
+  const current = normalizeTokenUsage(currentInput);
+  const previous = normalizeTokenUsage(previousInput);
+  const tokens = TOKEN_TYPES.reduce((result, type) => {
+    result[type] = Math.max(0, current[type] - previous[type]);
+    return result;
+  }, {});
+  tokens.total = Math.max(0, current.total - previous.total);
+  return tokens;
+}
+
+function hasRecordedTokenUsage(usageInput) {
+  const usage = normalizeTokenUsage(usageInput);
+  return usage.total > 0 || TOKEN_TYPES.some((type) => usage[type] > 0);
+}
+
+function shouldDeriveTurnUsageDelta(turn, previousUsage) {
+  if (!turn || !previousUsage) {
+    return false;
+  }
+  const sequence = Number(turn.sequence);
+  if (!Number.isFinite(sequence) || sequence <= 1) {
+    return false;
+  }
+  if (turn.commandSummary && turn.commandSummary.resume === true) {
+    return true;
+  }
+  return String(turn.kind || '').startsWith('followup_');
+}
+
+function compareIndexedTurns(left, right) {
+  const leftTurn = left.turn || {};
+  const rightTurn = right.turn || {};
+  const sessionCompare = String(leftTurn.sessionId || '').localeCompare(String(rightTurn.sessionId || ''));
+  if (sessionCompare !== 0) {
+    return sessionCompare;
+  }
+
+  const leftSequence = Number(leftTurn.sequence) || 0;
+  const rightSequence = Number(rightTurn.sequence) || 0;
+  if (leftSequence !== rightSequence) {
+    return leftSequence - rightSequence;
+  }
+
+  const leftDate = new Date(leftTurn.startedAt || leftTurn.queuedAt || leftTurn.createdAt || 0).getTime() || 0;
+  const rightDate = new Date(rightTurn.startedAt || rightTurn.queuedAt || rightTurn.createdAt || 0).getTime() || 0;
+  if (leftDate !== rightDate) {
+    return leftDate - rightDate;
+  }
+
+  return left.index - right.index;
+}
+
+function annotateTurnsWithTokenUsage(turns = []) {
+  if (!Array.isArray(turns) || !turns.length) {
+    return [];
+  }
+
+  const annotations = new Map();
+  const previousUsageBySession = new Map();
+  turns
+    .map((turn, index) => ({ turn, index }))
+    .sort(compareIndexedTurns)
+    .forEach(({ turn, index }) => {
+      const sessionId = String(turn && turn.sessionId ? turn.sessionId : '');
+      const sessionTokenUsage = normalizeTokenUsage(turn && turn.usage ? turn.usage : {});
+      const previousUsage = previousUsageBySession.get(sessionId);
+      const tokenUsage = shouldDeriveTurnUsageDelta(turn, previousUsage)
+        ? subtractTokenUsage(sessionTokenUsage, previousUsage)
+        : sessionTokenUsage;
+
+      annotations.set(index, { tokenUsage, sessionTokenUsage });
+      if (hasRecordedTokenUsage(sessionTokenUsage)) {
+        previousUsageBySession.set(sessionId, sessionTokenUsage);
+      }
+    });
+
+  return turns.map((turn, index) => ({
+    ...turn,
+    ...(annotations.get(index) || {}),
+  }));
+}
+
+function getTurnTokenUsage(turn) {
+  if (turn && Object.prototype.hasOwnProperty.call(turn, 'tokenUsage')) {
+    return normalizeTokenUsage(turn.tokenUsage);
+  }
+  return normalizeTokenUsage(turn && turn.usage ? turn.usage : {});
+}
+
 function addTokenUsage(target, usage) {
   const normalized = normalizeTokenUsage(usage);
   TOKEN_TYPES.forEach((type) => {
@@ -337,7 +427,7 @@ function recordTurnInBucket(bucket, turn, pricing) {
     return;
   }
   bucket.turnCount += 1;
-  const tokens = normalizeTokenUsage(turn.usage);
+  const tokens = getTurnTokenUsage(turn);
   addTokenUsage(bucket.tokenTotals, tokens);
   bucket.tokenValues.push(tokens.total);
   bucket.cost += estimateTokenCost(tokens, pricing).total;
@@ -1186,11 +1276,12 @@ async function updateTokenPricing(payload = {}, user) {
 }
 
 function buildSessionStats(turns = [], pricing) {
+  const usageTurns = annotateTurnsWithTokenUsage(turns);
   const bucket = createActivityBucket({ key: 'session', label: 'Session' });
   let firstStartedAt = null;
   let lastCompletedAt = null;
 
-  turns.forEach((turn) => {
+  usageTurns.forEach((turn) => {
     recordTurnInBucket(bucket, turn, pricing);
     const startedAt = getTurnStartedDate(turn);
     if (startedAt) {
@@ -1214,6 +1305,32 @@ function buildSessionStats(turns = [], pricing) {
     ? Math.max(0, new Date(lastCompletedAt).getTime() - new Date(firstStartedAt).getTime())
     : null;
   return stats;
+}
+
+async function annotatePeriodTurnsWithUsageDeltas(turns = []) {
+  if (!Array.isArray(turns) || !turns.length) {
+    return [];
+  }
+
+  const sessionIds = Array.from(new Set(turns
+    .map((turn) => String(turn.sessionId || ''))
+    .filter(Boolean)));
+  const turnIds = new Set(turns.map((turn) => String(turn._id || turn.id || '')));
+  if (!sessionIds.length || !turnIds.size) {
+    return annotateTurnsWithTokenUsage(turns);
+  }
+
+  const sessionTurns = await CodexTurn.find({ sessionId: { $in: sessionIds } })
+    .sort({ sessionId: 1, sequence: 1 })
+    .lean()
+    .exec();
+  const annotatedById = new Map(annotateTurnsWithTokenUsage(sessionTurns)
+    .map((turn) => [String(turn._id || turn.id || ''), turn]));
+
+  return turns.map((turn) => {
+    const annotated = annotatedById.get(String(turn._id || turn.id || ''));
+    return annotated || annotateTurnsWithTokenUsage([turn])[0];
+  });
 }
 
 async function getDashboardStats(options = {}) {
@@ -1279,7 +1396,8 @@ async function getDashboardStats(options = {}) {
     recordSessionInBucket(getWorkspaceBucket(session.workspaceId), session);
   });
 
-  turns.forEach((turn) => {
+  const usageTurns = await annotatePeriodTurnsWithUsageDeltas(turns);
+  usageTurns.forEach((turn) => {
     const startedAt = getTurnStartedDate(turn);
     const startedDate = startedAt ? new Date(startedAt) : null;
     if (!startedDate || Number.isNaN(startedDate.getTime())) {
@@ -1354,12 +1472,13 @@ async function getSessionDetail(sessionId) {
     CodexTurn.find({ sessionId }).sort({ sequence: 1 }).lean().exec(),
     getTokenPricing(),
   ]);
+  const turnsWithUsage = annotateTurnsWithTokenUsage(turns);
   return {
     session: serializeSession(session, { workspace, target }),
     workspace: serializeWorkspace(workspace, { target }),
     target: serializeTarget(target),
-    turns: turns.map((turn) => serializeTurn(turn, { workspace, pricing })),
-    stats: buildSessionStats(turns, pricing),
+    turns: turnsWithUsage.map((turn) => serializeTurn(turn, { workspace, pricing })),
+    stats: buildSessionStats(turnsWithUsage, pricing),
     pricing,
     config: publicConfig(),
   };
@@ -1370,14 +1489,18 @@ async function getTurnDetail(turnId) {
   if (!turn) {
     throw createHttpError(404, 'Turn not found.');
   }
-  const [session, workspace, target, pricing] = await Promise.all([
+  const [session, workspace, target, pricing, sessionTurns] = await Promise.all([
     CodexSession.findById(turn.sessionId).lean().exec(),
     CodexWorkspace.findById(turn.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(turn.targetId).lean().exec(),
     getTokenPricing(),
+    CodexTurn.find({ sessionId: turn.sessionId }).sort({ sequence: 1 }).lean().exec(),
   ]);
+  const turnsWithUsage = annotateTurnsWithTokenUsage(sessionTurns.length ? sessionTurns : [turn]);
+  const turnWithUsage = turnsWithUsage.find((entry) => String(entry._id) === String(turn._id)) ||
+    annotateTurnsWithTokenUsage([turn])[0];
   return {
-    turn: serializeTurn(turn, { workspace, pricing }),
+    turn: serializeTurn(turnWithUsage, { workspace, pricing }),
     session: serializeSession(session, { workspace, target }),
     workspace: serializeWorkspace(workspace, { target }),
     target: serializeTarget(target),
@@ -1666,7 +1789,10 @@ function serializeTurn(turn, extras = {}) {
   if (!turn) {
     return null;
   }
-  const tokenUsage = normalizeTokenUsage(turn.usage || {});
+  const sessionTokenUsage = turn.sessionTokenUsage
+    ? normalizeTokenUsage(turn.sessionTokenUsage)
+    : normalizeTokenUsage(turn.usage || {});
+  const tokenUsage = getTurnTokenUsage(turn);
   const costEstimate = extras.pricing ? estimateTokenCost(tokenUsage, extras.pricing) : null;
   return {
     id: String(turn._id),
@@ -1690,6 +1816,7 @@ function serializeTurn(turn, extras = {}) {
     exitSignal: turn.exitSignal || '',
     errorMessage: turn.errorMessage || '',
     usage: turn.usage || {},
+    sessionTokenUsage,
     tokenUsage,
     costEstimate,
     eventCount: turn.eventCount || 0,
@@ -1752,7 +1879,9 @@ async function logServiceWarning(message, metadata) {
 module.exports = {
   ACTIVE_TURN_STATUSES,
   TERMINAL_TURN_STATUSES,
+  annotateTurnsWithTokenUsage,
   archiveSession,
+  buildSessionStats,
   cancelTurn,
   createFollowupTurn,
   createHttpError,

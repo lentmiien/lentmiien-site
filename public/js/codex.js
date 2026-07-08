@@ -490,7 +490,7 @@
       turn.permissionMode,
       `Queued ${formatDate(turn.queuedAt)}`,
       `Duration ${formatDuration(turn.durationMs)}`,
-      `Cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
+      `Turn cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
     ].forEach((text) => meta.appendChild(createEl('span', { text })));
     card.appendChild(meta);
     card.appendChild(renderTokenStrip(turn.tokenUsage));
@@ -595,11 +595,11 @@
         ['Started', formatDate(turn.startedAt)],
         ['Completed', formatDate(turn.completedAt)],
         ['Duration', formatDuration(turn.durationMs)],
-        ['Input Tokens', formatNumber(tokens.input)],
-        ['Cached Tokens', formatNumber(tokens.cached)],
-        ['Output Tokens', formatNumber(tokens.output)],
-        ['Reasoning Tokens', formatNumber(tokens.reasoning)],
-        ['Estimated Cost', formatMoney(turn.costEstimate && turn.costEstimate.total)],
+        ['Turn Input Tokens', formatNumber(tokens.input)],
+        ['Turn Cached Tokens', formatNumber(tokens.cached)],
+        ['Turn Output Tokens', formatNumber(tokens.output)],
+        ['Turn Reasoning Tokens', formatNumber(tokens.reasoning)],
+        ['Turn Estimated Cost', formatMoney(turn.costEstimate && turn.costEstimate.total)],
         ['Exit', turn.exitCode === null || turn.exitCode === undefined ? '-' : String(turn.exitCode)],
       ];
       detailGrid.innerHTML = '';
