@@ -199,7 +199,7 @@ class CodexQueueWorker {
       }
 
       const lock = await this.acquireLock(queuedTurn).catch((error) => {
-        if (error && error.code === 11000) {
+        if (codexToolService.isWorkspaceLockConflictError(error)) {
           return null;
         }
         throw error;

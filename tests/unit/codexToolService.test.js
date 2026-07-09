@@ -2,7 +2,17 @@ jest.mock('../../models/codex_event', () => ({
   find: jest.fn(),
 }));
 
+jest.mock('../../models/codex_workspace_lock', () => ({
+  deleteMany: jest.fn(),
+  collection: {
+    indexes: jest.fn(),
+    dropIndex: jest.fn(),
+    createIndex: jest.fn(),
+  },
+}));
+
 const CodexEvent = require('../../models/codex_event');
+const CodexWorkspaceLock = require('../../models/codex_workspace_lock');
 const codexToolService = require('../../services/codexToolService');
 
 function createEventQuery(events) {
@@ -49,6 +59,60 @@ describe('codexToolService.listTurnEvents', () => {
       seq: { $gt: 5 },
     });
     expect(query.limit).toHaveBeenCalledWith(25);
+  });
+});
+
+describe('codexToolService lock index maintenance', () => {
+  beforeEach(() => {
+    CodexWorkspaceLock.deleteMany.mockReset();
+    CodexWorkspaceLock.collection.indexes.mockReset();
+    CodexWorkspaceLock.collection.dropIndex.mockReset();
+    CodexWorkspaceLock.collection.createIndex.mockReset();
+
+    CodexWorkspaceLock.deleteMany.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+    });
+    CodexWorkspaceLock.collection.dropIndex.mockResolvedValue({});
+    CodexWorkspaceLock.collection.createIndex.mockResolvedValue('index-name');
+  });
+
+  test('repairs stale unique lock indexes that would serialize one worker globally', async () => {
+    CodexWorkspaceLock.collection.indexes.mockResolvedValue([
+      { name: '_id_', key: { _id: 1 }, unique: true },
+      { name: 'workerId_1', key: { workerId: 1 }, unique: true },
+      { name: 'workspaceId_custom', key: { workspaceId: 1 }, unique: true },
+      { name: 'expiresAt_custom', key: { expiresAt: 1 }, expireAfterSeconds: 60 },
+    ]);
+
+    await codexToolService.ensureCodexWorkspaceLockIndexes();
+
+    expect(CodexWorkspaceLock.collection.dropIndex).toHaveBeenCalledWith('workerId_1');
+    expect(CodexWorkspaceLock.collection.dropIndex).toHaveBeenCalledWith('workspaceId_custom');
+    expect(CodexWorkspaceLock.collection.dropIndex).toHaveBeenCalledWith('expiresAt_custom');
+    expect(CodexWorkspaceLock.collection.createIndex).toHaveBeenCalledWith(
+      { workspaceId: 1 },
+      { unique: true, name: 'workspaceId_1' }
+    );
+    expect(CodexWorkspaceLock.collection.createIndex).toHaveBeenCalledWith(
+      { workerId: 1 },
+      { name: 'workerId_1' }
+    );
+    expect(CodexWorkspaceLock.collection.createIndex).toHaveBeenCalledWith(
+      { expiresAt: 1 },
+      { expireAfterSeconds: 0, name: 'expiresAt_1' }
+    );
+  });
+
+  test('classifies only workspace duplicate lock errors as queue conflicts', () => {
+    expect(codexToolService.isWorkspaceLockConflictError({
+      code: 11000,
+      keyPattern: { workspaceId: 1 },
+    })).toBe(true);
+
+    expect(codexToolService.isWorkspaceLockConflictError({
+      code: 11000,
+      keyPattern: { workerId: 1 },
+    })).toBe(false);
   });
 });
 

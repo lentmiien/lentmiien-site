@@ -26,6 +26,8 @@ const ACTIVE_TURN_STATUSES = ['queued', 'running'];
 const VALID_MODES = new Set(['question', 'action']);
 const VALID_PERMISSION_MODES = new Set(['read-only', 'workspace-write', 'yolo']);
 const CODEX_THREAD_INDEX_NAME = 'codexThreadId_1';
+const WORKSPACE_LOCK_INDEX_NAME = 'workspaceId_1';
+const WORKSPACE_LOCK_TTL_INDEX_NAME = 'expiresAt_1';
 const DEFAULT_TOKEN_PRICE_ID = 'default';
 const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
 const VALID_REASONING_EFFORTS = new Set(['', 'low', 'medium', 'high', 'xhigh']);
@@ -1010,6 +1012,48 @@ function isCodexThreadIndex(index) {
   );
 }
 
+function isSingleKeyIndex(index, keyName) {
+  return Boolean(
+    index &&
+    index.key &&
+    Number(index.key[keyName]) === 1 &&
+    Object.keys(index.key).length === 1
+  );
+}
+
+function isCorrectWorkspaceLockIndex(index) {
+  return Boolean(
+    index &&
+    index.name === WORKSPACE_LOCK_INDEX_NAME &&
+    index.unique === true &&
+    isSingleKeyIndex(index, 'workspaceId')
+  );
+}
+
+function isCorrectWorkspaceLockTtlIndex(index) {
+  return Boolean(
+    index &&
+    index.name === WORKSPACE_LOCK_TTL_INDEX_NAME &&
+    Number(index.expireAfterSeconds) === 0 &&
+    isSingleKeyIndex(index, 'expiresAt')
+  );
+}
+
+function isWorkspaceLockConflictError(error) {
+  if (!error || error.code !== 11000) {
+    return false;
+  }
+
+  const keyPattern = error.keyPattern && typeof error.keyPattern === 'object' ? error.keyPattern : null;
+  if (keyPattern) {
+    return Number(keyPattern.workspaceId) === 1 && Object.keys(keyPattern).length === 1;
+  }
+
+  const message = String(error.message || '');
+  const indexName = String(error.index || '');
+  return message.includes(WORKSPACE_LOCK_INDEX_NAME) || indexName === WORKSPACE_LOCK_INDEX_NAME;
+}
+
 async function ensureCodexSessionIndexes() {
   let indexes = [];
   try {
@@ -1062,6 +1106,58 @@ async function ensureCodexSessionIndexes() {
   ]);
 }
 
+async function ensureCodexWorkspaceLockIndexes() {
+  await CodexWorkspaceLock.deleteMany({ expiresAt: { $lte: new Date() } }).exec();
+
+  let indexes = [];
+  try {
+    indexes = await CodexWorkspaceLock.collection.indexes();
+  } catch (error) {
+    if (!isNamespaceMissingError(error)) {
+      throw error;
+    }
+  }
+
+  for (const index of indexes) {
+    if (!index || index.name === '_id_') {
+      continue;
+    }
+
+    const workspaceIndex = isSingleKeyIndex(index, 'workspaceId');
+    const ttlIndex = isSingleKeyIndex(index, 'expiresAt');
+    const obsoleteUniqueIndex = index.unique === true && !workspaceIndex;
+    const incorrectWorkspaceIndex = workspaceIndex && !isCorrectWorkspaceLockIndex(index);
+    const incorrectTtlIndex = ttlIndex && !isCorrectWorkspaceLockTtlIndex(index);
+
+    if (obsoleteUniqueIndex || incorrectWorkspaceIndex || incorrectTtlIndex) {
+      await CodexWorkspaceLock.collection.dropIndex(index.name).catch((error) => {
+        if (!isIndexNotFoundError(error)) {
+          throw error;
+        }
+      });
+    }
+  }
+
+  await Promise.all([
+    CodexWorkspaceLock.collection.createIndex(
+      { workspaceId: 1 },
+      { unique: true, name: WORKSPACE_LOCK_INDEX_NAME }
+    ),
+    CodexWorkspaceLock.collection.createIndex(
+      { turnId: 1 },
+      { name: 'turnId_1' }
+    ),
+    CodexWorkspaceLock.collection.createIndex(
+      { workerId: 1 },
+      { name: 'workerId_1' }
+    ),
+    CodexWorkspaceLock.collection.createIndex(
+      { expiresAt: 1 },
+      { expireAfterSeconds: 0, name: WORKSPACE_LOCK_TTL_INDEX_NAME }
+    ),
+  ]);
+}
+
 async function ensureDefaultData() {
   if (defaultDataPromise) {
     return defaultDataPromise;
@@ -1069,6 +1165,7 @@ async function ensureDefaultData() {
 
   defaultDataPromise = (async () => {
     await ensureCodexSessionIndexes();
+    await ensureCodexWorkspaceLockIndexes();
     await ensureDefaultRequestProfiles();
 
     const localDefaults = getLocalTargetDefaults();
@@ -2188,6 +2285,8 @@ module.exports = {
   getTokenPricing,
   getTurnDetail,
   getWorkspaceBundle,
+  ensureCodexWorkspaceLockIndexes,
+  isWorkspaceLockConflictError,
   listSessions,
   listRequestProfiles,
   listTargets,
