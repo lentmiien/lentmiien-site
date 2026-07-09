@@ -28,6 +28,7 @@ jest.mock('../../utils/OpenAI_API', () => ({
   downloadBatchOutput: jest.fn(),
   deleteBatchFile: jest.fn(),
   convertResponseBody: jest.fn(),
+  supportsReasoningModel: jest.fn(() => false),
 }));
 
 jest.mock('../../utils/logger', () => ({

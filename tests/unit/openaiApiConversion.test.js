@@ -47,7 +47,7 @@ jest.mock('openai', () => ({
   toFile: jest.fn(),
 }));
 
-const { convertResponseBody, chat } = require('../../utils/OpenAI_API');
+const { convertResponseBody, chat, supportsReasoningModel } = require('../../utils/OpenAI_API');
 
 describe('OpenAI_API response conversion', () => {
   beforeEach(() => {
@@ -155,6 +155,46 @@ describe('OpenAI_API response conversion', () => {
       },
       { error: null },
     ]);
+  });
+
+  test('supports reasoning for GPT-5.2 and newer dotted model families', () => {
+    expect(supportsReasoningModel('gpt-5.2-2025-12-11')).toBe(true);
+    expect(supportsReasoningModel('gpt-5.6')).toBe(true);
+    expect(supportsReasoningModel('gpt-5.6-pro-2026-07-01')).toBe(true);
+    expect(supportsReasoningModel('gpt-5.1-mini-2025-11-13')).toBe(false);
+    expect(supportsReasoningModel('gpt-4.1-2025-04-14')).toBe(false);
+  });
+
+  test('chat sends max reasoning for GPT-5.6 models', async () => {
+    mockResponsesCreate.mockResolvedValue({ id: 'resp-max' });
+
+    const conversation = {
+      metadata: {
+        maxMessages: 20,
+        outputFormat: 'text',
+        reasoning: 'max',
+      },
+    };
+    const model = {
+      api_model: 'gpt-5.6-pro-2026-07-01',
+      context_type: 'system',
+      in_modalities: ['text'],
+    };
+    const messages = [
+      {
+        _id: 'user-1',
+        user_id: 'Lennart',
+        contentType: 'text',
+        content: { text: 'Use maximum reasoning.' },
+        hideFromBot: false,
+      },
+    ];
+
+    await chat(conversation, messages, model);
+
+    expect(mockResponsesCreate).toHaveBeenCalledWith(expect.objectContaining({
+      reasoning: { effort: 'max', summary: 'detailed' },
+    }));
   });
 
   test('chat resolves custom tools and only includes last tool batch when requested', async () => {

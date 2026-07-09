@@ -5,6 +5,7 @@ const {
   downloadBatchOutput,
   deleteBatchFile,
   convertResponseBody,
+  supportsReasoningModel,
 } = require('../utils/OpenAI_API');
 const { AIModelCards, Conversation5Model, Chat5Model } = require('../database');
 const logger = require('../utils/logger');
@@ -20,15 +21,6 @@ const redirect_models = {
   'gpt-4.1-mini': 'gpt-4.1-mini-2025-04-14',
   'gpt-4.1-nano': 'gpt-4.1-nano-2025-04-14',
 };
-
-const reasoningModels = [
-  'o3-pro-2025-06-10',
-  'o3-2025-04-16',
-  'o4-mini-2025-04-16',
-  'gpt-5-2025-08-07',
-  'gpt-5-mini-2025-08-07',
-  'gpt-5-nano-2025-08-07',
-];
 
 const SUMMARY_PROMPT = 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to read the entire conversation.';
 
@@ -226,7 +218,7 @@ class BatchService {
         body.text = textSettings;
       }
 
-      if (snapshot.conversation.metadata?.reasoning && reasoningModels.includes(normalizedModel)) {
+      if (snapshot.conversation.metadata?.reasoning && supportsReasoningModel(normalizedModel)) {
         body.reasoning = { effort: snapshot.conversation.metadata.reasoning, summary: 'detailed' };
       }
 

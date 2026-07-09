@@ -24,7 +24,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY_PRIVATE });
 const toolManagerService = new ToolManagerService();
 const VIDEO_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'video');
 
-const reasoningModels = [
+const reasoningModels = new Set([
   "gpt-5.5-pro",
   "gpt-5.5",
   "gpt-5.4-nano-2026-03-17",
@@ -42,7 +42,17 @@ const reasoningModels = [
   "gpt-5-2025-08-07",
   "gpt-5-mini-2025-08-07",
   "gpt-5-nano-2025-08-07",
-];
+]);
+
+function supportsReasoningModel(modelName) {
+  if (typeof modelName !== 'string') return false;
+  if (reasoningModels.has(modelName)) return true;
+
+  const dottedGpt5Match = modelName.match(/^gpt-5\.(\d+)(?:-|$)/);
+  if (!dottedGpt5Match) return false;
+
+  return Number.parseInt(dottedGpt5Match[1], 10) >= 2;
+}
 
 const type_map = {
   message: "text",
@@ -875,7 +885,7 @@ const chat = async (conversation, messages, model, options = {}) => {
       inputParameters['text']['verbosity'] = conversation.metadata.verbosity;
     }
   }
-  if (conversation.metadata.reasoning && reasoningModels.indexOf(model.api_model) >= 0) {
+  if (conversation.metadata.reasoning && supportsReasoningModel(model.api_model)) {
     inputParameters["reasoning"] = { effort: conversation.metadata.reasoning, summary: "detailed" };
   }
 
@@ -1388,4 +1398,5 @@ module.exports = {
   fetchVideo,
   checkVideoProgress,
   generateStructuredOutput,
+  supportsReasoningModel,
 }

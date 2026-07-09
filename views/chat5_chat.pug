@@ -451,12 +451,13 @@ block content
       label.chat5-input-label(for="reasoning") Reasoning effort 
       select#reasoning.form-control(name="reasoning") 
         option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
-        option(value="none") None *Only GPT 5.2
+        option(value="none") None *GPT 5.2+
         option(value="minimal") Minimal 
         option(value="low") Low 
         option(value="medium") Medium 
         option(value="high") High 
-        option(value="xhigh") Extra High *Only GPT 5.2
+        option(value="xhigh") Extra High *GPT 5.2+
+        option(value="max") Max *GPT 5.6
       label.chat5-input-label(for="verbosity") Verbosity 
       select#verbosity.form-control(name="verbosity") 
         option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})

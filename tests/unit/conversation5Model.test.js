@@ -37,4 +37,18 @@ describe('Conversation5 model', () => {
     expect(conversation.createdAt.getTime()).toBe(createdAt.getTime());
     expect(conversation.lastCleanupAt.getTime()).toBe(createdAt.getTime());
   });
+
+  test('allows current chat5 reasoning efforts', async () => {
+    for (const reasoning of ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
+      const conversation = new Conversation5({
+        title: `Reasoning ${reasoning}`,
+        category: 'Chat5',
+        messages: [],
+        members: ['test-user'],
+        metadata: { reasoning },
+      });
+
+      await expect(conversation.validate()).resolves.toBeUndefined();
+    }
+  });
 });
