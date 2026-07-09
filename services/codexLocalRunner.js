@@ -117,6 +117,9 @@ function buildCodexArgs({ turn, session, workspace, outputPath }) {
   if (turn.profile) {
     args.push('-p', turn.profile);
   }
+  if (turn.reasoningEffort) {
+    args.push('-c', `model_reasoning_effort="${turn.reasoningEffort}"`);
+  }
   if (turn.permissionMode === 'yolo') {
     args.push('--dangerously-bypass-approvals-and-sandbox');
   } else {
@@ -190,6 +193,7 @@ class CodexLocalRunner {
           permissionMode: turn.permissionMode,
           model: turn.model || '',
           profile: turn.profile || '',
+          reasoningEffort: turn.reasoningEffort || '',
         },
       };
     }
@@ -210,6 +214,7 @@ class CodexLocalRunner {
         permissionMode: turn.permissionMode,
         model: turn.model || '',
         profile: turn.profile || '',
+        reasoningEffort: turn.reasoningEffort || '',
       },
     };
   }

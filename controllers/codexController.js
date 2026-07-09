@@ -109,6 +109,23 @@ exports.renderWorkspaces = async (req, res) => {
   }
 };
 
+exports.renderProfiles = async (req, res) => {
+  try {
+    const profiles = await codexToolService.listRequestProfiles({ includeDisabled: true });
+    const state = {
+      profiles,
+      config: codexToolService.publicConfig(),
+    };
+    return res.render('codex/profiles', {
+      pageTitle: 'Codex Profiles',
+      codexState: state,
+      codexStateJson: stringifyForScript(state),
+    });
+  } catch (error) {
+    return renderPageError(req, res, error, 'Unable to load Codex profiles.');
+  }
+};
+
 exports.createSession = async (req, res) => {
   try {
     const result = await codexToolService.createSession(req.body || {}, req.user);
@@ -223,6 +240,44 @@ exports.updatePricing = async (req, res) => {
     return res.json({ ok: true, pricing, stats });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to update Codex token prices.');
+  }
+};
+
+exports.listRequestProfiles = async (req, res) => {
+  try {
+    const profiles = await codexToolService.listRequestProfiles({
+      includeDisabled: req.query.includeDisabled === '1' && req.user?.type_user === 'admin',
+    });
+    return res.json({ ok: true, profiles });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to list Codex profiles.');
+  }
+};
+
+exports.createRequestProfile = async (req, res) => {
+  try {
+    const profile = await codexToolService.createRequestProfile(req.body || {}, req.user);
+    return res.status(201).json({ ok: true, profile });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to create Codex profile.');
+  }
+};
+
+exports.updateRequestProfile = async (req, res) => {
+  try {
+    const profile = await codexToolService.updateRequestProfile(req.params.profileId, req.body || {}, req.user);
+    return res.json({ ok: true, profile });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to update Codex profile.');
+  }
+};
+
+exports.deleteRequestProfile = async (req, res) => {
+  try {
+    const result = await codexToolService.disableRequestProfile(req.params.profileId);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to disable Codex profile.');
   }
 };
 

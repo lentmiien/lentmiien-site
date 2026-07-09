@@ -8,6 +8,7 @@ block content
   - const session = state.session || {};
   - const workspace = state.workspace || {};
   - const turns = state.turns || [];
+  - const requestProfiles = state.requestProfiles || [];
   - const stats = state.stats || {};
   - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
@@ -73,6 +74,12 @@ block content
               .codex-turn-meta
                 span= workspace.name || '-'
                 span= turn.permissionMode
+                if turn.requestProfileName
+                  span= 'Profile ' + turn.requestProfileName
+                if turn.model
+                  span= 'Model ' + turn.model
+                if turn.reasoningEffort
+                  span= 'Reasoning ' + turn.reasoningEffort
                 span= 'Queued ' + fmt(turn.queuedAt)
                 span= 'Duration ' + duration(turn.durationMs)
                 span= 'Turn cost ' + money(turn.costEstimate && turn.costEstimate.total)
@@ -123,6 +130,18 @@ block content
               label.codex-check
                 input(type='checkbox', name='confirmYolo', value='1')
                 span Confirm yolo mode for this turn
+            .codex-field
+              label(for='codex-followup-profile') Profile
+              select#codex-followup-profile(name='requestProfileId')
+                if requestProfiles.length
+                  each profile in requestProfiles
+                    - const detailParts = [];
+                    - if (profile.model) detailParts.push(profile.model);
+                    - if (profile.reasoningEffort) detailParts.push(profile.reasoningEffort);
+                    - if (profile.codexProfile) detailParts.push('config ' + profile.codexProfile);
+                    option(value=profile.id, selected=profile.id === 'default')= detailParts.length ? `${profile.name} - ${detailParts.join(' / ')}` : profile.name
+                else
+                  option(value='') Default
             .codex-field
               label(for='codex-followup-prompt') Prompt
               textarea#codex-followup-prompt(name='prompt', rows='5', maxlength=config.maxPromptChars || 20000, required)

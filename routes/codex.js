@@ -22,11 +22,17 @@ router.get('/', controller.renderHome);
 router.get('/sessions/:sessionId', controller.renderSession);
 router.get('/turns/:turnId', controller.renderTurn);
 router.get('/workspaces', requireAdmin, controller.renderWorkspaces);
+router.get('/profiles', requireAdmin, controller.renderProfiles);
 
 router.get('/api/workspaces', controller.listWorkspaces);
 router.post('/api/workspaces', requireAdmin, controller.createWorkspace);
 router.patch('/api/workspaces/:workspaceId', requireAdmin, controller.updateWorkspace);
 router.delete('/api/workspaces/:workspaceId', requireAdmin, controller.deleteWorkspace);
+
+router.get('/api/profiles', controller.listRequestProfiles);
+router.post('/api/profiles', requireAdmin, controller.createRequestProfile);
+router.patch('/api/profiles/:profileId', requireAdmin, controller.updateRequestProfile);
+router.delete('/api/profiles/:profileId', requireAdmin, controller.deleteRequestProfile);
 
 router.get('/api/sessions', controller.listSessions);
 router.post('/api/sessions', controller.createSession);

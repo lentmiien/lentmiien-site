@@ -496,10 +496,13 @@
     [
       workspace ? workspace.name : '-',
       turn.permissionMode,
+      turn.requestProfileName ? `Profile ${turn.requestProfileName}` : '',
+      turn.model ? `Model ${turn.model}` : '',
+      turn.reasoningEffort ? `Reasoning ${turn.reasoningEffort}` : '',
       `Queued ${formatDate(turn.queuedAt)}`,
       `Duration ${formatDuration(turn.durationMs)}`,
       `Turn cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
-    ].forEach((text) => meta.appendChild(createEl('span', { text })));
+    ].filter(Boolean).forEach((text) => meta.appendChild(createEl('span', { text })));
     card.appendChild(meta);
     card.appendChild(renderTokenStrip(turn.tokenUsage));
 
@@ -599,6 +602,9 @@
         ['Workspace', workspace ? workspace.name : '-'],
         ['Mode', String(turn.kind || '').replace(/_/g, ' ') || '-'],
         ['Permission', turn.permissionMode || '-'],
+        ['Profile', turn.requestProfileName || '-'],
+        ['Model', turn.model || '-'],
+        ['Reasoning', turn.reasoningEffort || '-'],
         ['Queued', formatDate(turn.queuedAt)],
         ['Started', formatDate(turn.startedAt)],
         ['Completed', formatDate(turn.completedAt)],
@@ -713,6 +719,9 @@
           window.location.href = '/codex';
         } else if (action === 'disable-workspace') {
           await requestJson(`/codex/api/workspaces/${encodeURIComponent(button.dataset.workspaceId)}`, { method: 'DELETE', body: '{}' });
+          window.location.reload();
+        } else if (action === 'disable-profile') {
+          await requestJson(`/codex/api/profiles/${encodeURIComponent(button.dataset.profileId)}`, { method: 'DELETE', body: '{}' });
           window.location.reload();
         }
       } catch (error) {
@@ -912,6 +921,50 @@
     });
   }
 
+  function initProfiles() {
+    const createForm = document.getElementById('codex-profile-create');
+    const status = document.getElementById('codex-profile-status');
+    if (createForm) {
+      createForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submit = createForm.querySelector('[type="submit"]');
+        submit.disabled = true;
+        setStatus(status, 'Saving...', '');
+        try {
+          await requestJson('/codex/api/profiles', {
+            method: 'POST',
+            body: JSON.stringify(formToPayload(createForm)),
+          });
+          setStatus(status, 'Profile added.', 'success');
+          window.location.reload();
+        } catch (error) {
+          setStatus(status, error.message, 'error');
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    }
+
+    root.querySelectorAll('[data-profile-form]').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submit = form.querySelector('[type="submit"]');
+        submit.disabled = true;
+        try {
+          await requestJson(`/codex/api/profiles/${encodeURIComponent(form.dataset.profileForm)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(formToPayload(form)),
+          });
+          window.location.reload();
+        } catch (error) {
+          alert(error.message || 'Unable to save profile.');
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    });
+  }
+
   bindPermissionControls(root);
   bindGlobalActions();
 
@@ -923,5 +976,7 @@
     initTurn();
   } else if (root.dataset.codexPage === 'workspaces') {
     initWorkspaces();
+  } else if (root.dataset.codexPage === 'profiles') {
+    initProfiles();
   }
 })();

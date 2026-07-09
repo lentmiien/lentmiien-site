@@ -47,6 +47,15 @@ block content
               small Permission
               strong= turn.permissionMode || '-'
             div
+              small Profile
+              strong= turn.requestProfileName || '-'
+            div
+              small Model
+              strong= turn.model || '-'
+            div
+              small Reasoning
+              strong= turn.reasoningEffort || '-'
+            div
               small Queued
               strong= fmt(turn.queuedAt)
             div

@@ -10,6 +10,7 @@ block content
   - const runningTurns = state.runningTurns || [];
   - const queuedTurns = state.queuedTurns || [];
   - const recentSessions = state.recentSessions || [];
+  - const requestProfiles = state.requestProfiles || [];
   - const stats = state.stats || {};
   - const summary = stats.summary || {};
   - const pricing = state.pricing || {};
@@ -29,6 +30,7 @@ block content
           p.codex-subtitle Submit workspace-scoped Codex turns and review the stored session history.
         .codex-topbar__actions
           if admin
+            a.codex-button.codex-button--secondary(href='/codex/profiles') Profiles
             a.codex-button.codex-button--secondary(href='/codex/workspaces') Workspaces
           a.codex-button.codex-button--secondary(href='/codex/api/health', target='_blank', rel='noopener noreferrer') Health
 
@@ -65,11 +67,17 @@ block content
                 input(type='checkbox', name='confirmYolo', value='1')
                 span Confirm yolo mode for this turn
             .codex-field
-              label(for='codex-model') Model
-              input#codex-model(type='text', name='model', maxlength='120', placeholder='Default')
-            .codex-field
-              label(for='codex-profile') Profile
-              input#codex-profile(type='text', name='profile', maxlength='120', placeholder='Default')
+              label(for='codex-request-profile') Profile
+              select#codex-request-profile(name='requestProfileId')
+                if requestProfiles.length
+                  each profile in requestProfiles
+                    - const detailParts = [];
+                    - if (profile.model) detailParts.push(profile.model);
+                    - if (profile.reasoningEffort) detailParts.push(profile.reasoningEffort);
+                    - if (profile.codexProfile) detailParts.push('config ' + profile.codexProfile);
+                    option(value=profile.id, selected=profile.id === 'default')= detailParts.length ? `${profile.name} - ${detailParts.join(' / ')}` : profile.name
+                else
+                  option(value='') Default
             .codex-field
               label(for='codex-prompt') Prompt
               textarea#codex-prompt(name='prompt', rows='8', maxlength=config.maxPromptChars || 20000, required, placeholder='Ask a question or request a change...')

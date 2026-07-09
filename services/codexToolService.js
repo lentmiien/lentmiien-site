@@ -10,6 +10,7 @@ const CodexTurn = require('../models/codex_turn');
 const CodexEvent = require('../models/codex_event');
 const CodexWorkspaceLock = require('../models/codex_workspace_lock');
 const CodexTokenPrice = require('../models/codex_token_price');
+const CodexRequestProfile = require('../models/codex_request_profile');
 const logger = require('../utils/logger');
 const {
   buildRemoteShellCommand,
@@ -27,6 +28,72 @@ const VALID_PERMISSION_MODES = new Set(['read-only', 'workspace-write', 'yolo'])
 const CODEX_THREAD_INDEX_NAME = 'codexThreadId_1';
 const DEFAULT_TOKEN_PRICE_ID = 'default';
 const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
+const VALID_REASONING_EFFORTS = new Set(['', 'low', 'medium', 'high', 'xhigh']);
+const DEFAULT_REQUEST_PROFILES = [
+  {
+    _id: 'default',
+    name: 'Default',
+    description: 'Use the target machine Codex defaults.',
+    model: '',
+    codexProfile: '',
+    reasoningEffort: '',
+    sortOrder: 0,
+  },
+  {
+    _id: 'max',
+    name: 'Max',
+    description: 'Strongest default model with extra high reasoning.',
+    model: 'gpt-5.5',
+    codexProfile: '',
+    reasoningEffort: 'xhigh',
+    sortOrder: 10,
+  },
+  {
+    _id: 'high',
+    name: 'High',
+    description: 'Strong model with high reasoning.',
+    model: 'gpt-5.5',
+    codexProfile: '',
+    reasoningEffort: 'high',
+    sortOrder: 20,
+  },
+  {
+    _id: 'normal',
+    name: 'Normal',
+    description: 'Capable default model with medium reasoning.',
+    model: 'gpt-5.5',
+    codexProfile: '',
+    reasoningEffort: 'medium',
+    sortOrder: 30,
+  },
+  {
+    _id: 'low',
+    name: 'Low',
+    description: 'Faster model with medium reasoning.',
+    model: 'gpt-5.4-mini',
+    codexProfile: '',
+    reasoningEffort: 'medium',
+    sortOrder: 40,
+  },
+  {
+    _id: 'fast',
+    name: 'Fast',
+    description: 'Faster model with low reasoning.',
+    model: 'gpt-5.4-mini',
+    codexProfile: '',
+    reasoningEffort: 'low',
+    sortOrder: 50,
+  },
+  {
+    _id: 'fastest',
+    name: 'Fastest',
+    description: 'Leanest bundled default; update this when a faster Codex model is available.',
+    model: 'gpt-5.4-mini',
+    codexProfile: '',
+    reasoningEffort: 'low',
+    sortOrder: 60,
+  },
+];
 const TERMINAL_STATUS_LABELS = {
   succeeded: 'Succeeded',
   failed: 'Failed',
@@ -664,6 +731,96 @@ function normalizeOptionalString(value, maxLength = 120) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
+function normalizeRequestProfileId(value, fallback = '') {
+  const source = normalizeOptionalString(value || fallback, 80).toLowerCase();
+  const normalized = source
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  if (!normalized) {
+    throw createHttpError(400, 'Profile key is required.');
+  }
+  return normalized;
+}
+
+function normalizeCodexProfileName(value) {
+  const profile = normalizeOptionalString(value, 120);
+  if (profile && !/^[A-Za-z0-9_-]+$/.test(profile)) {
+    throw createHttpError(400, 'Codex profile names can only contain letters, numbers, hyphens, and underscores.');
+  }
+  return profile;
+}
+
+function normalizeReasoningEffort(value) {
+  const effort = normalizeOptionalString(value, 20).toLowerCase();
+  if (!VALID_REASONING_EFFORTS.has(effort)) {
+    throw createHttpError(400, 'Reasoning effort must be low, medium, high, or xhigh.');
+  }
+  return effort;
+}
+
+function normalizeSortOrder(value, fallback = 100) {
+  const number = Number.parseInt(value, 10);
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(number, 100000));
+}
+
+function normalizeRequestProfilePayload(payload = {}, options = {}) {
+  const name = normalizeOptionalString(payload.name, 80);
+  if (!name) {
+    throw createHttpError(400, 'Profile name is required.');
+  }
+  const normalized = {
+    name,
+    description: normalizeOptionalString(payload.description, 500),
+    model: normalizeOptionalString(payload.model, 120),
+    codexProfile: normalizeCodexProfileName(payload.codexProfile || payload.profile),
+    reasoningEffort: normalizeReasoningEffort(payload.reasoningEffort),
+    enabled: Object.prototype.hasOwnProperty.call(payload, 'enabled') ? normalizeBoolean(payload.enabled) : true,
+    sortOrder: normalizeSortOrder(payload.sortOrder, 100),
+  };
+  if (options.includeId) {
+    normalized._id = normalizeRequestProfileId(payload.id || payload._id, name);
+  }
+  return normalized;
+}
+
+function serializeRequestProfile(profile) {
+  if (!profile) {
+    return null;
+  }
+  return {
+    id: String(profile._id || ''),
+    name: profile.name || '',
+    description: profile.description || '',
+    model: profile.model || '',
+    codexProfile: profile.codexProfile || '',
+    reasoningEffort: profile.reasoningEffort || '',
+    enabled: Boolean(profile.enabled),
+    sortOrder: Number(profile.sortOrder) || 0,
+    updatedBy: profile.updatedBy || {},
+    createdAt: profile.createdAt || null,
+    updatedAt: profile.updatedAt || null,
+  };
+}
+
+async function ensureDefaultRequestProfiles() {
+  await Promise.all(DEFAULT_REQUEST_PROFILES.map((profile) => (
+    CodexRequestProfile.updateOne(
+      { _id: profile._id },
+      {
+        $setOnInsert: {
+          ...profile,
+          enabled: true,
+        },
+      },
+      { upsert: true }
+    ).exec()
+  )));
+}
+
 function makeOwner(user) {
   return {
     id: user && user._id ? String(user._id) : null,
@@ -912,6 +1069,7 @@ async function ensureDefaultData() {
 
   defaultDataPromise = (async () => {
     await ensureCodexSessionIndexes();
+    await ensureDefaultRequestProfiles();
 
     const localDefaults = getLocalTargetDefaults();
     let target = await CodexExecutionTarget.findOne({
@@ -993,6 +1151,33 @@ async function getWorkspaceBundle(workspaceId, options = {}) {
   return { workspace, target };
 }
 
+async function resolveTurnRequestOptions(payload = {}, workspace = {}) {
+  const requestedProfileId = normalizeOptionalString(payload.requestProfileId || payload.requestProfile, 80);
+  if (!requestedProfileId) {
+    return {
+      requestProfileId: '',
+      requestProfileName: '',
+      model: normalizeOptionalString(payload.model || workspace.defaultModel),
+      profile: normalizeCodexProfileName(payload.profile || workspace.defaultProfile),
+      reasoningEffort: normalizeReasoningEffort(payload.reasoningEffort),
+    };
+  }
+
+  const requestProfileId = normalizeRequestProfileId(requestedProfileId);
+  const requestProfile = await CodexRequestProfile.findById(requestProfileId).lean().exec();
+  if (!requestProfile || !requestProfile.enabled) {
+    throw createHttpError(400, 'Selected Codex profile is not available.');
+  }
+
+  return {
+    requestProfileId: String(requestProfile._id),
+    requestProfileName: requestProfile.name || '',
+    model: normalizeOptionalString(requestProfile.model || workspace.defaultModel),
+    profile: normalizeCodexProfileName(requestProfile.codexProfile || workspace.defaultProfile),
+    reasoningEffort: normalizeReasoningEffort(requestProfile.reasoningEffort || payload.reasoningEffort),
+  };
+}
+
 async function createSession(payload = {}, user) {
   const prompt = normalizePrompt(payload.prompt);
   const mode = normalizeMode(payload.mode);
@@ -1003,8 +1188,7 @@ async function createSession(payload = {}, user) {
     workspace,
     confirmYolo: payload.confirmYolo,
   });
-  const model = normalizeOptionalString(payload.model || workspace.defaultModel);
-  const profile = normalizeOptionalString(payload.profile || workspace.defaultProfile);
+  const requestOptions = await resolveTurnRequestOptions(payload, workspace);
   const owner = makeOwner(user);
 
   const session = await CodexSession.create({
@@ -1026,8 +1210,11 @@ async function createSession(payload = {}, user) {
     prompt,
     permissionMode: permission.permissionMode,
     yolo: permission.yolo,
-    model,
-    profile,
+    requestProfileId: requestOptions.requestProfileId,
+    requestProfileName: requestOptions.requestProfileName,
+    model: requestOptions.model,
+    profile: requestOptions.profile,
+    reasoningEffort: requestOptions.reasoningEffort,
     createdBy: owner,
     queuedAt: new Date(),
   });
@@ -1074,6 +1261,7 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
   const sequence = await getNextSessionSequence(session._id);
   const owner = makeOwner(user);
   const kind = mode === 'action' ? 'followup_action' : 'followup_question';
+  const requestOptions = await resolveTurnRequestOptions(payload, workspace);
 
   const turn = await CodexTurn.create({
     sessionId: session._id,
@@ -1085,8 +1273,11 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
     prompt,
     permissionMode: permission.permissionMode,
     yolo: permission.yolo,
-    model: normalizeOptionalString(payload.model || workspace.defaultModel),
-    profile: normalizeOptionalString(payload.profile || workspace.defaultProfile),
+    requestProfileId: requestOptions.requestProfileId,
+    requestProfileName: requestOptions.requestProfileName,
+    model: requestOptions.model,
+    profile: requestOptions.profile,
+    reasoningEffort: requestOptions.reasoningEffort,
     createdBy: owner,
     queuedAt: new Date(),
   });
@@ -1118,6 +1309,91 @@ async function listWorkspaces(options = {}) {
   ]);
   const targetById = new Map(targets.map((target) => [String(target._id), target]));
   return workspaceDocs.map((workspace) => serializeWorkspace(workspace, { target: targetById.get(String(workspace.targetId)) }));
+}
+
+async function listRequestProfiles(options = {}) {
+  await ensureDefaultData();
+  const query = options.includeDisabled ? {} : { enabled: true };
+  const profiles = await CodexRequestProfile.find(query)
+    .sort({ enabled: -1, sortOrder: 1, name: 1 })
+    .lean()
+    .exec();
+  return profiles.map(serializeRequestProfile);
+}
+
+async function createRequestProfile(payload = {}, user) {
+  await ensureDefaultData();
+  const normalized = normalizeRequestProfilePayload(payload, { includeId: true });
+  const updatedBy = makeOwner(user);
+  try {
+    const profile = await CodexRequestProfile.create({
+      ...normalized,
+      updatedBy,
+    });
+    return serializeRequestProfile(profile);
+  } catch (error) {
+    if (error && error.code === 11000) {
+      throw createHttpError(409, 'A Codex profile with this key already exists.');
+    }
+    throw error;
+  }
+}
+
+async function updateRequestProfile(profileId, payload = {}, user) {
+  await ensureDefaultData();
+  const id = normalizeRequestProfileId(profileId);
+  const profile = await CodexRequestProfile.findById(id).exec();
+  if (!profile) {
+    throw createHttpError(404, 'Codex profile not found.');
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'name')) {
+    const name = normalizeOptionalString(payload.name, 80);
+    if (!name) {
+      throw createHttpError(400, 'Profile name is required.');
+    }
+    profile.name = name;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'description')) {
+    profile.description = normalizeOptionalString(payload.description, 500);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'model')) {
+    profile.model = normalizeOptionalString(payload.model, 120);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'codexProfile') || Object.prototype.hasOwnProperty.call(payload, 'profile')) {
+    profile.codexProfile = normalizeCodexProfileName(payload.codexProfile || payload.profile);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'reasoningEffort')) {
+    profile.reasoningEffort = normalizeReasoningEffort(payload.reasoningEffort);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'enabled')) {
+    if (id === 'default' && !normalizeBoolean(payload.enabled)) {
+      throw createHttpError(400, 'The default Codex profile cannot be disabled.');
+    }
+    profile.enabled = normalizeBoolean(payload.enabled);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'sortOrder')) {
+    profile.sortOrder = normalizeSortOrder(payload.sortOrder, profile.sortOrder);
+  }
+  profile.updatedBy = makeOwner(user);
+
+  await profile.save();
+  return serializeRequestProfile(profile);
+}
+
+async function disableRequestProfile(profileId) {
+  await ensureDefaultData();
+  const id = normalizeRequestProfileId(profileId);
+  if (id === 'default') {
+    throw createHttpError(400, 'The default Codex profile cannot be disabled.');
+  }
+  const profile = await CodexRequestProfile.findById(id).exec();
+  if (!profile) {
+    throw createHttpError(404, 'Codex profile not found.');
+  }
+  profile.enabled = false;
+  await profile.save();
+  return { ok: true, profile: serializeRequestProfile(profile) };
 }
 
 async function createWorkspace(payload = {}) {
@@ -1441,12 +1717,13 @@ async function getDashboardStats(options = {}) {
 
 async function getDashboardState() {
   await ensureDefaultData();
-  const [workspaces, queuedTurns, runningTurns, sessions, pricing] = await Promise.all([
+  const [workspaces, queuedTurns, runningTurns, sessions, pricing, requestProfiles] = await Promise.all([
     listWorkspaces(),
     CodexTurn.find({ status: 'queued' }).sort({ queuedAt: 1 }).limit(20).lean().exec(),
     CodexTurn.find({ status: 'running' }).sort({ startedAt: 1 }).limit(20).lean().exec(),
     listSessions({ limit: 12 }),
     getTokenPricing(),
+    listRequestProfiles(),
   ]);
   const stats = await getDashboardStats({ pricing });
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
@@ -1458,6 +1735,7 @@ async function getDashboardState() {
     queuedTurns: queuedTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricing })),
     runningTurns: runningTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricing })),
     recentSessions: sessions,
+    requestProfiles,
   };
 }
 
@@ -1466,11 +1744,12 @@ async function getSessionDetail(sessionId) {
   if (!session) {
     throw createHttpError(404, 'Session not found.');
   }
-  const [workspace, target, turns, pricing] = await Promise.all([
+  const [workspace, target, turns, pricing, requestProfiles] = await Promise.all([
     CodexWorkspace.findById(session.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(session.targetId).lean().exec(),
     CodexTurn.find({ sessionId }).sort({ sequence: 1 }).lean().exec(),
     getTokenPricing(),
+    listRequestProfiles(),
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(turns);
   return {
@@ -1481,6 +1760,7 @@ async function getSessionDetail(sessionId) {
     stats: buildSessionStats(turnsWithUsage, pricing),
     pricing,
     config: publicConfig(),
+    requestProfiles,
   };
 }
 
@@ -1613,8 +1893,11 @@ async function retryTurn(turnId, user) {
     prompt: originalTurn.prompt,
     permissionMode: permission.permissionMode,
     yolo: permission.yolo,
+    requestProfileId: originalTurn.requestProfileId || '',
+    requestProfileName: originalTurn.requestProfileName || '',
     model: originalTurn.model || '',
     profile: originalTurn.profile || '',
+    reasoningEffort: originalTurn.reasoningEffort || '',
     createdBy: makeOwner(user),
     queuedAt: new Date(),
   });
@@ -1718,6 +2001,7 @@ function publicConfig() {
     timeoutMs: config.timeoutMs,
     maxPromptChars: config.maxPromptChars,
     yoloEnabled: config.yoloEnabled,
+    reasoningEfforts: Array.from(VALID_REASONING_EFFORTS).filter(Boolean),
   };
 }
 
@@ -1808,8 +2092,11 @@ function serializeTurn(turn, extras = {}) {
     responsePreview: turn.responsePreview || '',
     permissionMode: turn.permissionMode || 'read-only',
     yolo: Boolean(turn.yolo),
+    requestProfileId: turn.requestProfileId || '',
+    requestProfileName: turn.requestProfileName || '',
     model: turn.model || '',
     profile: turn.profile || '',
+    reasoningEffort: turn.reasoningEffort || '',
     codexThreadIdSeen: turn.codexThreadIdSeen || '',
     commandSummary: turn.commandSummary || {},
     exitCode: turn.exitCode,
@@ -1885,9 +2172,11 @@ module.exports = {
   cancelTurn,
   createFollowupTurn,
   createHttpError,
+  createRequestProfile,
   createSession,
   createWorkspace,
   deleteWorkspace,
+  disableRequestProfile,
   ensureDefaultData,
   estimateTokenCost,
   getDashboardState,
@@ -1900,6 +2189,7 @@ module.exports = {
   getTurnDetail,
   getWorkspaceBundle,
   listSessions,
+  listRequestProfiles,
   listTargets,
   listTurnEvents,
   listWorkspaces,
@@ -1915,6 +2205,7 @@ module.exports = {
   serializeTurn,
   serializeWorkspace,
   updateTokenPricing,
+  updateRequestProfile,
   updateSessionAfterTurn,
   updateWorkspace,
 };

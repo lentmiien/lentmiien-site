@@ -1,0 +1,100 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/codex.css')
+
+block content
+  - const state = codexState || {};
+  - const profiles = state.profiles || [];
+  - const config = state.config || {};
+  - const reasoningEfforts = config.reasoningEfforts || ['low', 'medium', 'high', 'xhigh'];
+  section.codex-page(data-codex-page='profiles')
+    .codex-shell
+      .codex-topbar
+        div
+          a.codex-back-link(href='/codex') Back to Codex
+          h1.codex-title Codex Profiles
+          p.codex-subtitle Manage the presets used by new Codex requests and follow-ups.
+
+      section.codex-panel
+        .codex-panel__header
+          h2 Add Profile
+          span.codex-chip= profiles.length + ' profile' + (profiles.length === 1 ? '' : 's')
+        form#codex-profile-create.codex-form.codex-form--profile
+          .codex-field
+            label(for='profile-id') Key
+            input#profile-id(type='text', name='id', maxlength='80', pattern='[A-Za-z0-9_-]+', placeholder='auto-from-name')
+          .codex-field
+            label(for='profile-name') Name
+            input#profile-name(type='text', name='name', maxlength='80', required)
+          .codex-field
+            label(for='profile-model') Model
+            input#profile-model(type='text', name='model', maxlength='120', placeholder='Default')
+          .codex-field
+            label(for='profile-reasoning') Reasoning
+            select#profile-reasoning(name='reasoningEffort')
+              option(value='') Default
+              each effort in reasoningEfforts
+                option(value=effort)= effort
+          .codex-field
+            label(for='profile-codex-profile') Codex CLI profile
+            input#profile-codex-profile(type='text', name='codexProfile', maxlength='120', pattern='[A-Za-z0-9_-]*', placeholder='Optional')
+          .codex-field
+            label(for='profile-sort') Sort
+            input#profile-sort(type='number', name='sortOrder', min='0', step='1', value='100')
+          .codex-field.codex-field--wide
+            label(for='profile-description') Description
+            input#profile-description(type='text', name='description', maxlength='500')
+          .codex-field
+            label.codex-check
+              input(type='checkbox', name='enabled', value='1', checked)
+              span Enabled
+          .codex-actions
+            button.codex-button(type='submit') Add
+            span#codex-profile-status.codex-form-status(aria-live='polite')
+
+      section.codex-panel.codex-panel--full
+        .codex-panel__header
+          h2 Available Profiles
+          span.codex-chip= profiles.length
+        .codex-profile-list
+          if profiles.length
+            each profile in profiles
+              form.codex-profile-row(data-profile-form=profile.id)
+                input(type='hidden', name='id', value=profile.id)
+                .codex-profile-row__main
+                  .codex-field
+                    label Name
+                    input(type='text', name='name', value=profile.name, maxlength='80', required)
+                  .codex-field
+                    label Model
+                    input(type='text', name='model', value=profile.model, maxlength='120', placeholder='Default')
+                  .codex-field
+                    label Reasoning
+                    select(name='reasoningEffort')
+                      option(value='', selected=!profile.reasoningEffort) Default
+                      each effort in reasoningEfforts
+                        option(value=effort, selected=profile.reasoningEffort === effort)= effort
+                  .codex-field
+                    label Codex CLI profile
+                    input(type='text', name='codexProfile', value=profile.codexProfile, maxlength='120', pattern='[A-Za-z0-9_-]*', placeholder='Optional')
+                  .codex-field
+                    label Sort
+                    input(type='number', name='sortOrder', min='0', step='1', value=profile.sortOrder)
+                  .codex-field.codex-field--wide
+                    label Description
+                    input(type='text', name='description', value=profile.description, maxlength='500')
+                  label.codex-check
+                    input(type='checkbox', name='enabled', value='1', checked=profile.enabled, disabled=profile.id === 'default')
+                    span Enabled
+                .codex-profile-row__actions
+                  span(class=profile.enabled ? 'codex-status codex-status--active' : 'codex-status codex-status--blocked')= profile.enabled ? 'enabled' : 'disabled'
+                  button.codex-small-button(type='submit') Save
+                  if profile.id !== 'default'
+                    button.codex-small-button(type='button', data-action='disable-profile', data-profile-id=profile.id) Disable
+          else
+            p.codex-empty No Codex profiles configured.
+
+block script
+  script#codex-page-data(type='application/json')!= codexStateJson
+  script(src='/js/codex.js', defer)
