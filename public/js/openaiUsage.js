@@ -14,6 +14,9 @@
 
   const monthlyTimeline = Array.isArray(payload.monthlyTimeline) ? payload.monthlyTimeline : [];
   const monthlyCards = Array.isArray(payload.monthlyCards) ? payload.monthlyCards : [];
+  const completionInsights = payload.completionInsights && typeof payload.completionInsights === 'object'
+    ? payload.completionInsights
+    : null;
 
   const parseMonth = d3.timeParse('%Y-%m');
   const parseDay = d3.timeParse('%Y-%m-%d');
@@ -31,6 +34,12 @@
     currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+  });
+
+  const numberDetailed = new Intl.NumberFormat('en-US');
+  const numberCompact = new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
   });
 
   const formatCurrencyExact = (value) => {
@@ -116,6 +125,178 @@
     container.appendChild(tooltip);
     return tooltip;
   };
+
+  const cssColor = (token, fallback) => {
+    const value = window.getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+    return value || fallback;
+  };
+
+  const escapeHtml = (value) => String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+
+  const renderCompletionActivityChart = () => {
+    const container = document.getElementById('completionActivityChart');
+    const rawSeries = Array.isArray(completionInsights?.dailyActivity)
+      ? completionInsights.dailyActivity
+      : [];
+    if (!container || !rawSeries.length) {
+      return;
+    }
+
+    const series = rawSeries
+      .map((entry) => ({
+        dateString: entry.date,
+        date: parseDay(entry.date),
+        tracked: entry.tracked === true,
+        requests: Number(entry.requests) || 0,
+        tokens: Number(entry.tokens) || 0,
+        models: Array.isArray(entry.models) ? entry.models : [],
+      }))
+      .filter((entry) => entry.date instanceof Date && !Number.isNaN(entry.date.getTime()));
+
+    if (!series.length || !series.some((entry) => entry.requests > 0)) {
+      container.innerHTML = '<div class="chart-empty">No request activity to chart.</div>';
+      return;
+    }
+
+    series.forEach((entry, index) => {
+      const rollingWindow = series.slice(Math.max(0, index - 6), index + 1);
+      const trackedWindow = rollingWindow.filter((day) => day.tracked);
+      entry.rollingAverage = trackedWindow.length
+        ? d3.sum(trackedWindow, (day) => day.requests) / trackedWindow.length
+        : 0;
+    });
+
+    const width = container.clientWidth || container.parentElement?.clientWidth || 640;
+    const height = Math.max(260, Math.min(310, Math.floor(width * 0.48)));
+    const margin = {
+      top: 12,
+      right: 20,
+      bottom: 44,
+      left: width < 480 ? 44 : 54,
+    };
+    const innerWidth = Math.max(1, width - margin.left - margin.right);
+    const innerHeight = Math.max(1, height - margin.top - margin.bottom);
+    const accent = cssColor('--accent', '#FFC247');
+    const brand = cssColor('--brand', '#FF6A1F');
+    const divider = cssColor('--divider', '#2B313C');
+
+    container.innerHTML = '';
+    const svg = d3.select(container)
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`);
+    const chart = svg.append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const xScale = d3.scaleBand()
+      .domain(series.map((entry) => entry.dateString))
+      .range([0, innerWidth])
+      .padding(0.24);
+    const maxValue = d3.max(series, (entry) => Math.max(entry.requests, entry.rollingAverage)) || 0;
+    const yScale = d3.scaleLinear()
+      .domain([0, maxValue <= 0 ? 1 : maxValue * 1.12])
+      .nice()
+      .range([innerHeight, 0]);
+
+    chart.append('g')
+      .attr('stroke', divider)
+      .attr('stroke-dasharray', '4 4')
+      .selectAll('line')
+      .data(yScale.ticks(5))
+      .join('line')
+      .attr('x1', 0)
+      .attr('x2', innerWidth)
+      .attr('y1', (value) => yScale(value))
+      .attr('y2', (value) => yScale(value));
+
+    chart.selectAll('.completion-request-bar')
+      .data(series)
+      .join('rect')
+      .attr('class', 'completion-request-bar')
+      .attr('x', (entry) => xScale(entry.dateString))
+      .attr('y', (entry) => yScale(entry.requests))
+      .attr('width', xScale.bandwidth())
+      .attr('height', (entry) => innerHeight - yScale(entry.requests))
+      .attr('rx', Math.min(3, xScale.bandwidth() / 2))
+      .attr('fill', accent)
+      .attr('opacity', (entry) => (entry.tracked ? 0.78 : 0.22));
+
+    const averageLine = d3.line()
+      .curve(d3.curveMonotoneX)
+      .x((entry) => (xScale(entry.dateString) || 0) + (xScale.bandwidth() / 2))
+      .y((entry) => yScale(entry.rollingAverage));
+
+    chart.append('path')
+      .datum(series)
+      .attr('fill', 'none')
+      .attr('stroke', brand)
+      .attr('stroke-width', 2.25)
+      .attr('stroke-linecap', 'round')
+      .attr('stroke-linejoin', 'round')
+      .attr('d', averageLine);
+
+    const desiredTickCount = width < 520 ? 4 : 7;
+    const tickStep = Math.max(1, Math.ceil(series.length / desiredTickCount));
+    const tickValues = series
+      .filter((entry, index) => index % tickStep === 0 || index === series.length - 1)
+      .map((entry) => entry.dateString);
+    const xAxis = d3.axisBottom(xScale)
+      .tickValues(Array.from(new Set(tickValues)))
+      .tickSizeOuter(0)
+      .tickFormat((value) => {
+        const date = parseDay(value);
+        return date ? d3.timeFormat('%b %e')(date) : value;
+      });
+
+    chart.append('g')
+      .attr('transform', `translate(0,${innerHeight})`)
+      .call(xAxis);
+    chart.append('g')
+      .call(d3.axisLeft(yScale).ticks(5).tickSizeOuter(0).tickFormat(d3.format('~s')));
+
+    const tooltip = ensureTooltip(container);
+    chart.selectAll('.completion-request-hit-area')
+      .data(series)
+      .join('rect')
+      .attr('class', 'completion-request-hit-area')
+      .attr('x', (entry) => xScale(entry.dateString))
+      .attr('y', 0)
+      .attr('width', xScale.bandwidth())
+      .attr('height', innerHeight)
+      .attr('fill', 'transparent')
+      .on('mouseenter', (event, entry) => {
+        const modelSummary = entry.models
+          .slice(0, 3)
+          .map((model) => `${escapeHtml(model.model)}: ${numberDetailed.format(Number(model.requests) || 0)}`);
+        const detail = entry.tracked
+          ? [
+            `${numberDetailed.format(entry.requests)} requests`,
+            `${numberCompact.format(entry.tokens)} tokens`,
+            ...modelSummary,
+          ]
+          : ['No stored usage entry'];
+        tooltip.innerHTML = [`<strong>${formatDay(entry.date)}</strong>`, ...detail].join('<br>');
+        tooltip.style.opacity = '1';
+      })
+      .on('mousemove', (event) => {
+        tooltip.style.transform = `translate(${event.offsetX + 12}px, ${event.offsetY + 12}px)`;
+      })
+      .on('mouseleave', () => {
+        tooltip.style.opacity = '0';
+        tooltip.style.transform = 'translate(-9999px, -9999px)';
+      });
+  };
+
+  if (completionInsights?.hasActivity) {
+    renderCompletionActivityChart();
+    resizeCallbacks.push(renderCompletionActivityChart);
+  }
 
   const renderMonthlyTimelineChart = () => {
     const container = document.getElementById('monthlyUsageChart');

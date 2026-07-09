@@ -45,6 +45,7 @@ const {
   roundCurrency,
   sortSubscriptionPlans,
 } = require('../services/openaiSubscriptionPlanService');
+const { buildCompletionInsights } = require('../services/openaiUsageMetricsService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 const TEMP_PASSWORD_BYTES = 18;
@@ -1585,55 +1586,7 @@ exports.openai_usage = async (req, res) => {
   ]);
 
   const monthMap = new Map();
-  const modelMetrics = {
-    completions: {},
-    embeddings: {},
-    images: {},
-    speeches: {},
-    transcriptions: {},
-  };
-
-  const getRequestsValue = (entry) => {
-    const keys = ['num_model_requests', 'request_count', 'num_requests', 'count'];
-    for (const key of keys) {
-      if (typeof entry[key] === 'number') {
-        return entry[key];
-      }
-    }
-    return 1;
-  };
-
-  const getTokenValue = (entry) => {
-    const tokenFields = ['total_tokens', 'tokens'];
-    let total = 0;
-    for (const field of tokenFields) {
-      if (typeof entry[field] === 'number') {
-        total += entry[field];
-      }
-    }
-    if (typeof entry.input_tokens === 'number') {
-      total += entry.input_tokens;
-    }
-    if (typeof entry.output_tokens === 'number') {
-      total += entry.output_tokens;
-    }
-    if (typeof entry.cached_tokens === 'number') {
-      total += entry.cached_tokens;
-    }
-    if (typeof entry.input_cached_tokens === 'number') {
-      total += entry.input_cached_tokens;
-    }
-    return total;
-  };
-
-  const accumulateMetric = (bucket, item) => {
-    const model = item.model || 'unknown';
-    if (!bucket[model]) {
-      bucket[model] = { requests: 0, tokens: 0 };
-    }
-    bucket[model].requests += getRequestsValue(item);
-    bucket[model].tokens += getTokenValue(item);
-  };
+  const completionInsights = buildCompletionInsights(entries);
 
   entries.forEach((entry) => {
     const monthKey = (entry.entry_date || '').slice(0, 7);
@@ -1663,12 +1616,6 @@ exports.openai_usage = async (req, res) => {
       speeches: entry.speeches || [],
       transcriptions: entry.transcriptions || [],
     });
-
-    (entry.completions || []).forEach((item) => accumulateMetric(modelMetrics.completions, item));
-    (entry.embeddings || []).forEach((item) => accumulateMetric(modelMetrics.embeddings, item));
-    (entry.images || []).forEach((item) => accumulateMetric(modelMetrics.images, item));
-    (entry.speeches || []).forEach((item) => accumulateMetric(modelMetrics.speeches, item));
-    (entry.transcriptions || []).forEach((item) => accumulateMetric(modelMetrics.transcriptions, item));
   });
 
   const apiMonthKeys = Array.from(monthMap.keys());
@@ -1732,48 +1679,13 @@ exports.openai_usage = async (req, res) => {
     }))
     .sort((a, b) => b.month.localeCompare(a.month));
 
-  const usageMetrics = Object.entries(modelMetrics).map(([key, metrics]) => {
-    const models = Object.entries(metrics).map(([model, values]) => ({
-      model,
-      requests: values.requests,
-      tokens: values.tokens,
-    })).sort((a, b) => {
-      if (b.requests === a.requests) {
-        return b.tokens - a.tokens;
-      }
-      return b.requests - a.requests;
-    });
-
-    if (models.length === 0) {
-      return null;
-    }
-
-    const [top] = models;
-    const labelMap = {
-      completions: 'Completions',
-      embeddings: 'Embeddings',
-      images: 'Images',
-      speeches: 'Speech',
-      transcriptions: 'Transcription',
-    };
-
-    return {
-      key,
-      label: labelMap[key] || key,
-      topModel: top.model,
-      topModelRequests: top.requests,
-      topModelTokens: top.tokens,
-      models,
-    };
-  }).filter(Boolean);
-
   res.render('openai_usage', {
     feedback: parseFeedback(req),
     monthlyTimeline,
     monthlyCards,
     subscriptionPlans: sortSubscriptionPlans(subscriptionPlans).reverse(),
     subscriptionMonthlyRows: subscriptionRows.slice().reverse(),
-    usageMetrics,
+    completionInsights,
   });
 };
 

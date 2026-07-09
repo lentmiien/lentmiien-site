@@ -4,6 +4,10 @@ block styles
   link(rel='stylesheet', href='/css/openaiUsage.css')
 
 block content
+  - const formatWholeNumber = (value) => new Intl.NumberFormat('en-US').format(Number(value) || 0);
+  - const formatCompactNumber = (value) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value) || 0);
+  - const trendIcon = (direction) => ({ up: '↑', down: '↓', new: '✦', flat: '→', unavailable: '–' }[direction] || '–');
+  - const trendShortLabel = (trend) => trend.direction === 'up' ? `+${trend.percent}%` : trend.direction === 'down' ? `−${trend.percent}%` : trend.direction === 'new' ? 'New' : trend.direction === 'flat' ? '0%' : 'No comparison';
   .openai-usage
     .openai-usage__header
       h1 OpenAI Usage
@@ -22,24 +26,102 @@ block content
       .openai-usage__empty
         p No usage data available yet.
 
-    if usageMetrics && usageMetrics.length
+    if completionInsights
       section.openai-usage__section
-        header.section-header
-          h2.section-title Key Metrics
-          p.section-subtitle Most frequently used models by category.
-        .metrics-grid
-          each metric in usageMetrics
-            .metric-card
-              .metric-card__type= metric.label
-              .metric-card__model= metric.topModel
-              .metric-card__meta
-                span.metric-card__stat
-                  strong Requests:
-                  |  #{metric.topModelRequests}
-                if metric.topModelTokens && metric.topModelTokens > 0
-                  span.metric-card__stat
-                    strong Tokens:
-                    |  #{metric.topModelTokens}
+        header.section-header.completion-section__header
+          .completion-section__heading
+            h2.section-title Key Metrics
+            p.section-subtitle Completion activity from #{completionInsights.periodLabel}. Lifetime usage and low-volume API categories are excluded.
+          .completion-period-badge(aria-label=`${completionInsights.trackedDays} of ${completionInsights.periodDays} days have stored usage data`)
+            span Recent window
+            strong #{completionInsights.trackedDays}/#{completionInsights.periodDays} days tracked
+
+        if completionInsights.hasActivity
+          .completion-metrics-grid
+            article.completion-stat-card
+              .completion-stat-card__topline
+                span.completion-stat-card__label Requests
+                span.completion-trend(class=`completion-trend--${completionInsights.requestTrend.direction}`, title=completionInsights.requestTrend.label, aria-label=completionInsights.requestTrend.label)
+                  span.completion-trend__icon(aria-hidden='true')= trendIcon(completionInsights.requestTrend.direction)
+                  span= trendShortLabel(completionInsights.requestTrend)
+              strong.completion-stat-card__value= formatWholeNumber(completionInsights.requests)
+              p.completion-stat-card__detail
+                if completionInsights.activeDays > 0
+                  | #{formatWholeNumber(completionInsights.requestsPerActiveDay)} per active day across #{completionInsights.activeDays} #{completionInsights.activeDays === 1 ? 'day' : 'days'}
+                else
+                  | No request-bearing days in this window
+
+            article.completion-stat-card
+              .completion-stat-card__topline
+                span.completion-stat-card__label Tokens processed
+                span.completion-trend(class=`completion-trend--${completionInsights.tokenTrend.direction}`, title=completionInsights.tokenTrend.label, aria-label=completionInsights.tokenTrend.label)
+                  span.completion-trend__icon(aria-hidden='true')= trendIcon(completionInsights.tokenTrend.direction)
+                  span= trendShortLabel(completionInsights.tokenTrend)
+              strong.completion-stat-card__value(title=`${formatWholeNumber(completionInsights.tokens)} tokens`)= formatCompactNumber(completionInsights.tokens)
+              p.completion-stat-card__detail #{formatCompactNumber(completionInsights.inputTokens)} input · #{formatCompactNumber(completionInsights.outputTokens)} output
+              if completionInsights.cachedTokens > 0
+                p.completion-stat-card__note #{formatCompactNumber(completionInsights.cachedTokens)} cached input (#{completionInsights.cacheRate}%)
+
+            article.completion-stat-card.completion-stat-card--featured
+              .completion-stat-card__topline
+                span.completion-stat-card__label Leading model
+                span.completion-stat-card__share #{completionInsights.topModel.requestShare}% of requests
+              strong.completion-stat-card__value.completion-stat-card__value--model= completionInsights.topModel.model
+              p.completion-stat-card__detail #{formatWholeNumber(completionInsights.topModel.requests)} requests · last used #{completionInsights.topModel.latestDateLabel}
+
+            article.completion-stat-card
+              .completion-stat-card__topline
+                span.completion-stat-card__label Active models
+                span.completion-stat-card__share Last #{completionInsights.periodDays} days
+              strong.completion-stat-card__value= formatWholeNumber(completionInsights.activeModels)
+              p.completion-stat-card__detail #{completionInsights.activeModelsLast7Days} used in the latest 7 days
+              p.completion-stat-card__note #{completionInsights.activeDays} completion-active #{completionInsights.activeDays === 1 ? 'day' : 'days'}
+
+          .completion-detail-grid
+            article.completion-panel.completion-panel--activity
+              header.completion-panel__header
+                div
+                  h3 Daily request rhythm
+                  p Daily completion requests with a trailing 7-day average.
+                .completion-panel__legend(aria-label='Chart legend')
+                  span
+                    i.completion-panel__legend-swatch(aria-hidden='true')
+                    | Requests
+                  span
+                    i.completion-panel__legend-line(aria-hidden='true')
+                    | 7-day average
+              #completionActivityChart.completion-activity-chart(
+                role='img',
+                aria-label=`Daily completion requests from ${completionInsights.periodLabel}`
+              )
+
+            article.completion-panel.completion-panel--models
+              header.completion-panel__header
+                div
+                  h3 Recent model mix
+                  p Ranked only within this #{completionInsights.periodDays}-day window.
+              ol.completion-model-list
+                each model, index in completionInsights.models.slice(0, 6)
+                  li.completion-model
+                    .completion-model__heading
+                      span.completion-model__rank= index + 1
+                      strong.completion-model__name= model.model
+                      span.completion-model__share #{model.requestShare}%
+                    progress.completion-model__bar(
+                      value=model.requestShare,
+                      max='100',
+                      aria-label=`${model.model}: ${model.requestShare}% of recent completion requests`
+                    )
+                    .completion-model__meta
+                      span #{formatWholeNumber(model.requests)} requests
+                      span #{formatCompactNumber(model.tokens)} tokens
+                      span Last used #{model.latestDateLabel}
+              if completionInsights.models.length > 6
+                p.completion-model__more +#{completionInsights.models.length - 6} more active #{completionInsights.models.length - 6 === 1 ? 'model' : 'models'}
+        else
+          .completion-empty-state
+            strong No recent completion activity
+            p There are stored usage days in this window, but none contain completion requests or tokens.
 
     if monthlyCards && monthlyCards.length
       section.openai-usage__section
@@ -134,5 +216,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, usageMetrics })}
+  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, completionInsights })}
   script(src='/js/openaiUsage.js', defer)
