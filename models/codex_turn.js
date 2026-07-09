@@ -42,7 +42,7 @@ const CodexTurnSchema = new Schema({
   profile: { type: String, default: '', trim: true, maxlength: 120 },
   reasoningEffort: {
     type: String,
-    enum: ['', 'low', 'medium', 'high', 'xhigh'],
+    enum: ['', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     default: '',
   },
   codexThreadIdSeen: { type: String, default: null, index: true },

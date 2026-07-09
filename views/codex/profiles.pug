@@ -7,7 +7,8 @@ block content
   - const state = codexState || {};
   - const profiles = state.profiles || [];
   - const config = state.config || {};
-  - const reasoningEfforts = config.reasoningEfforts || ['low', 'medium', 'high', 'xhigh'];
+  - const modelOptions = config.codexModelOptions || [];
+  - const reasoningEfforts = config.reasoningEfforts || [{ value: 'low', label: 'Low', description: 'Fast responses with lighter reasoning.' }, { value: 'medium', label: 'Medium', description: 'Balances speed and reasoning depth for everyday tasks.' }, { value: 'high', label: 'High', description: 'Greater reasoning depth for complex problems.' }, { value: 'xhigh', label: 'Extra high', description: 'Extra high reasoning depth for complex problems.' }, { value: 'max', label: 'Max', description: 'Maximum reasoning depth for the hardest problems.' }, { value: 'ultra', label: 'Ultra', description: 'Maximum reasoning with automatic task delegation.' }];
   section.codex-page(data-codex-page='profiles')
     .codex-shell
       .codex-topbar
@@ -28,14 +29,14 @@ block content
             label(for='profile-name') Name
             input#profile-name(type='text', name='name', maxlength='80', required)
           .codex-field
-            label(for='profile-model') Model
-            input#profile-model(type='text', name='model', maxlength='120', placeholder='Default')
+            label(for='profile-model', title='Choose a Codex model slug. Leave empty to use the target machine default.') Model
+            input#profile-model(type='text', name='model', maxlength='120', placeholder='Default', list='codex-model-options', title='Sol: hardest work. Terra: balanced everyday work. Luna: fast affordable work. Spark: ultra-fast iteration.')
           .codex-field
-            label(for='profile-reasoning') Reasoning
-            select#profile-reasoning(name='reasoningEffort')
+            label(for='profile-reasoning', title='Choose how much reasoning Codex should use. Ultra can trigger automatic task delegation on supported models.') Reasoning
+            select#profile-reasoning(name='reasoningEffort', title='Low is fastest; Max is deepest single-model reasoning; Ultra adds automatic task delegation when supported.')
               option(value='') Default
               each effort in reasoningEfforts
-                option(value=effort)= effort
+                option(value=effort.value, title=effort.description)= effort.description ? `${effort.label} - ${effort.description}` : effort.label
           .codex-field
             label(for='profile-codex-profile') Codex CLI profile
             input#profile-codex-profile(type='text', name='codexProfile', maxlength='120', pattern='[A-Za-z0-9_-]*', placeholder='Optional')
@@ -67,14 +68,14 @@ block content
                     label Name
                     input(type='text', name='name', value=profile.name, maxlength='80', required)
                   .codex-field
-                    label Model
-                    input(type='text', name='model', value=profile.model, maxlength='120', placeholder='Default')
+                    label(title='Choose a Codex model slug. Leave empty to use the target machine default.') Model
+                    input(type='text', name='model', value=profile.model, maxlength='120', placeholder='Default', list='codex-model-options', title='Sol: hardest work. Terra: balanced everyday work. Luna: fast affordable work. Spark: ultra-fast iteration.')
                   .codex-field
-                    label Reasoning
-                    select(name='reasoningEffort')
+                    label(title='Choose how much reasoning Codex should use. Ultra can trigger automatic task delegation on supported models.') Reasoning
+                    select(name='reasoningEffort', title='Low is fastest; Max is deepest single-model reasoning; Ultra adds automatic task delegation when supported.')
                       option(value='', selected=!profile.reasoningEffort) Default
                       each effort in reasoningEfforts
-                        option(value=effort, selected=profile.reasoningEffort === effort)= effort
+                        option(value=effort.value, selected=profile.reasoningEffort === effort.value, title=effort.description)= effort.description ? `${effort.label} - ${effort.description}` : effort.label
                   .codex-field
                     label Codex CLI profile
                     input(type='text', name='codexProfile', value=profile.codexProfile, maxlength='120', pattern='[A-Za-z0-9_-]*', placeholder='Optional')
@@ -94,6 +95,10 @@ block content
                     button.codex-small-button(type='button', data-action='disable-profile', data-profile-id=profile.id) Disable
           else
             p.codex-empty No Codex profiles configured.
+      if modelOptions.length
+        datalist#codex-model-options
+          each model in modelOptions
+            option(value=model.value, label=`${model.label} - ${model.description}`)
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson

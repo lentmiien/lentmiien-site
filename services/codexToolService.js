@@ -30,7 +30,76 @@ const WORKSPACE_LOCK_INDEX_NAME = 'workspaceId_1';
 const WORKSPACE_LOCK_TTL_INDEX_NAME = 'expiresAt_1';
 const DEFAULT_TOKEN_PRICE_ID = 'default';
 const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
-const VALID_REASONING_EFFORTS = new Set(['', 'low', 'medium', 'high', 'xhigh']);
+const CODEX_MODEL_OPTIONS = [
+  {
+    value: 'gpt-5.6-sol',
+    label: 'GPT-5.6 Sol',
+    description: 'Latest frontier agentic coding model for hardest coding, research, and architecture work.',
+  },
+  {
+    value: 'gpt-5.6-terra',
+    label: 'GPT-5.6 Terra',
+    description: 'Balanced agentic coding model for everyday implementation, review, and debugging.',
+  },
+  {
+    value: 'gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
+    description: 'Fast and affordable agentic coding model for small changes, quick answers, and mechanical edits.',
+  },
+  {
+    value: 'gpt-5.5',
+    label: 'GPT-5.5',
+    description: 'Previous frontier model for complex coding, research, and real-world work.',
+  },
+  {
+    value: 'gpt-5.4',
+    label: 'GPT-5.4',
+    description: 'Strong model for everyday coding.',
+  },
+  {
+    value: 'gpt-5.4-mini',
+    label: 'GPT-5.4 Mini',
+    description: 'Small, fast, and cost-efficient model for simpler coding tasks.',
+  },
+  {
+    value: 'gpt-5.3-codex-spark',
+    label: 'GPT-5.3 Codex Spark',
+    description: 'Ultra-fast coding model for near-instant iteration.',
+  },
+];
+const REASONING_EFFORT_OPTIONS = [
+  {
+    value: 'low',
+    label: 'Low',
+    description: 'Fast responses with lighter reasoning.',
+  },
+  {
+    value: 'medium',
+    label: 'Medium',
+    description: 'Balances speed and reasoning depth for everyday tasks.',
+  },
+  {
+    value: 'high',
+    label: 'High',
+    description: 'Greater reasoning depth for complex problems.',
+  },
+  {
+    value: 'xhigh',
+    label: 'Extra high',
+    description: 'Extra high reasoning depth for complex problems.',
+  },
+  {
+    value: 'max',
+    label: 'Max',
+    description: 'Maximum reasoning depth for the hardest problems.',
+  },
+  {
+    value: 'ultra',
+    label: 'Ultra',
+    description: 'Maximum reasoning with automatic task delegation.',
+  },
+];
+const VALID_REASONING_EFFORTS = new Set(['', ...REASONING_EFFORT_OPTIONS.map((option) => option.value)]);
 const DEFAULT_REQUEST_PROFILES = [
   {
     _id: 'default',
@@ -44,26 +113,26 @@ const DEFAULT_REQUEST_PROFILES = [
   {
     _id: 'max',
     name: 'Max',
-    description: 'Strongest default model with extra high reasoning.',
-    model: 'gpt-5.5',
+    description: 'Frontier model with Ultra reasoning for the hardest delegated coding work.',
+    model: 'gpt-5.6-sol',
     codexProfile: '',
-    reasoningEffort: 'xhigh',
+    reasoningEffort: 'ultra',
     sortOrder: 10,
   },
   {
     _id: 'high',
     name: 'High',
-    description: 'Strong model with high reasoning.',
-    model: 'gpt-5.5',
+    description: 'Frontier model with Max reasoning for hard single-agent work.',
+    model: 'gpt-5.6-sol',
     codexProfile: '',
-    reasoningEffort: 'high',
+    reasoningEffort: 'max',
     sortOrder: 20,
   },
   {
     _id: 'normal',
     name: 'Normal',
-    description: 'Capable default model with medium reasoning.',
-    model: 'gpt-5.5',
+    description: 'Balanced 5.6 model with medium reasoning for everyday implementation.',
+    model: 'gpt-5.6-terra',
     codexProfile: '',
     reasoningEffort: 'medium',
     sortOrder: 30,
@@ -71,17 +140,17 @@ const DEFAULT_REQUEST_PROFILES = [
   {
     _id: 'low',
     name: 'Low',
-    description: 'Faster model with medium reasoning.',
-    model: 'gpt-5.4-mini',
+    description: 'Balanced 5.6 model with low reasoning for scoped work.',
+    model: 'gpt-5.6-terra',
     codexProfile: '',
-    reasoningEffort: 'medium',
+    reasoningEffort: 'low',
     sortOrder: 40,
   },
   {
     _id: 'fast',
     name: 'Fast',
-    description: 'Faster model with low reasoning.',
-    model: 'gpt-5.4-mini',
+    description: 'Fast 5.6 model with low reasoning for small changes and quick answers.',
+    model: 'gpt-5.6-luna',
     codexProfile: '',
     reasoningEffort: 'low',
     sortOrder: 50,
@@ -89,8 +158,8 @@ const DEFAULT_REQUEST_PROFILES = [
   {
     _id: 'fastest',
     name: 'Fastest',
-    description: 'Leanest bundled default; update this when a faster Codex model is available.',
-    model: 'gpt-5.4-mini',
+    description: 'Ultra-fast model for the smallest coding iteration loops.',
+    model: 'gpt-5.3-codex-spark',
     codexProfile: '',
     reasoningEffort: 'low',
     sortOrder: 60,
@@ -756,7 +825,7 @@ function normalizeCodexProfileName(value) {
 function normalizeReasoningEffort(value) {
   const effort = normalizeOptionalString(value, 20).toLowerCase();
   if (!VALID_REASONING_EFFORTS.has(effort)) {
-    throw createHttpError(400, 'Reasoning effort must be low, medium, high, or xhigh.');
+    throw createHttpError(400, 'Reasoning effort must be low, medium, high, xhigh, max, or ultra.');
   }
   return effort;
 }
@@ -809,18 +878,30 @@ function serializeRequestProfile(profile) {
 }
 
 async function ensureDefaultRequestProfiles() {
-  await Promise.all(DEFAULT_REQUEST_PROFILES.map((profile) => (
-    CodexRequestProfile.updateOne(
-      { _id: profile._id },
-      {
-        $setOnInsert: {
-          ...profile,
-          enabled: true,
-        },
-      },
-      { upsert: true }
-    ).exec()
-  )));
+  await Promise.all(DEFAULT_REQUEST_PROFILES.map(async (profile) => {
+    const existing = await CodexRequestProfile.findById(profile._id).exec();
+    if (!existing) {
+      await CodexRequestProfile.create({
+        ...profile,
+        enabled: true,
+      });
+      return;
+    }
+
+    const editedByUser = Boolean(existing.updatedBy && (existing.updatedBy.id || existing.updatedBy.name));
+    if (editedByUser) {
+      return;
+    }
+
+    existing.name = profile.name;
+    existing.description = profile.description;
+    existing.model = profile.model;
+    existing.codexProfile = profile.codexProfile;
+    existing.reasoningEffort = profile.reasoningEffort;
+    existing.sortOrder = profile.sortOrder;
+    existing.enabled = true;
+    await existing.save();
+  }));
 }
 
 function makeOwner(user) {
@@ -2098,7 +2179,8 @@ function publicConfig() {
     timeoutMs: config.timeoutMs,
     maxPromptChars: config.maxPromptChars,
     yoloEnabled: config.yoloEnabled,
-    reasoningEfforts: Array.from(VALID_REASONING_EFFORTS).filter(Boolean),
+    reasoningEfforts: REASONING_EFFORT_OPTIONS,
+    codexModelOptions: CODEX_MODEL_OPTIONS,
   };
 }
 

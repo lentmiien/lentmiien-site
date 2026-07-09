@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const { Schema } = mongoose;
 
-const REASONING_EFFORTS = ['', 'low', 'medium', 'high', 'xhigh'];
+const REASONING_EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
 const UserRefSchema = new Schema({
   id: { type: String, default: null },
