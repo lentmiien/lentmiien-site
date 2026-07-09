@@ -192,7 +192,7 @@ async function runWithTmpData(options) {
     newlyDiscovered.push(listing.gcode);
   }
 
-  const detailQueue = buildDetailQueue(store, newlyDiscovered, options);
+  const detailQueue = buildDetailQueue(store, newlyDiscovered, listingChanged, options);
   const detailResults = {
     attempted: 0,
     fetched: 0,
@@ -281,8 +281,8 @@ async function runWithDatabase(options) {
     const listedItems = extractNewItems(html);
     const limitedListedItems = listedItems.slice(0, options.maxNewItems);
     const seenAt = startedAt;
-    const { newlyDiscovered, listingChanged } = await upsertMongoListings(limitedListedItems, seenAt);
-    const detailQueue = await buildMongoDetailQueue(newlyDiscovered, options);
+    const { newlyDiscovered, listingChanged, unchangedSkipped } = await upsertMongoListings(limitedListedItems, seenAt);
+    const detailQueue = await buildMongoDetailQueue(newlyDiscovered, listingChanged, options);
     const detailResults = {
       attempted: 0,
       fetched: 0,
@@ -348,6 +348,7 @@ async function runWithDatabase(options) {
       newlyDiscovered,
       listingChangedCount: listingChanged.length,
       listingChanged,
+      unchangedSkippedCount: unchangedSkipped,
       pendingDetailCount,
       detailResults,
       collection: AmiAmiItem.collection.name,
@@ -363,19 +364,19 @@ async function runWithDatabase(options) {
   }
 }
 
-function buildDetailQueue(store, newlyDiscovered, options) {
+function buildDetailQueue(store, newlyDiscovered, listingChanged, options) {
   if (options.forceRefreshDetails) {
     return Object.keys(store.items).sort();
   }
 
-  const newPending = newlyDiscovered.filter((gcode) => !store.items[gcode].details);
+  const priorityGcodes = uniqueStrings([...newlyDiscovered, ...listingChanged]);
   const olderPending = Object.values(store.items)
-    .filter((item) => !newPending.includes(item.gcode))
+    .filter((item) => !priorityGcodes.includes(item.gcode))
     .filter((item) => !item.details || item.detailStatus === 'error')
     .sort((a, b) => String(a.discoveredAt).localeCompare(String(b.discoveredAt)))
     .map((item) => item.gcode);
 
-  return [...newPending, ...olderPending];
+  return [...priorityGcodes, ...olderPending];
 }
 
 async function connectMongo(options) {
@@ -389,7 +390,7 @@ async function connectMongo(options) {
 
 async function upsertMongoListings(listings, seenAt) {
   if (listings.length === 0) {
-    return { newlyDiscovered: [], listingChanged: [] };
+    return { newlyDiscovered: [], listingChanged: [], unchangedSkipped: 0 };
   }
 
   const gcodes = listings.map((listing) => listing.gcode);
@@ -401,51 +402,82 @@ async function upsertMongoListings(listings, seenAt) {
   const operations = listings.map((listing) => {
     const currentListingHash = getListingHash(listing);
     const existingItem = existingByGcode.get(listing.gcode);
+    const hasStoredListingHash = Boolean(existingItem && existingItem.listingHash);
     const didListingChange = Boolean(
       existingItem &&
-      existingItem.listingHash &&
+      hasStoredListingHash &&
       existingItem.listingHash !== currentListingHash,
     );
+    const needsListingHashBackfill = Boolean(existingItem && !hasStoredListingHash);
 
     if (didListingChange) {
       listingChanged.push(listing.gcode);
     }
 
-    const update = {
-      $set: {
-        url: listing.url,
-        source: 'amiami-new-products',
-        sourceUrl: NEW_ITEMS_URL,
-        lastSeenAt: seenAt,
-        listing,
-        listingHash: currentListingHash,
-      },
-      $setOnInsert: {
-        gcode: listing.gcode,
-        firstSeenAt: seenAt,
-        listingChangedAt: seenAt,
-        detailStatus: 'pending',
-        detailFetchedAt: null,
-        detailError: { message: null, at: null },
-        details: null,
-      },
+    if (!existingItem) {
+      return {
+        updateOne: {
+          filter: { gcode: listing.gcode },
+          update: {
+            $set: {
+              url: listing.url,
+              source: 'amiami-new-products',
+              sourceUrl: NEW_ITEMS_URL,
+              lastSeenAt: seenAt,
+              listing,
+              listingHash: currentListingHash,
+            },
+            $setOnInsert: {
+              gcode: listing.gcode,
+              firstSeenAt: seenAt,
+              listingChangedAt: seenAt,
+              detailStatus: 'pending',
+              detailFetchedAt: null,
+              detailError: { message: null, at: null },
+              details: null,
+            },
+          },
+          upsert: true,
+        },
+      };
+    }
+
+    if (!didListingChange && !needsListingHashBackfill) {
+      return null;
+    }
+
+    const updateSet = {
+      url: listing.url,
+      source: 'amiami-new-products',
+      sourceUrl: NEW_ITEMS_URL,
+      lastSeenAt: seenAt,
+      listing,
+      listingHash: currentListingHash,
     };
 
     if (didListingChange) {
-      update.$set.listingChangedAt = seenAt;
+      updateSet.listingChangedAt = seenAt;
     }
 
     return {
       updateOne: {
         filter: { gcode: listing.gcode },
-        update,
-        upsert: true,
+        update: {
+          $set: updateSet,
+        },
       },
     };
-  });
+  }).filter(Boolean);
 
-  await AmiAmiItem.bulkWrite(operations, { ordered: false });
-  return { newlyDiscovered, listingChanged };
+  if (operations.length > 0) {
+    await AmiAmiItem.bulkWrite(operations, { ordered: false });
+  }
+
+  return {
+    newlyDiscovered,
+    listingChanged,
+    unchangedSkipped: listings.length - operations.length,
+  };
 }
 
 function getListingHash(listing) {
@@ -462,22 +494,26 @@ function getListingHash(listing) {
     .digest('hex');
 }
 
-async function buildMongoDetailQueue(newlyDiscovered, options) {
+async function buildMongoDetailQueue(newlyDiscovered, listingChanged, options) {
   if (options.forceRefreshDetails) {
     const docs = await AmiAmiItem.find({}).select('gcode').sort({ gcode: 1 }).lean();
     return docs.map((item) => item.gcode);
   }
 
-  const newPending = newlyDiscovered;
+  const priorityGcodes = uniqueStrings([...newlyDiscovered, ...listingChanged]);
   const olderPending = await AmiAmiItem.find({
-    gcode: { $nin: newPending },
+    gcode: { $nin: priorityGcodes },
     $or: [
       { details: null },
       { detailStatus: 'error' },
     ],
   }).select('gcode').sort({ firstSeenAt: 1, gcode: 1 }).lean();
 
-  return [...newPending, ...olderPending.map((item) => item.gcode)];
+  return [...priorityGcodes, ...olderPending.map((item) => item.gcode)];
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 async function countMongoPendingDetails() {
