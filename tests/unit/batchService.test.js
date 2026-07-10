@@ -15,7 +15,18 @@ const mockModelCards = [
     in_modalities: ['text'],
     context_type: 'system',
   },
+  {
+    api_model: 'gpt-5.6-sol',
+    provider: 'OpenAI',
+    model_type: 'chat',
+    batch_use: true,
+    in_modalities: ['text'],
+    context_type: 'system',
+  },
 ];
+
+const mockSupportsReasoningModel = jest.fn(() => false);
+const mockSupportsReasoningMode = jest.fn(() => false);
 
 jest.mock('../../database', () => ({
   AIModelCards: { find: jest.fn().mockResolvedValue(mockModelCards) },
@@ -28,7 +39,8 @@ jest.mock('../../utils/OpenAI_API', () => ({
   downloadBatchOutput: jest.fn(),
   deleteBatchFile: jest.fn(),
   convertResponseBody: jest.fn(),
-  supportsReasoningModel: jest.fn(() => false),
+  supportsReasoningModel: mockSupportsReasoningModel,
+  supportsReasoningMode: mockSupportsReasoningMode,
 }));
 
 jest.mock('../../utils/logger', () => ({
@@ -39,6 +51,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 const { AIModelCards } = require('../../database');
+const { uploadBatchFile, startBatchJob } = require('../../utils/OpenAI_API');
 const BatchService = require('../../services/batchService');
 
 const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
@@ -80,6 +93,8 @@ describe('BatchService (chat5)', () => {
   });
 
   beforeEach(async () => {
+    mockSupportsReasoningModel.mockReturnValue(false);
+    mockSupportsReasoningMode.mockReturnValue(false);
     BatchPromptDatabase = createBatchPromptModel();
     BatchRequestDatabase = createBatchRequestModel();
     service = new BatchService(
@@ -153,5 +168,43 @@ describe('BatchService (chat5)', () => {
     const ids = await service.getPromptConversationIds();
 
     expect(ids).toEqual(['conv-1', 'conv-3']);
+  });
+
+  test('triggerBatchRequest sends pro reasoning mode for GPT-5.6', async () => {
+    const prompt = {
+      custom_id: 'prompt-1',
+      conversation_id: 'conv-1',
+      message_id: 'msg-1',
+      model: 'gpt-5.6-sol',
+      task_type: 'response',
+    };
+    BatchPromptDatabase.find.mockResolvedValue([prompt]);
+    BatchPromptDatabase.updateMany.mockResolvedValue({ modifiedCount: 1 });
+    mockSupportsReasoningModel.mockReturnValue(true);
+    mockSupportsReasoningMode.mockReturnValue(true);
+    uploadBatchFile.mockResolvedValue({ id: 'file-1' });
+    startBatchJob.mockResolvedValue({ id: 'batch-1', status: 'validating' });
+    service._loadConversationSnapshot = jest.fn().mockResolvedValue({
+      conversation: {
+        metadata: {
+          outputFormat: 'text',
+          reasoning: 'max',
+          mode: 'pro',
+        },
+      },
+      messages: [],
+    });
+    service._buildInputFromSnapshot = jest.fn().mockResolvedValue([
+      { role: 'user', content: [{ type: 'input_text', text: 'Review this.' }] },
+    ]);
+
+    await service.triggerBatchRequest();
+
+    const request = JSON.parse(uploadBatchFile.mock.calls[0][0]);
+    expect(request.body.reasoning).toEqual({
+      effort: 'max',
+      summary: 'detailed',
+      mode: 'pro',
+    });
   });
 });

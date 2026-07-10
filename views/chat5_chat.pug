@@ -458,6 +458,12 @@ block content
         option(value="high") High 
         option(value="xhigh") Extra High *GPT 5.2+
         option(value="max") Max *GPT 5.6
+      - const reasoningMode = conversation.metadata.mode || "standard"
+      label.chat5-input-label(for="mode") Reasoning mode
+      select#mode.form-control(name="mode")
+        option(value=reasoningMode) Use previous (#{reasoningMode})
+        option(value="standard") Standard
+        option(value="pro") Pro *GPT 5.6
       label.chat5-input-label(for="verbosity") Verbosity 
       select#verbosity.form-control(name="verbosity") 
         option(value=conversation.metadata.verbosity?conversation.metadata.verbosity:"medium") Use previous (#{conversation.metadata.verbosity?conversation.metadata.verbosity:"medium"})
@@ -593,6 +599,9 @@ block content
           div 
             b reasoning: 
             span= conversation.metadata.reasoning
+          div
+            b mode:
+            span= conversation.metadata.mode || "standard"
           div 
             b verbosity: 
             span= conversation.metadata.verbosity

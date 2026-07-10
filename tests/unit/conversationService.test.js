@@ -339,6 +339,24 @@ describe('ConversationService', () => {
     expect(conversation.save).toHaveBeenCalled();
   });
 
+  test('updateConversationDetails persists reasoning mode', async () => {
+    const conversation = {
+      title: 'Existing title',
+      category: 'Chat5',
+      tags: ['chat5'],
+      members: ['Lennart'],
+      metadata: { reasoning: 'high' },
+      save: jest.fn().mockResolvedValue(),
+    };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const service = new ConversationService({}, {}, {});
+    const updated = await service.updateConversationDetails('conv-1', { mode: 'pro' });
+
+    expect(updated.metadata.mode).toBe('pro');
+    expect(conversation.save).toHaveBeenCalled();
+  });
+
   test('generateMessageArrayForConversation builds context with knowledge and prior messages', async () => {
     const conversationModel = createConversationModel();
     const conversationDoc = {

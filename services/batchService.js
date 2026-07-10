@@ -6,6 +6,7 @@ const {
   deleteBatchFile,
   convertResponseBody,
   supportsReasoningModel,
+  supportsReasoningMode,
 } = require('../utils/OpenAI_API');
 const { AIModelCards, Conversation5Model, Chat5Model } = require('../database');
 const logger = require('../utils/logger');
@@ -220,6 +221,9 @@ class BatchService {
 
       if (snapshot.conversation.metadata?.reasoning && supportsReasoningModel(normalizedModel)) {
         body.reasoning = { effort: snapshot.conversation.metadata.reasoning, summary: 'detailed' };
+        if (supportsReasoningMode(normalizedModel)) {
+          body.reasoning.mode = snapshot.conversation.metadata.mode === 'pro' ? 'pro' : 'standard';
+        }
       }
 
       const requestEntry = {

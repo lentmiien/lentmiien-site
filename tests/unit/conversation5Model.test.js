@@ -51,4 +51,31 @@ describe('Conversation5 model', () => {
       await expect(conversation.validate()).resolves.toBeUndefined();
     }
   });
+
+  test('defaults missing reasoning mode to standard for existing conversations', () => {
+    const conversation = Conversation5.hydrate({
+      _id: new mongoose.Types.ObjectId(),
+      title: 'Existing conversation',
+      category: 'Chat5',
+      messages: [],
+      members: ['test-user'],
+      metadata: { reasoning: 'high' },
+    });
+
+    expect(conversation.metadata.mode).toBe('standard');
+  });
+
+  test('allows standard and pro reasoning modes', async () => {
+    for (const mode of ['standard', 'pro']) {
+      const conversation = new Conversation5({
+        title: `Reasoning mode ${mode}`,
+        category: 'Chat5',
+        messages: [],
+        members: ['test-user'],
+        metadata: { mode },
+      });
+
+      await expect(conversation.validate()).resolves.toBeUndefined();
+    }
+  });
 });

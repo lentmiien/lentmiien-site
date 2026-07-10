@@ -57,6 +57,10 @@ function supportsReasoningModel(modelName) {
   return Number.parseInt(dottedGpt5Match[1], 10) >= 2;
 }
 
+function supportsReasoningMode(modelName) {
+  return typeof modelName === 'string' && /^gpt-5\.6(?:-|$)/.test(modelName);
+}
+
 const type_map = {
   message: "text",
   image_generation_call: "image",
@@ -890,6 +894,9 @@ const chat = async (conversation, messages, model, options = {}) => {
   }
   if (conversation.metadata.reasoning && supportsReasoningModel(model.api_model)) {
     inputParameters["reasoning"] = { effort: conversation.metadata.reasoning, summary: "detailed" };
+    if (supportsReasoningMode(model.api_model)) {
+      inputParameters["reasoning"].mode = conversation.metadata.mode === 'pro' ? 'pro' : 'standard';
+    }
   }
 
   const requestUrl = 'openai.responses.create';
@@ -1402,4 +1409,5 @@ module.exports = {
   checkVideoProgress,
   generateStructuredOutput,
   supportsReasoningModel,
+  supportsReasoningMode,
 }

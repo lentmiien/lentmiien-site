@@ -223,6 +223,11 @@ module.exports = async function registerChat5_5Handlers({
     const contextPrompt = normalizeStringOption(settings.context, '', 'settings.context', adjustments, { allowEmpty: true });
     const model = normalizeStringOption(settings.model, 'gpt-5-2025-08-07', 'settings.model', adjustments);
     const reasoning = normalizeStringOption(settings.reasoning, 'medium', 'settings.reasoning', adjustments);
+    let mode = normalizeStringOption(settings.mode, 'standard', 'settings.mode', adjustments);
+    if (mode !== 'standard' && mode !== 'pro') {
+      pushAdjustment(adjustments, 'settings.mode', `Unsupported reasoning mode "${mode}"; using standard.`, 'warning');
+      mode = 'standard';
+    }
     const verbosity = normalizeStringOption(settings.verbosity, 'medium', 'settings.verbosity', adjustments);
     const outputFormat = normalizeStringOption(settings.outputFormat, 'text', 'settings.outputFormat', adjustments);
     const title = normalizeStringOption(settings.title, 'NEW', 'settings.title', adjustments);
@@ -246,6 +251,7 @@ module.exports = async function registerChat5_5Handlers({
         maxAudioMessages: 3,
         tools,
         reasoning,
+        mode,
         verbosity,
         outputFormat,
       },

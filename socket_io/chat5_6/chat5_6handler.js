@@ -110,6 +110,9 @@ function buildConversationSettings(rawSettings) {
   if (typeof rawSettings.reasoning === 'string' && rawSettings.reasoning.trim().length > 0) {
     settings.reasoning = rawSettings.reasoning.trim();
   }
+  if (rawSettings.mode === 'standard' || rawSettings.mode === 'pro') {
+    settings.mode = rawSettings.mode;
+  }
   if (typeof rawSettings.verbosity === 'string' && rawSettings.verbosity.trim().length > 0) {
     settings.verbosity = rawSettings.verbosity.trim();
   }

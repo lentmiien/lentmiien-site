@@ -16,6 +16,7 @@ const Conversation5 = new mongoose.Schema({
     maxAudioMessages: { type: Number, default: 3 },
     tools: [{ type: String, max: 100 }],
     reasoning: { type: String, enum: ["none", "minimal", "low", "medium", "high", "xhigh", "max"], default: "medium" },
+    mode: { type: String, enum: ["standard", "pro"], default: "standard" },
     verbosity: { type: String, enum: ["low", "medium", "high"], default: "medium" },
     outputFormat: { type: String, enum: ["text", "json"], default: "text" },
   },

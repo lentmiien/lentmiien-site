@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   maxAudioMessages: 3,
   tools: [],
   reasoning: "medium",
+  mode: "standard",
   verbosity: "medium",
   outputFormat: "text",
 };
@@ -1080,6 +1081,7 @@ class ConversationService {
         maxAudioMessages: 3,
         tools: [],
         reasoning: "medium",
+        mode: "standard",
         outputFormat: "text",
       },
       members: [conversation.user_id],
@@ -1132,6 +1134,11 @@ class ConversationService {
       conversation.metadata.maxAudioMessages = s.maxAudioMessages;
       conversation.metadata.tools = s.tools;
       conversation.metadata.reasoning = s.reasoning;
+      if (typeof s.mode === 'string' && s.mode.length > 0) {
+        conversation.metadata.mode = s.mode;
+      } else if (!conversation.metadata.mode) {
+        conversation.metadata.mode = 'standard';
+      }
       conversation.metadata.verbosity = s.verbosity;
       conversation.metadata.outputFormat = s.outputFormat;
     }
@@ -1343,6 +1350,9 @@ class ConversationService {
     }
     if (typeof updates.reasoning === 'string' && updates.reasoning.trim().length > 0) {
       meta.reasoning = updates.reasoning.trim();
+    }
+    if (updates.mode === 'standard' || updates.mode === 'pro') {
+      meta.mode = updates.mode;
     }
     if (typeof updates.verbosity === 'string' && updates.verbosity.trim().length > 0) {
       meta.verbosity = updates.verbosity.trim();

@@ -47,7 +47,12 @@ jest.mock('openai', () => ({
   toFile: jest.fn(),
 }));
 
-const { convertResponseBody, chat, supportsReasoningModel } = require('../../utils/OpenAI_API');
+const {
+  convertResponseBody,
+  chat,
+  supportsReasoningModel,
+  supportsReasoningMode,
+} = require('../../utils/OpenAI_API');
 
 describe('OpenAI_API response conversion', () => {
   beforeEach(() => {
@@ -165,7 +170,15 @@ describe('OpenAI_API response conversion', () => {
     expect(supportsReasoningModel('gpt-4.1-2025-04-14')).toBe(false);
   });
 
-  test('chat sends max reasoning for GPT-5.6 models', async () => {
+  test('only GPT-5.6 model families support reasoning mode', () => {
+    expect(supportsReasoningMode('gpt-5.6')).toBe(true);
+    expect(supportsReasoningMode('gpt-5.6-sol')).toBe(true);
+    expect(supportsReasoningMode('gpt-5.6-terra-2026-07-01')).toBe(true);
+    expect(supportsReasoningMode('gpt-5.5')).toBe(false);
+    expect(supportsReasoningMode('gpt-5.60')).toBe(false);
+  });
+
+  test('chat sends max effort and pro mode for GPT-5.6 models', async () => {
     mockResponsesCreate.mockResolvedValue({ id: 'resp-max' });
 
     const conversation = {
@@ -173,10 +186,11 @@ describe('OpenAI_API response conversion', () => {
         maxMessages: 20,
         outputFormat: 'text',
         reasoning: 'max',
+        mode: 'pro',
       },
     };
     const model = {
-      api_model: 'gpt-5.6-pro-2026-07-01',
+      api_model: 'gpt-5.6-sol',
       context_type: 'system',
       in_modalities: ['text'],
     };
@@ -193,8 +207,47 @@ describe('OpenAI_API response conversion', () => {
     await chat(conversation, messages, model);
 
     expect(mockResponsesCreate).toHaveBeenCalledWith(expect.objectContaining({
-      reasoning: { effort: 'max', summary: 'detailed' },
+      reasoning: { effort: 'max', summary: 'detailed', mode: 'pro' },
     }));
+  });
+
+  test('chat defaults GPT-5.6 reasoning mode to standard and omits it for older models', async () => {
+    mockResponsesCreate.mockResolvedValue({ id: 'resp-mode' });
+    const conversation = {
+      metadata: {
+        maxMessages: 20,
+        outputFormat: 'text',
+        reasoning: 'high',
+      },
+    };
+    const messages = [{
+      _id: 'user-1',
+      user_id: 'Lennart',
+      contentType: 'text',
+      content: { text: 'Review this.' },
+      hideFromBot: false,
+    }];
+
+    await chat(conversation, messages, {
+      api_model: 'gpt-5.6-terra',
+      context_type: 'system',
+      in_modalities: ['text'],
+    });
+    await chat({ metadata: { ...conversation.metadata, mode: 'pro' } }, messages, {
+      api_model: 'gpt-5.5',
+      context_type: 'system',
+      in_modalities: ['text'],
+    });
+
+    expect(mockResponsesCreate.mock.calls[0][0].reasoning).toEqual({
+      effort: 'high',
+      summary: 'detailed',
+      mode: 'standard',
+    });
+    expect(mockResponsesCreate.mock.calls[1][0].reasoning).toEqual({
+      effort: 'high',
+      summary: 'detailed',
+    });
   });
 
   test('chat resolves custom tools and only includes last tool batch when requested', async () => {

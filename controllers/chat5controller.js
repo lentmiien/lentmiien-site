@@ -488,6 +488,7 @@ const DEFAULT_CONVERSATION = {
     maxAudioMessages: 3,
     tools: [],
     reasoning: "high",
+    mode: "standard",
     verbosity: "high",
     outputFormat: "text",
   },

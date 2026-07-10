@@ -616,6 +616,7 @@ function collectChatSettings() {
   const toolSelect = document.getElementById('tools');
   const modelSelect = document.getElementById('model');
   const reasoning = document.getElementById('reasoning');
+  const mode = document.getElementById('mode');
   const verbosity = document.getElementById('verbosity');
   const titleInput = document.getElementById('title');
   const categoryInput = document.getElementById('category');
@@ -637,6 +638,7 @@ function collectChatSettings() {
     tools: toolArray,
     model: modelSelect ? modelSelect.value : '',
     reasoning: reasoning ? reasoning.value : 'medium',
+    mode: mode ? mode.value : 'standard',
     verbosity: verbosity ? verbosity.value : 'medium',
     members,
     maxMessages: Number.isNaN(maxMessagesInput) || maxMessagesInput <= 0 ? 999 : maxMessagesInput,
@@ -1096,6 +1098,7 @@ function UpdateConversation() {
     contextPrompt: document.getElementById("context").value,
     model: document.getElementById("model").value,
     reasoning: document.getElementById("reasoning").value,
+    mode: document.getElementById("mode").value,
     verbosity: document.getElementById("verbosity").value,
     maxMessages: Number.isNaN(maxMessagesInput) || maxMessagesInput <= 0 ? undefined : maxMessagesInput,
     tools: selectedTools,
@@ -1295,6 +1298,11 @@ socket.on('chat5-conversation-settings-updated', (data) => {
   const reasoningSelect = document.getElementById("reasoning");
   if (reasoningSelect && data.metadata?.reasoning) {
     reasoningSelect.value = data.metadata.reasoning;
+  }
+
+  const modeSelect = document.getElementById("mode");
+  if (modeSelect) {
+    modeSelect.value = data.metadata?.mode || 'standard';
   }
 
   const verbositySelect = document.getElementById("verbosity");
