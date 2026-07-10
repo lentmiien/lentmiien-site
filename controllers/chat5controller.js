@@ -483,7 +483,7 @@ const DEFAULT_CONVERSATION = {
   messages: [],
   metadata: {
     contextPrompt: "",
-    model: "gpt-5.5",
+    model: "gpt-5.6-sol",
     maxMessages: 999,
     maxAudioMessages: 3,
     tools: [],
