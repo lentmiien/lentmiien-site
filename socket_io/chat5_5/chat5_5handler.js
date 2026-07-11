@@ -3,7 +3,11 @@ const path = require('path');
 const context = require('./chat5_5context');
 const logger = require('../../utils/logger');
 const AsrApiService = require('../../services/asrApiService');
-const { renderMessagesHtml } = require('../../utils/chat5Markdown');
+const {
+  renderMarkdownSafe,
+  renderMessageHtml,
+  renderMessagesHtml,
+} = require('../../utils/chat5Markdown');
 
 const asrApiService = new AsrApiService();
 
@@ -353,7 +357,7 @@ module.exports = async function registerChat5_5Handlers({
     if (!output.content || typeof output.content !== 'object') {
       output.content = {};
     }
-    return output;
+    return renderMessageHtml(output);
   }
 
   function normalizeConversationIds(value, adjustments) {
@@ -789,10 +793,11 @@ module.exports = async function registerChat5_5Handlers({
       if (Array.isArray(aiMessages) && aiMessages.length > 0) outgoing.push(...aiMessages);
 
       if (outgoing.length > 0) {
+        const clientMessages = outgoing.map(serializeChat5Message).filter(Boolean);
         if (createdNewConversation) {
-          socket.emit('chat5-messages', { id: conversationId, messages: outgoing });
+          socket.emit('chat5-messages', { id: conversationId, messages: clientMessages });
         } else {
-          io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: outgoing });
+          io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: clientMessages });
         }
       }
 
@@ -917,11 +922,12 @@ module.exports = async function registerChat5_5Handlers({
       await conversation.save();
 
       const outgoing = [msg];
+      const clientMessages = outgoing.map(serializeChat5Message).filter(Boolean);
       const convRoom = roomForConversation(conversationId);
       if (createdNewConversation) {
-        socket.emit('chat5-messages', { id: conversationId, messages: outgoing });
+        socket.emit('chat5-messages', { id: conversationId, messages: clientMessages });
       } else {
-        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: outgoing });
+        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: clientMessages });
       }
 
       emitAdjustments(eventName, adjustments, { conversationId, voiceId: voiceId || null });
@@ -1195,11 +1201,12 @@ module.exports = async function registerChat5_5Handlers({
       const packets = [];
       if (userMessage) packets.push(userMessage);
       packets.push(placeholder);
+      const clientMessages = packets.map(serializeChat5Message).filter(Boolean);
 
       if (createdNewConversation) {
-        socket.emit('chat5-messages', { id: conversationId, messages: packets });
+        socket.emit('chat5-messages', { id: conversationId, messages: clientMessages });
       } else {
-        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: packets });
+        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: clientMessages });
       }
 
       notifyMembers(userName, conversationParams.members, 'chat5-notice', { id: conversationId, title: conversationParams.title }, { excludeCurrentSocket: true });
@@ -1299,10 +1306,11 @@ module.exports = async function registerChat5_5Handlers({
         generateAI: false,
       });
 
+      const clientMessages = [userMessage].map(serializeChat5Message).filter(Boolean);
       if (createdNewConversation) {
-        socket.emit('chat5-messages', { id: conversationId, messages: [userMessage] });
+        socket.emit('chat5-messages', { id: conversationId, messages: clientMessages });
       } else {
-        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: [userMessage] });
+        io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: clientMessages });
       }
       notifyMembers(userName, [], 'chat5-notice', { id: conversationId, title: "New Image" }, { excludeCurrentSocket: true });
       emitAdjustments(eventName, adjustments, { conversationId, createdNewConversation, fileName });
@@ -1505,7 +1513,11 @@ module.exports = async function registerChat5_5Handlers({
         value = String(raw.value);
       }
       await messageService.editTextNew({ message_id: messageId, type: editType, value });
-      socket.emit('chat5-edittext-done', { ok: true, messageId, type: editType });
+      const payload = { ok: true, messageId, type: editType };
+      if (editType === 'text') {
+        payload.html = renderMarkdownSafe(value);
+      }
+      socket.emit('chat5-edittext-done', payload);
       emitAdjustments(eventName, adjustments, { messageId, type: editType });
     } catch (error) {
       logger.error('Failed to edit message text', error);

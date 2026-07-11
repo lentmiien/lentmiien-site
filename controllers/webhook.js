@@ -127,8 +127,9 @@ exports.openai = async (req, res) => {
         for (const update of result.conversations) {
           const { conversationId, messages, placeholderId, members = [], title } = update;
           const convRoom = roomForConversation(conversationId);
-          io.to(convRoom).emit('chat5-messages', { id: conversationId, messages, placeholderId });
-          io.to(convRoom).emit('chat5_6-messages', { id: conversationId, messages: messages.map(toClientMessage) });
+          const clientMessages = messages.map(toClientMessage).filter(Boolean);
+          io.to(convRoom).emit('chat5-messages', { id: conversationId, messages: clientMessages, placeholderId });
+          io.to(convRoom).emit('chat5_6-messages', { id: conversationId, messages: clientMessages });
           if (Array.isArray(members) && members.length > 0) {
             const rooms = members.map(roomForUser);
             io.to(rooms).emit('chat5-notice', { id: conversationId, title });

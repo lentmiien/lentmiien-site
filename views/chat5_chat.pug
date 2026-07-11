@@ -1,5 +1,8 @@
 extends layout
 
+block styles
+  link(rel="stylesheet", href="/vendor/katex/katex.min.css")
+
 block content
   - const personaOptions = Array.isArray(personalities) ? personalities : [];
   - const responseTypeOptions = Array.isArray(responseTypes) ? responseTypes : [];

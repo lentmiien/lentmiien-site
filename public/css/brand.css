@@ -2287,6 +2287,26 @@ label,
   color: var(--text);
 }
 
+.chat5-message-text .katex,
+.chat5-message-reasoning .katex {
+  color: inherit;
+}
+
+.chat5-message-text .katex-error,
+.chat5-message-reasoning .katex-error {
+  color: var(--danger) !important;
+}
+
+.chat5-message-text .katex-display,
+.chat5-message-reasoning .katex-display {
+  display: block;
+  max-width: 100%;
+  margin: 0.75rem 0;
+  padding: 0.2rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .chat5-message-text img,
 #conversationContainer .chat5-message-text img {
   display: block;

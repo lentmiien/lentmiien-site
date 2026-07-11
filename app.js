@@ -346,6 +346,7 @@ app.use((req, res, next) => {
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/vendor/katex', express.static(path.join(__dirname, 'node_modules', 'katex', 'dist')));
 
 // Middleware for caching static files
 app.use('/img', express.static(path.join(__dirname, 'public', 'img'), {

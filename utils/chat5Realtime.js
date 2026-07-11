@@ -1,3 +1,5 @@
+const { renderMessageHtml } = require('./chat5Markdown');
+
 function toPlain(doc) {
   if (!doc) return doc;
   if (typeof doc.toObject === 'function') {
@@ -13,9 +15,12 @@ function toPlain(doc) {
 function toClientMessage(message) {
   const plain = toPlain(message);
   if (!plain) return plain;
+  if (plain.content && typeof plain.content === 'object') {
+    plain.content = { ...plain.content };
+  }
   if (plain._id && typeof plain._id !== 'string') plain._id = plain._id.toString();
   if (plain.id && typeof plain.id !== 'string') plain.id = plain.id.toString();
-  return plain;
+  return renderMessageHtml(plain);
 }
 
 function emitConversationMessages(io, { conversation, messages = [], placeholderId = null }) {
@@ -29,7 +34,8 @@ function emitConversationMessages(io, { conversation, messages = [], placeholder
   }
 
   const convRoom = io.conversationRoom(conversationId);
-  const payload = { id: conversationId, messages };
+  const clientMessages = messages.map(toClientMessage).filter(Boolean);
+  const payload = { id: conversationId, messages: clientMessages };
   if (placeholderId) {
     payload.placeholderId = placeholderId;
   }
@@ -37,7 +43,7 @@ function emitConversationMessages(io, { conversation, messages = [], placeholder
   io.to(convRoom).emit('chat5-messages', payload);
   io.to(convRoom).emit('chat5_6-messages', {
     id: conversationId,
-    messages: messages.map(toClientMessage),
+    messages: clientMessages,
   });
 
   const members = Array.isArray(conversation.members) ? conversation.members.filter(Boolean) : [];

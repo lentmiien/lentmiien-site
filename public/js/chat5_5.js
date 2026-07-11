@@ -1902,12 +1902,19 @@ function SaveText() {
     value: document.getElementById("text_to_edit").value,
   };
   socket.emit('chat5-edittext-up', data);
-  document.getElementById(`${data.message_id}${data.type}`).innerHTML = data.value;
-  if (data.type === "text") {
-    document.getElementById(`${data.message_id}textout`).innerHTML = parseMarkdownSafely(data.value, `edited message ${data.message_id}`);
-  }
+  const rawValue = document.getElementById(`${data.message_id}${data.type}`);
+  if (rawValue) rawValue.textContent = data.value;
   myModal.hide();
 }
+
+socket.on('chat5-edittext-done', (data = {}) => {
+  if (data.type !== 'text' || typeof data.html !== 'string') return;
+  const textOutput = document.getElementById(`${data.messageId}textout`);
+  if (!textOutput) return;
+  textOutput.innerHTML = data.html;
+  registerCodeCopyHandlers(textOutput);
+  enhanceTables(textOutput);
+});
 
 function initializeDraftingTool() {
   const personalitySelect = document.getElementById('draftPersonalitySelect');
