@@ -1,10 +1,10 @@
-jest.mock('marked', () => ({ parse: jest.fn() }));
+jest.mock('../../utils/chat5Markdown', () => ({ renderMarkdownSafe: jest.fn() }));
 jest.mock('../../services/embeddingApiService', () => jest.fn().mockImplementation(() => ({
   embed: jest.fn(),
   embedHighQuality: jest.fn(),
 })));
 
-const marked = require('marked');
+const { renderMarkdownSafe } = require('../../utils/chat5Markdown');
 const KnowledgeService = require('../../services/knowledgeService');
 
 const createQueryChain = (items) => {
@@ -19,8 +19,8 @@ describe('KnowledgeService', () => {
   let embeddingApiService;
 
   beforeEach(() => {
-    marked.parse.mockReset();
-    marked.parse.mockImplementation((text) => `parsed:${text}`);
+    renderMarkdownSafe.mockReset();
+    renderMarkdownSafe.mockImplementation((text) => `parsed:${text}`);
 
     knowledgeModel = jest.fn().mockImplementation((doc) => ({
       ...doc,
@@ -51,7 +51,7 @@ describe('KnowledgeService', () => {
     const result = await service.getKnowledgesById('knowledge-1');
 
     expect(knowledgeModel.findById).toHaveBeenCalledWith('knowledge-1');
-    expect(marked.parse).toHaveBeenCalledWith('# Heading');
+    expect(renderMarkdownSafe).toHaveBeenCalledWith('# Heading');
     expect(result.originType).toBe('chat4');
     expect(result.contentHTML).toBe('parsed:# Heading');
   });

@@ -199,6 +199,8 @@ function renderMarkdownSafe(markdown = '') {
       code: ['class'],
       img: ['src', 'alt', 'title', 'loading'],
       span: ['class', 'style', 'title', 'aria-hidden'],
+      th: ['align'],
+      td: ['align'],
       svg: ['xmlns', 'width', 'height', 'viewbox', 'preserveaspectratio'],
       path: ['d'],
       line: ['x1', 'x2', 'y1', 'y2', 'stroke-width'],

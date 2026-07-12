@@ -57,6 +57,7 @@
     "katex": "^0.17.0",
     "mailgun.js": "^12.9.0",
     "marked": "^9.1.6",
+    "mermaid": "^11.16.0",
     "method-override": "^3.0.0",
     "mongoose": "^8.24.1",
     "multer": "^1.4.5-lts.1",

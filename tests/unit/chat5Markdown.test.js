@@ -55,7 +55,7 @@ describe('chat5Markdown', () => {
       '> quoted text',
       '',
       '| Name | Value |',
-      '| --- | --- |',
+      '| --- | ---: |',
       '| one | two |',
     ].join('\n'));
 
@@ -65,6 +65,21 @@ describe('chat5Markdown', () => {
     expect(output).toContain('<ul>');
     expect(output).toContain('<blockquote>');
     expect(output).toContain('<table>');
+    expect(output).toContain('<th align="right">Value</th>');
+    expect(output).toContain('<td align="right">two</td>');
+  });
+
+  test('preserves fenced Mermaid diagrams for browser-side rendering', () => {
+    const output = renderMarkdownSafe([
+      '```mermaid',
+      'flowchart LR',
+      '    A[Start] --> B[Finish]',
+      '```',
+    ].join('\n'));
+
+    expect(output).toContain('<pre><code class="language-mermaid">');
+    expect(output).toContain('flowchart LR');
+    expect(output).toContain('A[Start] --&gt; B[Finish]');
   });
 
   test.each([

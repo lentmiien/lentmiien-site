@@ -1,5 +1,5 @@
-const marked = require('marked');
 const logger = require('../utils/logger');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 
 const KNOWLEDGE_COLLECTION = 'knowledge';
 const KNOWLEDGE_CONTENT_TYPE = 'knowledge_entry';
@@ -81,7 +81,7 @@ class KnowledgeService {
     }
     // Backward compatibility: default to chat4 if not set
     if (!knowledge.originType) knowledge.originType = 'chat4';
-    knowledge.contentHTML = marked.parse(knowledge.contentMarkdown);
+    knowledge.contentHTML = renderMarkdownSafe(knowledge.contentMarkdown);
     return knowledge;
   }
 

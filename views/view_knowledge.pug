@@ -1,30 +1,39 @@
 extends layout
 
+block styles
+  link(rel="stylesheet", href="/vendor/katex/katex.min.css")
+  link(rel="stylesheet", href="/css/view_knowledge.css")
+
 block content
-  .row
-    .col
-      h2= knowledge.title
-      i= `Updated: ${knowledge.updatedDate}`
-      .button-container 
-        if knowledge.originConversationId
-          if knowledge.originType && knowledge.originType === 'chat5'
-            a.btn.btn-outline-primary(href=`/chat5/chat/${knowledge.originConversationId}`) Show chat
+  .row.justify-content-center
+    .col-12.col-xl-10
+      article.knowledge-entry
+        header.knowledge-header
+          h1.knowledge-title= knowledge.title
+          p.knowledge-updated= `Updated: ${knowledge.updatedDate}`
+        .button-container.knowledge-actions
+          if knowledge.originConversationId
+            if knowledge.originType && knowledge.originType === 'chat5'
+              a.btn.btn-outline-primary(href=`/chat5/chat/${knowledge.originConversationId}`) Show chat
+            else
+              a.btn.btn-outline-primary(href=`/chat5?id=${knowledge.originConversationId}`) Show chat
           else
-            a.btn.btn-outline-primary(href=`/chat5?id=${knowledge.originConversationId}`) Show chat
-        else
-          span.badge.bg-secondary Standalone entry
-        a.btn.btn-outline-primary(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge 
-        button.btn.btn-outline-warning(data-title=knowledge.title, data-content=knowledge.contentMarkdown, onclick="CopyKnowledge(this)") Copy
-        if cookbookEntryUrl
-          a.btn.btn-outline-info(href=cookbookEntryUrl) Cookbook entry
-        a.btn.btn-outline-primary(href=`/chat4/knowledgelist`) Back
-      hr
-      each img in knowledge.images
-        img.image-large(src=`/img/${img}`, alt="image")
-      hr
-      p!= knowledge.contentHTML
-      p= `${knowledge.category}: ${knowledge.tags.join(", ")}`
-      i= `Created by: ${knowledge.user_id}`
-      .button-container 
-        a.btn.btn-danger(href=`/chat4/deleteknowledge/${knowledge._id.toString()}`) Delete
-  script(src="/js/view_knowledge.js") 
+            span.badge.bg-secondary Standalone entry
+          a.btn.btn-outline-primary(href=`/chat4/editknowledge/${knowledge._id.toString()}`) Edit knowledge
+          button.btn.btn-outline-warning(data-title=knowledge.title, data-content=knowledge.contentMarkdown, onclick="CopyKnowledge(this)") Copy
+          if cookbookEntryUrl
+            a.btn.btn-outline-info(href=cookbookEntryUrl) Cookbook entry
+          a.btn.btn-outline-primary(href=`/chat4/knowledgelist`) Back
+        if knowledge.images.length
+          .knowledge-images
+            each img in knowledge.images
+              img.image-large(src=`/img/${img}`, alt=`Image attached to ${knowledge.title}`, loading="lazy")
+        article#knowledgeContent.knowledge-markdown!= knowledge.contentHTML
+        footer.knowledge-footer
+          p.knowledge-taxonomy= `${knowledge.category}: ${knowledge.tags.join(", ")}`
+          p.knowledge-author= `Created by: ${knowledge.user_id}`
+          .button-container
+            a.btn.btn-danger(href=`/chat4/deleteknowledge/${knowledge._id.toString()}`) Delete
+
+block script
+  script(src="/js/view_knowledge.js", defer)

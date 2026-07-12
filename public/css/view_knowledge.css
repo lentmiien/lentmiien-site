@@ -1,0 +1,281 @@
+.knowledge-entry {
+  width: min(100%, 1120px);
+  margin: 1.5rem auto 0;
+  padding: clamp(1rem, 2.5vw, 2rem);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.24);
+}
+
+.knowledge-header {
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--divider);
+}
+
+.knowledge-title {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.65rem, 4vw, 2.5rem);
+  line-height: 1.15;
+}
+
+.knowledge-updated,
+.knowledge-author,
+.knowledge-taxonomy {
+  color: var(--text-muted);
+}
+
+.knowledge-updated {
+  margin: 0.55rem 0 0;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.knowledge-actions {
+  margin: 1rem 0 1.25rem;
+}
+
+.knowledge-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--divider);
+}
+
+.knowledge-images .image-large {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+.knowledge-markdown {
+  min-width: 0;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.72;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-markdown > :first-child {
+  margin-top: 0;
+}
+
+.knowledge-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.knowledge-markdown h1,
+.knowledge-markdown h2,
+.knowledge-markdown h3,
+.knowledge-markdown h4,
+.knowledge-markdown h5,
+.knowledge-markdown h6 {
+  margin: 1.65em 0 0.65em;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.knowledge-markdown h1,
+.knowledge-markdown h2 {
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--divider);
+}
+
+.knowledge-markdown a {
+  text-decoration-color: var(--accent-active);
+  text-underline-offset: 0.16em;
+}
+
+.knowledge-markdown blockquote {
+  margin: 1.2rem 0;
+  padding: 0.75rem 1rem;
+  color: var(--text-secondary);
+  background: var(--accent-tint);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+}
+
+.knowledge-markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.knowledge-markdown :not(pre) > code {
+  padding: 0.12em 0.38em;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+}
+
+.knowledge-markdown pre {
+  max-width: 100%;
+  margin: 1.25rem 0;
+  padding: 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  border-radius: 9px;
+  overflow-x: auto;
+}
+
+.knowledge-markdown pre code {
+  color: var(--text-secondary);
+}
+
+.knowledge-markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.25rem auto;
+  border-radius: 9px;
+}
+
+.knowledge-table-wrap {
+  max-width: 100%;
+  margin: 1.35rem 0;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow-x: auto;
+}
+
+.knowledge-markdown table {
+  width: 100%;
+  min-width: 34rem;
+  margin: 0;
+  color: var(--text);
+  border-collapse: collapse;
+}
+
+.knowledge-markdown th,
+.knowledge-markdown td {
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  vertical-align: top;
+  border-right: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+}
+
+.knowledge-markdown th[align='center'],
+.knowledge-markdown td[align='center'] {
+  text-align: center;
+}
+
+.knowledge-markdown th[align='right'],
+.knowledge-markdown td[align='right'] {
+  text-align: right;
+}
+
+.knowledge-markdown th:last-child,
+.knowledge-markdown td:last-child {
+  border-right: 0;
+}
+
+.knowledge-markdown tr:last-child td {
+  border-bottom: 0;
+}
+
+.knowledge-markdown thead th {
+  color: var(--accent);
+  background: var(--surface-3);
+  font-weight: 650;
+  letter-spacing: 0.015em;
+}
+
+.knowledge-markdown tbody tr:nth-child(odd) td {
+  background: var(--surface-1);
+}
+
+.knowledge-markdown tbody tr:nth-child(even) td {
+  background: var(--surface-2);
+}
+
+.knowledge-markdown tbody tr:hover td {
+  background: var(--accent-tint);
+}
+
+.knowledge-mermaid-figure {
+  max-width: 100%;
+  margin: 1.5rem 0;
+  padding: clamp(0.75rem, 2vw, 1.25rem);
+  background: var(--surface-2);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.knowledge-mermaid {
+  display: flex;
+  min-width: min-content;
+  justify-content: center;
+}
+
+.knowledge-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.knowledge-mermaid-figure--error {
+  border-color: var(--danger);
+}
+
+.knowledge-render-notice {
+  margin: 0 0 0.75rem;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.knowledge-mermaid-figure--error pre {
+  margin: 0;
+}
+
+.knowledge-markdown .katex {
+  color: inherit;
+}
+
+.knowledge-markdown .katex-error {
+  color: var(--danger) !important;
+}
+
+.knowledge-markdown .katex-display {
+  display: block;
+  max-width: 100%;
+  margin: 1rem 0;
+  padding: 0.35rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.knowledge-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--divider);
+}
+
+.knowledge-taxonomy,
+.knowledge-author {
+  margin: 0.25rem 0;
+}
+
+.knowledge-footer .button-container {
+  margin-top: 1rem;
+}
+
+@media (max-width: 575.98px) {
+  .knowledge-entry {
+    margin-top: 0.75rem;
+    border-radius: 10px;
+  }
+
+  .knowledge-markdown table {
+    min-width: 28rem;
+  }
+}
