@@ -6,6 +6,11 @@
 
 .knowledge-header {
   margin-bottom: 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .knowledge-header h1 {
@@ -16,6 +21,28 @@
 .knowledge-header p {
   color: var(--text-secondary);
   margin: 0;
+}
+
+.knowledge-create-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0.7rem 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--text-inverse);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.knowledge-create-button:hover,
+.knowledge-create-button:focus-visible {
+  background: var(--brand-hover);
+  color: var(--text-inverse);
+  transform: translateY(-1px);
 }
 
 .knowledge-toolbar {

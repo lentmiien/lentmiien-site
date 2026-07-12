@@ -13,7 +13,7 @@ let EmbeddingApiService;
   title: { type: String, required: true, max: 100 },
   createdDate: { type: Date, required: true },
   updatedDate: { type: Date, required: true },
-  originConversationId: { type: String, required: true, max: 100 },
+  originConversationId: { type: String, default: '', max: 100 }, // Empty for standalone manual entries
   contentMarkdown: { type: String, required: true },
   category: { type: String, required: true, max: 100 },
   tags: [{ type: String, max: 100 }],

@@ -14,8 +14,10 @@ block content
   - };
   .knowledge-page
     .knowledge-header
-      h1 Knowledge Library
-      p Explore saved references by category. Use filters to focus on what you need.
+      .knowledge-header__copy
+        h1 Knowledge Library
+        p Explore saved references by category. Use filters to focus on what you need.
+      a.knowledge-create-button(href='/chat4/createknowledge') New knowledge entry
     .knowledge-toolbar
       .knowledge-filters
         .filter-control
@@ -36,7 +38,7 @@ block content
         p.knowledge-no-results.hidden No entries match the current filters.
   if !knowledges || knowledges.length === 0
     .knowledge-empty
-      p No knowledge entries yet. Start by adding a new note.
+      p No knowledge entries yet. Use “New knowledge entry” to add a standalone note.
   else
     each category in knowledge_categories
       - const categoryEntries = knowledges.filter(function(item) { return item.displayCategory === category; });

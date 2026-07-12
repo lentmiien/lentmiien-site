@@ -46,6 +46,7 @@ router.get('/knowledgelist', controller.knowledgelist);
 router.post('/knowledge/embed-all', controller.embed_all_knowledge);
 router.get('/viewknowledge/:id', controller.viewknowledge);
 router.post('/saveknowledge', controller.saveknowledge);
+router.get('/createknowledge', controller.createknowledge);
 router.get('/createknowledgefromchat/:id', controller.createknowledgefromchat);
 router.get('/editknowledge/:id', controller.editknowledge);
 router.post('/updateknowledge/:id', controller.updateknowledge);

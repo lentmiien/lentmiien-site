@@ -152,6 +152,21 @@ function normalizeKnowledgeCategory(value) {
   return `${category.charAt(0).toUpperCase()}${category.slice(1).toLowerCase()}`;
 }
 
+function normalizeKnowledgeTags(value) {
+  return [...new Set(String(value || '')
+    .toLowerCase()
+    .split(',')
+    .map((tag) => tag.trim().replace(/\s+/g, '_'))
+    .filter(Boolean))];
+}
+
+function normalizeKnowledgeImages(value) {
+  return [...new Set(String(value || '')
+    .split(',')
+    .map((image) => image.trim().replace(/\s+/g, '_'))
+    .filter(Boolean))];
+}
+
 exports.post = async (req, res) => {
   const user_id = req.user.name;
   let use_conversation_id = req.params.id;
@@ -389,17 +404,37 @@ exports.saveknowledge = async (req, res) => {
   const originConversationId = req.body.k_conversation_id;
   const contentMarkdown = req.body.k_content;
   const category = req.body.k_category;
-  const tags = req.body.k_tags.toLowerCase().split(', ').join(',').split(' ').join('_').split(',');
-  const input_images = req.body.k_images.split(', ').join(',').split(' ').join('_').split(',');
+  const tags = normalizeKnowledgeTags(req.body.k_tags);
+  const images = normalizeKnowledgeImages(req.body.k_images);
   const user_id = req.user.name;
 
-  const images = [];
-  input_images.forEach(d => {
-    if (d.length > 0) images.push(d);
-  })
   const k_id = await knowledgeService.createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id);
 
   res.redirect(`/chat4/viewknowledge/${k_id}`);
+};
+
+exports.createknowledge = async (req, res) => {
+  const knowledge = {
+    title: '',
+    createdDate: new Date(),
+    updatedDate: new Date(),
+    originConversationId: '',
+    originType: 'chat4',
+    contentMarkdown: '',
+    category: '',
+    tags: [],
+    images: [],
+    user_id: req.user.name,
+  };
+
+  res.render('edit_knowledge', {
+    id: 'new',
+    knowledge,
+    conversations: [],
+    messageLookup: [],
+    messages: [],
+    pageTitle: 'Create knowledge entry',
+  });
 };
 
 exports.createknowledgefromchat = async (req, res) => {
@@ -501,6 +536,18 @@ exports.createknowledgefromchat = async (req, res) => {
 exports.editknowledge = async (req, res) => {
   const knowledge_id = req.params.id;
   const knowledge = await knowledgeService.getKnowledgesById(knowledge_id);
+  if (!knowledge) {
+    return res.status(404).render('error_page', { error: `Knowledge entry [${knowledge_id}] was not found.` });
+  }
+  if (!knowledge.originConversationId) {
+    return res.render('edit_knowledge', {
+      id: knowledge_id,
+      knowledge,
+      conversations: [],
+      messageLookup: [],
+      messages: [],
+    });
+  }
   if (knowledge.originType === 'chat5') {
     // Load chat5 content
     try {
@@ -578,18 +625,14 @@ exports.editknowledge = async (req, res) => {
 exports.updateknowledge = async (req, res) => {
   let knowledge_id = req.params.id;
   const title = req.body.k_title;
-  const originConversationId = req.body.k_originConversationId;
-  const originType = req.body.k_originType ? req.body.k_originType : 'chat4';
+  const originConversationId = String(req.body.k_originConversationId || '').trim();
+  const originType = req.body.k_originType === 'chat5' ? 'chat5' : 'chat4';
   const contentMarkdown = req.body.k_content;
   const category = req.body.k_category;
-  const tags = req.body.k_tags.toLowerCase().split(', ').join(',').split(' ').join('_').split(',');
-  const input_images = req.body.k_images.split(', ').join(',').split(' ').join('_').split(',');
+  const tags = normalizeKnowledgeTags(req.body.k_tags);
+  const images = normalizeKnowledgeImages(req.body.k_images);
   const user_id = req.user.name;
 
-  const images = [];
-  input_images.forEach(d => {
-    if (d.length > 0) images.push(d);
-  });
   if (knowledge_id === "new") {
     knowledge_id = await knowledgeService.createKnowledge(title, originConversationId, contentMarkdown, category, tags, images, user_id, originType);
   } else {
