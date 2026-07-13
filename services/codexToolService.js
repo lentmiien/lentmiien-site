@@ -23,7 +23,7 @@ const execFileAsync = promisify(execFile);
 
 const TERMINAL_TURN_STATUSES = new Set(['succeeded', 'failed', 'timed_out', 'cancelled', 'blocked']);
 const ACTIVE_TURN_STATUSES = ['queued', 'running'];
-const VALID_MODES = new Set(['question', 'action']);
+const VALID_MODES = new Set(['question', 'action', 'git_commit_push']);
 const VALID_PERMISSION_MODES = new Set(['read-only', 'workspace-write', 'yolo']);
 const CODEX_THREAD_INDEX_NAME = 'codexThreadId_1';
 const WORKSPACE_LOCK_INDEX_NAME = 'workspaceId_1';
@@ -178,6 +178,10 @@ const KIND_LABELS = {
   followup_question: 'Follow-up question',
   followup_action: 'Follow-up action',
 };
+const ACTION_MODE_TYPES = new Set(['action', 'git_commit_push']);
+const COMMIT_PUSH_MODE = 'git_commit_push';
+const COMMIT_PUSH_KIND = 'action';
+const COMMIT_PUSH_DEFAULT_PROFILE_ID = 'fastest';
 
 let defaultDataPromise = null;
 
@@ -940,9 +944,21 @@ function previewFromText(text, maxLength = 420) {
 function normalizeMode(mode) {
   const normalized = String(mode || 'question').trim().toLowerCase();
   if (!VALID_MODES.has(normalized)) {
-    throw createHttpError(400, 'Mode must be either question or action.');
+    throw createHttpError(400, 'Mode must be either question, action, or git_commit_push.');
   }
   return normalized;
+}
+
+function isActionMode(mode) {
+  return ACTION_MODE_TYPES.has(String(mode || '').trim().toLowerCase());
+}
+
+function getSessionTurnKind(mode) {
+  return isActionMode(mode) ? COMMIT_PUSH_KIND : 'question';
+}
+
+function getFollowupTurnKind(mode) {
+  return isActionMode(mode) ? 'followup_action' : 'followup_question';
 }
 
 function normalizePermissionMode(value) {
@@ -958,11 +974,17 @@ function normalizePermissionMode(value) {
 
 function resolvePermissionMode({ mode, requestedPermissionMode, workspace, confirmYolo }) {
   const requested = normalizePermissionMode(requestedPermissionMode);
-  const permissionMode = requested === 'auto'
-    ? (mode === 'action'
+  const isCommitPushMode = String(mode || '').trim().toLowerCase() === COMMIT_PUSH_MODE;
+  let permissionMode = requested === 'auto'
+    ? (isActionMode(mode)
       ? workspace.defaultActionPermission || 'workspace-write'
       : workspace.defaultQuestionPermission || 'read-only')
     : requested;
+
+  if (isCommitPushMode) {
+    permissionMode = 'yolo';
+    confirmYolo = true;
+  }
 
   if (permissionMode !== 'yolo') {
     return { permissionMode, yolo: false };
@@ -1329,9 +1351,13 @@ async function getWorkspaceBundle(workspaceId, options = {}) {
   return { workspace, target };
 }
 
-async function resolveTurnRequestOptions(payload = {}, workspace = {}) {
+async function resolveTurnRequestOptions(payload = {}, workspace = {}, options = {}) {
   const requestedProfileId = normalizeOptionalString(payload.requestProfileId || payload.requestProfile, 80);
-  if (!requestedProfileId) {
+  const normalizedMode = String(options.mode || '').trim().toLowerCase();
+  const effectiveProfileId = requestedProfileId || (normalizedMode === COMMIT_PUSH_MODE
+    ? COMMIT_PUSH_DEFAULT_PROFILE_ID
+    : '');
+  if (!effectiveProfileId) {
     return {
       requestProfileId: '',
       requestProfileName: '',
@@ -1341,7 +1367,7 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}) {
     };
   }
 
-  const requestProfileId = normalizeRequestProfileId(requestedProfileId);
+  const requestProfileId = normalizeRequestProfileId(effectiveProfileId);
   const requestProfile = await CodexRequestProfile.findById(requestProfileId).lean().exec();
   if (!requestProfile || !requestProfile.enabled) {
     throw createHttpError(400, 'Selected Codex profile is not available.');
@@ -1366,7 +1392,7 @@ async function createSession(payload = {}, user) {
     workspace,
     confirmYolo: payload.confirmYolo,
   });
-  const requestOptions = await resolveTurnRequestOptions(payload, workspace);
+  const requestOptions = await resolveTurnRequestOptions(payload, workspace, { mode });
   const owner = makeOwner(user);
 
   const session = await CodexSession.create({
@@ -1383,7 +1409,7 @@ async function createSession(payload = {}, user) {
     workspaceId: workspace._id,
     targetId: target._id,
     sequence: 1,
-    kind: mode,
+    kind: getSessionTurnKind(mode),
     status: 'queued',
     prompt,
     permissionMode: permission.permissionMode,
@@ -1438,8 +1464,8 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
   });
   const sequence = await getNextSessionSequence(session._id);
   const owner = makeOwner(user);
-  const kind = mode === 'action' ? 'followup_action' : 'followup_question';
-  const requestOptions = await resolveTurnRequestOptions(payload, workspace);
+  const kind = getFollowupTurnKind(mode);
+  const requestOptions = await resolveTurnRequestOptions(payload, workspace, { mode });
 
   const turn = await CodexTurn.create({
     sessionId: session._id,

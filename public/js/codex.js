@@ -16,6 +16,9 @@
   const ACTIVE_TURN_STATUSES = new Set(['queued', 'running']);
   const RETRYABLE_STATUSES = new Set(['failed', 'timed_out', 'cancelled', 'blocked']);
   const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
+  const COMMIT_PUSH_MODE = 'git_commit_push';
+  const COMMIT_PUSH_DEFAULT_PROFILE_ID = 'fastest';
+  const COMMIT_PUSH_DEFAULT_PROMPT = 'Please commit the pending changes and push to online repository';
   const TOKEN_LABELS = {
     input: 'Input',
     cached: 'Cached',
@@ -692,6 +695,35 @@
     });
   }
 
+  function applyCommitPushDefaults(form) {
+    if (!form) return;
+    const selectedMode = form.querySelector('[name="mode"]:checked');
+    if (!selectedMode || selectedMode.value !== COMMIT_PUSH_MODE) {
+      return;
+    }
+
+    const prompt = form.querySelector('[name="prompt"]');
+    if (prompt && !prompt.value.trim()) {
+      prompt.value = COMMIT_PUSH_DEFAULT_PROMPT;
+    }
+
+    const permission = form.querySelector('[name="permissionMode"]');
+    if (permission) {
+      permission.value = 'yolo';
+    }
+
+    const profile = form.querySelector('[name="requestProfileId"]');
+    if (profile) {
+      profile.value = COMMIT_PUSH_DEFAULT_PROFILE_ID;
+    }
+
+    const confirmInput = form.querySelector('.codex-yolo-confirm input[type="checkbox"]');
+    if (confirmInput) {
+      confirmInput.checked = true;
+    }
+    syncPermissionVisibility(form);
+  }
+
   function clearYoloConfirmation(form) {
     if (!form) return;
     const confirmInput = form.querySelector('.codex-yolo-confirm input[type="checkbox"]');
@@ -1324,6 +1356,16 @@
     const form = document.getElementById('codex-new-session-form');
     const status = document.getElementById('codex-new-session-status');
     if (form) {
+      const modeInputs = form.querySelectorAll('[name="mode"]');
+      modeInputs.forEach((input) => {
+        input.addEventListener('change', () => applyCommitPushDefaults(form));
+      });
+      form.addEventListener('reset', () => {
+        setTimeout(() => {
+          applyCommitPushDefaults(form);
+        }, 0);
+      });
+      applyCommitPushDefaults(form);
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submit = form.querySelector('[type="submit"]');
@@ -1408,6 +1450,11 @@
     }
 
     if (form) {
+      const modeInputs = form.querySelectorAll('[name="mode"]');
+      modeInputs.forEach((input) => {
+        input.addEventListener('change', () => applyCommitPushDefaults(form));
+      });
+      applyCommitPushDefaults(form);
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submit = form.querySelector('[type="submit"]');
