@@ -32,7 +32,24 @@ block content
           if admin
             a.codex-button.codex-button--secondary(href='/codex/profiles') Profiles
             a.codex-button.codex-button--secondary(href='/codex/workspaces') Workspaces
-          a.codex-button.codex-button--secondary(href='/codex/api/health', target='_blank', rel='noopener noreferrer') Health
+          button#codex-health-button.codex-button.codex-button--secondary(type='button', aria-haspopup='dialog', aria-controls='codex-health-modal') Health
+
+      dialog#codex-health-modal.codex-health-modal(aria-labelledby='codex-health-title', aria-describedby='codex-health-summary')
+        .codex-health-modal__header
+          div
+            h2#codex-health-title Codex Health
+            p#codex-health-summary Current server, binary, and worker status.
+          button.codex-health-modal__close(type='button', data-codex-health-close, aria-label='Close health dialog')
+            span(aria-hidden='true') ×
+        .codex-health-modal__body
+          #codex-health-loading.codex-health-state(role='status', aria-live='polite', hidden)
+            span.codex-health-spinner(aria-hidden='true')
+            p Checking Codex health…
+          #codex-health-error.codex-health-error(role='alert', hidden)
+          #codex-health-content.codex-health-content(hidden)
+        .codex-health-modal__footer
+          button#codex-health-refresh.codex-button(type='button') Refresh
+          button.codex-button.codex-button--secondary(type='button', data-codex-health-close) Close
 
       .codex-dashboard
         section.codex-panel.codex-panel--form

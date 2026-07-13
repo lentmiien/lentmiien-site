@@ -22,6 +22,32 @@
     output: 'Output',
     reasoning: 'Reasoning',
   };
+  const HEALTH_OMITTED_KEYS = new Set(['reasoningEfforts', 'codexModelOptions']);
+  const HEALTH_LABELS = {
+    apiOk: 'API response',
+    ok: 'Overall health',
+    path: 'Path',
+    available: 'Available',
+    version: 'Version',
+    error: 'Error',
+    workerId: 'Worker ID',
+    started: 'Started',
+    enabled: 'Enabled',
+    activeCount: 'Active turns',
+    activeTurnIds: 'Active turn IDs',
+    globalConcurrency: 'Global concurrency',
+    pollIntervalMs: 'Poll interval',
+    lastTickAt: 'Last tick',
+    lastError: 'Last error',
+    queuedCount: 'Queued',
+    runningCount: 'Running',
+    staleLockCount: 'Stale locks',
+    workspaceCount: 'Workspaces',
+    workerEnabled: 'Worker enabled',
+    timeoutMs: 'Turn timeout',
+    maxPromptChars: 'Maximum prompt length',
+    yoloEnabled: 'YOLO enabled',
+  };
   const LIVE_ACTIVITY_POLL_MS = 2000;
   const LIVE_ACTIVITY_HIGHLIGHT_MS = 1400;
   const liveActivityByTurn = new Map();
@@ -445,6 +471,187 @@
     } else {
       delete element.dataset.tone;
     }
+  }
+
+  function healthLabel(key) {
+    if (HEALTH_LABELS[key]) return HEALTH_LABELS[key];
+    return String(key || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .replace(/^./, (character) => character.toUpperCase());
+  }
+
+  function healthValue(key, value) {
+    if (value === null || value === undefined) {
+      return { text: 'Not reported', tone: 'muted' };
+    }
+    if (typeof value === 'boolean') {
+      return {
+        text: key === 'ok' || key === 'apiOk' ? (value ? 'Healthy' : 'Unhealthy') : (value ? 'Yes' : 'No'),
+        tone: value ? 'success' : (key === 'ok' || key === 'apiOk' || key === 'available' ? 'danger' : 'muted'),
+      };
+    }
+    if (Array.isArray(value)) {
+      return {
+        text: value.length ? value.map((entry) => String(entry)).join(', ') : 'None',
+        tone: value.length ? '' : 'muted',
+      };
+    }
+    if (typeof value === 'number') {
+      return {
+        text: key.endsWith('Ms') ? formatDuration(value) : formatNumber(value),
+        tone: '',
+      };
+    }
+    if (key.endsWith('At')) {
+      return { text: formatDate(value), tone: value ? '' : 'muted' };
+    }
+    if ((key === 'error' || key === 'lastError') && !String(value).trim()) {
+      return { text: 'None', tone: 'muted' };
+    }
+    return {
+      text: String(value),
+      tone: key === 'error' || key === 'lastError' ? 'danger' : '',
+      code: key === 'path' || key.endsWith('Id'),
+    };
+  }
+
+  function healthEntries(source) {
+    return Object.entries(source || {}).filter(([key, value]) => (
+      !HEALTH_OMITTED_KEYS.has(key) && (value === null || typeof value !== 'object' || Array.isArray(value))
+    ));
+  }
+
+  function renderHealthSection(container, title, source, note) {
+    const entries = healthEntries(source);
+    if (!entries.length) return;
+    const section = createEl('section', { className: 'codex-health-section' });
+    section.appendChild(createEl('h3', { text: title }));
+    const list = createEl('dl', { className: 'codex-health-grid' });
+    entries.forEach(([key, value]) => {
+      const item = createEl('div', { className: 'codex-health-item' });
+      item.appendChild(createEl('dt', { text: healthLabel(key) }));
+      const formatted = healthValue(key, value);
+      const valueClass = [
+        'codex-health-value',
+        formatted.tone ? `codex-health-value--${formatted.tone}` : '',
+        formatted.code ? 'codex-health-value--code' : '',
+      ].filter(Boolean).join(' ');
+      item.appendChild(createEl('dd', { className: valueClass, text: formatted.text }));
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    if (note) {
+      section.appendChild(createEl('p', { className: 'codex-health-note', text: note }));
+    }
+    container.appendChild(section);
+  }
+
+  function renderHealth(payload, container, summary) {
+    const health = payload && payload.health && typeof payload.health === 'object' ? payload.health : {};
+    const healthy = Boolean(payload && payload.ok === true && health.ok === true);
+    container.innerHTML = '';
+
+    const banner = createEl('div', {
+      className: `codex-health-banner codex-health-banner--${healthy ? 'success' : 'danger'}`,
+    });
+    banner.appendChild(createEl('strong', { text: healthy ? 'All systems healthy' : 'Health check needs attention' }));
+    banner.appendChild(createEl('span', { text: `Checked ${new Date().toLocaleString()}` }));
+    container.appendChild(banner);
+
+    renderHealthSection(container, 'Overview', {
+      apiOk: payload ? payload.ok : undefined,
+      ok: health.ok,
+      queuedCount: health.queuedCount,
+      runningCount: health.runningCount,
+      staleLockCount: health.staleLockCount,
+      workspaceCount: health.workspaceCount,
+    });
+    renderHealthSection(container, 'Codex binary', health.binary);
+    renderHealthSection(container, 'Queue worker', health.worker);
+    renderHealthSection(
+      container,
+      'Configuration',
+      health.config,
+      'Reasoning effort and model option lists are omitted to keep this view compact.',
+    );
+
+    Object.entries(health).forEach(([key, value]) => {
+      if (
+        !['binary', 'worker', 'config'].includes(key) &&
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        renderHealthSection(container, healthLabel(key), value);
+      }
+    });
+
+    summary.textContent = healthy
+      ? 'The Codex service is responding normally.'
+      : 'One or more Codex health checks reported a problem.';
+  }
+
+  function initHealthModal() {
+    const trigger = document.getElementById('codex-health-button');
+    const modal = document.getElementById('codex-health-modal');
+    const loadingState = document.getElementById('codex-health-loading');
+    const errorState = document.getElementById('codex-health-error');
+    const content = document.getElementById('codex-health-content');
+    const summary = document.getElementById('codex-health-summary');
+    const refresh = document.getElementById('codex-health-refresh');
+    if (!trigger || !modal || !loadingState || !errorState || !content || !summary || !refresh) return;
+
+    let loading = false;
+
+    function openModal() {
+      if (modal.open) return;
+      if (typeof modal.showModal === 'function') {
+        modal.showModal();
+      } else {
+        modal.setAttribute('open', '');
+      }
+    }
+
+    function closeModal() {
+      if (typeof modal.close === 'function') {
+        modal.close();
+      } else {
+        modal.removeAttribute('open');
+      }
+    }
+
+    async function loadHealth() {
+      if (loading) return;
+      loading = true;
+      trigger.disabled = true;
+      refresh.disabled = true;
+      loadingState.hidden = false;
+      errorState.hidden = true;
+      content.hidden = true;
+      summary.textContent = 'Checking current server, binary, and worker status…';
+      openModal();
+      try {
+        const payload = await requestJson('/codex/api/health');
+        renderHealth(payload, content, summary);
+        content.hidden = false;
+      } catch (error) {
+        summary.textContent = 'The Codex health check could not be loaded.';
+        errorState.textContent = error.message || 'Unable to load Codex health.';
+        errorState.hidden = false;
+      } finally {
+        loadingState.hidden = true;
+        loading = false;
+        trigger.disabled = false;
+        refresh.disabled = false;
+      }
+    }
+
+    trigger.addEventListener('click', loadHealth);
+    refresh.addEventListener('click', loadHealth);
+    modal.querySelectorAll('[data-codex-health-close]').forEach((button) => {
+      button.addEventListener('click', closeModal);
+    });
   }
 
   function formToPayload(form) {
@@ -1113,6 +1320,7 @@
   }
 
   function initDashboard() {
+    initHealthModal();
     const form = document.getElementById('codex-new-session-form');
     const status = document.getElementById('codex-new-session-status');
     if (form) {
