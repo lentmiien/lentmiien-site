@@ -92,11 +92,20 @@ block content
           .codex-list(data-codex-running-list)
             if runningTurns.length
               each turn in runningTurns
-                article.codex-job-row
+                article.codex-job-row(data-turn-id=turn.id)
                   .codex-job-row__main
                     span(class=statusClass(turn.status))= turn.status
                     a(href=`/codex/turns/${turn.id}`)= turn.workspace ? turn.workspace.name : 'Workspace'
                     small= 'Started ' + fmt(turn.startedAt)
+                    .codex-live-activity(data-turn-activity=turn.id, data-activity-state='live', aria-label='Live Codex process activity')
+                      span.codex-live-activity__signal(aria-hidden='true')
+                        span
+                        span
+                        span
+                      span.codex-live-activity__copy
+                        strong(data-activity-heading) Codex is working
+                        span(data-activity-summary) Waiting for the first process detail…
+                      span.codex-visually-hidden(data-activity-announcement, aria-live='polite', aria-atomic='true')
                   button.codex-icon-button(type='button', data-action='cancel-turn', data-turn-id=turn.id, title='Cancel') Cancel
             else
               p.codex-empty No running requests.

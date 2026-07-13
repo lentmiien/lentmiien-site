@@ -83,6 +83,16 @@ block content
                 span= 'Queued ' + fmt(turn.queuedAt)
                 span= 'Duration ' + duration(turn.durationMs)
                 span= 'Turn cost ' + money(turn.costEstimate && turn.costEstimate.total)
+              if turn.status === 'running'
+                .codex-live-activity(data-turn-activity=turn.id, data-activity-state='live', aria-label='Live Codex process activity')
+                  span.codex-live-activity__signal(aria-hidden='true')
+                    span
+                    span
+                    span
+                  span.codex-live-activity__copy
+                    strong(data-activity-heading) Codex is working
+                    span(data-activity-summary) Waiting for the first process detail…
+                  span.codex-visually-hidden(data-activity-announcement, aria-live='polite', aria-atomic='true')
               .codex-token-strip
                 each type in tokenTypes
                   span.codex-token-pill
@@ -101,8 +111,9 @@ block content
                   else
                     p.codex-empty Response pending.
               .codex-event-panel
-                button.codex-small-button(type='button', data-action='toggle-events', data-turn-id=turn.id) Process details
-                .codex-events(hidden, data-events-for=turn.id)
+                - const detailsId = `codex-events-${turn.id}`;
+                button.codex-small-button(type='button', data-action='toggle-events', data-turn-id=turn.id, aria-controls=detailsId, aria-expanded='false')= turn.eventCount ? `Process details (${turn.eventCount})` : 'Process details'
+                .codex-events(id=detailsId, hidden, data-events-for=turn.id)
         else
           p.codex-empty No turns found.
 

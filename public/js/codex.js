@@ -22,6 +22,11 @@
     output: 'Output',
     reasoning: 'Reasoning',
   };
+  const LIVE_ACTIVITY_POLL_MS = 2000;
+  const LIVE_ACTIVITY_HIGHLIGHT_MS = 1400;
+  const liveActivityByTurn = new Map();
+  let liveActivityTurns = [];
+  let liveActivityTimer = null;
   let syncPageAutoRefresh = null;
 
   function formatDate(value) {
@@ -137,6 +142,301 @@
     return payload;
   }
 
+  function getLiveActivityState(turnOrId) {
+    const turn = turnOrId && typeof turnOrId === 'object' ? turnOrId : null;
+    const turnId = String(turn ? turn.id : turnOrId || '');
+    if (!liveActivityByTurn.has(turnId)) {
+      liveActivityByTurn.set(turnId, {
+        turnId,
+        status: turn ? turn.status : '',
+        reportedCount: Number(turn && turn.eventCount) || 0,
+        events: [],
+        lastSeq: 0,
+        latestEvent: null,
+        loaded: false,
+        loading: false,
+        detailsOpen: false,
+        failureCount: 0,
+        errorMessage: '',
+        highlightUntil: 0,
+      });
+    }
+    const state = liveActivityByTurn.get(turnId);
+    if (turn) {
+      state.status = turn.status || '';
+      state.reportedCount = Math.max(state.reportedCount, Number(turn.eventCount) || 0);
+    }
+    return state;
+  }
+
+  function humanizeEventName(value) {
+    const text = String(value || 'process update')
+      .replace(/[._-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text) return 'Process update';
+    return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+  }
+
+  function describeProcessEvent(event) {
+    const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
+    const nestedPayload = payload.payload && typeof payload.payload === 'object' ? payload.payload : {};
+    const item = payload.item && typeof payload.item === 'object'
+      ? payload.item
+      : (nestedPayload.item && typeof nestedPayload.item === 'object' ? nestedPayload.item : {});
+    const itemType = String(item.type || '').toLowerCase();
+    const eventType = String(event && event.eventType || '').toLowerCase();
+    const completed = eventType.includes('completed') || eventType.includes('complete');
+
+    if (eventType === 'process.started') return 'Codex process started';
+    if (eventType === 'thread.started' || eventType === 'session_meta') return 'Codex session connected';
+    if (eventType.startsWith('turn.')) return humanizeEventName(eventType);
+    if (itemType.includes('reasoning')) return 'Reasoning update';
+    if (itemType.includes('command')) return completed ? 'Command completed' : 'Command started';
+    if (itemType.includes('file')) return 'File changes updated';
+    if (itemType.includes('agent') || itemType.includes('assistant')) return 'Response update';
+    if (itemType.includes('web_search') || itemType.includes('search')) return 'Search activity';
+    if (itemType.includes('tool') || itemType.includes('mcp')) return 'Tool activity';
+    if (eventType === 'stdout.line') return 'Process output received';
+    if (eventType === 'stderr.line') return 'Process warning received';
+    if (itemType) return humanizeEventName(itemType);
+    return humanizeEventName(event && event.eventType);
+  }
+
+  function formatActivityAge(value) {
+    if (!value) return 'time unavailable';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'time unavailable';
+    const elapsedMs = Math.max(0, Date.now() - date.getTime());
+    if (elapsedMs < 5000) return 'just now';
+    if (elapsedMs < 60000) return `${Math.floor(elapsedMs / 1000)}s ago`;
+    if (elapsedMs < 3600000) return `${Math.floor(elapsedMs / 60000)}m ago`;
+    return formatDate(value);
+  }
+
+  function liveActivityCount(state) {
+    return Math.max(state.reportedCount, state.lastSeq, state.events.length);
+  }
+
+  function liveActivityDisplay(state) {
+    const latest = state.latestEvent;
+    let heading = 'Codex is working';
+    if (state.failureCount >= 2) {
+      heading = 'Reconnecting to activity feed';
+    } else if (state.highlightUntil > Date.now()) {
+      heading = 'New process detail';
+    } else if (latest) {
+      const eventTime = new Date(latest.createdAt || 0).getTime();
+      heading = eventTime && Date.now() - eventTime > 30000
+        ? 'Monitoring for the next detail'
+        : 'Receiving process details';
+    }
+
+    if (!latest) {
+      return {
+        heading,
+        summary: state.failureCount >= 2
+          ? 'The status is still running; activity checks will retry automatically.'
+          : 'Waiting for the first process detail…',
+      };
+    }
+
+    return {
+      heading,
+      summary: `Detail #${latest.seq} · ${describeProcessEvent(latest)} · ${formatActivityAge(latest.createdAt)}`,
+    };
+  }
+
+  function renderLiveActivity(turn) {
+    const state = getLiveActivityState(turn);
+    const display = liveActivityDisplay(state);
+    const wrapper = createEl('div', {
+      className: `codex-live-activity${state.highlightUntil > Date.now() ? ' codex-live-activity--updated' : ''}`,
+      'data-turn-activity': turn.id,
+      'data-activity-state': state.failureCount >= 2 ? 'retrying' : 'live',
+      'aria-label': 'Live Codex process activity',
+    });
+    const signal = createEl('span', {
+      className: 'codex-live-activity__signal',
+      'aria-hidden': 'true',
+    });
+    signal.appendChild(createEl('span'));
+    signal.appendChild(createEl('span'));
+    signal.appendChild(createEl('span'));
+    wrapper.appendChild(signal);
+    const copy = createEl('span', { className: 'codex-live-activity__copy' });
+    copy.appendChild(createEl('strong', { 'data-activity-heading': '', text: display.heading }));
+    copy.appendChild(createEl('span', { 'data-activity-summary': '', text: display.summary }));
+    wrapper.appendChild(copy);
+    wrapper.appendChild(createEl('span', {
+      className: 'codex-visually-hidden',
+      'data-activity-announcement': '',
+      'aria-live': 'polite',
+      'aria-atomic': 'true',
+    }));
+    return wrapper;
+  }
+
+  function updateProcessDetailButtons(turnId) {
+    const state = getLiveActivityState(turnId);
+    const count = liveActivityCount(state);
+    root.querySelectorAll(`[data-action="toggle-events"][data-turn-id="${CSS.escape(turnId)}"]`).forEach((button) => {
+      const open = state.detailsOpen;
+      const onTurnPage = root.dataset.codexPage === 'turn';
+      const label = onTurnPage
+        ? (open ? 'Hide details' : 'Show details')
+        : (open ? 'Hide process details' : 'Process details');
+      button.textContent = count ? `${label} (${count})` : label;
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  }
+
+  function updateLiveActivityIndicators(turnId, options = {}) {
+    const state = getLiveActivityState(turnId);
+    const display = liveActivityDisplay(state);
+    const selector = `[data-turn-activity="${CSS.escape(turnId)}"]`;
+    root.querySelectorAll(selector).forEach((indicator) => {
+      indicator.classList.toggle('codex-live-activity--updated', state.highlightUntil > Date.now());
+      indicator.dataset.activityState = state.failureCount >= 2 ? 'retrying' : 'live';
+      const heading = indicator.querySelector('[data-activity-heading]');
+      const summary = indicator.querySelector('[data-activity-summary]');
+      if (heading) heading.textContent = display.heading;
+      if (summary) summary.textContent = display.summary;
+      if (state.latestEvent && state.latestEvent.createdAt) {
+        indicator.title = `Latest process detail: ${formatDate(state.latestEvent.createdAt)}`;
+      }
+      if (options.announce && state.latestEvent) {
+        const announcement = indicator.querySelector('[data-activity-announcement]');
+        if (announcement) {
+          announcement.textContent = `New process detail: ${describeProcessEvent(state.latestEvent)}.`;
+        }
+      }
+    });
+    updateProcessDetailButtons(turnId);
+
+    if (options.renderEventPanels) {
+      root.querySelectorAll(`[data-events-for="${CSS.escape(turnId)}"]`).forEach((container) => {
+        if (container.hidden || !state.detailsOpen) return;
+        renderEvents(container, state.events, {
+          errorMessage: state.errorMessage,
+          isRunning: state.status === 'running',
+          loaded: state.loaded,
+          newSeqs: options.newSeqs,
+        });
+      });
+    }
+  }
+
+  async function loadTurnActivity(turnId) {
+    const state = getLiveActivityState(turnId);
+    if (!turnId || state.loading) return false;
+    const initialLoad = !state.loaded;
+    state.loading = true;
+    try {
+      const afterSeq = initialLoad ? 0 : state.lastSeq;
+      const payload = await requestJson(
+        `/codex/api/turns/${encodeURIComponent(turnId)}/events?afterSeq=${encodeURIComponent(afterSeq)}`,
+        { cache: 'no-store' }
+      );
+      const knownSeqs = new Set(state.events.map((event) => Number(event.seq) || 0));
+      const incoming = (payload.events || [])
+        .filter((event) => !knownSeqs.has(Number(event.seq) || 0))
+        .sort((left, right) => Number(left.seq) - Number(right.seq));
+      const newSeqs = new Set(initialLoad ? [] : incoming.map((event) => Number(event.seq) || 0));
+      if (incoming.length) {
+        state.events.push(...incoming);
+        state.events.sort((left, right) => Number(left.seq) - Number(right.seq));
+        state.latestEvent = state.events[state.events.length - 1];
+        state.lastSeq = Number(state.latestEvent.seq) || state.lastSeq;
+        state.reportedCount = Math.max(state.reportedCount, state.lastSeq);
+        state.highlightUntil = Date.now() + LIVE_ACTIVITY_HIGHLIGHT_MS;
+      } else if (state.events.length) {
+        state.latestEvent = state.events[state.events.length - 1];
+        state.lastSeq = Math.max(state.lastSeq, Number(state.latestEvent.seq) || 0);
+      }
+      state.loaded = true;
+      state.failureCount = 0;
+      state.errorMessage = '';
+      updateLiveActivityIndicators(turnId, {
+        announce: incoming.length > 0,
+        newSeqs,
+        renderEventPanels: initialLoad || incoming.length > 0,
+      });
+      if (incoming.length) {
+        window.setTimeout(() => {
+          updateLiveActivityIndicators(turnId);
+        }, LIVE_ACTIVITY_HIGHLIGHT_MS + 50);
+      }
+      return true;
+    } catch (error) {
+      state.failureCount += 1;
+      state.errorMessage = error.message || 'Unable to load process details.';
+      updateLiveActivityIndicators(turnId, { renderEventPanels: true });
+      return false;
+    } finally {
+      state.loading = false;
+    }
+  }
+
+  function stopLiveActivityPolling() {
+    if (liveActivityTimer) {
+      window.clearInterval(liveActivityTimer);
+      liveActivityTimer = null;
+    }
+  }
+
+  async function pollLiveActivities() {
+    if (document.hidden || liveActivityTurns.length === 0) return;
+    await Promise.all(liveActivityTurns.map((turn) => loadTurnActivity(turn.id)));
+  }
+
+  function startLiveActivityPolling() {
+    if (liveActivityTimer || liveActivityTurns.length === 0) return;
+    pollLiveActivities().catch(() => {});
+    liveActivityTimer = window.setInterval(() => {
+      pollLiveActivities().catch(() => {});
+    }, LIVE_ACTIVITY_POLL_MS);
+  }
+
+  function syncLiveActivityTurns(turns) {
+    const previousRunningIds = new Set(liveActivityTurns.map((turn) => String(turn.id)));
+    const availableTurns = Array.isArray(turns) ? turns.filter(Boolean) : [];
+    availableTurns.forEach((turn) => {
+      const state = getLiveActivityState(turn.id);
+      const previousStatus = state.status;
+      getLiveActivityState(turn);
+      if (
+        root.dataset.codexPage === 'turn' &&
+        turn.status === 'running' &&
+        previousStatus &&
+        previousStatus !== 'running'
+      ) {
+        state.detailsOpen = true;
+        root.querySelectorAll(`[data-events-for="${CSS.escape(turn.id)}"]`).forEach((container) => {
+          container.hidden = false;
+        });
+      }
+      if (previousRunningIds.has(String(turn.id)) && turn.status !== 'running') {
+        window.setTimeout(() => loadTurnActivity(turn.id), 500);
+      }
+      updateLiveActivityIndicators(turn.id);
+    });
+    liveActivityTurns = availableTurns.filter((turn) => turn.status === 'running');
+    if (liveActivityTurns.length) {
+      startLiveActivityPolling();
+    } else {
+      stopLiveActivityPolling();
+    }
+  }
+
+  function captureInitialProcessDetailState() {
+    root.querySelectorAll('[data-events-for]').forEach((container) => {
+      const state = getLiveActivityState(container.dataset.eventsFor);
+      state.detailsOpen = !container.hidden;
+      updateProcessDetailButtons(state.turnId);
+    });
+  }
+
   function setStatus(element, message, tone) {
     if (!element) return;
     element.textContent = message || '';
@@ -195,7 +495,10 @@
   }
 
   function renderTurnRow(turn) {
-    const row = createEl('article', { className: 'codex-job-row' });
+    const row = createEl('article', {
+      className: 'codex-job-row',
+      'data-turn-id': turn.id,
+    });
     const main = createEl('div', { className: 'codex-job-row__main' });
     main.appendChild(createEl('span', { className: statusClass(turn.status), text: turn.status }));
     main.appendChild(createEl('a', {
@@ -205,6 +508,9 @@
     main.appendChild(createEl('small', {
       text: turn.status === 'running' ? `Started ${formatDate(turn.startedAt)}` : `Queued ${formatDate(turn.queuedAt)}`,
     }));
+    if (turn.status === 'running') {
+      main.appendChild(renderLiveActivity(turn));
+    }
     row.appendChild(main);
     if (turn.status === 'queued' || turn.status === 'running') {
       row.appendChild(createEl('button', {
@@ -434,6 +740,7 @@
       requestJson('/codex/api/sessions?limit=12'),
       requestJson('/codex/api/stats'),
     ]);
+    syncLiveActivityTurns([...(queue.runningTurns || []), ...(queue.queuedTurns || [])]);
     renderTurnList(root.querySelector('[data-codex-running-list]'), queue.runningTurns || [], 'No running requests.');
     renderTurnList(root.querySelector('[data-codex-queued-list]'), queue.queuedTurns || [], 'No queued requests.');
     renderSessionsTable(root.querySelector('[data-codex-session-table]'), sessions.sessions || []);
@@ -458,6 +765,7 @@
   }
 
   function renderTurnCard(turn, workspace) {
+    const activityState = getLiveActivityState(turn);
     const card = createEl('article', { className: 'codex-turn-card', 'data-turn-id': turn.id });
     const header = createEl('div', { className: 'codex-turn-card__header' });
     const title = createEl('div');
@@ -504,6 +812,9 @@
       `Turn cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
     ].filter(Boolean).forEach((text) => meta.appendChild(createEl('span', { text })));
     card.appendChild(meta);
+    if (turn.status === 'running') {
+      card.appendChild(renderLiveActivity(turn));
+    }
     card.appendChild(renderTokenStrip(turn.tokenUsage));
 
     const transcript = createEl('div', { className: 'codex-transcript' });
@@ -521,13 +832,24 @@
       className: 'codex-small-button',
       'data-action': 'toggle-events',
       'data-turn-id': turn.id,
+      'aria-controls': `codex-events-${turn.id}`,
+      'aria-expanded': activityState.detailsOpen ? 'true' : 'false',
       text: 'Process details',
     }));
-    eventPanel.appendChild(createEl('div', {
+    const eventsContainer = createEl('div', {
+      id: `codex-events-${turn.id}`,
       className: 'codex-events',
-      hidden: true,
+      hidden: !activityState.detailsOpen,
       'data-events-for': turn.id,
-    }));
+    });
+    if (activityState.detailsOpen) {
+      renderEvents(eventsContainer, activityState.events, {
+        errorMessage: activityState.errorMessage,
+        isRunning: turn.status === 'running',
+        loaded: activityState.loaded,
+      });
+    }
+    eventPanel.appendChild(eventsContainer);
     card.appendChild(eventPanel);
     return card;
   }
@@ -541,12 +863,14 @@
       return;
     }
     turns.forEach((turn) => container.appendChild(renderTurnCard(turn, workspace)));
+    turns.forEach((turn) => updateProcessDetailButtons(turn.id));
   }
 
   async function refreshSession() {
     const sessionId = root.dataset.sessionId;
     if (!sessionId) return null;
     const payload = await requestJson(`/codex/api/sessions/${encodeURIComponent(sessionId)}`);
+    syncLiveActivityTurns(payload.turns || []);
     renderTimeline(payload.turns || [], payload.workspace);
     renderSessionStats(payload.stats);
     return payload;
@@ -579,7 +903,15 @@
   function renderTurnDetail(turn, workspace) {
     const container = root.querySelector('[data-codex-turn-detail]');
     if (!container) return;
+    const activityState = getLiveActivityState(turn);
     renderTurnActions(turn);
+    const activitySlot = root.querySelector('[data-live-activity-slot]');
+    if (activitySlot) {
+      activitySlot.innerHTML = '';
+      if (turn.status === 'running') {
+        activitySlot.appendChild(renderLiveActivity(turn));
+      }
+    }
     const transcript = root.querySelector('.codex-transcript--detail');
     const status = root.querySelector('.codex-panel__header .codex-status');
     if (status) {
@@ -624,56 +956,103 @@
         detailGrid.appendChild(cell);
       });
     }
+    root.querySelectorAll(`[data-events-for="${CSS.escape(turn.id)}"]`).forEach((eventsContainer) => {
+      if (!eventsContainer.hidden && activityState.detailsOpen) {
+        renderEvents(eventsContainer, activityState.events, {
+          errorMessage: activityState.errorMessage,
+          isRunning: turn.status === 'running',
+          loaded: activityState.loaded,
+        });
+      }
+    });
+    updateProcessDetailButtons(turn.id);
   }
 
   async function refreshTurn() {
     const turnId = root.dataset.turnId;
     if (!turnId) return null;
     const payload = await requestJson(`/codex/api/turns/${encodeURIComponent(turnId)}`);
+    syncLiveActivityTurns([payload.turn]);
     renderTurnDetail(payload.turn, payload.workspace);
     return payload;
   }
 
-  function renderEvents(container, events) {
+  function renderEvents(container, events, options = {}) {
     container.innerHTML = '';
     if (!events || events.length === 0) {
-      container.appendChild(createEl('p', { className: 'codex-empty', text: 'No process events stored.' }));
-      return;
-    }
-    events.forEach((event) => {
-      const wrapper = createEl('article', { className: 'codex-event' });
-      const header = createEl('div', { className: 'codex-event__header' });
-      header.appendChild(createEl('strong', { text: `#${event.seq} ${event.eventType}` }));
-      header.appendChild(createEl('span', { text: `${event.stream} / ${event.severity}` }));
-      wrapper.appendChild(header);
-      if (event.text) {
-        wrapper.appendChild(createEl('pre', { text: event.text }));
-      } else if (event.payload && Object.keys(event.payload).length) {
-        wrapper.appendChild(createEl('pre', { text: JSON.stringify(event.payload, null, 2) }));
-      } else {
-        wrapper.appendChild(createEl('p', { className: 'codex-empty', text: 'No event payload.' }));
+      let message = 'No process details stored.';
+      if (!options.loaded) {
+        message = 'Loading process details…';
+      } else if (options.isRunning) {
+        message = 'Listening for the first process detail…';
       }
-      container.appendChild(wrapper);
-    });
+      container.appendChild(createEl('p', { className: 'codex-empty', text: message }));
+    } else {
+      events.forEach((event) => {
+        const eventSeq = Number(event.seq) || 0;
+        const isNew = Boolean(options.newSeqs && options.newSeqs.has(eventSeq));
+        const wrapper = createEl('article', {
+          className: `codex-event${isNew ? ' codex-event--new' : ''}`,
+          'data-event-seq': eventSeq,
+        });
+        const header = createEl('div', { className: 'codex-event__header' });
+        header.appendChild(createEl('strong', { text: `#${event.seq} ${event.eventType}` }));
+        const eventMeta = [
+          event.stream,
+          event.severity,
+          event.createdAt ? formatDate(event.createdAt) : '',
+        ].filter(Boolean).join(' / ');
+        header.appendChild(createEl('span', { text: eventMeta }));
+        wrapper.appendChild(header);
+        if (event.text) {
+          wrapper.appendChild(createEl('pre', { text: event.text }));
+        } else if (event.payload && Object.keys(event.payload).length) {
+          wrapper.appendChild(createEl('pre', { text: JSON.stringify(event.payload, null, 2) }));
+        } else {
+          wrapper.appendChild(createEl('p', { className: 'codex-empty', text: 'No event payload.' }));
+        }
+        container.appendChild(wrapper);
+      });
+    }
+    if (options.errorMessage) {
+      container.appendChild(createEl('p', {
+        className: 'codex-events__notice codex-error-text',
+        text: options.isRunning
+          ? `${options.errorMessage} Retrying automatically.`
+          : options.errorMessage,
+      }));
+    }
+    if (options.isRunning) {
+      const listener = createEl('div', {
+        className: 'codex-events__live',
+        'aria-label': 'Listening for more process details',
+      });
+      listener.appendChild(createEl('span', {
+        className: 'codex-events__live-dot',
+        'aria-hidden': 'true',
+      }));
+      listener.appendChild(createEl('span', { text: 'Live · listening for more details' }));
+      container.appendChild(listener);
+    }
+    const latestEvent = events && events.length ? events[events.length - 1] : null;
+    container.dataset.renderedSeq = latestEvent ? String(latestEvent.seq) : '0';
   }
 
   async function toggleEvents(turnId) {
     const container = root.querySelector(`[data-events-for="${CSS.escape(turnId)}"]`);
     if (!container) return;
-    const shouldLoad = container.hidden || !container.dataset.loaded;
-    container.hidden = !container.hidden;
-    if (!shouldLoad) return;
-    container.dataset.loaded = '1';
-    container.innerHTML = '';
-    container.appendChild(createEl('p', { className: 'codex-empty', text: 'Loading events...' }));
-    try {
-      const payload = await requestJson(`/codex/api/turns/${encodeURIComponent(turnId)}/events`);
-      renderEvents(container, payload.events || []);
-      container.hidden = false;
-    } catch (error) {
-      container.innerHTML = '';
-      container.appendChild(createEl('p', { className: 'codex-error-text', text: error.message }));
-      container.hidden = false;
+    const state = getLiveActivityState(turnId);
+    state.detailsOpen = container.hidden;
+    container.hidden = !state.detailsOpen;
+    updateProcessDetailButtons(turnId);
+    if (!state.detailsOpen) return;
+    renderEvents(container, state.events, {
+      errorMessage: state.errorMessage,
+      isRunning: state.status === 'running',
+      loaded: state.loaded,
+    });
+    if (!state.loaded) {
+      await loadTurnActivity(turnId);
     }
   }
 
@@ -788,6 +1167,7 @@
     setInterval(() => {
       refreshDashboard().catch(() => {});
     }, 10000);
+    syncLiveActivityTurns([...(bootstrap.runningTurns || []), ...(bootstrap.queuedTurns || [])]);
   }
 
   function initSession() {
@@ -843,6 +1223,7 @@
       });
     }
     syncPageAutoRefresh = syncAutoRefresh;
+    syncLiveActivityTurns(bootstrap.turns || []);
     syncAutoRefresh({ turns: bootstrap.turns });
   }
 
@@ -874,6 +1255,10 @@
     }
 
     syncPageAutoRefresh = syncAutoRefresh;
+    syncLiveActivityTurns(bootstrap.turn ? [bootstrap.turn] : []);
+    if (bootstrap.turn) {
+      updateLiveActivityIndicators(bootstrap.turn.id, { renderEventPanels: true });
+    }
     syncAutoRefresh({ turn: bootstrap.turn });
   }
 
@@ -965,8 +1350,15 @@
     });
   }
 
+  captureInitialProcessDetailState();
   bindPermissionControls(root);
   bindGlobalActions();
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      pollLiveActivities().catch(() => {});
+    }
+  });
 
   if (root.dataset.codexPage === 'dashboard') {
     initDashboard();

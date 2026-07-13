@@ -36,6 +36,17 @@ block content
           .codex-panel__header
             h2 Status
             span(class=statusClass(turn.status))= turn.status
+          .codex-live-activity-slot(data-live-activity-slot)
+            if turn.status === 'running'
+              .codex-live-activity(data-turn-activity=turn.id, data-activity-state='live', aria-label='Live Codex process activity')
+                span.codex-live-activity__signal(aria-hidden='true')
+                  span
+                  span
+                  span
+                span.codex-live-activity__copy
+                  strong(data-activity-heading) Codex is working
+                  span(data-activity-summary) Waiting for the first process detail…
+                span.codex-visually-hidden(data-activity-announcement, aria-live='polite', aria-atomic='true')
           .codex-detail-grid
             div
               small Workspace
@@ -102,8 +113,10 @@ block content
         .codex-panel
           .codex-panel__header
             h2 Process Details
-            button.codex-small-button(type='button', data-action='toggle-events', data-turn-id=turn.id) Load events
-          .codex-events(hidden=false, data-events-for=turn.id)
+            - const detailsAreLive = turn.status === 'running';
+            - const detailsId = `codex-events-${turn.id}`;
+            button.codex-small-button(type='button', data-action='toggle-events', data-turn-id=turn.id, aria-controls=detailsId, aria-expanded=detailsAreLive ? 'true' : 'false')= detailsAreLive ? 'Hide details' : (turn.eventCount ? `Show details (${turn.eventCount})` : 'Show details')
+          .codex-events(id=detailsId, hidden=!detailsAreLive, data-events-for=turn.id)
 
 block script
   script#codex-page-data(type='application/json')!= codexStateJson
