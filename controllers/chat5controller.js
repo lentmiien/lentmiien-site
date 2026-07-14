@@ -4,6 +4,7 @@ const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
 const logger = require('../utils/logger');
 const { renderMessagesHtml, renderMessageHtml } = require('../utils/chat5Markdown');
+const { hasDatePassed, parseOptionalDateOnly, toDateOnlyString } = require('../utils/dateOnly');
 
 // Instantiate the services
 const MessageService = require('../services/messageService');
@@ -172,7 +173,7 @@ exports.index = async (req, res) => {
 };
 
 exports.ai_model_cards = async (req, res) => {
-  const models = (await AIModelCards.find()).sort((a,b) => {
+  const storedModels = (await AIModelCards.find()).sort((a,b) => {
     if (a.model_type < b.model_type) return -1;
     if (a.model_type > b.model_type) return 1;
     if (a.output_1m_token_cost > b.output_1m_token_cost) return -1;
@@ -182,6 +183,14 @@ exports.ai_model_cards = async (req, res) => {
     if (a.model_name < b.model_name) return -1;
     if (a.model_name > b.model_name) return 1;
     return 0;
+  });
+  const models = storedModels.map((model) => {
+    const card = typeof model.toObject === 'function' ? model.toObject() : model;
+    return {
+      ...card,
+      deprecation_date_input: toDateOnlyString(card.deprecation_date),
+      deprecation_date_has_passed: hasDatePassed(card.deprecation_date),
+    };
   });
   const formDefaults = {
     model_name: '',
@@ -200,10 +209,23 @@ exports.ai_model_cards = async (req, res) => {
       formDefaults.provider = matchedProvider;
     }
   }
-  res.render('ai_model_cards', {models, formDefaults});
+  const errorMessages = {
+    'invalid-deprecation-date': 'Enter a valid scheduled deprecation date.',
+    'model-not-found': 'The AI model card could not be found.',
+    'update-failed': 'The scheduled deprecation date could not be updated.',
+  };
+  const pageError = typeof req.query.error === 'string' ? errorMessages[req.query.error] : '';
+  res.render('ai_model_cards', {models, formDefaults, pageError});
 };
 
 exports.add_model_card = async (req, res) => {
+  let deprecationDate;
+  try {
+    deprecationDate = parseOptionalDateOnly(req.body.deprecation_date);
+  } catch (error) {
+    return res.redirect('/chat5/ai_model_cards?error=invalid-deprecation-date');
+  }
+
   // Prepare data
   const data = {
     model_name: req.body.model_name,
@@ -217,6 +239,7 @@ exports.add_model_card = async (req, res) => {
     max_tokens: parseInt(req.body.max_tokens),
     max_out_tokens: parseInt(req.body.max_out_tokens),
     added_date: new Date(),
+    deprecation_date: deprecationDate,
     batch_use: req.body.batch_use != undefined && req.body.batch_use === "on",
     context_type: req.body.context_type
   }
@@ -234,6 +257,7 @@ exports.add_model_card = async (req, res) => {
     existing[0].max_tokens = data.max_tokens;
     existing[0].max_out_tokens = data.max_out_tokens;
     existing[0].added_date = data.added_date;
+    existing[0].deprecation_date = data.deprecation_date;
     existing[0].batch_use = data.batch_use;
     existing[0].context_type = data.context_type;
     await existing[0].save();
@@ -244,6 +268,31 @@ exports.add_model_card = async (req, res) => {
 
   invalidateChatModelCache();
   res.redirect('/chat5/ai_model_cards');
+};
+
+exports.update_model_card_deprecation_date = async (req, res) => {
+  let deprecationDate;
+  try {
+    deprecationDate = parseOptionalDateOnly(req.body.deprecation_date);
+  } catch (error) {
+    return res.redirect('/chat5/ai_model_cards?error=invalid-deprecation-date');
+  }
+
+  try {
+    const model = await AIModelCards.findById(req.params.id);
+    if (!model) {
+      return res.redirect('/chat5/ai_model_cards?error=model-not-found');
+    }
+    model.deprecation_date = deprecationDate;
+    await model.save();
+    return res.redirect('/chat5/ai_model_cards');
+  } catch (error) {
+    logger.error('Failed to update AI model card deprecation date', {
+      error: error.message,
+      metadata: { id: req.params.id },
+    });
+    return res.redirect('/chat5/ai_model_cards?error=update-failed');
+  }
 };
 
 exports.delete_model_card = async (req, res) => {

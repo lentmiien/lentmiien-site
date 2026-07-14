@@ -12,6 +12,7 @@ const AiModelCardModel = new mongoose.Schema({
   max_tokens: { type: Number, required: true },
   max_out_tokens: { type: Number, required: true },
   added_date: { type: Date, required: true },
+  deprecation_date: { type: Date, default: null },
   batch_use: { type: Boolean, required: true },
   context_type: { type: String, required: true, enum: ['none', 'system', 'developer'] },
 });

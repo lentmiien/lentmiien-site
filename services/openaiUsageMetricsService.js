@@ -1,5 +1,15 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_COMPLETION_WINDOW_DAYS = 30;
+const CENTERED_SPENDING_WINDOW_MONTHS = 5;
+const WEEKDAYS = [
+  { dayIndex: 1, label: 'Monday', shortLabel: 'Mon' },
+  { dayIndex: 2, label: 'Tuesday', shortLabel: 'Tue' },
+  { dayIndex: 3, label: 'Wednesday', shortLabel: 'Wed' },
+  { dayIndex: 4, label: 'Thursday', shortLabel: 'Thu' },
+  { dayIndex: 5, label: 'Friday', shortLabel: 'Fri' },
+  { dayIndex: 6, label: 'Saturday', shortLabel: 'Sat' },
+  { dayIndex: 0, label: 'Sunday', shortLabel: 'Sun' },
+];
 
 function formatDateKey(date) {
   const year = date.getUTCFullYear();
@@ -194,6 +204,135 @@ function roundToOneDecimal(value) {
   return Math.round(value * 10) / 10;
 }
 
+function nonNegativeNumber(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? Math.max(0, numericValue) : 0;
+}
+
+function buildWeekdaySpending(entries) {
+  const dailyCosts = new Map();
+
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    const date = parseDateKey(entry?.entry_date);
+    if (!date) {
+      return;
+    }
+
+    const dateKey = formatDateKey(date);
+    dailyCosts.set(dateKey, (dailyCosts.get(dateKey) || 0) + nonNegativeNumber(entry.cost));
+  });
+
+  const weekdayMap = new Map(WEEKDAYS.map((weekday) => [weekday.dayIndex, {
+    ...weekday,
+    totalCost: 0,
+    trackedDays: 0,
+  }]));
+
+  dailyCosts.forEach((cost, dateKey) => {
+    const date = parseDateKey(dateKey);
+    const weekday = date ? weekdayMap.get(date.getUTCDay()) : null;
+    if (!weekday) {
+      return;
+    }
+
+    weekday.totalCost += cost;
+    weekday.trackedDays += 1;
+  });
+
+  const totalApiSpend = Array.from(dailyCosts.values())
+    .reduce((total, cost) => total + cost, 0);
+
+  return WEEKDAYS.map(({ dayIndex }) => {
+    const weekday = weekdayMap.get(dayIndex);
+    return {
+      label: weekday.label,
+      shortLabel: weekday.shortLabel,
+      totalCost: weekday.totalCost,
+      trackedDays: weekday.trackedDays,
+      averageCost: weekday.trackedDays > 0
+        ? weekday.totalCost / weekday.trackedDays
+        : 0,
+      sharePercent: totalApiSpend > 0
+        ? roundToOneDecimal((weekday.totalCost / totalApiSpend) * 100)
+        : 0,
+    };
+  });
+}
+
+function buildSpendingInsights(monthlyTimeline, entries, options = {}) {
+  const currentMonth = typeof options.currentMonth === 'string'
+    && /^\d{4}-\d{2}$/.test(options.currentMonth)
+    ? options.currentMonth
+    : null;
+  const normalizedTimeline = (Array.isArray(monthlyTimeline) ? monthlyTimeline : [])
+    .filter((entry) => typeof entry?.month === 'string' && /^\d{4}-\d{2}$/.test(entry.month))
+    .map((entry) => {
+      const apiCost = nonNegativeNumber(entry.apiCost);
+      const subscriptionCost = nonNegativeNumber(entry.subscriptionCost);
+      return {
+        month: entry.month,
+        label: typeof entry.label === 'string' && entry.label ? entry.label : entry.month,
+        apiCost,
+        subscriptionCost,
+        totalCost: apiCost + subscriptionCost,
+      };
+    })
+    .filter((entry) => !currentMonth || entry.month <= currentMonth)
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  if (!normalizedTimeline.length) {
+    return null;
+  }
+
+  const windowRadius = Math.floor(CENTERED_SPENDING_WINDOW_MONTHS / 2);
+  const monthlySpending = normalizedTimeline.map((entry, index) => {
+    const windowStartIndex = index - windowRadius;
+    const windowEndIndex = index + windowRadius;
+    const hasFullWindow = windowStartIndex >= 0 && windowEndIndex < normalizedTimeline.length;
+    const window = hasFullWindow
+      ? normalizedTimeline.slice(windowStartIndex, windowEndIndex + 1)
+      : [];
+    const usesIncompleteMonth = currentMonth
+      ? window.some((windowEntry) => windowEntry.month >= currentMonth)
+      : false;
+    const centeredAverageCost = hasFullWindow && !usesIncompleteMonth
+      ? window.reduce((total, windowEntry) => total + windowEntry.totalCost, 0)
+        / CENTERED_SPENDING_WINDOW_MONTHS
+      : null;
+
+    return {
+      ...entry,
+      centeredAverageCost,
+      averageWindowStart: centeredAverageCost === null ? null : window[0].month,
+      averageWindowEnd: centeredAverageCost === null ? null : window[window.length - 1].month,
+    };
+  });
+  const totalApiSpend = normalizedTimeline
+    .reduce((total, entry) => total + entry.apiCost, 0);
+  const totalSubscriptionSpend = normalizedTimeline
+    .reduce((total, entry) => total + entry.subscriptionCost, 0);
+  const weekdaySpending = buildWeekdaySpending(entries);
+
+  return {
+    totalSpend: totalApiSpend + totalSubscriptionSpend,
+    totalApiSpend,
+    totalSubscriptionSpend,
+    monthsIncluded: normalizedTimeline.length,
+    periodStart: normalizedTimeline[0].month,
+    periodStartLabel: normalizedTimeline[0].label,
+    periodEnd: normalizedTimeline[normalizedTimeline.length - 1].month,
+    periodEndLabel: normalizedTimeline[normalizedTimeline.length - 1].label,
+    periodEndIsCurrentMonth: currentMonth === normalizedTimeline[normalizedTimeline.length - 1].month,
+    rollingWindowMonths: CENTERED_SPENDING_WINDOW_MONTHS,
+    rollingAveragePointCount: monthlySpending
+      .filter((entry) => entry.centeredAverageCost !== null).length,
+    monthlySpending,
+    weekdaySpending,
+    weekdayTrackedDays: weekdaySpending
+      .reduce((total, weekday) => total + weekday.trackedDays, 0),
+  };
+}
+
 function buildTrend(currentValue, previousValue, comparisonAvailable) {
   if (!comparisonAvailable) {
     return {
@@ -317,7 +456,10 @@ function buildCompletionInsights(entries, options = {}) {
 }
 
 module.exports = {
+  CENTERED_SPENDING_WINDOW_MONTHS,
   DEFAULT_COMPLETION_WINDOW_DAYS,
   buildCompletionInsights,
+  buildSpendingInsights,
+  buildWeekdaySpending,
   readCompletionMetric,
 };

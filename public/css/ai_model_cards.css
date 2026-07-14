@@ -1,0 +1,42 @@
+.ai-model-table-wrap {
+  overflow-x: auto;
+}
+
+.ai-model-table {
+  min-width: 1180px;
+}
+
+.ai-model-table td {
+  vertical-align: middle;
+}
+
+.ai-model-deprecation-cell {
+  min-width: 220px;
+}
+
+.ai-model-deprecation-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.ai-model-deprecation-form .form-control {
+  min-width: 145px;
+}
+
+.ai-model-row--deprecated > td {
+  --bs-table-bg: color-mix(in srgb, var(--danger) 14%, var(--surface-1));
+  --bs-table-striped-bg: color-mix(in srgb, var(--danger) 16%, var(--surface-1));
+  background-color: var(--bs-table-bg) !important;
+  border-bottom-color: color-mix(in srgb, var(--danger) 50%, var(--divider)) !important;
+}
+
+.ai-model-row--deprecated > td:first-child {
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.ai-model-deprecation-status {
+  background: var(--danger);
+  color: var(--text-inverse);
+}

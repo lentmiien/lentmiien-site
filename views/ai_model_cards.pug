@@ -1,75 +1,99 @@
 extends layout
 
+block styles
+  link(rel="stylesheet", href="/css/ai_model_cards.css")
+
 block content
-  .row 
+  .row
     .col
       h2 AI model list
-      table.table.table-dark.table-striped 
-        thead 
-          tr 
-            th Model 
-            th Cost (1m token, in/out)
-            th Use
-            th Modalities (in/out)
-            th Max tokens (total/out)
-            th Added
-            th Batch
-            th Context
-            th Actions
-        tbody 
-          each m in models
-            tr 
-              td
-                b= m.model_name 
-                span= ` ${m.provider} `
-                i= `[${m.api_model}]`
-              td= `$${m.input_1m_token_cost}/$${m.output_1m_token_cost}`
-              td= m.model_type
-              td= `${m.in_modalities.join(", ")}/${m.out_modalities.join(", ")}`
-              td= `${m.max_tokens}/${m.max_out_tokens}`
-              td= m.added_date.toDateString()
-              td= m.batch_use ? "✔" : "✘"
-              td= m.context_type
-              td
-                form(method="post", action=`/chat5/ai_model_cards/${m._id}/delete`, onsubmit="return confirm('Delete this AI model card?');")
-                  button.btn.btn-outline-danger.btn-sm(type="submit") Delete
-  .row 
-    .col 
+      p.text-secondary Set a scheduled deprecation date in the table when one is announced. Rows are highlighted after that date has passed; an empty date means no deprecation is scheduled.
+      if pageError
+        .alert.alert-danger(role="alert")= pageError
+      .table-responsive.ai-model-table-wrap
+        table.table.table-dark.table-striped.ai-model-table
+          thead
+            tr
+              th Model
+              th Cost (1m token, in/out)
+              th Use
+              th Modalities (in/out)
+              th Max tokens (total/out)
+              th Added
+              th Scheduled deprecation
+              th Batch
+              th Context
+              th Actions
+          tbody
+            each m in models
+              tr(class=m.deprecation_date_has_passed ? 'ai-model-row--deprecated' : '')
+                td
+                  b= m.model_name
+                  span= ` ${m.provider} `
+                  i= `[${m.api_model}]`
+                td= `$${m.input_1m_token_cost}/$${m.output_1m_token_cost}`
+                td= m.model_type
+                td= `${m.in_modalities.join(", ")}/${m.out_modalities.join(", ")}`
+                td= `${m.max_tokens}/${m.max_out_tokens}`
+                td= m.added_date.toDateString()
+                td.ai-model-deprecation-cell
+                  form.ai-model-deprecation-form(method="post", action=`/chat5/ai_model_cards/${m._id}/deprecation-date`)
+                    label.visually-hidden(for=`deprecation-date-${m._id}`)= `Scheduled deprecation date for ${m.model_name}`
+                    input.form-control.form-control-sm(
+                      id=`deprecation-date-${m._id}`
+                      type="date"
+                      name="deprecation_date"
+                      value=m.deprecation_date_input
+                    )
+                    button.btn.btn-outline-primary.btn-sm(type="submit") Save
+                  if m.deprecation_date_has_passed
+                    span.badge.ai-model-deprecation-status Deprecation date passed
+                  else if m.deprecation_date_input
+                    small.text-secondary Scheduled
+                  else
+                    small.text-muted No date
+                td= m.batch_use ? "✔" : "✘"
+                td= m.context_type
+                td
+                  form(method="post", action=`/chat5/ai_model_cards/${m._id}/delete`, onsubmit="return confirm('Delete this AI model card?');")
+                    button.btn.btn-outline-danger.btn-sm(type="submit") Delete
+  .row
+    .col
       h2 Add new model
       div *Replaces existing entry if 'Provider' and 'API Model' exactly matches an existing entry
-      form(action="/chat5/add_model_card", method="post") 
-        label(for="model_name") Model Name 
+      form(action="/chat5/add_model_card", method="post")
+        label(for="model_name") Model Name
         input#model_name.form-control(type="text", name="model_name", required, value=(formDefaults && formDefaults.model_name ? formDefaults.model_name : ''))
-        label(for="provider") Provider 
-        select#provider.form-control(name="provider", required) 
+        label(for="provider") Provider
+        select#provider.form-control(name="provider", required)
           option(value="OpenAI", selected=(formDefaults && formDefaults.provider === 'OpenAI')) OpenAI
           option(value="Anthropic", selected=(formDefaults && formDefaults.provider === 'Anthropic')) Anthropic
           option(value="Google", selected=(formDefaults && formDefaults.provider === 'Google')) Google
           option(value="Groq", selected=(formDefaults && formDefaults.provider === 'Groq')) Groq
           option(value="Local", selected=(formDefaults && formDefaults.provider === 'Local')) Local
-        label(for="api_model") API Model 
+        label(for="api_model") API Model
         input#api_model.form-control(type="text", name="api_model", required, value=(formDefaults && formDefaults.api_model ? formDefaults.api_model : ''))
         label(for="input_1m_token_cost") Input token cost per 1m tokens in USD
         input#input_1m_token_cost.form-control(type="text", name="input_1m_token_cost", required)
         label(for="output_1m_token_cost") Output token cost per 1m tokens in USD
         input#output_1m_token_cost.form-control(type="text", name="output_1m_token_cost", required)
-        label(for="model_type") Model Type 
-        select#model_type.form-control(name="model_type", required) 
+        label(for="model_type") Model Type
+        select#model_type.form-control(name="model_type", required)
           option(value="chat") Chat
           option(value="embedding") Embedding
           option(value="image") Image
           option(value="audio") Audio
           option(value="realtime") Realtime
           option(value="video") Video
-        label(for="in_modalities") Input modalities 
-        select#in_modalities.form-control(name="in_modalities", multiple, required) 
+        label(for="in_modalities") Input modalities
+        select#in_modalities.form-control(name="in_modalities", multiple, required)
           option(value="text") Text
           option(value="image") Image
           option(value="audio") Audio
           option(value="video") Video
           option(value="vector") Vector
-        label(for="out_modalities") Output modalities 
-        select#out_modalities.form-control(name="out_modalities", multiple, required) 
+        label(for="out_modalities") Output modalities
+        select#out_modalities.form-control(name="out_modalities", multiple, required)
           option(value="text") Text
           option(value="image") Image
           option(value="audio") Audio
@@ -79,11 +103,13 @@ block content
         input#max_tokens.form-control(type="number", name="max_tokens", required)
         label(for="max_out_tokens") Max Output Tokens
         input#max_out_tokens.form-control(type="number", name="max_out_tokens", required)
+        label(for="deprecation_date") Scheduled deprecation date (optional)
+        input#deprecation_date.form-control(type="date", name="deprecation_date")
         .form-check
           input#batch_use.form-check-input(type="checkbox", name="batch_use")
           label.form-check-label(for="batch_use") Can be used for batch?
-        label(for="context_type") Type of context message 
-        select#context_type.form-control(name="context_type") 
+        label(for="context_type") Type of context message
+        select#context_type.form-control(name="context_type")
           option(value="none") - none -
           option(value="system") System Message
           option(value="developer") Developer Message

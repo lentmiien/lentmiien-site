@@ -6,6 +6,7 @@ block styles
 block content
   - const formatWholeNumber = (value) => new Intl.NumberFormat('en-US').format(Number(value) || 0);
   - const formatCompactNumber = (value) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value) || 0);
+  - const formatCurrency = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) || 0);
   - const trendIcon = (direction) => ({ up: '↑', down: '↓', new: '✦', flat: '→', unavailable: '–' }[direction] || '–');
   - const trendShortLabel = (trend) => trend.direction === 'up' ? `+${trend.percent}%` : trend.direction === 'down' ? `−${trend.percent}%` : trend.direction === 'new' ? 'New' : trend.direction === 'flat' ? '0%' : 'No comparison';
   .openai-usage
@@ -16,6 +17,21 @@ block content
     if feedback && feedback.message
       .openai-usage__alert(class=`openai-usage__alert--${feedback.status || 'info'}`, role='alert')= feedback.message
 
+    if spendingInsights
+      section.spending-summary-card(aria-labelledby='totalSpendTitle')
+        .spending-summary-card__primary
+          h2.spending-summary-card__eyebrow#totalSpendTitle All-time OpenAI spend
+          strong.spending-summary-card__total= formatCurrency(spendingInsights.totalSpend)
+          p.spending-summary-card__period
+            | #{spendingInsights.monthsIncluded} #{spendingInsights.monthsIncluded === 1 ? 'month' : 'months'} included · #{spendingInsights.periodStartLabel} – #{spendingInsights.periodEndLabel}#{spendingInsights.periodEndIsCurrentMonth ? ' (to date)' : ''}
+        dl.spending-summary-card__breakdown
+          div
+            dt API usage
+            dd= formatCurrency(spendingInsights.totalApiSpend)
+          div
+            dt ChatGPT plans
+            dd= formatCurrency(spendingInsights.totalSubscriptionSpend)
+
     if monthlyTimeline && monthlyTimeline.length
       section.openai-usage__section
         header.section-header
@@ -25,6 +41,30 @@ block content
     else
       .openai-usage__empty
         p No usage data available yet.
+
+    if spendingInsights
+      section.openai-usage__section
+        header.section-header
+          h2.section-title Centered Five-Month Rolling Average
+          p.section-subtitle Combined API and ChatGPT spend for each month, averaged with the two months before and after it. Only complete calendar months are used.
+        if spendingInsights.rollingAveragePointCount
+          #rollingSpendingChart.chart-container.spending-chart(
+            role='img',
+            aria-label='Combined monthly OpenAI spending and centered five-month average'
+          )
+        else
+          .openai-usage__empty.openai-usage__empty--panel
+            p Five complete months are needed before the centered average can be shown.
+
+    if spendingInsights && spendingInsights.weekdayTrackedDays
+      section.openai-usage__section
+        header.section-header
+          h2.section-title Weekday Spending Pattern
+          p.section-subtitle Across all stored daily usage, this shows average API spend per tracked UTC day. ChatGPT plan costs are excluded because they are billed monthly rather than by weekday.
+        #weekdaySpendingChart.chart-container.spending-chart.spending-chart--weekday(
+          role='img',
+          aria-label='Average API spending by weekday'
+        )
 
     if completionInsights
       section.openai-usage__section
@@ -216,5 +256,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, completionInsights })}
+  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, completionInsights, spendingInsights })}
   script(src='/js/openaiUsage.js', defer)

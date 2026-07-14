@@ -1,5 +1,6 @@
 const {
   buildCompletionInsights,
+  buildSpendingInsights,
   readCompletionMetric,
 } = require('../../services/openaiUsageMetricsService');
 
@@ -93,5 +94,78 @@ describe('openaiUsageMetricsService', () => {
       expect.objectContaining({ date: '2026-07-10', tracked: true, requests: 6 }),
     ]);
     expect(result.requestTrend.direction).toBe('unavailable');
+  });
+
+  test('combines API and ChatGPT costs into an all-time total and centered average', () => {
+    const monthlyTimeline = Array.from({ length: 7 }, (_, index) => ({
+      month: `2026-${String(index + 1).padStart(2, '0')}`,
+      label: `Month ${index + 1}`,
+      apiCost: index + 1,
+      subscriptionCost: (index + 1) * 10,
+    }));
+
+    const result = buildSpendingInsights(monthlyTimeline, [], { currentMonth: '2026-08' });
+
+    expect(result.totalApiSpend).toBe(28);
+    expect(result.totalSubscriptionSpend).toBe(280);
+    expect(result.totalSpend).toBe(308);
+    expect(result.monthsIncluded).toBe(7);
+    expect(result.rollingAveragePointCount).toBe(3);
+    expect(result.monthlySpending.map((entry) => entry.centeredAverageCost)).toEqual([
+      null,
+      null,
+      33,
+      44,
+      55,
+      null,
+      null,
+    ]);
+    expect(result.monthlySpending[2]).toMatchObject({
+      averageWindowStart: '2026-01',
+      averageWindowEnd: '2026-05',
+    });
+  });
+
+  test('does not use the current partial month in a centered spending average', () => {
+    const monthlyTimeline = Array.from({ length: 8 }, (_, index) => ({
+      month: `2026-${String(index + 1).padStart(2, '0')}`,
+      apiCost: 10,
+      subscriptionCost: 20,
+    }));
+
+    const result = buildSpendingInsights(monthlyTimeline, [], { currentMonth: '2026-07' });
+
+    expect(result.rollingAveragePointCount).toBe(2);
+    expect(result.monthsIncluded).toBe(7);
+    expect(result.totalSpend).toBe(210);
+    expect(result.monthlySpending[3].centeredAverageCost).toBe(30);
+    expect(result.monthlySpending[4].centeredAverageCost).toBeNull();
+  });
+
+  test('groups API costs by UTC weekday and averages duplicate dates once', () => {
+    const result = buildSpendingInsights([
+      { month: '2026-07', apiCost: 12, subscriptionCost: 20 },
+    ], [
+      { entry_date: '2026-07-13', cost: 1 },
+      { entry_date: '2026-07-13', cost: 2 },
+      { entry_date: '2026-07-14', cost: 4 },
+      { entry_date: '2026-07-20', cost: 5 },
+      { entry_date: 'not-a-date', cost: 100 },
+    ]);
+
+    expect(result.weekdayTrackedDays).toBe(3);
+    expect(result.weekdaySpending[0]).toMatchObject({
+      label: 'Monday',
+      totalCost: 8,
+      trackedDays: 2,
+      averageCost: 4,
+    });
+    expect(result.weekdaySpending[1]).toMatchObject({
+      label: 'Tuesday',
+      totalCost: 4,
+      trackedDays: 1,
+      averageCost: 4,
+    });
+    expect(result.weekdaySpending[0].sharePercent).toBeCloseTo(66.7, 1);
   });
 });

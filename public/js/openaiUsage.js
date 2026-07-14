@@ -17,6 +17,9 @@
   const completionInsights = payload.completionInsights && typeof payload.completionInsights === 'object'
     ? payload.completionInsights
     : null;
+  const spendingInsights = payload.spendingInsights && typeof payload.spendingInsights === 'object'
+    ? payload.spendingInsights
+    : null;
 
   const parseMonth = d3.timeParse('%Y-%m');
   const parseDay = d3.timeParse('%Y-%m-%d');
@@ -95,6 +98,38 @@
 
   const monthlyDetailMap = new Map(monthlyDetailSeries.map((entry) => [entry.month, entry]));
 
+  const spendingTimelineSeries = (Array.isArray(spendingInsights?.monthlySpending)
+    ? spendingInsights.monthlySpending
+    : [])
+    .map((entry) => ({
+      month: entry.month,
+      label: entry.label,
+      date: parseMonth(entry.month),
+      totalCost: Number(entry.totalCost) || 0,
+      centeredAverageCost: entry.centeredAverageCost === null
+        || entry.centeredAverageCost === undefined
+        ? null
+        : Number(entry.centeredAverageCost),
+      averageWindowStart: entry.averageWindowStart,
+      averageWindowEnd: entry.averageWindowEnd,
+    }))
+    .filter((entry) => entry.date instanceof Date
+      && !Number.isNaN(entry.date.getTime())
+      && (entry.centeredAverageCost === null || Number.isFinite(entry.centeredAverageCost)))
+    .sort((a, b) => a.date - b.date);
+
+  const weekdaySpendingSeries = (Array.isArray(spendingInsights?.weekdaySpending)
+    ? spendingInsights.weekdaySpending
+    : [])
+    .map((entry) => ({
+      label: entry.label,
+      shortLabel: entry.shortLabel,
+      totalCost: Number(entry.totalCost) || 0,
+      averageCost: Number(entry.averageCost) || 0,
+      trackedDays: Number(entry.trackedDays) || 0,
+      sharePercent: Number(entry.sharePercent) || 0,
+    }));
+
   const resizeCallbacks = [];
   let resizeRaf = null;
   const scheduleResize = () => {
@@ -137,6 +172,294 @@
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+
+  const renderRollingSpendingChart = () => {
+    const container = document.getElementById('rollingSpendingChart');
+    const averageSeries = spendingTimelineSeries
+      .filter((entry) => entry.centeredAverageCost !== null);
+    if (!container || !spendingTimelineSeries.length || !averageSeries.length) {
+      return;
+    }
+
+    const width = container.clientWidth || container.parentElement?.clientWidth || 640;
+    const isCompactLegend = width < 560;
+    const height = Math.max(300, Math.min(420, Math.floor(width * 0.46)));
+    const margin = {
+      top: isCompactLegend ? 58 : 38,
+      right: width < 480 ? 18 : 30,
+      bottom: 58,
+      left: width < 480 ? 54 : 72,
+    };
+    const innerWidth = Math.max(1, width - margin.left - margin.right);
+    const innerHeight = Math.max(1, height - margin.top - margin.bottom);
+    const brand = cssColor('--brand', '#FF6A1F');
+    const accent = cssColor('--accent', '#FFC247');
+    const divider = cssColor('--divider', '#2B313C');
+    const textMuted = cssColor('--text-muted', '#9AA3B2');
+
+    container.innerHTML = '';
+    const svg = d3.select(container)
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`);
+    const chart = svg.append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+    const xScale = d3.scaleTime()
+      .domain(d3.extent(spendingTimelineSeries, (entry) => entry.date))
+      .range([0, innerWidth]);
+    const maxCost = d3.max(spendingTimelineSeries, (entry) => Math.max(
+      entry.totalCost,
+      entry.centeredAverageCost || 0,
+    )) || 0;
+    const yScale = d3.scaleLinear()
+      .domain([0, maxCost <= 0 ? 1 : maxCost * 1.15])
+      .nice()
+      .range([innerHeight, 0]);
+
+    chart.append('g')
+      .attr('stroke', divider)
+      .attr('stroke-dasharray', '4 4')
+      .selectAll('line')
+      .data(yScale.ticks(6))
+      .join('line')
+      .attr('x1', 0)
+      .attr('x2', innerWidth)
+      .attr('y1', (value) => yScale(value))
+      .attr('y2', (value) => yScale(value));
+
+    const pointSpacing = spendingTimelineSeries.length > 1
+      ? innerWidth / (spendingTimelineSeries.length - 1)
+      : innerWidth;
+    const barWidth = Math.max(2, Math.min(18, pointSpacing * 0.58));
+    chart.selectAll('.monthly-total-bar')
+      .data(spendingTimelineSeries)
+      .join('rect')
+      .attr('class', 'monthly-total-bar')
+      .attr('x', (entry) => xScale(entry.date) - (barWidth / 2))
+      .attr('y', (entry) => yScale(entry.totalCost))
+      .attr('width', barWidth)
+      .attr('height', (entry) => innerHeight - yScale(entry.totalCost))
+      .attr('rx', Math.min(3, barWidth / 2))
+      .attr('fill', brand)
+      .attr('opacity', 0.38);
+
+    const averageLine = d3.line()
+      .defined((entry) => entry.centeredAverageCost !== null)
+      .curve(d3.curveMonotoneX)
+      .x((entry) => xScale(entry.date))
+      .y((entry) => yScale(entry.centeredAverageCost));
+    chart.append('path')
+      .datum(spendingTimelineSeries)
+      .attr('fill', 'none')
+      .attr('stroke', accent)
+      .attr('stroke-width', 3)
+      .attr('stroke-linecap', 'round')
+      .attr('stroke-linejoin', 'round')
+      .attr('d', averageLine);
+    chart.selectAll('.rolling-average-point')
+      .data(averageSeries)
+      .join('circle')
+      .attr('class', 'rolling-average-point')
+      .attr('cx', (entry) => xScale(entry.date))
+      .attr('cy', (entry) => yScale(entry.centeredAverageCost))
+      .attr('r', 3.5)
+      .attr('fill', accent)
+      .attr('stroke', cssColor('--surface-1', '#171A20'))
+      .attr('stroke-width', 1.5);
+
+    const xAxis = d3.axisBottom(xScale)
+      .ticks(Math.min(width < 520 ? 5 : 10, spendingTimelineSeries.length))
+      .tickFormat(formatMonth);
+    chart.append('g')
+      .attr('transform', `translate(0,${innerHeight})`)
+      .call(xAxis)
+      .selectAll('text')
+      .attr('transform', 'rotate(-30)')
+      .style('text-anchor', 'end');
+    chart.append('g')
+      .call(d3.axisLeft(yScale).ticks(6).tickFormat(formatCurrencyTick));
+
+    const legend = svg.append('g')
+      .attr('class', 'chart-legend')
+      .attr('transform', `translate(${margin.left},12)`);
+    [
+      { label: 'Combined monthly spend', color: brand, type: 'bar' },
+      { label: 'Centered 5-month average', color: accent, type: 'line' },
+    ].forEach((item, index) => {
+      const group = legend.append('g')
+        .attr('transform', isCompactLegend
+          ? `translate(0,${index * 19})`
+          : `translate(${index * 205},0)`);
+      if (item.type === 'line') {
+        group.append('line')
+          .attr('x1', 0)
+          .attr('x2', 12)
+          .attr('y1', 6)
+          .attr('y2', 6)
+          .attr('stroke', item.color)
+          .attr('stroke-width', 3)
+          .attr('stroke-linecap', 'round');
+      } else {
+        group.append('rect')
+          .attr('width', 11)
+          .attr('height', 11)
+          .attr('rx', 2)
+          .attr('fill', item.color)
+          .attr('opacity', 0.55);
+      }
+      group.append('text')
+        .attr('x', 18)
+        .attr('y', 10)
+        .attr('fill', textMuted)
+        .text(item.label);
+    });
+
+    const tooltip = ensureTooltip(container);
+    const hitWidth = Math.max(10, pointSpacing);
+    chart.selectAll('.rolling-spending-hit-area')
+      .data(spendingTimelineSeries)
+      .join('rect')
+      .attr('class', 'rolling-spending-hit-area')
+      .attr('x', (entry) => Math.max(0, xScale(entry.date) - (hitWidth / 2)))
+      .attr('y', 0)
+      .attr('width', Math.min(hitWidth, innerWidth))
+      .attr('height', innerHeight)
+      .attr('fill', 'transparent')
+      .on('mouseenter', (event, entry) => {
+        const details = [
+          `<strong>${escapeHtml(entry.label || formatMonth(entry.date))}</strong>`,
+          `Combined spend ${formatCurrencyExact(entry.totalCost)}`,
+        ];
+        if (entry.centeredAverageCost !== null) {
+          const windowStart = parseMonth(entry.averageWindowStart);
+          const windowEnd = parseMonth(entry.averageWindowEnd);
+          const windowLabel = windowStart && windowEnd
+            ? ` (${formatMonth(windowStart)}–${formatMonth(windowEnd)})`
+            : '';
+          details.push(`5-month average ${formatCurrencyExact(entry.centeredAverageCost)}${windowLabel}`);
+        } else {
+          details.push('5-month average unavailable');
+        }
+        tooltip.innerHTML = details.join('<br>');
+        tooltip.style.opacity = '1';
+      })
+      .on('mousemove', (event) => {
+        tooltip.style.transform = `translate(${event.offsetX + 12}px, ${event.offsetY + 12}px)`;
+      })
+      .on('mouseleave', () => {
+        tooltip.style.opacity = '0';
+        tooltip.style.transform = 'translate(-9999px, -9999px)';
+      });
+  };
+
+  const renderWeekdaySpendingChart = () => {
+    const container = document.getElementById('weekdaySpendingChart');
+    if (!container || !weekdaySpendingSeries.length) {
+      return;
+    }
+
+    const width = container.clientWidth || container.parentElement?.clientWidth || 640;
+    const height = Math.max(270, Math.min(340, Math.floor(width * 0.36)));
+    const margin = {
+      top: 24,
+      right: width < 480 ? 14 : 28,
+      bottom: 44,
+      left: width < 480 ? 54 : 72,
+    };
+    const innerWidth = Math.max(1, width - margin.left - margin.right);
+    const innerHeight = Math.max(1, height - margin.top - margin.bottom);
+    const brand = cssColor('--brand', '#FF6A1F');
+    const accent = cssColor('--accent', '#FFC247');
+    const divider = cssColor('--divider', '#2B313C');
+    const highestAverage = d3.max(weekdaySpendingSeries, (entry) => entry.averageCost) || 0;
+
+    container.innerHTML = '';
+    const svg = d3.select(container)
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`);
+    const chart = svg.append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+    const xScale = d3.scaleBand()
+      .domain(weekdaySpendingSeries.map((entry) => entry.shortLabel))
+      .range([0, innerWidth])
+      .padding(0.28);
+    const yScale = d3.scaleLinear()
+      .domain([0, highestAverage <= 0 ? 1 : highestAverage * 1.16])
+      .nice()
+      .range([innerHeight, 0]);
+
+    chart.append('g')
+      .attr('stroke', divider)
+      .attr('stroke-dasharray', '4 4')
+      .selectAll('line')
+      .data(yScale.ticks(5))
+      .join('line')
+      .attr('x1', 0)
+      .attr('x2', innerWidth)
+      .attr('y1', (value) => yScale(value))
+      .attr('y2', (value) => yScale(value));
+
+    chart.selectAll('.weekday-spending-bar')
+      .data(weekdaySpendingSeries)
+      .join('rect')
+      .attr('class', 'weekday-spending-bar')
+      .attr('x', (entry) => xScale(entry.shortLabel))
+      .attr('y', (entry) => yScale(entry.averageCost))
+      .attr('width', xScale.bandwidth())
+      .attr('height', (entry) => innerHeight - yScale(entry.averageCost))
+      .attr('rx', Math.min(6, xScale.bandwidth() / 3))
+      .attr('fill', (entry) => (
+        highestAverage > 0 && entry.averageCost === highestAverage ? accent : brand
+      ))
+      .attr('opacity', (entry) => (entry.trackedDays > 0 ? 0.82 : 0.2));
+
+    chart.append('g')
+      .attr('transform', `translate(0,${innerHeight})`)
+      .call(d3.axisBottom(xScale).tickSizeOuter(0));
+    chart.append('g')
+      .call(d3.axisLeft(yScale).ticks(5).tickFormat(formatCurrencyTick));
+
+    const tooltip = ensureTooltip(container);
+    chart.selectAll('.weekday-spending-hit-area')
+      .data(weekdaySpendingSeries)
+      .join('rect')
+      .attr('class', 'weekday-spending-hit-area')
+      .attr('x', (entry) => xScale(entry.shortLabel))
+      .attr('y', 0)
+      .attr('width', xScale.bandwidth())
+      .attr('height', innerHeight)
+      .attr('fill', 'transparent')
+      .on('mouseenter', (event, entry) => {
+        const dayLabel = `${entry.trackedDays} tracked ${entry.trackedDays === 1 ? 'day' : 'days'}`;
+        tooltip.innerHTML = [
+          `<strong>${escapeHtml(entry.label)}</strong>`,
+          `Average ${formatCurrencyExact(entry.averageCost)}`,
+          `Total API spend ${formatCurrencyExact(entry.totalCost)}`,
+          `${dayLabel} · ${entry.sharePercent}% of API spend`,
+        ].join('<br>');
+        tooltip.style.opacity = '1';
+      })
+      .on('mousemove', (event) => {
+        tooltip.style.transform = `translate(${event.offsetX + 12}px, ${event.offsetY + 12}px)`;
+      })
+      .on('mouseleave', () => {
+        tooltip.style.opacity = '0';
+        tooltip.style.transform = 'translate(-9999px, -9999px)';
+      });
+  };
+
+  if (spendingTimelineSeries.some((entry) => entry.centeredAverageCost !== null)) {
+    renderRollingSpendingChart();
+    resizeCallbacks.push(renderRollingSpendingChart);
+  }
+
+  if (weekdaySpendingSeries.some((entry) => entry.trackedDays > 0)) {
+    renderWeekdaySpendingChart();
+    resizeCallbacks.push(renderWeekdaySpendingChart);
+  }
 
   const renderCompletionActivityChart = () => {
     const container = document.getElementById('completionActivityChart');

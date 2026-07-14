@@ -71,6 +71,105 @@
   background: rgba(59, 130, 246, 0.12);
 }
 
+.spending-summary-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 1.5rem;
+  align-items: stretch;
+  overflow: hidden;
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--brand) 52%, var(--border));
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--brand-tint), var(--surface-1) 48%);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+}
+
+.spending-summary-card::after {
+  position: absolute;
+  right: -85px;
+  bottom: -115px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: var(--accent-tint);
+  content: '';
+  filter: blur(14px);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.spending-summary-card__primary,
+.spending-summary-card__breakdown {
+  position: relative;
+  z-index: 1;
+}
+
+.spending-summary-card__primary {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.spending-summary-card__eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.spending-summary-card__total {
+  margin-top: 0.55rem;
+  color: var(--text);
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 750;
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.spending-summary-card__period {
+  margin: 0.8rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+
+.spending-summary-card__breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.spending-summary-card__breakdown div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+
+.spending-summary-card__breakdown dt {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.spending-summary-card__breakdown dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+  font-weight: 700;
+}
+
 .chart-container {
   background: var(--surface-1);
   border-radius: 16px;
@@ -79,6 +178,31 @@
   border: 1px solid var(--border);
   min-height: 320px;
   position: relative;
+}
+
+.spending-chart svg {
+  display: block;
+  max-width: 100%;
+}
+
+.spending-chart .domain,
+.spending-chart .tick line {
+  stroke: var(--divider);
+}
+
+.spending-chart .tick text {
+  fill: var(--text-muted);
+}
+
+.spending-chart--weekday {
+  min-height: 290px;
+}
+
+.openai-usage__empty--panel {
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-1);
 }
 
 .completion-section__header {
@@ -706,6 +830,10 @@
 }
 
 @media (max-width: 768px) {
+  .spending-summary-card {
+    grid-template-columns: 1fr;
+  }
+
   .completion-section__header,
   .completion-panel__header {
     flex-direction: column;
@@ -736,6 +864,10 @@
   .chart-container {
     padding: 1rem;
     min-height: 260px;
+  }
+
+  .spending-summary-card__breakdown {
+    grid-template-columns: 1fr;
   }
 
   .month-card__body {

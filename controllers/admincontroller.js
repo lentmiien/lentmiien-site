@@ -45,7 +45,10 @@ const {
   roundCurrency,
   sortSubscriptionPlans,
 } = require('../services/openaiSubscriptionPlanService');
-const { buildCompletionInsights } = require('../services/openaiUsageMetricsService');
+const {
+  buildCompletionInsights,
+  buildSpendingInsights,
+} = require('../services/openaiUsageMetricsService');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 const TEMP_PASSWORD_BYTES = 18;
@@ -1624,8 +1627,9 @@ exports.openai_usage = async (req, res) => {
     .filter(Boolean);
   const timelineStart = [...apiMonthKeys, ...planMonthKeys].sort()[0] || null;
   const timelineEndCandidates = [...apiMonthKeys, ...planMonthKeys];
+  const currentMonth = monthKeyFromDate(new Date());
   if (subscriptionPlans.length) {
-    timelineEndCandidates.push(monthKeyFromDate(new Date()));
+    timelineEndCandidates.push(currentMonth);
   }
   const timelineEnd = timelineEndCandidates.filter(Boolean).sort().slice(-1)[0] || null;
   const timelineMonthKeys = timelineStart && timelineEnd
@@ -1678,6 +1682,7 @@ exports.openai_usage = async (req, res) => {
       dailyEntries: monthData.dailyEntries.sort((a, b) => a.date.localeCompare(b.date)),
     }))
     .sort((a, b) => b.month.localeCompare(a.month));
+  const spendingInsights = buildSpendingInsights(monthlyTimeline, entries, { currentMonth });
 
   res.render('openai_usage', {
     feedback: parseFeedback(req),
@@ -1686,6 +1691,7 @@ exports.openai_usage = async (req, res) => {
     subscriptionPlans: sortSubscriptionPlans(subscriptionPlans).reverse(),
     subscriptionMonthlyRows: subscriptionRows.slice().reverse(),
     completionInsights,
+    spendingInsights,
   });
 };
 

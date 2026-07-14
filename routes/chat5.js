@@ -34,6 +34,7 @@ router.get('/', controller.index);
 // Manage model cards
 router.get('/ai_model_cards', controller.ai_model_cards);
 router.post('/add_model_card', controller.add_model_card);
+router.post('/ai_model_cards/:id/deprecation-date', controller.update_model_card_deprecation_date);
 router.post('/ai_model_cards/:id/delete', controller.delete_model_card);
 router.get('/drafting-presets', controller.viewDraftingPresets);
 router.post('/drafting-presets/personality', controller.savePersonalityPreset);
