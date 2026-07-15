@@ -669,6 +669,50 @@
     return payload;
   }
 
+  function availablePromptTemplates() {
+    const templates = Array.isArray(bootstrap.promptTemplates)
+      ? bootstrap.promptTemplates
+      : bootstrap.templates;
+    return Array.isArray(templates) ? templates : [];
+  }
+
+  function resetPromptTemplateSelection(form) {
+    if (!form) return;
+    form.querySelectorAll('[data-codex-template-select]').forEach((select) => {
+      select.value = '';
+      const help = select.closest('.codex-field')?.querySelector('[data-codex-template-help]');
+      if (help) {
+        help.textContent = availablePromptTemplates().length
+          ? 'Choose a template to copy it into the prompt.'
+          : 'Save reusable prompts in the Prompt Library.';
+      }
+    });
+  }
+
+  function bindPromptTemplateSelectors(scope) {
+    const templateById = new Map(availablePromptTemplates().map((template) => [String(template.id), template]));
+    scope.querySelectorAll('[data-codex-template-select]').forEach((select) => {
+      select.addEventListener('change', () => {
+        const template = templateById.get(String(select.value || ''));
+        const help = select.closest('.codex-field')?.querySelector('[data-codex-template-help]');
+        if (!template) {
+          if (help) help.textContent = 'Choose a template to copy it into the prompt.';
+          return;
+        }
+
+        const prompt = document.getElementById(select.dataset.promptTarget || '');
+        if (!prompt) return;
+        prompt.value = template.prompt || '';
+        prompt.dispatchEvent(new Event('input', { bubbles: true }));
+        prompt.focus();
+        prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+        if (help) {
+          help.textContent = template.description || `Copied “${template.name}” into the prompt.`;
+        }
+      });
+    });
+  }
+
   function syncPermissionVisibility(form) {
     if (!form) return;
     const permission = form.querySelector('[name="permissionMode"]');
@@ -1341,6 +1385,13 @@
         } else if (action === 'disable-profile') {
           await requestJson(`/codex/api/profiles/${encodeURIComponent(button.dataset.profileId)}`, { method: 'DELETE', body: '{}' });
           window.location.reload();
+        } else if (action === 'delete-template') {
+          const templateName = button.dataset.templateName || 'this template';
+          if (!window.confirm(`Delete “${templateName}”?`)) {
+            return;
+          }
+          await requestJson(`/codex/api/templates/${encodeURIComponent(button.dataset.templateId)}`, { method: 'DELETE', body: '{}' });
+          window.location.reload();
         }
       } catch (error) {
         console.error(error);
@@ -1378,6 +1429,7 @@
           });
           setStatus(status, `Accepted. Turn ${payload.turn.id} is queued.`, 'success');
           form.querySelector('[name="prompt"]').value = '';
+          resetPromptTemplateSelection(form);
           clearYoloConfirmation(form);
           await refreshDashboard();
         } catch (error) {
@@ -1467,6 +1519,7 @@
           });
           setStatus(status, `Accepted. Turn ${payload.turn.id} is queued.`, 'success');
           form.querySelector('[name="prompt"]').value = '';
+          resetPromptTemplateSelection(form);
           clearYoloConfirmation(form);
           const state = await refreshSession();
           syncAutoRefresh(state);
@@ -1605,8 +1658,53 @@
     });
   }
 
+  function initTemplates() {
+    const createForm = document.getElementById('codex-template-create');
+    const status = document.getElementById('codex-template-status');
+    if (createForm) {
+      createForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submit = createForm.querySelector('[type="submit"]');
+        submit.disabled = true;
+        setStatus(status, 'Saving...', '');
+        try {
+          await requestJson('/codex/api/templates', {
+            method: 'POST',
+            body: JSON.stringify(formToPayload(createForm)),
+          });
+          setStatus(status, 'Template saved.', 'success');
+          window.location.reload();
+        } catch (error) {
+          setStatus(status, error.message, 'error');
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    }
+
+    root.querySelectorAll('[data-template-form]').forEach((form) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const submit = form.querySelector('[type="submit"]');
+        submit.disabled = true;
+        try {
+          await requestJson(`/codex/api/templates/${encodeURIComponent(form.dataset.templateForm)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(formToPayload(form)),
+          });
+          window.location.reload();
+        } catch (error) {
+          alert(error.message || 'Unable to save prompt template.');
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    });
+  }
+
   captureInitialProcessDetailState();
   bindPermissionControls(root);
+  bindPromptTemplateSelectors(root);
   bindGlobalActions();
 
   document.addEventListener('visibilitychange', () => {
@@ -1625,5 +1723,7 @@
     initWorkspaces();
   } else if (root.dataset.codexPage === 'profiles') {
     initProfiles();
+  } else if (root.dataset.codexPage === 'templates') {
+    initTemplates();
   }
 })();

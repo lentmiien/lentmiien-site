@@ -126,6 +126,11 @@
   align-items: end;
 }
 
+.codex-form--template {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+}
+
 .codex-field {
   display: grid;
   gap: 6px;
@@ -133,6 +138,23 @@
 
 .codex-field--wide {
   grid-column: span 2;
+}
+
+.codex-field--full {
+  grid-column: 1 / -1;
+}
+
+.codex-field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.codex-field-help {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .codex-field label,
@@ -258,6 +280,17 @@
   background: var(--accent-tint);
   border-color: var(--accent);
   color: var(--accent-hover);
+}
+
+.codex-small-button--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.codex-small-button--danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--surface-3);
 }
 
 .codex-form-status {
@@ -1127,6 +1160,47 @@
   gap: 12px;
 }
 
+.codex-template-library {
+  margin-top: 16px;
+}
+
+.codex-template-list {
+  display: grid;
+  gap: 12px;
+}
+
+.codex-template-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 12px;
+}
+
+.codex-template-card__header,
+.codex-template-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.codex-template-card__header small {
+  color: var(--text-muted);
+}
+
+.codex-template-card__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.codex-template-card__actions {
+  justify-content: flex-end;
+}
+
 .codex-workspace-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1204,12 +1278,14 @@
   }
 
   .codex-detail-grid,
+  .codex-form--template,
   .codex-form--profile,
   .codex-form--workspace,
   .codex-form--pricing,
   .codex-stat-grid,
   .codex-stats-split,
   .codex-token-strip,
+  .codex-template-card__fields,
   .codex-profile-row__main,
   .codex-workspace-row__main {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1236,18 +1312,21 @@
   .codex-health-grid,
   .codex-transcript,
   .codex-detail-grid,
+  .codex-form--template,
   .codex-form--profile,
   .codex-form--workspace,
   .codex-form--pricing,
   .codex-stat-grid,
   .codex-stats-split,
   .codex-token-strip,
+  .codex-template-card__fields,
   .codex-profile-row__main,
   .codex-workspace-row__main {
     grid-template-columns: 1fr;
   }
 
   .codex-field--wide,
+  .codex-field--full,
   .codex-form--pricing .codex-actions,
   .codex-panel--wide {
     grid-column: auto;

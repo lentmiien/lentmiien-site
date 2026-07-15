@@ -11,6 +11,7 @@ block content
   - const queuedTurns = state.queuedTurns || [];
   - const recentSessions = state.recentSessions || [];
   - const requestProfiles = state.requestProfiles || [];
+  - const promptTemplates = state.promptTemplates || [];
   - const stats = state.stats || {};
   - const summary = stats.summary || {};
   - const pricing = state.pricing || {};
@@ -29,6 +30,7 @@ block content
           h1.codex-title Codex Workspace Assistant
           p.codex-subtitle Submit workspace-scoped Codex turns and review the stored session history.
         .codex-topbar__actions
+          a.codex-button.codex-button--secondary(href='/codex/templates') Prompt Library
           if admin
             a.codex-button.codex-button--secondary(href='/codex/profiles') Profiles
             a.codex-button.codex-button--secondary(href='/codex/workspaces') Workspaces
@@ -99,7 +101,14 @@ block content
                 else
                   option(value='') Default
             .codex-field
-              label(for='codex-prompt') Prompt
+              .codex-field-label-row
+                label(for='codex-prompt') Prompt
+                a.codex-small-link(href='/codex/templates') Manage templates
+              select#codex-prompt-template(data-codex-template-select, data-prompt-target='codex-prompt', aria-label='Prompt template', disabled=!promptTemplates.length)
+                option(value='')= promptTemplates.length ? 'Select a template…' : 'No saved templates'
+                each template in promptTemplates
+                  option(value=template.id)= template.name
+              small.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
               textarea#codex-prompt(name='prompt', rows='8', maxlength=config.maxPromptChars || 20000, required, placeholder='Ask a question or request a change...')
             .codex-actions
               button.codex-button(type='submit', disabled=!workspaces.length) Submit

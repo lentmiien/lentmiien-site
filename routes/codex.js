@@ -21,6 +21,7 @@ function requireAdmin(req, res, next) {
 router.get('/', controller.renderHome);
 router.get('/sessions/:sessionId', controller.renderSession);
 router.get('/turns/:turnId', controller.renderTurn);
+router.get('/templates', controller.renderPromptTemplates);
 router.get('/workspaces', requireAdmin, controller.renderWorkspaces);
 router.get('/profiles', requireAdmin, controller.renderProfiles);
 
@@ -33,6 +34,11 @@ router.get('/api/profiles', controller.listRequestProfiles);
 router.post('/api/profiles', requireAdmin, controller.createRequestProfile);
 router.patch('/api/profiles/:profileId', requireAdmin, controller.updateRequestProfile);
 router.delete('/api/profiles/:profileId', requireAdmin, controller.deleteRequestProfile);
+
+router.get('/api/templates', controller.listPromptTemplates);
+router.post('/api/templates', controller.createPromptTemplate);
+router.patch('/api/templates/:templateId', controller.updatePromptTemplate);
+router.delete('/api/templates/:templateId', controller.deletePromptTemplate);
 
 router.get('/api/sessions', controller.listSessions);
 router.post('/api/sessions', controller.createSession);

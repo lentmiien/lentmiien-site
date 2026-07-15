@@ -51,7 +51,11 @@ function renderError(req, res, error, fallbackMessage) {
 
 exports.renderHome = async (req, res) => {
   try {
-    const state = await codexToolService.getDashboardState();
+    const [state, promptTemplates] = await Promise.all([
+      codexToolService.getDashboardState(),
+      codexToolService.listPromptTemplates(req.user),
+    ]);
+    state.promptTemplates = promptTemplates;
     return res.render('codex/index', {
       pageTitle: 'Codex Workspace Assistant',
       codexState: state,
@@ -64,7 +68,11 @@ exports.renderHome = async (req, res) => {
 
 exports.renderSession = async (req, res) => {
   try {
-    const state = await codexToolService.getSessionDetail(req.params.sessionId);
+    const [state, promptTemplates] = await Promise.all([
+      codexToolService.getSessionDetail(req.params.sessionId),
+      codexToolService.listPromptTemplates(req.user),
+    ]);
+    state.promptTemplates = promptTemplates;
     return res.render('codex/session', {
       pageTitle: state.session ? state.session.title : 'Codex session',
       codexState: state,
@@ -72,6 +80,23 @@ exports.renderSession = async (req, res) => {
     });
   } catch (error) {
     return renderPageError(req, res, error, 'Unable to load Codex session.');
+  }
+};
+
+exports.renderPromptTemplates = async (req, res) => {
+  try {
+    const templates = await codexToolService.listPromptTemplates(req.user);
+    const state = {
+      templates,
+      config: codexToolService.publicConfig(),
+    };
+    return res.render('codex/templates', {
+      pageTitle: 'Codex Prompt Library',
+      codexState: state,
+      codexStateJson: stringifyForScript(state),
+    });
+  } catch (error) {
+    return renderPageError(req, res, error, 'Unable to load Codex prompt templates.');
   }
 };
 
@@ -251,6 +276,42 @@ exports.listRequestProfiles = async (req, res) => {
     return res.json({ ok: true, profiles });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to list Codex profiles.');
+  }
+};
+
+exports.listPromptTemplates = async (req, res) => {
+  try {
+    const templates = await codexToolService.listPromptTemplates(req.user);
+    return res.json({ ok: true, templates });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to list Codex prompt templates.');
+  }
+};
+
+exports.createPromptTemplate = async (req, res) => {
+  try {
+    const template = await codexToolService.createPromptTemplate(req.body || {}, req.user);
+    return res.status(201).json({ ok: true, template });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to create Codex prompt template.');
+  }
+};
+
+exports.updatePromptTemplate = async (req, res) => {
+  try {
+    const template = await codexToolService.updatePromptTemplate(req.params.templateId, req.body || {}, req.user);
+    return res.json({ ok: true, template });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to update Codex prompt template.');
+  }
+};
+
+exports.deletePromptTemplate = async (req, res) => {
+  try {
+    const result = await codexToolService.deletePromptTemplate(req.params.templateId, req.user);
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    return renderJsonError(req, res, error, 'Unable to delete Codex prompt template.');
   }
 };
 

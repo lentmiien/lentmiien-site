@@ -11,6 +11,7 @@ const CodexEvent = require('../models/codex_event');
 const CodexWorkspaceLock = require('../models/codex_workspace_lock');
 const CodexTokenPrice = require('../models/codex_token_price');
 const CodexRequestProfile = require('../models/codex_request_profile');
+const CodexPromptTemplate = require('../models/codex_prompt_template');
 const logger = require('../utils/logger');
 const {
   buildRemoteShellCommand,
@@ -881,6 +882,40 @@ function serializeRequestProfile(profile) {
   };
 }
 
+function normalizePromptTemplateId(value) {
+  const id = normalizeOptionalString(value, 160);
+  if (!id) {
+    throw createHttpError(400, 'Prompt template id is required.');
+  }
+  return id;
+}
+
+function normalizePromptTemplatePayload(payload = {}) {
+  const name = normalizeOptionalString(payload.name, 120);
+  if (!name) {
+    throw createHttpError(400, 'Template name is required.');
+  }
+  return {
+    name,
+    description: normalizeOptionalString(payload.description, 500),
+    prompt: normalizePrompt(payload.prompt),
+  };
+}
+
+function serializePromptTemplate(template) {
+  if (!template) {
+    return null;
+  }
+  return {
+    id: String(template._id || ''),
+    name: template.name || '',
+    description: template.description || '',
+    prompt: template.prompt || '',
+    createdAt: template.createdAt || null,
+    updatedAt: template.updatedAt || null,
+  };
+}
+
 async function ensureDefaultRequestProfiles() {
   await Promise.all(DEFAULT_REQUEST_PROFILES.map(async (profile) => {
     const existing = await CodexRequestProfile.findById(profile._id).exec();
@@ -913,6 +948,18 @@ function makeOwner(user) {
     id: user && user._id ? String(user._id) : null,
     name: user && user.name ? String(user.name) : '',
   };
+}
+
+function getOwnerId(user) {
+  const id = normalizeOptionalString(user && (user._id || user.id), 160);
+  if (id) {
+    return id;
+  }
+  const name = normalizeOptionalString(user && user.name, 120);
+  if (name) {
+    return `name:${name}`;
+  }
+  throw createHttpError(401, 'Authentication is required to access prompt templates.');
 }
 
 function normalizePrompt(prompt) {
@@ -1523,6 +1570,62 @@ async function listRequestProfiles(options = {}) {
     .lean()
     .exec();
   return profiles.map(serializeRequestProfile);
+}
+
+async function listPromptTemplates(user) {
+  const ownerId = getOwnerId(user);
+  const templates = await CodexPromptTemplate.find({ ownerId })
+    .sort({ name: 1, createdAt: 1 })
+    .lean()
+    .exec();
+  return templates.map(serializePromptTemplate);
+}
+
+async function createPromptTemplate(payload = {}, user) {
+  const ownerId = getOwnerId(user);
+  const normalized = normalizePromptTemplatePayload(payload);
+  const template = await CodexPromptTemplate.create({
+    ...normalized,
+    ownerId,
+    updatedBy: makeOwner(user),
+  });
+  return serializePromptTemplate(template);
+}
+
+async function updatePromptTemplate(templateId, payload = {}, user) {
+  const ownerId = getOwnerId(user);
+  const id = normalizePromptTemplateId(templateId);
+  const template = await CodexPromptTemplate.findOne({ _id: id, ownerId }).exec();
+  if (!template) {
+    throw createHttpError(404, 'Prompt template not found.');
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'name')) {
+    const name = normalizeOptionalString(payload.name, 120);
+    if (!name) {
+      throw createHttpError(400, 'Template name is required.');
+    }
+    template.name = name;
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'description')) {
+    template.description = normalizeOptionalString(payload.description, 500);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'prompt')) {
+    template.prompt = normalizePrompt(payload.prompt);
+  }
+  template.updatedBy = makeOwner(user);
+  await template.save();
+  return serializePromptTemplate(template);
+}
+
+async function deletePromptTemplate(templateId, user) {
+  const ownerId = getOwnerId(user);
+  const id = normalizePromptTemplateId(templateId);
+  const result = await CodexPromptTemplate.deleteOne({ _id: id, ownerId }).exec();
+  if (!result.deletedCount) {
+    throw createHttpError(404, 'Prompt template not found.');
+  }
+  return { deleted: true, templateId: id };
 }
 
 async function createRequestProfile(payload = {}, user) {
@@ -2377,9 +2480,11 @@ module.exports = {
   cancelTurn,
   createFollowupTurn,
   createHttpError,
+  createPromptTemplate,
   createRequestProfile,
   createSession,
   createWorkspace,
+  deletePromptTemplate,
   deleteWorkspace,
   disableRequestProfile,
   ensureDefaultData,
@@ -2396,6 +2501,7 @@ module.exports = {
   ensureCodexWorkspaceLockIndexes,
   isWorkspaceLockConflictError,
   listSessions,
+  listPromptTemplates,
   listRequestProfiles,
   listTargets,
   listTurnEvents,
@@ -2407,11 +2513,13 @@ module.exports = {
   retryTurn,
   serializeEvent,
   serializeLock,
+  serializePromptTemplate,
   serializeSession,
   serializeTarget,
   serializeTurn,
   serializeWorkspace,
   updateTokenPricing,
+  updatePromptTemplate,
   updateRequestProfile,
   updateSessionAfterTurn,
   updateWorkspace,

@@ -9,6 +9,7 @@ block content
   - const workspace = state.workspace || {};
   - const turns = state.turns || [];
   - const requestProfiles = state.requestProfiles || [];
+  - const promptTemplates = state.promptTemplates || [];
   - const stats = state.stats || {};
   - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
@@ -29,6 +30,7 @@ block content
             span= ' / '
             span= session.codexThreadId ? session.codexThreadId : 'waiting for Codex session id'
         .codex-topbar__actions
+          a.codex-button.codex-button--secondary(href='/codex/templates') Prompt Library
           a.codex-button.codex-button--secondary(href=`/codex/turns/${session.lastTurnId}`) Latest turn
           button.codex-button.codex-button--secondary(type='button', data-action='archive-session', data-session-id=session.id) Archive
 
@@ -157,7 +159,14 @@ block content
                 else
                   option(value='') Default
             .codex-field
-              label(for='codex-followup-prompt') Prompt
+              .codex-field-label-row
+                label(for='codex-followup-prompt') Prompt
+                a.codex-small-link(href='/codex/templates') Manage templates
+              select#codex-followup-template(data-codex-template-select, data-prompt-target='codex-followup-prompt', aria-label='Prompt template', disabled=!promptTemplates.length)
+                option(value='')= promptTemplates.length ? 'Select a template…' : 'No saved templates'
+                each template in promptTemplates
+                  option(value=template.id)= template.name
+              small.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
               textarea#codex-followup-prompt(name='prompt', rows='5', maxlength=config.maxPromptChars || 20000, required)
             .codex-actions
               button.codex-button(type='submit') Submit follow-up

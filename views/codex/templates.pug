@@ -1,0 +1,70 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/codex.css')
+
+block content
+  - const state = codexState || {};
+  - const templates = state.templates || [];
+  - const config = state.config || {};
+  - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
+  section.codex-page(data-codex-page='templates')
+    .codex-shell
+      .codex-topbar
+        div
+          a.codex-back-link(href='/codex') Back to Codex
+          h1.codex-title Prompt Library
+          p.codex-subtitle Save reusable prompt templates for new Codex requests and follow-ups.
+        if admin
+          .codex-topbar__actions
+            a.codex-button.codex-button--secondary(href='/codex/profiles') Profiles
+            a.codex-button.codex-button--secondary(href='/codex/workspaces') Workspaces
+
+      section.codex-panel
+        .codex-panel__header
+          h2 Add Template
+          span.codex-chip= templates.length + ' saved'
+        form#codex-template-create.codex-form.codex-form--template
+          .codex-field
+            label(for='template-name') Name
+            input#template-name(type='text', name='name', maxlength='120', required, placeholder='Review pending changes')
+          .codex-field
+            label(for='template-description') Description
+            input#template-description(type='text', name='description', maxlength='500', placeholder='Optional note about when to use it')
+          .codex-field.codex-field--full
+            label(for='template-prompt') Prompt
+            textarea#template-prompt(name='prompt', rows='7', maxlength=config.maxPromptChars || 20000, required, placeholder='Enter the reusable Codex prompt...')
+          .codex-actions.codex-field--full
+            button.codex-button(type='submit') Save Template
+            span#codex-template-status.codex-form-status(aria-live='polite')
+
+      section.codex-panel.codex-template-library
+        .codex-panel__header
+          h2 Saved Templates
+          span.codex-chip= templates.length
+        .codex-template-list
+          if templates.length
+            each template in templates
+              form.codex-template-card(data-template-form=template.id)
+                .codex-template-card__header
+                  strong= template.name
+                  small= 'Updated ' + fmt(template.updatedAt)
+                .codex-template-card__fields
+                  .codex-field
+                    label Name
+                    input(type='text', name='name', value=template.name, maxlength='120', required)
+                  .codex-field
+                    label Description
+                    input(type='text', name='description', value=template.description, maxlength='500', placeholder='Optional')
+                  .codex-field.codex-field--full
+                    label Prompt
+                    textarea(name='prompt', rows='7', maxlength=config.maxPromptChars || 20000, required)= template.prompt
+                .codex-template-card__actions
+                  button.codex-small-button(type='submit') Save
+                  button.codex-small-button.codex-small-button--danger(type='button', data-action='delete-template', data-template-id=template.id, data-template-name=template.name) Delete
+          else
+            p.codex-empty No prompt templates yet. Add one above to make it available beside each Codex prompt field.
+
+block script
+  script#codex-page-data(type='application/json')!= codexStateJson
+  script(src='/js/codex.js', defer)
