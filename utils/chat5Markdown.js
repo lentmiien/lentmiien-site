@@ -14,7 +14,7 @@ function escapeHtml(value = '') {
   }[char]));
 }
 
-renderer.html = (html) => escapeHtml(html);
+renderer.html = ({ text }) => escapeHtml(text);
 
 function findNextDelimiter(source, delimiter, startIndex) {
   let index = source.indexOf(delimiter, startIndex);

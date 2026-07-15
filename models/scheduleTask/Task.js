@@ -29,13 +29,12 @@ const taskSchema = new Schema({
 /* ----------------------
  * HOOKS AND VALIDATION
  * ---------------------- */
-taskSchema.pre('validate', function(next) {
+taskSchema.pre('validate', function() {
   if (this.type === 'presence') {
-    if (!this.location)  return next(new Error('Presence must have a location'));
-    if (!this.start || !this.end) return next(new Error('Presence must have start and end'));
-    if (this.end <= this.start) return next(new Error('Presence end must be after start'));
+    if (!this.location) throw new Error('Presence must have a location');
+    if (!this.start || !this.end) throw new Error('Presence must have start and end');
+    if (this.end <= this.start) throw new Error('Presence end must be after start');
   }
-  next();
 });
 
 // Client-side, or service will check for overlap

@@ -25,7 +25,7 @@ const MyLifeLogReminderSchema = new Schema({
   versionKey: false,
 });
 
-MyLifeLogReminderSchema.pre('validate', function normalizeReminder(next) {
+MyLifeLogReminderSchema.pre('validate', function normalizeReminder() {
   this.label = typeof this.label === 'string' ? this.label.trim() : '';
   this.labelKey = this.label.toLowerCase();
   this.weekdays = uniqueSortedNumbers(this.weekdays, 0, 6);
@@ -40,8 +40,6 @@ MyLifeLogReminderSchema.pre('validate', function normalizeReminder(next) {
   if (this.scheduleType !== 'month_dates') {
     this.monthDates = [];
   }
-
-  next();
 });
 
 MyLifeLogReminderSchema.index({ enabled: 1, type: 1, labelKey: 1 });

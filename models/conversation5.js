@@ -28,13 +28,12 @@ Conversation5.index({ category: 1, updatedAt: 1 });
 Conversation5.index({ lastCleanupAt: 1, updatedAt: 1 });
 Conversation5.index({ messages: 1 });
 
-Conversation5.pre('validate', function setInitialCleanupDate(next) {
+Conversation5.pre('validate', function setInitialCleanupDate() {
   if (this.isNew && !this.lastCleanupAt) {
     const createdAt = this.createdAt instanceof Date ? this.createdAt : new Date();
     if (!this.createdAt) this.createdAt = createdAt;
     this.lastCleanupAt = createdAt;
   }
-  next();
 });
 
 module.exports = mongoose.model('conversation5', Conversation5);

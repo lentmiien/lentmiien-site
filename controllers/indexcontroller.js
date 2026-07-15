@@ -124,11 +124,11 @@ exports.exchange_rates_data = async (req, res) => {
 /****************************/
 // TEST TEST TEST TEST TEST //
 /****************************/
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 exports.download_test = async (req, res) => {
   try {
     // Create a ZIP archive
-    const archive = archiver('zip', {
+    const archive = new ZipArchive({
       zlib: { level: 9 } // Set the compression level
     });
 

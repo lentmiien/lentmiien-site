@@ -49,9 +49,8 @@ const BulkTestPromptSchema = new mongoose.Schema({
   completed_at: { type: Date }
 }, { versionKey: false });
 
-BulkTestPromptSchema.pre('save', function saveHook(next) {
+BulkTestPromptSchema.pre('save', function saveHook() {
   this.updated_at = new Date();
-  next();
 });
 
 BulkTestPromptSchema.index({ job: 1, status: 1, created_at: 1 });

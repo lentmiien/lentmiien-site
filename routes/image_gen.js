@@ -45,7 +45,7 @@ if (!BULK_DISABLED) {
   router.get('/bulk/:id/analytics', ctrl.renderBulkAnalytics);
   router.get('/bulk/:id', ctrl.renderBulkJob);
 } else {
-  router.get('/bulk*', (_req, res) => res.status(503).send('Bulk image generation is temporarily disabled.'));
+  router.get('/bulk{*splat}', (_req, res) => res.status(503).send('Bulk image generation is temporarily disabled.'));
 }
 
 // API proxy endpoints (browser talks to these; server talks to Comfy API)

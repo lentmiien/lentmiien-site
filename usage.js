@@ -1,6 +1,6 @@
 // usage.js
 const logger = require('./utils/logger');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const axios = require('axios');
 
 /**

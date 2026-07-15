@@ -28,7 +28,7 @@ const handleAudioWorkflowUpload = (req, res, next) => {
 };
 
 /* GET home page. */
-router.all('*', controller.root);
+router.all('/{*splat}', controller.root);
 
 /* Bin packing */
 router.post('/binpacking', controller.binPacking);

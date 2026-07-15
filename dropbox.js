@@ -1,5 +1,5 @@
 const logger = require('./utils/logger');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const fs = require('fs');
 const path = require('path');
 const { getDropboxClient } = require('./dropboxClient');
@@ -86,4 +86,3 @@ async function setup() {
 }
 
 module.exports = { backup, setup };
-

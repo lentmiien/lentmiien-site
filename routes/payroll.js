@@ -10,7 +10,7 @@ router.get('/',            ctl.list);
 router.get('/new',         ctl.renderNewForm);
 router.get('/analytics',   ctl.analytics);
 router.get('/dashboard',   ctl.dashboard);
-router.get('/year/:year?', ctl.yearSummary);
+router.get('/year{/:year}', ctl.yearSummary);
 router.get('/attendance',  ctl.attendanceStats);
 
 /* create */

@@ -380,7 +380,7 @@ function buildDetailQueue(store, newlyDiscovered, listingChanged, options) {
 }
 
 async function connectMongo(options) {
-  dotenv.config({ path: path.join(PROJECT_ROOT, '.env') });
+  dotenv.config({ path: path.join(PROJECT_ROOT, '.env'), quiet: true });
   const mongoUri = options.mongoUri || process.env.MONGOOSE_URL;
   if (!mongoUri) {
     throw new Error('Missing MongoDB URI. Set MONGOOSE_URL or pass --mongo-uri=...');

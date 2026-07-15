@@ -1,5 +1,5 @@
 const logger = require('./utils/logger');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -65,4 +65,3 @@ app.listen(port, async () => {
   logger.notice(authorizationUri);
   open(authorizationUri);
 });
-

@@ -1,10 +1,9 @@
 // dropboxClient.js
 const logger = require('./utils/logger');
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const fs = require('fs');
 const path = require('path');
 const { Dropbox } = require('dropbox');
-const fetch = require('node-fetch'); // Required for Dropbox SDK in Node.js
 const { AuthorizationCode } = require('simple-oauth2');
 
 // OAuth2 Configuration
@@ -65,7 +64,7 @@ async function getValidAccessToken() {
 // Initialize Dropbox Client
 async function getDropboxClient() {
   const accessTokenValid = await getValidAccessToken();
-  const dbx = new Dropbox({ accessToken: accessTokenValid, fetch });
+  const dbx = new Dropbox({ accessToken: accessTokenValid, fetch: globalThis.fetch });
   return dbx;
 }
 

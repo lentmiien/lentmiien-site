@@ -54,9 +54,8 @@ const BulkJobSchema = new mongoose.Schema({
   updated_at: { type: Date, default: Date.now }
 }, { versionKey: false });
 
-BulkJobSchema.pre('save', function saveHook(next) {
+BulkJobSchema.pre('save', function saveHook() {
   this.updated_at = new Date();
-  next();
 });
 
 BulkJobSchema.index({ status: 1, updated_at: -1 });

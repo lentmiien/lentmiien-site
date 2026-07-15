@@ -12,7 +12,7 @@ const layoutLocals = {
 };
 
 describe('manual knowledge entries', () => {
-  test('the knowledge model accepts an empty origin chat ID', () => {
+  test('the knowledge model accepts an empty origin chat ID', async () => {
     const now = new Date();
     const entry = new Chat4KnowledgeModel({
       title: 'Standalone note',
@@ -27,7 +27,7 @@ describe('manual knowledge entries', () => {
       user_id: 'test-user',
     });
 
-    expect(entry.validateSync()).toBeUndefined();
+    await expect(entry.validate()).resolves.toBeUndefined();
     expect(entry.originConversationId).toBe('');
   });
 
