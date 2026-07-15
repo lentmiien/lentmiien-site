@@ -1,5 +1,6 @@
 const {
   buildCompletionInsights,
+  buildDeprecationInsights,
   buildSpendingInsights,
   readCompletionMetric,
 } = require('../../services/openaiUsageMetricsService');
@@ -94,6 +95,62 @@ describe('openaiUsageMetricsService', () => {
       expect.objectContaining({ date: '2026-07-10', tracked: true, requests: 6 }),
     ]);
     expect(result.requestTrend.direction).toBe('unavailable');
+  });
+
+  test('warns about recently used models deprecated or due within three months', () => {
+    const completionInsights = buildCompletionInsights([{
+      entry_date: '2026-07-14',
+      completions: [
+        { model: 'gpt-4o-search-preview-2025-03-11', num_model_requests: 4, total_tokens: 400 },
+        { model: 'already-deprecated', num_model_requests: 2, total_tokens: 200 },
+        { model: 'outside-warning-window', num_model_requests: 3, total_tokens: 300 },
+        { model: 'no-date-set', num_model_requests: 5, total_tokens: 500 },
+        { model: 'missing-model-card', num_model_requests: 6, total_tokens: 600 },
+      ],
+    }]);
+    const result = buildDeprecationInsights(completionInsights, [
+      {
+        api_model: 'gpt-4o-search-preview-2025-03-11',
+        deprecation_date: new Date('2026-07-23T00:00:00.000Z'),
+      },
+      { api_model: 'already-deprecated', deprecation_date: new Date('2026-07-01T00:00:00.000Z') },
+      { api_model: 'outside-warning-window', deprecation_date: new Date('2026-10-16T00:00:00.000Z') },
+      { api_model: 'no-date-set', deprecation_date: null },
+    ], { referenceDate: '2026-07-15' });
+
+    expect(result.warningEndDate).toBe('2026-10-15');
+    expect(result.totalAtRiskRequests).toBe(6);
+    expect(result.atRiskModels.map((model) => model.apiModel)).toEqual([
+      'gpt-4o-search-preview-2025-03-11',
+      'already-deprecated',
+    ]);
+    expect(result.atRiskModels[0]).toMatchObject({
+      deprecationDate: '2026-07-23',
+      daysUntilDeprecation: 8,
+      deprecationStatus: 'scheduled',
+    });
+    expect(result.atRiskModels[1].deprecationStatus).toBe('deprecated');
+    expect(result.unknownModels).toEqual([
+      expect.objectContaining({ apiModel: 'missing-model-card', requests: 6 }),
+    ]);
+    expect(result.isClear).toBe(false);
+  });
+
+  test('uses a clamped calendar-month boundary and reports a clear zero state', () => {
+    const completionInsights = buildCompletionInsights([{
+      entry_date: '2026-01-31',
+      completions: [{ model: 'current-model', num_model_requests: 7, total_tokens: 700 }],
+    }]);
+    const result = buildDeprecationInsights(completionInsights, [{
+      api_model: 'current-model',
+      deprecation_date: null,
+    }], { referenceDate: '2026-01-31' });
+
+    expect(result.warningEndDate).toBe('2026-04-30');
+    expect(result.totalAtRiskRequests).toBe(0);
+    expect(result.atRiskModels).toEqual([]);
+    expect(result.unknownModels).toEqual([]);
+    expect(result.isClear).toBe(true);
   });
 
   test('combines API and ChatGPT costs into an all-time total and centered average', () => {

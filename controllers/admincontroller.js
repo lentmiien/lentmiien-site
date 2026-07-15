@@ -20,6 +20,7 @@ const {
   ChatPersonalityModel,
   ChatResponseTypeModel,
   OpenAISubscriptionPlan,
+  AIModelCards,
 } = require('../database');
 const { HTML_RATING_CATEGORIES, parseRatingValue, computeAverageRating } = require('../utils/htmlRatings');
 const databaseUsageService = require('../services/databaseUsageService');
@@ -47,8 +48,10 @@ const {
 } = require('../services/openaiSubscriptionPlanService');
 const {
   buildCompletionInsights,
+  buildDeprecationInsights,
   buildSpendingInsights,
 } = require('../services/openaiUsageMetricsService');
+const { toLocalDateOnlyString } = require('../utils/dateOnly');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 const TEMP_PASSWORD_BYTES = 18;
@@ -1583,13 +1586,23 @@ exports.update_html_page_rating = async (req, res) => {
 };
 
 exports.openai_usage = async (req, res) => {
-  const [entries, subscriptionPlans] = await Promise.all([
+  const [entries, subscriptionPlans, modelCards] = await Promise.all([
     OpenAIUsage.find().sort({ entry_date: 1 }).lean().exec(),
     OpenAISubscriptionPlan.find().sort({ startDate: 1, createdAt: 1 }).lean().exec(),
+    AIModelCards.find({}, { api_model: 1, deprecation_date: 1 }).lean().exec(),
   ]);
 
   const monthMap = new Map();
   const completionInsights = buildCompletionInsights(entries);
+  const deprecationInsights = buildDeprecationInsights(completionInsights, modelCards, {
+    referenceDate: toLocalDateOnlyString(new Date()),
+  });
+  if (deprecationInsights) {
+    deprecationInsights.unknownModels = deprecationInsights.unknownModels.map((model) => ({
+      ...model,
+      addModelUrl: `/chat5/ai_model_cards?provider=OpenAI&model=${encodeURIComponent(model.apiModel)}`,
+    }));
+  }
 
   entries.forEach((entry) => {
     const monthKey = (entry.entry_date || '').slice(0, 7);
@@ -1691,6 +1704,7 @@ exports.openai_usage = async (req, res) => {
     subscriptionPlans: sortSubscriptionPlans(subscriptionPlans).reverse(),
     subscriptionMonthlyRows: subscriptionRows.slice().reverse(),
     completionInsights,
+    deprecationInsights,
     spendingInsights,
   });
 };

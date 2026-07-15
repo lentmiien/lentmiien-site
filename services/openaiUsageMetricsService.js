@@ -1,5 +1,6 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_COMPLETION_WINDOW_DAYS = 30;
+const DEFAULT_DEPRECATION_WARNING_MONTHS = 3;
 const CENTERED_SPENDING_WINDOW_MONTHS = 5;
 const WEEKDAYS = [
   { dayIndex: 1, label: 'Monday', shortLabel: 'Mon' },
@@ -34,6 +35,22 @@ function parseDateKey(value) {
 
 function addUtcDays(date, days) {
   return new Date(date.getTime() + (days * DAY_MS));
+}
+
+function addUtcMonthsClamped(date, months) {
+  const targetMonthStart = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + months,
+    1,
+  ));
+  const lastDayOfTargetMonth = new Date(Date.UTC(
+    targetMonthStart.getUTCFullYear(),
+    targetMonthStart.getUTCMonth() + 1,
+    0,
+  )).getUTCDate();
+
+  targetMonthStart.setUTCDate(Math.min(date.getUTCDate(), lastDayOfTargetMonth));
+  return targetMonthStart;
 }
 
 function formatDateLabel(date, includeYear = true) {
@@ -455,10 +472,152 @@ function buildCompletionInsights(entries, options = {}) {
   };
 }
 
+function dateOnlyFromValue(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return parseDateKey(formatDateKey(value));
+  }
+
+  if (typeof value === 'string') {
+    return parseDateKey(value);
+  }
+
+  return null;
+}
+
+function modelDeprecationStatus(daysUntilDeprecation) {
+  if (daysUntilDeprecation < 0) {
+    const daysPast = Math.abs(daysUntilDeprecation);
+    return {
+      status: 'deprecated',
+      label: `${daysPast} ${daysPast === 1 ? 'day' : 'days'} past deprecation`,
+    };
+  }
+
+  if (daysUntilDeprecation === 0) {
+    return { status: 'today', label: 'Deprecates today' };
+  }
+
+  return {
+    status: 'scheduled',
+    label: `Deprecates in ${daysUntilDeprecation} ${daysUntilDeprecation === 1 ? 'day' : 'days'}`,
+  };
+}
+
+function buildDeprecationInsights(completionInsights, modelCards, options = {}) {
+  if (!completionInsights || !Array.isArray(completionInsights.models)) {
+    return null;
+  }
+
+  const requestedWarningMonths = Number(options.warningMonths);
+  const warningMonths = Number.isInteger(requestedWarningMonths) && requestedWarningMonths > 0
+    ? requestedWarningMonths
+    : DEFAULT_DEPRECATION_WARNING_MONTHS;
+  const referenceDate = dateOnlyFromValue(options.referenceDate) || dateOnlyFromValue(new Date());
+  const warningEndDate = addUtcMonthsClamped(referenceDate, warningMonths);
+  const warningEndKey = formatDateKey(warningEndDate);
+  const modelCardMap = new Map();
+
+  (Array.isArray(modelCards) ? modelCards : []).forEach((card) => {
+    const apiModel = typeof card?.api_model === 'string' ? card.api_model.trim() : '';
+    if (!apiModel) {
+      return;
+    }
+
+    const deprecationDate = dateOnlyFromValue(card.deprecation_date);
+    const existing = modelCardMap.get(apiModel);
+    if (!existing
+      || (!existing.deprecationDate && deprecationDate)
+      || (existing.deprecationDate && deprecationDate && deprecationDate < existing.deprecationDate)) {
+      modelCardMap.set(apiModel, { deprecationDate });
+    }
+  });
+
+  const atRiskModels = [];
+  const unknownModels = [];
+
+  completionInsights.models.forEach((model) => {
+    const apiModel = typeof model?.model === 'string' ? model.model.trim() : '';
+    if (!apiModel) {
+      return;
+    }
+
+    const modelCard = modelCardMap.get(apiModel);
+    const usage = {
+      apiModel,
+      requests: nonNegativeNumber(model.requests),
+      tokens: nonNegativeNumber(model.tokens),
+      latestDate: typeof model.latestDate === 'string' ? model.latestDate : null,
+      latestDateLabel: typeof model.latestDateLabel === 'string' ? model.latestDateLabel : 'N/A',
+    };
+
+    if (!modelCard) {
+      unknownModels.push(usage);
+      return;
+    }
+
+    if (!modelCard.deprecationDate) {
+      return;
+    }
+
+    const deprecationDate = modelCard.deprecationDate;
+    const deprecationDateKey = formatDateKey(deprecationDate);
+    if (deprecationDateKey > warningEndKey) {
+      return;
+    }
+
+    const daysUntilDeprecation = Math.round(
+      (deprecationDate.getTime() - referenceDate.getTime()) / DAY_MS,
+    );
+    const deprecationStatus = modelDeprecationStatus(daysUntilDeprecation);
+    atRiskModels.push({
+      ...usage,
+      deprecationDate: deprecationDateKey,
+      deprecationDateLabel: formatDateLabel(deprecationDate),
+      daysUntilDeprecation,
+      deprecationStatus: deprecationStatus.status,
+      deprecationStatusLabel: deprecationStatus.label,
+    });
+  });
+
+  atRiskModels.sort((a, b) => {
+    if (b.requests === a.requests) {
+      return a.deprecationDate.localeCompare(b.deprecationDate);
+    }
+    return b.requests - a.requests;
+  });
+  unknownModels.sort((a, b) => b.requests - a.requests);
+
+  const totalAtRiskRequests = atRiskModels
+    .reduce((total, model) => total + model.requests, 0);
+  const totalUnknownRequests = unknownModels
+    .reduce((total, model) => total + model.requests, 0);
+  const hasAtRiskUsage = atRiskModels.some((model) => model.requests > 0 || model.tokens > 0);
+
+  return {
+    warningMonths,
+    referenceDate: formatDateKey(referenceDate),
+    referenceDateLabel: formatDateLabel(referenceDate),
+    warningEndDate: warningEndKey,
+    warningEndDateLabel: formatDateLabel(warningEndDate),
+    recentPeriodLabel: completionInsights.periodLabel,
+    totalAtRiskRequests,
+    totalUnknownRequests,
+    atRiskModelCount: atRiskModels.length,
+    unknownModelCount: unknownModels.length,
+    hasAtRiskUsage,
+    hasUnknownModels: unknownModels.length > 0,
+    isClear: !hasAtRiskUsage && unknownModels.length === 0,
+    atRiskModels,
+    unknownModels,
+  };
+}
+
 module.exports = {
   CENTERED_SPENDING_WINDOW_MONTHS,
   DEFAULT_COMPLETION_WINDOW_DAYS,
+  DEFAULT_DEPRECATION_WARNING_MONTHS,
   buildCompletionInsights,
+  buildDeprecationInsights,
   buildSpendingInsights,
   buildWeekdaySpending,
   readCompletionMetric,

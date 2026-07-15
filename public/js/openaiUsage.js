@@ -17,6 +17,9 @@
   const completionInsights = payload.completionInsights && typeof payload.completionInsights === 'object'
     ? payload.completionInsights
     : null;
+  const deprecationInsights = payload.deprecationInsights && typeof payload.deprecationInsights === 'object'
+    ? payload.deprecationInsights
+    : null;
   const spendingInsights = payload.spendingInsights && typeof payload.spendingInsights === 'object'
     ? payload.spendingInsights
     : null;
@@ -129,6 +132,20 @@
       trackedDays: Number(entry.trackedDays) || 0,
       sharePercent: Number(entry.sharePercent) || 0,
     }));
+
+  const deprecationSeries = (Array.isArray(deprecationInsights?.atRiskModels)
+    ? deprecationInsights.atRiskModels
+    : [])
+    .map((entry) => ({
+      apiModel: entry.apiModel,
+      requests: Number(entry.requests) || 0,
+      tokens: Number(entry.tokens) || 0,
+      latestDateLabel: entry.latestDateLabel || 'N/A',
+      deprecationDateLabel: entry.deprecationDateLabel || entry.deprecationDate,
+      deprecationStatus: entry.deprecationStatus,
+      deprecationStatusLabel: entry.deprecationStatusLabel,
+    }))
+    .filter((entry) => typeof entry.apiModel === 'string' && entry.apiModel.length > 0);
 
   const resizeCallbacks = [];
   let resizeRaf = null;
@@ -619,6 +636,123 @@
   if (completionInsights?.hasActivity) {
     renderCompletionActivityChart();
     resizeCallbacks.push(renderCompletionActivityChart);
+  }
+
+  const renderDeprecationRequestChart = () => {
+    const container = document.getElementById('deprecationRequestChart');
+    if (!container || !deprecationSeries.length) {
+      return;
+    }
+
+    const width = container.clientWidth || container.parentElement?.clientWidth || 640;
+    const height = Math.max(220, (deprecationSeries.length * 52) + 76);
+    const margin = {
+      top: 18,
+      right: width < 520 ? 40 : 62,
+      bottom: 42,
+      left: width < 520 ? Math.min(142, width * 0.38) : Math.min(250, width * 0.4),
+    };
+    const innerWidth = Math.max(1, width - margin.left - margin.right);
+    const innerHeight = Math.max(1, height - margin.top - margin.bottom);
+    const divider = cssColor('--divider', '#2B313C');
+    const warning = cssColor('--warning', '#FFC63D');
+    const danger = cssColor('--danger', '#FF4D4F');
+    const textSecondary = cssColor('--text-secondary', '#C5CBD5');
+    const maxRequests = d3.max(deprecationSeries, (entry) => entry.requests) || 0;
+
+    container.innerHTML = '';
+    const svg = d3.select(container)
+      .append('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`);
+    const chart = svg.append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+    const xScale = d3.scaleLinear()
+      .domain([0, maxRequests <= 0 ? 1 : maxRequests * 1.08])
+      .nice()
+      .range([0, innerWidth]);
+    const yScale = d3.scaleBand()
+      .domain(deprecationSeries.map((entry) => entry.apiModel))
+      .range([0, innerHeight])
+      .padding(0.34);
+
+    chart.append('g')
+      .attr('stroke', divider)
+      .attr('stroke-dasharray', '4 4')
+      .selectAll('line')
+      .data(xScale.ticks(5))
+      .join('line')
+      .attr('x1', (value) => xScale(value))
+      .attr('x2', (value) => xScale(value))
+      .attr('y1', 0)
+      .attr('y2', innerHeight);
+
+    chart.selectAll('.deprecation-request-bar')
+      .data(deprecationSeries)
+      .join('rect')
+      .attr('class', 'deprecation-request-bar')
+      .attr('x', 0)
+      .attr('y', (entry) => yScale(entry.apiModel))
+      .attr('width', (entry) => xScale(entry.requests))
+      .attr('height', yScale.bandwidth())
+      .attr('rx', Math.min(6, yScale.bandwidth() / 2))
+      .attr('fill', (entry) => (
+        entry.deprecationStatus === 'scheduled' ? warning : danger
+      ))
+      .attr('opacity', 0.82);
+
+    chart.selectAll('.deprecation-request-value')
+      .data(deprecationSeries)
+      .join('text')
+      .attr('class', 'deprecation-request-value')
+      .attr('x', (entry) => Math.min(innerWidth - 2, xScale(entry.requests) + 7))
+      .attr('y', (entry) => (yScale(entry.apiModel) || 0) + (yScale.bandwidth() / 2))
+      .attr('dominant-baseline', 'middle')
+      .attr('fill', textSecondary)
+      .text((entry) => numberDetailed.format(entry.requests));
+
+    const maxLabelCharacters = width < 520 ? 19 : 32;
+    const abbreviateModel = (value) => (value.length > maxLabelCharacters
+      ? `${value.slice(0, maxLabelCharacters - 1)}…`
+      : value);
+    chart.append('g')
+      .call(d3.axisLeft(yScale).tickSize(0).tickPadding(8).tickFormat(abbreviateModel));
+    chart.append('g')
+      .attr('transform', `translate(0,${innerHeight})`)
+      .call(d3.axisBottom(xScale).ticks(5).tickSizeOuter(0).tickFormat(d3.format('~s')));
+
+    const tooltip = ensureTooltip(container);
+    chart.selectAll('.deprecation-request-hit-area')
+      .data(deprecationSeries)
+      .join('rect')
+      .attr('class', 'deprecation-request-hit-area')
+      .attr('x', 0)
+      .attr('y', (entry) => yScale(entry.apiModel))
+      .attr('width', innerWidth)
+      .attr('height', yScale.bandwidth())
+      .attr('fill', 'transparent')
+      .on('mouseenter', (event, entry) => {
+        tooltip.innerHTML = [
+          `<strong>${escapeHtml(entry.apiModel)}</strong>`,
+          `${numberDetailed.format(entry.requests)} recent requests`,
+          `${escapeHtml(entry.deprecationStatusLabel)} (${escapeHtml(entry.deprecationDateLabel)})`,
+          `Last used ${escapeHtml(entry.latestDateLabel)}`,
+        ].join('<br>');
+        tooltip.style.opacity = '1';
+      })
+      .on('mousemove', (event) => {
+        tooltip.style.transform = `translate(${event.offsetX + 12}px, ${event.offsetY + 12}px)`;
+      })
+      .on('mouseleave', () => {
+        tooltip.style.opacity = '0';
+        tooltip.style.transform = 'translate(-9999px, -9999px)';
+      });
+  };
+
+  if (deprecationSeries.length) {
+    renderDeprecationRequestChart();
+    resizeCallbacks.push(renderDeprecationRequestChart);
   }
 
   const renderMonthlyTimelineChart = () => {

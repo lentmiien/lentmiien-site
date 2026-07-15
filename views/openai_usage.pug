@@ -163,6 +163,56 @@ block content
             strong No recent completion activity
             p There are stored usage days in this window, but none contain completion requests or tokens.
 
+        if deprecationInsights
+          article.model-lifecycle-panel(
+            class=deprecationInsights.isClear ? 'model-lifecycle-panel--clear' : 'model-lifecycle-panel--warning',
+            aria-labelledby='modelLifecycleTitle'
+          )
+            header.model-lifecycle-panel__header
+              div
+                h3#modelLifecycleTitle Model deprecation watch
+                p Recent completion usage is matched to #[code api_model] in the AI model-card database. The watch window ends #{deprecationInsights.warningEndDateLabel}.
+              span.model-lifecycle-status(class=deprecationInsights.isClear ? 'model-lifecycle-status--clear' : 'model-lifecycle-status--warning')
+                if deprecationInsights.isClear
+                  | Clear
+                else
+                  | Review needed
+
+            .model-lifecycle-summary
+              .model-lifecycle-summary__metric
+                span Recent requests to at-risk models
+                strong= formatWholeNumber(deprecationInsights.totalAtRiskRequests)
+                p During #{deprecationInsights.recentPeriodLabel}; includes models already deprecated or scheduled within the next #{deprecationInsights.warningMonths} months.
+              if deprecationInsights.atRiskModels.length
+                #deprecationRequestChart.model-lifecycle-chart(
+                  role='img',
+                  aria-label='Recent request counts for deprecated and soon-deprecating OpenAI models'
+                )
+              else
+                .model-lifecycle-zero
+                  strong 0
+                  span No recent requests matched a model with a deprecation date on or before #{deprecationInsights.warningEndDateLabel}.
+
+            if deprecationInsights.atRiskModels.length
+              .model-lifecycle-callout.model-lifecycle-callout--warning(role='alert')
+                strong #{formatWholeNumber(deprecationInsights.totalAtRiskRequests)} recent #{deprecationInsights.totalAtRiskRequests === 1 ? 'request used' : 'requests used'} #{deprecationInsights.atRiskModelCount} at-risk #{deprecationInsights.atRiskModelCount === 1 ? 'model' : 'models'}.
+                ul.model-lifecycle-model-list
+                  each model in deprecationInsights.atRiskModels
+                    li
+                      code= model.apiModel
+                      span #{model.deprecationStatusLabel} (#{model.deprecationDateLabel}) · last used #{model.latestDateLabel}
+
+            if deprecationInsights.unknownModels.length
+              .model-lifecycle-callout.model-lifecycle-callout--unknown(role='alert')
+                strong #{deprecationInsights.unknownModelCount} recently used #{deprecationInsights.unknownModelCount === 1 ? 'api_model does' : 'api_models do'} not exist in the model-card database.
+                p Add #{deprecationInsights.unknownModelCount === 1 ? 'it' : 'them'} so this dashboard can check scheduled deprecation dates.
+                ul.model-lifecycle-unknown-list
+                  each model in deprecationInsights.unknownModels
+                    li
+                      code= model.apiModel
+                      span #{formatWholeNumber(model.requests)} recent #{model.requests === 1 ? 'request' : 'requests'}
+                      a(href=model.addModelUrl) Add model card
+
     if monthlyCards && monthlyCards.length
       section.openai-usage__section
         header.section-header
@@ -256,5 +306,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, completionInsights, spendingInsights })}
+  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, completionInsights, deprecationInsights, spendingInsights })}
   script(src='/js/openaiUsage.js', defer)
