@@ -1335,7 +1335,11 @@ class ConversationService {
       conversation.tags = cleanedTags;
     }
     if (Array.isArray(updates.members)) {
-      conversation.members = sanitizeArray(updates.members);
+      const cleanedMembers = sanitizeArray(updates.members);
+      // A blank Members input must not orphan an existing conversation.
+      if (cleanedMembers.length > 0) {
+        conversation.members = cleanedMembers;
+      }
     }
     if (typeof updates.summary === 'string') {
       conversation.summary = updates.summary.trim();

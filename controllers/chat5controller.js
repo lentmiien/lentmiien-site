@@ -559,7 +559,10 @@ exports.view_chat5 = async (req, res) => {
   });
 
   if (id === "NEW") {
-    conversation = null;
+    conversation = {
+      ...DEFAULT_CONVERSATION,
+      members: [req.user.name],
+    };
     messages = [];
     conversationSource = 'unsaved';
   } else {
@@ -599,7 +602,7 @@ exports.view_chat5 = async (req, res) => {
   ]);
   const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
-    conversation: conversation ? conversation : DEFAULT_CONVERSATION,
+    conversation: conversation || DEFAULT_CONVERSATION,
     messages,
     chat_models,
     templates,

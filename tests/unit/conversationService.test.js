@@ -357,6 +357,24 @@ describe('ConversationService', () => {
     expect(conversation.save).toHaveBeenCalled();
   });
 
+  test('updateConversationDetails preserves members when an empty list is submitted', async () => {
+    const conversation = {
+      title: 'Existing title',
+      category: 'Chat5',
+      tags: ['chat5'],
+      members: ['Lennart'],
+      metadata: {},
+      save: jest.fn().mockResolvedValue(),
+    };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const service = new ConversationService({}, {}, {});
+    await service.updateConversationDetails('conv-1', { members: [] });
+
+    expect(conversation.members).toEqual(['Lennart']);
+    expect(conversation.save).toHaveBeenCalled();
+  });
+
   test('generateMessageArrayForConversation builds context with knowledge and prior messages', async () => {
     const conversationModel = createConversationModel();
     const conversationDoc = {
