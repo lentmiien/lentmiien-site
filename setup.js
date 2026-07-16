@@ -9,6 +9,7 @@ const { runPreflightChecks, notifyStartupAlert } = require('./utils/startupCheck
 const { syncOpenAIUsageHistory } = require('./services/openaiUsageSyncService');
 const ToolManagerService = require('./services/toolManagerService');
 const AccountingBusinessService = require('./services/accountingBusinessService');
+const { appSettingsService } = require('./services/appSettingsService');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
 const batchprompt = require('./models/batchprompt');
@@ -519,6 +520,7 @@ async function performDatabaseMaintenance() {
     messageInboxHighQualityEmbeddingsRemoved: 0,
     toolManagerSeed: null,
     accountingBusinessSeed: null,
+    appSettingsSeed: null,
   };
 
   await mongoose.connect(mongoUrl, {
@@ -565,6 +567,7 @@ async function performDatabaseMaintenance() {
     });
     summary.transactionCategoryCleanup = await normalizeLegacyTransactionCategories();
     summary.accountingBusinessSeed = await AccountingBusinessService.seedFromExistingTransactions();
+    summary.appSettingsSeed = await appSettingsService.seedDefaults('setup');
     summary.htmlRatingEntriesRemoved = await pruneMissingHtmlRatings();
     const inboxCleanup = await pruneExpiredInboxMessages();
     summary.expiredInboxMessagesRemoved = inboxCleanup.removed;

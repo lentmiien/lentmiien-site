@@ -16,6 +16,7 @@ const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminControlle
 const locateAnythingAdminController = require('../controllers/locateAnythingAdminController');
 const tapoController = require('../controllers/tapoController');
 const requestCounterAdminController = require('../controllers/requestCounterAdminController');
+const appSettingsAdminController = require('../controllers/appSettingsAdminController');
 const deviceUsageAdminController = require('../controllers/deviceUsageAdminController');
 const minuteLoggerAdminController = require('../controllers/minuteLoggerAdminController');
 const dummyApiAdminController = require('../controllers/dummyApiAdminController');
@@ -229,6 +230,10 @@ router.post('/ai-gateway/monitor', controller.ai_gateway_monitor_update);
 router.get('/performance', controller.performance_dashboard);
 router.get('/request-counter', requestCounterAdminController.dashboard);
 router.post('/request-counter/settings', requestCounterAdminController.updateSettings);
+router.get('/app-settings', appSettingsAdminController.index);
+router.post('/app-settings/save', appSettingsAdminController.save);
+router.post('/app-settings/seed-defaults', appSettingsAdminController.seedDefaults);
+router.post('/app-settings/:id/delete', appSettingsAdminController.delete);
 router.get('/device-usage', deviceUsageAdminController.dashboard);
 router.post('/device-usage/settings', deviceUsageAdminController.updateSettings);
 router.post('/device-usage/packages', deviceUsageAdminController.savePackageRule);

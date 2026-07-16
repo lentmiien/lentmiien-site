@@ -10,6 +10,10 @@ const ai = require('../utils/OpenAI_API');
 const ollama = require('../utils/Ollama_API');
 const { z } = require('zod');
 const logger = require('../utils/logger');
+const {
+  APP_SETTING_KEYS,
+  appSettingsService: defaultAppSettingsService,
+} = require('./appSettingsService');
 
 const { AIModelCards, Chat5Model, Conversation5Model } = require('../database');
 let EmbeddingApiService = null;
@@ -149,10 +153,11 @@ const Title = z.object({
 
 // Message service operations: managing individual messages within a conversation
 class MessageService {
-  constructor(messageModel, fileMetaModel, embeddingApiService = null) {
+  constructor(messageModel, fileMetaModel, embeddingApiService = null, appSettingsService = defaultAppSettingsService) {
     this.messageModel = messageModel;
     this.fileMetaModel = fileMetaModel;
     this.embeddingApiService = embeddingApiService;
+    this.appSettingsService = appSettingsService;
   }
 
   getEmbeddingService() {
@@ -426,7 +431,7 @@ class MessageService {
 
   async CreateTitle(message_ids) {
     const msgs = await this.getMessagesByIdArray(message_ids, false);
-    const use_model = 'gpt-4.1-nano-2025-04-14';
+    const use_model = await this.appSettingsService.getValue(APP_SETTING_KEYS.CHAT5_TITLE_MODEL);
     const use_messages = [];
     use_messages.push({
       role: "system",
@@ -464,11 +469,12 @@ class MessageService {
       role: 'user',
       content: 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to go through the entire conversation.',
     });
-    const summary = await chatGPT(messages, 'gpt-4o-2024-11-20');
+    const model = await this.appSettingsService.getValue(APP_SETTING_KEYS.CHAT5_SUMMARY_MODEL);
+    const summary = await chatGPT(messages, model);
     return summary.choices[0].message.content;
   }
 
-  async generateChat5Summary({ conversation, messages, model = 'gpt-4.1-mini' }) {
+  async generateChat5Summary({ conversation, messages }) {
     const visibleMessages = messages.filter((message) => (
       message &&
       message.contentType === 'text' &&
@@ -515,6 +521,7 @@ class MessageService {
       ]
     });
 
+    const model = await this.appSettingsService.getValue(APP_SETTING_KEYS.CHAT5_SUMMARY_MODEL);
     const response = await chatGPT(promptMessages, model);
 
     if (!response || !response.choices || !response.choices[0] || !response.choices[0].message) {
@@ -1245,7 +1252,7 @@ class MessageService {
 
   async GenerateTitle(message_ids) {
     const msgs = await this.loadMessagesInNewFormat(message_ids, true);
-    const use_model = 'gpt-4.1-nano-2025-04-14';
+    const use_model = await this.appSettingsService.getValue(APP_SETTING_KEYS.CHAT5_TITLE_MODEL);
     const use_messages = [];
     use_messages.push({
       role: "system",
@@ -1287,7 +1294,7 @@ class MessageService {
       return title;
     } catch (error) {
       logger.error(error);
-      return "Error generating title";
+      throw new Error('Failed to generate conversation title', { cause: error });
     }
   }
 

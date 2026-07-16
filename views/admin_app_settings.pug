@@ -1,0 +1,107 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/app_settings_admin.css')
+
+block content
+  - const editing = !!editSetting;
+  - const formSetting = formDefaults || {};
+  .app-settings-page
+    header.app-settings-header
+      div
+        p.app-settings-header__eyebrow System Admin
+        h1.app-settings-header__title App Settings
+        p.app-settings-header__subtitle Database-backed key-value configuration. Changes take effect on the next operation.
+      .app-settings-header__actions
+        form(method='post', action='/admin/app-settings/seed-defaults')
+          button.btn.btn-outline-primary(type='submit') Restore required defaults
+        if editing
+          a.btn.btn-outline-secondary(href='/admin/app-settings') New setting
+
+    if feedback
+      .alert(class=feedback.status === 'success' ? 'alert-success' : 'alert-danger')= feedback.message
+
+    .app-settings-notice
+      strong Keep secrets out of this collection.
+      span Use environment variables or the existing credential stores for passwords, API keys, and tokens.
+
+    section.app-settings-core
+      .app-settings-section-heading
+        div
+          h2 Required Chat5 settings
+          p Title and summary generation use separate model values.
+      .app-settings-core-grid
+        each item in coreSettings
+          article.app-settings-core-card
+            .app-settings-core-card__top
+              code= item.key
+              if item.setting
+                span.badge.text-bg-success Configured
+              else
+                span.badge.text-bg-danger Missing
+            if item.setting
+              strong.app-settings-core-card__value= item.setting.value
+              p= item.setting.description || item.description
+              a.btn.btn-outline-primary.btn-sm(href=`/admin/app-settings?edit=${item.setting._id}`) Edit
+            else
+              p This required setting is missing; its AI Generate action will fail until it is restored.
+              a.btn.btn-primary.btn-sm(href=`/admin/app-settings?key=${encodeURIComponent(item.key)}&value=${encodeURIComponent(item.value)}&description=${encodeURIComponent(item.description)}`) Create setting
+
+    .app-settings-layout
+      section.app-settings-panel.app-settings-editor
+        .app-settings-panel__header
+          h2= editing ? 'Edit setting' : 'Add setting'
+          if editing
+            span= `Updated ${new Date(editSetting.updatedAt).toLocaleString()}`
+        form(method='post', action='/admin/app-settings/save')
+          if editing
+            input(type='hidden', name='id', value=editSetting._id)
+          .mb-3
+            label.form-label(for='appSettingKey') Key
+            input#appSettingKey.form-control(type='text', name='key', value=formSetting.key || '', maxlength='160', pattern='[a-z0-9]+([._-][a-z0-9]+)*', placeholder='feature.setting_name', required)
+            .form-text Lowercase letters, numbers, dots, underscores, and hyphens.
+          .mb-3
+            label.form-label(for='appSettingValue') Value
+            textarea#appSettingValue.form-control.app-settings-value(name='value', rows='4', maxlength='10000', required)= formSetting.value || ''
+          .mb-3
+            label.form-label(for='appSettingDescription') Description
+            textarea#appSettingDescription.form-control(name='description', rows='3', maxlength='1000')= formSetting.description || ''
+          .app-settings-editor__actions
+            button.btn.btn-primary(type='submit')= editing ? 'Save changes' : 'Add setting'
+            if editing
+              a.btn.btn-outline-secondary(href='/admin/app-settings') Cancel
+
+      section.app-settings-panel.app-settings-list
+        .app-settings-panel__header
+          h2 Stored settings
+          span= `${settings.length} total`
+        if settings && settings.length
+          .table-responsive
+            table.table.table-sm.align-middle.app-settings-table
+              thead
+                tr
+                  th Key
+                  th Value
+                  th Description
+                  th Updated
+                  th Actions
+              tbody
+                each setting in settings
+                  tr
+                    td
+                      code= setting.key
+                    td
+                      pre.app-settings-table__value= setting.value
+                    td= setting.description || '-'
+                    td
+                      div= new Date(setting.updatedAt).toLocaleString()
+                      small.text-muted= setting.updatedBy || 'system'
+                    td.app-settings-table__actions
+                      a.btn.btn-outline-primary.btn-sm(href=`/admin/app-settings?edit=${setting._id}`) Edit
+                      form(method='post', action=`/admin/app-settings/${setting._id}/delete`, data-confirm='Delete this app setting? Features that require it may stop working.')
+                        button.btn.btn-outline-danger.btn-sm(type='submit') Delete
+        else
+          p.app-settings-empty No app settings are stored yet.
+
+block script
+  script(src='/js/app_settings_admin.js', defer)

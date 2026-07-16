@@ -163,6 +163,7 @@ const ClusterNodeType = require('./models/cluster_node_type');
 const ClusterHardwareCatalogItem = require('./models/cluster_hardware_catalog_item');
 const IncomingRequest = require('./models/incoming_request');
 const RequestCounterSettings = require('./models/request_counter_settings');
+const AppSetting = require('./models/app_setting');
 const DeviceUsageRequest = require('./models/device_usage_request');
 const DeviceUsageSettings = require('./models/device_usage_settings');
 const DeviceUsageGateState = require('./models/device_usage_gate_state');
@@ -295,6 +296,7 @@ module.exports = {
   ClusterHardwareCatalogItem,
   IncomingRequest,
   RequestCounterSettings,
+  AppSetting,
   DeviceUsageRequest,
   DeviceUsageSettings,
   DeviceUsageGateState,

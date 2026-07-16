@@ -1179,6 +1179,10 @@ socket.on('chat5-generatetitle-done', (data) => {
   document.getElementById("conversation_title").innerHTML = data.title;
   hideLoadingPopup();
 });
+socket.on('chat5-generatetitle-up:error', (data) => {
+  hideLoadingPopup();
+  alert(data && data.message ? data.message : 'Unable to generate a title at this time.');
+});
 
 // Generate summary
 function GenerateSummary() {

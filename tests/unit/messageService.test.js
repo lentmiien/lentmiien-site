@@ -56,6 +56,8 @@ jest.mock('../../database', () => {
 jest.mock('marked', () => ({ parse: mockMarkedParse }));
 
 const MessageService = require('../../services/messageService');
+const { APP_SETTING_KEYS } = require('../../services/appSettingsService');
+const { chatGPT, chatGPT_beta } = require('../../utils/ChatGPT');
 const ai = require('../../utils/OpenAI_API');
 const ollama = require('../../utils/Ollama_API');
 const { AIModelCards, Chat5Model } = require('../../database');
@@ -88,6 +90,8 @@ describe('MessageService', () => {
     Chat5Model.find.mockReset();
     ollama.chat.mockReset();
     ollama.convertResponseBody.mockReset();
+    chatGPT.mockReset();
+    chatGPT_beta.mockReset();
 
     messageModel = {
       find: jest.fn(),
@@ -353,5 +357,80 @@ describe('MessageService', () => {
     expect(chain.exec).toHaveBeenCalledTimes(1);
     expect(mockMarkedParse).not.toHaveBeenCalled();
     expect(result).toBe(docs);
+  });
+
+  test('GenerateTitle gets the title model from app settings', async () => {
+    const appSettingsService = {
+      getValue: jest.fn().mockResolvedValue('title-model-from-db'),
+    };
+    service = new MessageService(messageModel, fileMetaModel, null, appSettingsService);
+    service.loadMessagesInNewFormat = jest.fn().mockResolvedValue([
+      {
+        user_id: 'Lennart',
+        contentType: 'text',
+        content: { text: 'How should we name this?' },
+      },
+      {
+        user_id: 'bot',
+        contentType: 'text',
+        content: { text: 'A concise title would work.' },
+      },
+    ]);
+    chatGPT_beta.mockResolvedValue({
+      output_parsed: { conversation_title: 'Database-backed Titles' },
+    });
+
+    await expect(service.GenerateTitle(['message-1', 'message-2']))
+      .resolves.toBe('Database-backed Titles');
+    expect(appSettingsService.getValue).toHaveBeenCalledWith(APP_SETTING_KEYS.CHAT5_TITLE_MODEL);
+    expect(chatGPT_beta).toHaveBeenCalledWith(
+      expect.any(Array),
+      'title-model-from-db',
+      true,
+      expect.objectContaining({ title: 'title' })
+    );
+  });
+
+  test('GenerateTitle surfaces model failures instead of saving an error as the title', async () => {
+    const appSettingsService = {
+      getValue: jest.fn().mockResolvedValue('invalid-title-model'),
+    };
+    service = new MessageService(messageModel, fileMetaModel, null, appSettingsService);
+    service.loadMessagesInNewFormat = jest.fn().mockResolvedValue([]);
+    chatGPT_beta.mockRejectedValue(new Error('model not found'));
+
+    await expect(service.GenerateTitle([])).rejects.toThrow('Failed to generate conversation title');
+  });
+
+  test('generateChat5Summary gets a separate summary model from app settings', async () => {
+    const appSettingsService = {
+      getValue: jest.fn().mockResolvedValue('summary-model-from-db'),
+    };
+    service = new MessageService(messageModel, fileMetaModel, null, appSettingsService);
+    chatGPT.mockResolvedValue({
+      choices: [{ message: { content: 'A stored summary.' } }],
+    });
+
+    const summary = await service.generateChat5Summary({
+      conversation: {},
+      messages: [
+        {
+          user_id: 'Lennart',
+          contentType: 'text',
+          content: { text: 'Remember this.' },
+          hideFromBot: false,
+        },
+        {
+          user_id: 'bot',
+          contentType: 'text',
+          content: { text: 'I will.' },
+          hideFromBot: false,
+        },
+      ],
+    });
+
+    expect(summary).toBe('A stored summary.');
+    expect(appSettingsService.getValue).toHaveBeenCalledWith(APP_SETTING_KEYS.CHAT5_SUMMARY_MODEL);
+    expect(chatGPT).toHaveBeenCalledWith(expect.any(Array), 'summary-model-from-db');
   });
 });
