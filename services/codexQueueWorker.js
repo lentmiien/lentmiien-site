@@ -143,7 +143,7 @@ class CodexQueueWorker {
           durationMs,
           errorMessage: 'Codex worker stopped before this turn completed.',
         },
-      }, { new: true }).exec();
+      }, { returnDocument: 'after' }).exec();
       await CodexWorkspaceLock.deleteMany({ turnId: turn._id }).exec();
       await this.recordEvent(updatedTurn, 1, {
         stream: 'system',
@@ -218,7 +218,7 @@ class CodexQueueWorker {
           startedAt: now,
           errorMessage: '',
         },
-      }, { new: true }).exec();
+      }, { returnDocument: 'after' }).exec();
 
       if (!claimedTurn) {
         await this.releaseLock(lock);
@@ -282,7 +282,7 @@ class CodexQueueWorker {
         completedAt,
         errorMessage: message,
       },
-    }, { new: true }).exec();
+    }, { returnDocument: 'after' }).exec();
     if (!updatedTurn) {
       return;
     }
@@ -384,7 +384,7 @@ class CodexQueueWorker {
           completedAt,
           durationMs: result.durationMs,
         },
-      }, { new: true }).exec();
+      }, { returnDocument: 'after' }).exec();
 
       await onEvent({
         stream: 'system',
@@ -415,7 +415,7 @@ class CodexQueueWorker {
           errorMessage: error.message || 'Codex turn failed unexpectedly.',
           eventCount: storedEventCount,
         },
-      }, { new: true }).exec();
+      }, { returnDocument: 'after' }).exec();
       await onEvent({
         stream: 'system',
         eventType: 'turn.failed',
