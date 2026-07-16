@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const router = express.Router();
 
@@ -7,6 +8,17 @@ const controller = require('../controllers/apicontroller');
 const apiRecordController = require('../controllers/apiRecordController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
 const tapoController = require('../controllers/tapoController');
+const amiamiItemsApiController = require('../controllers/amiamiItemsApiController');
+
+const amiamiItemsReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 50,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: {
+    error: 'Too many AmiAmi item requests. A maximum of 50 requests per minute is allowed.',
+  },
+});
 
 const audioUpload = multer({
   storage: multer.memoryStorage(),
@@ -35,6 +47,9 @@ router.post('/binpacking', controller.binPacking);
 
 /* Product details */
 router.post('/productDetails', controller.processProductDetails);
+
+/* AmiAmi items (read-only) */
+router.post('/amiami-items', amiamiItemsReadLimiter, amiamiItemsApiController.fetchItems);
 
 /* Health log */
 router.get('/getHealthEntries', controller.getHealthEntries);

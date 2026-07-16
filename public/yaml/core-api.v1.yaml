@@ -6,9 +6,9 @@ info:
   description: |
     This document captures the REST endpoints mounted under `/api`. They back the Vue tools,
     health log dashboards, and automation agents that seed Chat5 conversations and schedule tasks.
-    Most routes require an authenticated session cookie (`connect.sid`) unless otherwise noted.
-    The `/api/records` endpoints also support bearer API-key access together with an allowed
-    `x-user-id` tier header.
+    Routes accept either an authenticated session cookie (`connect.sid`) or bearer API-key access
+    unless otherwise noted. The `/api/records` endpoints additionally require an allowed
+    `x-user-id` tier header for bearer API-key access.
 servers:
   - url: http://localhost:3000
     description: Local development
@@ -25,6 +25,8 @@ tags:
     description: Utility endpoints for schedule/task automation.
   - name: Records
     description: Tiered record storage with partial updates and encrypted field redaction.
+  - name: AmiAmi
+    description: Read-only AmiAmi item lookup for external applications.
 security:
   - sessionCookie: []
 paths:
@@ -60,6 +62,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemResponse'
+  /api/amiami-items:
+    post:
+      summary: Fetch AmiAmi items by gcode or JAN code
+      description: >
+        Performs an exact, read-only lookup against both `gcode` and `details.janCode`. The body
+        may mix both code types and is limited to 100 entries. Duplicate input codes are queried
+        once, matching database entries are returned once in request-code order, and unmatched
+        codes are omitted. This endpoint is limited to 50 requests per minute per client IP.
+      tags: [AmiAmi]
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 100
+              items:
+                oneOf:
+                  - type: string
+                    minLength: 1
+                  - type: integer
+                    minimum: 0
+                    maximum: 9007199254740991
+            examples:
+              mixedCodes:
+                summary: Mixed gcode and JAN lookup
+                value:
+                  - FIGURE-205029
+                  - '4934054079537'
+      responses:
+        '200':
+          description: Matching AmiAmi database entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AmiAmiItem'
+        '400':
+          description: Invalid input or more than 100 requested codes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleErrorResponse'
+        '401':
+          description: Missing or invalid authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleErrorResponse'
+        '429':
+          description: More than 50 requests received within one minute
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleErrorResponse'
+        '500':
+          description: Database lookup failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleErrorResponse'
   /api/getHealthEntries:
     get:
       summary: List health log entries
@@ -529,6 +596,70 @@ components:
       name: x-user-id
       description: "Must match either `API_TIER1_USER_ID` or `API_TIER2_USER_ID`."
   schemas:
+    SimpleErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+    AmiAmiItem:
+      type: object
+      additionalProperties: true
+      required:
+        - gcode
+        - url
+        - source
+        - sourceUrl
+        - listing
+        - detailStatus
+      properties:
+        _id:
+          type: string
+        gcode:
+          type: string
+        url:
+          type: string
+          format: uri
+        source:
+          type: string
+        sourceUrl:
+          type: string
+          format: uri
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        listingChangedAt:
+          type: string
+          format: date-time
+        listingHash:
+          type: [string, 'null']
+        listing:
+          type: object
+          additionalProperties: true
+        detailStatus:
+          type: string
+          enum: [pending, fetched, error]
+        detailFetchedAt:
+          type: [string, 'null']
+          format: date-time
+        detailError:
+          type: object
+          additionalProperties: true
+        details:
+          type: [object, 'null']
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        __v:
+          type: integer
     ProblemResponse:
       type: object
       required:
@@ -1083,6 +1214,7 @@ x-yaml-viewer:
     - Bin packing helper shared with the Vue dashboard and CLI runners.
     - Automation-friendly task creation and reminder buckets used by calendar agents.
     - Tiered `/api/records` storage with encrypted field redaction for Tier 1 callers.
+    - Read-only AmiAmi item lookup by mixed gcode and JAN code batches.
   examples:
     - label: Fetch health entries
       description: Pull a 7-day window to hydrate local notebooks.
@@ -1095,3 +1227,10 @@ x-yaml-viewer:
         curl -b cookie.txt -H "Content-Type: application/json" \
           -X POST http://localhost:3000/api/binpacking \
           -d @payloads/binpacking-sample.json
+    - label: Fetch AmiAmi items
+      description: Look up full database entries with a mixed batch of gcode and JAN values.
+      snippet: |
+        curl -H "Authorization: Bearer <API_KEY>" \
+          -H "Content-Type: application/json" \
+          -X POST http://localhost:3000/api/amiami-items \
+          -d '["FIGURE-205029", "4934054079537"]'

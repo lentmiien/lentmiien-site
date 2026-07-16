@@ -86,5 +86,6 @@ const AmiAmiItemSchema = new mongoose.Schema({
 
 AmiAmiItemSchema.index({ detailStatus: 1, firstSeenAt: 1 });
 AmiAmiItemSchema.index({ lastSeenAt: -1 });
+AmiAmiItemSchema.index({ 'details.janCode': 1 });
 
 module.exports = mongoose.model('amiamiitems', AmiAmiItemSchema);
