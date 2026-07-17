@@ -85,7 +85,7 @@ required.
 | `shape_guidance` | number | `7.5` | `0` to `20`. Detailed-shape image guidance. |
 | `texture_steps` | integer | `12` | `1` to `50`. PBR attribute sampling steps. |
 | `texture_guidance` | number | `1.0` | `0` to `20`. Texture-stage image guidance. |
-| `decimation_target` | integer | `500000` | `100000` to `1000000`. Target export complexity; use 100000 for lighter previews. |
+| `decimation_target` | integer | `500000` | `10000` to `1000000`. Target export complexity; use 10000 for lighter previews. |
 | `texture_size` | integer | `2048` | `1024`, `2048`, or `4096`. Exported texture-map size. |
 | `remesh` | boolean | `true` | Rebuild and clean topology before UV unwrapping and texture baking. |
 

@@ -65,13 +65,13 @@ block content
             input#trellis2Decimation.form-control(
               type='number',
               name='decimation_target',
-              min='100000',
+              min='10000',
               max='1000000',
-              step='10000',
+              step='1',
               value=defaults.decimationTarget,
               required
             )
-            p.form-text 100,000 makes a lighter model; 500,000 preserves more detail.
+            p.form-text 10,000 makes a very light model; 500,000 preserves more detail.
 
         details.trellis2-advanced
           summary Advanced sampling controls

@@ -43,9 +43,17 @@ describe('TRELLIS.2 utilities', () => {
     });
   });
 
+  test.each([10000, 1000000])('accepts decimation target boundary %i', (decimationTarget) => {
+    expect(normalizeTrellis2Parameters({
+      decimation_target: String(decimationTarget),
+    }).decimationTarget).toBe(decimationTarget);
+  });
+
   test.each([
     [{ resolution: '768' }, 'Resolution must be one of'],
     [{ seed: '-1' }, 'Seed must be at least 0'],
+    [{ decimation_target: '9999' }, 'Decimation target must be at least 10000'],
+    [{ decimation_target: '1000001' }, 'Decimation target must be at most 1000000'],
     [{ texture_size: '512' }, 'Texture size must be one of'],
     [{ shape_steps: '2.5' }, 'Shape steps must be an integer'],
     [{ remesh: 'sometimes' }, 'Remesh must be true or false'],

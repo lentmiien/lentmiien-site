@@ -37,7 +37,7 @@ const ParametersSchema = new Schema({
   shapeGuidance: { type: Number, required: true, min: 0, max: 20 },
   textureSteps: { type: Number, required: true, min: 1, max: 50 },
   textureGuidance: { type: Number, required: true, min: 0, max: 20 },
-  decimationTarget: { type: Number, required: true, min: 100000, max: 1000000 },
+  decimationTarget: { type: Number, required: true, min: 10000, max: 1000000 },
   textureSize: { type: Number, required: true, enum: [1024, 2048, 4096] },
   remesh: { type: Boolean, required: true },
 }, { _id: false });

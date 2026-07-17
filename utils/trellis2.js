@@ -136,7 +136,7 @@ function normalizeTrellis2Parameters(body = {}) {
       'decimation_target',
       'Decimation target',
       DEFAULT_TRELLIS2_PARAMETERS.decimationTarget,
-      { integer: true, min: 100000, max: 1000000 },
+      { integer: true, min: 10000, max: 1000000 },
     ),
     textureSize: parseNumberField(
       body,
