@@ -82,4 +82,13 @@ describe('mypageIconService', () => {
     expect(tile.href).toBe('/trellis2');
     expect(tile.src).toBe('/i/trellis2.svg');
   });
+
+  test('Pixal3D image-to-3D tile is available to every logged-in user', () => {
+    const regularTiles = buildMypageTiles();
+    const tile = regularTiles.find((entry) => entry.id === 'pixal3d');
+
+    expect(tile).toBeDefined();
+    expect(tile.href).toBe('/pixal3d');
+    expect(tile.src).toBe('/i/pixal3d.svg');
+  });
 });

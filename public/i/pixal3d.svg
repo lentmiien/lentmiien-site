@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Pixal3D image-to-model tile illustration</title>
+  <desc id="desc">A camera-framed object passes through a glowing depth grid and becomes a textured three-dimensional mesh.</desc>
+  <defs>
+    <linearGradient id="pixalBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0F13"/>
+      <stop offset="55%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="pixalDepth" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#19E3E3" stop-opacity="0.24"/>
+      <stop offset="52%" stop-color="#FFC247" stop-opacity="0.72"/>
+      <stop offset="100%" stop-color="#FF6A1F" stop-opacity="0.92"/>
+    </linearGradient>
+    <linearGradient id="pixalMesh" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="58%" stop-color="#FF7C3B"/>
+      <stop offset="100%" stop-color="#E05F1C"/>
+    </linearGradient>
+    <filter id="pixalGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feBlend in="SourceGraphic" in2="blur" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#pixalBg)"/>
+  <circle cx="92" cy="332" r="126" fill="#19E3E3" fill-opacity="0.06"/>
+  <circle cx="559" cy="64" r="116" fill="#FF6A1F" fill-opacity="0.12"/>
+
+  <g transform="translate(54 76)">
+    <rect width="218" height="246" rx="24" fill="#20242A" stroke="#262B34" stroke-width="4"/>
+    <rect x="18" y="18" width="182" height="182" rx="15" fill="#0E0F13" stroke="#FFC247" stroke-opacity="0.46" stroke-width="3"/>
+    <path d="M63 164c2-31 15-51 38-61-12-11-12-31-2-42 11-13 34-13 45 0 10 12 9 31-3 42 23 10 37 30 39 61Z" fill="#FF6A1F" fill-opacity="0.76"/>
+    <path d="M35 45v28M35 45h28m92 0h28m0 0v28M35 173v-28m0 28h28m120 0h-28m28 0v-28" fill="none" stroke="#FFC247" stroke-width="5" stroke-linecap="round"/>
+    <path d="M46 219h74" stroke="#C1C7D3" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="172" cy="219" r="13" fill="#17C696"/>
+  </g>
+
+  <g transform="translate(283 96)" fill="none" stroke-linecap="round">
+    <path d="M0 205 85 0l88 205" stroke="url(#pixalDepth)" stroke-width="4" opacity="0.72"/>
+    <path d="M18 162h137M31 129h110M43 98h84M56 66h57M69 35h31" stroke="#FFC247" stroke-opacity="0.42" stroke-width="3"/>
+    <path d="M42 205 85 0m1 205L85 0m43 205L85 0" stroke="#19E3E3" stroke-opacity="0.25" stroke-width="3"/>
+    <g fill="#FFC247" stroke="none" filter="url(#pixalGlow)">
+      <circle cx="28" cy="151" r="5"/>
+      <circle cx="143" cy="137" r="6"/>
+      <circle cx="65" cy="82" r="5"/>
+      <circle cx="112" cy="62" r="4"/>
+    </g>
+  </g>
+
+  <g transform="translate(430 70)" stroke-linejoin="round">
+    <path d="m73 0 82 47 1 103-83 49-72-42L0 50Z" fill="#171A20" stroke="#FFC247" stroke-opacity="0.68" stroke-width="4"/>
+    <path d="m73 0 32 62-33 45-34-47Z" fill="url(#pixalMesh)"/>
+    <path d="m105 62 50-15 1 103-84-43Z" fill="#FF6A1F" fill-opacity="0.62"/>
+    <path d="m72 107 84 43-83 49-35-45Z" fill="#FFC247" fill-opacity="0.45"/>
+    <path d="M0 50 38 60l34 47-34 47-37 3Z" fill="#19E3E3" fill-opacity="0.23"/>
+    <path d="M73 0 0 50m73-50 82 47m1 103-84-43m84 43-83 49M1 157l71-50M38 60l67 2m-33 45 1 92m-35-45 34-47" fill="none" stroke="#FFC247" stroke-opacity="0.76" stroke-width="3"/>
+    <g fill="#FFC247">
+      <circle cx="73" cy="0" r="5"/>
+      <circle cx="155" cy="47" r="5"/>
+      <circle cx="156" cy="150" r="5"/>
+      <circle cx="73" cy="199" r="5"/>
+      <circle cx="1" cy="157" r="5"/>
+      <circle cx="0" cy="50" r="5"/>
+      <circle cx="72" cy="107" r="7" fill="#FF6A1F"/>
+    </g>
+  </g>
+
+  <g transform="translate(421 315)">
+    <rect width="165" height="48" rx="24" fill="#20242A" stroke="#17C696" stroke-width="3"/>
+    <path d="M23 13h20l8 8v14H23Z" fill="none" stroke="#FFC247" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M43 13v9h8" fill="none" stroke="#FFC247" stroke-width="3"/>
+    <text x="65" y="31" fill="#E8ECF2" font-family="Arial, sans-serif" font-size="18" font-weight="700">PIXAL GLB</text>
+  </g>
+</svg>

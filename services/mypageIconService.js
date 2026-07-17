@@ -189,8 +189,15 @@ const MYPAGE_ICON_DEFINITIONS = [
     id: 'trellis2',
     href: '/trellis2',
     src: '/i/trellis2.svg',
-    alt: 'Generate a 3D model from an image',
-    label: 'Image to 3D',
+    alt: 'Generate a 3D model from an image with TRELLIS.2',
+    label: 'TRELLIS.2 3D',
+  },
+  {
+    id: 'pixal3d',
+    href: '/pixal3d',
+    src: '/i/pixal3d.svg',
+    alt: 'Generate a 3D model from an image with Pixal3D',
+    label: 'Pixal3D',
   },
   {
     id: 'credit_card',
