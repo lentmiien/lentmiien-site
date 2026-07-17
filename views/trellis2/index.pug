@@ -179,16 +179,23 @@ block content
                     span.trellis2-muted(data-trellis2-progress) The model will appear here when generation finishes.
 
                   if job.isOwner
-                    .trellis2-share
-                      .form-check.form-switch
-                        input.form-check-input(
-                          id=`trellis2Share-${job.id}`,
-                          type='checkbox',
-                          checked=job.shared,
-                          data-trellis2-share
-                        )
-                        label.form-check-label(for=`trellis2Share-${job.id}`) Share with other users
-                      span.trellis2-share__status(data-trellis2-share-status, aria-live='polite')
+                    .trellis2-owner-actions
+                      .trellis2-share
+                        .form-check.form-switch
+                          input.form-check-input(
+                            id=`trellis2Share-${job.id}`,
+                            type='checkbox',
+                            checked=job.shared,
+                            data-trellis2-share
+                          )
+                          label.form-check-label(for=`trellis2Share-${job.id}`) Share with other users
+                        span.trellis2-share__status(data-trellis2-share-status, aria-live='polite')
+                      button.btn.btn-outline-danger.btn-sm(
+                        type='button',
+                        data-trellis2-delete,
+                        disabled=job.status === 'queued' || job.status === 'processing',
+                        title=job.status === 'queued' || job.status === 'processing' ? 'This job can be deleted after generation finishes.' : 'Delete this job and its stored files.'
+                      ) Delete job
       else
         .trellis2-empty
           h3 No models yet

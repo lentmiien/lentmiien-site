@@ -105,6 +105,22 @@ class Trellis2JobService {
     });
   }
 
+  async removeOutputModel(fileName) {
+    if (!fileName) return;
+    await fs.unlink(this.outputPath(fileName)).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+  }
+
+  async removeJobFiles(job) {
+    const removals = await Promise.allSettled([
+      this.removeInputImage(job?.inputImage?.fileName),
+      this.removeOutputModel(job?.outputModel?.fileName),
+    ]);
+    const failedRemoval = removals.find((result) => result.status === 'rejected');
+    if (failedRemoval) throw failedRemoval.reason;
+  }
+
   enqueue(jobId) {
     const normalizedId = String(jobId || '');
     if (!normalizedId || this.queuedJobIds.has(normalizedId)) return;

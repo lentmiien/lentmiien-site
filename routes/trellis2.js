@@ -23,6 +23,7 @@ router.post('/jobs', (req, res, next) => {
 });
 router.get('/jobs/:jobId', controller.getJob);
 router.patch('/jobs/:jobId/share', controller.toggleShare);
+router.delete('/jobs/:jobId', controller.deleteJob);
 router.get('/jobs/:jobId/download', controller.downloadModel);
 
 module.exports = router;

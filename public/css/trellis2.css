@@ -407,6 +407,30 @@
   min-height: 2.4rem;
 }
 
+.trellis2-owner-actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.trellis2-owner-actions .btn-outline-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.trellis2-owner-actions .btn-outline-danger:hover,
+.trellis2-owner-actions .btn-outline-danger:focus {
+  background: var(--danger);
+  color: var(--text-inverse);
+}
+
+.trellis2-owner-actions .btn-outline-danger:disabled {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
 .trellis2-share .form-check {
   margin: 0;
 }
@@ -512,6 +536,10 @@
   }
 
   .trellis2-share {
+    align-items: flex-start;
+  }
+
+  .trellis2-owner-actions {
     align-items: flex-start;
   }
 }

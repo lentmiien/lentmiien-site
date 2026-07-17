@@ -53,6 +53,31 @@ describe('Trellis2JobService', () => {
     expect(() => service.outputPath('..')).toThrow('file name is invalid');
   });
 
+  test('removes a job input image and generated model', async () => {
+    const service = new Trellis2JobService({
+      JobModel: {},
+      gateway: {},
+      publicRoot,
+    });
+    const inputFileName = `${'a'.repeat(64)}.png`;
+    const outputFileName = `${'b'.repeat(64)}.glb`;
+    await service.ensureStorageDirectories();
+    await Promise.all([
+      fs.writeFile(service.inputPath(inputFileName), 'input'),
+      fs.writeFile(service.outputPath(outputFileName), 'output'),
+    ]);
+
+    const job = {
+      inputImage: { fileName: inputFileName },
+      outputModel: { fileName: outputFileName },
+    };
+    await service.removeJobFiles(job);
+
+    await expect(fs.access(service.inputPath(inputFileName))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(service.outputPath(outputFileName))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(service.removeJobFiles(job)).resolves.toBeUndefined();
+  });
+
   test('completes a queued job with output and gateway metadata', async () => {
     const job = buildJob();
     const JobModel = {

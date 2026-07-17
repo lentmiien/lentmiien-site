@@ -124,6 +124,16 @@ function jobAccessQuery(jobId, user) {
   };
 }
 
+function jobOwnerQuery(jobId, user, extraConditions = []) {
+  return {
+    $and: [
+      { _id: String(jobId || '') },
+      buildTrellis2OwnerQuery(user),
+      ...extraConditions,
+    ],
+  };
+}
+
 function sanitizeOriginalName(value) {
   const baseName = String(value || 'image')
     .replace(/\0/g, '')
@@ -306,12 +316,7 @@ async function toggleShare(req, res) {
   }
   try {
     const job = await Trellis2Job.findOneAndUpdate(
-      {
-        $and: [
-          { _id: String(req.params.jobId || '') },
-          buildTrellis2OwnerQuery(req.user),
-        ],
-      },
+      jobOwnerQuery(req.params.jobId, req.user),
       { $set: { shared: req.body.shared } },
       { new: true },
     ).lean().exec();
@@ -323,6 +328,44 @@ async function toggleShare(req, res) {
       metadata: { jobId: req.params.jobId, user: req.user?.name || null, message: error.message },
     });
     return res.status(500).json({ error: 'Unable to update sharing right now.' });
+  }
+}
+
+async function deleteJob(req, res) {
+  const jobId = String(req.params.jobId || '');
+  const ownerQuery = jobOwnerQuery(jobId, req.user);
+  try {
+    const job = await Trellis2Job.findOne(ownerQuery).lean().exec();
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found or not owned by you.' });
+    }
+    if (!['completed', 'failed'].includes(job.status)) {
+      return res.status(409).json({ error: 'Wait for the job to finish before deleting it.' });
+    }
+
+    await jobService.removeJobFiles(job);
+    const deletion = await Trellis2Job.deleteOne(jobOwnerQuery(jobId, req.user, [
+      { status: { $in: ['completed', 'failed'] } },
+    ])).exec();
+    if (deletion.deletedCount !== 1) {
+      return res.status(409).json({ error: 'The job changed while it was being deleted. Refresh and try again.' });
+    }
+
+    logger.notice('TRELLIS.2 job deleted', {
+      category: 'trellis2',
+      metadata: {
+        jobId,
+        user: req.user?.name || null,
+        removedModel: Boolean(job.outputModel?.fileName),
+      },
+    });
+    return res.json({ ok: true, jobId });
+  } catch (error) {
+    logger.error('Unable to delete TRELLIS.2 job', {
+      category: 'trellis2',
+      metadata: { jobId, user: req.user?.name || null, message: error.message },
+    });
+    return res.status(500).json({ error: 'Unable to delete the job and its files right now.' });
   }
 }
 
@@ -390,6 +433,7 @@ function handleUploadError(req, res, error) {
 module.exports = {
   MAX_IMAGE_BYTES,
   createJob,
+  deleteJob,
   downloadModel,
   getJob,
   handleUploadError,

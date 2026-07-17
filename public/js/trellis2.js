@@ -122,6 +122,34 @@
     }
   }
 
+  async function deleteJob(button) {
+    const card = button.closest('[data-trellis2-job-id]');
+    const jobId = card?.dataset.trellis2JobId;
+    if (!jobId) return;
+
+    const jobName = card.querySelector('h3')?.textContent?.trim() || 'this job';
+    const confirmed = window.confirm(`Delete "${jobName}" and its image and 3D model files? This cannot be undone.`);
+    if (!confirmed) return;
+
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Deleting...';
+    card.setAttribute('aria-busy', 'true');
+    setAlert('Deleting the job and its stored files...', 'info');
+    try {
+      await requestJson(`/trellis2/jobs/${encodeURIComponent(jobId)}`, {
+        method: 'DELETE',
+        headers: { Accept: 'application/json' },
+      });
+      window.location.reload();
+    } catch (error) {
+      setAlert(error.message || 'Unable to delete the job.', 'error');
+      card.removeAttribute('aria-busy');
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+
   function activeJobCards() {
     return [...document.querySelectorAll('[data-trellis2-job-id]')]
       .filter((card) => ['queued', 'processing'].includes(card.dataset.trellis2JobStatus));
@@ -175,6 +203,9 @@
   });
   document.querySelectorAll('[data-trellis2-share]').forEach((toggle) => {
     toggle.addEventListener('change', () => updateSharing(toggle));
+  });
+  document.querySelectorAll('[data-trellis2-delete]').forEach((button) => {
+    button.addEventListener('click', () => deleteJob(button));
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && activeJobCards().length && !pollTimer) {
