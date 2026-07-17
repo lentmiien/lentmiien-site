@@ -186,6 +186,13 @@ const MYPAGE_ICON_DEFINITIONS = [
     label: 'Qwen3 Text',
   },
   {
+    id: 'trellis2',
+    href: '/trellis2',
+    src: '/i/trellis2.svg',
+    alt: 'Generate a 3D model from an image',
+    label: 'Image to 3D',
+  },
+  {
     id: 'credit_card',
     href: '/budget/cards',
     src: '/i/credit.svg',

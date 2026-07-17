@@ -73,4 +73,13 @@ describe('mypageIconService', () => {
     expect(tile.href).toBe('/codex');
     expect(tile.src).toBe('/i/codex.svg');
   });
+
+  test('TRELLIS.2 image-to-3D tile is available to every logged-in user', () => {
+    const regularTiles = buildMypageTiles();
+    const tile = regularTiles.find((entry) => entry.id === 'trellis2');
+
+    expect(tile).toBeDefined();
+    expect(tile.href).toBe('/trellis2');
+    expect(tile.src).toBe('/i/trellis2.svg');
+  });
 });

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Image to 3D model tile illustration</title>
+  <desc id="desc">A framed reference image transforming through amber particles into a faceted three dimensional model.</desc>
+  <defs>
+    <linearGradient id="trellisBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0F13"/>
+      <stop offset="58%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="trellisSpark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="100%" stop-color="#FF6A1F"/>
+    </linearGradient>
+    <linearGradient id="trellisFacet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247" stop-opacity="0.92"/>
+      <stop offset="52%" stop-color="#FF7C3B" stop-opacity="0.84"/>
+      <stop offset="100%" stop-color="#E05F1C" stop-opacity="0.72"/>
+    </linearGradient>
+    <filter id="trellisGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feBlend in="SourceGraphic" in2="blur" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#trellisBg)"/>
+  <circle cx="92" cy="326" r="122" fill="#FFC247" fill-opacity="0.08"/>
+  <circle cx="548" cy="72" r="112" fill="#FF6A1F" fill-opacity="0.11"/>
+  <path d="M62 320c86-50 154-53 206-10 48 40 99 37 152-9 48-42 99-40 158 7" fill="none" stroke="#2B313C" stroke-width="4"/>
+
+  <g transform="translate(72 86)">
+    <rect width="210" height="226" rx="22" fill="#20242A" stroke="#262B34" stroke-width="4"/>
+    <rect x="18" y="18" width="174" height="166" rx="14" fill="#0E0F13" stroke="#FFC247" stroke-opacity="0.34" stroke-width="3"/>
+    <circle cx="105" cy="74" r="34" fill="#FFC247" fill-opacity="0.78"/>
+    <path d="M56 166c5-42 24-65 49-65s44 23 49 65Z" fill="#FF6A1F" fill-opacity="0.78"/>
+    <path d="M46 202h118" stroke="#C1C7D3" stroke-opacity="0.76" stroke-width="9" stroke-linecap="round"/>
+    <path d="M46 218h74" stroke="#9AA3B2" stroke-opacity="0.62" stroke-width="7" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#trellisGlow)" fill="url(#trellisSpark)">
+    <circle cx="310" cy="154" r="7"/>
+    <circle cx="337" cy="184" r="5"/>
+    <circle cx="310" cy="221" r="5"/>
+    <circle cx="342" cy="251" r="7"/>
+    <path d="M318 198h54" stroke="#FFC247" stroke-width="8" stroke-linecap="round"/>
+    <path d="m360 181 24 17-24 17Z"/>
+  </g>
+
+  <g transform="translate(370 76)" stroke-linejoin="round">
+    <path d="m104 0 98 58 2 118-101 60L2 178 0 59Z" fill="#171A20" stroke="#FFC247" stroke-opacity="0.5" stroke-width="4"/>
+    <path d="m104 0 37 76-39 49-42-50Z" fill="url(#trellisFacet)"/>
+    <path d="m141 76 61-18 2 118-102-51Z" fill="#FF6A1F" fill-opacity="0.58"/>
+    <path d="m102 125 102 51-101 60-43-57Z" fill="#FFC247" fill-opacity="0.44"/>
+    <path d="M0 59 60 75l42 50-42 54-58-1Z" fill="#19E3E3" fill-opacity="0.22"/>
+    <path d="M104 0 0 59m104-59 98 58m2 118-102-51m102 51-101 60M2 178l100-53M60 75l81 1m-39 49 1 111m-43-57 42-54" fill="none" stroke="#FFC247" stroke-opacity="0.72" stroke-width="3"/>
+    <g fill="#FFC247">
+      <circle cx="104" cy="0" r="6"/>
+      <circle cx="202" cy="58" r="6"/>
+      <circle cx="204" cy="176" r="6"/>
+      <circle cx="103" cy="236" r="6"/>
+      <circle cx="2" cy="178" r="6"/>
+      <circle cx="0" cy="59" r="6"/>
+      <circle cx="102" cy="125" r="7" fill="#FF6A1F"/>
+    </g>
+  </g>
+
+  <g transform="translate(420 324)">
+    <rect width="142" height="46" rx="23" fill="#20242A" stroke="#17C696" stroke-width="3"/>
+    <path d="M25 13h20l8 8v13H25Z" fill="none" stroke="#FFC247" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M45 13v9h8" fill="none" stroke="#FFC247" stroke-width="3"/>
+    <text x="67" y="30" fill="#E8ECF2" font-family="Arial, sans-serif" font-size="18" font-weight="700">GLB</text>
+  </g>
+</svg>

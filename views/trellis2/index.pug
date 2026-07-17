@@ -1,0 +1,216 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/trellis2.css')
+
+block content
+  main.trellis2-page
+    header.trellis2-hero
+      .trellis2-hero__copy
+        p.trellis2-eyebrow TRELLIS.2
+        h1 Turn one image into a 3D model
+        p Upload a clear reference image, tune the generation, and TRELLIS.2 will build a textured GLB you can download.
+      .trellis2-service
+        span#trellis2ServiceBadge.trellis2-badge.trellis2-badge--pending Checking service
+        button#trellis2ServiceRefresh.btn.btn-outline-light.btn-sm(type='button') Refresh
+
+    #trellis2Alert.trellis2-alert(
+      role='status',
+      aria-live='polite',
+      class=queuedNotice ? 'trellis2-alert--success' : '',
+      hidden=!queuedNotice
+    )= queuedNotice ? 'Your image-to-3D job was queued. This page will update when it finishes.' : ''
+
+    section.trellis2-panel(aria-labelledby='trellis2GenerateHeading')
+      .trellis2-panel__heading
+        div
+          p.trellis2-eyebrow New model
+          h2#trellis2GenerateHeading Generation settings
+        p The job runs in the background and can take several minutes.
+
+      form#trellis2GenerateForm.trellis2-form(action='/trellis2/jobs', method='post', enctype='multipart/form-data')
+        .trellis2-upload
+          .trellis2-upload__field
+            label.form-label(for='trellis2Image') Reference image
+            input#trellis2Image.form-control(
+              type='file',
+              name='image',
+              accept='image/png,image/jpeg,image/webp',
+              required
+            )
+            p.form-text PNG, JPEG, or WebP, up to #{maxImageMiB} MiB and 25 megapixels. A centered object on a transparent or plain background works best.
+          figure#trellis2Preview.trellis2-preview(hidden)
+            img#trellis2PreviewImage(alt='Selected image preview')
+            figcaption Input preview
+
+        .trellis2-parameter-grid
+          .trellis2-field
+            label.form-label(for='trellis2Seed') Seed
+            input#trellis2Seed.form-control(type='number', name='seed', min='0', max='2147483647', step='1', value=defaults.seed, required)
+            p.form-text Changes hidden geometry and fine detail.
+          .trellis2-field
+            label.form-label(for='trellis2Resolution') Generation resolution
+            select#trellis2Resolution.form-select(name='resolution', required)
+              each option in [512, 1024, 1536]
+                option(value=option, selected=defaults.resolution === option)= `${option}`
+            p.form-text Start at 512; higher values need more time and VRAM.
+          .trellis2-field
+            label.form-label(for='trellis2TextureSize') Texture size
+            select#trellis2TextureSize.form-select(name='texture_size', required)
+              each option in [1024, 2048, 4096]
+                option(value=option, selected=defaults.textureSize === option)= `${option} px`
+            p.form-text Size of the exported texture maps.
+          .trellis2-field
+            label.form-label(for='trellis2Decimation') Target face complexity
+            input#trellis2Decimation.form-control(
+              type='number',
+              name='decimation_target',
+              min='100000',
+              max='1000000',
+              step='10000',
+              value=defaults.decimationTarget,
+              required
+            )
+            p.form-text 100,000 makes a lighter model; 500,000 preserves more detail.
+
+        details.trellis2-advanced
+          summary Advanced sampling controls
+          .trellis2-parameter-grid.trellis2-parameter-grid--advanced
+            .trellis2-field
+              label.form-label(for='trellis2SparseSteps') Sparse structure steps
+              input#trellis2SparseSteps.form-control(type='number', name='sparse_structure_steps', min='1', max='50', step='1', value=defaults.sparseStructureSteps, required)
+            .trellis2-field
+              label.form-label(for='trellis2SparseGuidance') Sparse structure guidance
+              input#trellis2SparseGuidance.form-control(type='number', name='sparse_structure_guidance', min='0', max='20', step='0.1', value=defaults.sparseStructureGuidance, required)
+            .trellis2-field
+              label.form-label(for='trellis2ShapeSteps') Shape steps
+              input#trellis2ShapeSteps.form-control(type='number', name='shape_steps', min='1', max='50', step='1', value=defaults.shapeSteps, required)
+            .trellis2-field
+              label.form-label(for='trellis2ShapeGuidance') Shape guidance
+              input#trellis2ShapeGuidance.form-control(type='number', name='shape_guidance', min='0', max='20', step='0.1', value=defaults.shapeGuidance, required)
+            .trellis2-field
+              label.form-label(for='trellis2TextureSteps') Texture steps
+              input#trellis2TextureSteps.form-control(type='number', name='texture_steps', min='1', max='50', step='1', value=defaults.textureSteps, required)
+            .trellis2-field
+              label.form-label(for='trellis2TextureGuidance') Texture guidance
+              input#trellis2TextureGuidance.form-control(type='number', name='texture_guidance', min='0', max='20', step='0.1', value=defaults.textureGuidance, required)
+
+          .trellis2-switches
+            .form-check.form-switch
+              input(type='hidden', name='preprocess_image', value='false')
+              input#trellis2Preprocess.form-check-input(type='checkbox', name='preprocess_image', value='true', checked=defaults.preprocessImage)
+              label.form-check-label(for='trellis2Preprocess') Remove the background and crop the subject
+            .form-check.form-switch
+              input(type='hidden', name='remesh', value='false')
+              input#trellis2Remesh.form-check-input(type='checkbox', name='remesh', value='true', checked=defaults.remesh)
+              label.form-check-label(for='trellis2Remesh') Remesh before UV unwrapping and texture baking
+
+        .trellis2-form__actions
+          button#trellis2Submit.btn.btn-primary(type='submit') Generate 3D model
+          span#trellis2SubmitStatus.trellis2-muted(aria-live='polite')
+
+    section.trellis2-history(aria-labelledby='trellis2HistoryHeading')
+      .trellis2-history__heading
+        div
+          p.trellis2-eyebrow Library
+          h2#trellis2HistoryHeading Recent jobs
+        p #{pagination.totalJobs} visible #{pagination.totalJobs === 1 ? 'job' : 'jobs'} · your jobs and models shared by other users
+
+      if jobs.length
+        .trellis2-jobs
+          each job in jobs
+            article.trellis2-job(data-trellis2-job-id=job.id, data-trellis2-job-status=job.status)
+              .trellis2-job__media
+                img(src=job.inputImage.publicUrl, alt=`Reference image for ${job.inputImage.originalName || 'TRELLIS.2 job'}`, loading='lazy')
+                span.trellis2-status(class=`trellis2-status--${job.status}`, data-trellis2-status)= job.statusLabel
+              .trellis2-job__body
+                .trellis2-job__heading
+                  div
+                    h3= job.inputImage.originalName || 'Image to 3D job'
+                    p.trellis2-byline
+                      span= job.ownerLabel
+                      span(aria-hidden='true') ·
+                      time(datetime=job.createdAtIso)= job.createdAtLabel
+                  if !job.isOwner && job.shared
+                    span.trellis2-shared-label Shared
+
+                if job.error
+                  p.trellis2-job__error= job.error
+
+                dl.trellis2-metadata
+                  div
+                    dt Input
+                    dd #{job.inputImage.width} × #{job.inputImage.height} · #{job.inputSizeLabel}
+                  div
+                    dt Generation
+                    dd #{job.parameters.resolution} resolution · seed #{job.parameters.seed}
+                  div
+                    dt Export
+                    dd #{Number(job.parameters.decimationTarget).toLocaleString('en-US')} target faces · #{job.parameters.textureSize}px texture
+                  div
+                    dt Processing
+                    dd= `${job.parameters.preprocessImage ? 'Preprocessed' : 'Original framing'} · ${job.parameters.remesh ? 'Remeshed' : 'No remesh'}`
+                  if job.durationLabel
+                    div
+                      dt Runtime
+                      dd= job.durationLabel
+                  if job.metrics.sourceFaces != null && job.metrics.sourceVertices != null
+                    div
+                      dt Source mesh
+                      dd #{Number(job.metrics.sourceFaces).toLocaleString('en-US')} faces · #{Number(job.metrics.sourceVertices).toLocaleString('en-US')} vertices
+                  if job.outputSizeLabel
+                    div
+                      dt GLB file
+                      dd= job.outputSizeLabel
+                  if job.metrics.peakVramMiB != null
+                    div
+                      dt Peak VRAM
+                      dd #{Number(job.metrics.peakVramMiB).toLocaleString('en-US')} MiB
+                  if job.gatewayJobId
+                    div.trellis2-metadata__wide
+                      dt Gateway job
+                      dd
+                        code= job.gatewayJobId
+
+                .trellis2-job__actions
+                  if job.downloadUrl
+                    a.btn.btn-primary(href=job.downloadUrl) Download GLB
+                  else if job.status === 'queued' || job.status === 'processing'
+                    span.trellis2-muted(data-trellis2-progress) The model will appear here when generation finishes.
+
+                  if job.isOwner
+                    .trellis2-share
+                      .form-check.form-switch
+                        input.form-check-input(
+                          id=`trellis2Share-${job.id}`,
+                          type='checkbox',
+                          checked=job.shared,
+                          data-trellis2-share
+                        )
+                        label.form-check-label(for=`trellis2Share-${job.id}`) Share with other users
+                      span.trellis2-share__status(data-trellis2-share-status, aria-live='polite')
+      else
+        .trellis2-empty
+          h3 No models yet
+          p Upload an image above to create the first model in your library.
+
+      if pagination.totalPages > 1
+        nav.trellis2-pagination(aria-label='TRELLIS.2 job pages')
+          if pagination.previousUrl
+            a.trellis2-page-link(href=pagination.previousUrl, rel='prev') Previous
+          else
+            span.trellis2-page-link.trellis2-page-link--disabled Previous
+          each link in pagination.links
+            if link.ellipsis
+              span.trellis2-page-ellipsis …
+            else if link.current
+              span.trellis2-page-link.trellis2-page-link--current(aria-current='page')= link.page
+            else
+              a.trellis2-page-link(href=link.href)= link.page
+          if pagination.nextUrl
+            a.trellis2-page-link(href=pagination.nextUrl, rel='next') Next
+          else
+            span.trellis2-page-link.trellis2-page-link--disabled Next
+
+block script
+  script(src='/js/trellis2.js', defer)

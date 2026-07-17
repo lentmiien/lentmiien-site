@@ -122,6 +122,8 @@ const Palette = require('./models/scheduleTask/Palette');
 const Prompt = require('./models/prompt');
 // Sora videos
 const SoraVideo = require('./models/sora_video');
+// TRELLIS.2 image-to-3D jobs
+const Trellis2Job = require('./models/trellis2_job');
 // Image gen bulk
 const BulkJob = require('./models/bulk_job');
 const BulkTestPrompt = require('./models/bulk_test_prompt');
@@ -265,6 +267,7 @@ module.exports = {
   Palette,
   Prompt,
   SoraVideo,
+  Trellis2Job,
   BulkJob,
   BulkTestPrompt,
   CreditCard,
