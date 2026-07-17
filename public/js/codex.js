@@ -232,6 +232,31 @@
     return humanizeEventName(event && event.eventType);
   }
 
+  function extractEventItem(event) {
+    const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
+    if (payload.item && typeof payload.item === 'object') {
+      return payload.item;
+    }
+    if (payload.payload?.item && typeof payload.payload.item === 'object') {
+      return payload.payload.item;
+    }
+    return null;
+  }
+
+  function eventItemType(event) {
+    const presentedType = event?.presentation?.itemType;
+    const item = extractEventItem(event);
+    return String(presentedType || item?.type || '').trim().toLowerCase();
+  }
+
+  function isFocusedProcessEvent(event) {
+    return ['agent_message', 'todo_list'].includes(eventItemType(event));
+  }
+
+  function normalizeEventViewMode(value) {
+    return value === 'focused' ? 'focused' : 'all';
+  }
+
   function formatActivityAge(value) {
     if (!value) return 'time unavailable';
     const date = new Date(value);
@@ -318,6 +343,27 @@
       button.textContent = count ? `${label} (${count})` : label;
       button.setAttribute('aria-expanded', open ? 'true' : 'false');
     });
+  }
+
+  function updateEventViewButtons(turnId, viewMode) {
+    const selectedMode = normalizeEventViewMode(viewMode);
+    root.querySelectorAll(`[data-action="set-event-view"][data-turn-id="${CSS.escape(turnId)}"]`).forEach((button) => {
+      button.setAttribute('aria-pressed', button.dataset.eventViewMode === selectedMode ? 'true' : 'false');
+    });
+  }
+
+  function setEventViewMode(turnId, viewMode) {
+    const selectedMode = normalizeEventViewMode(viewMode);
+    const state = getLiveActivityState(turnId);
+    root.querySelectorAll(`[data-events-for="${CSS.escape(turnId)}"]`).forEach((container) => {
+      container.dataset.eventViewMode = selectedMode;
+      renderEvents(container, state.events, {
+        errorMessage: state.errorMessage,
+        isRunning: state.status === 'running',
+        loaded: state.loaded,
+      });
+    });
+    updateEventViewButtons(turnId, selectedMode);
   }
 
   function updateLiveActivityIndicators(turnId, options = {}) {
@@ -462,7 +508,9 @@
     root.querySelectorAll('[data-events-for]').forEach((container) => {
       const state = getLiveActivityState(container.dataset.eventsFor);
       state.detailsOpen = !container.hidden;
+      container.dataset.eventViewMode = normalizeEventViewMode(container.dataset.eventViewMode);
       updateProcessDetailButtons(state.turnId);
+      updateEventViewButtons(state.turnId, container.dataset.eventViewMode);
     });
   }
 
@@ -1260,26 +1308,88 @@
     return payload;
   }
 
+  function renderFocusedEventContent(wrapper, event) {
+    const itemType = eventItemType(event);
+    const item = extractEventItem(event);
+    const presentation = event.presentation && typeof event.presentation === 'object'
+      ? event.presentation
+      : {};
+
+    if (itemType === 'agent_message') {
+      const content = createEl('div', { className: 'codex-event__markdown' });
+      if (typeof presentation.html === 'string') {
+        // The events API renders this with marked and sanitizes it before returning it.
+        content.innerHTML = presentation.html;
+      } else {
+        content.appendChild(createEl('p', { text: String(item?.text || '') }));
+      }
+      if (!content.hasChildNodes()) {
+        content.appendChild(createEl('p', { className: 'codex-empty', text: 'Empty agent message.' }));
+      }
+      wrapper.appendChild(content);
+      return;
+    }
+
+    const todos = Array.isArray(presentation.items)
+      ? presentation.items
+      : (Array.isArray(item?.items) ? item.items : []);
+    if (todos.length === 0) {
+      wrapper.appendChild(createEl('p', { className: 'codex-empty', text: 'No todo items.' }));
+      return;
+    }
+
+    const list = createEl('ul', { className: 'codex-event__todo-list' });
+    todos.forEach((todo) => {
+      const completed = todo?.completed === true;
+      const row = createEl('li', {
+        className: completed ? 'codex-event__todo codex-event__todo--completed' : 'codex-event__todo',
+      });
+      const label = createEl('label');
+      const checkbox = createEl('input', { type: 'checkbox' });
+      checkbox.checked = completed;
+      checkbox.disabled = true;
+      label.appendChild(checkbox);
+      label.appendChild(createEl('span', { text: String(todo?.text || '') }));
+      row.appendChild(label);
+      list.appendChild(row);
+    });
+    wrapper.appendChild(list);
+  }
+
   function renderEvents(container, events, options = {}) {
     container.innerHTML = '';
-    if (!events || events.length === 0) {
-      let message = 'No process details stored.';
-      if (!options.loaded) {
+    const eventList = Array.isArray(events) ? events : [];
+    const viewMode = normalizeEventViewMode(container.dataset.eventViewMode);
+    const visibleEvents = viewMode === 'focused'
+      ? eventList.filter(isFocusedProcessEvent)
+      : eventList;
+
+    if (visibleEvents.length === 0) {
+      let message = viewMode === 'focused'
+        ? 'No agent messages or todo lists stored.'
+        : 'No process details stored.';
+      if (!options.loaded && eventList.length === 0) {
         message = 'Loading process details…';
       } else if (options.isRunning) {
-        message = 'Listening for the first process detail…';
+        message = viewMode === 'focused'
+          ? 'Waiting for an agent message or todo list…'
+          : 'Listening for the first process detail…';
       }
       container.appendChild(createEl('p', { className: 'codex-empty', text: message }));
     } else {
-      events.forEach((event) => {
+      visibleEvents.forEach((event) => {
         const eventSeq = Number(event.seq) || 0;
         const isNew = Boolean(options.newSeqs && options.newSeqs.has(eventSeq));
+        const itemType = eventItemType(event);
         const wrapper = createEl('article', {
-          className: `codex-event${isNew ? ' codex-event--new' : ''}`,
+          className: `codex-event${viewMode === 'focused' ? ` codex-event--${itemType.replace(/_/g, '-')}` : ''}${isNew ? ' codex-event--new' : ''}`,
           'data-event-seq': eventSeq,
         });
         const header = createEl('div', { className: 'codex-event__header' });
-        header.appendChild(createEl('strong', { text: `#${event.seq} ${event.eventType}` }));
+        const focusedLabel = itemType === 'agent_message' ? 'Agent message' : 'Todo list';
+        header.appendChild(createEl('strong', {
+          text: `#${event.seq} ${viewMode === 'focused' ? focusedLabel : event.eventType}`,
+        }));
         const eventMeta = [
           event.stream,
           event.severity,
@@ -1287,7 +1397,9 @@
         ].filter(Boolean).join(' / ');
         header.appendChild(createEl('span', { text: eventMeta }));
         wrapper.appendChild(header);
-        if (event.text) {
+        if (viewMode === 'focused') {
+          renderFocusedEventContent(wrapper, event);
+        } else if (event.text) {
           wrapper.appendChild(createEl('pre', { text: event.text }));
         } else if (event.payload && Object.keys(event.payload).length) {
           wrapper.appendChild(createEl('pre', { text: JSON.stringify(event.payload, null, 2) }));
@@ -1314,10 +1426,14 @@
         className: 'codex-events__live-dot',
         'aria-hidden': 'true',
       }));
-      listener.appendChild(createEl('span', { text: 'Live · listening for more details' }));
+      listener.appendChild(createEl('span', {
+        text: viewMode === 'focused'
+          ? 'Live · listening for messages and todos'
+          : 'Live · listening for more details',
+      }));
       container.appendChild(listener);
     }
-    const latestEvent = events && events.length ? events[events.length - 1] : null;
+    const latestEvent = visibleEvents.length ? visibleEvents[visibleEvents.length - 1] : null;
     container.dataset.renderedSeq = latestEvent ? String(latestEvent.seq) : '0';
   }
 
@@ -1376,6 +1492,8 @@
           await retryTurn(button.dataset.turnId);
         } else if (action === 'toggle-events') {
           await toggleEvents(button.dataset.turnId);
+        } else if (action === 'set-event-view') {
+          setEventViewMode(button.dataset.turnId, button.dataset.eventViewMode);
         } else if (action === 'archive-session') {
           await requestJson(`/codex/api/sessions/${encodeURIComponent(button.dataset.sessionId)}/archive`, { method: 'POST', body: '{}' });
           window.location.href = '/codex';

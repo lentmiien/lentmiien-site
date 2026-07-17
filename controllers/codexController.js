@@ -1,5 +1,6 @@
 const codexToolService = require('../services/codexToolService');
 const codexQueueWorker = require('../services/codexQueueWorker');
+const { addCodexEventPresentation } = require('../utils/codexEventPresentation');
 const logger = require('../utils/logger');
 
 function stringifyForScript(data) {
@@ -215,7 +216,10 @@ exports.getTurnEvents = async (req, res) => {
       afterSeq: req.query.afterSeq,
       limit: req.query.limit,
     });
-    return res.json({ ok: true, events });
+    return res.json({
+      ok: true,
+      events: events.map(addCodexEventPresentation),
+    });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to load Codex events.');
   }
