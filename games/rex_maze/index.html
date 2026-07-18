@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="Guide a young T-Rex through ever-changing prehistoric mazes, gather every piece of meat, and escape through the amber gate.">
+  <title>Rex Run: The Amber Labyrinth</title>
+  <link rel="icon" href="graphics/rex.webp" type="image/webp">
+  <link rel="preload" href="graphics/jungle-backdrop.webp" as="image">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#gameCanvas">Skip to the maze</a>
+
+  <div class="game-shell" id="gameShell">
+    <header class="topbar">
+      <div class="brand-lockup" aria-label="Rex Run: The Amber Labyrinth">
+        <span class="brand-mark" aria-hidden="true">R</span>
+        <span>
+          <strong>Rex Run</strong>
+          <small>The Amber Labyrinth</small>
+        </span>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="icon-button" id="soundButton" type="button" aria-pressed="true" aria-label="Mute sound">
+          <span aria-hidden="true" id="soundIcon">♪</span>
+        </button>
+        <button class="pause-button" id="pauseButton" type="button">
+          <span aria-hidden="true">Ⅱ</span>
+          <span>Pause</span>
+        </button>
+      </div>
+    </header>
+
+    <section class="hud" aria-label="Expedition status">
+      <div class="hud-stat score-stat">
+        <span class="hud-label">Score</span>
+        <strong id="scoreValue">0</strong>
+        <span class="combo" id="comboValue" aria-live="polite">x1 combo</span>
+      </div>
+
+      <div class="hud-stat">
+        <span class="hud-label">Maze</span>
+        <strong id="levelValue">1</strong>
+        <span id="biomeValue">Fern Hollow</span>
+      </div>
+
+      <div class="hud-stat meat-stat">
+        <span class="hud-label">Meat found</span>
+        <strong><span id="meatValue">0</span><span class="hud-slash">/</span><span id="meatTotal">3</span></strong>
+        <span id="gateState">Gate sealed</span>
+      </div>
+
+      <div class="rank-panel">
+        <div class="rank-heading">
+          <span>
+            <small>Expedition rank</small>
+            <strong id="rankValue">Hatchling</strong>
+          </span>
+          <span class="rank-icon" id="rankIcon" aria-hidden="true">●</span>
+        </div>
+        <div class="rank-track" aria-hidden="true">
+          <span id="rankProgress"></span>
+        </div>
+        <small id="rankCaption">0 / 700 renown</small>
+      </div>
+    </section>
+
+    <main class="game-stage" id="gameStage">
+      <canvas
+        id="gameCanvas"
+        tabindex="0"
+        role="img"
+        aria-label="A prehistoric maze. Use the arrow keys or on-screen controls to guide the T-Rex."
+      ></canvas>
+      <div class="stage-shade" aria-hidden="true"></div>
+
+      <div class="objective-pill" id="objectivePill" aria-live="polite">
+        <span class="objective-dot" aria-hidden="true"></span>
+        <span id="objectiveText">Sniff out every piece of meat</span>
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="screen-flash" id="screenFlash" aria-hidden="true"></div>
+    </main>
+
+    <footer class="control-deck" aria-label="Game controls">
+      <div class="control-copy">
+        <strong>Move Rex</strong>
+        <span>Arrow keys or WASD</span>
+      </div>
+
+      <div class="d-pad" aria-label="Movement pad">
+        <button class="move-button up" type="button" data-direction="up" aria-label="Move up">▲</button>
+        <button class="move-button left" type="button" data-direction="left" aria-label="Move left">◀</button>
+        <span class="d-pad-center" aria-hidden="true">✦</span>
+        <button class="move-button right" type="button" data-direction="right" aria-label="Move right">▶</button>
+        <button class="move-button down" type="button" data-direction="down" aria-label="Move down">▼</button>
+      </div>
+
+      <div class="ability-controls">
+        <button class="ability-button scent-button" id="scentButton" type="button">
+          <span class="ability-icon" aria-hidden="true">⌁</span>
+          <span class="ability-copy">
+            <strong>Scent trail</strong>
+            <small id="scentStatus">Ready · Space</small>
+          </span>
+          <span class="ability-meter" aria-hidden="true"><span id="scentMeter"></span></span>
+        </button>
+
+        <button class="ability-button roar-button" id="roarButton" type="button">
+          <span class="ability-icon" aria-hidden="true">!</span>
+          <span class="ability-copy">
+            <strong>Rex roar</strong>
+            <small id="roarStatus">50% · R</small>
+          </span>
+          <span class="ability-meter" aria-hidden="true"><span id="roarMeter"></span></span>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <section class="modal is-open" id="introModal" role="dialog" aria-modal="true" aria-labelledby="gameTitle">
+    <div class="modal-card intro-card">
+      <div class="intro-art" aria-hidden="true">
+        <img src="graphics/rex.webp" alt="">
+        <span class="intro-glow"></span>
+      </div>
+
+      <div class="intro-content">
+        <p class="eyebrow">A prehistoric maze expedition</p>
+        <h1 id="gameTitle"><span>Rex Run</span> The Amber Labyrinth</h1>
+        <p class="intro-lede">The jungle shifts every night. Feed Rex, outsmart the raptor pack, and open the ancient gate before the trail goes cold.</p>
+
+        <div class="mission-grid">
+          <div class="mission-item">
+            <span aria-hidden="true">01</span>
+            <p><strong>Gather the feast</strong>Collect every piece of meat to unlock the exit.</p>
+          </div>
+          <div class="mission-item">
+            <span aria-hidden="true">02</span>
+            <p><strong>Hunt smart</strong>Follow your scent trail and roar to stun nearby raptors.</p>
+          </div>
+          <div class="mission-item">
+            <span aria-hidden="true">03</span>
+            <p><strong>Rise in rank</strong>Fast, clean runs earn more renown and permanent rank.</p>
+          </div>
+        </div>
+
+        <div class="intro-footer">
+          <div class="saved-progress">
+            <small>Your expedition record</small>
+            <strong><span id="introRank">Hatchling</span> · Best <span id="introBest">0</span></strong>
+          </div>
+          <button class="primary-button" id="startButton" type="button" disabled>
+            <span id="startButtonText">Loading expedition…</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="modal" id="resultModal" role="dialog" aria-modal="true" aria-labelledby="resultTitle" hidden>
+    <div class="modal-card result-card">
+      <p class="eyebrow" id="resultEyebrow">Maze cleared</p>
+      <div class="grade-badge" id="gradeBadge" aria-label="Performance grade A">A</div>
+      <h2 id="resultTitle">The gate remembers your name.</h2>
+      <p id="resultSummary">A clean hunt through Fern Hollow.</p>
+
+      <div class="result-stats">
+        <div><span>Time</span><strong id="resultTime">0:00</strong></div>
+        <div><span>Steps</span><strong id="resultSteps">0</strong></div>
+        <div><span>Raptor hits</span><strong id="resultHits">0</strong></div>
+        <div><span>Maze bonus</span><strong id="resultBonus">+0</strong></div>
+      </div>
+
+      <div class="renown-award">
+        <span>Expedition renown</span>
+        <strong id="resultRenown">+0</strong>
+      </div>
+
+      <button class="primary-button wide" id="nextLevelButton" type="button">
+        <span>Enter the next maze</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </div>
+  </section>
+
+  <section class="modal pause-modal" id="pauseModal" role="dialog" aria-modal="true" aria-labelledby="pauseTitle" hidden>
+    <div class="modal-card pause-card">
+      <p class="eyebrow">Expedition paused</p>
+      <h2 id="pauseTitle">Even apex hunters catch their breath.</h2>
+      <p>The maze will wait. Your timer is frozen until you return.</p>
+      <button class="primary-button wide" id="resumeButton" type="button">Resume expedition</button>
+      <button class="text-button" id="restartButton" type="button">Restart this maze</button>
+    </div>
+  </section>
+
+  <noscript>
+    <div class="noscript-message">Rex needs JavaScript enabled to explore the labyrinth.</div>
+  </noscript>
+
+  <script src="js/game.js"></script>
+</body>
+</html>
