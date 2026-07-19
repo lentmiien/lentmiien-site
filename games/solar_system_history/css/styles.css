@@ -625,6 +625,7 @@ article:focus-visible {
   font-size: 0.8rem;
   letter-spacing: 0.04em;
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8);
+  transition: opacity 220ms ease;
 }
 
 .artist-label {
@@ -1370,6 +1371,32 @@ article:focus-visible {
     max-height: min(47svh, 430px);
     padding: 18px;
     border-radius: 4px 14px 4px 4px;
+  }
+
+  .experience[data-phase="event"][data-paused="false"] .event-card.is-visible {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(14px);
+    transition:
+      opacity 320ms ease,
+      transform 420ms var(--ease-cinematic),
+      visibility 0s linear 420ms;
+  }
+
+  .experience[data-phase="event"][data-paused="true"] .event-card.is-visible {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    transition:
+      opacity 320ms ease,
+      transform 420ms var(--ease-cinematic),
+      visibility 0s linear 0s;
+  }
+
+  .experience[data-paused="true"] .interstitial figcaption {
+    opacity: 0;
   }
 
   .event-card h1 {

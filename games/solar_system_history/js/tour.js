@@ -67,6 +67,8 @@ const state = {
   outroResolver: null
 };
 
+const artworkCache = new Map();
+
 const narrator = new NarrationController(dom.narrationAudio);
 const solarScene = new SolarScene(dom.canvas, {
   reduceMotion: state.reducedMotion,
@@ -83,6 +85,7 @@ applyMotionPreference();
 updateTimeline(0);
 updateSources(TOUR_EVENTS[0]);
 dom.experience.dataset.captions = 'on';
+dom.experience.dataset.paused = 'false';
 dom.timelineTotal.textContent = String(TOUR_EVENTS.length).padStart(2, '0');
 
 requestAnimationFrame(() => dom.introOverlay.classList.add('is-visible'));
@@ -205,6 +208,33 @@ function waitTour(milliseconds, token, onProgress = () => {}) {
   });
 }
 
+function preloadArtwork(source) {
+  if (!source) return Promise.resolve(null);
+  if (artworkCache.has(source)) return artworkCache.get(source);
+
+  const ready = new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.loading = 'eager';
+    image.addEventListener('load', () => resolve(image), { once: true });
+    image.addEventListener('error', () => reject(new Error(`Unable to load artwork: ${source}`)), { once: true });
+    image.src = source;
+  }).then(async (image) => {
+    try {
+      await image.decode();
+    } catch (error) {
+      // A completed load is still safe to display when decode() is unavailable.
+    }
+    return image;
+  }).catch((error) => {
+    artworkCache.delete(source);
+    throw error;
+  });
+
+  artworkCache.set(source, ready);
+  return ready;
+}
+
 async function showOverlay(element) {
   element.hidden = false;
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -231,19 +261,37 @@ async function hideEventCard() {
   dom.eventCard.hidden = true;
 }
 
-async function showInterstitial(event) {
+async function showInterstitial(event, token) {
   if (!event.image) return;
 
-  dom.interstitialImage.src = event.image;
+  let artwork;
+  try {
+    artwork = await preloadArtwork(event.image);
+  } catch (error) {
+    return;
+  }
+  if (token !== state.runToken || !artwork) return;
+
+  // Keep the old artwork fully hidden until the replacement has loaded and
+  // decoded. This prevents browsers from briefly painting the previous frame.
+  dom.interstitial.classList.remove('is-visible');
+  dom.interstitial.hidden = true;
+  dom.interstitialImage.src = artwork.currentSrc || artwork.src;
   dom.interstitialImage.alt = event.imageAlt || '';
   dom.artTitle.textContent = event.title;
-  dom.interstitial.hidden = false;
   try {
     await dom.interstitialImage.decode();
   } catch (error) {
     // The browser can still paint an image even if decode() is unavailable or interrupted.
   }
-  await new Promise((resolve) => requestAnimationFrame(resolve));
+  if (token !== state.runToken) return;
+
+  // Re-start the restrained Ken Burns drift for each newly swapped image.
+  dom.interstitialImage.style.animation = 'none';
+  void dom.interstitialImage.offsetWidth;
+  dom.interstitialImage.style.removeProperty('animation');
+  dom.interstitial.hidden = false;
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   dom.interstitial.classList.add('is-visible');
 }
 
@@ -259,6 +307,11 @@ function makeSkipPromise() {
     state.skipResolver = () => {
       state.skipResolver = null;
       narrator.stop('continued');
+      if (state.userPaused) {
+        state.userPaused = false;
+        updatePauseButton();
+        syncPausedState();
+      }
       resolve('continued');
     };
   });
@@ -276,7 +329,7 @@ async function presentEvent(event, token) {
 
   await Promise.all([
     showEventCard(),
-    showInterstitial(event)
+    showInterstitial(event, token)
   ]);
   if (token !== state.runToken) return false;
 
@@ -311,6 +364,7 @@ async function travelToEvent(event, previousEvent, index, token) {
   updateTimeline(index);
   updateSources(event);
   syncPausedState();
+  void preloadArtwork(event.image).catch(() => {});
 
   const startTime = previousEvent?.time ?? event.time;
   const duration = state.reducedMotion ? 520 : (index === 0 ? 2600 : 3600);
@@ -441,6 +495,10 @@ function updatePauseButton() {
   dom.pauseButton.setAttribute('aria-pressed', String(state.userPaused));
   dom.pauseButton.setAttribute('aria-label', state.userPaused ? 'Resume the tour' : 'Pause the tour');
   dom.pauseLabel.textContent = state.userPaused ? 'Resume' : 'Pause';
+  dom.experience.dataset.paused = String(state.userPaused);
+  if (state.userPaused && state.phase === 'event') {
+    dom.statusAnnouncer.textContent = 'Tour paused. Chapter details are now visible.';
+  }
 }
 
 function toggleNarration() {
