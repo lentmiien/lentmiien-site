@@ -608,38 +608,29 @@ const serveGames = () => {
   });
 };
 
-// Function to generate the main page listing all games
-const generateMainPage = () => {
-  const gameLinks = fs.readdirSync(gamesDirectory)
-    .filter(gameFolder => fs.statSync(path.join(gamesDirectory, gameFolder)).isDirectory())
-    .map(gameFolder => `<li><a href="/${gameFolder}">${gameFolder}</a></li>`)
-    .join('');
+const formatGameName = (gameFolder) => gameFolder
+  .split(/[-_]+/)
+  .filter(Boolean)
+  .map(word => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+  .join(' ');
 
-  return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Available Games</title>
-    </head>
-    <body>
-        <h1>Available Games</h1>
-        <ul>
-            ${gameLinks}
-        </ul>
-    </body>
-    </html>
-  `;
-};
+const getAvailableGames = () => fs.readdirSync(gamesDirectory, { withFileTypes: true })
+  .filter(entry => entry.isDirectory())
+  .map(entry => ({
+    name: formatGameName(entry.name),
+    href: `/${encodeURIComponent(entry.name)}`,
+  }))
+  .sort((first, second) => first.name.localeCompare(second.name));
 
 // Initialize serving of games
 serveGames();
 
 // Main route to display all available games
 app.get('/games', (req, res) => {
-  const mainPage = generateMainPage();
-  res.send(mainPage);
+  res.render('games', {
+    pageTitle: 'Games',
+    games: getAvailableGames(),
+  });
 });
 // -----------------
 

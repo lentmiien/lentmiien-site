@@ -1,0 +1,34 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/games.css')
+
+block content
+  main.games-page
+    section.games-hero(aria-labelledby='games-title')
+      .games-hero__content
+        p.games-hero__eyebrow Lennart's arcade
+        h1#games-title Choose your next game
+        p.games-hero__copy A collection of small games and interactive experiments. Pick one below and start playing.
+      .games-hero__count(aria-label=`${games.length} ${games.length === 1 ? 'game' : 'games'} available`)
+        svg.games-hero__icon(viewBox='0 0 48 48', aria-hidden='true')
+          path(d='M15.5 17h17c4.2 0 7.6 3.4 7.6 7.6v4.8c0 4.2-3.4 7.6-7.6 7.6l-4.3-4.5h-8.4L15.5 37c-4.2 0-7.6-3.4-7.6-7.6v-4.8c0-4.2 3.4-7.6 7.6-7.6Z')
+          path(d='M17 23v8M13 27h8M31.5 24.5h.1M35 29h.1')
+        strong= games.length
+        span= games.length === 1 ? 'game' : 'games'
+
+    if games.length
+      section.games-grid(aria-label='Available games')
+        each game, index in games
+          a.game-card(href=game.href, aria-label=`Play ${game.name}`)
+            span.game-card__number(aria-hidden='true')= String(index + 1).padStart(2, '0')
+            .game-card__content
+              h2.game-card__title= game.name
+              span.game-card__action Play now
+            span.game-card__arrow(aria-hidden='true')
+              svg(viewBox='0 0 24 24')
+                path(d='M5 12h14M13 6l6 6-6 6')
+    else
+      section.games-empty(role='status')
+        h2 No games available yet
+        p Check back later for something new to play.
