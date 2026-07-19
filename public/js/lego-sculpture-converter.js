@@ -10,6 +10,7 @@
   const MAX_INPUT_TRIANGLES = 1200000;
   const MAX_EXACT_TRIANGLES = 600000;
   const MAX_SURFACE_SAMPLES = 18000000;
+  const MAX_VOXEL_CELLS = 2000000;
 
   const PALETTE = [
     [0.92, 0.08, 0.10, 1], [0.08, 0.34, 0.82, 1], [0.98, 0.78, 0.03, 1],
@@ -32,6 +33,20 @@
   const PART_DEF_BY_KEY = new Map(PART_DEFS.map(part => [part.key, part]));
   const SUPPLY_BONUS = Object.freeze({ plenty: 55, normal: 0, few: -210, avoid: -700, none: -100000 });
   const INVENTORY_STORAGE_KEY = 'brickify3d.inventory.v2';
+
+  function getLayerPlanRect(grid, brick) {
+    return {
+      x: grid.nx - brick.x - brick.w,
+      y: grid.nz - brick.z - brick.d,
+      width: brick.w,
+      height: brick.d
+    };
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { getLayerPlanRect, MAX_VOXEL_CELLS };
+  }
+  if (typeof document === 'undefined') return;
 
   const el = id => document.getElementById(id);
   const fileInput = el('fileInput');
@@ -2811,7 +2826,9 @@
       const oriented = orientModel(sourceModel, axisMode());
       const normalized = normalizeModel(oriented, Number(resolution.value));
       const potentialCells = normalized.nx * normalized.ny * normalized.nz;
-      if (potentialCells > 1000000) throw new Error('The selected resolution creates more than one million cells. Lower the resolution.');
+      if (potentialCells > MAX_VOXEL_CELLS) {
+        throw new Error(`The selected resolution creates more than ${fmt.format(MAX_VOXEL_CELLS)} cells. Lower the resolution.`);
+      }
       setProgress(10, `Voxel grid ${normalized.nx} × ${normalized.nz} × ${normalized.ny}…`);
       const grid = await voxelizeMesh(normalized, revision, repair);
       const packed = await packBricks(grid, revision, inventory, supportMode);
@@ -3052,15 +3069,17 @@
     if (below) {
       ctx.fillStyle = 'rgba(132, 145, 174, 0.20)';
       for (const b of below.bricks) {
-        ctx.fillRect(ox + b.x * scale, oy + (grid.nz - b.z - b.d) * scale, b.w * scale, b.d * scale);
+        const planRect = getLayerPlanRect(grid, b);
+        ctx.fillRect(ox + planRect.x * scale, oy + planRect.y * scale, planRect.width * scale, planRect.height * scale);
       }
     }
 
     for (const brick of layer.bricks) {
-      const x = ox + brick.x * scale;
-      const y = oy + (grid.nz - brick.z - brick.d) * scale;
-      const w = brick.w * scale;
-      const h = brick.d * scale;
+      const planRect = getLayerPlanRect(grid, brick);
+      const x = ox + planRect.x * scale;
+      const y = oy + planRect.y * scale;
+      const w = planRect.width * scale;
+      const h = planRect.height * scale;
       const c = brick.color;
       ctx.fillStyle = `rgb(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)})`;
       ctx.fillRect(x + 0.6, y + 0.6, Math.max(0, w - 1.2), Math.max(0, h - 1.2));

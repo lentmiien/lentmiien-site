@@ -1,13 +1,10 @@
-doctype html
-html(lang='en')
-  head
-    meta(charset='utf-8')
-    meta(name='viewport', content='width=device-width, initial-scale=1')
-    title= pageTitle || 'Brickify 3D — GLB-aware LEGO Sculpture Converter'
-    link(rel='stylesheet', href='/css/color-theme.css')
+extends layout
+
+block styles
     link(rel='stylesheet', href='/css/lego-sculpture-converter.css')
-  body
-    .app
+
+block content
+    .lego-converter-app
       header
         .brand
           .logo(aria-hidden='true')
@@ -49,9 +46,9 @@ html(lang='en')
               .field-label
                 label(for='resolution') Longest dimension
                 span#resolutionValue.value-pill 36
-              input#resolution(type='range', min='10', max='72', value='36', step='1')
+              input#resolution(type='range', min='10', max='128', value='36', step='1')
               p.hint.hint--after-control Higher values preserve more detail but create more bricks and take longer to process.
-              .row.row--top-space
+              .control-row.row--top-space
                 label(for='upAxis') Model up axis
                 select#upAxis
                   option(value='auto') Auto by format
@@ -62,19 +59,19 @@ html(lang='en')
               h2.section-title
                 span 3 · Mesh repair
                 span.hint Solid volume
-              .row
+              .control-row
                 label(for='volumeMode') Inside detection
                 select#volumeMode.select--wide
                   option(value='robust', selected) Robust · recommended
                   option(value='generous') Generous · strong repair
                   option(value='exact') Exact · watertight
-              .row
+              .control-row
                 label(for='gapSeal') Seal holes / cracks
                 select#gapSeal.select--wide
                   option(value='0') Off
                   option(value='1', selected) 1 voxel · normal
                   option(value='2') 2 voxels · strong
-              .row
+              .control-row
                 label(for='flattenBase') Flatten bottom
                 select#flattenBase.select--wide
                   option(value='0') Off
@@ -108,7 +105,7 @@ html(lang='en')
             section.section
               h2.section-title
                 span 5 · Structure & layout
-              .row.row--bottom-space
+              .control-row.row--bottom-space
                 label(for='supportStrength') Connection preference
                 select#supportStrength.select--support
                   option(value='one') Flexible · final lock
@@ -124,7 +121,7 @@ html(lang='en')
                 span
                   strong Show source wireframe
                   | Overlay a sampled outline of the imported mesh for comparison.
-              .row.row--top-space
+              .control-row.row--top-space
                 label(for='colorMode') Brick colors
                 select#colorMode.select--wide
                   option(value='model', selected) GLB model / texture
@@ -238,7 +235,8 @@ html(lang='en')
                 .hint No parts to show.
               p#layerNote.hint.hint--layer-note Each layer uses standard-height bricks. Start at layer 1 and work upward.
 
-    #toast.toast(role='status')
+      #toast.toast(role='status')
 
+block script
     script(src='/js/lego-sculpture-converter-loader.js')
     script(src='/js/lego-sculpture-converter.js')

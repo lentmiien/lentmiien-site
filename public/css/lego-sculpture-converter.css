@@ -13,7 +13,7 @@
 
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body {
+  body.lego-converter-page {
     margin: 0;
     min-width: 320px;
     overflow: hidden;
@@ -25,16 +25,24 @@
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
 
-  button, input, select { font: inherit; }
-  button { color: inherit; }
+  .lego-converter-container {
+    height: calc(100vh - 25px);
+    height: calc(100dvh - 25px);
+    padding: 0;
+  }
 
-  .app {
+  .lego-converter-app button,
+  .lego-converter-app input,
+  .lego-converter-app select { font: inherit; }
+  .lego-converter-app button { color: inherit; }
+
+  .lego-converter-app {
     display: grid;
     grid-template-rows: auto 1fr;
     height: 100%;
   }
 
-  header {
+  .lego-converter-app > header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -46,8 +54,8 @@
     z-index: 5;
   }
 
-  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .logo {
+  .lego-converter-app .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .lego-converter-app .logo {
     display: grid;
     grid-template-columns: repeat(2, 10px);
     grid-template-rows: repeat(2, 10px);
@@ -57,10 +65,10 @@
     background: var(--accent);
     box-shadow: 0 8px 22px var(--accent-tint);
   }
-  .logo span { border-radius: 50%; background: var(--surface-3); }
-  h1 { margin: 0; font-size: clamp(18px, 2vw, 24px); letter-spacing: -0.035em; }
-  .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .header-note { color: var(--muted); font-size: 12px; text-align: right; }
+  .lego-converter-app .logo span { border-radius: 50%; background: var(--surface-3); }
+  .lego-converter-app h1 { margin: 0; font-size: clamp(18px, 2vw, 24px); letter-spacing: -0.035em; }
+  .lego-converter-app .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lego-converter-app .header-note { color: var(--muted); font-size: 12px; text-align: right; }
 
   .workspace {
     display: grid;
@@ -126,9 +134,9 @@
   .drop-sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
   .file-name { margin-top: 9px; min-height: 18px; color: var(--accent-2); font-size: 12px; word-break: break-word; }
 
-  .row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
-  .row + .row { margin-top: 12px; }
-  label { font-size: 13px; color: var(--text-secondary); }
+  .control-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+  .control-row + .control-row { margin-top: 12px; }
+  .lego-converter-app label { font-size: 13px; color: var(--text-secondary); }
   .field-label { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
   .value-pill {
     min-width: 52px;
@@ -141,8 +149,8 @@
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
-  input[type="range"] { width: 100%; accent-color: var(--accent); }
-  select, input[type="number"] {
+  .lego-converter-app input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .lego-converter-app select, .lego-converter-app input[type="number"] {
     width: 132px;
     border: 1px solid var(--line);
     border-radius: 10px;
@@ -151,7 +159,7 @@
     padding: 8px 10px;
     outline: none;
   }
-  select:focus, input[type="number"]:focus { border-color: var(--focus); }
+  .lego-converter-app select:focus, .lego-converter-app input[type="number"]:focus { border-color: var(--focus); }
 
   .inventory-table {
     overflow: hidden;
@@ -211,7 +219,7 @@
   .check-row strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 1px; }
 
   .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-  .btn {
+  .lego-converter-app .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -226,10 +234,10 @@
     font-weight: 750;
     font-size: 13px;
   }
-  .btn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--line-strong); background: var(--surface-3); }
-  .btn:active:not(:disabled) { transform: translateY(0); }
-  .btn:disabled { opacity: .45; cursor: not-allowed; }
-  .btn.primary {
+  .lego-converter-app .btn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--line-strong); background: var(--surface-3); }
+  .lego-converter-app .btn:active:not(:disabled) { transform: translateY(0); }
+  .lego-converter-app .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .lego-converter-app .btn.primary {
     width: 100%;
     margin-top: 12px;
     border-color: var(--brand);
@@ -237,10 +245,10 @@
     color: var(--text-inverse);
     box-shadow: 0 12px 26px var(--brand-tint);
   }
-  .btn.primary:hover:not(:disabled) { background: var(--brand-hover); }
-  .btn.small { min-height: 34px; padding: 7px 10px; font-size: 12px; }
-  .btn.icon { width: 36px; min-height: 34px; padding: 0; }
-  .btn.active { border-color: var(--accent); background: var(--accent-tint); color: var(--text); }
+  .lego-converter-app .btn.primary:hover:not(:disabled) { background: var(--brand-hover); }
+  .lego-converter-app .btn.small { min-height: 34px; padding: 7px 10px; font-size: 12px; }
+  .lego-converter-app .btn.icon { width: 36px; min-height: 34px; padding: 0; }
+  .lego-converter-app .btn.active { border-color: var(--accent); background: var(--accent-tint); color: var(--text); }
 
   .progress-wrap { display: none; margin-top: 13px; }
   .progress-wrap.visible { display: block; }
@@ -380,7 +388,7 @@
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
 
-  .toast {
+  .lego-converter-app .toast {
     position: fixed;
     left: 50%;
     bottom: 22px;
@@ -397,7 +405,7 @@
     pointer-events: none;
     transition: .22s ease;
   }
-  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .lego-converter-app .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
   .button-row--spaced { margin-top: 10px; }
   .hint--after-control { margin: 7px 0 0; }
@@ -418,8 +426,9 @@
   .legend-swatch--locking { background: var(--accent); }
 
   @media (max-width: 1120px) {
-    body { overflow: auto; }
-    .app { height: auto; min-height: 100%; }
+    body.lego-converter-page { overflow: auto; }
+    .lego-converter-container { height: auto; min-height: calc(100vh - 25px); min-height: calc(100dvh - 25px); }
+    .lego-converter-app { height: auto; min-height: calc(100vh - 25px); min-height: calc(100dvh - 25px); }
     .workspace { grid-template-columns: 290px minmax(380px, 1fr); grid-template-rows: minmax(620px, calc(100vh - 92px)) auto; }
     .instruction-panel { grid-column: 1 / -1; }
     .instruction-panel .scroll { display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 18px; overflow: visible; }
@@ -427,7 +436,7 @@
   }
 
   @media (max-width: 760px) {
-    header { align-items: flex-start; padding: 12px 14px; }
+    .lego-converter-app > header { align-items: flex-start; padding: 12px 14px; }
     .header-note { display: none; }
     .workspace { display: flex; flex-direction: column; padding: 8px; }
     .control-panel { max-height: none; }
