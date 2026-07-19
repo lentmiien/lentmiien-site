@@ -1,0 +1,330 @@
+.model-previewer-body {
+  background:
+    radial-gradient(circle at 12% 8%, var(--brand-tint), transparent 26rem),
+    radial-gradient(circle at 88% 2%, var(--accent-tint), transparent 24rem),
+    var(--bg);
+}
+
+.model-previewer-container {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.model-previewer-page {
+  margin: 0 auto;
+  max-width: 112rem;
+  padding: clamp(1rem, 2vw, 2rem);
+}
+
+.model-previewer-header,
+.model-previewer-toolbar,
+.model-previewer-header__actions,
+.model-previewer-mode-group,
+.model-previewer-help {
+  align-items: center;
+  display: flex;
+}
+
+.model-previewer-header {
+  gap: 2rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.model-previewer-heading {
+  min-width: 0;
+}
+
+.model-previewer-back {
+  display: inline-block;
+  font-weight: 650;
+  margin-bottom: 0.9rem;
+  text-decoration: none;
+}
+
+.model-previewer-eyebrow {
+  color: var(--brand);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.model-previewer-heading h1,
+.model-previewer-toolbar h2 {
+  color: var(--text);
+  margin: 0;
+}
+
+.model-previewer-heading h1 {
+  font-size: clamp(1.65rem, 4vw, 2.6rem);
+  overflow-wrap: anywhere;
+}
+
+.model-previewer-heading > p:last-child {
+  color: var(--text-secondary);
+  margin: 0.55rem 0 0;
+  max-width: 52rem;
+}
+
+.model-previewer-header__actions {
+  flex: 0 0 auto;
+  gap: 0.75rem;
+}
+
+.model-previewer-source {
+  background: var(--brand-tint);
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  color: var(--brand-hover);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.42rem 0.7rem;
+  text-transform: uppercase;
+}
+
+.model-previewer-panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 1.5rem 4rem var(--bg);
+  overflow: hidden;
+}
+
+.model-previewer-toolbar {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--divider);
+  gap: 1rem;
+  min-height: 4.5rem;
+  padding: 0.85rem 1rem;
+}
+
+.model-previewer-toolbar__title {
+  margin-right: auto;
+}
+
+.model-previewer-toolbar h2 {
+  font-size: 1.15rem;
+}
+
+.model-previewer-modes {
+  align-items: center;
+  border: 0;
+  display: flex;
+  gap: 0.65rem;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.model-previewer-modes legend {
+  color: var(--text-muted);
+  float: none;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin: 0;
+  width: auto;
+}
+
+.model-previewer-mode-group {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  gap: 0.2rem;
+  padding: 0.2rem;
+}
+
+.model-previewer-mode {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  min-height: 2.35rem;
+  padding: 0.42rem 0.8rem;
+}
+
+.model-previewer-mode:hover:not(:disabled),
+.model-previewer-mode:focus-visible:not(:disabled) {
+  background: var(--accent-tint);
+  color: var(--text);
+}
+
+.model-previewer-mode[aria-pressed='true'] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--text-inverse);
+}
+
+.model-previewer-mode:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.model-previewer-reset {
+  flex: 0 0 auto;
+}
+
+.model-previewer-viewport {
+  background:
+    radial-gradient(circle at 50% 38%, var(--surface-3), var(--bg) 72%);
+  height: clamp(28rem, 68vh, 52rem);
+  min-height: 28rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.model-previewer-viewport canvas {
+  cursor: grab;
+  display: block;
+  height: 100%;
+  outline-offset: -3px;
+  touch-action: none;
+  width: 100%;
+}
+
+.model-previewer-viewport canvas:active {
+  cursor: grabbing;
+}
+
+.model-previewer-overlay {
+  align-items: center;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  inset: 0;
+  justify-content: center;
+  padding: 2rem;
+  position: absolute;
+  text-align: center;
+  z-index: 2;
+}
+
+.model-previewer-overlay[hidden] {
+  display: none;
+}
+
+.model-previewer-loading-mark {
+  animation: model-previewer-spin 0.9s linear infinite;
+  border: 3px solid var(--divider);
+  border-radius: 50%;
+  border-top-color: var(--accent);
+  height: 2.7rem;
+  margin-bottom: 1rem;
+  width: 2.7rem;
+}
+
+.model-previewer-overlay p {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.model-previewer-overlay progress {
+  accent-color: var(--accent);
+  height: 0.45rem;
+  margin-top: 1rem;
+  max-width: 20rem;
+  width: min(75%, 20rem);
+}
+
+.model-previewer-overlay--error {
+  background: var(--surface-1);
+}
+
+.model-previewer-overlay .model-previewer-error-title {
+  color: var(--danger);
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin-bottom: 0.4rem;
+}
+
+.model-previewer-overlay--error .btn {
+  margin-top: 1rem;
+}
+
+.model-previewer-help {
+  background: var(--surface-2);
+  border-top: 1px solid var(--divider);
+  color: var(--text-muted);
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  gap: 0.55rem 1.25rem;
+  justify-content: center;
+  margin: 0;
+  min-height: 2.8rem;
+  padding: 0.55rem 1rem;
+}
+
+.model-previewer-help span:not(:first-child)::before {
+  color: var(--accent);
+  content: '•';
+  margin-right: 1.25rem;
+}
+
+@keyframes model-previewer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .model-previewer-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .model-previewer-header__actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .model-previewer-toolbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .model-previewer-toolbar__title {
+    width: 100%;
+  }
+
+  .model-previewer-modes {
+    align-items: stretch;
+    flex: 1 1 100%;
+    flex-direction: column;
+  }
+
+  .model-previewer-mode-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+  }
+
+  .model-previewer-reset {
+    width: 100%;
+  }
+
+  .model-previewer-viewport {
+    height: min(64vh, 40rem);
+    min-height: 24rem;
+  }
+
+  .model-previewer-help {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .model-previewer-help span:not(:first-child)::before {
+    margin-right: 0.6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-previewer-loading-mark {
+    animation-duration: 1.8s;
+  }
+}

@@ -111,6 +111,7 @@ function buildJobView(job, user) {
     inputSizeLabel: formatBytes(job.inputImage?.sizeBytes),
     outputSizeLabel: formatBytes(job.outputModel?.sizeBytes),
     durationLabel: formatSeconds(job.metrics?.totalSeconds),
+    previewUrl: hasCompletedModel ? `/model-previewer/trellis2/${encodedJobId}` : '',
     downloadUrl: hasCompletedModel ? `/trellis2/jobs/${encodedJobId}/download` : '',
     legoSculptureUrl: hasCompletedModel
       ? `/lego-sculpture-converter?source=trellis2&jobId=${encodedJobId}`
@@ -302,6 +303,9 @@ async function getJob(req, res) {
       updatedAt: job.updatedAt,
       downloadUrl: job.status === 'completed' && job.outputModel
         ? `/trellis2/jobs/${encodeURIComponent(job._id)}/download`
+        : '',
+      previewUrl: job.status === 'completed' && job.outputModel
+        ? `/model-previewer/trellis2/${encodeURIComponent(job._id)}`
         : '',
     });
   } catch (error) {

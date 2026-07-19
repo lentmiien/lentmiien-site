@@ -1,0 +1,83 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/model-previewer.css')
+
+block content
+  main.model-previewer-page
+    header.model-previewer-header
+      .model-previewer-heading
+        a.model-previewer-back(href=preview.backUrl) ← Back to #{preview.sourceLabel}
+        p.model-previewer-eyebrow 3D model preview
+        h1= preview.modelName
+        p Orbit around the finished model, inspect its surface, and switch rendering modes without downloading it first.
+      .model-previewer-header__actions
+        span.model-previewer-source= preview.sourceLabel
+        a.btn.btn-outline-light(href=preview.downloadUrl) Download GLB
+
+    section.model-previewer-panel(aria-labelledby='modelPreviewHeading')
+      .model-previewer-toolbar
+        .model-previewer-toolbar__title
+          h2#modelPreviewHeading Preview
+          span#modelPreviewModeStatus.visually-hidden(aria-live='polite') Texture preview mode selected.
+        fieldset.model-previewer-modes
+          legend Preview mode
+          .model-previewer-mode-group(role='group', aria-label='Preview mode')
+            button.model-previewer-mode(
+              type='button',
+              data-preview-mode='texture',
+              aria-pressed='true',
+              disabled
+            ) Texture
+            button.model-previewer-mode(
+              type='button',
+              data-preview-mode='solid',
+              aria-pressed='false',
+              disabled
+            ) Solid
+            button.model-previewer-mode(
+              type='button',
+              data-preview-mode='wireframe',
+              aria-pressed='false',
+              disabled
+            ) Wireframe
+        button#modelPreviewReset.model-previewer-reset.btn.btn-outline-light(type='button', disabled) Reset camera
+
+      #modelPreviewViewport.model-previewer-viewport(
+        data-model-url=preview.modelUrl,
+        data-model-name=preview.modelName,
+        aria-describedby='modelPreviewHelp'
+      )
+        canvas#modelPreviewCanvas(
+          tabindex='0',
+          role='img',
+          aria-label=`Interactive 3D preview of ${preview.modelName}`,
+          aria-busy='true'
+        )
+        #modelPreviewLoading.model-previewer-overlay(role='status', aria-live='polite')
+          .model-previewer-loading-mark(aria-hidden='true')
+          p#modelPreviewStatus Loading model…
+          progress#modelPreviewProgress(max='100', aria-label='Model loading progress')
+        #modelPreviewError.model-previewer-overlay.model-previewer-overlay--error(role='alert', hidden)
+          p.model-previewer-error-title Preview unavailable
+          p#modelPreviewErrorMessage The model could not be displayed.
+          a.btn.btn-outline-light(href=preview.downloadUrl) Download the GLB instead
+        noscript
+          .model-previewer-overlay.model-previewer-overlay--error
+            p.model-previewer-error-title JavaScript is required
+            p Enable JavaScript to use the interactive 3D preview.
+
+      p#modelPreviewHelp.model-previewer-help
+        span Drag to rotate
+        span Scroll or pinch to zoom
+        span Keyboard: arrows rotate, +/− zoom, 0 resets
+
+block script
+  script(type='importmap').
+    {
+      "imports": {
+        "three": "/vendor/three/build/three.module.min.js",
+        "three/addons/": "/vendor/three/addons/"
+      }
+    }
+  script(type='module', src='/js/model-previewer.js')

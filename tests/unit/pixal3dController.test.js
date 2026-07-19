@@ -194,10 +194,12 @@ describe('Pixal3D visibility, pagination, and sharing', () => {
 
     const view = res.render.mock.calls[0][1];
     expect(view.jobs[0]).toEqual(expect.objectContaining({
+      previewUrl: '/model-previewer/pixal3d/completed-job',
       downloadUrl: '/pixal3d/jobs/completed-job/download',
       legoSculptureUrl: '/lego-sculpture-converter?source=pixal3d&jobId=completed-job',
     }));
     expect(view.jobs[1]).toEqual(expect.objectContaining({
+      previewUrl: '',
       downloadUrl: '',
       legoSculptureUrl: '',
     }));

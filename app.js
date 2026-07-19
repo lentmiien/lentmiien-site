@@ -352,6 +352,8 @@ app.get('/html/lego_sculpture_converter.html', isAuthenticated, (_req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/katex', express.static(path.join(__dirname, 'node_modules', 'katex', 'dist')));
 app.use('/vendor/mermaid', express.static(path.join(__dirname, 'node_modules', 'mermaid', 'dist')));
+app.use('/vendor/three/build', express.static(path.join(__dirname, 'node_modules', 'three', 'build')));
+app.use('/vendor/three/addons', express.static(path.join(__dirname, 'node_modules', 'three', 'examples', 'jsm')));
 
 // Middleware for caching static files
 app.use('/img', express.static(path.join(__dirname, 'public', 'img'), {
@@ -403,6 +405,7 @@ const soraRouter = require('./routes/sora');
 const qwen3LoraRouter = require('./routes/qwen3_lora');
 const trellis2Router = require('./routes/trellis2');
 const pixal3dRouter = require('./routes/pixal3d');
+const modelPreviewerRouter = require('./routes/model_previewer');
 const legoSculptureConverterRouter = require('./routes/lego_sculpture_converter');
 const codexRouter = require('./routes/codex');
 const adminRouter = require('./routes/admin');
@@ -460,6 +463,7 @@ app.use('/sora', isAuthenticated, authorize("sora"), soraRouter);
 app.use('/qwen3-lora', isAuthenticated, qwen3LoraRouter);
 app.use('/trellis2', isAuthenticated, trellis2Router);
 app.use('/pixal3d', isAuthenticated, pixal3dRouter);
+app.use('/model-previewer', isAuthenticated, modelPreviewerRouter);
 app.use('/lego-sculpture-converter', isAuthenticated, legoSculptureConverterRouter);
 app.use('/codex', isAuthenticated, codexRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);

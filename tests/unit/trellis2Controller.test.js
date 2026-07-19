@@ -166,10 +166,12 @@ describe('TRELLIS.2 Lego sculpture links', () => {
 
     const view = res.render.mock.calls[0][1];
     expect(view.jobs[0]).toEqual(expect.objectContaining({
+      previewUrl: '/model-previewer/trellis2/completed-job',
       downloadUrl: '/trellis2/jobs/completed-job/download',
       legoSculptureUrl: '/lego-sculpture-converter?source=trellis2&jobId=completed-job',
     }));
     expect(view.jobs[1]).toEqual(expect.objectContaining({
+      previewUrl: '',
       downloadUrl: '',
       legoSculptureUrl: '',
     }));

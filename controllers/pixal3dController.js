@@ -121,6 +121,7 @@ function buildJobView(job, user) {
     inputSizeLabel: formatBytes(job.inputImage?.sizeBytes),
     outputSizeLabel: formatBytes(job.outputModel?.sizeBytes),
     durationLabel: formatSeconds(metrics?.totalSeconds),
+    previewUrl: hasCompletedModel ? `/model-previewer/pixal3d/${encodedJobId}` : '',
     downloadUrl: hasCompletedModel ? `/pixal3d/jobs/${encodedJobId}/download` : '',
     legoSculptureUrl: hasCompletedModel
       ? `/lego-sculpture-converter?source=pixal3d&jobId=${encodedJobId}`
@@ -298,6 +299,9 @@ async function getJob(req, res) {
       updatedAt: job.updatedAt,
       downloadUrl: job.status === 'completed' && job.outputModel
         ? `/pixal3d/jobs/${encodeURIComponent(job._id)}/download`
+        : '',
+      previewUrl: job.status === 'completed' && job.outputModel
+        ? `/model-previewer/pixal3d/${encodeURIComponent(job._id)}`
         : '',
     });
   } catch (error) {
