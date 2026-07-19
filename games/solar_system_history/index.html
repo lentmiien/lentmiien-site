@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="A cinematic 3D guided tour through 4.6 billion years of Solar System history—and the Sun's far future.">
+  <title>Orrery · A Solar System Story</title>
+  <link rel="icon" href="assets/images/solar-nebula.webp" type="image/webp">
+  <link rel="preload" href="assets/images/solar-nebula.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#eventCard">Skip to the current chapter</a>
+
+  <main class="experience" id="experience" data-phase="intro" data-era="deep-time">
+    <canvas id="spaceCanvas" aria-hidden="true"></canvas>
+    <div class="fallback-scene" id="fallbackScene" hidden aria-hidden="true">
+      <img src="assets/images/solar-nebula.webp" alt="">
+    </div>
+    <div class="space-vignette" aria-hidden="true"></div>
+    <div class="film-grain" aria-hidden="true"></div>
+
+    <header class="topbar" id="topbar">
+      <div class="brand-lockup" aria-label="Orrery, a Solar System story">
+        <span class="brand-orbit" aria-hidden="true"><i></i></span>
+        <span class="brand-copy">
+          <strong>Orrery</strong>
+          <small>A Solar System story</small>
+        </span>
+      </div>
+
+      <div class="era-chip" id="eraChip">
+        <span class="era-dot" aria-hidden="true"></span>
+        <span id="eraLabel">Deep time</span>
+      </div>
+
+      <nav class="tour-controls" aria-label="Tour controls">
+        <button class="control-button" id="narrationButton" type="button" aria-pressed="true" aria-label="Turn narration off">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5Zm12.4 3a4.3 4.3 0 0 0-2-3.6v7.2a4.3 4.3 0 0 0 2-3.6Zm-2-8v2.1a7 7 0 0 1 0 11.8V20a9 9 0 0 0 0-16Z"/></svg>
+          <span class="control-label">Narration</span>
+        </button>
+        <button class="control-button" id="captionsButton" type="button" aria-pressed="true" aria-label="Hide transcript captions">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm1 4v2h5V9H5Zm9 0v2h5V9h-5ZM5 13v2h7v-2H5Zm10 0v2h4v-2h-4Z"/></svg>
+          <span class="control-label">Transcript</span>
+        </button>
+        <button class="control-button" id="motionButton" type="button" aria-pressed="false" aria-label="Use reduced motion">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11l-2.8-2.8L13.6 3 19 8.4 13.6 14l-1.4-1.4L15.8 9H4V7Zm16 10H9l2.8 2.8-1.4 1.2L5 15.6l5.4-5.6 1.4 1.4L8.2 15H20v2Z"/></svg>
+          <span class="control-label">Motion</span>
+        </button>
+        <button class="control-button pause-control" id="pauseButton" type="button" aria-pressed="false" aria-label="Pause the tour" disabled>
+          <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6V5Zm8 0h4v14h-4V5Z"/></svg>
+          <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8V4Z"/></svg>
+          <span class="control-label" id="pauseLabel">Pause</span>
+        </button>
+        <button class="control-button icon-only" id="infoButton" type="button" aria-label="Open science notes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z"/></svg>
+        </button>
+      </nav>
+    </header>
+
+    <div class="date-display" id="dateDisplay" aria-hidden="true">
+      <span class="date-rule"></span>
+      <span id="dateCounter">4.57 billion years ago</span>
+      <span class="date-rule"></span>
+    </div>
+
+    <div class="status-announcer" id="statusAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <article class="event-card" id="eventCard" tabindex="-1" hidden>
+      <div class="card-scanline" aria-hidden="true"></div>
+      <header class="event-header">
+        <p class="event-eyebrow" id="eventEyebrow">01 · The solar nebula</p>
+        <span class="confidence-badge" id="confidenceBadge">High confidence</span>
+      </header>
+      <h1 id="eventTitle">A cloud becomes a system</h1>
+      <p class="event-summary" id="eventSummary"></p>
+      <p class="event-context" id="eventContext"></p>
+      <blockquote class="transcript" id="transcriptText"></blockquote>
+      <footer class="event-footer">
+        <div class="narration-state" id="narrationState">
+          <span class="narration-pulse" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span id="narrationLabel">Transcript ready</span>
+        </div>
+        <button class="text-button" id="skipButton" type="button">Continue <span aria-hidden="true">→</span></button>
+      </footer>
+    </article>
+
+    <figure class="interstitial" id="interstitial" aria-labelledby="artCaption" hidden>
+      <img id="interstitialImage" src="assets/images/solar-nebula.webp" alt="">
+      <div class="art-shade" aria-hidden="true"></div>
+      <figcaption id="artCaption">
+        <span class="artist-label">Artist’s impression</span>
+        <span id="artTitle">The solar nebula</span>
+      </figcaption>
+    </figure>
+
+    <section class="timeline" id="timeline" aria-label="Journey timeline">
+      <div class="timeline-heading">
+        <span><b id="timelineCurrent">00</b> / <span id="timelineTotal">27</span></span>
+        <span>Intervals compressed for storytelling</span>
+      </div>
+      <div class="timeline-track" aria-hidden="true">
+        <span class="timeline-fill" id="timelineFill"></span>
+        <ol class="timeline-markers" id="timelineMarkers"></ol>
+      </div>
+      <div class="chapter-labels" aria-hidden="true">
+        <span>Solar system</span>
+        <span>Human story</span>
+        <span>Today</span>
+        <span class="future-label" id="futureLabel">Future locked</span>
+      </div>
+    </section>
+
+    <section class="overlay intro-overlay" id="introOverlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+      <div class="intro-panel">
+        <p class="overline"><span></span> A guided journey through deep time</p>
+        <h1 id="introTitle">From dust<br><em>to awareness.</em></h1>
+        <p class="intro-lede">Travel through 4.6 billion years of Solar System history, then choose whether to follow the Sun into its far future.</p>
+
+        <div class="journey-stats" aria-label="Journey overview">
+          <div><strong>27</strong><span>milestones</span></div>
+          <div><strong>4.6B</strong><span>years behind us</span></div>
+          <div><strong>8B</strong><span>years ahead</span></div>
+        </div>
+
+        <div class="intro-notes">
+          <p><span aria-hidden="true">✦</span><strong>Science-grounded, artistically compressed.</strong> Sizes, distances, orbits, and elapsed intervals favor clarity and cinema over scale accuracy.</p>
+          <p><span aria-hidden="true">♪</span><strong>Narration ready.</strong> Add a matching MP3 beside any transcript and the journey will wait for it to finish.</p>
+        </div>
+
+        <div class="intro-actions">
+          <button class="primary-button" id="startButton" type="button">
+            <span>Begin the journey</span>
+            <span class="button-orbit" aria-hidden="true"><i></i></span>
+          </button>
+          <button class="text-button" id="introInfoButton" type="button">How the science is handled</button>
+        </div>
+      </div>
+      <div class="intro-coordinate" aria-hidden="true">
+        <span>LOCAL STAR · SOL</span>
+        <span>PLANETARY SYSTEM · 01</span>
+      </div>
+    </section>
+
+    <section class="overlay today-overlay" id="todayOverlay" role="dialog" aria-modal="true" aria-labelledby="todayTitle" hidden>
+      <div class="gate-panel">
+        <p class="overline"><span></span> The present boundary</p>
+        <span class="today-marker" aria-hidden="true"><i></i></span>
+        <h2 id="todayTitle">Today, the story<br>reaches <em>you.</em></h2>
+        <p>History ends here. Everything beyond this point is a model-based projection—with uncertainty widening the farther we travel.</p>
+        <div class="gate-actions">
+          <button class="primary-button" id="futureButton" type="button">
+            <span>What happens next?</span>
+            <span aria-hidden="true">→</span>
+          </button>
+          <button class="text-button" id="replayAtTodayButton" type="button">Replay history</button>
+        </div>
+        <small>Future dates are broad ranges, not appointments.</small>
+      </div>
+    </section>
+
+    <section class="overlay outro-overlay" id="outroOverlay" role="dialog" aria-modal="true" aria-labelledby="outroTitle" hidden>
+      <div class="gate-panel outro-panel">
+        <p class="overline"><span></span> About 8 billion years from now</p>
+        <span class="white-dwarf-mark" aria-hidden="true"></span>
+        <h2 id="outroTitle">The light remains,<br>then slowly <em>fades.</em></h2>
+        <p>The Solar System’s architecture will be profoundly changed, but whatever survives will continue circling the Sun’s dense remnant through an immense quiet future.</p>
+        <div class="gate-actions">
+          <button class="primary-button" id="replayButton" type="button"><span>Replay the journey</span><span aria-hidden="true">↺</span></button>
+          <button class="text-button" id="outroInfoButton" type="button">Review sources and uncertainties</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="science-dialog" id="scienceDialog" aria-labelledby="scienceTitle">
+    <form method="dialog" class="dialog-card">
+      <header>
+        <div>
+          <p class="overline"><span></span> Behind the journey</p>
+          <h2 id="scienceTitle">Science notes</h2>
+        </div>
+        <button class="dialog-close" value="close" aria-label="Close science notes">×</button>
+      </header>
+      <div class="dialog-scroll">
+        <section>
+          <h3>What you are seeing</h3>
+          <p>This is a curated story, not a numerical orbital model. Planet sizes, distances, orbital speeds, camera paths, and the spacing between events are deliberately compressed. Generated artwork is labeled as an artist’s impression.</p>
+        </section>
+        <section>
+          <h3>How uncertainty is shown</h3>
+          <p>Cards distinguish strong evidence from indirect evidence, leading hypotheses, and model-based projections. The Moon-forming impact is a family of leading models. A sharp late bombardment spike is disputed. Earth’s physical survival during the Sun’s giant phases remains unresolved.</p>
+        </section>
+        <section>
+          <h3>Sources for the current milestone</h3>
+          <ul class="source-list" id="currentSources"></ul>
+        </section>
+        <section>
+          <h3>Narration files</h3>
+          <p>For any milestone ID, place <code>assets/audio/&lt;id&gt;.mp3</code> beside the existing <code>&lt;id&gt;.txt</code>. Only one clip is played at a time; the tour remains paused until that clip ends or you continue manually.</p>
+        </section>
+      </div>
+    </form>
+  </dialog>
+
+  <audio id="narrationAudio" preload="none"></audio>
+
+  <noscript>
+    <div class="noscript-message">This guided 3D journey needs JavaScript enabled.</div>
+  </noscript>
+
+  <script type="module" src="js/tour.js"></script>
+</body>
+</html>
