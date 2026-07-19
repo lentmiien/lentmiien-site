@@ -98,6 +98,8 @@ function buildJobView(job, user) {
   const isOwner = isPixal3dJobOwner(job, user);
   const parameters = job.parameters || DEFAULT_PIXAL3D_PARAMETERS;
   const metrics = job.metrics || {};
+  const hasCompletedModel = job.status === 'completed' && job.outputModel;
+  const encodedJobId = encodeURIComponent(job._id);
   return {
     id: String(job._id),
     status: job.status,
@@ -119,8 +121,9 @@ function buildJobView(job, user) {
     inputSizeLabel: formatBytes(job.inputImage?.sizeBytes),
     outputSizeLabel: formatBytes(job.outputModel?.sizeBytes),
     durationLabel: formatSeconds(metrics?.totalSeconds),
-    downloadUrl: job.status === 'completed' && job.outputModel
-      ? `/pixal3d/jobs/${encodeURIComponent(job._id)}/download`
+    downloadUrl: hasCompletedModel ? `/pixal3d/jobs/${encodedJobId}/download` : '',
+    legoSculptureUrl: hasCompletedModel
+      ? `/lego-sculpture-converter?source=pixal3d&jobId=${encodedJobId}`
       : '',
   };
 }

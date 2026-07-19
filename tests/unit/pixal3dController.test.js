@@ -156,6 +156,53 @@ describe('Pixal3D visibility, pagination, and sharing', () => {
     }));
   });
 
+  test('adds the converter link only when a job has a completed GLB', async () => {
+    const jobs = [
+      {
+        _id: 'completed-job',
+        inputImage: { sizeBytes: 1024 },
+        metrics: {},
+        outputModel: { sizeBytes: 2048 },
+        owner: { id: 'owner-1', name: 'Owner' },
+        shared: false,
+        status: 'completed',
+      },
+      {
+        _id: 'failed-job',
+        inputImage: { sizeBytes: 1024 },
+        metrics: {},
+        outputModel: null,
+        owner: { id: 'owner-1', name: 'Owner' },
+        shared: false,
+        status: 'failed',
+      },
+    ];
+    Pixal3dJob.countDocuments.mockReturnValue(execResult(jobs.length));
+    const exec = jest.fn().mockResolvedValue(jobs);
+    const lean = jest.fn(() => ({ exec }));
+    const limit = jest.fn(() => ({ lean }));
+    const skip = jest.fn(() => ({ limit }));
+    const sort = jest.fn(() => ({ skip }));
+    Pixal3dJob.find.mockReturnValue({ sort });
+    const req = {
+      query: {},
+      user: { _id: { toString: () => 'owner-1' }, name: 'Owner' },
+    };
+    const res = buildResponse();
+
+    await controller.renderIndex(req, res);
+
+    const view = res.render.mock.calls[0][1];
+    expect(view.jobs[0]).toEqual(expect.objectContaining({
+      downloadUrl: '/pixal3d/jobs/completed-job/download',
+      legoSculptureUrl: '/lego-sculpture-converter?source=pixal3d&jobId=completed-job',
+    }));
+    expect(view.jobs[1]).toEqual(expect.objectContaining({
+      downloadUrl: '',
+      legoSculptureUrl: '',
+    }));
+  });
+
   test('updates sharing with an owner-scoped query', async () => {
     Pixal3dJob.findOneAndUpdate.mockReturnValue(leanResult({ _id: 'job-1', shared: true }));
     const req = { ...buildRequest(), body: { shared: true } };

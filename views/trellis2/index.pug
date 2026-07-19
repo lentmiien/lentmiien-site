@@ -174,7 +174,9 @@ block content
 
                 .trellis2-job__actions
                   if job.downloadUrl
-                    a.btn.btn-primary(href=job.downloadUrl) Download GLB
+                    .trellis2-model-actions
+                      a.btn.btn-primary(href=job.downloadUrl) Download GLB
+                      a.btn.trellis2-lego-action(href=job.legoSculptureUrl) Generate Lego sculpture
                   else if job.status === 'queued' || job.status === 'processing'
                     span.trellis2-muted(data-trellis2-progress) The model will appear here when generation finishes.
 

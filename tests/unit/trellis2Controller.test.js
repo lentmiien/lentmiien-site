@@ -7,7 +7,9 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 jest.mock('../../models/trellis2_job', () => ({
+  countDocuments: jest.fn(),
   deleteOne: jest.fn(),
+  find: jest.fn(),
   findOne: jest.fn(),
 }));
 
@@ -39,6 +41,7 @@ function execResult(value) {
 function buildResponse() {
   const res = {
     json: jest.fn(),
+    render: jest.fn(),
     status: jest.fn(),
   };
   res.status.mockReturnValue(res);
@@ -116,5 +119,59 @@ describe('TRELLIS.2 job deletion', () => {
     expect(res.json).toHaveBeenCalledWith({ error: 'Wait for the job to finish before deleting it.' });
     expect(mockRemoveJobFiles).not.toHaveBeenCalled();
     expect(Trellis2Job.deleteOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('TRELLIS.2 Lego sculpture links', () => {
+  beforeEach(() => {
+    Trellis2Job.countDocuments.mockReset();
+    Trellis2Job.find.mockReset();
+  });
+
+  test('adds the converter link only when a job has a completed GLB', async () => {
+    const jobs = [
+      {
+        _id: 'completed-job',
+        inputImage: { sizeBytes: 1024 },
+        metrics: {},
+        outputModel: { sizeBytes: 2048 },
+        owner: { id: 'owner-1', name: 'Owner' },
+        shared: false,
+        status: 'completed',
+      },
+      {
+        _id: 'queued-job',
+        inputImage: { sizeBytes: 1024 },
+        metrics: {},
+        outputModel: null,
+        owner: { id: 'owner-1', name: 'Owner' },
+        shared: false,
+        status: 'queued',
+      },
+    ];
+    Trellis2Job.countDocuments.mockReturnValue(execResult(jobs.length));
+    const exec = jest.fn().mockResolvedValue(jobs);
+    const lean = jest.fn(() => ({ exec }));
+    const limit = jest.fn(() => ({ lean }));
+    const skip = jest.fn(() => ({ limit }));
+    const sort = jest.fn(() => ({ skip }));
+    Trellis2Job.find.mockReturnValue({ sort });
+    const req = {
+      query: {},
+      user: { _id: { toString: () => 'owner-1' }, name: 'Owner' },
+    };
+    const res = buildResponse();
+
+    await controller.renderIndex(req, res);
+
+    const view = res.render.mock.calls[0][1];
+    expect(view.jobs[0]).toEqual(expect.objectContaining({
+      downloadUrl: '/trellis2/jobs/completed-job/download',
+      legoSculptureUrl: '/lego-sculpture-converter?source=trellis2&jobId=completed-job',
+    }));
+    expect(view.jobs[1]).toEqual(expect.objectContaining({
+      downloadUrl: '',
+      legoSculptureUrl: '',
+    }));
   });
 });

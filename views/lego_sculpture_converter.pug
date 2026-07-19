@@ -1,0 +1,244 @@
+doctype html
+html(lang='en')
+  head
+    meta(charset='utf-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1')
+    title= pageTitle || 'Brickify 3D — GLB-aware LEGO Sculpture Converter'
+    link(rel='stylesheet', href='/css/color-theme.css')
+    link(rel='stylesheet', href='/css/lego-sculpture-converter.css')
+  body
+    .app
+      header
+        .brand
+          .logo(aria-hidden='true')
+            span
+            span
+            span
+            span
+          div
+            h1 Brickify 3D
+            .subtitle Convert OBJ, STL, and textured GLB models into solid, connected brick sculptures
+        .header-note Runs locally in your browser · no upload required
+
+      main.workspace
+        aside.panel.control-panel
+          .scroll
+            section.section
+              h2.section-title
+                span 1 · Model
+                span.hint OBJ / STL / GLB
+              #dropZone.drop-zone
+                input#fileInput(
+                  type='file',
+                  accept='.obj,.stl,.glb,model/stl,model/gltf-binary,text/plain,application/octet-stream',
+                  aria-label='Choose an OBJ, STL, or GLB model'
+                )
+                div
+                  .drop-icon ⬡
+                  .drop-title Drop a 3D model here
+                  .drop-sub or click to choose an OBJ / STL / GLB file
+                  #fileName.file-name No file selected
+              .button-row.button-row--spaced
+                button#demoBtn.btn.small(type='button') Load demo rocket
+                button#clearBtn.btn.small(type='button', disabled) Clear model
+
+            section.section
+              h2.section-title
+                span 2 · Scale
+                span#resolutionHint.hint 36 studs
+              .field-label
+                label(for='resolution') Longest dimension
+                span#resolutionValue.value-pill 36
+              input#resolution(type='range', min='10', max='72', value='36', step='1')
+              p.hint.hint--after-control Higher values preserve more detail but create more bricks and take longer to process.
+              .row.row--top-space
+                label(for='upAxis') Model up axis
+                select#upAxis
+                  option(value='auto') Auto by format
+                  option(value='y') Y-up
+                  option(value='z') Z-up
+
+            section.section
+              h2.section-title
+                span 3 · Mesh repair
+                span.hint Solid volume
+              .row
+                label(for='volumeMode') Inside detection
+                select#volumeMode.select--wide
+                  option(value='robust', selected) Robust · recommended
+                  option(value='generous') Generous · strong repair
+                  option(value='exact') Exact · watertight
+              .row
+                label(for='gapSeal') Seal holes / cracks
+                select#gapSeal.select--wide
+                  option(value='0') Off
+                  option(value='1', selected) 1 voxel · normal
+                  option(value='2') 2 voxels · strong
+              .row
+                label(for='flattenBase') Flatten bottom
+                select#flattenBase.select--wide
+                  option(value='0') Off
+                  option(value='1', selected) Gentle · 1 layer
+                  option(value='3') Strong · 3 layers
+              label.check-row.check-row--spaced
+                input#mainBodyOnly(type='checkbox', checked)
+                span
+                  strong Keep the main connected body
+                  | Discard detached shell fragments, duplicate specks, and floating geometry after the solid is reconstructed.
+              p.structure-note
+                strong Robust mode does not trust face winding.
+                |  It voxelizes the visible surface, seals small cracks, flood-fills enclosed space, and also looks for surface on multiple opposing directions. This recovers a solid body from many non-manifold, self-intersecting, duplicated, or partly open meshes. Generous mode adds stronger smoothing for especially chaotic generated models.
+
+            section.section
+              h2.section-title
+                span 4 · Brick inventory
+                span.hint Global limits
+              p.hint.hint--inventory Tell the planner which pieces are plentiful or scarce. A blank maximum means unlimited; every model brick and any optional bottom-leveling brick counts toward the limit.
+              .inventory-table
+                .inventory-header
+                  span Part
+                  span Supply
+                  span Max
+                  span.inventory-used-heading Used
+                #inventoryRows
+              .inventory-actions
+                button#resetInventoryBtn.btn.small(type='button') Reset inventory
+                span.hint 1×3 defaults to max 4
+
+            section.section
+              h2.section-title
+                span 5 · Structure & layout
+              .row.row--bottom-space
+                label(for='supportStrength') Connection preference
+                select#supportStrength.select--support
+                  option(value='one') Flexible · final lock
+                  option(value='robust', selected) Robust · prefer 2 studs
+                  option(value='strong') Strong · prefer broad locks
+              label.check-row
+                input#stagger(type='checkbox', checked)
+                span
+                  strong Stagger vertical seams
+                  | Alternate orientation and favor bricks that cross joints in the completed layer below.
+              label.check-row
+                input#showWire(type='checkbox')
+                span
+                  strong Show source wireframe
+                  | Overlay a sampled outline of the imported mesh for comparison.
+              .row.row--top-space
+                label(for='colorMode') Brick colors
+                select#colorMode.select--wide
+                  option(value='model', selected) GLB model / texture
+                  option(value='random') Random palette
+              p.hint.hint--after-control For GLB files, the app samples embedded PNG, JPEG, or WebP base-color textures at the reconstructed surface, then averages those colors over each brick footprint. Vertex and material colors are also supported. OBJ/STL files fall back to the random palette.
+              p.structure-note
+                strong No internal scaffolding is added.
+                |  Bricks are allowed to cantilever sideways from supported studs or lock into the layer above. After packing, the app traces real stud overlaps both upward and downward; pieces with no path to the baseplate are skipped instead of receiving support columns. The only added volume is optional bottom leveling within the first few layers when the imported model is tilted.
+              button#generateBtn.btn.primary(type='button', disabled) Generate connected sculpture
+              #progressWrap.progress-wrap
+                .progress-track
+                  #progressBar.progress-bar
+              #status.status(aria-live='polite') Choose a model or load the demo.
+
+            section.section
+              h2.section-title
+                span Sculpture statistics
+              .stats
+                .stat
+                  #statGrid.stat-value —
+                  .stat-label Grid
+                .stat
+                  #statLayers.stat-value —
+                  .stat-label Layers
+                .stat
+                  #statVoxels.stat-value —
+                  .stat-label Model studs
+                .stat
+                  #statBricks.stat-value —
+                  .stat-label Bricks
+                .stat
+                  #statSupports.stat-value —
+                  .stat-label Base-level pieces
+                .stat
+                  #statConnected.stat-value —
+                  .stat-label Connected to base
+              button#exportBtn.btn.btn--full-spaced(type='button', disabled) Export instructions as JSON
+
+            section.section
+              h2.section-title
+                span How it works
+              p.hint.hint--flush In Robust mode the app rasterizes the visible triangle surface without relying on consistent normals or a perfectly closed shell. It seals small voxel cracks, combines exterior flood filling with three-axis enclosure tests, removes detached fragments, optionally levels only the bottom, and then tiles the solid layer by layer. The planner favors plentiful pieces, alternates seam direction, lets overhang bricks lock from above, and removes any final brick component that has no real stud-overlap path to the baseplate.
+
+        section.panel.viewer-panel(aria-label='Interactive 3D sculpture viewer')
+          canvas#glCanvas
+          #emptyState.empty-state
+            .empty-card
+              .empty-model 🧱
+              h2 Your sculpture will appear here
+              p Load the built-in rocket or choose an OBJ, STL, or textured GLB model—even one with modest holes or messy generated geometry. Drag to orbit and use the mouse wheel or pinch gesture to zoom.
+
+          .viewer-topbar
+            .toolbar(role='group', aria-label='Layer display mode')
+              span.mode-label Display
+              button.btn.small.active(data-mode='all', type='button') All
+              button.btn.small(data-mode='through', type='button') Through layer
+              button.btn.small(data-mode='layer', type='button') Layer only
+            .toolbar
+              button#resetViewBtn.btn.small(type='button') Reset view
+
+          .viewer-bottombar
+            #layerControl.layer-control
+              button#prevLayer.btn.icon(type='button', aria-label='Previous layer') ‹
+              input#layerSlider(type='range', min='1', max='1', value='1', disabled, aria-label='Selected build layer')
+              button#nextLayer.btn.icon(type='button', aria-label='Next layer') ›
+              #layerReadout.layer-readout Layer — / —
+            .viewer-tip Drag to orbit · Wheel to zoom · Double-click to reset
+
+        aside.panel.instruction-panel
+          .instruction-head
+            .instruction-kicker Build instructions
+            h2#instructionTitle No sculpture yet
+            #instructionSummary.instruction-summary Generate a sculpture to inspect one brick layer at a time.
+          .scroll
+            section.section.section--first
+              .plan-wrap
+                canvas#planCanvas
+                #planEmpty.plan-empty A top-down placement diagram will appear here.
+              .layer-meta
+                .mini-stat
+                  strong#layerBrickCount —
+                  span bricks
+                .mini-stat
+                  strong#layerStudCount —
+                  span studs filled
+                .mini-stat
+                  strong#layerTypeCount —
+                  span brick types
+                .mini-stat
+                  strong#layerSupportCount —
+                  span base fillers
+              .legend
+                span
+                  i.legend-swatch.legend-swatch--current
+                  | current layer
+                span
+                  i.legend-swatch.legend-swatch--below
+                  | layer below
+                span
+                  i.legend-swatch.legend-swatch--leveling
+                  | bottom-leveling brick
+                span
+                  i.legend-swatch.legend-swatch--locking
+                  | locks from next layer
+                span Numbers match brick placement IDs
+
+            section.section
+              h2.section-title
+                span Parts for this layer
+              #partsList.parts-list
+                .hint No parts to show.
+              p#layerNote.hint.hint--layer-note Each layer uses standard-height bricks. Start at layer 1 and work upward.
+
+    #toast.toast(role='status')
+
+    script(src='/js/lego-sculpture-converter-loader.js')
+    script(src='/js/lego-sculpture-converter.js')

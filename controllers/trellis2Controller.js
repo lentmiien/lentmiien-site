@@ -89,6 +89,8 @@ function buildPageLinks(currentPage, totalPages) {
 
 function buildJobView(job, user) {
   const isOwner = isTrellis2JobOwner(job, user);
+  const hasCompletedModel = job.status === 'completed' && job.outputModel;
+  const encodedJobId = encodeURIComponent(job._id);
   return {
     id: String(job._id),
     status: job.status,
@@ -109,8 +111,9 @@ function buildJobView(job, user) {
     inputSizeLabel: formatBytes(job.inputImage?.sizeBytes),
     outputSizeLabel: formatBytes(job.outputModel?.sizeBytes),
     durationLabel: formatSeconds(job.metrics?.totalSeconds),
-    downloadUrl: job.status === 'completed' && job.outputModel
-      ? `/trellis2/jobs/${encodeURIComponent(job._id)}/download`
+    downloadUrl: hasCompletedModel ? `/trellis2/jobs/${encodedJobId}/download` : '',
+    legoSculptureUrl: hasCompletedModel
+      ? `/lego-sculpture-converter?source=trellis2&jobId=${encodedJobId}`
       : '',
   };
 }

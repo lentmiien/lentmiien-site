@@ -400,6 +400,24 @@
   padding-top: 1rem;
 }
 
+.trellis2-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.trellis2-lego-action {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.trellis2-lego-action:hover,
+.trellis2-lego-action:focus {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-inverse);
+}
+
 .trellis2-share {
   align-items: flex-end;
   display: flex;
