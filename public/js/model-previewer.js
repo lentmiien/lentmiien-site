@@ -127,13 +127,17 @@ function startPreview() {
   }
 
   function createLoader() {
+    const threeVendorUrl = viewport.dataset.threeVendorUrl;
+    if (!threeVendorUrl) {
+      throw new Error('The Three.js vendor URL is missing.');
+    }
     const manager = new THREE.LoadingManager();
     const loader = new GLTFLoader(manager);
     const dracoLoader = new DRACOLoader(manager);
     const ktx2Loader = new KTX2Loader(manager);
-    dracoLoader.setDecoderPath('/vendor/three/addons/libs/draco/');
+    dracoLoader.setDecoderPath(`${threeVendorUrl}/addons/libs/draco/`);
     ktx2Loader
-      .setTranscoderPath('/vendor/three/addons/libs/basis/')
+      .setTranscoderPath(`${threeVendorUrl}/addons/libs/basis/`)
       .detectSupport(renderer);
     loader.setDRACOLoader(dracoLoader);
     loader.setKTX2Loader(ktx2Loader);
@@ -148,7 +152,13 @@ function startPreview() {
       return;
     }
 
-    const loaderResources = createLoader();
+    let loaderResources;
+    try {
+      loaderResources = createLoader();
+    } catch {
+      showError('The 3D viewer could not initialize its model loaders. Refresh the page and try again.');
+      return;
+    }
     loaderResources.loader.load(
       modelUrl,
       (gltf) => {

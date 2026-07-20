@@ -21,6 +21,11 @@ const { ensurePublicTobuyListPath } = require('./utils/publicTobuyList');
 const { ensureRequestCounterPath } = require('./utils/requestCounterPath');
 const { ensureMinuteLoggerPath } = require('./utils/minuteLoggerPath');
 const { ensureDeviceUsagePath } = require('./utils/deviceUsagePath');
+const {
+  THREE_ADDONS_PATH,
+  THREE_BUILD_PATH,
+  THREE_VENDOR_BASE_URL,
+} = require('./utils/threeVendor');
 
 // Database models
 const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
@@ -352,8 +357,13 @@ app.get('/html/lego_sculpture_converter.html', isAuthenticated, (_req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/katex', express.static(path.join(__dirname, 'node_modules', 'katex', 'dist')));
 app.use('/vendor/mermaid', express.static(path.join(__dirname, 'node_modules', 'mermaid', 'dist')));
-app.use('/vendor/three/build', express.static(path.join(__dirname, 'node_modules', 'three', 'build')));
-app.use('/vendor/three/addons', express.static(path.join(__dirname, 'node_modules', 'three', 'examples', 'jsm')));
+const immutableVendorOptions = { immutable: true, maxAge: '1y' };
+app.use(`${THREE_VENDOR_BASE_URL}/build`, express.static(THREE_BUILD_PATH, immutableVendorOptions));
+app.use(`${THREE_VENDOR_BASE_URL}/addons`, express.static(THREE_ADDONS_PATH, immutableVendorOptions));
+
+// Keep the original URLs available for preview pages opened before the versioned asset rollout.
+app.use('/vendor/three/build', express.static(THREE_BUILD_PATH));
+app.use('/vendor/three/addons', express.static(THREE_ADDONS_PATH));
 
 // Middleware for caching static files
 app.use('/img', express.static(path.join(__dirname, 'public', 'img'), {

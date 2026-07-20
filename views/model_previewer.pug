@@ -46,6 +46,7 @@ block content
       #modelPreviewViewport.model-previewer-viewport(
         data-model-url=preview.modelUrl,
         data-model-name=preview.modelName,
+        data-three-vendor-url=threeVendorBaseUrl,
         aria-describedby='modelPreviewHelp'
       )
         canvas#modelPreviewCanvas(
@@ -73,11 +74,5 @@ block content
         span Keyboard: arrows rotate, +/− zoom, 0 resets
 
 block script
-  script(type='importmap').
-    {
-      "imports": {
-        "three": "/vendor/three/build/three.module.min.js",
-        "three/addons/": "/vendor/three/addons/"
-      }
-    }
-  script(type='module', src='/js/model-previewer.js')
+  script(type='importmap')!= JSON.stringify({ imports: { 'three': threeVendorBaseUrl + '/build/three.module.min.js', 'three/addons/': threeVendorBaseUrl + '/addons/' } })
+  script(type='module', src='/js/model-previewer-bootstrap.js')

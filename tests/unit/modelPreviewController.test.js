@@ -16,6 +16,7 @@ jest.mock('../../models/pixal3d_job', () => ({
 const Trellis2Job = require('../../models/trellis2_job');
 const Pixal3dJob = require('../../models/pixal3d_job');
 const controller = require('../../controllers/modelPreviewController');
+const { THREE_VENDOR_BASE_URL } = require('../../utils/threeVendor');
 
 function leanResult(value) {
   return {
@@ -68,6 +69,7 @@ describe('3D model preview controller', () => {
       pageTitle: 'tiny robot.png · 3D model preview',
       bodyClass: 'model-previewer-body',
       hideLayoutFooterSpacer: true,
+      threeVendorBaseUrl: THREE_VENDOR_BASE_URL,
       preview: {
         source: 'trellis2',
         sourceLabel: 'TRELLIS.2',
@@ -150,6 +152,7 @@ describe('3D model preview page', () => {
         permissions: [],
         htmlPaths: [],
         bookmarks: [],
+        threeVendorBaseUrl: THREE_VENDOR_BASE_URL,
         preview: {
           sourceLabel: 'TRELLIS.2',
           backUrl: '/trellis2',
@@ -163,13 +166,14 @@ describe('3D model preview page', () => {
     expect(html).toContain('<link rel="stylesheet" href="/css/color-theme.css">');
     expect(html).toContain('<link rel="stylesheet" href="/css/model-previewer.css">');
     expect(html).toContain('data-model-url="/trellis2/jobs/job-123/download"');
+    expect(html).toContain(`data-three-vendor-url="${THREE_VENDOR_BASE_URL}"`);
     expect(html).toContain('data-preview-mode="texture" aria-pressed="true" disabled>');
     expect(html).toContain('data-preview-mode="solid" aria-pressed="false" disabled>');
     expect(html).toContain('data-preview-mode="wireframe" aria-pressed="false" disabled>');
     expect(html).toContain('id="modelPreviewReset"');
     expect(html).toContain('Keyboard: arrows rotate, +/− zoom, 0 resets');
-    expect(html).toContain('"three": "/vendor/three/build/three.module.min.js"');
-    expect(html).toContain('"three/addons/": "/vendor/three/addons/"');
-    expect(html).toContain('<script type="module" src="/js/model-previewer.js"></script>');
+    expect(html).toContain(`"three":"${THREE_VENDOR_BASE_URL}/build/three.module.min.js"`);
+    expect(html).toContain(`"three/addons/":"${THREE_VENDOR_BASE_URL}/addons/"`);
+    expect(html).toContain('<script type="module" src="/js/model-previewer-bootstrap.js"></script>');
   });
 });

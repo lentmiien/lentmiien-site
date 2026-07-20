@@ -3,6 +3,7 @@ const Trellis2Job = require('../models/trellis2_job');
 const Pixal3dJob = require('../models/pixal3d_job');
 const { buildVisibleTrellis2JobsQuery } = require('../utils/trellis2');
 const { buildVisiblePixal3dJobsQuery } = require('../utils/pixal3d');
+const { THREE_VENDOR_BASE_URL } = require('../utils/threeVendor');
 
 const JOB_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const MODEL_SOURCES = Object.freeze({
@@ -55,6 +56,7 @@ async function renderPreview(req, res) {
       bodyClass: 'model-previewer-body',
       contentContainerClass: 'model-previewer-container',
       hideLayoutFooterSpacer: true,
+      threeVendorBaseUrl: THREE_VENDOR_BASE_URL,
       preview: {
         source,
         sourceLabel: sourceConfig.label,
