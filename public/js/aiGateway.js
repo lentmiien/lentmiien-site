@@ -18,8 +18,8 @@
   const llmThroughput = Array.isArray(chartData.llmThroughput) ? chartData.llmThroughput : [];
   const ocrTimings = Array.isArray(chartData.ocrTimings) ? chartData.ocrTimings : [];
   const ttsBackends = Array.isArray(chartData.ttsBackends) ? chartData.ttsBackends : [];
-  const gpuTimeline = chartData.gpuTimeline || {};
-  const gpu = payload.gpu || {};
+  let gpuTimeline = chartData.gpuTimeline || {};
+  let gpu = payload.gpu || {};
   const autoStop = payload.autoStop || null;
   let containers = Array.isArray(payload.containers) ? payload.containers : [];
   let containerSummary = payload.containerSummary || {};
@@ -1373,6 +1373,63 @@
     }
   };
 
+  const initGpuTimelinePolling = (renderChart) => {
+    const container = document.getElementById('gpuTimelineChart');
+    if (!container) {
+      return;
+    }
+
+    const refreshIntervalMs = 1000;
+    let requestInFlight = false;
+    let stopped = false;
+    let failureLogged = false;
+
+    const refreshGpuTimeline = async () => {
+      if (requestInFlight || stopped) {
+        return;
+      }
+
+      requestInFlight = true;
+      try {
+        const response = await fetch('/admin/ai-gateway/gpu', {
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.error || `Request failed (${response.status})`);
+        }
+        if (!data.gpuTimeline || typeof data.gpuTimeline !== 'object') {
+          throw new Error('GPU timeline data missing from response.');
+        }
+
+        const previousTotalBytes = asNumber(gpu.totalBytes);
+        gpu = data.gpu && typeof data.gpu === 'object'
+          ? { ...gpu, ...data.gpu }
+          : gpu;
+        if (asNumber(gpu.totalBytes) === null && previousTotalBytes !== null) {
+          gpu.totalBytes = previousTotalBytes;
+        }
+        gpuTimeline = data.gpuTimeline;
+        renderChart();
+        failureLogged = false;
+      } catch (error) {
+        if (!failureLogged) {
+          console.warn('Unable to refresh the GPU timeline; retrying.', error);
+          failureLogged = true;
+        }
+      } finally {
+        requestInFlight = false;
+      }
+    };
+
+    const refreshTimer = window.setInterval(refreshGpuTimeline, refreshIntervalMs);
+    window.addEventListener('pagehide', () => {
+      stopped = true;
+      window.clearInterval(refreshTimer);
+    }, { once: true });
+  };
+
   const safeRequestChart = safeRender(renderRequestVolumeChart, 'request volume chart');
   safeRequestChart();
   resizeCallbacks.push(safeRequestChart);
@@ -1384,6 +1441,7 @@
   const safeGpuChart = safeRender(renderGpuTimelineChart, 'GPU timeline chart');
   safeGpuChart();
   resizeCallbacks.push(safeGpuChart);
+  initGpuTimelinePolling(safeGpuChart);
 
   const safeVramChart = safeRender(renderVramPressureChart, 'VRAM pressure chart');
   safeVramChart();

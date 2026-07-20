@@ -3724,6 +3724,37 @@ exports.ai_gateway_dashboard = async (req, res) => {
   });
 };
 
+exports.ai_gateway_gpu = async (req, res) => {
+  try {
+    const response = await axios.get(
+      `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.gpu}`,
+      { timeout: AI_GATEWAY_TIMEOUT_MS },
+    );
+
+    return res
+      .set('Cache-Control', 'no-store')
+      .json({
+        ok: true,
+        fetchedAt: new Date().toISOString(),
+        gpu: buildGatewayGpuStats({}, response.data, null),
+        gpuTimeline: buildGpuTimeline(response.data),
+      });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    const message = buildAiGatewayErrorMessage(error, 'Unable to fetch AI gateway GPU data.');
+
+    logger.warning('Failed to fetch AI gateway GPU data', {
+      category: 'ai_gateway',
+      metadata: { error: message, status },
+    });
+
+    return res
+      .status(status)
+      .set('Cache-Control', 'no-store')
+      .json({ ok: false, error: message });
+  }
+};
+
 async function fetchAiGatewayContainerState() {
   const response = await axios.get(
     `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.containers}`,
