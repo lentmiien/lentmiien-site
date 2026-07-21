@@ -9,6 +9,8 @@ block content
   - const availableToolOptions = typeof availableTools !== 'undefined' && Array.isArray(availableTools) ? availableTools : [];
   - const trainingGroupOptions = typeof trainingGroups !== 'undefined' && Array.isArray(trainingGroups) ? trainingGroups : [];
   - const trainingEntryOptions = typeof trainingEntries !== 'undefined' && Array.isArray(trainingEntries) ? trainingEntries : [];
+  - const quickOptions = typeof quickSettingOptions !== 'undefined' && Array.isArray(quickSettingOptions) ? quickSettingOptions : [];
+  - const signedInUser = typeof currentUser === 'string' ? currentUser : '';
   -
     const trainingUsageByMessage = {};
     const ensureTrainingUsage = (messageId) => {
@@ -354,6 +356,28 @@ block content
       button#pills-raw-tab.nav-link(data-bs-toggle="pill" data-bs-target="#pills-raw" type="button" role="tab" aria-controls="pills-raw" aria-selected="false") Raw
   #pills-tabContent.tab-content.chat5-tab-content
     #pills-chat.tab-pane.fade.show.active.chat5-pane(role="tabpanel" aria-labelledby="pills-chat-tab" tabindex="0")
+      .chat5-quick-settings-panel
+        .d-flex.flex-wrap.justify-content-between.align-items-center.gap-2.mb-2
+          strong Quick settings
+          a.chat5-quick-settings-manage.small(href="/chat5/quick-settings") Manage options
+        .chat5-quick-settings-grid
+          if conversationSource === 'unsaved'
+            div(data-quick-new-only)
+              label.form-label.small(for="quickCategory") Category
+              input#quickCategory.form-control.form-control-sm(type="text", value=conversation.category)
+            div(data-quick-new-only)
+              label.form-label.small(for="quickTags") Tags
+              input#quickTags.form-control.form-control-sm(type="text", value=conversation.tags.join(', '), placeholder="comma, separated")
+          div
+            label.form-label.small(for="quickSettingsSelect") Quick setting
+            select#quickSettingsSelect.form-select.form-select-sm(data-current-user=signedInUser, disabled=quickOptions.length === 0)
+              if quickOptions.length
+                option(value="") -- Select quick setting --
+                each setting in quickOptions
+                  option(value=setting._id, data-overrides=JSON.stringify(setting.overrides))= setting.name
+              else
+                option(value="") No quick settings saved
+        small#quickSettingsStatus.text-muted.d-block.mt-2(aria-live="polite") Ignored fields remain unchanged.
       label.chat5-input-label(for="fileInput") Append image to conversation
       input#fileInput.form-control(type="file", name="fileInput", accept="image/*")
       hr.chat5-divider
@@ -829,4 +853,5 @@ block content
         updateBatchWarning();
       });
     })();
+  script(src="/js/chat5_quick_settings.js", defer)
   script(src="/js/chat5_5.js", defer)

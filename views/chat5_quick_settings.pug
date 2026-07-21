@@ -1,0 +1,163 @@
+extends layout
+
+block content
+  -
+    const emptyForm = {
+      categoryEnabled: false,
+      category: '',
+      tagsEnabled: false,
+      tags: '',
+      contextMode: 'ignore',
+      contextText: '',
+      contextTemplateId: '',
+      toolsEnabled: false,
+      tools: [],
+      modelEnabled: false,
+      model: '',
+      maxMessagesEnabled: false,
+      maxMessages: 999,
+      reasoningEnabled: false,
+      reasoning: 'medium',
+      modeEnabled: false,
+      mode: 'standard',
+      verbosityEnabled: false,
+      verbosity: 'medium',
+      membersEnabled: false,
+      members: '',
+    };
+  mixin overrideMode(prefix, field, enabled)
+    select.form-select.form-select-sm.chat5-quick-setting-mode(
+      id=`${prefix}-${field}-mode`
+      name=`${field}_mode`
+      data-quick-setting-mode
+      data-target=`${prefix}-${field}-value`
+    )
+      option(value="ignore", selected=!enabled) Ignore
+      option(value="override", selected=enabled) Override
+  mixin quickSettingForm(setting, action, submitLabel, prefix)
+    - const form = setting.form || emptyForm;
+    form(method="post", action=action, data-quick-setting-form)
+      .mb-3
+        label.form-label(for=`${prefix}-name`) Name
+        input.form-control(id=`${prefix}-name`, type="text", name="name", maxlength="120", required, value=setting.name || '', placeholder="e.g. Quick answer")
+      .chat5-quick-setting-grid
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-category`) Category
+            +overrideMode(prefix, 'category', form.categoryEnabled)
+          input.form-control(id=`${prefix}-category`, data-quick-setting-value, data-field-id=`${prefix}-category-value`, type="text", name="category", maxlength="100", value=form.category, disabled=!form.categoryEnabled)
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-tags`) Tags
+            +overrideMode(prefix, 'tags', form.tagsEnabled)
+          input.form-control(id=`${prefix}-tags`, data-quick-setting-value, data-field-id=`${prefix}-tags-value`, type="text", name="tags", value=form.tags, placeholder="comma, separated", disabled=!form.tagsEnabled)
+        .chat5-quick-setting-field.chat5-quick-setting-field--wide
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-context-mode`) Context
+            select.form-select.form-select-sm.chat5-quick-setting-mode(
+              id=`${prefix}-context-mode`
+              name="context_mode"
+              data-quick-context-mode
+              data-text-target=`${prefix}-context-text`
+              data-template-target=`${prefix}-context-template`
+            )
+              option(value="ignore", selected=form.contextMode === 'ignore') Ignore
+              option(value="text", selected=form.contextMode === 'text') Free text
+              option(value="template", selected=form.contextMode === 'template') Existing template
+          textarea.form-control.mt-2(
+            id=`${prefix}-context-text`
+            name="context_text"
+            rows="4"
+            data-quick-context-text
+            disabled=form.contextMode !== 'text'
+          )= form.contextText
+          select.form-select.mt-2(
+            id=`${prefix}-context-template`
+            name="context_template_id"
+            data-quick-context-template
+            disabled=form.contextMode !== 'template'
+          )
+            option(value="") -- Select context template --
+            each template in catalog.contextTemplates
+              option(value=template._id, selected=String(template._id) === form.contextTemplateId)= `${template.Category} - ${template.Title}`
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-tools`) Tools
+            +overrideMode(prefix, 'tools', form.toolsEnabled)
+          select.form-select(id=`${prefix}-tools`, name="tools", multiple, size="6", data-quick-setting-value, data-field-id=`${prefix}-tools-value`, disabled=!form.toolsEnabled)
+            each tool in catalog.tools
+              option(value=tool.name, title=tool.description, selected=form.tools.indexOf(tool.name) >= 0)= tool.displayName
+          small.text-muted Override with no selection to clear all tools.
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-model`) Model
+            +overrideMode(prefix, 'model', form.modelEnabled)
+          select.form-select(id=`${prefix}-model`, name="model", data-quick-setting-value, data-field-id=`${prefix}-model-value`, disabled=!form.modelEnabled)
+            option(value="") -- Select model --
+            each model in catalog.models
+              option(value=model.api_model, selected=model.api_model === form.model)= model.model_name
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-maxMessages`) Max messages
+            +overrideMode(prefix, 'maxMessages', form.maxMessagesEnabled)
+          input.form-control(id=`${prefix}-maxMessages`, name="maxMessages", type="number", min="1", step="1", value=form.maxMessages, data-quick-setting-value, data-field-id=`${prefix}-maxMessages-value`, disabled=!form.maxMessagesEnabled)
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-reasoning`) Reasoning effort
+            +overrideMode(prefix, 'reasoning', form.reasoningEnabled)
+          select.form-select(id=`${prefix}-reasoning`, name="reasoning", data-quick-setting-value, data-field-id=`${prefix}-reasoning-value`, disabled=!form.reasoningEnabled)
+            each optionValue in reasoningOptions
+              option(value=optionValue, selected=optionValue === form.reasoning)= optionValue === 'xhigh' ? 'Extra high' : optionValue.charAt(0).toUpperCase() + optionValue.slice(1)
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-mode`) Reasoning mode
+            +overrideMode(prefix, 'mode', form.modeEnabled)
+          select.form-select(id=`${prefix}-mode`, name="mode", data-quick-setting-value, data-field-id=`${prefix}-mode-value`, disabled=!form.modeEnabled)
+            each optionValue in modeOptions
+              option(value=optionValue, selected=optionValue === form.mode)= optionValue.charAt(0).toUpperCase() + optionValue.slice(1)
+        .chat5-quick-setting-field
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-verbosity`) Verbosity
+            +overrideMode(prefix, 'verbosity', form.verbosityEnabled)
+          select.form-select(id=`${prefix}-verbosity`, name="verbosity", data-quick-setting-value, data-field-id=`${prefix}-verbosity-value`, disabled=!form.verbosityEnabled)
+            each optionValue in verbosityOptions
+              option(value=optionValue, selected=optionValue === form.verbosity)= optionValue.charAt(0).toUpperCase() + optionValue.slice(1)
+        .chat5-quick-setting-field.chat5-quick-setting-field--wide
+          .chat5-quick-setting-field-heading
+            label.form-label.mb-0(for=`${prefix}-members`) Members
+            +overrideMode(prefix, 'members', form.membersEnabled)
+          input.form-control(id=`${prefix}-members`, name="members", type="text", value=form.members, placeholder="comma, separated", data-quick-setting-value, data-field-id=`${prefix}-members-value`, disabled=!form.membersEnabled)
+          small.text-muted The current user is added automatically when this override is applied.
+      button.btn.btn-primary.mt-3(type="submit")= submitLabel
+
+  .d-flex.flex-wrap.justify-content-between.align-items-start.gap-3.mb-4
+    div
+      h2.mb-1 Chat5 Quick Settings
+      p.text-muted.mb-0 Save user-specific combinations and apply them beside the chat prompt.
+    a.btn.btn-outline-secondary(href="/chat5/chat/NEW") Back to new chat
+  if successMessage
+    .alert.alert-success(role="status")= successMessage
+  if errorMessage
+    .alert.alert-danger(role="alert")= errorMessage
+  .card.chat5-quick-setting-card.mb-4
+    .card-body
+      h3.h5.mb-2 Add quick setting
+      p.text-muted Fields set to Ignore remain unchanged when the quick setting is applied.
+      +quickSettingForm({ name: '', form: emptyForm }, '/chat5/quick-settings', 'Create quick setting', 'new-quick-setting')
+  h3.h4.mb-3 Saved quick settings
+  if quickSettings.length
+    .chat5-quick-setting-list
+      each setting, index in quickSettings
+        details.chat5-quick-setting-entry
+          summary
+            span.chat5-quick-setting-entry-name= setting.name
+            span.chat5-quick-setting-entry-summary= setting.summary
+          .chat5-quick-setting-entry-body
+            +quickSettingForm(setting, `/chat5/quick-settings/${setting._id}`, 'Update quick setting', `quick-setting-${index}`)
+            form.mt-2(method="post", action=`/chat5/quick-settings/${setting._id}/delete`, onsubmit="return confirm('Delete this quick setting?');")
+              button.btn.btn-outline-danger.btn-sm(type="submit") Delete
+  else
+    p.text-muted No quick settings saved yet.
+
+block script
+  script(src="/js/chat5_quick_settings.js", defer)

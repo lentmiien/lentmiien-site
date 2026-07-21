@@ -827,6 +827,9 @@ function SwitchConversation(new_id) {
   socket.emit('chat5-joinConversation', {conversationId: new_id});
   document.getElementById("id").innerHTML = new_id;
   chat5MessageWindow.source = 'conversation5';
+  if (window.Chat5QuickSettings && typeof window.Chat5QuickSettings.updateConversationState === 'function') {
+    window.Chat5QuickSettings.updateConversationState(document);
+  }
   updateBatchButtons();
   updateMessageLoadControls();
 }
@@ -1074,15 +1077,23 @@ function RemoveLastMessage() {
   });
 }
 
-function UpdateConversation() {
+function UpdateConversation(options = {}) {
+  const onComplete = options && typeof options.onComplete === 'function'
+    ? options.onComplete
+    : null;
+  const complete = (ok, response) => {
+    if (onComplete) onComplete(ok, response);
+  };
   const idEl = document.getElementById("id");
   const conversation_id = idEl.innerHTML;
   if (conversation_id === "NEW") {
     alert('Please create the conversation before updating its settings.');
+    complete(false, { message: 'Please create the conversation before updating its settings.' });
     return;
   }
   if (idEl.dataset.source !== 'conversation5') {
     alert('Updating settings is only supported for chat5 conversations.');
+    complete(false, { message: 'Updating settings is only supported for chat5 conversations.' });
     return;
   }
 
@@ -1110,10 +1121,12 @@ function UpdateConversation() {
     hideLoadingPopup();
     if (!resp || resp.ok !== true) {
       alert(resp && resp.message ? resp.message : 'Failed to update conversation.');
+      complete(false, resp || { message: 'Failed to update conversation.' });
       return;
     }
     idEl.dataset.source = 'conversation5';
     setUpdateButtonState();
+    complete(true, resp);
   });
 }
 

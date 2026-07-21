@@ -26,6 +26,7 @@ const upload = multer({
 // Require controller modules.
 const controller = require('../controllers/chat5controller');
 const chat5DocumentController = require('../controllers/chat5DocumentController');
+const quickSettingsController = require('../controllers/chat5QuickSettingsController');
 const trainingDataController = require('../controllers/trainingDataController');
 
 // Chat5 top page
@@ -41,6 +42,10 @@ router.post('/drafting-presets/personality', controller.savePersonalityPreset);
 router.post('/drafting-presets/personality/:id/delete', controller.deletePersonalityPreset);
 router.post('/drafting-presets/response-type', controller.saveResponseTypePreset);
 router.post('/drafting-presets/response-type/:id/delete', controller.deleteResponseTypePreset);
+router.get('/quick-settings', quickSettingsController.list);
+router.post('/quick-settings', quickSettingsController.create);
+router.post('/quick-settings/:id', quickSettingsController.update);
+router.post('/quick-settings/:id/delete', quickSettingsController.remove);
 router.get('/story_mode/:id', controller.story_mode);
 router.get('/edit_message/:id', controller.edit_message);
 router.post('/update_message/:id', upload.array('imgs'), controller.update_message);

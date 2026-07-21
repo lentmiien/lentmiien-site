@@ -45,6 +45,7 @@ const CookbookRecipeModel = require('./models/cookbook_recipe');
 const Chat5Model = require('./models/chat5');
 const Conversation5Model = require('./models/conversation5');
 const Chat5TemplateModel = require('./models/chat5_template');
+const Chat5QuickSettingModel = require('./models/chat5_quick_setting');
 const ChatPersonalityModel = require('./models/chat_personality');
 const ChatResponseTypeModel = require('./models/chat_response_type');
 const PendingRequests = require('./models/pending_requests');
@@ -213,6 +214,7 @@ module.exports = {
   Chat5Model,
   Conversation5Model,
   Chat5TemplateModel,
+  Chat5QuickSettingModel,
   ChatPersonalityModel,
   ChatResponseTypeModel,
   PendingRequests,

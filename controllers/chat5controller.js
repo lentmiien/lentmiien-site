@@ -1,4 +1,4 @@
-const { AIModelCards, Chat4Model, Conversation4Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
+const { AIModelCards, Chat4Model, Conversation4Model, Conversation5Model, Chat4KnowledgeModel, FileMetaModel, Chat3TemplateModel, Chat5QuickSettingModel, ChatPersonalityModel, ChatResponseTypeModel } = require('../database');
 const utils = require('../utils/utils');
 const openai = require('../utils/ChatGPT');
 const anthropic = require('../utils/anthropic');
@@ -14,6 +14,8 @@ const TemplateService = require('../services/templateService');
 const TtsService = require('../services/ttsService');
 const ToolManagerService = require('../services/toolManagerService');
 const TrainingDataService = require('../services/trainingDataService');
+const { invalidateChatModelCache, listAvailableChatModels } = require('../services/chat5ModelCatalogService');
+const { Chat5QuickSettingService, serializeQuickSetting } = require('../services/chat5QuickSettingService');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
@@ -21,6 +23,7 @@ const templateService = new TemplateService(Chat3TemplateModel);
 const ttsService = new TtsService();
 const toolManagerService = new ToolManagerService();
 const trainingDataService = new TrainingDataService();
+const quickSettingService = new Chat5QuickSettingService(Chat5QuickSettingModel);
 const CHAT5_INITIAL_MESSAGE_LIMIT = 25;
 const CHAT5_MESSAGE_BATCH_SIZE = 25;
 
@@ -110,23 +113,6 @@ function parseActiveFlag(value) {
     return value === 1;
   }
   return false;
-}
-
-let chat_models = [];
-
-function invalidateChatModelCache() {
-  chat_models = [];
-}
-
-async function ensureChatModels() {
-  if (Array.isArray(chat_models) && chat_models.length > 0) return chat_models;
-  const models = await AIModelCards.find();
-  const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
-  chat_models = models.filter(d => (
-    (d.provider === 'OpenAI' && availableOpenAI.indexOf(d.api_model) >= 0) ||
-    d.provider === 'Local'
-  ) && d.model_type === 'chat');
-  return chat_models;
 }
 
 async function loadTtsVoicesSafe() {
@@ -477,10 +463,6 @@ exports.update_message = async (req, res) => {
 
 exports.view_chat5_top = async (req, res) => {
   const user_id = req.user.name;
-  // Load available OpenAI models
-  const models = await AIModelCards.find();
-  const availableOpenAI = openai.GetOpenAIModels().map(d => d.model);
-  chat_models = models.filter(d => ((d.provider === "OpenAI" && availableOpenAI.indexOf(d.api_model) >= 0) || d.provider === "Local") && d.model_type === "chat");
 
   // Get both new and old conversations, and sort from new to old
   const conversations = await conversationService.listUserConversations(user_id);
@@ -592,19 +574,21 @@ exports.view_chat5 = async (req, res) => {
   const trainingEntriesPromise = id !== 'NEW' && conversationSource === 'conversation5'
     ? trainingDataService.listEntriesForConversation(id)
     : Promise.resolve([]);
-  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries] = await Promise.all([
+  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries, quickSettings, models] = await Promise.all([
     templateService.getTemplates(),
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
     toolManagerService.getAvailableTools(),
     trainingDataService.listGroupsWithStats({ includeInactive: false }),
     trainingEntriesPromise,
+    quickSettingService.listForUser(req.user.name),
+    listAvailableChatModels(),
   ]);
   const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
     conversation: conversation || DEFAULT_CONVERSATION,
     messages,
-    chat_models,
+    chat_models: models,
     templates,
     personalities,
     responseTypes,
@@ -614,6 +598,8 @@ exports.view_chat5 = async (req, res) => {
     ttsVoices,
     trainingGroups,
     trainingEntries,
+    quickSettingOptions: quickSettings.map((setting) => serializeQuickSetting(setting, templates)),
+    currentUser: req.user.name,
     trainingStatus: {
       success: req.query.training_success || '',
       error: req.query.training_error || '',
@@ -662,7 +648,7 @@ exports.view_chat5_voice = async (req, res) => {
     conversationPayload.metadata = { ...DEFAULT_CONVERSATION.metadata, ...conversationPayload.metadata };
   }
 
-  const models = await ensureChatModels();
+  const models = await listAvailableChatModels();
   const ttsVoices = await loadTtsVoicesSafe();
 
   res.render('chat5_voice', {
@@ -714,19 +700,21 @@ exports.post_chat5 = async (req, res) => {
   const conversation = await Conversation5Model.findById(id);
   const initial = await loadInitialChat5Messages(conversation);
 
-  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries] = await Promise.all([
+  const [templates, personalities, responseTypes, availableTools, trainingGroups, trainingEntries, quickSettings, models] = await Promise.all([
     templateService.getTemplates(),
     ChatPersonalityModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }),
     ChatResponseTypeModel.find({ isActive: true }).sort({ sortOrder: 1, label: 1 }),
     toolManagerService.getAvailableTools(),
     trainingDataService.listGroupsWithStats({ includeInactive: false }),
     trainingDataService.listEntriesForConversation(id),
+    quickSettingService.listForUser(req.user.name),
+    listAvailableChatModels(),
   ]);
   const ttsVoices = await loadTtsVoicesSafe();
   res.render("chat5_chat", {
     conversation,
     messages: initial.messages,
-    chat_models,
+    chat_models: models,
     templates,
     personalities,
     responseTypes,
@@ -736,6 +724,8 @@ exports.post_chat5 = async (req, res) => {
     ttsVoices,
     trainingGroups,
     trainingEntries,
+    quickSettingOptions: quickSettings.map((setting) => serializeQuickSetting(setting, templates)),
+    currentUser: req.user.name,
     trainingStatus: { success: '', error: '' },
   });
 };

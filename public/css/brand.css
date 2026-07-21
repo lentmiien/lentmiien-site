@@ -2593,6 +2593,116 @@ label,
   margin-bottom: 12px;
 }
 
+.chat5-quick-settings-panel {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.chat5-quick-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.chat5-quick-settings-manage {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.chat5-quick-setting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.chat5-quick-setting-card,
+.chat5-quick-setting-entry {
+  color: var(--text);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+}
+
+.chat5-quick-setting-field {
+  padding: 0.85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+.chat5-quick-setting-field--wide {
+  grid-column: 1 / -1;
+}
+
+.chat5-quick-setting-field-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
+.chat5-quick-setting-mode {
+  width: auto;
+  min-width: 7.5rem;
+}
+
+.chat5-quick-setting-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.chat5-quick-setting-entry {
+  border-radius: 0.7rem;
+  overflow: hidden;
+}
+
+.chat5-quick-setting-entry > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  cursor: pointer;
+  background: var(--surface-3);
+}
+
+.chat5-quick-setting-entry > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.chat5-quick-setting-entry-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.chat5-quick-setting-entry-summary {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.chat5-quick-setting-entry-body {
+  padding: 1rem;
+  border-top: 1px solid var(--divider);
+}
+
+@media (max-width: 575.98px) {
+  .chat5-quick-setting-field--wide {
+    grid-column: auto;
+  }
+
+  .chat5-quick-setting-entry > summary {
+    flex-direction: column;
+  }
+
+  .chat5-quick-setting-entry-summary {
+    text-align: left;
+  }
+}
+
 @media (min-width: 992px) {
   .chat5-input-tools {
     flex-direction: row;

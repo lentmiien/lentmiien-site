@@ -1568,7 +1568,15 @@ module.exports = async function registerChat5_5Handlers({
         return;
       }
 
-      const conversation = await conversationService.updateConversationDetails(conversationId, raw.updates);
+      const updates = { ...raw.updates };
+      if (Array.isArray(updates.members)) {
+        updates.members = [...new Set([
+          ...updates.members.filter((member) => typeof member === 'string' && member.trim().length > 0),
+          userName,
+        ])];
+      }
+
+      const conversation = await conversationService.updateConversationDetails(conversationId, updates);
       if (!conversation) {
         const message = 'Conversation settings can only be updated for chat5 entries.';
         respondWithError(eventName, message, { ack, adjustments });
