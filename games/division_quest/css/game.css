@@ -349,6 +349,41 @@ a:focus-visible {
   gap: 9px;
 }
 
+.language-control {
+  width: auto;
+  min-width: 78px;
+  padding: 0 12px;
+  gap: 6px;
+  border-radius: 999px;
+  color: var(--accent);
+}
+
+.language-control svg {
+  width: 18px;
+}
+
+.language-control span {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+:lang(ja) .brand-copy strong,
+:lang(ja) .brand-copy small,
+:lang(ja) .garden-progress > span,
+:lang(ja) .method-chip,
+:lang(ja) .level-chip,
+:lang(ja) .eyebrow {
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+:lang(ja) .intro-content h1 {
+  font-size: clamp(3.2rem, 7vw, 6.3rem);
+  line-height: 1.08;
+}
+
 .sound-off-icon {
   display: none;
 }
@@ -2107,6 +2142,15 @@ a:focus-visible {
     gap: 6px;
   }
 
+  .language-control {
+    min-width: 64px;
+    padding: 0 8px;
+  }
+
+  .language-control svg {
+    display: none;
+  }
+
   .back-control {
     grid-column: 1;
   }
@@ -2141,6 +2185,11 @@ a:focus-visible {
 
   .intro-content h1 {
     font-size: clamp(3.35rem, 17vw, 5.8rem);
+  }
+
+  :lang(ja) .intro-content h1 {
+    max-width: 82%;
+    font-size: clamp(2.65rem, 12vw, 4.8rem);
   }
 
   .intro-lede {
@@ -2321,6 +2370,12 @@ a:focus-visible {
   .topbar-actions .round-control {
     width: 39px;
     height: 39px;
+  }
+
+  .topbar-actions .language-control {
+    width: auto;
+    min-width: 50px;
+    padding: 0 7px;
   }
 
   .garden-progress {

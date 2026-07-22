@@ -4,29 +4,257 @@
   const AUDIO_BASE = 'assets/audio';
   const TRAINING_LENGTH = 6;
 
+  const COPY = {
+    en: {
+      documentTitle: 'Divide & Shine · The Lantern Garden',
+      metaDescription: 'A voice-guided division adventure for young learners, with animated models, gentle practice, and endless play.',
+      skipLink: 'Skip to the learning game',
+      backControlAria: 'Go back to all games',
+      brandAria: 'Divide and Shine, The Lantern Garden',
+      brandTitle: 'Divide & Shine',
+      brandSubtitle: 'The Lantern Garden',
+      gardenProgressAria: 'Garden lantern progress',
+      replayAria: 'Hear the current guidance again',
+      soundOffAria: 'Turn voice and sound off',
+      soundOnAria: 'Turn voice and sound on',
+      switchLanguageAria: 'Switch to Japanese',
+      targetLanguageLabel: '日本語',
+      introEyebrow: 'A voice-guided division adventure',
+      introTitleHtml: '<span>Divide</span> &amp; Shine',
+      introLede: 'Share the star-seeds fairly, discover four division tricks, and wake a garden of light.',
+      introMethodsAria: 'Learn by sharing, grouping, hopping, and using fact families',
+      methodShareShort: 'Share',
+      methodGroupsShort: 'Group',
+      methodHopsShort: 'Hop',
+      methodFamilyShort: 'Connect',
+      startAria: 'Start the voice-guided division adventure',
+      startSmall: 'Tap to begin',
+      startStrong: 'Start the adventure',
+      headphoneNote: 'Every lesson and problem is spoken aloud.',
+      guideMessage: 'Your garden guide',
+      lessonGuideAria: 'Ask Lumi to repeat this lesson',
+      lumiAlt: 'Lumi, the friendly lantern guide',
+      lumiName: 'Lumi',
+      guideRepeat: 'Tap me to hear it again',
+      lessonPathAria: 'Four ways to divide',
+      lessonStepShare: 'Sharing lesson',
+      lessonStepGroups: 'Grouping lesson',
+      lessonStepHops: 'Backward hops lesson',
+      lessonStepFamily: 'Fact family lesson',
+      hintGuideAria: 'Ask Lumi for a spoken and animated hint',
+      needHint: 'Need a hint?',
+      tapLumi: 'Tap Lumi',
+      streakAria: 'Current answer streak',
+      glowStreak: 'Glow streak',
+      answerPrompt: 'Choose the answer',
+      answerGridAria: 'Answer choices',
+      hearAgain: 'Hear it again',
+      showHint: 'Show a hint',
+      keyboardNote: 'Keys 1–3 choose · H helps · R repeats',
+      celebrationEyebrow: 'The garden is awake',
+      celebrationTitle: 'You made every light shine!',
+      celebrationBody: 'New division paths will keep growing for as long as you want to play.',
+      endlessAria: 'Continue into endless division practice',
+      endlessSmall: 'Endless garden',
+      endlessStrong: 'Keep dividing',
+      methodShareLabel: 'Share fairly',
+      methodShareTitle: 'Share fairly',
+      methodShareCaption: 'Give one star-seed to each lantern, again and again.',
+      methodGroupsLabel: 'Make groups',
+      methodGroupsTitle: 'Make equal groups',
+      methodGroupsCaption: 'Choose a group size, then count how many groups you can make.',
+      methodHopsLabel: 'Hop to zero',
+      methodHopsTitle: 'Take equal hops',
+      methodHopsCaption: 'Count equal steps along a number path.',
+      methodFamilyLabel: 'Fact family',
+      methodFamilyTitle: 'Connect multiplication',
+      methodFamilyCaption: 'Use a multiplication fact you already know.',
+      levelFirst: 'First Lights',
+      levelGarden: 'Garden Glow',
+      levelMoon: 'Moon Bridge',
+      levelStar: 'Star Keeper',
+      wayProgress: 'Way {current} of {total}',
+      lessonEquationAria: '{dividend} divided by {divisor} equals {quotient}',
+      nextIdea: 'Next idea',
+      tryYourself: 'Try it yourself',
+      lessonNextAria: 'Continue to the next division idea',
+      lessonTryAria: 'Start the guided division practice',
+      lessonSpeaking: 'Lumi is showing this division idea aloud.',
+      lessonReady: 'Tap the glowing arrow when you are ready.',
+      nextReadyAnnouncement: 'The next button is ready.',
+      challengeEndlessTitle: 'Grow the endless garden',
+      challengePracticeTitle: 'Light lantern {current} of {total}',
+      guidedPractice: 'Guided practice',
+      problemEquationAria: '{dividend} divided by {divisor}. Choose the answer.',
+      shareProblemCaption: 'Share {dividend} star-seeds equally among {divisor} lanterns. How many go in each lantern?',
+      groupsProblemCaption: 'Use {dividend} star-seeds. Make groups of {divisor}. How many equal groups can you make?',
+      hopsProblemCaption: 'Start at {dividend} and hop back by {divisor}. How many equal hops reach zero?',
+      familyProblemCaption: '{divisor} times what number makes {dividend}?',
+      shareModelLabel: '{groups} equal lanterns',
+      shareModelAria: '{dividend} glowing star-seeds shared into {groups} equal lanterns',
+      groupsModelLabel: '{groups} equal groups',
+      groupsModelPrompt: 'Count the groups',
+      groupsModelAria: '{dividend} glowing star-seeds arranged in equal groups of {size}',
+      hopsModelLabel: 'Equal hops',
+      hopsModelAria: 'A number path from {dividend} down to zero in equal backward hops of {size}',
+      familyModelAria: 'A fact family triangle connecting {dividend}, {divisor}, and the missing answer',
+      answerChoiceAria: 'Answer {answer}. Choice {choice}.',
+      successToast: 'Wonderful! {dividend} ÷ {divisor} = {quotient}',
+      correctAnnouncement: 'Correct. The answer is {quotient}.',
+      retryToast: 'Almost! Watch the lights, then try again.',
+      retryAnnouncement: 'Not yet. Lumi is showing a hint. Try another answer.',
+      hintToast: 'Lumi is showing the strategy.',
+      hintAnnouncement: 'Hint shown. The picture now reveals the counting step.',
+      celebrationAnnouncement: 'All six training lanterns are glowing. Endless practice is unlocked.',
+      progressLearn: 'Learn',
+      progressIdea: 'Idea {current} / {total}',
+      progressGardenAwake: 'Garden awake',
+      soundOffAnnouncement: 'Voice and sound are off.',
+      soundOnAnnouncement: 'Voice and sound are on.',
+    },
+    ja: {
+      documentTitle: 'わけて ひかろう・ランタンの庭',
+      metaDescription: '絵と声でやさしく学べる、子ども向けのわり算アドベンチャー。練習のあとは何問でも遊べます。',
+      skipLink: 'わり算ゲームへ移動',
+      backControlAria: 'ゲーム一覧にもどる',
+      brandAria: 'わけて ひかろう、ランタンの庭',
+      brandTitle: 'わけて ひかろう',
+      brandSubtitle: 'ランタンの庭',
+      gardenProgressAria: '庭のランタンの進みぐあい',
+      replayAria: 'いまの説明をもう一度聞く',
+      soundOffAria: '声と音を消す',
+      soundOnAria: '声と音を出す',
+      switchLanguageAria: '英語に切り替える',
+      targetLanguageLabel: 'EN',
+      introEyebrow: '声で学べる わり算アドベンチャー',
+      introTitleHtml: '<span>わけて</span> ひかろう',
+      introLede: '星の種を同じ数ずつ分けて、4つのコツを見つけ、光の庭を目覚めさせよう。',
+      introMethodsAria: '分ける、まとめる、ジャンプする、かけ算とつなぐ方法で学ぶ',
+      methodShareShort: 'わける',
+      methodGroupsShort: 'まとめる',
+      methodHopsShort: 'とぶ',
+      methodFamilyShort: 'つなぐ',
+      startAria: '声で学べるわり算のぼうけんを始める',
+      startSmall: 'タップして はじめよう',
+      startStrong: 'ぼうけんを はじめる',
+      headphoneNote: 'レッスンも問題も、ぜんぶ声で聞けるよ。',
+      guideMessage: '庭のガイド',
+      lessonGuideAria: 'ルミにこのレッスンをもう一度話してもらう',
+      lumiAlt: 'やさしいランタンのガイド、ルミ',
+      lumiName: 'ルミ',
+      guideRepeat: 'タップでもう一度聞く',
+      lessonPathAria: 'わり算の4つの考え方',
+      lessonStepShare: '同じ数ずつ分けるレッスン',
+      lessonStepGroups: '同じまとまりを作るレッスン',
+      lessonStepHops: '後ろ向きにジャンプするレッスン',
+      lessonStepFamily: 'かけ算とつなぐレッスン',
+      hintGuideAria: 'ルミに声と動きのヒントを見せてもらう',
+      needHint: 'ヒントがいる？',
+      tapLumi: 'ルミをタップ',
+      streakAria: 'いまの連続正解数',
+      glowStreak: 'れんぞく正解',
+      answerPrompt: '答えをえらぼう',
+      answerGridAria: '答えの選択肢',
+      hearAgain: 'もう一度聞く',
+      showHint: 'ヒントを見る',
+      keyboardNote: '1～3で答える・Hでヒント・Rでもう一度',
+      celebrationEyebrow: '庭が目覚めたよ',
+      celebrationTitle: 'ぜんぶの光がかがやいた！',
+      celebrationBody: '遊びたいだけ、新しいわり算の道がどこまでも続くよ。',
+      endlessAria: '終わりのないわり算れんしゅうへ進む',
+      endlessSmall: 'どこまでも続く庭',
+      endlessStrong: 'わり算をつづける',
+      methodShareLabel: '同じ数ずつ分ける',
+      methodShareTitle: '同じ数ずつ分けよう',
+      methodShareCaption: '一つずつ、どのランタンにも同じように入れよう。',
+      methodGroupsLabel: 'まとまりを作る',
+      methodGroupsTitle: '同じまとまりを作ろう',
+      methodGroupsCaption: '一つのまとまりの数を決めて、いくつできるか数えよう。',
+      methodHopsLabel: '0までジャンプ',
+      methodHopsTitle: '同じ大きさでジャンプ',
+      methodHopsCaption: '数の道を、同じ数ずつ戻って数えよう。',
+      methodFamilyLabel: 'かけ算のなかま',
+      methodFamilyTitle: 'かけ算とつなげよう',
+      methodFamilyCaption: '知っているかけ算を使って考えよう。',
+      levelFirst: 'はじめの光',
+      levelGarden: '庭のかがやき',
+      levelMoon: '月の橋',
+      levelStar: '星の守り人',
+      wayProgress: 'わけ方 {current} / {total}',
+      lessonEquationAria: '{dividend}わる{divisor}は{quotient}',
+      nextIdea: '次のわけ方',
+      tryYourself: 'やってみよう',
+      lessonNextAria: '次のわり算の考え方へ進む',
+      lessonTryAria: 'わり算のれんしゅうを始める',
+      lessonSpeaking: 'ルミが声と絵で、このわり算を見せているよ。',
+      lessonReady: '準備ができたら、光る矢印を押してね。',
+      nextReadyAnnouncement: '次へ進むボタンを押せるよ。',
+      challengeEndlessTitle: 'どこまでも庭を育てよう',
+      challengePracticeTitle: 'ランタン {current} / {total} をともそう',
+      guidedPractice: 'いっしょに れんしゅう',
+      problemEquationAria: '{dividend}わる{divisor}。答えをえらんでね。',
+      shareProblemCaption: '{dividend}この星の種を、{divisor}このランタンに同じ数ずつ分けよう。1こに何こ入る？',
+      groupsProblemCaption: '{dividend}この星の種を、{divisor}こずつまとめよう。同じまとまりはいくつできる？',
+      hopsProblemCaption: '{dividend}から{divisor}ずつ戻ろう。0まで何回ジャンプする？',
+      familyProblemCaption: '{divisor}かけるいくつで、{dividend}になる？',
+      shareModelLabel: '同じランタンが{groups}こ',
+      shareModelAria: '{dividend}この光る星の種を、{groups}このランタンに同じ数ずつ分けた絵',
+      groupsModelLabel: '同じまとまりが{groups}こ',
+      groupsModelPrompt: 'まとまりを数えよう',
+      groupsModelAria: '{dividend}この光る星の種を、{size}こずつの同じまとまりにした絵',
+      hopsModelLabel: '同じジャンプ',
+      hopsModelAria: '{dividend}から0まで、{size}ずつ後ろへジャンプする数の道',
+      familyModelAria: '{dividend}と{divisor}と答えをつなぐ、かけ算とわり算の三角形',
+      answerChoiceAria: '答えは{answer}。{choice}番目の選択肢。',
+      successToast: 'すごい！ {dividend} ÷ {divisor} = {quotient}',
+      correctAnnouncement: '正解。答えは{quotient}です。',
+      retryToast: 'おしい！光をよく見て、もう一度やってみよう。',
+      retryAnnouncement: 'もう少し。ルミがヒントを見せるよ。別の答えをえらんでね。',
+      hintToast: 'ルミが考え方を見せているよ。',
+      hintAnnouncement: 'ヒントを表示したよ。絵を見て数えてみよう。',
+      celebrationAnnouncement: '6つのれんしゅうランタンが全部光ったよ。終わりのないれんしゅうが開いたよ。',
+      progressLearn: 'まなぶ',
+      progressIdea: 'わけ方 {current} / {total}',
+      progressGardenAwake: '庭がめざめた',
+      soundOffAnnouncement: '声と音を消したよ。',
+      soundOnAnnouncement: '声と音を出したよ。',
+    },
+  };
+
+  function getInitialLanguage() {
+    try {
+      const savedLanguage = window.localStorage.getItem('divisionQuestLanguage');
+      if (savedLanguage === 'en' || savedLanguage === 'ja') return savedLanguage;
+    } catch {
+      // Local storage can be unavailable in private or embedded browsing contexts.
+    }
+
+    return navigator.language?.toLowerCase().startsWith('ja') ? 'ja' : 'en';
+  }
+
   const METHODS = {
     share: {
-      label: 'Share fairly',
-      lessonTitle: 'Share fairly',
-      caption: 'Give one star-seed to each lantern, again and again.',
+      labelKey: 'methodShareLabel',
+      lessonTitleKey: 'methodShareTitle',
+      captionKey: 'methodShareCaption',
       hintClip: 'hint-share',
     },
     groups: {
-      label: 'Make groups',
-      lessonTitle: 'Make equal groups',
-      caption: 'Choose a group size, then count how many groups you can make.',
+      labelKey: 'methodGroupsLabel',
+      lessonTitleKey: 'methodGroupsTitle',
+      captionKey: 'methodGroupsCaption',
       hintClip: 'hint-groups',
     },
     hops: {
-      label: 'Hop to zero',
-      lessonTitle: 'Take equal hops',
-      caption: 'Count equal steps along a number path.',
+      labelKey: 'methodHopsLabel',
+      lessonTitleKey: 'methodHopsTitle',
+      captionKey: 'methodHopsCaption',
       hintClip: 'hint-hops',
     },
     family: {
-      label: 'Fact family',
-      lessonTitle: 'Connect multiplication',
-      caption: 'Use a multiplication fact you already know.',
+      labelKey: 'methodFamilyLabel',
+      lessonTitleKey: 'methodFamilyTitle',
+      captionKey: 'methodFamilyCaption',
       hintClip: 'hint-family',
     },
   };
@@ -73,7 +301,7 @@
 
   const LEVELS = [
     {
-      name: 'First Lights',
+      nameKey: 'levelFirst',
       threshold: 0,
       divisors: [2, 3],
       quotientMin: 1,
@@ -81,7 +309,7 @@
       methods: ['share', 'groups'],
     },
     {
-      name: 'Garden Glow',
+      nameKey: 'levelGarden',
       threshold: 6,
       divisors: [2, 3, 4, 5],
       quotientMin: 1,
@@ -89,7 +317,7 @@
       methods: ['share', 'groups', 'hops'],
     },
     {
-      name: 'Moon Bridge',
+      nameKey: 'levelMoon',
       threshold: 18,
       divisors: [2, 3, 4, 5, 6, 7],
       quotientMin: 2,
@@ -97,7 +325,7 @@
       methods: ['share', 'groups', 'hops', 'family'],
     },
     {
-      name: 'Star Keeper',
+      nameKey: 'levelStar',
       threshold: 36,
       divisors: [2, 3, 4, 5, 6, 7, 8, 9, 10],
       quotientMin: 2,
@@ -112,6 +340,8 @@
     lessonScreen: document.getElementById('lessonScreen'),
     challengeScreen: document.getElementById('challengeScreen'),
     startButton: document.getElementById('startButton'),
+    languageButton: document.getElementById('languageButton'),
+    languageLabel: document.getElementById('languageLabel'),
     soundButton: document.getElementById('soundButton'),
     replayButton: document.getElementById('replayButton'),
     lessonGuideButton: document.getElementById('lessonGuideButton'),
@@ -145,6 +375,7 @@
     statusAnnouncer: document.getElementById('statusAnnouncer'),
     moteField: document.getElementById('moteField'),
     voiceAudio: document.getElementById('voiceAudio'),
+    metaDescription: document.querySelector('meta[name="description"]'),
   };
 
   const state = {
@@ -165,7 +396,47 @@
     voiceRun: 0,
     toastTimer: null,
     audioContext: null,
+    language: getInitialLanguage(),
   };
+
+  function t(key, replacements = {}) {
+    const template = COPY[state.language][key] ?? COPY.en[key] ?? key;
+
+    return Object.entries(replacements).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, `${value}`),
+      template,
+    );
+  }
+
+  function applyStaticTranslations() {
+    document.documentElement.lang = state.language;
+    document.title = t('documentTitle');
+    elements.metaDescription.setAttribute('content', t('metaDescription'));
+
+    document.querySelectorAll('[data-i18n]').forEach((element) => {
+      element.textContent = t(element.dataset.i18n);
+    });
+
+    document.querySelectorAll('[data-i18n-html]').forEach((element) => {
+      element.innerHTML = t(element.dataset.i18nHtml);
+    });
+
+    document.querySelectorAll('[data-i18n-aria]').forEach((element) => {
+      element.setAttribute('aria-label', t(element.dataset.i18nAria));
+    });
+
+    document.querySelectorAll('[data-i18n-alt]').forEach((element) => {
+      element.setAttribute('alt', t(element.dataset.i18nAlt));
+    });
+
+    elements.languageLabel.textContent = t('targetLanguageLabel');
+    elements.languageButton.setAttribute('aria-label', t('switchLanguageAria'));
+    elements.languageButton.title = t('switchLanguageAria');
+    elements.soundButton.setAttribute(
+      'aria-label',
+      state.soundEnabled ? t('soundOffAria') : t('soundOnAria'),
+    );
+  }
 
   function showScreen(activeScreen) {
     [elements.introScreen, elements.lessonScreen, elements.challengeScreen].forEach((screen) => {
@@ -237,7 +508,8 @@
 
       elements.voiceAudio.onended = advance;
       elements.voiceAudio.onerror = advance;
-      elements.voiceAudio.src = `${AUDIO_BASE}/${clipId}.mp3`;
+      const languagePath = state.language === 'ja' ? `${AUDIO_BASE}/ja` : AUDIO_BASE;
+      elements.voiceAudio.src = `${languagePath}/${clipId}.mp3`;
       elements.voiceAudio.load();
 
       const playPromise = elements.voiceAudio.play();
@@ -336,30 +608,40 @@
     });
   }
 
-  function renderLesson(index, includeWelcome = false) {
+  function renderLesson(index, includeWelcome = false, speak = true) {
     const lesson = LESSONS[index];
     const method = METHODS[lesson.id];
     state.lessonIndex = index;
-    elements.lessonMethod.innerHTML = `<span aria-hidden="true">●</span> Way ${index + 1} of ${LESSONS.length}`;
-    elements.lessonTitle.textContent = method.lessonTitle;
-    elements.lessonCaption.textContent = method.caption;
+    elements.lessonMethod.innerHTML = `<span aria-hidden="true">●</span> ${t('wayProgress', {
+      current: index + 1,
+      total: LESSONS.length,
+    })}`;
+    elements.lessonTitle.textContent = t(method.lessonTitleKey);
+    elements.lessonCaption.textContent = t(method.captionKey);
     elements.lessonEquation.innerHTML = `<b>${lesson.dividend}</b><span>÷</span><b>${lesson.divisor}</b><span>=</span><em>${lesson.quotient}</em>`;
     elements.lessonEquation.setAttribute(
       'aria-label',
-      `${lesson.dividend} divided by ${lesson.divisor} equals ${lesson.quotient}`,
+      t('lessonEquationAria', lesson),
     );
-    elements.nextLessonLabel.textContent = index === LESSONS.length - 1 ? 'Try it yourself' : 'Next idea';
+    const isLastLesson = index === LESSONS.length - 1;
+    elements.nextLessonLabel.textContent = t(isLastLesson ? 'tryYourself' : 'nextIdea');
+    elements.nextLessonButton.setAttribute(
+      'aria-label',
+      t(isLastLesson ? 'lessonTryAria' : 'lessonNextAria'),
+    );
     updateLessonPath(index);
     updateProgress();
     renderVisual(elements.lessonVisual, lesson, true);
-    narrateLesson(includeWelcome);
+    if (speak) {
+      narrateLesson(includeWelcome);
+    }
   }
 
   function narrateLesson(includeWelcome = false) {
     const lesson = LESSONS[state.lessonIndex];
     elements.nextLessonButton.disabled = true;
     elements.nextLessonButton.classList.remove('is-ready');
-    elements.lessonVoiceCaption.lastElementChild.textContent = 'Lumi is showing this division idea aloud.';
+    elements.lessonVoiceCaption.lastElementChild.textContent = t('lessonSpeaking');
 
     const clips = includeWelcome ? ['welcome', lesson.narration] : [lesson.narration];
     setReplayAction(() => narrateLesson(false));
@@ -370,8 +652,8 @@
     if (state.phase !== 'lesson') return;
     elements.nextLessonButton.disabled = false;
     elements.nextLessonButton.classList.add('is-ready');
-    elements.lessonVoiceCaption.lastElementChild.textContent = 'Tap the glowing arrow when you are ready.';
-    announce('The next button is ready.');
+    elements.lessonVoiceCaption.lastElementChild.textContent = t('lessonReady');
+    announce(t('nextReadyAnnouncement'));
   }
 
   function nextLesson() {
@@ -408,31 +690,47 @@
     elements.hearProblemButton.disabled = false;
     elements.hintButton.disabled = false;
     elements.hintGuideButton.disabled = false;
-    const method = METHODS[problem.method];
-    const level = getCurrentLevel();
-
-    elements.challengeMethod.innerHTML = `<span aria-hidden="true">●</span> ${method.label}`;
-    elements.challengeTitle.textContent = state.phase === 'endless'
-      ? 'Grow the endless garden'
-      : `Light lantern ${state.practiceIndex + 1} of ${TRAINING_LENGTH}`;
-    elements.levelChip.querySelector('span').textContent = state.phase === 'endless'
-      ? level.name
-      : 'Guided practice';
-    elements.problemEquation.innerHTML = `<strong>${problem.dividend}</strong><span>÷</span><strong>${problem.divisor}</strong><span>=</span><em>?</em>`;
-    elements.problemEquation.setAttribute(
-      'aria-label',
-      `${problem.dividend} divided by ${problem.divisor}. Choose the answer.`,
-    );
-    elements.problemCaption.textContent = getProblemCaption(problem);
-    renderVisual(elements.problemVisual, problem, false);
+    updateProblemPresentation(problem);
     renderAnswers(problem);
-    updateProgress();
-    updateStreak();
     setReplayAction(speakCurrentProblem);
 
     if (speak) {
       window.setTimeout(speakCurrentProblem, 260);
     }
+  }
+
+  function updateProblemPresentation(problem) {
+    const method = METHODS[problem.method];
+    const level = getCurrentLevel();
+    const practiceNumber = state.answerLocked
+      ? state.practiceIndex
+      : state.practiceIndex + 1;
+
+    elements.challengeMethod.innerHTML = `<span aria-hidden="true">●</span> ${t(method.labelKey)}`;
+    elements.challengeTitle.textContent = state.phase === 'endless'
+      ? t('challengeEndlessTitle')
+      : t('challengePracticeTitle', {
+        current: practiceNumber,
+        total: TRAINING_LENGTH,
+      });
+    elements.levelChip.querySelector('span').textContent = state.phase === 'endless'
+      ? t(level.nameKey)
+      : t('guidedPractice');
+    elements.problemEquation.innerHTML = `<strong>${problem.dividend}</strong><span>÷</span><strong>${problem.divisor}</strong><span>=</span><em>?</em>`;
+    elements.problemEquation.setAttribute(
+      'aria-label',
+      t('problemEquationAria', problem),
+    );
+    elements.problemCaption.textContent = getProblemCaption(problem);
+    renderVisual(elements.problemVisual, problem, false);
+    Array.from(elements.answerGrid.children).forEach((button, index) => {
+      button.setAttribute('aria-label', t('answerChoiceAria', {
+        answer: button.dataset.answer,
+        choice: index + 1,
+      }));
+    });
+    updateProgress();
+    updateStreak();
   }
 
   function speakCurrentProblem() {
@@ -484,18 +782,18 @@
 
   function getProblemCaption(problem) {
     if (problem.method === 'share') {
-      return `Share ${problem.dividend} star-seeds equally among ${problem.divisor} lanterns. How many go in each lantern?`;
+      return t('shareProblemCaption', problem);
     }
 
     if (problem.method === 'groups') {
-      return `Use ${problem.dividend} star-seeds. Make groups of ${problem.divisor}. How many equal groups can you make?`;
+      return t('groupsProblemCaption', problem);
     }
 
     if (problem.method === 'hops') {
-      return `Start at ${problem.dividend} and hop back by ${problem.divisor}. How many equal hops reach zero?`;
+      return t('hopsProblemCaption', problem);
     }
 
-    return `${problem.divisor} times what number makes ${problem.dividend}?`;
+    return t('familyProblemCaption', problem);
   }
 
   function renderVisual(container, problem, lessonMode) {
@@ -505,20 +803,17 @@
 
     if (method === 'share') {
       renderSharing(container, problem, lessonMode);
-      return;
-    }
-
-    if (method === 'groups') {
+    } else if (method === 'groups') {
       renderGrouping(container, problem, lessonMode);
-      return;
-    }
-
-    if (method === 'hops') {
+    } else if (method === 'hops') {
       renderHops(container, problem, lessonMode);
-      return;
+    } else {
+      renderFactFamily(container, problem, lessonMode);
     }
 
-    renderFactFamily(container, problem, lessonMode);
+    if (!lessonMode && state.hintShown) {
+      revealCurrentVisual(container);
+    }
   }
 
   function makeSeeds(count, delayForSeed) {
@@ -547,10 +842,10 @@
       <div class="seed-model share-model" style="--columns: ${groups}">
         ${groupMarkup}
       </div>
-      <span class="model-label">${groups} equal lanterns</span>`;
+      <span class="model-label">${t('shareModelLabel', { groups })}</span>`;
     container.setAttribute(
       'aria-label',
-      `${problem.dividend} glowing star-seeds shared into ${groups} equal lanterns`,
+      t('shareModelAria', { dividend: problem.dividend, groups }),
     );
   }
 
@@ -565,9 +860,10 @@
           <span class="group-count">${groupSize}</span>
         </div>`;
     }).join('');
+    const groupsLabel = t('groupsModelLabel', { groups: numberOfGroups });
     const label = lessonMode
-      ? `${numberOfGroups} equal groups`
-      : `<span data-reveal="${numberOfGroups} equal groups">Count the groups</span>`;
+      ? groupsLabel
+      : `<span data-reveal="${groupsLabel}">${t('groupsModelPrompt')}</span>`;
 
     container.innerHTML = `
       <div class="seed-model groups-model" style="--columns: ${Math.min(numberOfGroups, 6)}">
@@ -576,7 +872,7 @@
       <span class="model-label">${label}</span>`;
     container.setAttribute(
       'aria-label',
-      `${problem.dividend} glowing star-seeds arranged in equal groups of ${groupSize}`,
+      t('groupsModelAria', { dividend: problem.dividend, size: groupSize }),
     );
   }
 
@@ -597,11 +893,11 @@
     container.innerHTML = `
       <div class="hops-model">
         <div class="hop-track">${points}</div>
-        <div class="hop-count"><span>Equal hops</span>${lessonMode ? `<strong>${count}</strong>` : count}</div>
+        <div class="hop-count"><span>${t('hopsModelLabel')}</span>${lessonMode ? `<strong>${count}</strong>` : count}</div>
       </div>`;
     container.setAttribute(
       'aria-label',
-      `A number path from ${problem.dividend} down to zero in equal backward hops of ${problem.divisor}`,
+      t('hopsModelAria', { dividend: problem.dividend, size: problem.divisor }),
     );
   }
 
@@ -624,7 +920,7 @@
       </div>`;
     container.setAttribute(
       'aria-label',
-      `A fact family triangle connecting ${problem.dividend}, ${problem.divisor}, and the missing answer`,
+      t('familyModelAria', problem),
     );
   }
 
@@ -672,7 +968,10 @@
       button.className = 'answer-button';
       button.dataset.answer = `${choice}`;
       button.dataset.key = `${index + 1}`;
-      button.setAttribute('aria-label', `Answer ${choice}. Choice ${index + 1}.`);
+      button.setAttribute('aria-label', t('answerChoiceAria', {
+        answer: choice,
+        choice: index + 1,
+      }));
       button.textContent = `${choice}`;
       elements.answerGrid.appendChild(button);
     });
@@ -728,8 +1027,8 @@
 
     playTone('correct');
     createSparkles(button);
-    showToast(`Wonderful! ${state.currentProblem.dividend} ÷ ${state.currentProblem.divisor} = ${state.currentProblem.quotient}`, 'success');
-    announce(`Correct. The answer is ${state.currentProblem.quotient}.`);
+    showToast(t('successToast', state.currentProblem), 'success');
+    announce(t('correctAnnouncement', state.currentProblem));
     updateStreak();
     updateProgress();
 
@@ -746,8 +1045,8 @@
     updateStreak();
     revealHint(false);
     playTone('try-again');
-    showToast('Almost! Watch the lights, then try again.', 'try-again');
-    announce('Not yet. Lumi is showing a hint. Try another answer.');
+    showToast(t('retryToast'), 'try-again');
+    announce(t('retryAnnouncement'));
     playVoice(['retry', METHODS[state.currentProblem.method].hintClip]);
   }
 
@@ -771,18 +1070,22 @@
     }
   }
 
+  function revealCurrentVisual(container = elements.problemVisual) {
+    container.classList.add('is-hinting');
+    container.querySelectorAll('[data-reveal]').forEach((item) => {
+      item.textContent = item.dataset.reveal;
+    });
+  }
+
   function revealHint(speak = true) {
     if (state.answerLocked || !state.currentProblem) return;
     state.hintShown = true;
-    elements.problemVisual.classList.add('is-hinting');
-    elements.problemVisual.querySelectorAll('[data-reveal]').forEach((item) => {
-      item.textContent = item.dataset.reveal;
-    });
+    revealCurrentVisual();
 
     if (speak) {
       stopVoice();
-      showToast('Lumi is showing the strategy.', 'try-again');
-      announce('Hint shown. The picture now reveals the counting step.');
+      showToast(t('hintToast'), 'try-again');
+      announce(t('hintAnnouncement'));
       playVoice([METHODS[state.currentProblem.method].hintClip]);
     }
   }
@@ -797,7 +1100,7 @@
     playVoice(['endless-unlocked'], () => {
       elements.endlessButton.focus({ preventScroll: true });
     });
-    announce('All six training lanterns are glowing. Endless practice is unlocked.');
+    announce(t('celebrationAnnouncement'));
   }
 
   function enterEndlessMode() {
@@ -862,7 +1165,10 @@
 
     if (state.phase === 'lesson') {
       litCount = state.lessonIndex;
-      elements.progressLabel.textContent = `Idea ${state.lessonIndex + 1} / 4`;
+      elements.progressLabel.textContent = t('progressIdea', {
+        current: state.lessonIndex + 1,
+        total: LESSONS.length,
+      });
     } else if (state.phase === 'practice') {
       litCount = state.practiceIndex;
       elements.progressLabel.textContent = `${state.practiceIndex} / ${TRAINING_LENGTH}`;
@@ -872,7 +1178,9 @@
         : (state.endlessCorrect === 0 ? 0 : ((state.endlessCorrect - 1) % TRAINING_LENGTH) + 1);
       elements.progressLabel.textContent = state.phase === 'endless'
         ? `${state.endlessCorrect} · ∞`
-        : 'Garden awake';
+        : t('progressGardenAwake');
+    } else {
+      elements.progressLabel.textContent = t('progressLearn');
     }
 
     elements.miniLanterns.forEach((lantern, index) => {
@@ -918,12 +1226,55 @@
     }
   }
 
+  function saveLanguagePreference() {
+    try {
+      window.localStorage.setItem('divisionQuestLanguage', state.language);
+    } catch {
+      // The game remains bilingual when storage is unavailable; it simply will not persist.
+    }
+  }
+
+  function toggleLanguage() {
+    stopVoice();
+    state.language = state.language === 'en' ? 'ja' : 'en';
+    saveLanguagePreference();
+    applyStaticTranslations();
+    hideToast();
+
+    if (state.phase === 'lesson') {
+      renderLesson(state.lessonIndex, false, false);
+      narrateLesson(false);
+      return;
+    }
+
+    if (['practice', 'endless'].includes(state.phase) && state.currentProblem) {
+      updateProblemPresentation(state.currentProblem);
+
+      if (state.answerLocked) {
+        const feedbackClip = `correct-${((state.totalCorrect - 1) % 3) + 1}`;
+        playVoice([feedbackClip], () => {
+          window.setTimeout(advanceAfterCorrect, state.soundEnabled ? 260 : 650);
+        });
+      } else {
+        speakCurrentProblem();
+      }
+      return;
+    }
+
+    updateProgress();
+
+    if (state.phase === 'celebration') {
+      setReplayAction(() => playVoice(['endless-unlocked']));
+      playVoice(['endless-unlocked']);
+    }
+  }
+
   function toggleSound() {
     state.soundEnabled = !state.soundEnabled;
     elements.soundButton.setAttribute('aria-pressed', `${state.soundEnabled}`);
     elements.soundButton.setAttribute(
       'aria-label',
-      state.soundEnabled ? 'Turn voice and sound off' : 'Turn voice and sound on',
+      state.soundEnabled ? t('soundOffAria') : t('soundOnAria'),
     );
 
     if (!state.soundEnabled) {
@@ -932,12 +1283,12 @@
       if (state.answerLocked && ['practice', 'endless'].includes(state.phase)) {
         window.setTimeout(advanceAfterCorrect, 650);
       }
-      announce('Voice and sound are off.');
+      announce(t('soundOffAnnouncement'));
       return;
     }
 
     ensureAudioContext();
-    announce('Voice and sound are on.');
+    announce(t('soundOnAnnouncement'));
     state.replayAction?.();
   }
 
@@ -962,6 +1313,7 @@
   }
 
   elements.startButton.addEventListener('click', startAdventure);
+  elements.languageButton.addEventListener('click', toggleLanguage);
   elements.nextLessonButton.addEventListener('click', nextLesson);
   elements.lessonGuideButton.addEventListener('click', () => narrateLesson(false));
   elements.soundButton.addEventListener('click', toggleSound);
@@ -976,6 +1328,7 @@
   });
   document.addEventListener('keydown', handleKeydown);
 
+  applyStaticTranslations();
   createMotes();
   updateProgress();
 })();
