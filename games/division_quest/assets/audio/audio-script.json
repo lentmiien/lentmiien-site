@@ -1,0 +1,129 @@
+{
+  "voice": "en_US-lessac-medium",
+  "clips": [
+    {
+      "id": "welcome",
+      "text": "Hi, explorer! I'm Lumi. The Lantern Garden has lost its glow. Division will help us share the star-seeds fairly and light every lantern. Let's learn four clever ways to divide."
+    },
+    {
+      "id": "lesson-share",
+      "text": "First, division can mean sharing equally. Here are twelve star-seeds and three lanterns. Give one seed to each lantern, then go around again. When all twelve are shared, each lantern has four. Twelve divided by three equals four. When you're ready, tap the glowing arrow."
+    },
+    {
+      "id": "lesson-groups",
+      "text": "Division can also mean making equal groups. We have twelve star-seeds. Put four in every group. We can make three equal groups. Twelve divided by four equals three. Count the groups to find the answer. When you're ready, tap the glowing arrow."
+    },
+    {
+      "id": "lesson-hops",
+      "text": "We can divide with backward hops. Start at twelve and hop back by three. Twelve, nine, six, three, zero. Four equal hops reach zero, so twelve divided by three equals four. When you're ready, tap the glowing arrow."
+    },
+    {
+      "id": "lesson-family",
+      "text": "Multiplication and division are a family. Three times four makes twelve. So twelve divided by three must be four. When you know a times fact, you also know a division fact. Tap the glowing arrow to practice."
+    },
+    {
+      "id": "practice-ready",
+      "text": "You know four division tricks! Now help me relight the garden. Look at the picture, listen to the problem, and tap the answer. If you get stuck, tap my glowing picture for a hint."
+    },
+    {
+      "id": "endless-unlocked",
+      "text": "You did it! Six lanterns shine. Now the garden can keep making problems forever. Play as long as you like. The problems will grow with you, and I will always help."
+    },
+    {
+      "id": "level-up",
+      "text": "A new path is glowing! The numbers can grow a little bigger now."
+    },
+    {
+      "id": "correct-1",
+      "text": "You found it! Every group is equal."
+    },
+    {
+      "id": "correct-2",
+      "text": "Brilliant dividing! Another lantern is glowing."
+    },
+    {
+      "id": "correct-3",
+      "text": "Yes! Equal groups, perfect answer."
+    },
+    {
+      "id": "retry",
+      "text": "Almost! Watch the lights organize themselves, then try again. Mistakes help our brains grow."
+    },
+    {
+      "id": "streak-3",
+      "text": "Three in a row! Your division light is shining."
+    },
+    {
+      "id": "lantern-milestone",
+      "text": "Another garden lantern is glowing. Wonderful work!"
+    },
+    {
+      "id": "hint-share",
+      "text": "Try sharing one star-seed with each lantern. Keep going around until every seed is shared. Then count one lantern."
+    },
+    {
+      "id": "hint-groups",
+      "text": "Look for equal groups. Count each finished group, not every star-seed."
+    },
+    {
+      "id": "hint-hops",
+      "text": "Count each equal backward hop. The number of hops that reaches zero is the answer."
+    },
+    {
+      "id": "hint-family",
+      "text": "Think multiplication. What number times the divisor makes the big number?"
+    },
+    {
+      "id": "prompt-share-start",
+      "text": "Share"
+    },
+    {
+      "id": "prompt-share-middle",
+      "text": "star-seeds equally among"
+    },
+    {
+      "id": "prompt-share-end",
+      "text": "lanterns. How many star-seeds go in each lantern?"
+    },
+    {
+      "id": "prompt-groups-start",
+      "text": "Use"
+    },
+    {
+      "id": "prompt-groups-middle",
+      "text": "star-seeds. Make groups of"
+    },
+    {
+      "id": "prompt-groups-end",
+      "text": "How many equal groups can you make?"
+    },
+    {
+      "id": "prompt-hops-start",
+      "text": "Start at"
+    },
+    {
+      "id": "prompt-hops-middle",
+      "text": "and hop back by"
+    },
+    {
+      "id": "prompt-hops-end",
+      "text": "How many equal hops reach zero?"
+    },
+    {
+      "id": "prompt-family-start",
+      "text": "Think multiplication."
+    },
+    {
+      "id": "prompt-family-middle",
+      "text": "times what number makes"
+    },
+    {
+      "id": "prompt-family-end",
+      "text": "Choose the missing number."
+    }
+  ],
+  "numberRange": {
+    "start": 0,
+    "end": 100
+  }
+}

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="A voice-guided division adventure for young learners, with animated models, gentle practice, and endless play.">
+  <title>Divide &amp; Shine · The Lantern Garden</title>
+  <link rel="icon" href="assets/images/lumi.webp" type="image/webp">
+  <link rel="preload" href="assets/images/lantern-garden.webp" as="image" type="image/webp">
+  <link rel="preload" href="assets/images/lumi.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+  <a class="skip-link" href="#gameMain">Skip to the learning game</a>
+
+  <div class="game-shell" id="gameShell" data-phase="intro">
+    <div class="world-art" aria-hidden="true"></div>
+    <div class="world-shade" aria-hidden="true"></div>
+    <div class="mist mist-one" aria-hidden="true"></div>
+    <div class="mist mist-two" aria-hidden="true"></div>
+    <div class="mote-field" id="moteField" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="round-control back-control" href="/games" aria-label="Go back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 12H5m6-6-6 6 6 6"></path>
+        </svg>
+      </a>
+
+      <div class="brand-lockup" aria-label="Divide and Shine, The Lantern Garden">
+        <span class="brand-glyph" aria-hidden="true"><i></i><b>÷</b></span>
+        <span class="brand-copy">
+          <strong>Divide &amp; Shine</strong>
+          <small>The Lantern Garden</small>
+        </span>
+      </div>
+
+      <div class="garden-progress" id="gardenProgress" aria-label="Garden lantern progress">
+        <div class="mini-lanterns" id="miniLanterns" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <span id="progressLabel">Learn</span>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="round-control" id="replayButton" type="button" aria-label="Hear the current guidance again" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 11a8 8 0 1 1 2.3 5.7M4 5v6h6"></path>
+          </svg>
+        </button>
+        <button class="round-control" id="soundButton" type="button" aria-pressed="true" aria-label="Turn voice and sound off">
+          <svg class="sound-on-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 9v6h4l5 4V5L9 9H5m12.2-.2a5 5 0 0 1 0 6.4M19.8 6a9 9 0 0 1 0 12"></path>
+          </svg>
+          <svg class="sound-off-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 9v6h4l5 4V5L9 9H5m3-5 13 13"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="game-main" id="gameMain">
+      <section class="screen intro-screen is-active" id="introScreen" aria-labelledby="gameTitle">
+        <div class="intro-card">
+          <div class="intro-content">
+            <p class="eyebrow"><span aria-hidden="true">✦</span> A voice-guided division adventure</p>
+            <h1 id="gameTitle"><span>Divide</span> &amp; Shine</h1>
+            <p class="intro-lede">Share the star-seeds fairly, discover four division tricks, and wake a garden of light.</p>
+
+            <div class="intro-methods" aria-label="Learn by sharing, grouping, hopping, and using fact families">
+              <span aria-hidden="true"><i class="method-symbol bowls-symbol"></i><small>Share</small></span>
+              <span aria-hidden="true"><i class="method-symbol groups-symbol"></i><small>Group</small></span>
+              <span aria-hidden="true"><i class="method-symbol hops-symbol"></i><small>Hop</small></span>
+              <span aria-hidden="true"><i class="method-symbol family-symbol">×</i><small>Connect</small></span>
+            </div>
+
+            <button class="start-button" id="startButton" type="button" aria-label="Start the voice-guided division adventure">
+              <span class="start-copy">
+                <small>Tap to begin</small>
+                <strong>Start the adventure</strong>
+              </span>
+              <span class="start-orb" aria-hidden="true">
+                <svg viewBox="0 0 32 32"><path d="m11 7 14 9-14 9V7Z"></path></svg>
+              </span>
+            </button>
+
+            <p class="headphone-note"><span aria-hidden="true">♪</span> Every lesson and problem is spoken aloud.</p>
+          </div>
+
+          <div class="intro-guide" aria-hidden="true">
+            <div class="guide-halo"></div>
+            <img src="assets/images/lumi.webp" alt="">
+            <span class="guide-name">Lumi</span>
+            <span class="guide-message"><i></i> Your garden guide</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen lesson-screen" id="lessonScreen" aria-labelledby="lessonTitle" hidden>
+        <div class="learning-layout">
+          <aside class="guide-rail">
+            <button class="guide-button" id="lessonGuideButton" type="button" aria-label="Ask Lumi to repeat this lesson">
+              <span class="portrait-ring">
+                <img src="assets/images/lumi.webp" alt="Lumi, the friendly lantern guide">
+                <i class="voice-ring voice-ring-one" aria-hidden="true"></i>
+                <i class="voice-ring voice-ring-two" aria-hidden="true"></i>
+              </span>
+              <span class="guide-button-copy"><strong>Lumi</strong><small>Tap me to hear it again</small></span>
+            </button>
+
+            <div class="lesson-path" id="lessonPath" aria-label="Four ways to divide">
+              <span class="is-current" aria-label="Sharing lesson"><i>1</i></span>
+              <span aria-label="Grouping lesson"><i>2</i></span>
+              <span aria-label="Backward hops lesson"><i>3</i></span>
+              <span aria-label="Fact family lesson"><i>4</i></span>
+            </div>
+          </aside>
+
+          <article class="learning-card">
+            <header class="card-heading">
+              <div>
+                <p class="method-chip" id="lessonMethod"><span aria-hidden="true">●</span> Way 1 of 4</p>
+                <h2 id="lessonTitle">Share fairly</h2>
+                <p id="lessonCaption">Give one star-seed to each lantern, again and again.</p>
+              </div>
+              <div class="equation-orb" id="lessonEquation" aria-label="Twelve divided by three equals four">
+                <b>12</b><span>÷</span><b>3</b><span>=</span><em>4</em>
+              </div>
+            </header>
+
+            <div class="visual-stage lesson-visual" id="lessonVisual" role="img" aria-label="Twelve glowing star-seeds shared equally into three lanterns"></div>
+
+            <footer class="lesson-footer">
+              <div class="voice-caption" id="lessonVoiceCaption" aria-live="polite">
+                <span class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <span>Listen to Lumi, then follow the glowing arrow.</span>
+              </div>
+              <button class="next-button" id="nextLessonButton" type="button" disabled aria-label="Continue to the next division idea">
+                <span id="nextLessonLabel">Next idea</span>
+                <svg viewBox="0 0 28 28" aria-hidden="true"><path d="M5 14h17m-7-7 7 7-7 7"></path></svg>
+              </button>
+            </footer>
+          </article>
+        </div>
+      </section>
+
+      <section class="screen challenge-screen" id="challengeScreen" aria-labelledby="challengeTitle" hidden>
+        <div class="challenge-layout">
+          <aside class="guide-rail challenge-guide">
+            <button class="guide-button" id="hintGuideButton" type="button" aria-label="Ask Lumi for a spoken and animated hint">
+              <span class="portrait-ring">
+                <img src="assets/images/lumi.webp" alt="Lumi, the friendly lantern guide">
+                <i class="voice-ring voice-ring-one" aria-hidden="true"></i>
+                <i class="voice-ring voice-ring-two" aria-hidden="true"></i>
+                <span class="help-spark" aria-hidden="true">?</span>
+              </span>
+              <span class="guide-button-copy"><strong>Need a hint?</strong><small>Tap Lumi</small></span>
+            </button>
+
+            <div class="streak-card" aria-label="Current answer streak">
+              <span class="streak-flame" aria-hidden="true">✦</span>
+              <span><small>Glow streak</small><strong id="streakValue">0</strong></span>
+            </div>
+          </aside>
+
+          <article class="challenge-card" id="challengeCard">
+            <header class="challenge-heading">
+              <div>
+                <p class="method-chip" id="challengeMethod"><span aria-hidden="true">●</span> Share fairly</p>
+                <h2 id="challengeTitle">Light the next lantern</h2>
+              </div>
+              <div class="level-chip" id="levelChip"><i aria-hidden="true"></i><span>First Lights</span></div>
+            </header>
+
+            <div class="problem-equation" id="problemEquation" aria-label="Six divided by two">
+              <strong>6</strong><span>÷</span><strong>2</strong><span>=</span><em>?</em>
+            </div>
+            <p class="problem-caption" id="problemCaption">Share 6 star-seeds equally among 2 lanterns.</p>
+
+            <div class="visual-stage problem-visual" id="problemVisual" role="img"></div>
+
+            <div class="answer-area">
+              <p class="answer-prompt"><span aria-hidden="true">✦</span> Choose the answer</p>
+              <div class="answer-grid" id="answerGrid" aria-label="Answer choices"></div>
+            </div>
+
+            <footer class="challenge-footer">
+              <button class="soft-button" id="hearProblemButton" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m8 4a4.5 4.5 0 0 1 0 6m2-9a8 8 0 0 1 0 12"></path></svg>
+                <span>Hear it again</span>
+              </button>
+              <button class="soft-button hint-button" id="hintButton" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6m-5 3h4M8.6 14.5A6 6 0 1 1 15.4 14.5c-.9.7-1.4 1.5-1.4 2.5h-4c0-1-.5-1.8-1.4-2.5Z"></path></svg>
+                <span>Show a hint</span>
+              </button>
+              <span class="keyboard-note">Keys 1–3 choose · H helps · R repeats</span>
+            </footer>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <div class="feedback-toast" id="feedbackToast" role="status" aria-live="assertive" aria-atomic="true"></div>
+    <div class="sparkle-layer" id="sparkleLayer" aria-hidden="true"></div>
+
+    <section class="celebration" id="celebration" role="dialog" aria-modal="true" aria-labelledby="celebrationTitle" hidden>
+      <div class="celebration-shade" aria-hidden="true"></div>
+      <div class="celebration-card">
+        <div class="celebration-rays" aria-hidden="true"></div>
+        <div class="big-lantern" aria-hidden="true"><i></i><b>✦</b></div>
+        <p class="eyebrow">The garden is awake</p>
+        <h2 id="celebrationTitle">You made every light shine!</h2>
+        <p>New division paths will keep growing for as long as you want to play.</p>
+        <div class="celebration-lanterns" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <button class="start-button continue-button" id="endlessButton" type="button" aria-label="Continue into endless division practice">
+          <span class="start-copy"><small>Endless garden</small><strong>Keep dividing</strong></span>
+          <span class="start-orb" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="M6 16c3-6 7-6 10 0s7 6 10 0M6 16c3 6 7 6 10 0s7-6 10 0"></path></svg>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <div class="status-announcer" id="statusAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+    <audio id="voiceAudio" preload="auto" playsinline></audio>
+  </div>
+
+  <noscript>
+    <div class="noscript-message">Lumi needs JavaScript enabled to guide this division adventure.</div>
+  </noscript>
+
+  <script src="js/game.js"></script>
+</body>
+</html>
