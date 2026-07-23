@@ -793,7 +793,7 @@ a {
 .card-front {
   border-color: var(--accent);
   background: var(--surface-2);
-  transform: rotateY(180deg);
+  transform: rotateY(180deg) translateZ(1px);
 }
 
 .card-front::after {
@@ -836,6 +836,7 @@ a {
   place-items: center;
   background:
     linear-gradient(145deg, var(--surface-3), var(--surface-1));
+  transform: rotateY(0deg) translateZ(1px);
 }
 
 .card-back::before,

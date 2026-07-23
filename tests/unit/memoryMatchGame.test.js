@@ -38,6 +38,13 @@ describe('Memory Match game', () => {
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
   });
 
+  test('keeps the front and back of each card on separate 3D planes', () => {
+    const styles = fs.readFileSync(path.join(gameRoot, 'css', 'styles.css'), 'utf8');
+
+    expect(styles).toContain('transform: rotateY(180deg) translateZ(1px);');
+    expect(styles).toContain('transform: rotateY(0deg) translateZ(1px);');
+  });
+
   test('uses a non-mutating Fisher-Yates shuffle', () => {
     const cards = ['apple', 'banana', 'cat', 'dog', 'fish', 'lion'];
     const shuffled = shuffle(cards, createSeededRandom(42));
