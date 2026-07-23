@@ -1,42 +1,238 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Maze Game</title>
-    <link rel="stylesheet" href="css/maze_game_style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="Explore an ever-growing labyrinth, gather amber, and use the full-maze overview to plan your route.">
+  <title>Ember Maze</title>
+  <link rel="preload" href="img/maze_splash.webp" as="image">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/maze_game_style.css">
 </head>
 <body>
-    <!-- Splash Screen -->
-    <div id="splashScreen">
-        <img src="img/maze_splash.webp" alt="Maze Adventure Splash Screen">
-        <button id="enterGameButton">Enter Game</button>
-    </div>
-    <canvas id="gameCanvas"></canvas>
-    <!-- Movement Controls -->
-    <div id="controls">
-        <button id="upButton">▲</button>
-        <div id="leftRightContainer">
-            <button id="leftButton">◄</button>
-            <button id="downButton">▼</button>
-            <button id="rightButton">►</button>
+  <div class="game-shell" inert>
+    <a class="skip-link" href="#gameCanvas">Skip to the maze</a>
+
+    <header class="topbar">
+      <a class="brand-lockup" href="/games" aria-label="Ember Maze — back to all games">
+        <span class="brand-mark" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </span>
+        <span class="brand-copy">
+          <strong>Ember Maze</strong>
+          <small>The shifting atlas</small>
+        </span>
+      </a>
+
+      <section class="hud" aria-label="Maze progress">
+        <div class="hud-stat">
+          <span>Level</span>
+          <strong id="levelValue">1</strong>
         </div>
-    </div>
-    <!-- Introduction Overlay -->
-    <div id="introOverlay">
-        <div id="introContent">
-            <h1>Welcome to the Maze Adventure!</h1>
-            <p>You are an explorer seeking hidden treasures in mysterious mazes. Navigate through the labyrinths, collect treasures, and reach the exit to progress. Good luck!</p>
-            <button id="startButton">Start Game</button>
+        <div class="hud-divider" aria-hidden="true"></div>
+        <div class="hud-stat hud-score">
+          <span>Score</span>
+          <strong id="scoreValue">0</strong>
         </div>
-    </div>
-    <!-- Difficulty Selection Popup -->
-    <div id="difficultyPopup" class="popup">
-        <div class="popup-content">
-            <h2>Select Difficulty</h2>
-            <div id="difficultyButtons"></div>
+        <div class="hud-divider" aria-hidden="true"></div>
+        <div class="hud-stat">
+          <span>Amber</span>
+          <strong><span id="treasureValue">0</span><small>/</small><span id="treasureTotal">0</span></strong>
         </div>
+      </section>
+
+      <button
+        class="map-button"
+        id="previewButton"
+        type="button"
+        aria-pressed="false"
+        aria-keyshortcuts="M"
+        disabled
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m3.5 5.4 5-2.2 7 2.3 5-2.2v15.3l-5 2.2-7-2.3-5 2.2V5.4Z"></path>
+          <path d="M8.5 3.2v15.3M15.5 5.5v15.3"></path>
+        </svg>
+        <span id="previewButtonLabel">Full maze</span>
+        <kbd>M</kbd>
+      </button>
+    </header>
+
+    <main class="game-stage" id="gameStage">
+      <canvas
+        id="gameCanvas"
+        tabindex="0"
+        role="application"
+        aria-label="Ember Maze board. Swipe across the board, or use the arrow keys or WASD, to move one space."
+        aria-describedby="controlHint"
+      ></canvas>
+
+      <div class="stage-vignette" aria-hidden="true"></div>
+      <div class="stage-corners" aria-hidden="true"></div>
+
+      <div class="objective-pill" id="objectivePill">
+        <span class="objective-spark" aria-hidden="true"></span>
+        <span id="objectiveText">Find the amber. Reach the jade gate.</span>
+      </div>
+
+      <div class="view-badge" id="viewBadge" hidden>
+        <span aria-hidden="true"></span>
+        Full maze overview
+      </div>
+
+      <div class="swipe-feedback" id="swipeFeedback" aria-hidden="true">
+        <span></span>
+      </div>
+      <div class="stage-flash" id="stageFlash" aria-hidden="true"></div>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <p class="sr-only" id="gameAnnouncement" aria-live="polite"></p>
+    </main>
+
+    <footer class="control-deck">
+      <div class="swipe-cue" aria-hidden="true">
+        <span class="swipe-orbit"></span>
+        <span class="swipe-line"></span>
+        <span class="swipe-dot"></span>
+      </div>
+      <p id="controlHint">
+        <strong>Swipe to move</strong>
+        <span>One gesture, one space</span>
+      </p>
+      <div class="keyboard-hint">
+        <span>or</span>
+        <kbd>WASD</kbd>
+        <kbd>Arrow keys</kbd>
+      </div>
+      <div class="maze-legend" aria-label="Maze legend">
+        <span><i class="legend-player"></i>You</span>
+        <span><i class="legend-amber"></i>Amber</span>
+        <span><i class="legend-exit"></i>Exit</span>
+      </div>
+    </footer>
+  </div>
+
+  <section
+    class="modal is-open intro-modal"
+    id="introOverlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="gameTitle"
+  >
+    <div class="modal-card intro-card">
+      <div class="intro-art">
+        <img src="img/maze_splash.webp" alt="An explorer overlooking a vast, glowing temple maze">
+        <div class="intro-art-shade" aria-hidden="true"></div>
+        <div class="atlas-stamp" aria-hidden="true">
+          <span>THE</span>
+          <strong>SHIFTING</strong>
+          <span>ATLAS</span>
+        </div>
+      </div>
+
+      <div class="intro-content">
+        <p class="eyebrow">A new path every time</p>
+        <h1 id="gameTitle">Find the light.<br><span>Learn the maze.</span></h1>
+        <p class="intro-lede">Gather golden amber as the labyrinth grows around you, then find the jade gate. If the path gets tangled, open the full atlas whenever you need it.</p>
+
+        <div class="feature-grid">
+          <div class="feature-item">
+            <span class="feature-number">01</span>
+            <p><strong>Swipe a direction</strong>Each gesture moves one space.</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-number">02</span>
+            <p><strong>Open the atlas</strong>See the entire maze at any time.</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-number">03</span>
+            <p><strong>Reach the gate</strong>Fast routes earn a bigger reward.</p>
+          </div>
+        </div>
+
+        <div class="challenge-picker">
+          <div class="challenge-heading">
+            <span>Starting maze</span>
+            <small>It grows after every clear</small>
+          </div>
+          <div class="challenge-options" role="group" aria-label="Choose a starting maze size">
+            <button type="button" data-base-size="5" aria-pressed="true">
+              <strong>Compact</strong>
+              <span>5 × 5</span>
+            </button>
+            <button type="button" data-base-size="7" aria-pressed="false">
+              <strong>Winding</strong>
+              <span>7 × 7</span>
+            </button>
+            <button type="button" data-base-size="9" aria-pressed="false">
+              <strong>Epic</strong>
+              <span>9 × 9</span>
+            </button>
+          </div>
+        </div>
+
+        <button class="primary-button" id="startButton" type="button">
+          <span>Enter the labyrinth</span>
+          <span aria-hidden="true">→</span>
+        </button>
+      </div>
     </div>
-    <script src="js/maze_game_script.js"></script>
+  </section>
+
+  <section
+    class="modal reward-modal"
+    id="levelUpOverlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="levelUpTitle"
+    hidden
+  >
+    <div class="confetti" id="confetti" aria-hidden="true"></div>
+    <div class="modal-card reward-card">
+      <div class="reward-burst" aria-hidden="true">
+        <span class="burst-ring burst-ring-one"></span>
+        <span class="burst-ring burst-ring-two"></span>
+        <div class="level-medallion">
+          <span>LEVEL</span>
+          <strong id="completedLevelValue">1</strong>
+          <small>CLEARED</small>
+        </div>
+      </div>
+
+      <p class="eyebrow" id="rewardEyebrow">Path complete</p>
+      <h2 id="levelUpTitle">Level 2 unlocked!</h2>
+      <p class="reward-message" id="rewardMessage">The atlas shifts. A larger labyrinth is taking shape.</p>
+      <div class="rank-unlock" id="rankUnlock" hidden></div>
+
+      <div class="reward-stats">
+        <div>
+          <span>Time</span>
+          <strong id="resultTime">0:00</strong>
+        </div>
+        <div>
+          <span>Amber</span>
+          <strong id="resultTreasure">0 / 0</strong>
+        </div>
+        <div class="score-award">
+          <span>Level reward</span>
+          <strong id="resultPoints">+0</strong>
+        </div>
+      </div>
+
+      <button class="primary-button reward-button" id="nextLevelButton" type="button">
+        <span id="nextLevelButtonLabel">Enter level 2</span>
+        <span aria-hidden="true">→</span>
+      </button>
+    </div>
+  </section>
+
+  <noscript>
+    <div class="noscript-message">Ember Maze needs JavaScript enabled to build the labyrinth.</div>
+  </noscript>
+
+  <script src="js/maze_game_script.js"></script>
 </body>
 </html>
