@@ -1,35 +1,157 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Memory Match Game</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="Flip cards, find every matching pair, and unlock a collection of bite-sized facts.">
+  <title>Memory Match · Lennart's Arcade</title>
+  <link rel="stylesheet" href="/css/color-theme.css">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <div id="game-container">
-    <!-- Difficulty Selection Screen -->
-    <div id="difficulty-screen">
-      <h1>Select Difficulty</h1>
-      <div id="difficulty-options">
-        <!-- Difficulty buttons will be inserted here -->
+  <a class="skip-link" href="#game-main">Skip to the game</a>
+
+  <div class="ambient-glow ambient-glow--ember" aria-hidden="true"></div>
+  <div class="ambient-glow ambient-glow--amber" aria-hidden="true"></div>
+  <div class="ambient-grid" aria-hidden="true"></div>
+
+  <main class="game-shell" id="game-main">
+    <header class="game-header">
+      <a class="icon-button back-link" href="/games" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 12H5m6-6-6 6 6 6"></path>
+        </svg>
+      </a>
+
+      <div class="brand-lockup">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i>
+          <b>✦</b>
+        </span>
+        <span>
+          <strong>Memory Match</strong>
+          <small>Lennart's Arcade</small>
+        </span>
+      </div>
+
+      <span class="header-note">
+        <i aria-hidden="true"></i>
+        Facts included
+      </span>
+    </header>
+
+    <section class="screen difficulty-screen" id="difficulty-screen" aria-labelledby="game-title">
+      <div class="setup-panel">
+        <div class="setup-copy">
+          <p class="eyebrow"><span aria-hidden="true">✦</span> Flip · remember · match</p>
+          <h1 id="game-title">Put your memory<br><em>to the test.</em></h1>
+          <p class="setup-lede">Choose a board, uncover every pair, and collect a surprising fact with each match.</p>
+
+          <div class="how-to" aria-label="How to play">
+            <span><b>1</b> Flip two cards</span>
+            <i aria-hidden="true"></i>
+            <span><b>2</b> Find a pair</span>
+            <i aria-hidden="true"></i>
+            <span><b>3</b> Clear the board</span>
+          </div>
+        </div>
+
+        <div class="difficulty-picker">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Choose your challenge</p>
+              <h2>Board size</h2>
+            </div>
+            <span class="difficulty-hint">5 levels</span>
+          </div>
+
+          <div id="difficulty-options" class="difficulty-options" aria-label="Difficulty levels" aria-busy="true">
+            <p class="loading-message">Shuffling the deck…</p>
+          </div>
+          <p class="fact-note"><span aria-hidden="true">♪</span> Every match unlocks a short spoken fact.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen game-screen" id="game-screen" aria-labelledby="round-title" hidden>
+      <div class="round-header">
+        <button class="soft-button" id="change-level-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 12H5m6-6-6 6 6 6"></path>
+          </svg>
+          <span>Change level</span>
+        </button>
+
+        <div class="round-heading">
+          <p class="eyebrow" id="round-eyebrow">Level 1 · Warm-up</p>
+          <h1 id="round-title">Find all 3 pairs</h1>
+        </div>
+
+        <div class="round-stats" aria-label="Game progress">
+          <div class="stat">
+            <span id="moves-count">0</span>
+            <small>Moves</small>
+          </div>
+          <div class="stat stat--pairs">
+            <span><b id="matches-count">0</b><i>/</i><b id="pairs-count">3</b></span>
+            <small>Pairs</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="board-frame">
+        <div class="board-progress" aria-hidden="true">
+          <span id="board-progress-bar"></span>
+        </div>
+        <div id="game-board" class="game-board" role="group" aria-label="Memory cards"></div>
+      </div>
+
+      <p class="board-help"><span aria-hidden="true">✦</span> Turn over any two cards. Matching cards stay face up.</p>
+    </section>
+  </main>
+
+  <aside class="fact-display" id="fact-display" role="status" aria-live="polite" aria-atomic="true" hidden>
+    <span class="fact-icon" aria-hidden="true">✦</span>
+    <span class="fact-copy">
+      <small>Match found · did you know?</small>
+      <strong id="fact-text"></strong>
+    </span>
+  </aside>
+
+  <section class="winning-message" id="winning-message" role="dialog" aria-modal="true" aria-labelledby="winning-text" hidden>
+    <div class="winning-shade" aria-hidden="true"></div>
+    <div class="winning-card">
+      <div class="celebration-sparks" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <span class="winning-emblem" aria-hidden="true">
+        <i></i>
+        <b>✓</b>
+      </span>
+      <p class="eyebrow">Board complete</p>
+      <h2 id="winning-text">Fantastic memory!</h2>
+      <p class="winning-copy">Every pair found. Ready to shuffle the deck and go again?</p>
+
+      <div class="winning-stats" aria-label="Final score">
+        <span><strong id="final-moves-count">0</strong><small>moves</small></span>
+        <i aria-hidden="true"></i>
+        <span><strong id="final-pairs-count">0</strong><small>pairs found</small></span>
+      </div>
+
+      <div class="winning-actions">
+        <button class="primary-button" id="play-again-button" type="button">
+          <span>Play same level</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"></path>
+          </svg>
+        </button>
+        <button class="soft-button choose-level-button" id="winning-change-level-button" type="button">Choose another level</button>
       </div>
     </div>
+  </section>
 
-    <!-- Game Board -->
-    <div id="game-board" class="hidden">
-      <!-- Cards will be dynamically generated here -->
-    </div>
-
-    <!-- Fact Display -->
-    <div id="fact-display" class="fact-display hidden"></div>
-
-    <!-- Winning Message -->
-    <div id="winning-message" class="hidden">
-      <h2 id="winning-text">Congratulations!</h2>
-      <button id="play-again-button">Play Again</button>
-    </div>
-  </div>
-
+  <audio id="game-audio" preload="auto" playsinline></audio>
   <script src="js/script.js"></script>
 </body>
 </html>
