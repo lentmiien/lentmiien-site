@@ -21,6 +21,7 @@ describe('SVERIGE visual journey', () => {
     expect(html).toContain('SVERIGE · 光と余白の国へ');
     expect(html).toContain('href="/css/color-theme.css"');
     expect(html).toContain('assets/images/archipelago-hero.webp');
+    expect(html).toContain('id="panelButton"');
     expect(html).toContain('id="captionButton"');
     expect(html).toContain('id="soundButton"');
     expect(html).toContain('id="infoDialog"');
@@ -64,7 +65,7 @@ describe('SVERIGE visual journey', () => {
     });
   });
 
-  test('implements replayable narration, captions, keyboard travel, and reduced motion', () => {
+  test('implements replayable narration, a quiz-aware panel, keyboard travel, and reduced motion', () => {
     const script = fs.readFileSync(path.join(gameRoot, 'js', 'app.js'), 'utf8');
     const styles = fs.readFileSync(path.join(gameRoot, 'css', 'styles.css'), 'utf8');
 
@@ -73,7 +74,11 @@ describe('SVERIGE visual journey', () => {
     expect(script).toContain("event.key === 'ArrowRight'");
     expect(script).toContain("key === 'r'");
     expect(script).toContain("key === 'c'");
+    expect(script).toContain("key === 'p'");
+    expect(script).toContain("safeStorageSet('swedenJourneyPanel'");
+    expect(script).toContain("const quizRequiresPanel = slide.kind === 'quiz'");
     expect(script).toContain('chooseQuizByKeyboard(event.key)');
+    expect(styles).toContain('.experience[data-panel="hidden"] .story-card');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toContain('--brand: #ff6a1f');
     expect(styles).toContain('--accent: #ffc247');

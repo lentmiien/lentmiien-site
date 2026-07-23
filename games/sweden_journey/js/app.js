@@ -25,6 +25,7 @@
     previousButton: document.getElementById('previousButton'),
     nextButton: document.getElementById('nextButton'),
     nextButtonLabel: document.getElementById('nextButtonLabel'),
+    panelButton: document.getElementById('panelButton'),
     captionButton: document.getElementById('captionButton'),
     closeTranscriptButton: document.getElementById('closeTranscriptButton'),
     transcriptCard: document.getElementById('transcriptCard'),
@@ -47,10 +48,13 @@
 
   const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
   const savedSound = safeStorageGet('swedenJourneySound');
+  const savedPanel = safeStorageGet('swedenJourneyPanel');
   const state = {
     started: false,
     index: 0,
     sound: savedSound !== 'off',
+    panelPreferred: savedPanel !== 'hidden',
+    panelVisible: true,
     captions: false,
     reducedMotion: motionPreference.matches,
     visibleImage: 0,
@@ -467,6 +471,39 @@
     dom.nextButton.setAttribute('aria-label', slide.kind === 'finale' ? '旅を最初から見る' : '次の章へ');
   }
 
+  function syncPanelForSlide(slide, announce = false) {
+    const quizRequiresPanel = slide.kind === 'quiz';
+    const visible = quizRequiresPanel || state.panelPreferred;
+    const changed = visible !== state.panelVisible;
+
+    state.panelVisible = visible;
+    dom.experience.dataset.panel = visible ? 'visible' : 'hidden';
+    dom.storyCard.setAttribute('aria-hidden', String(!visible));
+    dom.storyCard.inert = !visible;
+    dom.panelButton.disabled = quizRequiresPanel;
+    dom.panelButton.setAttribute('aria-pressed', String(visible));
+
+    const label = quizRequiresPanel
+      ? 'クイズ中は情報パネルを隠せません'
+      : visible ? '情報パネルを隠す' : '情報パネルを表示';
+    dom.panelButton.setAttribute('aria-label', label);
+    dom.panelButton.title = label;
+
+    if (announce && changed) {
+      dom.statusAnnouncer.textContent = visible
+        ? '情報パネルを表示しました。'
+        : '情報パネルを隠しました。風景とナレーションをお楽しみください。';
+    }
+  }
+
+  function togglePanel() {
+    const slide = slides[state.index];
+    if (slide.kind === 'quiz') return;
+    state.panelPreferred = !state.panelPreferred;
+    safeStorageSet('swedenJourneyPanel', state.panelPreferred ? 'visible' : 'hidden');
+    syncPanelForSlide(slide, true);
+  }
+
   function fetchTranscript(slide) {
     const token = ++state.transcriptToken;
     dom.transcriptText.textContent = '字幕を読み込んでいます。';
@@ -512,6 +549,7 @@
     renderWord(slide.word);
     updateProgress(slide);
     updateNavigation(slide);
+    syncPanelForSlide(slide);
     fetchTranscript(slide);
     document.title = `${slide.title} · SVERIGE`;
     dom.statusAnnouncer.textContent = `${state.index + 1}場面目。${slide.title}`;
@@ -519,7 +557,10 @@
 
     requestAnimationFrame(() => requestAnimationFrame(() => {
       dom.storyCard.classList.add('is-visible');
-      if (options.focus) dom.storyCard.focus({ preventScroll: true });
+      if (options.focus) {
+        const focusTarget = state.panelVisible ? dom.storyCard : dom.nextButton;
+        focusTarget.focus({ preventScroll: true });
+      }
     }));
 
     if (options.narrate !== false) narrator.play(slide);
@@ -557,6 +598,7 @@
     dom.experience.dataset.phase = 'story';
     dom.storyStage.hidden = false;
     dom.chapterChip.hidden = false;
+    dom.panelButton.hidden = false;
     dom.captionButton.hidden = false;
     dom.soundButton.hidden = false;
     dom.soundButton.setAttribute('aria-pressed', String(state.sound));
@@ -642,8 +684,10 @@
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     if (dom.infoDialog.open) return;
     const target = event.target;
+    const key = event.key.toLowerCase();
+    const globalShortcuts = ['r', 'c', 'm', 'p'];
     if (target instanceof HTMLButtonElement || target instanceof HTMLAnchorElement) {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' && !globalShortcuts.includes(key)) return;
     }
 
     if (!state.started && (event.key === 'Enter' || event.key === ' ')) {
@@ -658,7 +702,6 @@
       return;
     }
 
-    const key = event.key.toLowerCase();
     if (event.key === 'ArrowRight') {
       event.preventDefault();
       goNext();
@@ -675,12 +718,16 @@
     } else if (key === 'm') {
       event.preventDefault();
       toggleSound();
+    } else if (key === 'p') {
+      event.preventDefault();
+      togglePanel();
     }
   }
 
   dom.startButton.addEventListener('click', startExperience);
   dom.previousButton.addEventListener('click', goPrevious);
   dom.nextButton.addEventListener('click', goNext);
+  dom.panelButton.addEventListener('click', togglePanel);
   dom.soundButton.addEventListener('click', toggleSound);
   dom.captionButton.addEventListener('click', () => setCaptions(!state.captions));
   dom.closeTranscriptButton.addEventListener('click', () => setCaptions(false));

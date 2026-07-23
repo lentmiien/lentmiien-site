@@ -7,8 +7,9 @@
 - Eight original cinematic environments cover geography, Viking Age trade, the Vasa era, democracy, Sápmi and nature, fika, inventions and the Nobel Prize, and modern music.
 - Twelve navigable scenes combine eight story chapters, three optional multiple-choice discoveries, and a finale.
 - Every scene has Japanese Voicevox narration, an exact transcript, replay and mute controls, and a visible audio-progress indicator.
+- The information panel can be hidden for an image-and-narration mode. Quizzes reveal it automatically, then the viewer's prior preference resumes.
 - Backgrounds crossfade with a restrained atmosphere layer. `prefers-reduced-motion` disables movement and particles.
-- Arrow controls and the progress rail revisit any scene. Keyboard shortcuts are `←` / `→` to travel, `1`–`3` to answer, `R` to replay narration, `C` for captions, and `M` for sound.
+- Arrow controls and the progress rail revisit any scene. Keyboard shortcuts are `←` / `→` to travel, `1`–`3` to answer, `R` to replay narration, `C` for captions, `M` for sound, and `P` for the information panel.
 - The source dialog links to the Swedish Government, Swedish Institute, Sámi Parliament, Vasa Museum, Uppsala University, Nobel Prize, and NATO material used to check the story.
 
 ## Structure

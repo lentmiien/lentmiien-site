@@ -428,6 +428,27 @@ article:focus-visible {
   display: block;
 }
 
+#panelButton .panel-off-icon {
+  display: none;
+}
+
+#panelButton[aria-pressed="false"] .panel-on-icon {
+  display: none;
+}
+
+#panelButton[aria-pressed="false"] .panel-off-icon {
+  display: block;
+}
+
+#panelButton:disabled {
+  border-color: rgba(255, 194, 71, 0.28);
+  background: rgba(255, 194, 71, 0.09);
+  color: var(--accent);
+  cursor: not-allowed;
+  opacity: 0.82;
+  transform: none;
+}
+
 #soundButton[aria-pressed="false"],
 #captionButton[aria-pressed="false"] {
   color: var(--text-muted);
@@ -692,6 +713,27 @@ article:focus-visible {
 .story-card.is-visible {
   transform: translateY(0);
   opacity: 1;
+}
+
+.experience[data-panel="hidden"] .story-card {
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(22px) scale(0.985);
+  opacity: 0;
+  transition:
+    opacity 360ms var(--ease-cinematic),
+    transform 440ms var(--ease-cinematic),
+    visibility 0s linear 440ms;
+}
+
+.experience[data-panel="hidden"][data-phase="story"] .scene-wash {
+  background:
+    linear-gradient(180deg, rgba(4, 6, 9, 0.6), transparent 25%, transparent 70%, rgba(4, 6, 9, 0.64)),
+    radial-gradient(circle at 50% 48%, transparent 38%, rgba(3, 5, 8, 0.16) 100%);
+}
+
+.experience[data-panel="hidden"] .scene-vignette {
+  box-shadow: inset 0 0 130px 20px rgba(0, 0, 0, 0.27);
 }
 
 .story-card::before {
@@ -1639,6 +1681,13 @@ kbd {
     object-position: 50% 35%;
   }
 
+  .experience[data-panel="hidden"][data-phase="story"] .scene-wash,
+  .experience[data-panel="hidden"][data-phase="story"][data-layout="right"] .scene-wash {
+    background:
+      linear-gradient(180deg, rgba(4, 6, 9, 0.62), transparent 24%, transparent 72%, rgba(4, 6, 9, 0.58)),
+      radial-gradient(circle at 50% 48%, transparent 48%, rgba(3, 5, 8, 0.13) 100%);
+  }
+
   .story-layout,
   .experience[data-layout="right"] .story-layout {
     inset: 70px 12px 94px;
@@ -1767,6 +1816,35 @@ kbd {
 
   .info-grid {
     gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    padding-right: 8px;
+    padding-left: 8px;
+    gap: 5px;
+  }
+
+  .round-control,
+  .back-control,
+  .info-control {
+    min-width: 44px;
+    width: 44px;
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .topbar-actions {
+    gap: 3px;
+  }
+
+  .brand-lockup {
+    gap: 0;
+  }
+
+  .brand-copy {
+    display: none;
   }
 }
 

@@ -16,7 +16,7 @@
 <body>
   <a class="skip-link" href="#storyTitle">現在の章へ移動</a>
 
-  <div class="experience" id="experience" data-phase="intro" data-tone="coast">
+  <div class="experience" id="experience" data-phase="intro" data-tone="coast" data-panel="visible">
     <div class="background-stage" aria-hidden="true">
       <img class="scene-image is-visible" id="sceneImageA" src="assets/images/archipelago-hero.webp" alt="">
       <img class="scene-image" id="sceneImageB" src="assets/images/archipelago-hero.webp" alt="">
@@ -47,6 +47,11 @@
       </div>
 
       <div class="topbar-actions">
+        <button class="round-control" id="panelButton" type="button" aria-pressed="true" aria-label="情報パネルを隠す" hidden>
+          <svg class="panel-on-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5Zm4 4h7M7 12h10M7 15h8"></path></svg>
+          <svg class="panel-off-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5M2 2l20 20"></path></svg>
+          <span>パネル</span>
+        </button>
         <button class="round-control" id="captionButton" type="button" aria-pressed="false" aria-label="字幕を表示" hidden>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm1 4v2h5V9H5Zm9 0v2h5V9h-5ZM5 13v2h7v-2H5Zm10 0v2h4v-2h-4Z"></path></svg>
           <span>字幕</span>
@@ -159,7 +164,8 @@
         <div class="info-grid">
           <section>
             <h3>操作</h3>
-            <p>画面下の矢印、またはキーボードの ← → で移動できます。<kbd>R</kbd> は音声の再生、<kbd>C</kbd> は字幕、<kbd>M</kbd> は音声の切り替えです。</p>
+            <p>画面下の矢印、またはキーボードの ← → で移動できます。<kbd>R</kbd> は音声の再生、<kbd>C</kbd> は字幕、<kbd>M</kbd> は音声、<kbd>P</kbd> は情報パネルの切り替えです。</p>
+            <p>情報パネルを隠して、風景とナレーションだけを楽しむこともできます。クイズでは回答できるよう自動的にパネルが開き、その後は以前の表示設定に戻ります。</p>
             <p>端末の「視差効果を減らす」設定を尊重します。クイズは結果を競うものではなく、意外な事実を見つける小さな寄り道です。</p>
           </section>
           <section>
