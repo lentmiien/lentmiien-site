@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta id="metaDescription" name="description" content="A cinematic, narrated journey for children through the Triassic, Jurassic and Cretaceous—ending with the dinosaurs still around us.">
+  <title>The history of the dinosaurs</title>
+  <link rel="icon" href="assets/images/deep-time-gateway.webp" type="image/webp">
+  <link rel="preload" href="assets/images/deep-time-gateway.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/story.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#storyCard" data-i18n="skipLink">Skip to the current chapter</a>
+
+  <div class="experience" id="experience" data-phase="intro" data-tone="gateway" data-layout="left" data-panel="visible">
+    <div class="background-stage" id="backgroundStage" role="img" aria-label="An amber sunrise opens beyond a fossil-layered canyon.">
+      <img class="scene-image is-visible" id="sceneImageA" src="assets/images/deep-time-gateway.webp" alt="" aria-hidden="true">
+      <img class="scene-image" id="sceneImageB" src="assets/images/deep-time-gateway.webp" alt="" aria-hidden="true">
+      <div class="scene-wash" aria-hidden="true"></div>
+      <div class="scene-vignette" aria-hidden="true"></div>
+      <div class="film-grain" aria-hidden="true"></div>
+      <canvas id="atmosphereCanvas" aria-hidden="true"></canvas>
+    </div>
+
+    <div class="strata-trace" aria-hidden="true">
+      <i></i><i></i><i></i>
+    </div>
+
+    <header class="topbar">
+      <a class="round-control back-control" href="/games" data-i18n-aria="backLabel" aria-label="Back to all games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+      </a>
+
+      <div class="brand-lockup">
+        <span class="brand-fossil" aria-hidden="true">
+          <i></i><b></b>
+        </span>
+        <span class="brand-copy">
+          <strong data-i18n="brandName">DEEP TIME</strong>
+          <small data-i18n="brandSubtitle">Dinosaur field journey</small>
+        </span>
+      </div>
+
+      <div class="chapter-chip" id="chapterChip" hidden>
+        <span class="chapter-pulse" aria-hidden="true"></span>
+        <span id="chapterChipText">Deep time</span>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="round-control language-control" id="languageButton" type="button" data-i18n-aria="switchLanguage" aria-label="Switch to Japanese">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h10M9 3v2m-2 0c.4 3.1 2.1 5.8 5 7.8M12 5c-.5 4.1-3 7.6-7 9.4m8.5 5.6 3.2-8h1.8l3.2 8m-7.2-2.5h6.2"></path></svg>
+          <span id="languageButtonLabel">日本語</span>
+        </button>
+
+        <button class="round-control" id="panelButton" type="button" aria-pressed="true" data-i18n-aria="panelHide" aria-label="Hide story panel" hidden>
+          <svg class="panel-on-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5Zm4 4h7M7 12h10M7 15h8"></path></svg>
+          <svg class="panel-off-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5M2 2l20 20"></path></svg>
+          <span data-i18n="panelShort">Story</span>
+        </button>
+
+        <button class="round-control" id="captionButton" type="button" aria-pressed="false" data-i18n-aria="captionsShow" aria-label="Show transcript" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm1 4v2h5V9H5Zm9 0v2h5V9h-5ZM5 13v2h7v-2H5Zm10 0v2h4v-2h-4Z"></path></svg>
+          <span data-i18n="captionsShort">Transcript</span>
+        </button>
+
+        <button class="round-control" id="soundButton" type="button" aria-pressed="true" data-i18n-aria="soundOff" aria-label="Turn narration off" hidden>
+          <svg class="sound-on-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m3 4a4.5 4.5 0 0 1 0 6m2-9a8 8 0 0 1 0 12"></path></svg>
+          <svg class="sound-off-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m3-5 13 13"></path></svg>
+          <span data-i18n="soundShort">Sound</span>
+        </button>
+
+        <button class="round-control info-control" id="infoButton" type="button" data-i18n-aria="infoLabel" aria-label="Open controls, media notes and sources">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="intro-overlay" id="introOverlay" aria-labelledby="introTitle">
+      <div class="intro-card">
+        <div class="time-compass" aria-hidden="true">
+          <span></span><i></i><b></b>
+        </div>
+        <div class="intro-story">
+          <p class="intro-overline"><span></span><span data-i18n="introOverline">OPEN THE DEEP-TIME DOOR</span></p>
+          <h1 id="introTitle" data-i18n="introTitle">The history of the dinosaurs</h1>
+          <p class="intro-lede" data-i18n="introLede">Walk through three changing worlds. Meet small pioneers, feathered fliers and famous giants—and discover why they never all shared one stage.</p>
+        </div>
+
+        <div class="intro-actions">
+          <fieldset class="language-choice">
+            <legend data-i18n="introLanguageLegend">Choose your language</legend>
+            <div>
+              <button id="introLanguageEnglish" type="button" data-language="en" aria-pressed="true">
+                <span aria-hidden="true">EN</span>
+                <strong data-i18n="englishLanguage">English</strong>
+              </button>
+              <button id="introLanguageJapanese" type="button" data-language="ja" aria-pressed="false">
+                <span aria-hidden="true">日</span>
+                <strong data-i18n="japaneseLanguage">日本語</strong>
+              </button>
+            </div>
+          </fieldset>
+
+          <div class="intro-stats" data-i18n-aria="journeyOverview" aria-label="Journey overview">
+            <span><strong>9</strong><small data-i18n="chaptersStat">9 chapters</small></span>
+            <span><strong>≈ 8</strong><small data-i18n="durationStat">about 8 minutes</small></span>
+            <span><strong>3</strong><small data-i18n="quizzesStat">3 discoveries</small></span>
+          </div>
+
+          <button class="start-button" id="startButton" type="button">
+            <span><small data-i18n="startKicker">English narration</small><strong data-i18n="startAction">Begin the journey</strong></span>
+            <i aria-hidden="true">
+              <svg viewBox="0 0 32 32"><path d="m11 7 14 9-14 9V7Z"></path></svg>
+            </i>
+          </button>
+          <p class="headphone-note"><span aria-hidden="true">♪</span><span data-i18n="headphoneNote">Headphones recommended · narration can be changed any time</span></p>
+        </div>
+      </div>
+
+      <div class="intro-coordinate" aria-hidden="true">
+        <span data-i18n="introCoordinatePrimary">MESOZOIC · 252—66 Ma</span>
+        <span data-i18n="introCoordinateSecondary">TRIASSIC / JURASSIC / CRETACEOUS</span>
+      </div>
+    </section>
+
+    <section class="story-stage" id="storyStage" data-i18n-aria="storyStageLabel" aria-label="A journey through dinosaur history" hidden>
+      <main class="story-layout">
+        <article class="story-card" id="storyCard" tabindex="-1">
+          <div class="card-era-line" aria-hidden="true"><i></i><b></b></div>
+          <header class="story-header">
+            <p class="story-eyebrow" id="storyEyebrow">01 · SET THE TIME COMPASS</p>
+            <span class="story-date" id="storyDate">252–66 million years ago</span>
+          </header>
+
+          <h1 id="storyTitle">One age? Three changing worlds.</h1>
+          <p class="story-lede" id="storyLede"></p>
+          <div class="story-body" id="storyBody"></div>
+
+          <footer class="story-footer">
+            <div class="narration-status" id="narrationStatus" data-state="ready">
+              <button class="narration-replay" id="replayNarrationButton" type="button" data-i18n-aria="replayNarration" aria-label="Replay this scene’s narration">
+                <span class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              </button>
+              <span class="narration-copy">
+                <small id="narrationLabel" data-i18n="narrationReady">Narration ready</small>
+                <span class="audio-progress" id="audioProgressTrack" role="progressbar" data-i18n-aria="narrationProgress" aria-label="Narration progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <i id="audioProgress"></i>
+                </span>
+              </span>
+            </div>
+            <span class="field-term" id="fieldTerm"></span>
+          </footer>
+        </article>
+
+        <aside class="transcript-card" id="transcriptCard" aria-labelledby="transcriptHeading" hidden>
+          <header>
+            <span id="transcriptHeading"><i aria-hidden="true"></i><span data-i18n="transcriptTitle">Narration transcript</span></span>
+            <button id="closeTranscriptButton" type="button" data-i18n-aria="transcriptClose" aria-label="Close transcript">×</button>
+          </header>
+          <p id="transcriptText" data-i18n="transcriptLoading">Loading the transcript…</p>
+        </aside>
+      </main>
+
+      <div class="period-ribbon" aria-hidden="true">
+        <span class="period-triassic" data-i18n="periodTriassic">TRIASSIC</span>
+        <span class="period-jurassic" data-i18n="periodJurassic">JURASSIC</span>
+        <span class="period-cretaceous" data-i18n="periodCretaceous">CRETACEOUS</span>
+        <i id="periodCursor"></i>
+      </div>
+
+      <nav class="journey-nav" data-i18n-aria="progressLabel" aria-label="Journey progress">
+        <button class="nav-button previous-button" id="previousButton" type="button" data-i18n-aria="previousLabel" aria-label="Go to the previous scene">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+          <span data-i18n="previous">Back</span>
+        </button>
+
+        <div class="journey-progress">
+          <div class="progress-copy">
+            <span><b id="currentNumber">01</b> / <span id="totalNumber">13</span></span>
+            <span id="progressLabel">Deep time</span>
+          </div>
+          <ol class="progress-dots" id="progressDots" aria-label="13 scenes"></ol>
+        </div>
+
+        <button class="nav-button next-button" id="nextButton" type="button" data-i18n-aria="nextLabel" aria-label="Go to the next scene">
+          <span id="nextButtonLabel" data-i18n="next">Next</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg>
+        </button>
+      </nav>
+    </section>
+
+    <dialog class="info-dialog" id="infoDialog" aria-labelledby="infoTitle">
+      <form method="dialog" class="info-panel">
+        <header>
+          <div>
+            <p data-i18n="infoOverline">FIELD NOTES</p>
+            <h2 id="infoTitle" data-i18n="infoTitle">About this journey</h2>
+          </div>
+          <button class="dialog-close" value="close" data-i18n-aria="closeDialog" aria-label="Close information">×</button>
+        </header>
+
+        <div class="info-grid">
+          <section>
+            <h3 data-i18n="controlsTitle">Controls</h3>
+            <p data-i18n="controlsBody">Use the arrow buttons or ← and → to travel. Press 1–3 to answer a discovery, R to replay narration, C for the transcript, M for sound, P for the story panel, and L to change language.</p>
+          </section>
+          <section>
+            <h3 data-i18n="panelHelpTitle">Image-and-narration mode</h3>
+            <p data-i18n="panelHelpBody">Hide the glass story panel whenever you want a clearer view of the artwork. A discovery opens it automatically and restores your saved preference after you leave.</p>
+          </section>
+          <section>
+            <h3 data-i18n="mediaTitle">Generated media</h3>
+            <p data-i18n="mediaBody">The prehistoric scenes are original AI-generated artist’s reconstructions made for this journey. They are guided by current evidence, but colors, soft tissues and behavior are partly uncertain. They are not photographs.</p>
+          </section>
+          <section>
+            <h3 data-i18n="narrationDisclosureTitle">Narration</h3>
+            <p data-i18n="narrationDisclosureBody">English narration uses the local Piper Lessac voice. Japanese narration uses the local Voicevox Shikoku Metan voice. Audio is generated and stored locally; no speech service is contacted while you watch.</p>
+          </section>
+          <section>
+            <h3 data-i18n="evidenceTitle">How the science is handled</h3>
+            <p data-i18n="evidenceBody">Dates are rounded. Fossil ranges show the oldest and youngest fossils currently known—not the exact first and last individual. New discoveries can change a range or a reconstruction.</p>
+          </section>
+          <section>
+            <h3 data-i18n="motionTitle">Comfort and access</h3>
+            <p data-i18n="motionBody">Your reduced-motion setting removes decorative movement. Narration begins only after you start. The transcript, language, sound, navigation and progress controls remain available when the story panel is hidden.</p>
+          </section>
+        </div>
+
+        <section class="source-section">
+          <h3 data-i18n="sourcesTitle">Research sources</h3>
+          <p data-i18n="sourcesIntro">The story was checked against the current geological chart and museum, university and space-agency material. Links open the original source.</p>
+          <div class="current-source-block" id="currentSourceBlock" hidden>
+            <h4 data-i18n="sourcesForScene">Sources for this scene</h4>
+            <ul id="currentSourceList"></ul>
+          </div>
+          <ul class="all-source-list" id="sourceList"></ul>
+        </section>
+      </form>
+    </dialog>
+
+    <div class="status-announcer" id="statusAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+    <audio id="narrationAudio" preload="metadata" playsinline></audio>
+  </div>
+
+  <noscript>
+    <div class="noscript-message">
+      <p lang="en">This journey needs JavaScript enabled.</p>
+      <p lang="ja">この旅にはJavaScriptが必要です。</p>
+    </div>
+  </noscript>
+</body>
+</html>
