@@ -1,138 +1,482 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Snake Game</title>
-    <style>
-        body {
-            background-color: #000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-        }
-        canvas {
-            background-color: #111;
-            border: 1px solid #555;
-        }
-        #score {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: #0f0;
-            font-family: Arial, sans-serif;
-            font-size: 24px;
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E0F13">
+  <meta
+    name="description"
+    content="Build your ideal Snake run—from the original Simple and Classic modes to portals, power fruit, and timed Ember Rushes."
+  >
+  <title>Ember Snake · Lennart's Arcade</title>
+  <link rel="preload" href="assets/ember-serpent.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <div id="score">Score: 0</div>
-    <canvas id="gameCanvas" width="400" height="400"></canvas>
+  <a class="skip-link" href="#main-content">Skip to game setup</a>
 
-    <script>
-        // Get the canvas and context
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+  <div class="ambient ambient--ember" aria-hidden="true"></div>
+  <div class="ambient ambient--amber" aria-hidden="true"></div>
+  <div class="page-grid" aria-hidden="true"></div>
 
-        // Set up the game variables
-        const gridSize = 20; // Size of each grid cell
-        let snake = [{ x: 200, y: 200 }]; // Initial snake position
-        let direction = { x: 0, y: 0 }; // Initial direction
-        let food = { x: 0, y: 0 }; // Food position
-        let score = 0;
-        let gameSpeed = 100; // Game speed in milliseconds
+  <main class="arcade-shell" id="main-content">
+    <header class="site-header">
+      <a class="back-link" href="/games">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 12H5m6-6-6 6 6 6"></path>
+        </svg>
+        <span>All games</span>
+      </a>
 
-        // Place the first food
-        placeFood();
+      <a class="brand-lockup" href="/snake" aria-label="Ember Snake home">
+        <span class="brand-glyph" aria-hidden="true">
+          <i></i>
+          <b></b>
+          <em></em>
+        </span>
+        <span>
+          <strong>Ember Snake</strong>
+          <small>Lennart's Arcade</small>
+        </span>
+      </a>
 
-        // Listen for key presses to control the snake
-        document.addEventListener('keydown', changeDirection);
+      <span class="header-tag">
+        <i aria-hidden="true"></i>
+        Make it yours
+      </span>
+    </header>
 
-        // Start the game loop
-        let gameLoop = setInterval(main, gameSpeed);
+    <section class="setup-screen" id="setup-screen" aria-labelledby="game-title">
+      <article class="hero-card">
+        <img
+          src="assets/ember-serpent.webp"
+          alt="A friendly charcoal serpent follows glowing paths toward ember, amber, and jade fruit."
+          width="1600"
+          height="900"
+        >
+        <div class="hero-shade" aria-hidden="true"></div>
+        <div class="hero-copy">
+          <p class="eyebrow"><span aria-hidden="true">✦</span> One game · your rules</p>
+          <h1 id="game-title">Chase the glow.<br><em>Shape the run.</em></h1>
+          <p>Go slow and forgiving, fast and classic, or open the rifts and let the board get strange.</p>
+        </div>
+        <div class="hero-features" aria-label="Available game features">
+          <span><i class="mini-fruit mini-fruit--ember" aria-hidden="true"></i>Power fruit</span>
+          <span><i class="mini-rift" aria-hidden="true"></i>Rift portals</span>
+          <span><i class="mini-spark" aria-hidden="true">✦</i>Ember Rush</span>
+        </div>
+      </article>
 
-        function main() {
-            update();
-            draw();
-        }
+      <form class="settings-card" id="settings-form">
+        <div class="settings-heading">
+          <div>
+            <p class="eyebrow">Choose a starting point</p>
+            <h2>Build your run</h2>
+          </div>
+          <span class="custom-badge" id="preset-status">Ember preset</span>
+        </div>
 
-        function update() {
-            // Move the snake
-            const head = { x: snake[0].x + direction.x * gridSize, y: snake[0].y + direction.y * gridSize };
-            snake.unshift(head);
+        <div class="preset-grid" role="group" aria-label="Game presets">
+          <button class="preset-card" type="button" data-preset="simple" aria-pressed="false">
+            <span class="preset-card__top">
+              <strong>Simple</strong>
+              <small>simple_snake</small>
+            </span>
+            <span>Slow · soft collisions</span>
+          </button>
+          <button class="preset-card" type="button" data-preset="classic" aria-pressed="false">
+            <span class="preset-card__top">
+              <strong>Classic</strong>
+              <small>snake</small>
+            </span>
+            <span>Fast · pure rules</span>
+          </button>
+          <button class="preset-card is-selected" type="button" data-preset="ember" aria-pressed="true">
+            <span class="preset-card__top">
+              <strong>Ember</strong>
+              <small>new</small>
+            </span>
+            <span>Rifts · rushes · ramp</span>
+          </button>
+        </div>
 
-            // Check for collision with food
-            if (head.x === food.x && head.y === food.y) {
-                score += 10;
-                document.getElementById('score').innerText = 'Score: ' + score;
-                placeFood();
-            } else {
-                snake.pop(); // Remove the tail segment if no food eaten
-            }
+        <div class="fine-tune-heading">
+          <span>Fine-tune</span>
+          <small>Every change is reflected in your run</small>
+        </div>
 
-            // Check for collision with walls or self
-            if (
-                head.x < 0 || head.x >= canvas.width ||
-                head.y < 0 || head.y >= canvas.height ||
-                collisionWithSelf(head)
-            ) {
-                clearInterval(gameLoop);
-                alert('Game Over! Your score: ' + score);
-                document.location.reload();
-            }
-        }
+        <div class="setting-grid">
+          <label class="setting-block setting-block--wide" for="speed-setting">
+            <span class="setting-label">
+              <span>
+                <strong>Move speed</strong>
+                <small>70–1250 ms per step</small>
+              </span>
+              <output id="speed-output" for="speed-setting">165 ms</output>
+            </span>
+            <input
+              id="speed-setting"
+              name="speedMs"
+              type="range"
+              min="70"
+              max="1250"
+              step="5"
+              value="165"
+            >
+            <span class="range-labels" aria-hidden="true">
+              <span>Blazing</span>
+              <span>Leisurely</span>
+            </span>
+          </label>
 
-        function draw() {
-            // Clear the canvas
-            ctx.fillStyle = '#111';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          <label class="setting-block" for="board-setting">
+            <span class="setting-label">
+              <span>
+                <strong>Board</strong>
+                <small>Space to roam</small>
+              </span>
+            </span>
+            <select id="board-setting" name="boardSize">
+              <option value="16">Compact · 16 × 16</option>
+              <option value="20" selected>Original · 20 × 20</option>
+              <option value="24">Wide · 24 × 24</option>
+              <option value="28">Expansive · 28 × 28</option>
+            </select>
+          </label>
 
-            // Draw the snake
-            ctx.fillStyle = '#0f0';
-            snake.forEach(segment => {
-                ctx.fillRect(segment.x, segment.y, gridSize, gridSize);
-            });
+          <label class="setting-block" for="points-setting">
+            <span class="setting-label">
+              <span>
+                <strong>Fruit value</strong>
+                <small>Points per ember</small>
+              </span>
+              <output id="points-output" for="points-setting">10</output>
+            </span>
+            <input
+              id="points-setting"
+              name="pointsPerFood"
+              type="range"
+              min="1"
+              max="10"
+              step="1"
+              value="10"
+            >
+          </label>
 
-            // Draw the food
-            ctx.fillStyle = '#f00';
-            ctx.fillRect(food.x, food.y, gridSize, gridSize);
-        }
+          <label class="setting-block" for="growth-setting">
+            <span class="setting-label">
+              <span>
+                <strong>Growth</strong>
+                <small>Segments per fruit</small>
+              </span>
+            </span>
+            <select id="growth-setting" name="growthPerFood">
+              <option value="1" selected>Steady · +1</option>
+              <option value="2">Hungry · +2</option>
+              <option value="3">Wild · +3</option>
+            </select>
+          </label>
+        </div>
 
-        function changeDirection(event) {
-            const keyPressed = event.keyCode;
+        <fieldset class="collision-setting">
+          <legend>
+            <strong>Collision rule</strong>
+            <small>What happens at an edge or your own trail</small>
+          </legend>
+          <div class="segment-control">
+            <label>
+              <input type="radio" name="collisionMode" value="brake">
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 6v12M17 6v12"></path>
+                </svg>
+                <strong>Brake</strong>
+                <small>Stop safely</small>
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="collisionMode" value="crash" checked>
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m12 3 2.2 6.1 6.3.2-5 3.8 1.8 6.1-5.3-3.5-5.3 3.5 1.8-6.1-5-3.8 6.3-.2L12 3Z"></path>
+                </svg>
+                <strong>Crash</strong>
+                <small>End the run</small>
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="collisionMode" value="wrap">
+              <span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 7h8a4 4 0 0 1 4 4v1M17 9l2 3 2-3M17 17H9a4 4 0 0 1-4-4v-1M7 15l-2-3-2 3"></path>
+                </svg>
+                <strong>Wrap</strong>
+                <small>Cross the edge</small>
+              </span>
+            </label>
+          </div>
+        </fieldset>
 
-            const LEFT = 37;
-            const UP = 38;
-            const RIGHT = 39;
-            const DOWN = 40;
+        <div class="mechanic-list">
+          <label class="toggle-row">
+            <span class="toggle-icon toggle-icon--fruit" aria-hidden="true"></span>
+            <span>
+              <strong>Power &amp; void fruit</strong>
+              <small>Rare rewards and a risky tail-shortening fruit</small>
+            </span>
+            <input id="power-foods-setting" name="powerFoods" type="checkbox" checked>
+            <i aria-hidden="true"></i>
+          </label>
 
-            if (keyPressed === LEFT && direction.x !== 1) {
-                direction = { x: -1, y: 0 };
-            } else if (keyPressed === UP && direction.y !== 1) {
-                direction = { x: 0, y: -1 };
-            } else if (keyPressed === RIGHT && direction.x !== -1) {
-                direction = { x: 1, y: 0 };
-            } else if (keyPressed === DOWN && direction.y !== -1) {
-                direction = { x: 0, y: 1 };
-            }
-        }
+          <label class="toggle-row">
+            <span class="toggle-icon toggle-icon--rift" aria-hidden="true"></span>
+            <span>
+              <strong>Rift portals</strong>
+              <small>Timed shortcuts connect distant cells</small>
+            </span>
+            <input id="portals-setting" name="portals" type="checkbox" checked>
+            <i aria-hidden="true"></i>
+          </label>
 
-        function placeFood() {
-            // Generate random food position
-            food.x = Math.floor(Math.random() * (canvas.width / gridSize)) * gridSize;
-            food.y = Math.floor(Math.random() * (canvas.height / gridSize)) * gridSize;
+          <label class="toggle-row">
+            <span class="toggle-icon toggle-icon--spark" aria-hidden="true">✦</span>
+            <span>
+              <strong>Ember Rush</strong>
+              <small>Every fourth fruit starts a timed spark hunt and combo</small>
+            </span>
+            <input id="rush-setting" name="emberRush" type="checkbox" checked>
+            <i aria-hidden="true"></i>
+          </label>
 
-            // Ensure food doesn't appear on the snake
-            if (snake.some(segment => segment.x === food.x && segment.y === food.y)) {
-                placeFood();
-            }
-        }
+          <label class="toggle-row">
+            <span class="toggle-icon toggle-icon--ramp" aria-hidden="true">
+              <b></b><b></b><b></b>
+            </span>
+            <span>
+              <strong>Rising speed</strong>
+              <small>The pace increases gently with every ember</small>
+            </span>
+            <input id="speed-ramp-setting" name="speedRamp" type="checkbox" checked>
+            <i aria-hidden="true"></i>
+          </label>
 
-        function collisionWithSelf(head) {
-            // Check if the snake's head collides with its body
-            return snake.slice(1).some(segment => segment.x === head.x && segment.y === head.y);
-        }
-    </script>
+          <label class="toggle-row">
+            <span class="toggle-icon toggle-icon--sound" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 9v6h4l5 4V5L9 9H5Zm12 1a3 3 0 0 1 0 4m2.5-7a7 7 0 0 1 0 10"></path>
+              </svg>
+            </span>
+            <span>
+              <strong>Arcade sound</strong>
+              <small>Soft synthesized cues—no audio files to load</small>
+            </span>
+            <input id="sound-setting" name="sound" type="checkbox" checked>
+            <i aria-hidden="true"></i>
+          </label>
+        </div>
+
+        <div class="run-summary" aria-live="polite">
+          <span class="summary-dot" aria-hidden="true"></span>
+          <p>
+            <small>Your run</small>
+            <strong id="run-summary">Balanced · 20 × 20 · Crash walls · 4 mechanics</strong>
+          </p>
+        </div>
+
+        <button class="primary-button" id="start-button" type="submit">
+          <span>
+            <small>Ready when you are</small>
+            Start this run
+          </span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14m-6-6 6 6-6 6"></path>
+          </svg>
+        </button>
+      </form>
+    </section>
+
+    <section class="play-screen" id="play-screen" aria-labelledby="round-title" hidden>
+      <header class="play-header">
+        <div class="round-heading">
+          <p class="eyebrow" id="round-mode">Ember rules</p>
+          <h1 id="round-title">Follow the glow</h1>
+        </div>
+
+        <div class="hud" aria-label="Current game statistics">
+          <div class="hud-stat hud-stat--score">
+            <small>Score</small>
+            <strong id="score-value">0</strong>
+          </div>
+          <div class="hud-divider" aria-hidden="true"></div>
+          <div class="hud-stat">
+            <small>Length</small>
+            <strong id="length-value">1</strong>
+          </div>
+          <div class="hud-divider" aria-hidden="true"></div>
+          <div class="hud-stat">
+            <small>Best</small>
+            <strong id="best-value">0</strong>
+          </div>
+          <div class="combo-stat" id="combo-stat" hidden>
+            <span id="combo-value">×2</span>
+            <small>Combo</small>
+          </div>
+        </div>
+
+        <div class="round-actions">
+          <button class="icon-button" id="restart-button" type="button" aria-label="Restart this run">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4.8 9A8 8 0 1 1 4 14m.8-5V4m0 5h5"></path>
+            </svg>
+          </button>
+          <button class="pause-button" id="pause-button" type="button" aria-keyshortcuts="P Space">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5v14M16 5v14"></path>
+            </svg>
+            <span>Pause</span>
+            <kbd>P</kbd>
+          </button>
+        </div>
+      </header>
+
+      <div class="play-layout">
+        <section class="board-column" aria-label="Snake board">
+          <div class="rush-meter" id="rush-meter" hidden>
+            <span class="rush-meter__label"><i aria-hidden="true">✦</i> Ember Rush</span>
+            <span class="rush-meter__track" aria-hidden="true"><i id="rush-meter-fill"></i></span>
+            <strong id="rush-count">5 left</strong>
+          </div>
+
+          <div class="board-frame" id="board-frame">
+            <canvas
+              id="game-canvas"
+              width="720"
+              height="720"
+              tabindex="0"
+              role="application"
+              aria-label="Ember Snake game board. Use arrow keys, WASD, swipe, or the direction pad to steer."
+              aria-describedby="control-help"
+            ></canvas>
+            <div class="board-corners" aria-hidden="true"></div>
+            <div class="board-prompt" id="board-prompt">
+              <span class="prompt-keys" aria-hidden="true">
+                <i>↑</i><i>←</i><i>↓</i><i>→</i>
+              </span>
+              <p><strong>Choose a direction</strong><span>Swipe, use WASD, or press an arrow key</span></p>
+            </div>
+            <div class="board-flash" id="board-flash" aria-hidden="true"></div>
+          </div>
+        </section>
+
+        <aside class="game-sidebar">
+          <section class="objective-card" id="objective-card">
+            <span class="objective-icon" aria-hidden="true">✦</span>
+            <p>
+              <small>Current objective</small>
+              <strong id="objective-text">Collect the ember fruit</strong>
+            </p>
+          </section>
+
+          <section class="legend-card" aria-labelledby="legend-title">
+            <div class="card-heading">
+              <h2 id="legend-title">Field guide</h2>
+              <span>Live rules</span>
+            </div>
+            <ul id="game-legend">
+              <li data-legend="food">
+                <span class="legend-symbol legend-symbol--food" aria-hidden="true"></span>
+                <p><strong>Ember fruit</strong><small id="food-legend-copy">+10 points · +1 length</small></p>
+              </li>
+              <li data-legend="bonus">
+                <span class="legend-symbol legend-symbol--bonus" aria-hidden="true"></span>
+                <p><strong>Golden fruit</strong><small>Triple points · extra growth</small></p>
+              </li>
+              <li data-legend="hazard">
+                <span class="legend-symbol legend-symbol--hazard" aria-hidden="true"></span>
+                <p><strong>Void fruit</strong><small>Costs points · removes 3 segments</small></p>
+              </li>
+              <li data-legend="portals">
+                <span class="legend-symbol legend-symbol--portal" aria-hidden="true"></span>
+                <p><strong>Rift pair</strong><small>Enter either side to cross the board</small></p>
+              </li>
+              <li data-legend="rush">
+                <span class="legend-symbol legend-symbol--rush" aria-hidden="true">✦</span>
+                <p><strong>Rush sparks</strong><small>Clear all five before time runs out</small></p>
+              </li>
+            </ul>
+          </section>
+
+          <section class="controls-card" id="control-help">
+            <div class="control-row">
+              <span class="control-keys" aria-hidden="true"><kbd>WASD</kbd><kbd>↑ ↓ ← →</kbd></span>
+              <p><strong>Steer</strong><small>Keyboard or swipe</small></p>
+            </div>
+            <div class="control-row">
+              <span class="control-keys" aria-hidden="true"><kbd>P</kbd><kbd>Space</kbd></span>
+              <p><strong>Pause</strong><small>Take a breather</small></p>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <nav class="touch-controls" aria-label="Touch direction controls">
+        <button type="button" data-direction="up" aria-label="Move up">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6"></path></svg>
+        </button>
+        <button type="button" data-direction="left" aria-label="Move left">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"></path></svg>
+        </button>
+        <span class="touch-center" aria-hidden="true"><i></i></span>
+        <button type="button" data-direction="right" aria-label="Move right">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"></path></svg>
+        </button>
+        <button type="button" data-direction="down" aria-label="Move down">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 10 6 6 6-6"></path></svg>
+        </button>
+      </nav>
+    </section>
+  </main>
+
+  <section
+    class="game-dialog"
+    id="game-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="dialog-title"
+    hidden
+  >
+    <div class="dialog-backdrop" aria-hidden="true"></div>
+    <div class="dialog-card">
+      <span class="dialog-mark" id="dialog-mark" aria-hidden="true">
+        <i></i>
+        <b>✦</b>
+      </span>
+      <p class="eyebrow" id="dialog-eyebrow">Run paused</p>
+      <h2 id="dialog-title">Hold that thought.</h2>
+      <p class="dialog-copy" id="dialog-copy">The board will wait right here.</p>
+
+      <div class="dialog-stats" id="dialog-stats">
+        <div><strong id="dialog-score">0</strong><small>Score</small></div>
+        <div><strong id="dialog-length">1</strong><small>Length</small></div>
+        <div><strong id="dialog-food">0</strong><small>Fruit</small></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button class="primary-button dialog-primary" id="dialog-primary" type="button">
+          <span><small>Same board</small><b>Resume run</b></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z"></path></svg>
+        </button>
+        <button class="secondary-button" id="dialog-restart" type="button">Restart</button>
+        <button class="text-button" id="dialog-settings" type="button">Change settings</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <p class="sr-only" id="game-announcement" aria-live="polite" aria-atomic="true"></p>
+
+  <script src="js/snake-engine.js"></script>
+  <script src="js/script.js"></script>
 </body>
 </html>
