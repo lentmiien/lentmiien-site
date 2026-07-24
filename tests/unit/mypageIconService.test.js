@@ -74,6 +74,15 @@ describe('mypageIconService', () => {
     expect(tile.src).toBe('/i/codex.svg');
   });
 
+  test('GPT Image tile is available to regular logged-in users', () => {
+    const regularTiles = buildMypageTiles();
+    const tile = regularTiles.find((entry) => entry.id === 'gpt_image');
+
+    expect(tile).toBeDefined();
+    expect(tile.href).toBe('/gpt-image');
+    expect(tile.src).toBe('/i/gpt_image.svg');
+  });
+
   test('TRELLIS.2 image-to-3D tile is available to every logged-in user', () => {
     const regularTiles = buildMypageTiles();
     const tile = regularTiles.find((entry) => entry.id === 'trellis2');

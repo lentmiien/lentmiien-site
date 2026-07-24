@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">GPT Image tile illustration</title>
+  <desc id="desc">A prompt card pointing toward a generated landscape with sparkles.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#141A22"/>
+      <stop offset="100%" stop-color="#222B37"/>
+    </linearGradient>
+    <linearGradient id="image" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2F8F83"/>
+      <stop offset="100%" stop-color="#FFC247"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="100%" stop-color="#FF6A1F"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <circle cx="532" cy="72" r="96" fill="#FFC247" fill-opacity="0.08"/>
+
+  <g transform="translate(66 116)">
+    <rect width="220" height="168" rx="18" fill="#252D38" stroke="#FFC247" stroke-opacity="0.36" stroke-width="3"/>
+    <rect x="24" y="30" width="128" height="12" rx="6" fill="#FFC247"/>
+    <rect x="24" y="58" width="170" height="9" rx="4.5" fill="#697483"/>
+    <rect x="24" y="80" width="146" height="9" rx="4.5" fill="#697483"/>
+    <rect x="24" y="102" width="116" height="9" rx="4.5" fill="#697483"/>
+    <rect x="24" y="130" width="76" height="18" rx="9" fill="#FF6A1F"/>
+  </g>
+
+  <path d="M304 200h42" fill="none" stroke="#FFB84E" stroke-width="9" stroke-linecap="round"/>
+  <path d="M334 184l18 16-18 16" fill="none" stroke="#FFB84E" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g transform="translate(370 82)">
+    <rect width="212" height="236" rx="20" fill="#252D38" stroke="#FFC247" stroke-opacity="0.48" stroke-width="3"/>
+    <rect x="16" y="16" width="180" height="174" rx="13" fill="#1B2026"/>
+    <circle cx="148" cy="56" r="18" fill="#FFC247"/>
+    <path d="M28 166l44-58 34 38 28-26 50 46" fill="none" stroke="url(#image)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="34" y="207" width="144" height="10" rx="5" fill="#697483"/>
+  </g>
+
+  <g fill="url(#spark)">
+    <path d="M350 70l7 16 16 7-16 7-7 16-7-16-16-7 16-7z"/>
+    <path d="M578 62l5 12 12 5-12 5-5 12-5-12-12-5 12-5z"/>
+    <path d="M592 252l6 14 14 6-14 6-6 14-6-14-14-6 14-6z"/>
+  </g>
+</svg>

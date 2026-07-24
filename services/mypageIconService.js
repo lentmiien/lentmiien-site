@@ -163,6 +163,13 @@ const MYPAGE_ICON_DEFINITIONS = [
     permissions: ['image_gen'],
   },
   {
+    id: 'gpt_image',
+    href: '/gpt-image',
+    src: '/i/gpt_image.svg',
+    alt: 'Generate images with GPT Image',
+    label: 'GPT Image',
+  },
+  {
     id: 'music',
     href: '/music',
     src: '/i/music.svg',
