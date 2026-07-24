@@ -13,8 +13,17 @@
     };
   }
 
+  function filterPromptTemplatesByWorkspace(templates, workspaceId) {
+    const selectedWorkspaceId = String(workspaceId || '').trim();
+    return (Array.isArray(templates) ? templates : []).filter((template) => {
+      const templateWorkspaceId = String(template?.workspaceId || '').trim();
+      return !templateWorkspaceId ||
+        (Boolean(selectedWorkspaceId) && templateWorkspaceId === selectedWorkspaceId);
+    });
+  }
+
   if (typeof module === 'object' && module.exports && typeof document === 'undefined') {
-    module.exports = { getPromptLengthState };
+    module.exports = { filterPromptTemplatesByWorkspace, getPromptLengthState };
     return;
   }
 
@@ -811,16 +820,65 @@
     return Array.isArray(templates) ? templates : [];
   }
 
+  function promptTemplateOptionCount(select) {
+    if (!select) return 0;
+    return Array.from(select.options).filter((option) => Boolean(option.value)).length;
+  }
+
+  function syncPromptTemplateHelp(select) {
+    if (!select) return;
+    const help = select.closest('.codex-field')?.querySelector('[data-codex-template-help]');
+    if (!help) return;
+    help.textContent = promptTemplateOptionCount(select)
+      ? 'Choose a template to copy it into the prompt.'
+      : 'Save a global or workspace-specific prompt in the Prompt Library.';
+  }
+
+  function renderPromptTemplateOptions(select, templates) {
+    if (!select) return;
+    const availableTemplates = Array.isArray(templates) ? templates : [];
+    select.innerHTML = '';
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = availableTemplates.length
+      ? 'Select a template…'
+      : 'No templates available for this workspace';
+    select.appendChild(placeholder);
+
+    availableTemplates.forEach((template) => {
+      const option = document.createElement('option');
+      option.value = String(template.id || '');
+      option.textContent = template.name || 'Untitled template';
+      select.appendChild(option);
+    });
+    select.disabled = availableTemplates.length === 0;
+    syncPromptTemplateHelp(select);
+  }
+
+  function bindDashboardPromptTemplateFilter() {
+    const workspaceSelect = document.getElementById('codex-workspace');
+    if (!workspaceSelect) return;
+
+    const sync = () => {
+      const templates = filterPromptTemplatesByWorkspace(
+        availablePromptTemplates(),
+        workspaceSelect.value,
+      );
+      root.querySelectorAll('[data-codex-template-select]').forEach((select) => {
+        renderPromptTemplateOptions(select, templates);
+      });
+    };
+
+    workspaceSelect.addEventListener('change', sync);
+    sync();
+  }
+
   function resetPromptTemplateSelection(form) {
     if (!form) return;
     form.querySelectorAll('[data-codex-template-select]').forEach((select) => {
       select.value = '';
-      const help = select.closest('.codex-field')?.querySelector('[data-codex-template-help]');
-      if (help) {
-        help.textContent = availablePromptTemplates().length
-          ? 'Choose a template to copy it into the prompt.'
-          : 'Save reusable prompts in the Prompt Library.';
-      }
+      syncPromptTemplateHelp(select);
     });
   }
 
@@ -831,7 +889,7 @@
         const template = templateById.get(String(select.value || ''));
         const help = select.closest('.codex-field')?.querySelector('[data-codex-template-help]');
         if (!template) {
-          if (help) help.textContent = 'Choose a template to copy it into the prompt.';
+          syncPromptTemplateHelp(select);
           return;
         }
 
@@ -1611,6 +1669,7 @@
   function initDashboard() {
     initHealthModal();
     initNewRequestMaximize();
+    bindDashboardPromptTemplateFilter();
     const form = document.getElementById('codex-new-session-form');
     const status = document.getElementById('codex-new-session-status');
     if (form) {

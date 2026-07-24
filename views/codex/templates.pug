@@ -6,6 +6,8 @@ block styles
 block content
   - const state = codexState || {};
   - const templates = state.templates || [];
+  - const workspaces = state.workspaces || [];
+  - const workspaceById = new Map(workspaces.map((workspace) => [String(workspace.id), workspace]));
   - const config = state.config || {};
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
   section.codex-page(data-codex-page='templates')
@@ -29,6 +31,12 @@ block content
             label(for='template-name') Name
             input#template-name(type='text', name='name', maxlength='120', required, placeholder='Review pending changes')
           .codex-field
+            label(for='template-workspace') Workspace
+            select#template-workspace(name='workspaceId')
+              option(value='') All workspaces
+              each workspace in workspaces
+                option(value=workspace.id)= workspace.name + ' - ' + workspace.rootPath + (workspace.enabled ? '' : ' (disabled)')
+          .codex-field.codex-field--full
             label(for='template-description') Description
             input#template-description(type='text', name='description', maxlength='500', placeholder='Optional note about when to use it')
           .codex-field.codex-field--full
@@ -45,15 +53,25 @@ block content
         .codex-template-list
           if templates.length
             each template in templates
+              - const assignedWorkspace = workspaceById.get(String(template.workspaceId || ''));
+              - const assignedWorkspaceLabel = assignedWorkspace ? assignedWorkspace.name : (template.workspaceId ? 'Unavailable workspace' : 'All workspaces');
               form.codex-template-card(data-template-form=template.id)
                 .codex-template-card__header
                   strong= template.name
-                  small= 'Updated ' + fmt(template.updatedAt)
+                  small= assignedWorkspaceLabel + ' / Updated ' + fmt(template.updatedAt)
                 .codex-template-card__fields
                   .codex-field
                     label Name
                     input(type='text', name='name', value=template.name, maxlength='120', required)
                   .codex-field
+                    label Workspace
+                    select(name='workspaceId')
+                      option(value='', selected=!template.workspaceId) All workspaces
+                      if template.workspaceId && !assignedWorkspace
+                        option(value=template.workspaceId, selected)= 'Unavailable workspace - ' + template.workspaceId
+                      each workspace in workspaces
+                        option(value=workspace.id, selected=String(template.workspaceId || '') === String(workspace.id))= workspace.name + ' - ' + workspace.rootPath + (workspace.enabled ? '' : ' (disabled)')
+                  .codex-field.codex-field--full
                     label Description
                     input(type='text', name='description', value=template.description, maxlength='500', placeholder='Optional')
                   .codex-field.codex-field--full

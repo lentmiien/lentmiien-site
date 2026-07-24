@@ -899,6 +899,7 @@ function normalizePromptTemplatePayload(payload = {}) {
     name,
     description: normalizeOptionalString(payload.description, 500),
     prompt: normalizePrompt(payload.prompt),
+    workspaceId: normalizeOptionalString(payload.workspaceId, 160),
   };
 }
 
@@ -911,9 +912,20 @@ function serializePromptTemplate(template) {
     name: template.name || '',
     description: template.description || '',
     prompt: template.prompt || '',
+    workspaceId: String(template.workspaceId || ''),
     createdAt: template.createdAt || null,
     updatedAt: template.updatedAt || null,
   };
+}
+
+async function ensurePromptTemplateWorkspaceExists(workspaceId) {
+  if (!workspaceId) {
+    return;
+  }
+  const workspace = await CodexWorkspace.exists({ _id: workspaceId });
+  if (!workspace) {
+    throw createHttpError(400, 'Selected workspace does not exist.');
+  }
 }
 
 async function ensureDefaultRequestProfiles() {
@@ -1572,9 +1584,20 @@ async function listRequestProfiles(options = {}) {
   return profiles.map(serializeRequestProfile);
 }
 
-async function listPromptTemplates(user) {
+async function listPromptTemplates(user, options = {}) {
   const ownerId = getOwnerId(user);
-  const templates = await CodexPromptTemplate.find({ ownerId })
+  const query = { ownerId };
+  if (Object.prototype.hasOwnProperty.call(options, 'workspaceId')) {
+    const workspaceId = normalizeOptionalString(options.workspaceId, 160);
+    query.$or = [
+      { workspaceId: '' },
+      { workspaceId: null },
+    ];
+    if (workspaceId) {
+      query.$or.push({ workspaceId });
+    }
+  }
+  const templates = await CodexPromptTemplate.find(query)
     .sort({ name: 1, createdAt: 1 })
     .lean()
     .exec();
@@ -1584,6 +1607,7 @@ async function listPromptTemplates(user) {
 async function createPromptTemplate(payload = {}, user) {
   const ownerId = getOwnerId(user);
   const normalized = normalizePromptTemplatePayload(payload);
+  await ensurePromptTemplateWorkspaceExists(normalized.workspaceId);
   const template = await CodexPromptTemplate.create({
     ...normalized,
     ownerId,
@@ -1612,6 +1636,11 @@ async function updatePromptTemplate(templateId, payload = {}, user) {
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'prompt')) {
     template.prompt = normalizePrompt(payload.prompt);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'workspaceId')) {
+    const workspaceId = normalizeOptionalString(payload.workspaceId, 160);
+    await ensurePromptTemplateWorkspaceExists(workspaceId);
+    template.workspaceId = workspaceId;
   }
   template.updatedBy = makeOwner(user);
   await template.save();

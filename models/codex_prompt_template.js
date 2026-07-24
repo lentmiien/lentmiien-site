@@ -14,6 +14,7 @@ const CodexPromptTemplateSchema = new Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },
   description: { type: String, default: '', trim: true, maxlength: 500 },
   prompt: { type: String, required: true, trim: true, maxlength: 500000 },
+  workspaceId: { type: String, default: '', trim: true, maxlength: 160 },
   updatedBy: { type: UserRefSchema, default: () => ({}) },
 }, {
   timestamps: true,
@@ -21,5 +22,6 @@ const CodexPromptTemplateSchema = new Schema({
 });
 
 CodexPromptTemplateSchema.index({ ownerId: 1, name: 1 });
+CodexPromptTemplateSchema.index({ ownerId: 1, workspaceId: 1, name: 1 });
 
 module.exports = mongoose.model('codex_prompt_template', CodexPromptTemplateSchema);

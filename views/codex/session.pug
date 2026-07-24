@@ -164,10 +164,10 @@ block content
                 label(for='codex-followup-prompt') Prompt
                 a.codex-small-link(href='/codex/templates') Manage templates
               select#codex-followup-template(data-codex-template-select, data-prompt-target='codex-followup-prompt', aria-label='Prompt template', disabled=!promptTemplates.length)
-                option(value='')= promptTemplates.length ? 'Select a template…' : 'No saved templates'
+                option(value='')= promptTemplates.length ? 'Select a template…' : 'No templates available for this workspace'
                 each template in promptTemplates
                   option(value=template.id)= template.name
-              small#codex-followup-template-help.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
+              small#codex-followup-template-help.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save a global or workspace-specific prompt in the Prompt Library.'
               textarea#codex-followup-prompt(
                 name='prompt',
                 rows='5',

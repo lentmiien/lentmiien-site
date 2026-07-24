@@ -69,11 +69,10 @@ exports.renderHome = async (req, res) => {
 
 exports.renderSession = async (req, res) => {
   try {
-    const [state, promptTemplates] = await Promise.all([
-      codexToolService.getSessionDetail(req.params.sessionId),
-      codexToolService.listPromptTemplates(req.user),
-    ]);
-    state.promptTemplates = promptTemplates;
+    const state = await codexToolService.getSessionDetail(req.params.sessionId);
+    state.promptTemplates = await codexToolService.listPromptTemplates(req.user, {
+      workspaceId: state.session.workspaceId,
+    });
     return res.render('codex/session', {
       pageTitle: state.session ? state.session.title : 'Codex session',
       codexState: state,
@@ -86,9 +85,13 @@ exports.renderSession = async (req, res) => {
 
 exports.renderPromptTemplates = async (req, res) => {
   try {
-    const templates = await codexToolService.listPromptTemplates(req.user);
+    const [templates, workspaces] = await Promise.all([
+      codexToolService.listPromptTemplates(req.user),
+      codexToolService.listWorkspaces({ includeDisabled: true }),
+    ]);
     const state = {
       templates,
+      workspaces,
       config: codexToolService.publicConfig(),
     };
     return res.render('codex/templates', {
@@ -285,7 +288,10 @@ exports.listRequestProfiles = async (req, res) => {
 
 exports.listPromptTemplates = async (req, res) => {
   try {
-    const templates = await codexToolService.listPromptTemplates(req.user);
+    const options = Object.prototype.hasOwnProperty.call(req.query || {}, 'workspaceId')
+      ? { workspaceId: req.query.workspaceId }
+      : {};
+    const templates = await codexToolService.listPromptTemplates(req.user, options);
     return res.json({ ok: true, templates });
   } catch (error) {
     return renderJsonError(req, res, error, 'Unable to list Codex prompt templates.');

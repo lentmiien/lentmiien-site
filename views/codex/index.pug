@@ -13,6 +13,8 @@ block content
   - const recentSessions = state.recentSessions || [];
   - const requestProfiles = state.requestProfiles || [];
   - const promptTemplates = state.promptTemplates || [];
+  - const selectedWorkspaceId = workspaces.length ? String(workspaces[0].id || '') : '';
+  - const visiblePromptTemplates = promptTemplates.filter((template) => !template.workspaceId || String(template.workspaceId) === selectedWorkspaceId);
   - const stats = state.stats || {};
   - const summary = stats.summary || {};
   - const pricing = state.pricing || {};
@@ -112,11 +114,11 @@ block content
               .codex-field-label-row
                 label(for='codex-prompt') Prompt
                 a.codex-small-link(href='/codex/templates') Manage templates
-              select#codex-prompt-template(data-codex-template-select, data-prompt-target='codex-prompt', aria-label='Prompt template', disabled=!promptTemplates.length)
-                option(value='')= promptTemplates.length ? 'Select a template…' : 'No saved templates'
-                each template in promptTemplates
+              select#codex-prompt-template(data-codex-template-select, data-prompt-target='codex-prompt', aria-label='Prompt template', disabled=!visiblePromptTemplates.length)
+                option(value='')= visiblePromptTemplates.length ? 'Select a template…' : 'No templates available for this workspace'
+                each template in visiblePromptTemplates
                   option(value=template.id)= template.name
-              small#codex-prompt-template-help.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
+              small#codex-prompt-template-help.codex-field-help(data-codex-template-help)= visiblePromptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save a global or workspace-specific prompt in the Prompt Library.'
               textarea#codex-prompt(
                 name='prompt',
                 rows='8',
