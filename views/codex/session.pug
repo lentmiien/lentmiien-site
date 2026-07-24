@@ -14,6 +14,7 @@ block content
   - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const config = state.config || {};
+  - const maxPromptChars = Number(config.maxPromptChars) > 0 ? Number(config.maxPromptChars) : 20000;
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
   - const num = (value) => Number.isFinite(Number(value)) ? Math.round(Number(value)).toLocaleString() : '0';
   - const money = (value) => '$' + (Number(value) || 0).toFixed(4);
@@ -124,7 +125,7 @@ block content
           h2 Follow-up
           span.codex-chip= session.codexThreadId ? 'Ready' : 'Waiting'
         if session.codexThreadId
-          form#codex-followup-form.codex-form(data-session-id=session.id)
+          form#codex-followup-form.codex-form(data-session-id=session.id, data-codex-prompt-form)
             .codex-mode-group(role='radiogroup', aria-label='Follow-up mode')
               label.codex-mode-option
                 input(type='radio', name='mode', value='question', checked)
@@ -166,10 +167,19 @@ block content
                 option(value='')= promptTemplates.length ? 'Select a template…' : 'No saved templates'
                 each template in promptTemplates
                   option(value=template.id)= template.name
-              small.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
-              textarea#codex-followup-prompt(name='prompt', rows='5', maxlength=config.maxPromptChars || 20000, required)
+              small#codex-followup-template-help.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
+              textarea#codex-followup-prompt(
+                name='prompt',
+                rows='5',
+                maxlength=maxPromptChars,
+                required,
+                data-codex-prompt-input,
+                data-max-characters=maxPromptChars,
+                aria-describedby='codex-followup-template-help codex-followup-character-count'
+              )
+              small#codex-followup-character-count.codex-character-count(data-codex-character-count)= `0 / ${maxPromptChars.toLocaleString()} characters`
             .codex-actions
-              button.codex-button(type='submit') Submit follow-up
+              button.codex-button(type='submit', data-codex-prompt-submit) Submit follow-up
               span#codex-followup-status.codex-form-status(aria-live='polite')
         else
           p.codex-empty Follow-up is unavailable until the first turn starts and Codex reports a session id.

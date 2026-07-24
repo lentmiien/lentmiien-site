@@ -71,6 +71,15 @@
   grid-row: span 2;
 }
 
+.codex-panel--form.codex-panel--maximized {
+  grid-column: 1 / -1;
+  grid-row: auto;
+}
+
+.codex-panel--maximized #codex-prompt {
+  min-height: 280px;
+}
+
 .codex-panel--wide {
   grid-column: 2 / -1;
 }
@@ -91,6 +100,14 @@
   margin: 0;
   font-size: 1rem;
   line-height: 1.25;
+}
+
+.codex-panel__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .codex-chip {
@@ -157,6 +174,19 @@
   line-height: 1.35;
 }
 
+.codex-character-count {
+  justify-self: end;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.codex-character-count[data-tone='error'] {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .codex-field label,
 .codex-mode-option,
 .codex-check {
@@ -180,6 +210,10 @@
 .codex-field textarea {
   resize: vertical;
   min-height: 140px;
+}
+
+.codex-field textarea[aria-invalid='true'] {
+  border-color: var(--danger);
 }
 
 .codex-mode-group {

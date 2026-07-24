@@ -6,6 +6,7 @@ block styles
 block content
   - const state = codexState || {};
   - const config = state.config || {};
+  - const maxPromptChars = Number(config.maxPromptChars) > 0 ? Number(config.maxPromptChars) : 20000;
   - const workspaces = state.workspaces || [];
   - const runningTurns = state.runningTurns || [];
   - const queuedTurns = state.queuedTurns || [];
@@ -54,11 +55,18 @@ block content
           button.codex-button.codex-button--secondary(type='button', data-codex-health-close) Close
 
       .codex-dashboard
-        section.codex-panel.codex-panel--form
+        section#codex-new-request-panel.codex-panel.codex-panel--form
           .codex-panel__header
             h2 New Request
-            span.codex-chip= workspaces.length + ' workspace' + (workspaces.length === 1 ? '' : 's')
-          form#codex-new-session-form.codex-form
+            .codex-panel__header-actions
+              span.codex-chip= workspaces.length + ' workspace' + (workspaces.length === 1 ? '' : 's')
+              button#codex-new-request-maximize.codex-small-button(
+                type='button',
+                data-codex-maximize-request,
+                aria-controls='codex-new-session-form',
+                aria-pressed='false'
+              ) Maximize
+          form#codex-new-session-form.codex-form(data-codex-prompt-form)
             .codex-field
               label(for='codex-workspace') Workspace
               select#codex-workspace(name='workspaceId', required, disabled=!workspaces.length)
@@ -108,10 +116,20 @@ block content
                 option(value='')= promptTemplates.length ? 'Select a template…' : 'No saved templates'
                 each template in promptTemplates
                   option(value=template.id)= template.name
-              small.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
-              textarea#codex-prompt(name='prompt', rows='8', maxlength=config.maxPromptChars || 20000, required, placeholder='Ask a question or request a change...')
+              small#codex-prompt-template-help.codex-field-help(data-codex-template-help)= promptTemplates.length ? 'Choose a template to copy it into the prompt.' : 'Save reusable prompts in the Prompt Library.'
+              textarea#codex-prompt(
+                name='prompt',
+                rows='8',
+                maxlength=maxPromptChars,
+                required,
+                placeholder='Ask a question or request a change...',
+                data-codex-prompt-input,
+                data-max-characters=maxPromptChars,
+                aria-describedby='codex-prompt-template-help codex-prompt-character-count'
+              )
+              small#codex-prompt-character-count.codex-character-count(data-codex-character-count)= `0 / ${maxPromptChars.toLocaleString()} characters`
             .codex-actions
-              button.codex-button(type='submit', disabled=!workspaces.length) Submit
+              button.codex-button(type='submit', data-codex-prompt-submit, disabled=!workspaces.length) Submit
               span#codex-new-session-status.codex-form-status(aria-live='polite')
 
         section.codex-panel

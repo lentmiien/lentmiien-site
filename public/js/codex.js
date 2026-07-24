@@ -1,4 +1,23 @@
 (function () {
+  function getPromptLengthState(value, maxCharacters) {
+    const parsedMaximum = Number(maxCharacters);
+    const maximum = Number.isFinite(parsedMaximum) && parsedMaximum > 0
+      ? Math.floor(parsedMaximum)
+      : 20000;
+    const count = String(value === null || value === undefined ? '' : value).length;
+    return {
+      count,
+      maximum,
+      overLimit: count > maximum,
+      label: `${count.toLocaleString()} / ${maximum.toLocaleString()} characters`,
+    };
+  }
+
+  if (typeof module === 'object' && module.exports && typeof document === 'undefined') {
+    module.exports = { getPromptLengthState };
+    return;
+  }
+
   const root = document.querySelector('[data-codex-page]');
   const dataElement = document.getElementById('codex-page-data');
   if (!root || !dataElement) {
@@ -524,6 +543,74 @@
     }
   }
 
+  function bindPromptLengthControl(form) {
+    if (!form) return null;
+    const prompt = form.querySelector('[data-codex-prompt-input]');
+    const counter = form.querySelector('[data-codex-character-count]');
+    const submit = form.querySelector('[data-codex-prompt-submit]');
+    if (!prompt) return null;
+
+    const initiallyDisabled = Boolean(submit && submit.disabled);
+    let submitting = false;
+
+    function sync() {
+      const state = getPromptLengthState(
+        prompt.value,
+        prompt.dataset.maxCharacters || prompt.maxLength,
+      );
+      if (counter) {
+        counter.textContent = state.label;
+        if (state.overLimit) {
+          counter.dataset.tone = 'error';
+        } else {
+          delete counter.dataset.tone;
+        }
+      }
+
+      const validationMessage = state.overLimit
+        ? `Prompt is too long. Maximum length is ${state.maximum.toLocaleString()} characters.`
+        : '';
+      prompt.setCustomValidity(validationMessage);
+      if (state.overLimit) {
+        prompt.setAttribute('aria-invalid', 'true');
+      } else {
+        prompt.removeAttribute('aria-invalid');
+      }
+      if (submit) {
+        submit.disabled = initiallyDisabled || submitting || state.overLimit;
+      }
+      return state;
+    }
+
+    prompt.addEventListener('input', sync);
+    form.addEventListener('reset', () => {
+      setTimeout(sync, 0);
+    });
+    sync();
+
+    return {
+      sync,
+      setSubmitting(value) {
+        submitting = Boolean(value);
+        sync();
+      },
+    };
+  }
+
+  function initNewRequestMaximize() {
+    const panel = document.getElementById('codex-new-request-panel');
+    const button = document.getElementById('codex-new-request-maximize');
+    if (!panel || !button) return;
+
+    button.addEventListener('click', () => {
+      const maximized = !panel.classList.contains('codex-panel--maximized');
+      panel.classList.toggle('codex-panel--maximized', maximized);
+      button.setAttribute('aria-pressed', maximized ? 'true' : 'false');
+      button.textContent = maximized ? 'Restore' : 'Maximize';
+      button.title = maximized ? 'Restore the default panel size' : 'Maximize the New Request panel';
+    });
+  }
+
   function healthLabel(key) {
     if (HEALTH_LABELS[key]) return HEALTH_LABELS[key];
     return String(key || '')
@@ -797,6 +884,7 @@
     const prompt = form.querySelector('[name="prompt"]');
     if (prompt && !prompt.value.trim()) {
       prompt.value = COMMIT_PUSH_DEFAULT_PROMPT;
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     const permission = form.querySelector('[name="permissionMode"]');
@@ -1522,9 +1610,11 @@
 
   function initDashboard() {
     initHealthModal();
+    initNewRequestMaximize();
     const form = document.getElementById('codex-new-session-form');
     const status = document.getElementById('codex-new-session-status');
     if (form) {
+      const promptControl = bindPromptLengthControl(form);
       const modeInputs = form.querySelectorAll('[name="mode"]');
       modeInputs.forEach((input) => {
         input.addEventListener('change', () => applyCommitPushDefaults(form));
@@ -1538,8 +1628,21 @@
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submit = form.querySelector('[type="submit"]');
+        const promptState = promptControl && promptControl.sync();
+        if (promptState && promptState.overLimit) {
+          setStatus(
+            status,
+            `Prompt is too long. Maximum length is ${promptState.maximum.toLocaleString()} characters.`,
+            'error',
+          );
+          return;
+        }
         setStatus(status, 'Submitting...', '');
-        submit.disabled = true;
+        if (promptControl) {
+          promptControl.setSubmitting(true);
+        } else {
+          submit.disabled = true;
+        }
         try {
           const payload = await requestJson('/codex/api/sessions', {
             method: 'POST',
@@ -1547,13 +1650,18 @@
           });
           setStatus(status, `Accepted. Turn ${payload.turn.id} is queued.`, 'success');
           form.querySelector('[name="prompt"]').value = '';
+          if (promptControl) promptControl.sync();
           resetPromptTemplateSelection(form);
           clearYoloConfirmation(form);
           await refreshDashboard();
         } catch (error) {
           setStatus(status, error.message, 'error');
         } finally {
-          submit.disabled = false;
+          if (promptControl) {
+            promptControl.setSubmitting(false);
+          } else {
+            submit.disabled = false;
+          }
         }
       });
     }
@@ -1620,6 +1728,7 @@
     }
 
     if (form) {
+      const promptControl = bindPromptLengthControl(form);
       const modeInputs = form.querySelectorAll('[name="mode"]');
       modeInputs.forEach((input) => {
         input.addEventListener('change', () => applyCommitPushDefaults(form));
@@ -1628,8 +1737,21 @@
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submit = form.querySelector('[type="submit"]');
+        const promptState = promptControl && promptControl.sync();
+        if (promptState && promptState.overLimit) {
+          setStatus(
+            status,
+            `Prompt is too long. Maximum length is ${promptState.maximum.toLocaleString()} characters.`,
+            'error',
+          );
+          return;
+        }
         setStatus(status, 'Submitting...', '');
-        submit.disabled = true;
+        if (promptControl) {
+          promptControl.setSubmitting(true);
+        } else {
+          submit.disabled = true;
+        }
         try {
           const payload = await requestJson(`/codex/api/sessions/${encodeURIComponent(form.dataset.sessionId)}/turns`, {
             method: 'POST',
@@ -1637,6 +1759,7 @@
           });
           setStatus(status, `Accepted. Turn ${payload.turn.id} is queued.`, 'success');
           form.querySelector('[name="prompt"]').value = '';
+          if (promptControl) promptControl.sync();
           resetPromptTemplateSelection(form);
           clearYoloConfirmation(form);
           const state = await refreshSession();
@@ -1644,7 +1767,11 @@
         } catch (error) {
           setStatus(status, error.message, 'error');
         } finally {
-          submit.disabled = false;
+          if (promptControl) {
+            promptControl.setSubmitting(false);
+          } else {
+            submit.disabled = false;
+          }
         }
       });
     }
