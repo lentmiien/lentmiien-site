@@ -1,0 +1,266 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/prompt-to-3d.css')
+
+block content
+  - const currentJob = pageConfig.currentJob;
+  - const activeStatuses = ['queued', 'generating_image', 'generating_model'];
+  - const hasActiveJob = currentJob && activeStatuses.includes(currentJob.status);
+  - const serializedPageConfig = JSON.stringify(pageConfig).replace(/</g, '\\u003c');
+  main.prompt3d-page
+    header.prompt3d-hero
+      .prompt3d-hero__copy
+        p.prompt3d-eyebrow GPT Image 2 → Pixal3D
+        h1 Turn one prompt into a textured 3D model
+        p Describe one complete object. The workflow saves the generated image to GPT Image, sends it through Pixal3D, then opens the finished GLB in the 3D previewer.
+      ol.prompt3d-pipeline(aria-label='Generation pipeline')
+        li
+          span.prompt3d-pipeline__number 1
+          span
+            strong Generate image
+            small Saved in GPT Image
+        li
+          span.prompt3d-pipeline__number 2
+          span
+            strong Build model
+            small Saved in Pixal3D
+        li
+          span.prompt3d-pipeline__number 3
+          span
+            strong Preview
+            small Open the textured GLB
+
+    section#promptTo3dJob.prompt3d-job(
+      aria-live='polite',
+      hidden=!currentJob,
+      data-job-id=currentJob ? currentJob.id : '',
+      data-job-status=currentJob ? currentJob.status : ''
+    )
+      .prompt3d-job__header
+        div
+          p.prompt3d-eyebrow Current job
+          h2#promptTo3dJobTitle= currentJob ? 'Restoring your generation…' : 'Generation status'
+        span#promptTo3dJobBadge.prompt3d-badge= currentJob ? currentJob.status : ''
+      p#promptTo3dJobMessage.prompt3d-job__message
+      ol.prompt3d-progress(aria-label='Job progress')
+        li(data-progress-step='image')
+          span.prompt3d-progress__dot
+          span
+            strong GPT Image
+            small Generate and save the source image
+        li(data-progress-step='model')
+          span.prompt3d-progress__dot
+          span
+            strong Pixal3D
+            small Queue and generate the GLB
+        li(data-progress-step='preview')
+          span.prompt3d-progress__dot
+          span
+            strong Preview
+            small Open the completed model
+      .prompt3d-job__output
+        img#promptTo3dGeneratedImage.prompt3d-job__image(
+          src=currentJob && currentJob.imageUrl ? currentJob.imageUrl : '',
+          alt='Generated source for the current 3D model',
+          hidden=!(currentJob && currentJob.imageUrl)
+        )
+        .prompt3d-job__links
+          a#promptTo3dImageLink.prompt3d-link(
+            href=currentJob && currentJob.imageGalleryUrl ? currentJob.imageGalleryUrl : '#',
+            hidden=!(currentJob && currentJob.imageGalleryUrl)
+          ) View saved GPT Image
+          a#promptTo3dPixalLink.prompt3d-link(
+            href=currentJob && currentJob.pixal3dUrl ? currentJob.pixal3dUrl : '#',
+            hidden=!(currentJob && currentJob.pixal3dUrl)
+          ) View Pixal3D job
+
+    section.prompt3d-panel(aria-labelledby='promptTo3dFormHeading')
+      .prompt3d-panel__heading
+        div
+          p.prompt3d-eyebrow New model
+          h2#promptTo3dFormHeading Configure the complete job
+        p All image and model settings are submitted and validated together before generation starts.
+
+      form#promptTo3dForm.prompt3d-form(action=pageConfig.createEndpoint, method='post')
+        fieldset#promptTo3dFields(disabled=hasActiveJob)
+          label.prompt3d-field.prompt3d-field--prompt(for='promptTo3dPrompt')
+            span.prompt3d-field__label Prompt
+            textarea#promptTo3dPrompt.prompt3d-control(
+              name='prompt',
+              rows='6',
+              maxlength='32000',
+              required,
+              autofocus=!hasActiveJob,
+              placeholder='A single handcrafted brass desk robot, centered, full object visible, neutral studio background…'
+            )
+            small.prompt3d-field__hint With the defaults below, this is the only field you need to fill in.
+
+          details#promptTo3dAdvanced.prompt3d-advanced
+            summary
+              span Advanced settings
+              small GPT Image and Pixal3D defaults
+            .prompt3d-advanced__body
+              section.prompt3d-settings(aria-labelledby='promptTo3dImageSettings')
+                .prompt3d-settings__heading
+                  h3#promptTo3dImageSettings GPT Image settings
+                  p The wrapper always creates one source image.
+                .prompt3d-grid
+                  label.prompt3d-field
+                    span.prompt3d-field__label Quality
+                    select.prompt3d-control(name='quality', required)
+                      each quality in imageOptions.qualities
+                        option(value=quality, selected=imageDefaults.quality === quality)= quality
+                  label.prompt3d-field
+                    span.prompt3d-field__label Size mode
+                    select#promptTo3dSizeMode.prompt3d-control(name='sizeMode', required)
+                      option(value='preset', selected=imageDefaults.sizeMode === 'preset') Preset
+                      option(value='custom', selected=imageDefaults.sizeMode === 'custom') Custom
+                      option(value='auto', selected=imageDefaults.sizeMode === 'auto') Auto
+                  label#promptTo3dPresetField.prompt3d-field
+                    span.prompt3d-field__label Preset size
+                    select.prompt3d-control(name='sizePreset', required)
+                      each size in imageOptions.sizes
+                        option(value=size.value, selected=imageDefaults.sizePreset === size.value)= size.label
+                  .prompt3d-custom-size#promptTo3dCustomSize(hidden)
+                    label.prompt3d-field
+                      span.prompt3d-field__label Custom width
+                      input.prompt3d-control(
+                        type='number',
+                        name='customWidth',
+                        min='256',
+                        max='3840',
+                        step='16',
+                        value=imageDefaults.customWidth,
+                        required
+                      )
+                    label.prompt3d-field
+                      span.prompt3d-field__label Custom height
+                      input.prompt3d-control(
+                        type='number',
+                        name='customHeight',
+                        min='256',
+                        max='3840',
+                        step='16',
+                        value=imageDefaults.customHeight,
+                        required
+                      )
+                  label.prompt3d-field
+                    span.prompt3d-field__label Background
+                    select.prompt3d-control(name='background', required)
+                      each background in imageOptions.backgrounds
+                        option(value=background, selected=imageDefaults.background === background)= background
+                  label.prompt3d-field
+                    span.prompt3d-field__label Output format
+                    select#promptTo3dOutputFormat.prompt3d-control(name='outputFormat', required)
+                      each outputFormat in imageOptions.outputFormats
+                        option(value=outputFormat, selected=imageDefaults.outputFormat === outputFormat)= outputFormat
+                  label#promptTo3dCompressionField.prompt3d-field(hidden=imageDefaults.outputFormat === 'png')
+                    span.prompt3d-field__label Compression
+                    input.prompt3d-control(
+                      type='number',
+                      name='outputCompression',
+                      min='0',
+                      max='100',
+                      step='1',
+                      value=imageDefaults.outputCompression,
+                      required
+                    )
+                  label.prompt3d-field
+                    span.prompt3d-field__label Moderation
+                    select.prompt3d-control(name='moderation', required)
+                      each moderation in imageOptions.moderations
+                        option(value=moderation, selected=imageDefaults.moderation === moderation)= moderation
+
+              section.prompt3d-settings(aria-labelledby='promptTo3dModelSettings')
+                .prompt3d-settings__heading
+                  h3#promptTo3dModelSettings Pixal3D settings
+                  p These values match the defaults in the Pixal3D tool.
+                .prompt3d-grid
+                  label.prompt3d-field
+                    span.prompt3d-field__label Seed
+                    input.prompt3d-control(type='number', name='seed', min='0', max='2147483647', step='1', value=pixal3dDefaults.seed, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Generation resolution
+                    select.prompt3d-control(name='resolution', required)
+                      each option in [1024, 1536]
+                        option(value=option, selected=pixal3dDefaults.resolution === option)= option
+                  label.prompt3d-field
+                    span.prompt3d-field__label Texture size
+                    select.prompt3d-control(name='texture_size', required)
+                      each option in [1024, 2048, 4096]
+                        option(value=option, selected=pixal3dDefaults.textureSize === option)= `${option} px`
+                  label.prompt3d-field
+                    span.prompt3d-field__label Target triangle count
+                    input.prompt3d-control(type='number', name='decimation_target', min='10000', max='1000000', step='1', value=pixal3dDefaults.decimationTarget, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Camera FOV
+                    input#promptTo3dFov.prompt3d-control(type='number', name='fov_degrees', min='0', max='120', step='0.01', value=pixal3dDefaults.fovDegrees, required)
+                    small.prompt3d-field__hint 0 estimates it automatically; manual values must be 5–120.
+                  label.prompt3d-field
+                    span.prompt3d-field__label Mesh scale
+                    input.prompt3d-control(type='number', name='mesh_scale', min='0.25', max='4', step='0.01', value=pixal3dDefaults.meshScale, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Framing adjustment
+                    input.prompt3d-control(type='number', name='extend_pixel', min='-128', max='128', step='1', value=pixal3dDefaults.extendPixel, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Maximum sparse tokens
+                    input.prompt3d-control(type='number', name='max_num_tokens', min='8192', max='100000', step='1', value=pixal3dDefaults.maxNumTokens, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Extraction resolution
+                    select.prompt3d-control(name='dc_resolution', required)
+                      each option in [128, 192, 256]
+                        option(value=option, selected=pixal3dDefaults.dcResolution === option)= option
+                  label.prompt3d-field
+                    span.prompt3d-field__label Smoothing iterations
+                    input.prompt3d-control(type='number', name='smooth_iterations', min='0', max='20', step='1', value=pixal3dDefaults.smoothIterations, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Sparse structure steps
+                    input.prompt3d-control(type='number', name='sparse_structure_steps', min='1', max='50', step='1', value=pixal3dDefaults.sparseStructureSteps, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Sparse structure guidance
+                    input.prompt3d-control(type='number', name='sparse_structure_guidance', min='0', max='30', step='0.1', value=pixal3dDefaults.sparseStructureGuidance, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Sparse guidance rescale
+                    input.prompt3d-control(type='number', name='sparse_structure_guidance_rescale', min='0', max='1', step='0.01', value=pixal3dDefaults.sparseStructureGuidanceRescale, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Shape steps
+                    input.prompt3d-control(type='number', name='shape_steps', min='1', max='50', step='1', value=pixal3dDefaults.shapeSteps, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Shape guidance
+                    input.prompt3d-control(type='number', name='shape_guidance', min='0', max='30', step='0.1', value=pixal3dDefaults.shapeGuidance, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Shape guidance rescale
+                    input.prompt3d-control(type='number', name='shape_guidance_rescale', min='0', max='1', step='0.01', value=pixal3dDefaults.shapeGuidanceRescale, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Texture steps
+                    input.prompt3d-control(type='number', name='texture_steps', min='1', max='50', step='1', value=pixal3dDefaults.textureSteps, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Texture guidance
+                    input.prompt3d-control(type='number', name='texture_guidance', min='0', max='30', step='0.1', value=pixal3dDefaults.textureGuidance, required)
+                  label.prompt3d-field
+                    span.prompt3d-field__label Texture guidance rescale
+                    input.prompt3d-control(type='number', name='texture_guidance_rescale', min='0', max='1', step='0.01', value=pixal3dDefaults.textureGuidanceRescale, required)
+
+                .prompt3d-switches
+                  label.prompt3d-switch
+                    input(type='hidden', name='preprocess_image', value='false')
+                    input(type='checkbox', name='preprocess_image', value='true', checked=pixal3dDefaults.preprocessImage)
+                    span
+                      strong Preprocess image
+                      small Remove the background and crop the object.
+                  label.prompt3d-switch
+                    input(type='hidden', name='fill_holes', value='false')
+                    input(type='checkbox', name='fill_holes', value='true', checked=pixal3dDefaults.fillHoles)
+                    span
+                      strong Fill holes
+                      small Fill holes during mesh extraction.
+
+          .prompt3d-actions
+            button#promptTo3dSubmit.btn.btn-primary(type='submit') Generate image and 3D model
+            span#promptTo3dFormStatus.prompt3d-form__status(role='status', aria-live='polite')
+
+  script#promptTo3dPageConfig(type='application/json') !{serializedPageConfig}
+
+block script
+  script(src='/js/prompt-to-3d.js', defer)

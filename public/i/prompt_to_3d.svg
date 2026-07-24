@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" role="img" aria-labelledby="title desc">
+  <title id="title">Prompt to 3D tile illustration</title>
+  <desc id="desc">A written prompt becomes a generated object image, then a glowing three-dimensional model.</desc>
+  <defs>
+    <linearGradient id="prompt3dBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E0F13"/>
+      <stop offset="58%" stop-color="#171A20"/>
+      <stop offset="100%" stop-color="#20242A"/>
+    </linearGradient>
+    <linearGradient id="prompt3dObject" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFC247"/>
+      <stop offset="100%" stop-color="#FF6A1F"/>
+    </linearGradient>
+    <filter id="prompt3dGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feBlend in="SourceGraphic" in2="blur" mode="screen"/>
+    </filter>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#prompt3dBg)"/>
+  <circle cx="548" cy="54" r="118" fill="#FF6A1F" fill-opacity="0.1"/>
+  <circle cx="88" cy="346" r="132" fill="#FFC247" fill-opacity="0.07"/>
+
+  <g transform="translate(42 106)">
+    <rect width="178" height="188" rx="20" fill="#20242A" stroke="#262B34" stroke-width="4"/>
+    <path d="M26 42h98M26 70h126M26 98h108" fill="none" stroke="#C1C7D3" stroke-width="10" stroke-linecap="round"/>
+    <rect x="26" y="132" width="79" height="24" rx="12" fill="#FF6A1F"/>
+    <path d="m143 24 6 14 14 6-14 6-6 14-6-14-14-6 14-6Z" fill="#FFC247"/>
+  </g>
+
+  <g filter="url(#prompt3dGlow)" fill="#FFC247">
+    <path d="M230 194h54" stroke="#FFC247" stroke-width="8" stroke-linecap="round"/>
+    <path d="m273 178 23 16-23 16Z"/>
+  </g>
+
+  <g transform="translate(302 98)">
+    <rect width="142" height="202" rx="18" fill="#20242A" stroke="#FFC247" stroke-opacity="0.45" stroke-width="3"/>
+    <rect x="14" y="14" width="114" height="136" rx="12" fill="#0E0F13"/>
+    <circle cx="71" cy="64" r="28" fill="url(#prompt3dObject)"/>
+    <path d="M39 132c3-36 15-53 32-53s29 17 32 53Z" fill="#FF6A1F" fill-opacity="0.78"/>
+    <path d="M31 174h80" stroke="#9AA3B2" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#prompt3dGlow)" fill="#FFC247">
+    <path d="M454 194h42" stroke="#FFC247" stroke-width="8" stroke-linecap="round"/>
+    <path d="m485 178 23 16-23 16Z"/>
+  </g>
+
+  <g transform="translate(506 92)" stroke-linejoin="round">
+    <path d="m50 0 58 34 1 70-60 36-48-29L0 35Z" fill="#171A20" stroke="#FFC247" stroke-width="3"/>
+    <path d="m50 0 22 45-23 29-24-30Z" fill="url(#prompt3dObject)"/>
+    <path d="m72 45 36-11 1 70-60-30Z" fill="#FF6A1F" fill-opacity="0.6"/>
+    <path d="m49 74 60 30-60 36-24-34Z" fill="#FFC247" fill-opacity="0.42"/>
+    <path d="M0 35 25 44l24 30-24 32-24 5Z" fill="#19E3E3" fill-opacity="0.2"/>
+    <path d="M50 0 0 35m50-35 58 34m1 70L49 74m60 30-60 36M1 111l48-37M25 44l47 1M49 74v66" fill="none" stroke="#FFC247" stroke-opacity="0.75" stroke-width="2.5"/>
+  </g>
+
+  <g transform="translate(464 306)">
+    <rect width="138" height="46" rx="23" fill="#20242A" stroke="#17C696" stroke-width="3"/>
+    <path d="M22 13h20l8 8v13H22Z" fill="none" stroke="#FFC247" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M42 13v9h8" fill="none" stroke="#FFC247" stroke-width="3"/>
+    <text x="63" y="30" fill="#E8ECF2" font-family="Arial, sans-serif" font-size="18" font-weight="700">GLB</text>
+  </g>
+</svg>

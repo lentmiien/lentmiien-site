@@ -2,9 +2,8 @@ const fs = require('fs/promises');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
 const Pixal3dJob = require('../models/pixal3d_job');
-const Pixal3dGatewayService = require('../services/pixal3dGatewayService');
-const Pixal3dJobService = require('../services/pixal3dJobService');
 const { containerIsRunning } = require('../services/pixal3dGatewayService');
+const { gateway, jobService } = require('../services/pixal3dRuntime');
 const {
   DEFAULT_PIXAL3D_PARAMETERS,
   SUPPORTED_PIXAL3D_IMAGE_FORMATS,
@@ -18,8 +17,6 @@ const {
 const PAGE_SIZE = 10;
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 const MAX_DECODED_PIXELS = 25000000;
-const gateway = new Pixal3dGatewayService();
-const jobService = new Pixal3dJobService({ gateway });
 const dateFormatter = new Intl.DateTimeFormat('en-GB', {
   dateStyle: 'medium',
   timeStyle: 'short',

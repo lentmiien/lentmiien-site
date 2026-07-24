@@ -1,0 +1,498 @@
+.prompt3d-page {
+  color: var(--text);
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.prompt3d-hero {
+  align-items: end;
+  background:
+    radial-gradient(circle at 82% 10%, var(--accent-tint), transparent 34%),
+    radial-gradient(circle at 12% 100%, var(--brand-tint), transparent 42%),
+    var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  overflow: hidden;
+  padding: clamp(1.5rem, 4vw, 3rem);
+}
+
+.prompt3d-hero h1 {
+  font-size: clamp(2rem, 5vw, 4.25rem);
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+  margin: 0 0 1rem;
+  max-width: 760px;
+}
+
+.prompt3d-hero__copy > p:last-child {
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  line-height: 1.7;
+  margin: 0;
+  max-width: 720px;
+}
+
+.prompt3d-eyebrow {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  margin: 0 0 0.55rem;
+  text-transform: uppercase;
+}
+
+.prompt3d-pipeline {
+  counter-reset: none;
+  display: grid;
+  gap: 0.65rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.prompt3d-pipeline li {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  gap: 0.85rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.prompt3d-pipeline__number {
+  align-items: center;
+  background: var(--brand);
+  border-radius: 50%;
+  color: var(--text-inverse);
+  display: inline-flex;
+  flex: 0 0 2rem;
+  font-weight: 900;
+  height: 2rem;
+  justify-content: center;
+}
+
+.prompt3d-pipeline strong,
+.prompt3d-pipeline small {
+  display: block;
+}
+
+.prompt3d-pipeline small {
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+.prompt3d-panel,
+.prompt3d-job {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  margin-top: 1.25rem;
+  padding: clamp(1.15rem, 3vw, 2rem);
+}
+
+.prompt3d-panel__heading,
+.prompt3d-job__header {
+  align-items: start;
+  display: flex;
+  gap: 1.5rem;
+  justify-content: space-between;
+  margin-bottom: 1.35rem;
+}
+
+.prompt3d-panel__heading h2,
+.prompt3d-job__header h2 {
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  margin: 0;
+}
+
+.prompt3d-panel__heading > p {
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 480px;
+  text-align: right;
+}
+
+.prompt3d-form fieldset {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.prompt3d-form fieldset:disabled {
+  opacity: 0.62;
+}
+
+.prompt3d-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.prompt3d-field--prompt {
+  margin-bottom: 1rem;
+}
+
+.prompt3d-field__label {
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.prompt3d-field__hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.prompt3d-control {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  min-height: 2.8rem;
+  padding: 0.68rem 0.78rem;
+  width: 100%;
+}
+
+textarea.prompt3d-control {
+  line-height: 1.55;
+  min-height: 9rem;
+  resize: vertical;
+}
+
+.prompt3d-control::placeholder {
+  color: var(--text-muted);
+}
+
+.prompt3d-control:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+  outline: none;
+}
+
+.prompt3d-advanced {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.prompt3d-advanced summary {
+  align-items: center;
+  color: var(--accent);
+  cursor: pointer;
+  display: flex;
+  font-weight: 800;
+  gap: 1rem;
+  justify-content: space-between;
+  list-style: none;
+  padding: 1rem 1.1rem;
+}
+
+.prompt3d-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.prompt3d-advanced summary::after {
+  content: '+';
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.prompt3d-advanced[open] summary::after {
+  content: '−';
+}
+
+.prompt3d-advanced summary small {
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.prompt3d-advanced__body {
+  border-top: 1px solid var(--divider);
+  padding: 0 1.1rem 1.1rem;
+}
+
+.prompt3d-settings {
+  padding-top: 1.25rem;
+}
+
+.prompt3d-settings + .prompt3d-settings {
+  border-top: 1px solid var(--divider);
+  margin-top: 1.25rem;
+}
+
+.prompt3d-settings__heading {
+  align-items: baseline;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.prompt3d-settings__heading h3 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.prompt3d-settings__heading p {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.prompt3d-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.prompt3d-custom-size {
+  display: grid;
+  gap: 1rem;
+  grid-column: span 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prompt3d-custom-size[hidden] {
+  display: none;
+}
+
+.prompt3d-switches {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.prompt3d-switch {
+  align-items: flex-start;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+
+.prompt3d-switch input[type='checkbox'] {
+  accent-color: var(--brand);
+  height: 1.1rem;
+  margin-top: 0.15rem;
+  width: 1.1rem;
+}
+
+.prompt3d-switch strong,
+.prompt3d-switch small {
+  display: block;
+}
+
+.prompt3d-switch small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+}
+
+.prompt3d-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1.15rem;
+}
+
+.prompt3d-actions .btn-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--text-inverse);
+  font-weight: 800;
+}
+
+.prompt3d-actions .btn-primary:hover {
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
+  color: var(--text-inverse);
+}
+
+.prompt3d-form__status {
+  color: var(--text-secondary);
+}
+
+.prompt3d-form__status[data-tone='error'] {
+  color: var(--danger);
+}
+
+.prompt3d-badge {
+  background: var(--accent-tint);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  padding: 0.4rem 0.7rem;
+  text-transform: uppercase;
+}
+
+.prompt3d-badge[data-status='failed'] {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.prompt3d-badge[data-status='completed'] {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.prompt3d-job__message {
+  color: var(--text-secondary);
+  margin: -0.5rem 0 1.25rem;
+}
+
+.prompt3d-progress {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.prompt3d-progress li {
+  align-items: flex-start;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.85rem;
+}
+
+.prompt3d-progress__dot {
+  background: var(--surface-3);
+  border: 2px solid var(--text-muted);
+  border-radius: 50%;
+  flex: 0 0 0.9rem;
+  height: 0.9rem;
+  margin-top: 0.2rem;
+}
+
+.prompt3d-progress li.is-active {
+  border-color: var(--accent);
+}
+
+.prompt3d-progress li.is-active .prompt3d-progress__dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-tint);
+}
+
+.prompt3d-progress li.is-complete .prompt3d-progress__dot {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+.prompt3d-progress li.is-failed {
+  border-color: var(--danger);
+}
+
+.prompt3d-progress li.is-failed .prompt3d-progress__dot {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.prompt3d-progress strong,
+.prompt3d-progress small {
+  display: block;
+}
+
+.prompt3d-progress small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+}
+
+.prompt3d-job__output {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.prompt3d-job__image {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  height: 108px;
+  object-fit: contain;
+  width: 108px;
+}
+
+.prompt3d-job__links {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.prompt3d-link {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.prompt3d-link:hover {
+  color: var(--accent-hover);
+}
+
+@media (max-width: 860px) {
+  .prompt3d-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt3d-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .prompt3d-page {
+    padding-inline: 0.65rem;
+  }
+
+  .prompt3d-panel__heading,
+  .prompt3d-job__header,
+  .prompt3d-settings__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .prompt3d-panel__heading > p {
+    text-align: left;
+  }
+
+  .prompt3d-grid,
+  .prompt3d-custom-size,
+  .prompt3d-switches,
+  .prompt3d-progress {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt3d-custom-size {
+    grid-column: auto;
+  }
+
+  .prompt3d-advanced summary small {
+    display: none;
+  }
+}

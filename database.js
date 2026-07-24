@@ -125,6 +125,7 @@ const Prompt = require('./models/prompt');
 const SoraVideo = require('./models/sora_video');
 // TRELLIS.2 image-to-3D jobs
 const Trellis2Job = require('./models/trellis2_job');
+const PromptTo3dJob = require('./models/prompt_to_3d_job');
 // Image gen bulk
 const BulkJob = require('./models/bulk_job');
 const BulkTestPrompt = require('./models/bulk_test_prompt');
@@ -270,6 +271,7 @@ module.exports = {
   Prompt,
   SoraVideo,
   Trellis2Job,
+  PromptTo3dJob,
   BulkJob,
   BulkTestPrompt,
   CreditCard,

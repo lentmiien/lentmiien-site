@@ -170,6 +170,13 @@ const MYPAGE_ICON_DEFINITIONS = [
     label: 'GPT Image',
   },
   {
+    id: 'prompt_to_3d',
+    href: '/prompt-to-3d',
+    src: '/i/prompt_to_3d.svg',
+    alt: 'Turn a prompt into a Pixal3D model',
+    label: 'Prompt to 3D',
+  },
+  {
     id: 'music',
     href: '/music',
     src: '/i/music.svg',
