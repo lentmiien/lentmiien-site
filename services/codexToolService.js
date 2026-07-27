@@ -281,6 +281,7 @@ function normalizeTokenUsage(usage = {}) {
   const reasoning = firstNonNegativeNumber(usage, [
     'reasoning',
     'reasoning_tokens',
+    'reasoning_output_tokens',
     'output_reasoning_tokens',
     'completion_reasoning_tokens',
     'output_tokens_details.reasoning_tokens',

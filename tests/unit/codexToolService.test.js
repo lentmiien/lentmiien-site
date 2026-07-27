@@ -135,6 +135,44 @@ describe('codexToolService token usage helpers', () => {
     });
   });
 
+  test('normalizes reasoning tokens reported by Codex turn completion events', () => {
+    const rawUsage = {
+      input_tokens: 1154244,
+      cached_input_tokens: 1056000,
+      cache_write_input_tokens: 0,
+      output_tokens: 16956,
+      reasoning_output_tokens: 7093,
+    };
+
+    const usage = codexToolService.normalizeTokenUsage(rawUsage);
+    const cost = codexToolService.estimateTokenCost(rawUsage, {
+      currency: 'USD',
+      unitTokens: 1000000,
+      prices: {
+        input: 2,
+        cached: 0.5,
+        output: 8,
+        reasoning: 8,
+      },
+    });
+
+    expect(usage).toEqual({
+      input: 1154244,
+      cached: 1056000,
+      output: 16956,
+      reasoning: 7093,
+      total: 1171200,
+    });
+    expect(cost.billableTokens).toEqual({
+      input: 98244,
+      cached: 1056000,
+      output: 9863,
+      reasoning: 7093,
+    });
+    expect(cost.breakdown.output + cost.breakdown.reasoning)
+      .toBeCloseTo((16956 * 8) / 1000000, 8);
+  });
+
   test('estimates costs without double-counting cached or reasoning tokens', () => {
     const cost = codexToolService.estimateTokenCost(
       {
