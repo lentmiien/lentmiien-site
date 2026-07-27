@@ -36,6 +36,7 @@ async function runRecovery(app) {
   const io = app?.get?.('io');
   let completedCount = 0;
   let failedCount = 0;
+  let abandonedCount = 0;
 
   for (const update of updates) {
     if (update?.type === 'completed') {
@@ -53,6 +54,9 @@ async function runRecovery(app) {
 
     if (update?.type === 'failed') {
       failedCount += 1;
+      if (update.status === 'abandoned') {
+        abandonedCount += 1;
+      }
       await audioWorkflowService.handleOpenAiResponseFailed(update.response_id, update.error_msg);
     }
   }
@@ -60,6 +64,7 @@ async function runRecovery(app) {
   logger.notice('OpenAI pending response recovery processed updates', {
     recoveredCompleted: completedCount,
     recoveredFailed: failedCount,
+    abandoned: abandonedCount,
     totalUpdates: updates.length,
   });
 }

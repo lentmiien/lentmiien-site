@@ -3,8 +3,61 @@ const sharp = require('sharp');
 const logger = require('../utils/logger');
 const ai = require('../utils/OpenAI_API');
 const ToolManagerService = require('./toolManagerService');
+const {
+  getNextRecoveryCheckAt,
+  getRecoveryPolicy,
+} = require('./openaiResponseRecoveryPolicy');
 
 const { Conversation5Model, PendingRequests, Chat5Model } = require('../database');
+
+const PENDING_CLAIM_TIMEOUT_MS = 15 * 60 * 1000;
+const TERMINAL_FAILURE_STATUSES = new Set(['cancelled', 'failed', 'incomplete']);
+
+function activeRecoveryCondition() {
+  return {
+    $or: [
+      { recoveryState: 'pending' },
+      { recoveryState: null },
+      { recoveryState: { $exists: false } },
+    ],
+  };
+}
+
+function claimableRecoveryCondition(staleThreshold) {
+  return {
+    $or: [
+      { processingStartedAt: null },
+      { processingStartedAt: { $exists: false } },
+      { processingStartedAt: { $lt: staleThreshold } },
+    ],
+  };
+}
+
+function getPendingCreatedAt(pending, fallback) {
+  const rawCreatedAt = pending?.createdAt;
+  const createdAt = rawCreatedAt instanceof Date
+    ? rawCreatedAt
+    : (rawCreatedAt !== null && rawCreatedAt !== undefined ? new Date(rawCreatedAt) : null);
+  if (createdAt && Number.isFinite(createdAt.getTime())) {
+    return createdAt;
+  }
+
+  const objectIdTimestamp = pending?._id?.getTimestamp?.();
+  if (objectIdTimestamp instanceof Date && Number.isFinite(objectIdTimestamp.getTime())) {
+    return objectIdTimestamp;
+  }
+
+  return fallback;
+}
+
+function normalizeAttemptCount(value) {
+  return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+function formatRecoveryAgeLimit(maxAgeMs) {
+  const hours = Math.round(maxAgeMs / (60 * 60 * 1000));
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
+}
 
 // Conversation5Model.metadata
 const DEFAULT_SETTINGS = {
@@ -40,19 +93,48 @@ class ConversationService {
   }
 
   async claimPendingRequest(response_id) {
-    const staleThreshold = new Date(Date.now() - (15 * 60 * 1000));
+    const now = new Date();
+    const staleThreshold = new Date(now.getTime() - PENDING_CLAIM_TIMEOUT_MS);
 
     return await PendingRequests.findOneAndUpdate(
       {
         response_id,
-        $or: [
-          { processingStartedAt: null },
-          { processingStartedAt: { $exists: false } },
-          { processingStartedAt: { $lt: staleThreshold } },
+        $and: [
+          activeRecoveryCondition(),
+          claimableRecoveryCondition(staleThreshold),
         ],
       },
-      { $set: { processingStartedAt: new Date() } },
+      { $set: { processingStartedAt: now } },
       { new: true },
+    );
+  }
+
+  async claimNextPendingRequestForRecovery(now = new Date()) {
+    const staleThreshold = new Date(now.getTime() - PENDING_CLAIM_TIMEOUT_MS);
+
+    return await PendingRequests.findOneAndUpdate(
+      {
+        $and: [
+          activeRecoveryCondition(),
+          {
+            $or: [
+              { nextCheckAt: { $lte: now } },
+              { nextCheckAt: null },
+              { nextCheckAt: { $exists: false } },
+            ],
+          },
+          claimableRecoveryCondition(staleThreshold),
+        ],
+      },
+      { $set: { processingStartedAt: now } },
+      {
+        new: true,
+        sort: {
+          lastCheckedAt: 1,
+          createdAt: -1,
+          _id: -1,
+        },
+      },
     );
   }
 
@@ -1518,52 +1600,343 @@ class ConversationService {
   }
 
   async fetchPending() {
-    const p = await PendingRequests.find({});
-    const msg_ids = [];
-    for (let i = 0; i < p.length; i++) {
-      msg_ids.push(p.conversation_id);
-    }
-    return msg_ids;
+    const pendingItems = await PendingRequests.find(activeRecoveryCondition());
+    return pendingItems
+      .map(pending => pending?.conversation_id)
+      .filter(Boolean);
   }
 
-  async reconcilePendingResponses({ limit = 25 } = {}) {
+  async pendingPlaceholderExists(pending) {
+    if (!pending?.conversation_id || !pending?.placeholder_id) {
+      return false;
+    }
+
+    try {
+      const [conversationReference, placeholder] = await Promise.all([
+        Conversation5Model.exists({
+          _id: pending.conversation_id,
+          messages: pending.placeholder_id,
+        }),
+        Chat5Model.exists({ _id: pending.placeholder_id }),
+      ]);
+
+      return Boolean(conversationReference && placeholder);
+    } catch (error) {
+      if (error?.name === 'CastError') {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async removePendingPlaceholderReference(pending) {
+    if (!pending?.conversation_id || !pending?.placeholder_id) {
+      return;
+    }
+
+    const conversation = await Conversation5Model.findById(pending.conversation_id);
+    if (!conversation || !Array.isArray(conversation.messages)) {
+      return;
+    }
+
+    const remainingMessages = conversation.messages.filter(
+      messageId => messageId?.toString() !== pending.placeholder_id,
+    );
+    if (remainingMessages.length === conversation.messages.length) {
+      return;
+    }
+
+    conversation.messages = remainingMessages;
+    await conversation.save();
+  }
+
+  async abandonPendingResponse(pending, {
+    reason,
+    errorMessage,
+    checkedAt = new Date(),
+    attemptCount = normalizeAttemptCount(pending?.recoveryAttemptCount),
+    lastResponseStatus = pending?.lastResponseStatus || null,
+    lastRetrievalError = pending?.lastRetrievalError || null,
+  }) {
+    await PendingRequests.updateOne(
+      { _id: pending._id },
+      {
+        $set: {
+          recoveryState: 'abandoned',
+          recoveryAttemptCount: attemptCount,
+          lastCheckedAt: checkedAt,
+          nextCheckAt: null,
+          lastResponseStatus,
+          lastRetrievalError,
+          abandonedAt: checkedAt,
+          abandonReason: reason,
+          processingStartedAt: null,
+        },
+      },
+    );
+
+    try {
+      await this.removePendingPlaceholderReference(pending);
+    } catch (error) {
+      logger.error('Failed to remove placeholder for abandoned OpenAI response', {
+        category: 'openai_webhook_recovery',
+        metadata: {
+          responseId: pending.response_id,
+          pendingId: pending._id?.toString?.() || pending._id,
+          error: error?.message || String(error),
+        },
+      });
+    }
+
+    logger.warning('Abandoned pending OpenAI response recovery', {
+      category: 'openai_webhook_recovery',
+      metadata: {
+        responseId: pending.response_id,
+        conversationId: pending.conversation_id,
+        reason,
+        attemptCount,
+      },
+    });
+
+    return {
+      type: 'failed',
+      response_id: pending.response_id,
+      conversation_id: pending.conversation_id,
+      placeholder_id: pending.placeholder_id,
+      error_msg: errorMessage,
+      status: 'abandoned',
+      reason,
+    };
+  }
+
+  logRecoveryStatusTransition(pending, status, attemptCount) {
+    if (!status || pending?.lastResponseStatus === status) {
+      return;
+    }
+
+    logger.notice('OpenAI pending response recovery status changed', {
+      category: 'openai_webhook_recovery',
+      metadata: {
+        responseId: pending.response_id,
+        previousStatus: pending.lastResponseStatus || null,
+        status,
+        attemptCount,
+      },
+    });
+  }
+
+  async schedulePendingResponseRecovery(pending, {
+    checkedAt,
+    attemptCount,
+    status,
+    retrievalError = null,
+    policy,
+  }) {
+    this.logRecoveryStatusTransition(pending, status, attemptCount);
+
+    const createdAt = getPendingCreatedAt(pending, checkedAt);
+    const ageMs = Math.max(0, checkedAt.getTime() - createdAt.getTime());
+    if (ageMs >= policy.maxAgeMs) {
+      return await this.abandonPendingResponse(pending, {
+        reason: 'max_age_exceeded',
+        errorMessage: `OpenAI response recovery exceeded its ${formatRecoveryAgeLimit(policy.maxAgeMs)} age limit`,
+        checkedAt,
+        attemptCount,
+        lastResponseStatus: status,
+        lastRetrievalError: retrievalError,
+      });
+    }
+
+    if (attemptCount >= policy.maxAttempts) {
+      return await this.abandonPendingResponse(pending, {
+        reason: 'max_attempts_exceeded',
+        errorMessage: `OpenAI response recovery exceeded ${policy.maxAttempts} attempts`,
+        checkedAt,
+        attemptCount,
+        lastResponseStatus: status,
+        lastRetrievalError: retrievalError,
+      });
+    }
+
+    const nextCheckAt = getNextRecoveryCheckAt({
+      createdAt,
+      checkedAt,
+      maxAgeMs: policy.maxAgeMs,
+    });
+    const update = {
+      $set: {
+        recoveryState: 'pending',
+        recoveryAttemptCount: attemptCount,
+        lastCheckedAt: checkedAt,
+        nextCheckAt,
+        lastResponseStatus: status,
+        lastRetrievalError: retrievalError,
+        processingStartedAt: null,
+      },
+      $unset: {
+        abandonedAt: 1,
+        abandonReason: 1,
+      },
+    };
+
+    await PendingRequests.updateOne({ _id: pending._id }, update);
+    return null;
+  }
+
+  async reconcilePendingResponses({ limit = 25, now = null, policy = null } = {}) {
     const parsedLimit = Number.parseInt(limit, 10);
     const resolvedLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25;
-    const pendingItems = await PendingRequests.find({}).sort({ _id: 1 }).limit(resolvedLimit);
+    const recoveryPolicy = {
+      ...getRecoveryPolicy(),
+      ...(policy || {}),
+    };
+    const currentTime = () => {
+      if (now instanceof Date && Number.isFinite(now.getTime())) {
+        return new Date(now);
+      }
+      return new Date();
+    };
     const updates = [];
 
-    for (const pending of pendingItems) {
-      if (!pending?.response_id) {
-        continue;
+    for (let index = 0; index < resolvedLimit; index += 1) {
+      const pending = await this.claimNextPendingRequestForRecovery(currentTime());
+      if (!pending) {
+        break;
       }
 
-      const response = await ai.retrieveResponse(pending.response_id);
-      if (!response || typeof response.status !== 'string') {
-        continue;
-      }
+      let checkedAt = currentTime();
+      let attemptCount = normalizeAttemptCount(pending.recoveryAttemptCount);
+      const startingAttemptCount = attemptCount;
+      let observedStatus = pending.lastResponseStatus || null;
 
-      if (response.status === 'completed') {
-        const result = await this.processCompletedResponse(pending.response_id);
-        if (result) {
+      try {
+        if (!pending.response_id) {
+          updates.push(await this.abandonPendingResponse(pending, {
+            reason: 'invalid_pending_request',
+            errorMessage: 'Pending OpenAI response is missing its response ID',
+            checkedAt,
+            attemptCount,
+          }));
+          continue;
+        }
+
+        const placeholderExists = await this.pendingPlaceholderExists(pending);
+        if (!placeholderExists) {
+          updates.push(await this.abandonPendingResponse(pending, {
+            reason: 'placeholder_missing',
+            errorMessage: 'Pending OpenAI response placeholder no longer exists',
+            checkedAt,
+            attemptCount,
+          }));
+          continue;
+        }
+
+        const createdAt = getPendingCreatedAt(pending, checkedAt);
+        const ageMs = Math.max(0, checkedAt.getTime() - createdAt.getTime());
+        if (ageMs >= recoveryPolicy.maxAgeMs) {
+          updates.push(await this.abandonPendingResponse(pending, {
+            reason: 'max_age_exceeded',
+            errorMessage: `OpenAI response recovery exceeded its ${formatRecoveryAgeLimit(recoveryPolicy.maxAgeMs)} age limit`,
+            checkedAt,
+            attemptCount,
+          }));
+          continue;
+        }
+
+        if (attemptCount >= recoveryPolicy.maxAttempts) {
+          updates.push(await this.abandonPendingResponse(pending, {
+            reason: 'max_attempts_exceeded',
+            errorMessage: `OpenAI response recovery exceeded ${recoveryPolicy.maxAttempts} attempts`,
+            checkedAt,
+            attemptCount,
+          }));
+          continue;
+        }
+
+        const response = await ai.retrieveResponse(pending.response_id);
+        checkedAt = currentTime();
+        attemptCount += 1;
+        observedStatus = typeof response?.status === 'string'
+          ? response.status
+          : (response ? 'invalid_response' : 'retrieval_error');
+
+        if (observedStatus === 'completed') {
+          this.logRecoveryStatusTransition(pending, observedStatus, attemptCount);
+          const result = await this.processCompletedResponse(pending.response_id, {
+            claimedPending: pending,
+            retrievedResponse: response,
+          });
+          if (result) {
+            updates.push({
+              type: 'completed',
+              response_id: pending.response_id,
+              ...result,
+            });
+          }
+          continue;
+        }
+
+        if (TERMINAL_FAILURE_STATUSES.has(observedStatus)) {
+          this.logRecoveryStatusTransition(pending, observedStatus, attemptCount);
+          const error_msg = await this.processFailedResponse(pending.response_id, {
+            claimedPending: pending,
+            retrievedResponse: response,
+          });
           updates.push({
-            type: 'completed',
+            type: 'failed',
             response_id: pending.response_id,
-            ...result,
+            conversation_id: pending.conversation_id,
+            placeholder_id: pending.placeholder_id,
+            error_msg,
+            status: observedStatus,
+          });
+          continue;
+        }
+
+        const abandonment = await this.schedulePendingResponseRecovery(pending, {
+          checkedAt,
+          attemptCount,
+          status: observedStatus,
+          retrievalError: response ? null : 'OpenAI response retrieval returned no result',
+          policy: recoveryPolicy,
+        });
+        if (abandonment) {
+          updates.push(abandonment);
+        }
+      } catch (error) {
+        logger.error('Failed to reconcile a pending OpenAI response', {
+          category: 'openai_webhook_recovery',
+          metadata: {
+            responseId: pending.response_id,
+            pendingId: pending._id?.toString?.() || pending._id,
+            error: error?.message || String(error),
+          },
+        });
+
+        try {
+          const abandonment = await this.schedulePendingResponseRecovery(pending, {
+            checkedAt: currentTime(),
+            attemptCount: attemptCount > startingAttemptCount
+              ? attemptCount
+              : startingAttemptCount + 1,
+            status: observedStatus || 'recovery_error',
+            retrievalError: error?.message || String(error),
+            policy: recoveryPolicy,
+          });
+          if (abandonment) {
+            updates.push(abandonment);
+          }
+        } catch (scheduleError) {
+          await this.releasePendingRequest(pending._id).catch(() => {});
+          logger.error('Failed to defer pending OpenAI response after recovery error', {
+            category: 'openai_webhook_recovery',
+            metadata: {
+              responseId: pending.response_id,
+              pendingId: pending._id?.toString?.() || pending._id,
+              error: scheduleError?.message || String(scheduleError),
+            },
           });
         }
-        continue;
-      }
-
-      if (response.status === 'cancelled' || response.status === 'failed' || response.status === 'incomplete') {
-        const error_msg = await this.processFailedResponse(pending.response_id);
-        updates.push({
-          type: 'failed',
-          response_id: pending.response_id,
-          conversation_id: pending.conversation_id,
-          placeholder_id: pending.placeholder_id,
-          error_msg,
-          status: response.status,
-        });
       }
     }
 
@@ -1723,8 +2096,11 @@ class ConversationService {
   }
 
   // {conversation, messages, placeholder_id} = processCompletedResponse(response_id);
-  async processCompletedResponse(response_id) {
-    const pending = await this.claimPendingRequest(response_id);
+  async processCompletedResponse(response_id, {
+    claimedPending = null,
+    retrievedResponse = null,
+  } = {}) {
+    const pending = claimedPending || await this.claimPendingRequest(response_id);
 
     if (!pending) {
       logger.debug('No claimable pending request found for completed response', { response_id });
@@ -1740,7 +2116,9 @@ class ConversationService {
         return { conversation: null, messages: [], placeholder_id: pending.placeholder_id };
       }
 
-      const messages = await this.messageService.processCompletedResponse(conversation, response_id);
+      const messages = retrievedResponse
+        ? await this.messageService.processCompletedResponse(conversation, response_id, retrievedResponse)
+        : await this.messageService.processCompletedResponse(conversation, response_id);
       const returnedMessages = [...messages];
       const followUpResponseIds = [];
 
@@ -1782,8 +2160,11 @@ class ConversationService {
     }
   }
 
-  async processFailedResponse(response_id) {
-    const pending = await this.claimPendingRequest(response_id);
+  async processFailedResponse(response_id, {
+    claimedPending = null,
+    retrievedResponse = null,
+  } = {}) {
+    const pending = claimedPending || await this.claimPendingRequest(response_id);
 
     if (!pending) {
       logger.debug('No claimable pending request found for failed response', { response_id });
@@ -1799,7 +2180,9 @@ class ConversationService {
         return 'Conversation not found for failed response';
       }
 
-      const error_msg = await this.messageService.processFailedResponse(conversation, response_id);
+      const error_msg = retrievedResponse
+        ? await this.messageService.processFailedResponse(conversation, response_id, retrievedResponse)
+        : await this.messageService.processFailedResponse(conversation, response_id);
 
       conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
 

@@ -117,6 +117,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `OPENAI_WEBHOOK_SECRET` | Shared secret to validate OpenAI webhook payloads (`/webhook/openai`). |
 | `OPENAI_WEBHOOK_TOLERANCE_SECONDS`, `OPENAI_WEBHOOK_FALLBACK_TOLERANCE_SECONDS` | Strict and fallback timestamp windows for webhook signature verification. |
 | `OPENAI_PENDING_RECONCILE_INTERVAL_MS`, `OPENAI_PENDING_RECONCILE_BATCH_SIZE` | Cadence and batch size for recovering pending OpenAI responses when webhook delivery is missed. |
+| `OPENAI_PENDING_MAX_AGE_MS`, `OPENAI_PENDING_MAX_ATTEMPTS` | Recovery hard limits (defaults: 48 hours and 50 attempts). Polling runs every minute for 10 minutes, every 5 minutes until one hour, hourly until one day, then every 6 hours. |
 | `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | Optional provider keys surfaced in Chat5. |
 | `DISABLE_LOCAL` | Set to `TRUE` to hide the LM Studio provider integration. |
 | `AI_GATEWAY_BASE_URL` | Local AI gateway base URL used by admin dashboards, music generation, and Ollama fallback clients. |

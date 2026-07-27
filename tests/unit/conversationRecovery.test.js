@@ -28,10 +28,12 @@ jest.mock('../../database', () => {
     return this;
   });
   Chat5Model.deleteOne = jest.fn().mockResolvedValue({ deletedCount: 1 });
+  Chat5Model.exists = jest.fn();
 
   return {
     Conversation5Model: {
       findById: jest.fn(),
+      exists: jest.fn(),
     },
     PendingRequests,
     Chat5Model,
@@ -40,9 +42,16 @@ jest.mock('../../database', () => {
 
 const ConversationService = require('../../services/conversationService');
 const ai = require('../../utils/OpenAI_API');
-const { Conversation5Model, PendingRequests } = require('../../database');
+const { Conversation5Model, PendingRequests, Chat5Model } = require('../../database');
 
 describe('ConversationService response recovery', () => {
+  beforeEach(() => {
+    Conversation5Model.exists.mockResolvedValue({ _id: 'conversation-reference' });
+    Chat5Model.exists.mockResolvedValue({ _id: 'placeholder' });
+    PendingRequests.updateOne.mockResolvedValue({ modifiedCount: 1 });
+    PendingRequests.deleteOne.mockResolvedValue({ deletedCount: 1 });
+  });
+
   afterEach(() => {
     jest.clearAllMocks();
   });
@@ -54,11 +63,11 @@ describe('ConversationService response recovery', () => {
       { response_id: 'resp-waiting', conversation_id: 'conv-3', placeholder_id: 'ph-3' },
     ];
 
-    PendingRequests.find.mockReturnValue({
-      sort: jest.fn().mockReturnValue({
-        limit: jest.fn().mockResolvedValue(pendingItems),
-      }),
-    });
+    PendingRequests.findOneAndUpdate
+      .mockResolvedValueOnce(pendingItems[0])
+      .mockResolvedValueOnce(pendingItems[1])
+      .mockResolvedValueOnce(pendingItems[2])
+      .mockResolvedValueOnce(null);
 
     ai.retrieveResponse
       .mockResolvedValueOnce({ status: 'completed' })
@@ -75,8 +84,34 @@ describe('ConversationService response recovery', () => {
 
     const updates = await service.reconcilePendingResponses({ limit: 5 });
 
-    expect(service.processCompletedResponse).toHaveBeenCalledWith('resp-complete');
-    expect(service.processFailedResponse).toHaveBeenCalledWith('resp-failed');
+    expect(service.processCompletedResponse).toHaveBeenCalledWith('resp-complete', {
+      claimedPending: pendingItems[0],
+      retrievedResponse: { status: 'completed' },
+    });
+    expect(service.processFailedResponse).toHaveBeenCalledWith('resp-failed', {
+      claimedPending: pendingItems[1],
+      retrievedResponse: { status: 'failed' },
+    });
+    expect(PendingRequests.findOneAndUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        $and: expect.arrayContaining([
+          expect.objectContaining({
+            $or: expect.arrayContaining([
+              { nextCheckAt: { $lte: expect.any(Date) } },
+            ]),
+          }),
+        ]),
+      }),
+      { $set: { processingStartedAt: expect.any(Date) } },
+      expect.objectContaining({
+        new: true,
+        sort: {
+          lastCheckedAt: 1,
+          createdAt: -1,
+          _id: -1,
+        },
+      }),
+    );
     expect(updates).toEqual([
       {
         type: 'completed',
@@ -94,6 +129,211 @@ describe('ConversationService response recovery', () => {
         status: 'failed',
       },
     ]);
+  });
+
+  test('reconcilePendingResponses schedules nonterminal responses with persisted backoff state', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-waiting',
+      response_id: 'resp-waiting',
+      conversation_id: 'conv-waiting',
+      placeholder_id: 'ph-waiting',
+      createdAt: new Date('2026-07-27T00:40:00.000Z'),
+      recoveryAttemptCount: 3,
+      lastResponseStatus: 'queued',
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    ai.retrieveResponse.mockResolvedValue({ status: 'in_progress', output: [] });
+
+    const service = new ConversationService({}, {}, {});
+    const updates = await service.reconcilePendingResponses({
+      limit: 1,
+      now,
+      policy: { maxAgeMs: 48 * 60 * 60 * 1000, maxAttempts: 50 },
+    });
+
+    expect(updates).toEqual([]);
+    expect(ai.retrieveResponse).toHaveBeenCalledWith('resp-waiting');
+    expect(PendingRequests.updateOne).toHaveBeenCalledWith(
+      { _id: 'pending-waiting' },
+      {
+        $set: expect.objectContaining({
+          recoveryState: 'pending',
+          recoveryAttemptCount: 4,
+          lastCheckedAt: now,
+          nextCheckAt: new Date('2026-07-27T01:05:00.000Z'),
+          lastResponseStatus: 'in_progress',
+          lastRetrievalError: null,
+          processingStartedAt: null,
+        }),
+        $unset: {
+          abandonedAt: 1,
+          abandonReason: 1,
+        },
+      },
+    );
+  });
+
+  test('reconcilePendingResponses backs off retrieval failures instead of immediately retrying them', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-network-error',
+      response_id: 'resp-network-error',
+      conversation_id: 'conv-network-error',
+      placeholder_id: 'ph-network-error',
+      createdAt: new Date('2026-07-27T00:55:00.000Z'),
+      recoveryAttemptCount: 0,
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    ai.retrieveResponse.mockResolvedValue(null);
+
+    const service = new ConversationService({}, {}, {});
+    await service.reconcilePendingResponses({ limit: 1, now });
+
+    expect(PendingRequests.updateOne).toHaveBeenCalledWith(
+      { _id: 'pending-network-error' },
+      expect.objectContaining({
+        $set: expect.objectContaining({
+          recoveryAttemptCount: 1,
+          nextCheckAt: new Date('2026-07-27T01:01:00.000Z'),
+          lastResponseStatus: 'retrieval_error',
+          lastRetrievalError: 'OpenAI response retrieval returned no result',
+          processingStartedAt: null,
+        }),
+      }),
+    );
+  });
+
+  test('reconcilePendingResponses dead-letters an orphan without calling OpenAI', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-orphan',
+      response_id: 'resp-orphan',
+      conversation_id: 'conv-orphan',
+      placeholder_id: 'ph-orphan',
+      createdAt: new Date('2026-07-27T00:55:00.000Z'),
+      recoveryAttemptCount: 2,
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    Conversation5Model.exists.mockResolvedValue(null);
+    Conversation5Model.findById.mockResolvedValue(null);
+
+    const service = new ConversationService({}, {}, {});
+    const updates = await service.reconcilePendingResponses({ limit: 1, now });
+
+    expect(ai.retrieveResponse).not.toHaveBeenCalled();
+    expect(PendingRequests.updateOne).toHaveBeenCalledWith(
+      { _id: 'pending-orphan' },
+      {
+        $set: expect.objectContaining({
+          recoveryState: 'abandoned',
+          recoveryAttemptCount: 2,
+          nextCheckAt: null,
+          abandonedAt: now,
+          abandonReason: 'placeholder_missing',
+          processingStartedAt: null,
+        }),
+      },
+    );
+    expect(updates).toEqual([
+      expect.objectContaining({
+        type: 'failed',
+        response_id: 'resp-orphan',
+        status: 'abandoned',
+        reason: 'placeholder_missing',
+      }),
+    ]);
+  });
+
+  test('reconcilePendingResponses abandons work older than the age limit and removes its placeholder reference', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-expired',
+      response_id: 'resp-expired',
+      conversation_id: 'conv-expired',
+      placeholder_id: 'ph-expired',
+      createdAt: new Date('2026-07-24T23:00:00.000Z'),
+      recoveryAttemptCount: 8,
+    };
+    const conversation = {
+      messages: ['user-message', 'ph-expired'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const service = new ConversationService({}, {}, {});
+    const updates = await service.reconcilePendingResponses({
+      limit: 1,
+      now,
+      policy: { maxAgeMs: 48 * 60 * 60 * 1000, maxAttempts: 50 },
+    });
+
+    expect(ai.retrieveResponse).not.toHaveBeenCalled();
+    expect(conversation.messages).toEqual(['user-message']);
+    expect(conversation.save).toHaveBeenCalledTimes(1);
+    expect(updates[0]).toEqual(expect.objectContaining({
+      status: 'abandoned',
+      reason: 'max_age_exceeded',
+    }));
+  });
+
+  test('reconcilePendingResponses enforces the recovery attempt limit', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-attempt-limit',
+      response_id: 'resp-attempt-limit',
+      conversation_id: 'conv-attempt-limit',
+      placeholder_id: 'ph-attempt-limit',
+      createdAt: new Date('2026-07-27T00:58:00.000Z'),
+      recoveryAttemptCount: 0,
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    Conversation5Model.findById.mockResolvedValue(null);
+    ai.retrieveResponse.mockResolvedValue({ status: 'queued', output: [] });
+
+    const service = new ConversationService({}, {}, {});
+    const updates = await service.reconcilePendingResponses({
+      limit: 1,
+      now,
+      policy: { maxAgeMs: 48 * 60 * 60 * 1000, maxAttempts: 1 },
+    });
+
+    expect(ai.retrieveResponse).toHaveBeenCalledTimes(1);
+    expect(PendingRequests.updateOne).toHaveBeenCalledWith(
+      { _id: 'pending-attempt-limit' },
+      {
+        $set: expect.objectContaining({
+          recoveryState: 'abandoned',
+          recoveryAttemptCount: 1,
+          abandonReason: 'max_attempts_exceeded',
+        }),
+      },
+    );
+    expect(updates[0]).toEqual(expect.objectContaining({
+      status: 'abandoned',
+      reason: 'max_attempts_exceeded',
+    }));
+  });
+
+  test('fetchPending returns only active pending conversation IDs', async () => {
+    PendingRequests.find.mockResolvedValue([
+      { conversation_id: 'conv-active-1' },
+      { conversation_id: null },
+      { conversation_id: 'conv-active-2' },
+    ]);
+
+    const service = new ConversationService({}, {}, {});
+    const conversationIds = await service.fetchPending();
+
+    expect(PendingRequests.find).toHaveBeenCalledWith({
+      $or: [
+        { recoveryState: 'pending' },
+        { recoveryState: null },
+        { recoveryState: { $exists: false } },
+      ],
+    });
+    expect(conversationIds).toEqual(['conv-active-1', 'conv-active-2']);
   });
 
   test('processCompletedResponse claims and removes pending request after saving messages', async () => {
@@ -129,6 +369,40 @@ describe('ConversationService response recovery', () => {
       messages: [savedMessage],
       placeholder_id: 'ph-1',
     });
+  });
+
+  test('processCompletedResponse reuses a response already retrieved by recovery', async () => {
+    const pending = {
+      _id: 'pending-retrieved',
+      response_id: 'resp-retrieved',
+      conversation_id: 'conv-retrieved',
+      placeholder_id: 'ph-retrieved',
+    };
+    const conversation = {
+      messages: ['ph-retrieved'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    const retrievedResponse = {
+      status: 'completed',
+      output: [{ type: 'message' }],
+    };
+    const messageService = {
+      processCompletedResponse: jest.fn().mockResolvedValue([]),
+    };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const service = new ConversationService({}, messageService, {});
+    await service.processCompletedResponse('resp-retrieved', {
+      claimedPending: pending,
+      retrievedResponse,
+    });
+
+    expect(PendingRequests.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(messageService.processCompletedResponse).toHaveBeenCalledWith(
+      conversation,
+      'resp-retrieved',
+      retrievedResponse,
+    );
   });
 
   test('processCompletedResponse executes function calls and queues follow-up response', async () => {

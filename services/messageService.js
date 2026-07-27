@@ -1299,9 +1299,11 @@ class MessageService {
   }
 
   // const messages = await this.messageService.processCompletedResponse(conversation, response_id, r.placeholder_id);
-  async processCompletedResponse(conversation, response_id) {
-    const resp = await ai.fetchCompleted(response_id);
-    return this._persistConvertedOutputs(conversation, resp);
+  async processCompletedResponse(conversation, response_id, retrievedResponse = null) {
+    const outputs = retrievedResponse
+      ? await ai.convertResponseBody(retrievedResponse)
+      : await ai.fetchCompleted(response_id);
+    return this._persistConvertedOutputs(conversation, outputs);
   }
 
   async processConvertedOutputs(conversation, outputs) {
@@ -1335,9 +1337,9 @@ class MessageService {
     return newAiMessages;
   }
 
-  async processFailedResponse(conversation, response_id) {
+  async processFailedResponse(conversation, response_id, retrievedResponse = null) {
     // TODO: Only support OpenAi at this stage
-    const resp = await ai.retrieveResponse(response_id);
+    const resp = retrievedResponse || await ai.retrieveResponse(response_id);
     if (!resp) {
       return 'Unable to retrieve failed OpenAI response details';
     }

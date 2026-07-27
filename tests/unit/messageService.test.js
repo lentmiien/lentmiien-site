@@ -28,7 +28,11 @@ jest.mock('../../utils/anthropic', () => ({ anthropic: jest.fn() }));
 jest.mock('../../utils/groq', () => ({ groq: jest.fn(), groq_vision: jest.fn() }));
 jest.mock('../../utils/google', () => ({ googleAI: jest.fn() }));
 jest.mock('../../utils/lmstudio', () => ({ chat: jest.fn() }));
-jest.mock('../../utils/OpenAI_API', () => ({ fetchCompleted: jest.fn(), retrieveResponse: jest.fn() }));
+jest.mock('../../utils/OpenAI_API', () => ({
+  fetchCompleted: jest.fn(),
+  retrieveResponse: jest.fn(),
+  convertResponseBody: jest.fn(),
+}));
 jest.mock('../../utils/Ollama_API', () => ({
   chat: jest.fn(),
   convertResponseBody: jest.fn(),
@@ -90,6 +94,9 @@ describe('MessageService', () => {
     Chat5Model.find.mockReset();
     ollama.chat.mockReset();
     ollama.convertResponseBody.mockReset();
+    ai.fetchCompleted.mockReset();
+    ai.retrieveResponse.mockReset();
+    ai.convertResponseBody.mockReset();
     chatGPT.mockReset();
     chatGPT_beta.mockReset();
 
@@ -176,6 +183,32 @@ describe('MessageService', () => {
 
     expect(ai.retrieveResponse).toHaveBeenCalledWith('resp-old');
     expect(result).toBe('Incomplete: max_output_tokens');
+  });
+
+  test('processFailedResponse reuses failure details already retrieved by recovery', async () => {
+    const retrievedResponse = {
+      status: 'failed',
+      error: { message: 'Provider rejected the response' },
+    };
+
+    const result = await service.processFailedResponse({}, 'resp-failed', retrievedResponse);
+
+    expect(ai.retrieveResponse).not.toHaveBeenCalled();
+    expect(result).toBe('Provider rejected the response');
+  });
+
+  test('processCompletedResponse converts an already retrieved response without fetching it again', async () => {
+    const retrievedResponse = {
+      status: 'completed',
+      output: [],
+      output_text: 'Recovered response',
+    };
+    ai.convertResponseBody.mockResolvedValue([{ error: null }]);
+
+    await service.processCompletedResponse({}, 'resp-recovered', retrievedResponse);
+
+    expect(ai.convertResponseBody).toHaveBeenCalledWith(retrievedResponse);
+    expect(ai.fetchCompleted).not.toHaveBeenCalled();
   });
 
   test('generateAIMessage saves all converted Ollama function messages', async () => {
