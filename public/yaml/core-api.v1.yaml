@@ -26,7 +26,7 @@ tags:
   - name: Records
     description: Tiered record storage with partial updates and encrypted field redaction.
   - name: AmiAmi
-    description: Read-only AmiAmi item lookup for external applications.
+    description: AmiAmi item lookup with a guarded missing-item fetch for external applications.
 security:
   - sessionCookie: []
 paths:
@@ -66,10 +66,14 @@ paths:
     post:
       summary: Fetch AmiAmi items by gcode or JAN code
       description: >
-        Performs an exact, read-only lookup against both `gcode` and `details.janCode`. The body
-        may mix both code types and is limited to 100 entries. Duplicate input codes are queried
-        once, matching database entries are returned once in request-code order, and unmatched
-        codes are omitted. This endpoint is limited to 50 requests per minute per client IP.
+        Performs an exact lookup against both `gcode` and `details.janCode`. The body may mix both
+        code types and is limited to 100 entries. Duplicate input codes are queried once and
+        matching database entries are returned once in request-code order. When a missing string
+        contains only letters, numbers, and hyphens with at least one of each, the first such code
+        can trigger one AmiAmi item fetch. A successful item or a failure marker is saved, so the
+        API route does not fetch that code again. Numeric barcodes and other unmatched codes are
+        omitted. Missing-item fetches have a process-wide rolling limit of 20 per minute, while
+        this endpoint is limited to 50 requests per minute per client IP.
       tags: [AmiAmi]
       security:
         - sessionCookie: []
@@ -96,7 +100,7 @@ paths:
                   - '4934054079537'
       responses:
         '200':
-          description: Matching AmiAmi database entries
+          description: Matching AmiAmi entries, including an item or failure marker saved by the fallback
           content:
             application/json:
               schema:
@@ -122,7 +126,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SimpleErrorResponse'
         '500':
-          description: Database lookup failed
+          description: Database lookup or fallback persistence failed
           content:
             application/json:
               schema:
@@ -1214,7 +1218,7 @@ x-yaml-viewer:
     - Bin packing helper shared with the Vue dashboard and CLI runners.
     - Automation-friendly task creation and reminder buckets used by calendar agents.
     - Tiered `/api/records` storage with encrypted field redaction for Tier 1 callers.
-    - Read-only AmiAmi item lookup by mixed gcode and JAN code batches.
+    - AmiAmi item lookup by mixed gcode and JAN batches with guarded missing-item fetching.
   examples:
     - label: Fetch health entries
       description: Pull a 7-day window to hydrate local notebooks.

@@ -1,4 +1,7 @@
 const { AmiAmiItem } = require('../database');
+const {
+  attemptMissingItemScrape,
+} = require('../services/amiamiItemFallbackService');
 const logger = require('../utils/logger');
 
 const MAX_CODES_PER_REQUEST = 100;
@@ -13,6 +16,23 @@ function normalizeCode(value) {
   }
 
   return '';
+}
+
+function isLikelyItemCode(code) {
+  return /^(?=.*[A-Za-z])(?=.*\d)(?=.*-)[A-Za-z\d-]+$/.test(code);
+}
+
+function getMatchedCodes(items) {
+  const matchedCodes = new Set();
+  for (const item of items) {
+    if (item.gcode) {
+      matchedCodes.add(item.gcode);
+    }
+    if (item.details && item.details.janCode) {
+      matchedCodes.add(item.details.janCode);
+    }
+  }
+  return matchedCodes;
 }
 
 function orderItemsByRequestedCodes(items, codes) {
@@ -73,7 +93,23 @@ exports.fetchItems = async (req, res) => {
       .lean()
       .exec();
 
-    return res.json(orderItemsByRequestedCodes(items, uniqueCodes));
+    const matchedCodes = getMatchedCodes(items);
+    const missingItemCode = uniqueCodes.find(
+      (code) => !matchedCodes.has(code) && isLikelyItemCode(code),
+    );
+    const responseItems = [...items];
+
+    if (missingItemCode) {
+      const scrapeResult = await attemptMissingItemScrape(missingItemCode);
+      if (
+        scrapeResult.item &&
+        !responseItems.some((item) => item.gcode === scrapeResult.item.gcode)
+      ) {
+        responseItems.push(scrapeResult.item);
+      }
+    }
+
+    return res.json(orderItemsByRequestedCodes(responseItems, uniqueCodes));
   } catch (error) {
     logger.error('Unable to fetch AmiAmi items through the API', {
       category: 'amiami-items-api',
@@ -84,4 +120,3 @@ exports.fetchItems = async (req, res) => {
     });
   }
 };
-

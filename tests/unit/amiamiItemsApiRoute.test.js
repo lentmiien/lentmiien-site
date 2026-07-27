@@ -27,7 +27,7 @@ jest.mock('../../controllers/amiamiItemsApiController', () => ({
 const rateLimit = require('express-rate-limit');
 
 describe('AmiAmi items API route', () => {
-  test('registers the read-only endpoint with a 50 request per minute limit', () => {
+  test('registers the endpoint with a 50 request per minute limit', () => {
     const amiamiItemsApiController = require('../../controllers/amiamiItemsApiController');
     const router = require('../../routes/api');
 

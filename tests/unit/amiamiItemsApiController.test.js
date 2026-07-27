@@ -8,7 +8,14 @@ jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
+jest.mock('../../services/amiamiItemFallbackService', () => ({
+  attemptMissingItemScrape: jest.fn(),
+}));
+
 const { AmiAmiItem } = require('../../database');
+const {
+  attemptMissingItemScrape,
+} = require('../../services/amiamiItemFallbackService');
 const logger = require('../../utils/logger');
 const controller = require('../../controllers/amiamiItemsApiController');
 
@@ -29,6 +36,10 @@ function mockFindResult(items) {
 describe('amiamiItemsApiController.fetchItems', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    attemptMissingItemScrape.mockResolvedValue({
+      status: 'rate-limited',
+      item: null,
+    });
   });
 
   test('fetches a mixed list of gcodes and JAN codes in request order', async () => {
@@ -72,6 +83,97 @@ describe('amiamiItemsApiController.fetchItems', () => {
     expect(query.lean).toHaveBeenCalledTimes(1);
     expect(query.exec).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith([byJan, byGcode, byNumericJan]);
+    expect(attemptMissingItemScrape).not.toHaveBeenCalled();
+  });
+
+  test('scrapes only the first missing item code and returns the saved item', async () => {
+    const existingByJan = {
+      _id: 'item-1',
+      gcode: 'GOODS-200002',
+      details: { janCode: '2222222222222' },
+    };
+    const scrapedItem = {
+      _id: 'item-2',
+      gcode: 'FIGURE-100001',
+      detailStatus: 'fetched',
+      details: { janCode: '1111111111111' },
+    };
+    mockFindResult([existingByJan]);
+    attemptMissingItemScrape.mockResolvedValue({
+      status: 'fetched',
+      item: scrapedItem,
+    });
+    const req = {
+      body: ['2222222222222', 'FIGURE-100001', 'GOODS-300003'],
+    };
+    const res = createResponse();
+
+    await controller.fetchItems(req, res);
+
+    expect(attemptMissingItemScrape).toHaveBeenCalledTimes(1);
+    expect(attemptMissingItemScrape).toHaveBeenCalledWith('FIGURE-100001');
+    expect(res.json).toHaveBeenCalledWith([existingByJan, scrapedItem]);
+  });
+
+  test('returns a saved failure marker without attempting a second missing code', async () => {
+    const failedItem = {
+      _id: 'item-error',
+      gcode: 'FIGURE-100001',
+      detailStatus: 'error',
+      details: null,
+    };
+    mockFindResult([]);
+    attemptMissingItemScrape.mockResolvedValue({
+      status: 'failed',
+      item: failedItem,
+    });
+    const req = {
+      body: ['FIGURE-100001', 'GOODS-300003'],
+    };
+    const res = createResponse();
+
+    await controller.fetchItems(req, res);
+
+    expect(attemptMissingItemScrape).toHaveBeenCalledTimes(1);
+    expect(attemptMissingItemScrape).toHaveBeenCalledWith('FIGURE-100001');
+    expect(res.json).toHaveBeenCalledWith([failedItem]);
+  });
+
+  test('does not scrape missing barcodes or strings that are not item codes', async () => {
+    mockFindResult([]);
+    const req = {
+      body: [
+        '4934054079537',
+        3333333333333,
+        'FIGURE100001',
+        'FIGURE-ONLY',
+        '123-456',
+        'FIGURE_100-001',
+      ],
+    };
+    const res = createResponse();
+
+    await controller.fetchItems(req, res);
+
+    expect(attemptMissingItemScrape).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  test('does not scrape an item code that already has a failed database entry', async () => {
+    const failedItem = {
+      _id: 'item-error',
+      gcode: 'FIGURE-100001',
+      detailStatus: 'error',
+      details: null,
+    };
+    mockFindResult([failedItem]);
+    const req = { body: ['FIGURE-100001'] };
+    const res = createResponse();
+
+    await controller.fetchItems(req, res);
+
+    expect(attemptMissingItemScrape).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([failedItem]);
   });
 
   test('returns an empty array without querying for an empty request', async () => {
@@ -81,6 +183,7 @@ describe('amiamiItemsApiController.fetchItems', () => {
     await controller.fetchItems(req, res);
 
     expect(AmiAmiItem.find).not.toHaveBeenCalled();
+    expect(attemptMissingItemScrape).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith([]);
   });
 
@@ -147,4 +250,3 @@ describe('amiamiItemsApiController.fetchItems', () => {
     });
   });
 });
-

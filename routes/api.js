@@ -48,7 +48,7 @@ router.post('/binpacking', controller.binPacking);
 /* Product details */
 router.post('/productDetails', controller.processProductDetails);
 
-/* AmiAmi items (read-only) */
+/* AmiAmi item lookup with a rate-limited missing-item fallback */
 router.post('/amiami-items', amiamiItemsReadLimiter, amiamiItemsApiController.fetchItems);
 
 /* Health log */
