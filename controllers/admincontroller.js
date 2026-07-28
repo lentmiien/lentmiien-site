@@ -52,6 +52,7 @@ const {
   buildSpendingInsights,
 } = require('../services/openaiUsageMetricsService');
 const { toLocalDateOnlyString } = require('../utils/dateOnly');
+const { isAiGatewayDashboardStatusAccepted } = require('../utils/aiGatewayHttp');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 const TEMP_PASSWORD_BYTES = 18;
@@ -3697,6 +3698,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
       timeout: AI_GATEWAY_TIMEOUT_MS,
       responseType: endpoint.responseType || 'json',
       headers: endpoint.admin ? buildAiGatewayAdminHeaders() : undefined,
+      validateStatus: (status) => isAiGatewayDashboardStatusAccepted(endpoint.key, status),
     },
   ));
 
