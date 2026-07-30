@@ -160,6 +160,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `CODEX_WORKER_ENABLED` | Enables the Codex queue worker for worker processes (defaults to `true`). |
 | `CODEX_WEB_WORKER_ENABLED` | Enables the embedded Codex worker inside `app.js` (defaults to `CODEX_WORKER_ENABLED`). Set this to `false` when running the worker as a separate user-login process. |
 | `CODEX_GLOBAL_CONCURRENCY` | Maximum Codex turns this worker may run at once across different workspaces. Each workspace is still locked to one running turn. Defaults to `1`; set higher, such as `5`, on a remote Linux worker with multiple workspaces. |
+| `CODEX_MAX_EVENTS_PER_TURN` | Maximum number of detail events persisted for each Codex turn before a truncation warning is stored. Defaults to `2000`. |
 | `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
 | `CODEX_REMOTE_SSH_ENABLED` | Seeds an SSH-backed Linux Codex execution target when set to `true`. |
 | `CODEX_REMOTE_SSH_DESTINATION` | SSH destination for the seeded target, such as `user@host`. |

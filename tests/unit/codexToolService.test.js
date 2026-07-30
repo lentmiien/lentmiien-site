@@ -15,6 +15,30 @@ const CodexEvent = require('../../models/codex_event');
 const CodexWorkspaceLock = require('../../models/codex_workspace_lock');
 const codexToolService = require('../../services/codexToolService');
 
+describe('codexToolService runtime config', () => {
+  const originalMaxEventsPerTurn = process.env.CODEX_MAX_EVENTS_PER_TURN;
+
+  afterEach(() => {
+    if (originalMaxEventsPerTurn === undefined) {
+      delete process.env.CODEX_MAX_EVENTS_PER_TURN;
+    } else {
+      process.env.CODEX_MAX_EVENTS_PER_TURN = originalMaxEventsPerTurn;
+    }
+  });
+
+  test('persists up to 2000 turn events by default', () => {
+    delete process.env.CODEX_MAX_EVENTS_PER_TURN;
+
+    expect(codexToolService.getRuntimeConfig().maxEventsPerTurn).toBe(2000);
+  });
+
+  test('allows the event persistence limit to be overridden', () => {
+    process.env.CODEX_MAX_EVENTS_PER_TURN = '2500';
+
+    expect(codexToolService.getRuntimeConfig().maxEventsPerTurn).toBe(2500);
+  });
+});
+
 function createEventQuery(events) {
   const query = {
     sort: jest.fn(() => query),

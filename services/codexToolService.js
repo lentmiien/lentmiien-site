@@ -655,7 +655,7 @@ function getRuntimeConfig() {
     lockTtlMs: getPositiveIntegerEnv('CODEX_LOCK_TTL_MS', 5 * 60 * 1000, 60 * 1000),
     heartbeatMs: getPositiveIntegerEnv('CODEX_LOCK_HEARTBEAT_MS', 15 * 1000, 2000),
     maxPromptChars: getPositiveIntegerEnv('CODEX_MAX_PROMPT_CHARS', 20000, 1000, 500000),
-    maxEventsPerTurn: getPositiveIntegerEnv('CODEX_MAX_EVENTS_PER_TURN', 1000, 20, 100000),
+    maxEventsPerTurn: getPositiveIntegerEnv('CODEX_MAX_EVENTS_PER_TURN', 2000, 20, 100000),
     maxEventTextChars: getPositiveIntegerEnv('CODEX_MAX_EVENT_TEXT_CHARS', 12000, 1000, 100000),
     remoteValidationTimeoutMs: getPositiveIntegerEnv('CODEX_REMOTE_VALIDATION_TIMEOUT_MS', 15000, 1000, 120000),
     yoloEnabled: getBooleanEnv('CODEX_YOLO_ENABLED', false),
