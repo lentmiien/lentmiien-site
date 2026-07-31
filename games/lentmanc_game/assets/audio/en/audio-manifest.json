@@ -1,0 +1,194 @@
+{
+  "language": "en",
+  "generatedWith": "Local Piper neural text-to-speech; MP3 runtime copies encoded with FFmpeg libmp3lame VBR quality 2.",
+  "voices": {
+    "narrator": {
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "purpose": "Introductions, transitions, cinematic narration, and endings"
+    },
+    "aren": {
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "purpose": "Selected protagonist lines and important reactions"
+    }
+  },
+  "clips": [
+    {
+      "id": "narrator_intro_birchwood",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "On the eastern finger of Asterra, beyond the roads important people bothered to map, Willowmere was having an ordinary afternoon.",
+      "transcript": "assets/audio/en/transcripts/narrator_intro_birchwood.txt",
+      "wav": "assets/audio/en/source-wav/narrator_intro_birchwood.wav",
+      "mp3": "assets/audio/en/mp3/narrator_intro_birchwood.mp3",
+      "durationSeconds": 7.993
+    },
+    {
+      "id": "aren_intro_mushrooms",
+      "speakerId": "aren",
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "text": "Coppercaps, moonbells, fox-ears. Three baskets in one, and home before the stew gives up on me.",
+      "transcript": "assets/audio/en/transcripts/aren_intro_mushrooms.txt",
+      "wav": "assets/audio/en/source-wav/aren_intro_mushrooms.wav",
+      "mp3": "assets/audio/en/mp3/aren_intro_mushrooms.mp3",
+      "durationSeconds": 6.034
+    },
+    {
+      "id": "narrator_smoke_willowmere",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "The first smell was not supper. Smoke climbed above Willowmere, black against the evening. Beneath it came the measured retreat of armored boots.",
+      "transcript": "assets/audio/en/transcripts/narrator_smoke_willowmere.txt",
+      "wav": "assets/audio/en/source-wav/narrator_smoke_willowmere.wav",
+      "mp3": "assets/audio/en/mp3/narrator_smoke_willowmere.mp3",
+      "durationSeconds": 9.613
+    },
+    {
+      "id": "aren_after_fire",
+      "speakerId": "aren",
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "text": "Mum. Dad. I came home. I was only— I was in the woods.",
+      "transcript": "assets/audio/en/transcripts/aren_after_fire.txt",
+      "wav": "assets/audio/en/source-wav/aren_after_fire.wav",
+      "mp3": "assets/audio/en/mp3/aren_after_fire.mp3",
+      "durationSeconds": 4.467
+    },
+    {
+      "id": "narrator_fingers",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "The Hand is too large for one warning to reach every finger. Choosing a road means choosing where time will be lost.",
+      "transcript": "assets/audio/en/transcripts/narrator_fingers.txt",
+      "wav": "assets/audio/en/source-wav/narrator_fingers.wav",
+      "mp3": "assets/audio/en/mp3/narrator_fingers.mp3",
+      "durationSeconds": 7.602
+    },
+    {
+      "id": "aren_rescue_line",
+      "speakerId": "aren",
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "text": "We are not here to win their battle. We are here to get everyone out of it.",
+      "transcript": "assets/audio/en/transcripts/aren_rescue_line.txt",
+      "wav": "assets/audio/en/source-wav/aren_rescue_line.wav",
+      "mp3": "assets/audio/en/mp3/aren_rescue_line.mp3",
+      "durationSeconds": 3.448
+    },
+    {
+      "id": "narrator_cinder_thumb",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "Cinder Thumb has no houses to burn. The mountain burns by itself. Across its basalt causeway, King Edric’s engineers prepare the fifth restored circle.",
+      "transcript": "assets/audio/en/transcripts/narrator_cinder_thumb.txt",
+      "wav": "assets/audio/en/source-wav/narrator_cinder_thumb.wav",
+      "mp3": "assets/audio/en/mp3/narrator_cinder_thumb.mp3",
+      "durationSeconds": 10.449
+    },
+    {
+      "id": "aren_cinder_refusal",
+      "speakerId": "aren",
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "text": "A dying queen does not turn villages into kindling. I will hear the rest, but I will not excuse this.",
+      "transcript": "assets/audio/en/transcripts/aren_cinder_refusal.txt",
+      "wav": "assets/audio/en/source-wav/aren_cinder_refusal.wav",
+      "mp3": "assets/audio/en/mp3/aren_cinder_refusal.mp3",
+      "durationSeconds": 5.878
+    },
+    {
+      "id": "narrator_crown_city",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "Crown City sleeps above sealed archives and forbidden workshops. Below, Prince Lucen has been collecting every truth his father ordered buried.",
+      "transcript": "assets/audio/en/transcripts/narrator_crown_city.txt",
+      "wav": "assets/audio/en/source-wav/narrator_crown_city.wav",
+      "mp3": "assets/audio/en/mp3/narrator_crown_city.mp3",
+      "durationSeconds": 9.273
+    },
+    {
+      "id": "aren_cael_seal",
+      "speakerId": "aren",
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "text": "I will help seal the gate. Not because you hid the choice well, Cael—because one starving circle could become another Willowmere.",
+      "transcript": "assets/audio/en/transcripts/aren_cael_seal.txt",
+      "wav": "assets/audio/en/source-wav/aren_cael_seal.wav",
+      "mp3": "assets/audio/en/mp3/aren_cael_seal.mp3",
+      "durationSeconds": 6.922
+    },
+    {
+      "id": "aren_cael_open",
+      "speakerId": "aren",
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "text": "You decided for two worlds and called it necessity. I will stop Edric, but I will not destroy the only door before both sides can speak.",
+      "transcript": "assets/audio/en/transcripts/aren_cael_open.txt",
+      "wav": "assets/audio/en/source-wav/aren_cael_open.wav",
+      "mp3": "assets/audio/en/mp3/aren_cael_open.mp3",
+      "durationSeconds": 7.654
+    },
+    {
+      "id": "narrator_frostcrown",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "Frostcrown lies beyond the Hand, where black water cuts the snow and the eclipse makes old magic quiet. Edric’s ship reached it first. The Starling reached it in time.",
+      "transcript": "assets/audio/en/transcripts/narrator_frostcrown.txt",
+      "wav": "assets/audio/en/source-wav/narrator_frostcrown.wav",
+      "mp3": "assets/audio/en/mp3/narrator_frostcrown.mp3",
+      "durationSeconds": 10.998
+    },
+    {
+      "id": "aren_frostcrown_choice",
+      "speakerId": "aren",
+      "speakerName": "Aren Vale",
+      "voice": "Lessac",
+      "text": "No more choices made for people who never got a voice. This one is mine, and I know who it will cost.",
+      "transcript": "assets/audio/en/transcripts/aren_frostcrown_choice.txt",
+      "wav": "assets/audio/en/source-wav/aren_frostcrown_choice.wav",
+      "mp3": "assets/audio/en/mp3/aren_frostcrown_choice.mp3",
+      "durationSeconds": 5.564
+    },
+    {
+      "id": "narrator_ending_severed",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "Edric dies on Frostcrown reaching for a door that no longer exists. Elara dies three days later. Across Asterra, the circles cool, and no single region will ever be drained to keep the gate alive.",
+      "transcript": "assets/audio/en/transcripts/narrator_ending_severed.txt",
+      "wav": "assets/audio/en/source-wav/narrator_ending_severed.wav",
+      "mp3": "assets/audio/en/mp3/narrator_ending_severed.mp3",
+      "durationSeconds": 13.74
+    },
+    {
+      "id": "narrator_ending_crown",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "The gate opens too late for Elara. Lucen takes a repaired crown and lays down his father’s sword before the citizens of both saved and lost villages. His first treaty is with Veyra; his second places the gate under civilian stewardship.",
+      "transcript": "assets/audio/en/transcripts/narrator_ending_crown.txt",
+      "wav": "assets/audio/en/source-wav/narrator_ending_crown.wav",
+      "mp3": "assets/audio/en/mp3/narrator_ending_crown.mp3",
+      "durationSeconds": 16.118
+    },
+    {
+      "id": "narrator_ending_open",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "Veyra gives moonleaf under one condition: Edric abdicates. Elara survives. Lucen becomes king. The gate remains open beneath a two-world council, and the seven circles share their gentle cost again.",
+      "transcript": "assets/audio/en/transcripts/narrator_ending_open.txt",
+      "wav": "assets/audio/en/source-wav/narrator_ending_open.wav",
+      "mp3": "assets/audio/en/mp3/narrator_ending_open.mp3",
+      "durationSeconds": 14.028
+    }
+  ]
+}

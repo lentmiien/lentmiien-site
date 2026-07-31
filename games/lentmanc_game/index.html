@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="The great adventure is a short story-focused 2D RPG about seven crystals, two worlds, difficult choices, and three endings.">
+  <meta name="application-name" content="The great adventure">
+  <title>The great adventure · Seven crystals between worlds</title>
+  <link rel="icon" href="assets/images/environments/title-thumbnail.webp" type="image/webp">
+  <link rel="preload" href="assets/images/environments/title-key-art.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/characters.js" defer></script>
+  <script src="js/maps.js" defer></script>
+  <script src="js/story.js" defer></script>
+  <script src="js/audio.js" defer></script>
+  <script src="js/game.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#gameMain">Skip to the game</a>
+
+  <div class="game-shell" id="gameShell" data-screen="loading" data-motion="full" data-contrast="standard">
+    <section class="loading-screen" id="loadingScreen" aria-labelledby="loadingTitle">
+      <div class="loading-orbit" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <p class="eyebrow">ASTERRA · THE HAND</p>
+      <h1 id="loadingTitle">The great adventure</h1>
+      <p id="loadingStatus">Preparing the first path…</p>
+      <div class="loading-track" aria-hidden="true"><i id="loadingProgress"></i></div>
+    </section>
+
+    <section class="title-screen" id="titleScreen" aria-labelledby="gameTitle" hidden>
+      <div class="title-art" aria-hidden="true">
+        <img src="assets/images/environments/title-key-art.webp" alt="">
+        <div class="title-art-wash"></div>
+        <div class="title-stars" id="titleStars"></div>
+      </div>
+
+      <header class="title-topbar">
+        <a class="icon-button title-back" href="/games" aria-label="Return to the games library">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+        </a>
+        <div class="world-mark" aria-label="Asterra and Veyra">
+          <span class="world-mark-ring" aria-hidden="true"><i></i></span>
+          <span><strong>ASTER﻿RA / VEYRA</strong><small>Seven circles · Two worlds</small></span>
+        </div>
+        <button class="icon-button" id="titleAudioButton" type="button" aria-label="Mute voice audio" aria-pressed="false">
+          <svg class="sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m9 3a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12"></path></svg>
+          <svg class="sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5M4 4l16 16"></path></svg>
+        </button>
+      </header>
+
+      <main class="title-layout">
+        <section class="title-copy">
+          <p class="eyebrow"><span>STORY RPG</span> · A 20–30 MINUTE JOURNEY</p>
+          <h1 id="gameTitle"><span>The great</span> adventure</h1>
+          <p class="title-subtitle">Seven crystals hold a forgotten gate open. A king will burn a world to cross it. An ordinary villager must decide what a door is worth.</p>
+          <div class="title-features" aria-label="Game features">
+            <span><b>7</b><small>exploration maps</small></span>
+            <span><b>5</b><small>story encounters</small></span>
+            <span><b>3</b><small>complete endings</small></span>
+          </div>
+        </section>
+
+        <nav class="title-menu" aria-label="Main menu">
+          <button class="menu-button primary" id="newGameButton" type="button">
+            <span><small>Begin at Willowmere</small><strong>New Game</strong></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 8 7-8 7V5Z"></path></svg>
+          </button>
+          <button class="menu-button" id="continueButton" type="button" disabled>
+            <span><small id="continueDetail">No journey saved</small><strong>Continue</strong></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg>
+          </button>
+          <div class="menu-grid">
+            <button class="menu-button compact" id="settingsButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6M6 14v6"></path></svg>
+              <strong>Settings</strong>
+            </button>
+            <button class="menu-button compact" id="helpButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.8 9a2.3 2.3 0 1 1 3.8 1.8c-1 .7-1.6 1.2-1.6 2.7M12 17h.01M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Z"></path></svg>
+              <strong>Help</strong>
+            </button>
+            <button class="menu-button compact" id="creditsButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 9.5 8 4 9l4 4-.8 6L12 16l4.8 3L16 13l4-4-5.5-1L12 3Z"></path></svg>
+              <strong>Credits</strong>
+            </button>
+          </div>
+          <p class="save-note" id="storageNote">Progress saves locally after scenes and checkpoints.</p>
+        </nav>
+      </main>
+
+      <footer class="title-footer">
+        <span>Keyboard + touch</span>
+        <span>English captions and transcript</span>
+        <span>Local synthesized voice · no runtime services</span>
+      </footer>
+    </section>
+
+    <section class="game-screen" id="gameScreen" hidden aria-label="The great adventure game">
+      <header class="game-hud">
+        <div class="hud-location">
+          <span class="chapter-kicker" id="chapterKicker">I · An ordinary day</span>
+          <strong id="mapName">Birchwood</strong>
+          <small id="mapSubtitle">Above Willowmere · Late afternoon</small>
+        </div>
+
+        <div class="hud-objective" aria-label="Current objective">
+          <span aria-hidden="true"></span>
+          <div>
+            <small>Current purpose</small>
+            <strong id="objectiveText">Gather mushrooms.</strong>
+          </div>
+        </div>
+
+        <nav class="hud-actions" aria-label="Game actions">
+          <button class="hud-button" id="gameTranscriptButton" type="button" aria-label="Open dialogue history">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v13H9l-4 3V4Zm4 4h6m-6 4h8"></path></svg>
+            <span>History</span>
+          </button>
+          <button class="hud-button" id="gameAudioButton" type="button" aria-label="Mute voice audio" aria-pressed="false">
+            <svg class="sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m5 4a4 4 0 0 1 0 6m2-9a8 8 0 0 1 0 12"></path></svg>
+            <svg class="sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5M4 4l16 16"></path></svg>
+            <span>Voice</span>
+          </button>
+          <button class="hud-button" id="pauseButton" type="button" aria-label="Pause game">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h3v16H7V4Zm7 0h3v16h-3V4Z"></path></svg>
+            <span>Pause</span>
+          </button>
+        </nav>
+      </header>
+
+      <main class="game-main" id="gameMain">
+        <canvas id="worldCanvas" width="1280" height="720" role="img" tabindex="0" aria-label="Top-down view of Birchwood. Aren stands on a forest path near several points of interest.">
+          The exploration map requires canvas support. Dialogue, choices, help, and transcripts remain available as HTML.
+        </canvas>
+        <p class="sr-only" id="mapAccessibleSummary">Birchwood contains a southern trail, three mushroom patches, and a weathered stone in the northeast.</p>
+
+        <div class="map-vignette" aria-hidden="true"></div>
+        <div class="weather-layer" id="weatherLayer" aria-hidden="true"></div>
+
+        <aside class="party-rail" id="partyRail" aria-label="Current companions">
+          <span class="party-label">TRAVELING WITH</span>
+          <div id="partyList"></div>
+        </aside>
+
+        <div class="interaction-prompt" id="interactionPrompt" role="status" aria-live="polite" hidden>
+          <kbd>E</kbd>
+          <span id="interactionPromptText">Interact</span>
+        </div>
+
+        <div class="checkpoint-toast" id="checkpointToast" role="status" aria-live="polite" hidden>
+          <span class="checkpoint-glyph" aria-hidden="true"></span>
+          <div><small>CHECKPOINT</small><strong id="checkpointToastText">Progress remembered</strong></div>
+        </div>
+
+        <nav class="touch-controls" id="touchControls" aria-label="Touch movement controls">
+          <div class="touch-dpad" aria-label="Movement">
+            <button class="touch-up" type="button" data-direction="up" aria-label="Move up">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 15 7-7 7 7"></path></svg>
+            </button>
+            <button class="touch-left" type="button" data-direction="left" aria-label="Move left">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"></path></svg>
+            </button>
+            <span class="touch-center" aria-hidden="true"></span>
+            <button class="touch-right" type="button" data-direction="right" aria-label="Move right">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg>
+            </button>
+            <button class="touch-down" type="button" data-direction="down" aria-label="Move down">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 9 7 7 7-7"></path></svg>
+            </button>
+          </div>
+          <button class="touch-interact" id="touchInteractButton" type="button" aria-label="Interact or advance dialogue">
+            <span>INTERACT</span><strong>A</strong>
+          </button>
+        </nav>
+      </main>
+    </section>
+
+    <section class="scene-overlay" id="sceneOverlay" role="dialog" aria-modal="true" aria-labelledby="sceneTitle" hidden>
+      <div class="scene-art" id="sceneArtWrap" aria-label="Cinematic scene illustration">
+        <img id="sceneArt" src="assets/images/environments/title-thumbnail.webp" alt="">
+        <div class="scene-art-fallback" id="sceneArtFallback">
+          <span aria-hidden="true"></span>
+          <p>The scene continues in text.</p>
+        </div>
+        <div class="scene-art-shade"></div>
+      </div>
+
+      <header class="scene-header">
+        <div>
+          <span id="sceneChapter">I · An ordinary day</span>
+          <h2 id="sceneTitle">An ordinary afternoon</h2>
+        </div>
+        <div class="scene-header-actions">
+          <button class="scene-icon-button" id="sceneHistoryButton" type="button" aria-label="Open dialogue history">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v13H9l-4 3V4Zm4 4h6m-6 4h8"></path></svg>
+          </button>
+          <button class="scene-icon-button" id="scenePauseButton" type="button" aria-label="Pause game">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h3v16H7V4Zm7 0h3v16h-3V4Z"></path></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="scene-content">
+        <article class="dialogue-card" id="dialogueCard">
+          <figure class="speaker-portrait" id="speakerPortraitWrap">
+            <img id="speakerPortrait" alt="" hidden>
+            <span id="speakerMonogram" aria-hidden="true">A</span>
+          </figure>
+
+          <div class="dialogue-copy">
+            <header class="speaker-heading">
+              <div>
+                <span id="speakerRole">Willowmere villager</span>
+                <h3 id="speakerName">Aren Vale</h3>
+              </div>
+              <span class="expression-label" id="expressionLabel">neutral</span>
+            </header>
+
+            <p class="dialogue-text" id="dialogueText" aria-live="polite"></p>
+
+            <div class="choice-region" id="choiceRegion" hidden>
+              <p id="choicePrompt">Choose a response.</p>
+              <div class="choice-list" id="choiceList" role="group" aria-labelledby="choicePrompt"></div>
+            </div>
+
+            <footer class="dialogue-controls">
+              <button class="voice-replay" id="replayVoiceButton" type="button" disabled>
+                <span class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <span><small>VOICE</small><strong>Replay line</strong></span>
+              </button>
+              <button class="advance-button" id="advanceButton" type="button">
+                <span id="advanceButtonText">Continue</span>
+                <kbd>↵</kbd>
+              </button>
+            </footer>
+          </div>
+        </article>
+      </div>
+
+      <aside class="voice-caption" id="voiceCaption" aria-label="Voice caption" hidden>
+        <span class="caption-label">CAPTION</span>
+        <p id="voiceCaptionText"></p>
+        <span class="voice-progress" id="voiceProgress" aria-hidden="true"></span>
+      </aside>
+    </section>
+
+    <section class="game-over-overlay" id="gameOverOverlay" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle" hidden>
+      <div class="game-over-backdrop" aria-hidden="true"></div>
+      <article class="game-over-card">
+        <span class="danger-mark" aria-hidden="true"><i></i></span>
+        <p class="eyebrow">THE STORY ENDS HERE</p>
+        <h2 id="gameOverTitle">Courage was not armor</h2>
+        <p id="gameOverReason"></p>
+        <div class="game-over-lesson">
+          <strong>What was foreshadowed</strong>
+          <p id="gameOverLesson"></p>
+        </div>
+        <div class="overlay-actions">
+          <button class="menu-button primary" id="retryCheckpointButton" type="button">
+            <span><small id="retryCheckpointLabel">Return to checkpoint</small><strong>Try another choice</strong></span>
+          </button>
+          <button class="menu-button" id="gameOverTitleButton" type="button"><strong>Return to title</strong></button>
+          <button class="text-button danger-text" id="gameOverRestartButton" type="button">Restart the adventure</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="ending-overlay" id="endingOverlay" role="dialog" aria-modal="true" aria-labelledby="endingTitle" hidden>
+      <div class="ending-art">
+        <img id="endingImage" src="assets/images/scenes/ending-open-sky.webp" alt="">
+        <div class="ending-art-shade"></div>
+      </div>
+      <article class="ending-card">
+        <p class="eyebrow" id="endingNumber">ENDING 3 OF 3</p>
+        <h2 id="endingTitle">The Open Sky</h2>
+        <p class="ending-subtitle" id="endingSubtitle">Mercy with conditions</p>
+        <p id="endingSummary"></p>
+        <div class="ending-consequence">
+          <span aria-hidden="true"></span>
+          <p id="endingConsequence">The gate remains open.</p>
+        </div>
+        <div class="ending-echoes" id="endingEchoes" aria-label="How earlier choices shaped the epilogue"></div>
+        <div class="overlay-actions">
+          <button class="menu-button primary" id="endingTitleButton" type="button">
+            <span><small>Journey complete</small><strong>Return to title</strong></span>
+          </button>
+          <button class="menu-button" id="endingReplayButton" type="button"><strong>Replay ending narration</strong></button>
+          <button class="menu-button" id="endingTranscriptButton" type="button"><strong>Read full history</strong></button>
+          <button class="text-button" id="endingRestartButton" type="button">Begin a new adventure</button>
+        </div>
+      </article>
+    </section>
+
+    <dialog class="panel-dialog pause-dialog" id="pauseDialog" aria-labelledby="pauseTitle">
+      <form method="dialog" class="dialog-panel">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">JOURNEY PAUSED</p>
+            <h2 id="pauseTitle">Take a breath</h2>
+          </div>
+          <button class="dialog-close" value="cancel" aria-label="Resume game">×</button>
+        </header>
+        <div class="pause-location">
+          <span class="checkpoint-glyph" aria-hidden="true"></span>
+          <div><small>LAST CHECKPOINT</small><strong id="pauseCheckpointName">Smoke on the ridge</strong></div>
+        </div>
+        <nav class="pause-menu" aria-label="Pause menu">
+          <button class="menu-button primary" id="resumeButton" value="cancel">
+            <span><small>Return to Asterra</small><strong>Resume</strong></span>
+          </button>
+          <button class="menu-button" id="saveNowButton" type="button"><strong>Save now</strong></button>
+          <button class="menu-button" id="pauseRetryButton" type="button"><strong>Retry checkpoint</strong></button>
+          <button class="menu-button" id="pauseSettingsButton" type="button"><strong>Settings</strong></button>
+          <button class="menu-button" id="pauseHelpButton" type="button"><strong>Help</strong></button>
+          <button class="menu-button" id="pauseTranscriptButton" type="button"><strong>Dialogue history</strong></button>
+          <button class="text-button" id="pauseTitleButton" type="button">Save and return to title</button>
+        </nav>
+      </form>
+    </dialog>
+
+    <dialog class="panel-dialog settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+      <form method="dialog" class="dialog-panel settings-panel" id="settingsForm">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">ACCESS & PLAYBACK</p>
+            <h2 id="settingsTitle">Settings</h2>
+          </div>
+          <button class="dialog-close" value="close" aria-label="Close settings">×</button>
+        </header>
+
+        <div class="settings-groups">
+          <fieldset>
+            <legend>Voice</legend>
+            <label class="toggle-row">
+              <span><strong>Mute voice</strong><small>Captions and text remain available.</small></span>
+              <input id="voiceMutedSetting" type="checkbox">
+              <i aria-hidden="true"></i>
+            </label>
+            <label class="range-row" for="voiceVolumeSetting">
+              <span><strong>Voice volume</strong><output id="voiceVolumeOutput">80%</output></span>
+              <input id="voiceVolumeSetting" type="range" min="0" max="100" step="5" value="80">
+            </label>
+            <label class="toggle-row">
+              <span><strong>Play voices automatically</strong><small>Voice always waits for the first user gesture.</small></span>
+              <input id="autoVoiceSetting" type="checkbox" checked>
+              <i aria-hidden="true"></i>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Reading</legend>
+            <label class="select-row" for="textSpeedSetting">
+              <span><strong>Text reveal</strong><small>Press Continue once to reveal a line immediately.</small></span>
+              <select id="textSpeedSetting">
+                <option value="relaxed">Relaxed</option>
+                <option value="fast" selected>Fast</option>
+                <option value="instant">Instant</option>
+              </select>
+            </label>
+            <label class="toggle-row">
+              <span><strong>High-contrast dialogue</strong><small>Strengthens cards, outlines, and map prompts.</small></span>
+              <input id="highContrastSetting" type="checkbox">
+              <i aria-hidden="true"></i>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>Motion</legend>
+            <label class="toggle-row">
+              <span><strong>Reduce motion</strong><small>Disables camera easing, crossfades, and typewriter motion.</small></span>
+              <input id="reducedMotionSetting" type="checkbox">
+              <i aria-hidden="true"></i>
+            </label>
+            <label class="toggle-row">
+              <span><strong>Decorative animation</strong><small>Controls title sparks, weather, and ambient map shimmer.</small></span>
+              <input id="decorativeMotionSetting" type="checkbox" checked>
+              <i aria-hidden="true"></i>
+            </label>
+          </fieldset>
+        </div>
+        <button class="menu-button primary dialog-done" value="close"><strong>Done</strong></button>
+      </form>
+    </dialog>
+
+    <dialog class="panel-dialog help-dialog" id="helpDialog" aria-labelledby="helpTitle">
+      <form method="dialog" class="dialog-panel wide-panel">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">FIELD GUIDE</p>
+            <h2 id="helpTitle">How to play</h2>
+          </div>
+          <button class="dialog-close" value="close" aria-label="Close help">×</button>
+        </header>
+        <div class="help-grid">
+          <section>
+            <span class="help-number">01</span>
+            <h3>Explore</h3>
+            <p>Move with <kbd>WASD</kbd> or the arrow keys. On touch devices, use the directional pad. Amber markers identify people, objects, and routes you can inspect.</p>
+          </section>
+          <section>
+            <span class="help-number">02</span>
+            <h3>Interact</h3>
+            <p>Press <kbd>E</kbd>, <kbd>Enter</kbd>, or <kbd>Space</kbd> near a marker. The same keys advance dialogue. <kbd>Esc</kbd> opens Pause or closes the top panel.</p>
+          </section>
+          <section>
+            <span class="help-number">03</span>
+            <h3>Choose</h3>
+            <p>Use arrow keys and Enter, or number keys <kbd>1</kbd>–<kbd>4</kbd>. Dangerous options are foreshadowed and explicitly marked. There are no hidden combat statistics.</p>
+          </section>
+          <section>
+            <span class="help-number">04</span>
+            <h3>Recover</h3>
+            <p>The game saves after scenes and map transitions. Checkpoints appear before major risks. A game over always offers a checkpoint retry and explains the warning that was ignored.</p>
+          </section>
+        </div>
+        <div class="help-note">
+          <strong>Story encounters, not combat</strong>
+          <p>Investigate, protect, hide, retreat, or use a clue. The point is to choose a consequence, not guess an invisible damage number.</p>
+        </div>
+        <button class="menu-button primary dialog-done" value="close"><strong>Back</strong></button>
+      </form>
+    </dialog>
+
+    <dialog class="panel-dialog credits-dialog" id="creditsDialog" aria-labelledby="creditsTitle">
+      <form method="dialog" class="dialog-panel wide-panel">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">ABOUT THE ADVENTURE</p>
+            <h2 id="creditsTitle">Credits & disclosures</h2>
+          </div>
+          <button class="dialog-close" value="close" aria-label="Close credits">×</button>
+        </header>
+        <div class="credits-grid">
+          <section>
+            <h3>Source and adaptation</h3>
+            <p>Adapted from the Swedish concept outline in <code>games/lentmanc_game/idea.txt</code>. The seven crystals, the Hand, the two dimensions, the king’s motive, the wounded knight, the airship, and the three outcome structures come from that source.</p>
+            <p>Asterra, Veyra, named characters, detailed locations, civilian stories, connective scenes, dialogue, and encounter mechanics were created for this playable English adaptation.</p>
+          </section>
+          <section>
+            <h3>Generated media</h3>
+            <p>Character references, portraits, title art, cut-scene illustrations, and ending art were generated specifically for this game and reviewed against a written character bible. They are artist’s interpretations of a fictional world.</p>
+            <p>Exploration maps, collision, tiles, props, and sprites are deterministic local canvas drawings. No third-party media URL is used at runtime.</p>
+          </section>
+          <section>
+            <h3>Voice</h3>
+            <p>Aren uses the local Piper <strong>Lessac</strong> English voice. The narrator uses the distinct local Piper <strong>Amy</strong> English voice. Every other character is intentionally text-only.</p>
+            <p>WAV masters, browser-ready MP3s, and exact English transcripts ship locally. Voice playback can be muted or prevented from starting automatically.</p>
+          </section>
+          <section>
+            <h3>Design and engineering</h3>
+            <p>Story design, English adaptation, UI, accessibility, maps, save system, and implementation were produced for this repository. The interface follows the site’s Graphite, Ember, and Golden Amber color system.</p>
+            <p>Detailed creative additions and continuity rules are documented in <code>docs/GAME-DESIGN.md</code> and <code>docs/CHARACTER-BIBLE.md</code>.</p>
+          </section>
+        </div>
+        <button class="menu-button primary dialog-done" value="close"><strong>Back</strong></button>
+      </form>
+    </dialog>
+
+    <dialog class="panel-dialog transcript-dialog" id="transcriptDialog" aria-labelledby="transcriptTitle">
+      <form method="dialog" class="dialog-panel transcript-panel">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">JOURNEY RECORD</p>
+            <h2 id="transcriptTitle">Dialogue history</h2>
+          </div>
+          <button class="dialog-close" value="close" aria-label="Close dialogue history">×</button>
+        </header>
+        <div class="transcript-summary">
+          <span id="transcriptLocation">Birchwood</span>
+          <span id="transcriptCount">0 entries</span>
+        </div>
+        <ol class="transcript-list" id="transcriptList">
+          <li class="empty-transcript">Spoken lines, narration, and choices will appear here.</li>
+        </ol>
+        <button class="menu-button primary dialog-done" value="close"><strong>Back to the story</strong></button>
+      </form>
+    </dialog>
+
+    <div class="save-status" id="saveStatus" role="status" aria-live="polite" aria-atomic="true"></div>
+    <audio id="voiceAudio" preload="none" playsinline></audio>
+  </div>
+
+  <noscript>
+    <div class="noscript-panel">
+      <h1>The great adventure</h1>
+      <p>This story RPG requires JavaScript for movement, dialogue choices, checkpoints, and saves. Please enable JavaScript to play.</p>
+      <a href="/games">Return to the games library</a>
+    </div>
+  </noscript>
+</body>
+</html>

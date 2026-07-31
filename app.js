@@ -602,7 +602,7 @@ const serveGames = () => {
   fs.readdirSync(gamesDirectory).forEach(gameFolder => {
     const gamePath = path.join(gamesDirectory, gameFolder);
     if (fs.statSync(gamePath).isDirectory()) {
-      app.use(`/${gameFolder}`, expressStaticGzip(gamePath, {
+      const staticOptions = {
         enableBrotli: true, // Enable Brotli if you have .br files
         orderPreference: ['br', 'gz'], // Prioritize Brotli over gzip
         setHeaders: (res, filepath) => {
@@ -625,7 +625,11 @@ const serveGames = () => {
             }
           }
         }
-      }));
+      };
+      app.use(`/${gameFolder}`, expressStaticGzip(gamePath, staticOptions));
+      if (gameFolder === 'lentmanc_game') {
+        app.use(`/games/${gameFolder}`, expressStaticGzip(gamePath, staticOptions));
+      }
     }
   });
 };
@@ -639,8 +643,12 @@ const formatGameName = (gameFolder) => gameFolder
 const getAvailableGames = () => fs.readdirSync(gamesDirectory, { withFileTypes: true })
   .filter(entry => entry.isDirectory())
   .map(entry => ({
-    name: formatGameName(entry.name),
-    href: `/${encodeURIComponent(entry.name)}`,
+    name: entry.name === 'lentmanc_game'
+      ? 'The great adventure'
+      : formatGameName(entry.name),
+    href: entry.name === 'lentmanc_game'
+      ? `/games/${encodeURIComponent(entry.name)}/`
+      : `/${encodeURIComponent(entry.name)}`,
   }))
   .sort((first, second) => first.name.localeCompare(second.name));
 
