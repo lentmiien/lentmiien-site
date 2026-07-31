@@ -232,6 +232,10 @@
           type: 'narration',
           text: 'No answer came from the house. Someone did call from the ruined well, in a voice roughened by smoke.',
         },
+        {
+          type: 'narration',
+          text: 'Aren sets the mushroom basket beneath the last birch. The familiar descent becomes a boundary: woods behind him, Willowmere below, and no ordinary evening left between them.',
+        },
       ],
       onComplete: {
         effects: [
@@ -446,6 +450,12 @@
           text: 'Two fingers lie ahead. Greenwake is peaceful and does not know the army is coming. Ashfinger is already ringing its battle bell. You cannot arrive first at both.',
         },
         {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'Greenwake lies downriver along the reed finger. Ashfinger is north beyond the mill ridge. At a walk, choosing either road puts half a day between us and the other.',
+        },
+        {
           type: 'narration',
           text: 'The Hand is too large for one warning to reach every finger. Choosing a road means choosing where time will be lost.',
           audio: 'narrator_fingers',
@@ -501,6 +511,18 @@
           type: 'narration',
           text: 'Aren and Bram take the canal road toward Greenwake. Behind them, Cael watches from a borrowed bed, guarding a truth he still believes he can ration.',
         },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'determined',
+          text: 'The reed channels are still clear on the horizon. If we keep moving, Greenwake gets a choice Willowmere never had.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'protective',
+          text: 'Then let the road end with people walking away from danger, not us walking into it.',
+        },
       ],
       onComplete: {
         travel: { mapId: 'greenwake', spawnId: 'west_bridge' },
@@ -518,6 +540,18 @@
         {
           type: 'narration',
           text: 'They follow the battle bell into rain. The road becomes a canal, the canal becomes a flood, and the royal banner is already on the ridge.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'Ashfinger is past that dark ridge. Once we cross it, the flood will hide every easy way back.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'determined',
+          text: 'We are going for the people beneath the bell. The banner can wait.',
         },
       ],
       onComplete: {
@@ -686,6 +720,12 @@
           speaker: 'bram',
           expression: 'grieving',
           text: 'We chose people in front of us. That does not make the people beyond us matter less.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'Ashfinger is north across the river channels. We leave Greenwake alive, and we carry the lost hour with us.',
         },
       ],
       onComplete: {
@@ -882,6 +922,10 @@
           expression: 'warm',
           text: 'You found a third direction. I am coming with you until we find one for the whole Hand.',
         },
+        {
+          type: 'narration',
+          text: 'The rescued column turns south at first light. Far beyond the rain, Greenwake’s reed bells should be answering the wind. No sound reaches the road.',
+        },
       ],
       onComplete: {
         effects: [
@@ -922,6 +966,10 @@
           speaker: 'mira',
           expression: 'warm',
           text: 'I have spent all night telling people not to travel alone. It would be hypocritical to let you start now.',
+        },
+        {
+          type: 'narration',
+          text: 'They leave Ashfinger with the survivors at dawn and take the southern flood road. The miles toward Greenwake are measured by the bells they cannot hear.',
         },
       ],
       onComplete: {
@@ -982,6 +1030,19 @@
         {
           type: 'narration',
           text: 'One finger carries survivors. The other carries smoke. Ahead, the volcanic thumb has no village to evacuate—only a crystal circle, a royal army, and the first chance to face the king.',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'determined',
+          text: 'The river fingers are behind us. Cinder Thumb is west across the whole palm. If the king is moving there, we will see his supply road before we see his face.',
+          when: { flag: 'miraJoined', equals: true },
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'protective',
+          text: 'Then we cross the Hand, sleep before the black stone, and meet him with clear eyes. Grief has hurried us far enough.',
         },
       ],
       onComplete: {
@@ -1280,6 +1341,18 @@
         {
           type: 'narration',
           text: 'The fifth circle burns behind them. The sixth lies on the main island, beneath Crown City, where a prince, an archive, and an unfinished airship are waiting.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'determined',
+          text: 'The old quarry road reaches the central palm by morning. We find the prince, learn why Edric is doing this, and leave the city before his army comes home.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'A beautifully simple plan. Those are usually the ones with stairs under them.',
         },
       ],
       onComplete: {
@@ -1696,6 +1769,18 @@
           type: 'narration',
           text: 'The Starling breaks its last chain and rises through the launch door. Crown City shrinks beneath a machine built to connect distances, carrying one argument about whether a distance should remain.',
         },
+        {
+          type: 'line',
+          speaker: 'mara',
+          expression: 'grinning',
+          text: 'There is the northern edge of the Hand. Past those fingertips, every light is either Edric’s ship or Frostcrown ice. I recommend hoping for ice.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'Willowmere is somewhere behind the wing. I thought leaving it would feel like walking away. From up here, every road is still connected.',
+        },
       ],
       onComplete: {
         effects: [
@@ -1724,6 +1809,12 @@
           type: 'line',
           speaker: 'system',
           text: 'This is the final checkpoint. Inspect the anchor and the seven-grooved ring, then speak with Cael before entering the circle.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'protective',
+          text: 'The Hand is behind us now. Whatever happens in that circle, we do not lose sight of the people waiting across the water.',
         },
       ],
       onComplete: {
@@ -2249,6 +2340,7 @@
         'assets/images/portraits/aren.webp',
       ],
       deferred: [
+        'assets/images/environments/hand-world-map.webp',
         'assets/images/portraits/bram.webp',
         'assets/images/portraits/cael.webp',
         'assets/images/portraits/mira.webp',

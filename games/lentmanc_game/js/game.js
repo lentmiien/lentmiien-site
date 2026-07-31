@@ -69,6 +69,7 @@
     checkpointToastText: document.getElementById('checkpointToastText'),
     touchControls: document.getElementById('touchControls'),
     touchInteractButton: document.getElementById('touchInteractButton'),
+    gameMapButton: document.getElementById('gameMapButton'),
     gameTranscriptButton: document.getElementById('gameTranscriptButton'),
     gameAudioButton: document.getElementById('gameAudioButton'),
     pauseButton: document.getElementById('pauseButton'),
@@ -79,6 +80,7 @@
     sceneArtFallback: document.getElementById('sceneArtFallback'),
     sceneChapter: document.getElementById('sceneChapter'),
     sceneTitle: document.getElementById('sceneTitle'),
+    sceneMapButton: document.getElementById('sceneMapButton'),
     sceneHistoryButton: document.getElementById('sceneHistoryButton'),
     scenePauseButton: document.getElementById('scenePauseButton'),
     dialogueCard: document.getElementById('dialogueCard'),
@@ -99,6 +101,25 @@
     voiceCaptionText: document.getElementById('voiceCaptionText'),
     voiceProgress: document.getElementById('voiceProgress'),
     voiceAudio: document.getElementById('voiceAudio'),
+
+    travelOverlay: document.getElementById('travelOverlay'),
+    travelMapImage: document.getElementById('travelMapImage'),
+    travelRouteLayer: document.getElementById('travelRouteLayer'),
+    travelMapMarkers: document.getElementById('travelMapMarkers'),
+    travelerToken: document.getElementById('travelerToken'),
+    travelTitle: document.getElementById('travelTitle'),
+    travelFromName: document.getElementById('travelFromName'),
+    travelToName: document.getElementById('travelToName'),
+    travelDescription: document.getElementById('travelDescription'),
+    travelNarration: document.getElementById('travelNarration'),
+    travelNarrationText: document.getElementById('travelNarrationText'),
+    travelMode: document.getElementById('travelMode'),
+    travelSpan: document.getElementById('travelSpan'),
+    travelChapterRail: document.getElementById('travelChapterRail'),
+    travelMapSummary: document.getElementById('travelMapSummary'),
+    travelReplayButton: document.getElementById('travelReplayButton'),
+    travelContinueButton: document.getElementById('travelContinueButton'),
+    travelContinueText: document.getElementById('travelContinueText'),
 
     gameOverOverlay: document.getElementById('gameOverOverlay'),
     gameOverTitle: document.getElementById('gameOverTitle'),
@@ -126,6 +147,7 @@
     pauseCheckpointName: document.getElementById('pauseCheckpointName'),
     resumeButton: document.getElementById('resumeButton'),
     saveNowButton: document.getElementById('saveNowButton'),
+    pauseMapButton: document.getElementById('pauseMapButton'),
     pauseRetryButton: document.getElementById('pauseRetryButton'),
     pauseSettingsButton: document.getElementById('pauseSettingsButton'),
     pauseHelpButton: document.getElementById('pauseHelpButton'),
@@ -149,6 +171,14 @@
     transcriptLocation: document.getElementById('transcriptLocation'),
     transcriptCount: document.getElementById('transcriptCount'),
     transcriptList: document.getElementById('transcriptList'),
+    worldMapDialog: document.getElementById('worldMapDialog'),
+    worldMapImage: document.getElementById('worldMapImage'),
+    worldMapRouteLayer: document.getElementById('worldMapRouteLayer'),
+    worldMapMarkers: document.getElementById('worldMapMarkers'),
+    worldMapCurrentName: document.getElementById('worldMapCurrentName'),
+    worldMapCurrentRegion: document.getElementById('worldMapCurrentRegion'),
+    worldMapCurrentDescription: document.getElementById('worldMapCurrentDescription'),
+    worldMapJourneyList: document.getElementById('worldMapJourneyList'),
     saveStatus: document.getElementById('saveStatus'),
   };
 
@@ -313,6 +343,9 @@
       items: [],
       encounters: {},
       objective: 'Gather coppercaps, moonbells, and fox-ears.',
+      visitedMaps: ['birchwood'],
+      journeyLog: [],
+      pendingTravel: null,
       checkpoint: null,
       ending: null,
       transcript: [],
@@ -338,9 +371,30 @@
       clues: Array.isArray(candidate.clues) ? candidate.clues : [],
       items: Array.isArray(candidate.items) ? candidate.items : [],
       encounters: candidate.encounters && typeof candidate.encounters === 'object' ? candidate.encounters : {},
+      visitedMaps: Array.isArray(candidate.visitedMaps)
+        ? candidate.visitedMaps.filter((id) => mapData.maps[id])
+        : ['birchwood'],
+      journeyLog: Array.isArray(candidate.journeyLog)
+        ? candidate.journeyLog.filter((entry) => (
+          entry
+          && mapData.maps[entry.fromMapId]
+          && mapData.maps[entry.toMapId]
+        ))
+        : [],
       transcript: Array.isArray(candidate.transcript) ? candidate.transcript.slice(-MAX_TRANSCRIPT_ENTRIES) : [],
       settings: { ...settings },
     };
+    if (!normalized.visitedMaps.includes(normalized.mapId)) normalized.visitedMaps.push(normalized.mapId);
+    const pendingScene = candidate.pendingTravel?.sceneId
+      ? story.scenes[candidate.pendingTravel.sceneId]
+      : null;
+    normalized.pendingTravel = pendingScene?.onComplete?.travel
+      && mapData.maps[candidate.pendingTravel.fromMapId]
+      ? {
+        sceneId: candidate.pendingTravel.sceneId,
+        fromMapId: candidate.pendingTravel.fromMapId,
+      }
+      : null;
     normalized.flags.mushroomsGathered = Number(normalized.flags.mushroomsGathered) || 0;
     normalized.flags.truthScore = Number(normalized.flags.truthScore) || 0;
     normalized.flags.bramTrust = Number(normalized.flags.bramTrust) || 0;
@@ -486,6 +540,7 @@
     dom.loadingScreen.hidden = true;
     dom.gameScreen.hidden = true;
     dom.sceneOverlay.hidden = true;
+    dom.travelOverlay.hidden = true;
     dom.gameOverOverlay.hidden = true;
     dom.endingOverlay.hidden = true;
     dom.titleScreen.hidden = false;
@@ -501,6 +556,7 @@
     dom.loadingScreen.hidden = true;
     dom.gameOverOverlay.hidden = true;
     dom.endingOverlay.hidden = true;
+    dom.travelOverlay.hidden = true;
     dom.gameScreen.hidden = false;
     dom.gameScreen.inert = false;
     dom.shell.dataset.screen = 'game';
@@ -539,7 +595,9 @@
     currentMap = mapData.maps[state.mapId];
     showGame();
     setMap(state.mapId, null, { preservePosition: true });
-    if (state.ending && story.endings[state.ending]) {
+    if (state.pendingTravel) {
+      showTravelTransition();
+    } else if (state.ending && story.endings[state.ending]) {
       showEnding(state.ending);
     } else {
       announce(`Continued at ${currentMap.name}.`);
@@ -554,6 +612,8 @@
     }
     currentMap = map;
     state.mapId = mapId;
+    if (!Array.isArray(state.visitedMaps)) state.visitedMaps = [];
+    if (!state.visitedMaps.includes(mapId)) state.visitedMaps.push(mapId);
     if (spawnId) {
       const spawn = map.spawns.find((entry) => entry.id === spawnId) || map.spawns[0];
       state.spawnId = spawn.id;
@@ -730,6 +790,7 @@
     selectedChoiceIndex = 0;
     dom.gameOverOverlay.hidden = true;
     dom.endingOverlay.hidden = true;
+    dom.travelOverlay.hidden = true;
     dom.gameScreen.inert = true;
     dom.sceneOverlay.hidden = false;
     dom.sceneChapter.textContent = scene.chapter || currentMap?.chapter || 'The great adventure';
@@ -1008,7 +1069,13 @@
     activeScene = null;
     applyEffects(completion.effects || []);
     if (completion.travel) {
-      setMap(completion.travel.mapId, completion.travel.spawnId);
+      state.pendingTravel = {
+        sceneId: completed.scene.id,
+        fromMapId: state.mapId,
+      };
+      persistState();
+      showTravelTransition();
+      return;
     }
     applyEffects(completion.effectsAfterTravel || []);
     if (completion.checkpoint) {
@@ -1026,6 +1093,258 @@
     dom.voiceCaption.hidden = true;
     updateInteractionPrompt();
     dom.worldCanvas.focus({ preventScroll: true });
+  }
+
+  function getPendingTravelDetails() {
+    const pending = state.pendingTravel;
+    const scene = pending?.sceneId ? story.scenes[pending.sceneId] : null;
+    const completion = scene?.onComplete || null;
+    const travel = completion?.travel || null;
+    const fromMapId = pending?.fromMapId;
+    const toMapId = travel?.mapId;
+    if (!scene || !travel || !mapData.maps[fromMapId] || !mapData.maps[toMapId]) return null;
+    const journey = mapData.world?.journeys?.[`${fromMapId}:${toMapId}`] || {
+      mode: 'Overland',
+      span: 'Across the Hand',
+      via: [],
+      description: `The party leaves ${mapData.maps[fromMapId].name} and continues toward ${mapData.maps[toMapId].name}.`,
+    };
+    return {
+      pending,
+      scene,
+      completion,
+      travel,
+      fromMapId,
+      toMapId,
+      fromMap: mapData.maps[fromMapId],
+      toMap: mapData.maps[toMapId],
+      journey,
+    };
+  }
+
+  function showTravelTransition() {
+    const details = getPendingTravelDetails();
+    if (!details) {
+      state.pendingTravel = null;
+      dom.travelOverlay.hidden = true;
+      dom.gameScreen.inert = false;
+      persistState();
+      announce('The saved journey transition was incomplete. Exploration has resumed safely.');
+      return;
+    }
+
+    clearTyping();
+    movementKeys.clear();
+    activeScene = null;
+    dom.sceneOverlay.hidden = true;
+    dom.gameOverOverlay.hidden = true;
+    dom.endingOverlay.hidden = true;
+    dom.gameScreen.inert = true;
+    dom.travelOverlay.hidden = false;
+
+    dom.travelTitle.textContent = `Toward ${details.toMap.name}`;
+    dom.travelFromName.textContent = details.fromMap.name;
+    dom.travelToName.textContent = details.toMap.name;
+    dom.travelDescription.textContent = details.journey.description;
+    dom.travelMode.textContent = details.journey.mode;
+    dom.travelSpan.textContent = details.journey.span;
+    dom.travelContinueText.textContent = `Arrive in ${details.toMap.name}`;
+    dom.travelMapSummary.textContent = `Traveling from ${details.fromMap.name}, ${mapData.world.locations[details.fromMapId]?.region || 'Asterra'}, to ${details.toMap.name}, ${mapData.world.locations[details.toMapId]?.region || 'Asterra'}.`;
+
+    renderWorldMap(dom.travelRouteLayer, dom.travelMapMarkers, {
+      departure: details.fromMapId,
+      destination: details.toMapId,
+    });
+    renderTravelChapterRail(details.fromMapId, details.toMapId);
+    positionTravelerToken(details.fromMapId, details.toMapId);
+
+    const narration = details.journey.narration || '';
+    dom.travelNarration.hidden = !narration;
+    dom.travelNarrationText.textContent = narration;
+    dom.travelReplayButton.disabled = !details.journey.audio;
+    if (details.journey.audio) {
+      if (narration) {
+        addTranscript({
+          type: 'narration',
+          speakerId: 'narrator',
+          speakerName: 'Narrator',
+          text: narration,
+          sceneId: `travel_${details.scene.id}`,
+          mapId: details.fromMapId,
+        });
+      }
+      audio.play(details.journey.audio);
+    } else {
+      audio.showCaption('');
+    }
+
+    announce(`Journey map: ${details.fromMap.name} to ${details.toMap.name}.`);
+    window.setTimeout(() => dom.travelContinueButton.focus({ preventScroll: true }), 40);
+  }
+
+  function positionTravelerToken(fromMapId, toMapId) {
+    const from = mapData.world?.locations?.[fromMapId];
+    const to = mapData.world?.locations?.[toMapId];
+    if (!from || !to) {
+      dom.travelerToken.hidden = true;
+      return;
+    }
+    dom.travelerToken.hidden = false;
+    dom.travelerToken.classList.remove('is-moving');
+    dom.travelerToken.style.setProperty('--from-x', `${from.x}%`);
+    dom.travelerToken.style.setProperty('--from-y', `${from.y}%`);
+    dom.travelerToken.style.setProperty('--to-x', `${to.x}%`);
+    dom.travelerToken.style.setProperty('--to-y', `${to.y}%`);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => dom.travelerToken.classList.add('is-moving'));
+    });
+  }
+
+  function renderTravelChapterRail(fromMapId, toMapId) {
+    const visited = new Set(state.visitedMaps || []);
+    const orderedMapIds = [...visited];
+    if (!orderedMapIds.includes(toMapId)) orderedMapIds.push(toMapId);
+    mapData.mapOrder.forEach((mapId) => {
+      if (!orderedMapIds.includes(mapId)) orderedMapIds.push(mapId);
+    });
+    const fragment = document.createDocumentFragment();
+    orderedMapIds.forEach((mapId, index) => {
+      const item = document.createElement('li');
+      let markerState = visited.has(mapId) ? 'visited' : 'unvisited';
+      if (mapId === fromMapId) markerState = 'departure';
+      if (mapId === toMapId) markerState = 'destination';
+      item.dataset.state = markerState;
+      const chapter = document.createElement('small');
+      chapter.textContent = `STOP ${index + 1}`;
+      const name = document.createElement('strong');
+      name.textContent = mapData.maps[mapId].name.replace(' & Rowanstead', '');
+      item.append(chapter, name);
+      fragment.appendChild(item);
+    });
+    dom.travelChapterRail.replaceChildren(fragment);
+  }
+
+  function renderWorldMap(routeLayer, markerLayer, options = {}) {
+    if (!routeLayer || !markerLayer || !mapData.world) return;
+    const svgNamespace = routeLayer.namespaceURI;
+    const routeFragment = document.createDocumentFragment();
+    const loggedJourneys = Array.isArray(state.journeyLog) ? state.journeyLog : [];
+
+    loggedJourneys.forEach((entry) => {
+      const pathData = getJourneyPath(entry.fromMapId, entry.toMapId);
+      if (!pathData) return;
+      const path = document.createElementNS(svgNamespace, 'path');
+      path.setAttribute('d', pathData);
+      path.setAttribute('class', 'route-past');
+      routeFragment.appendChild(path);
+    });
+
+    if (options.departure && options.destination) {
+      const activePathData = getJourneyPath(options.departure, options.destination);
+      if (activePathData) {
+        const path = document.createElementNS(svgNamespace, 'path');
+        path.setAttribute('d', activePathData);
+        path.setAttribute('class', 'route-active');
+        routeFragment.appendChild(path);
+      }
+    }
+    routeLayer.replaceChildren(routeFragment);
+
+    const visited = new Set(state.visitedMaps || []);
+    const markerFragment = document.createDocumentFragment();
+    Object.entries(mapData.world.locations).forEach(([mapId, location]) => {
+      const marker = document.createElement('span');
+      marker.className = 'world-marker';
+      marker.style.left = `${location.x}%`;
+      marker.style.top = `${location.y}%`;
+      marker.dataset.side = location.labelSide || 'right';
+      let markerState = visited.has(mapId) ? 'visited' : 'unknown';
+      if (mapId === options.current) markerState = 'current';
+      if (mapId === options.departure) markerState = 'departure';
+      if (mapId === options.destination) markerState = 'destination';
+      marker.dataset.state = markerState;
+
+      const dot = document.createElement('i');
+      const label = document.createElement('span');
+      const name = document.createElement('strong');
+      name.textContent = location.name;
+      const region = document.createElement('small');
+      region.textContent = location.region;
+      label.append(name, region);
+      marker.append(dot, label);
+      markerFragment.appendChild(marker);
+    });
+    markerLayer.replaceChildren(markerFragment);
+  }
+
+  function getJourneyPath(fromMapId, toMapId) {
+    const from = mapData.world?.locations?.[fromMapId];
+    const to = mapData.world?.locations?.[toMapId];
+    if (!from || !to) return '';
+    const journey = mapData.world.journeys?.[`${fromMapId}:${toMapId}`];
+    const points = [[from.x, from.y], ...(journey?.via || []), [to.x, to.y]];
+    return points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ');
+  }
+
+  function completeTravelTransition() {
+    const details = getPendingTravelDetails();
+    if (!details) {
+      showTravelTransition();
+      return;
+    }
+    audio.stop(true);
+    state.pendingTravel = null;
+    if (!Array.isArray(state.journeyLog)) state.journeyLog = [];
+    const lastJourney = state.journeyLog[state.journeyLog.length - 1];
+    if (lastJourney?.fromMapId !== details.fromMapId || lastJourney?.toMapId !== details.toMapId) {
+      state.journeyLog.push({
+        fromMapId: details.fromMapId,
+        toMapId: details.toMapId,
+        sceneId: details.scene.id,
+      });
+    }
+    dom.travelOverlay.hidden = true;
+    setMap(details.toMapId, details.travel.spawnId);
+    applyEffects(details.completion.effectsAfterTravel || []);
+    if (details.completion.checkpoint) {
+      createCheckpoint(details.completion.checkpoint, details.completion.next || null);
+    }
+    updateHud();
+    updateParty();
+    persistState();
+    announce(`Arrived in ${details.toMap.name}.`);
+    if (details.completion.next) {
+      startScene(details.completion.next);
+      return;
+    }
+    dom.gameScreen.inert = false;
+    updateInteractionPrompt();
+    dom.worldCanvas.focus({ preventScroll: true });
+  }
+
+  function openWorldMap() {
+    if (!state.started || currentScreen !== 'game') return;
+    const location = mapData.world?.locations?.[state.mapId];
+    renderWorldMap(dom.worldMapRouteLayer, dom.worldMapMarkers, { current: state.mapId });
+    dom.worldMapCurrentName.textContent = location?.name || currentMap?.name || 'Asterra';
+    dom.worldMapCurrentRegion.textContent = location?.region || currentMap?.subtitle || '';
+    dom.worldMapCurrentDescription.textContent = location?.description || currentMap?.ambience || '';
+
+    const fragment = document.createDocumentFragment();
+    (state.visitedMaps || []).forEach((mapId, index) => {
+      const visitedLocation = mapData.world?.locations?.[mapId];
+      if (!visitedLocation) return;
+      const item = document.createElement('li');
+      if (mapId === state.mapId) item.setAttribute('aria-current', 'location');
+      const number = document.createElement('b');
+      number.textContent = String(index + 1);
+      const label = document.createElement('span');
+      label.textContent = `${visitedLocation.name} · ${visitedLocation.region}`;
+      item.append(number, label);
+      fragment.appendChild(item);
+    });
+    dom.worldMapJourneyList.replaceChildren(fragment);
+    showDialog(dom.worldMapDialog);
   }
 
   function applyEffects(effects) {
@@ -1133,6 +1452,7 @@
     clearTyping();
     audio.stop(true);
     dom.sceneOverlay.hidden = true;
+    dom.travelOverlay.hidden = true;
     dom.gameOverTitle.textContent = step.title || 'The story ends here';
     dom.gameOverReason.textContent = step.reason || 'A dangerous choice ended the journey.';
     dom.gameOverLesson.textContent = step.lesson || 'Return to the checkpoint and choose another approach.';
@@ -1156,6 +1476,7 @@
     state.ending = endingId;
     state.objective = 'Journey complete.';
     dom.sceneOverlay.hidden = true;
+    dom.travelOverlay.hidden = true;
     dom.gameOverOverlay.hidden = true;
     dom.gameScreen.inert = true;
     dom.endingImage.src = ending.image;
@@ -1289,12 +1610,12 @@
   }
 
   function closeAllDialogs() {
-    [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog]
+    [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog, dom.worldMapDialog]
       .forEach(closeDialog);
   }
 
   function anyDialogOpen() {
-    return [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog]
+    return [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog, dom.worldMapDialog]
       .some((dialog) => Boolean(dialog?.open));
   }
 
@@ -1924,12 +2245,16 @@
     dom.creditsButton.addEventListener('click', () => showDialog(dom.creditsDialog));
     dom.titleAudioButton.addEventListener('click', toggleVoiceMute);
     dom.gameAudioButton.addEventListener('click', toggleVoiceMute);
+    dom.gameMapButton.addEventListener('click', openWorldMap);
     dom.gameTranscriptButton.addEventListener('click', openTranscript);
+    dom.sceneMapButton.addEventListener('click', openWorldMap);
     dom.sceneHistoryButton.addEventListener('click', openTranscript);
     dom.pauseButton.addEventListener('click', openPause);
     dom.scenePauseButton.addEventListener('click', openPause);
     dom.advanceButton.addEventListener('click', advanceScene);
     dom.replayVoiceButton.addEventListener('click', () => audio.replay());
+    dom.travelReplayButton.addEventListener('click', () => audio.replay());
+    dom.travelContinueButton.addEventListener('click', completeTravelTransition);
     dom.touchInteractButton.addEventListener('click', () => {
       audio.unlock();
       interact();
@@ -1945,6 +2270,10 @@
 
     dom.resumeButton.addEventListener('click', () => closeDialog(dom.pauseDialog));
     dom.saveNowButton.addEventListener('click', () => persistState('Progress saved locally.'));
+    dom.pauseMapButton.addEventListener('click', () => {
+      closeDialog(dom.pauseDialog);
+      openWorldMap();
+    });
     dom.pauseRetryButton.addEventListener('click', () => {
       closeDialog(dom.pauseDialog);
       retryCheckpoint();
@@ -2029,6 +2358,13 @@
     dom.endingImage.addEventListener('error', () => {
       dom.endingImage.hidden = true;
     });
+    [dom.travelMapImage, dom.worldMapImage].forEach((image) => {
+      image.addEventListener('error', () => {
+        image.hidden = true;
+        image.parentElement.dataset.imageFailed = 'true';
+        announce('The painted world chart could not be loaded. Location labels and route information remain available.');
+      });
+    });
 
     motionPreference.addEventListener?.('change', (event) => {
       if (!settings.reducedMotionExplicit) {
@@ -2045,7 +2381,7 @@
     audio.unlock();
     if (anyDialogOpen()) {
       if (event.key === 'Escape') {
-        const openDialog = [dom.transcriptDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.pauseDialog]
+        const openDialog = [dom.worldMapDialog, dom.transcriptDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.pauseDialog]
           .find((dialog) => dialog.open);
         closeDialog(openDialog);
       }
@@ -2053,7 +2389,30 @@
     }
     if (!dom.gameOverOverlay.hidden || !dom.endingOverlay.hidden) return;
 
+    if (!dom.travelOverlay.hidden) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'e' || event.key === 'E') {
+        event.preventDefault();
+        completeTravelTransition();
+        return;
+      }
+      if (event.key === 't' || event.key === 'T') {
+        event.preventDefault();
+        openTranscript();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        openPause();
+      }
+      return;
+    }
+
     if (activeScene) {
+      if (event.key === 'm' || event.key === 'M') {
+        event.preventDefault();
+        openWorldMap();
+        return;
+      }
       const currentStep = activeScene.scene.steps[activeScene.stepIndex];
       if (currentStep?.type === 'choice') {
         if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
@@ -2110,6 +2469,11 @@
     if (currentScreen === 'game' && (event.key === 't' || event.key === 'T')) {
       event.preventDefault();
       openTranscript();
+      return;
+    }
+    if (currentScreen === 'game' && (event.key === 'm' || event.key === 'M')) {
+      event.preventDefault();
+      openWorldMap();
       return;
     }
     if (currentScreen === 'game' && event.key === 'Escape') {

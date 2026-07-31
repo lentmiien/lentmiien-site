@@ -15,6 +15,7 @@ The game has no runtime network or third-party media dependency. It imports the 
 ## Format
 
 - Seven compact, authored top-down maps rendered from maintainable tile data.
+- A painted chart of the complete Hand with labeled HTML markers, visited-route trails, an always-available current-location view, and a dedicated travel interlude before every map change.
 - Environmental inspection, optional clues, NPC conversations, and route-order consequences.
 - Illustrated dialogue and cinematic story scenes.
 - Five choice-driven story encounters with no conventional combat, equipment, levels, or grinding.
@@ -30,6 +31,7 @@ The game has no runtime network or third-party media dependency. It imports the 
 | Interact / advance | Enter, Space, or E | Interact / Continue |
 | Select a choice | Arrow keys and Enter, or number keys | Choice button |
 | Pause / cancel | Escape | Pause button |
+| Open world map | M or Map button | Map button |
 | Review dialogue | Transcript button | Transcript button |
 
 All menu and dialogue controls use semantic HTML and are keyboard accessible. Settings include voice mute and volume, automatic voice playback, three text speeds, reduced motion, decorative-animation control, and high contrast. Captions and exact transcripts accompany every spoken line.
@@ -38,9 +40,9 @@ All menu and dialogue controls use semantic HTML and are keyboard accessible. Se
 
 - `index.html` — accessible standalone shell and all menus.
 - `css/styles.css` — responsive presentation and accessibility states.
-- `js/game.js` — exploration renderer, scene interpreter, state, save, input, and UI.
+- `js/game.js` — exploration renderer, scene interpreter, world-map travel flow, state, save, input, and UI.
 - `js/story.js` — data-driven scenes, choices, encounters, and endings.
-- `js/maps.js` — tile maps, collision, spawns, NPCs, and interaction points.
+- `js/maps.js` — tile maps, collision, spawns, NPCs, world-chart coordinates, travel legs, and interaction points.
 - `js/characters.js` — recurring-character presentation and voice assignments.
 - `js/audio.js` — local voice playback and graceful audio fallback.
 - `docs/GAME-DESIGN.md` — mechanics, narrative structure, flags, endings, and adaptation decisions.
@@ -50,7 +52,7 @@ All menu and dialogue controls use semantic HTML and are keyboard accessible. Se
 
 ## Creative additions
 
-The original outline supplies the two dimensions, Hand-shaped continent, seven crystals, destroyed village, injured knight, grieving woodcutter, desperate king, ill queen, airship, eclipse rule, and three ending outcomes. The adaptation adds the names Asterra and Veyra; protagonist Aren Vale; Willowmere, Greenwake, Ashfinger, Cinder Thumb, Crown City, and Frostcrown; the civilians Mira and Mara; Prince Lucen’s resistance; the Starling airship; the moonleaf cure; optional clue trails; rescue outcomes; and connective scenes that make each ending a deliberate choice.
+The original outline supplies the two dimensions, Hand-shaped continent, seven crystals, destroyed village, injured knight, grieving woodcutter, desperate king, ill queen, airship, eclipse rule, and three ending outcomes. The adaptation adds the names Asterra and Veyra; protagonist Aren Vale; Willowmere, Greenwake, Ashfinger, Cinder Thumb, Crown City, and Frostcrown; the civilians Mira and Mara; Prince Lucen’s resistance; the Starling airship; the moonleaf cure; optional clue trails; rescue outcomes; a complete authored geography; and connective scenes that make each journey and ending a deliberate choice.
 
 Artwork was generated locally with OpenAI image generation and then reviewed, corrected, cropped, and optimized for the game. Exploration tiles and sprites are deterministic canvas art so collision and silhouettes remain readable. Narrator and protagonist voice clips were synthesized locally with Piper and converted locally with FFmpeg. Generated-media disclosures and source notes are also available in the in-game Credits screen.
 
@@ -62,4 +64,4 @@ Run the focused suite from the repository root:
 npm test -- --runInBand tests/unit/lentmancGame.test.js --coverage=false
 ```
 
-The suite checks the standalone shell, story graph, maps, collision and references, ending reachability, checkpoint recovery, voice restrictions, exact transcript alignment, local asset integrity, accessibility controls, responsive hooks, save fallback, and route registration.
+The suite checks the standalone shell, story graph, exploration maps, world-chart coordinates and travel legs, collision and references, ending reachability, checkpoint recovery, resumable mid-travel saves, voice restrictions, exact transcript alignment, local asset integrity, accessibility controls, responsive hooks, save fallback, and route registration.

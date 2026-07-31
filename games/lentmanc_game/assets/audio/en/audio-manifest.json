@@ -189,6 +189,50 @@
       "wav": "assets/audio/en/source-wav/narrator_ending_open.wav",
       "mp3": "assets/audio/en/mp3/narrator_ending_open.mp3",
       "durationSeconds": 14.028
+    },
+    {
+      "id": "narrator_travel_eastern_ridge",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "Birchwood stood on the high eastern ridge. Willowmere waited below, close enough for Aren to see home long before he understood what the smoke had taken.",
+      "transcript": "assets/audio/en/transcripts/narrator_travel_eastern_ridge.txt",
+      "wav": "assets/audio/en/source-wav/narrator_travel_eastern_ridge.wav",
+      "mp3": "assets/audio/en/mp3/narrator_travel_eastern_ridge.mp3",
+      "durationSeconds": 10.031
+    },
+    {
+      "id": "narrator_travel_across_hand",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "From the river fingers, the road bent west across the broad palm of the Hand. Farms gave way to black stone, and Cinder Thumb glowed against the evening.",
+      "transcript": "assets/audio/en/transcripts/narrator_travel_across_hand.txt",
+      "wav": "assets/audio/en/source-wav/narrator_travel_across_hand.wav",
+      "mp3": "assets/audio/en/mp3/narrator_travel_across_hand.mp3",
+      "durationSeconds": 9.718
+    },
+    {
+      "id": "narrator_travel_to_palm",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "They left the burning thumb by an old quarry road. Beyond the fields of the palm, Crown City rose above the sixth circle and all the answers the palace had buried.",
+      "transcript": "assets/audio/en/transcripts/narrator_travel_to_palm.txt",
+      "wav": "assets/audio/en/source-wav/narrator_travel_to_palm.wav",
+      "mp3": "assets/audio/en/mp3/narrator_travel_to_palm.mp3",
+      "durationSeconds": 10.507
+    },
+    {
+      "id": "narrator_travel_beyond_hand",
+      "speakerId": "narrator",
+      "speakerName": "Narrator",
+      "voice": "Amy",
+      "text": "The Starling crossed the northern fingertips and flew out over open water. Frostcrown waited beyond the Hand, alone beneath the darkening moon.",
+      "transcript": "assets/audio/en/transcripts/narrator_travel_beyond_hand.txt",
+      "wav": "assets/audio/en/source-wav/narrator_travel_beyond_hand.wav",
+      "mp3": "assets/audio/en/mp3/narrator_travel_beyond_hand.mp3",
+      "durationSeconds": 9.218
     }
   ]
 }

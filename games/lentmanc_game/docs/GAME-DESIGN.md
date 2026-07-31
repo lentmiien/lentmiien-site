@@ -15,7 +15,7 @@ The two dimensions are named **Asterra** (D1, where play begins) and **Veyra** (
 3. Reach a story trigger and watch a short illustrated dialogue or cinematic.
 4. Make a choice that changes trust, rescue outcomes, available approaches, or the ending trajectory.
 5. Resolve a story encounter without conventional combat.
-6. Reach an automatic checkpoint, then travel to the next authored map.
+6. Close the local scene, then cross a dedicated world-chart interlude that names the departure, destination, route, travel mode, and passage of time before arriving at the next authored map.
 
 The bulk of the experience is delivered through cut-scenes, but each chapter first gives the player room to walk, inspect, and form an opinion.
 
@@ -26,7 +26,7 @@ The bulk of the experience is delivered through cut-scenes, but each chapter fir
 - Authored maps use rectangular character grids in `js/maps.js`; they are never screenshots.
 - The canvas scales the visible world to fit while preserving its aspect ratio. The camera eases toward the player on maps larger than the viewport.
 - Four-direction movement uses collision-aware continuous motion over the tile grid.
-- Keyboard: Arrow keys or WASD to move; Enter, Space, or E to interact/advance; Escape to pause/cancel; number keys or arrows to select choices.
+- Keyboard: Arrow keys or WASD to move; Enter, Space, or E to interact/advance; M to open the world chart; Escape to pause/cancel; number keys or arrows to select choices.
 - Touch: a four-way directional pad plus a large context-sensitive Interact button.
 - Gamepad is not included; keyboard and touch receive the complete interaction set.
 
@@ -43,12 +43,13 @@ Tile symbols separate visuals from rules. Each map defines walkable ground, soli
 7. **Frostcrown Isle** — the last crystal circle during a total lunar eclipse, the final multi-choice encounter, and the branch into one of three endings.
 8. **Veyra** — illustrated cut-scenes only. It is reached during the reconciliation ending rather than used as an exploration map.
 
-Travel between distant fingers is compressed into short narrated transitions. This keeps the Hand geographically large without padding the play time with empty walking.
+Travel between distant fingers is compressed into short narrated transitions and a full-screen chart of the Hand. The chart draws the completed route, highlights the point of departure and destination, moves a visible traveler marker, and preserves all prior legs as a journey trail. The same chart is available during exploration and cut-scenes through the **Map** button or `M`, where it marks Aren’s current location. This keeps the Hand geographically large and legible without padding play time with empty walking.
 
 ## Interaction system
 
 - Nearby interactable NPCs and objects receive an amber focus marker.
 - A DOM prompt describes the action in plain English, for example “E — Inspect the scorched banner.”
+- The world chart is a DOM/SVG interface layered over a local painted backdrop. Labels, state markers, route lines, current-location copy, and journey history remain readable without depending on text baked into the image.
 - Important objects are usable from any adjacent walkable tile.
 - Required interactions are tracked by stable IDs. Optional discoveries add transcript entries and flags but never soft-lock progress.
 - Exit tiles show the destination and can require a scene, clue count, or completed objective.
@@ -86,6 +87,8 @@ The save schema explicitly tracks:
 - finger-route order;
 - rescued village and optional companion state;
 - encounter outcomes;
+- visited map IDs and an ordered journey log;
+- a resumable pending-travel record, so closing the page during a chart interlude cannot strand progression;
 - checkpoint snapshot;
 - ending ID;
 - settings and accessibility preferences.
@@ -152,6 +155,7 @@ The endings preserve the three source outcomes while translating “defeat” in
 ## Failure, checkpoints, save, and retry
 
 - Automatic local save occurs after every completed scene, map transition, setting change, and checkpoint.
+- A scene that initiates travel first stores a compact pending-travel record. Continue reopens the route chart, and the destination map is committed only after the player confirms arrival.
 - Eight named checkpoints are created at the smoke ridge, on reaching Willowmere, at Rowanstead’s route fork, after the finger chapter, on entering and leaving Cinder Thumb, aboard the Starling, and on arrival at Frostcrown.
 - Game over explains which warning was ignored and offers **Retry checkpoint**, **Return to title**, and **Restart adventure**.
 - Pause offers **Resume**, **Save now**, **Retry checkpoint**, **Settings**, **Help**, and **Title screen**.
@@ -167,6 +171,7 @@ The endings preserve the three source outcomes while translating “defeat” in
 - Bram, Cael, Mira, Mara, Edric, Elara, and Lucen remain text-only.
 - Voice playback begins only after New Game/Continue or an explicit replay gesture.
 - Exact captions accompany every spoken clip; a replay control is present during voiced lines.
+- Four additional Amy-voice clips narrate the major geographic crossings: the eastern ridge, the river fingers to Cinder Thumb, Cinder Thumb to the central palm, and the Starling’s flight beyond the Hand.
 - Voice volume, mute, and automatic voice playback are independently configurable.
 - Text speed offers instant, fast, and relaxed modes.
 - The UI uses semantic dialogs, buttons, labels, headings, landmarks, focus trapping, polite status announcements, and visible focus rings.
@@ -177,7 +182,7 @@ The endings preserve the three source outcomes while translating “defeat” in
 
 ## Visual direction
 
-Character and scene artwork uses a coherent anime-inspired painted-2D style: clean expressive faces, restrained linework, textured fantasy fabrics, cinematic rim light, and slightly simplified shapes that remain readable at small sizes. Maps use deterministic canvas tiles with the same graphite shadows, ember firelight, amber magic, desaturated forest greens, and Veyran cyan accents.
+Character and scene artwork uses a coherent anime-inspired painted-2D style: clean expressive faces, restrained linework, textured fantasy fabrics, cinematic rim light, and slightly simplified shapes that remain readable at small sizes. Exploration maps use deterministic canvas tiles with the same graphite shadows, ember firelight, amber magic, desaturated forest greens, and Veyran cyan accents. The world chart uses a generated text-free painted map beneath deterministic HTML labels and SVG routes, keeping geography atmospheric while all critical information stays precise and accessible.
 
 The page imports `/css/color-theme.css`. Graphite is the structural base, Ember marks primary actions, Golden Amber marks focus, links, crystal light, and highlights, and semantic Jade/Vermilion mark success/danger. Subject colors never replace the shared UI hierarchy.
 
@@ -190,5 +195,6 @@ The page imports `/css/color-theme.css`. Graphite is the structural base, Ember 
 - Mira, Lucen, and Mara were expanded to give affected civilians, the future government, and the airship plot distinct voices.
 - “Cid” became Mara’s workshop nickname, **Cinder**, as a respectful nod rather than importing a character from another property.
 - The main-island chapter, airship interlude, final island, and Veyran resolution were newly authored because the source leaves them blank.
+- The exact placement of Birchwood, Willowmere, Greenwake, Ashfinger, Cinder Thumb, Crown City, and Frostcrown—and the road, canal, quarry, and airship routes between them—was added to make the Hand function as a coherent traveled place rather than a list of scene backdrops.
 - The seven-crystal eclipse rules are preserved exactly: crystals must leave their circles to be destroyed; a total lunar eclipse weakens them; one active crystal can keep the gate open only by draining its surroundings; all seven are required to reopen the gate near eclipse.
 - No historical or real-world factual claims are made; the setting is wholly fictional.

@@ -2,10 +2,12 @@
 
 The game uses two distinct local Piper voices:
 
-- **Narrator:** `en_US-amy-medium` — warm female English narration for introductions, transitions, and endings.
+- **Narrator:** `en_US-amy-medium` — warm female English narration for introductions, world-chart travel interludes, transitions, and endings.
 - **Aren Vale:** `en_US-lessac-medium` — clear male English delivery for selected protagonist lines.
 
 All other characters are text-only and have no synthesized voice assignment.
+
+The manifest contains **20 clips**: 13 narrator clips (including four geographic travel narrations) and 7 selected Aren lines. A travel clip may be reused by branch-equivalent routes whose spoken script is exactly the same.
 
 Each clip has:
 

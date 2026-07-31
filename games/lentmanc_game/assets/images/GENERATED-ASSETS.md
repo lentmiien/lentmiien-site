@@ -18,6 +18,7 @@ This manifest was initialized before production artwork, as required by the proj
 | --- | --- | --- | --- | --- |
 | Runtime canvas tile renderer | Seven authored exploration maps | 48×48 logical tiles drawn from terrain tokens in `js/maps.js`; layered fills, edge lines, landmarks, collision highlights, props, character silhouettes, and animated amber crystal light | Responsive canvas; 48×48 logical tile | Code-native, no external source. It favors deterministic collision readability over a generated tilesheet. |
 | Runtime character sprites | Aren and recurring NPC exploration silhouettes | Two-head-tall canvas sprites assembled from each character’s invariant palette, hair silhouette, clothing blocks, and distinguishing prop | Approximately 28×40 logical pixels | Code-native; not used as portrait reference. |
+| World-chart route overlay | Current location, visited trail, and every inter-location journey | Responsive HTML labels and state markers plus SVG route paths positioned from authored percentage coordinates in `js/maps.js` | Responsive over a 3:2 chart | Code-native overlay. Names, route state, and current position are never baked into or inferred from the generated backdrop. |
 
 ## Generated character references
 
@@ -90,6 +91,15 @@ This manifest was initialized before production artwork, as required by the proj
 - **Processing:** initial generation contained eight beacons. A targeted edit removed the small extra beacon immediately left of the portal, leaving exactly seven. The corrected 1672×941 source was center-cropped/resized to 1600×900 and encoded as WebP.
 - **Continuity caveat:** the key art is a symbolic aerial view, not a navigable or scale-accurate map. The central cyan ring is the gate, not an eighth crystal.
 
+### `environments/hand-world-map.webp`
+
+- **Purpose:** world-chart backdrop for the always-available map dialog and every travel interlude.
+- **Dimensions:** 1536×1024 WebP, quality 86.
+- **Prompt:** “Top-down painted fantasy map of Asterra’s Hand-shaped island-continent: broad central palm; five distinct peninsulas; volcanic southwest thumb; forested eastern finger; southeastern reed-and-river finger; rain-dark northeastern mill valley; tiny capital landmark in the upper central palm; separate icy island beyond the northern fingertips; readable paths, rivers, forests, farmland, basalt, cliffs, and snow; anime-inspired hand-painted 2D fantasy cartography; Graphite-blue sea, desaturated forest green, Ember orange, Golden Amber paths, pale cyan ice; entire coastline and generous ocean margin; absolutely no words, labels, compass, legend, border, characters, ships, route lines, pins, UI, signature, logo, or watermark.”
+- **Character reference used:** none; this is an environment-only asset based on the geography defined in `docs/GAME-DESIGN.md` and `js/maps.js`.
+- **Processing:** copied from the built-in image generator’s 1536×1024 PNG output, visually reviewed, and encoded locally to WebP quality 86 with FFmpeg/libwebp. No crop was required.
+- **Continuity caveat:** the painting supplies terrain mood and the recognizable hand silhouette, while exact locations and routes are deterministic overlays. This avoids treating generated coast details as gameplay coordinates and keeps all labels accessible.
+
 ### `scenes/willowmere-ruins.webp`
 
 - **Purpose:** prologue destruction and Bram’s arrival.
@@ -149,7 +159,7 @@ One 1774×887 built-in generation produced three explicitly isolated equal panel
 
 - 5 approved generated character-reference images.
 - 8 processed dialogue portraits.
-- 1 generated title/environment illustration plus 1 thumbnail derivative.
+- 2 generated title/environment illustrations plus 1 thumbnail derivative.
 - 5 generated cinematic story illustrations.
 - 3 ending illustrations cropped from 1 generated triptych.
 - 0 raster sprite sheets and 0 raster tilesheets by design.

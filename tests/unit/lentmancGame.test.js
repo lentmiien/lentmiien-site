@@ -129,9 +129,15 @@ describe('The great adventure standalone RPG', () => {
       'creditsButton',
       'gameScreen',
       'worldCanvas',
+      'gameMapButton',
       'sceneOverlay',
+      'sceneMapButton',
       'dialogueCard',
       'choiceRegion',
+      'travelOverlay',
+      'travelRouteLayer',
+      'travelContinueButton',
+      'worldMapDialog',
       'pauseDialog',
       'gameOverOverlay',
       'retryCheckpointButton',
@@ -160,6 +166,7 @@ describe('The great adventure standalone RPG', () => {
     expect(gameSource).toContain("event.key === ' '");
     expect(gameSource).toContain("event.key === 'e'");
     expect(gameSource).toContain("event.key === 'Escape'");
+    expect(gameSource).toContain("event.key === 'm'");
     expect(gameSource).toContain('/^[1-4]$/');
     expect(gameSource).toContain("button.addEventListener('pointerdown'");
     expect(gameSource).toContain("button.addEventListener('pointerup'");
@@ -211,6 +218,56 @@ describe('The great adventure standalone RPG', () => {
       'open_sky',
     ]);
     expect(Object.values(story.endings).map((ending) => ending.number).sort()).toEqual([1, 2, 3]);
+  });
+
+  test('defines a complete world chart, current-location markers, and every travel leg', () => {
+    expect(mapData.world.image).toBe('assets/images/environments/hand-world-map.webp');
+    expect(Object.keys(mapData.world.locations)).toEqual(mapData.mapOrder);
+    Object.entries(mapData.world.locations).forEach(([mapId, location]) => {
+      expect(mapData.maps[mapId]).toBeDefined();
+      expect(location.mapId).toBe(mapId);
+      expect(location.name).toEqual(expect.any(String));
+      expect(location.region).toEqual(expect.any(String));
+      expect(location.x).toBeGreaterThanOrEqual(0);
+      expect(location.x).toBeLessThanOrEqual(100);
+      expect(location.y).toBeGreaterThanOrEqual(0);
+      expect(location.y).toBeLessThanOrEqual(100);
+    });
+
+    const expectedLegs = [
+      'birchwood:willowmere',
+      'willowmere:greenwake',
+      'willowmere:ashfinger',
+      'greenwake:ashfinger',
+      'ashfinger:greenwake',
+      'greenwake:cinder_thumb',
+      'ashfinger:cinder_thumb',
+      'cinder_thumb:crown_city',
+      'crown_city:frostcrown',
+    ];
+    expect(Object.keys(mapData.world.journeys)).toEqual(expectedLegs);
+    expectedLegs.forEach((key) => {
+      const [fromMapId, toMapId] = key.split(':');
+      const journey = mapData.world.journeys[key];
+      expect(mapData.world.locations[fromMapId]).toBeDefined();
+      expect(mapData.world.locations[toMapId]).toBeDefined();
+      expect(journey.mode).toEqual(expect.any(String));
+      expect(journey.span).toEqual(expect.any(String));
+      expect(journey.description.length).toBeGreaterThan(40);
+      (journey.via || []).forEach(([x, y]) => {
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThanOrEqual(100);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(y).toBeLessThanOrEqual(100);
+      });
+    });
+
+    expect(gameSource).toContain('function showTravelTransition');
+    expect(gameSource).toContain('function renderWorldMap');
+    expect(gameSource).toContain('function completeTravelTransition');
+    expect(gameSource).toContain('Journey map:');
+    expect(html).toContain('YOU ARE HERE');
+    expect(html).toContain('CROSSING ASTERRA');
   });
 
   test('keeps all scene, choice, speaker, travel, and ending references valid', () => {
@@ -384,6 +441,9 @@ describe('The great adventure standalone RPG', () => {
     expect(gameSource).toContain('Local storage is unavailable.');
     expect(gameSource).toContain('function continueGame');
     expect(gameSource).toContain('function restartAdventure');
+    expect(gameSource).toContain('pendingTravel: null');
+    expect(gameSource).toContain('state.pendingTravel = {');
+    expect(gameSource).toContain('if (state.pendingTravel)');
     expect(gameSource).toContain('storage.remove(SAVE_KEY)');
     expect(gameSource).not.toContain('localStorage.clear(');
   });
@@ -464,15 +524,25 @@ describe('The great adventure standalone RPG', () => {
   });
 
   test('aligns every spoken story line with a local transcript, WAV, and MP3', () => {
-    const voicedSteps = collectValues(
+    const voicedStorySteps = collectValues(
       story.scenes,
       (value) => typeof value.audio === 'string' && typeof value.text === 'string',
     );
+    const voicedJourneys = Object.values(mapData.world.journeys)
+      .filter((journey) => journey.audio && journey.narration)
+      .map((journey) => ({
+        type: 'narration',
+        audio: journey.audio,
+        text: journey.narration,
+      }));
+    const voicedSteps = [...new Map(
+      [...voicedStorySteps, ...voicedJourneys].map((step) => [step.audio, step]),
+    ).values()];
     const stepsByAudioId = new Map(voicedSteps.map((step) => [step.audio, step]));
     const clipsById = new Map(audioManifest.clips.map((clip) => [clip.id, clip]));
 
     expect(audioManifest.language).toBe('en');
-    expect(audioManifest.clips).toHaveLength(16);
+    expect(audioManifest.clips).toHaveLength(20);
     expect(new Set(clipsById.keys())).toEqual(new Set(stepsByAudioId.keys()));
     expect(new Set(audioManifest.clips.map((clip) => clip.speakerId))).toEqual(new Set(['narrator', 'aren']));
     expect(Object.entries(characters).filter(([, character]) => character.voice).map(([id]) => id).sort())
