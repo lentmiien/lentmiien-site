@@ -16,6 +16,7 @@ The two dimensions are named **Asterra** (D1, where play begins) and **Veyra** (
 4. Make a choice that changes trust, rescue outcomes, available approaches, or the ending trajectory.
 5. Resolve a story encounter without conventional combat.
 6. Close the local scene, then cross a dedicated world-chart interlude that names the departure, destination, route, travel mode, and passage of time before arriving at the next authored map.
+7. After any ending, open the completion library to revisit the people and places that gave those decisions context.
 
 The bulk of the experience is delivered through cut-scenes, but each chapter first gives the player room to walk, inspect, and form an opinion.
 
@@ -72,7 +73,7 @@ Scene steps may:
 - create a checkpoint;
 - resolve an ending or game-over state.
 
-Dialogue is concise, normally one to three sentences per card. Optional lore is placed in journals, monuments, tools, and conversations. All displayed dialogue and narration is copied into an in-game transcript/history.
+Dialogue is concise, normally one to three sentences per card. The prologue and major handoffs deliberately spend several cards establishing names, relationships, immediate needs, and geography before presenting a decision. Short campfire, treatment, apology, and farewell beats let the recurring cast exist as people outside exposition. Optional lore remains in journals, monuments, tools, and conversations. All displayed dialogue and narration is copied into an in-game transcript/history.
 
 ## Story flags and progression
 
@@ -130,7 +131,7 @@ The protagonist is never presented as capable of winning a conventional duel tha
 
 ### Act I — Smoke
 
-Aren Vale gathers mushrooms on an ordinary afternoon. Returning at dusk, he finds Willowmere destroyed after the king’s army fought a demon beside a crystal circle. His parents are dead. Bram Alder, whose wife and daughter were killed in the earlier Mossreach disaster, stops Aren from turning grief into a suicidal charge. At Rowanstead Farm they meet the wounded Sir Cael, who asks them to prevent the king from restoring all seven crystals but conceals that he came from Veyra and originally removed them.
+At nineteen, Aren Vale works wherever Willowmere needs him and keeps postponing a decision about taking the winter courier road. After weeks of rain, his mother Nessa sends him to gather three mushroom kinds for a shared supper while his father Tomas lends him a newly repaired basket. Returning at dusk, Aren finds Willowmere destroyed after the king’s army fought a demon beside a crystal circle. His parents are dead. Bram Alder, whose wife and daughter were killed in the earlier Mossreach disaster, helps the survivors through the night and stops Aren from turning grief into a suicidal charge. At Rowanstead Farm they meet the wounded Sir Cael, who asks them to prevent the king from restoring all seven crystals but conceals that he came from Veyra and originally removed them.
 
 ### Act II — The fingers
 
@@ -152,6 +153,12 @@ The Starling reaches Frostcrown as the king brings the last crystal to its circl
 
 The endings preserve the three source outcomes while translating “defeat” into story consequences rather than conventional combat. Ending three is the most hopeful, but the game does not label another ending as incorrect.
 
+## Completion library
+
+Completing any ending unlocks a prominent **People & places** action on the ending screen. It opens a semantic, keyboard-accessible dialog containing eleven character entries and eleven setting entries: the principal cast, a combined memory profile for Nessa and Tomas Vale, every exploration map, Rowanstead Farm, Mossreach, Asterra/the Hand, and Veyra. Existing character names, portraits, roles, ages, and pronouns are reused from `js/characters.js`; mapped place names and regions are reused from `js/maps.js`; longer background and story-significance copy lives in `js/story.js`.
+
+The archive is intentionally complete rather than route-gated. Both finger villages are visited on every finished route, while Veyra remains important even when Aren knows it only through Cael, records, and the closed gate. The current ending changes Veyra’s journey label from known testimony to a directly visited place. Rowan, Holt, and the combined Vale-parent memory use a readable monogram fallback because they have no generated portrait. No library selection is persisted: a completed v1 save already records the ending and can regenerate the archive safely.
+
 ## Failure, checkpoints, save, and retry
 
 - Automatic local save occurs after every completed scene, map transition, setting change, and checkpoint.
@@ -160,7 +167,7 @@ The endings preserve the three source outcomes while translating “defeat” in
 - Game over explains which warning was ignored and offers **Retry checkpoint**, **Return to title**, and **Restart adventure**.
 - Pause offers **Resume**, **Save now**, **Retry checkpoint**, **Settings**, **Help**, and **Title screen**.
 - Continue appears only when a valid save exists.
-- A “Continue from ending” save returns to the ending gallery; New Game asks for confirmation before replacing progress.
+- A “Continue from ending” save returns to the ending screen with the completion library available; New Game asks for confirmation before replacing progress.
 - Storage reads and writes are wrapped in `try/catch`. Corrupt or unavailable storage produces a polite warning and keeps the in-memory game fully playable.
 - Restart clears only this game’s save key, never unrelated local storage.
 
@@ -175,7 +182,7 @@ The endings preserve the three source outcomes while translating “defeat” in
 - Voice volume, mute, and automatic voice playback are independently configurable.
 - Text speed offers instant, fast, and relaxed modes.
 - The UI uses semantic dialogs, buttons, labels, headings, landmarks, focus trapping, polite status announcements, and visible focus rings.
-- A transcript/history is available from exploration, dialogue, pause, and endings.
+- A transcript/history is available from exploration, dialogue, pause, and endings. The ending library uses native expandable entries, meaningful headings, local image alt text, and keyboard focus without relying on generated imagery.
 - Reduced motion follows `prefers-reduced-motion` by default and can also be forced on. Decorative particles can be disabled independently.
 - Touch targets are at least 44 CSS pixels, include safe-area padding, and rearrange for narrow portrait and short landscape screens.
 - Essential narrative information never relies on color, animation, audio, or generated imagery alone.
@@ -190,11 +197,14 @@ The page imports `/css/color-theme.css`. Graphite is the structural base, Ember 
 
 - Names were created for all previously unnamed people and dimensions.
 - Aren is nineteen rather than a child, matching the young-adult audience while preserving the “ordinary boy” premise.
+- Nessa and Tomas Vale, the shared supper, and Aren’s postponed courier plan were added to turn the source’s mushroom errand into a short personal prologue whose ordinary details matter after Willowmere burns.
 - Bram’s grief remains, but his role expands from revenge companion to the person who warns Aren what revenge can become.
 - Cael’s concealment is treated as manipulation with understandable stakes, giving the second meeting a meaningful trust decision.
 - Mira, Lucen, and Mara were expanded to give affected civilians, the future government, and the airship plot distinct voices.
 - “Cid” became Mara’s workshop nickname, **Cinder**, as a respectful nod rather than importing a character from another property.
 - The main-island chapter, airship interlude, final island, and Veyran resolution were newly authored because the source leaves them blank.
 - The exact placement of Birchwood, Willowmere, Greenwake, Ashfinger, Cinder Thumb, Crown City, and Frostcrown—and the road, canal, quarry, and airship routes between them—was added to make the Hand function as a coherent traveled place rather than a list of scene backdrops.
+- Expanded introductions, verification beats, treatment scenes, a river-road campfire, the Starling launch conversation, and fuller epilogues were added without changing existing scene IDs, material choices, checkpoints, or ending conditions.
+- The completion library is a new adaptation aid, summarizing character arcs and location significance only after the player reaches an ending.
 - The seven-crystal eclipse rules are preserved exactly: crystals must leave their circles to be destroyed; a total lunar eclipse weakens them; one active crystal can keep the gate open only by draining its surroundings; all seven are required to reopen the gate near eclipse.
 - No historical or real-world factual claims are made; the setting is wholly fictional.

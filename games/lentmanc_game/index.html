@@ -66,7 +66,7 @@
 
         <nav class="title-menu" aria-label="Main menu">
           <button class="menu-button primary" id="newGameButton" type="button">
-            <span><small>Begin at Willowmere</small><strong>New Game</strong></span>
+            <span><small>Begin in Birchwood</small><strong>New Game</strong></span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 8 7-8 7V5Z"></path></svg>
           </button>
           <button class="menu-button" id="continueButton" type="button" disabled>
@@ -101,7 +101,7 @@
     <section class="game-screen" id="gameScreen" hidden aria-label="The great adventure game">
       <header class="game-hud">
         <div class="hud-location">
-          <span class="chapter-kicker" id="chapterKicker">I · An ordinary day</span>
+          <span class="chapter-kicker" id="chapterKicker">Prologue · Before the smoke</span>
           <strong id="mapName">Birchwood</strong>
           <small id="mapSubtitle">Above Willowmere · Late afternoon</small>
         </div>
@@ -194,8 +194,8 @@
 
       <header class="scene-header">
         <div>
-          <span id="sceneChapter">I · An ordinary day</span>
-          <h2 id="sceneTitle">An ordinary afternoon</h2>
+          <span id="sceneChapter">Prologue · Before the smoke</span>
+          <h2 id="sceneTitle">A basket for home</h2>
         </div>
         <div class="scene-header-actions">
           <button class="scene-icon-button" id="sceneMapButton" type="button" aria-label="Open world map">
@@ -327,7 +327,7 @@
       </div>
       <article class="ending-card">
         <p class="eyebrow" id="endingNumber">ENDING 3 OF 3</p>
-        <h2 id="endingTitle">The Open Sky</h2>
+        <h2 id="endingTitle" tabindex="-1">The Open Sky</h2>
         <p class="ending-subtitle" id="endingSubtitle">Mercy with conditions</p>
         <p id="endingSummary"></p>
         <div class="ending-consequence">
@@ -336,7 +336,10 @@
         </div>
         <div class="ending-echoes" id="endingEchoes" aria-label="How earlier choices shaped the epilogue"></div>
         <div class="overlay-actions">
-          <button class="menu-button primary" id="endingTitleButton" type="button">
+          <button class="menu-button primary" id="endingLibraryButton" type="button">
+            <span><small>Journey archive unlocked</small><strong>Explore people & places</strong></span>
+          </button>
+          <button class="menu-button" id="endingTitleButton" type="button">
             <span><small>Journey complete</small><strong>Return to title</strong></span>
           </button>
           <button class="menu-button" id="endingReplayButton" type="button"><strong>Replay ending narration</strong></button>
@@ -345,6 +348,42 @@
         </div>
       </article>
     </section>
+
+    <dialog class="panel-dialog library-dialog" id="libraryDialog" aria-labelledby="libraryTitle" aria-describedby="libraryDescription">
+      <form method="dialog" class="dialog-panel library-panel">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">JOURNEY ARCHIVE</p>
+            <h2 id="libraryTitle">People & places</h2>
+          </div>
+          <button class="dialog-close" value="close" aria-label="Close the journey archive">×</button>
+        </header>
+        <p class="library-description" id="libraryDescription">Completion unlocks the full story library. Open an entry to revisit the people who shaped Aren’s journey and the places crossed along the Hand.</p>
+        <div class="library-sections">
+          <section class="library-section" aria-labelledby="characterLibraryTitle">
+            <header class="library-section-heading">
+              <div>
+                <p class="eyebrow">COMPANIONS, RULERS & WITNESSES</p>
+                <h3 id="characterLibraryTitle">Characters</h3>
+              </div>
+              <span id="characterLibraryCount" aria-label="Character entry count">0</span>
+            </header>
+            <div class="library-list" id="characterLibraryList"></div>
+          </section>
+          <section class="library-section" aria-labelledby="locationLibraryTitle">
+            <header class="library-section-heading">
+              <div>
+                <p class="eyebrow">THE ROUTE ACROSS TWO WORLDS</p>
+                <h3 id="locationLibraryTitle">Locations</h3>
+              </div>
+              <span id="locationLibraryCount" aria-label="Location entry count">0</span>
+            </header>
+            <div class="library-list" id="locationLibraryList"></div>
+          </section>
+        </div>
+        <button class="menu-button primary dialog-done" value="close"><strong>Back to the ending</strong></button>
+      </form>
+    </dialog>
 
     <dialog class="panel-dialog pause-dialog" id="pauseDialog" aria-labelledby="pauseTitle">
       <form method="dialog" class="dialog-panel">

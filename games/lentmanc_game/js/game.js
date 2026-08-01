@@ -138,10 +138,18 @@
     endingSummary: document.getElementById('endingSummary'),
     endingConsequence: document.getElementById('endingConsequence'),
     endingEchoes: document.getElementById('endingEchoes'),
+    endingLibraryButton: document.getElementById('endingLibraryButton'),
     endingTitleButton: document.getElementById('endingTitleButton'),
     endingTranscriptButton: document.getElementById('endingTranscriptButton'),
     endingRestartButton: document.getElementById('endingRestartButton'),
     endingReplayButton: document.getElementById('endingReplayButton'),
+
+    libraryDialog: document.getElementById('libraryDialog'),
+    libraryTitle: document.getElementById('libraryTitle'),
+    characterLibraryCount: document.getElementById('characterLibraryCount'),
+    characterLibraryList: document.getElementById('characterLibraryList'),
+    locationLibraryCount: document.getElementById('locationLibraryCount'),
+    locationLibraryList: document.getElementById('locationLibraryList'),
 
     pauseDialog: document.getElementById('pauseDialog'),
     pauseCheckpointName: document.getElementById('pauseCheckpointName'),
@@ -1355,6 +1363,7 @@
 
   function applyEffect(effect) {
     if (!effect || !effect.type) return;
+    if (effect.when && !evaluate(effect.when)) return;
     switch (effect.type) {
       case 'set':
         state.flags[effect.key] = effect.value;
@@ -1497,7 +1506,7 @@
     populateEndingEchoes();
     dom.endingOverlay.hidden = false;
     persistState('Journey complete. The ending has been saved.');
-    window.setTimeout(() => dom.endingTitleButton.focus(), 40);
+    window.setTimeout(() => dom.endingTitle.focus(), 40);
   }
 
   function populateEndingEchoes() {
@@ -1532,6 +1541,177 @@
       fragment.appendChild(entry);
     });
     dom.endingEchoes.replaceChildren(fragment);
+  }
+
+  function createLibraryMedia({ image, imageAlt, name, accent }) {
+    const media = document.createElement('span');
+    media.className = 'library-entry-media';
+    media.style.setProperty('--library-accent', accent || 'var(--accent)');
+
+    const fallback = document.createElement('span');
+    fallback.className = 'library-entry-fallback';
+    fallback.setAttribute('aria-hidden', 'true');
+    fallback.textContent = name.slice(0, 1).toUpperCase();
+
+    if (image) {
+      const portrait = document.createElement('img');
+      portrait.src = image;
+      portrait.alt = imageAlt || '';
+      portrait.loading = 'lazy';
+      portrait.decoding = 'async';
+      fallback.hidden = true;
+      portrait.addEventListener('error', () => {
+        portrait.hidden = true;
+        fallback.hidden = false;
+      }, { once: true });
+      media.append(portrait);
+    }
+    media.append(fallback);
+    return media;
+  }
+
+  function appendLibraryFact(list, label, value) {
+    if (!value) return;
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const detail = document.createElement('dd');
+    detail.textContent = value;
+    list.append(term, detail);
+  }
+
+  function createLibraryEntry({
+    id,
+    name,
+    subtitle,
+    image,
+    imageAlt,
+    accent,
+    summary,
+    facts,
+    sections,
+    open = false,
+  }) {
+    const details = document.createElement('details');
+    details.className = 'library-entry';
+    details.dataset.entryId = id;
+    details.style.setProperty('--library-accent', accent || 'var(--accent)');
+    details.open = open;
+
+    const heading = document.createElement('summary');
+    heading.append(createLibraryMedia({ image, imageAlt, name, accent }));
+
+    const title = document.createElement('span');
+    title.className = 'library-entry-title';
+    const titleName = document.createElement('strong');
+    titleName.textContent = name;
+    const titleSubtitle = document.createElement('small');
+    titleSubtitle.textContent = subtitle;
+    title.append(titleName, titleSubtitle);
+
+    const disclosure = document.createElement('span');
+    disclosure.className = 'library-entry-disclosure';
+    disclosure.setAttribute('aria-hidden', 'true');
+    heading.append(title, disclosure);
+
+    const body = document.createElement('div');
+    body.className = 'library-entry-body';
+    const introduction = document.createElement('p');
+    introduction.className = 'library-entry-summary';
+    introduction.textContent = summary;
+    body.append(introduction);
+
+    const factList = document.createElement('dl');
+    factList.className = 'library-entry-facts';
+    facts.forEach(([label, value]) => appendLibraryFact(factList, label, value));
+    body.append(factList);
+
+    sections.forEach(([sectionTitle, copy]) => {
+      const section = document.createElement('section');
+      const subheading = document.createElement('h4');
+      subheading.textContent = sectionTitle;
+      const paragraph = document.createElement('p');
+      paragraph.textContent = copy;
+      section.append(subheading, paragraph);
+      body.append(section);
+    });
+
+    details.append(heading, body);
+    return details;
+  }
+
+  function renderLibrary() {
+    const library = story.library || { characters: [], locations: [] };
+    const characterFragment = document.createDocumentFragment();
+    const locationFragment = document.createDocumentFragment();
+
+    library.characters.forEach((entry, index) => {
+      const character = entry.characterId ? characters[entry.characterId] : null;
+      const name = entry.name || character?.name || entry.id;
+      const accent = entry.accent || character?.accent || 'var(--accent)';
+      characterFragment.append(createLibraryEntry({
+        id: entry.id,
+        name,
+        subtitle: entry.epithet,
+        image: entry.image || character?.portrait,
+        imageAlt: entry.imageAlt || character?.portraitAlt,
+        accent,
+        summary: entry.summary,
+        facts: [
+          ['Role', entry.role || character?.role],
+          ['Pronouns', entry.pronouns || character?.pronouns],
+          ['Age', entry.ageLabel || (character?.age ? String(character.age) : 'Not recorded')],
+          ['Home', entry.home],
+        ],
+        sections: [
+          ['In the story', entry.journey],
+          ['Remember', entry.keepsake],
+        ],
+        open: index === 0,
+      }));
+    });
+
+    library.locations.forEach((entry) => {
+      const mappedLocation = entry.mapId ? mapData.world.locations[entry.mapId] : null;
+      const name = entry.name || mappedLocation?.name || entry.id;
+      const region = entry.region || mappedLocation?.region || 'Asterra';
+      const enteredVeyra = entry.id === 'veyra' && state.ending === 'open_sky';
+      let visited = entry.knownOnly !== true;
+      if (entry.mapId) visited = Boolean(state.ending) || state.visitedMaps.includes(entry.mapId);
+      if (entry.id === 'veyra') visited = enteredVeyra;
+      locationFragment.append(createLibraryEntry({
+        id: entry.id,
+        name,
+        subtitle: region,
+        image: entry.image,
+        imageAlt: entry.imageAlt,
+        accent: entry.id === 'veyra' ? characters.cael.accent : 'var(--accent)',
+        summary: entry.summary,
+        facts: [
+          ['World', entry.id === 'veyra' ? 'Veyra' : 'Asterra'],
+          ['Journey record', visited ? 'Visited in this completed journey' : 'Known through testimony and records'],
+        ],
+        sections: [
+          ['Place in the story', entry.story],
+          ['What remains', entry.memory],
+        ],
+      }));
+    });
+
+    dom.characterLibraryCount.textContent = String(library.characters.length);
+    dom.characterLibraryCount.setAttribute('aria-label', `${library.characters.length} character entries`);
+    dom.locationLibraryCount.textContent = String(library.locations.length);
+    dom.locationLibraryCount.setAttribute('aria-label', `${library.locations.length} location entries`);
+    dom.characterLibraryList.replaceChildren(characterFragment);
+    dom.locationLibraryList.replaceChildren(locationFragment);
+  }
+
+  function openLibrary() {
+    if (!state.ending || !story.endings[state.ending]) {
+      announce('The journey archive unlocks after completing an ending.');
+      return;
+    }
+    renderLibrary();
+    showDialog(dom.libraryDialog);
   }
 
   function addTranscript(entry) {
@@ -1610,12 +1790,12 @@
   }
 
   function closeAllDialogs() {
-    [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog, dom.worldMapDialog]
+    [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog, dom.worldMapDialog, dom.libraryDialog]
       .forEach(closeDialog);
   }
 
   function anyDialogOpen() {
-    return [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog, dom.worldMapDialog]
+    return [dom.pauseDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.transcriptDialog, dom.worldMapDialog, dom.libraryDialog]
       .some((dialog) => Boolean(dialog?.open));
   }
 
@@ -1676,7 +1856,7 @@
   }
 
   function restartAdventure() {
-    const confirmed = window.confirm('Restart the adventure from Willowmere? The current journey will be replaced.');
+    const confirmed = window.confirm('Restart the adventure from Birchwood? The current journey will be replaced.');
     if (!confirmed) return;
     storage.remove(SAVE_KEY);
     closeAllDialogs();
@@ -2263,6 +2443,7 @@
     dom.retryCheckpointButton.addEventListener('click', retryCheckpoint);
     dom.gameOverTitleButton.addEventListener('click', showTitle);
     dom.gameOverRestartButton.addEventListener('click', restartAdventure);
+    dom.endingLibraryButton.addEventListener('click', openLibrary);
     dom.endingTitleButton.addEventListener('click', showTitle);
     dom.endingTranscriptButton.addEventListener('click', openTranscript);
     dom.endingRestartButton.addEventListener('click', restartAdventure);
@@ -2381,7 +2562,7 @@
     audio.unlock();
     if (anyDialogOpen()) {
       if (event.key === 'Escape') {
-        const openDialog = [dom.worldMapDialog, dom.transcriptDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.pauseDialog]
+        const openDialog = [dom.libraryDialog, dom.worldMapDialog, dom.transcriptDialog, dom.settingsDialog, dom.helpDialog, dom.creditsDialog, dom.pauseDialog]
           .find((dialog) => dialog.open);
         closeDialog(openDialog);
       }

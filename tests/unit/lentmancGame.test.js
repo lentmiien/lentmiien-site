@@ -142,8 +142,12 @@ describe('The great adventure standalone RPG', () => {
       'gameOverOverlay',
       'retryCheckpointButton',
       'endingOverlay',
+      'endingLibraryButton',
       'endingTitleButton',
       'endingReplayButton',
+      'libraryDialog',
+      'characterLibraryList',
+      'locationLibraryList',
       'transcriptDialog',
       'voiceCaption',
     ].forEach((id) => expect(html).toContain(`id="${id}"`));
@@ -157,6 +161,7 @@ describe('The great adventure standalone RPG', () => {
     expect(html).toContain('data-direction="left"');
     expect(html).toContain('data-direction="right"');
     expect(html).toContain('id="touchInteractButton"');
+    expect(html).toContain('aria-describedby="libraryDescription"');
   });
 
   test('implements keyboard, touch, captions, settings, reduced motion, and safe areas', () => {
@@ -218,6 +223,81 @@ describe('The great adventure standalone RPG', () => {
       'open_sky',
     ]);
     expect(Object.values(story.endings).map((ending) => ending.number).sort()).toEqual([1, 2, 3]);
+  });
+
+  test('opens with a grounded prologue that explains Aren and the mushroom errand', () => {
+    expect(story.initialScene).toBe('prologue_intro');
+    const prologue = story.scenes[story.initialScene];
+    const prologueCopy = prologue.steps.map((step) => step.text || '').join(' ');
+    expect(prologue.kind).toBe('cinematic');
+    expect(prologue.chapter).toMatch(/prologue/i);
+    expect(prologueCopy).toMatch(/Aren Vale/i);
+    expect(prologueCopy).toMatch(/Willowmere/i);
+    expect(prologueCopy).toMatch(/mushroom|coppercap|moonbell|fox-ear/i);
+    expect(prologueCopy).toMatch(/mother|father|Mum|Dad|supper/i);
+    expect(prologue.steps.some((step) => step.speaker === 'system' && /WASD|arrow keys/.test(step.text))).toBe(true);
+
+    ['mushroom_coppercap', 'mushroom_moonbell', 'mushroom_foxear'].forEach((sceneId) => {
+      const mushroomScene = story.scenes[sceneId];
+      expect(mushroomScene.steps.some((step) => (
+        /All three mushroom kinds collected/.test(step.text || '')
+        && step.when?.counter === 'mushroomsGathered'
+        && step.when.gte === 2
+      ))).toBe(true);
+      expect(mushroomScene.onComplete.effects.some((effect) => (
+        effect.type === 'objective'
+        && effect.when?.counter === 'mushroomsGathered'
+        && effect.when.gte === 3
+      ))).toBe(true);
+    });
+
+    ['meet_bram', 'rowanstead_cael', 'warn_greenwake', 'cinder_standoff', 'meet_lucen', 'meet_mara', 'cael_confession', 'frostcrown_final']
+      .forEach((sceneId) => expect(story.scenes[sceneId].steps.length).toBeGreaterThanOrEqual(6));
+  });
+
+  test('provides a complete data-driven ending library for characters and locations', () => {
+    expect(story.library).toBeDefined();
+    const characterIds = story.library.characters.map((entry) => entry.characterId).filter(Boolean);
+    const expectedCharacterIds = Object.keys(characters).filter((id) => !['narrator', 'system'].includes(id));
+    expect(new Set(characterIds)).toEqual(new Set(expectedCharacterIds));
+    expect(new Set(story.library.characters.map((entry) => entry.id)).size).toBe(story.library.characters.length);
+
+    story.library.characters.forEach((entry) => {
+      if (entry.characterId) {
+        expect(characters[entry.characterId]).toBeDefined();
+      } else {
+        expect(entry.name).toEqual(expect.any(String));
+        expect(entry.role).toEqual(expect.any(String));
+        expect(entry.pronouns).toEqual(expect.any(String));
+      }
+      expect(entry.epithet.length).toBeGreaterThan(8);
+      expect(entry.summary.length).toBeGreaterThan(80);
+      expect(entry.journey.length).toBeGreaterThan(100);
+      expect(entry.keepsake.length).toBeGreaterThan(60);
+    });
+
+    const locationIds = story.library.locations.map((entry) => entry.id);
+    expect(new Set(locationIds).size).toBe(locationIds.length);
+    const mappedLibraryLocations = story.library.locations
+      .filter((entry) => entry.mapId)
+      .map((entry) => entry.mapId);
+    mapData.mapOrder.forEach((mapId) => expect(mappedLibraryLocations).toContain(mapId));
+    expect(locationIds).toContain('veyra');
+    expect(locationIds).toContain('rowanstead');
+    expect(locationIds).toContain('mossreach');
+    expect(story.library.locations.find((entry) => entry.id === 'mossreach').knownOnly).toBe(true);
+    story.library.locations.forEach((entry) => {
+      if (entry.mapId) expect(mapData.maps[entry.mapId]).toBeDefined();
+      expect(entry.summary.length).toBeGreaterThan(80);
+      expect(entry.story.length).toBeGreaterThan(100);
+      expect(entry.memory.length).toBeGreaterThan(60);
+    });
+
+    expect(gameSource).toContain('function renderLibrary');
+    expect(gameSource).toContain('function openLibrary');
+    expect(gameSource).toContain("dom.endingLibraryButton.addEventListener('click', openLibrary)");
+    expect(gameSource).toContain('Boolean(state.ending) || state.visitedMaps.includes(entry.mapId)');
+    expect((gameSource.match(/dom\.libraryDialog/g) || []).length).toBeGreaterThanOrEqual(4);
   });
 
   test('defines a complete world chart, current-location markers, and every travel leg', () => {
@@ -369,7 +449,13 @@ describe('The great adventure standalone RPG', () => {
         if (step.when) conditions.push(step.when);
         (step.options || []).forEach((option) => {
           if (option.when) conditions.push(option.when);
+          (option.effects || []).forEach((effect) => {
+            if (effect.when) conditions.push(effect.when);
+          });
         });
+      });
+      (scene.onComplete?.effects || []).forEach((effect) => {
+        if (effect.when) conditions.push(effect.when);
       });
     });
 
@@ -433,6 +519,7 @@ describe('The great adventure standalone RPG', () => {
     expect(gameSource).toContain("const SAVE_KEY = 'theGreatAdventure.save.v1'");
     expect(gameSource).toContain('const SAVE_VERSION = 1');
     expect(gameSource).toContain('function createStorageAdapter');
+    expect(gameSource).toContain('if (effect.when && !evaluate(effect.when)) return;');
     expect(gameSource).toContain('window.localStorage.setItem');
     expect(gameSource).toContain('window.localStorage.getItem');
     expect(gameSource).toContain('window.localStorage.removeItem');
@@ -490,6 +577,8 @@ describe('The great adventure standalone RPG', () => {
       ...story.assets.deferred,
       ...Object.values(story.scenes).map((scene) => scene.image).filter(Boolean),
       ...Object.values(story.endings).map((ending) => ending.image),
+      ...story.library.characters.map((character) => character.image).filter(Boolean),
+      ...story.library.locations.map((location) => location.image).filter(Boolean),
       ...Object.values(characters).map((character) => character.portrait).filter(Boolean),
     ]);
 

@@ -162,7 +162,7 @@
       id: 'birchwood',
       name: 'Birchwood',
       subtitle: 'Above Willowmere · Late afternoon',
-      chapter: 'I · An ordinary day',
+      chapter: 'Prologue · Before the smoke',
       ambience: 'Leaves, distant water, and the last quiet hour.',
       palette: {
         ground: '#273c32',

@@ -5,8 +5,8 @@
     prologue_intro: {
       id: 'prologue_intro',
       kind: 'cinematic',
-      title: 'An ordinary afternoon',
-      chapter: 'I · An ordinary day',
+      title: 'A basket for home',
+      chapter: 'Prologue · Before the smoke',
       image: 'assets/images/environments/title-key-art.webp',
       imageAlt: 'Aren looks across the Hand-shaped continent beneath an eclipsed moon, with seven distant crystal circles and a gate between worlds.',
       steps: [
@@ -16,11 +16,29 @@
           audio: 'narrator_intro_birchwood',
         },
         {
+          type: 'narration',
+          text: 'Aren Vale was nineteen and knew every path within a day of home. He worked wherever Willowmere needed an extra pair of hands—orchard, mill, leaking roof—and kept promising himself he would choose a life beyond the eastern finger after winter.',
+        },
+        {
+          type: 'narration',
+          text: 'Three weeks of rain had emptied the village pantry and filled Birchwood with mushrooms. Aren’s mother, Nessa, planned to stretch the last barley into supper for the neighbors repairing the storm fence. His father, Tomas, mended the old gathering basket and requested enough fox-ears to rescue his famously stubborn bread.',
+        },
+        {
           type: 'line',
           speaker: 'aren',
           expression: 'neutral',
           text: 'Coppercaps, moonbells, fox-ears. Three baskets in one, and home before the stew gives up on me.',
           audio: 'aren_intro_mushrooms',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'relieved',
+          text: 'Then, after supper, I tell Mum and Dad I might take the winter courier road. That is a perfectly ordinary amount of courage for one afternoon.',
+        },
+        {
+          type: 'narration',
+          text: 'Birchwood stood one quiet hour above Willowmere. Aren had gathered here since childhood, but he still checked the birch roots, the damp side of fallen logs, and every track crossing the path. Familiar did not mean empty.',
         },
         {
           type: 'line',
@@ -44,13 +62,24 @@
           type: 'line',
           speaker: 'aren',
           expression: 'neutral',
-          text: 'Dry gills, clean stems. Mum will pretend she expected me to find these.',
+          text: 'Dry gills, clean stems. Dad taught me to cut them above the soil so the patch returns. He will still claim the basket did the difficult part.',
+        },
+        {
+          type: 'narration',
+          text: 'The coppercaps settle into the basket beside Tomas’s neat new willow binding.',
+        },
+        {
+          type: 'line',
+          speaker: 'system',
+          text: 'All three mushroom kinds collected. Follow the southern trail home.',
+          when: { counter: 'mushroomsGathered', gte: 2 },
         },
       ],
       onComplete: {
         effects: [
           { type: 'increment', key: 'mushroomsGathered', amount: 1 },
           { type: 'addItem', id: 'coppercaps', name: 'Coppercaps' },
+          { type: 'objective', text: 'Return to Willowmere by the southern trail.', when: { counter: 'mushroomsGathered', gte: 3 } },
         ],
       },
     },
@@ -64,13 +93,26 @@
           type: 'line',
           speaker: 'aren',
           expression: 'relieved',
-          text: 'Moonbells. Peppery, if Bram from the mill is wrong about everything except mushrooms.',
+          text: 'Moonbells. Mum dries the smallest ones with pepperleaf. Half a handful can make barley taste like we planned it that way.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'neutral',
+          text: 'Mum will feed the fence crew first and pretend she forgot to save herself a bowl. I will save it for her this time.',
+        },
+        {
+          type: 'line',
+          speaker: 'system',
+          text: 'All three mushroom kinds collected. Follow the southern trail home.',
+          when: { counter: 'mushroomsGathered', gte: 2 },
         },
       ],
       onComplete: {
         effects: [
           { type: 'increment', key: 'mushroomsGathered', amount: 1 },
           { type: 'addItem', id: 'moonbells', name: 'Moonbells' },
+          { type: 'objective', text: 'Return to Willowmere by the southern trail.', when: { counter: 'mushroomsGathered', gte: 3 } },
         ],
       },
     },
@@ -84,19 +126,24 @@
           type: 'line',
           speaker: 'aren',
           expression: 'relieved',
-          text: 'That is three. If I hurry, I can still complain about chores while eating the result.',
+          text: 'Fox-ears. Dad gets his bread, Mum gets her full bowl, and I get to complain about chores while eating the result.',
+        },
+        {
+          type: 'narration',
+          text: 'The basket is heavier than when Aren climbed the ridge. Below the trees, Willowmere’s supper bell should ring before the light leaves the eastern fields.',
         },
         {
           type: 'line',
           speaker: 'system',
           text: 'All three mushroom kinds collected. Follow the southern trail home.',
+          when: { counter: 'mushroomsGathered', gte: 2 },
         },
       ],
       onComplete: {
         effects: [
           { type: 'increment', key: 'mushroomsGathered', amount: 1 },
           { type: 'addItem', id: 'foxears', name: 'Fox-ear mushrooms' },
-          { type: 'objective', text: 'Return to Willowmere by the southern trail.' },
+          { type: 'objective', text: 'Return to Willowmere by the southern trail.', when: { counter: 'mushroomsGathered', gte: 3 } },
         ],
       },
     },
@@ -148,6 +195,10 @@
       steps: [
         {
           type: 'narration',
+          text: 'Aren starts down the home trail rehearsing how casually he will mention the courier road. Through the birches, a dark column rises where chimney smoke should have thinned into evening.',
+        },
+        {
+          type: 'narration',
           text: 'The first smell was not supper. Smoke climbed above Willowmere, black against the evening. Beneath it came the measured retreat of armored boots.',
           audio: 'narrator_smoke_willowmere',
         },
@@ -160,6 +211,12 @@
           speaker: 'aren',
           expression: 'surprised',
           text: 'That is the royal banner. Why are soldiers coming out of my village?',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'The blue shutter should be below that smoke. Mum and Dad should be waiting beside it.',
         },
         {
           type: 'narration',
@@ -222,6 +279,10 @@
           text: 'The crystal warden was gone. So were the soldiers. Willowmere remained only in pieces: a well, one lantern, names spoken softly, and people digging with bare hands.',
         },
         {
+          type: 'narration',
+          text: 'The Vales’ blue kitchen shutter hangs from one hinge. Tomas repaired that latch last week. Beside the broken doorstep, a neighbor has placed Nessa’s copper ladle and Tomas’s leather awl where Aren cannot fail to understand them.',
+        },
+        {
           type: 'line',
           speaker: 'aren',
           expression: 'hurt',
@@ -234,7 +295,7 @@
         },
         {
           type: 'narration',
-          text: 'Aren sets the mushroom basket beneath the last birch. The familiar descent becomes a boundary: woods behind him, Willowmere below, and no ordinary evening left between them.',
+          text: 'Aren sets the still-full mushroom basket beneath the last birch because his hands can no longer hold an ordinary errand. The familiar descent becomes a boundary: woods behind him, Willowmere below, and no ordinary evening left between them.',
         },
       ],
       onComplete: {
@@ -260,6 +321,18 @@
         },
         {
           type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'Bram Alder. Mossreach, once. Help me lift this beam; questions after breathing.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'hurt',
+          text: 'Aren Vale. I was looking for my parents. The neighbors left their tools by our door, so I suppose I am looking for something else now.',
+        },
+        {
+          type: 'line',
           speaker: 'aren',
           expression: 'angry',
           text: 'The king’s army did this.',
@@ -272,9 +345,15 @@
         },
         {
           type: 'line',
+          speaker: 'aren',
+          expression: 'angry',
+          text: 'You say that as if you have seen them do it before.',
+        },
+        {
+          type: 'line',
           speaker: 'bram',
           expression: 'grieving',
-          text: 'Mossreach was the first circle. My wife Sella and our Piri were there. I know the road your anger is pointing down.',
+          text: 'Mossreach was the first circle. I followed the royal supply wagons afterward and learned what crystal work looks like. My wife Sella and our Piri were there. I know the road your anger is pointing down.',
         },
         {
           type: 'choice',
@@ -300,8 +379,22 @@
         {
           type: 'line',
           speaker: 'bram',
+          expression: 'guarded',
+          text: 'Wanting him to hurt will carry you through one night. It will not tell you whom to protect in the morning.',
+          when: { flag: 'revengeLanguageUsed', equals: true },
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
           expression: 'protective',
-          text: 'I will walk with you. But if you start mistaking dying for justice, I will be irritatingly alive beside you.',
+          text: 'Then we begin with the people still breathing. After that, we ask Rowan what she saw and stop the next fire before it starts.',
+          when: { not: { flag: 'revengeLanguageUsed', equals: true } },
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'protective',
+          text: 'At dawn, I will walk with you. But if you start mistaking dying for justice, I will be irritatingly alive beside you.',
         },
       ],
       onComplete: {
@@ -400,9 +493,30 @@
       chapter: 'II · Whom can you reach?',
       steps: [
         {
+          type: 'narration',
+          text: 'Rowanstead’s kitchen has become an infirmary: clean cloth on the table, six borrowed bedrolls, and a kettle working harder than anyone. Rowan puts a hot bowl before Aren. It is his first since the fire, and he cannot lift the spoon.',
+        },
+        {
+          type: 'line',
+          speaker: 'rowan',
+          text: 'Sit anyway. Grief does not excuse you from having a body. I am Rowan, and this farm is where stubborn things come to remain alive.',
+        },
+        {
           type: 'line',
           speaker: 'rowan',
           text: 'This is Cael. I found him half-dead in my turnip trench two years ago. He has been waiting for somebody foolish enough to move faster than an army.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'Two years in a bed, yet you know where the king marches next. Start with that.',
+        },
+        {
+          type: 'line',
+          speaker: 'cael',
+          expression: 'pained',
+          text: 'Because I studied every crystal circle before the army found me. What guards those circles is also, in part, my responsibility.',
         },
         {
           type: 'line',
@@ -454,6 +568,18 @@
           speaker: 'bram',
           expression: 'guarded',
           text: 'Greenwake lies downriver along the reed finger. Ashfinger is north beyond the mill ridge. At a walk, choosing either road puts half a day between us and the other.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'Yesterday I was looking for supper. Now a stranger wants me to race an army across the Hand and decide who hears us first.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'protective',
+          text: 'The choice is unfair. The road is still under our feet. We choose with what we know, then we answer for how we walk it.',
         },
         {
           type: 'narration',
@@ -637,6 +763,24 @@
           type: 'line',
           speaker: 'mira',
           expression: 'focused',
+          text: 'Mira Fen. Healer most mornings, keeper of the evacuation ledger today. I do not move ninety people because two travelers arrive breathless. Names, evidence, danger—in that order.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'determined',
+          text: 'Aren Vale, from Willowmere. The royal army restored our circle yesterday. This shield came from the road they used to leave us burning.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'grieving',
+          text: 'Bram Alder, from Mossreach. I have seen the same wagons, the same crystal braces, and the same hurry before.',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
           text: 'You smell like smoke, you have a royal shield strap, and Bram is not making a joke. I believe you. I have ninety people and six boats.',
         },
         {
@@ -714,6 +858,26 @@
         {
           type: 'narration',
           text: 'By sundown, Greenwake is empty but alive. The party turns toward Ashfinger. Its battle bell stopped an hour ago.',
+          when: { flag: 'miraJoined', equals: true },
+        },
+        {
+          type: 'narration',
+          text: 'Greenwake’s evacuation bells begin their descending call. As the first boats push away, Aren and Bram turn toward Ashfinger; reaching the other finger means trusting Mira to finish the work behind them.',
+          when: { not: { flag: 'miraJoined', equals: true } },
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
+          text: 'The senior boatman has the ledger and six boats accounted for. I can come. If I stay here counting people already safe, I am only hiding from the next list.',
+          when: { flag: 'miraJoined', equals: true },
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'determined',
+          text: 'I stay until the last boat reaches high ground. Take the sluice path north, and tell Ashfinger that Greenwake heard you.',
+          when: { not: { flag: 'miraJoined', equals: true } },
         },
         {
           type: 'line',
@@ -744,6 +908,16 @@
         {
           type: 'narration',
           text: 'Ashfinger’s rescue cost the night. By the time they reach Greenwake, the bridges are broken and the reed bells lie in the water. Most villagers fled on their own. Some did not.',
+        },
+        {
+          type: 'narration',
+          text: 'Mira finds the evacuation ledger wedged beneath a bridge rail. The final page is a hurried list of boats, followed by three names without check marks.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'hurt',
+          text: 'If we had chosen this road first, those names might be crossed out. Does saving Ashfinger make this the wrong choice?',
         },
         {
           type: 'line',
@@ -852,8 +1026,26 @@
         {
           type: 'line',
           speaker: 'mira',
+          expression: 'focused',
+          text: 'Mira Fen—healer until the bridge fell, evacuation leader since. If Rowan sent you, save the introductions for dry ground.',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
           expression: 'determined',
           text: 'The army has the north road. The warden has the ridge. I have twelve people trapped at the mill and no third direction.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'Twelve who can move, or twelve who need carrying?',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
+          text: 'Seven can run. Two children, Old Fenrick, and two millers with crushed legs cannot. Now you understand why “retreat” is not a direction.',
         },
         {
           type: 'narration',
@@ -923,6 +1115,12 @@
           text: 'You found a third direction. I am coming with you until we find one for the whole Hand.',
         },
         {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
+          text: 'First, hold still. Bram’s shoulder is bruised, your palms are split, and heroes get infections as efficiently as everyone else.',
+        },
+        {
           type: 'narration',
           text: 'The rescued column turns south at first light. Far beyond the rain, Greenwake’s reed bells should be answering the wind. No sound reaches the road.',
         },
@@ -968,6 +1166,12 @@
           text: 'I have spent all night telling people not to travel alone. It would be hypocritical to let you start now.',
         },
         {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
+          text: 'Give me those hands, Aren. You can decide the fate of the continent after I stop you bleeding on it.',
+        },
+        {
           type: 'narration',
           text: 'They leave Ashfinger with the survivors at dawn and take the southern flood road. The miles toward Greenwake are measured by the bells they cannot hear.',
         },
@@ -1000,10 +1204,20 @@
           text: 'Ashfinger’s army and warden are gone. The mill channel carries roof shingles, a child’s red cup, and the last echo of the battle bell.',
         },
         {
+          type: 'narration',
+          text: 'Bram wades out to retrieve the cup. A name has been scratched into its base so it would always find the right kitchen. There is no kitchen left to ask.',
+        },
+        {
           type: 'line',
           speaker: 'aren',
           expression: 'hurt',
           text: 'Greenwake is alive because we stayed. Ashfinger is gone because we could not be in two places.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'Tell me choosing Greenwake was not just another way to abandon someone.',
         },
         {
           type: 'line',
@@ -1030,6 +1244,47 @@
         {
           type: 'narration',
           text: 'One finger carries survivors. The other carries smoke. Ahead, the volcanic thumb has no village to evacuate—only a crystal circle, a royal army, and the first chance to face the king.',
+        },
+        {
+          type: 'narration',
+          text: 'They camp where the two river roads join. For one hour nobody asks Aren to choose anything. Bram turns a tiny wooden bird between his fingers while Mira rewinds the linen around Aren’s palms.',
+          when: { flag: 'miraJoined', equals: true },
+        },
+        {
+          type: 'narration',
+          text: 'They camp where the two river roads join. For one hour nobody asks Aren to choose anything. Bram turns a tiny wooden bird between his fingers while the road dries beside the fire.',
+          when: { not: { flag: 'miraJoined', equals: true } },
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'You touch that bird whenever somebody says Mossreach. Was it Piri’s?',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'grieving',
+          text: 'Her first carving. The wings are uneven because she believed measuring was an insult to birds. I set out after Edric because I wanted him to carry Mossreach for one hour.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'protective',
+          text: 'I am still here because I do not want another parent learning which ordinary thing became the last.',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'warm',
+          text: 'And I am here because evacuation ledgers should end with totals, not question marks. When this is over, I want signal towers from finger to finger. One warning should not need heroes.',
+          when: { flag: 'miraJoined', equals: true },
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'Before the fire, I was trying to decide whether I wanted to leave Willowmere. Now I would give anything to have it waiting while I made up my mind.',
         },
         {
           type: 'line',
@@ -1064,6 +1319,16 @@
           type: 'narration',
           text: 'Cinder Thumb has no houses to burn. The mountain burns by itself. Across its basalt causeway, King Edric’s engineers prepare the fifth restored circle.',
           audio: 'narrator_cinder_thumb',
+        },
+        {
+          type: 'narration',
+          text: 'It is the first time Aren has seen the king outside a coin: taller, older, and more exhausted than a symbol is allowed to look. Every soldier on the causeway watches him for permission to breathe.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'Edric inspected flood walls in person once. People called that proof he listened. Desperation did not replace the man; it taught him which parts of himself to ignore.',
         },
         {
           type: 'line',
@@ -1212,6 +1477,30 @@
           text: 'You spent them. They were not yours.',
         },
         {
+          type: 'line',
+          speaker: 'edric',
+          expression: 'controlled',
+          text: 'The gray ribbon. Willowmere. Nessa and Tomas Vale were on its casualty roll. I read every name.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'angry',
+          text: 'I am Aren. Their son. You knew their names before you called them a delay.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'angry',
+          text: 'Names are not penance, Edric.',
+        },
+        {
+          type: 'line',
+          speaker: 'edric',
+          expression: 'tender',
+          text: 'No. They are my failure. I cannot add Elara to them while a cure waits behind a closed door.',
+        },
+        {
           type: 'narration',
           text: 'The guards close ranks. The warden turns toward the causeway. Steam gathers beneath the vents. Bram’s warning is clear: a direct charge ends here.',
         },
@@ -1337,6 +1626,18 @@
           speaker: 'bram',
           expression: 'guarded',
           text: 'He said her name like a prayer and an order at once.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'I expected a monster. He knew my parents’ names. What happened to Queen Elara, and what cure does he believe waits beyond the gate?',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'grieving',
+          text: 'A grieving man can do monstrous things without becoming a storybook monster. That is why we cannot wait for him to look like one.',
         },
         {
           type: 'narration',
@@ -1474,7 +1775,31 @@
           type: 'line',
           speaker: 'lucen',
           expression: 'worried',
+          text: 'I am Lucen Aurel. Before anything else: I copied the Willowmere orders before Father’s clerks destroyed them. I failed to stop those orders from becoming a fire.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'angry',
+          text: 'Then do not ask me to make your apology comfortable.',
+        },
+        {
+          type: 'line',
+          speaker: 'lucen',
+          expression: 'resolved',
+          text: 'I will not. I can only give you the records, the truth behind them, and whatever authority I still have to put between citizens and my father.',
+        },
+        {
+          type: 'line',
+          speaker: 'lucen',
+          expression: 'worried',
           text: 'My mother is dying from silverroot fever. Every Asterra remedy failed. Father found one account of moonleaf curing it in the other world.',
+        },
+        {
+          type: 'line',
+          speaker: 'lucen',
+          expression: 'grieving',
+          text: 'Mother taught me botany by making me write the cost beside every remedy: soil, labor, risk, consent. Father remembered only the name of the leaf.',
         },
         {
           type: 'line',
@@ -1539,6 +1864,24 @@
         },
         {
           type: 'line',
+          speaker: 'mara',
+          expression: 'appraising',
+          text: 'Elara funded the first frame to carry medicine over winter roads. When Edric asked how many bombs it could carry, I hid the working engine beneath his palace and let him believe the prototype hated corners.',
+        },
+        {
+          type: 'line',
+          speaker: 'lucen',
+          expression: 'worried',
+          text: 'For the record, I helped hide it.',
+        },
+        {
+          type: 'line',
+          speaker: 'mara',
+          expression: 'grinning',
+          text: 'For the accurate record, you apologized to every guard we passed and held the wrench backward. But yes, Your Helpful Highness assisted.',
+        },
+        {
+          type: 'line',
           speaker: 'aren',
           expression: 'surprised',
           text: 'Can it reach the ice island?',
@@ -1587,6 +1930,12 @@
         },
         {
           type: 'line',
+          speaker: 'cael',
+          expression: 'guilty',
+          text: 'It was a one-way oath. Once the final crystal left its circle, the gate closed behind me. I expected to die here after the eclipse, when the crystals were weak enough to destroy.',
+        },
+        {
+          type: 'line',
           speaker: 'bram',
           expression: 'angry',
           text: 'You put wardens beside villages and sent a grieving boy where you could not walk.',
@@ -1600,8 +1949,26 @@
         {
           type: 'line',
           speaker: 'cael',
+          expression: 'guilty',
+          text: 'I did not tell you direct lies. I made every answer too small to contain the choice I wanted from you. That was still deceit.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'angry',
+          text: 'Every village we crossed has been living inside one of your shortened answers.',
+        },
+        {
+          type: 'line',
+          speaker: 'cael',
           expression: 'determined',
           text: 'Ilyan foresaw Veyra’s ruin if the gate remained. During tomorrow’s eclipse, remove the crystals from their circles and they can be shattered forever.',
+        },
+        {
+          type: 'line',
+          speaker: 'cael',
+          expression: 'determined',
+          text: 'Seven active circles share a slow, recoverable draw. One crystal could sustain an open gate alone, but it would drain its whole region to dust. Near totality, reopening the closed gate requires all seven.',
         },
         {
           type: 'line',
@@ -1669,6 +2036,19 @@
           expression: 'guilty',
           text: 'Then I will earn the trust I asked you to spend.',
         },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'We help Aren make this choice. We do not turn Cael’s certainty into a new crown.',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
+          text: 'Then at Frostcrown we count the people, the land, and the door. All of them.',
+          when: { flag: 'miraJoined', equals: true },
+        },
       ],
       onComplete: {
         effects: [
@@ -1695,6 +2075,19 @@
           expression: 'guilty',
           text: 'I disagree. I will still take you to Frostcrown. That is what honesty costs me now.',
         },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'protective',
+          text: 'A door is not innocent. Neither is sealing it before the people on both sides can answer. We carry the argument together.',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
+          text: 'And if the argument forgets civilians, I will interrupt it loudly.',
+          when: { flag: 'miraJoined', equals: true },
+        },
       ],
       onComplete: {
         effects: [
@@ -1710,6 +2103,24 @@
       image: 'assets/images/scenes/starling-workshop.webp',
       imageAlt: 'The Starling hangs above Aren, Cael, Mara, and Prince Lucen in the secret workshop.',
       steps: [
+        {
+          type: 'line',
+          speaker: 'lucen',
+          expression: 'resolved',
+          text: 'I remain here. I can open the public archive, delay the north guard, and make these records impossible to bury before Father returns.',
+        },
+        {
+          type: 'line',
+          speaker: 'mara',
+          expression: 'appraising',
+          text: 'You always did choose the most dangerous way to organize paper. Keep your head down, Lucen.',
+        },
+        {
+          type: 'line',
+          speaker: 'lucen',
+          expression: 'relieved',
+          text: 'Land the Starling once before criticizing my methods.',
+        },
         {
           type: 'line',
           speaker: 'mara',
@@ -1777,6 +2188,18 @@
         },
         {
           type: 'line',
+          speaker: 'cael',
+          expression: 'guilty',
+          text: 'From here, the circles look harmless. Seven points of light. Distance is generous to terrible decisions.',
+        },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'guarded',
+          text: 'That lantern line below is the old Mossreach road. Piri hated the steep turn. From up here, I nearly missed it.',
+        },
+        {
+          type: 'line',
           speaker: 'aren',
           expression: 'worried',
           text: 'Willowmere is somewhere behind the wing. I thought leaving it would feel like walking away. From up here, every road is still connected.',
@@ -1815,6 +2238,19 @@
           speaker: 'bram',
           expression: 'protective',
           text: 'The Hand is behind us now. Whatever happens in that circle, we do not lose sight of the people waiting across the water.',
+        },
+        {
+          type: 'line',
+          speaker: 'mara',
+          expression: 'calculating',
+          text: 'The Starling has one landing left in her, possibly two if the second is downhill. I would prefer the future include a workshop in which to argue about that.',
+        },
+        {
+          type: 'line',
+          speaker: 'mira',
+          expression: 'focused',
+          text: 'Greenwake and Ashfinger are not behind us. They are the reason every grand answer here needs a smaller, human one.',
+          when: { flag: 'miraJoined', equals: true },
         },
       ],
       onComplete: {
@@ -1917,6 +2353,18 @@
           expression: 'protective',
           text: 'And choose something you can still call yours tomorrow.',
         },
+        {
+          type: 'line',
+          speaker: 'bram',
+          expression: 'grieving',
+          text: 'I came here wanting Edric to feel my grief. I leave wanting him unable to hand it to anyone else. That is the only revenge I trust now.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'determined',
+          text: 'Then we make an opening, reach the crystal, and choose for the living—not against the dead.',
+        },
       ],
       onComplete: {
         effects: [
@@ -1983,6 +2431,18 @@
           speaker: 'bram',
           expression: 'angry',
           text: 'You said the villages were delays. Now you ask them to trust your next promise.',
+        },
+        {
+          type: 'line',
+          speaker: 'edric',
+          expression: 'defeated',
+          text: 'Crown, command, judgment—I will surrender all of it when Elara breathes without pain. I ask only that you let me reach her cure.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'angry',
+          text: 'You still offer tomorrow’s surrender as payment for authority you are taking tonight. The circles and the lives around them are not yours to promise.',
         },
         {
           type: 'narration',
@@ -2194,6 +2654,20 @@
           text: 'We are safe from the prophecy. I wish safety did not sound so much like silence.',
         },
         {
+          type: 'narration',
+          text: 'Cael remains in Asterra to dismantle the empty circles and document every shortened answer he once gave. Lucen inherits a country without the cure his father promised and begins rebuilding it without promising that grief can be made fair.',
+        },
+        {
+          type: 'narration',
+          text: 'In spring, Aren and Bram return to Willowmere. They plant birch saplings around the memorial and build the first roof for whoever comes home. Aren keeps Tomas’s basket by the door, repaired once more.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'worried',
+          text: 'We closed the only road to a world we never knew. We will spend the life it bought making sure certainty does not become another excuse.',
+        },
+        {
           type: 'ending',
           endingId: 'severed_dawn',
         },
@@ -2223,6 +2697,26 @@
           text: 'Peace is not what follows a good king. It is what keeps one frightened king from owning every answer.',
         },
         {
+          type: 'narration',
+          text: 'At Elara’s funeral, Lucen reads the names of the dead from Mossreach, Willowmere, and Greenwake before he speaks either parent’s name. The preserved orders are opened beside her journals so motive and cost cannot be separated again.',
+          when: { flag: 'lostVillage', equals: 'greenwake' },
+        },
+        {
+          type: 'narration',
+          text: 'At Elara’s funeral, Lucen reads the names of the dead from Mossreach, Willowmere, and Ashfinger before he speaks either parent’s name. The preserved orders are opened beside her journals so motive and cost cannot be separated again.',
+          when: { flag: 'lostVillage', equals: 'ashfinger' },
+        },
+        {
+          type: 'narration',
+          text: 'Aren refuses a palace title. He accepts a civilian seat at the gate instead, on the condition that every circle has the power to close its own channel before magic begins to take more than the land can restore.',
+        },
+        {
+          type: 'line',
+          speaker: 'aren',
+          expression: 'determined',
+          text: 'An open door is not peace by itself. It is only a place where we can finally meet and answer one another.',
+        },
+        {
           type: 'ending',
           endingId: 'crown_of_ash',
         },
@@ -2238,7 +2732,11 @@
       steps: [
         {
           type: 'narration',
-          text: 'Edric crosses. Aren follows. In Veyra, the king finally learns that Cael closed the gate to prevent a foretold catastrophe—not to deny a cure. He fights once more and loses without being killed.',
+          text: 'Edric crosses. Aren follows. Veyra is not an army waiting in triumph, but a moonlit garden crowded with healers, frightened guards, and people who know Cael’s name. The king finally learns that the gate was closed to prevent a foretold catastrophe—not to deny a cure.',
+        },
+        {
+          type: 'narration',
+          text: 'Edric draws his sword when Veyra refuses to hand medicine to an invading king. Aren does not answer with a duel. Cael names the oath, Bram blocks the narrow garden stair, and Veyran guards close every path except the one back toward his son. Edric lowers the blade first.',
         },
         {
           type: 'line',
@@ -2247,9 +2745,29 @@
           text: 'You do not get forgiveness as the price of stopping. You get a chance to stop, step down, and carry what you did while Elara still has a chance to live.',
         },
         {
+          type: 'line',
+          speaker: 'edric',
+          expression: 'defeated',
+          text: 'The crown, the command, every claim beyond my own name. Take them. Give me the leaf, and I will spend whatever remains answering for the road here.',
+        },
+        {
+          type: 'narration',
+          text: 'Edric signs his abdication before Veyran healers release the moonleaf. Days later in Crown City, Elara wakes to find him uncrowned beside her bed and Lucen holding the public copy of her journal.',
+        },
+        {
+          type: 'line',
+          speaker: 'elara',
+          expression: 'firm',
+          text: 'A cure is not a pardon, Edric. It is time in which to answer. Do not waste what so many others were denied.',
+        },
+        {
           type: 'narration',
           text: 'Veyra gives moonleaf under one condition: Edric abdicates. Elara survives. Lucen becomes king. The gate remains open beneath a two-world council, and the seven circles share their gentle cost again.',
           audio: 'narrator_ending_open',
+        },
+        {
+          type: 'narration',
+          text: 'The next mushroom season, Aren climbs into Birchwood with a repaired basket and a courier’s map folded in his pocket. He returns before dusk—not because the Hand ends at Willowmere, but because home is now a place he can leave and choose again.',
         },
         {
           type: 'ending',
@@ -2295,6 +2813,220 @@
     },
   };
 
+  const library = Object.freeze({
+    characters: Object.freeze([
+      {
+        id: 'aren',
+        characterId: 'aren',
+        epithet: 'The ordinary traveler',
+        home: 'Willowmere, eastern Asterra',
+        summary: 'Aren is a nineteen-year-old village hand who knows the paths around Willowmere better than he knows what he wants from the rest of his life.',
+        journey: 'A mushroom errand leaves him outside Willowmere when the royal army destroys it. His first instinct is revenge; his harder journey is learning to make choices for the living without pretending grief has stopped speaking.',
+        keepsake: 'He carries his father’s repaired mushroom basket, his mother’s habit of feeding everyone else first, and a pale memorial ribbon tied at his wrist.',
+      },
+      {
+        id: 'vale_parents',
+        name: 'Nessa & Tomas Vale',
+        role: 'Willowmere neighbors and Aren’s parents',
+        pronouns: 'she/her & he/him',
+        ageLabel: 'Adults',
+        accent: '#b8c9a2',
+        epithet: 'The home inside the errand',
+        home: 'Willowmere, eastern Asterra',
+        summary: 'Nessa and Tomas never ask their son to become a hero. On the last ordinary afternoon, they ask him to gather mushrooms for a shared village supper.',
+        journey: 'Nessa organizes meals and always serves herself last. Tomas repairs tools, teaches Aren to leave a mushroom patch able to grow again, and bakes bread everyone lovingly insults. Their deaths make Willowmere personal before it becomes political.',
+        keepsake: 'A copper ladle, a leather awl, and one newly mended willow binding remain. Aren’s clearest inheritance is their habit of repairing what can still be saved.',
+      },
+      {
+        id: 'bram',
+        characterId: 'bram',
+        epithet: 'The man who stayed alive',
+        home: 'Mossreach, formerly the northern mills',
+        summary: 'Bram is a woodcutter and former militia fighter whose wife, Sella, and daughter, Piri, died during the first crystal restoration.',
+        journey: 'He recognizes his own anger in Aren and becomes the companion willing to stand between the young man and a meaningless death. Bram wants Edric stopped, but refuses to let revenge decide whom the party leaves behind.',
+        keepsake: 'Piri’s first wooden bird hangs at his neck. Its uneven wings remind him that people should be remembered for how they lived, not used as reasons to harm someone else.',
+      },
+      {
+        id: 'cael',
+        characterId: 'cael',
+        epithet: 'The knight with shortened answers',
+        home: 'Veyra, beyond the old gate',
+        summary: 'Sir Cael Varin crossed from Veyra on a one-way mission to remove Asterra’s seven crystals and prevent the catastrophe foretold by his world’s seer.',
+        journey: 'Wounded before he can destroy the crystals, Cael uses careful omissions to send Aren after them. He eventually admits that an answer can avoid being a lie and still be deceit, then yields the final choice he once tried to control.',
+        keepsake: 'His silver oath cylinder records the mission that stranded him. Indigo cloth at his belt was meant to wrap the weakened crystals during the eclipse.',
+      },
+      {
+        id: 'mira',
+        characterId: 'mira',
+        epithet: 'Keeper of the living count',
+        home: 'Greenwake, the reed finger',
+        summary: 'Mira is a young healer who becomes an evacuation leader because somebody has to turn warnings into boats, bandages, names, and routes.',
+        journey: 'Whether met in Greenwake or under Ashfinger’s battle bell, she insists that decisions made for worlds and kingdoms must still account for individual people. When she travels with Aren, protecting civilians becomes the party’s measure of success; when she stays, she builds that principle into Greenwake.',
+        keepsake: 'Her evacuation ledger is practical, battered, and precious. A check mark means a person reached safety; an empty space is never treated as an acceptable abstraction.',
+      },
+      {
+        id: 'mara',
+        characterId: 'mara',
+        epithet: 'Builder of shorter distances',
+        home: 'The hidden Crown City workshop',
+        summary: 'Mara “Cinder” Vell is the restless engineer behind the Starling, Asterra’s first airship capable of crossing the sea to Frostcrown.',
+        journey: 'Queen Elara funded the craft to carry medicine over winter roads. When Edric demanded bomb rails, Mara hid the working engine beneath his palace and joined Lucen’s effort to make invention serve connection instead of conquest.',
+        keepsake: 'Amber goggles, a folding brass spanner, and the conviction that landing is a separate philosophical dispute from flying.',
+      },
+      {
+        id: 'edric',
+        characterId: 'edric',
+        epithet: 'The king who made grief a command',
+        home: 'Crown City, central Asterra',
+        summary: 'Edric was once a conscientious king. When Queen Elara’s illness resisted every known cure, he let love harden into certainty that Veyra had closed the gate to deny her medicine.',
+        journey: 'He restores the circles at any civilian cost and calls destroyed communities delays, even while memorizing their casualty rolls. His devotion explains the road to Frostcrown; it never excuses the people he knowingly placed beneath it.',
+        keepsake: 'A glass locket holds Elara’s pressed moonflower. He closes one hand around it whenever the person he loves becomes indistinguishable from the orders he gives.',
+      },
+      {
+        id: 'elara',
+        characterId: 'elara',
+        epithet: 'The conscience used as an excuse',
+        home: 'Crown City, central Asterra',
+        summary: 'Queen Elara is a natural philosopher and public servant weakened by silverroot fever but never made passive by it.',
+        journey: 'Her botanical journal identifies Veyran moonleaf as a possible cure and explicitly rejects any remedy purchased with unwilling lives. Edric suppresses that choice while claiming to act for her, making her own words vital at Frostcrown.',
+        keepsake: 'Her field journals record the cost beside every remedy: soil, labor, risk, and consent. In the most hopeful ending, survival gives her time to demand accountability rather than erase it.',
+      },
+      {
+        id: 'lucen',
+        characterId: 'lucen',
+        epithet: 'The prince beneath the palace',
+        home: 'Crown City, central Asterra',
+        summary: 'Prince Lucen is Edric and Elara’s son, a careful archivist who chooses resistance after private appeals fail to slow his father.',
+        journey: 'He copies the Willowmere orders before they can be destroyed, opens forbidden records, and helps conceal the Starling. Lucen does not ask Aren to make royal apologies comfortable; he offers evidence and accepts the duty to answer plainly.',
+        keepsake: 'His copied ledgers preserve both motive and cost. If he becomes king, he treats public records and civilian authority as safeguards against another frightened ruler owning every answer.',
+      },
+      {
+        id: 'rowan',
+        characterId: 'rowan',
+        epithet: 'Keeper of the stubborn farm',
+        home: 'Rowanstead Farm, outside Willowmere',
+        summary: 'Rowan is the elderly farmer who finds Cael dying in a turnip trench and spends two years keeping him alive without pretending to believe all of his answers.',
+        journey: 'After Willowmere burns, her kitchen becomes an infirmary and her farm the first place where Aren can sit, eat, and hear how large the crystal race has become. She offers shelter without surrendering her judgment.',
+        keepsake: 'A perpetually offended kettle and a practical rule: grief does not excuse anyone from having a body that needs food, rest, and care.',
+      },
+      {
+        id: 'holt',
+        characterId: 'holt',
+        epithet: 'The timetable in armor',
+        home: 'The royal field camps',
+        summary: 'Commander Holt directs the disciplined royal formations that escort the crystals, suppress witnesses, and keep Edric’s restoration moving.',
+        journey: 'Holt is not a secret final villain. He is the more ordinary danger of a capable officer who turns “civilian delay unacceptable” into procedure and lets a king’s desperation become everybody else’s emergency.',
+        keepsake: 'His rain-damaged orders remain as evidence after the campaign: cruelty written as a schedule is still a choice somebody made.',
+      },
+    ]),
+    locations: Object.freeze([
+      {
+        id: 'asterra_hand',
+        name: 'Asterra and the Hand',
+        region: 'The first world',
+        image: 'assets/images/environments/hand-world-map.webp',
+        imageAlt: 'A painted chart of Asterra’s hand-shaped island-continent and Frostcrown Isle.',
+        summary: 'Asterra’s settled continent resembles an open hand: four long fingers, a volcanic thumb, and a broad central palm linked by roads and waterways.',
+        story: 'Seven crystal circles are distributed across this landscape. The journey makes their distance tangible—warnings cannot reach every finger at once, and a decision at Frostcrown can still change soil far across the Hand.',
+        memory: 'The map begins as geography and becomes a record of choices: one route carries survivors, another smoke, and every line eventually points beyond the northern sea.',
+      },
+      {
+        id: 'birchwood',
+        mapId: 'birchwood',
+        image: 'assets/images/environments/title-key-art.webp',
+        imageAlt: 'Aren stands in a forested landscape beneath an eclipsed sky.',
+        summary: 'A damp birch forest one quiet hour above Willowmere, rich with coppercaps, moonbells, and fox-ear mushrooms after the rain.',
+        story: 'Birchwood teaches Aren—and the player—to look closely before acting. The last ordinary errand begins here, beside a weathered seven-marked stone whose importance nobody in Willowmere remembers.',
+        memory: 'At the end of the longest route, Aren returns in mushroom season with a courier’s map in his pocket and home waiting below by choice.',
+      },
+      {
+        id: 'willowmere',
+        mapId: 'willowmere',
+        image: 'assets/images/scenes/willowmere-ruins.webp',
+        imageAlt: 'Willowmere’s damaged homes and survivors beneath lantern light.',
+        summary: 'A small farming village on the eastern finger, built close to an ancient crystal circle long after its purpose was forgotten.',
+        story: 'The royal army defeats the circle’s warden without evacuating the village. Willowmere’s destruction takes Aren’s parents and ends the ordinary future he had postponed choosing.',
+        memory: 'A pale ribbon memorial and a full mushroom basket beneath the last birch keep Willowmere from becoming only the place where the plot began.',
+      },
+      {
+        id: 'mossreach',
+        name: 'Mossreach',
+        region: 'Northern mill country',
+        knownOnly: true,
+        image: 'assets/images/environments/hand-world-map.webp',
+        imageAlt: 'A painted chart of the Hand, including the northern mill country where Mossreach once stood.',
+        summary: 'A mill settlement destroyed during the first royal attempt to return a crystal, years before the army reaches Willowmere.',
+        story: 'Mossreach is not an exploration map, but its absence travels with Bram. The disaster killed Sella and Piri, taught the army how to fight a crystal warden, and showed Edric that a village could be entered into the cost of a timetable.',
+        memory: 'Piri’s uneven wooden bird and Bram’s knowledge of royal supply roads keep Mossreach present. It is the earlier warning Asterra failed to hear.',
+      },
+      {
+        id: 'rowanstead',
+        name: 'Rowanstead Farm',
+        region: 'Eastern edge of Willowmere',
+        image: 'assets/images/scenes/willowmere-ruins.webp',
+        imageAlt: 'Lanterns burn near the surviving edge of Willowmere, where Rowanstead Farm shelters the wounded.',
+        summary: 'A stubborn farm beyond Willowmere’s ruined lanes whose roof, well, kitchen, and keeper survive the attack.',
+        story: 'Rowan hides the wounded Cael here for two years. After the fire, the farmhouse becomes an improvised ward and the place where Aren first learns that his village is one point in a race across seven circles.',
+        memory: 'A hot bowl left untouched marks the moment the adventure becomes larger than Aren can absorb, while Rowan insists that bodies still need care inside world-sized grief.',
+      },
+      {
+        id: 'greenwake',
+        mapId: 'greenwake',
+        image: 'assets/images/environments/hand-world-map.webp',
+        imageAlt: 'A painted chart showing the long river fingers of the Hand where Greenwake’s wetlands lie.',
+        summary: 'A canal village among reed channels, low bridges, evacuation bells, and old maintenance routes on the southeastern finger.',
+        story: 'Greenwake represents what a warning can accomplish if it arrives in time. Its boats and bells turn knowledge into movement, but staying long enough to save it costs precious hours elsewhere.',
+        memory: 'Mira’s ledger and the descending reed-bell rhythm reduce no one to a nameless crowd: every family must be counted onto high ground.',
+      },
+      {
+        id: 'ashfinger',
+        mapId: 'ashfinger',
+        image: 'assets/images/scenes/ashfinger-rescue.webp',
+        imageAlt: 'A rescue through Ashfinger’s flooded mill lane beneath a distant crystal warden.',
+        summary: 'A rain-dark mill valley where floodwater, a royal formation, and a towering crystal warden leave civilians with no obvious way out.',
+        story: 'Ashfinger is the clearest statement of the game’s encounters: victory is not defeating an army but finding a third direction for trapped people. The sluice and rope routes reward attention and protection.',
+        memory: 'A child’s red cup and a stopped battle bell give weight to arriving late; bandaged hands give weight to arriving in time.',
+      },
+      {
+        id: 'cinder_thumb',
+        mapId: 'cinder_thumb',
+        image: 'assets/images/scenes/cinder-thumb.webp',
+        imageAlt: 'A volcanic causeway, royal soldiers, and an amber-cracked basalt warden at Cinder Thumb.',
+        summary: 'A village-less volcanic reach of basalt shelves, lava fissures, steam vents, and the fifth restored crystal circle.',
+        story: 'The lack of civilians makes Cinder Thumb the first place Aren can confront Edric directly. Studying how the mountain breathes creates an escape where a charge through forty guards cannot.',
+        memory: 'Here the king stops being a distant emblem. He knows Nessa and Tomas by name, forcing Aren to face a man whose human grief produces inhuman decisions.',
+      },
+      {
+        id: 'crown_city',
+        mapId: 'crown_city',
+        image: 'assets/images/scenes/starling-workshop.webp',
+        imageAlt: 'The Starling airship above the hidden workshop beneath Crown City.',
+        summary: 'Asterra’s capital rises over sealed archives, a forbidden workshop, the sixth circle, and a resistance hidden beneath its own palace.',
+        story: 'Lucen’s records reveal Edric’s motive and Elara’s refusal. Mara’s workshop supplies the only route to Frostcrown, while Cael’s confession turns buried history into the game’s central moral choice.',
+        memory: 'The Starling was designed to carry medicine over winter roads. Its launch reclaims that purpose from the bomb rails Edric requested.',
+      },
+      {
+        id: 'frostcrown',
+        mapId: 'frostcrown',
+        image: 'assets/images/scenes/frostcrown-choice.webp',
+        imageAlt: 'The final crystal circle on Frostcrown Isle beneath a total lunar eclipse.',
+        summary: 'A remote ice island beyond the Hand’s northern fingers, separated by black water and reachable only by airship during the story.',
+        story: 'The seventh crystal is quiet enough to lift during totality. Every earlier warning, clue, rescue, omission, and relationship converges here before Aren chooses whether the gate is shattered, restored, or crossed.',
+        memory: 'Frostcrown is not an arena for a stronger hero. It is a place where truth, protection, and an anchor line can open the formation that force cannot.',
+      },
+      {
+        id: 'veyra',
+        name: 'Veyra',
+        region: 'The second world',
+        image: 'assets/images/scenes/ending-open-sky.webp',
+        imageAlt: 'A luminous Veyran garden with cyan leaves beside the open gate.',
+        summary: 'The world beyond the gate is known in Asterra through fragments: moonleaf medicine, Cael’s oath, an old prophecy, and centuries of unanswered assumptions.',
+        story: 'Veyra is reached directly in The Open Sky ending, where it proves neither enemy kingdom nor effortless cure. Its people offer moonleaf under terms that end Edric’s rule and begin shared stewardship of the gate.',
+        memory: 'A moonlit healing garden replaces the imagined battlefield. The first lasting connection between worlds begins with conditions, records, and the refusal to confuse mercy with pardon.',
+      },
+    ]),
+  });
+
   const story = Object.freeze({
     meta: {
       id: 'the-great-adventure',
@@ -2313,6 +3045,7 @@
     initialScene: 'prologue_intro',
     scenes,
     endings,
+    library,
     encounters: [
       'ridge_smoke',
       'ashfinger_encounter',
