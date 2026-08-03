@@ -141,6 +141,18 @@ block styles
       min-width: 90px;
     }
 
+    .asr-model-license {
+      background: var(--accent-tint);
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      color: var(--text-secondary);
+      padding: 0.75rem 0.9rem;
+    }
+
+    .asr-model-license strong {
+      color: var(--warning);
+    }
+
     @media (max-width: 992px) {
       .asr-page {
         padding: 1.25rem;
@@ -176,47 +188,74 @@ block content
                 select#asr-model.form-select(name="model")
                   option(value="whisper-api", selected=(!form.model || form.model === 'whisper-api')) whisper-api
                   option(value="vibevoice-asr", selected=form.model === 'vibevoice-asr') vibevoice-asr
-                small.text-muted Vibevoice supports speaker labels.
+                  option(value="crisperwhisper-2.0", selected=form.model === 'crisperwhisper-2.0') CrisperWhisper 2.0
+                small#asr-model-help.text-muted Whisper uses the standard gateway transcription controls.
               .col-md-4.mb-3
                 label.asr-label(for="asr-language") Language
-                input#asr-language.form-control(type="text", name="language", value=form.language || 'auto', placeholder="auto")
+                input#asr-language.form-control(type="text", name="language", value=form.language || 'auto', placeholder="auto", aria-describedby="asr-language-help")
+                small#asr-language-help.text-muted ISO code or auto detection.
               .col-md-4.mb-3
                 label.asr-label(for="asr-task") Task
                 select#asr-task.form-select(name="task")
                   option(value="transcribe", selected=form.task !== 'translate') Transcribe
-                  option(value="translate", selected=form.task === 'translate') Translate to English
-            .row
-              .col-md-4.mb-3
-                label.asr-label(for="asr-temperature") Temperature
-                input#asr-temperature.form-control(type="number", step="0.1", name="temperature", value=form.temperature || 1, min="0", max="2")
-              .col-md-4.mb-3
-                label.asr-label(for="asr-beam-size") Beam size
-                input#asr-beam-size.form-control(type="number", step="1", min="1", name="beam_size", value=form.beamSize || 5)
-              .col-md-4.mb-3
-                label.asr-label(for="asr-vad") Voice activity detection
-                .form-check.form-switch
-                  input#asr-vad.form-check-input(type="checkbox", name="vad_filter", checked=form.vadFilter !== false)
-                  label.form-check-label.text-muted(for="asr-vad") Keep VAD on for reliable trims
+                  option(value="translate", selected=form.task === 'translate', disabled=form.model === 'crisperwhisper-2.0') Translate to English
+            #asr-standard-options(class=(form.model === 'crisperwhisper-2.0' ? 'd-none' : ''))
+              .row
+                .col-md-4.mb-3
+                  label.asr-label(for="asr-temperature") Temperature
+                  input#asr-temperature.form-control(type="number", step="0.1", name="temperature", value=form.temperature || 1, min="0", max="2", disabled=form.model === 'crisperwhisper-2.0')
+                .col-md-4.mb-3
+                  label.asr-label(for="asr-beam-size") Beam size
+                  input#asr-beam-size.form-control(type="number", step="1", min="1", name="beam_size", value=form.beamSize || 5, disabled=form.model === 'crisperwhisper-2.0')
+                .col-md-4.mb-3
+                  label.asr-label(for="asr-vad") Voice activity detection
+                  .form-check.form-switch
+                    input#asr-vad.form-check-input(type="checkbox", name="vad_filter", checked=form.vadFilter !== false, disabled=form.model === 'crisperwhisper-2.0')
+                    label.form-check-label.text-muted(for="asr-vad") Keep VAD on for reliable trims
             .d-flex.flex-wrap.gap-3.mb-3
               .form-check
                 input#asr-word-ts.form-check-input(type="checkbox", name="word_timestamps", checked=form.wordTimestamps === true)
                 label.form-check-label.text-muted(for="asr-word-ts") Include word timestamps
-            p.asr-label.mb-1 VibeVoice options (optional)
-            p.text-muted.small.mb-2 Applies to vibevoice-asr. Leave blank for gateway defaults.
-            .row
-              .col-md-6.mb-3
-                label.asr-label(for="asr-sampling-rate") Sampling rate
-                input#asr-sampling-rate.form-control(type="number", step="1", min="1", name="sampling_rate", value=form.samplingRate || '', placeholder="16000")
-              .col-md-6.mb-3
-                label.asr-label(for="asr-max-new-tokens") Max new tokens
-                input#asr-max-new-tokens.form-control(type="number", step="1", min="1", name="max_new_tokens", value=form.maxNewTokens || '', placeholder="1024")
-            .row
-              .col-md-6.mb-3
-                label.asr-label(for="asr-hotwords") Hotwords
-                input#asr-hotwords.form-control(type="text", name="hotwords", value=form.hotwords || '', placeholder="comma-separated")
-              .col-md-6.mb-3
-                label.asr-label(for="asr-context") Context
-                textarea#asr-context.form-control(name="context", rows="2", placeholder="Optional prompt")= form.context || ''
+            #asr-vibevoice-options(class=(form.model === 'vibevoice-asr' ? '' : 'd-none'))
+              p.asr-label.mb-1 VibeVoice options (optional)
+              p.text-muted.small.mb-2 Leave blank to use the gateway defaults.
+              .row
+                .col-md-6.mb-3
+                  label.asr-label(for="asr-sampling-rate") Sampling rate
+                  input#asr-sampling-rate.form-control(type="number", step="1", min="1", name="sampling_rate", value=(form.model === 'vibevoice-asr' ? (form.samplingRate || '') : ''), placeholder="16000", disabled=form.model !== 'vibevoice-asr')
+                .col-md-6.mb-3
+                  label.asr-label(for="asr-vibe-max-new-tokens") Max new tokens
+                  input#asr-vibe-max-new-tokens.form-control(type="number", step="1", min="1", name="max_new_tokens", value=(form.model === 'vibevoice-asr' ? (form.maxNewTokens || '') : ''), placeholder="1024", disabled=form.model !== 'vibevoice-asr')
+              .row
+                .col-md-6.mb-3
+                  label.asr-label(for="asr-hotwords") Hotwords
+                  input#asr-hotwords.form-control(type="text", name="hotwords", value=(form.model === 'vibevoice-asr' ? (form.hotwords || '') : ''), placeholder="comma-separated", disabled=form.model !== 'vibevoice-asr')
+                .col-md-6.mb-3
+                  label.asr-label(for="asr-context") Context
+                  textarea#asr-context.form-control(name="context", rows="2", placeholder="Optional prompt", disabled=form.model !== 'vibevoice-asr')= form.model === 'vibevoice-asr' ? (form.context || '') : ''
+            #asr-crisperwhisper-options(class=(form.model === 'crisperwhisper-2.0' ? '' : 'd-none'))
+              p.asr-label.mb-1 CrisperWhisper 2.0 options
+              p.asr-model-license.small.mb-3
+                strong License notice:&nbsp;
+                | Standard CrisperWhisper 2.0 weights are licensed for non-commercial research. Commercial use requires a license from Nyra Health.
+              .row
+                .col-md-4.mb-3
+                  label.asr-label(for="asr-crisper-model-size") Model size
+                  select#asr-crisper-model-size.form-select(name="model_size", disabled=form.model !== 'crisperwhisper-2.0')
+                    option(value="small", selected=form.modelSize === 'small') Small
+                    option(value="medium", selected=form.modelSize === 'medium') Medium
+                    option(value="large", selected=(!form.modelSize || form.modelSize === 'large')) Large
+                .col-md-4.mb-3
+                  label.asr-label(for="asr-crisper-mode") Transcript mode
+                  select#asr-crisper-mode.form-select(name="mode", disabled=form.model !== 'crisperwhisper-2.0')
+                    option(value="verbatim", selected=(!form.mode || form.mode === 'verbatim')) Verbatim
+                    option(value="intended", selected=form.mode === 'intended') Intended (cleaner)
+                .col-md-4.mb-3
+                  label.asr-label(for="asr-crisper-max-new-tokens") Max new tokens
+                  input#asr-crisper-max-new-tokens.form-control(type="number", step="1", min="1", max="1024", name="max_new_tokens", value=(form.model === 'crisperwhisper-2.0' && form.maxNewTokens ? form.maxNewTokens : 256), disabled=form.model !== 'crisperwhisper-2.0')
+              .form-check.form-switch.mb-3
+                input#asr-crisper-hallucination.form-check-input(type="checkbox", name="hallucination_mitigation", checked=form.hallucinationMitigation !== false, disabled=form.model !== 'crisperwhisper-2.0')
+                label.form-check-label.text-muted(for="asr-crisper-hallucination") Repair looping and repetition artifacts
             button#asr-submit.btn.btn-primary(type="submit") Transcribe upload
           .small.text-muted.mt-2#asr-status Ready.
 
@@ -337,16 +376,44 @@ block content
       const recordPreview = document.getElementById('asr-record-preview');
 
       const modelInput = document.getElementById('asr-model');
+      const modelHelp = document.getElementById('asr-model-help');
       const languageInput = document.getElementById('asr-language');
+      const languageHelp = document.getElementById('asr-language-help');
       const taskInput = document.getElementById('asr-task');
       const tempInput = document.getElementById('asr-temperature');
       const beamInput = document.getElementById('asr-beam-size');
       const vadInput = document.getElementById('asr-vad');
       const tsInput = document.getElementById('asr-word-ts');
       const samplingRateInput = document.getElementById('asr-sampling-rate');
-      const maxNewTokensInput = document.getElementById('asr-max-new-tokens');
+      const vibeMaxNewTokensInput = document.getElementById('asr-vibe-max-new-tokens');
       const hotwordsInput = document.getElementById('asr-hotwords');
       const contextInput = document.getElementById('asr-context');
+      const standardOptions = document.getElementById('asr-standard-options');
+      const vibevoiceOptions = document.getElementById('asr-vibevoice-options');
+      const crisperWhisperOptions = document.getElementById('asr-crisperwhisper-options');
+      const crisperModelSizeInput = document.getElementById('asr-crisper-model-size');
+      const crisperModeInput = document.getElementById('asr-crisper-mode');
+      const crisperMaxNewTokensInput = document.getElementById('asr-crisper-max-new-tokens');
+      const crisperHallucinationInput = document.getElementById('asr-crisper-hallucination');
+
+      const CRISPERWHISPER_MODEL = 'crisperwhisper-2.0';
+      const VIBEVOICE_MODEL = 'vibevoice-asr';
+      const ASR_OPTION_KEYS = [
+        'model',
+        'language',
+        'task',
+        'temperature',
+        'beam_size',
+        'vad_filter',
+        'word_timestamps',
+        'sampling_rate',
+        'model_size',
+        'mode',
+        'max_new_tokens',
+        'hallucination_mitigation',
+        'hotwords',
+        'context',
+      ];
 
       let mediaRecorder = null;
       let recordedChunks = [];
@@ -369,19 +436,75 @@ block content
         else statusEl.classList.add('text-muted');
       };
 
-      const collectOptions = () => ({
-        model: modelInput ? modelInput.value : '',
-        language: languageInput ? languageInput.value : '',
-        task: taskInput ? taskInput.value : '',
-        temperature: tempInput ? tempInput.value : '',
-        beam_size: beamInput ? beamInput.value : '',
-        vad_filter: vadInput ? String(vadInput.checked) : '',
-        word_timestamps: tsInput ? String(tsInput.checked) : '',
-        sampling_rate: samplingRateInput ? samplingRateInput.value : '',
-        max_new_tokens: maxNewTokensInput ? maxNewTokensInput.value : '',
-        hotwords: hotwordsInput ? hotwordsInput.value : '',
-        context: contextInput ? contextInput.value : '',
-      });
+      const setOptionsGroupEnabled = (group, enabled) => {
+        if (!group) return;
+        group.classList.toggle('d-none', !enabled);
+        group.querySelectorAll('input, select, textarea').forEach((control) => {
+          control.disabled = !enabled;
+        });
+      };
+
+      const updateModelControls = () => {
+        const model = modelInput?.value || 'whisper-api';
+        const isCrisperWhisper = model === CRISPERWHISPER_MODEL;
+        const isVibeVoice = model === VIBEVOICE_MODEL;
+
+        setOptionsGroupEnabled(standardOptions, !isCrisperWhisper);
+        setOptionsGroupEnabled(vibevoiceOptions, isVibeVoice);
+        setOptionsGroupEnabled(crisperWhisperOptions, isCrisperWhisper);
+
+        const translateOption = taskInput?.querySelector('option[value="translate"]');
+        if (translateOption) translateOption.disabled = isCrisperWhisper;
+        if (isCrisperWhisper && taskInput) taskInput.value = 'transcribe';
+
+        if (modelHelp) {
+          if (isCrisperWhisper) {
+            modelHelp.textContent = 'CrisperWhisper offers verbatim or cleaned transcripts in three checkpoint sizes.';
+          } else if (isVibeVoice) {
+            modelHelp.textContent = 'VibeVoice supports speaker labels and optional prompting controls.';
+          } else {
+            modelHelp.textContent = 'Whisper uses the standard gateway transcription controls.';
+          }
+        }
+        if (languageHelp) {
+          languageHelp.textContent = isCrisperWhisper
+            ? 'Use an ISO code such as en, ja, or sv. Auto is treated as English.'
+            : 'Use an ISO code or auto detection.';
+        }
+      };
+
+      const collectOptions = () => {
+        const model = modelInput?.value || 'whisper-api';
+        const options = {
+          model,
+          language: languageInput ? languageInput.value : '',
+          task: model === CRISPERWHISPER_MODEL ? 'transcribe' : (taskInput ? taskInput.value : ''),
+          word_timestamps: tsInput ? String(tsInput.checked) : '',
+        };
+
+        if (model === CRISPERWHISPER_MODEL) {
+          options.model_size = crisperModelSizeInput ? crisperModelSizeInput.value : 'large';
+          options.mode = crisperModeInput ? crisperModeInput.value : 'verbatim';
+          options.max_new_tokens = crisperMaxNewTokensInput ? crisperMaxNewTokensInput.value : '256';
+          options.hallucination_mitigation = crisperHallucinationInput
+            ? String(crisperHallucinationInput.checked)
+            : 'true';
+          return options;
+        }
+
+        options.temperature = tempInput ? tempInput.value : '';
+        options.beam_size = beamInput ? beamInput.value : '';
+        options.vad_filter = vadInput ? String(vadInput.checked) : '';
+
+        if (model === VIBEVOICE_MODEL) {
+          options.sampling_rate = samplingRateInput ? samplingRateInput.value : '';
+          options.max_new_tokens = vibeMaxNewTokensInput ? vibeMaxNewTokensInput.value : '';
+          options.hotwords = hotwordsInput ? hotwordsInput.value : '';
+          options.context = contextInput ? contextInput.value : '';
+        }
+
+        return options;
+      };
 
       const renderResult = (result, job) => {
         if (!resultText) return;
@@ -587,11 +710,10 @@ block content
           return;
         }
         const formData = new FormData(uploadForm);
+        ASR_OPTION_KEYS.forEach((key) => formData.delete(key));
         Object.entries(collectOptions()).forEach(([key, value]) => {
           if (value !== undefined && value !== null && value !== '') {
             formData.set(key, value);
-          } else {
-            formData.delete(key);
           }
         });
 
@@ -702,6 +824,7 @@ block content
         }
       };
 
+      if (modelInput) modelInput.addEventListener('change', updateModelControls);
       if (uploadForm) uploadForm.addEventListener('submit', handleUploadSubmit);
       if (prevBtn) prevBtn.addEventListener('click', () => {
         const target = Number(prevBtn.dataset.target || 1);
@@ -716,6 +839,7 @@ block content
       if (recordStop) recordStop.addEventListener('click', stopRecording);
       if (recordSend) recordSend.addEventListener('click', submitRecording);
 
+      updateModelControls();
       renderPinnedJob();
       renderJobs();
     })();

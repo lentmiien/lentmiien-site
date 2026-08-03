@@ -364,9 +364,10 @@ exports.transcribe = async (req, res) => {
       message = `ASR API returned ${error.response.status}. ${detail}`.trim();
     } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
       message = `Unable to reach the ASR API at ${asrApiService.apiBase}.`;
-    } else if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
+    } else if (['ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(error?.code)) {
       status = 504;
-      message = `ASR API request timed out after ${ASR_REQUEST_TIMEOUT_MS}ms.`;
+      const timeoutMs = error?.asrRequestTimeoutMs || ASR_REQUEST_TIMEOUT_MS;
+      message = `ASR API request timed out after ${timeoutMs}ms.`;
     }
 
     logger.error('ASR transcription failed', {

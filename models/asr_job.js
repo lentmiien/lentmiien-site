@@ -5,7 +5,17 @@ const { Schema } = mongoose;
 
 const RequestOptionsSchema = new Schema({
   model: { type: String, default: 'whisper-api' },
+  modelSize: {
+    type: String,
+    enum: ['small', 'medium', 'large'],
+    default: null,
+  },
   language: { type: String, default: null },
+  mode: {
+    type: String,
+    enum: ['verbatim', 'intended'],
+    default: null,
+  },
   task: { type: String, default: 'transcribe' },
   vadFilter: { type: Boolean, default: true },
   beamSize: { type: Number, default: 5 },
@@ -13,6 +23,7 @@ const RequestOptionsSchema = new Schema({
   wordTimestamps: { type: Boolean, default: false },
   samplingRate: { type: Number, default: null },
   maxNewTokens: { type: Number, default: null },
+  hallucinationMitigation: { type: Boolean, default: null },
   hotwords: { type: String, default: null },
   context: { type: String, default: null },
 }, { _id: false });

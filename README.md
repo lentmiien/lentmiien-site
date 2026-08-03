@@ -141,6 +141,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `SORA_STATUS_POLL_MS`, `SORA_STATUS_POLL_BATCH` | Background polling interval and batch size for pending Sora videos. |
 | `COMFY_API_BASE`, `COMFY_API_KEY` | ComfyUI REST endpoint + key for `/image_gen`. |
 | `ASR_API_BASE`, `TTS_API_BASE` | Local ASR and TTS service endpoints used by `/asr`, `/ocr-tts`, and the audio workflow. |
+| `ASR_CRISPERWHISPER_TIMEOUT_MS` | CrisperWhisper request timeout; defaults to `2800000` ms to cover gateway queueing and inference. |
 | `AUDIO_WORKFLOW_LLM_MODEL` | Default model used by audio workflow triggers. |
 | `AUDIO_WORKFLOW_TTS_VOICE`, `AUDIO_WORKFLOW_TTS_VOICE_EN`, `AUDIO_WORKFLOW_TTS_VOICE_JP`/`AUDIO_WORKFLOW_TTS_VOICE_JA`, `AUDIO_WORKFLOW_TTS_VOICE_SV` | Default TTS voices, including language-specific overrides. |
 | `AUDIO_WORKFLOW_TTS_FORMAT`, `AUDIO_WORKFLOW_QUALITY_PLOT_LIMIT` | Output audio format and quality-review chart limit for the audio workflow admin page. |
