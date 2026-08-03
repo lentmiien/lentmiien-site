@@ -1,0 +1,95 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/aiGatewayDocumentation.css')
+
+block content
+  section.gateway-docs
+    header.gateway-docs__header
+      .gateway-docs__heading
+        p.gateway-docs__eyebrow AI Gateway
+        if selectedDoc
+          h1= selectedDoc.title
+          p.gateway-docs__subtitle Rendered from #[code= selectedDoc.name] on the configured Gateway.
+        else
+          h1 Documentation
+          p.gateway-docs__subtitle Browse the Markdown guides published by the AI Gateway.
+      nav.gateway-docs__header-actions(aria-label='AI Gateway documentation navigation')
+        a.gateway-docs__button.gateway-docs__button--secondary(href='/admin/ai-gateway') Dashboard
+        if isDetail
+          a.gateway-docs__button.gateway-docs__button--secondary(href='/admin/ai-gateway/documentation') All documentation
+        else
+          a.gateway-docs__button.gateway-docs__button--secondary(href='/admin/ai-gateway/documentation') Refresh
+
+    .gateway-docs__gateway-meta
+      span.gateway-docs__gateway-label Gateway source
+      code= gatewayBaseUrl
+
+    if errorMessage
+      .gateway-docs__alert(role='alert')
+        strong Documentation unavailable
+        span= errorMessage
+
+    if !isDetail
+      section.gateway-docs__landing(aria-labelledby='gatewayDocumentationFilesTitle')
+        .gateway-docs__section-heading
+          div
+            h2#gatewayDocumentationFilesTitle Available files
+            p Select a guide to open its rendered, admin-only web view.
+          span.gateway-docs__count #{files.length} #{files.length === 1 ? 'file' : 'files'}
+        if files.length
+          nav.gateway-docs__file-grid(aria-label='Available AI Gateway documentation files')
+            each file in files
+              a.gateway-docs__file-card(href=file.href)
+                span.gateway-docs__file-icon(aria-hidden='true') MD
+                span.gateway-docs__file-copy
+                  strong= file.name
+                  small Open rendered guide
+                span.gateway-docs__file-arrow(aria-hidden='true') →
+        else if !errorMessage
+          .gateway-docs__empty
+            h2 No documentation files
+            p The Gateway returned an empty documentation list.
+
+    if isDetail && selectedDoc
+      section.gateway-docs__share(aria-labelledby='gatewayDocumentationLinksTitle')
+        .gateway-docs__section-heading
+          div
+            h2#gatewayDocumentationLinksTitle Copy document links
+            p Use localhost on the Gateway machine, Gateway IP on the home network, or Web app from anywhere after admin login.
+          button.gateway-docs__button.gateway-docs__button--primary(
+            type='button'
+            data-copy-button
+            data-copy-source='#gatewayDocumentationRaw'
+            data-copy-label='Markdown'
+          ) Copy Markdown
+        .gateway-docs__link-list
+          each link in selectedDoc.links
+            .gateway-docs__link-row
+              .gateway-docs__link-copy
+                strong= link.label
+                a(href=link.url, target='_blank', rel='noopener noreferrer')= link.url
+              button.gateway-docs__copy-link(
+                type='button'
+                data-copy-button
+                data-copy-value=link.url
+                data-copy-label=`${link.label} link`
+                aria-label=`Copy ${link.label} documentation link`
+              ) Copy link
+        p#gatewayDocumentationCopyStatus.gateway-docs__copy-status(role='status', aria-live='polite')
+
+      textarea#gatewayDocumentationRaw(hidden, readonly)= selectedDoc.rawContent
+      article.gateway-docs__reader
+        .gateway-docs__reader-head
+          div
+            p.gateway-docs__eyebrow Rendered Markdown
+            h2= selectedDoc.name
+          a.gateway-docs__source-link(
+            href=selectedDoc.links[1].url
+            target='_blank'
+            rel='noopener noreferrer'
+          ) Open Gateway source ↗
+        .gateway-docs__markdown!= selectedDoc.contentHtml
+
+block script
+  script(src='/js/ai-gateway-documentation.js', defer)

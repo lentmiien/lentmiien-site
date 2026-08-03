@@ -22,6 +22,7 @@ const minuteLoggerAdminController = require('../controllers/minuteLoggerAdminCon
 const dummyApiAdminController = require('../controllers/dummyApiAdminController');
 const disasterAdminController = require('../controllers/disasterAdminController');
 const amiamiItemsController = require('../controllers/amiamiItemsController');
+const aiGatewayDocumentationAdminController = require('../controllers/aiGatewayDocumentationAdminController');
 const lifeLogRouter = require('./lifeLog');
 
 const htmlUpload = multer({
@@ -222,6 +223,8 @@ router.get('/delete_log_file/:file', controller.delete_log_file);
 
 router.get('/openai_usage', controller.openai_usage);
 router.get('/ai-gateway', controller.ai_gateway_dashboard);
+router.get('/ai-gateway/documentation', aiGatewayDocumentationAdminController.index);
+router.get('/ai-gateway/documentation/:filename', aiGatewayDocumentationAdminController.show);
 router.get('/ai-gateway/gpu', controller.ai_gateway_gpu);
 router.get('/ai-gateway/containers', controller.ai_gateway_containers);
 router.post('/ai-gateway/containers/reset-defaults', controller.ai_gateway_containers_reset_defaults);
