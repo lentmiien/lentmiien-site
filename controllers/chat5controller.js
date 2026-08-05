@@ -5,6 +5,15 @@ const anthropic = require('../utils/anthropic');
 const logger = require('../utils/logger');
 const { renderMessagesHtml, renderMessageHtml } = require('../utils/chat5Markdown');
 const { hasDatePassed, parseOptionalDateOnly, toDateOnlyString } = require('../utils/dateOnly');
+const {
+  AIModelCardInputError,
+  CONTEXT_TYPES,
+  MODEL_TYPES,
+  MODALITIES,
+  buildModelCardsRedirect,
+  parseModelCardInput,
+  parseTokenLimits,
+} = require('../services/aiModelCardManagementService');
 
 // Instantiate the services
 const MessageService = require('../services/messageService');
@@ -172,88 +181,165 @@ exports.ai_model_cards = async (req, res) => {
   });
   const models = storedModels.map((model) => {
     const card = typeof model.toObject === 'function' ? model.toObject() : model;
+    const deprecationDateInput = toDateOnlyString(card.deprecation_date);
+    const deprecationDateHasPassed = hasDatePassed(card.deprecation_date);
     return {
       ...card,
-      deprecation_date_input: toDateOnlyString(card.deprecation_date),
-      deprecation_date_has_passed: hasDatePassed(card.deprecation_date),
+      deprecation_date_input: deprecationDateInput,
+      deprecation_date_has_passed: deprecationDateHasPassed,
+      deprecation_status: deprecationDateHasPassed ? 'deprecated' : (deprecationDateInput ? 'scheduled' : 'active'),
     };
   });
   const formDefaults = {
     model_name: '',
     provider: '',
     api_model: '',
+    input_1m_token_cost: '',
+    output_1m_token_cost: '',
+    model_type: 'chat',
+    in_modalities: [],
+    out_modalities: [],
+    max_tokens: '',
+    max_out_tokens: '',
+    deprecation_date_input: '',
+    batch_use: false,
+    context_type: 'none',
   };
-  const allowedProviders = ['OpenAI', 'Anthropic', 'Google', 'Groq', 'Local'];
-  if (typeof req.query.model === 'string' && req.query.model.trim().length > 0) {
-    formDefaults.model_name = req.query.model.trim();
-    formDefaults.api_model = req.query.model.trim();
+  const defaultProviders = ['OpenAI', 'Anthropic', 'Google', 'Groq', 'Local'];
+  const providerOptions = [...new Set([...defaultProviders, ...models.map((model) => model.provider).filter(Boolean)])];
+  let editingModel = null;
+
+  if (typeof req.query.edit === 'string' && req.query.edit.trim()) {
+    editingModel = models.find((model) => String(model._id) === req.query.edit.trim()) || null;
   }
-  if (typeof req.query.provider === 'string') {
-    const provider = req.query.provider.trim();
-    const matchedProvider = allowedProviders.find((value) => value.toLowerCase() === provider.toLowerCase());
-    if (matchedProvider) {
-      formDefaults.provider = matchedProvider;
+
+  if (editingModel) {
+    Object.assign(formDefaults, editingModel);
+  } else {
+    if (typeof req.query.model === 'string' && req.query.model.trim().length > 0) {
+      formDefaults.model_name = req.query.model.trim();
+      formDefaults.api_model = req.query.model.trim();
+    }
+    if (typeof req.query.provider === 'string') {
+      const provider = req.query.provider.trim();
+      const matchedProvider = providerOptions.find((value) => value.toLowerCase() === provider.toLowerCase());
+      if (matchedProvider) {
+        formDefaults.provider = matchedProvider;
+      }
     }
   }
+
   const errorMessages = {
     'invalid-deprecation-date': 'Enter a valid scheduled deprecation date.',
+    'invalid-model-card': 'Review the model fields and enter valid values before saving.',
+    'invalid-token-limits': 'Both token limits must be positive whole numbers.',
     'model-not-found': 'The AI model card could not be found.',
-    'update-failed': 'The scheduled deprecation date could not be updated.',
+    'save-failed': 'The AI model card could not be saved.',
+    'update-failed': 'The AI model card could not be updated.',
   };
-  const pageError = typeof req.query.error === 'string' ? errorMessages[req.query.error] : '';
-  res.render('ai_model_cards', {models, formDefaults, pageError});
+  const savedMessages = {
+    added: 'Model card saved.',
+    updated: 'Model card updated.',
+    tokens: 'Token limits updated.',
+    deprecation: 'Scheduled deprecation date updated.',
+    deleted: 'Model card deleted.',
+  };
+  let pageError = typeof req.query.error === 'string' ? errorMessages[req.query.error] : '';
+  if (!pageError && req.query.edit && !editingModel) {
+    pageError = errorMessages['model-not-found'];
+  }
+  const pageSuccess = typeof req.query.saved === 'string' ? savedMessages[req.query.saved] : '';
+  const filterOptions = {
+    providers: [...new Set(models.map((model) => model.provider).filter(Boolean))].sort(),
+    types: [...new Set(models.map((model) => model.model_type).filter(Boolean))].sort(),
+    inputModalities: [...new Set(models.flatMap((model) => model.in_modalities || []))].sort(),
+    outputModalities: [...new Set(models.flatMap((model) => model.out_modalities || []))].sort(),
+  };
+  res.render('ai_model_cards', {
+    models,
+    formDefaults,
+    editingModel,
+    providerOptions,
+    modelTypes: MODEL_TYPES,
+    modalities: MODALITIES,
+    contextTypes: CONTEXT_TYPES,
+    filterOptions,
+    pageError,
+    pageSuccess,
+  });
 };
 
 exports.add_model_card = async (req, res) => {
-  let deprecationDate;
   try {
-    deprecationDate = parseOptionalDateOnly(req.body.deprecation_date);
+    const data = {
+      ...parseModelCardInput(req.body),
+      added_date: new Date(),
+    };
+
+    // Preserve the existing add-form behavior: matching provider + API model replaces the card.
+    const existing = await AIModelCards.find({provider: data.provider, api_model: data.api_model});
+    if (existing.length === 1) {
+      Object.assign(existing[0], data);
+      await existing[0].save();
+    } else {
+      await new AIModelCards(data).save();
+    }
+
+    invalidateChatModelCache();
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'added', clearEdit: true }));
   } catch (error) {
-    return res.redirect('/chat5/ai_model_cards?error=invalid-deprecation-date');
+    if (!(error instanceof AIModelCardInputError)) {
+      logger.error('Failed to save AI model card', { error: error.message });
+    }
+    const errorCode = error instanceof AIModelCardInputError ? 'invalid-model-card' : 'save-failed';
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: errorCode, clearEdit: true }));
   }
+};
 
-  // Prepare data
-  const data = {
-    model_name: req.body.model_name,
-    provider: req.body.provider,
-    api_model: req.body.api_model,
-    input_1m_token_cost: parseFloat(req.body.input_1m_token_cost),
-    output_1m_token_cost: parseFloat(req.body.output_1m_token_cost),
-    model_type: req.body.model_type,
-    in_modalities: utils.normalizeInputToArrayOfStrings(req.body.in_modalities),
-    out_modalities: utils.normalizeInputToArrayOfStrings(req.body.out_modalities),
-    max_tokens: parseInt(req.body.max_tokens),
-    max_out_tokens: parseInt(req.body.max_out_tokens),
-    added_date: new Date(),
-    deprecation_date: deprecationDate,
-    batch_use: req.body.batch_use != undefined && req.body.batch_use === "on",
-    context_type: req.body.context_type
+exports.update_model_card = async (req, res) => {
+  try {
+    const data = parseModelCardInput(req.body);
+    const model = await AIModelCards.findById(req.params.id);
+    if (!model) {
+      return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: 'model-not-found', clearEdit: true }));
+    }
+    Object.assign(model, data);
+    await model.save();
+    invalidateChatModelCache();
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'updated', clearEdit: true }));
+  } catch (error) {
+    if (!(error instanceof AIModelCardInputError)) {
+      logger.error('Failed to update AI model card', {
+        error: error.message,
+        metadata: { id: req.params.id },
+      });
+    }
+    const errorCode = error instanceof AIModelCardInputError ? 'invalid-model-card' : 'update-failed';
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: errorCode, clearEdit: false }));
   }
+};
 
-  // Check if identical `provider` + `api_model` exist
-  const existing = await AIModelCards.find({provider: req.body.provider, api_model: req.body.api_model});
-  if (existing.length === 1) {
-    // Exist -> Replace current entry
-    existing[0].model_name = data.model_name;
-    existing[0].input_1m_token_cost = data.input_1m_token_cost;
-    existing[0].output_1m_token_cost = data.output_1m_token_cost;
-    existing[0].model_type = data.model_type;
-    existing[0].in_modalities = data.in_modalities;
-    existing[0].out_modalities = data.out_modalities;
-    existing[0].max_tokens = data.max_tokens;
-    existing[0].max_out_tokens = data.max_out_tokens;
-    existing[0].added_date = data.added_date;
-    existing[0].deprecation_date = data.deprecation_date;
-    existing[0].batch_use = data.batch_use;
-    existing[0].context_type = data.context_type;
-    await existing[0].save();
-  } else {
-    // Unique entry -> Save as new entry to database
-    await new AIModelCards(data).save();
+exports.update_model_card_tokens = async (req, res) => {
+  try {
+    const tokenLimits = parseTokenLimits(req.body);
+    const model = await AIModelCards.findById(req.params.id);
+    if (!model) {
+      return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: 'model-not-found' }));
+    }
+    Object.assign(model, tokenLimits);
+    await model.save();
+    invalidateChatModelCache();
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'tokens' }));
+  } catch (error) {
+    if (!(error instanceof AIModelCardInputError)) {
+      logger.error('Failed to update AI model card token limits', {
+        error: error.message,
+        metadata: { id: req.params.id },
+      });
+    }
+    const errorCode = error instanceof AIModelCardInputError ? 'invalid-token-limits' : 'update-failed';
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: errorCode }));
   }
-
-  invalidateChatModelCache();
-  res.redirect('/chat5/ai_model_cards');
 };
 
 exports.update_model_card_deprecation_date = async (req, res) => {
@@ -261,23 +347,23 @@ exports.update_model_card_deprecation_date = async (req, res) => {
   try {
     deprecationDate = parseOptionalDateOnly(req.body.deprecation_date);
   } catch (error) {
-    return res.redirect('/chat5/ai_model_cards?error=invalid-deprecation-date');
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: 'invalid-deprecation-date' }));
   }
 
   try {
     const model = await AIModelCards.findById(req.params.id);
     if (!model) {
-      return res.redirect('/chat5/ai_model_cards?error=model-not-found');
+      return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: 'model-not-found' }));
     }
     model.deprecation_date = deprecationDate;
     await model.save();
-    return res.redirect('/chat5/ai_model_cards');
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'deprecation' }));
   } catch (error) {
     logger.error('Failed to update AI model card deprecation date', {
       error: error.message,
       metadata: { id: req.params.id },
     });
-    return res.redirect('/chat5/ai_model_cards?error=update-failed');
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: 'update-failed' }));
   }
 };
 
@@ -285,13 +371,13 @@ exports.delete_model_card = async (req, res) => {
   try {
     await AIModelCards.findByIdAndDelete(req.params.id);
     invalidateChatModelCache();
-    return res.redirect('/chat5/ai_model_cards');
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'deleted', clearEdit: true }));
   } catch (error) {
     logger.error('Failed to delete AI model card', {
       error: error.message,
       metadata: { id: req.params.id },
     });
-    return res.redirect('/chat5/ai_model_cards');
+    return res.redirect(buildModelCardsRedirect(req.body?.return_to, { error: 'update-failed', clearEdit: true }));
   }
 };
 
