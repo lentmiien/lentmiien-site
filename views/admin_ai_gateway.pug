@@ -15,6 +15,13 @@ block content
   - const autoStop = dashboard.autoStop || null;
   - const containers = Array.isArray(dashboard.containers) ? dashboard.containers : [];
   - const containerSummary = dashboard.containerSummary || {};
+  - const reservation = dashboard.reservation || null;
+  - const reservationKnown = reservation && typeof reservation.active === 'boolean';
+  - const reservationActive = reservation && reservation.active === true;
+  - const reservationReleaseFailed = reservationActive && reservation.phase === 'release_failed';
+  - const reservableContainers = containers.filter((container) => container.gpuReservable === true || (reservation && container.id === reservation.service));
+  - const reservationTimeout = reservationActive ? reservation.idleTimeoutSec : (reservation && reservation.defaultIdleTimeoutSec);
+  - const reservationTimeoutValue = typeof reservationTimeout === 'number' && Number.isFinite(reservationTimeout) ? reservationTimeout : 900;
   - const checkpoints = Array.isArray(dashboard.checkpoints) ? dashboard.checkpoints : [];
   - const checkpointNames = Array.from(new Set(checkpoints.map((entry) => entry.checkpoint).filter((name) => name && name !== 'Unknown'))).sort();
   - const formatFixed = (value, digits = 2) => (typeof value === 'number' && !Number.isNaN(value) ? value.toFixed(digits) : 'N/A');
@@ -107,6 +114,61 @@ block content
                   .health-card__detail= upstream.detail
         else
           p.text-muted.mb-0 No upstream data available.
+      .panel
+        .panel__header
+          h2.panel__title GPU Reservation
+          p.panel__subtitle Keep one managed GPU service ready for an interactive or bulk session.
+        .reservation-controls#reservationControls
+          .reservation-controls__summary
+            div
+              span.reservation-controls__eyebrow Reservation status
+              strong#reservationStatus.reservation-controls__status= (reservation && reservation.statusDisplay) || 'Unknown'
+            span#reservationBadge.reservation-controls__badge(class=reservationReleaseFailed ? 'reservation-controls__badge--error' : (reservationActive ? 'reservation-controls__badge--active' : 'reservation-controls__badge--idle'))= reservationReleaseFailed ? 'Attention' : (reservationActive ? 'Exclusive' : (reservationKnown ? 'Open' : 'Unknown'))
+          form#reservationForm.reservation-controls__form
+            .reservation-controls__fields
+              .reservation-controls__field
+                label.form-label(for='reservationService') GPU service
+                select#reservationService.form-select(required, disabled=reservationActive || !reservableContainers.length)
+                  option(value='') Select a reservable service
+                  each container in reservableContainers
+                    option(value=container.id, selected=reservation && reservation.service === container.id)= `${container.label || container.name || container.id} · ${container.gpuRoleDisplay || 'GPU'}`
+              .reservation-controls__field
+                label.form-label(for='reservationIdleTimeout') Inactivity timeout (seconds)
+                input#reservationIdleTimeout.form-control(type='number', min='1', step='1', required, value=reservationTimeoutValue, disabled=reservationActive)
+            .form-check
+              input#reservationWait.form-check-input(type='checkbox', checked=true, disabled=reservationActive)
+              label.form-check-label(for='reservationWait') Wait until the service is ready
+            p.reservation-controls__hint Only work for the reserved service can enter the GPU scheduler until release or inactivity expiry.
+            .reservation-controls__actions
+              button#reservationReserve.btn.btn-primary(type='submit', disabled=reservationActive || !reservableContainers.length) Reserve GPU
+              button#reservationRelease.btn.btn-outline-danger(type='button', disabled=!reservationActive) Release
+              button#reservationRefresh.btn.btn-outline-light(type='button') Refresh
+              span#reservationFeedback.reservation-controls__feedback.text-muted(role='status', aria-live='polite')
+          .reservation-controls__status-grid
+            .reservation-controls__metric
+              span Owner
+              strong#reservationOwner= (reservation && (reservation.serviceLabel || reservation.service)) || 'None'
+            .reservation-controls__metric
+              span Phase
+              strong#reservationPhase= (reservation && reservation.phaseDisplay) || 'Unknown'
+            .reservation-controls__metric
+              span Time remaining
+              strong#reservationRemaining= (reservation && reservation.remainingDisplay) || '—'
+            .reservation-controls__metric
+              span Expires
+              strong#reservationExpires= (reservation && reservation.expiresAtDisplay) || '—'
+            .reservation-controls__metric
+              span Last activity
+              strong#reservationLastActivity= (reservation && reservation.lastActivityAtDisplay) || '—'
+            .reservation-controls__metric
+              span Container
+              strong#reservationContainer= (reservation && reservation.containerStateDisplay) || 'Unknown'
+            .reservation-controls__metric
+              span Blocked queue
+              strong#reservationBlockedQueue= reservation && reservation.blockedQueueDepth !== null ? reservation.blockedQueueDepth : '—'
+          p#reservationError.reservation-controls__error(hidden=!(reservation && reservation.lastError))= (reservation && reservation.lastError) || ''
+          if !reservableContainers.length
+            p.reservation-controls__empty No GPU-reservable managed services were returned by the Gateway.
       .panel
         .panel__header
           h2.panel__title Managed Services
@@ -544,5 +606,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='aiGatewayData') !{JSON.stringify({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary })}
+  script(type='application/json', id='aiGatewayData') !{JSON.stringify({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary, reservation: dashboard.reservation })}
   script(src='/js/aiGateway.js', defer)

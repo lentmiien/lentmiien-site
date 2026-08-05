@@ -53,6 +53,10 @@ const {
 } = require('../services/openaiUsageMetricsService');
 const { toLocalDateOnlyString } = require('../utils/dateOnly');
 const { isAiGatewayDashboardStatusAccepted } = require('../utils/aiGatewayHttp');
+const {
+  buildAiGatewayReservationRequest,
+  normalizeAiGatewayReservation,
+} = require('../utils/aiGatewayReservation');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 const TEMP_PASSWORD_BYTES = 18;
@@ -131,6 +135,7 @@ const AI_GATEWAY_ENDPOINTS = {
   limits: '/limits',
   health: '/health',
   logs: '/logs/tail?n=500',
+  reservation: '/gpu/reservation',
   containers: '/containers',
   containerResetDefaults: '/containers/reset-defaults',
   autoStop: '/comfy/auto_stop',
@@ -138,6 +143,7 @@ const AI_GATEWAY_ENDPOINTS = {
   monitor: '/lentmiienlm/monitor',
 };
 const AI_GATEWAY_TIMEOUT_MS = 5000;
+const AI_GATEWAY_RESERVATION_TIMEOUT_MS = 630000;
 
 function buildAiGatewayAdminHeaders() {
   const headers = {};
@@ -147,7 +153,7 @@ function buildAiGatewayAdminHeaders() {
   return headers;
 }
 
-function buildAiGatewayErrorMessage(error, fallback) {
+function buildAiGatewayErrorMessage(error, fallback, timeoutMs = AI_GATEWAY_TIMEOUT_MS) {
   if (error?.response?.data) {
     if (typeof error.response.data === 'string') {
       return error.response.data;
@@ -166,8 +172,8 @@ function buildAiGatewayErrorMessage(error, fallback) {
   if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
     return `Unable to reach the AI Gateway at ${AI_GATEWAY_BASE_URL}.`;
   }
-  if (error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
-    return `AI Gateway request timed out after ${AI_GATEWAY_TIMEOUT_MS}ms.`;
+  if (['ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(error?.code)) {
+    return `AI Gateway request timed out after ${timeoutMs}ms.`;
   }
 
   return error?.message || fallback;
@@ -3265,6 +3271,13 @@ function normalizeGatewayContainer(rawContainer, fallbackId) {
     || rawContainer.healthStatus
     || rawContainer.status_health
     || null;
+  const gpuRoleRaw = rawContainer.gpu_role ?? rawContainer.gpuRole;
+  const gpuRole = typeof gpuRoleRaw === 'string' && gpuRoleRaw.trim()
+    ? gpuRoleRaw.trim()
+    : null;
+  const gpuReservable = normalizeGatewayBool(
+    rawContainer.gpu_reservable ?? rawContainer.gpuReservable,
+  );
   const ports = Array.isArray(rawContainer.ports)
     ? rawContainer.ports.map((port) => {
         if (typeof port === 'string') return port;
@@ -3300,6 +3313,10 @@ function normalizeGatewayContainer(rawContainer, fallbackId) {
     service: rawContainer.service || rawContainer.compose_service || null,
     project: rawContainer.project || rawContainer.compose_project || null,
     health,
+    gpuRole,
+    gpuRoleDisplay: gpuRole ? formatGatewayStateLabel(gpuRole) : 'Unknown',
+    gpuReservable,
+    gatewayPrefix: rawContainer.gateway_prefix || rawContainer.gatewayPrefix || null,
     meta: meta.filter((line, index) => meta.indexOf(line) === index),
     canStart: running !== true,
     canStop: running !== false,
@@ -3344,6 +3361,18 @@ function buildGatewayContainerSummary(containers) {
     unknown,
     defaultRunning,
     display: items.length ? `${running}/${items.length} running` : 'No containers',
+  };
+}
+
+function attachGatewayReservationServiceLabel(reservation, containers) {
+  if (!reservation) return null;
+
+  const matchingContainer = Array.isArray(containers)
+    ? containers.find((container) => container.id === reservation.service)
+    : null;
+  return {
+    ...reservation,
+    serviceLabel: matchingContainer?.label || reservation.service || null,
   };
 }
 
@@ -3543,6 +3572,10 @@ function buildAiGatewayDashboard(rawData) {
   const checkpoints = normalizeGatewayCheckpoints(rawData.checkpoints);
   const containers = normalizeGatewayContainers(rawData.containers, rawData.health);
   const containerSummary = buildGatewayContainerSummary(containers);
+  const reservation = attachGatewayReservationServiceLabel(
+    normalizeAiGatewayReservation(rawData.reservation),
+    containers,
+  );
   const successRate = calculatePercent(requests.totals.total || 0, requests.totals.success || 0);
   const errorRate = calculatePercent(requests.totals.total || 0, requests.totals.errors || 0);
 
@@ -3661,6 +3694,7 @@ function buildAiGatewayDashboard(rawData) {
     checkpoints,
     containers,
     containerSummary,
+    reservation,
     health,
     logs,
     logInsights,
@@ -3685,6 +3719,7 @@ exports.ai_gateway_dashboard = async (req, res) => {
     { key: 'gpu', path: AI_GATEWAY_ENDPOINTS.gpu },
     { key: 'limits', path: AI_GATEWAY_ENDPOINTS.limits },
     { key: 'health', path: AI_GATEWAY_ENDPOINTS.health },
+    { key: 'reservation', path: AI_GATEWAY_ENDPOINTS.reservation },
     { key: 'containers', path: AI_GATEWAY_ENDPOINTS.containers, admin: true },
     { key: 'autoStop', path: AI_GATEWAY_ENDPOINTS.autoStop },
     { key: 'checkpoints', path: AI_GATEWAY_ENDPOINTS.checkpoints },
@@ -3771,6 +3806,193 @@ async function fetchAiGatewayContainerState() {
     containerSummary: buildGatewayContainerSummary(containers),
   };
 }
+
+async function fetchAiGatewayReservationState() {
+  const response = await axios.get(
+    `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.reservation}`,
+    { timeout: AI_GATEWAY_TIMEOUT_MS },
+  );
+  const reservation = normalizeAiGatewayReservation(response.data);
+  if (!reservation) {
+    throw new Error('The AI Gateway returned invalid reservation data.');
+  }
+  return reservation;
+}
+
+async function refreshAiGatewayReservationControls(fallbackReservation = null) {
+  const [reservationResult, containerResult] = await Promise.allSettled([
+    fetchAiGatewayReservationState(),
+    fetchAiGatewayContainerState(),
+  ]);
+  const containerState = containerResult.status === 'fulfilled'
+    ? containerResult.value
+    : null;
+  const reservation = reservationResult.status === 'fulfilled'
+    ? reservationResult.value
+    : fallbackReservation;
+
+  return {
+    reservation: attachGatewayReservationServiceLabel(
+      reservation,
+      containerState?.containers || [],
+    ),
+    containerState,
+    refreshErrors: [
+      reservationResult.status === 'rejected' ? reservationResult.reason : null,
+      containerResult.status === 'rejected' ? containerResult.reason : null,
+    ].filter(Boolean),
+  };
+}
+
+function logAiGatewayReservationRefreshErrors(errors) {
+  if (!Array.isArray(errors) || !errors.length) return;
+  logger.warning('AI gateway reservation changed, but control state refresh was incomplete', {
+    category: 'ai_gateway',
+    metadata: {
+      errors: errors.map((error) => buildAiGatewayErrorMessage(error, 'Refresh failed.')),
+    },
+  });
+}
+
+exports.ai_gateway_reservation = async (req, res) => {
+  try {
+    const reservation = await fetchAiGatewayReservationState();
+
+    return res
+      .set('Cache-Control', 'no-store')
+      .json({
+        ok: true,
+        reservation,
+      });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    const message = buildAiGatewayErrorMessage(
+      error,
+      'Unable to fetch AI gateway reservation state.',
+    );
+
+    logger.warning('Failed to fetch AI gateway reservation state', {
+      category: 'ai_gateway',
+      metadata: { error: message, status },
+    });
+
+    return res
+      .status(status)
+      .set('Cache-Control', 'no-store')
+      .json({ ok: false, error: message });
+  }
+};
+
+exports.ai_gateway_reservation_create = async (req, res) => {
+  let gatewayBody;
+  try {
+    gatewayBody = buildAiGatewayReservationRequest(req.body);
+  } catch (error) {
+    return res.status(400).json({ ok: false, error: error.message });
+  }
+
+  const timeoutMs = gatewayBody.wait
+    ? AI_GATEWAY_RESERVATION_TIMEOUT_MS
+    : AI_GATEWAY_TIMEOUT_MS;
+
+  try {
+    const response = await axios.post(
+      `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.reservation}`,
+      gatewayBody,
+      {
+        timeout: timeoutMs,
+        headers: buildAiGatewayAdminHeaders(),
+      },
+    );
+    const fallbackReservation = normalizeAiGatewayReservation(response.data);
+    const controlState = await refreshAiGatewayReservationControls(fallbackReservation);
+    logAiGatewayReservationRefreshErrors(controlState.refreshErrors);
+
+    logger.notice('Reserved AI gateway GPU service', {
+      category: 'ai_gateway',
+      metadata: {
+        containerId: gatewayBody.container_id,
+        idleTimeoutSec: gatewayBody.idle_timeout_sec || null,
+        wait: gatewayBody.wait,
+        user: req.user?.name || 'unknown',
+      },
+    });
+
+    return res
+      .set('Cache-Control', 'no-store')
+      .json({
+        ok: true,
+        reservation: controlState.reservation,
+        ...(controlState.containerState || {}),
+      });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    const message = buildAiGatewayErrorMessage(
+      error,
+      'Unable to reserve the AI gateway GPU service.',
+      timeoutMs,
+    );
+
+    logger.warning('Failed to reserve AI gateway GPU service', {
+      category: 'ai_gateway',
+      metadata: {
+        containerId: gatewayBody.container_id,
+        error: message,
+        status,
+      },
+    });
+
+    return res
+      .status(status)
+      .set('Cache-Control', 'no-store')
+      .json({ ok: false, error: message });
+  }
+};
+
+exports.ai_gateway_reservation_release = async (req, res) => {
+  try {
+    const response = await axios.delete(
+      `${AI_GATEWAY_BASE_URL}${AI_GATEWAY_ENDPOINTS.reservation}`,
+      {
+        timeout: AI_GATEWAY_RESERVATION_TIMEOUT_MS,
+        headers: buildAiGatewayAdminHeaders(),
+      },
+    );
+    const fallbackReservation = normalizeAiGatewayReservation(response.data);
+    const controlState = await refreshAiGatewayReservationControls(fallbackReservation);
+    logAiGatewayReservationRefreshErrors(controlState.refreshErrors);
+
+    logger.notice('Released AI gateway GPU reservation', {
+      category: 'ai_gateway',
+      metadata: { user: req.user?.name || 'unknown' },
+    });
+
+    return res
+      .set('Cache-Control', 'no-store')
+      .json({
+        ok: true,
+        reservation: controlState.reservation,
+        ...(controlState.containerState || {}),
+      });
+  } catch (error) {
+    const status = error?.response?.status || 502;
+    const message = buildAiGatewayErrorMessage(
+      error,
+      'Unable to release the AI gateway GPU reservation.',
+      AI_GATEWAY_RESERVATION_TIMEOUT_MS,
+    );
+
+    logger.warning('Failed to release AI gateway GPU reservation', {
+      category: 'ai_gateway',
+      metadata: { error: message, status },
+    });
+
+    return res
+      .status(status)
+      .set('Cache-Control', 'no-store')
+      .json({ ok: false, error: message });
+  }
+};
 
 function buildGatewayContainerActionBody(body) {
   if (!body || typeof body !== 'object' || typeof body.wait === 'undefined') {

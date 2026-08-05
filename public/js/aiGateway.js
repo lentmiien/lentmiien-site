@@ -23,6 +23,7 @@
   const autoStop = payload.autoStop || null;
   let containers = Array.isArray(payload.containers) ? payload.containers : [];
   let containerSummary = payload.containerSummary || {};
+  let reservation = payload.reservation || null;
 
   const STATUS_LABELS = {
     success: '2xx success',
@@ -1164,7 +1165,269 @@
       });
     }
 
+    window.addEventListener('ai-gateway:containers-updated', (event) => {
+      if (event.detail && Array.isArray(event.detail.containers)) {
+        applyContainerResponse(event.detail);
+      }
+    });
+
     renderContainers();
+  };
+
+  const initReservationControls = () => {
+    const root = document.getElementById('reservationControls');
+    if (!root) {
+      return;
+    }
+
+    const form = document.getElementById('reservationForm');
+    const serviceEl = document.getElementById('reservationService');
+    const timeoutEl = document.getElementById('reservationIdleTimeout');
+    const waitEl = document.getElementById('reservationWait');
+    const reserveButton = document.getElementById('reservationReserve');
+    const releaseButton = document.getElementById('reservationRelease');
+    const refreshButton = document.getElementById('reservationRefresh');
+    const feedbackEl = document.getElementById('reservationFeedback');
+    const statusEl = document.getElementById('reservationStatus');
+    const badgeEl = document.getElementById('reservationBadge');
+    const ownerEl = document.getElementById('reservationOwner');
+    const phaseEl = document.getElementById('reservationPhase');
+    const remainingEl = document.getElementById('reservationRemaining');
+    const expiresEl = document.getElementById('reservationExpires');
+    const activityEl = document.getElementById('reservationLastActivity');
+    const containerEl = document.getElementById('reservationContainer');
+    const blockedQueueEl = document.getElementById('reservationBlockedQueue');
+    const errorEl = document.getElementById('reservationError');
+    const hasReservableServices = Boolean(
+      serviceEl && Array.from(serviceEl.options).some((option) => option.value),
+    );
+    let busy = false;
+    let requestInFlight = false;
+    let pollFailureLogged = false;
+
+    const formatEpoch = (value) => {
+      const epoch = asNumber(value);
+      if (epoch === null) return '—';
+      const milliseconds = epoch > 1e11 ? epoch : epoch * 1000;
+      return new Date(milliseconds).toLocaleString();
+    };
+
+    const getReservationOwner = (state = reservation) => {
+      const matchingContainer = containers.find((container) => container.id === state?.service);
+      return matchingContainer?.label || state?.serviceLabel || state?.service || null;
+    };
+
+    const setFeedback = (message, isError) => {
+      if (!feedbackEl) return;
+      feedbackEl.textContent = message || '';
+      feedbackEl.classList.toggle('reservation-controls__feedback--error', Boolean(isError));
+    };
+
+    const applyDisabledState = () => {
+      const active = reservation?.active === true;
+      if (serviceEl) serviceEl.disabled = busy || active || !hasReservableServices;
+      if (timeoutEl) timeoutEl.disabled = busy || active;
+      if (waitEl) waitEl.disabled = busy || active;
+      if (reserveButton) reserveButton.disabled = busy || active || !hasReservableServices;
+      if (releaseButton) releaseButton.disabled = busy || !active;
+      if (refreshButton) refreshButton.disabled = busy;
+      root.classList.toggle('reservation-controls--busy', busy);
+    };
+
+    const updateReservationUI = (state, { syncForm = false } = {}) => {
+      reservation = state && typeof state === 'object' ? state : null;
+      const active = reservation?.active === true;
+      const known = typeof reservation?.active === 'boolean';
+      const releaseFailed = reservation?.phase === 'release_failed';
+
+      if (statusEl) {
+        statusEl.textContent = reservation?.statusDisplay
+          || (active ? 'Reserved' : (reservation ? 'Not reserved' : 'Unavailable'));
+      }
+      if (badgeEl) {
+        badgeEl.textContent = releaseFailed
+          ? 'Attention'
+          : (active ? 'Exclusive' : (known ? 'Open' : 'Unknown'));
+        badgeEl.classList.toggle('reservation-controls__badge--active', active && !releaseFailed);
+        badgeEl.classList.toggle('reservation-controls__badge--idle', !active && !releaseFailed);
+        badgeEl.classList.toggle('reservation-controls__badge--error', releaseFailed);
+      }
+      if (ownerEl) ownerEl.textContent = getReservationOwner() || 'None';
+      if (phaseEl) phaseEl.textContent = reservation?.phaseDisplay || (active ? 'Unknown' : 'Idle');
+      if (remainingEl) {
+        remainingEl.textContent = active ? formatSeconds(reservation?.remainingSec) : '—';
+      }
+      if (expiresEl) expiresEl.textContent = active ? formatEpoch(reservation?.expiresAt) : '—';
+      if (activityEl) activityEl.textContent = active ? formatEpoch(reservation?.lastActivityAt) : '—';
+      if (containerEl) {
+        containerEl.textContent = reservation?.containerStateDisplay
+          || reservation?.containerState
+          || 'Unknown';
+      }
+      if (blockedQueueEl) {
+        blockedQueueEl.textContent = reservation?.blockedQueueDepth === null
+          || typeof reservation?.blockedQueueDepth === 'undefined'
+          ? '—'
+          : formatInteger(reservation.blockedQueueDepth);
+      }
+      if (errorEl) {
+        errorEl.textContent = reservation?.lastError || '';
+        errorEl.hidden = !reservation?.lastError;
+      }
+
+      if (serviceEl && active && reservation?.service) {
+        const matchingOption = Array.from(serviceEl.options)
+          .find((option) => option.value === reservation.service);
+        if (matchingOption) serviceEl.value = reservation.service;
+      }
+      if (timeoutEl && syncForm) {
+        const timeout = active
+          ? asNumber(reservation?.idleTimeoutSec)
+          : asNumber(reservation?.defaultIdleTimeoutSec);
+        if (timeout !== null && timeout > 0) timeoutEl.value = String(timeout);
+      }
+
+      applyDisabledState();
+    };
+
+    const setBusy = (value) => {
+      busy = Boolean(value);
+      applyDisabledState();
+    };
+
+    const readJsonResponse = async (response) => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed (${response.status})`);
+      }
+      return data;
+    };
+
+    const publishContainerState = (data) => {
+      if (Array.isArray(data?.containers)) {
+        window.dispatchEvent(new CustomEvent('ai-gateway:containers-updated', {
+          detail: data,
+        }));
+      }
+    };
+
+    const refreshReservation = async ({ quiet = false, syncForm = false } = {}) => {
+      if (requestInFlight || busy) return;
+      requestInFlight = true;
+      if (!quiet) {
+        setBusy(true);
+        setFeedback('Refreshing...', false);
+      }
+
+      try {
+        const response = await fetch('/admin/ai-gateway/reservation', {
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+        });
+        const data = await readJsonResponse(response);
+        updateReservationUI(data.reservation, { syncForm });
+        pollFailureLogged = false;
+        if (!quiet) {
+          setFeedback('Refreshed.', false);
+          window.setTimeout(() => setFeedback('', false), 2000);
+        }
+      } catch (error) {
+        if (!quiet) {
+          setFeedback(error.message || 'Refresh failed.', true);
+        } else if (!pollFailureLogged) {
+          console.warn('Unable to refresh the GPU reservation; retrying.', error);
+          pollFailureLogged = true;
+        }
+      } finally {
+        requestInFlight = false;
+        if (!quiet) setBusy(false);
+      }
+    };
+
+    if (form) {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const containerId = serviceEl?.value.trim() || '';
+        const idleTimeoutSec = Number(timeoutEl?.value);
+        if (!containerId) {
+          setFeedback('Select a GPU service first.', true);
+          return;
+        }
+        if (!Number.isFinite(idleTimeoutSec) || idleTimeoutSec <= 0) {
+          setFeedback('Enter an inactivity timeout greater than zero.', true);
+          return;
+        }
+
+        const wait = waitEl?.checked !== false;
+        setBusy(true);
+        setFeedback(wait ? 'Starting service and waiting until ready...' : 'Starting reservation...', false);
+        try {
+          const response = await fetch('/admin/ai-gateway/reservation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              container_id: containerId,
+              idle_timeout_sec: idleTimeoutSec,
+              wait,
+            }),
+          });
+          const data = await readJsonResponse(response);
+          updateReservationUI(data.reservation, { syncForm: true });
+          publishContainerState(data);
+          const owner = getReservationOwner(data.reservation) || containerId;
+          setFeedback(`${owner} is reserved.`, false);
+        } catch (error) {
+          setFeedback(error.message || 'Reservation failed.', true);
+          window.setTimeout(() => refreshReservation({ quiet: true }), 250);
+        } finally {
+          setBusy(false);
+        }
+      });
+    }
+
+    if (releaseButton) {
+      releaseButton.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const owner = getReservationOwner() || 'the reserved service';
+        if (!window.confirm(`Release the GPU reservation? This will stop ${owner}.`)) {
+          return;
+        }
+
+        setBusy(true);
+        setFeedback(`Stopping ${owner} and releasing the GPU...`, false);
+        try {
+          const response = await fetch('/admin/ai-gateway/reservation', {
+            method: 'DELETE',
+            headers: { Accept: 'application/json' },
+          });
+          const data = await readJsonResponse(response);
+          updateReservationUI(data.reservation, { syncForm: true });
+          publishContainerState(data);
+          setFeedback('GPU reservation released.', false);
+        } catch (error) {
+          setFeedback(error.message || 'Release failed.', true);
+          window.setTimeout(() => refreshReservation({ quiet: true }), 250);
+        } finally {
+          setBusy(false);
+        }
+      });
+    }
+
+    if (refreshButton) {
+      refreshButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        refreshReservation({ syncForm: reservation?.active !== true });
+      });
+    }
+
+    updateReservationUI(reservation, { syncForm: true });
+    const refreshTimer = window.setInterval(
+      () => refreshReservation({ quiet: true }),
+      5000,
+    );
+    window.addEventListener('pagehide', () => {
+      window.clearInterval(refreshTimer);
+    }, { once: true });
   };
 
   const initAutoStopControls = () => {
@@ -1461,5 +1724,6 @@
 
   initAutoStopControls();
   initContainerControls();
+  initReservationControls();
   initMonitorControls();
 })();
