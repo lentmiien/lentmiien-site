@@ -6,6 +6,7 @@ const { Chat4Model, Conversation4Model, Chat4KnowledgeModel, FileMetaModel, Batc
 const logger = require('../utils/logger');
 const { emitConversationMessages, toClientMessage } = require('../utils/chat5Realtime');
 const { unwrapOpenAIWebhook } = require('../utils/openaiWebhook');
+const { PUSHOVER_PRIORITIES, sendPushoverNotification } = require('../utils/pushover');
 const audioWorkflowService = require('../services/audioWorkflowInstance');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
@@ -116,6 +117,21 @@ exports.openai = async (req, res) => {
 
     if (event.type === 'batch.completed') {
       const batchId = event.data.id;
+
+      try {
+        await sendPushoverNotification({
+          title: 'OpenAI batch completed',
+          message: `Batch ${batchId} completed.`,
+          priority: PUSHOVER_PRIORITIES.MEDIUM,
+        });
+        logger.notice('Pushover notification sent for completed batch', { batchId });
+      } catch (notificationError) {
+        logger.error('Failed to send Pushover notification for completed batch', {
+          batchId,
+          error: notificationError.message,
+        });
+      }
+
       await batchService.checkBatchStatus(batchId);
       const result = await batchService.processBatchResponses();
 
