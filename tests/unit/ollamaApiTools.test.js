@@ -3,6 +3,7 @@ const mockPost = jest.fn();
 const mockGetToolDefinitions = jest.fn();
 const mockGetTool = jest.fn();
 const mockExecuteToolCall = jest.fn();
+const mockRecordApiDebugLog = jest.fn().mockResolvedValue();
 
 jest.mock('axios', () => ({
   create: jest.fn(() => ({
@@ -19,7 +20,7 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 jest.mock('../../utils/apiDebugLogger', () => ({
-  createApiDebugLogger: jest.fn(() => jest.fn().mockResolvedValue()),
+  createApiDebugLogger: jest.fn(() => mockRecordApiDebugLog),
 }));
 
 jest.mock('../../services/toolManagerService', () => jest.fn().mockImplementation(() => ({
@@ -28,15 +29,196 @@ jest.mock('../../services/toolManagerService', () => jest.fn().mockImplementatio
   executeToolCall: mockExecuteToolCall,
 })));
 
-const { chat, convertResponseBody } = require('../../utils/Ollama_API');
+const {
+  chat,
+  submitChatJob,
+  retrieveChatJob,
+  buildWebhookUrl,
+  verifyWebhookToken,
+  convertResponseBody,
+} = require('../../utils/Ollama_API');
 
 describe('Ollama_API tool manager integration', () => {
   beforeEach(() => {
+    process.env.OLLAMA_WEBHOOK_SECRET = 'test-ollama-webhook-secret-with-enough-entropy';
+    process.env.OLLAMA_WEBHOOK_BASE_URL = 'https://my.lentmiien.com/';
     mockGet.mockReset();
     mockPost.mockReset();
     mockGetToolDefinitions.mockReset();
     mockGetTool.mockReset();
     mockExecuteToolCall.mockReset();
+    mockRecordApiDebugLog.mockClear();
+  });
+
+  afterAll(() => {
+    delete process.env.OLLAMA_WEBHOOK_SECRET;
+    delete process.env.OLLAMA_WEBHOOK_BASE_URL;
+  });
+
+  test('submits a background job with the production webhook base and a derived token', async () => {
+    mockGet.mockResolvedValue({
+      data: { models: [{ id: 'background-model' }] },
+      headers: {},
+    });
+    mockPost.mockResolvedValue({
+      status: 202,
+      data: {
+        job_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+        status: 'queued',
+        status_url: '/llm/chat/jobs/02d58123-b2da-4412-8df5-1fbb47bb07cd',
+      },
+      headers: {},
+    });
+
+    const job = await submitChatJob(
+      {
+        _id: { toString: () => 'conv-background' },
+        metadata: { tools: [], maxMessages: 10 },
+      },
+      [{
+        user_id: 'Lennart',
+        contentType: 'text',
+        content: { text: 'Run this in the background.' },
+        hideFromBot: false,
+      }],
+      {
+        provider: 'Local',
+        api_model: 'background-model',
+        in_modalities: ['text'],
+      },
+    );
+
+    expect(job).toMatchObject({
+      job_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+      status: 'queued',
+    });
+    expect(mockPost).toHaveBeenCalledWith(
+      '/llm/chat/jobs',
+      expect.objectContaining({
+        model: 'background-model',
+        stream: false,
+        webhook_url: expect.stringMatching(/^https:\/\/my\.lentmiien\.com\/webhook\/ollama\?token=[0-9a-f]{64}$/),
+      }),
+      expect.objectContaining({ timeout: 30000 }),
+    );
+    const submittedPayload = mockPost.mock.calls[0][1];
+    const token = new URL(submittedPayload.webhook_url).searchParams.get('token');
+    expect(token).not.toContain(process.env.OLLAMA_WEBHOOK_SECRET);
+    expect(verifyWebhookToken(token)).toBe(true);
+    expect(buildWebhookUrl()).toBe(submittedPayload.webhook_url);
+
+    const submissionLog = mockRecordApiDebugLog.mock.calls
+      .map(([entry]) => entry)
+      .find((entry) => entry.functionName === 'submitChatJob');
+    expect(submissionLog.requestBody.webhook_url).not.toContain(token);
+    expect(submissionLog.requestBody.webhook_url).toContain('redacted');
+  });
+
+  test('rejects an insecure public webhook base URL', () => {
+    process.env.OLLAMA_WEBHOOK_BASE_URL = 'http://example.test/';
+    expect(() => buildWebhookUrl()).toThrow('must use https unless it targets loopback');
+  });
+
+  test('retrieves a background job only from its canonical gateway path', async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        job_id: '12d58123-b2da-4412-8df5-1fbb47bb07cd',
+        status: 'completed',
+        status_url: 'https://attacker.invalid/result',
+        result: { message: { role: 'assistant', content: 'Done.' } },
+      },
+      headers: {},
+    });
+
+    const job = await retrieveChatJob('12d58123-b2da-4412-8df5-1fbb47bb07cd');
+
+    expect(mockGet).toHaveBeenCalledWith(
+      '/llm/chat/jobs/12d58123-b2da-4412-8df5-1fbb47bb07cd',
+      { timeout: 30000 },
+    );
+    expect(job.status_url).toBe('/llm/chat/jobs/12d58123-b2da-4412-8df5-1fbb47bb07cd');
+    await expect(retrieveChatJob('../gpu/reservation')).rejects.toThrow('valid Ollama job ID');
+  });
+
+  test('replays the latest persisted tool result in a background follow-up job', async () => {
+    mockGet.mockResolvedValue({
+      data: { models: [{ id: 'background-tool-model' }] },
+      headers: {},
+    });
+    mockGetToolDefinitions.mockResolvedValue([{
+      type: 'function',
+      function: {
+        name: 'demo_tool',
+        description: 'Demo tool',
+        parameters: { type: 'object', properties: {} },
+      },
+    }]);
+    mockGetTool.mockResolvedValue({ name: 'demo_tool', displayName: 'Demo Tool' });
+    mockPost.mockResolvedValue({
+      status: 202,
+      data: {
+        job_id: '52d58123-b2da-4412-8df5-1fbb47bb07cd',
+        status: 'queued',
+        status_url: '/llm/chat/jobs/52d58123-b2da-4412-8df5-1fbb47bb07cd',
+      },
+      headers: {},
+    });
+
+    await submitChatJob(
+      { metadata: { tools: ['demo_tool'], maxMessages: 10 } },
+      [
+        {
+          _id: 'user-tool',
+          user_id: 'Lennart',
+          contentType: 'text',
+          content: { text: 'Use the tool.' },
+          hideFromBot: false,
+        },
+        {
+          _id: 'function-tool',
+          user_id: 'bot',
+          contentType: 'function_call',
+          content: {
+            toolCallId: 'call_replay',
+            callId: 'call_replay',
+            toolName: 'demo_tool',
+            arguments: '{"prompt":"hello"}',
+          },
+          hideFromBot: true,
+        },
+        {
+          _id: 'output-tool',
+          user_id: 'bot',
+          contentType: 'function_call_output',
+          content: {
+            toolCallId: 'call_replay',
+            callId: 'call_replay',
+            toolName: 'demo_tool',
+            output: { answer: 42 },
+          },
+          hideFromBot: true,
+        },
+      ],
+      {
+        provider: 'Local',
+        api_model: 'background-tool-model',
+        in_modalities: ['text'],
+      },
+      { includeLastToolBatch: true },
+    );
+
+    const payload = mockPost.mock.calls[0][1];
+    expect(payload.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        tool_calls: [expect.objectContaining({ id: 'call_replay' })],
+      }),
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'call_replay',
+        content: '{"answer":42}',
+      }),
+    ]));
   });
 
   test('uses selected tool manager tools, ignores OpenAI built-ins, and completes the follow-up turn', async () => {
@@ -258,6 +440,37 @@ describe('Ollama_API tool manager integration', () => {
       hideFromBot: false,
       content: {
         text: 'Final answer',
+      },
+    });
+  });
+
+  test('converts a single background-job tool request without exposing it as final text', async () => {
+    const converted = await convertResponseBody({
+      message: {
+        role: 'assistant',
+        content: 'demo_tool(prompt="hello")',
+        tool_calls: [{
+          id: 'call_background_1',
+          type: 'function',
+          function: {
+            name: 'demo_tool',
+            arguments: { prompt: 'hello' },
+          },
+        }],
+      },
+    }, {
+      allowTextToolFallback: true,
+      allowedToolNames: ['demo_tool'],
+    });
+
+    expect(converted).toHaveLength(1);
+    expect(converted[0]).toMatchObject({
+      contentType: 'function_call',
+      hideFromBot: true,
+      content: {
+        toolCallId: 'call_background_1',
+        toolName: 'demo_tool',
+        arguments: '{"prompt":"hello"}',
       },
     });
   });

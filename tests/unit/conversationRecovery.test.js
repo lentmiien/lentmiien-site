@@ -9,6 +9,10 @@ jest.mock('../../utils/OpenAI_API', () => ({
   retrieveResponse: jest.fn(),
 }));
 
+jest.mock('../../utils/Ollama_API', () => ({
+  retrieveChatJob: jest.fn(),
+}));
+
 jest.mock('../../database', () => {
   const PendingRequests = jest.fn(function pendingCtor(doc) {
     Object.assign(this, doc);
@@ -29,6 +33,7 @@ jest.mock('../../database', () => {
   });
   Chat5Model.deleteOne = jest.fn().mockResolvedValue({ deletedCount: 1 });
   Chat5Model.exists = jest.fn();
+  Chat5Model.findOne = jest.fn();
 
   return {
     Conversation5Model: {
@@ -42,12 +47,14 @@ jest.mock('../../database', () => {
 
 const ConversationService = require('../../services/conversationService');
 const ai = require('../../utils/OpenAI_API');
+const ollama = require('../../utils/Ollama_API');
 const { Conversation5Model, PendingRequests, Chat5Model } = require('../../database');
 
 describe('ConversationService response recovery', () => {
   beforeEach(() => {
     Conversation5Model.exists.mockResolvedValue({ _id: 'conversation-reference' });
     Chat5Model.exists.mockResolvedValue({ _id: 'placeholder' });
+    Chat5Model.findOne.mockResolvedValue(null);
     PendingRequests.updateOne.mockResolvedValue({ modifiedCount: 1 });
     PendingRequests.deleteOne.mockResolvedValue({ deletedCount: 1 });
   });
@@ -128,6 +135,48 @@ describe('ConversationService response recovery', () => {
         error_msg: 'model error',
         status: 'failed',
       },
+    ]);
+  });
+
+  test('reconcilePendingResponses retrieves Ollama jobs with the Gateway client', async () => {
+    const pending = {
+      _id: 'pending-ollama',
+      response_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+      provider: 'Ollama',
+      conversation_id: 'conv-ollama',
+      placeholder_id: 'ph-ollama',
+    };
+    const retrievedJob = {
+      job_id: pending.response_id,
+      status: 'completed',
+      result: { message: { role: 'assistant', content: 'Local result' } },
+    };
+    PendingRequests.findOneAndUpdate
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce(null);
+    ollama.retrieveChatJob.mockResolvedValue(retrievedJob);
+
+    const service = new ConversationService({}, {}, {});
+    service.processCompletedResponse = jest.fn().mockResolvedValue({
+      conversation: { _id: { toString: () => 'conv-ollama' }, members: [] },
+      messages: [],
+      placeholder_id: 'ph-ollama',
+    });
+
+    const updates = await service.reconcilePendingResponses({ limit: 2 });
+
+    expect(ollama.retrieveChatJob).toHaveBeenCalledWith(pending.response_id);
+    expect(ai.retrieveResponse).not.toHaveBeenCalled();
+    expect(service.processCompletedResponse).toHaveBeenCalledWith(pending.response_id, {
+      claimedPending: pending,
+      retrievedResponse: retrievedJob,
+    });
+    expect(updates).toEqual([
+      expect.objectContaining({
+        type: 'completed',
+        response_id: pending.response_id,
+        response_provider: 'Ollama',
+      }),
     ]);
   });
 
@@ -405,6 +454,54 @@ describe('ConversationService response recovery', () => {
     );
   });
 
+  test('processCompletedResponse claims and converts an Ollama job with its provider context', async () => {
+    const jobId = '02d58123-b2da-4412-8df5-1fbb47bb07cd';
+    const pending = {
+      _id: 'pending-local-complete',
+      response_id: jobId,
+      provider: 'Ollama',
+      conversation_id: 'conv-local-complete',
+      placeholder_id: 'ph-local-complete',
+      toolRound: 1,
+    };
+    const conversation = {
+      messages: ['ph-local-complete'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    const savedMessage = {
+      _id: { toString: () => 'local-answer' },
+      contentType: 'text',
+    };
+    const job = {
+      job_id: jobId,
+      status: 'completed',
+      result: { message: { role: 'assistant', content: 'Local answer' } },
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValue(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      processCompletedResponse: jest.fn().mockResolvedValue([savedMessage]),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    await service.processCompletedResponse(jobId, {
+      retrievedResponse: job,
+      responseProvider: 'Ollama',
+    });
+
+    expect(PendingRequests.findOneAndUpdate.mock.calls[0][0]).toMatchObject({
+      response_id: jobId,
+      provider: 'Ollama',
+    });
+    expect(messageService.processCompletedResponse).toHaveBeenCalledWith(
+      conversation,
+      jobId,
+      job,
+      'Ollama',
+    );
+    expect(conversation.messages).toEqual(['local-answer']);
+  });
+
   test('processCompletedResponse executes function calls and queues follow-up response', async () => {
     const pending = {
       _id: 'pending-tools',
@@ -417,6 +514,7 @@ describe('ConversationService response recovery', () => {
       category: 'Chat5',
       tags: ['chat5'],
       members: ['Lennart'],
+      metadata: { tools: ['demo_tool'] },
       messages: ['user-1', 'ph-old'],
       save: jest.fn().mockResolvedValue(),
     };
@@ -486,6 +584,188 @@ describe('ConversationService response recovery', () => {
     expect(conversation.messages).toEqual(['user-1', 'fc-msg', 'chat5-generated', 'ph-next']);
     expect(result.messages.map(m => m.contentType)).toEqual(['function_call', 'function_call_output', 'text']);
     expect(PendingRequests.deleteOne).toHaveBeenCalledWith({ _id: 'pending-tools' });
+  });
+
+  test('Ollama tool follow-ups remain background jobs and increment the round guard', async () => {
+    const jobId = '22d58123-b2da-4412-8df5-1fbb47bb07cd';
+    const pending = {
+      _id: 'pending-local-tools',
+      response_id: jobId,
+      provider: 'Ollama',
+      conversation_id: 'conv-local-tools',
+      placeholder_id: 'ph-local-old',
+      toolRound: 1,
+    };
+    const conversation = {
+      _id: { toString: () => 'conv-local-tools' },
+      category: 'Chat5',
+      tags: ['chat5'],
+      members: ['Lennart'],
+      messages: ['user-local', 'ph-local-old'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    const functionCallMessage = {
+      _id: { toString: () => 'fc-local' },
+      contentType: 'function_call',
+      content: { toolName: 'demo_tool', toolCallId: 'call-local' },
+    };
+    const functionOutputMessage = {
+      _id: { toString: () => 'output-local' },
+      contentType: 'function_call_output',
+    };
+    const nextPlaceholder = {
+      _id: { toString: () => 'ph-local-next' },
+      contentType: 'text',
+      content: { text: 'Pending response' },
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValue(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      processCompletedResponse: jest.fn().mockResolvedValue([functionCallMessage]),
+      generateAIMessage: jest.fn().mockResolvedValue({
+        response_id: '32d58123-b2da-4412-8df5-1fbb47bb07cd',
+        response_provider: 'Ollama',
+        msg: nextPlaceholder,
+      }),
+    };
+    const service = new ConversationService({}, messageService, {});
+    service.executeFunctionCallsForConversation = jest.fn().mockResolvedValue([functionOutputMessage]);
+
+    await service.processCompletedResponse(jobId, { responseProvider: 'Ollama' });
+
+    expect(messageService.generateAIMessage).toHaveBeenCalledWith({
+      conversation: expect.objectContaining({
+        messages: ['user-local', 'fc-local', 'output-local'],
+      }),
+      includeLastToolBatch: true,
+    });
+    expect(PendingRequests).toHaveBeenCalledWith({
+      response_id: '32d58123-b2da-4412-8df5-1fbb47bb07cd',
+      conversation_id: 'conv-local-tools',
+      placeholder_id: 'ph-local-next',
+      provider: 'Ollama',
+      toolRound: 2,
+    });
+  });
+
+  test('function calls cannot execute tools that were not selected for the conversation', async () => {
+    const conversation = {
+      _id: { toString: () => 'conv-tool-safety' },
+      category: 'Chat5',
+      tags: ['chat5'],
+      members: ['Lennart'],
+      metadata: { tools: [] },
+    };
+    const functionCallMessage = {
+      contentType: 'function_call',
+      content: {
+        toolCallId: 'call-unselected',
+        callId: 'call-unselected',
+        toolName: 'dangerous_tool',
+        arguments: '{}',
+      },
+    };
+    const service = new ConversationService({}, {}, {});
+    service.toolManagerService = {
+      executeToolCall: jest.fn(),
+      formatToolResultForOpenAI: jest.fn((toolCall, result) => ({
+        type: 'function_call_output',
+        call_id: toolCall.call_id,
+        output: JSON.stringify(result),
+      })),
+    };
+
+    const outputs = await service.executeFunctionCallsForConversation(conversation, [functionCallMessage]);
+
+    expect(service.toolManagerService.executeToolCall).not.toHaveBeenCalled();
+    expect(outputs[0]).toMatchObject({
+      contentType: 'function_call_output',
+      content: expect.objectContaining({
+        status: 'failed',
+        error: expect.stringContaining('was not selected'),
+      }),
+    });
+  });
+
+  test('a retried callback reuses a saved tool output instead of repeating the side effect', async () => {
+    const existingOutput = {
+      _id: { toString: () => 'existing-function-output' },
+      contentType: 'function_call_output',
+    };
+    Chat5Model.findOne.mockResolvedValue(existingOutput);
+    const service = new ConversationService({}, {}, {});
+    service.toolManagerService = {
+      executeToolCall: jest.fn(),
+      formatToolResultForOpenAI: jest.fn(),
+    };
+
+    const outputs = await service.executeFunctionCallsForConversation({
+      _id: { toString: () => 'conv-tool-retry' },
+      members: ['Lennart'],
+      metadata: { tools: ['demo_tool'] },
+    }, [{
+      contentType: 'function_call',
+      content: {
+        responseId: '72d58123-b2da-4412-8df5-1fbb47bb07cd',
+        toolCallId: 'call-retry',
+        callId: 'call-retry',
+        toolName: 'demo_tool',
+        arguments: '{}',
+      },
+    }]);
+
+    expect(Chat5Model.findOne).toHaveBeenCalledWith({
+      contentType: 'function_call_output',
+      'content.responseId': '72d58123-b2da-4412-8df5-1fbb47bb07cd',
+      'content.callId': 'call-retry',
+    });
+    expect(service.toolManagerService.executeToolCall).not.toHaveBeenCalled();
+    expect(outputs).toEqual([existingOutput]);
+  });
+
+  test('Ollama tool execution stops before a fifth background round', async () => {
+    const jobId = '42d58123-b2da-4412-8df5-1fbb47bb07cd';
+    const pending = {
+      _id: 'pending-local-limit',
+      response_id: jobId,
+      provider: 'Ollama',
+      conversation_id: 'conv-local-limit',
+      placeholder_id: 'ph-local-limit',
+      toolRound: 4,
+    };
+    const conversation = {
+      _id: { toString: () => 'conv-local-limit' },
+      category: 'Chat5',
+      tags: ['chat5'],
+      members: ['Lennart'],
+      messages: ['ph-local-limit'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    const functionCallMessage = {
+      _id: { toString: () => 'fc-local-limit' },
+      contentType: 'function_call',
+      content: { toolName: 'demo_tool', toolCallId: 'call-limit' },
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValue(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      processCompletedResponse: jest.fn().mockResolvedValue([functionCallMessage]),
+      generateAIMessage: jest.fn(),
+    };
+    const service = new ConversationService({}, messageService, {});
+    service.executeFunctionCallsForConversation = jest.fn();
+
+    const result = await service.processCompletedResponse(jobId, { responseProvider: 'Ollama' });
+
+    expect(service.executeFunctionCallsForConversation).not.toHaveBeenCalled();
+    expect(messageService.generateAIMessage).not.toHaveBeenCalled();
+    expect(result.toolLoopLimited).toBe(true);
+    expect(result.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        contentType: 'text',
+        content: expect.objectContaining({ text: expect.stringContaining('4 consecutive tool rounds') }),
+      }),
+    ]));
   });
 
   test('processCompletedResponse releases claim when persistence fails', async () => {

@@ -3,10 +3,17 @@ const { getInitialRecoveryCheckAt } = require('../services/openaiResponseRecover
 
 const PendingRequests = new mongoose.Schema({
   response_id: { type: String, required: true, index: true },
+  provider: {
+    type: String,
+    enum: ['OpenAI', 'Ollama'],
+    default: 'OpenAI',
+    index: true,
+  },
   conversation_id: { type: String, required: true },
   placeholder_id: { type: String, required: true },
   sourceType: { type: String, default: null, index: true },
   sourceId: { type: String, default: null, index: true },
+  toolRound: { type: Number, default: 1, min: 1, max: 20 },
   processingStartedAt: { type: Date, default: null },
   recoveryState: {
     type: String,

@@ -1131,30 +1131,21 @@ class MessageService {
       return {response_id, msg};
     }
 
-    // Non-OpenAI providers are handled via the local Ollama helper
-    const response = await ollama.chat(runtimeConversation, messages, model);
-    const convertedOutputs = typeof ollama.convertResponseBody === 'function'
-      ? await ollama.convertResponseBody(response)
-      : [];
-    if (Array.isArray(convertedOutputs) && convertedOutputs.length > 0) {
-      const newAiMessages = await this._persistConvertedOutputs(conversation, convertedOutputs);
-      if (newAiMessages.length > 0) {
-        return {
-          response_id: null,
-          msg: newAiMessages[newAiMessages.length - 1],
-          messages: newAiMessages,
-        };
-      }
+    // Local models use the Gateway's background job API. The webhook/recovery
+    // path replaces this placeholder after retrieving the terminal job result.
+    const job = await ollama.submitChatJob(runtimeConversation, messages, model, {
+      includeLastToolBatch,
+    });
+    if (!job || !job.job_id) {
+      throw new Error('AI gateway did not return an Ollama background job ID');
     }
-
-    const assistantText = extractAssistantText(response) || '[No response produced]';
     const message = {
       user_id: "bot",
       category: conversation.category,
       tags: conversation.tags,
       contentType: "text",
       content: {
-        text: assistantText,
+        text: "Pending response",
         image: null,
         audio: null,
         tts: null,
@@ -1164,12 +1155,15 @@ class MessageService {
         toolOutput: null,
       },
       timestamp: new Date(),
-      hideFromBot: false,
+      hideFromBot: true,
     };
     const msg = new Chat5Model(message);
     await msg.save();
-    await this.syncTextEmbedding({ message: msg, conversationId: conversation?._id });
-    return {response_id: null, msg};
+    return {
+      response_id: job.job_id,
+      response_provider: 'Ollama',
+      msg,
+    };
   }
 
   async generateDraftResponseWithModel({
@@ -1299,7 +1293,46 @@ class MessageService {
   }
 
   // const messages = await this.messageService.processCompletedResponse(conversation, response_id, r.placeholder_id);
-  async processCompletedResponse(conversation, response_id, retrievedResponse = null) {
+  async processCompletedResponse(conversation, response_id, retrievedResponse = null, responseProvider = 'OpenAI') {
+    if (String(responseProvider).toLowerCase() === 'ollama') {
+      const job = retrievedResponse || await ollama.retrieveChatJob(response_id);
+      if (!job) {
+        throw new Error('Unable to retrieve completed Ollama job');
+      }
+      if (job.status !== 'completed' || !job.result || typeof job.result !== 'object') {
+        throw new Error(`Ollama job is not complete or has no result (status: ${job.status || 'unknown'})`);
+      }
+      const allowedToolNames = Array.isArray(conversation?.metadata?.tools)
+        ? conversation.metadata.tools.filter((name) => (
+            typeof name === 'string'
+            && name !== 'image_generation'
+            && name !== 'web_search_preview'
+          ))
+        : [];
+      const outputs = await ollama.convertResponseBody(job.result, {
+        allowTextToolFallback: allowedToolNames.length > 0,
+        allowedToolNames,
+      });
+      const jobOutputs = Array.isArray(outputs)
+        ? outputs.map((output, outputIndex) => {
+            if (!output || output.error || !output.content || typeof output.content !== 'object') {
+              return output;
+            }
+            return {
+              ...output,
+              content: {
+                ...output.content,
+                responseId: response_id,
+                outputIndex,
+              },
+            };
+          })
+        : outputs;
+      return this._persistConvertedOutputs(conversation, jobOutputs, {
+        responseId: response_id,
+      });
+    }
+
     const outputs = retrievedResponse
       ? await ai.convertResponseBody(retrievedResponse)
       : await ai.fetchCompleted(response_id);
@@ -1310,7 +1343,7 @@ class MessageService {
     return this._persistConvertedOutputs(conversation, outputs);
   }
 
-  async _persistConvertedOutputs(conversation, outputs) {
+  async _persistConvertedOutputs(conversation, outputs, { responseId = null } = {}) {
     const newAiMessages = [];
     if (!Array.isArray(outputs)) return newAiMessages;
 
@@ -1318,6 +1351,19 @@ class MessageService {
       if (Object.hasOwn(m, 'error')) {
         if (m.error) newAiMessages.push(m);
       } else {
+        const outputIndex = Number.isInteger(m?.content?.outputIndex)
+          ? m.content.outputIndex
+          : null;
+        if (responseId && outputIndex !== null && typeof Chat5Model.findOne === 'function') {
+          const existing = await Chat5Model.findOne({
+            'content.responseId': responseId,
+            'content.outputIndex': outputIndex,
+          });
+          if (existing) {
+            newAiMessages.push(existing);
+            continue;
+          }
+        }
         const message = {
           user_id: "bot",
           category: conversation.category,
@@ -1337,8 +1383,24 @@ class MessageService {
     return newAiMessages;
   }
 
-  async processFailedResponse(conversation, response_id, retrievedResponse = null) {
-    // TODO: Only support OpenAi at this stage
+  async processFailedResponse(conversation, response_id, retrievedResponse = null, responseProvider = 'OpenAI') {
+    if (String(responseProvider).toLowerCase() === 'ollama') {
+      const job = retrievedResponse || await ollama.retrieveChatJob(response_id);
+      if (!job) {
+        return 'Unable to retrieve failed Ollama job details';
+      }
+      if (typeof job.error === 'string' && job.error.trim().length > 0) {
+        return job.error.trim();
+      }
+      if (job.error && typeof job.error.detail === 'string' && job.error.detail.trim().length > 0) {
+        return job.error.detail.trim();
+      }
+      if (job.error && typeof job.error.message === 'string' && job.error.message.trim().length > 0) {
+        return job.error.message.trim();
+      }
+      return `Ollama background job status: ${job.status || 'unknown'}`;
+    }
+
     const resp = retrievedResponse || await ai.retrieveResponse(response_id);
     if (!resp) {
       return 'Unable to retrieve failed OpenAI response details';

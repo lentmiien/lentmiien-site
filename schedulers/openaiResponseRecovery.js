@@ -48,7 +48,9 @@ async function runRecovery(app) {
           placeholderId: update.placeholder_id,
         });
       }
-      await audioWorkflowService.handleOpenAiResponseCompleted(update.response_id, update);
+      if (update.response_provider !== 'Ollama') {
+        await audioWorkflowService.handleOpenAiResponseCompleted(update.response_id, update);
+      }
       continue;
     }
 
@@ -57,11 +59,13 @@ async function runRecovery(app) {
       if (update.status === 'abandoned') {
         abandonedCount += 1;
       }
-      await audioWorkflowService.handleOpenAiResponseFailed(update.response_id, update.error_msg);
+      if (update.response_provider !== 'Ollama') {
+        await audioWorkflowService.handleOpenAiResponseFailed(update.response_id, update.error_msg);
+      }
     }
   }
 
-  logger.notice('OpenAI pending response recovery processed updates', {
+  logger.notice('AI pending response recovery processed updates', {
     recoveredCompleted: completedCount,
     recoveredFailed: failedCount,
     abandoned: abandonedCount,
@@ -79,7 +83,7 @@ function scheduleOpenAIResponseRecovery(app) {
     try {
       await performanceMetrics.trackTask('openaiResponseRecovery.run', () => runRecovery(app));
     } catch (error) {
-      logger.error('OpenAI pending response recovery failed', {
+      logger.error('AI pending response recovery failed', {
         category: 'openai_webhook_recovery',
         metadata: { error: error.message },
       });
@@ -89,7 +93,7 @@ function scheduleOpenAIResponseRecovery(app) {
   };
 
   const start = () => {
-    logger.notice('OpenAI pending response recovery started', {
+    logger.notice('AI pending response recovery started', {
       category: 'openai_webhook_recovery',
       metadata: { intervalMs },
     });
@@ -103,7 +107,7 @@ function scheduleOpenAIResponseRecovery(app) {
     return;
   }
 
-  logger.notice('OpenAI pending response recovery waiting for MongoDB connection', {
+  logger.notice('AI pending response recovery waiting for MongoDB connection', {
     category: 'openai_webhook_recovery',
   });
   mongoose.connection.once('connected', () => {

@@ -46,6 +46,10 @@ jest.mock('../../utils/OpenAI_API', () => ({
   retrieveResponse: jest.fn(),
 }));
 
+jest.mock('../../utils/Ollama_API', () => ({
+  retrieveChatJob: jest.fn(),
+}));
+
 const ConversationService = require('../../services/conversationService');
 const { Conversation5Model } = require('../../database');
 
@@ -285,6 +289,58 @@ describe('ConversationService', () => {
       'text',
     ]);
     expect(conversation.save).toHaveBeenCalled();
+  });
+
+  test('postToConversationNew records an Ollama job against its pending placeholder', async () => {
+    const conversation = {
+      _id: { toString: () => 'conv-background' },
+      category: 'chat',
+      tags: ['demo'],
+      members: ['Lennart'],
+      metadata: { model: 'llama3.2', maxMessages: 10, tools: [] },
+      messages: [],
+      save: jest.fn().mockResolvedValue(),
+    };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const userMessage = {
+      _id: { toString: () => 'user-background' },
+      contentType: 'text',
+    };
+    const placeholder = {
+      _id: { toString: () => 'placeholder-background' },
+      contentType: 'text',
+      content: { text: 'Pending response' },
+      hideFromBot: true,
+    };
+    const messageService = {
+      createMessageNew: jest.fn().mockResolvedValue(userMessage),
+      generateAIMessage: jest.fn().mockResolvedValue({
+        response_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+        response_provider: 'Ollama',
+        msg: placeholder,
+      }),
+    };
+
+    const service = new ConversationService({}, messageService, {});
+    const result = await service.postToConversationNew({
+      conversationId: 'conv-background',
+      userId: 'Lennart',
+      messageContent: { text: 'Background please.' },
+      messageType: 'text',
+      generateAI: true,
+    });
+
+    expect(conversation.messages).toEqual(['user-background', 'placeholder-background']);
+    expect(result.aiMessages).toEqual([placeholder]);
+    expect(mockPendingRequests).toHaveBeenCalledWith({
+      response_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+      conversation_id: 'conv-background',
+      placeholder_id: 'placeholder-background',
+      provider: 'Ollama',
+      toolRound: 1,
+    });
+    expect(mockPendingRequests.mock.instances[0].save).toHaveBeenCalledTimes(1);
   });
 
   test('postToConversationNew does not add bot-authored messages to conversation members', async () => {

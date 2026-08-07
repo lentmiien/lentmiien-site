@@ -35,6 +35,8 @@ jest.mock('../../utils/OpenAI_API', () => ({
 }));
 jest.mock('../../utils/Ollama_API', () => ({
   chat: jest.fn(),
+  submitChatJob: jest.fn(),
+  retrieveChatJob: jest.fn(),
   convertResponseBody: jest.fn(),
 }));
 jest.mock('../../utils/logger', () => ({
@@ -53,6 +55,7 @@ jest.mock('../../database', () => {
     this.save = jest.fn().mockResolvedValue(this);
   });
   Chat5Model.find = jest.fn();
+  Chat5Model.findOne = jest.fn();
   Chat5Model.findById = jest.fn();
   return { AIModelCards, Chat5Model };
 });
@@ -92,7 +95,11 @@ describe('MessageService', () => {
     AIModelCards.find.mockReset();
     Chat5Model.mockClear();
     Chat5Model.find.mockReset();
+    Chat5Model.findOne.mockReset();
+    Chat5Model.findOne.mockResolvedValue(null);
     ollama.chat.mockReset();
+    ollama.submitChatJob.mockReset();
+    ollama.retrieveChatJob.mockReset();
     ollama.convertResponseBody.mockReset();
     ai.fetchCompleted.mockReset();
     ai.retrieveResponse.mockReset();
@@ -211,7 +218,7 @@ describe('MessageService', () => {
     expect(ai.fetchCompleted).not.toHaveBeenCalled();
   });
 
-  test('generateAIMessage saves all converted Ollama function messages', async () => {
+  test('generateAIMessage submits an Ollama job and immediately saves a hidden placeholder', async () => {
     AIModelCards.find.mockResolvedValue([
       {
         provider: 'Local',
@@ -229,9 +236,55 @@ describe('MessageService', () => {
         hideFromBot: false,
       },
     ]);
-    ollama.chat.mockResolvedValue({
-      choices: [{ message: { role: 'assistant', content: 'Final answer' } }],
+    ollama.submitChatJob.mockResolvedValue({
+      job_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+      status: 'queued',
     });
+
+    const conversation = {
+      _id: { toString: () => 'conv-1' },
+      category: 'chat',
+      tags: ['demo'],
+      members: ['Lennart'],
+      metadata: {
+        model: 'llama3.2',
+        maxMessages: 10,
+      },
+      messages: ['user-msg'],
+    };
+    const result = await service.generateAIMessage({ conversation });
+
+    expect(ollama.submitChatJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: expect.anything(),
+        metadata: expect.objectContaining({ model: 'llama3.2' }),
+      }),
+      expect.any(Array),
+      expect.objectContaining({ api_model: 'llama3.2' }),
+      { includeLastToolBatch: false },
+    );
+    expect(ollama.chat).not.toHaveBeenCalled();
+    expect(ollama.convertResponseBody).not.toHaveBeenCalled();
+    expect(Chat5Model).toHaveBeenCalledWith(expect.objectContaining({
+      contentType: 'text',
+      hideFromBot: true,
+      content: expect.objectContaining({ text: 'Pending response' }),
+    }));
+    expect(result).toMatchObject({
+      response_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+      response_provider: 'Ollama',
+      msg: expect.objectContaining({ hideFromBot: true }),
+    });
+  });
+
+  test('processCompletedResponse saves all converted Ollama function messages', async () => {
+    const job = {
+      job_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
+      status: 'completed',
+      result: {
+        message: { role: 'assistant', content: '', tool_calls: [] },
+      },
+    };
     ollama.convertResponseBody.mockResolvedValue([
       {
         contentType: 'function_call',
@@ -264,64 +317,94 @@ describe('MessageService', () => {
     ]);
 
     service.syncTextEmbedding = jest.fn().mockResolvedValue();
-    const result = await service.generateAIMessage({
-      conversation: {
-        _id: { toString: () => 'conv-1' },
-        category: 'chat',
-        tags: ['demo'],
-        members: ['Lennart'],
-        metadata: {
-          model: 'llama3.2',
-          maxMessages: 10,
-        },
-        messages: ['user-msg'],
+    const conversation = {
+      _id: { toString: () => 'conv-1' },
+      category: 'chat',
+      tags: ['demo'],
+      metadata: {
+        tools: ['demo_tool', 'web_search_preview'],
       },
-    });
+    };
+    const result = await service.processCompletedResponse(
+      conversation,
+      job.job_id,
+      job,
+      'Ollama',
+    );
 
-    expect(ollama.chat).toHaveBeenCalled();
-    expect(ollama.convertResponseBody).toHaveBeenCalled();
+    expect(ollama.convertResponseBody).toHaveBeenCalledWith(job.result, {
+      allowTextToolFallback: true,
+      allowedToolNames: ['demo_tool'],
+    });
+    expect(ollama.retrieveChatJob).not.toHaveBeenCalled();
     expect(Chat5Model).toHaveBeenCalledWith(expect.objectContaining({
       contentType: 'function_call',
       hideFromBot: true,
+      content: expect.objectContaining({
+        responseId: job.job_id,
+        outputIndex: 0,
+      }),
     }));
     expect(Chat5Model).toHaveBeenCalledWith(expect.objectContaining({
       contentType: 'function_call_output',
       hideFromBot: true,
     }));
-    expect(result.response_id).toBeNull();
-    expect(result.messages.map((message) => message.contentType)).toEqual([
+    expect(result.map((message) => message.contentType)).toEqual([
       'function_call',
       'function_call_output',
       'text',
     ]);
-    expect(result.msg.content.text).toBe('Final answer');
   });
 
-  test('generateAIMessage saves converted Ollama thinking as hidden reasoning before content', async () => {
-    AIModelCards.find.mockResolvedValue([
-      {
-        provider: 'Local',
-        api_model: 'supergemma4:26b-uncensored',
-        context_type: 'system',
-        in_modalities: ['text'],
+  test('processCompletedResponse reuses outputs persisted by an earlier callback attempt', async () => {
+    const job = {
+      job_id: '62d58123-b2da-4412-8df5-1fbb47bb07cd',
+      status: 'completed',
+      result: { message: { role: 'assistant', content: 'Already saved' } },
+    };
+    const existing = {
+      _id: { toString: () => 'existing-local-output' },
+      contentType: 'text',
+      content: {
+        text: 'Already saved',
+        responseId: job.job_id,
+        outputIndex: 0,
       },
-    ]);
-    Chat5Model.find.mockResolvedValue([
-      {
-        _id: { toString: () => 'user-msg' },
-        user_id: 'Lennart',
-        contentType: 'text',
-        content: { text: 'Give me an answer' },
-        hideFromBot: false,
-      },
-    ]);
-    ollama.chat.mockResolvedValue({
-      message: {
-        role: 'assistant',
-        content: 'Final answer',
-        thinking: 'Plan the answer.',
-      },
+    };
+    ollama.convertResponseBody.mockResolvedValue([{
+      contentType: 'text',
+      content: { text: 'Already saved' },
+      hideFromBot: false,
+    }]);
+    Chat5Model.findOne.mockResolvedValue(existing);
+
+    const result = await service.processCompletedResponse(
+      { category: 'chat', tags: ['demo'], metadata: { tools: [] } },
+      job.job_id,
+      job,
+      'Ollama',
+    );
+
+    expect(Chat5Model.findOne).toHaveBeenCalledWith({
+      'content.responseId': job.job_id,
+      'content.outputIndex': 0,
     });
+    expect(Chat5Model).not.toHaveBeenCalled();
+    expect(result).toEqual([existing]);
+  });
+
+  test('processCompletedResponse saves converted Ollama thinking before content', async () => {
+    const job = {
+      job_id: '12d58123-b2da-4412-8df5-1fbb47bb07cd',
+      status: 'completed',
+      result: {
+        message: {
+          role: 'assistant',
+          content: 'Final answer',
+          thinking: 'Plan the answer.',
+        },
+      },
+    };
     ollama.convertResponseBody.mockResolvedValue([
       {
         contentType: 'reasoning',
@@ -341,19 +424,17 @@ describe('MessageService', () => {
     ]);
 
     service.syncTextEmbedding = jest.fn().mockResolvedValue();
-    const result = await service.generateAIMessage({
-      conversation: {
+    const result = await service.processCompletedResponse(
+      {
         _id: { toString: () => 'conv-1' },
         category: 'chat',
         tags: ['demo'],
-        members: ['Lennart'],
-        metadata: {
-          model: 'supergemma4:26b-uncensored',
-          maxMessages: 10,
-        },
-        messages: ['user-msg'],
+        metadata: { tools: [] },
       },
-    });
+      job.job_id,
+      job,
+      'Ollama',
+    );
 
     expect(Chat5Model).toHaveBeenNthCalledWith(1, expect.objectContaining({
       contentType: 'reasoning',
@@ -370,11 +451,10 @@ describe('MessageService', () => {
         text: 'Final answer',
       }),
     }));
-    expect(result.messages.map((message) => message.contentType)).toEqual([
+    expect(result.map((message) => message.contentType)).toEqual([
       'reasoning',
       'text',
     ]);
-    expect(result.msg.content.text).toBe('Final answer');
   });
 
   test('getMessagesByCategoryUserId filters by category without html parsing', async () => {

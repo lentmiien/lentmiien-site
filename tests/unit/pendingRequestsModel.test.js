@@ -11,6 +11,8 @@ describe('PendingRequests recovery fields', () => {
     const after = Date.now();
 
     expect(pending.recoveryState).toBe('pending');
+    expect(pending.provider).toBe('OpenAI');
+    expect(pending.toolRound).toBe(1);
     expect(pending.recoveryAttemptCount).toBe(0);
     expect(pending.nextCheckAt).toBeInstanceOf(Date);
     expect(pending.nextCheckAt.getTime()).toBeGreaterThanOrEqual(before + (60 * 1000));

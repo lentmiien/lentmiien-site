@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const axios = require('axios');
 const logger = require('./logger');
 const { createApiDebugLogger } = require('./apiDebugLogger');
@@ -7,8 +8,17 @@ const ToolManagerService = require('../services/toolManagerService');
 
 const JS_FILE_NAME = 'utils/Ollama_API.js';
 const DEFAULT_BASE_URL = 'http://192.168.0.20:8080';
+const DEFAULT_WEBHOOK_BASE_URL = 'https://my.lentmiien.com/';
 const MODELS_ENDPOINT = '/llm/models';
 const CHAT_ENDPOINT = '/llm/chat';
+const CHAT_JOBS_ENDPOINT = '/llm/chat/jobs';
+const WEBHOOK_PATH = '/webhook/ollama';
+const WEBHOOK_TOKEN_PARAM = 'token';
+const WEBHOOK_TOKEN_CONTEXT = 'lentmiien-ollama-webhook-v1';
+const JOB_REQUEST_TIMEOUT_MS = 30000;
+const JOB_STATUS_TIMEOUT_MS = 30000;
+const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CHAT_JOB_STATUSES = new Set(['queued', 'running', 'completed', 'failed', 'cancelled']);
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const DEFAULT_MAX_TOOL_ROUNDS = 4;
 const GEMMA4_ESCAPE_TOKEN = '<|"|>';
@@ -28,6 +38,110 @@ const normalizeBaseUrl = (value) => {
   }
   return normalized.length > 0 ? normalized : DEFAULT_BASE_URL;
 };
+
+let warnedAboutSessionSecretFallback = false;
+let warnedAboutShortWebhookSecret = false;
+
+const getWebhookSecretMaterial = () => {
+  const configuredSecret = typeof process.env.OLLAMA_WEBHOOK_SECRET === 'string'
+    ? process.env.OLLAMA_WEBHOOK_SECRET.trim()
+    : '';
+  if (configuredSecret) {
+    return configuredSecret;
+  }
+
+  const sessionSecret = typeof process.env.SESSION_SECRET === 'string'
+    ? process.env.SESSION_SECRET.trim()
+    : '';
+  if (sessionSecret && !warnedAboutSessionSecretFallback) {
+    warnedAboutSessionSecretFallback = true;
+    void logger.warning('OLLAMA_WEBHOOK_SECRET is not configured; deriving the callback token from SESSION_SECRET', {
+      category: 'ollama_webhook',
+      metadata: {
+        recommendation: 'Configure a separate OLLAMA_WEBHOOK_SECRET before rotating SESSION_SECRET.',
+      },
+    });
+  }
+  return sessionSecret;
+};
+
+const getWebhookToken = () => {
+  const secret = getWebhookSecretMaterial();
+  if (!secret) {
+    throw new Error('OLLAMA_WEBHOOK_SECRET or SESSION_SECRET is required for Ollama background jobs');
+  }
+  if (secret.length < 32 && !warnedAboutShortWebhookSecret) {
+    warnedAboutShortWebhookSecret = true;
+    void logger.warning('Ollama webhook secret material is shorter than 32 characters', {
+      category: 'ollama_webhook',
+      metadata: {
+        configuredLength: secret.length,
+        recommendation: 'Use a randomly generated OLLAMA_WEBHOOK_SECRET of at least 32 characters.',
+      },
+    });
+  }
+  return crypto.createHmac('sha256', secret).update(WEBHOOK_TOKEN_CONTEXT).digest('hex');
+};
+
+const normalizeWebhookBaseUrl = (value) => {
+  const raw = typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : DEFAULT_WEBHOOK_BASE_URL;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch (error) {
+    throw new Error('OLLAMA_WEBHOOK_BASE_URL must be a valid absolute URL');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('OLLAMA_WEBHOOK_BASE_URL must use http or https');
+  }
+  const loopbackHost = ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname.toLowerCase());
+  if (parsed.protocol === 'http:' && !loopbackHost) {
+    throw new Error('OLLAMA_WEBHOOK_BASE_URL must use https unless it targets loopback');
+  }
+  if (parsed.username || parsed.password || parsed.hash) {
+    throw new Error('OLLAMA_WEBHOOK_BASE_URL must not contain credentials or a fragment');
+  }
+  parsed.search = '';
+  return parsed;
+};
+
+const buildWebhookUrl = () => {
+  const baseUrl = normalizeWebhookBaseUrl(process.env.OLLAMA_WEBHOOK_BASE_URL || DEFAULT_WEBHOOK_BASE_URL);
+  const webhookUrl = new URL(WEBHOOK_PATH, baseUrl);
+  webhookUrl.searchParams.set(WEBHOOK_TOKEN_PARAM, getWebhookToken());
+  return webhookUrl.toString();
+};
+
+const redactWebhookUrl = (value) => {
+  if (typeof value !== 'string' || value.length === 0) return value;
+  try {
+    const parsed = new URL(value);
+    if (parsed.searchParams.has(WEBHOOK_TOKEN_PARAM)) {
+      parsed.searchParams.set(WEBHOOK_TOKEN_PARAM, '[redacted]');
+    }
+    return parsed.toString();
+  } catch (error) {
+    return '[invalid webhook URL]';
+  }
+};
+
+const verifyWebhookToken = (candidate) => {
+  if (typeof candidate !== 'string' || candidate.length === 0) return false;
+  let expected;
+  try {
+    expected = getWebhookToken();
+  } catch (error) {
+    return false;
+  }
+  const providedBuffer = Buffer.from(candidate, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  return providedBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+};
+
+const isValidChatJobId = (value) => typeof value === 'string' && JOB_ID_PATTERN.test(value);
 
 const hostBaseUrl = normalizeBaseUrl(process.env.OLLAMA_BASE_URL || process.env.AI_GATEWAY_BASE_URL || DEFAULT_BASE_URL);
 
@@ -113,6 +227,126 @@ const resolveContextPrompt = (conversation) => {
 };
 
 const determineRole = (message) => (message && message.user_id === 'bot' ? 'assistant' : 'user');
+
+const getMessageIdentity = (message, fallbackIndex = 0) => {
+  if (!message) return `message-${fallbackIndex}`;
+  const rawId = message._id || message.id;
+  if (!rawId) return `message-${fallbackIndex}`;
+  if (typeof rawId === 'string') return rawId;
+  if (typeof rawId.toString === 'function') return rawId.toString();
+  return `message-${fallbackIndex}`;
+};
+
+const isFunctionReplayMessage = (message) => (
+  message?.contentType === 'function_call' || message?.contentType === 'function_call_output'
+);
+
+const isReasoningReplayMessage = (message) => message?.contentType === 'reasoning';
+
+const findLastFunctionReplayBatch = (messages = []) => {
+  const batch = new Set();
+  let foundBatch = false;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message) continue;
+
+    if (isFunctionReplayMessage(message)) {
+      batch.add(getMessageIdentity(message, index));
+      foundBatch = true;
+      continue;
+    }
+    if (foundBatch && isReasoningReplayMessage(message)) {
+      batch.add(getMessageIdentity(message, index));
+      continue;
+    }
+    if (foundBatch && !message.hideFromBot) {
+      break;
+    }
+  }
+
+  return batch;
+};
+
+const selectMessagesForOllama = (messages = [], maxMessagesLimit = null, { includeLastToolBatch = false } = {}) => {
+  if (!Array.isArray(messages) || messages.length === 0) return [];
+
+  const replayBatch = includeLastToolBatch ? findLastFunctionReplayBatch(messages) : new Set();
+  const selected = [];
+  let visibleCount = 0;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message) continue;
+
+    if (isFunctionReplayMessage(message) || isReasoningReplayMessage(message)) {
+      if (replayBatch.has(getMessageIdentity(message, index))) {
+        selected.push(message);
+      }
+      continue;
+    }
+    if (message.hideFromBot) continue;
+    if (maxMessagesLimit && visibleCount >= maxMessagesLimit) continue;
+    selected.push(message);
+    visibleCount += 1;
+  }
+
+  return selected.reverse();
+};
+
+const buildFunctionCallReplayMessage = (message) => {
+  const content = message?.content || {};
+  const raw = content.raw && typeof content.raw === 'object' ? content.raw : {};
+  const rawFunction = raw.function && typeof raw.function === 'object' ? raw.function : {};
+  const name = content.toolName || content.name || raw.name || rawFunction.name;
+  const callId = content.toolCallId || content.callId || raw.id || raw.tool_call_id || raw.call_id;
+  if (!name || !callId) {
+    logger.warning('Skipping malformed Ollama function_call replay message', {
+      category: 'ollama_background_job',
+      metadata: { messageId: getMessageIdentity(message), name: name || null, callId: callId || null },
+    });
+    return null;
+  }
+  const rawArguments = Object.prototype.hasOwnProperty.call(content, 'arguments')
+    ? content.arguments
+    : (Object.prototype.hasOwnProperty.call(rawFunction, 'arguments') ? rawFunction.arguments : raw.arguments);
+  return {
+    role: 'assistant',
+    content: '',
+    tool_calls: [{
+      id: callId,
+      type: 'function',
+      function: {
+        name,
+        arguments: parseToolArguments(rawArguments),
+      },
+    }],
+  };
+};
+
+const buildFunctionOutputReplayMessage = (message) => {
+  const content = message?.content || {};
+  const raw = content.raw && typeof content.raw === 'object' ? content.raw : {};
+  const callId = content.toolCallId || content.callId || raw.tool_call_id || raw.call_id;
+  const name = content.toolName || content.name || raw.name || 'unknown_tool';
+  if (!callId) {
+    logger.warning('Skipping malformed Ollama function_call_output replay message', {
+      category: 'ollama_background_job',
+      metadata: { messageId: getMessageIdentity(message), name },
+    });
+    return null;
+  }
+  const output = Object.prototype.hasOwnProperty.call(content, 'output')
+    ? content.output
+    : content.toolOutput;
+  return {
+    role: 'tool',
+    tool_name: name,
+    tool_call_id: callId,
+    call_id: content.callId || raw.call_id || callId,
+    content: serializeToolResult(output),
+  };
+};
 
 const convertMessageContent = ({ message, role, allowImages }) => {
   if (!message || typeof message !== 'object') {
@@ -206,9 +440,21 @@ const buildChatCompletionMessages = (contextPrompt, messages, allowImages) => {
   }
 
   for (const message of messages) {
-    if (!message || message.hideFromBot) {
+    if (!message) {
       continue;
     }
+
+    if (message.contentType === 'function_call') {
+      const replayMessage = buildFunctionCallReplayMessage(message);
+      if (replayMessage) formatted.push(replayMessage);
+      continue;
+    }
+    if (message.contentType === 'function_call_output') {
+      const replayMessage = buildFunctionOutputReplayMessage(message);
+      if (replayMessage) formatted.push(replayMessage);
+      continue;
+    }
+    if (message.contentType === 'reasoning' || message.hideFromBot) continue;
 
     const role = determineRole(message);
     const { text, images } = convertMessageContent({ message, role, allowImages });
@@ -305,6 +551,18 @@ const sanitizeMessagesForLogging = (messages) => {
         : '[binary image]')),
     };
   });
+};
+
+const sanitizeChatPayloadForLogging = (payload) => {
+  if (!payload || typeof payload !== 'object') return payload;
+  const sanitized = {
+    ...payload,
+    messages: sanitizeMessagesForLogging(payload.messages),
+  };
+  if (typeof sanitized.webhook_url === 'string') {
+    sanitized.webhook_url = redactWebhookUrl(sanitized.webhook_url);
+  }
+  return sanitized;
 };
 
 const isModelAvailable = (modelName) => {
@@ -1384,10 +1642,11 @@ const flattenAssistantContent = (content) => {
   return '';
 };
 
-const convertResponseBody = async (response) => {
+const convertResponseBody = async (response, options = {}) => {
   const outputs = [];
   const toolSteps = Array.isArray(response?.tool_steps) ? response.tool_steps : [];
   const includedThinking = new Set();
+  const includedToolCalls = new Set();
 
   const addThinkingOutput = (thinking, extras = {}) => {
     const text = normalizeThinkingText(thinking);
@@ -1395,6 +1654,18 @@ const convertResponseBody = async (response) => {
     const output = createOllamaReasoningOutput(text, extras);
     if (!output) return;
     includedThinking.add(text);
+    outputs.push(output);
+  };
+
+  const addToolCallOutput = (toolCall, fallbackIndex = 0) => {
+    const normalized = ensureToolCallIdentifier(toolCall, 1, fallbackIndex);
+    const output = createOllamaFunctionCallOutput(normalized);
+    if (!output) return;
+    const key = output.content.toolCallId
+      || output.content.callId
+      || `${output.content.toolName}:${output.content.arguments}`;
+    if (includedToolCalls.has(key)) return;
+    includedToolCalls.add(key);
     outputs.push(output);
   };
 
@@ -1408,10 +1679,7 @@ const convertResponseBody = async (response) => {
         toolCallSource: step.tool_call_source,
       });
       if (Array.isArray(step.tool_calls)) {
-        step.tool_calls.forEach((toolCall) => {
-          const output = createOllamaFunctionCallOutput(toolCall);
-          if (output) outputs.push(output);
-        });
+        step.tool_calls.forEach((toolCall, toolIndex) => addToolCallOutput(toolCall, toolIndex));
       }
       continue;
     }
@@ -1421,14 +1689,22 @@ const convertResponseBody = async (response) => {
     }
   }
 
-  const assistantMessage = extractAssistantMessage(response);
+  const rawAssistantMessage = extractAssistantMessage(response);
+  const { assistantMessage } = buildAssistantLoopMessage(rawAssistantMessage || {}, {
+    allowTextToolFallback: options.allowTextToolFallback === true,
+    allowedToolNames: Array.isArray(options.allowedToolNames) ? options.allowedToolNames : [],
+  });
   addThinkingOutput(assistantMessage?.thinking, {
     model: response?.model,
     createdAt: response?.created_at,
     role: assistantMessage?.role,
   });
+  const assistantToolCalls = Array.isArray(assistantMessage?.tool_calls)
+    ? assistantMessage.tool_calls
+    : [];
+  assistantToolCalls.forEach((toolCall, toolIndex) => addToolCallOutput(toolCall, toolIndex));
   const assistantText = flattenAssistantContent(assistantMessage?.content);
-  if (assistantText) {
+  if (assistantText && assistantToolCalls.length === 0) {
     outputs.push(createOllamaTextOutput(assistantText, false));
   }
 
@@ -1470,10 +1746,7 @@ const ensureModelAvailable = async (targetModel) => {
 
 const postChatPayload = async (payload, functionName) => {
   const requestUrl = `${hostBaseUrl}${CHAT_ENDPOINT}`;
-  const logPayload = {
-    ...payload,
-    messages: sanitizeMessagesForLogging(payload.messages),
-  };
+  const logPayload = sanitizeChatPayloadForLogging(payload);
 
   try {
     const response = await httpClient.post(CHAT_ENDPOINT, payload, {
@@ -1495,10 +1768,7 @@ const postChatPayload = async (payload, functionName) => {
         ...payload,
         messages: convertMessagesForGatewayToolRoleFallback(payload.messages),
       };
-      const fallbackLogPayload = {
-        ...fallbackPayload,
-        messages: sanitizeMessagesForLogging(fallbackPayload.messages),
-      };
+      const fallbackLogPayload = sanitizeChatPayloadForLogging(fallbackPayload);
 
       try {
         const fallbackResponse = await httpClient.post(CHAT_ENDPOINT, fallbackPayload, {
@@ -1541,6 +1811,210 @@ const postChatPayload = async (payload, functionName) => {
       functionName,
     });
     throw error;
+  }
+};
+
+const normalizeChatJobRecord = (data, { expectedJobId = null } = {}) => {
+  if (!data || typeof data !== 'object') {
+    throw new Error('AI gateway returned an invalid Ollama job response');
+  }
+  const jobId = normalizeModelIdentifier(data.job_id);
+  if (!isValidChatJobId(jobId)) {
+    throw new Error('AI gateway returned an invalid Ollama job ID');
+  }
+  if (expectedJobId && jobId !== expectedJobId) {
+    throw new Error('AI gateway returned a mismatched Ollama job ID');
+  }
+  const status = normalizeModelIdentifier(data.status).toLowerCase();
+  if (!CHAT_JOB_STATUSES.has(status)) {
+    throw new Error(`AI gateway returned an invalid Ollama job status: ${status || 'missing'}`);
+  }
+
+  const expectedStatusUrl = `${CHAT_JOBS_ENDPOINT}/${jobId}`;
+  if (data.status_url && data.status_url !== expectedStatusUrl) {
+    void logger.warning('Ignoring unexpected Ollama job status URL from AI gateway', {
+      category: 'ollama_background_job',
+      metadata: {
+        jobId,
+        receivedStatusUrl: String(data.status_url).slice(0, 300),
+        expectedStatusUrl,
+      },
+    });
+  }
+
+  return {
+    ...data,
+    job_id: jobId,
+    status,
+    status_url: expectedStatusUrl,
+  };
+};
+
+const sendChatJobPayload = async (payload, functionName) => {
+  const requestUrl = `${hostBaseUrl}${CHAT_JOBS_ENDPOINT}`;
+  const logPayload = sanitizeChatPayloadForLogging(payload);
+
+  try {
+    const response = await httpClient.post(CHAT_JOBS_ENDPOINT, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: JOB_REQUEST_TIMEOUT_MS,
+    });
+    const job = normalizeChatJobRecord(response.data);
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: logPayload,
+      responseHeaders: headersToObject(response.headers),
+      responseBody: response.data,
+      functionName,
+    });
+    return job;
+  } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: logPayload,
+      responseHeaders: headersToObject(error.response?.headers),
+      responseBody: error.response?.data || error.message || error,
+      functionName,
+    });
+    throw error;
+  }
+};
+
+const postChatJobPayload = async (payload, functionName) => {
+  try {
+    return await sendChatJobPayload(payload, functionName);
+  } catch (error) {
+    if (shouldRetryWithToolRoleFallback(error, payload)) {
+      const fallbackPayload = {
+        ...payload,
+        messages: convertMessagesForGatewayToolRoleFallback(payload.messages),
+      };
+      void logger.warning('Retrying rejected Ollama job submission with tool-result compatibility messages', {
+        category: 'ollama_background_job',
+        metadata: { model: payload.model },
+      });
+      const fallbackJob = await sendChatJobPayload(fallbackPayload, `${functionName}.toolRoleFallback`);
+      fallbackJob.gateway_tool_role_fallback = true;
+      return fallbackJob;
+    }
+
+    logger.error('Failed to submit Ollama background chat job', {
+      category: 'ollama_background_job',
+      metadata: {
+        model: payload?.model || null,
+        statusCode: error?.response?.status || null,
+        error: error?.message || String(error),
+      },
+    });
+    throw error;
+  }
+};
+
+const submitChatJob = async (conversation, messages, model, options = {}) => {
+  if (!model || typeof model.api_model !== 'string' || model.api_model.length === 0) {
+    throw new Error('Model information is required for Ollama chat requests');
+  }
+
+  const targetModel = normalizeModelIdentifier(model.api_model);
+  if (!targetModel) {
+    throw new Error('Model information is required for Ollama chat requests');
+  }
+
+  await ensureModelAvailable(targetModel);
+
+  const supportsImages = model.allow_images === true
+    || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'))
+    || isGemma4Model(targetModel);
+  const toolManagerConfig = await resolveToolManagerToolsForConversation(conversation);
+  const tools = toolManagerConfig.tools;
+  const contextPrompt = appendToolGuidanceToContext(
+    resolveContextPrompt(conversation),
+    toolManagerConfig.toolGuidance,
+  );
+  const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
+  const selectedMessages = selectMessagesForOllama(messages, maxMessagesLimit, {
+    includeLastToolBatch: options.includeLastToolBatch === true,
+  });
+  const rawMessageArray = buildChatCompletionMessages(
+    contextPrompt,
+    selectedMessages,
+    supportsImages,
+  );
+  const messageArray = isGemma4Model(targetModel)
+    ? limitMessagesToLastImage(rawMessageArray, 1)
+    : rawMessageArray.filter(messageHasPayload);
+
+  if (messageArray.length === 0) {
+    throw new Error('No messages available to send to the AI gateway');
+  }
+
+  const webhookUrl = buildWebhookUrl();
+  const payload = {
+    model: targetModel,
+    messages: messageArray,
+    stream: false,
+    webhook_url: webhookUrl,
+    ...buildChatPayloadOptions(conversation),
+  };
+  if (tools.length > 0) {
+    payload.tools = tools;
+  }
+
+  const job = await postChatJobPayload(payload, 'submitChatJob');
+  void logger.notice('Ollama background chat job accepted', {
+    category: 'ollama_background_job',
+    metadata: {
+      jobId: job.job_id,
+      status: job.status,
+      model: targetModel,
+      conversationId: conversation?._id?.toString?.() || conversation?.id?.toString?.() || null,
+      webhookUrl: redactWebhookUrl(webhookUrl),
+      includesTools: tools.length > 0,
+      includeLastToolBatch: options.includeLastToolBatch === true,
+    },
+  });
+  return job;
+};
+
+const retrieveChatJob = async (jobId) => {
+  if (!isValidChatJobId(jobId)) {
+    throw new Error('A valid Ollama job ID is required');
+  }
+
+  const endpoint = `${CHAT_JOBS_ENDPOINT}/${encodeURIComponent(jobId)}`;
+  const requestUrl = `${hostBaseUrl}${endpoint}`;
+  try {
+    const response = await httpClient.get(endpoint, { timeout: JOB_STATUS_TIMEOUT_MS });
+    const job = normalizeChatJobRecord(response.data, { expectedJobId: jobId });
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: null,
+      responseHeaders: headersToObject(response.headers),
+      responseBody: response.data,
+      functionName: 'retrieveChatJob',
+    });
+    return job;
+  } catch (error) {
+    await recordApiDebugLog({
+      requestUrl,
+      requestHeaders: null,
+      requestBody: null,
+      responseHeaders: headersToObject(error.response?.headers),
+      responseBody: error.response?.data || error.message || error,
+      functionName: 'retrieveChatJob',
+    });
+    logger.error('Failed to retrieve Ollama background chat job', {
+      category: 'ollama_background_job',
+      metadata: {
+        jobId,
+        statusCode: error?.response?.status || null,
+        error: error?.message || String(error),
+      },
+    });
+    return null;
   }
 };
 
@@ -1830,6 +2304,11 @@ module.exports = {
   getCachedModels,
   getCachedDefaultModel,
   isModelAvailable,
+  isValidChatJobId,
+  buildWebhookUrl,
+  verifyWebhookToken,
+  submitChatJob,
+  retrieveChatJob,
   chat,
   chatWithThinkingAndTools,
   chatGemma4,

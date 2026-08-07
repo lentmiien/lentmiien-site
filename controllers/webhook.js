@@ -13,9 +13,49 @@ const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
 const conversationService = new ConversationService(Conversation4Model, messageService, knowledgeService);
 const batchService = new BatchService(BatchPromptModel, BatchRequestModel, messageService, conversationService);
 const { fetchVideo, checkVideoProgress } = require('../utils/OpenAI_API');
+const ollama = require('../utils/Ollama_API');
 
 const { OpenAI } = require('openai');
 const client = new OpenAI({ webhookSecret: process.env.OPENAI_WEBHOOK_SECRET });
+
+const OLLAMA_TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
+function validateOllamaWebhookPayload(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { error: 'Payload must be a JSON object.' };
+  }
+
+  const jobId = typeof body.job_id === 'string' ? body.job_id.trim() : '';
+  if (!ollama.isValidChatJobId(jobId)) {
+    return { error: 'Invalid or missing job_id.' };
+  }
+
+  const status = typeof body.status === 'string' ? body.status.trim().toLowerCase() : '';
+  if (!OLLAMA_TERMINAL_JOB_STATUSES.has(status)) {
+    return { error: 'Invalid or nonterminal job status.' };
+  }
+
+  const expectedStatusUrl = `/llm/chat/jobs/${jobId}`;
+  if (body.status_url !== undefined && body.status_url !== expectedStatusUrl) {
+    return { error: 'status_url does not match job_id.' };
+  }
+
+  if (body.completed_at !== undefined && body.completed_at !== null) {
+    const completedAt = Number(body.completed_at);
+    if (!Number.isFinite(completedAt) || completedAt < 0) {
+      return { error: 'completed_at must be a non-negative number.' };
+    }
+  }
+
+  return {
+    value: {
+      jobId,
+      status,
+      statusUrl: expectedStatusUrl,
+      completedAt: body.completed_at ?? null,
+    },
+  };
+}
 
 exports.openai = async (req, res) => {
   let event;
@@ -194,5 +234,181 @@ exports.openai = async (req, res) => {
     }
   } catch (error) {
     logger.error('Failed to process OpenAI webhook event', { error, type: event.type });
+  }
+};
+
+exports.ollama = async (req, res) => {
+  const token = typeof req.query?.token === 'string' ? req.query.token : '';
+  if (!ollama.verifyWebhookToken(token)) {
+    logger.warning('Rejected Ollama webhook with invalid authentication token', {
+      category: 'ollama_webhook',
+      metadata: {
+        remoteAddress: req.ip || req.socket?.remoteAddress || null,
+      },
+    });
+    return res.status(401).send('Unauthorized');
+  }
+
+  const validation = validateOllamaWebhookPayload(req.body);
+  if (validation.error) {
+    logger.warning('Rejected malformed Ollama webhook notification', {
+      category: 'ollama_webhook',
+      metadata: {
+        error: validation.error,
+        remoteAddress: req.ip || req.socket?.remoteAddress || null,
+      },
+    });
+    return res.status(400).send('Invalid payload');
+  }
+
+  const notification = validation.value;
+  logger.notice('Ollama webhook notification accepted', {
+    category: 'ollama_webhook',
+    metadata: {
+      jobId: notification.jobId,
+      notifiedStatus: notification.status,
+      completedAt: notification.completedAt,
+    },
+  });
+
+  // Acknowledge promptly so Gateway retry timing is independent of database,
+  // result retrieval, tool execution, and Socket.IO delivery latency.
+  res.status(200).send();
+
+  try {
+    const knownPendingJob = await conversationService.hasPendingResponse(notification.jobId, 'Ollama');
+    if (!knownPendingJob) {
+      logger.warning('Ignoring Ollama webhook for unknown or already-processed job', {
+        category: 'ollama_webhook',
+        metadata: {
+          jobId: notification.jobId,
+          notifiedStatus: notification.status,
+        },
+      });
+      return;
+    }
+
+    // Never trust or follow a callback-supplied URL and never accept model
+    // output in the webhook body. Fetch the canonical job endpoint instead.
+    const job = await ollama.retrieveChatJob(notification.jobId);
+    if (!job) {
+      logger.error('Ollama webhook could not retrieve the notified job', {
+        category: 'ollama_webhook',
+        metadata: { jobId: notification.jobId },
+      });
+      return;
+    }
+
+    if (!OLLAMA_TERMINAL_JOB_STATUSES.has(job.status)) {
+      logger.warning('Ollama webhook retrieval returned a nonterminal job', {
+        category: 'ollama_webhook',
+        metadata: {
+          jobId: notification.jobId,
+          notifiedStatus: notification.status,
+          retrievedStatus: job.status,
+        },
+      });
+      return;
+    }
+
+    if (job.status !== notification.status) {
+      logger.warning('Ollama webhook status differed from canonical job status', {
+        category: 'ollama_webhook',
+        metadata: {
+          jobId: notification.jobId,
+          notifiedStatus: notification.status,
+          retrievedStatus: job.status,
+        },
+      });
+    }
+
+    const io = req.app.get('io');
+
+    if (job.status === 'completed') {
+      const result = await conversationService.processCompletedResponse(notification.jobId, {
+        retrievedResponse: job,
+        responseProvider: 'Ollama',
+      });
+      if (!result) {
+        logger.debug('No pending Ollama conversation claimed after job retrieval', {
+          jobId: notification.jobId,
+        });
+        return;
+      }
+
+      const { conversation, messages, placeholder_id } = result;
+      if (!conversation) {
+        logger.warning('Conversation missing for completed Ollama job', {
+          category: 'ollama_webhook',
+          metadata: { jobId: notification.jobId },
+        });
+        return;
+      }
+
+      if (!io) {
+        logger.warning('Socket.IO instance not available for Ollama webhook response', {
+          category: 'ollama_webhook',
+          metadata: { jobId: notification.jobId },
+        });
+        return;
+      }
+
+      emitConversationMessages(io, {
+        conversation,
+        messages,
+        placeholderId: placeholder_id,
+      });
+      logger.notice('Completed Ollama job persisted and broadcast', {
+        category: 'ollama_webhook',
+        metadata: {
+          jobId: notification.jobId,
+          conversationId: conversation._id?.toString?.() || conversation.id?.toString?.() || null,
+          placeholderId: placeholder_id,
+          messageCount: Array.isArray(messages) ? messages.length : 0,
+        },
+      });
+      return;
+    }
+
+    const failure = await conversationService.processFailedResponse(notification.jobId, {
+      retrievedResponse: job,
+      responseProvider: 'Ollama',
+      returnResult: true,
+    });
+    if (failure && typeof failure === 'object' && failure.conversation) {
+      if (io) {
+        emitConversationMessages(io, {
+          conversation: failure.conversation,
+          messages: [],
+          placeholderId: failure.placeholder_id,
+        });
+      }
+      logger.warning('Failed Ollama job removed its pending placeholder', {
+        category: 'ollama_webhook',
+        metadata: {
+          jobId: notification.jobId,
+          status: job.status,
+          conversationId: failure.conversation._id?.toString?.()
+            || failure.conversation.id?.toString?.()
+            || null,
+          error: failure.error_msg,
+        },
+      });
+      return;
+    }
+
+    logger.debug('No pending Ollama conversation claimed for failed job', {
+      jobId: notification.jobId,
+      status: job.status,
+    });
+  } catch (error) {
+    logger.error('Failed to process Ollama webhook notification', {
+      category: 'ollama_webhook',
+      metadata: {
+        jobId: notification.jobId,
+        notifiedStatus: notification.status,
+        error: error?.message || String(error),
+      },
+    });
   }
 };

@@ -2,6 +2,7 @@
 const sharp = require('sharp');
 const logger = require('../utils/logger');
 const ai = require('../utils/OpenAI_API');
+const ollama = require('../utils/Ollama_API');
 const ToolManagerService = require('./toolManagerService');
 const {
   getNextRecoveryCheckAt,
@@ -12,6 +13,22 @@ const { Conversation5Model, PendingRequests, Chat5Model } = require('../database
 
 const PENDING_CLAIM_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINAL_FAILURE_STATUSES = new Set(['cancelled', 'failed', 'incomplete']);
+const OPENAI_RESPONSE_PROVIDER = 'OpenAI';
+const OLLAMA_RESPONSE_PROVIDER = 'Ollama';
+const DEFAULT_OLLAMA_MAX_TOOL_ROUNDS = 4;
+
+function getOllamaMaxToolRounds() {
+  const parsed = Number.parseInt(process.env.OLLAMA_MAX_TOOL_ROUNDS, 10);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 20
+    ? parsed
+    : DEFAULT_OLLAMA_MAX_TOOL_ROUNDS;
+}
+
+function getPendingResponseProvider(pending) {
+  return String(pending?.provider || OPENAI_RESPONSE_PROVIDER).toLowerCase() === 'ollama'
+    ? OLLAMA_RESPONSE_PROVIDER
+    : OPENAI_RESPONSE_PROVIDER;
+}
 
 function activeRecoveryCondition() {
   return {
@@ -92,13 +109,17 @@ class ConversationService {
     this.tagList = [];
   }
 
-  async claimPendingRequest(response_id) {
+  async claimPendingRequest(response_id, responseProvider = null) {
     const now = new Date();
     const staleThreshold = new Date(now.getTime() - PENDING_CLAIM_TIMEOUT_MS);
+    const providerFilter = String(responseProvider).toLowerCase() === 'ollama'
+      ? { provider: OLLAMA_RESPONSE_PROVIDER }
+      : {};
 
     return await PendingRequests.findOneAndUpdate(
       {
         response_id,
+        ...providerFilter,
         $and: [
           activeRecoveryCondition(),
           claimableRecoveryCondition(staleThreshold),
@@ -107,6 +128,19 @@ class ConversationService {
       { $set: { processingStartedAt: now } },
       { new: true },
     );
+  }
+
+  async hasPendingResponse(response_id, responseProvider = null) {
+    if (!response_id || typeof PendingRequests.exists !== 'function') return false;
+    const providerFilter = String(responseProvider).toLowerCase() === 'ollama'
+      ? { provider: OLLAMA_RESPONSE_PROVIDER }
+      : {};
+    const pending = await PendingRequests.exists({
+      response_id,
+      ...providerFilter,
+      ...activeRecoveryCondition(),
+    });
+    return Boolean(pending);
   }
 
   async claimNextPendingRequestForRecovery(now = new Date()) {
@@ -1278,7 +1312,12 @@ class ConversationService {
     let aiMessages = [];
       if (generateAI) {
         const conversationForAI = this.normalizeMembersForAI(conversation);
-        const {response_id, msg, messages: generatedMessages} = await this.messageService.generateAIMessage({conversation: conversationForAI});
+        const {
+          response_id,
+          response_provider,
+          msg,
+          messages: generatedMessages,
+        } = await this.messageService.generateAIMessage({conversation: conversationForAI});
         const messagesToAppend = Array.isArray(generatedMessages) && generatedMessages.length > 0
           ? generatedMessages
           : (msg ? [msg] : []);
@@ -1304,6 +1343,10 @@ class ConversationService {
             conversation_id: conversation._id.toString(),
             placeholder_id,
           };
+          if (String(response_provider).toLowerCase() === 'ollama') {
+            pending_req.provider = OLLAMA_RESPONSE_PROVIDER;
+            pending_req.toolRound = 1;
+          }
           const pr = new PendingRequests(pending_req);
           await pr.save();
         }
@@ -1658,6 +1701,7 @@ class ConversationService {
     lastResponseStatus = pending?.lastResponseStatus || null,
     lastRetrievalError = pending?.lastRetrievalError || null,
   }) {
+    const responseProvider = getPendingResponseProvider(pending);
     await PendingRequests.updateOne(
       { _id: pending._id },
       {
@@ -1678,27 +1722,29 @@ class ConversationService {
     try {
       await this.removePendingPlaceholderReference(pending);
     } catch (error) {
-      logger.error('Failed to remove placeholder for abandoned OpenAI response', {
+      logger.error('Failed to remove placeholder for abandoned AI response', {
         category: 'openai_webhook_recovery',
         metadata: {
           responseId: pending.response_id,
+          provider: responseProvider,
           pendingId: pending._id?.toString?.() || pending._id,
           error: error?.message || String(error),
         },
       });
     }
 
-    logger.warning('Abandoned pending OpenAI response recovery', {
+    logger.warning('Abandoned pending AI response recovery', {
       category: 'openai_webhook_recovery',
       metadata: {
         responseId: pending.response_id,
+        provider: responseProvider,
         conversationId: pending.conversation_id,
         reason,
         attemptCount,
       },
     });
 
-    return {
+    const result = {
       type: 'failed',
       response_id: pending.response_id,
       conversation_id: pending.conversation_id,
@@ -1707,6 +1753,10 @@ class ConversationService {
       status: 'abandoned',
       reason,
     };
+    if (responseProvider === OLLAMA_RESPONSE_PROVIDER) {
+      result.response_provider = OLLAMA_RESPONSE_PROVIDER;
+    }
+    return result;
   }
 
   logRecoveryStatusTransition(pending, status, attemptCount) {
@@ -1714,10 +1764,11 @@ class ConversationService {
       return;
     }
 
-    logger.notice('OpenAI pending response recovery status changed', {
+    logger.notice('AI pending response recovery status changed', {
       category: 'openai_webhook_recovery',
       metadata: {
         responseId: pending.response_id,
+        provider: getPendingResponseProvider(pending),
         previousStatus: pending.lastResponseStatus || null,
         status,
         attemptCount,
@@ -1733,13 +1784,14 @@ class ConversationService {
     policy,
   }) {
     this.logRecoveryStatusTransition(pending, status, attemptCount);
+    const responseProvider = getPendingResponseProvider(pending);
 
     const createdAt = getPendingCreatedAt(pending, checkedAt);
     const ageMs = Math.max(0, checkedAt.getTime() - createdAt.getTime());
     if (ageMs >= policy.maxAgeMs) {
       return await this.abandonPendingResponse(pending, {
         reason: 'max_age_exceeded',
-        errorMessage: `OpenAI response recovery exceeded its ${formatRecoveryAgeLimit(policy.maxAgeMs)} age limit`,
+        errorMessage: `${responseProvider} response recovery exceeded its ${formatRecoveryAgeLimit(policy.maxAgeMs)} age limit`,
         checkedAt,
         attemptCount,
         lastResponseStatus: status,
@@ -1750,7 +1802,7 @@ class ConversationService {
     if (attemptCount >= policy.maxAttempts) {
       return await this.abandonPendingResponse(pending, {
         reason: 'max_attempts_exceeded',
-        errorMessage: `OpenAI response recovery exceeded ${policy.maxAttempts} attempts`,
+        errorMessage: `${responseProvider} response recovery exceeded ${policy.maxAttempts} attempts`,
         checkedAt,
         attemptCount,
         lastResponseStatus: status,
@@ -1808,12 +1860,13 @@ class ConversationService {
       let attemptCount = normalizeAttemptCount(pending.recoveryAttemptCount);
       const startingAttemptCount = attemptCount;
       let observedStatus = pending.lastResponseStatus || null;
+      const responseProvider = getPendingResponseProvider(pending);
 
       try {
         if (!pending.response_id) {
           updates.push(await this.abandonPendingResponse(pending, {
             reason: 'invalid_pending_request',
-            errorMessage: 'Pending OpenAI response is missing its response ID',
+            errorMessage: `Pending ${responseProvider} response is missing its response ID`,
             checkedAt,
             attemptCount,
           }));
@@ -1824,7 +1877,7 @@ class ConversationService {
         if (!placeholderExists) {
           updates.push(await this.abandonPendingResponse(pending, {
             reason: 'placeholder_missing',
-            errorMessage: 'Pending OpenAI response placeholder no longer exists',
+            errorMessage: `Pending ${responseProvider} response placeholder no longer exists`,
             checkedAt,
             attemptCount,
           }));
@@ -1836,7 +1889,7 @@ class ConversationService {
         if (ageMs >= recoveryPolicy.maxAgeMs) {
           updates.push(await this.abandonPendingResponse(pending, {
             reason: 'max_age_exceeded',
-            errorMessage: `OpenAI response recovery exceeded its ${formatRecoveryAgeLimit(recoveryPolicy.maxAgeMs)} age limit`,
+            errorMessage: `${responseProvider} response recovery exceeded its ${formatRecoveryAgeLimit(recoveryPolicy.maxAgeMs)} age limit`,
             checkedAt,
             attemptCount,
           }));
@@ -1846,14 +1899,16 @@ class ConversationService {
         if (attemptCount >= recoveryPolicy.maxAttempts) {
           updates.push(await this.abandonPendingResponse(pending, {
             reason: 'max_attempts_exceeded',
-            errorMessage: `OpenAI response recovery exceeded ${recoveryPolicy.maxAttempts} attempts`,
+            errorMessage: `${responseProvider} response recovery exceeded ${recoveryPolicy.maxAttempts} attempts`,
             checkedAt,
             attemptCount,
           }));
           continue;
         }
 
-        const response = await ai.retrieveResponse(pending.response_id);
+        const response = responseProvider === OLLAMA_RESPONSE_PROVIDER
+          ? await ollama.retrieveChatJob(pending.response_id)
+          : await ai.retrieveResponse(pending.response_id);
         checkedAt = currentTime();
         attemptCount += 1;
         observedStatus = typeof response?.status === 'string'
@@ -1867,11 +1922,15 @@ class ConversationService {
             retrievedResponse: response,
           });
           if (result) {
-            updates.push({
+            const update = {
               type: 'completed',
               response_id: pending.response_id,
               ...result,
-            });
+            };
+            if (responseProvider === OLLAMA_RESPONSE_PROVIDER) {
+              update.response_provider = OLLAMA_RESPONSE_PROVIDER;
+            }
+            updates.push(update);
           }
           continue;
         }
@@ -1882,14 +1941,18 @@ class ConversationService {
             claimedPending: pending,
             retrievedResponse: response,
           });
-          updates.push({
+          const update = {
             type: 'failed',
             response_id: pending.response_id,
             conversation_id: pending.conversation_id,
             placeholder_id: pending.placeholder_id,
             error_msg,
             status: observedStatus,
-          });
+          };
+          if (responseProvider === OLLAMA_RESPONSE_PROVIDER) {
+            update.response_provider = OLLAMA_RESPONSE_PROVIDER;
+          }
+          updates.push(update);
           continue;
         }
 
@@ -1897,17 +1960,18 @@ class ConversationService {
           checkedAt,
           attemptCount,
           status: observedStatus,
-          retrievalError: response ? null : 'OpenAI response retrieval returned no result',
+          retrievalError: response ? null : `${responseProvider} response retrieval returned no result`,
           policy: recoveryPolicy,
         });
         if (abandonment) {
           updates.push(abandonment);
         }
       } catch (error) {
-        logger.error('Failed to reconcile a pending OpenAI response', {
+        logger.error('Failed to reconcile a pending AI response', {
           category: 'openai_webhook_recovery',
           metadata: {
             responseId: pending.response_id,
+            provider: responseProvider,
             pendingId: pending._id?.toString?.() || pending._id,
             error: error?.message || String(error),
           },
@@ -1928,10 +1992,11 @@ class ConversationService {
           }
         } catch (scheduleError) {
           await this.releasePendingRequest(pending._id).catch(() => {});
-          logger.error('Failed to defer pending OpenAI response after recovery error', {
+          logger.error('Failed to defer pending AI response after recovery error', {
             category: 'openai_webhook_recovery',
             metadata: {
               responseId: pending.response_id,
+              provider: responseProvider,
               pendingId: pending._id?.toString?.() || pending._id,
               error: scheduleError?.message || String(scheduleError),
             },
@@ -2013,37 +2078,84 @@ class ConversationService {
     const userName = Array.isArray(conversation.members) && conversation.members.length > 0
       ? conversation.members[0]
       : 'chat5';
+    const allowedToolNames = new Set(
+      Array.isArray(conversation?.metadata?.tools)
+        ? conversation.metadata.tools.filter((name) => typeof name === 'string' && name.trim().length > 0)
+        : [],
+    );
 
     for (const functionCallMessage of functionCallMessages) {
       const toolCall = this.buildToolCallFromMessage(functionCallMessage);
+      const responseId = functionCallMessage?.content?.responseId || null;
+      const callId = toolCall?.call_id || toolCall?.id || null;
+      if (responseId && callId && typeof Chat5Model.findOne === 'function') {
+        const existingOutput = await Chat5Model.findOne({
+          contentType: 'function_call_output',
+          'content.responseId': responseId,
+          'content.callId': callId,
+        });
+        if (existingOutput) {
+          outputMessages.push(existingOutput);
+          logger.notice('Reused persisted function output while retrying AI response completion', {
+            category: 'chat5_tool_safety',
+            metadata: {
+              conversationId: conversation._id?.toString?.() || conversation.id?.toString?.() || null,
+              responseId,
+              callId,
+              toolName: toolCall?.name || null,
+            },
+          });
+          continue;
+        }
+      }
       let execution;
       let outputPayload;
 
-      try {
-        execution = await this.toolManagerService.executeToolCall(toolCall, {
-          conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
-          conversation,
-          userName,
-          userId: userName,
-          openaiUser: userName,
-          createdBy: 'Chat5',
-        });
-        outputPayload = execution.result;
-      } catch (error) {
-        logger.error('Tool execution failed for function_call response', {
-          conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
-          toolName: toolCall.name,
-          callId: toolCall.call_id || toolCall.id,
-          error,
-        });
+      if (!toolCall?.name || !allowedToolNames.has(toolCall.name)) {
+        const errorMessage = `Tool "${toolCall?.name || 'unknown'}" was not selected for this conversation.`;
         execution = {
           ok: false,
-          tool: toolCall.name || null,
-          toolCallId: toolCall.id || null,
-          callId: toolCall.call_id || toolCall.id || null,
-          error: error?.message || String(error),
+          tool: toolCall?.name || null,
+          toolCallId: toolCall?.id || null,
+          callId: toolCall?.call_id || toolCall?.id || null,
+          error: errorMessage,
         };
         outputPayload = execution;
+        logger.warning('Rejected unselected function call from AI response', {
+          category: 'chat5_tool_safety',
+          metadata: {
+            conversationId: conversation._id?.toString?.() || conversation.id?.toString?.() || null,
+            toolName: toolCall?.name || null,
+            callId: toolCall?.call_id || toolCall?.id || null,
+          },
+        });
+      } else {
+        try {
+          execution = await this.toolManagerService.executeToolCall(toolCall, {
+            conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
+            conversation,
+            userName,
+            userId: userName,
+            openaiUser: userName,
+            createdBy: 'Chat5',
+          });
+          outputPayload = execution.result;
+        } catch (error) {
+          logger.error('Tool execution failed for function_call response', {
+            conversationId: conversation._id?.toString?.() || conversation.id?.toString?.(),
+            toolName: toolCall.name,
+            callId: toolCall.call_id || toolCall.id,
+            error,
+          });
+          execution = {
+            ok: false,
+            tool: toolCall.name || null,
+            toolCallId: toolCall.id || null,
+            callId: toolCall.call_id || toolCall.id || null,
+            error: error?.message || String(error),
+          };
+          outputPayload = execution;
+        }
       }
 
       const outputItem = this.toolManagerService.formatToolResultForOpenAI(toolCall, outputPayload, { format: 'responses' });
@@ -2062,7 +2174,7 @@ class ConversationService {
 
   async queueFollowUpAfterFunctionCalls(conversation, pendingContext = {}) {
     const conversationForAI = this.normalizeMembersForAI(conversation);
-    const { response_id, msg } = await this.messageService.generateAIMessage({
+    const { response_id, response_provider, msg } = await this.messageService.generateAIMessage({
       conversation: conversationForAI,
       includeLastToolBatch: true,
     });
@@ -2081,6 +2193,16 @@ class ConversationService {
         conversation_id: conversation._id.toString(),
         placeholder_id: msg._id.toString(),
       };
+      const provider = String(response_provider || pendingContext?.provider).toLowerCase() === 'ollama'
+        ? OLLAMA_RESPONSE_PROVIDER
+        : OPENAI_RESPONSE_PROVIDER;
+      if (provider === OLLAMA_RESPONSE_PROVIDER) {
+        pendingRequest.provider = OLLAMA_RESPONSE_PROVIDER;
+        const previousRound = Number.isInteger(pendingContext?.toolRound) && pendingContext.toolRound > 0
+          ? pendingContext.toolRound
+          : 1;
+        pendingRequest.toolRound = previousRound + 1;
+      }
       if (pendingContext?.sourceType) {
         pendingRequest.sourceType = pendingContext.sourceType;
       }
@@ -2099,8 +2221,9 @@ class ConversationService {
   async processCompletedResponse(response_id, {
     claimedPending = null,
     retrievedResponse = null,
+    responseProvider = null,
   } = {}) {
-    const pending = claimedPending || await this.claimPendingRequest(response_id);
+    const pending = claimedPending || await this.claimPendingRequest(response_id, responseProvider);
 
     if (!pending) {
       logger.debug('No claimable pending request found for completed response', { response_id });
@@ -2116,30 +2239,89 @@ class ConversationService {
         return { conversation: null, messages: [], placeholder_id: pending.placeholder_id };
       }
 
-      const messages = retrievedResponse
-        ? await this.messageService.processCompletedResponse(conversation, response_id, retrievedResponse)
-        : await this.messageService.processCompletedResponse(conversation, response_id);
+      const pendingProvider = getPendingResponseProvider(pending);
+      let messages;
+      if (pendingProvider === OLLAMA_RESPONSE_PROVIDER) {
+        messages = await this.messageService.processCompletedResponse(
+          conversation,
+          response_id,
+          retrievedResponse,
+          OLLAMA_RESPONSE_PROVIDER,
+        );
+      } else {
+        messages = retrievedResponse
+          ? await this.messageService.processCompletedResponse(conversation, response_id, retrievedResponse)
+          : await this.messageService.processCompletedResponse(conversation, response_id);
+      }
       const returnedMessages = [...messages];
       const followUpResponseIds = [];
 
       conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
       const savedMessages = messages.filter(m => m && !m.error);
+      const conversationMessageIds = new Set(conversation.messages.map(id => id.toString()));
       for (const m of savedMessages) {
-        conversation.messages.push(m._id.toString());
+        const messageId = m._id.toString();
+        if (!conversationMessageIds.has(messageId)) {
+          conversation.messages.push(messageId);
+          conversationMessageIds.add(messageId);
+        }
       }
 
       const functionCallMessages = savedMessages.filter(m => m.contentType === 'function_call');
+      let toolLoopLimited = false;
       if (functionCallMessages.length > 0) {
-        const functionOutputMessages = await this.executeFunctionCallsForConversation(conversation, functionCallMessages);
-        for (const m of functionOutputMessages) {
-          conversation.messages.push(m._id.toString());
-          returnedMessages.push(m);
-        }
+        const toolRound = Number.parseInt(pending.toolRound, 10) || 1;
+        const maxToolRounds = getOllamaMaxToolRounds();
+        toolLoopLimited = pendingProvider === OLLAMA_RESPONSE_PROVIDER && toolRound >= maxToolRounds;
 
-        const followUp = await this.queueFollowUpAfterFunctionCalls(conversation, pending);
-        returnedMessages.push(...followUp.messages);
-        if (followUp.responseId) {
-          followUpResponseIds.push(followUp.responseId);
+        if (toolLoopLimited) {
+          const limitMessage = new Chat5Model({
+            user_id: 'bot',
+            category: conversation.category,
+            tags: conversation.tags,
+            contentType: 'text',
+            content: {
+              text: `The local model stopped after ${maxToolRounds} consecutive tool rounds. Please revise the request and try again.`,
+              image: null,
+              audio: null,
+              tts: null,
+              transcript: null,
+              revisedPrompt: null,
+              imageQuality: null,
+              toolOutput: null,
+            },
+            timestamp: new Date(),
+            hideFromBot: false,
+          });
+          await limitMessage.save();
+          conversation.messages.push(limitMessage._id.toString());
+          returnedMessages.push(limitMessage);
+          logger.error('Stopped Ollama background tool loop at configured round limit', {
+            category: 'ollama_background_job',
+            metadata: {
+              responseId: response_id,
+              conversationId: conversation._id?.toString?.() || null,
+              toolRound,
+              maxToolRounds,
+              functionCallCount: functionCallMessages.length,
+            },
+          });
+        } else {
+          const functionOutputMessages = await this.executeFunctionCallsForConversation(conversation, functionCallMessages);
+          for (const m of functionOutputMessages) {
+            const messageId = m._id.toString();
+            if (!conversationMessageIds.has(messageId)) {
+              conversation.messages.push(messageId);
+              conversationMessageIds.add(messageId);
+            }
+            returnedMessages.push(m);
+          }
+
+          const followUp = await this.queueFollowUpAfterFunctionCalls(conversation, pending);
+          returnedMessages.push(...followUp.messages);
+          if (followUp.responseId) {
+            followUpResponseIds.push(followUp.responseId);
+          }
         }
       }
 
@@ -2153,6 +2335,9 @@ class ConversationService {
       if (followUpResponseIds.length > 0) {
         result.followUpResponseIds = followUpResponseIds;
       }
+      if (toolLoopLimited) {
+        result.toolLoopLimited = true;
+      }
       return result;
     } catch (error) {
       await this.releasePendingRequest(pending._id);
@@ -2163,8 +2348,10 @@ class ConversationService {
   async processFailedResponse(response_id, {
     claimedPending = null,
     retrievedResponse = null,
+    responseProvider = null,
+    returnResult = false,
   } = {}) {
-    const pending = claimedPending || await this.claimPendingRequest(response_id);
+    const pending = claimedPending || await this.claimPendingRequest(response_id, responseProvider);
 
     if (!pending) {
       logger.debug('No claimable pending request found for failed response', { response_id });
@@ -2180,15 +2367,33 @@ class ConversationService {
         return 'Conversation not found for failed response';
       }
 
-      const error_msg = retrievedResponse
-        ? await this.messageService.processFailedResponse(conversation, response_id, retrievedResponse)
-        : await this.messageService.processFailedResponse(conversation, response_id);
+      const pendingProvider = getPendingResponseProvider(pending);
+      let error_msg;
+      if (pendingProvider === OLLAMA_RESPONSE_PROVIDER) {
+        error_msg = await this.messageService.processFailedResponse(
+          conversation,
+          response_id,
+          retrievedResponse,
+          OLLAMA_RESPONSE_PROVIDER,
+        );
+      } else {
+        error_msg = retrievedResponse
+          ? await this.messageService.processFailedResponse(conversation, response_id, retrievedResponse)
+          : await this.messageService.processFailedResponse(conversation, response_id);
+      }
 
       conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
 
       await conversation.save();
       await PendingRequests.deleteOne({_id: pending._id});
 
+      if (returnResult) {
+        return {
+          error_msg,
+          conversation,
+          placeholder_id: pending.placeholder_id,
+        };
+      }
       return error_msg;
     } catch (error) {
       await this.releasePendingRequest(pending._id);

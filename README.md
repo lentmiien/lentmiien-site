@@ -16,7 +16,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 - **Server & Domain Layer:** `app.js` wires Express, session management, Passport-local auth, and role-based permissions. Routers in `routes/` map to task-focused controllers inside `controllers/`, which delegate domain logic to `services/` and persistence to Mongoose models (`models/` via `database.js`).
 - **Realtime Collaboration:** `socket_io/` exposes namespaces for Chat5 conversation updates, typing indicators, and notification fan-out.
 - **Data & Storage:** MongoDB backs all domain entities (chat transcripts, knowledge, budgets, cooking schedules, Sora videos, audio jobs, OCR jobs, performance snapshots, etc.). Local directories (`cache/`, `tmp_data/`, `public/`, `logs/`, `github-repos/`) store generated media, working files, log archives, repo mirrors, and cached prompts.
-- **Background Workflows:** `setup.js` provisions folders, converts legacy images, prunes logs, syncs OpenAI usage, and clears temp data before each start. Schedulers handle batch triggers, DB usage monitoring, Agent5 runs, and pending OpenAI response recovery, while `controllers/webhook.js` consumes OpenAI webhooks to finalize batches and media jobs.
+- **Background Workflows:** `setup.js` provisions folders, converts legacy images, prunes logs, syncs OpenAI usage, and clears temp data before each start. Schedulers handle batch triggers, DB usage monitoring, Agent5 runs, and pending AI response recovery, while `controllers/webhook.js` consumes OpenAI and Ollama Gateway webhooks.
 - **Frontend Rendering:** Views live in `views/` (Pug) and ship compiled assets from `public/` (JS/CSS/audio/mp3/video). `/games` serves static WebAssembly/HTML bundles with gzip/Brotli.
 
 ## Directory Reference
@@ -35,7 +35,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `public/yaml/` | OpenAPI specs served via `/yaml-viewer` (`core-api.v1.yaml`, `schedule-task.v1.yaml`, `chat5-pdf.v1.yaml`, `chat5-realtime.v1.yaml`, `product-details.v1.yaml`). |
 | `games/` | Standalone web games served via `express-static-gzip`. |
 | `github-repos/` | Local clone cache managed by `GitHubService`. |
-| `schedulers/` | Background triggers (batch automation, DB usage checks, Agent5 runner, OpenAI response recovery) started at app boot. |
+| `schedulers/` | Background triggers (batch automation, DB usage checks, Agent5 runner, AI response recovery) started at app boot. |
 | `scripts/` | Maintenance scripts such as OpenAPI validation. |
 | `tests/` | Jest tests (`tests/unit` plus startup diagnostics coverage in `tests/startupChecks.test.js`). |
 | `documentation/` | Architecture notes, testing guide, prompt catalog, and color reference used alongside `AGENTS.md`. |
@@ -116,13 +116,16 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `OPENAI_ADMIN_KEY` | Usage-scoped key used by `setup.js` to archive daily usage stats. |
 | `OPENAI_WEBHOOK_SECRET` | Shared secret to validate OpenAI webhook payloads (`/webhook/openai`). |
 | `OPENAI_WEBHOOK_TOLERANCE_SECONDS`, `OPENAI_WEBHOOK_FALLBACK_TOLERANCE_SECONDS` | Strict and fallback timestamp windows for webhook signature verification. |
-| `OPENAI_PENDING_RECONCILE_INTERVAL_MS`, `OPENAI_PENDING_RECONCILE_BATCH_SIZE` | Cadence and batch size for recovering pending OpenAI responses when webhook delivery is missed. |
-| `OPENAI_PENDING_MAX_AGE_MS`, `OPENAI_PENDING_MAX_ATTEMPTS` | Recovery hard limits (defaults: 48 hours and 50 attempts). Polling runs every minute for 10 minutes, every 5 minutes until one hour, hourly until one day, then every 6 hours. |
+| `OPENAI_PENDING_RECONCILE_INTERVAL_MS`, `OPENAI_PENDING_RECONCILE_BATCH_SIZE` | Cadence and batch size for recovering pending OpenAI or Ollama responses when webhook delivery is missed. |
+| `OPENAI_PENDING_MAX_AGE_MS`, `OPENAI_PENDING_MAX_ATTEMPTS` | Shared pending-response recovery limits (defaults: 48 hours and 50 attempts). Polling runs every minute for 10 minutes, every 5 minutes until one hour, hourly until one day, then every 6 hours. |
 | `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | Optional provider keys surfaced in Chat5. |
 | `DISABLE_LOCAL` | Set to `TRUE` to hide the LM Studio provider integration. |
 | `AI_GATEWAY_BASE_URL` | Local AI gateway base URL used by admin dashboards, music generation, and Ollama fallback clients. |
 | `LLM_ADMIN_TOKEN` | Optional `X-Admin-Token` sent to protected AI Gateway admin endpoints. |
 | `OLLAMA_BASE_URL`, `OLLAMA_GEMMA4_MODEL` | Optional Ollama host/model overrides for local model testing. |
+| `OLLAMA_WEBHOOK_BASE_URL` | Public callback base for Gateway chat jobs (defaults to `https://my.lentmiien.com/`; endpoint is `/webhook/ollama`). |
+| `OLLAMA_WEBHOOK_SECRET` | Recommended dedicated secret used to derive the Ollama callback token. If omitted, the app derives it from `SESSION_SECRET`. |
+| `OLLAMA_MAX_TOOL_ROUNDS` | Maximum consecutive background tool-call rounds for one local-model response (defaults to `4`, hard-capped at `20`). |
 | `GITHUB_TOKEN` | GitHub PAT used by `GitHubService` to mirror repos under `github-repos/`. |
 | `DROPBOX_API_KEY`, `DROPBOX_CLIENT_ID`, `DROPBOX_CLIENT_SECRET`, `DROPBOX_REDIRECT_URI` | Dropbox credentials for image backups. |
 | `MAILGUN_API_KEY` | Optional Mailgun key for notifications in `MessageService`. |
