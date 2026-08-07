@@ -27,6 +27,24 @@ block styles
     .workflow-field__title{font-weight:700;letter-spacing:.01em}
     .workflow-field__meta{color:var(--text-muted);font-size:.85rem}
     #workflowJson{font-family:'JetBrains Mono','Fira Code',monospace;font-size:.85rem}
+    .input-library__intro{color:var(--text-secondary);max-width:72ch}
+    .input-upload{background:var(--surface-2);border:1px solid var(--divider);border-radius:.85rem;padding:1rem}
+    .input-selection{background:var(--accent-tint);border:1px solid var(--accent);border-radius:.75rem;padding:.75rem}
+    .input-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.85rem}
+    .input-card{display:flex;flex-direction:column;min-width:0;background:var(--surface-2);border:1px solid var(--divider);border-radius:.8rem;overflow:hidden;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease}
+    .input-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+    .input-card.is-selected{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-tint)}
+    .input-card__preview{display:flex;align-items:center;justify-content:center;min-height:150px;height:180px;background:var(--surface-3);border-bottom:1px solid var(--divider);overflow:hidden}
+    .input-card__preview img,.input-card__preview video,.input-card__preview iframe{width:100%;height:100%;border:0;object-fit:contain}
+    .input-card__preview audio{width:calc(100% - 1.5rem)}
+    .input-card__fallback{display:flex;flex-direction:column;align-items:center;gap:.35rem;color:var(--text-muted);text-align:center;padding:1rem}
+    .input-card__extension{color:var(--accent);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .input-card__body{display:flex;flex:1;flex-direction:column;padding:.75rem}
+    .input-card__path{color:var(--text);font-family:'JetBrains Mono','Fira Code',monospace;font-size:.78rem;overflow-wrap:anywhere}
+    .input-card__meta{color:var(--text-muted);font-size:.75rem;margin-top:.35rem}
+    .input-card__actions{display:flex;gap:.5rem;align-items:center;margin-top:auto;padding-top:.65rem}
+    .input-empty{grid-column:1/-1;border:1px dashed var(--divider);border-radius:.75rem;color:var(--text-muted);padding:2rem;text-align:center}
+    .input-browser-status{min-height:1.5rem;color:var(--text-muted)}
 
 block content
   .container.py-3.imgen-page
@@ -80,6 +98,62 @@ block content
             input#negativeText.form-control(type="text" autocomplete="off")
         .d-flex.gap-2.mt-3
           button#btnGenerate.btn.btn-success(type="button") Submit job
+
+    // Workflow input files
+    .card.mb-3
+      .card-body
+        .d-flex.justify-content-between.align-items-start.gap-3.mb-2
+          div
+            h2.h6.mb-1 Workflow input files
+            p.input-library__intro.mb-0 Upload image, audio, video, or other input data to persistent ComfyUI storage, then select a file for a workflow field.
+          button#btnRefreshInputs.btn.btn-outline-secondary.btn-sm(type="button") Refresh files
+
+        form#inputUploadForm.input-upload.mt-3(enctype="multipart/form-data")
+          .row.g-3.align-items-end
+            .col-lg-5
+              label.form-label(for="inputFile") File
+              input#inputFile.form-control(type="file" name="file" required aria-describedby="inputUploadHelp")
+            .col-lg-4
+              label.form-label(for="inputSubfolder") Destination subfolder (optional)
+              input#inputSubfolder.form-control(type="text" name="subfolder" placeholder="references/audio" autocomplete="off")
+            .col-lg-3
+              button#btnUploadInput.btn.btn-primary.w-100(type="submit") Upload to ComfyUI
+          .d-flex.flex-wrap.align-items-center.gap-3.mt-2
+            small#inputUploadHelp.text-muted Generic files up to 100 MiB are supported; the selected workflow node must be able to decode the file.
+            .form-check.ms-lg-auto
+              input#inputOverwrite.form-check-input(type="checkbox" name="overwrite" value="true")
+              label.form-check-label(for="inputOverwrite") Replace an existing file
+          #inputUploadStatus.small.mt-2(role="status" aria-live="polite")
+
+        .row.g-2.align-items-end.mt-3
+          .col-md-5
+            label.form-label(for="inputBrowseSubfolder") Browse subfolder
+            input#inputBrowseSubfolder.form-control(type="text" placeholder="All input files" autocomplete="off")
+          .col-md-5
+            label.form-label(for="inputFilter") Filter this page
+            input#inputFilter.form-control(type="search" placeholder="Filename or path" autocomplete="off")
+          .col-md-2
+            button#btnBrowseInputs.btn.btn-outline-primary.w-100(type="button") Browse
+
+        .input-selection.mt-3
+          .row.g-2.align-items-end
+            .col-lg-5
+              .form-label.mb-1 Selected input
+              #selectedInputName.monospace.text-break No file selected
+            .col-lg-5
+              label.form-label(for="inputTargetField") Workflow field
+              select#inputTargetField.form-select(disabled)
+                option(value="") Load a workflow first
+            .col-lg-2
+              button#btnUseInput.btn.btn-warning.w-100(type="button" disabled) Use in workflow
+          small#inputTargetHelp.text-muted Select any string-valued workflow field; likely media fields are listed first.
+
+        #inputBrowserStatus.input-browser-status.small.mt-3(role="status" aria-live="polite")
+        #inputGrid.input-grid(aria-label="Available ComfyUI input files")
+        .d-flex.justify-content-between.align-items-center.gap-2.mt-3
+          button#btnInputPrev.btn.btn-outline-secondary.btn-sm(type="button" disabled) Previous
+          span#inputPageMeta.small.text-muted Page 1 of 1
+          button#btnInputNext.btn.btn-outline-secondary.btn-sm(type="button" disabled) Next
 
     // Jobs
     .card.mb-3

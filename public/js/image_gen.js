@@ -19,17 +19,38 @@
   const resultsEl = $('#results');
   const healthDot = $('#healthDot');
   const instanceMetaEl = $('#instanceMeta');
+  const inputUploadForm = $('#inputUploadForm');
+  const inputFileEl = $('#inputFile');
+  const inputOverwriteEl = $('#inputOverwrite');
+  const inputUploadStatusEl = $('#inputUploadStatus');
+  const inputBrowseSubfolderEl = $('#inputBrowseSubfolder');
+  const inputFilterEl = $('#inputFilter');
+  const inputGridEl = $('#inputGrid');
+  const inputBrowserStatusEl = $('#inputBrowserStatus');
+  const inputPageMetaEl = $('#inputPageMeta');
+  const inputTargetFieldEl = $('#inputTargetField');
+  const selectedInputNameEl = $('#selectedInputName');
+  const btnUseInput = $('#btnUseInput');
+  const btnInputPrev = $('#btnInputPrev');
+  const btnInputNext = $('#btnInputNext');
   let ratingBarVisible = false;
   let currentJobId = null;
   let pollTimer = null;
   let pollJobId = null;
   let currentWorkflowName = null;
   let originalWorkflow = null;
+  let inputFiles = [];
+  let selectedInputFile = null;
+  let inputPage = 1;
+  let inputPages = 1;
+  let inputTotal = 0;
+  let inputFilesLoading = false;
   const availableFields = new Map();
   const editableFields = new Map();
   const STATUS_POLL_INTERVAL_MS = 2500;
   const STATUS_POLL_ERROR_INTERVAL_MS = 4500;
   const JOB_STORAGE_KEY = 'imageGenActiveJobId';
+  const INPUT_PAGE_SIZE = 48;
   if (wfJsonArea) wfJsonArea.readOnly = true;
   if (promptTextInput) {
     promptTextInput.readOnly = true;
@@ -561,6 +582,7 @@
     availableFields.clear();
     editableFields.clear();
     renderNodeFieldSelect();
+    renderInputTargetFields();
     renderEditableFields();
     if (fieldAsPromptToggle) fieldAsPromptToggle.checked = false;
     if (wfJsonArea) wfJsonArea.value = '';
@@ -594,6 +616,388 @@
       });
     });
     renderNodeFieldSelect();
+    renderInputTargetFields();
+  }
+
+  function normalizeInputFile(file) {
+    const source = typeof file === 'string' ? { path: file } : file;
+    if (!source || typeof source !== 'object') return null;
+    const subfolder = String(source.subfolder || '').trim().replace(/^\/+|\/+$/g, '');
+    let filePath = String(source.path || '').trim().replace(/^\/+/, '');
+    let filename = String(source.filename || source.name || '').trim();
+    if (!filePath && filename) filePath = subfolder ? `${subfolder}/${filename}` : filename;
+    if (!filename && filePath) filename = filePath.split('/').pop() || filePath;
+    if (!filePath || !filename) return null;
+    return {
+      name: filename,
+      filename,
+      subfolder,
+      path: filePath,
+      size_bytes: Number(source.size_bytes),
+      modified_ts: source.modified_ts,
+      content_type: String(source.content_type || '').trim(),
+      type: source.type || 'input'
+    };
+  }
+
+  function inputPreviewUrl(file) {
+    return `/image_gen/api/files/input/view?path=${encodeURIComponent(file.path)}`;
+  }
+
+  function inputFileExtension(name) {
+    const filename = String(name || '');
+    const dot = filename.lastIndexOf('.');
+    return dot >= 0 && dot < filename.length - 1 ? filename.slice(dot + 1).toLowerCase() : '';
+  }
+
+  function detectInputPreviewType(file) {
+    const contentType = String(file?.content_type || '').toLowerCase();
+    const extension = inputFileExtension(file?.filename || file?.path);
+    if (contentType.startsWith('image/') && contentType !== 'image/svg+xml') return 'image';
+    if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'apng', 'bmp', 'avif'].includes(extension)) return 'image';
+    if (contentType.startsWith('audio/')) return 'audio';
+    if (['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'oga', 'opus'].includes(extension)) return 'audio';
+    if (contentType.startsWith('video/')) return 'video';
+    if (['mp4', 'webm', 'mov', 'mkv', 'm4v', 'avi'].includes(extension)) return 'video';
+    if (contentType === 'application/pdf' || extension === 'pdf') return 'pdf';
+    if (contentType.startsWith('text/') || ['txt', 'json', 'csv', 'md', 'log'].includes(extension)) return 'text';
+    return 'file';
+  }
+
+  function formatInputBytes(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    const units = ['KiB', 'MiB', 'GiB'];
+    let amount = bytes / 1024;
+    let index = 0;
+    while (amount >= 1024 && index < units.length - 1) {
+      amount /= 1024;
+      index += 1;
+    }
+    return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${units[index]}`;
+  }
+
+  function createInputPreview(file) {
+    const preview = document.createElement('div');
+    preview.className = 'input-card__preview';
+    const previewType = detectInputPreviewType(file);
+    const src = inputPreviewUrl(file);
+    let media;
+
+    if (previewType === 'image') {
+      media = document.createElement('img');
+      media.alt = file.filename;
+      media.loading = 'lazy';
+      media.src = src;
+    } else if (previewType === 'audio') {
+      media = document.createElement('audio');
+      media.controls = true;
+      media.preload = 'metadata';
+      media.src = src;
+    } else if (previewType === 'video') {
+      media = document.createElement('video');
+      media.controls = true;
+      media.preload = 'metadata';
+      media.playsInline = true;
+      media.src = src;
+    } else if (previewType === 'pdf' || previewType === 'text') {
+      media = document.createElement('iframe');
+      media.title = `Preview of ${file.filename}`;
+      media.loading = 'lazy';
+      media.setAttribute('sandbox', '');
+      media.src = src;
+    } else {
+      media = document.createElement('div');
+      media.className = 'input-card__fallback';
+      const extension = document.createElement('span');
+      extension.className = 'input-card__extension';
+      extension.textContent = inputFileExtension(file.filename) || 'FILE';
+      const message = document.createElement('span');
+      message.textContent = 'Preview unavailable';
+      media.appendChild(extension);
+      media.appendChild(message);
+    }
+
+    preview.appendChild(media);
+    return preview;
+  }
+
+  function inputTargetScore(field, file) {
+    const haystack = `${field.field || ''} ${field.nodeLabel || ''}`.toLowerCase();
+    const mediaType = detectInputPreviewType(file);
+    const mediaHints = {
+      image: ['image', 'img', 'photo', 'picture', 'frame', 'reference', 'ref'],
+      audio: ['audio', 'sound', 'voice', 'music', 'speech', 'reference', 'ref'],
+      video: ['video', 'movie', 'clip', 'frames', 'reference', 'ref'],
+      pdf: ['pdf', 'document', 'file', 'path'],
+      text: ['text_file', 'document', 'file', 'path'],
+      file: ['file', 'path', 'source', 'input']
+    };
+    let score = ['file', 'path', 'filename', 'source', 'input'].some((hint) => haystack.includes(hint)) ? 2 : 0;
+    if ((mediaHints[mediaType] || mediaHints.file).some((hint) => haystack.includes(hint))) score += 4;
+    const defaultType = detectInputPreviewType({ filename: String(field.defaultValue || '') });
+    if (defaultType !== 'file' && defaultType === mediaType) score += 5;
+    if (haystack.includes('prompt') || haystack.includes('negative')) score -= 5;
+    return score;
+  }
+
+  function renderInputTargetFields() {
+    if (!inputTargetFieldEl) return;
+    const previousValue = inputTargetFieldEl.value;
+    inputTargetFieldEl.innerHTML = '';
+    const candidates = Array.from(availableFields.values())
+      .filter((field) => typeof field.defaultValue === 'string')
+      .map((field) => ({ field, score: selectedInputFile ? inputTargetScore(field, selectedInputFile) : 0 }))
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+        return `${left.field.nodeLabel} ${left.field.field}`.localeCompare(`${right.field.nodeLabel} ${right.field.field}`);
+      });
+
+    if (!candidates.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = originalWorkflow ? 'No string-valued fields in this workflow' : 'Load a workflow first';
+      inputTargetFieldEl.appendChild(option);
+      inputTargetFieldEl.disabled = true;
+      if (btnUseInput) btnUseInput.disabled = true;
+      return;
+    }
+
+    const recommended = candidates.filter((entry) => entry.score > 0);
+    const other = candidates.filter((entry) => entry.score <= 0);
+    const appendOptions = (label, entries) => {
+      if (!entries.length) return;
+      const group = document.createElement('optgroup');
+      group.label = label;
+      entries.forEach(({ field }) => {
+        const option = document.createElement('option');
+        option.value = field.key;
+        const defaultValue = String(field.defaultValue || '');
+        const summary = defaultValue.length > 34 ? `${defaultValue.slice(0, 31)}…` : defaultValue;
+        option.textContent = `${field.nodeLabel} · ${field.field}${summary ? ` (${summary})` : ''}`;
+        group.appendChild(option);
+      });
+      inputTargetFieldEl.appendChild(group);
+    };
+    appendOptions('Likely file inputs', recommended);
+    appendOptions(recommended.length ? 'Other string fields' : 'String fields', other);
+    inputTargetFieldEl.disabled = false;
+    if (candidates.some((entry) => entry.field.key === previousValue)) {
+      inputTargetFieldEl.value = previousValue;
+    }
+    if (!inputTargetFieldEl.value) inputTargetFieldEl.selectedIndex = 0;
+    if (btnUseInput) btnUseInput.disabled = !selectedInputFile || !inputTargetFieldEl.value;
+  }
+
+  function updateInputCardSelection() {
+    if (!inputGridEl) return;
+    inputGridEl.querySelectorAll('.input-card').forEach((card) => {
+      const selected = Boolean(selectedInputFile && card.dataset.inputPath === selectedInputFile.path);
+      card.classList.toggle('is-selected', selected);
+      const button = card.querySelector('[data-select-input]');
+      if (button) {
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        button.textContent = selected ? 'Selected' : 'Select';
+        button.classList.toggle('btn-warning', selected);
+        button.classList.toggle('btn-outline-primary', !selected);
+      }
+    });
+  }
+
+  function selectInputFile(file) {
+    selectedInputFile = normalizeInputFile(file);
+    if (selectedInputNameEl) {
+      selectedInputNameEl.textContent = selectedInputFile ? selectedInputFile.path : 'No file selected';
+    }
+    renderInputTargetFields();
+    updateInputCardSelection();
+  }
+
+  function renderInputFiles() {
+    if (!inputGridEl) return;
+    inputGridEl.innerHTML = '';
+    const filter = String(inputFilterEl?.value || '').trim().toLowerCase();
+    const visibleFiles = inputFiles.filter((file) => !filter || file.path.toLowerCase().includes(filter));
+
+    if (!visibleFiles.length) {
+      const empty = document.createElement('div');
+      empty.className = 'input-empty';
+      empty.textContent = inputFiles.length ? 'No files on this page match the filter.' : 'No ComfyUI input files were found.';
+      inputGridEl.appendChild(empty);
+      return;
+    }
+
+    visibleFiles.forEach((file) => {
+      const card = document.createElement('article');
+      card.className = 'input-card';
+      card.dataset.inputPath = file.path;
+      card.appendChild(createInputPreview(file));
+
+      const body = document.createElement('div');
+      body.className = 'input-card__body';
+      const filePath = document.createElement('div');
+      filePath.className = 'input-card__path';
+      filePath.textContent = file.path;
+      body.appendChild(filePath);
+
+      const metaParts = [formatInputBytes(file.size_bytes), formatTimestamp(file.modified_ts)].filter(Boolean);
+      if (metaParts.length) {
+        const meta = document.createElement('div');
+        meta.className = 'input-card__meta';
+        meta.textContent = metaParts.join(' · ');
+        body.appendChild(meta);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'input-card__actions';
+      const selectButton = document.createElement('button');
+      selectButton.type = 'button';
+      selectButton.className = 'btn btn-sm btn-outline-primary';
+      selectButton.dataset.selectInput = file.path;
+      selectButton.setAttribute('aria-pressed', 'false');
+      selectButton.textContent = 'Select';
+      selectButton.addEventListener('click', () => selectInputFile(file));
+      actions.appendChild(selectButton);
+
+      const openLink = document.createElement('a');
+      openLink.className = 'btn btn-sm btn-outline-secondary';
+      openLink.href = inputPreviewUrl(file);
+      openLink.target = '_blank';
+      openLink.rel = 'noopener';
+      openLink.textContent = 'Open';
+      actions.appendChild(openLink);
+      body.appendChild(actions);
+      card.appendChild(body);
+      inputGridEl.appendChild(card);
+    });
+    updateInputCardSelection();
+  }
+
+  function updateInputPagination() {
+    if (inputPageMetaEl) {
+      inputPageMetaEl.textContent = `Page ${inputPage} of ${inputPages} · ${inputTotal} file${inputTotal === 1 ? '' : 's'}`;
+    }
+    if (btnInputPrev) btnInputPrev.disabled = inputFilesLoading || inputPage <= 1;
+    if (btnInputNext) btnInputNext.disabled = inputFilesLoading || inputPage >= inputPages;
+  }
+
+  async function loadInputFiles({ page = inputPage } = {}) {
+    if (!inputGridEl || inputFilesLoading) return;
+    inputFilesLoading = true;
+    inputPage = Math.max(1, Number(page) || 1);
+    if (inputBrowserStatusEl) inputBrowserStatusEl.textContent = 'Loading ComfyUI input files…';
+    updateInputPagination();
+    const params = new URLSearchParams({
+      recursive: 'true',
+      page: String(inputPage),
+      limit: String(INPUT_PAGE_SIZE)
+    });
+    const subfolder = String(inputBrowseSubfolderEl?.value || '').trim();
+    if (subfolder) params.set('subfolder', subfolder);
+
+    try {
+      const payload = await api(`/api/files/input?${params.toString()}`);
+      inputFiles = (Array.isArray(payload?.files) ? payload.files : [])
+        .map(normalizeInputFile)
+        .filter(Boolean);
+      inputTotal = Number.isFinite(Number(payload?.total)) ? Number(payload.total) : inputFiles.length;
+      inputPage = Math.max(1, Number(payload?.page) || inputPage);
+      inputPages = Math.max(1, Number(payload?.pages) || 1);
+      if (selectedInputFile) {
+        const refreshedSelection = inputFiles.find((file) => file.path === selectedInputFile.path);
+        if (refreshedSelection) selectedInputFile = refreshedSelection;
+      }
+      renderInputFiles();
+      if (inputBrowserStatusEl) {
+        inputBrowserStatusEl.textContent = inputFiles.length
+          ? `Showing ${inputFiles.length} file${inputFiles.length === 1 ? '' : 's'} from ComfyUI input storage.`
+          : 'This location has no input files.';
+      }
+    } catch (err) {
+      inputFiles = [];
+      inputTotal = 0;
+      inputPages = 1;
+      renderInputFiles();
+      if (inputBrowserStatusEl) inputBrowserStatusEl.textContent = `Could not load input files: ${err.message}`;
+      log('Load input files failed: ' + err.message, 'text-danger');
+    } finally {
+      inputFilesLoading = false;
+      updateInputPagination();
+    }
+  }
+
+  function setInputUploadStatus(message, className = 'text-muted') {
+    if (!inputUploadStatusEl) return;
+    inputUploadStatusEl.className = `small mt-2 ${className}`;
+    inputUploadStatusEl.textContent = message;
+  }
+
+  async function uploadInput(event) {
+    event.preventDefault();
+    const file = inputFileEl?.files?.[0];
+    if (!file) {
+      setInputUploadStatus('Choose a file to upload.', 'text-warning');
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setInputUploadStatus('The selected file is larger than 100 MiB.', 'text-danger');
+      return;
+    }
+
+    const submitButton = $('#btnUploadInput');
+    if (submitButton) submitButton.disabled = true;
+    setInputUploadStatus(`Uploading ${file.name}…`);
+    try {
+      const formData = new FormData(inputUploadForm);
+      const payload = await api('/api/files/input', { method: 'POST', body: formData });
+      const uploaded = normalizeInputFile(payload?.file || payload);
+      if (uploaded) {
+        selectInputFile(uploaded);
+        if (inputBrowseSubfolderEl) inputBrowseSubfolderEl.value = uploaded.subfolder || '';
+      }
+      if (inputFileEl) inputFileEl.value = '';
+      if (inputOverwriteEl) inputOverwriteEl.checked = false;
+      setInputUploadStatus(`${uploaded?.path || file.name} is ready for a workflow.`, 'text-success');
+      await loadInputFiles({ page: 1 });
+      log(`Uploaded ComfyUI input ${uploaded?.path || file.name}.`, 'text-success');
+    } catch (err) {
+      const conflict = String(err.message || '').startsWith('409');
+      setInputUploadStatus(
+        conflict ? 'That destination already exists. Enable replacement to overwrite it.' : `Upload failed: ${err.message}`,
+        'text-danger'
+      );
+      log('Input upload failed: ' + err.message, 'text-danger');
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  }
+
+  function useSelectedInput() {
+    if (!selectedInputFile || !inputTargetFieldEl?.value) {
+      log('Select an input file and workflow field first.', 'text-warning');
+      return;
+    }
+    const descriptor = availableFields.get(inputTargetFieldEl.value);
+    if (!descriptor) {
+      log('The selected workflow field is no longer available.', 'text-warning');
+      return;
+    }
+    const existing = editableFields.get(descriptor.key);
+    if (existing) {
+      existing.value = selectedInputFile.path;
+      existing.controlType = 'text';
+    } else {
+      editableFields.set(descriptor.key, Object.assign({}, descriptor, {
+        value: selectedInputFile.path,
+        controlType: 'text'
+      }));
+    }
+    saveUiState();
+    renderEditableFields();
+    refreshPromptPreview();
+    updateJsonViewer();
+    log(`Using ${selectedInputFile.path} for ${descriptor.nodeLabel} · ${descriptor.field}.`, 'text-success');
   }
 
   function detectMediaTypeFromName(name) {
@@ -997,11 +1401,35 @@
   if (btnPoll) btnPoll.addEventListener('click', loadJobById);
   const btnHealth = $('#btnHealth');
   if (btnHealth) btnHealth.addEventListener('click', checkHealth);
+  if (inputUploadForm) inputUploadForm.addEventListener('submit', uploadInput);
+  const btnRefreshInputs = $('#btnRefreshInputs');
+  if (btnRefreshInputs) btnRefreshInputs.addEventListener('click', () => loadInputFiles());
+  const btnBrowseInputs = $('#btnBrowseInputs');
+  if (btnBrowseInputs) btnBrowseInputs.addEventListener('click', () => loadInputFiles({ page: 1 }));
+  if (inputBrowseSubfolderEl) {
+    inputBrowseSubfolderEl.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      loadInputFiles({ page: 1 });
+    });
+  }
+  if (inputFilterEl) inputFilterEl.addEventListener('input', renderInputFiles);
+  if (btnInputPrev) btnInputPrev.addEventListener('click', () => loadInputFiles({ page: inputPage - 1 }));
+  if (btnInputNext) btnInputNext.addEventListener('click', () => loadInputFiles({ page: inputPage + 1 }));
+  if (inputTargetFieldEl) {
+    inputTargetFieldEl.addEventListener('change', () => {
+      if (btnUseInput) btnUseInput.disabled = !selectedInputFile || !inputTargetFieldEl.value;
+    });
+  }
+  if (btnUseInput) btnUseInput.addEventListener('click', useSelectedInput);
 
   renderNodeFieldSelect();
+  renderInputTargetFields();
   renderEditableFields();
+  updateInputPagination();
   setStatus('idle');
   loadWorkflows();
+  loadInputFiles();
   checkHealth();
   resumeStoredPolling();
 })(); 

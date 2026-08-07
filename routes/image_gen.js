@@ -23,11 +23,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 64 * 1024 * 1024 }, // 64MB
-  fileFilter: (_req, file, cb) => {
-    const ok = /image\/(png|jpe?g|webp)/i.test(file.mimetype);
-    cb(ok ? null : new Error('Only images are allowed'), ok);
-  }
+  limits: { fileSize: 100 * 1024 * 1024 }
 });
 
 // Parse JSON for our API routes
@@ -60,8 +56,9 @@ router.get('/api/jobs/:id', ctrl.getJob);
 router.get('/api/jobs/:id/files/:index', ctrl.getJobFile);
 router.get('/api/jobs/:id/images/:index', ctrl.getJobImage); // legacy alias
 router.get('/api/files/:bucket', ctrl.listFiles);
+router.get('/api/files/input/view', ctrl.getInputFile);
 router.get('/api/files/:bucket/:filename', ctrl.getFile);
-router.post('/api/files/input', upload.single('image'), ctrl.uploadInput);
+router.post('/api/files/input', upload.single('file'), ctrl.uploadInput);
 router.post('/api/files/promote', ctrl.promoteCachedFile);
 router.get('/api/prompts', ctrl.listPrompts);
 router.post('/api/rate', ctrl.rateJob);

@@ -103,6 +103,116 @@ class ComfyGatewayService {
     return this.fetchJson('/comfy/system_stats', {}, { functionName: 'getSystemStats' });
   }
 
+  async listInputFiles({ subfolder, recursive, page, limit } = {}) {
+    const params = new URLSearchParams();
+    if (subfolder !== undefined && subfolder !== null && String(subfolder).trim()) {
+      params.set('subfolder', String(subfolder).trim());
+    }
+    if (recursive !== undefined && recursive !== null && recursive !== '') {
+      params.set('recursive', String(recursive));
+    }
+    if (page !== undefined && page !== null && page !== '') {
+      params.set('page', String(page));
+    }
+    if (limit !== undefined && limit !== null && limit !== '') {
+      params.set('limit', String(limit));
+    }
+    const query = params.toString();
+    return this.fetchJson(
+      `/comfy/input/files${query ? `?${query}` : ''}`,
+      {},
+      { functionName: 'listInputFiles', requestBody: Object.fromEntries(params) }
+    );
+  }
+
+  async uploadInputFile({ buffer, filename, contentType, subfolder, overwrite = false } = {}) {
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      const err = new Error('a non-empty input file is required');
+      err.status = 400;
+      throw err;
+    }
+    const safeFilename = String(filename || '').trim();
+    if (!safeFilename) {
+      const err = new Error('input filename is required');
+      err.status = 400;
+      throw err;
+    }
+
+    const body = new FormData();
+    body.append(
+      'file',
+      new Blob([buffer], { type: contentType || 'application/octet-stream' }),
+      safeFilename
+    );
+    const normalizedSubfolder = String(subfolder || '').trim();
+    if (normalizedSubfolder) body.append('subfolder', normalizedSubfolder);
+    if (overwrite === true) body.append('overwrite', 'true');
+
+    return this.fetchJson(
+      '/comfy/input/upload',
+      { method: 'POST', body },
+      {
+        functionName: 'uploadInputFile',
+        requestBody: {
+          filename: safeFilename,
+          content_type: contentType || 'application/octet-stream',
+          size_bytes: buffer.length,
+          subfolder: normalizedSubfolder || null,
+          overwrite: overwrite === true
+        }
+      }
+    );
+  }
+
+  async openInputFile(inputPath, { range } = {}) {
+    const normalizedPath = String(inputPath || '').trim();
+    if (!normalizedPath) {
+      const err = new Error('input path is required');
+      err.status = 400;
+      throw err;
+    }
+
+    const params = new URLSearchParams({ path: normalizedPath });
+    const requestUrl = this.buildUrl(`/comfy/input/view?${params.toString()}`);
+    const requestHeaders = this.apiHeaders(range ? { Range: range } : {});
+    const functionName = 'openInputFile';
+    let responseHeaders = null;
+
+    try {
+      const response = await fetch(requestUrl, {
+        headers: requestHeaders,
+        signal: AbortSignal.timeout(this.timeoutMs)
+      });
+      responseHeaders = headersToObject(response.headers);
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: { path: normalizedPath, range: range || null },
+        responseHeaders,
+        responseBody: { status: response.status },
+        functionName
+      });
+      if (!response.ok) {
+        const responseBody = await response.text().catch(() => '');
+        const err = new Error(responseBody || `upstream ${response.status}`);
+        err.status = response.status;
+        err.response = responseBody;
+        throw err;
+      }
+      return response;
+    } catch (err) {
+      await recordApiDebugLog({
+        requestUrl,
+        requestHeaders,
+        requestBody: { path: normalizedPath, range: range || null },
+        responseHeaders,
+        responseBody: err,
+        functionName
+      });
+      throw err;
+    }
+  }
+
   async runPrompt(prompt, { wait = true } = {}) {
     if (!prompt || typeof prompt !== 'object' || Array.isArray(prompt)) {
       throw new Error('prompt JSON object is required');

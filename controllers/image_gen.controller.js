@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const { randomUUID } = require('crypto');
+const { Readable } = require('stream');
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
@@ -3646,103 +3647,70 @@ exports.getJobFile = async (req, res) => {
 // Back-compat alias for older clients hitting /images/:index
 exports.getJobImage = exports.getJobFile;
 
-// Proxy: list input/output
+// Proxy: browse persistent ComfyUI input files.
 exports.listFiles = async (req, res) => {
-  const bucket = req.params.bucket;
-  if (!['input', 'output', 'video'].includes(bucket)) return errorJson(res, 400, 'bucket must be input, output, or video');
-  return errorJson(res, 503, 'file browsing is temporarily disabled for the new gateway');
-  const functionName = 'listFiles';
-  const requestHeaders = apiHeaders();
-  let requestUrl = null;
-  let responseHeaders = null;
-  let loggedError = false;
+  const bucket = String(req.params.bucket || '').trim();
+  if (!['input', 'output', 'video'].includes(bucket)) {
+    return errorJson(res, 400, 'bucket must be input, output, or video');
+  }
+  if (bucket !== 'input') {
+    return errorJson(res, 503, 'only persistent input browsing is available through the new gateway');
+  }
+
   try {
-    const instanceId = extractInstanceId(req);
-    requestUrl = buildComfyUrl(`/v1/files/${bucket}`, { instanceId });
-    const r = await fetch(requestUrl, { headers: requestHeaders });
-    responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt, bucket, instanceId },
-        functionName
-      });
-      loggedError = true;
-      return errorJson(res, r.status, 'upstream error', txt);
-    }
-    let remoteJson = null;
-    try {
-      remoteJson = await r.json();
-    } catch (parseError) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: { parseError: parseError.message, body: txt, bucket, instanceId },
-        functionName
-      });
-      loggedError = true;
-      throw parseError;
-    }
-    const remoteFiles = Array.isArray(remoteJson?.files) ? remoteJson.files : [];
-
-    const names = remoteFiles.map(item => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item === 'object') {
-        return item.filename || item.name || item.file || item.file_name || item.path || '';
-      }
-      return '';
-    }).filter(Boolean);
-
-    const cachedEntries = await mapWithConcurrency(names, CACHE_CONCURRENCY, async (original) => {
-      const safeName = toSafeName(original);
-      if (!safeName) {
-        return { original, bucket, name: null, url: null, media_type: detectMediaType(original) };
-      }
-      const mediaType = detectMediaType(original);
-      const cacheRecord = await resolveCachedRecord(bucket, original, instanceId);
-      return {
-        original,
-        name: safeName,
-        bucket,
-        media_type: mediaType,
-        url: cacheRecord ? cacheRecord.url : null,
-        instance_id: instanceId || null
-      };
+    const payload = await comfyGatewayService.listInputFiles({
+      subfolder: req.query.subfolder,
+      recursive: req.query.recursive,
+      page: req.query.page,
+      limit: req.query.limit
     });
-
-    const payload = Object.assign({}, remoteJson, {
-      instance_id: remoteJson?.instance_id || instanceId || null,
-      files: names,
-      cached: cachedEntries
-    });
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: null,
-      responseHeaders,
-      responseBody: payload,
-      functionName
-    });
-    res.json(payload);
+    return res.json(payload);
   } catch (e) {
-    if (!loggedError) {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: null,
-        responseHeaders,
-        responseBody: e,
-        functionName
-      });
-    }
-    return errorJson(res, 502, 'failed to list files', String(e.message || e));
+    logger.error('[listFiles] error', e);
+    return errorJson(res, e?.status || 502, 'failed to list ComfyUI input files', String(e.message || e));
+  }
+};
+
+// Proxy a persistent input preview while preserving byte-range responses.
+exports.getInputFile = async (req, res) => {
+  const inputPath = String(req.query.path || '').trim();
+  if (!inputPath) return errorJson(res, 400, 'input path required');
+
+  try {
+    const upstream = await comfyGatewayService.openInputFile(inputPath, {
+      range: req.headers.range
+    });
+    res.status(upstream.status);
+    [
+      'accept-ranges',
+      'cache-control',
+      'content-disposition',
+      'content-length',
+      'content-range',
+      'content-type',
+      'etag',
+      'last-modified',
+      'x-content-type-options'
+    ].forEach((headerName) => {
+      const value = upstream.headers.get(headerName);
+      if (value) res.setHeader(headerName, value);
+    });
+    if (!upstream.body) return res.end();
+
+    const stream = Readable.fromWeb(upstream.body);
+    stream.on('error', (error) => {
+      logger.error('[getInputFile] stream error', error);
+      if (!res.headersSent) {
+        errorJson(res, 502, 'failed to stream ComfyUI input file', String(error.message || error));
+      } else {
+        res.destroy(error);
+      }
+    });
+    stream.pipe(res);
+    return stream;
+  } catch (e) {
+    logger.error('[getInputFile] error', e);
+    return errorJson(res, e?.status || 502, 'failed to preview ComfyUI input file', String(e.message || e));
   }
 };
 
@@ -3936,103 +3904,28 @@ exports.promoteCachedFile = async (req, res) => {
   }
 };
 
-// Upload to input/ (saves to tmp_data, forwards to Comfy API, then deletes temp)
+function parseUploadBoolean(value) {
+  return ['true', '1', 'on', 'yes'].includes(String(value || '').trim().toLowerCase());
+}
+
+// Upload generic workflow input data through the Gateway's persistent input mount.
 exports.uploadInput = async (req, res) => {
-  return errorJson(res, 503, 'file uploads are temporarily disabled for the new gateway');
-  if (!req.file) return errorJson(res, 400, 'missing file "image"');
+  if (!req.file) return errorJson(res, 400, 'missing file "file"');
   const tmpPath = req.file.path;
-  const fileName = req.file.originalname;
-  const functionName = 'uploadInput';
-  const requestHeaders = apiHeaders();
-  let requestUrl = null;
-  let responseHeaders = null;
-  let loggedError = false;
-  let requestBodyLog = null;
   try {
-    const instanceId = extractInstanceId(req);
-    const buf = await fsp.readFile(tmpPath);
-    // Node 18+: FormData & Blob available globally
-    const fd = new FormData();
-    const blob = new Blob([buf], { type: req.file.mimetype || 'application/octet-stream' });
-    fd.append('image', blob, fileName);
-    if (instanceId) fd.append('instance_id', instanceId);
-    requestBodyLog = {
-      fileName,
-      instanceId,
-      mime: req.file.mimetype || 'application/octet-stream',
-      size: buf.length,
-      data: buf
-    };
-    requestUrl = buildComfyUrl('/v1/files/input');
-    const r = await fetch(requestUrl, {
-      method: 'POST',
-      headers: requestHeaders, // do not set Content-Type; fetch will set the boundary
-      body: fd
+    const buffer = await fsp.readFile(tmpPath);
+    const payload = await comfyGatewayService.uploadInputFile({
+      buffer,
+      filename: path.basename(req.file.originalname),
+      contentType: req.file.mimetype || 'application/octet-stream',
+      subfolder: req.body?.subfolder,
+      overwrite: parseUploadBoolean(req.body?.overwrite)
     });
-    responseHeaders = headersToObject(r.headers);
-    if (!r.ok) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: requestBodyLog,
-        responseHeaders,
-        responseBody: { status: r.status, body: txt },
-        functionName
-      });
-      loggedError = true;
-      return errorJson(res, r.status, 'upstream error', txt);
-    }
-    let json = {};
-    try {
-      json = await r.json();
-    } catch (parseError) {
-      const txt = await r.text().catch(() => '');
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: requestBodyLog,
-        responseHeaders,
-        responseBody: { parseError: parseError.message, body: txt },
-        functionName
-      });
-      loggedError = true;
-      throw parseError;
-    }
-    const savedName = json?.filename || json?.file || fileName;
-    if (savedName) {
-      try {
-        await writeCacheFile(savedName, buf, { bucket: 'input', mediaType: detectMediaType(savedName), instanceId });
-      } catch (err) {
-        logger.warn('[uploadInput] failed to persist cache', err);
-      }
-    }
-    if (instanceId && !json.instance_id) {
-      json.instance_id = instanceId;
-    }
-    await recordApiDebugLog({
-      requestUrl,
-      requestHeaders,
-      requestBody: requestBodyLog,
-      responseHeaders,
-      responseBody: json,
-      functionName
-    });
-    res.json(json);
+    return res.status(201).json(payload);
   } catch (e) {
-    if (!loggedError) {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: requestBodyLog,
-        responseHeaders,
-        responseBody: e,
-        functionName
-      });
-    }
-    return errorJson(res, 502, 'failed to upload to ComfyUI API', String(e.message || e));
+    logger.error('[uploadInput] error', e);
+    return errorJson(res, e?.status || 502, 'failed to upload ComfyUI input file', String(e.message || e));
   } finally {
-    // best-effort cleanup
     try { await fsp.unlink(tmpPath); } catch {}
   }
 };
