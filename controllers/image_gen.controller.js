@@ -377,6 +377,11 @@ function isCompletedStatus(status) {
   return normalized === 'completed' || normalized === 'complete' || normalized === 'done';
 }
 
+function isTerminalJobStatus(status) {
+  const normalized = normalizeJobStatus(status);
+  return isCompletedStatus(normalized) || ['failed', 'error', 'timeout', 'canceled', 'cancelled'].includes(normalized);
+}
+
 async function cacheGatewayOutputs(jobId, outputs, instanceId) {
   if (!Array.isArray(outputs) || !outputs.length) return [];
   const items = await mapWithConcurrency(outputs, CACHE_CONCURRENCY, async (output, index) => {
@@ -1708,27 +1713,23 @@ async function fetchJobDetail(jobId, instanceId) {
   const local = localJobStore.get(jobId);
   const localStatus = normalizeJobStatus(local?.status);
   const hasFiles = Array.isArray(local?.files) && local.files.length > 0;
-  if (local && isCompletedStatus(localStatus) && hasFiles) {
+  const canUseLocalTerminal = isTerminalJobStatus(localStatus)
+    && (!isCompletedStatus(localStatus) || hasFiles);
+  if (local && canUseLocalTerminal) {
     const effectiveInstance = local.instance_id || instanceId || null;
     const files = normalizeJobFiles(jobId, Array.isArray(local.files) ? local.files : [], effectiveInstance);
     return Object.assign({}, local, { instance_id: effectiveInstance, files });
   }
 
-  let updated = null;
-  try {
-    const status = await comfyGatewayService.getStatus(jobId);
-    const normalized = normalizeGatewayStatus(status, jobId, local?.workflow || null);
-    if (isCompletedStatus(normalized.status) && normalized.outputs.length) {
-      const files = await cacheGatewayOutputs(jobId, normalized.outputs, instanceId);
-      if (files.length) normalized.files = files;
-      const mapping = jobPromptMap.get(jobId);
-      if (mapping && files.length) mapping.files = files;
-    }
-    updated = rememberLocalJob(jobId, normalized);
-  } catch (err) {
-    if (!local) throw err;
-    updated = local;
+  const status = await comfyGatewayService.getStatus(jobId);
+  const normalized = normalizeGatewayStatus(status, jobId, local?.workflow || null);
+  if (isCompletedStatus(normalized.status) && normalized.outputs.length) {
+    const files = await cacheGatewayOutputs(jobId, normalized.outputs, instanceId);
+    if (files.length) normalized.files = files;
+    const mapping = jobPromptMap.get(jobId);
+    if (mapping && files.length) mapping.files = files;
   }
+  const updated = rememberLocalJob(jobId, normalized);
 
   const effectiveInstance = updated.instance_id || instanceId || null;
   const files = normalizeJobFiles(jobId, Array.isArray(updated.files) ? updated.files : [], effectiveInstance);
@@ -3604,8 +3605,17 @@ exports.getJob = async (req, res) => {
     const job = await fetchJobDetail(jobId, instanceId);
     return res.json(job);
   } catch (e) {
-    logger.error('[getJob] error', e);
     const status = e?.status || (e?.message === 'job not found' ? 404 : 502);
+    if (status === 404) {
+      logger.notice('[getJob] job expired or not found', { category: 'image_gen' });
+      return res.status(404).json({
+        error: 'job expired or not found',
+        details: String(e.message || e),
+        code: 'JOB_NOT_FOUND',
+        terminal: true
+      });
+    }
+    logger.error('[getJob] error', e);
     return errorJson(res, status, 'failed to fetch job', String(e.message || e));
   }
 };
@@ -3676,10 +3686,44 @@ exports.getInputFile = async (req, res) => {
   const inputPath = String(req.query.path || '').trim();
   if (!inputPath) return errorJson(res, 400, 'input path required');
 
+  const upstreamController = new AbortController();
+  let stream = null;
+  let idleTimer = null;
+  let clientDisconnected = false;
+  let streamFinished = false;
+
+  const clearIdleTimer = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  };
+  const abortUpstream = (reason) => {
+    if (!upstreamController.signal.aborted) upstreamController.abort(reason);
+  };
+  const onClientDisconnect = () => {
+    if (streamFinished) return;
+    clientDisconnected = true;
+    const error = new Error('preview client disconnected');
+    error.name = 'AbortError';
+    abortUpstream(error);
+    stream?.destroy(error);
+  };
+  const cleanup = () => {
+    clearIdleTimer();
+    req.off?.('aborted', onClientDisconnect);
+    res.off?.('close', onClientDisconnect);
+  };
+
+  req.once?.('aborted', onClientDisconnect);
+  res.once?.('close', onClientDisconnect);
+
   try {
     const upstream = await comfyGatewayService.openInputFile(inputPath, {
-      range: req.headers.range
+      range: req.headers.range,
+      signal: upstreamController.signal
     });
+    if (clientDisconnected) return undefined;
     res.status(upstream.status);
     [
       'accept-ranges',
@@ -3695,10 +3739,32 @@ exports.getInputFile = async (req, res) => {
       const value = upstream.headers.get(headerName);
       if (value) res.setHeader(headerName, value);
     });
-    if (!upstream.body) return res.end();
+    if (!upstream.body) {
+      streamFinished = true;
+      cleanup();
+      return res.end();
+    }
 
-    const stream = Readable.fromWeb(upstream.body);
+    stream = Readable.fromWeb(upstream.body);
+    const resetIdleTimer = () => {
+      clearIdleTimer();
+      idleTimer = setTimeout(() => {
+        const error = new Error('gateway preview stream idle timeout');
+        error.name = 'TimeoutError';
+        abortUpstream(error);
+        stream.destroy(error);
+      }, comfyGatewayService.streamIdleTimeoutMs);
+      idleTimer.unref?.();
+    };
+    resetIdleTimer();
+    stream.on('data', resetIdleTimer);
+    stream.once('end', () => {
+      streamFinished = true;
+      cleanup();
+    });
     stream.on('error', (error) => {
+      cleanup();
+      if (clientDisconnected) return;
       logger.error('[getInputFile] stream error', error);
       if (!res.headersSent) {
         errorJson(res, 502, 'failed to stream ComfyUI input file', String(error.message || error));
@@ -3709,6 +3775,8 @@ exports.getInputFile = async (req, res) => {
     stream.pipe(res);
     return stream;
   } catch (e) {
+    cleanup();
+    if (clientDisconnected || req.aborted || res.destroyed) return undefined;
     logger.error('[getInputFile] error', e);
     return errorJson(res, e?.status || 502, 'failed to preview ComfyUI input file', String(e.message || e));
   }

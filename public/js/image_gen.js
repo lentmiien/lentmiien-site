@@ -49,7 +49,13 @@
   const editableFields = new Map();
   const STATUS_POLL_INTERVAL_MS = 2500;
   const STATUS_POLL_ERROR_INTERVAL_MS = 4500;
+  const STATUS_POLL_MAX_ERROR_INTERVAL_MS = 60000;
+  const STATUS_POLL_MAX_CONSECUTIVE_ERRORS = 8;
+  const STATUS_POLL_JITTER_RATIO = 0.2;
   const JOB_STORAGE_KEY = 'imageGenActiveJobId';
+  const JOB_STORAGE_TTL_MS = 24 * 60 * 60 * 1000;
+  let pollErrorCount = 0;
+  let pollStartedAt = 0;
   const INPUT_PAGE_SIZE = 48;
   if (wfJsonArea) wfJsonArea.readOnly = true;
   if (promptTextInput) {
@@ -80,7 +86,19 @@
     const resp = await fetch(url, init);
     if (!resp.ok) {
       const txt = await resp.text().catch(() => '');
-      throw new Error(`${resp.status} ${resp.statusText} ${txt}`.trim());
+      let payload = null;
+      try {
+        payload = txt ? JSON.parse(txt) : null;
+      } catch (_) {
+        payload = null;
+      }
+      const upstreamMessage = payload?.error || payload?.details || txt;
+      const err = new Error(`${resp.status} ${resp.statusText} ${upstreamMessage || ''}`.trim());
+      err.status = resp.status;
+      err.code = payload?.code || null;
+      err.details = payload?.details || null;
+      err.terminal = payload?.terminal === true;
+      throw err;
     }
     const ct = resp.headers.get('content-type') || '';
     if (ct.includes('application/json')) return resp.json();
@@ -152,31 +170,57 @@
       pollTimer = null;
     }
     pollJobId = null;
+    pollErrorCount = 0;
+    pollStartedAt = 0;
+  }
+
+  function parseStoredJob(raw) {
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      const jobId = typeof parsed?.jobId === 'string' ? parsed.jobId.trim() : '';
+      const storedAt = Number(parsed?.storedAt);
+      if (!jobId || !Number.isFinite(storedAt)) return null;
+      return { jobId, storedAt };
+    } catch (_) {
+      // Legacy values had no timestamp and could be resumed forever. Discard them.
+      return null;
+    }
   }
 
   function getStoredJobId() {
     if (typeof localStorage === 'undefined') return null;
     try {
-      return localStorage.getItem(JOB_STORAGE_KEY);
+      const stored = parseStoredJob(localStorage.getItem(JOB_STORAGE_KEY));
+      if (!stored || Date.now() - stored.storedAt > JOB_STORAGE_TTL_MS) {
+        localStorage.removeItem(JOB_STORAGE_KEY);
+        return null;
+      }
+      return stored.jobId;
     } catch (err) {
       return null;
     }
   }
 
   function storeJobId(jobId) {
-    if (!jobId || typeof localStorage === 'undefined') return;
+    if (!jobId || typeof localStorage === 'undefined') return Date.now();
     try {
-      localStorage.setItem(JOB_STORAGE_KEY, jobId);
+      const normalizedJobId = String(jobId).trim();
+      const existing = parseStoredJob(localStorage.getItem(JOB_STORAGE_KEY));
+      const storedAt = existing?.jobId === normalizedJobId ? existing.storedAt : Date.now();
+      localStorage.setItem(JOB_STORAGE_KEY, JSON.stringify({ jobId: normalizedJobId, storedAt }));
+      return storedAt;
     } catch (err) {
       log('Unable to store job id: ' + err.message, 'text-warning');
+      return Date.now();
     }
   }
 
   function clearStoredJobId(jobId) {
     if (typeof localStorage === 'undefined') return;
     try {
-      const stored = localStorage.getItem(JOB_STORAGE_KEY);
-      if (!jobId || !stored || stored === jobId) {
+      const stored = parseStoredJob(localStorage.getItem(JOB_STORAGE_KEY));
+      if (!jobId || !stored || stored.jobId === jobId) {
         localStorage.removeItem(JOB_STORAGE_KEY);
       }
     } catch (err) {
@@ -236,17 +280,53 @@
   async function pollJob(jobId, { repeat = true } = {}) {
     if (!jobId) return;
     pollJobId = jobId;
+    if (pollStartedAt && Date.now() - pollStartedAt > JOB_STORAGE_TTL_MS) {
+      clearStoredJobId(jobId);
+      stopPolling();
+      setStatus('expired');
+      setJobStatus('expired');
+      clearResults('This job exceeded the polling lifetime.');
+      log('Job polling expired after 24 hours.', 'text-warning');
+      return;
+    }
     try {
       const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
       if (pollJobId !== jobId) return;
+      pollErrorCount = 0;
       const done = await handleJobUpdate(job, { fromPoll: true });
       if (!done && repeat && pollJobId === jobId) {
         pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), STATUS_POLL_INTERVAL_MS);
       }
     } catch (err) {
+      if (pollJobId !== jobId) return;
+      if (err?.status === 404 || err?.code === 'JOB_NOT_FOUND' || err?.terminal === true) {
+        clearStoredJobId(jobId);
+        stopPolling();
+        setStatus('expired');
+        setJobStatus('not found');
+        clearResults('This job expired or is no longer available.');
+        log('Job expired or was not found; polling stopped.', 'text-warning');
+        return;
+      }
+
+      pollErrorCount += 1;
       log('Poll failed: ' + err.message, 'text-danger');
+      if (pollErrorCount >= STATUS_POLL_MAX_CONSECUTIVE_ERRORS) {
+        clearStoredJobId(jobId);
+        stopPolling();
+        setStatus('unavailable');
+        setJobStatus('unavailable');
+        log('Polling stopped after repeated gateway errors. Retry manually when the gateway is available.', 'text-warning');
+        return;
+      }
       if (repeat && pollJobId === jobId) {
-        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), STATUS_POLL_ERROR_INTERVAL_MS);
+        const exponentialDelay = Math.min(
+          STATUS_POLL_ERROR_INTERVAL_MS * Math.pow(2, pollErrorCount - 1),
+          STATUS_POLL_MAX_ERROR_INTERVAL_MS
+        );
+        const jitter = exponentialDelay * STATUS_POLL_JITTER_RATIO * ((Math.random() * 2) - 1);
+        const retryDelay = Math.max(STATUS_POLL_ERROR_INTERVAL_MS, Math.round(exponentialDelay + jitter));
+        pollTimer = setTimeout(() => pollJob(jobId, { repeat: true }), retryDelay);
       }
     }
   }
@@ -254,7 +334,7 @@
   function startPolling(jobId) {
     if (!jobId) return;
     stopPolling();
-    storeJobId(jobId);
+    pollStartedAt = storeJobId(jobId);
     pollJob(jobId, { repeat: true });
   }
 

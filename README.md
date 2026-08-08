@@ -16,7 +16,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 - **Server & Domain Layer:** `app.js` wires Express, session management, Passport-local auth, and role-based permissions. Routers in `routes/` map to task-focused controllers inside `controllers/`, which delegate domain logic to `services/` and persistence to Mongoose models (`models/` via `database.js`).
 - **Realtime Collaboration:** `socket_io/` exposes namespaces for Chat5 conversation updates, typing indicators, and notification fan-out.
 - **Data & Storage:** MongoDB backs all domain entities (chat transcripts, knowledge, budgets, cooking schedules, Sora videos, audio jobs, OCR jobs, performance snapshots, etc.). Local directories (`cache/`, `tmp_data/`, `public/`, `logs/`, `github-repos/`) store generated media, working files, log archives, repo mirrors, and cached prompts.
-- **Background Workflows:** `setup.js` provisions folders, converts legacy images, prunes logs, syncs OpenAI usage, and clears temp data before each start. Schedulers handle batch triggers, DB usage monitoring, Agent5 runs, and pending AI response recovery, while `controllers/webhook.js` consumes OpenAI and Ollama Gateway webhooks.
+- **Background Workflows:** `setup.js` provisions folders, converts legacy images, prunes logs, syncs OpenAI usage, and clears temp data before each start. Schedulers handle log retention, batch triggers, DB usage monitoring, Agent5 runs, and pending AI response recovery, while `controllers/webhook.js` consumes OpenAI and Ollama Gateway webhooks.
 - **Frontend Rendering:** Views live in `views/` (Pug) and ship compiled assets from `public/` (JS/CSS/audio/mp3/video). `/games` serves static WebAssembly/HTML bundles with gzip/Brotli.
 
 ## Directory Reference
@@ -131,6 +131,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `MAILGUN_API_KEY` | Optional Mailgun key for notifications in `MessageService`. |
 | `MAILGUN_DOMAIN` | Mailgun domain used for startup/crash alerts. |
 | `LOG_LEVEL` | Minimum JSON log level (`debug`, `notice`, `warning`, or `error`; defaults to `debug`). |
+| `LOG_RETENTION_DAYS`, `LOG_PRUNE_INTERVAL_MS` | Structured-log retention window and independent pruning cadence (defaults to seven days and once daily). |
 | `STARTUP_ALERT_EMAIL` | Comma-separated list of recipients for startup diagnostics emails (Mailgun). |
 | `STARTUP_ALERT_FROM` | Optional friendly from name for diagnostics emails. |
 | `STARTUP_SLACK_WEBHOOK_URL` | Incoming webhook for Slack/Teams alerts when diagnostics fail. |
@@ -143,6 +144,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `DB_USAGE_ALERT_WEBHOOK`, `DB_USAGE_ALERT_INTERVAL_MINUTES` | Optional webhook and polling interval for database usage alerts. |
 | `SORA_STATUS_POLL_MS`, `SORA_STATUS_POLL_BATCH` | Background polling interval and batch size for pending Sora videos. |
 | `COMFY_API_BASE`, `COMFY_API_KEY` | ComfyUI REST endpoint + key for `/image_gen`. |
+| `COMFY_STREAM_HEADER_TIMEOUT_MS`, `COMFY_STREAM_IDLE_TIMEOUT_MS` | Separate response-header and idle-body deadlines for streamed ComfyUI previews. |
 | `ASR_API_BASE`, `TTS_API_BASE` | Local ASR and TTS service endpoints used by `/asr`, `/ocr-tts`, and the audio workflow. |
 | `ASR_CRISPERWHISPER_TIMEOUT_MS` | CrisperWhisper request timeout; defaults to `2800000` ms to cover gateway queueing and inference. |
 | `AUDIO_WORKFLOW_LLM_MODEL` | Default model used by audio workflow triggers. |
@@ -255,7 +257,7 @@ The web process stores remote workspace paths as allowlist metadata; the worker 
 - `public/ocr` and `public/ocr_tts` are generated preview/output folders for OCR tools.
 - `tmp_data/` is purged on every startup; use `/tmp-files` for transient transfers.
 - `cache/` stores JSON caches (`chat3vdb.json`, `default_models.json`, embeddings).
-- `logs/` retains seven days of structured logs (JSON-per-line). Older files are pruned automatically.
+- `logs/` retains seven days of structured logs (JSON-per-line). Older files are pruned at startup and daily even when the app is launched directly with `node app`.
 - `sample_data/` contains datasets used in demos and ingestion flows.
 - `coverage/` is produced by Jest runs; open `coverage/lcov-report/index.html` after `npm test` for an HTML report.
 

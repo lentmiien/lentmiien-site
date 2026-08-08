@@ -1,11 +1,15 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { EventEmitter } = require('events');
+const { PassThrough } = require('stream');
 
 const mockGateway = {
   listInputFiles: jest.fn(),
   uploadInputFile: jest.fn(),
   openInputFile: jest.fn(),
+  getStatus: jest.fn(),
+  streamIdleTimeoutMs: 60000,
 };
 
 jest.mock('../../database', () => ({
@@ -132,5 +136,62 @@ describe('image_gen persistent workflow inputs', () => {
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  test('returns a structured terminal response for an expired Gateway job', async () => {
+    mockGateway.getStatus.mockRejectedValue(Object.assign(new Error('Unknown prompt_id'), {
+      status: 404,
+    }));
+    const req = {
+      params: { id: 'expired-job' },
+      query: {},
+      body: {},
+      headers: {},
+    };
+    const res = responseDouble();
+
+    await controller.getJob(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'job expired or not found',
+      details: 'Unknown prompt_id',
+      code: 'JOB_NOT_FOUND',
+      terminal: true,
+    });
+  });
+
+  test('aborts the Gateway preview when the browser disconnects', async () => {
+    const req = Object.assign(new EventEmitter(), {
+      query: { path: 'references/preview.png' },
+      headers: { range: 'bytes=0-99' },
+      aborted: false,
+    });
+    const res = new PassThrough();
+    res.status = jest.fn().mockReturnValue(res);
+    res.setHeader = jest.fn();
+    res.on('error', () => {});
+    let requestSignal = null;
+    mockGateway.openInputFile.mockImplementation(async (_path, options) => {
+      requestSignal = options.signal;
+      return new Response(new ReadableStream({ start() {} }), {
+        status: 206,
+        headers: { 'content-type': 'image/png' },
+      });
+    });
+
+    await controller.getInputFile(req, res);
+    req.emit('aborted');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockGateway.openInputFile).toHaveBeenCalledWith('references/preview.png', {
+      range: 'bytes=0-99',
+      signal: expect.any(AbortSignal),
+    });
+    expect(requestSignal.aborted).toBe(true);
+    expect(requestSignal.reason).toMatchObject({
+      name: 'AbortError',
+      message: 'preview client disconnected',
+    });
   });
 });

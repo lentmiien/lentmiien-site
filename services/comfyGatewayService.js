@@ -3,8 +3,21 @@ const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.COMFY_API_BASE || 'http://192.168.0.20:8080';
 const DEFAULT_TIMEOUT_MS = 20000;
+const DEFAULT_STREAM_HEADER_TIMEOUT_MS = 10000;
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60000;
 const JS_FILE_NAME = 'services/comfyGatewayService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+
+function positiveTimeout(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function timeoutError(message) {
+  const error = new Error(message);
+  error.name = 'TimeoutError';
+  return error;
+}
 
 function headersToObject(headers) {
   if (!headers || typeof headers.forEach !== 'function') return null;
@@ -19,12 +32,16 @@ class ComfyGatewayService {
   constructor({
     baseUrl = DEFAULT_API_BASE,
     apiKey = process.env.COMFY_API_KEY,
-    timeoutMs = DEFAULT_TIMEOUT_MS
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    streamHeaderTimeoutMs = process.env.COMFY_STREAM_HEADER_TIMEOUT_MS,
+    streamIdleTimeoutMs = process.env.COMFY_STREAM_IDLE_TIMEOUT_MS
   } = {}) {
     if (!baseUrl) throw new Error('COMFY_API_BASE is not configured');
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.apiKey = apiKey || null;
-    this.timeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = positiveTimeout(timeoutMs, DEFAULT_TIMEOUT_MS);
+    this.streamHeaderTimeoutMs = positiveTimeout(streamHeaderTimeoutMs, DEFAULT_STREAM_HEADER_TIMEOUT_MS);
+    this.streamIdleTimeoutMs = positiveTimeout(streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS);
   }
 
   buildUrl(pathname = '') {
@@ -49,6 +66,7 @@ class ComfyGatewayService {
     if (body !== undefined) fetchOptions.body = body;
 
     let responseHeaders = null;
+    let debugRecorded = false;
     try {
       const r = await fetch(requestUrl, fetchOptions);
       responseHeaders = headersToObject(r.headers);
@@ -67,6 +85,7 @@ class ComfyGatewayService {
         responseBody,
         functionName
       });
+      debugRecorded = true;
       if (!r.ok) {
         const errorMsg = (responseBody && responseBody.error) || (typeof responseBody === 'string' ? responseBody : '') || `upstream ${r.status}`;
         const err = new Error(errorMsg);
@@ -76,14 +95,16 @@ class ComfyGatewayService {
       }
       return responseBody;
     } catch (err) {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: requestBody ?? body,
-        responseHeaders,
-        responseBody: err,
-        functionName
-      });
+      if (!debugRecorded) {
+        await recordApiDebugLog({
+          requestUrl,
+          requestHeaders,
+          requestBody: requestBody ?? body,
+          responseHeaders,
+          responseBody: err,
+          functionName
+        });
+      }
       throw err;
     }
   }
@@ -164,7 +185,7 @@ class ComfyGatewayService {
     );
   }
 
-  async openInputFile(inputPath, { range } = {}) {
+  async openInputFile(inputPath, { range, signal } = {}) {
     const normalizedPath = String(inputPath || '').trim();
     if (!normalizedPath) {
       const err = new Error('input path is required');
@@ -177,13 +198,39 @@ class ComfyGatewayService {
     const requestHeaders = this.apiHeaders(range ? { Range: range } : {});
     const functionName = 'openInputFile';
     let responseHeaders = null;
+    let debugRecorded = false;
+    const headerController = new AbortController();
+    const headerTimer = setTimeout(() => {
+      headerController.abort(timeoutError('gateway response header timeout'));
+    }, this.streamHeaderTimeoutMs);
+    headerTimer.unref?.();
+    const requestSignal = signal
+      ? AbortSignal.any([signal, headerController.signal])
+      : headerController.signal;
 
     try {
       const response = await fetch(requestUrl, {
         headers: requestHeaders,
-        signal: AbortSignal.timeout(this.timeoutMs)
+        signal: requestSignal
       });
+      clearTimeout(headerTimer);
       responseHeaders = headersToObject(response.headers);
+      if (!response.ok) {
+        const responseBody = await response.text().catch(() => '');
+        await recordApiDebugLog({
+          requestUrl,
+          requestHeaders,
+          requestBody: { path: normalizedPath, range: range || null },
+          responseHeaders,
+          responseBody: { status: response.status, body: responseBody },
+          functionName
+        });
+        debugRecorded = true;
+        const err = new Error(responseBody || `upstream ${response.status}`);
+        err.status = response.status;
+        err.response = responseBody;
+        throw err;
+      }
       await recordApiDebugLog({
         requestUrl,
         requestHeaders,
@@ -192,23 +239,19 @@ class ComfyGatewayService {
         responseBody: { status: response.status },
         functionName
       });
-      if (!response.ok) {
-        const responseBody = await response.text().catch(() => '');
-        const err = new Error(responseBody || `upstream ${response.status}`);
-        err.status = response.status;
-        err.response = responseBody;
-        throw err;
-      }
       return response;
     } catch (err) {
-      await recordApiDebugLog({
-        requestUrl,
-        requestHeaders,
-        requestBody: { path: normalizedPath, range: range || null },
-        responseHeaders,
-        responseBody: err,
-        functionName
-      });
+      clearTimeout(headerTimer);
+      if (!debugRecorded) {
+        await recordApiDebugLog({
+          requestUrl,
+          requestHeaders,
+          requestBody: { path: normalizedPath, range: range || null },
+          responseHeaders,
+          responseBody: err,
+          functionName
+        });
+      }
       throw err;
     }
   }

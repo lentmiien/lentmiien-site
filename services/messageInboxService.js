@@ -32,6 +32,14 @@ class MessageInboxService {
     return String(value).trim().toLowerCase();
   }
 
+  emailDomain(value) {
+    const normalized = this.normalizeEmail(value);
+    const separator = normalized.lastIndexOf('@');
+    return separator >= 0 && separator < normalized.length - 1
+      ? normalized.slice(separator + 1)
+      : 'unknown';
+  }
+
   normalizeLabels(labels) {
     const stored = [];
     const normalized = [];
@@ -200,11 +208,10 @@ class MessageInboxService {
       generateHighQuality: !!policy.hasHighQualityEmbedding,
     });
 
-    logger.notice('Message saved', {
+    logger.debug('Inbox message saved', {
       category: 'message_inbox',
       metadata: {
-        messageId,
-        from: normalizedFrom,
+        senderDomain: this.emailDomain(normalizedFrom),
         retentionDays: policy.retentionDays,
         hasEmbedding: !!doc.hasEmbedding,
         hasHighQualityEmbedding: !!doc.hasHighQualityEmbedding,

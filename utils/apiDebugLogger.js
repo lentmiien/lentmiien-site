@@ -8,6 +8,14 @@ const MAX_ARRAY_LENGTH = 200; // Replace arrays longer than this many elements
 const MAX_ARRAY_BYTES = 256 * 1024; // Replace arrays whose serialized size exceeds this
 const MAX_OBJECT_KEYS = 200; // Replace objects with too many keys
 const MAX_OBJECT_BYTES = 256 * 1024; // Replace objects whose serialized size is huge
+const SECRET_REDACTION = '[redacted secret]';
+
+const SENSITIVE_KEY_NAMES = new Set([
+  'authorization',
+  'proxyauthorization',
+  'cookie',
+  'setcookie',
+]);
 
 // Custom path-based redactions. Extend this list as needed.
 const CUSTOM_PATH_REDACTIONS = [
@@ -29,9 +37,10 @@ const recordApiDebugLog = async ({
   responseBody = null,
   functionName = 'unknown',
 }) => {
+  const sanitizedRequestUrl = sanitizeRequestUrl(requestUrl);
   try {
     await ApiDebugLog.create({
-      requestUrl,
+      requestUrl: sanitizedRequestUrl,
       requestHeaders: sanitizePayload(requestHeaders),
       requestBody: sanitizePayload(requestBody),
       responseHeaders: sanitizePayload(responseHeaders),
@@ -43,7 +52,7 @@ const recordApiDebugLog = async ({
     logger.error('Failed to record API debug log entry', {
       category: 'api-debug',
       metadata: {
-        requestUrl,
+        requestUrl: sanitizedRequestUrl,
         functionName,
         jsFileName,
         message: err?.message || err,
@@ -56,6 +65,33 @@ const sanitizePayload = (payload) =>
   sanitizeValue(payload, [], {
     seen: new WeakSet(),
   });
+
+const isSensitiveKey = (key) => {
+  const normalized = String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (SENSITIVE_KEY_NAMES.has(normalized)) return true;
+  return normalized.endsWith('apikey')
+    || normalized.endsWith('password')
+    || normalized.endsWith('passwd')
+    || normalized.endsWith('secret')
+    || normalized.endsWith('token');
+};
+
+const sanitizeRequestUrl = (value) => {
+  const raw = String(value ?? 'unknown');
+  try {
+    const isAbsolute = /^[a-z][a-z\d+.-]*:\/\//i.test(raw);
+    if (!isAbsolute && !raw.startsWith('/') && !raw.startsWith('?')) return raw;
+    const parsed = new URL(raw, 'http://redaction.invalid');
+    if (parsed.username) parsed.username = SECRET_REDACTION;
+    if (parsed.password) parsed.password = SECRET_REDACTION;
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (isSensitiveKey(key)) parsed.searchParams.set(key, SECRET_REDACTION);
+    }
+    return isAbsolute ? parsed.toString() : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch (_) {
+    return raw;
+  }
+};
 
 const sanitizeValue = (value, path, context) => {
   const customReplacement = getCustomReplacement(path, value);
@@ -153,7 +189,10 @@ const sanitizeObject = (obj, path, context) => {
   if (obj instanceof Map) {
     const entries = {};
     for (const [key, val] of obj.entries()) {
-      entries[String(key)] = sanitizeValue(val, path.concat(String(key)), context);
+      const stringKey = String(key);
+      entries[stringKey] = isSensitiveKey(stringKey)
+        ? SECRET_REDACTION
+        : sanitizeValue(val, path.concat(stringKey), context);
     }
     context.seen.delete(obj);
     return enforceObjectSize(entries, path);
@@ -173,7 +212,9 @@ const sanitizeObject = (obj, path, context) => {
 
   const sanitized = {};
   for (const key of keys) {
-    sanitized[key] = sanitizeValue(obj[key], path.concat(key), context);
+    sanitized[key] = isSensitiveKey(key)
+      ? SECRET_REDACTION
+      : sanitizeValue(obj[key], path.concat(key), context);
   }
 
   context.seen.delete(obj);
@@ -260,6 +301,9 @@ module.exports = {
   createApiDebugLogger,
   recordApiDebugLog,
   sanitizePayload,
+  sanitizeRequestUrl,
+  isSensitiveKey,
+  SECRET_REDACTION,
   REDACTION_LIMITS: {
     MAX_STRING_BYTES,
     MAX_BUFFER_BYTES,

@@ -10,6 +10,7 @@ const { syncOpenAIUsageHistory } = require('./services/openaiUsageSyncService');
 const ToolManagerService = require('./services/toolManagerService');
 const AccountingBusinessService = require('./services/accountingBusinessService');
 const { appSettingsService } = require('./services/appSettingsService');
+const { pruneOldLogs: pruneLogFiles } = require('./services/logRetentionService');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
 const batchprompt = require('./models/batchprompt');
@@ -33,7 +34,6 @@ const HTML_DIR = path.join(ROOT_DIR, 'public', 'html');
 const DROPBOX_TOKEN_PATH = path.join(ROOT_DIR, 'tokens.json');
 
 const PDF_JOB_MAX_AGE_HOURS = Number.parseInt(process.env.CHAT_PDF_MAX_AGE_HOURS || '24', 10) || 24;
-const LOG_RETENTION_DAYS = 7;
 const DROPBOX_REQUIRED_ENV = ['DROPBOX_CLIENT_ID', 'DROPBOX_CLIENT_SECRET', 'DROPBOX_REDIRECT_URI'];
 const MESSAGE_COLLECTION = 'message_inbox';
 const MESSAGE_CONTENT_TYPE = 'message';
@@ -275,30 +275,7 @@ async function convertPngAssets() {
 }
 
 async function pruneOldLogs() {
-  const retentionMs = LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-  let removed = 0;
-  await fs.promises.mkdir(LOG_DIR, { recursive: true });
-  const entries = await fs.promises.readdir(LOG_DIR);
-  for (const entry of entries) {
-    if (!entry.toLowerCase().endsWith('.log')) {
-      continue;
-    }
-    const filePath = path.join(LOG_DIR, entry);
-    try {
-      const stats = await fs.promises.stat(filePath);
-      if (!stats.isFile()) {
-        continue;
-      }
-      if (Date.now() - stats.mtimeMs > retentionMs) {
-        await fs.promises.unlink(filePath);
-        removed += 1;
-        logger.notice(`Removed old log file: ${filePath}`);
-      }
-    } catch (error) {
-      logger.warning(`Unable to inspect log file: ${filePath}`, error);
-    }
-  }
-  return { removed };
+  return pruneLogFiles({ logDir: LOG_DIR, logger });
 }
 
 async function removeVideoRecords(filter) {

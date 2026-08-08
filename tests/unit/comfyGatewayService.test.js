@@ -1,5 +1,7 @@
+const mockRecordApiDebugLog = jest.fn().mockResolvedValue(undefined);
+
 jest.mock('../../utils/apiDebugLogger', () => ({
-  createApiDebugLogger: () => jest.fn().mockResolvedValue(undefined),
+  createApiDebugLogger: () => mockRecordApiDebugLog,
 }));
 
 jest.mock('../../utils/logger', () => ({
@@ -15,6 +17,7 @@ describe('ComfyGatewayService input files', () => {
   beforeEach(() => {
     originalFetch = global.fetch;
     global.fetch = jest.fn();
+    mockRecordApiDebugLog.mockClear();
     service = new ComfyGatewayService({
       baseUrl: 'http://gateway.test:8080',
       apiKey: 'gateway-key',
@@ -116,6 +119,48 @@ describe('ComfyGatewayService input files', () => {
     await expect(response.text()).resolves.toBe('partial audio');
   });
 
+  test('clears the preview header deadline before the response body is streamed', async () => {
+    jest.useFakeTimers();
+    service = new ComfyGatewayService({
+      baseUrl: 'http://gateway.test:8080',
+      streamHeaderTimeoutMs: 25,
+    });
+    global.fetch.mockResolvedValue(new Response('body after headers'));
+
+    try {
+      const response = await service.openInputFile('preview.png');
+      const requestSignal = global.fetch.mock.calls[0][1].signal;
+      await jest.advanceTimersByTimeAsync(100);
+
+      expect(requestSignal.aborted).toBe(false);
+      await expect(response.text()).resolves.toBe('body after headers');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('aborts a preview that does not return response headers in time', async () => {
+    jest.useFakeTimers();
+    service = new ComfyGatewayService({
+      baseUrl: 'http://gateway.test:8080',
+      streamHeaderTimeoutMs: 25,
+    });
+    global.fetch.mockImplementation((_url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+    }));
+
+    try {
+      const request = expect(service.openInputFile('preview.png')).rejects.toMatchObject({
+        name: 'TimeoutError',
+        message: 'gateway response header timeout',
+      });
+      await jest.advanceTimersByTimeAsync(25);
+      await request;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('preserves Gateway upload conflicts for the controller', async () => {
     global.fetch.mockResolvedValue(new Response(JSON.stringify({ error: 'destination exists' }), {
       status: 409,
@@ -129,5 +174,6 @@ describe('ComfyGatewayService input files', () => {
       status: 409,
       message: 'destination exists',
     });
+    expect(mockRecordApiDebugLog).toHaveBeenCalledTimes(1);
   });
 });

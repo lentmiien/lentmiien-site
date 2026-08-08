@@ -123,6 +123,7 @@ const scheduleDatabaseUsageMonitor = require('./schedulers/databaseUsageMonitor'
 const scheduleAgent5Runner = require('./schedulers/agent5');
 const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecovery');
 const scheduleDisasterIngestion = require('./schedulers/disasterIngestion');
+const scheduleLogRetention = require('./schedulers/logRetention');
 const audioWorkflowService = require('./services/audioWorkflowInstance');
 const codexQueueWorker = require('./services/codexQueueWorker');
 const io = socketIO(server, sessionMiddleware);
@@ -679,6 +680,7 @@ scheduleDatabaseUsageMonitor();
 scheduleAgent5Runner();
 scheduleOpenAIResponseRecovery(app);
 scheduleDisasterIngestion();
+scheduleLogRetention();
 if (getBooleanEnv('CODEX_WEB_WORKER_ENABLED', getBooleanEnv('CODEX_WORKER_ENABLED', true))) {
   codexQueueWorker.start();
 } else {

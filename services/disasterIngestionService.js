@@ -98,6 +98,11 @@ function compactError(error) {
   return error.response?.data?.message || error.response?.data?.error || error.message || String(error);
 }
 
+function getHttpStatus(error) {
+  const status = Number(error?.response?.status ?? error?.status);
+  return Number.isInteger(status) ? status : null;
+}
+
 function p2pDate(value) {
   if (!value) {
     return null;
@@ -207,6 +212,7 @@ class DisasterIngestionService {
       DisasterWeatherSnapshot,
     };
     this.running = false;
+    this.openWeatherOneCallDisabled = false;
   }
 
   async fetchText(url) {
@@ -1013,64 +1019,80 @@ class DisasterIngestionService {
     const apiKey = process.env.OPENWEATHER_API_KEY;
     const preferOneCall = process.env.OPENWEATHER_USE_ONECALL === 'true';
 
+    if (apiKey && preferOneCall && !this.openWeatherOneCallDisabled) {
+      try {
+        const data = await this.fetchJson('https://api.openweathermap.org/data/3.0/onecall', {
+          params: {
+            lat: location.latitude,
+            lon: location.longitude,
+            appid: apiKey,
+            units: 'metric',
+            exclude: 'minutely,daily,alerts',
+          },
+        });
+        const hourly = (Array.isArray(data?.hourly) ? data.hourly : []).slice(0, 24).map((entry) => ({
+          time: entry.dt ? new Date(entry.dt * 1000) : null,
+          temperatureC: entry.temp ?? null,
+          feelsLikeC: entry.feels_like ?? null,
+          precipitationMm: entry.rain?.['1h'] || entry.snow?.['1h'] || 0,
+          precipitationProbability: Number.isFinite(entry.pop) ? Math.round(entry.pop * 100) : null,
+          windSpeedMs: entry.wind_speed ?? null,
+          windGustMs: entry.wind_gust ?? null,
+          humidityPercent: entry.humidity ?? null,
+          pressureHpa: entry.pressure ?? null,
+          weatherCode: entry.weather?.[0]?.id ? String(entry.weather[0].id) : null,
+          description: entry.weather?.[0]?.description || null,
+        })).filter((entry) => entry.time);
+        const snapshot = await this.models.DisasterWeatherSnapshot.create({
+          source: 'openweathermap-onecall',
+          locationName: location.name,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          fetchedAt: new Date(),
+          forecastStartAt: hourly[0]?.time || null,
+          forecastEndAt: hourly[hourly.length - 1]?.time || null,
+          summary: buildForecastSummary(hourly),
+          current: data?.current || {},
+          hourly,
+          raw: data,
+        });
+        await this.saveWeatherObservation({
+          source: 'openweathermap-onecall-current',
+          locationName: location.name,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          observedAt: data?.current?.dt ? new Date(data.current.dt * 1000) : new Date(),
+          temperatureC: data?.current?.temp ?? null,
+          feelsLikeC: data?.current?.feels_like ?? null,
+          precipitationMm: data?.current?.rain?.['1h'] || data?.current?.snow?.['1h'] || 0,
+          windSpeedMs: data?.current?.wind_speed ?? null,
+          windGustMs: data?.current?.wind_gust ?? null,
+          humidityPercent: data?.current?.humidity ?? null,
+          pressureHpa: data?.current?.pressure ?? null,
+          weatherCode: data?.current?.weather?.[0]?.id ? String(data.current.weather[0].id) : null,
+          description: data?.current?.weather?.[0]?.description || null,
+          raw: data?.current || {},
+        });
+        return snapshot;
+      } catch (error) {
+        const status = getHttpStatus(error);
+        if (status === 401 || status === 403) {
+          this.openWeatherOneCallDisabled = true;
+        }
+        this.logger.warning(
+          this.openWeatherOneCallDisabled
+            ? 'OpenWeather One Call authorization failed; disabling One Call until restart'
+            : 'OpenWeather One Call refresh failed, trying forecast fallback',
+          {
+            category: 'disaster_ingestion',
+            metadata: { error: compactError(error), status },
+          }
+        );
+      }
+    }
+
     if (apiKey) {
       try {
-        if (preferOneCall) {
-          const data = await this.fetchJson('https://api.openweathermap.org/data/3.0/onecall', {
-            params: {
-              lat: location.latitude,
-              lon: location.longitude,
-              appid: apiKey,
-              units: 'metric',
-              exclude: 'minutely,daily,alerts',
-            },
-          });
-          const hourly = (Array.isArray(data?.hourly) ? data.hourly : []).slice(0, 24).map((entry) => ({
-            time: entry.dt ? new Date(entry.dt * 1000) : null,
-            temperatureC: entry.temp ?? null,
-            feelsLikeC: entry.feels_like ?? null,
-            precipitationMm: entry.rain?.['1h'] || entry.snow?.['1h'] || 0,
-            precipitationProbability: Number.isFinite(entry.pop) ? Math.round(entry.pop * 100) : null,
-            windSpeedMs: entry.wind_speed ?? null,
-            windGustMs: entry.wind_gust ?? null,
-            humidityPercent: entry.humidity ?? null,
-            pressureHpa: entry.pressure ?? null,
-            weatherCode: entry.weather?.[0]?.id ? String(entry.weather[0].id) : null,
-            description: entry.weather?.[0]?.description || null,
-          })).filter((entry) => entry.time);
-          const snapshot = await this.models.DisasterWeatherSnapshot.create({
-            source: 'openweathermap-onecall',
-            locationName: location.name,
-            latitude: location.latitude,
-            longitude: location.longitude,
-            fetchedAt: new Date(),
-            forecastStartAt: hourly[0]?.time || null,
-            forecastEndAt: hourly[hourly.length - 1]?.time || null,
-            summary: buildForecastSummary(hourly),
-            current: data?.current || {},
-            hourly,
-            raw: data,
-          });
-          await this.saveWeatherObservation({
-            source: 'openweathermap-onecall-current',
-            locationName: location.name,
-            latitude: location.latitude,
-            longitude: location.longitude,
-            observedAt: data?.current?.dt ? new Date(data.current.dt * 1000) : new Date(),
-            temperatureC: data?.current?.temp ?? null,
-            feelsLikeC: data?.current?.feels_like ?? null,
-            precipitationMm: data?.current?.rain?.['1h'] || data?.current?.snow?.['1h'] || 0,
-            windSpeedMs: data?.current?.wind_speed ?? null,
-            windGustMs: data?.current?.wind_gust ?? null,
-            humidityPercent: data?.current?.humidity ?? null,
-            pressureHpa: data?.current?.pressure ?? null,
-            weatherCode: data?.current?.weather?.[0]?.id ? String(data.current.weather[0].id) : null,
-            description: data?.current?.weather?.[0]?.description || null,
-            raw: data?.current || {},
-          });
-          return snapshot;
-        }
-
         const data = await this.fetchJson('https://api.openweathermap.org/data/2.5/forecast', {
           params: {
             lat: location.latitude,
