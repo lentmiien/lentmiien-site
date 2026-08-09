@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="A ten-minute cinematic journey through Type I, Type II, and Type III civilizations, with English narration and three light discoveries.">
+  <title>Kardashev Civilizations</title>
+  <link rel="icon" href="assets/images/first-signal.webp" type="image/webp">
+  <link rel="preload" href="assets/images/first-signal.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/story.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#storyTitle">Skip to the current scene</a>
+
+  <div class="experience" id="experience" data-phase="intro" data-tone="signal" data-panel="visible" data-layout="left">
+    <div class="background-stage" aria-hidden="true">
+      <img class="scene-image is-visible" id="sceneImageA" src="assets/images/first-signal.webp" alt="">
+      <img class="scene-image" id="sceneImageB" src="assets/images/first-signal.webp" alt="">
+      <div class="scene-wash"></div>
+      <div class="scene-vignette"></div>
+      <div class="spectral-haze"></div>
+      <div class="film-grain"></div>
+      <canvas id="atmosphereCanvas"></canvas>
+    </div>
+
+    <div class="scale-trace" aria-hidden="true">
+      <span></span><i></i><i></i><i></i><b></b>
+    </div>
+
+    <header class="topbar">
+      <a class="round-control back-control" href="/games" aria-label="Return to the games list">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+      </a>
+
+      <div class="brand-lockup" aria-label="Kardashev Civilizations">
+        <span class="k-mark" aria-hidden="true">K</span>
+        <span class="brand-copy">
+          <strong>KARDASHEV</strong>
+          <small>CIVILIZATIONS</small>
+        </span>
+      </div>
+
+      <div class="chapter-chip" id="chapterChip" hidden>
+        <span class="chapter-pulse" aria-hidden="true"></span>
+        <span id="chapterChipText">The first signal</span>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="round-control" id="panelButton" type="button" aria-pressed="true" aria-label="Hide the story panel" hidden>
+          <svg class="panel-on-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5Zm4 4h7M7 12h10M7 15h8"></path></svg>
+          <svg class="panel-off-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5M2 2l20 20"></path></svg>
+          <span>Story</span>
+        </button>
+        <button class="round-control" id="captionButton" type="button" aria-pressed="false" aria-label="Show transcript" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm1 4v2h5V9H5Zm9 0v2h5V9h-5ZM5 13v2h7v-2H5Zm10 0v2h4v-2h-4Z"></path></svg>
+          <span>Text</span>
+        </button>
+        <button class="round-control" id="soundButton" type="button" aria-pressed="true" aria-label="Mute narration" hidden>
+          <svg class="sound-on-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m8 4a4.5 4.5 0 0 1 0 6m2-9a8 8 0 0 1 0 12"></path></svg>
+          <svg class="sound-off-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m3-5 13 13"></path></svg>
+          <span>Sound</span>
+        </button>
+        <button class="round-control info-control" id="infoButton" type="button" aria-label="Open controls, disclosures, and sources">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="intro-overlay" id="introOverlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+      <div class="intro-orbit" aria-hidden="true"><i></i><b></b></div>
+      <div class="intro-card">
+        <p class="intro-overline"><span>ONE PLANET</span><i></i><span>ONE STAR</span><i></i><span>ONE GALAXY</span></p>
+        <h1 id="introTitle"><small>THE ENERGY LADDER</small>Kardashev<br>Civilizations</h1>
+        <p class="intro-lede">Begin with a radio signal in 1964. End among billions of stars. Between them lies a question bigger than power: what must a civilization become to survive its own reach?</p>
+
+        <div class="intro-stats" aria-label="Experience overview">
+          <span><strong>12</strong><small>cinematic scenes</small></span>
+          <span><strong>≈ 10 min</strong><small>guided narration</small></span>
+          <span><strong>3</strong><small>light discoveries</small></span>
+        </div>
+
+        <button class="start-button" id="startButton" type="button">
+          <span><small>English narration · headphones recommended</small><strong>Begin the ascent</strong></span>
+          <i aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="m11 7 14 9-14 9V7Z"></path></svg>
+          </i>
+        </button>
+        <p class="gesture-note"><span aria-hidden="true">◉</span> Audio begins after you start and can be muted at any time.</p>
+      </div>
+
+      <div class="intro-coordinate" aria-hidden="true">
+        <span>HUMANITY · K ≈ 0.73</span>
+        <span>POWER / DISTANCE / DEEP TIME</span>
+      </div>
+    </section>
+
+    <section class="story-stage" id="storyStage" aria-label="Guided tour of the Kardashev scale" hidden>
+      <main class="story-layout">
+        <article class="story-card" id="storyCard" tabindex="-1">
+          <header class="story-header">
+            <p class="story-eyebrow" id="storyEyebrow">01 · ORIGIN</p>
+            <span class="story-date" id="storyDate">1964</span>
+          </header>
+
+          <h1 id="storyTitle">A ladder made of light.</h1>
+          <p class="story-lede" id="storyLede"></p>
+          <div class="story-body" id="storyBody"></div>
+
+          <footer class="story-footer">
+            <div class="narration-status" id="narrationStatus" data-state="ready">
+              <button class="narration-replay" id="replayNarrationButton" type="button" aria-label="Replay narration for this scene">
+                <span class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              </button>
+              <span class="narration-copy">
+                <small id="narrationLabel">Narration ready</small>
+                <span class="audio-progress" aria-hidden="true"><i id="audioProgress"></i></span>
+              </span>
+            </div>
+            <span class="field-term" id="fieldTerm"><small>Signal word</small><strong>technosignature</strong><em>a detectable effect of technology</em></span>
+          </footer>
+        </article>
+
+        <aside class="transcript-card" id="transcriptCard" aria-label="English narration transcript" hidden>
+          <header>
+            <span><i aria-hidden="true"></i> Narration transcript</span>
+            <button id="closeTranscriptButton" type="button" aria-label="Close transcript">×</button>
+          </header>
+          <p id="transcriptText">Loading transcript…</p>
+        </aside>
+      </main>
+
+      <nav class="journey-nav" aria-label="Scene navigation">
+        <button class="nav-button previous-button" id="previousButton" type="button" aria-label="Go to the previous scene">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+          <span>Previous</span>
+        </button>
+
+        <div class="journey-progress">
+          <div class="progress-copy">
+            <span><b id="currentNumber">01</b> / <span id="totalNumber">12</span></span>
+            <span id="progressLabel">The first signal</span>
+          </div>
+          <ol class="progress-dots" id="progressDots" aria-label="All 12 scenes"></ol>
+        </div>
+
+        <button class="nav-button next-button" id="nextButton" type="button" aria-label="Go to the next scene">
+          <span id="nextButtonLabel">Next</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg>
+        </button>
+      </nav>
+    </section>
+
+    <dialog class="info-dialog" id="infoDialog" aria-labelledby="infoTitle">
+      <form method="dialog" class="info-panel">
+        <header>
+          <div>
+            <p>MISSION NOTES</p>
+            <h2 id="infoTitle">About this ascent</h2>
+          </div>
+          <button class="dialog-close" value="close" aria-label="Close information dialog">×</button>
+        </header>
+
+        <div class="info-grid">
+          <section>
+            <h3>Controls</h3>
+            <p>Use the on-screen arrows or <kbd>←</kbd> <kbd>→</kbd> to travel. Press <kbd>1</kbd>–<kbd>3</kbd> for discoveries, <kbd>R</kbd> to replay narration, <kbd>C</kbd> for the transcript, <kbd>M</kbd> for sound, and <kbd>P</kbd> to show or hide the story panel.</p>
+            <p>Hiding the panel leaves navigation, transcript, sound, and progress available. Discovery scenes reveal the panel automatically so the question can be answered, then restore your preferred viewing mode.</p>
+            <p>Your reduced-motion preference disables decorative drift and animated camera movement without removing content.</p>
+          </section>
+          <section>
+            <h3>Media & interpretation</h3>
+            <p>All nine scene images were generated specifically for this experience. They are artist impressions, not telescope imagery or documentary photographs. The 1964 scene is a historically informed reconstruction, not a portrait or recorded event.</p>
+            <p>English narration was synthesized locally with the Piper Lessac voice. Exact transcripts are included beside the audio; no external speech or media service runs in the browser.</p>
+            <p>The modern 10¹⁶ / 10²⁶ / 10³⁶ W convention differs from Kardashev’s original numerical classes. Engineering quantities beyond current measurements are labeled as estimates or inferences.</p>
+          </section>
+        </div>
+
+        <section class="source-section">
+          <h3>Research trail</h3>
+          <ul>
+            <li><a href="https://articles.adsabs.harvard.edu/pdf/1964SvA.....8..217K" target="_blank" rel="noopener noreferrer">Kardashev (1964) · Transmission of Information by Extraterrestrial Civilizations</a></li>
+            <li><a href="https://arxiv.org/abs/1601.05112" target="_blank" rel="noopener noreferrer">Ćirković · Kardashev’s Classification at 50+</a></li>
+            <li><a href="https://www.iea.org/reports/global-energy-review-2026/global-trends" target="_blank" rel="noopener noreferrer">International Energy Agency · Global Energy Review 2026</a></li>
+            <li><a href="https://science.nasa.gov/earth/earth-observatory/climate-and-earths-energy-budget/" target="_blank" rel="noopener noreferrer">NASA Earth Observatory · Earth’s energy budget</a></li>
+            <li><a href="https://www.ipcc.ch/report/ar6/wg1/chapter/chapter-5/" target="_blank" rel="noopener noreferrer">IPCC AR6 · Carbon cycles, removal, and solar modification</a></li>
+            <li><a href="https://www.energy.gov/edf/energy-storage-projects" target="_blank" rel="noopener noreferrer">U.S. Department of Energy · Energy storage families and durations</a></li>
+            <li><a href="https://www.nasa.gov/science-research/planetary-science/nasas-dart-data-validates-kinetic-impact-as-planetary-defense-method/" target="_blank" rel="noopener noreferrer">NASA · DART validates kinetic asteroid deflection</a></li>
+            <li><a href="https://www.jpl.nasa.gov/missions/deep-space-optical-communications-dsoc/" target="_blank" rel="noopener noreferrer">NASA JPL · Deep Space Optical Communications</a></li>
+            <li><a href="https://www.nasa.gov/lunar-surface-technology/" target="_blank" rel="noopener noreferrer">NASA · Lunar surface technology and local resources</a></li>
+            <li><a href="https://www.iau.org/common/Uploaded%20files/IAUGA2015-Resolution-B3-recommended-nominal-conversion.pdf" target="_blank" rel="noopener noreferrer">International Astronomical Union · Nominal solar luminosity</a></li>
+            <li><a href="https://pubmed.ncbi.nlm.nih.gov/17780673/" target="_blank" rel="noopener noreferrer">Dyson (1960) · Artificial stellar sources of infrared radiation</a></li>
+            <li><a href="https://arxiv.org/abs/2309.06564" target="_blank" rel="noopener noreferrer">Wright · Thermodynamics of Dyson spheres</a></li>
+            <li><a href="https://science.nasa.gov/universe/exoplanets/our-milky-way-galaxy-how-big-is-space/" target="_blank" rel="noopener noreferrer">NASA · Milky Way size and stellar population</a></li>
+            <li><a href="https://arxiv.org/abs/1504.03418" target="_blank" rel="noopener noreferrer">The Ĝ infrared search · Galaxy-scale waste heat results</a></li>
+          </ul>
+        </section>
+      </form>
+    </dialog>
+
+    <div class="status-announcer" id="statusAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+    <audio id="narrationAudio" preload="metadata" playsinline></audio>
+  </div>
+
+  <noscript>
+    <div class="noscript-message">This guided tour requires JavaScript. Enable it in your browser to begin the ascent.</div>
+  </noscript>
+</body>
+</html>
