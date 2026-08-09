@@ -14,9 +14,10 @@ const commonLocals = {
   admin: false,
 };
 
-function renderCodexView(view, codexState) {
+function renderCodexView(view, codexState, locals = {}) {
   return pug.renderFile(path.join(process.cwd(), 'views', 'codex', `${view}.pug`), {
     ...commonLocals,
+    ...locals,
     codexState,
     codexStateJson: JSON.stringify(codexState),
   });
@@ -66,6 +67,61 @@ describe('Codex request prompt controls', () => {
     expect(html).toContain('id="codex-prompt-character-count"');
     expect(html).toContain(`0 / ${(12345).toLocaleString()} characters`);
     expect(html).toContain('data-codex-prompt-submit');
+  });
+
+  test('renders an explicit Ollama provider and configured local-model choices', () => {
+    const state = {
+      config: {
+        maxPromptChars: 20000,
+        localModelOptions: [
+          { value: 'qwen3.6:27b', label: 'Qwen 3.6 27B', description: 'Local model.' },
+          { value: 'llama4:scout', label: 'Llama 4 Scout', description: 'Second local model.' },
+        ],
+      },
+      workspaces: [{ id: 'workspace-1', name: 'Workspace', rootPath: '/workspace' }],
+      runningTurns: [],
+      queuedTurns: [],
+      recentSessions: [],
+      requestProfiles: [{ id: 'default', name: 'Default' }],
+      promptTemplates: [],
+      stats: {},
+      pricing: {},
+    };
+
+    const html = renderCodexView('index', state);
+
+    expect(html).toContain('id="codex-model-provider"');
+    expect(html).toContain('name="modelProvider"');
+    expect(html).toContain('<option value="ollama">Ollama (local)</option>');
+    expect(html).toContain('id="codex-local-model"');
+    expect(html).toContain('value="qwen3.6:27b"');
+    expect(html).toContain('value="llama4:scout"');
+  });
+
+  test('renders independent OpenAI and Ollama pricing forms for admins', () => {
+    const state = {
+      config: { maxPromptChars: 20000, localModelOptions: [{ value: 'qwen3.6:27b', label: 'Qwen' }] },
+      workspaces: [{ id: 'workspace-1', name: 'Workspace', rootPath: '/workspace' }],
+      runningTurns: [],
+      queuedTurns: [],
+      recentSessions: [],
+      requestProfiles: [],
+      promptTemplates: [],
+      stats: {},
+      pricingByProvider: {
+        openai: { prices: { input: 1, cached: 2, output: 3, reasoning: 4 } },
+        ollama: { prices: { input: 5, cached: 6, output: 7, reasoning: 8 } },
+      },
+    };
+
+    const html = renderCodexView('index', state, { admin: true });
+
+    expect(html).toContain('data-provider="openai"');
+    expect(html).toContain('data-provider="ollama"');
+    expect(html).toContain('id="codex-price-openai-input"');
+    expect(html).toContain('id="codex-price-ollama-input"');
+    expect(html).toContain('Save OpenAI Prices');
+    expect(html).toContain('Save Ollama Prices');
   });
 
   test('shows only global and selected-workspace templates for a new request', () => {
@@ -134,6 +190,44 @@ describe('Codex request prompt controls', () => {
     expect(html).toContain('id="codex-followup-character-count"');
     expect(html).toContain(`0 / ${(20000).toLocaleString()} characters`);
     expect(html).toContain('data-codex-prompt-submit');
+  });
+
+  test('locks an Ollama follow-up to its local provider and selected model', () => {
+    const state = {
+      config: {
+        maxPromptChars: 20000,
+        localModelOptions: [
+          { value: 'qwen3.6:27b', label: 'Qwen 3.6 27B', description: 'Local model.' },
+        ],
+      },
+      session: {
+        id: 'session-local',
+        title: 'Local session',
+        status: 'active',
+        codexThreadId: 'thread-local',
+        modelProvider: 'ollama',
+        model: 'qwen3.6:27b',
+      },
+      workspace: { name: 'Workspace' },
+      turns: [{
+        id: 'turn-local',
+        sequence: 1,
+        kind: 'question',
+        status: 'succeeded',
+        modelProvider: 'ollama',
+        model: 'qwen3.6:27b',
+      }],
+      requestProfiles: [{ id: 'default', name: 'Default' }],
+      promptTemplates: [],
+      stats: {},
+    };
+
+    const html = renderCodexView('session', state);
+
+    expect(html).toContain('name="modelProvider" value="ollama"');
+    expect(html).toContain('id="codex-followup-local-model"');
+    expect(html).toContain('value="qwen3.6:27b" selected');
+    expect(html).not.toContain('id="codex-followup-profile"');
   });
 
   test('renders workspace choices when managing prompt templates', () => {

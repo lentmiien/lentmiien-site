@@ -39,7 +39,7 @@ async function shutdown(signal, exitCode = 0) {
     clearInterval(keepAliveInterval);
     keepAliveInterval = null;
   }
-  codexQueueWorker.stop();
+  await codexQueueWorker.stop();
   await mongoose.disconnect().catch((error) => {
     logger.warning('Codex worker MongoDB disconnect failed', {
       category: 'codex_tool',
@@ -58,7 +58,7 @@ async function main() {
       category: 'codex_tool',
       metadata: { workerId: status.workerId },
     });
-    codexQueueWorker.stop();
+    await codexQueueWorker.stop();
     await mongoose.disconnect();
     return;
   }

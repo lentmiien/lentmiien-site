@@ -100,6 +100,7 @@ function createRemoteOutputPath(target, turnId) {
 }
 
 function buildCodexArgs({ turn, session, workspace, outputPath }) {
+  const modelProvider = codexToolService.getTurnModelProvider(turn);
   const args = [
     'exec',
     '--json',
@@ -111,6 +112,9 @@ function buildCodexArgs({ turn, session, workspace, outputPath }) {
     outputPath,
   ];
 
+  if (modelProvider === 'ollama') {
+    args.push('--oss');
+  }
   if (turn.model) {
     args.push('-m', turn.model);
   }
@@ -191,6 +195,8 @@ class CodexLocalRunner {
           targetType: target.type,
           resume: isFollowup,
           permissionMode: turn.permissionMode,
+          modelProvider: codexToolService.getTurnModelProvider(turn),
+          oss: codexToolService.getTurnModelProvider(turn) === 'ollama',
           model: turn.model || '',
           profile: turn.profile || '',
           reasoningEffort: turn.reasoningEffort || '',
@@ -212,6 +218,8 @@ class CodexLocalRunner {
         outputLocation: 'local',
         resume: isFollowup,
         permissionMode: turn.permissionMode,
+        modelProvider: codexToolService.getTurnModelProvider(turn),
+        oss: codexToolService.getTurnModelProvider(turn) === 'ollama',
         model: turn.model || '',
         profile: turn.profile || '',
         reasoningEffort: turn.reasoningEffort || '',

@@ -63,6 +63,36 @@ describe('CodexLocalRunner', () => {
     expect(command.commandSummary.resume).toBe(true);
   });
 
+  test('adds the Ollama OSS flags for a local-model turn', () => {
+    const runner = new CodexLocalRunner({
+      binaryPath: 'codex-test',
+      timeoutMs: 60000,
+    });
+
+    const command = runner.buildCommand({
+      turn: {
+        _id: 'turn-local',
+        kind: 'question',
+        modelProvider: 'ollama',
+        model: 'qwen3.6:27b',
+        permissionMode: 'read-only',
+      },
+      session: {},
+      workspace: { rootPath: '/workspace/project' },
+    });
+
+    expect(command.args).toEqual(expect.arrayContaining([
+      '--oss',
+      '-m',
+      'qwen3.6:27b',
+    ]));
+    expect(command.commandSummary).toEqual(expect.objectContaining({
+      modelProvider: 'ollama',
+      model: 'qwen3.6:27b',
+      oss: true,
+    }));
+  });
+
   test('uses the dangerous bypass flag only for yolo mode', () => {
     const runner = new CodexLocalRunner({
       binaryPath: 'codex-test',

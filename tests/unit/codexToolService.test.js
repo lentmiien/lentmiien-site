@@ -17,12 +17,18 @@ const codexToolService = require('../../services/codexToolService');
 
 describe('codexToolService runtime config', () => {
   const originalMaxEventsPerTurn = process.env.CODEX_MAX_EVENTS_PER_TURN;
+  const originalLocalModels = process.env.CODEX_LOCAL_MODELS;
 
   afterEach(() => {
     if (originalMaxEventsPerTurn === undefined) {
       delete process.env.CODEX_MAX_EVENTS_PER_TURN;
     } else {
       process.env.CODEX_MAX_EVENTS_PER_TURN = originalMaxEventsPerTurn;
+    }
+    if (originalLocalModels === undefined) {
+      delete process.env.CODEX_LOCAL_MODELS;
+    } else {
+      process.env.CODEX_LOCAL_MODELS = originalLocalModels;
     }
   });
 
@@ -36,6 +42,19 @@ describe('codexToolService runtime config', () => {
     process.env.CODEX_MAX_EVENTS_PER_TURN = '2500';
 
     expect(codexToolService.getRuntimeConfig().maxEventsPerTurn).toBe(2500);
+  });
+
+  test('merges configured Ollama models into the built-in local model catalog', () => {
+    process.env.CODEX_LOCAL_MODELS = JSON.stringify([
+      'llama4:scout',
+      { value: 'qwen3.6:14b', label: 'Qwen 3.6 14B', description: 'Smaller local model.' },
+    ]);
+
+    expect(codexToolService.getRuntimeConfig().localModelOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'qwen3.6:27b' }),
+      expect.objectContaining({ value: 'llama4:scout' }),
+      expect.objectContaining({ value: 'qwen3.6:14b', label: 'Qwen 3.6 14B' }),
+    ]));
   });
 });
 
@@ -413,5 +432,109 @@ describe('codexToolService token usage helpers', () => {
     expect(serialized.tokenUsage.total).toBe(210);
     expect(serialized.sessionTokenUsage.total).toBe(350);
     expect(serialized.costEstimate.total).toBeCloseTo(0.21, 8);
+  });
+
+  test('keeps OpenAI and Ollama costs in separate provider totals', () => {
+    const stats = codexToolService.buildSessionStats([
+      {
+        _id: 'openai-turn',
+        sessionId: 'openai-session',
+        modelProvider: 'openai',
+        sequence: 1,
+        kind: 'question',
+        status: 'succeeded',
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+      },
+      {
+        _id: 'ollama-turn',
+        sessionId: 'ollama-session',
+        modelProvider: 'ollama',
+        model: 'qwen3.6:27b',
+        sequence: 1,
+        kind: 'question',
+        status: 'succeeded',
+        usage: { input_tokens: 100, output_tokens: 100, total_tokens: 200 },
+      },
+    ], {
+      openai: {
+        provider: 'openai',
+        currency: 'USD',
+        unitTokens: 1000,
+        prices: { input: 1, cached: 1, output: 1, reasoning: 1 },
+      },
+      ollama: {
+        provider: 'ollama',
+        currency: 'USD',
+        unitTokens: 1000,
+        prices: { input: 2, cached: 2, output: 2, reasoning: 2 },
+      },
+    });
+
+    expect(stats.cost).toBeCloseTo(0.15, 8);
+    expect(stats.ollamaCost).toBeCloseTo(0.4, 8);
+    expect(stats.combinedCost).toBeCloseTo(0.55, 8);
+    expect(stats.providerUsage.openai.tokens.total).toBe(150);
+    expect(stats.providerUsage.ollama.tokens.total).toBe(200);
+  });
+
+  test('serializes an Ollama turn using only the Ollama price table', () => {
+    const serialized = codexToolService.serializeTurn({
+      _id: 'ollama-turn',
+      sessionId: 'ollama-session',
+      workspaceId: 'workspace-1',
+      targetId: 'target-1',
+      modelProvider: 'ollama',
+      model: 'qwen3.6:27b',
+      sequence: 1,
+      kind: 'question',
+      usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+    }, {
+      pricingByProvider: {
+        openai: {
+          provider: 'openai',
+          unitTokens: 1000,
+          prices: { input: 100, cached: 100, output: 100, reasoning: 100 },
+        },
+        ollama: {
+          provider: 'ollama',
+          unitTokens: 1000,
+          prices: { input: 2, cached: 2, output: 2, reasoning: 2 },
+        },
+      },
+    });
+
+    expect(serialized.modelProvider).toBe('ollama');
+    expect(serialized.costEstimate.provider).toBe('ollama');
+    expect(serialized.costEstimate.total).toBeCloseTo(0.3, 8);
+  });
+});
+
+describe('codexToolService local model request options', () => {
+  test('resolves an Ollama request without an OpenAI profile or reasoning override', async () => {
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider: 'ollama',
+      model: 'qwen3.6:27b',
+      requestProfileId: 'default',
+      reasoningEffort: 'high',
+    })).resolves.toEqual({
+      requestProfileId: '',
+      requestProfileName: '',
+      modelProvider: 'ollama',
+      model: 'qwen3.6:27b',
+      profile: '',
+      reasoningEffort: '',
+    });
+  });
+
+  test('rejects switching an existing Ollama session back to OpenAI', async () => {
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider: 'openai',
+    }, {}, {
+      requiredModelProvider: 'ollama',
+      defaultModel: 'qwen3.6:27b',
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining('cannot switch'),
+    });
   });
 });

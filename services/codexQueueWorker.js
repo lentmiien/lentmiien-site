@@ -6,6 +6,7 @@ const CodexEvent = require('../models/codex_event');
 const CodexSession = require('../models/codex_session');
 const codexToolService = require('./codexToolService');
 const CodexLocalRunner = require('./codexLocalRunner');
+const CodexOllamaReservation = require('./codexOllamaReservation');
 const logger = require('../utils/logger');
 
 function addMilliseconds(date, ms) {
@@ -42,9 +43,10 @@ function sanitizePayload(payload, maxLength) {
 }
 
 class CodexQueueWorker {
-  constructor() {
+  constructor(options = {}) {
     this.workerId = `codex-worker-${process.pid}-${randomUUID()}`;
-    this.runner = new CodexLocalRunner();
+    this.runner = options.runner || new CodexLocalRunner();
+    this.ollamaReservation = options.ollamaReservation || new CodexOllamaReservation();
     this.started = false;
     this.tickInFlight = false;
     this.activeTurns = new Map();
@@ -101,12 +103,13 @@ class CodexQueueWorker {
     });
   }
 
-  stop() {
+  async stop() {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
     this.started = false;
+    await this.releaseOllamaReservationIfIdle();
   }
 
   getStatus() {
@@ -121,6 +124,7 @@ class CodexQueueWorker {
       pollIntervalMs: config.pollIntervalMs,
       lastTickAt: this.lastTickAt,
       lastError: this.lastError,
+      ollamaReservation: this.ollamaReservation.getStatus(),
     };
   }
 
@@ -170,6 +174,7 @@ class CodexQueueWorker {
           break;
         }
       }
+      await this.releaseOllamaReservationIfIdle();
     } finally {
       this.tickInFlight = false;
     }
@@ -227,6 +232,7 @@ class CodexQueueWorker {
 
       this.activeTurns.set(String(claimedTurn._id), {
         workspaceId: String(claimedTurn.workspaceId),
+        modelProvider: codexToolService.getTurnModelProvider(claimedTurn),
         startedAt: now,
       });
 
@@ -295,12 +301,67 @@ class CodexQueueWorker {
     await codexToolService.updateSessionAfterTurn(updatedTurn);
   }
 
+  async hasPendingOllamaTurns(excludeTurnId = '') {
+    const query = {
+      modelProvider: 'ollama',
+      status: { $in: ['queued', 'running'] },
+    };
+    if (excludeTurnId) {
+      query._id = { $ne: String(excludeTurnId) };
+    }
+    return Boolean(await CodexTurn.exists(query).exec());
+  }
+
+  async reserveOllamaGpu(turn) {
+    const reservation = await this.ollamaReservation.reserve();
+    logger.notice('Reserved AI Gateway GPU for Codex Ollama turn', {
+      category: 'codex_tool',
+      metadata: {
+        workerId: this.workerId,
+        turnId: String(turn._id),
+        service: reservation.service || 'ollama',
+        idleTimeoutSec: reservation.idleTimeoutSec || this.ollamaReservation.getStatus().idleTimeoutSec,
+      },
+    });
+    return reservation;
+  }
+
+  async releaseOllamaReservationIfIdle(excludeTurnId = '') {
+    if (!this.ollamaReservation.getStatus().held) {
+      return false;
+    }
+    if (await this.hasPendingOllamaTurns(excludeTurnId)) {
+      return false;
+    }
+    try {
+      const result = await this.ollamaReservation.release();
+      if (result.released) {
+        logger.notice('Released AI Gateway GPU after Codex Ollama queue drained', {
+          category: 'codex_tool',
+          metadata: { workerId: this.workerId },
+        });
+      }
+      return result.released;
+    } catch (error) {
+      this.lastError = error.message;
+      logger.warning('Failed to release AI Gateway GPU after Codex Ollama turn', {
+        category: 'codex_tool',
+        metadata: {
+          workerId: this.workerId,
+          error: error.message,
+        },
+      });
+      return false;
+    }
+  }
+
   async runClaimedTurn(turn, workspace, target, lock) {
     const config = this.getConfig();
     let nextEventSeq = 1;
     let storedEventCount = 0;
     let eventCapReached = false;
     let heartbeatInterval = null;
+    const usesOllama = codexToolService.getTurnModelProvider(turn) === 'ollama';
 
     const session = await CodexSession.findById(turn.sessionId).lean().exec();
     const onEvent = async (event) => {
@@ -357,6 +418,25 @@ class CodexQueueWorker {
     }
 
     try {
+      if (usesOllama) {
+        await onEvent({
+          stream: 'system',
+          eventType: 'gpu.reservation.requested',
+          text: 'Waiting for the AI Gateway Ollama GPU reservation.',
+          severity: 'info',
+        });
+        const reservation = await this.reserveOllamaGpu(turn);
+        await onEvent({
+          stream: 'system',
+          eventType: 'gpu.reservation.acquired',
+          payload: {
+            service: reservation.service || 'ollama',
+            idleTimeoutSec: reservation.idleTimeoutSec || this.ollamaReservation.getStatus().idleTimeoutSec,
+          },
+          text: 'AI Gateway Ollama GPU reservation acquired.',
+          severity: 'info',
+        });
+      }
       const result = await this.runner.runTurn({
         turn,
         session,
@@ -430,6 +510,9 @@ class CodexQueueWorker {
         clearInterval(heartbeatInterval);
       }
       this.activeTurns.delete(String(turn._id));
+      if (usesOllama) {
+        await this.releaseOllamaReservationIfIdle(turn._id);
+      }
       await this.releaseLock(lock).catch((error) => {
         this.lastError = error.message;
       });
@@ -460,3 +543,4 @@ class CodexQueueWorker {
 }
 
 module.exports = new CodexQueueWorker();
+module.exports.CodexQueueWorker = CodexQueueWorker;

@@ -53,7 +53,7 @@
     output: 'Output',
     reasoning: 'Reasoning',
   };
-  const HEALTH_OMITTED_KEYS = new Set(['reasoningEfforts', 'codexModelOptions']);
+  const HEALTH_OMITTED_KEYS = new Set(['reasoningEfforts', 'codexModelOptions', 'localModelOptions']);
   const HEALTH_LABELS = {
     apiOk: 'API response',
     ok: 'Overall health',
@@ -78,6 +78,11 @@
     timeoutMs: 'Turn timeout',
     maxPromptChars: 'Maximum prompt length',
     yoloEnabled: 'YOLO enabled',
+    ollamaReservation: 'Ollama GPU reservation',
+    held: 'Held',
+    service: 'Service',
+    reservationId: 'Reservation ID',
+    idleTimeoutSec: 'Reservation idle timeout',
   };
   const LIVE_ACTIVITY_POLL_MS = 2000;
   const LIVE_ACTIVITY_HIGHLIGHT_MS = 1400;
@@ -932,6 +937,39 @@
     });
   }
 
+  function syncModelProviderControls(form) {
+    if (!form) return;
+    const provider = form.querySelector('[data-codex-model-provider]');
+    if (!provider) return;
+    const usesOllama = provider.value === 'ollama';
+    const openaiControls = form.querySelector('[data-codex-openai-model-controls]');
+    const localControls = form.querySelector('[data-codex-local-model-controls]');
+    if (openaiControls) {
+      openaiControls.hidden = usesOllama;
+      openaiControls.querySelectorAll('input, select, textarea').forEach((control) => {
+        control.disabled = usesOllama;
+      });
+    }
+    if (localControls) {
+      localControls.hidden = !usesOllama;
+      localControls.querySelectorAll('input, select, textarea').forEach((control) => {
+        control.disabled = !usesOllama;
+        if (control.name === 'model') {
+          control.required = usesOllama;
+        }
+      });
+    }
+  }
+
+  function bindModelProviderControls(scope) {
+    scope.querySelectorAll('form').forEach((form) => {
+      const provider = form.querySelector('[data-codex-model-provider]');
+      if (!provider) return;
+      provider.addEventListener('change', () => syncModelProviderControls(form));
+      syncModelProviderControls(form);
+    });
+  }
+
   function applyCommitPushDefaults(form) {
     if (!form) return;
     const selectedMode = form.querySelector('[name="mode"]:checked');
@@ -1082,7 +1120,8 @@
       const grid = createEl('div', { className: 'codex-stat-grid' });
       grid.appendChild(renderMetricCard('Turns', formatNumber(summary.turnCount), `${formatNumber(summary.sessionCount)} sessions`));
       grid.appendChild(renderMetricCard('Tokens', formatNumber(summary.tokens && summary.tokens.total), `Avg ${formatNumber(summary.averageTokensPerTurn)} / turn`));
-      grid.appendChild(renderMetricCard('Estimated Cost', formatMoney(summary.cost), (pricing && pricing.currency) || 'USD'));
+      grid.appendChild(renderMetricCard('OpenAI Cost', formatMoney(summary.cost), (pricing?.openai?.currency || pricing?.currency) || 'USD'));
+      grid.appendChild(renderMetricCard('Ollama Cost', formatMoney(summary.ollamaCost), pricing?.ollama?.currency || 'USD'));
       grid.appendChild(renderMetricCard('Avg Time', formatDuration(summary.durationStats && summary.durationStats.avg), `Max ${formatDuration(summary.durationStats && summary.durationStats.max)}`));
       grid.appendChild(renderMetricCard('Success', formatPercent(summary.successRate), `${formatNumber(summary.successfulTurnCount)} completed`));
       grid.appendChild(renderMetricCard('Cache Share', formatPercent(summary.cacheShare), `Reasoning ${formatPercent(summary.reasoningShare)}`));
@@ -1116,7 +1155,7 @@
       const months = stats && Array.isArray(stats.months) ? stats.months : [];
       if (!months.length) {
         const row = createEl('tr');
-        row.appendChild(createEl('td', { colspan: '8', text: 'No token usage recorded for the last 3 months.' }));
+        row.appendChild(createEl('td', { colspan: '9', text: 'No token usage recorded for the last 3 months.' }));
         monthlyBody.appendChild(row);
       } else {
         months.forEach((month) => {
@@ -1126,7 +1165,8 @@
           row.appendChild(tableCell('Sessions', { text: formatNumber(month.sessionCount) }));
           const tokens = normalizeTokens(month.tokens);
           TOKEN_TYPES.forEach((type) => row.appendChild(tableCell(TOKEN_LABELS[type], { text: formatNumber(tokens[type]) })));
-          row.appendChild(tableCell('Cost', { text: formatMoney(month.cost) }));
+          row.appendChild(tableCell('OpenAI Cost', { text: formatMoney(month.cost) }));
+          row.appendChild(tableCell('Ollama Cost', { text: formatMoney(month.ollamaCost) }));
           monthlyBody.appendChild(row);
         });
       }
@@ -1138,7 +1178,7 @@
       const workspaces = stats && Array.isArray(stats.workspaceActivity) ? stats.workspaceActivity : [];
       if (!workspaces.length) {
         const row = createEl('tr');
-        row.appendChild(createEl('td', { colspan: '10', text: 'No workspace activity recorded for the last 3 months.' }));
+        row.appendChild(createEl('td', { colspan: '11', text: 'No workspace activity recorded for the last 3 months.' }));
         workspaceBody.appendChild(row);
       } else {
         workspaces.forEach((workspace) => {
@@ -1155,7 +1195,8 @@
           TOKEN_TYPES.forEach((type) => row.appendChild(tableCell(TOKEN_LABELS[type], { text: formatNumber(tokens[type]) })));
           row.appendChild(tableCell('Avg Time', { text: formatDuration(workspace.avgDurationMs) }));
           row.appendChild(tableCell('Success', { text: formatPercent(workspace.successRate) }));
-          row.appendChild(tableCell('Cost', { text: formatMoney(workspace.cost) }));
+          row.appendChild(tableCell('OpenAI Cost', { text: formatMoney(workspace.cost) }));
+          row.appendChild(tableCell('Ollama Cost', { text: formatMoney(workspace.ollamaCost) }));
           workspaceBody.appendChild(row);
         });
       }
@@ -1169,7 +1210,10 @@
     container.innerHTML = '';
     const header = createEl('div', { className: 'codex-panel__header' });
     header.appendChild(createEl('h2', { text: 'Session Totals' }));
-    header.appendChild(createEl('span', { className: 'codex-chip', text: formatMoney(current.cost) }));
+    const costs = createEl('div', { className: 'codex-panel__header-actions' });
+    costs.appendChild(createEl('span', { className: 'codex-chip', text: `OpenAI ${formatMoney(current.cost)}` }));
+    costs.appendChild(createEl('span', { className: 'codex-chip', text: `Ollama ${formatMoney(current.ollamaCost)}` }));
+    header.appendChild(costs);
     container.appendChild(header);
     const grid = createEl('div', { className: 'codex-stat-grid codex-stat-grid--compact' });
     grid.appendChild(renderMetricCard('Total Time', formatDuration(current.totalDurationMs), `Elapsed ${formatDuration(current.elapsedMs)}`));
@@ -1221,7 +1265,7 @@
     renderTurnList(root.querySelector('[data-codex-running-list]'), queue.runningTurns || [], 'No running requests.');
     renderTurnList(root.querySelector('[data-codex-queued-list]'), queue.queuedTurns || [], 'No queued requests.');
     renderSessionsTable(root.querySelector('[data-codex-session-table]'), sessions.sessions || []);
-    renderDashboardStats(statsPayload.stats, statsPayload.pricing);
+    renderDashboardStats(statsPayload.stats, statsPayload.pricingByProvider || statsPayload.pricing);
     const runningCount = root.querySelector('[data-codex-running-count]');
     const queuedCount = root.querySelector('[data-codex-queued-count]');
     const sessionCount = root.querySelector('[data-codex-session-count]');
@@ -1282,11 +1326,12 @@
       workspace ? workspace.name : '-',
       turn.permissionMode,
       turn.requestProfileName ? `Profile ${turn.requestProfileName}` : '',
+      `Provider ${turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'}`,
       turn.model ? `Model ${turn.model}` : '',
       turn.reasoningEffort ? `Reasoning ${turn.reasoningEffort}` : '',
       `Queued ${formatDate(turn.queuedAt)}`,
       `Duration ${formatDuration(turn.durationMs)}`,
-      `Turn cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
+      `${turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'} cost ${formatMoney(turn.costEstimate && turn.costEstimate.total)}`,
     ].filter(Boolean).forEach((text) => meta.appendChild(createEl('span', { text })));
     card.appendChild(meta);
     if (turn.status === 'running') {
@@ -1412,6 +1457,7 @@
         ['Mode', String(turn.kind || '').replace(/_/g, ' ') || '-'],
         ['Permission', turn.permissionMode || '-'],
         ['Profile', turn.requestProfileName || '-'],
+        ['Provider', turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'],
         ['Model', turn.model || '-'],
         ['Reasoning', turn.reasoningEffort || '-'],
         ['Queued', formatDate(turn.queuedAt)],
@@ -1422,7 +1468,7 @@
         ['Turn Cached Tokens', formatNumber(tokens.cached)],
         ['Turn Output Tokens', formatNumber(tokens.output)],
         ['Turn Reasoning Tokens', formatNumber(tokens.reasoning)],
-        ['Turn Estimated Cost', formatMoney(turn.costEstimate && turn.costEstimate.total)],
+        [`Turn ${turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'} Estimated Cost`, formatMoney(turn.costEstimate && turn.costEstimate.total)],
         ['Exit', turn.exitCode === null || turn.exitCode === undefined ? '-' : String(turn.exitCode)],
       ];
       detailGrid.innerHTML = '';
@@ -1681,6 +1727,7 @@
       form.addEventListener('reset', () => {
         setTimeout(() => {
           applyCommitPushDefaults(form);
+          syncModelProviderControls(form);
         }, 0);
       });
       applyCommitPushDefaults(form);
@@ -1724,16 +1771,15 @@
         }
       });
     }
-    const pricingForm = document.getElementById('codex-pricing-form');
-    const pricingStatus = document.getElementById('codex-pricing-status');
-    if (pricingForm) {
+    root.querySelectorAll('[data-codex-pricing-form]').forEach((pricingForm) => {
+      const pricingStatus = pricingForm.querySelector('[data-codex-pricing-status]');
       pricingForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submit = pricingForm.querySelector('[type="submit"]');
         setStatus(pricingStatus, 'Saving...', '');
         submit.disabled = true;
         try {
-          const payload = {};
+          const payload = { provider: pricingForm.dataset.provider || 'openai' };
           TOKEN_TYPES.forEach((type) => {
             const input = pricingForm.querySelector(`[name="${type}"]`);
             payload[type] = input ? input.value : 0;
@@ -1743,14 +1789,14 @@
             body: JSON.stringify(payload),
           });
           setStatus(pricingStatus, 'Prices saved.', 'success');
-          renderDashboardStats(response.stats, response.pricing);
+          renderDashboardStats(response.stats, response.pricingByProvider || response.pricing);
         } catch (error) {
           setStatus(pricingStatus, error.message, 'error');
         } finally {
           submit.disabled = false;
         }
       });
-    }
+    });
     setInterval(() => {
       refreshDashboard().catch(() => {});
     }, 10000);
@@ -2008,6 +2054,7 @@
 
   captureInitialProcessDetailState();
   bindPermissionControls(root);
+  bindModelProviderControls(root);
   bindPromptTemplateSelectors(root);
   bindGlobalActions();
 

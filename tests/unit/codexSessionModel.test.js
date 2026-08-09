@@ -1,6 +1,14 @@
 const CodexSession = require('../../models/codex_session');
 
 describe('CodexSession model', () => {
+  test('stores the provider and model used to resume a Codex session', () => {
+    expect(CodexSession.schema.path('modelProvider').options).toEqual(expect.objectContaining({
+      enum: ['openai', 'ollama'],
+      default: 'openai',
+    }));
+    expect(CodexSession.schema.path('model').options.maxlength).toBe(120);
+  });
+
   test('only enforces unique Codex thread ids for stored string values', () => {
     const indexes = CodexSession.schema.indexes();
     const threadIndex = indexes.find(([keys]) => keys.codexThreadId === 1);

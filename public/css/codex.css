@@ -138,6 +138,39 @@
   align-items: end;
 }
 
+.codex-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.codex-pricing-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--surface-2);
+}
+
+.codex-pricing-card__heading {
+  grid-column: 1 / -1;
+}
+
+.codex-pricing-card__heading h3,
+.codex-pricing-card__heading p {
+  margin: 0;
+}
+
+.codex-pricing-card__heading h3 {
+  color: var(--accent);
+  font-size: 0.94rem;
+}
+
+.codex-pricing-card__heading p {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
 .codex-form--profile {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: end;
@@ -1475,6 +1508,7 @@
   .codex-form--profile,
   .codex-form--workspace,
   .codex-form--pricing,
+  .codex-pricing-grid,
   .codex-stat-grid,
   .codex-stats-split,
   .codex-token-strip,
@@ -1514,6 +1548,7 @@
   .codex-form--profile,
   .codex-form--workspace,
   .codex-form--pricing,
+  .codex-pricing-grid,
   .codex-stat-grid,
   .codex-stats-split,
   .codex-token-strip,

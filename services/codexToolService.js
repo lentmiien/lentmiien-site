@@ -30,7 +30,13 @@ const CODEX_THREAD_INDEX_NAME = 'codexThreadId_1';
 const WORKSPACE_LOCK_INDEX_NAME = 'workspaceId_1';
 const WORKSPACE_LOCK_TTL_INDEX_NAME = 'expiresAt_1';
 const DEFAULT_TOKEN_PRICE_ID = 'default';
+const OLLAMA_TOKEN_PRICE_ID = 'ollama';
 const TOKEN_TYPES = ['input', 'cached', 'output', 'reasoning'];
+const MODEL_PROVIDERS = {
+  OPENAI: 'openai',
+  OLLAMA: 'ollama',
+};
+const VALID_MODEL_PROVIDERS = new Set(Object.values(MODEL_PROVIDERS));
 const CODEX_MODEL_OPTIONS = [
   {
     value: 'gpt-5.6-sol',
@@ -66,6 +72,13 @@ const CODEX_MODEL_OPTIONS = [
     value: 'gpt-5.3-codex-spark',
     label: 'GPT-5.3 Codex Spark',
     description: 'Ultra-fast coding model for near-instant iteration.',
+  },
+];
+const DEFAULT_LOCAL_MODEL_OPTIONS = [
+  {
+    value: 'qwen3.6:27b',
+    label: 'Qwen 3.6 27B',
+    description: 'Local Ollama model running on the Codex machine.',
   },
 ];
 const REASONING_EFFORT_OPTIONS = [
@@ -206,6 +219,65 @@ function getBooleanEnv(name, fallback = false) {
     return fallback;
   }
   return ['1', 'true', 'yes', 'on'].includes(String(rawValue).trim().toLowerCase());
+}
+
+function normalizeModelProvider(value, fallback = MODEL_PROVIDERS.OPENAI) {
+  const provider = String(value || fallback).trim().toLowerCase();
+  if (!VALID_MODEL_PROVIDERS.has(provider)) {
+    throw createHttpError(400, 'Model provider must be either openai or ollama.');
+  }
+  return provider;
+}
+
+function normalizeLocalModelOption(entry) {
+  const source = typeof entry === 'string' ? { value: entry } : entry;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return null;
+  }
+  const value = String(source.value || source.model || '').trim().slice(0, 120);
+  if (!value) {
+    return null;
+  }
+  return {
+    value,
+    label: String(source.label || value).trim().slice(0, 120) || value,
+    description: String(source.description || 'Local Ollama model.').trim().slice(0, 500),
+  };
+}
+
+function getLocalModelOptions() {
+  const rawValue = String(process.env.CODEX_LOCAL_MODELS || '').trim();
+  let configuredModels = [];
+  if (rawValue) {
+    try {
+      const parsed = JSON.parse(rawValue);
+      configuredModels = Array.isArray(parsed) ? parsed : [parsed];
+    } catch (_error) {
+      configuredModels = rawValue.split(',');
+    }
+  }
+
+  const byValue = new Map();
+  [...DEFAULT_LOCAL_MODEL_OPTIONS, ...configuredModels]
+    .map(normalizeLocalModelOption)
+    .filter(Boolean)
+    .forEach((option) => byValue.set(option.value, option));
+  return Array.from(byValue.values());
+}
+
+function normalizeLocalModel(value, fallback = '') {
+  const model = String(value || fallback).trim().slice(0, 120);
+  const localModels = getLocalModelOptions();
+  const selectedModel = model || localModels[0]?.value || '';
+  if (!selectedModel || !localModels.some((option) => option.value === selectedModel)) {
+    throw createHttpError(400, 'Selected local model is not configured for the Codex tool.');
+  }
+  return selectedModel;
+}
+
+function getTurnModelProvider(turn) {
+  const provider = String(turn && turn.modelProvider || '').trim().toLowerCase();
+  return provider === MODEL_PROVIDERS.OLLAMA ? MODEL_PROVIDERS.OLLAMA : MODEL_PROVIDERS.OPENAI;
 }
 
 function getFiniteNumber(value, fallback = 0) {
@@ -369,15 +441,17 @@ function annotateTurnsWithTokenUsage(turns = []) {
     .sort(compareIndexedTurns)
     .forEach(({ turn, index }) => {
       const sessionId = String(turn && turn.sessionId ? turn.sessionId : '');
+      const provider = getTurnModelProvider(turn);
+      const usageKey = `${sessionId}:${provider}`;
       const sessionTokenUsage = normalizeTokenUsage(turn && turn.usage ? turn.usage : {});
-      const previousUsage = previousUsageBySession.get(sessionId);
+      const previousUsage = previousUsageBySession.get(usageKey);
       const tokenUsage = shouldDeriveTurnUsageDelta(turn, previousUsage)
         ? subtractTokenUsage(sessionTokenUsage, previousUsage)
         : sessionTokenUsage;
 
       annotations.set(index, { tokenUsage, sessionTokenUsage });
       if (hasRecordedTokenUsage(sessionTokenUsage)) {
-        previousUsageBySession.set(sessionId, sessionTokenUsage);
+        previousUsageBySession.set(usageKey, sessionTokenUsage);
       }
     });
 
@@ -403,10 +477,16 @@ function addTokenUsage(target, usage) {
   return target;
 }
 
-function serializeTokenPricing(pricing) {
+function getTokenPriceId(provider) {
+  return provider === MODEL_PROVIDERS.OLLAMA ? OLLAMA_TOKEN_PRICE_ID : DEFAULT_TOKEN_PRICE_ID;
+}
+
+function serializeTokenPricing(pricing, providerInput = MODEL_PROVIDERS.OPENAI) {
+  const provider = normalizeModelProvider(providerInput);
   const prices = pricing && pricing.prices ? pricing.prices : {};
   return {
-    id: pricing && pricing._id ? String(pricing._id) : DEFAULT_TOKEN_PRICE_ID,
+    id: pricing && pricing._id ? String(pricing._id) : getTokenPriceId(provider),
+    provider,
     currency: pricing && pricing.currency ? String(pricing.currency) : 'USD',
     unitTokens: Math.max(1, Number(pricing && pricing.unitTokens) || 1000000),
     prices: TOKEN_TYPES.reduce((result, type) => {
@@ -438,7 +518,10 @@ function normalizeTokenPricingPayload(payload = {}) {
 
 function estimateTokenCost(tokensInput, pricingInput) {
   const tokens = normalizeTokenUsage(tokensInput);
-  const pricing = serializeTokenPricing(pricingInput);
+  const provider = pricingInput && pricingInput.provider
+    ? normalizeModelProvider(pricingInput.provider)
+    : MODEL_PROVIDERS.OPENAI;
+  const pricing = serializeTokenPricing(pricingInput, provider);
   const unitTokens = pricing.unitTokens || 1000000;
   const billableTokens = {
     input: Math.max(tokens.input - tokens.cached, 0),
@@ -452,12 +535,31 @@ function estimateTokenCost(tokensInput, pricingInput) {
   }, {});
   const total = TOKEN_TYPES.reduce((sum, type) => sum + breakdown[type], 0);
   return {
+    provider,
     currency: pricing.currency,
     unitTokens,
     billableTokens,
     breakdown,
     total,
   };
+}
+
+function serializePricingByProvider(pricingInput = {}) {
+  const hasProviderMap = pricingInput && (
+    Object.prototype.hasOwnProperty.call(pricingInput, MODEL_PROVIDERS.OPENAI) ||
+    Object.prototype.hasOwnProperty.call(pricingInput, MODEL_PROVIDERS.OLLAMA)
+  );
+  const openaiPricing = hasProviderMap ? pricingInput[MODEL_PROVIDERS.OPENAI] : pricingInput;
+  const ollamaPricing = hasProviderMap ? pricingInput[MODEL_PROVIDERS.OLLAMA] : null;
+  return {
+    [MODEL_PROVIDERS.OPENAI]: serializeTokenPricing(openaiPricing, MODEL_PROVIDERS.OPENAI),
+    [MODEL_PROVIDERS.OLLAMA]: serializeTokenPricing(ollamaPricing, MODEL_PROVIDERS.OLLAMA),
+  };
+}
+
+function getPricingForProvider(pricingInput, providerInput) {
+  const provider = normalizeModelProvider(providerInput);
+  return serializePricingByProvider(pricingInput)[provider];
 }
 
 function startOfMonth(date) {
@@ -531,6 +633,14 @@ function calculateNumberStats(values = []) {
 }
 
 function createActivityBucket(seed = {}) {
+  const providerTotals = Object.values(MODEL_PROVIDERS).reduce((result, provider) => {
+    result[provider] = {
+      sessionIds: new Set(),
+      turnCount: 0,
+      tokenTotals: zeroTokenUsage(),
+    };
+    return result;
+  }, {});
   return {
     key: seed.key || '',
     label: seed.label || '',
@@ -546,10 +656,11 @@ function createActivityBucket(seed = {}) {
     durations: [],
     tokenTotals: zeroTokenUsage(),
     tokenValues: [],
-    cost: 0,
+    providerTotals,
     kindMap: new Map(),
     statusMap: new Map(),
     modelMap: new Map(),
+    providerMap: new Map(),
     dayMap: new Map(),
     lastStartedAt: null,
   };
@@ -564,22 +675,29 @@ function recordSessionInBucket(bucket, session) {
     bucket.sessionIds.add(sessionId);
     bucket.sessionCount += 1;
   }
+  const provider = getTurnModelProvider(session);
+  if (sessionId) {
+    bucket.providerTotals[provider].sessionIds.add(sessionId);
+  }
 }
 
-function recordTurnInBucket(bucket, turn, pricing) {
+function recordTurnInBucket(bucket, turn) {
   if (!bucket || !turn) {
     return;
   }
   bucket.turnCount += 1;
   const tokens = getTurnTokenUsage(turn);
+  const provider = getTurnModelProvider(turn);
   addTokenUsage(bucket.tokenTotals, tokens);
+  addTokenUsage(bucket.providerTotals[provider].tokenTotals, tokens);
+  bucket.providerTotals[provider].turnCount += 1;
   bucket.tokenValues.push(tokens.total);
-  bucket.cost += estimateTokenCost(tokens, pricing).total;
 
   const status = turn.status || 'unknown';
   incrementMap(bucket.statusMap, status);
   incrementMap(bucket.kindMap, turn.kind || 'unknown');
   incrementMap(bucket.modelMap, turn.model || 'default');
+  incrementMap(bucket.providerMap, provider);
   recordSessionInBucket(bucket, turn);
 
   if (TERMINAL_TURN_STATUSES.has(status)) {
@@ -615,7 +733,25 @@ function getTopDay(dayMap) {
 function finalizeActivityBucket(bucket, pricing) {
   const durationStats = calculateNumberStats(bucket.durations);
   const tokenStats = calculateNumberStats(bucket.tokenValues);
-  const tokenCost = estimateTokenCost(bucket.tokenTotals, pricing);
+  const pricingByProvider = serializePricingByProvider(pricing);
+  const providerUsage = Object.values(MODEL_PROVIDERS).reduce((result, provider) => {
+    const providerTotals = bucket.providerTotals[provider];
+    const tokenCost = estimateTokenCost(
+      providerTotals.tokenTotals,
+      pricingByProvider[provider],
+    );
+    result[provider] = {
+      provider,
+      sessionCount: providerTotals.sessionIds.size,
+      turnCount: providerTotals.turnCount,
+      tokens: normalizeTokenUsage(providerTotals.tokenTotals),
+      cost: tokenCost.total,
+      costBreakdown: tokenCost.breakdown,
+    };
+    return result;
+  }, {});
+  const openaiUsage = providerUsage[MODEL_PROVIDERS.OPENAI];
+  const ollamaUsage = providerUsage[MODEL_PROVIDERS.OLLAMA];
   return {
     key: bucket.key,
     label: bucket.label,
@@ -635,11 +771,24 @@ function finalizeActivityBucket(bucket, pricing) {
     averageTokensPerTurn: bucket.turnCount ? bucket.tokenTotals.total / bucket.turnCount : 0,
     cacheShare: bucket.tokenTotals.input ? (bucket.tokenTotals.cached / bucket.tokenTotals.input) * 100 : 0,
     reasoningShare: bucket.tokenTotals.output ? (bucket.tokenTotals.reasoning / bucket.tokenTotals.output) * 100 : 0,
-    cost: tokenCost.total,
-    costBreakdown: tokenCost.breakdown,
+    cost: openaiUsage.cost,
+    costBreakdown: openaiUsage.costBreakdown,
+    ollamaCost: ollamaUsage.cost,
+    ollamaCostBreakdown: ollamaUsage.costBreakdown,
+    combinedCost: openaiUsage.cost + ollamaUsage.cost,
+    costs: {
+      openai: openaiUsage.cost,
+      ollama: ollamaUsage.cost,
+      combined: openaiUsage.cost + ollamaUsage.cost,
+    },
+    providerUsage,
     kindDistribution: serializeDistribution(bucket.kindMap, bucket.turnCount, KIND_LABELS),
     statusDistribution: serializeDistribution(bucket.statusMap, bucket.turnCount, TERMINAL_STATUS_LABELS),
     modelDistribution: serializeDistribution(bucket.modelMap, bucket.turnCount),
+    providerDistribution: serializeDistribution(bucket.providerMap, bucket.turnCount, {
+      openai: 'OpenAI',
+      ollama: 'Ollama',
+    }),
     busiestDay: getTopDay(bucket.dayMap),
     lastStartedAt: bucket.lastStartedAt,
   };
@@ -659,6 +808,7 @@ function getRuntimeConfig() {
     maxEventTextChars: getPositiveIntegerEnv('CODEX_MAX_EVENT_TEXT_CHARS', 12000, 1000, 100000),
     remoteValidationTimeoutMs: getPositiveIntegerEnv('CODEX_REMOTE_VALIDATION_TIMEOUT_MS', 15000, 1000, 120000),
     yoloEnabled: getBooleanEnv('CODEX_YOLO_ENABLED', false),
+    localModelOptions: getLocalModelOptions(),
   };
 }
 
@@ -1412,6 +1562,22 @@ async function getWorkspaceBundle(workspaceId, options = {}) {
 }
 
 async function resolveTurnRequestOptions(payload = {}, workspace = {}, options = {}) {
+  const fallbackProvider = options.requiredModelProvider || options.modelProvider || MODEL_PROVIDERS.OPENAI;
+  const modelProvider = normalizeModelProvider(payload.modelProvider, fallbackProvider);
+  if (options.requiredModelProvider && modelProvider !== normalizeModelProvider(options.requiredModelProvider)) {
+    throw createHttpError(409, 'A Codex session cannot switch between OpenAI and Ollama. Start a new session to change providers.');
+  }
+  if (modelProvider === MODEL_PROVIDERS.OLLAMA) {
+    return {
+      requestProfileId: '',
+      requestProfileName: '',
+      modelProvider,
+      model: normalizeLocalModel(payload.model, options.defaultModel),
+      profile: '',
+      reasoningEffort: '',
+    };
+  }
+
   const requestedProfileId = normalizeOptionalString(payload.requestProfileId || payload.requestProfile, 80);
   const normalizedMode = String(options.mode || '').trim().toLowerCase();
   const effectiveProfileId = requestedProfileId || (normalizedMode === COMMIT_PUSH_MODE
@@ -1421,6 +1587,7 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}, options =
     return {
       requestProfileId: '',
       requestProfileName: '',
+      modelProvider,
       model: normalizeOptionalString(payload.model || workspace.defaultModel),
       profile: normalizeCodexProfileName(payload.profile || workspace.defaultProfile),
       reasoningEffort: normalizeReasoningEffort(payload.reasoningEffort),
@@ -1436,6 +1603,7 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}, options =
   return {
     requestProfileId: String(requestProfile._id),
     requestProfileName: requestProfile.name || '',
+    modelProvider,
     model: normalizeOptionalString(requestProfile.model || workspace.defaultModel),
     profile: normalizeCodexProfileName(requestProfile.codexProfile || workspace.defaultProfile),
     reasoningEffort: normalizeReasoningEffort(requestProfile.reasoningEffort || payload.reasoningEffort),
@@ -1459,6 +1627,8 @@ async function createSession(payload = {}, user) {
     workspaceId: workspace._id,
     targetId: target._id,
     title: titleFromPrompt(prompt),
+    modelProvider: requestOptions.modelProvider,
+    model: requestOptions.model,
     status: 'pending',
     createdBy: owner,
     turnCount: 0,
@@ -1476,6 +1646,7 @@ async function createSession(payload = {}, user) {
     yolo: permission.yolo,
     requestProfileId: requestOptions.requestProfileId,
     requestProfileName: requestOptions.requestProfileName,
+    modelProvider: requestOptions.modelProvider,
     model: requestOptions.model,
     profile: requestOptions.profile,
     reasoningEffort: requestOptions.reasoningEffort,
@@ -1525,7 +1696,12 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
   const sequence = await getNextSessionSequence(session._id);
   const owner = makeOwner(user);
   const kind = getFollowupTurnKind(mode);
-  const requestOptions = await resolveTurnRequestOptions(payload, workspace, { mode });
+  const sessionProvider = getTurnModelProvider(session);
+  const requestOptions = await resolveTurnRequestOptions(payload, workspace, {
+    mode,
+    requiredModelProvider: sessionProvider,
+    defaultModel: session.model,
+  });
 
   const turn = await CodexTurn.create({
     sessionId: session._id,
@@ -1539,6 +1715,7 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
     yolo: permission.yolo,
     requestProfileId: requestOptions.requestProfileId,
     requestProfileName: requestOptions.requestProfileName,
+    modelProvider: requestOptions.modelProvider,
     model: requestOptions.model,
     profile: requestOptions.profile,
     reasoningEffort: requestOptions.reasoningEffort,
@@ -1548,6 +1725,7 @@ async function createFollowupTurn(sessionId, payload = {}, user) {
 
   session.lastTurnId = turn._id;
   session.turnCount = Math.max(session.turnCount || 0, sequence);
+  session.model = requestOptions.model;
   await session.save();
 
   return {
@@ -1860,23 +2038,33 @@ async function listSessions(options = {}) {
   return sessions.map((session) => serializeSession(session, { workspace: workspaceById.get(String(session.workspaceId)) }));
 }
 
-async function getTokenPricing() {
-  const pricing = await CodexTokenPrice.findById(DEFAULT_TOKEN_PRICE_ID).lean().exec();
-  return serializeTokenPricing(pricing);
+async function getTokenPricing(providerInput = MODEL_PROVIDERS.OPENAI) {
+  const provider = normalizeModelProvider(providerInput);
+  const pricing = await CodexTokenPrice.findById(getTokenPriceId(provider)).lean().exec();
+  return serializeTokenPricing(pricing, provider);
+}
+
+async function getTokenPricingByProvider() {
+  const [openai, ollama] = await Promise.all([
+    getTokenPricing(MODEL_PROVIDERS.OPENAI),
+    getTokenPricing(MODEL_PROVIDERS.OLLAMA),
+  ]);
+  return { openai, ollama };
 }
 
 async function updateTokenPricing(payload = {}, user) {
+  const provider = normalizeModelProvider(payload.provider, MODEL_PROVIDERS.OPENAI);
   const normalized = normalizeTokenPricingPayload(payload);
   const updatedBy = makeOwner(user);
   const pricing = await CodexTokenPrice.findByIdAndUpdate(
-    DEFAULT_TOKEN_PRICE_ID,
+    getTokenPriceId(provider),
     {
       $set: {
         ...normalized,
         updatedBy,
       },
       $setOnInsert: {
-        _id: DEFAULT_TOKEN_PRICE_ID,
+        _id: getTokenPriceId(provider),
       },
     },
     {
@@ -1885,7 +2073,7 @@ async function updateTokenPricing(payload = {}, user) {
       setDefaultsOnInsert: true,
     }
   ).lean().exec();
-  return serializeTokenPricing(pricing);
+  return serializeTokenPricing(pricing, provider);
 }
 
 function buildSessionStats(turns = [], pricing) {
@@ -1947,7 +2135,7 @@ async function annotatePeriodTurnsWithUsageDeltas(turns = []) {
 }
 
 async function getDashboardStats(options = {}) {
-  const pricing = options.pricing || await getTokenPricing();
+  const pricing = options.pricingByProvider || options.pricing || await getTokenPricingByProvider();
   const currentMonthStart = startOfMonth(new Date());
   const oldestStart = addMonths(currentMonthStart, -2);
   const nextMonthStart = addMonths(currentMonthStart, 1);
@@ -2054,23 +2242,24 @@ async function getDashboardStats(options = {}) {
 
 async function getDashboardState() {
   await ensureDefaultData();
-  const [workspaces, queuedTurns, runningTurns, sessions, pricing, requestProfiles] = await Promise.all([
+  const [workspaces, queuedTurns, runningTurns, sessions, pricingByProvider, requestProfiles] = await Promise.all([
     listWorkspaces(),
     CodexTurn.find({ status: 'queued' }).sort({ queuedAt: 1 }).limit(20).lean().exec(),
     CodexTurn.find({ status: 'running' }).sort({ startedAt: 1 }).limit(20).lean().exec(),
     listSessions({ limit: 12 }),
-    getTokenPricing(),
+    getTokenPricingByProvider(),
     listRequestProfiles(),
   ]);
-  const stats = await getDashboardStats({ pricing });
+  const stats = await getDashboardStats({ pricingByProvider });
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
   return {
     config: publicConfig(),
-    pricing,
+    pricing: pricingByProvider.openai,
+    pricingByProvider,
     stats,
     workspaces,
-    queuedTurns: queuedTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricing })),
-    runningTurns: runningTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricing })),
+    queuedTurns: queuedTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricingByProvider })),
+    runningTurns: runningTurns.map((turn) => serializeTurn(turn, { workspace: workspaceById.get(String(turn.workspaceId)), pricingByProvider })),
     recentSessions: sessions,
     requestProfiles,
   };
@@ -2081,11 +2270,11 @@ async function getSessionDetail(sessionId) {
   if (!session) {
     throw createHttpError(404, 'Session not found.');
   }
-  const [workspace, target, turns, pricing, requestProfiles] = await Promise.all([
+  const [workspace, target, turns, pricingByProvider, requestProfiles] = await Promise.all([
     CodexWorkspace.findById(session.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(session.targetId).lean().exec(),
     CodexTurn.find({ sessionId }).sort({ sequence: 1 }).lean().exec(),
-    getTokenPricing(),
+    getTokenPricingByProvider(),
     listRequestProfiles(),
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(turns);
@@ -2093,9 +2282,10 @@ async function getSessionDetail(sessionId) {
     session: serializeSession(session, { workspace, target }),
     workspace: serializeWorkspace(workspace, { target }),
     target: serializeTarget(target),
-    turns: turnsWithUsage.map((turn) => serializeTurn(turn, { workspace, pricing })),
-    stats: buildSessionStats(turnsWithUsage, pricing),
-    pricing,
+    turns: turnsWithUsage.map((turn) => serializeTurn(turn, { workspace, pricingByProvider })),
+    stats: buildSessionStats(turnsWithUsage, pricingByProvider),
+    pricing: pricingByProvider.openai,
+    pricingByProvider,
     config: publicConfig(),
     requestProfiles,
   };
@@ -2106,22 +2296,23 @@ async function getTurnDetail(turnId) {
   if (!turn) {
     throw createHttpError(404, 'Turn not found.');
   }
-  const [session, workspace, target, pricing, sessionTurns] = await Promise.all([
+  const [session, workspace, target, pricingByProvider, sessionTurns] = await Promise.all([
     CodexSession.findById(turn.sessionId).lean().exec(),
     CodexWorkspace.findById(turn.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(turn.targetId).lean().exec(),
-    getTokenPricing(),
+    getTokenPricingByProvider(),
     CodexTurn.find({ sessionId: turn.sessionId }).sort({ sequence: 1 }).lean().exec(),
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(sessionTurns.length ? sessionTurns : [turn]);
   const turnWithUsage = turnsWithUsage.find((entry) => String(entry._id) === String(turn._id)) ||
     annotateTurnsWithTokenUsage([turn])[0];
   return {
-    turn: serializeTurn(turnWithUsage, { workspace, pricing }),
+    turn: serializeTurn(turnWithUsage, { workspace, pricingByProvider }),
     session: serializeSession(session, { workspace, target }),
     workspace: serializeWorkspace(workspace, { target }),
     target: serializeTarget(target),
-    pricing,
+    pricing: pricingByProvider.openai,
+    pricingByProvider,
     config: publicConfig(),
   };
 }
@@ -2232,6 +2423,7 @@ async function retryTurn(turnId, user) {
     yolo: permission.yolo,
     requestProfileId: originalTurn.requestProfileId || '',
     requestProfileName: originalTurn.requestProfileName || '',
+    modelProvider: getTurnModelProvider(originalTurn),
     model: originalTurn.model || '',
     profile: originalTurn.profile || '',
     reasoningEffort: originalTurn.reasoningEffort || '',
@@ -2241,6 +2433,8 @@ async function retryTurn(turnId, user) {
 
   session.lastTurnId = turn._id;
   session.turnCount = Math.max(session.turnCount || 0, sequence);
+  session.modelProvider = getTurnModelProvider(originalTurn);
+  session.model = originalTurn.model || '';
   await session.save();
 
   return {
@@ -2275,6 +2469,8 @@ async function updateSessionAfterTurn(turnInput) {
   if (turn.codexThreadIdSeen && !session.codexThreadId) {
     session.codexThreadId = turn.codexThreadIdSeen;
   }
+  session.modelProvider = getTurnModelProvider(turn);
+  session.model = turn.model || session.model || '';
 
   if (String(session.firstTurnId) === String(turn._id)) {
     if (turn.status === 'succeeded') {
@@ -2340,6 +2536,7 @@ function publicConfig() {
     yoloEnabled: config.yoloEnabled,
     reasoningEfforts: REASONING_EFFORT_OPTIONS,
     codexModelOptions: CODEX_MODEL_OPTIONS,
+    localModelOptions: config.localModelOptions,
   };
 }
 
@@ -2393,6 +2590,8 @@ function serializeSession(session, extras = {}) {
     workspace: extras.workspace ? serializeWorkspace(extras.workspace, { target: extras.target }) : null,
     targetId: String(session.targetId || ''),
     codexThreadId: session.codexThreadId || '',
+    modelProvider: getTurnModelProvider(session),
+    model: session.model || '',
     title: session.title || '',
     summary: session.summary || '',
     status: session.status || 'pending',
@@ -2415,7 +2614,11 @@ function serializeTurn(turn, extras = {}) {
     ? normalizeTokenUsage(turn.sessionTokenUsage)
     : normalizeTokenUsage(turn.usage || {});
   const tokenUsage = getTurnTokenUsage(turn);
-  const costEstimate = extras.pricing ? estimateTokenCost(tokenUsage, extras.pricing) : null;
+  const modelProvider = getTurnModelProvider(turn);
+  const pricingInput = extras.pricingByProvider || extras.pricing;
+  const costEstimate = pricingInput
+    ? estimateTokenCost(tokenUsage, getPricingForProvider(pricingInput, modelProvider))
+    : null;
   return {
     id: String(turn._id),
     sessionId: String(turn.sessionId || ''),
@@ -2432,6 +2635,7 @@ function serializeTurn(turn, extras = {}) {
     yolo: Boolean(turn.yolo),
     requestProfileId: turn.requestProfileId || '',
     requestProfileName: turn.requestProfileName || '',
+    modelProvider,
     model: turn.model || '',
     profile: turn.profile || '',
     reasoningEffort: turn.reasoningEffort || '',
@@ -2526,6 +2730,8 @@ module.exports = {
   getRuntimeConfig,
   getSessionDetail,
   getTokenPricing,
+  getTokenPricingByProvider,
+  getTurnModelProvider,
   getTurnDetail,
   getWorkspaceBundle,
   ensureCodexWorkspaceLockIndexes,
@@ -2540,6 +2746,7 @@ module.exports = {
   normalizeTokenUsage,
   previewFromText,
   publicConfig,
+  resolveTurnRequestOptions,
   retryTurn,
   serializeEvent,
   serializeLock,

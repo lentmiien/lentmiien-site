@@ -1,0 +1,51 @@
+jest.mock('../../utils/logger', () => ({
+  error: jest.fn(),
+  notice: jest.fn(),
+  warning: jest.fn(),
+}));
+
+const { CodexQueueWorker } = require('../../services/codexQueueWorker');
+
+describe('Codex queue worker Ollama reservation lifecycle', () => {
+  function createWorker() {
+    const ollamaReservation = {
+      getStatus: jest.fn().mockReturnValue({
+        held: true,
+        service: 'ollama',
+        idleTimeoutSec: 21600,
+      }),
+      release: jest.fn().mockResolvedValue({ released: true }),
+      reserve: jest.fn().mockResolvedValue({
+        active: true,
+        service: 'ollama',
+        idleTimeoutSec: 21600,
+      }),
+    };
+    return {
+      ollamaReservation,
+      worker: new CodexQueueWorker({
+        runner: {},
+        ollamaReservation,
+      }),
+    };
+  }
+
+  test('keeps the reservation while another Ollama turn is pending', async () => {
+    const { worker, ollamaReservation } = createWorker();
+    worker.hasPendingOllamaTurns = jest.fn().mockResolvedValue(true);
+
+    await expect(worker.releaseOllamaReservationIfIdle('turn-1')).resolves.toBe(false);
+
+    expect(worker.hasPendingOllamaTurns).toHaveBeenCalledWith('turn-1');
+    expect(ollamaReservation.release).not.toHaveBeenCalled();
+  });
+
+  test('releases the reservation after the Ollama queue drains', async () => {
+    const { worker, ollamaReservation } = createWorker();
+    worker.hasPendingOllamaTurns = jest.fn().mockResolvedValue(false);
+
+    await expect(worker.releaseOllamaReservationIfIdle('turn-1')).resolves.toBe(true);
+
+    expect(ollamaReservation.release).toHaveBeenCalledTimes(1);
+  });
+});

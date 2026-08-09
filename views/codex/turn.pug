@@ -61,6 +61,9 @@ block content
               small Profile
               strong= turn.requestProfileName || '-'
             div
+              small Provider
+              strong= turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI'
+            div
               small Model
               strong= turn.model || '-'
             div
@@ -91,7 +94,7 @@ block content
               small Turn Reasoning Tokens
               strong= num(turn.tokenUsage && turn.tokenUsage.reasoning)
             div
-              small Turn Estimated Cost
+              small= turn.modelProvider === 'ollama' ? 'Turn Ollama Estimated Cost' : 'Turn OpenAI Estimated Cost'
               strong= money(turn.costEstimate && turn.costEstimate.total)
             div
               small Exit

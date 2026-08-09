@@ -14,6 +14,10 @@ block content
   - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const config = state.config || {};
+  - const localModelOptions = config.localModelOptions || [];
+  - const sessionProvider = session.modelProvider === 'ollama' ? 'ollama' : 'openai';
+  - const latestTurn = turns.length ? turns[turns.length - 1] : {};
+  - const selectedLocalModel = latestTurn.model || session.model || (localModelOptions[0] && localModelOptions[0].value) || '';
   - const maxPromptChars = Number(config.maxPromptChars) > 0 ? Number(config.maxPromptChars) : 20000;
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
   - const num = (value) => Number.isFinite(Number(value)) ? Math.round(Number(value)).toLocaleString() : '0';
@@ -29,6 +33,8 @@ block content
           p.codex-subtitle
             span= workspace.name || 'Workspace'
             span= ' / '
+            span= sessionProvider === 'ollama' ? 'Ollama' : 'OpenAI'
+            span= ' / '
             span= session.codexThreadId ? session.codexThreadId : 'waiting for Codex session id'
         .codex-topbar__actions
           a.codex-button.codex-button--secondary(href='/codex/templates') Prompt Library
@@ -37,13 +43,16 @@ block content
 
       .codex-session-meta
         span(class=statusClass(session.status))= session.status
+        span= 'Provider: ' + (sessionProvider === 'ollama' ? 'Ollama' : 'OpenAI')
         span= 'Turns: ' + (session.turnCount || turns.length)
         span= 'Updated: ' + fmt(session.updatedAt)
 
       section.codex-panel.codex-session-stats(data-codex-session-stats)
         .codex-panel__header
           h2 Session Totals
-          span.codex-chip= money(stats.cost)
+          .codex-panel__header-actions
+            span.codex-chip= 'OpenAI ' + money(stats.cost)
+            span.codex-chip= 'Ollama ' + money(stats.ollamaCost)
         .codex-stat-grid.codex-stat-grid--compact
           .codex-stat-card
             small Total Time
@@ -79,13 +88,14 @@ block content
                 span= turn.permissionMode
                 if turn.requestProfileName
                   span= 'Profile ' + turn.requestProfileName
+                span= 'Provider ' + (turn.modelProvider === 'ollama' ? 'Ollama' : 'OpenAI')
                 if turn.model
                   span= 'Model ' + turn.model
                 if turn.reasoningEffort
                   span= 'Reasoning ' + turn.reasoningEffort
                 span= 'Queued ' + fmt(turn.queuedAt)
                 span= 'Duration ' + duration(turn.durationMs)
-                span= 'Turn cost ' + money(turn.costEstimate && turn.costEstimate.total)
+                span= (turn.modelProvider === 'ollama' ? 'Ollama cost ' : 'OpenAI cost ') + money(turn.costEstimate && turn.costEstimate.total)
               if turn.status === 'running'
                 .codex-live-activity(data-turn-activity=turn.id, data-activity-state='live', aria-label='Live Codex process activity')
                   span.codex-live-activity__signal(aria-hidden='true')
@@ -126,6 +136,7 @@ block content
           span.codex-chip= session.codexThreadId ? 'Ready' : 'Waiting'
         if session.codexThreadId
           form#codex-followup-form.codex-form(data-session-id=session.id, data-codex-prompt-form)
+            input(type='hidden', name='modelProvider', value=sessionProvider)
             .codex-mode-group(role='radiogroup', aria-label='Follow-up mode')
               label.codex-mode-option
                 input(type='radio', name='mode', value='question', checked)
@@ -147,18 +158,26 @@ block content
               label.codex-check
                 input(type='checkbox', name='confirmYolo', value='1')
                 span Confirm yolo mode for this turn
-            .codex-field
-              label(for='codex-followup-profile') Profile
-              select#codex-followup-profile(name='requestProfileId')
-                if requestProfiles.length
-                  each profile in requestProfiles
-                    - const detailParts = [];
-                    - if (profile.model) detailParts.push(profile.model);
-                    - if (profile.reasoningEffort) detailParts.push(profile.reasoningEffort);
-                    - if (profile.codexProfile) detailParts.push('config ' + profile.codexProfile);
-                    option(value=profile.id, selected=profile.id === 'default')= detailParts.length ? `${profile.name} - ${detailParts.join(' / ')}` : profile.name
-                else
-                  option(value='') Default
+            if sessionProvider === 'ollama'
+              .codex-field
+                label(for='codex-followup-local-model') Local model
+                select#codex-followup-local-model(name='model', required)
+                  each model in localModelOptions
+                    option(value=model.value, selected=model.value === selectedLocalModel)= model.description ? `${model.label} - ${model.description}` : model.label
+                small.codex-field-help Provider is locked to Ollama for this session. Start a new session to return to OpenAI.
+            else
+              .codex-field
+                label(for='codex-followup-profile') OpenAI profile
+                select#codex-followup-profile(name='requestProfileId')
+                  if requestProfiles.length
+                    each profile in requestProfiles
+                      - const detailParts = [];
+                      - if (profile.model) detailParts.push(profile.model);
+                      - if (profile.reasoningEffort) detailParts.push(profile.reasoningEffort);
+                      - if (profile.codexProfile) detailParts.push('config ' + profile.codexProfile);
+                      option(value=profile.id, selected=profile.id === (latestTurn.requestProfileId || 'default'))= detailParts.length ? `${profile.name} - ${detailParts.join(' / ')}` : profile.name
+                  else
+                    option(value='') Default
             .codex-field
               .codex-field-label-row
                 label(for='codex-followup-prompt') Prompt

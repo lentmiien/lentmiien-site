@@ -12,12 +12,15 @@ block content
   - const queuedTurns = state.queuedTurns || [];
   - const recentSessions = state.recentSessions || [];
   - const requestProfiles = state.requestProfiles || [];
+  - const localModelOptions = config.localModelOptions || [];
   - const promptTemplates = state.promptTemplates || [];
   - const selectedWorkspaceId = workspaces.length ? String(workspaces[0].id || '') : '';
   - const visiblePromptTemplates = promptTemplates.filter((template) => !template.workspaceId || String(template.workspaceId) === selectedWorkspaceId);
   - const stats = state.stats || {};
   - const summary = stats.summary || {};
   - const pricing = state.pricing || {};
+  - const pricingByProvider = state.pricingByProvider || { openai: pricing, ollama: {} };
+  - const pricingProviders = [{ value: 'openai', label: 'OpenAI' }, { value: 'ollama', label: 'Ollama' }];
   - const tokenTypes = ['input', 'cached', 'output', 'reasoning'];
   - const tokenLabels = { input: 'Input', cached: 'Cached', output: 'Output', reasoning: 'Reasoning' };
   - const fmt = (value) => value ? new Date(value).toLocaleString() : '-';
@@ -77,6 +80,12 @@ block content
                     option(value=workspace.id)= workspace.name + ' - ' + workspace.rootPath
                 else
                   option(value='') No workspaces configured
+            .codex-field
+              label(for='codex-model-provider') Model provider
+              select#codex-model-provider(name='modelProvider', data-codex-model-provider)
+                option(value='openai', selected) OpenAI
+                option(value='ollama', disabled=!localModelOptions.length) Ollama (local)
+              small.codex-field-help Ollama runs on the Codex machine and reserves the AI Gateway GPU while a turn is active.
             .codex-mode-group(role='radiogroup', aria-label='Request mode')
               label.codex-mode-option
                 input(type='radio', name='mode', value='question', checked)
@@ -98,8 +107,8 @@ block content
               label.codex-check
                 input(type='checkbox', name='confirmYolo', value='1')
                 span Confirm yolo mode for this turn
-            .codex-field
-              label(for='codex-request-profile') Profile
+            .codex-field(data-codex-openai-model-controls)
+              label(for='codex-request-profile') OpenAI profile
               select#codex-request-profile(name='requestProfileId')
                 if requestProfiles.length
                   each profile in requestProfiles
@@ -110,6 +119,11 @@ block content
                     option(value=profile.id, selected=profile.id === 'default')= detailParts.length ? `${profile.name} - ${detailParts.join(' / ')}` : profile.name
                 else
                   option(value='') Default
+            .codex-field(data-codex-local-model-controls, hidden)
+              label(for='codex-local-model') Local model
+              select#codex-local-model(name='model', disabled, required)
+                each model in localModelOptions
+                  option(value=model.value)= model.description ? `${model.label} - ${model.description}` : model.label
             .codex-field
               .codex-field-label-row
                 label(for='codex-prompt') Prompt
@@ -189,9 +203,13 @@ block content
               strong= num(summary.tokens && summary.tokens.total)
               span= 'Avg ' + num(summary.averageTokensPerTurn) + ' / turn'
             .codex-stat-card
-              small Estimated Cost
+              small OpenAI Cost
               strong= money(summary.cost)
-              span= pricing.currency || 'USD'
+              span= (pricingByProvider.openai && pricingByProvider.openai.currency) || 'USD'
+            .codex-stat-card
+              small Ollama Cost
+              strong= money(summary.ollamaCost)
+              span= (pricingByProvider.ollama && pricingByProvider.ollama.currency) || 'USD'
             .codex-stat-card
               small Avg Time
               strong= duration(summary.durationStats && summary.durationStats.avg)
@@ -256,15 +274,21 @@ block content
           section.codex-panel.codex-panel--full
             .codex-panel__header
               h2 Token Prices
-              span.codex-chip USD / 1M tokens
-            form#codex-pricing-form.codex-form.codex-form--pricing
-              each type in tokenTypes
-                .codex-field
-                  label(for=`codex-price-${type}`)= tokenLabels[type]
-                  input(id=`codex-price-${type}`, type='number', name=type, min='0', step='0.000001', value=(pricing.prices && pricing.prices[type]) || 0)
-              .codex-actions
-                button.codex-button(type='submit') Save Prices
-                span#codex-pricing-status.codex-form-status(aria-live='polite')
+              span.codex-chip Separate estimates · USD / 1M tokens
+            .codex-pricing-grid
+              each provider in pricingProviders
+                - const providerPricing = pricingByProvider[provider.value] || {};
+                form.codex-pricing-card.codex-form.codex-form--pricing(data-codex-pricing-form, data-provider=provider.value)
+                  .codex-pricing-card__heading
+                    h3= provider.label
+                    p= provider.value === 'openai' ? 'Used only for OpenAI-backed Codex turns.' : 'Used only for local Ollama-backed Codex turns.'
+                  each type in tokenTypes
+                    .codex-field
+                      label(for=`codex-price-${provider.value}-${type}`)= tokenLabels[type]
+                      input(id=`codex-price-${provider.value}-${type}`, type='number', name=type, min='0', step='0.000001', value=(providerPricing.prices && providerPricing.prices[type]) || 0)
+                  .codex-actions
+                    button.codex-button(type='submit')= `Save ${provider.label} Prices`
+                    span.codex-form-status(data-codex-pricing-status, aria-live='polite')
 
         section.codex-panel.codex-panel--full
           .codex-panel__header
@@ -279,7 +303,8 @@ block content
                   th Sessions
                   each type in tokenTypes
                     th= tokenLabels[type]
-                  th Cost
+                  th OpenAI Cost
+                  th Ollama Cost
               tbody(data-codex-monthly-body)
                 if stats.months && stats.months.length
                   each month in stats.months
@@ -289,10 +314,11 @@ block content
                       td(data-label='Sessions')= num(month.sessionCount)
                       each type in tokenTypes
                         td(data-label=tokenLabels[type])= num(month.tokens && month.tokens[type])
-                      td(data-label='Cost')= money(month.cost)
+                      td(data-label='OpenAI Cost')= money(month.cost)
+                      td(data-label='Ollama Cost')= money(month.ollamaCost)
                 else
                   tr
-                    td(colspan='8') No token usage recorded for the last 3 months.
+                    td(colspan='9') No token usage recorded for the last 3 months.
 
         section.codex-panel.codex-panel--full
           .codex-panel__header
@@ -311,7 +337,8 @@ block content
                   th Reasoning
                   th Avg Time
                   th Success
-                  th Cost
+                  th OpenAI Cost
+                  th Ollama Cost
               tbody(data-codex-workspace-body)
                 if stats.workspaceActivity && stats.workspaceActivity.length
                   each workspaceStat in stats.workspaceActivity
@@ -328,10 +355,11 @@ block content
                       td(data-label='Reasoning')= num(workspaceStat.tokens && workspaceStat.tokens.reasoning)
                       td(data-label='Avg Time')= duration(workspaceStat.avgDurationMs)
                       td(data-label='Success')= pct(workspaceStat.successRate)
-                      td(data-label='Cost')= money(workspaceStat.cost)
+                      td(data-label='OpenAI Cost')= money(workspaceStat.cost)
+                      td(data-label='Ollama Cost')= money(workspaceStat.ollamaCost)
                 else
                   tr
-                    td(colspan='10') No workspace activity recorded for the last 3 months.
+                    td(colspan='11') No workspace activity recorded for the last 3 months.
 
         section.codex-panel.codex-panel--full
           .codex-panel__header

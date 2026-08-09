@@ -38,6 +38,12 @@ const CodexTurnSchema = new Schema({
   yolo: { type: Boolean, default: false, index: true },
   requestProfileId: { type: String, default: '', trim: true, maxlength: 80, index: true },
   requestProfileName: { type: String, default: '', trim: true, maxlength: 80 },
+  modelProvider: {
+    type: String,
+    enum: ['openai', 'ollama'],
+    default: 'openai',
+    index: true,
+  },
   model: { type: String, default: '', trim: true, maxlength: 120 },
   profile: { type: String, default: '', trim: true, maxlength: 120 },
   reasoningEffort: {
@@ -70,5 +76,6 @@ CodexTurnSchema.index({ sessionId: 1, sequence: 1 }, { unique: true });
 CodexTurnSchema.index({ 'createdBy.id': 1, createdAt: -1 });
 CodexTurnSchema.index({ workspaceId: 1, startedAt: -1 });
 CodexTurnSchema.index({ kind: 1, createdAt: -1 });
+CodexTurnSchema.index({ modelProvider: 1, status: 1, queuedAt: 1 });
 
 module.exports = mongoose.model('codex_turn', CodexTurnSchema);

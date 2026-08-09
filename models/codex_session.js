@@ -13,6 +13,13 @@ const CodexSessionSchema = new Schema({
   workspaceId: { type: String, required: true, index: true },
   targetId: { type: String, required: true, index: true },
   codexThreadId: { type: String, default: undefined },
+  modelProvider: {
+    type: String,
+    enum: ['openai', 'ollama'],
+    default: 'openai',
+    index: true,
+  },
+  model: { type: String, default: '', trim: true, maxlength: 120 },
   title: { type: String, required: true, trim: true, maxlength: 180 },
   summary: { type: String, default: '', trim: true, maxlength: 2000 },
   status: {
