@@ -23,8 +23,9 @@ games/dinosaur-history/assets/audio/en/source-wav/
 games/dinosaur-history/assets/audio/ja/source-wav/
 games/deep_ocean/assets/audio/en/source-wav/
 games/deep_ocean/assets/audio/ja/source-wav/
-games/galaxy_center/assets/audio/source-wav
-games/lentmanc_game/assets/audio/en/source-wav
+games/galaxy_center/assets/audio/source-wav/
+games/lentmanc_game/assets/audio/en/source-wav/
+games/kardashev/assets/audio/source-wav/
 public/html
 utils/batch_input.jsonl
 public/temp/
