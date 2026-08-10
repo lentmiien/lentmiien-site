@@ -797,6 +797,7 @@ function finalizeActivityBucket(bucket, pricing) {
 function getRuntimeConfig() {
   return {
     binaryPath: process.env.CODEX_BINARY_PATH || process.env.CODEX_BINARY || 'codex',
+    ollamaProfile: normalizeCodexProfileName(process.env.CODEX_OLLAMA_PROFILE || 'ollama'),
     workerEnabled: getBooleanEnv('CODEX_WORKER_ENABLED', true),
     globalConcurrency: getPositiveIntegerEnv('CODEX_GLOBAL_CONCURRENCY', 1, 1, 8),
     pollIntervalMs: getPositiveIntegerEnv('CODEX_WORKER_POLL_MS', 5000, 1000, 60000),

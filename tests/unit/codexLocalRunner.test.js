@@ -83,6 +83,8 @@ describe('CodexLocalRunner', () => {
 
     expect(command.args).toEqual(expect.arrayContaining([
       '--oss',
+      '-p',
+      'ollama',
       '-m',
       'qwen3.6:27b',
     ]));
@@ -90,7 +92,35 @@ describe('CodexLocalRunner', () => {
       modelProvider: 'ollama',
       model: 'qwen3.6:27b',
       oss: true,
+      profile: 'ollama',
     }));
+  });
+
+  test('allows the Ollama Codex profile to be configured', () => {
+    const runner = new CodexLocalRunner({
+      binaryPath: 'codex-test',
+      timeoutMs: 60000,
+      ollamaProfile: 'local-qwen',
+    });
+
+    const command = runner.buildCommand({
+      turn: {
+        _id: 'turn-local-profile',
+        kind: 'question',
+        modelProvider: 'ollama',
+        model: 'qwen3.6:27b',
+        permissionMode: 'read-only',
+      },
+      session: {},
+      workspace: { rootPath: '/workspace/project' },
+    });
+
+    expect(command.args).toEqual(expect.arrayContaining([
+      '--oss',
+      '-p',
+      'local-qwen',
+    ]));
+    expect(command.commandSummary.profile).toBe('local-qwen');
   });
 
   test('uses the dangerous bypass flag only for yolo mode', () => {

@@ -169,6 +169,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `CODEX_MAX_EVENTS_PER_TURN` | Maximum number of detail events persisted for each Codex turn before a truncation warning is stored. Defaults to `2000`. |
 | `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
 | `CODEX_LOCAL_MODELS` | Additional Ollama models offered by `/codex`, as a comma-separated list or JSON array of strings/objects. `qwen3.6:27b` is always included. Example: `qwen3.6:14b,llama4:scout`. |
+| `CODEX_OLLAMA_PROFILE` | Codex config profile layered onto every Ollama turn. Defaults to `ollama`, which loads `$CODEX_HOME/ollama.config.toml`. |
 | `CODEX_OLLAMA_RESERVATION_CONTAINER` | AI Gateway container reserved before a local Codex turn. Defaults to `ollama`. |
 | `CODEX_OLLAMA_RESERVATION_SECONDS` | AI Gateway reservation idle timeout for local Codex turns. Values below six hours are raised to `21600` seconds. |
 | `CODEX_OLLAMA_RESERVATION_TIMEOUT_MS` | Maximum time to wait for AI Gateway reservation and release requests. Defaults to `630000`. |
@@ -230,7 +231,7 @@ When the Express web server runs as a Windows service, keep it from claiming Cod
 
 The web UI still creates and displays Codex turns through MongoDB. The separate user-login worker is the only process that should execute queued turns.
 
-To enable local models, configure the Codex CLI on the machine that executes Codex with `oss_provider = "ollama"`. Selecting Ollama in `/codex` starts the CLI with `--oss -m <local-model>`. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
+To enable local models, configure the Codex CLI on the machine that executes Codex with `oss_provider = "ollama"`. The worker defaults `CODEX_OLLAMA_PROFILE` to `ollama`, so local turns load `$CODEX_HOME/ollama.config.toml`; use that profile to set `model_catalog_json` for the configured local models. Selecting Ollama in `/codex` starts the CLI with `--oss -p <ollama-profile> -m <local-model>`. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
 
 For SSH-backed Linux targets, make sure the worker account can run a non-interactive SSH command such as:
 ```powershell

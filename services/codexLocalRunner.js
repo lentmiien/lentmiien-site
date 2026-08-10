@@ -99,8 +99,11 @@ function createRemoteOutputPath(target, turnId) {
   return `${trimmedTempDir}/codex-last-message-${turnId}-${randomUUID()}.txt`;
 }
 
-function buildCodexArgs({ turn, session, workspace, outputPath }) {
+function buildCodexArgs({ turn, session, workspace, outputPath, ollamaProfile }) {
   const modelProvider = codexToolService.getTurnModelProvider(turn);
+  const effectiveProfile = modelProvider === 'ollama'
+    ? (ollamaProfile || turn.profile || '')
+    : (turn.profile || '');
   const args = [
     'exec',
     '--json',
@@ -118,8 +121,8 @@ function buildCodexArgs({ turn, session, workspace, outputPath }) {
   if (turn.model) {
     args.push('-m', turn.model);
   }
-  if (turn.profile) {
-    args.push('-p', turn.profile);
+  if (effectiveProfile) {
+    args.push('-p', effectiveProfile);
   }
   if (turn.reasoningEffort) {
     args.push('-c', `model_reasoning_effort="${turn.reasoningEffort}"`);
@@ -137,7 +140,7 @@ function buildCodexArgs({ turn, session, workspace, outputPath }) {
     args.push('-');
   }
 
-  return { args, isFollowup };
+  return { args, isFollowup, effectiveProfile };
 }
 
 class CodexLocalRunner {
@@ -156,7 +159,17 @@ class CodexLocalRunner {
     const config = this.getConfig();
     const remote = isRemoteSshTarget(target);
     const outputPath = remote ? createRemoteOutputPath(target, turn._id) : createLocalOutputPath(turn._id);
-    const { args: codexArgs, isFollowup } = buildCodexArgs({ turn, session, workspace, outputPath });
+    const {
+      args: codexArgs,
+      isFollowup,
+      effectiveProfile,
+    } = buildCodexArgs({
+      turn,
+      session,
+      workspace,
+      outputPath,
+      ollamaProfile: config.ollamaProfile,
+    });
 
     if (remote) {
       const connection = target.connection || {};
@@ -198,7 +211,7 @@ class CodexLocalRunner {
           modelProvider: codexToolService.getTurnModelProvider(turn),
           oss: codexToolService.getTurnModelProvider(turn) === 'ollama',
           model: turn.model || '',
-          profile: turn.profile || '',
+          profile: effectiveProfile,
           reasoningEffort: turn.reasoningEffort || '',
         },
       };
@@ -221,7 +234,7 @@ class CodexLocalRunner {
         modelProvider: codexToolService.getTurnModelProvider(turn),
         oss: codexToolService.getTurnModelProvider(turn) === 'ollama',
         model: turn.model || '',
-        profile: turn.profile || '',
+        profile: effectiveProfile,
         reasoningEffort: turn.reasoningEffort || '',
       },
     };

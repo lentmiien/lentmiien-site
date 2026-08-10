@@ -18,6 +18,7 @@ const codexToolService = require('../../services/codexToolService');
 describe('codexToolService runtime config', () => {
   const originalMaxEventsPerTurn = process.env.CODEX_MAX_EVENTS_PER_TURN;
   const originalLocalModels = process.env.CODEX_LOCAL_MODELS;
+  const originalOllamaProfile = process.env.CODEX_OLLAMA_PROFILE;
 
   afterEach(() => {
     if (originalMaxEventsPerTurn === undefined) {
@@ -29,6 +30,11 @@ describe('codexToolService runtime config', () => {
       delete process.env.CODEX_LOCAL_MODELS;
     } else {
       process.env.CODEX_LOCAL_MODELS = originalLocalModels;
+    }
+    if (originalOllamaProfile === undefined) {
+      delete process.env.CODEX_OLLAMA_PROFILE;
+    } else {
+      process.env.CODEX_OLLAMA_PROFILE = originalOllamaProfile;
     }
   });
 
@@ -55,6 +61,14 @@ describe('codexToolService runtime config', () => {
       expect.objectContaining({ value: 'llama4:scout' }),
       expect.objectContaining({ value: 'qwen3.6:14b', label: 'Qwen 3.6 14B' }),
     ]));
+  });
+
+  test('uses the ollama Codex profile by default and allows an override', () => {
+    delete process.env.CODEX_OLLAMA_PROFILE;
+    expect(codexToolService.getRuntimeConfig().ollamaProfile).toBe('ollama');
+
+    process.env.CODEX_OLLAMA_PROFILE = 'local-qwen';
+    expect(codexToolService.getRuntimeConfig().ollamaProfile).toBe('local-qwen');
   });
 });
 
