@@ -152,8 +152,8 @@ describe('AppSettingsService', () => {
   test('seeds required defaults without overwriting existing values', async () => {
     const model = createSettingsModel();
     model.updateOne
-      .mockResolvedValueOnce({ upsertedCount: 1 })
-      .mockResolvedValueOnce({ upsertedCount: 0 });
+      .mockResolvedValue({ upsertedCount: 0 })
+      .mockResolvedValueOnce({ upsertedCount: 1 });
     const service = new AppSettingsService(model);
 
     await expect(service.seedDefaults('setup')).resolves.toEqual({
@@ -175,5 +175,9 @@ describe('AppSettingsService', () => {
       },
       { upsert: true, timestamps: false }
     );
+    expect(DEFAULT_APP_SETTINGS).toContainEqual(expect.objectContaining({
+      key: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,
+      value: 'gpt-4.1-nano-2025-04-14',
+    }));
   });
 });

@@ -43,6 +43,9 @@ jest.mock('../../services/chat5ModelCatalogService', () => ({
   invalidateChatModelCache: jest.fn(),
   listAvailableChatModels: jest.fn(),
 }));
+jest.mock('../../services/batchService', () => ({
+  invalidateBatchModelCache: jest.fn(),
+}));
 jest.mock('../../services/chat5QuickSettingService', () => ({
   Chat5QuickSettingService: jest.fn().mockImplementation(() => ({})),
   serializeQuickSetting: jest.fn(),
@@ -50,6 +53,7 @@ jest.mock('../../services/chat5QuickSettingService', () => ({
 
 const { AIModelCards } = require('../../database');
 const { invalidateChatModelCache } = require('../../services/chat5ModelCatalogService');
+const { invalidateBatchModelCache } = require('../../services/batchService');
 const controller = require('../../controllers/chat5controller');
 
 function validModelBody(overrides = {}) {
@@ -106,6 +110,7 @@ describe('AI model card controller editing', () => {
     expect(model.max_out_tokens).toBe(32768);
     expect(model.save).toHaveBeenCalledTimes(1);
     expect(invalidateChatModelCache).toHaveBeenCalledTimes(1);
+    expect(invalidateBatchModelCache).toHaveBeenCalledTimes(1);
     expect(res.redirect).toHaveBeenCalledWith('/chat5/ai_model_cards?filter_provider=Local&saved=tokens');
   });
 
@@ -147,6 +152,7 @@ describe('AI model card controller editing', () => {
     }));
     expect(model.save).toHaveBeenCalledTimes(1);
     expect(invalidateChatModelCache).toHaveBeenCalledTimes(1);
+    expect(invalidateBatchModelCache).toHaveBeenCalledTimes(1);
     expect(res.redirect).toHaveBeenCalledWith('/chat5/ai_model_cards?filter_provider=Local&saved=updated');
   });
 

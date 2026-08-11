@@ -5,8 +5,12 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 const { CodexQueueWorker } = require('../../services/codexQueueWorker');
+const logger = require('../../utils/logger');
 
 describe('Codex queue worker Ollama reservation lifecycle', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
   function createWorker() {
     const ollamaReservation = {
       getStatus: jest.fn().mockReturnValue({
@@ -47,5 +51,18 @@ describe('Codex queue worker Ollama reservation lifecycle', () => {
     await expect(worker.releaseOllamaReservationIfIdle('turn-1')).resolves.toBe(true);
 
     expect(ollamaReservation.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not duplicate the release notice for a coalesced caller', async () => {
+    const { worker, ollamaReservation } = createWorker();
+    worker.hasPendingOllamaTurns = jest.fn().mockResolvedValue(false);
+    ollamaReservation.release.mockResolvedValue({ released: true, initiated: false });
+
+    await expect(worker.releaseOllamaReservationIfIdle('turn-1')).resolves.toBe(true);
+
+    expect(logger.notice).not.toHaveBeenCalledWith(
+      'Released AI Gateway GPU after Codex Ollama queue drained',
+      expect.anything(),
+    );
   });
 });

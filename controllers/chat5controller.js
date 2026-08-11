@@ -24,6 +24,7 @@ const TtsService = require('../services/ttsService');
 const ToolManagerService = require('../services/toolManagerService');
 const TrainingDataService = require('../services/trainingDataService');
 const { invalidateChatModelCache, listAvailableChatModels } = require('../services/chat5ModelCatalogService');
+const { invalidateBatchModelCache } = require('../services/batchService');
 const { Chat5QuickSettingService, serializeQuickSetting } = require('../services/chat5QuickSettingService');
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
@@ -286,6 +287,7 @@ exports.add_model_card = async (req, res) => {
     }
 
     invalidateChatModelCache();
+    invalidateBatchModelCache();
     return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'added', clearEdit: true }));
   } catch (error) {
     if (!(error instanceof AIModelCardInputError)) {
@@ -306,6 +308,7 @@ exports.update_model_card = async (req, res) => {
     Object.assign(model, data);
     await model.save();
     invalidateChatModelCache();
+    invalidateBatchModelCache();
     return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'updated', clearEdit: true }));
   } catch (error) {
     if (!(error instanceof AIModelCardInputError)) {
@@ -329,6 +332,7 @@ exports.update_model_card_tokens = async (req, res) => {
     Object.assign(model, tokenLimits);
     await model.save();
     invalidateChatModelCache();
+    invalidateBatchModelCache();
     return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'tokens' }));
   } catch (error) {
     if (!(error instanceof AIModelCardInputError)) {
@@ -357,6 +361,7 @@ exports.update_model_card_deprecation_date = async (req, res) => {
     }
     model.deprecation_date = deprecationDate;
     await model.save();
+    invalidateBatchModelCache();
     return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'deprecation' }));
   } catch (error) {
     logger.error('Failed to update AI model card deprecation date', {
@@ -371,6 +376,7 @@ exports.delete_model_card = async (req, res) => {
   try {
     await AIModelCards.findByIdAndDelete(req.params.id);
     invalidateChatModelCache();
+    invalidateBatchModelCache();
     return res.redirect(buildModelCardsRedirect(req.body?.return_to, { saved: 'deleted', clearEdit: true }));
   } catch (error) {
     logger.error('Failed to delete AI model card', {

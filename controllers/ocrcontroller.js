@@ -7,6 +7,8 @@ const { randomUUID } = require('crypto');
 const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 const EmbeddingApiService = require('../services/embeddingApiService');
+const ocrEmbeddingService = require('../services/ocrEmbeddingService');
+const { buildOcrEmbeddingMetadata } = ocrEmbeddingService;
 const { OcrJob } = require('../database');
 
 const DEFAULT_PROMPT = 'Detect and recognize text in the image, and output the text coordinates in a formatted manner.';
@@ -21,12 +23,10 @@ const OCR_PREVIEW_DIR = path.join(__dirname, '..', 'public', 'ocr');
 const MAX_PREVIEW_SIDE = 2048;
 const logApiDebug = createApiDebugLogger('controllers/ocrcontroller.js');
 const embeddingApiService = new EmbeddingApiService();
-const OCR_EMBED_CONTENT_TYPE = 'ocr_layout_text';
-const OCR_SOURCE_COLLECTION = 'ocr_job_files';
-const OCR_PARENT_COLLECTION = 'ocr_job';
 
 const jobQueue = [];
 let activeJobId = null;
+ocrEmbeddingService.setOcrIdleCheck(() => !activeJobId && jobQueue.length === 0);
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const percentOfCanvas = (value) => clamp((value / MAX_COORD_VALUE) * 100, 0, 100);
@@ -234,58 +234,13 @@ const formatImagePath = (storedPath) => {
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
 };
 
-const buildOcrEmbeddingMetadata = (job, file) => {
-  const documentId = (file?.id || file?._id?.toString?.() || '').trim();
-  const parentId = (job?.id || job?._id?.toString?.() || '').trim();
-
-  if (!documentId || !parentId) {
-    return null;
-  }
-
-  return {
-    collectionName: OCR_SOURCE_COLLECTION,
-    documentId,
-    contentType: OCR_EMBED_CONTENT_TYPE,
-    parentCollection: OCR_PARENT_COLLECTION,
-    parentId,
-  };
-};
-
-const syncOcrEmbedding = async (job, file, { silent = false } = {}) => {
-  const metadata = buildOcrEmbeddingMetadata(job, file);
-  const text = (file?.result?.layoutText || '').trim();
-
-  if (!metadata) {
-    logger.warning('Missing OCR metadata for embedding sync', {
-      category: 'ocr',
-      metadata: {
-        jobId: job?.id || job?._id,
-        fileId: file?.id,
-      },
-    });
-    return;
-  }
-
-  try {
-    if (!text) {
-      await embeddingApiService.deleteEmbeddings(metadata);
-      return;
-    }
-
-    await embeddingApiService.embed([text], {}, [metadata]);
-  } catch (error) {
-    logger.error('Failed to sync OCR embeddings', {
-      category: 'ocr',
-      metadata: {
-        jobId: job?.id || job?._id,
-        fileId: file?.id,
-        message: error?.message || error,
-      },
-    });
-    if (!silent) {
-      throw error;
-    }
-  }
+const queueOcrEmbedding = (file, now = new Date()) => {
+  file.embeddingStatus = 'pending';
+  file.embeddingAttempts = 0;
+  file.embeddingRetryable = true;
+  file.embeddingError = null;
+  file.embeddingUpdatedAt = now;
+  file.embeddingNextAttemptAt = null;
 };
 
 const computeFileCounts = (job) => {
@@ -319,6 +274,11 @@ const sanitizeJobSummary = (job) => {
       size: file.size,
       completedAt: file.completedAt,
       updatedAt: file.updatedAt,
+      embeddingStatus: file.embeddingStatus || null,
+      embeddingAttempts: file.embeddingAttempts || 0,
+      embeddingError: file.embeddingError || null,
+      embeddingUpdatedAt: file.embeddingUpdatedAt || null,
+      embeddingNextAttemptAt: file.embeddingNextAttemptAt || null,
     })),
   };
 };
@@ -338,6 +298,11 @@ const sanitizeJobDetail = (job) => {
       completedAt: file.completedAt,
       updatedAt: file.updatedAt,
       error: file.error,
+      embeddingStatus: file.embeddingStatus || null,
+      embeddingAttempts: file.embeddingAttempts || 0,
+      embeddingError: file.embeddingError || null,
+      embeddingUpdatedAt: file.embeddingUpdatedAt || null,
+      embeddingNextAttemptAt: file.embeddingNextAttemptAt || null,
       previewPath: formatImagePath(file.previewPath),
       result: file.result ? {
         rawText: file.result.rawText,
@@ -437,6 +402,12 @@ const createJobRecord = async (files, prompt, maxNewTokens, user) => {
         startedAt: null,
         completedAt: null,
         updatedAt: now,
+        embeddingStatus: 'pending',
+        embeddingAttempts: 0,
+        embeddingRetryable: true,
+        embeddingError: null,
+        embeddingUpdatedAt: now,
+        embeddingNextAttemptAt: null,
         result: null,
       });
 
@@ -614,6 +585,8 @@ const processQueue = () => {
       activeJobId = null;
       if (jobQueue.length) {
         setImmediate(processQueue);
+      } else {
+        ocrEmbeddingService.deferUntilOcrIdle();
       }
     });
 };
@@ -649,6 +622,7 @@ const executeJob = async (queueItem) => {
       file.status = 'completed';
       file.completedAt = new Date();
       file.error = null;
+      queueOcrEmbedding(file);
       logger.notice('OCR file completed', {
         category: 'ocr',
         metadata: {
@@ -658,11 +632,15 @@ const executeJob = async (queueItem) => {
           segments: result.segmentsCount,
         },
       });
-      await syncOcrEmbedding(job, file, { silent: true });
     } catch (error) {
       file.status = 'failed';
       file.error = error.message || 'File failed to process.';
       file.completedAt = new Date();
+      file.embeddingStatus = 'not_applicable';
+      file.embeddingRetryable = false;
+      file.embeddingError = null;
+      file.embeddingUpdatedAt = new Date();
+      file.embeddingNextAttemptAt = null;
       hadError = true;
       logger.error('OCR file failed', {
         category: 'ocr',
@@ -837,6 +815,7 @@ exports.enqueueJob = async (req, res) => {
 
   try {
     const { job, queueFiles } = await createJobRecord(req.files, prompt, maxNewTokens, req.user);
+    ocrEmbeddingService.noteOcrActivity();
     jobQueue.push({ jobId: job.id, files: queueFiles });
     processQueue();
 
@@ -914,10 +893,10 @@ exports.updateFileResult = async (req, res) => {
       file.result.originalLayoutDirection = nextLayoutDirection;
     }
     file.updatedAt = new Date();
+    queueOcrEmbedding(file, file.updatedAt);
     job.updatedAt = new Date();
     await job.save();
-
-    await syncOcrEmbedding(job, file);
+    ocrEmbeddingService.deferUntilOcrIdle();
 
     return res.json({ job: sanitizeJobDetail(job) });
   } catch (error) {

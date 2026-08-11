@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const { syncOpenAIUsageHistory } = require('./openaiUsageSyncService');
 const { RefreshOpenAIModels } = require('../utils/ChatGPT');
 const { RefreshAnthropicModels } = require('../utils/anthropic');
+const { invalidateBatchModelCache } = require('./batchService');
 
 const REFRESH_COOLDOWN_HOURS = 12;
 const REFRESH_COOLDOWN_MS = REFRESH_COOLDOWN_HOURS * 60 * 60 * 1000;
@@ -168,6 +169,7 @@ async function refreshAIModelListsForAdmin() {
       RefreshOpenAIModels(),
       RefreshAnthropicModels(),
     ]);
+    invalidateBatchModelCache();
 
     logger.notice('Admin-triggered provider model refresh completed', {
       category: 'admin_refresh',

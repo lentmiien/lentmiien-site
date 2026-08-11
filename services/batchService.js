@@ -10,6 +10,10 @@ const {
 } = require('../utils/OpenAI_API');
 const { AIModelCards, Conversation5Model, Chat5Model } = require('../database');
 const logger = require('../utils/logger');
+const {
+  APP_SETTING_KEYS,
+  appSettingsService: defaultAppSettingsService,
+} = require('./appSettingsService');
 
 const redirect_models = {
   o1: 'o1-2024-12-17',
@@ -24,26 +28,55 @@ const redirect_models = {
 };
 
 const SUMMARY_PROMPT = 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to read the entire conversation.';
+const DEFAULT_MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const modelCache = new Map();
 let loadModelsPromise = null;
+let modelCacheLoadedAt = 0;
+let modelCacheVersion = 0;
+
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getModelCacheTtlMs() {
+  return positiveInteger(process.env.BATCH_MODEL_CACHE_TTL_MS, DEFAULT_MODEL_CACHE_TTL_MS);
+}
 
 async function ensureModelsLoaded() {
+  const cacheIsFresh = modelCacheLoadedAt > 0
+    && Date.now() - modelCacheLoadedAt < getModelCacheTtlMs();
+  if (cacheIsFresh) return [...modelCache.values()];
+
   if (!loadModelsPromise) {
-    loadModelsPromise = AIModelCards.find({ model_type: 'chat', batch_use: true, provider: 'OpenAI' })
+    const loadVersion = modelCacheVersion;
+    const promise = AIModelCards.find({ model_type: 'chat', batch_use: true, provider: 'OpenAI' })
       .then((cards) => {
+        if (loadVersion !== modelCacheVersion) return [];
         modelCache.clear();
         cards.forEach((card) => {
           modelCache.set(card.api_model, card);
         });
+        modelCacheLoadedAt = Date.now();
         return cards;
       })
       .catch((error) => {
         logger.error('Failed to load batch-capable model cards', { error });
-        modelCache.clear();
+        return [...modelCache.values()];
+      })
+      .finally(() => {
+        if (loadModelsPromise === promise) loadModelsPromise = null;
       });
+    loadModelsPromise = promise;
   }
-  await loadModelsPromise;
+  return loadModelsPromise;
+}
+
+function invalidateBatchModelCache() {
+  modelCacheVersion += 1;
+  modelCache.clear();
+  modelCacheLoadedAt = 0;
 }
 
 function normalizeModelName(model) {
@@ -53,6 +86,53 @@ function normalizeModelName(model) {
     return redirect_models[model];
   }
   return null;
+}
+
+async function resolveConfiguredSummaryModel(
+  appSettingsService = defaultAppSettingsService,
+  fallbackModel = null,
+) {
+  await ensureModelsLoaded();
+  let configuredModel = null;
+  let settingError = null;
+  try {
+    configuredModel = await appSettingsService.getValue(APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL);
+  } catch (error) {
+    settingError = error;
+  }
+
+  const normalizedConfiguredModel = normalizeModelName(configuredModel);
+  if (normalizedConfiguredModel) {
+    return {
+      model: normalizedConfiguredModel,
+      configuredModel,
+      usedFallback: false,
+      settingError: null,
+    };
+  }
+
+  const normalizedFallbackModel = normalizeModelName(fallbackModel);
+  const firstEnabledModel = modelCache.keys().next().value || null;
+  const resolvedFallback = normalizedFallbackModel || firstEnabledModel;
+  logger.warn('Batch summary model setting is unavailable; using an enabled fallback', {
+    category: 'batch',
+    metadata: {
+      settingKey: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,
+      configuredModel,
+      fallbackModel: resolvedFallback,
+      reason: settingError?.message || (configuredModel ? 'unsupported_model' : 'missing_setting'),
+    },
+  });
+  return {
+    model: resolvedFallback,
+    configuredModel,
+    usedFallback: true,
+    settingError,
+  };
+}
+
+async function validateBatchSummaryModelSetting() {
+  return resolveConfiguredSummaryModel(defaultAppSettingsService);
 }
 
 function buildTextSettings(conversation, modelName) {
@@ -84,11 +164,18 @@ function extractSummaryText(body) {
 }
 
 class BatchService {
-  constructor(BatchPromptDatabase, BatchRequestDatabase, messageService, conversationService) {
+  constructor(
+    BatchPromptDatabase,
+    BatchRequestDatabase,
+    messageService,
+    conversationService,
+    appSettingsService = defaultAppSettingsService,
+  ) {
     this.BatchPromptDatabase = BatchPromptDatabase;
     this.BatchRequestDatabase = BatchRequestDatabase;
     this.messageService = messageService;
     this.conversationService = conversationService;
+    this.appSettingsService = appSettingsService;
   }
 
   async getAll() {
@@ -388,13 +475,24 @@ class BatchService {
           });
         }
 
-        await this.addPromptToBatch({
-          userId: prompt.user_id,
-          conversationId: prompt.conversation_id,
-          model: 'gpt-4.1-nano-2025-04-14',
-          title: prompt.title || conversation.title || '(no title)',
-          taskType: 'summary',
-        });
+        const summaryModel = await resolveConfiguredSummaryModel(this.appSettingsService, prompt.model);
+        if (summaryModel.model) {
+          await this.addPromptToBatch({
+            userId: prompt.user_id,
+            conversationId: prompt.conversation_id,
+            model: summaryModel.model,
+            title: prompt.title || conversation.title || '(no title)',
+            taskType: 'summary',
+          });
+        } else {
+          logger.warn('Unable to queue automatic batch summary because no batch model is enabled', {
+            category: 'batch',
+            metadata: {
+              conversationId: prompt.conversation_id,
+              settingKey: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,
+            },
+          });
+        }
       }
 
       request.status = 'DONE';
@@ -565,3 +663,7 @@ class BatchService {
 }
 
 module.exports = BatchService;
+module.exports.ensureModelsLoaded = ensureModelsLoaded;
+module.exports.invalidateBatchModelCache = invalidateBatchModelCache;
+module.exports.resolveConfiguredSummaryModel = resolveConfiguredSummaryModel;
+module.exports.validateBatchSummaryModelSetting = validateBatchSummaryModelSetting;

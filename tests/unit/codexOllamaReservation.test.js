@@ -111,4 +111,35 @@ describe('CodexOllamaReservation', () => {
     expect(httpClient.post).toHaveBeenCalledTimes(2);
     expect(reservation.getStatus().held).toBe(true);
   });
+
+  test('marks only the caller that initiated a coalesced release', async () => {
+    let finishRelease;
+    const httpClient = {
+      post: jest.fn().mockResolvedValue({
+        data: { reservation: { active: true, service: 'ollama' } },
+      }),
+      delete: jest.fn().mockReturnValue(new Promise((resolve) => {
+        finishRelease = resolve;
+      })),
+    };
+    const reservation = new CodexOllamaReservation({
+      httpClient,
+      baseUrl: 'http://gateway.test',
+    });
+    await reservation.reserve();
+
+    const initiatedRelease = reservation.release();
+    const coalescedRelease = reservation.release();
+    finishRelease({ data: { reservation: { active: false, service: null } } });
+
+    await expect(initiatedRelease).resolves.toEqual(expect.objectContaining({
+      released: true,
+      initiated: true,
+    }));
+    await expect(coalescedRelease).resolves.toEqual(expect.objectContaining({
+      released: true,
+      initiated: false,
+    }));
+    expect(httpClient.delete).toHaveBeenCalledTimes(1);
+  });
 });

@@ -47,6 +47,16 @@ const FileSchema = new Schema({
   startedAt: { type: Date, default: null },
   completedAt: { type: Date, default: null },
   updatedAt: { type: Date, default: Date.now },
+  embeddingStatus: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'failed', 'not_applicable'],
+    default: 'pending',
+  },
+  embeddingAttempts: { type: Number, default: 0 },
+  embeddingRetryable: { type: Boolean, default: true },
+  embeddingError: { type: String, default: null },
+  embeddingUpdatedAt: { type: Date, default: null },
+  embeddingNextAttemptAt: { type: Date, default: null },
   result: { type: FileResultSchema, default: null },
 }, { _id: false });
 

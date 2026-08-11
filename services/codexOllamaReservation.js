@@ -132,15 +132,18 @@ class CodexOllamaReservation {
 
   async release() {
     if (!this.held) {
-      return { released: false, reservation: this.reservation };
+      return { released: false, initiated: false, reservation: this.reservation };
     }
     if (this.releasePromise) {
-      return this.releasePromise;
+      const result = await this.releasePromise;
+      return { ...result, initiated: false };
     }
-    this.releasePromise = this.releaseNow().finally(() => {
+    const releasePromise = this.releaseNow().finally(() => {
       this.releasePromise = null;
     });
-    return this.releasePromise;
+    this.releasePromise = releasePromise;
+    const result = await releasePromise;
+    return { ...result, initiated: true };
   }
 
   async releaseNow() {

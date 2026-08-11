@@ -1105,7 +1105,14 @@ block script
 
       const computeLayoutTextFromSegments = (segments = [], direction = 'auto') => computeLayoutResult(segments, direction).text;
 
-      const hasActiveJobs = () => state.jobs.some((job) => job.status === 'processing' || job.status === 'queued');
+      const hasActiveJobs = () => state.jobs.some((job) => (
+        job.status === 'processing'
+        || job.status === 'queued'
+        || (job.files || []).some((file) => (
+          ['pending', 'processing'].includes(file.embeddingStatus)
+          || (file.embeddingStatus === 'failed' && file.embeddingNextAttemptAt)
+        ))
+      ));
 
       const setFeedback = (message, tone = 'info') => {
         if (!feedbackEl) return;
@@ -1349,6 +1356,18 @@ block script
           : '<p class="text-muted mb-0">No OCR segments available.</p>';
 
         const layoutValue = file.result?.layoutText || '';
+        const embeddingStatus = file.embeddingStatus || (file.status === 'completed' ? 'pending' : 'not_applicable');
+        const embeddingNote = embeddingStatus === 'completed'
+          ? 'Standard embedding stored.'
+          : embeddingStatus === 'processing'
+            ? 'Standard embedding is being generated in the background.'
+            : embeddingStatus === 'failed'
+              ? file.embeddingNextAttemptAt
+                ? `Standard embedding retry scheduled${file.embeddingError ? `: ${escapeHtml(file.embeddingError)}` : '.'}`
+                : `Standard embedding failed${file.embeddingError ? `: ${escapeHtml(file.embeddingError)}` : '.'}`
+              : embeddingStatus === 'pending'
+                ? 'Standard embedding queued for the idle background worker.'
+                : 'No standard embedding is needed.';
         const layoutSection = file.result
           ? `
             <div class="text-card">
@@ -1358,7 +1377,7 @@ block script
               </div>
               ${directionControls}
               <textarea id="${layoutId}" class="layout-textarea" data-layout-input="${file.id}" data-job-id="${job.id}" data-layout-direction="${direction}" placeholder="Edit OCR layout text and save.">${escapeHtml(layoutValue)}</textarea>
-              <p class="ocr-note">Edits are saved to the database and won't change the original job date.</p>
+              <p class="ocr-note">Edits are saved to the database and won't change the original job date. ${embeddingNote}</p>
               <div class="edit-actions">
                 <button class="save-edits-btn" type="button" data-save-file="${file.id}" data-job-id="${job.id}">Save OCR edits</button>
                 <button class="restore-edits-btn" type="button" data-restore-file="${file.id}" data-job-id="${job.id}">Restore from raw output</button>
@@ -1786,7 +1805,7 @@ block script
           state.jobDetails[jobId] = payload.job;
           mergeJobSummaries([payload.job]);
           renderJobDetails();
-          setFeedback('Edits saved.', 'success');
+          setFeedback('Edits saved; the standard embedding was queued.', 'success');
         } catch (error) {
           setFeedback(error.message || 'Failed to save OCR edits.', 'error');
         } finally {

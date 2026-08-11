@@ -124,6 +124,8 @@ const scheduleAgent5Runner = require('./schedulers/agent5');
 const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecovery');
 const scheduleDisasterIngestion = require('./schedulers/disasterIngestion');
 const scheduleLogRetention = require('./schedulers/logRetention');
+const scheduleOcrEmbeddingReconciliation = require('./schedulers/ocrEmbeddings');
+const { validateBatchSummaryModelSetting } = require('./services/batchService');
 const audioWorkflowService = require('./services/audioWorkflowInstance');
 const codexQueueWorker = require('./services/codexQueueWorker');
 const io = socketIO(server, sessionMiddleware);
@@ -681,6 +683,13 @@ scheduleAgent5Runner();
 scheduleOpenAIResponseRecovery(app);
 scheduleDisasterIngestion();
 scheduleLogRetention();
+scheduleOcrEmbeddingReconciliation();
+validateBatchSummaryModelSetting().catch((error) => {
+  logger.warning('Unable to validate the batch summary model setting at startup', {
+    category: 'batch',
+    metadata: { error: error.message },
+  });
+});
 if (getBooleanEnv('CODEX_WEB_WORKER_ENABLED', getBooleanEnv('CODEX_WORKER_ENABLED', true))) {
   codexQueueWorker.start();
 } else {

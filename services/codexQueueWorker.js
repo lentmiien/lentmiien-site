@@ -335,7 +335,7 @@ class CodexQueueWorker {
     }
     try {
       const result = await this.ollamaReservation.release();
-      if (result.released) {
+      if (result.released && result.initiated !== false) {
         logger.notice('Released AI Gateway GPU after Codex Ollama queue drained', {
           category: 'codex_tool',
           metadata: { workerId: this.workerId },

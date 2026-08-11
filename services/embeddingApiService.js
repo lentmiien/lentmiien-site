@@ -6,7 +6,7 @@ const DEFAULT_API_BASE = process.env.EMBED_API_BASE || 'http://192.168.0.20:8080
 const DEFAULT_HQ_API_BASE = process.env.EMBED_API_BASE_HQ || process.env.EMBED_HQ_API_BASE || DEFAULT_API_BASE;
 const DEFAULT_EMBED_PATH = '/embed/mpnet';
 const DEFAULT_HQ_EMBED_PATH = '/embed/nomic';
-const DEFAULT_TIMEOUT_MS = 15000;
+const DEFAULT_TIMEOUT_MS = positiveInteger(process.env.EMBED_API_TIMEOUT_MS, 15000);
 const JS_FILE_NAME = 'services/embeddingApiService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
 const DEFAULT_TOP_K = 10;
@@ -33,6 +33,11 @@ const EMBEDDING_SUMMARY_PROJECTION = {
   createdAt: 1,
   updatedAt: 1,
 };
+
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 class EmbeddingApiService {
   constructor({

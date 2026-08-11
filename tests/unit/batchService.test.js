@@ -53,6 +53,10 @@ jest.mock('../../utils/logger', () => ({
 const { AIModelCards } = require('../../database');
 const { uploadBatchFile, startBatchJob } = require('../../utils/OpenAI_API');
 const BatchService = require('../../services/batchService');
+const {
+  invalidateBatchModelCache,
+  resolveConfiguredSummaryModel,
+} = require('../../services/batchService');
 
 const flushPromises = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -93,6 +97,8 @@ describe('BatchService (chat5)', () => {
   });
 
   beforeEach(async () => {
+    invalidateBatchModelCache();
+    AIModelCards.find.mockResolvedValue(mockModelCards);
     mockSupportsReasoningModel.mockReturnValue(false);
     mockSupportsReasoningMode.mockReturnValue(false);
     BatchPromptDatabase = createBatchPromptModel();
@@ -206,5 +212,42 @@ describe('BatchService (chat5)', () => {
       summary: 'detailed',
       mode: 'pro',
     });
+  });
+
+  test('resolves the automatic summary model from app settings', async () => {
+    const appSettingsService = {
+      getValue: jest.fn().mockResolvedValue('gpt-4.1-nano'),
+    };
+
+    await expect(resolveConfiguredSummaryModel(appSettingsService, 'gpt-4.1'))
+      .resolves.toEqual(expect.objectContaining({
+        model: 'gpt-4.1-nano-2025-04-14',
+        usedFallback: false,
+      }));
+  });
+
+  test('falls back to the completed request model when the configured summary model is unsupported', async () => {
+    const appSettingsService = {
+      getValue: jest.fn().mockResolvedValue('retired-summary-model'),
+    };
+
+    await expect(resolveConfiguredSummaryModel(appSettingsService, 'gpt-4.1-2025-04-14'))
+      .resolves.toEqual(expect.objectContaining({
+        model: 'gpt-4.1-2025-04-14',
+        configuredModel: 'retired-summary-model',
+        usedFallback: true,
+      }));
+  });
+
+  test('reloads batch model cards after explicit cache invalidation', async () => {
+    await resolveConfiguredSummaryModel({
+      getValue: jest.fn().mockResolvedValue('gpt-4.1'),
+    });
+    invalidateBatchModelCache();
+    await resolveConfiguredSummaryModel({
+      getValue: jest.fn().mockResolvedValue('gpt-4.1'),
+    });
+
+    expect(AIModelCards.find).toHaveBeenCalledTimes(2);
   });
 });

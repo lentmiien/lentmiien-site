@@ -10,6 +10,7 @@ const TTS_VOICE_LIST_PATH = '/tts/voices';
 const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, '..', 'public', 'mp3');
 const JS_FILE_NAME = 'services/ttsService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+const sharedVoiceStates = new Map();
 
 const CONTENT_TYPE_EXTENSION_MAP = {
   'audio/wav': 'wav',
@@ -24,23 +25,38 @@ const CONTENT_TYPE_EXTENSION_MAP = {
   'audio/flac': 'flac',
 };
 
+function getSharedVoiceState(apiBase) {
+  if (!sharedVoiceStates.has(apiBase)) {
+    sharedVoiceStates.set(apiBase, {
+      cache: {
+        voices: [],
+        defaultVoiceId: null,
+        lastUpdated: null,
+        lastError: null,
+      },
+      refreshPromise: null,
+      warmupAttempted: false,
+    });
+  }
+  return sharedVoiceStates.get(apiBase);
+}
+
 class TtsService {
-  constructor({ apiBase = DEFAULT_API_BASE, outputDir = DEFAULT_OUTPUT_DIR } = {}) {
+  constructor({ apiBase = DEFAULT_API_BASE, outputDir = DEFAULT_OUTPUT_DIR, warmCache = true } = {}) {
     this.apiBase = (apiBase || DEFAULT_API_BASE).replace(/\/+$/, '');
     this.outputDir = outputDir;
-    this.voiceCache = {
-      voices: [],
-      defaultVoiceId: null,
-      lastUpdated: null,
-      lastError: null,
-    };
+    this.voiceState = getSharedVoiceState(this.apiBase);
+    this.voiceCache = this.voiceState.cache;
 
-    this.refreshVoiceCache().catch((error) => {
-      logger.warning('Failed to warm TTS voice cache (service)', {
-        category: 'tts_service',
-        metadata: { apiBase: this.apiBase, message: error?.message },
+    if (warmCache && !this.voiceState.warmupAttempted) {
+      this.voiceState.warmupAttempted = true;
+      this.refreshVoiceCache().catch((error) => {
+        logger.warning('Failed to warm TTS voice cache (service)', {
+          category: 'tts_service',
+          metadata: { apiBase: this.apiBase, message: error?.message },
+        });
       });
-    });
+    }
   }
 
   async ensureOutputDir() {
@@ -78,6 +94,20 @@ class TtsService {
   }
 
   async refreshVoiceCache() {
+    if (this.voiceState.refreshPromise) {
+      return this.voiceState.refreshPromise;
+    }
+
+    const refreshPromise = this.performVoiceCacheRefresh().finally(() => {
+      if (this.voiceState.refreshPromise === refreshPromise) {
+        this.voiceState.refreshPromise = null;
+      }
+    });
+    this.voiceState.refreshPromise = refreshPromise;
+    return refreshPromise;
+  }
+
+  async performVoiceCacheRefresh() {
     const requestUrl = `${this.apiBase}${TTS_VOICE_LIST_PATH}`;
     try {
       const response = await axios.get(requestUrl, { timeout: 15_000 });
@@ -266,3 +296,4 @@ class TtsService {
 }
 
 module.exports = TtsService;
+module.exports.clearSharedVoiceCaches = () => sharedVoiceStates.clear();
