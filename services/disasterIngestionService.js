@@ -98,11 +98,6 @@ function compactError(error) {
   return error.response?.data?.message || error.response?.data?.error || error.message || String(error);
 }
 
-function getHttpStatus(error) {
-  const status = Number(error?.response?.status ?? error?.status);
-  return Number.isInteger(status) ? status : null;
-}
-
 function p2pDate(value) {
   if (!value) {
     return null;
@@ -212,7 +207,6 @@ class DisasterIngestionService {
       DisasterWeatherSnapshot,
     };
     this.running = false;
-    this.openWeatherOneCallDisabled = false;
   }
 
   async fetchText(url) {
@@ -809,24 +803,39 @@ class DisasterIngestionService {
   }
 
   parseOpenWeatherForecast(data, location) {
+    if (!Array.isArray(data?.list) || data.list.length === 0) {
+      throw new Error('OpenWeather forecast response did not include forecast entries');
+    }
+
     const now = Date.now();
     const cutoff = now + 24 * 60 * 60 * 1000;
-    const hourly = (Array.isArray(data?.list) ? data.list : [])
+    const hourly = data.list
       .map((entry) => ({
         time: entry.dt ? new Date(entry.dt * 1000) : null,
         temperatureC: entry.main?.temp ?? null,
         feelsLikeC: entry.main?.feels_like ?? null,
-        precipitationMm: entry.rain?.['3h'] || entry.snow?.['3h'] || 0,
+        precipitationMm: [entry.rain?.['3h'], entry.snow?.['3h']]
+          .filter(Number.isFinite)
+          .reduce((sum, value) => sum + value, 0),
         precipitationProbability: Number.isFinite(entry.pop) ? Math.round(entry.pop * 100) : null,
         windSpeedMs: entry.wind?.speed ?? null,
         windGustMs: entry.wind?.gust ?? null,
         humidityPercent: entry.main?.humidity ?? null,
         pressureHpa: entry.main?.pressure ?? null,
-        weatherCode: entry.weather?.[0]?.id ? String(entry.weather[0].id) : null,
+        weatherCode: entry.weather?.[0]?.id !== undefined ? String(entry.weather[0].id) : null,
         description: entry.weather?.[0]?.description || null,
       }))
-      .filter((entry) => entry.time && entry.time.getTime() >= now - 4 * 60 * 60 * 1000 && entry.time.getTime() <= cutoff)
+      .filter((entry) => (
+        entry.time
+        && !Number.isNaN(entry.time.getTime())
+        && entry.time.getTime() >= now - 4 * 60 * 60 * 1000
+        && entry.time.getTime() <= cutoff
+      ))
       .slice(0, 10);
+
+    if (hourly.length === 0) {
+      throw new Error('OpenWeather forecast response did not include usable 24-hour entries');
+    }
 
     return {
       source: 'openweathermap',
@@ -840,6 +849,9 @@ class DisasterIngestionService {
       current: {
         cityName: data?.city?.name || location.name,
         country: data?.city?.country || null,
+        timezoneOffsetSeconds: data?.city?.timezone ?? null,
+        sunriseAt: data?.city?.sunrise ? new Date(data.city.sunrise * 1000) : null,
+        sunsetAt: data?.city?.sunset ? new Date(data.city.sunset * 1000) : null,
       },
       hourly,
       raw: data,
@@ -847,7 +859,11 @@ class DisasterIngestionService {
   }
 
   parseOpenWeatherObservation(data, location) {
-    const observedAt = data?.dt ? new Date(data.dt * 1000) : new Date();
+    if (!data || typeof data !== 'object' || !Number.isFinite(data.dt) || !data.main) {
+      throw new Error('OpenWeather current weather response was malformed');
+    }
+
+    const observedAt = new Date(data.dt * 1000);
     return {
       source: 'openweathermap-current',
       locationName: location.name,
@@ -856,13 +872,15 @@ class DisasterIngestionService {
       observedAt,
       temperatureC: data?.main?.temp ?? null,
       feelsLikeC: data?.main?.feels_like ?? null,
-      precipitationMm: data?.rain?.['1h'] || data?.snow?.['1h'] || 0,
+      precipitationMm: [data?.rain?.['1h'], data?.snow?.['1h']]
+        .filter(Number.isFinite)
+        .reduce((sum, value) => sum + value, 0),
       precipitationProbability: null,
       windSpeedMs: data?.wind?.speed ?? null,
       windGustMs: data?.wind?.gust ?? null,
       humidityPercent: data?.main?.humidity ?? null,
       pressureHpa: data?.main?.pressure ?? null,
-      weatherCode: data?.weather?.[0]?.id ? String(data.weather[0].id) : null,
+      weatherCode: data?.weather?.[0]?.id !== undefined ? String(data.weather[0].id) : null,
       description: data?.weather?.[0]?.description || null,
       raw: data || {},
     };
@@ -1017,79 +1035,6 @@ class DisasterIngestionService {
     }
     const location = getLocationConfig();
     const apiKey = process.env.OPENWEATHER_API_KEY;
-    const preferOneCall = process.env.OPENWEATHER_USE_ONECALL === 'true';
-
-    if (apiKey && preferOneCall && !this.openWeatherOneCallDisabled) {
-      try {
-        const data = await this.fetchJson('https://api.openweathermap.org/data/3.0/onecall', {
-          params: {
-            lat: location.latitude,
-            lon: location.longitude,
-            appid: apiKey,
-            units: 'metric',
-            exclude: 'minutely,daily,alerts',
-          },
-        });
-        const hourly = (Array.isArray(data?.hourly) ? data.hourly : []).slice(0, 24).map((entry) => ({
-          time: entry.dt ? new Date(entry.dt * 1000) : null,
-          temperatureC: entry.temp ?? null,
-          feelsLikeC: entry.feels_like ?? null,
-          precipitationMm: entry.rain?.['1h'] || entry.snow?.['1h'] || 0,
-          precipitationProbability: Number.isFinite(entry.pop) ? Math.round(entry.pop * 100) : null,
-          windSpeedMs: entry.wind_speed ?? null,
-          windGustMs: entry.wind_gust ?? null,
-          humidityPercent: entry.humidity ?? null,
-          pressureHpa: entry.pressure ?? null,
-          weatherCode: entry.weather?.[0]?.id ? String(entry.weather[0].id) : null,
-          description: entry.weather?.[0]?.description || null,
-        })).filter((entry) => entry.time);
-        const snapshot = await this.models.DisasterWeatherSnapshot.create({
-          source: 'openweathermap-onecall',
-          locationName: location.name,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          fetchedAt: new Date(),
-          forecastStartAt: hourly[0]?.time || null,
-          forecastEndAt: hourly[hourly.length - 1]?.time || null,
-          summary: buildForecastSummary(hourly),
-          current: data?.current || {},
-          hourly,
-          raw: data,
-        });
-        await this.saveWeatherObservation({
-          source: 'openweathermap-onecall-current',
-          locationName: location.name,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          observedAt: data?.current?.dt ? new Date(data.current.dt * 1000) : new Date(),
-          temperatureC: data?.current?.temp ?? null,
-          feelsLikeC: data?.current?.feels_like ?? null,
-          precipitationMm: data?.current?.rain?.['1h'] || data?.current?.snow?.['1h'] || 0,
-          windSpeedMs: data?.current?.wind_speed ?? null,
-          windGustMs: data?.current?.wind_gust ?? null,
-          humidityPercent: data?.current?.humidity ?? null,
-          pressureHpa: data?.current?.pressure ?? null,
-          weatherCode: data?.current?.weather?.[0]?.id ? String(data.current.weather[0].id) : null,
-          description: data?.current?.weather?.[0]?.description || null,
-          raw: data?.current || {},
-        });
-        return snapshot;
-      } catch (error) {
-        const status = getHttpStatus(error);
-        if (status === 401 || status === 403) {
-          this.openWeatherOneCallDisabled = true;
-        }
-        this.logger.warning(
-          this.openWeatherOneCallDisabled
-            ? 'OpenWeather One Call authorization failed; disabling One Call until restart'
-            : 'OpenWeather One Call refresh failed, trying forecast fallback',
-          {
-            category: 'disaster_ingestion',
-            metadata: { error: compactError(error), status },
-          }
-        );
-      }
-    }
 
     if (apiKey) {
       try {
