@@ -51,4 +51,39 @@ describe('codexController.getTurnEvents', () => {
     });
     expect(event).not.toHaveProperty('presentation');
   });
+
+  test('adds Markdown presentation data for reasoning events', async () => {
+    const event = {
+      id: 'event-2',
+      seq: 4,
+      eventType: 'item.completed',
+      payload: {
+        item: {
+          type: 'reasoning',
+          text: 'Inspecting **local-model output**.',
+        },
+      },
+    };
+    codexToolService.listTurnEvents.mockResolvedValue([event]);
+    const req = {
+      params: { turnId: 'turn-1' },
+      query: {},
+    };
+    const res = {
+      json: jest.fn((payload) => payload),
+    };
+
+    await codexController.getTurnEvents(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      events: [{
+        ...event,
+        presentation: {
+          itemType: 'reasoning',
+          html: '<p>Inspecting <strong>local-model output</strong>.</p>\n',
+        },
+      }],
+    });
+  });
 });

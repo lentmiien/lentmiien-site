@@ -1135,6 +1135,17 @@
   padding: 10px;
 }
 
+.codex-events[data-event-view-mode='focused'] .codex-event--todo-list {
+  position: sticky;
+  z-index: 1;
+  order: 1;
+  bottom: 10px;
+  max-height: min(45vh, 420px);
+  overflow-y: auto;
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
 .codex-event--new {
   border-color: var(--accent);
   animation: codex-event-arrive 900ms ease-out;

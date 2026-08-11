@@ -22,8 +22,52 @@
     });
   }
 
+  function extractEventItem(event) {
+    const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
+    if (payload.item && typeof payload.item === 'object') {
+      return payload.item;
+    }
+    if (payload.payload?.item && typeof payload.payload.item === 'object') {
+      return payload.payload.item;
+    }
+    return null;
+  }
+
+  function eventItemType(event) {
+    const presentedType = event?.presentation?.itemType;
+    const item = extractEventItem(event);
+    return String(presentedType || item?.type || '').trim().toLowerCase();
+  }
+
+  function isFocusedProcessEvent(event) {
+    return ['agent_message', 'reasoning', 'todo_list'].includes(eventItemType(event));
+  }
+
+  function selectFocusedProcessEvents(events) {
+    const messages = [];
+    let latestTodo = null;
+
+    (Array.isArray(events) ? events : []).forEach((event) => {
+      const itemType = eventItemType(event);
+      if (itemType === 'todo_list') {
+        latestTodo = event;
+      } else if (isFocusedProcessEvent(event)) {
+        messages.push(event);
+      }
+    });
+
+    if (latestTodo) {
+      messages.push(latestTodo);
+    }
+    return messages;
+  }
+
   if (typeof module === 'object' && module.exports && typeof document === 'undefined') {
-    module.exports = { filterPromptTemplatesByWorkspace, getPromptLengthState };
+    module.exports = {
+      filterPromptTemplatesByWorkspace,
+      getPromptLengthState,
+      selectFocusedProcessEvents,
+    };
     return;
   }
 
@@ -263,27 +307,6 @@
     if (eventType === 'stderr.line') return 'Process warning received';
     if (itemType) return humanizeEventName(itemType);
     return humanizeEventName(event && event.eventType);
-  }
-
-  function extractEventItem(event) {
-    const payload = event && event.payload && typeof event.payload === 'object' ? event.payload : {};
-    if (payload.item && typeof payload.item === 'object') {
-      return payload.item;
-    }
-    if (payload.payload?.item && typeof payload.payload.item === 'object') {
-      return payload.payload.item;
-    }
-    return null;
-  }
-
-  function eventItemType(event) {
-    const presentedType = event?.presentation?.itemType;
-    const item = extractEventItem(event);
-    return String(presentedType || item?.type || '').trim().toLowerCase();
-  }
-
-  function isFocusedProcessEvent(event) {
-    return ['agent_message', 'todo_list'].includes(eventItemType(event));
   }
 
   function normalizeEventViewMode(value) {
@@ -1507,7 +1530,7 @@
       ? event.presentation
       : {};
 
-    if (itemType === 'agent_message') {
+    if (itemType === 'agent_message' || itemType === 'reasoning') {
       const content = createEl('div', { className: 'codex-event__markdown' });
       if (typeof presentation.html === 'string') {
         // The events API renders this with marked and sanitizes it before returning it.
@@ -1516,7 +1539,10 @@
         content.appendChild(createEl('p', { text: String(item?.text || '') }));
       }
       if (!content.hasChildNodes()) {
-        content.appendChild(createEl('p', { className: 'codex-empty', text: 'Empty agent message.' }));
+        content.appendChild(createEl('p', {
+          className: 'codex-empty',
+          text: itemType === 'reasoning' ? 'Empty reasoning update.' : 'Empty agent message.',
+        }));
       }
       wrapper.appendChild(content);
       return;
@@ -1553,18 +1579,18 @@
     const eventList = Array.isArray(events) ? events : [];
     const viewMode = normalizeEventViewMode(container.dataset.eventViewMode);
     const visibleEvents = viewMode === 'focused'
-      ? eventList.filter(isFocusedProcessEvent)
+      ? selectFocusedProcessEvents(eventList)
       : eventList;
 
     if (visibleEvents.length === 0) {
       let message = viewMode === 'focused'
-        ? 'No agent messages or todo lists stored.'
+        ? 'No agent messages, reasoning updates, or todo lists stored.'
         : 'No process details stored.';
       if (!options.loaded && eventList.length === 0) {
         message = 'Loading process details…';
       } else if (options.isRunning) {
         message = viewMode === 'focused'
-          ? 'Waiting for an agent message or todo list…'
+          ? 'Waiting for an agent message, reasoning update, or todo list…'
           : 'Listening for the first process detail…';
       }
       container.appendChild(createEl('p', { className: 'codex-empty', text: message }));
@@ -1578,7 +1604,12 @@
           'data-event-seq': eventSeq,
         });
         const header = createEl('div', { className: 'codex-event__header' });
-        const focusedLabel = itemType === 'agent_message' ? 'Agent message' : 'Todo list';
+        const focusedLabels = {
+          agent_message: 'Agent message',
+          reasoning: 'Reasoning',
+          todo_list: 'Current todo list',
+        };
+        const focusedLabel = focusedLabels[itemType] || humanizeEventName(itemType);
         header.appendChild(createEl('strong', {
           text: `#${event.seq} ${viewMode === 'focused' ? focusedLabel : event.eventType}`,
         }));
@@ -1620,13 +1651,16 @@
       }));
       listener.appendChild(createEl('span', {
         text: viewMode === 'focused'
-          ? 'Live · listening for messages and todos'
+          ? 'Live · listening for messages, reasoning and todos'
           : 'Live · listening for more details',
       }));
       container.appendChild(listener);
     }
-    const latestEvent = visibleEvents.length ? visibleEvents[visibleEvents.length - 1] : null;
-    container.dataset.renderedSeq = latestEvent ? String(latestEvent.seq) : '0';
+    const latestSeq = visibleEvents.reduce(
+      (maximum, event) => Math.max(maximum, Number(event.seq) || 0),
+      0,
+    );
+    container.dataset.renderedSeq = String(latestSeq);
   }
 
   async function toggleEvents(turnId) {

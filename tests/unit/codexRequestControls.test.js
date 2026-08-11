@@ -3,6 +3,7 @@ const pug = require('pug');
 const {
   filterPromptTemplatesByWorkspace,
   getPromptLengthState,
+  selectFocusedProcessEvents,
 } = require('../../public/js/codex');
 
 const commonLocals = {
@@ -255,5 +256,30 @@ describe('Codex request prompt controls', () => {
     expect(html).toContain('All workspaces');
     expect(html).toContain('Second - /second (disabled)');
     expect(html).toContain('value="workspace-2" selected');
+  });
+});
+
+describe('Codex focused process details', () => {
+  test('includes reasoning and keeps only the latest todo list at the bottom', () => {
+    const events = [
+      { seq: 1, payload: { item: { type: 'todo_list', items: [{ text: 'Old' }] } } },
+      { seq: 2, payload: { item: { type: 'reasoning', text: 'Thinking' } } },
+      { seq: 3, payload: { item: { type: 'command_execution' } } },
+      { seq: 4, payload: { item: { type: 'todo_list', items: [{ text: 'Current' }] } } },
+      { seq: 5, payload: { item: { type: 'agent_message', text: 'Done' } } },
+    ];
+
+    expect(selectFocusedProcessEvents(events).map((event) => event.seq)).toEqual([2, 5, 4]);
+  });
+
+  test('recognizes focused event types from server presentation data', () => {
+    const reasoning = {
+      seq: 8,
+      presentation: { itemType: 'reasoning', html: '<p>Thinking</p>' },
+      payload: {},
+    };
+
+    expect(selectFocusedProcessEvents([reasoning])).toEqual([reasoning]);
+    expect(selectFocusedProcessEvents(null)).toEqual([]);
   });
 });

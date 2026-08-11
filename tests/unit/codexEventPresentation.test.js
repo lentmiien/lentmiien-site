@@ -55,6 +55,29 @@ describe('codexEventPresentation', () => {
     expect(presentation.html).not.toContain('ignored');
   });
 
+  test('builds a safe Markdown presentation for reasoning items', () => {
+    const presentation = buildCodexEventPresentation({
+      payload: {
+        item: {
+          type: 'reasoning',
+          text: 'Checking **Ollama output**.\n\n- Inspect events\n- Update the view',
+        },
+      },
+    });
+
+    expect(presentation).toEqual({
+      itemType: 'reasoning',
+      html: [
+        '<p>Checking <strong>Ollama output</strong>.</p>',
+        '<ul>',
+        '<li>Inspect events</li>',
+        '<li>Update the view</li>',
+        '</ul>',
+        '',
+      ].join('\n'),
+    });
+  });
+
   test('normalizes todo list items and their completed state', () => {
     const presentation = buildCodexEventPresentation({
       payload: {

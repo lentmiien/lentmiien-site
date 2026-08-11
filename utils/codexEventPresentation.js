@@ -1,7 +1,8 @@
 const marked = require('marked');
 const sanitizeHtml = require('sanitize-html');
 
-const SUPPORTED_ITEM_TYPES = new Set(['agent_message', 'todo_list']);
+const MARKDOWN_ITEM_TYPES = new Set(['agent_message', 'reasoning']);
+const SUPPORTED_ITEM_TYPES = new Set([...MARKDOWN_ITEM_TYPES, 'todo_list']);
 
 function extractCodexItem(payload) {
   if (!payload || typeof payload !== 'object') {
@@ -61,7 +62,7 @@ function buildCodexEventPresentation(event) {
     return null;
   }
 
-  if (itemType === 'agent_message') {
+  if (MARKDOWN_ITEM_TYPES.has(itemType)) {
     return {
       itemType,
       html: renderAgentMessageMarkdown(item.text),
