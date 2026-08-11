@@ -22,6 +22,11 @@
 - Files: follow existing patterns in each folder (e.g., `routes/*.js`, `models/*`). Use PascalCase for new model constructor identifiers and `lowerCamelCase` for functions; preserve existing filenames, registered Mongoose model names, and collection names unless a migration is explicitly requested.
 - Views: Pug templates under `views/`; keep route names aligned with template names where practical.
 
+## Production Logging & Issue Reporting
+- Production application logs are an important issue-discovery and review channel. When implementing or changing server, realtime, scheduler, worker, or maintenance code, report operational failures and abnormal conditions that may require follow-up through the shared `utils/logger`; issues omitted from these logs may be missed and fixes delayed.
+- Use `warning` for recoverable failures or degraded behavior and `error` for failed operations or conditions requiring intervention. Include a stable, actionable message plus an appropriate `category` and concise diagnostic `metadata` when useful, without logging secrets or personal data.
+- This guidance is for actionable production issue reporting, not general debug output. Avoid noisy success-path, per-request, or speculative logs, and do not use `console.*` as a substitute for `utils/logger` when an issue should appear in the production app logs.
+
 ## UI Color Theme
 - New or materially modified first-party UI pages must use the Graphite/Ember/Golden Amber color system defined in `documentation/README-Colors.md`; do not perform unrelated restyling.
 - Import `/css/color-theme.css` as the base theme for any Pug page that does not extend `views/layout.pug`; the shared layout already imports it.
