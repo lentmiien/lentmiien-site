@@ -233,7 +233,21 @@ When the Express web server runs as a Windows service, keep it from claiming Cod
 
 The web UI still creates and displays Codex turns through MongoDB. The separate user-login worker is the only process that should execute queued turns.
 
-To enable local models, configure the Codex CLI on the machine that executes Codex with `oss_provider = "ollama"`. The worker defaults `CODEX_OLLAMA_PROFILE` to `ollama`, so local turns load `$CODEX_HOME/ollama.config.toml`; use that profile to set `model_catalog_json` for the configured local models. Selecting Ollama in `/codex` starts the CLI with `--oss -p <ollama-profile> -m <local-model>`. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
+To enable local models, configure an Ollama-only Codex profile on the machine that executes Codex. The worker defaults `CODEX_OLLAMA_PROFILE` to `ollama`, so local turns load `$CODEX_HOME/ollama.config.toml`. Use a custom provider ID because Codex's built-in `ollama` provider is reserved and cannot be overridden:
+
+```toml
+oss_provider = "local_ollama"
+model_catalog_json = "/home/your-user/.codex/ollama-models.json"
+
+[model_providers.local_ollama]
+name = "Local Ollama"
+base_url = "http://localhost:11434/v1"
+wire_api = "responses"
+stream_idle_timeout_ms = 900000
+stream_max_retries = 5
+```
+
+The `900000` ms SSE idle timeout lets Ollama spend up to 15 minutes without emitting a stream event. Selecting Ollama in `/codex` starts the CLI with `--oss -p <ollama-profile> -m <local-model>`. The worker reserves the AI Gateway `ollama` container for at least six hours before each local turn and releases it once no other Ollama turn is queued or running. OpenAI and Ollama token prices and cost estimates are stored and displayed separately.
 
 For SSH-backed Linux targets, make sure the worker account can run a non-interactive SSH command such as:
 ```powershell
