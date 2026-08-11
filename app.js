@@ -125,6 +125,7 @@ const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecov
 const scheduleDisasterIngestion = require('./schedulers/disasterIngestion');
 const scheduleLogRetention = require('./schedulers/logRetention');
 const scheduleOcrEmbeddingReconciliation = require('./schedulers/ocrEmbeddings');
+const scheduleCodexLogReview = require('./schedulers/codexLogReview');
 const { validateBatchSummaryModelSetting } = require('./services/batchService');
 const audioWorkflowService = require('./services/audioWorkflowInstance');
 const codexQueueWorker = require('./services/codexQueueWorker');
@@ -422,6 +423,7 @@ const promptTo3dRouter = require('./routes/prompt_to_3d');
 const modelPreviewerRouter = require('./routes/model_previewer');
 const legoSculptureConverterRouter = require('./routes/lego_sculpture_converter');
 const codexRouter = require('./routes/codex');
+const codexLogReviewRouter = require('./routes/codexLogReview');
 const adminRouter = require('./routes/admin');
 const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
@@ -481,6 +483,7 @@ app.use('/prompt-to-3d', isAuthenticated, promptTo3dRouter);
 app.use('/model-previewer', isAuthenticated, modelPreviewerRouter);
 app.use('/lego-sculpture-converter', isAuthenticated, legoSculptureConverterRouter);
 app.use('/codex', isAuthenticated, codexRouter);
+app.use('/codex-log-review', isAuthenticated, isAdmin, codexLogReviewRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
@@ -684,6 +687,7 @@ scheduleOpenAIResponseRecovery(app);
 scheduleDisasterIngestion();
 scheduleLogRetention();
 scheduleOcrEmbeddingReconciliation();
+scheduleCodexLogReview();
 validateBatchSummaryModelSetting().catch((error) => {
   logger.warning('Unable to validate the batch summary model setting at startup', {
     category: 'batch',

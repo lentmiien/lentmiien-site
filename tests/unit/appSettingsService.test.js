@@ -179,5 +179,9 @@ describe('AppSettingsService', () => {
       key: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,
       value: 'gpt-4.1-nano-2025-04-14',
     }));
+    expect(DEFAULT_APP_SETTINGS).toContainEqual(expect.objectContaining({
+      key: APP_SETTING_KEYS.CODEX_LOG_REVIEW_LAST_RUN_AT,
+      value: '2026-08-11T03:00:00.000Z',
+    }));
   });
 });

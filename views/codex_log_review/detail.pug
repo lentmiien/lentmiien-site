@@ -1,0 +1,101 @@
+extends ../layout
+
+include _task
+
+block styles
+  link(rel='stylesheet', href='/css/codex-log-review.css')
+
+block content
+  - const state = workflowState || {};
+  - const run = state.run || {};
+  - const config = state.config || {};
+  - const fmt = (value) => value ? new Date(value).toLocaleString('en-CA', { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  - const phases = [{ key: 'analysis', number: 1, title: 'Analyze logs' }, { key: 'fix', number: 2, title: 'Fix issues' }, { key: 'commit', number: 3, title: 'Commit and push' }];
+  main.log-review-page(data-auto-refresh=run.processing ? 'true' : 'false')
+    .log-review-shell
+      header.log-review-header
+        div
+          a.log-review-back(href='/codex-log-review') ← Production Log Review
+          h1 Run #{String(run.id || '').slice(0, 8)}
+          p Log window #{fmt(run.logWindowStart)} through #{fmt(run.logWindowEnd)}.
+        .log-review-header__actions
+          span.log-review-status(class=`log-review-status--${run.status}`)= run.statusLabel
+          a.log-review-button.log-review-button--secondary(href='/codex') Open Codex
+
+      if notice
+        .log-review-alert.log-review-alert--success(role='status')= notice
+      if errorMessage
+        .log-review-alert.log-review-alert--danger(role='alert')= errorMessage
+
+      if run.actionRequired || run.processing || run.status === 'completed'
+        section.log-review-panel.log-review-panel--task
+          +workflowTask(run, config, fmt)
+
+      section.log-review-overview
+        .log-review-overview__item
+          span Scheduled
+          strong= fmt(run.scheduledFor)
+        .log-review-overview__item
+          span Started
+          strong= fmt(run.startedAt)
+        .log-review-overview__item
+          span Completed
+          strong= fmt(run.completedAt)
+        .log-review-overview__item
+          span Next cycle
+          strong= fmt(state.nextScheduledAt)
+
+      section.log-review-phase-list
+        each descriptor in phases
+          - const phase = run[descriptor.key] || {};
+          - const configured = phase.prompt || descriptor.key === 'analysis';
+          article.log-review-phase(class=!configured ? 'log-review-phase--future' : '')
+            .log-review-phase__top
+              span.log-review-phase__number= descriptor.number
+              div
+                h2= descriptor.title
+                p
+                  if configured
+                    | #{phase.mode || 'action'} · #{phase.permissionMode || 'yolo'} · profile #{phase.requestProfileId || (descriptor.key === 'commit' ? config.commitProfileId : config.fixProfileId)}
+                  else
+                    | Waiting for the previous review step
+              span.log-review-status(class=`log-review-status--${phase.status || 'not_started'}`)= phase.status || 'not started'
+            if configured
+              .log-review-phase__meta
+                span Workspace #[code #{phase.workspaceId || config.fixWorkspaceId}]
+                span Attempts #{phase.attemptCount || 0}
+                span Started #{fmt(phase.startedAt)}
+                if phase.completedAt
+                  span Completed #{fmt(phase.completedAt)}
+              if phase.sessionId || phase.turnId
+                .log-review-links
+                  if phase.sessionId
+                    a(href=`/codex/sessions/${phase.sessionId}`) Codex session
+                  if phase.turnId
+                    a(href=`/codex/turns/${phase.turnId}`) Codex turn
+                  if phase.codexThreadId
+                    span Thread #{phase.codexThreadId}
+              if descriptor.key === 'fix' && run.userNotes
+                details.log-review-details(open)
+                  summary Your notes
+                  pre= run.userNotes
+              if phase.prompt
+                details.log-review-details
+                  summary
+                    span Input prompt
+                    button.log-review-copy(type='button', data-copy-target=`${descriptor.key}-prompt-${run.id}`) Copy
+                  pre(id=`${descriptor.key}-prompt-${run.id}`)= phase.prompt
+              if phase.response
+                details.log-review-details(open=descriptor.key !== 'analysis' || run.status === 'completed')
+                  summary
+                    span Response copy
+                    button.log-review-copy(type='button', data-copy-target=`${descriptor.key}-response-${run.id}`) Copy
+                  pre(id=`${descriptor.key}-response-${run.id}`)= phase.response
+              if phase.lastError
+                .log-review-error
+                  strong Latest error
+                  span= phase.lastError
+                  small Failures #{phase.failureCount || 0}; next retry #{fmt(phase.nextAttemptAt)}
+
+block script
+  script(src='/js/codex-log-review.js', defer)

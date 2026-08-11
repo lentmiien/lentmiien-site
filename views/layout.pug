@@ -124,6 +124,8 @@ html(lang=pageLang || 'en')
           +navLink('/trellis2', 'Image to 3D')
           +navLink('/lego-sculpture-converter', 'Lego sculpture converter', 'secondary')
           +navLink('/codex', 'Codex')
+          if admin
+            +navLink('/codex-log-review', 'Production log review', 'secondary')
         if showUtilityLinks
           +navColumn('Utilities')
             if hasPermission("box")

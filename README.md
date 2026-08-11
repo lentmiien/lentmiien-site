@@ -87,6 +87,8 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 ### Useful Local Routes
 
 - `/chat5` - Chat workspace with templates, knowledge browser, and pending queue.
+- `/codex` - Persisted Codex workspace sessions, turns, queue state, and usage accounting.
+- `/codex-log-review` - Admin workflow for scheduled production-log analysis, reviewed fixes, and commit/push follow-ups.
 - `/sora` - Sora 2 Studio dashboard with job filters, polling, and ratings.
 - `/image_gen` - ComfyUI job queue, cached output browser, prompt library.
 - `/gpt-image` - OpenAI image generation workflow.

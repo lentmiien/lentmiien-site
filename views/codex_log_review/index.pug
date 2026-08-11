@@ -1,0 +1,75 @@
+extends ../layout
+
+include _task
+
+block styles
+  link(rel='stylesheet', href='/css/codex-log-review.css')
+
+block content
+  - const state = workflowState || {};
+  - const currentRun = state.currentRun || null;
+  - const previousRuns = state.previousRuns || [];
+  - const config = state.config || {};
+  - const fmt = (value) => value ? new Date(value).toLocaleString('en-CA', { timeZone: 'Asia/Tokyo', dateStyle: 'medium', timeStyle: 'short' }) : '—';
+  - const shortDate = (value) => value ? new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  main.log-review-page(data-auto-refresh=currentRun && currentRun.processing ? 'true' : 'false')
+    .log-review-shell
+      header.log-review-header
+        div
+          span.log-review-eyebrow Codex workflow
+          h1 Production Log Review
+          p A guided ten-day cycle for investigating production logs, implementing reviewed fixes, and publishing the changes.
+        .log-review-header__actions
+          a.log-review-button.log-review-button--secondary(href='/codex') Open Codex
+
+      if notice
+        .log-review-alert.log-review-alert--success(role='status')= notice
+      if errorMessage
+        .log-review-alert.log-review-alert--danger(role='alert')= errorMessage
+
+      if currentRun
+        section.log-review-panel.log-review-panel--task
+          .log-review-run-meta
+            span Run #{String(currentRun.id).slice(0, 8)}
+            span Scheduled #{fmt(currentRun.scheduledFor)}
+            a(href=`/codex-log-review/runs/${currentRun.id}`) Full run details
+          +workflowTask(currentRun, config, fmt)
+      else
+        section.log-review-panel.log-review-panel--empty
+          .log-review-next-icon(aria-hidden='true') 10
+          div
+            span.log-review-eyebrow Nothing needs your attention
+            h2 Next analysis: #{fmt(state.nextScheduledAt)}
+            p The next Codex question will inspect the preceding seven days of application logs. If the app is offline at noon, it starts shortly after service resumes.
+            .log-review-specs
+              span Every #{config.intervalDays} days
+              span 12:00 JST
+              span #{config.logWindowDays}-day log window
+
+      section.log-review-history
+        .log-review-section-heading
+          div
+            span.log-review-eyebrow History
+            h2 Previous 10 runs
+          span Next scheduled #{fmt(state.nextScheduledAt)}
+        if previousRuns.length
+          .log-review-run-list
+            each run in previousRuns
+              a.log-review-run-row(href=`/codex-log-review/runs/${run.id}`)
+                .log-review-run-row__date
+                  strong= shortDate(run.scheduledFor)
+                  small= String(run.id).slice(0, 8)
+                .log-review-run-row__main
+                  strong= run.statusLabel
+                  span Logs #{shortDate(run.logWindowStart)} – #{shortDate(run.logWindowEnd)}
+                span.log-review-status(class=`log-review-status--${run.status}`)= run.actionRequired ? 'Action needed' : run.status.replace(/_/g, ' ')
+                span.log-review-run-row__arrow(aria-hidden='true') →
+        else
+          .log-review-empty-history No earlier workflow runs are stored yet.
+
+      section.log-review-schedule-note
+        h2 Schedule anchor
+        p The cadence is persisted in the app setting #[code codex_log_review.last_run_at]. Its initial value is #{fmt(config.initialLastRunAt)}, making the first run #{fmt(state.nextScheduledAt)}.
+
+block script
+  script(src='/js/codex-log-review.js', defer)

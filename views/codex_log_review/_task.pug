@@ -1,0 +1,106 @@
+mixin workflowTask(run, config, fmt)
+  if run.status === 'awaiting_fix'
+    .log-review-task__heading
+      div
+        span.log-review-eyebrow Step 2 of 3
+        h2 Review the report and start fixes
+      span.log-review-status.log-review-status--action Action needed
+    p.log-review-lead Read the analysis, add any guidance you want Codex to follow, then start the implementation session.
+    if run.analysis && run.analysis.sessionId
+      .log-review-links
+        a(href=`/codex/sessions/${run.analysis.sessionId}`) Open analysis session in Codex
+        if run.analysis.turnId
+          a(href=`/codex/turns/${run.analysis.turnId}`) Open analysis turn
+    .log-review-response
+      .log-review-response__header
+        h3 Production log report
+        button.log-review-copy(type='button', data-copy-target=`analysis-response-${run.id}`) Copy report
+      pre(id=`analysis-response-${run.id}`)= run.analysis && run.analysis.response || 'The analysis completed without a text response.'
+    form.log-review-form(method='post', action=`/codex-log-review/runs/${run.id}/fix`)
+      label(for=`notes-${run.id}`) Your notes and comments (optional)
+      textarea(
+        id=`notes-${run.id}`,
+        name='notes',
+        rows='7',
+        maxlength=config.userNotesMaxLength,
+        placeholder='Add corrections, priorities, constraints, or implementation guidance…'
+      )= run.userNotes || ''
+      .log-review-form__footer
+        small Up to #{Number(config.userNotesMaxLength).toLocaleString()} characters. The report and these notes are copied into the fix prompt.
+        button.log-review-button(type='submit') Start fixing issues
+  else if run.status === 'awaiting_commit'
+    .log-review-task__heading
+      div
+        span.log-review-eyebrow Step 3 of 3
+        h2 Review the fixes and approve commit &amp; push
+      span.log-review-status.log-review-status--action Action needed
+    p.log-review-lead Review Codex’s implementation summary and the pending repository changes before approving the final follow-up.
+    if run.fix && run.fix.sessionId
+      .log-review-links
+        a(href=`/codex/sessions/${run.fix.sessionId}`) Open fix session in Codex
+        if run.fix.turnId
+          a(href=`/codex/turns/${run.fix.turnId}`) Open fix turn
+    .log-review-response
+      .log-review-response__header
+        h3 Fix response
+        button.log-review-copy(type='button', data-copy-target=`fix-response-${run.id}`) Copy response
+      pre(id=`fix-response-${run.id}`)= run.fix && run.fix.response || 'The fix turn completed without a text response.'
+    .log-review-warning
+      strong This action can publish repository changes.
+      span The follow-up runs in the existing fix session with Yolo permission and the “fastest” profile.
+    form.log-review-form(method='post', action=`/codex-log-review/runs/${run.id}/commit`)
+      .log-review-form__footer
+        small Prompt: “Please commit the pending changes and push to the online repository.”
+        button.log-review-button(
+          type='submit',
+          data-confirm='Start the Codex follow-up that commits and pushes the pending changes?'
+        ) Commit and push
+  else if run.processing
+    - const phase = run[run.pendingPhase] || {};
+    .log-review-task__heading
+      div
+        span.log-review-eyebrow Automated step
+        h2= run.statusLabel
+      span.log-review-status(class=`log-review-status--${run.status}`)= phase.status || 'pending'
+    if run.status === 'analyzing'
+      p.log-review-lead Codex is reviewing the seven-day production log window. You will receive a normal-priority notification when the report needs your review.
+    else if run.status === 'fixing'
+      p.log-review-lead Codex is verifying the report against the current code and implementing the remaining fixes. You will be notified when review and commit approval are needed.
+    else if run.status === 'committing'
+      p.log-review-lead Codex is committing and pushing in the existing fix session. No notification is sent when this final automated step succeeds.
+    else
+      p.log-review-lead The workflow is waiting to start or retry this Codex phase automatically.
+    .log-review-progress(role='status', aria-live='polite')
+      span.log-review-progress__dot
+      span
+        strong= phase.status === 'running' ? 'Codex is working' : 'Codex queue is being monitored'
+        if phase.nextAttemptAt && String(run.status).endsWith('_pending')
+          small Next attempt #{fmt(phase.nextAttemptAt)}
+        else if phase.startedAt
+          small Started #{fmt(phase.startedAt)}
+    if phase.sessionId || phase.turnId
+      .log-review-links
+        if phase.sessionId
+          a(href=`/codex/sessions/${phase.sessionId}`) Open session in Codex
+        if phase.turnId
+          a(href=`/codex/turns/${phase.turnId}`) Open current turn
+    if phase.lastError
+      .log-review-error
+        strong Latest error
+        span= phase.lastError
+        small Automatic retries continue every 15 minutes. Pushover is sent after repeated failures.
+      if String(run.status).endsWith('_pending')
+        form(method='post', action=`/codex-log-review/runs/${run.id}/retry`)
+          button.log-review-button.log-review-button--secondary(type='submit') Retry now
+  else if run.status === 'completed'
+    .log-review-task__heading
+      div
+        span.log-review-eyebrow Workflow complete
+        h2 Changes committed and pushed
+      span.log-review-status.log-review-status--completed Completed
+    p.log-review-lead The analysis, implementation, and commit responses are stored with this run. The Codex sessions remain available in the main Codex tool.
+    if run.fix && run.fix.sessionId
+      .log-review-links
+        a(href=`/codex/sessions/${run.fix.sessionId}`) Open fix and commit session
+        if run.commit && run.commit.turnId
+          a(href=`/codex/turns/${run.commit.turnId}`) Open commit turn
