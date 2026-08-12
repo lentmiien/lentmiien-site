@@ -11,6 +11,7 @@ block content
   - const adapterTrainingGroupBase = typeof trainingGroupBase === 'string' && trainingGroupBase ? trainingGroupBase : `${adapterAdminBase}/training-groups`;
   - const adapterTrainingGroupManagePath = typeof trainingGroupManagePath === 'string' && trainingGroupManagePath ? trainingGroupManagePath : '/admin/qwen3-lora/training-groups';
   - const adapterDocumentationPath = typeof documentationPath === 'string' ? documentationPath : '';
+  - const adapterTrainingGuidePath = typeof trainingGuidePath === 'string' && trainingGuidePath ? trainingGuidePath : '/admin/qwen3-training-guide';
   - const showContainerActions = typeof supportsContainerActions === 'boolean' ? supportsContainerActions : true;
   - const showThinkingControls = typeof supportsThinking === 'boolean' ? supportsThinking : false;
   - const showGpuReservation = typeof supportsGpuReservation === 'boolean' ? supportsGpuReservation : false;
@@ -27,6 +28,7 @@ block content
       .qwen-lora__meta
         span.qwen-lora__chip Gateway: #{apiBase}
         span.qwen-lora__chip Prefix: #{servicePrefix}
+        a.btn.btn-outline-primary.btn-sm(href=adapterTrainingGuidePath) Training guide
         if adapterDocumentationPath
           a.btn.btn-outline-secondary.btn-sm(href=adapterDocumentationPath) Usage guide
         button#refreshStateBtn.btn.btn-outline-light.btn-sm(type='button') Refresh

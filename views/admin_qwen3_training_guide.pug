@@ -1,0 +1,35 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/aiGatewayDocumentation.css')
+  link(rel='stylesheet', href='/css/qwen3_training_guide.css')
+
+block content
+  section.qwen-guide
+    header.qwen-guide__toolbar
+      div
+        p.qwen-guide__eyebrow Qwen3 adapter training
+        p.qwen-guide__lede Practical guidance for choosing a model, preparing data, tuning parameters, and evaluating an adapter.
+      nav.qwen-guide__actions(aria-label='Qwen3 training tools')
+        a.qwen-guide__button.qwen-guide__button--primary(href='/admin/qwen3-lora') Open Qwen3 LoRA
+        a.qwen-guide__button.qwen-guide__button--secondary(href='/admin/qwen3-qlora') Open Qwen3 QLoRA
+
+    .qwen-guide__layout
+      aside.qwen-guide__toc
+        nav(aria-label='Training guide contents')
+          strong On this page
+          a(href='#quick-start') Quick start
+          a(href='#choose-the-tool') Choose the tool
+          a(href='#what-lora-and-qlora-change') LoRA and QLoRA
+          a(href='#design-the-evaluation-first') Evaluation design
+          a(href='#prepare-training-data') Training data
+          a(href='#sample-size-guidance') Sample sizes
+          a(href='#training-parameter-reference') Parameters
+          a(href='#starting-recipes') Starting recipes
+          a(href='#evaluate-the-adapter') Evaluate the adapter
+          a(href='#operational-notes') Operations
+          a(href='#diagnosis-and-next-actions') Troubleshooting
+          a(href='#preflight-checklist') Preflight checklist
+
+      article.gateway-docs__reader.qwen-guide__reader
+        .gateway-docs__markdown!= guideHtml

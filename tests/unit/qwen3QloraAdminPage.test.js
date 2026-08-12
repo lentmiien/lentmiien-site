@@ -60,6 +60,8 @@ describe('Qwen3 QLoRA admin page', () => {
     expect(html).toContain('id="gpuReserveBtn"');
     expect(html).toContain('id="gpuReleaseBtn"');
     expect(html).toContain('Download / verify model');
+    expect(html).toContain('href="/admin/qwen3-training-guide"');
+    expect(html).toContain('Training guide');
     expect(html).toContain('qwen3-qlora-gateway-usage.md');
     expect(html).not.toContain('id="containerStartBtn"');
     expect(html).not.toContain('id="containerStopBtn"');

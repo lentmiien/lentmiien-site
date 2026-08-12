@@ -14,6 +14,7 @@ const toolManagerController = require('../controllers/toolManagerController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
 const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminController');
 const qwen3QloraAdminController = require('../controllers/qwen3QloraAdminController');
+const qwen3TrainingGuideController = require('../controllers/qwen3TrainingGuideController');
 const locateAnythingAdminController = require('../controllers/locateAnythingAdminController');
 const tapoController = require('../controllers/tapoController');
 const requestCounterAdminController = require('../controllers/requestCounterAdminController');
@@ -348,6 +349,7 @@ router.post('/music-test', controller.music_test_generate);
 router.get('/music-test/status/:id', controller.music_test_status);
 router.get('/music-test/output', controller.music_test_output);
 
+router.get('/qwen3-training-guide', qwen3TrainingGuideController.render);
 router.get('/qwen3-lora', qwen3LoraAdminController.render);
 router.get('/qwen3-lora/state', qwen3LoraAdminController.state);
 router.get('/qwen3-lora/training-groups', qwen3LoraAdminController.trainingGroups);
