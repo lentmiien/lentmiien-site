@@ -11,6 +11,7 @@ describe('AI Gateway documentation service', () => {
   test.each([
     'ai-gateway.md',
     'qwen3-lora-gateway-usage.md',
+    'qwen3-qlora-gateway-usage.md',
     '_internal-guide.md',
   ])('accepts the safe Markdown filename %s', (fileName) => {
     expect(sanitizeDocumentationFileName(fileName)).toBe(fileName);

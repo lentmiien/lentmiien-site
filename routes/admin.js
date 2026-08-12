@@ -13,6 +13,7 @@ const messageInboxController = require('../controllers/messageInboxAdminControll
 const toolManagerController = require('../controllers/toolManagerController');
 const audioWorkflowController = require('../controllers/audioWorkflowController');
 const qwen3LoraAdminController = require('../controllers/qwen3LoraAdminController');
+const qwen3QloraAdminController = require('../controllers/qwen3QloraAdminController');
 const locateAnythingAdminController = require('../controllers/locateAnythingAdminController');
 const tapoController = require('../controllers/tapoController');
 const requestCounterAdminController = require('../controllers/requestCounterAdminController');
@@ -61,6 +62,18 @@ const qwen3LoraUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: qwen3LoraMaxUploadMb * 1024 * 1024,
+  },
+});
+
+const qwen3QloraMaxUploadMb = (() => {
+  const parsed = Number.parseInt(process.env.QWEN3_QLORA_CSV_UPLOAD_MAX_MB, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 200;
+})();
+
+const qwen3QloraUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: qwen3QloraMaxUploadMb * 1024 * 1024,
   },
 });
 
@@ -163,6 +176,27 @@ const handleQwen3LoraDatasetUpload = (req, res, next) => {
       return res.status(400).json({ error: message });
     }
     return qwen3LoraAdminController.uploadDataset(req, res, next);
+  });
+};
+
+const handleQwen3QloraDatasetUpload = (req, res, next) => {
+  qwen3QloraUpload.single('file')(req, res, (err) => {
+    if (err) {
+      const message = err.code === 'LIMIT_FILE_SIZE'
+        ? `CSV upload exceeds the ${qwen3QloraMaxUploadMb}MB limit.`
+        : 'Unable to process the uploaded CSV file.';
+      logger.warning('Qwen3 QLoRA CSV upload rejected before controller', {
+        category: 'qwen3_qlora_admin',
+        metadata: {
+          path: req.originalUrl || req.url,
+          user: req.user?.name || null,
+          code: err.code || null,
+          message: err.message || String(err),
+        },
+      });
+      return res.status(400).json({ error: message });
+    }
+    return qwen3QloraAdminController.uploadDataset(req, res, next);
   });
 };
 
@@ -331,6 +365,23 @@ router.post('/qwen3-lora/train/jobs', qwen3LoraAdminController.createTrainingJob
 router.get('/qwen3-lora/train/jobs/:jobId', qwen3LoraAdminController.getTrainingJob);
 router.post('/qwen3-lora/generate', qwen3LoraAdminController.generate);
 router.post('/qwen3-lora/compare', qwen3LoraAdminController.compare);
+
+router.get('/qwen3-qlora', qwen3QloraAdminController.render);
+router.get('/qwen3-qlora/state', qwen3QloraAdminController.state);
+router.get('/qwen3-qlora/reservation', qwen3QloraAdminController.getReservation);
+router.post('/qwen3-qlora/reservation', qwen3QloraAdminController.reserveGpu);
+router.delete('/qwen3-qlora/reservation', qwen3QloraAdminController.releaseReservation);
+router.get('/qwen3-qlora/training-groups/:groupId/export.csv', qwen3QloraAdminController.exportTrainingGroupCsv);
+router.post('/qwen3-qlora/training-groups/:groupId/upload-dataset', qwen3QloraAdminController.uploadTrainingGroupDataset);
+router.post('/qwen3-qlora/model/download', qwen3QloraAdminController.downloadModel);
+router.post('/qwen3-qlora/model/unload', qwen3QloraAdminController.unloadModel);
+router.post('/qwen3-qlora/datasets/upload', handleQwen3QloraDatasetUpload);
+router.delete('/qwen3-qlora/datasets/:datasetId', qwen3QloraAdminController.deleteDataset);
+router.post('/qwen3-qlora/datasets/:datasetId/delete', qwen3QloraAdminController.deleteDataset);
+router.post('/qwen3-qlora/train/jobs', qwen3QloraAdminController.createTrainingJob);
+router.get('/qwen3-qlora/train/jobs/:jobId', qwen3QloraAdminController.getTrainingJob);
+router.post('/qwen3-qlora/generate', qwen3QloraAdminController.generate);
+router.post('/qwen3-qlora/compare', qwen3QloraAdminController.compare);
 
 router.get('/locateanything', locateAnythingAdminController.render);
 router.post('/locateanything/jobs', handleLocateAnythingUpload);

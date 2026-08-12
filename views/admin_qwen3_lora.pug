@@ -5,14 +5,30 @@ block styles
 
 block content
   - const qwenTrainingGroups = Array.isArray(trainingGroups) ? trainingGroups : [];
+  - const adapterToolName = typeof toolName === 'string' && toolName ? toolName : 'Qwen3 LoRA';
+  - const adapterToolDescription = typeof toolDescription === 'string' && toolDescription ? toolDescription : 'Train adapters, manage the container, and compare generations.';
+  - const adapterAdminBase = typeof adminBase === 'string' && adminBase ? adminBase : '/admin/qwen3-lora';
+  - const adapterTrainingGroupBase = typeof trainingGroupBase === 'string' && trainingGroupBase ? trainingGroupBase : `${adapterAdminBase}/training-groups`;
+  - const adapterTrainingGroupManagePath = typeof trainingGroupManagePath === 'string' && trainingGroupManagePath ? trainingGroupManagePath : '/admin/qwen3-lora/training-groups';
+  - const adapterDocumentationPath = typeof documentationPath === 'string' ? documentationPath : '';
+  - const showContainerActions = typeof supportsContainerActions === 'boolean' ? supportsContainerActions : true;
+  - const showThinkingControls = typeof supportsThinking === 'boolean' ? supportsThinking : false;
+  - const showGpuReservation = typeof supportsGpuReservation === 'boolean' ? supportsGpuReservation : false;
+  - const adapterReservationContainerId = typeof reservationContainerId === 'string' && reservationContainerId ? reservationContainerId : '';
+  - const adapterRuntimeNotice = typeof runtimeNotice === 'string' ? runtimeNotice : '';
+  - const adapterModelActionLabel = typeof modelActionLabel === 'string' && modelActionLabel ? modelActionLabel : 'Verify model';
+  - const adapterModelActionHelp = typeof modelActionHelp === 'string' ? modelActionHelp : '';
+  - const adapterMethodLabel = showThinkingControls ? 'QLoRA' : 'LoRA';
   .qwen-lora
     .qwen-lora__header
       div
-        h1 Qwen3 LoRA
-        p.text-muted.mb-0 Train adapters, manage the container, and compare generations.
+        h1= adapterToolName
+        p.text-muted.mb-0= adapterToolDescription
       .qwen-lora__meta
         span.qwen-lora__chip Gateway: #{apiBase}
         span.qwen-lora__chip Prefix: #{servicePrefix}
+        if adapterDocumentationPath
+          a.btn.btn-outline-secondary.btn-sm(href=adapterDocumentationPath) Usage guide
         button#refreshStateBtn.btn.btn-outline-light.btn-sm(type='button') Refresh
 
     #qwenLoraAlert.qwen-lora__alert(role='status', aria-live='polite', hidden)
@@ -35,16 +51,33 @@ block content
           .qwen-lora__status-item
             span.qwen-lora__status-label Loaded adapter
             strong#loadedAdapter None
+          if showGpuReservation
+            .qwen-lora__status-item
+              span.qwen-lora__status-label GPU reservation
+              strong#gpuReservationState Unknown
+        if showContainerActions
+          .qwen-lora__actions
+            button#containerStartBtn.btn.btn-success.btn-sm(type='button') Start
+            button#containerRestartBtn.btn.btn-warning.btn-sm(type='button') Restart
+            button#containerStopBtn.btn.btn-outline-danger.btn-sm(type='button') Stop
+            .form-check.form-switch.qwen-lora__switch
+              input#containerWaitToggle.form-check-input(type='checkbox', checked)
+              label.form-check-label(for='containerWaitToggle') wait
+        else if adapterRuntimeNotice
+          p.qwen-lora__notice= adapterRuntimeNotice
+        if showGpuReservation
+          .qwen-lora__actions
+            button#gpuReserveBtn.btn.btn-outline-primary.btn-sm(type='button') Reserve QLoRA GPU
+            button#gpuReleaseBtn.btn.btn-outline-danger.btn-sm(type='button', hidden) Release reservation
+            label.qwen-lora__inline-field(for='gpuReservationIdleMinutes')
+              span Idle minutes
+              input#gpuReservationIdleMinutes.form-control.form-control-sm(type='number', min='1', max='720', step='1', value='15')
+          p.qwen-lora__muted.mt-2.mb-0 Reserve before comparisons to keep the model available across sequential generations.
         .qwen-lora__actions
-          button#containerStartBtn.btn.btn-success.btn-sm(type='button') Start
-          button#containerRestartBtn.btn.btn-warning.btn-sm(type='button') Restart
-          button#containerStopBtn.btn.btn-outline-danger.btn-sm(type='button') Stop
-          .form-check.form-switch.qwen-lora__switch
-            input#containerWaitToggle.form-check-input(type='checkbox', checked)
-            label.form-check-label(for='containerWaitToggle') wait
-        .qwen-lora__actions
-          button#modelDownloadBtn.btn.btn-outline-primary.btn-sm(type='button') Verify model
+          button#modelDownloadBtn.btn.btn-outline-primary.btn-sm(type='button')= adapterModelActionLabel
           button#modelUnloadBtn.btn.btn-outline-secondary.btn-sm(type='button') Unload model
+        if adapterModelActionHelp
+          p.qwen-lora__muted.mt-2.mb-0= adapterModelActionHelp
         details.qwen-lora__details
           summary Raw runtime payload
           pre#runtimeRaw.qwen-lora__pre
@@ -79,15 +112,15 @@ block content
           label.form-label(for='trainingGroupDatasetName') Dataset name
           input#trainingGroupDatasetName.form-control(type='text', placeholder='Defaults to group id', disabled=qwenTrainingGroups.length === 0)
         .qwen-lora__actions
-          a#trainingGroupCsvLink.btn.btn-outline-primary.btn-sm(href=qwenTrainingGroups.length ? `/admin/qwen3-lora/training-groups/${encodeURIComponent(qwenTrainingGroups[0].groupId)}/export.csv` : '#', class={ disabled: qwenTrainingGroups.length === 0 }) Download CSV
+          a#trainingGroupCsvLink.btn.btn-outline-primary.btn-sm(href=qwenTrainingGroups.length ? `${adapterTrainingGroupBase}/${encodeURIComponent(qwenTrainingGroups[0].groupId)}/export.csv` : '#', class={ disabled: qwenTrainingGroups.length === 0 }) Download CSV
           button#trainingGroupUploadBtn.btn.btn-primary.btn-sm(type='button', disabled=qwenTrainingGroups.length === 0) Upload as dataset
-          a.btn.btn-outline-secondary.btn-sm(href='/admin/qwen3-lora/training-groups') Manage
+          a.btn.btn-outline-secondary.btn-sm(href=adapterTrainingGroupManagePath) Manage
         #trainingGroupExportResult.qwen-lora__result
 
       section.qwen-lora__panel
         .qwen-lora__panel-head
           h2 Start Training
-          span.qwen-lora__muted One active job
+          span.qwen-lora__muted One active operation
         form#trainingForm
           .mb-3
             label.form-label(for='trainDataset') Dataset
@@ -134,6 +167,9 @@ block content
             label
               span Seed
               input#trainSeed.form-control(type='number', step='1', value=defaultTrainingParams.seed)
+            label.qwen-lora__param-wide
+              span Target modules (optional)
+              input#trainTargetModules.form-control(type='text', placeholder='Use service defaults')
           .form-check.mt-3.mb-3
             input#overwriteAdapter.form-check-input(type='checkbox')
             label.form-check-label(for='overwriteAdapter') Overwrite adapter
@@ -176,12 +212,20 @@ block content
             .col-md-3.mb-3
               label.form-label(for='generateTemperature') Temperature
               input#generateTemperature.form-control(type='number', min='0', max='2', step='0.05', value='0')
+          if showThinkingControls
+            .qwen-lora__actions.mb-3
+              .form-check.form-switch.qwen-lora__switch
+                input#generateDoSample.form-check-input(type='checkbox')
+                label.form-check-label(for='generateDoSample') Sampling
+              .form-check.form-switch.qwen-lora__switch
+                input#generateEnableThinking.form-check-input(type='checkbox')
+                label.form-check-label(for='generateEnableThinking') Thinking mode
           .mb-3
             label.form-label(for='generateSystem') System
             textarea#generateSystem.form-control(rows='2', placeholder='Optional system message')
           .mb-3
             label.form-label(for='generatePrompt') Prompt
-            textarea#generatePrompt.form-control(rows='5', required, placeholder='Explain LoRA in one sentence.')
+            textarea#generatePrompt.form-control(rows='5', required, placeholder=`Explain ${adapterMethodLabel} in one sentence.`)
           details.qwen-lora__advanced
             summary Advanced request JSON
             .row.mt-3
@@ -207,7 +251,7 @@ block content
       section.qwen-lora__panel
         .qwen-lora__panel-head
           h2 Compare
-          span.qwen-lora__muted Base plus selected LoRAs
+          span.qwen-lora__muted Base plus selected adapters
         form#compareForm
           .mb-3
             label.form-label Targets
@@ -219,6 +263,14 @@ block content
             .col-md-6.mb-3
               label.form-label(for='compareTemperature') Temperature
               input#compareTemperature.form-control(type='number', min='0', max='2', step='0.05', value='0')
+          if showThinkingControls
+            .qwen-lora__actions.mb-3
+              .form-check.form-switch.qwen-lora__switch
+                input#compareDoSample.form-check-input(type='checkbox')
+                label.form-check-label(for='compareDoSample') Sampling
+              .form-check.form-switch.qwen-lora__switch
+                input#compareEnableThinking.form-check-input(type='checkbox')
+                label.form-check-label(for='compareEnableThinking') Thinking mode
           .mb-3
             label.form-label(for='compareSystem') System
             textarea#compareSystem.form-control(rows='2', placeholder='Optional system message')
@@ -229,5 +281,5 @@ block content
         #compareResult.qwen-lora__compare-results
 
 block script
-  script(type='application/json', id='qwen3LoraConfig') !{JSON.stringify({ maxCompareTargets, defaultTrainingParams })}
+  script(type='application/json', id='qwen3LoraConfig') !{JSON.stringify({ maxCompareTargets, defaultTrainingParams, adminBase: adapterAdminBase, trainingGroupBase: adapterTrainingGroupBase, toolName: adapterToolName, supportsContainerActions: showContainerActions, supportsThinking: showThinkingControls, supportsGpuReservation: showGpuReservation, reservationContainerId: adapterReservationContainerId })}
   script(src='/js/qwen3_lora_admin.js', defer)

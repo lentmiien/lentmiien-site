@@ -104,6 +104,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 - `/tmp-files` - Authenticated temporary file shuttle (admin only).
 - `/admin` & `/admin/manage_roles` - User/role management.
 - `/admin/performance`, `/admin/database_usage`, `/admin/ai-gateway`, `/admin/audio-workflow` - Runtime dashboards and admin tooling.
+- `/admin/qwen3-lora`, `/admin/qwen3-qlora` - Train and test Qwen3 LoRA and 32B QLoRA adapters through the AI Gateway.
 - `/yaml-viewer` - Swagger UI for YAML specs stored under `public/yaml/`.
 
 ## Environment Variables
@@ -123,6 +124,9 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | Optional provider keys surfaced in Chat5. |
 | `DISABLE_LOCAL` | Set to `TRUE` to hide the LM Studio provider integration. |
 | `AI_GATEWAY_BASE_URL` | Local AI gateway base URL used by admin dashboards, music generation, and Ollama fallback clients. |
+| `QWEN3_QLORA_INFO_TIMEOUT_MS`, `QWEN3_QLORA_ACTION_TIMEOUT_MS`, `QWEN3_QLORA_UPLOAD_TIMEOUT_MS` | Optional QLoRA metadata, job-creation, and CSV upload timeouts. Defaults follow the Gateway's long-running heavy-service contract. |
+| `QWEN3_QLORA_DOWNLOAD_TIMEOUT_MS`, `QWEN3_QLORA_GENERATE_TIMEOUT_MS` | Optional QLoRA model preparation and generation timeouts (defaults: 75 minutes and 12 hours 10 minutes). |
+| `QWEN3_QLORA_CSV_UPLOAD_MAX_MB`, `QWEN3_QLORA_MAX_COMPARE_TARGETS` | QLoRA dashboard upload and sequential comparison caps (defaults: 200 MiB and 4 targets). |
 | `LLM_ADMIN_TOKEN` | Optional `X-Admin-Token` sent to protected AI Gateway admin endpoints. |
 | `OLLAMA_BASE_URL`, `OLLAMA_GEMMA4_MODEL` | Optional Ollama host/model overrides for local model testing. |
 | `OLLAMA_WEBHOOK_BASE_URL` | Public callback base for Gateway chat jobs (defaults to `https://my.lentmiien.com/`; endpoint is `/webhook/ollama`). |

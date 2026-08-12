@@ -7,23 +7,29 @@
     config = {};
   }
 
+  const adminBase = String(config.adminBase || '/admin/qwen3-lora').replace(/\/+$/, '');
+  const trainingGroupBase = String(config.trainingGroupBase || `${adminBase}/training-groups`).replace(/\/+$/, '');
+  const toolName = String(config.toolName || 'Qwen3 LoRA');
+
   const endpoints = {
-    state: '/admin/qwen3-lora/state',
-    upload: '/admin/qwen3-lora/datasets/upload',
-    train: '/admin/qwen3-lora/train/jobs',
-    generate: '/admin/qwen3-lora/generate',
-    compare: '/admin/qwen3-lora/compare',
-    modelDownload: '/admin/qwen3-lora/model/download',
-    modelUnload: '/admin/qwen3-lora/model/unload',
-    container: (action) => `/admin/qwen3-lora/container/${action}`,
-    dataset: (datasetId) => `/admin/qwen3-lora/datasets/${encodeURIComponent(datasetId)}`,
-    trainingGroupExport: (groupId) => `/admin/qwen3-lora/training-groups/${encodeURIComponent(groupId)}/export.csv`,
-    trainingGroupUpload: (groupId) => `/admin/qwen3-lora/training-groups/${encodeURIComponent(groupId)}/upload-dataset`,
+    state: `${adminBase}/state`,
+    upload: `${adminBase}/datasets/upload`,
+    train: `${adminBase}/train/jobs`,
+    generate: `${adminBase}/generate`,
+    compare: `${adminBase}/compare`,
+    modelDownload: `${adminBase}/model/download`,
+    modelUnload: `${adminBase}/model/unload`,
+    reservation: `${adminBase}/reservation`,
+    container: (action) => `${adminBase}/container/${action}`,
+    dataset: (datasetId) => `${adminBase}/datasets/${encodeURIComponent(datasetId)}`,
+    trainingGroupExport: (groupId) => `${trainingGroupBase}/${encodeURIComponent(groupId)}/export.csv`,
+    trainingGroupUpload: (groupId) => `${trainingGroupBase}/${encodeURIComponent(groupId)}/upload-dataset`,
   };
 
   const $ = (id) => document.getElementById(id);
   const selectedCompareTargets = new Set(['__base__']);
   let dashboardState = null;
+  let reservationState = null;
   let pollTimer = null;
 
   function create(tag, attrs = {}, children = []) {
@@ -236,18 +242,39 @@
     const health = dashboardState?.health || null;
     const model = dashboardState?.model || null;
     const download = model?.download || health?.download || null;
-    const healthLabel = health?.ok === true ? 'OK' : (health?.ok === false ? 'Issue' : 'Unknown');
+    const healthLabel = firstPresent(
+      health?.status,
+      health?.ok === true ? 'OK' : null,
+      health?.ok === false ? 'Issue' : null,
+      'Unknown',
+    );
     const loadedAdapter = firstPresent(model?.loaded_adapter_name, health?.loaded_adapter_name, 'None');
+    const reservationActive = reservationState?.active === true;
+    const reservationService = reservationState?.service || null;
+    const reservationContainerId = String(config.reservationContainerId || 'qwen3_qlora');
+    const normalizedReservationService = String(reservationService || '').replace(/-/g, '_');
+    const ownsReservation = reservationActive
+      && normalizedReservationService === reservationContainerId.replace(/-/g, '_');
 
     setText($('containerState'), inferContainerState(container));
     setText($('serviceHealth'), healthLabel);
     setText($('modelDownloadStatus'), download?.status || 'Unknown');
     setText($('loadedAdapter'), loadedAdapter || 'None');
+    if ($('gpuReservationState')) {
+      const reservationLabel = reservationActive
+        ? `Reserved: ${reservationService || 'unknown service'}`
+        : firstPresent(reservationState?.statusDisplay, 'Not reserved');
+      setText($('gpuReservationState'), reservationLabel);
+    }
+    if ($('gpuReserveBtn')) $('gpuReserveBtn').hidden = reservationActive;
+    if ($('gpuReleaseBtn')) $('gpuReleaseBtn').hidden = !ownsReservation;
+    if ($('gpuReservationIdleMinutes')) $('gpuReservationIdleMinutes').disabled = reservationActive;
     setText($('runtimeFetched'), dashboardState?.fetchedAt ? `Fetched ${formatDate(dashboardState.fetchedAt)}` : 'Not loaded');
     setText($('runtimeRaw'), toJson({
       container,
       health,
       model,
+      reservation: reservationState,
       limits: dashboardState?.limits || null,
       errors: dashboardState?.errors || {},
     }));
@@ -519,8 +546,26 @@
   }
 
   async function loadState({ silent = false } = {}) {
-    if (!silent) setAlert('Loading Qwen3 LoRA state...', 'info');
-    dashboardState = await requestJson(endpoints.state);
+    if (!silent) setAlert(`Loading ${toolName} state...`, 'info');
+    const reservationRequest = config.supportsGpuReservation === true
+      ? requestJson(endpoints.reservation)
+        .then((payload) => ({ payload, error: null }))
+        .catch((error) => ({ payload: null, error }))
+      : Promise.resolve(null);
+    const [nextDashboardState, reservationResult] = await Promise.all([
+      requestJson(endpoints.state),
+      reservationRequest,
+    ]);
+    dashboardState = nextDashboardState;
+    if (reservationResult) {
+      reservationState = reservationResult.payload?.reservation || null;
+      if (reservationResult.error) {
+        dashboardState.errors = {
+          ...(dashboardState.errors || {}),
+          reservation: reservationResult.error.message || 'Unable to fetch GPU reservation.',
+        };
+      }
+    }
     renderAll();
     if (!silent && !Object.keys(dashboardState.errors || {}).length) {
       setAlert('State refreshed.', 'success');
@@ -532,7 +577,13 @@
       clearTimeout(pollTimer);
       pollTimer = null;
     }
-    const active = getJobs().some((job) => ['queued', 'running'].includes(String(job.status || '').toLowerCase()));
+    const active = getJobs().some((job) => [
+      'accepted',
+      'pending',
+      'queued',
+      'running',
+      'starting',
+    ].includes(String(job.status || '').toLowerCase()));
     if (!active) return;
     pollTimer = setTimeout(() => {
       loadState({ silent: true }).catch(() => {
@@ -593,6 +644,14 @@
       },
     };
 
+    const targetModules = $('trainTargetModules')?.value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (targetModules?.length) {
+      payload.params.target_modules = targetModules;
+    }
+
     const preset = $('columnPreset')?.value || 'auto';
     const columnsAvailable = selectedDatasetColumns();
     if (preset === 'prompt_response') {
@@ -644,6 +703,16 @@
       if (responseFormat !== undefined) payload.response_format = responseFormat;
     }
 
+    if (config.supportsThinking === true) {
+      const doSample = $(`${prefix}DoSample`)?.checked === true;
+      const enableThinking = $(`${prefix}EnableThinking`)?.checked === true;
+      if (enableThinking && !doSample) {
+        throw new Error('Thinking mode requires sampling.');
+      }
+      payload.do_sample = doSample;
+      payload.enable_thinking = enableThinking;
+    }
+
     Object.keys(payload).forEach((key) => {
       if (payload[key] === undefined || payload[key] === '') delete payload[key];
     });
@@ -664,6 +733,13 @@
       ]),
       create('div', { className: 'qwen-lora__response-content', text: content || '(empty response)' }),
     ]);
+    if (result?.reasoning_content) {
+      const reasoning = create('details', { className: 'qwen-lora__details' }, [
+        create('summary', { text: 'Reasoning' }),
+        create('div', { className: 'qwen-lora__response-content mt-2', text: result.reasoning_content }),
+      ]);
+      card.appendChild(reasoning);
+    }
     if (Array.isArray(result?.tool_calls) && result.tool_calls.length) {
       card.appendChild(create('pre', { className: 'qwen-lora__pre', text: toJson(result.tool_calls) }));
     }
@@ -688,6 +764,15 @@
           text: content,
         }),
       ]);
+      if (entry.ok && entry.data?.reasoning_content) {
+        card.appendChild(create('details', { className: 'qwen-lora__details' }, [
+          create('summary', { text: 'Reasoning' }),
+          create('div', {
+            className: 'qwen-lora__response-content mt-2',
+            text: entry.data.reasoning_content,
+          }),
+        ]));
+      }
       if (entry.ok && Array.isArray(entry.data?.tool_calls) && entry.data.tool_calls.length) {
         card.appendChild(create('pre', { className: 'qwen-lora__pre', text: toJson(entry.data.tool_calls) }));
       }
@@ -732,6 +817,31 @@
       });
     });
 
+    $('gpuReserveBtn')?.addEventListener('click', (event) => {
+      withButton(event.currentTarget, 'Reserving the QLoRA GPU service...', async () => {
+        const idleMinutes = numberValue('gpuReservationIdleMinutes');
+        if (!Number.isFinite(idleMinutes) || idleMinutes < 1 || idleMinutes > 720) {
+          throw new Error('Idle minutes must be between 1 and 720.');
+        }
+        await requestJson(endpoints.reservation, {
+          method: 'POST',
+          body: {
+            idle_timeout_sec: Math.round(idleMinutes * 60),
+          },
+        });
+        setAlert('QLoRA GPU reservation is active.', 'success');
+        await loadState({ silent: true });
+      });
+    });
+
+    $('gpuReleaseBtn')?.addEventListener('click', (event) => {
+      withButton(event.currentTarget, 'Releasing the QLoRA GPU reservation...', async () => {
+        await requestJson(endpoints.reservation, { method: 'DELETE' });
+        setAlert('QLoRA GPU reservation released.', 'success');
+        await loadState({ silent: true });
+      });
+    });
+
     $('datasetUploadForm')?.addEventListener('submit', (event) => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -769,6 +879,27 @@
     $('columnPreset')?.addEventListener('change', () => {
       const textarea = $('columnJson');
       if (textarea) textarea.hidden = $('columnPreset')?.value !== 'custom';
+    });
+
+    ['generate', 'compare'].forEach((prefix) => {
+      $(`${prefix}EnableThinking`)?.addEventListener('change', (event) => {
+        if (event.currentTarget.checked) {
+          const samplingToggle = $(`${prefix}DoSample`);
+          if (samplingToggle) samplingToggle.checked = true;
+          const temperatureInput = $(`${prefix}Temperature`);
+          if (temperatureInput && Number(temperatureInput.value) <= 0) {
+            temperatureInput.value = '0.7';
+          }
+        }
+      });
+      $(`${prefix}DoSample`)?.addEventListener('change', (event) => {
+        if (event.currentTarget.checked) {
+          const temperatureInput = $(`${prefix}Temperature`);
+          if (temperatureInput && Number(temperatureInput.value) <= 0) {
+            temperatureInput.value = '0.7';
+          }
+        }
+      });
     });
 
     $('trainingForm')?.addEventListener('submit', (event) => {
@@ -827,6 +958,6 @@
   bindEvents();
   updateTrainingGroupControls();
   loadState().catch((error) => {
-    setAlert(error.message || 'Unable to load Qwen3 LoRA state.', 'error');
+    setAlert(error.message || `Unable to load ${toolName} state.`, 'error');
   });
 })();

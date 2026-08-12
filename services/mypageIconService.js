@@ -238,6 +238,14 @@ const MYPAGE_ICON_DEFINITIONS = [
     adminOnly: true,
   },
   {
+    id: 'qwen3_qlora',
+    href: '/admin/qwen3-qlora',
+    src: '/i/qwen3_lora.svg',
+    alt: 'Qwen3 QLoRA admin tool',
+    label: 'Qwen3 QLoRA',
+    adminOnly: true,
+  },
+  {
     id: 'request_counter',
     href: '/admin/request-counter',
     src: '/i/request_counter.svg',

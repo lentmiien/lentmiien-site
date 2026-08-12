@@ -129,6 +129,18 @@
   align-items: center;
 }
 
+.qwen-lora__inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.qwen-lora__inline-field .form-control {
+  width: 5.5rem;
+}
+
 .qwen-lora__details {
   margin-top: 1rem;
   color: var(--text-secondary);
@@ -143,7 +155,7 @@
 .qwen-lora__pre,
 .qwen-lora__result pre,
 .qwen-lora__item pre {
-  background: #101318;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text-secondary);
@@ -173,6 +185,18 @@
 
 .qwen-lora__param-grid label {
   min-width: 0;
+}
+
+.qwen-lora__param-wide {
+  grid-column: span 2;
+}
+
+.qwen-lora__notice {
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-tint);
+  color: var(--text-secondary);
 }
 
 .qwen-lora__list {
@@ -228,18 +252,18 @@
 }
 
 .qwen-lora__badge--ok {
-  border-color: rgba(34, 197, 94, 0.4);
-  color: #4ade80;
+  border-color: var(--success);
+  color: var(--success);
 }
 
 .qwen-lora__badge--warn {
-  border-color: rgba(245, 158, 11, 0.45);
-  color: #fbbf24;
+  border-color: var(--warning);
+  color: var(--warning);
 }
 
 .qwen-lora__badge--error {
-  border-color: rgba(248, 113, 113, 0.45);
-  color: #f87171;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .qwen-lora__target-list {
@@ -301,30 +325,30 @@
 }
 
 .qwen-lora__alert--success {
-  border-color: rgba(34, 197, 94, 0.42);
-  color: #86efac;
+  border-color: var(--success);
+  color: var(--success);
 }
 
 .qwen-lora__alert--error {
-  border-color: rgba(248, 113, 113, 0.45);
-  color: #fca5a5;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .qwen-lora__alert--info {
-  border-color: rgba(96, 165, 250, 0.45);
-  color: #bfdbfe;
+  border-color: var(--info);
+  color: var(--info);
 }
 
 .qwen-lora .form-control,
 .qwen-lora .form-select {
-  background-color: #11151b;
+  background-color: var(--bg);
   border-color: var(--border);
   color: var(--text);
 }
 
 .qwen-lora .form-control:focus,
 .qwen-lora .form-select:focus {
-  background-color: #11151b;
+  background-color: var(--bg);
   color: var(--text);
   border-color: var(--focus);
   box-shadow: 0 0 0 0.2rem rgba(255, 194, 71, 0.16);
@@ -357,5 +381,9 @@
   .qwen-lora__meta,
   .qwen-lora__item-actions {
     justify-content: flex-start;
+  }
+
+  .qwen-lora__param-wide {
+    grid-column: span 1;
   }
 }

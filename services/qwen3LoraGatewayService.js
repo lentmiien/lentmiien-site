@@ -56,13 +56,17 @@ function extractDetail(data) {
   }
 }
 
-function buildGatewayErrorMessage(error, fallback = 'Qwen3 LoRA request failed.') {
+function buildGatewayErrorMessage(
+  error,
+  fallback = 'Qwen3 LoRA request failed.',
+  gatewayBaseUrl = DEFAULT_GATEWAY_BASE_URL,
+) {
   if (error?.response) {
     const detail = extractDetail(error.response.data);
     return `Gateway returned ${error.response.status}${detail ? `: ${detail}` : ''}`;
   }
   if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
-    return `Unable to reach the AI Gateway at ${DEFAULT_GATEWAY_BASE_URL}.`;
+    return `Unable to reach the AI Gateway at ${gatewayBaseUrl}.`;
   }
   if (error?.code === 'ECONNABORTED' || error?.code === 'ETIMEDOUT' || error?.code === 'ESOCKETTIMEDOUT') {
     return 'The AI Gateway request timed out.';
@@ -70,20 +74,40 @@ function buildGatewayErrorMessage(error, fallback = 'Qwen3 LoRA request failed.'
   return error?.message || fallback;
 }
 
-function fireAndForgetLog(promise) {
+function fireAndForgetLog(promise, {
+  serviceLabel = 'Qwen3 LoRA',
+  logCategory = 'qwen3_lora_gateway',
+} = {}) {
   if (!promise || typeof promise.catch !== 'function') {
     return;
   }
   promise.catch((error) => {
-    console.error('[QWEN3_LORA_LOGGING]', error);
+    logger.warning(`${serviceLabel} API debug logging failed`, {
+      category: logCategory,
+      metadata: {
+        message: error?.message || String(error),
+      },
+    });
   });
 }
 
-function recordDebugLog(payload) {
-  fireAndForgetLog(recordApiDebugLog(payload));
+function recordDebugLog(payload, {
+  recorder = recordApiDebugLog,
+  serviceLabel,
+  logCategory,
+} = {}) {
+  fireAndForgetLog(recorder(payload), { serviceLabel, logCategory });
 }
 
-function requestLogMetadata({ method, path, requestUrl, startedAt, error = null, response = null }) {
+function requestLogMetadata({
+  method,
+  path,
+  requestUrl,
+  startedAt,
+  error = null,
+  response = null,
+  errorMessageBuilder = buildGatewayErrorMessage,
+}) {
   const durationMs = Date.now() - startedAt;
   const base = {
     method: String(method || 'get').toUpperCase(),
@@ -100,7 +124,7 @@ function requestLogMetadata({ method, path, requestUrl, startedAt, error = null,
     base.status = error?.response?.status || null;
     base.code = error?.code || null;
     base.message = error?.message || String(error);
-    base.gatewayMessage = buildGatewayErrorMessage(error);
+    base.gatewayMessage = errorMessageBuilder(error);
     base.responseDetail = extractDetail(error?.response?.data);
   }
 
@@ -114,21 +138,44 @@ class Qwen3LoraGatewayService {
     actionTimeoutMs = DEFAULT_ACTION_TIMEOUT_MS,
     uploadTimeoutMs = DEFAULT_UPLOAD_TIMEOUT_MS,
     generateTimeoutMs = DEFAULT_GENERATE_TIMEOUT_MS,
+    downloadTimeoutMs = actionTimeoutMs,
+    servicePrefix = SERVICE_PREFIX,
+    serviceLabel = 'Qwen3 LoRA',
+    logCategory = 'qwen3_lora_gateway',
+    functionPrefix = 'qwen3_lora',
+    dashboardContainerPath = '/container',
+    apiDebugFileName = JS_FILE_NAME,
   } = {}) {
     this.gatewayBaseUrl = gatewayBaseUrl;
     this.infoTimeoutMs = infoTimeoutMs;
     this.actionTimeoutMs = actionTimeoutMs;
     this.uploadTimeoutMs = uploadTimeoutMs;
     this.generateTimeoutMs = generateTimeoutMs;
+    this.downloadTimeoutMs = downloadTimeoutMs;
+    this.servicePrefix = servicePrefix;
+    this.serviceLabel = serviceLabel;
+    this.logCategory = logCategory;
+    this.functionPrefix = functionPrefix;
+    this.dashboardContainerPath = dashboardContainerPath;
+    this.recordApiDebugLog = apiDebugFileName === JS_FILE_NAME
+      ? recordApiDebugLog
+      : createApiDebugLogger(apiDebugFileName);
   }
 
   servicePath(path = '') {
     const suffix = String(path || '');
-    return `${SERVICE_PREFIX}${suffix.startsWith('/') ? suffix : `/${suffix}`}`;
+    if (!suffix) {
+      return this.servicePrefix;
+    }
+    return `${this.servicePrefix}${suffix.startsWith('/') ? suffix : `/${suffix}`}`;
   }
 
   url(path) {
     return joinUrl(this.gatewayBaseUrl, path);
+  }
+
+  gatewayErrorMessage(error, fallback = `${this.serviceLabel} request failed.`) {
+    return buildGatewayErrorMessage(error, fallback, this.gatewayBaseUrl);
   }
 
   async request({
@@ -145,8 +192,8 @@ class Qwen3LoraGatewayService {
   }) {
     const requestUrl = this.url(path);
     const startedAt = Date.now();
-    logger.debug('Qwen3 LoRA gateway request started', {
-      category: 'qwen3_lora_gateway',
+    logger.debug(`${this.serviceLabel} gateway request started`, {
+      category: this.logCategory,
       metadata: {
         method: String(method || 'get').toUpperCase(),
         path,
@@ -175,12 +222,23 @@ class Qwen3LoraGatewayService {
           requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
           responseHeaders: response.headers || null,
           responseBody: responseBodyForLog === undefined ? response.data : responseBodyForLog,
+        }, {
+          recorder: this.recordApiDebugLog,
+          serviceLabel: this.serviceLabel,
+          logCategory: this.logCategory,
         });
       }
 
-      logger.debug('Qwen3 LoRA gateway request completed', {
-        category: 'qwen3_lora_gateway',
-        metadata: requestLogMetadata({ method, path, requestUrl, startedAt, response }),
+      logger.debug(`${this.serviceLabel} gateway request completed`, {
+        category: this.logCategory,
+        metadata: requestLogMetadata({
+          method,
+          path,
+          requestUrl,
+          startedAt,
+          response,
+          errorMessageBuilder: (requestError) => this.gatewayErrorMessage(requestError),
+        }),
       });
 
       return response.data;
@@ -192,12 +250,23 @@ class Qwen3LoraGatewayService {
           requestBody: requestBodyForLog === undefined ? data || params || null : requestBodyForLog,
           responseHeaders: error?.response?.headers || null,
           responseBody: responseBodyForLog === undefined ? getErrorPayload(error) : responseBodyForLog,
+        }, {
+          recorder: this.recordApiDebugLog,
+          serviceLabel: this.serviceLabel,
+          logCategory: this.logCategory,
         });
       }
 
-      logger.warning('Qwen3 LoRA gateway request failed', {
-        category: 'qwen3_lora_gateway',
-        metadata: requestLogMetadata({ method, path, requestUrl, startedAt, error }),
+      logger.warning(`${this.serviceLabel} gateway request failed`, {
+        category: this.logCategory,
+        metadata: requestLogMetadata({
+          method,
+          path,
+          requestUrl,
+          startedAt,
+          error,
+          errorMessageBuilder: (requestError) => this.gatewayErrorMessage(requestError),
+        }),
       });
 
       throw error;
@@ -209,19 +278,24 @@ class Qwen3LoraGatewayService {
       method: 'get',
       path: this.servicePath(path),
       timeout: this.infoTimeoutMs,
-      functionName: `qwen3_lora_get_${String(path || 'root').replace(/[^a-z0-9]+/gi, '_')}`,
+      functionName: `${this.functionPrefix}_get_${String(path || 'root').replace(/[^a-z0-9]+/gi, '_')}`,
     });
   }
 
   async getDashboardState() {
     const endpoints = {
-      container: { path: this.servicePath('/container'), functionName: 'qwen3_lora_container_state' },
-      health: { path: this.servicePath('/health'), functionName: 'qwen3_lora_health' },
-      model: { path: this.servicePath('/model'), functionName: 'qwen3_lora_model' },
-      datasets: { path: this.servicePath('/datasets'), functionName: 'qwen3_lora_datasets' },
-      jobs: { path: this.servicePath('/train/jobs'), functionName: 'qwen3_lora_jobs' },
-      adapters: { path: this.servicePath('/adapters'), functionName: 'qwen3_lora_adapters' },
-      limits: { path: '/limits', functionName: 'qwen3_lora_limits' },
+      container: {
+        path: this.dashboardContainerPath
+          ? this.servicePath(this.dashboardContainerPath)
+          : this.servicePath(),
+        functionName: `${this.functionPrefix}_container_state`,
+      },
+      health: { path: this.servicePath('/health'), functionName: `${this.functionPrefix}_health` },
+      model: { path: this.servicePath('/model'), functionName: `${this.functionPrefix}_model` },
+      datasets: { path: this.servicePath('/datasets'), functionName: `${this.functionPrefix}_datasets` },
+      jobs: { path: this.servicePath('/train/jobs'), functionName: `${this.functionPrefix}_jobs` },
+      adapters: { path: this.servicePath('/adapters'), functionName: `${this.functionPrefix}_adapters` },
+      limits: { path: '/limits', functionName: `${this.functionPrefix}_limits` },
     };
 
     const results = await Promise.all(Object.entries(endpoints).map(async ([key, endpoint]) => {
@@ -234,23 +308,23 @@ class Qwen3LoraGatewayService {
         });
         return [key, data, null];
       } catch (error) {
-        logger.warning('Qwen3 LoRA dashboard endpoint unavailable', {
-          category: 'qwen3_lora_gateway',
+        logger.warning(`${this.serviceLabel} dashboard endpoint unavailable`, {
+          category: this.logCategory,
           metadata: {
             endpoint: key,
             path: endpoint.path,
-            message: buildGatewayErrorMessage(error),
+            message: this.gatewayErrorMessage(error),
             status: error?.response?.status || null,
             code: error?.code || null,
           },
         });
-        return [key, null, buildGatewayErrorMessage(error)];
+        return [key, null, this.gatewayErrorMessage(error)];
       }
     }));
 
     const state = {
       baseUrl: this.gatewayBaseUrl,
-      servicePrefix: SERVICE_PREFIX,
+      servicePrefix: this.servicePrefix,
       fetchedAt: new Date().toISOString(),
       errors: {},
     };
@@ -264,8 +338,8 @@ class Qwen3LoraGatewayService {
 
     const errorKeys = Object.keys(state.errors);
     if (errorKeys.length) {
-      logger.warning('Qwen3 LoRA dashboard state loaded with endpoint errors', {
-        category: 'qwen3_lora_gateway',
+      logger.warning(`${this.serviceLabel} dashboard state loaded with endpoint errors`, {
+        category: this.logCategory,
         metadata: {
           baseUrl: this.gatewayBaseUrl,
           failedEndpoints: errorKeys,
@@ -273,8 +347,8 @@ class Qwen3LoraGatewayService {
         },
       });
     } else {
-      logger.debug('Qwen3 LoRA dashboard state loaded', {
-        category: 'qwen3_lora_gateway',
+      logger.debug(`${this.serviceLabel} dashboard state loaded`, {
+        category: this.logCategory,
         metadata: { baseUrl: this.gatewayBaseUrl },
       });
     }
@@ -296,7 +370,7 @@ class Qwen3LoraGatewayService {
       path: this.servicePath(`/container/${action}`),
       data: body,
       timeout: this.actionTimeoutMs,
-      functionName: `qwen3_lora_container_${action}`,
+      functionName: `${this.functionPrefix}_container_${action}`,
     });
   }
 
@@ -305,8 +379,8 @@ class Qwen3LoraGatewayService {
       method: 'post',
       path: this.servicePath('/model/download'),
       data: {},
-      timeout: this.actionTimeoutMs,
-      functionName: 'qwen3_lora_model_download',
+      timeout: this.downloadTimeoutMs,
+      functionName: `${this.functionPrefix}_model_download`,
     });
   }
 
@@ -316,7 +390,7 @@ class Qwen3LoraGatewayService {
       path: this.servicePath('/model/unload'),
       data: {},
       timeout: this.actionTimeoutMs,
-      functionName: 'qwen3_lora_model_unload',
+      functionName: `${this.functionPrefix}_model_unload`,
     });
   }
 
@@ -343,7 +417,7 @@ class Qwen3LoraGatewayService {
       data: formData,
       headers: formData.getHeaders(),
       timeout: this.uploadTimeoutMs,
-      functionName: 'qwen3_lora_dataset_upload',
+      functionName: `${this.functionPrefix}_dataset_upload`,
       requestBodyForLog: {
         ...fileSummary,
         name: typeof name === 'string' ? name.trim() : '',
@@ -356,7 +430,7 @@ class Qwen3LoraGatewayService {
       method: 'delete',
       path: this.servicePath(`/datasets/${encodeURIComponent(datasetId)}`),
       timeout: this.actionTimeoutMs,
-      functionName: 'qwen3_lora_dataset_delete',
+      functionName: `${this.functionPrefix}_dataset_delete`,
       requestBodyForLog: { datasetId },
     });
   }
@@ -367,7 +441,7 @@ class Qwen3LoraGatewayService {
       path: this.servicePath('/train/jobs'),
       data: payload,
       timeout: this.actionTimeoutMs,
-      functionName: 'qwen3_lora_train_job_create',
+      functionName: `${this.functionPrefix}_train_job_create`,
     });
   }
 
@@ -376,7 +450,7 @@ class Qwen3LoraGatewayService {
       method: 'get',
       path: this.servicePath(`/train/jobs/${encodeURIComponent(jobId)}`),
       timeout: this.infoTimeoutMs,
-      functionName: 'qwen3_lora_train_job_get',
+      functionName: `${this.functionPrefix}_train_job_get`,
       requestBodyForLog: { jobId },
     });
   }
@@ -387,7 +461,7 @@ class Qwen3LoraGatewayService {
       path: this.servicePath('/generate'),
       data: payload,
       timeout: this.generateTimeoutMs,
-      functionName: 'qwen3_lora_generate',
+      functionName: `${this.functionPrefix}_generate`,
       requestBodyForLog: options.requestBodyForLog,
       responseBodyForLog: options.responseBodyForLog,
       debugLog: options.debugLog !== false,
@@ -420,7 +494,7 @@ class Qwen3LoraGatewayService {
           adapter_name: adapterName,
           duration_ms: Date.now() - startedAt,
           status: error?.response?.status || error?.statusCode || 502,
-          error: buildGatewayErrorMessage(error),
+          error: this.gatewayErrorMessage(error),
           detail: error?.response?.data || null,
         });
       }

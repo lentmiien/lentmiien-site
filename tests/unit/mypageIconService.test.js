@@ -49,6 +49,17 @@ describe('mypageIconService', () => {
     expect(adminTiles.some((tile) => tile.id === 'qwen3_lora')).toBe(true);
   });
 
+  test('Qwen3 QLoRA tile is visible only for admins', () => {
+    const regularTiles = buildMypageTiles();
+    const adminTiles = buildMypageTiles({ isAdmin: true });
+
+    expect(regularTiles.some((tile) => tile.id === 'qwen3_qlora')).toBe(false);
+    expect(adminTiles).toContainEqual(expect.objectContaining({
+      id: 'qwen3_qlora',
+      href: '/admin/qwen3-qlora',
+    }));
+  });
+
   test('My Life Log tile is visible only for admins', () => {
     const regularTiles = buildMypageTiles();
     const adminTiles = buildMypageTiles({ isAdmin: true });

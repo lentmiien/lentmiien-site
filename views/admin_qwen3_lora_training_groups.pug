@@ -7,10 +7,11 @@ block content
   .qwen-lora
     .qwen-lora__header
       div
-        h1 Training Groups
-        p.text-muted.mb-0 Group chat5 training entries and export them for Qwen3 LoRA datasets.
+        h1 Adapter Training Groups
+        p.text-muted.mb-0 Group chat5 training entries and export them for LoRA or QLoRA datasets.
       .qwen-lora__meta
         a.btn.btn-outline-light.btn-sm(href='/admin/qwen3-lora') Qwen3 LoRA
+        a.btn.btn-outline-light.btn-sm(href='/admin/qwen3-qlora') Qwen3 QLoRA
 
     if status && status.error
       .qwen-lora__alert.qwen-lora__alert--error= status.error
