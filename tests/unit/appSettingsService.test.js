@@ -176,6 +176,10 @@ describe('AppSettingsService', () => {
       { upsert: true, timestamps: false }
     );
     expect(DEFAULT_APP_SETTINGS).toContainEqual(expect.objectContaining({
+      key: APP_SETTING_KEYS.CHAT5_BATCH_DEFAULT_MODEL,
+      value: 'gpt-5.6-luna',
+    }));
+    expect(DEFAULT_APP_SETTINGS).toContainEqual(expect.objectContaining({
       key: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,
       value: 'gpt-4.1-nano-2025-04-14',
     }));

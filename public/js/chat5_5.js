@@ -645,25 +645,6 @@ function collectChatSettings() {
   };
 }
 
-function getSelectedModel() {
-  const modelSelect = document.getElementById('model');
-  return modelSelect ? modelSelect.value : '';
-}
-
-function isBatchModelSelected() {
-  const selected = getSelectedModel();
-  if (!selected || !Array.isArray(chatModels)) return false;
-  return chatModels.some((model) => model.api_model === selected && model.batch_use);
-}
-
-function updateBatchButtons() {
-  const enabled = isBatchModelSelected();
-  ['batchSendResponse', 'batchResponse'].forEach((id) => {
-    const btn = document.getElementById(id);
-    if (btn) btn.disabled = !enabled;
-  });
-}
-
 function setUpdateButtonState() {
   const idEl = document.getElementById('id');
   const btn = document.getElementById('updateSettingsButton');
@@ -830,7 +811,6 @@ function SwitchConversation(new_id) {
   if (window.Chat5QuickSettings && typeof window.Chat5QuickSettings.updateConversationState === 'function') {
     window.Chat5QuickSettings.updateConversationState(document);
   }
-  updateBatchButtons();
   updateMessageLoadControls();
 }
 
@@ -1034,11 +1014,6 @@ function toggleVoiceRecording() {
 }
 
 function QueueBatch(includePrompt) {
-  if (!isBatchModelSelected()) {
-    alert('Selected model does not support batch processing.');
-    return;
-  }
-
   showLoadingPopup();
   const conversation_id = document.getElementById("id").innerHTML;
   const prompt = includePrompt ? editor.getMarkdown() : null;
@@ -2030,13 +2005,6 @@ socket.on('welcome', () => {
 });
 
 document.addEventListener('DOMContentLoaded', setUpdateButtonState);
-document.addEventListener('DOMContentLoaded', () => {
-  const modelSelect = document.getElementById('model');
-  if (modelSelect) {
-    modelSelect.addEventListener('change', updateBatchButtons);
-  }
-  updateBatchButtons();
-});
 document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('conversationContainer');
   initializeMessageCopyButtons(container);

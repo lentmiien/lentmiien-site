@@ -131,8 +131,46 @@ async function resolveConfiguredSummaryModel(
   };
 }
 
+async function resolveConfiguredDefaultModel(appSettingsService = defaultAppSettingsService) {
+  await ensureModelsLoaded();
+  let configuredModel = null;
+  let settingError = null;
+  try {
+    configuredModel = await appSettingsService.getValue(APP_SETTING_KEYS.CHAT5_BATCH_DEFAULT_MODEL);
+  } catch (error) {
+    settingError = error;
+  }
+
+  const normalizedConfiguredModel = normalizeModelName(configuredModel);
+  if (normalizedConfiguredModel) {
+    return {
+      model: normalizedConfiguredModel,
+      configuredModel,
+      settingError: null,
+    };
+  }
+
+  logger.warning('Batch default model setting is missing or not eligible for OpenAI batch processing', {
+    category: 'batch',
+    metadata: {
+      settingKey: APP_SETTING_KEYS.CHAT5_BATCH_DEFAULT_MODEL,
+      configuredModel,
+      reason: settingError?.message || (configuredModel ? 'ineligible_model' : 'missing_setting'),
+    },
+  });
+  return {
+    model: null,
+    configuredModel,
+    settingError,
+  };
+}
+
 async function validateBatchSummaryModelSetting() {
   return resolveConfiguredSummaryModel(defaultAppSettingsService);
+}
+
+async function validateBatchDefaultModelSetting() {
+  return resolveConfiguredDefaultModel(defaultAppSettingsService);
 }
 
 function buildTextSettings(conversation, modelName) {
@@ -212,16 +250,40 @@ class BatchService {
       userId,
       conversationId,
       messageId = null,
-      model = 'gpt-4.1-2025-04-14',
+      model = null,
       title = '(no title)',
       taskType = 'response',
     } = options;
 
     await ensureModelsLoaded();
-    const normalizedModel = normalizeModelName(model);
+    let normalizedModel = normalizeModelName(model);
     if (!normalizedModel) {
-      logger.warn('Skipping batch prompt due to unsupported model', { model });
-      return null;
+      const configuredDefault = await resolveConfiguredDefaultModel(this.appSettingsService);
+      if (!configuredDefault.model) {
+        logger.error('Unable to queue batch prompt because neither the selected model nor the configured default is eligible', {
+          category: 'batch',
+          metadata: {
+            selectedModel: model,
+            configuredModel: configuredDefault.configuredModel,
+            settingKey: APP_SETTING_KEYS.CHAT5_BATCH_DEFAULT_MODEL,
+            conversationId,
+            taskType,
+          },
+        });
+        return null;
+      }
+
+      normalizedModel = configuredDefault.model;
+      logger.warning('Selected model is not eligible for OpenAI batch processing; using the configured default', {
+        category: 'batch',
+        metadata: {
+          selectedModel: model,
+          fallbackModel: normalizedModel,
+          settingKey: APP_SETTING_KEYS.CHAT5_BATCH_DEFAULT_MODEL,
+          conversationId,
+          taskType,
+        },
+      });
     }
 
     if (taskType === 'response' && !messageId) {
@@ -665,5 +727,7 @@ class BatchService {
 module.exports = BatchService;
 module.exports.ensureModelsLoaded = ensureModelsLoaded;
 module.exports.invalidateBatchModelCache = invalidateBatchModelCache;
+module.exports.resolveConfiguredDefaultModel = resolveConfiguredDefaultModel;
 module.exports.resolveConfiguredSummaryModel = resolveConfiguredSummaryModel;
+module.exports.validateBatchDefaultModelSetting = validateBatchDefaultModelSetting;
 module.exports.validateBatchSummaryModelSetting = validateBatchSummaryModelSetting;

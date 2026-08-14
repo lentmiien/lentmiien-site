@@ -1,6 +1,7 @@
 const APP_SETTING_KEYS = Object.freeze({
   CHAT5_TITLE_MODEL: 'chat5.ai.title_model',
   CHAT5_SUMMARY_MODEL: 'chat5.ai.summary_model',
+  CHAT5_BATCH_DEFAULT_MODEL: 'chat5.batch.default_model',
   CHAT5_BATCH_SUMMARY_MODEL: 'chat5.batch.summary_model',
   CODEX_LOG_REVIEW_LAST_RUN_AT: 'codex_log_review.last_run_at',
 });
@@ -15,6 +16,11 @@ const DEFAULT_APP_SETTINGS = Object.freeze([
     key: APP_SETTING_KEYS.CHAT5_SUMMARY_MODEL,
     value: 'gpt-4.1-mini',
     description: 'OpenAI model used by Chat5 AI Generate Summary.',
+  }),
+  Object.freeze({
+    key: APP_SETTING_KEYS.CHAT5_BATCH_DEFAULT_MODEL,
+    value: 'gpt-5.6-luna',
+    description: 'OpenAI batch-capable model used when the model selected in Chat5 is not eligible for batch processing.',
   }),
   Object.freeze({
     key: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,

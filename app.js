@@ -126,7 +126,10 @@ const scheduleDisasterIngestion = require('./schedulers/disasterIngestion');
 const scheduleLogRetention = require('./schedulers/logRetention');
 const scheduleOcrEmbeddingReconciliation = require('./schedulers/ocrEmbeddings');
 const scheduleCodexLogReview = require('./schedulers/codexLogReview');
-const { validateBatchSummaryModelSetting } = require('./services/batchService');
+const {
+  validateBatchDefaultModelSetting,
+  validateBatchSummaryModelSetting,
+} = require('./services/batchService');
 const audioWorkflowService = require('./services/audioWorkflowInstance');
 const codexQueueWorker = require('./services/codexQueueWorker');
 const io = socketIO(server, sessionMiddleware);
@@ -688,6 +691,12 @@ scheduleDisasterIngestion();
 scheduleLogRetention();
 scheduleOcrEmbeddingReconciliation();
 scheduleCodexLogReview();
+validateBatchDefaultModelSetting().catch((error) => {
+  logger.warning('Unable to validate the batch default model setting at startup', {
+    category: 'batch',
+    metadata: { error: error.message },
+  });
+});
 validateBatchSummaryModelSetting().catch((error) => {
   logger.warning('Unable to validate the batch summary model setting at startup', {
     category: 'batch',

@@ -16,6 +16,14 @@ const mockModelCards = [
     context_type: 'system',
   },
   {
+    api_model: 'gpt-5.6-luna',
+    provider: 'OpenAI',
+    model_type: 'chat',
+    batch_use: true,
+    in_modalities: ['text'],
+    context_type: 'developer',
+  },
+  {
     api_model: 'gpt-5.6-sol',
     provider: 'OpenAI',
     model_type: 'chat',
@@ -46,6 +54,7 @@ jest.mock('../../utils/OpenAI_API', () => ({
 jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
   warn: jest.fn(),
+  warning: jest.fn(),
   notice: jest.fn(),
   info: jest.fn(),
 }));
@@ -55,6 +64,7 @@ const { uploadBatchFile, startBatchJob } = require('../../utils/OpenAI_API');
 const BatchService = require('../../services/batchService');
 const {
   invalidateBatchModelCache,
+  resolveConfiguredDefaultModel,
   resolveConfiguredSummaryModel,
 } = require('../../services/batchService');
 
@@ -141,6 +151,62 @@ describe('BatchService (chat5)', () => {
     });
   });
 
+  test('addPromptToBatch uses the configured default when the selected model is ineligible', async () => {
+    const appSettingsService = {
+      getValue: jest.fn().mockResolvedValue('gpt-5.6-luna'),
+    };
+    service = new BatchService(
+      BatchPromptDatabase,
+      BatchRequestDatabase,
+      { processConvertedOutputs: jest.fn() },
+      {},
+      appSettingsService,
+    );
+
+    const result = await service.addPromptToBatch({
+      userId: 'user-1',
+      conversationId: 'conv-123',
+      messageId: 'msg-456',
+      model: 'claude-ineligible-for-openai-batch',
+      title: 'Conversation',
+      taskType: 'response',
+    });
+
+    expect(result).toBe('conv-123');
+    expect(appSettingsService.getValue).toHaveBeenCalledWith('chat5.batch.default_model');
+    expect(BatchPromptDatabase.mockDocs[0]).toMatchObject({
+      model: 'gpt-5.6-luna',
+      task_type: 'response',
+    });
+  });
+
+  test('does not read the batch default setting when the selected model is eligible', async () => {
+    const appSettingsService = {
+      getValue: jest.fn(),
+    };
+    service = new BatchService(
+      BatchPromptDatabase,
+      BatchRequestDatabase,
+      { processConvertedOutputs: jest.fn() },
+      {},
+      appSettingsService,
+    );
+
+    await service.addPromptToBatch({
+      userId: 'user-1',
+      conversationId: 'conv-123',
+      messageId: 'msg-456',
+      model: 'gpt-4.1',
+      title: 'Conversation',
+      taskType: 'response',
+    });
+
+    expect(appSettingsService.getValue).not.toHaveBeenCalled();
+    expect(BatchPromptDatabase.mockDocs[0]).toMatchObject({
+      model: 'gpt-4.1-2025-04-14',
+    });
+  });
+
   test('addPromptToBatch skips summary duplicates', async () => {
     BatchPromptDatabase.find.mockResolvedValue([{ task_type: 'summary', request_id: 'new' }]);
 
@@ -224,6 +290,19 @@ describe('BatchService (chat5)', () => {
         model: 'gpt-4.1-nano-2025-04-14',
         usedFallback: false,
       }));
+  });
+
+  test('resolves the batch default model from app settings', async () => {
+    const appSettingsService = {
+      getValue: jest.fn().mockResolvedValue('gpt-5.6-luna'),
+    };
+
+    await expect(resolveConfiguredDefaultModel(appSettingsService))
+      .resolves.toEqual({
+        model: 'gpt-5.6-luna',
+        configuredModel: 'gpt-5.6-luna',
+        settingError: null,
+      });
   });
 
   test('falls back to the completed request model when the configured summary model is unsupported', async () => {
