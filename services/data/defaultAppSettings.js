@@ -3,6 +3,7 @@ const APP_SETTING_KEYS = Object.freeze({
   CHAT5_SUMMARY_MODEL: 'chat5.ai.summary_model',
   CHAT5_BATCH_DEFAULT_MODEL: 'chat5.batch.default_model',
   CHAT5_BATCH_SUMMARY_MODEL: 'chat5.batch.summary_model',
+  CODEX_LOCAL_MODELS: 'codex.local_models',
   CODEX_LOG_REVIEW_LAST_RUN_AT: 'codex_log_review.last_run_at',
 });
 
@@ -26,6 +27,11 @@ const DEFAULT_APP_SETTINGS = Object.freeze([
     key: APP_SETTING_KEYS.CHAT5_BATCH_SUMMARY_MODEL,
     value: 'gpt-4.1-nano-2025-04-14',
     description: 'Preferred OpenAI batch-capable model used for automatic Chat5 conversation summaries.',
+  }),
+  Object.freeze({
+    key: APP_SETTING_KEYS.CODEX_LOCAL_MODELS,
+    value: 'qwen3.6:27b',
+    description: 'Comma-separated Ollama models offered by the Codex tool. Changes take effect on the next page load or request.',
   }),
   Object.freeze({
     key: APP_SETTING_KEYS.CODEX_LOG_REVIEW_LAST_RUN_AT,

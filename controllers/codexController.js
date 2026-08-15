@@ -85,14 +85,15 @@ exports.renderSession = async (req, res) => {
 
 exports.renderPromptTemplates = async (req, res) => {
   try {
-    const [templates, workspaces] = await Promise.all([
+    const [templates, workspaces, config] = await Promise.all([
       codexToolService.listPromptTemplates(req.user),
       codexToolService.listWorkspaces({ includeDisabled: true }),
+      codexToolService.publicConfig(),
     ]);
     const state = {
       templates,
       workspaces,
-      config: codexToolService.publicConfig(),
+      config,
     };
     return res.render('codex/templates', {
       pageTitle: 'Codex Prompt Library',
@@ -119,14 +120,15 @@ exports.renderTurn = async (req, res) => {
 
 exports.renderWorkspaces = async (req, res) => {
   try {
-    const [workspaces, targets] = await Promise.all([
+    const [workspaces, targets, config] = await Promise.all([
       codexToolService.listWorkspaces({ includeDisabled: true }),
       codexToolService.listTargets(),
+      codexToolService.publicConfig(),
     ]);
     const state = {
       workspaces,
       targets,
-      config: codexToolService.publicConfig(),
+      config,
     };
     return res.render('codex/workspaces', {
       pageTitle: 'Codex Workspaces',
@@ -140,10 +142,13 @@ exports.renderWorkspaces = async (req, res) => {
 
 exports.renderProfiles = async (req, res) => {
   try {
-    const profiles = await codexToolService.listRequestProfiles({ includeDisabled: true });
+    const [profiles, config] = await Promise.all([
+      codexToolService.listRequestProfiles({ includeDisabled: true }),
+      codexToolService.publicConfig(),
+    ]);
     const state = {
       profiles,
-      config: codexToolService.publicConfig(),
+      config,
     };
     return res.render('codex/profiles', {
       pageTitle: 'Codex Profiles',

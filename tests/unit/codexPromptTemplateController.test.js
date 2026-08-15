@@ -54,7 +54,7 @@ describe('codexController prompt templates', () => {
     const workspaces = [{ id: 'workspace-1', name: 'Workspace' }];
     codexToolService.listPromptTemplates.mockResolvedValue(templates);
     codexToolService.listWorkspaces.mockResolvedValue(workspaces);
-    codexToolService.publicConfig.mockReturnValue({ maxPromptChars: 20000 });
+    codexToolService.publicConfig.mockResolvedValue({ maxPromptChars: 20000 });
     const req = { user };
     const res = {
       render: jest.fn(),

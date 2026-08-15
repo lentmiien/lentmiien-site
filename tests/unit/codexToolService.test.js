@@ -11,9 +11,25 @@ jest.mock('../../models/codex_workspace_lock', () => ({
   },
 }));
 
+const mockGetAppSettingValue = jest.fn();
+
+jest.mock('../../services/appSettingsService', () => ({
+  APP_SETTING_KEYS: {
+    CODEX_LOCAL_MODELS: 'codex.local_models',
+  },
+  appSettingsService: {
+    getValue: mockGetAppSettingValue,
+  },
+}));
+
 const CodexEvent = require('../../models/codex_event');
 const CodexWorkspaceLock = require('../../models/codex_workspace_lock');
 const codexToolService = require('../../services/codexToolService');
+
+beforeEach(() => {
+  mockGetAppSettingValue.mockReset();
+  mockGetAppSettingValue.mockResolvedValue('qwen3.6:27b');
+});
 
 describe('codexToolService runtime config', () => {
   const originalMaxEventsPerTurn = process.env.CODEX_MAX_EVENTS_PER_TURN;
@@ -50,17 +66,42 @@ describe('codexToolService runtime config', () => {
     expect(codexToolService.getRuntimeConfig().maxEventsPerTurn).toBe(2500);
   });
 
-  test('merges configured Ollama models into the built-in local model catalog', () => {
-    process.env.CODEX_LOCAL_MODELS = JSON.stringify([
-      'llama4:scout',
-      { value: 'qwen3.6:14b', label: 'Qwen 3.6 14B', description: 'Smaller local model.' },
-    ]);
+  test('loads comma-separated Ollama models from app settings and ignores the legacy environment value', async () => {
+    process.env.CODEX_LOCAL_MODELS = 'legacy-model:latest';
+    mockGetAppSettingValue.mockResolvedValue(
+      'llama4:scout, qwen3.6:27b, qwen3.6:14b, llama4:scout'
+    );
 
-    expect(codexToolService.getRuntimeConfig().localModelOptions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ value: 'qwen3.6:27b' }),
-      expect.objectContaining({ value: 'llama4:scout' }),
-      expect.objectContaining({ value: 'qwen3.6:14b', label: 'Qwen 3.6 14B' }),
-    ]));
+    const config = await codexToolService.publicConfig();
+
+    expect(mockGetAppSettingValue).toHaveBeenCalledWith('codex.local_models');
+    expect(config.localModelOptions).toEqual([
+      expect.objectContaining({ value: 'llama4:scout', label: 'llama4:scout' }),
+      expect.objectContaining({ value: 'qwen3.6:27b', label: 'Qwen 3.6 27B' }),
+      expect.objectContaining({ value: 'qwen3.6:14b', label: 'qwen3.6:14b' }),
+    ]);
+  });
+
+  test('reads the Ollama model setting again for each public config request', async () => {
+    mockGetAppSettingValue
+      .mockResolvedValueOnce('qwen3.6:27b')
+      .mockResolvedValueOnce('llama4:scout');
+
+    const firstConfig = await codexToolService.publicConfig();
+    const secondConfig = await codexToolService.publicConfig();
+
+    expect(firstConfig.localModelOptions.map((option) => option.value)).toEqual(['qwen3.6:27b']);
+    expect(secondConfig.localModelOptions.map((option) => option.value)).toEqual(['llama4:scout']);
+    expect(mockGetAppSettingValue).toHaveBeenCalledTimes(2);
+  });
+
+  test('rejects an app setting that contains no model names', async () => {
+    mockGetAppSettingValue.mockResolvedValue(' , , ');
+
+    await expect(codexToolService.publicConfig()).rejects.toMatchObject({
+      statusCode: 500,
+      message: expect.stringContaining('codex.local_models'),
+    });
   });
 
   test('uses the ollama Codex profile by default and allows an override', () => {
@@ -549,6 +590,18 @@ describe('codexToolService local model request options', () => {
     })).rejects.toMatchObject({
       statusCode: 409,
       message: expect.stringContaining('cannot switch'),
+    });
+  });
+
+  test('validates an Ollama submission against the latest app setting value', async () => {
+    mockGetAppSettingValue.mockResolvedValue('llama4:scout');
+
+    await expect(codexToolService.resolveTurnRequestOptions({
+      modelProvider: 'ollama',
+      model: 'qwen3.6:27b',
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining('not configured'),
     });
   });
 });

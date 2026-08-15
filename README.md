@@ -174,7 +174,6 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `CODEX_GLOBAL_CONCURRENCY` | Maximum Codex turns this worker may run at once across different workspaces. Each workspace is still locked to one running turn. Defaults to `1`; set higher, such as `5`, on a remote Linux worker with multiple workspaces. |
 | `CODEX_MAX_EVENTS_PER_TURN` | Maximum number of detail events persisted for each Codex turn before a truncation warning is stored. Defaults to `2000`. |
 | `CODEX_YOLO_ENABLED` | Enables server-side acceptance of yolo Codex turns when the selected workspace also allows yolo. Defaults to `false`. |
-| `CODEX_LOCAL_MODELS` | Additional Ollama models offered by `/codex`, as a comma-separated list or JSON array of strings/objects. `qwen3.6:27b` is always included. Example: `qwen3.6:14b,llama4:scout`. |
 | `CODEX_OLLAMA_PROFILE` | Codex config profile layered onto every Ollama turn. Defaults to `ollama`, which loads `$CODEX_HOME/ollama.config.toml`. |
 | `CODEX_OLLAMA_RESERVATION_CONTAINER` | AI Gateway container reserved before a local Codex turn. Defaults to `ollama`. |
 | `CODEX_OLLAMA_RESERVATION_SECONDS` | AI Gateway reservation idle timeout for local Codex turns. Values below six hours are raised to `21600` seconds. |
@@ -192,6 +191,8 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `HIDE_GTAG` | Set to `YES` to suppress Google Analytics tags. |
 
 > Keep `.env` out of version control. `setup.js` warns if the file is missing.
+
+The Ollama model choices shown by `/codex` are stored in the `app_settings` collection under `codex.local_models`, initially seeded as `qwen3.6:27b`. Set its value to a comma-separated list such as `qwen3.6:27b,qwen3.6:14b,llama4:scout`. Manage it at `/admin/app-settings`; changes apply on the next Codex page load or Ollama request without restarting the app. The legacy `CODEX_LOCAL_MODELS` environment variable is no longer read.
 
 ### Startup Diagnostics & Alerts
 

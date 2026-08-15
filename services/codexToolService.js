@@ -14,6 +14,10 @@ const CodexRequestProfile = require('../models/codex_request_profile');
 const CodexPromptTemplate = require('../models/codex_prompt_template');
 const logger = require('../utils/logger');
 const {
+  APP_SETTING_KEYS,
+  appSettingsService,
+} = require('./appSettingsService');
+const {
   buildRemoteShellCommand,
   buildSshArgs,
   getSshBinary,
@@ -74,7 +78,7 @@ const CODEX_MODEL_OPTIONS = [
     description: 'Ultra-fast coding model for near-instant iteration.',
   },
 ];
-const DEFAULT_LOCAL_MODEL_OPTIONS = [
+const KNOWN_LOCAL_MODEL_OPTIONS = [
   {
     value: 'qwen3.6:27b',
     label: 'Qwen 3.6 27B',
@@ -245,29 +249,34 @@ function normalizeLocalModelOption(entry) {
   };
 }
 
-function getLocalModelOptions() {
-  const rawValue = String(process.env.CODEX_LOCAL_MODELS || '').trim();
-  let configuredModels = [];
-  if (rawValue) {
-    try {
-      const parsed = JSON.parse(rawValue);
-      configuredModels = Array.isArray(parsed) ? parsed : [parsed];
-    } catch (_error) {
-      configuredModels = rawValue.split(',');
-    }
-  }
-
+function parseLocalModelOptions(rawValue) {
+  const knownOptionsByValue = new Map(
+    KNOWN_LOCAL_MODEL_OPTIONS.map((option) => [option.value, option])
+  );
   const byValue = new Map();
-  [...DEFAULT_LOCAL_MODEL_OPTIONS, ...configuredModels]
+  String(rawValue || '').split(',')
     .map(normalizeLocalModelOption)
     .filter(Boolean)
-    .forEach((option) => byValue.set(option.value, option));
+    .forEach((option) => {
+      byValue.set(option.value, knownOptionsByValue.get(option.value) || option);
+    });
   return Array.from(byValue.values());
 }
 
-function normalizeLocalModel(value, fallback = '') {
+async function getLocalModelOptions() {
+  const rawValue = await appSettingsService.getValue(APP_SETTING_KEYS.CODEX_LOCAL_MODELS);
+  const options = parseLocalModelOptions(rawValue);
+  if (!options.length) {
+    throw createHttpError(
+      500,
+      `App setting "${APP_SETTING_KEYS.CODEX_LOCAL_MODELS}" must contain at least one comma-separated Ollama model.`
+    );
+  }
+  return options;
+}
+
+function normalizeLocalModel(value, fallback = '', localModels = []) {
   const model = String(value || fallback).trim().slice(0, 120);
-  const localModels = getLocalModelOptions();
   const selectedModel = model || localModels[0]?.value || '';
   if (!selectedModel || !localModels.some((option) => option.value === selectedModel)) {
     throw createHttpError(400, 'Selected local model is not configured for the Codex tool.');
@@ -809,7 +818,6 @@ function getRuntimeConfig() {
     maxEventTextChars: getPositiveIntegerEnv('CODEX_MAX_EVENT_TEXT_CHARS', 12000, 1000, 100000),
     remoteValidationTimeoutMs: getPositiveIntegerEnv('CODEX_REMOTE_VALIDATION_TIMEOUT_MS', 15000, 1000, 120000),
     yoloEnabled: getBooleanEnv('CODEX_YOLO_ENABLED', false),
-    localModelOptions: getLocalModelOptions(),
   };
 }
 
@@ -1569,11 +1577,12 @@ async function resolveTurnRequestOptions(payload = {}, workspace = {}, options =
     throw createHttpError(409, 'A Codex session cannot switch between OpenAI and Ollama. Start a new session to change providers.');
   }
   if (modelProvider === MODEL_PROVIDERS.OLLAMA) {
+    const localModelOptions = await getLocalModelOptions();
     return {
       requestProfileId: '',
       requestProfileName: '',
       modelProvider,
-      model: normalizeLocalModel(payload.model, options.defaultModel),
+      model: normalizeLocalModel(payload.model, options.defaultModel, localModelOptions),
       profile: '',
       reasoningEffort: '',
     };
@@ -2243,18 +2252,19 @@ async function getDashboardStats(options = {}) {
 
 async function getDashboardState() {
   await ensureDefaultData();
-  const [workspaces, queuedTurns, runningTurns, sessions, pricingByProvider, requestProfiles] = await Promise.all([
+  const [workspaces, queuedTurns, runningTurns, sessions, pricingByProvider, requestProfiles, config] = await Promise.all([
     listWorkspaces(),
     CodexTurn.find({ status: 'queued' }).sort({ queuedAt: 1 }).limit(20).lean().exec(),
     CodexTurn.find({ status: 'running' }).sort({ startedAt: 1 }).limit(20).lean().exec(),
     listSessions({ limit: 12 }),
     getTokenPricingByProvider(),
     listRequestProfiles(),
+    publicConfig(),
   ]);
   const stats = await getDashboardStats({ pricingByProvider });
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
   return {
-    config: publicConfig(),
+    config,
     pricing: pricingByProvider.openai,
     pricingByProvider,
     stats,
@@ -2271,12 +2281,13 @@ async function getSessionDetail(sessionId) {
   if (!session) {
     throw createHttpError(404, 'Session not found.');
   }
-  const [workspace, target, turns, pricingByProvider, requestProfiles] = await Promise.all([
+  const [workspace, target, turns, pricingByProvider, requestProfiles, config] = await Promise.all([
     CodexWorkspace.findById(session.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(session.targetId).lean().exec(),
     CodexTurn.find({ sessionId }).sort({ sequence: 1 }).lean().exec(),
     getTokenPricingByProvider(),
     listRequestProfiles(),
+    publicConfig(),
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(turns);
   return {
@@ -2287,7 +2298,7 @@ async function getSessionDetail(sessionId) {
     stats: buildSessionStats(turnsWithUsage, pricingByProvider),
     pricing: pricingByProvider.openai,
     pricingByProvider,
-    config: publicConfig(),
+    config,
     requestProfiles,
   };
 }
@@ -2297,12 +2308,13 @@ async function getTurnDetail(turnId) {
   if (!turn) {
     throw createHttpError(404, 'Turn not found.');
   }
-  const [session, workspace, target, pricingByProvider, sessionTurns] = await Promise.all([
+  const [session, workspace, target, pricingByProvider, sessionTurns, config] = await Promise.all([
     CodexSession.findById(turn.sessionId).lean().exec(),
     CodexWorkspace.findById(turn.workspaceId).lean().exec(),
     CodexExecutionTarget.findById(turn.targetId).lean().exec(),
     getTokenPricingByProvider(),
     CodexTurn.find({ sessionId: turn.sessionId }).sort({ sequence: 1 }).lean().exec(),
+    publicConfig(),
   ]);
   const turnsWithUsage = annotateTurnsWithTokenUsage(sessionTurns.length ? sessionTurns : [turn]);
   const turnWithUsage = turnsWithUsage.find((entry) => String(entry._id) === String(turn._id)) ||
@@ -2314,7 +2326,7 @@ async function getTurnDetail(turnId) {
     target: serializeTarget(target),
     pricing: pricingByProvider.openai,
     pricingByProvider,
-    config: publicConfig(),
+    config,
   };
 }
 
@@ -2523,12 +2535,13 @@ async function getHealth(workerStatus) {
     runningCount,
     staleLockCount,
     workspaceCount,
-    config: publicConfig(),
+    config: await publicConfig(),
   };
 }
 
-function publicConfig() {
+async function publicConfig() {
   const config = getRuntimeConfig();
+  const localModelOptions = await getLocalModelOptions();
   return {
     workerEnabled: config.workerEnabled,
     globalConcurrency: config.globalConcurrency,
@@ -2537,7 +2550,7 @@ function publicConfig() {
     yoloEnabled: config.yoloEnabled,
     reasoningEfforts: REASONING_EFFORT_OPTIONS,
     codexModelOptions: CODEX_MODEL_OPTIONS,
-    localModelOptions: config.localModelOptions,
+    localModelOptions,
   };
 }
 
