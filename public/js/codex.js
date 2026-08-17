@@ -62,11 +62,77 @@
     return messages;
   }
 
+  function summarizeEditedFiles(events) {
+    const filesByPath = new Map();
+
+    (Array.isArray(events) ? events : []).forEach((event) => {
+      if (eventItemType(event) !== 'file_change') {
+        return;
+      }
+      const item = extractEventItem(event);
+      const presentation = event?.presentation && typeof event.presentation === 'object'
+        ? event.presentation
+        : {};
+      const changes = Array.isArray(presentation.changes)
+        ? presentation.changes
+        : (Array.isArray(item?.changes) ? item.changes : []);
+
+      changes.forEach((change) => {
+        const filePath = String(change?.path || '').trim();
+        if (!filePath) {
+          return;
+        }
+        if (!filesByPath.has(filePath)) {
+          filesByPath.set(filePath, { path: filePath, kinds: [] });
+        }
+        const kind = String(change?.kind || '').trim().toLowerCase();
+        const file = filesByPath.get(filePath);
+        if (kind && !file.kinds.includes(kind)) {
+          file.kinds.push(kind);
+        }
+      });
+    });
+
+    return Array.from(filesByPath.values())
+      .sort((left, right) => left.path.localeCompare(right.path));
+  }
+
+  function isErrorProcessEvent(event) {
+    const eventType = String(event?.eventType || '').trim().toLowerCase();
+    const stream = String(event?.stream || '').trim().toLowerCase();
+    const severity = String(event?.severity || '').trim().toLowerCase();
+
+    if (eventType === 'stderr.line' || stream === 'stderr') {
+      return true;
+    }
+    if (['error', 'fatal', 'critical'].includes(severity)) {
+      return true;
+    }
+
+    const errorEventTokens = new Set(['error', 'failed', 'failure', 'fatal', 'panic']);
+    if (eventType.split(/[._:-]+/).some((token) => errorEventTokens.has(token))) {
+      return true;
+    }
+
+    const payload = event?.payload && typeof event.payload === 'object' ? event.payload : {};
+    const nestedPayload = payload.payload && typeof payload.payload === 'object' ? payload.payload : {};
+    const item = extractEventItem(event) || {};
+    const errorStatuses = new Set(['error', 'failed', 'failure', 'fatal', 'blocked', 'rejected', 'timed_out']);
+    return [event?.status, payload.status, nestedPayload.status, item.status]
+      .some((status) => errorStatuses.has(String(status || '').trim().toLowerCase()));
+  }
+
+  function selectErrorProcessEvents(events) {
+    return (Array.isArray(events) ? events : []).filter(isErrorProcessEvent);
+  }
+
   if (typeof module === 'object' && module.exports && typeof document === 'undefined') {
     module.exports = {
       filterPromptTemplatesByWorkspace,
       getPromptLengthState,
+      selectErrorProcessEvents,
       selectFocusedProcessEvents,
+      summarizeEditedFiles,
     };
     return;
   }
@@ -310,7 +376,7 @@
   }
 
   function normalizeEventViewMode(value) {
-    return value === 'focused' ? 'focused' : 'all';
+    return ['focused', 'errors'].includes(value) ? value : 'all';
   }
 
   function formatActivityAge(value) {
@@ -1574,24 +1640,93 @@
     wrapper.appendChild(list);
   }
 
+  function renderEditedFilesSummary(container, files) {
+    const wrapper = createEl('article', {
+      className: 'codex-event codex-event--file-changes',
+    });
+    const header = createEl('div', { className: 'codex-event__header' });
+    header.appendChild(createEl('strong', { text: 'Edited files' }));
+    header.appendChild(createEl('span', {
+      text: `${files.length} ${files.length === 1 ? 'file' : 'files'}`,
+    }));
+    wrapper.appendChild(header);
+
+    const tableWrapper = createEl('div', { className: 'codex-event__file-table-wrap' });
+    const table = createEl('table', { className: 'codex-event__file-table' });
+    const tableHead = createEl('thead');
+    const headingRow = createEl('tr');
+    headingRow.appendChild(createEl('th', { scope: 'col', text: 'File' }));
+    headingRow.appendChild(createEl('th', { scope: 'col', text: 'Changes' }));
+    tableHead.appendChild(headingRow);
+    table.appendChild(tableHead);
+
+    const tableBody = createEl('tbody');
+    files.forEach((file) => {
+      const row = createEl('tr');
+      const fileCell = tableCell('File');
+      const lastSeparator = Math.max(file.path.lastIndexOf('/'), file.path.lastIndexOf('\\'));
+      const fileName = lastSeparator >= 0 ? file.path.slice(lastSeparator + 1) : file.path;
+      const directory = lastSeparator >= 0 ? file.path.slice(0, lastSeparator + 1) : '';
+      fileCell.appendChild(createEl('code', {
+        className: 'codex-event__file-name',
+        title: file.path,
+        text: fileName || file.path,
+      }));
+      if (directory) {
+        fileCell.appendChild(createEl('small', {
+          className: 'codex-event__file-directory',
+          title: file.path,
+          text: directory,
+        }));
+      }
+      row.appendChild(fileCell);
+
+      const kindCell = tableCell('Changes');
+      const kinds = file.kinds.length ? file.kinds : ['change'];
+      const kindList = createEl('div', { className: 'codex-event__file-kinds' });
+      kinds.forEach((kind) => {
+        const modifier = kind.replace(/[^a-z0-9_-]+/g, '-');
+        kindList.appendChild(createEl('span', {
+          className: `codex-event__file-kind codex-event__file-kind--${modifier}`,
+          text: kind,
+        }));
+      });
+      kindCell.appendChild(kindList);
+      row.appendChild(kindCell);
+      tableBody.appendChild(row);
+    });
+    table.appendChild(tableBody);
+    tableWrapper.appendChild(table);
+    wrapper.appendChild(tableWrapper);
+    container.appendChild(wrapper);
+  }
+
   function renderEvents(container, events, options = {}) {
     container.innerHTML = '';
     const eventList = Array.isArray(events) ? events : [];
     const viewMode = normalizeEventViewMode(container.dataset.eventViewMode);
+    const editedFiles = viewMode === 'focused' ? summarizeEditedFiles(eventList) : [];
     const visibleEvents = viewMode === 'focused'
       ? selectFocusedProcessEvents(eventList)
-      : eventList;
+      : (viewMode === 'errors' ? selectErrorProcessEvents(eventList) : eventList);
 
-    if (visibleEvents.length === 0) {
-      let message = viewMode === 'focused'
-        ? 'No agent messages, reasoning updates, or todo lists stored.'
-        : 'No process details stored.';
+    if (visibleEvents.length === 0 && editedFiles.length === 0) {
+      let message = 'No process details stored.';
+      if (viewMode === 'focused') {
+        message = 'No agent messages, reasoning updates, todo lists, or edited files stored.';
+      } else if (viewMode === 'errors') {
+        message = 'No error outputs stored.';
+      }
       if (!options.loaded && eventList.length === 0) {
         message = 'Loading process details…';
       } else if (options.isRunning) {
-        message = viewMode === 'focused'
-          ? 'Waiting for an agent message, reasoning update, or todo list…'
-          : 'Listening for the first process detail…';
+        if (viewMode === 'focused') {
+          message = 'Waiting for an agent message, reasoning update, todo list, or file change…';
+        } else if (viewMode === 'errors') {
+          message = 'No error output recorded yet.';
+        } else {
+          message = 'Listening for the first process detail…';
+        }
       }
       container.appendChild(createEl('p', { className: 'codex-empty', text: message }));
     } else {
@@ -1599,8 +1734,11 @@
         const eventSeq = Number(event.seq) || 0;
         const isNew = Boolean(options.newSeqs && options.newSeqs.has(eventSeq));
         const itemType = eventItemType(event);
+        const eventVariant = viewMode === 'focused'
+          ? ` codex-event--${itemType.replace(/_/g, '-')}`
+          : (viewMode === 'errors' ? ' codex-event--error' : '');
         const wrapper = createEl('article', {
-          className: `codex-event${viewMode === 'focused' ? ` codex-event--${itemType.replace(/_/g, '-')}` : ''}${isNew ? ' codex-event--new' : ''}`,
+          className: `codex-event${eventVariant}${isNew ? ' codex-event--new' : ''}`,
           'data-event-seq': eventSeq,
         });
         const header = createEl('div', { className: 'codex-event__header' });
@@ -1631,6 +1769,9 @@
         }
         container.appendChild(wrapper);
       });
+      if (editedFiles.length) {
+        renderEditedFilesSummary(container, editedFiles);
+      }
     }
     if (options.errorMessage) {
       container.appendChild(createEl('p', {
@@ -1651,12 +1792,14 @@
       }));
       listener.appendChild(createEl('span', {
         text: viewMode === 'focused'
-          ? 'Live · listening for messages, reasoning and todos'
-          : 'Live · listening for more details',
+          ? 'Live · listening for messages, reasoning, todos and file changes'
+          : (viewMode === 'errors'
+            ? 'Live · listening for error output'
+            : 'Live · listening for more details'),
       }));
       container.appendChild(listener);
     }
-    const latestSeq = visibleEvents.reduce(
+    const latestSeq = eventList.reduce(
       (maximum, event) => Math.max(maximum, Number(event.seq) || 0),
       0,
     );

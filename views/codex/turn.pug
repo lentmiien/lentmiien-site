@@ -122,6 +122,7 @@ block content
               .codex-event-view-toggle(role='group', aria-label='Process detail view')
                 button.codex-event-view-toggle__button(type='button', data-action='set-event-view', data-turn-id=turn.id, data-event-view-mode='all', aria-pressed='false') View all
                 button.codex-event-view-toggle__button(type='button', data-action='set-event-view', data-turn-id=turn.id, data-event-view-mode='focused', aria-pressed='true') Agent messages, reasoning & todos
+                button.codex-event-view-toggle__button(type='button', data-action='set-event-view', data-turn-id=turn.id, data-event-view-mode='errors', aria-pressed='false') Errors
               button.codex-small-button(type='button', data-action='toggle-events', data-turn-id=turn.id, aria-controls=detailsId, aria-expanded=detailsAreLive ? 'true' : 'false')= detailsAreLive ? 'Hide details' : (turn.eventCount ? `Show details (${turn.eventCount})` : 'Show details')
           .codex-events(id=detailsId, hidden=!detailsAreLive, data-events-for=turn.id, data-event-view-mode='focused')
 

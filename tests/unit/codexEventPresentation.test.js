@@ -104,6 +104,29 @@ describe('codexEventPresentation', () => {
     });
   });
 
+  test('normalizes file changes for the focused edited-files summary', () => {
+    const presentation = buildCodexEventPresentation({
+      payload: {
+        item: {
+          type: 'file_change',
+          changes: [
+            { path: ' /workspace/app.js ', kind: 'UPDATE' },
+            { path: '/workspace/models/item.js', kind: 'add' },
+            { path: '', kind: 'delete' },
+          ],
+        },
+      },
+    });
+
+    expect(presentation).toEqual({
+      itemType: 'file_change',
+      changes: [
+        { path: '/workspace/app.js', kind: 'update' },
+        { path: '/workspace/models/item.js', kind: 'add' },
+      ],
+    });
+  });
+
   test('adds presentation without changing unsupported events', () => {
     const event = { seq: 1, payload: { item: { type: 'command_execution' } } };
     const presented = addCodexEventPresentation(event);

@@ -86,4 +86,45 @@ describe('codexController.getTurnEvents', () => {
       }],
     });
   });
+
+  test('adds normalized file changes for the edited-files summary', async () => {
+    const event = {
+      id: 'event-3',
+      seq: 5,
+      eventType: 'item.started',
+      payload: {
+        item: {
+          type: 'file_change',
+          changes: [
+            { path: '/workspace/app.js', kind: 'update' },
+            { path: '/workspace/models/item.js', kind: 'add' },
+          ],
+        },
+      },
+    };
+    codexToolService.listTurnEvents.mockResolvedValue([event]);
+    const req = {
+      params: { turnId: 'turn-1' },
+      query: {},
+    };
+    const res = {
+      json: jest.fn((payload) => payload),
+    };
+
+    await codexController.getTurnEvents(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      events: [{
+        ...event,
+        presentation: {
+          itemType: 'file_change',
+          changes: [
+            { path: '/workspace/app.js', kind: 'update' },
+            { path: '/workspace/models/item.js', kind: 'add' },
+          ],
+        },
+      }],
+    });
+  });
 });

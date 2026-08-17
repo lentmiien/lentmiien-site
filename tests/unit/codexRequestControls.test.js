@@ -3,7 +3,9 @@ const pug = require('pug');
 const {
   filterPromptTemplatesByWorkspace,
   getPromptLengthState,
+  selectErrorProcessEvents,
   selectFocusedProcessEvents,
+  summarizeEditedFiles,
 } = require('../../public/js/codex');
 
 const commonLocals = {
@@ -281,5 +283,123 @@ describe('Codex focused process details', () => {
 
     expect(selectFocusedProcessEvents([reasoning])).toEqual([reasoning]);
     expect(selectFocusedProcessEvents(null)).toEqual([]);
+  });
+
+  test('combines file-change kinds by path and ignores unrelated event items', () => {
+    const events = [
+      {
+        seq: 1,
+        payload: {
+          item: {
+            type: 'file_change',
+            changes: [
+              { path: '/workspace/models/item.js', kind: 'add' },
+              { path: '/workspace/app.js', kind: 'update' },
+            ],
+          },
+        },
+      },
+      {
+        seq: 2,
+        presentation: {
+          itemType: 'file_change',
+          changes: [
+            { path: '/workspace/app.js', kind: 'update' },
+            { path: '/workspace/app.js', kind: 'rename' },
+          ],
+        },
+        payload: {},
+      },
+      { seq: 3, payload: { item: { type: 'command_execution', path: '/workspace/ignored.js' } } },
+    ];
+
+    expect(summarizeEditedFiles(events)).toEqual([
+      { path: '/workspace/app.js', kinds: ['update', 'rename'] },
+      { path: '/workspace/models/item.js', kinds: ['add'] },
+    ]);
+    expect(summarizeEditedFiles(null)).toEqual([]);
+  });
+
+  test('selects structured error output without scanning ordinary event text', () => {
+    const events = [
+      {
+        seq: 1,
+        eventType: 'stderr.line',
+        stream: 'stderr',
+        severity: 'warning',
+        text: 'Warning: no last agent message',
+      },
+      {
+        seq: 2,
+        eventType: 'turn.failed',
+        stream: 'system',
+        severity: 'error',
+        text: 'Turn failed',
+      },
+      {
+        seq: 3,
+        eventType: 'item.failed',
+        stream: 'stdout-json',
+        severity: 'info',
+        payload: {},
+      },
+      {
+        seq: 4,
+        eventType: 'item.completed',
+        stream: 'stdout-json',
+        severity: 'info',
+        payload: { item: { type: 'command_execution', status: 'rejected' } },
+      },
+      {
+        seq: 5,
+        eventType: 'stdout.line',
+        stream: 'stdout',
+        severity: 'info',
+        text: 'const error = buildExpectedResult();',
+      },
+      {
+        seq: 6,
+        eventType: 'item.completed',
+        stream: 'stdout-json',
+        severity: 'info',
+        payload: {
+          item: {
+            type: 'file_change',
+            status: 'completed',
+            changes: [{ path: '/workspace/error-handler.js', kind: 'update' }],
+          },
+        },
+      },
+      {
+        seq: 7,
+        eventType: 'events.truncated',
+        stream: 'system',
+        severity: 'warning',
+        text: 'Event storage warning',
+      },
+    ];
+
+    expect(selectErrorProcessEvents(events).map((event) => event.seq)).toEqual([1, 2, 3, 4]);
+    expect(selectErrorProcessEvents(null)).toEqual([]);
+  });
+
+  test('renders the focused and Errors process-detail mode controls', () => {
+    const html = renderCodexView('turn', {
+      turn: {
+        id: 'turn-1',
+        sequence: 1,
+        status: 'succeeded',
+        prompt: 'Update the app',
+        tokenUsage: {},
+        costEstimate: {},
+      },
+      session: { id: 'session-1', title: 'Session' },
+      workspace: { id: 'workspace-1', name: 'Workspace' },
+    });
+
+    expect(html).toContain('data-event-view-mode="focused" aria-pressed="true"');
+    expect(html).toContain('Agent messages, reasoning & todos');
+    expect(html).toContain('data-event-view-mode="errors" aria-pressed="false"');
+    expect(html).toContain('>Errors</button>');
   });
 });
