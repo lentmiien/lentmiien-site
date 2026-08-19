@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0f13">
+  <meta name="description" content="A bilingual cinematic narrated journey across more than forty powers of ten, from quarks to giant galaxies.">
+  <title>THE LONG ZOOM · From Quarks to Galaxies</title>
+  <link rel="icon" href="assets/images/09-human.webp" type="image/webp">
+  <link rel="preload" href="assets/images/09-human.webp" as="image" type="image/webp">
+  <link rel="stylesheet" href="/css/color-theme.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/story.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" id="skipLink" href="#storyTitle">Skip to the current chapter</a>
+
+  <div class="experience" id="experience" data-phase="intro" data-panel="visible" data-tone="human" data-layout="left">
+    <div class="background-stage" aria-hidden="true">
+      <img class="scene-image is-visible" id="sceneImageA" src="assets/images/09-human.webp" alt="">
+      <img class="scene-image" id="sceneImageB" src="assets/images/09-human.webp" alt="">
+      <div class="scale-grid"></div>
+      <div class="scene-wash"></div>
+      <div class="scene-vignette"></div>
+      <div class="film-grain"></div>
+      <canvas id="atmosphereCanvas"></canvas>
+    </div>
+
+    <div class="axis-mark" aria-hidden="true">
+      <span></span>
+      <i></i>
+      <b></b>
+    </div>
+
+    <header class="topbar" aria-label="Experience controls">
+      <a class="round-control back-control" id="backControl" href="/games" aria-label="Back to games">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+      </a>
+
+      <div class="brand-lockup" id="brandLockup">
+        <span class="brand-mark" aria-hidden="true"><i></i><b></b></span>
+        <span class="brand-copy">
+          <strong>THE LONG ZOOM</strong>
+          <small id="brandSubtitle">A journey through scale</small>
+        </span>
+      </div>
+
+      <div class="chapter-chip" id="chapterChip" hidden>
+        <span class="chapter-dot" aria-hidden="true"></span>
+        <span id="chapterChipText">01 · The probed edge</span>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="language-switch compact-language-switch" id="topLanguageSwitch" role="group" aria-label="Language">
+          <button type="button" data-language="en" aria-pressed="true"><span aria-hidden="true">EN</span><span class="sr-only">English</span></button>
+          <button type="button" data-language="ja" aria-pressed="false"><span aria-hidden="true">日</span><span class="sr-only">日本語</span></button>
+        </div>
+
+        <button class="round-control" id="panelButton" type="button" aria-pressed="true" aria-label="Hide story panel" hidden>
+          <svg class="panel-on-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5Zm4 4h7M7 12h10M7 15h8"></path></svg>
+          <svg class="panel-off-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5M2 2l20 20"></path></svg>
+          <span id="panelButtonText">Story</span>
+        </button>
+
+        <button class="round-control" id="captionButton" type="button" aria-pressed="false" aria-label="Open transcript" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm1 4v2h5V9H5Zm9 0v2h5V9h-5ZM5 13v2h7v-2H5Zm10 0v2h4v-2h-4Z"></path></svg>
+          <span id="captionButtonText">Transcript</span>
+        </button>
+
+        <button class="round-control" id="soundButton" type="button" aria-pressed="true" aria-label="Mute narration" hidden>
+          <svg class="sound-on-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m8 4a4.5 4.5 0 0 1 0 6m2-9a8 8 0 0 1 0 12"></path></svg>
+          <svg class="sound-off-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9v6h4l5 4V5L9 9H5m3-5 13 13"></path></svg>
+          <span id="soundButtonText">Sound</span>
+        </button>
+
+        <button class="round-control info-control" id="infoButton" type="button" aria-label="Open information and sources">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 10h2v7h-2v-7Zm0-3h2v2h-2V7Zm1-5a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="intro-overlay" id="introOverlay" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+      <div class="intro-card">
+        <div class="intro-orbit" aria-hidden="true"><i></i><b></b></div>
+        <p class="intro-overline" id="introKicker">FROM THE ALMOST POINT-LIKE TO THE ALMOST UNIMAGINABLE</p>
+        <h1 id="introTitle">THE LONG ZOOM</h1>
+        <p class="intro-subtitle" id="introSubtitle">From quarks to galaxies</p>
+        <p class="intro-lede" id="introLede">Stand at human scale for one breath. Then travel outward—and inward—across more than forty powers of ten.</p>
+
+        <div class="language-choice">
+          <p id="chooseLanguage">Choose your language</p>
+          <div class="language-switch intro-language-switch" id="introLanguageSwitch" role="group" aria-label="Language">
+            <button type="button" data-language="en" aria-pressed="true"><strong>English</strong><small>Lessac voice</small></button>
+            <button type="button" data-language="ja" aria-pressed="false"><strong>日本語</strong><small>四国めたん</small></button>
+          </div>
+        </div>
+
+        <div class="intro-stats" id="introStats" aria-label="Experience summary">
+          <span><strong>19</strong><small id="introScenesLabel">chapters</small></span>
+          <span><strong id="introDuration">about 12 min</strong><small id="introDurationLabel">narrated journey</small></span>
+          <span><strong>3</strong><small id="introQuizzesLabel">scale pauses</small></span>
+        </div>
+
+        <button class="start-button" id="startButton" type="button">
+          <span><small id="startEyebrow">English narration</small><strong id="startLabel">Begin the zoom</strong></span>
+          <i aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m11 7 14 9-14 9V7Z"></path></svg></i>
+        </button>
+        <p class="headphone-note" id="headphoneNote"><span aria-hidden="true">♪</span> Headphones recommended · narration can be changed at any time</p>
+      </div>
+
+      <div class="intro-coordinate" aria-hidden="true">
+        <span id="openingCoordinate">YOU ARE HERE · ABOUT 10⁰ METRES</span>
+        <span>10⁻²⁰ → 10²² · 42+ ORDERS OF MAGNITUDE</span>
+      </div>
+    </section>
+
+    <section class="story-stage" id="storyStage" aria-label="The Long Zoom story" hidden>
+      <main class="story-layout">
+        <article class="story-card" id="storyCard" tabindex="-1">
+          <header class="story-header">
+            <p class="story-eyebrow" id="storyEyebrow">01 · THE PROBED EDGE</p>
+            <span class="story-scale" id="storyScale">&lt; 10⁻²⁰ m</span>
+          </header>
+
+          <h1 id="storyTitle">Small does not end with a tiny ball.</h1>
+          <p class="story-lede" id="storyLede"></p>
+
+          <section class="fact-section" aria-labelledby="factsHeading">
+            <h2 class="sr-only" id="factsHeading">Three things to notice</h2>
+            <div class="fact-grid" id="factGrid"></div>
+          </section>
+
+          <p class="story-note" id="storyNote"></p>
+          <section class="quiz-block" id="quizBlock" aria-labelledby="quizQuestion" hidden></section>
+
+          <footer class="story-footer">
+            <div class="narration-status" id="narrationStatus" data-state="ready">
+              <button class="narration-replay" id="replayNarrationButton" type="button" aria-label="Replay this chapter narration">
+                <span class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+              </button>
+              <span class="narration-copy">
+                <small id="narrationLabel">Narration ready</small>
+                <span class="audio-progress" role="progressbar" aria-label="Narration progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="audioProgressTrack"><i id="audioProgress"></i></span>
+              </span>
+            </div>
+
+            <span class="scale-term" id="scaleTerm">
+              <small id="scaleTermLabel">Scale word</small>
+              <strong id="scaleTermWord"></strong>
+              <em id="scaleTermMeaning"></em>
+            </span>
+          </footer>
+        </article>
+
+        <aside class="transcript-card" id="transcriptCard" aria-labelledby="transcriptTitle" hidden>
+          <header>
+            <span><i aria-hidden="true"></i> <span id="transcriptTitle">Exact narration transcript</span></span>
+            <button id="closeTranscriptButton" type="button" aria-label="Close transcript">×</button>
+          </header>
+          <p id="transcriptText">Loading transcript…</p>
+        </aside>
+      </main>
+
+      <nav class="journey-nav" id="journeyNav" aria-label="Chapter navigation">
+        <button class="nav-button previous-button" id="previousButton" type="button" aria-label="Previous chapter">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"></path></svg>
+          <span id="previousLabel">Previous</span>
+        </button>
+
+        <div class="journey-progress">
+          <div class="progress-copy">
+            <span><b id="currentNumber">01</b> / <span id="totalNumber">19</span></span>
+            <span id="progressLabel">THE PROBED EDGE</span>
+          </div>
+          <div class="scale-rail" aria-hidden="true"><i id="scaleRailFill"></i><b id="scaleRailMarker"></b></div>
+          <ol class="progress-dots" id="progressDots" aria-label="Direct chapter navigation, 19 scenes"></ol>
+        </div>
+
+        <button class="nav-button next-button" id="nextButton" type="button" aria-label="Next chapter">
+          <span id="nextButtonLabel">Next</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"></path></svg>
+        </button>
+      </nav>
+    </section>
+
+    <dialog class="info-dialog" id="infoDialog" aria-labelledby="infoTitle">
+      <div class="info-panel">
+        <header>
+          <div>
+            <p id="infoKicker">FIELD NOTES</p>
+            <h2 id="infoTitle">About this journey</h2>
+          </div>
+          <button class="dialog-close" id="infoCloseButton" type="button" aria-label="Close information">×</button>
+        </header>
+
+        <div class="info-grid">
+          <section>
+            <h3 id="controlsTitle">Controls</h3>
+            <p id="controlsText"></p>
+            <p id="panelHelp"></p>
+          </section>
+          <section>
+            <h3 id="accessibilityTitle">Motion and access</h3>
+            <p id="accessibilityText"></p>
+          </section>
+          <section>
+            <h3 id="mediaTitle">Generated media</h3>
+            <p id="mediaText"></p>
+          </section>
+          <section>
+            <h3 id="voiceTitle">Narration</h3>
+            <p id="voiceText"></p>
+          </section>
+          <section class="accuracy-section">
+            <h3 id="accuracyTitle">Reading the scale</h3>
+            <p id="accuracyText"></p>
+          </section>
+        </div>
+
+        <section class="source-section">
+          <h3 id="sourcesTitle">Research sources</h3>
+          <p id="sourcesNote"></p>
+          <ul id="sourceList"></ul>
+        </section>
+      </div>
+    </dialog>
+
+    <div class="status-announcer" id="statusAnnouncer" role="status" aria-live="polite" aria-atomic="true"></div>
+    <audio id="narrationAudio" preload="metadata" playsinline></audio>
+  </div>
+
+  <noscript>
+    <div class="noscript-message">
+      <p lang="en">This narrated journey requires JavaScript.</p>
+      <p lang="ja">この音声の旅にはJavaScriptが必要です。</p>
+    </div>
+  </noscript>
+</body>
+</html>
