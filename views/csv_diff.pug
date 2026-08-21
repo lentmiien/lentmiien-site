@@ -1,0 +1,196 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/csv-diff.css')
+
+block content
+  main.csv-diff
+    .csv-diff__shell
+      header.csv-diff__hero
+        .csv-diff__hero-copy
+          span.csv-diff__eyebrow Structure-aware comparison
+          h1 CSV format &amp; content diff
+          p Compare CSV or TSV without losing track of cells after an insertion or deletion. Parsed content and raw formatting are reported separately.
+        a.csv-diff__json-link(href='/diff') Open JSON diff
+
+      form#csvDiffForm.csv-diff__form(action='/csv-diff', method='post', enctype='multipart/form-data')
+        .csv-diff__input-grid
+          section.csv-input-panel(aria-labelledby='left-input-title')
+            .csv-input-panel__header
+              div
+                span.csv-input-panel__side A
+                h2#left-input-title Left CSV
+              label.csv-input-panel__delimiter
+                span Delimiter
+                select.form-select.form-select-sm(name='aDelimiter', data-delimiter='a')
+                  option(value='auto', selected=inputs.aDelimiter === 'auto') Auto-detect
+                  option(value='comma', selected=inputs.aDelimiter === 'comma') Comma
+                  option(value='tab', selected=inputs.aDelimiter === 'tab') Tab
+                  option(value='semicolon', selected=inputs.aDelimiter === 'semicolon') Semicolon
+                  option(value='pipe', selected=inputs.aDelimiter === 'pipe') Pipe
+            label.csv-input-panel__file-label(for='aFile')
+              span Upload CSV or TSV
+              input#aFile.form-control.form-control-sm(type='file', name='aFile', accept='.csv,.tsv,.txt,text/csv,text/tab-separated-values', data-file-input='a')
+            .csv-input-panel__file-meta
+              small(data-file-status='a')= inputs.aFilename ? `Compared from ${inputs.aFilename}` : 'A selected file takes precedence over pasted text.'
+              button.csv-input-panel__clear-file(type='button', data-clear-file='a', hidden=!inputs.aFilename) Remove file
+            label.visually-hidden(for='a') Left CSV content
+            textarea#a.form-control.csv-input-panel__textarea(name='a', rows='13', wrap='off', spellcheck='false', placeholder='Paste the original CSV here…')= inputs.a
+
+          section.csv-input-panel(aria-labelledby='right-input-title')
+            .csv-input-panel__header
+              div
+                span.csv-input-panel__side B
+                h2#right-input-title Right CSV
+              label.csv-input-panel__delimiter
+                span Delimiter
+                select.form-select.form-select-sm(name='bDelimiter', data-delimiter='b')
+                  option(value='auto', selected=inputs.bDelimiter === 'auto') Auto-detect
+                  option(value='comma', selected=inputs.bDelimiter === 'comma') Comma
+                  option(value='tab', selected=inputs.bDelimiter === 'tab') Tab
+                  option(value='semicolon', selected=inputs.bDelimiter === 'semicolon') Semicolon
+                  option(value='pipe', selected=inputs.bDelimiter === 'pipe') Pipe
+            label.csv-input-panel__file-label(for='bFile')
+              span Upload CSV or TSV
+              input#bFile.form-control.form-control-sm(type='file', name='bFile', accept='.csv,.tsv,.txt,text/csv,text/tab-separated-values', data-file-input='b')
+            .csv-input-panel__file-meta
+              small(data-file-status='b')= inputs.bFilename ? `Compared from ${inputs.bFilename}` : 'A selected file takes precedence over pasted text.'
+              button.csv-input-panel__clear-file(type='button', data-clear-file='b', hidden=!inputs.bFilename) Remove file
+            label.visually-hidden(for='b') Right CSV content
+            textarea#b.form-control.csv-input-panel__textarea(name='b', rows='13', wrap='off', spellcheck='false', placeholder='Paste the updated CSV here…')= inputs.b
+
+        .csv-diff__form-footer
+          p.csv-diff__upload-note Upload files when line-ending or BOM changes matter; browsers can normalize line endings pasted into text areas.
+          .csv-diff__actions
+            button.btn.btn-outline-secondary(type='button', data-load-example) Load deletion example
+            button.btn.btn-outline-secondary(type='button', data-swap-inputs) Swap sides
+            button.btn.btn-primary.csv-diff__compare(type='submit') Compare CSV
+
+      if errorMessage
+        .alert.alert-danger.csv-diff__alert(role='alert')= errorMessage
+
+      if hasCompared && comparison
+        - const summary = comparison.summary;
+        section.csv-results(aria-labelledby='csv-results-title')
+          .csv-results__heading
+            div
+              span.csv-diff__eyebrow Comparison result
+              h2#csv-results-title Changes found
+            if comparison.identical
+              span.csv-results__identity Exact source match
+            else
+              span.csv-results__identity.csv-results__identity--different Sources differ
+
+          .csv-summary(aria-label='Comparison summary')
+            article.csv-summary__item
+              span.csv-summary__value= summary.changedCells
+              span.csv-summary__label Changed cells
+            article.csv-summary__item
+              span.csv-summary__value= summary.addedCells
+              span.csv-summary__label Added cells
+            article.csv-summary__item
+              span.csv-summary__value= summary.removedCells
+              span.csv-summary__label Removed cells
+            article.csv-summary__item
+              span.csv-summary__value #{summary.addedRows} / #{summary.removedRows}
+              span.csv-summary__label Rows added / removed
+            article.csv-summary__item.csv-summary__item--format
+              span.csv-summary__value= summary.formatChanges
+              span.csv-summary__label Format changes
+            article.csv-summary__item.csv-summary__item--total
+              span.csv-summary__value= summary.total
+              span.csv-summary__label Total findings
+
+          details.csv-format-overview
+            summary Detected file details
+            .table-responsive
+              table.table.csv-format-overview__table
+                thead
+                  tr
+                    th Attribute
+                    th Left (A)
+                    th Right (B)
+                tbody
+                  tr
+                    th Delimiter
+                    td= comparison.left.format.delimiterLabel
+                    td= comparison.right.format.delimiterLabel
+                  tr
+                    th Line endings
+                    td= comparison.left.format.lineEndingLabel
+                    td= comparison.right.format.lineEndingLabel
+                  tr
+                    th UTF-8 BOM
+                    td= comparison.left.format.hasBom ? 'Present' : 'None'
+                    td= comparison.right.format.hasBom ? 'Present' : 'None'
+                  tr
+                    th Final line break
+                    td= comparison.left.format.finalNewline ? 'Present' : 'Missing'
+                    td= comparison.right.format.finalNewline ? 'Present' : 'Missing'
+                  tr
+                    th Parsed rows
+                    td= comparison.left.rowCount
+                    td= comparison.right.rowCount
+                  tr
+                    th Maximum columns
+                    td= comparison.left.maxColumns
+                    td= comparison.right.maxColumns
+                  tr
+                    th Quoted cells
+                    td= comparison.left.format.quotedCellCount
+                    td= comparison.right.format.quotedCellCount
+
+          if summary.total === 0
+            .csv-results__empty(role='status')
+              span.csv-results__empty-icon ✓
+              div
+                h3 No differences found
+                if comparison.identical
+                  p The two inputs are byte-for-byte identical and parse into the same cells.
+                else
+                  p The two inputs parse and format identically.
+          else
+            .csv-results__toolbar
+              fieldset.csv-filter-group
+                legend Show findings
+                label.csv-filter.csv-filter--changed
+                  input(type='checkbox', checked, data-filter-kind='changed')
+                  span Changed
+                label.csv-filter.csv-filter--added
+                  input(type='checkbox', checked, data-filter-kind='added')
+                  span Added
+                label.csv-filter.csv-filter--removed
+                  input(type='checkbox', checked, data-filter-kind='removed')
+                  span Removed
+                label.csv-filter.csv-filter--format
+                  input(type='checkbox', checked, data-filter-kind='format')
+                  span Format
+              label.csv-results__search
+                span.visually-hidden Search findings
+                input.form-control.form-control-sm(type='search', placeholder='Search location or value…', data-results-search)
+
+            .table-responsive.csv-results__table-wrap
+              table.table.table-hover.csv-results__table
+                thead
+                  tr
+                    th Location
+                    th Left (A)
+                    th Right (B)
+                    th Finding
+                tbody
+                  each entry in comparison.entries
+                    tr(class=`csv-change csv-change--${entry.kind}`, data-kind=entry.kind, data-scope=entry.scope)
+                      td.csv-change__location
+                        code= entry.location
+                        span.csv-change__scope= entry.scope
+                      td.csv-change__value
+                        code= entry.aDisplay
+                      td.csv-change__value
+                        code= entry.bDisplay
+                      td.csv-change__finding
+                        span(class=`csv-change__badge csv-change__badge--${entry.kind}`)= entry.kind
+                        small= entry.detail
+            p#csvNoFilteredResults.csv-results__no-filtered(hidden) No findings match the active filters.
+
+block script
+  script(src='/js/csv-diff.js', defer)

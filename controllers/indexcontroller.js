@@ -1,6 +1,8 @@
 const { ExchangeRate } = require('../database');
+const { TextDecoder } = require('util');
 const logger = require('../utils/logger');
 const { diffJSON } = require('../utils/diffJSON');
+const { CSVParseError, diffCSV } = require('../utils/diffCSV');
 
 const DEFAULT_EXCHANGE_BASE = 'JPY';
 const DEFAULT_EXCHANGE_CURRENCIES = [
@@ -198,3 +200,72 @@ exports.diff = async (req, res) => {
   const diff = diffJSON(a, b, { onTypeMismatch: 'record' }); // or 'expand'
   res.render('diff', { title: 'JSON Diff', diff, sideALabel: 'Left (A)', sideBLabel: 'Right (B)' });
 }
+
+const CSV_DELIMITER_OPTIONS = new Set(['auto', 'comma', 'tab', 'semicolon', 'pipe']);
+
+function csvDelimiterOption(value) {
+  return CSV_DELIMITER_OPTIONS.has(value) ? value : 'auto';
+}
+
+function decodeCsvUpload(file, side) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(file.buffer);
+  } catch {
+    const error = new CSVParseError(`${side} file is not valid UTF-8 text`);
+    error.side = side.toLowerCase();
+    throw error;
+  }
+}
+
+exports.csvDiff = async (req, res) => {
+  const hasCompared = req.method === 'POST';
+  const body = req.body || {};
+  const leftFile = req.files?.aFile?.[0] || null;
+  const rightFile = req.files?.bFile?.[0] || null;
+  const inputs = {
+    a: typeof body.a === 'string' ? body.a : '',
+    b: typeof body.b === 'string' ? body.b : '',
+    aDelimiter: csvDelimiterOption(body.aDelimiter),
+    bDelimiter: csvDelimiterOption(body.bDelimiter),
+    aFilename: leftFile?.originalname || '',
+    bFilename: rightFile?.originalname || '',
+  };
+
+  let comparison = null;
+  let errorMessage = req.csvDiffUploadError || '';
+
+  if (hasCompared && !errorMessage) {
+    try {
+      if (leftFile) {
+        inputs.a = decodeCsvUpload(leftFile, 'Left');
+      }
+      if (rightFile) {
+        inputs.b = decodeCsvUpload(rightFile, 'Right');
+      }
+
+      comparison = diffCSV(inputs.a, inputs.b, {
+        leftDelimiter: inputs.aDelimiter,
+        rightDelimiter: inputs.bDelimiter,
+      });
+    } catch (error) {
+      if (error instanceof CSVParseError) {
+        const sideLabel = error.side === 'right' ? 'Right input' : 'Left input';
+        errorMessage = `${sideLabel}: ${error.message}`;
+      } else {
+        errorMessage = 'Unable to compare these CSV inputs right now.';
+        await logger.error('Failed to compare CSV content', {
+          category: 'csv-diff',
+          metadata: { error: error.message, name: error.name },
+        });
+      }
+    }
+  }
+
+  return res.status(errorMessage ? 400 : 200).render('csv_diff', {
+    pageTitle: 'CSV Diff',
+    hasCompared,
+    comparison,
+    inputs,
+    errorMessage,
+  });
+};

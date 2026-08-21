@@ -140,6 +140,7 @@ html(lang=pageLang || 'en')
               +navLink('/product', 'Product details')
             if canUseTestLinks
               +navLink('/diff', 'JSON diff')
+              +navLink('/csv-diff', 'CSV diff', 'secondary')
             if hasPermission("gallery")
               +navLink('/gallery', 'Gallery')
             if canUseTestLinks
