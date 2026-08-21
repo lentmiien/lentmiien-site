@@ -26,8 +26,8 @@ block content
         dd.col-sm-9= message.retentionDateInput || 'Not set'
         dt.col-sm-3 Embeddings
         dd.col-sm-9
-          span.badge(class=message.hasEmbedding ? 'bg-success' : 'bg-light text-muted') Default: #{message.hasEmbedding ? 'Yes' : 'No'}
-          span.badge(class=message.hasHighQualityEmbedding ? 'bg-success ms-2' : 'bg-light text-muted ms-2') High-quality: #{message.hasHighQualityEmbedding ? 'Yes' : 'No'}
+          span.badge(class=message.hasEmbedding ? 'bg-success' : message.embeddingStatus === 'pending' ? 'bg-warning text-dark' : 'bg-light text-muted') Default: #{message.hasEmbedding ? 'Yes' : message.embeddingStatus === 'pending' ? 'Pending' : 'No'}
+          span.badge(class=message.hasHighQualityEmbedding ? 'bg-success ms-2' : message.highQualityEmbeddingStatus === 'pending' ? 'bg-warning text-dark ms-2' : 'bg-light text-muted ms-2') High-quality: #{message.hasHighQualityEmbedding ? 'Yes' : message.highQualityEmbeddingStatus === 'pending' ? 'Pending' : 'No'}
         dt.col-sm-3 Labels
         dd.col-sm-9
           if message.labels && message.labels.length

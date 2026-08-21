@@ -125,6 +125,7 @@ const scheduleOpenAIResponseRecovery = require('./schedulers/openaiResponseRecov
 const scheduleDisasterIngestion = require('./schedulers/disasterIngestion');
 const scheduleLogRetention = require('./schedulers/logRetention');
 const scheduleOcrEmbeddingReconciliation = require('./schedulers/ocrEmbeddings');
+const scheduleEmbeddingQueue = require('./schedulers/embeddingQueue');
 const scheduleCodexLogReview = require('./schedulers/codexLogReview');
 const {
   validateBatchDefaultModelSetting,
@@ -690,6 +691,7 @@ scheduleOpenAIResponseRecovery(app);
 scheduleDisasterIngestion();
 scheduleLogRetention();
 scheduleOcrEmbeddingReconciliation();
+scheduleEmbeddingQueue();
 scheduleCodexLogReview();
 validateBatchDefaultModelSetting().catch((error) => {
   logger.warning('Unable to validate the batch default model setting at startup', {

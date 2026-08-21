@@ -1327,7 +1327,7 @@ module.exports = async function registerChat5_6Handlers({
         await conversation.save();
 
         if (createdMessageIds.length > 0) {
-          await messageService.deleteMessages(createdMessageIds);
+          await messageService.deleteMessages(createdMessageIds, { conversationId });
           createdMessageIds.length = 0;
         }
       }
@@ -1349,7 +1349,7 @@ module.exports = async function registerChat5_6Handlers({
       logger.error(eventName + ' failed', error);
       if (createdMessageIds.length > 0) {
         try {
-          await messageService.deleteMessages(createdMessageIds);
+          await messageService.deleteMessages(createdMessageIds, { conversationId });
         } catch (cleanupError) {
           logger.warning('Unable to clean up cloned template messages after failure', cleanupError);
         }

@@ -17,6 +17,7 @@ const {
 
 const { AIModelCards, Chat5Model, Conversation5Model } = require('../database');
 let EmbeddingApiService = null;
+let embeddingQueueService = null;
 
 const CHAT_EMBED_COLLECTION = 'chat_message';
 const CHAT_EMBED_CONTENT_TYPE = 'chat_message_text';
@@ -153,11 +154,18 @@ const Title = z.object({
 
 // Message service operations: managing individual messages within a conversation
 class MessageService {
-  constructor(messageModel, fileMetaModel, embeddingApiService = null, appSettingsService = defaultAppSettingsService) {
+  constructor(
+    messageModel,
+    fileMetaModel,
+    embeddingApiService = null,
+    appSettingsService = defaultAppSettingsService,
+    embeddingQueue = null,
+  ) {
     this.messageModel = messageModel;
     this.fileMetaModel = fileMetaModel;
     this.embeddingApiService = embeddingApiService;
     this.appSettingsService = appSettingsService;
+    this.embeddingQueueService = embeddingQueue;
   }
 
   getEmbeddingService() {
@@ -168,6 +176,16 @@ class MessageService {
       this.embeddingApiService = new EmbeddingApiService();
     }
     return this.embeddingApiService;
+  }
+
+  getEmbeddingQueueService() {
+    if (!this.embeddingQueueService) {
+      if (!embeddingQueueService) {
+        embeddingQueueService = require('./embeddingQueueService');
+      }
+      this.embeddingQueueService = embeddingQueueService;
+    }
+    return this.embeddingQueueService;
   }
 
   normalizeConversationId(conversation) {
@@ -243,14 +261,14 @@ class MessageService {
     }
 
     try {
-      const embeddingService = this.getEmbeddingService();
+      const queue = this.getEmbeddingQueueService();
       if (!normalizedText) {
-        await embeddingService.deleteEmbeddings(metadata);
+        await queue.enqueueDelete(metadata, { mode: 'default' });
         return;
       }
-      await embeddingService.embed([normalizedText], {}, [metadata]);
+      await queue.enqueue([normalizedText], {}, [metadata], { mode: 'default' });
     } catch (error) {
-      logger.error('Failed to sync chat message embeddings', {
+      logger.error('Failed to queue chat message embedding sync', {
         category: 'chat_embedding',
         metadata: {
           messageId,
@@ -303,9 +321,12 @@ class MessageService {
       throw new Error('Unable to build embedding metadata for this message.');
     }
 
-    const embeddingService = this.getEmbeddingService();
-    await embeddingService.embedHighQuality([normalizedText], {}, [metadata]);
-    return { ok: true };
+    const queue = this.getEmbeddingQueueService();
+    await queue.enqueue([normalizedText], { task: 'document' }, [metadata], {
+      mode: 'high_quality',
+      force: true,
+    });
+    return { ok: true, queued: true };
   }
 
   async getMessageById(id) {
@@ -1079,9 +1100,41 @@ class MessageService {
     return { ids, messages: clones };
   }
 
-  async deleteMessages(messageIds = []) {
+  async queueMessageEmbeddingDeletes(messageIds, conversationId = null) {
+    const queue = this.getEmbeddingQueueService();
+    for (const messageId of messageIds) {
+      const resolvedConversationId = this.normalizeConversationId(conversationId)
+        || await this.findConversationIdForMessage(messageId);
+      let metadata = this.buildMessageEmbeddingMetadata(messageId, resolvedConversationId);
+      if (!metadata && typeof queue.findStoredChatSource === 'function') {
+        metadata = await queue.findStoredChatSource(messageId);
+      }
+      if (!metadata) {
+        metadata = {
+          collectionName: CHAT_EMBED_COLLECTION,
+          documentId: String(messageId),
+          contentType: CHAT_EMBED_CONTENT_TYPE,
+          parentCollection: null,
+          parentId: null,
+        };
+      }
+      await queue.enqueueDelete(metadata, {
+        mode: 'default',
+        force: true,
+        verifySourceState: false,
+      });
+      await queue.enqueueDelete(metadata, {
+        mode: 'high_quality',
+        force: true,
+        verifySourceState: false,
+      });
+    }
+  }
+
+  async deleteMessages(messageIds = [], { conversationId = null } = {}) {
     if (!Array.isArray(messageIds) || messageIds.length === 0) return 0;
     const normalized = messageIds.map(id => id.toString());
+    await this.queueMessageEmbeddingDeletes(normalized, conversationId);
     const result = await Chat5Model.deleteMany({ _id: normalized });
     return result.deletedCount || 0;
   }

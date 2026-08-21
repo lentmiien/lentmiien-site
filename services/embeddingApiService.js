@@ -1,3 +1,5 @@
+const { randomUUID } = require('crypto');
+
 const logger = require('../utils/logger');
 const { VectorEmbedding, VectorEmbeddingHighQuality } = require('../database');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
@@ -247,6 +249,17 @@ class EmbeddingApiService {
     };
   }
 
+  async findLatestEmbeddingGeneration(Model, filter) {
+    if (!Model || typeof Model.findOne !== 'function') return null;
+    let query = Model.findOne(filter, { generationId: 1, createdAt: 1 });
+    if (query && typeof query.sort === 'function') {
+      query = query.sort({ createdAt: -1, generationId: -1 });
+    }
+    if (query && typeof query.lean === 'function') query = query.lean();
+    if (query && typeof query.exec === 'function') return query.exec();
+    return query;
+  }
+
   async deleteEmbeddings(metadataInput, { mode = SEARCH_MODES.DEFAULT } = {}) {
     if (!metadataInput) {
       return 0;
@@ -397,6 +410,7 @@ class EmbeddingApiService {
     model = VectorEmbedding,
     operationName = 'embed',
     task = null,
+    logFailure = true,
   } = {}) {
     const texts = this.normalizeTexts(textsInput);
     const normalizedOptions = this.normalizeOptions(options);
@@ -467,32 +481,35 @@ class EmbeddingApiService {
         responseBody: error?.responseBody || error?.message || 'Unknown error',
       });
 
-      logger.error('Embedding API request failed', {
-        category: 'embedding_api',
-        metadata: {
-          apiBase,
-          mode,
-          textCount: texts.length,
-          message: error?.message,
-          status: error?.status,
-          task: normalizedTask || null,
-        },
-      });
+      if (logFailure) {
+        logger.error('Embedding API request failed', {
+          category: 'embedding_api',
+          metadata: {
+            apiBase,
+            mode,
+            textCount: texts.length,
+            message: error?.message,
+            status: error?.status,
+            task: normalizedTask || null,
+          },
+        });
+      }
       throw error;
     }
   }
 
-  async embed(textsInput, options = {}, metadataInput = null) {
+  async embed(textsInput, options = {}, metadataInput = null, requestOptions = {}) {
     const { task, ...rest } = options || {};
     return this.embedWithApi(textsInput, rest, metadataInput, {
       apiBase: this.apiBase,
       model: VectorEmbedding,
       operationName: 'embed',
       task,
+      logFailure: requestOptions.logFailure !== false,
     });
   }
 
-  async embedHighQuality(textsInput, options = {}, metadataInput = null) {
+  async embedHighQuality(textsInput, options = {}, metadataInput = null, requestOptions = {}) {
     const { task, ...rest } = options || {};
     const resolvedTask = task || 'document';
     return this.embedWithApi(textsInput, rest, metadataInput, {
@@ -500,6 +517,7 @@ class EmbeddingApiService {
       model: VectorEmbeddingHighQuality,
       operationName: 'embedHighQuality',
       task: resolvedTask,
+      logFailure: requestOptions.logFailure !== false,
     });
   }
 
@@ -519,6 +537,7 @@ class EmbeddingApiService {
     }
 
     const now = new Date();
+    const generationId = randomUUID();
     const documents = vectors.map((vector, index) => {
       const numericVector = Array.isArray(vector) ? vector.map((value) => Number(value)) : [];
       if (!numericVector.length || numericVector.some((value) => !Number.isFinite(value))) {
@@ -542,6 +561,7 @@ class EmbeddingApiService {
         embedding: numericVector,
         dim: Number.isFinite(dim) ? dim : numericVector.length,
         model,
+        generationId,
         textLength: text.length,
         createdAt: now,
         updatedAt: now,
@@ -559,8 +579,39 @@ class EmbeddingApiService {
 
     for (const docs of grouped.values()) {
       const filter = this.buildSourceFilter(docs[0].source);
-      await Model.deleteMany(filter);
-      await Model.insertMany(docs, { ordered: true });
+      try {
+        await Model.insertMany(docs, { ordered: true });
+      } catch (error) {
+        try {
+          await Model.deleteMany({ ...filter, generationId });
+        } catch (cleanupError) {
+          logger.warning('Failed to clean up an incomplete embedding generation', {
+            category: 'embedding_api',
+            metadata: {
+              generationId,
+              message: cleanupError?.message || cleanupError,
+            },
+          });
+        }
+        throw error;
+      }
+      const latest = await this.findLatestEmbeddingGeneration(Model, filter);
+      const latestGenerationId = latest?.generationId || generationId;
+      if (latestGenerationId !== generationId) {
+        await Model.deleteMany({ ...filter, generationId });
+        continue;
+      }
+
+      const latestCreatedAt = latest?.createdAt || now;
+      await Model.deleteMany({
+        ...filter,
+        generationId: { $ne: generationId },
+        $or: [
+          { createdAt: { $lt: latestCreatedAt } },
+          { createdAt: latestCreatedAt, generationId: { $lt: generationId } },
+          { createdAt: { $exists: false } },
+        ],
+      });
     }
 
     logger.notice('Persisted embedding vectors to database', {

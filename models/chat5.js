@@ -33,6 +33,29 @@ const Chat5 = new mongoose.Schema({
 
   timestamp: { type: Date, default: Date.now },
   hideFromBot: { type: Boolean, default: false },
+  embeddingStatus: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'delete_pending', 'disabled'],
+    default: undefined,
+  },
+  embeddingContentHash: { type: String, default: null },
 }, { timestamps: false });
+
+Chat5.pre('validate', function markTextEmbeddingPending() {
+  const text = this.contentType === 'text' && typeof this.content?.text === 'string'
+    ? this.content.text.trim()
+    : '';
+  if (!text) {
+    if (this.isNew || this.isModified('contentType') || this.isModified('content.text')) {
+      this.embeddingStatus = this.isNew ? 'disabled' : 'delete_pending';
+      this.embeddingContentHash = null;
+    }
+    return;
+  }
+  if (this.isNew || this.isModified('contentType') || this.isModified('content.text')) {
+    this.embeddingStatus = 'pending';
+    this.embeddingContentHash = null;
+  }
+});
 
 module.exports = mongoose.model('chat5', Chat5);

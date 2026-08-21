@@ -24,6 +24,7 @@ const VectorEmbeddingSchema = new Schema({
   embedding: { type: [Number], required: true },
   dim: { type: Number, required: true },
   model: { type: String, default: null },
+  generationId: { type: String, default: null, index: true },
   textLength: { type: Number, default: 0 },
 }, {
   timestamps: true,

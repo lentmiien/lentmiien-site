@@ -343,8 +343,12 @@ describe('Database maintenance helpers', () => {
 
     const result = await pruneExpiredInboxMessages();
 
-    expect(VectorEmbedding.deleteMany).toHaveBeenCalledWith({ $or: [expect.any(Object)] });
-    expect(VectorEmbeddingHighQuality.deleteMany).toHaveBeenCalledWith({ $or: [expect.any(Object)] });
+    expect(VectorEmbedding.deleteMany).toHaveBeenCalledWith({
+      $or: [expect.any(Object), expect.any(Object)],
+    });
+    expect(VectorEmbeddingHighQuality.deleteMany).toHaveBeenCalledWith({
+      $or: [expect.any(Object), expect.any(Object)],
+    });
     expect(result).toEqual({
       removed: 2,
       defaultEmbeddingsRemoved: 1,

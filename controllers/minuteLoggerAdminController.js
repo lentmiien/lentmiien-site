@@ -34,6 +34,7 @@ const LOCATION_PREVIEW_PADDING_Y = 14;
 const LOCATION_CLOUD_WIDTH = 520;
 const LOCATION_CLOUD_HEIGHT = 280;
 const LOCATION_CLOUD_PADDING = 18;
+const REDACTED_COORDINATES = '[redacted]';
 
 function formatDecimal(value, digits = 1) {
   const number = Number(value);
@@ -1437,7 +1438,7 @@ exports.ignoreLocationGroup = async (req, res) => {
     logger.notice('Minute logger location group ignored by admin', {
       category: 'minute-logger',
       metadata: {
-        groupKey: settings.groupKey,
+        groupKey: REDACTED_COORDINATES,
         user: req.user?.name || 'unknown',
       },
     });
@@ -1470,7 +1471,7 @@ exports.unignoreLocationGroup = async (req, res) => {
     logger.notice('Minute logger location group removed from ignore list by admin', {
       category: 'minute-logger',
       metadata: {
-        groupKey: settings.groupKey,
+        groupKey: REDACTED_COORDINATES,
         user: req.user?.name || 'unknown',
       },
     });
@@ -1545,7 +1546,7 @@ exports.updateLocationGroupSettings = async (req, res) => {
     logger.notice('Minute logger location group settings updated by admin', {
       category: 'minute-logger',
       metadata: {
-        groupKey: settings.groupKey,
+        groupKey: REDACTED_COORDINATES,
         hasName: Boolean(settings.name),
         hideCoordinates: settings.hideCoordinates,
         user: req.user?.name || 'unknown',

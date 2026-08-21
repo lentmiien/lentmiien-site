@@ -348,7 +348,7 @@ function bindEmbedButton(btn) {
 
     btn.dataset.embedBusy = 'true';
     btn.disabled = true;
-    btn.textContent = 'Embedding...';
+    btn.textContent = 'Queuing...';
     socket.emit('chat5-embed-hq', { conversation_id: conversationId, message_id: messageId }, (resp) => {
       if (!resp || resp.ok !== true) {
         btn.textContent = 'Retry';
@@ -357,7 +357,7 @@ function bindEmbedButton(btn) {
         alert(resp && resp.message ? resp.message : 'Unable to embed this message.');
         return;
       }
-      btn.textContent = 'Embedded';
+      btn.textContent = resp.queued ? 'Queued' : 'Embedded';
       setTimeout(() => {
         btn.textContent = defaultLabel;
         btn.disabled = false;

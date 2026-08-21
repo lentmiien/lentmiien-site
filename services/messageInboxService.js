@@ -1,6 +1,7 @@
 const logger = require('../utils/logger');
 
 let EmbeddingApiService = null;
+let embeddingQueueService = null;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 90;
@@ -9,10 +10,11 @@ const MESSAGE_CONTENT_TYPE = 'message';
 const THREAD_COLLECTION = 'message_thread';
 
 class MessageInboxService {
-  constructor(MessageModel, FilterModel, embeddingApiService = null) {
+  constructor(MessageModel, FilterModel, embeddingApiService = null, embeddingQueue = null) {
     this.MessageModel = MessageModel;
     this.FilterModel = FilterModel;
     this.embeddingApiService = embeddingApiService || this.getEmbeddingApiService();
+    this.embeddingQueueService = embeddingQueue;
   }
 
   getEmbeddingApiService() {
@@ -23,6 +25,28 @@ class MessageInboxService {
       this.embeddingApiService = new EmbeddingApiService();
     }
     return this.embeddingApiService;
+  }
+
+  getEmbeddingQueueService() {
+    if (!this.embeddingQueueService) {
+      if (!embeddingQueueService) {
+        embeddingQueueService = require('./embeddingQueueService');
+      }
+      this.embeddingQueueService = embeddingQueueService;
+    }
+    return this.embeddingQueueService;
+  }
+
+  isEmbeddingRequested(message, mode = 'default') {
+    const requestedField = mode === 'high_quality'
+      ? 'highQualityEmbeddingRequested'
+      : 'embeddingRequested';
+    const actualField = mode === 'high_quality'
+      ? 'hasHighQualityEmbedding'
+      : 'hasEmbedding';
+    return typeof message?.[requestedField] === 'boolean'
+      ? message[requestedField]
+      : Boolean(message?.[actualField]);
   }
 
   normalizeEmail(value) {
@@ -159,6 +183,7 @@ class MessageInboxService {
 
     const existing = await this.MessageModel.findOne({ messageId }).exec();
     if (existing) {
+      await this.ensureDuplicateEmbeddingIntent(existing);
       return { status: 'ignored', reason: 'duplicate', message: existing };
     }
 
@@ -187,8 +212,12 @@ class MessageInboxService {
       date: messageDate,
       from: normalizedFrom,
       retentionDeadlineDate,
-      hasEmbedding: !!policy.hasEmbedding,
-      hasHighQualityEmbedding: !!policy.hasHighQualityEmbedding,
+      hasEmbedding: false,
+      hasHighQualityEmbedding: false,
+      embeddingRequested: !!policy.hasEmbedding,
+      highQualityEmbeddingRequested: !!policy.hasHighQualityEmbedding,
+      embeddingStatus: policy.hasEmbedding ? 'pending' : 'disabled',
+      highQualityEmbeddingStatus: policy.hasHighQualityEmbedding ? 'pending' : 'disabled',
       appliedRetentionDays: policy.retentionDays,
       appliedFilterId: policy.filterId,
       appliedLabelRules: policy.matchedLabelRules,
@@ -197,7 +226,8 @@ class MessageInboxService {
       await doc.save();
     } catch (error) {
       if (error?.code === 11000) {
-        const existingDoc = await this.MessageModel.findOne({ messageId }).lean().exec();
+        const existingDoc = await this.MessageModel.findOne({ messageId }).exec();
+        if (existingDoc) await this.ensureDuplicateEmbeddingIntent(existingDoc);
         return { status: 'ignored', reason: 'duplicate', message: existingDoc };
       }
       throw error;
@@ -219,6 +249,44 @@ class MessageInboxService {
     });
 
     return { status: 'saved', message: doc, policy };
+  }
+
+  async ensureDuplicateEmbeddingIntent(message) {
+    let generateDefault = this.isEmbeddingRequested(message, 'default');
+    let generateHighQuality = this.isEmbeddingRequested(message, 'high_quality');
+    let changed = false;
+
+    if (typeof message.embeddingRequested !== 'boolean'
+      || typeof message.highQualityEmbeddingRequested !== 'boolean') {
+      const { normalized: normalizedLabels } = this.normalizeLabels(message.labels || []);
+      const policy = await this.resolvePolicy(message.from, normalizedLabels);
+      if (typeof message.embeddingRequested !== 'boolean') {
+        generateDefault = Boolean(message.hasEmbedding || policy.hasEmbedding);
+        message.embeddingRequested = generateDefault;
+        message.embeddingStatus = message.hasEmbedding
+          ? 'completed'
+          : (generateDefault ? 'pending' : 'disabled');
+        changed = true;
+      }
+      if (typeof message.highQualityEmbeddingRequested !== 'boolean') {
+        generateHighQuality = Boolean(
+          message.hasHighQualityEmbedding || policy.hasHighQualityEmbedding,
+        );
+        message.highQualityEmbeddingRequested = generateHighQuality;
+        message.highQualityEmbeddingStatus = message.hasHighQualityEmbedding
+          ? 'completed'
+          : (generateHighQuality ? 'pending' : 'disabled');
+        changed = true;
+      }
+    }
+
+    if (changed) await message.save();
+    if (generateDefault || generateHighQuality) {
+      await this.generateEmbeddingsForMessage(message, {
+        generateDefault,
+        generateHighQuality,
+      });
+    }
   }
 
   async listMessages({ page = 1, pageSize = 25 } = {}) {
@@ -247,29 +315,41 @@ class MessageInboxService {
     const previous = {
       hasEmbedding: message.hasEmbedding,
       hasHighQualityEmbedding: message.hasHighQualityEmbedding,
+      embeddingRequested: this.isEmbeddingRequested(message, 'default'),
+      highQualityEmbeddingRequested: this.isEmbeddingRequested(message, 'high_quality'),
     };
 
     if (retentionDeadlineDate instanceof Date && !Number.isNaN(retentionDeadlineDate.getTime())) {
       message.retentionDeadlineDate = retentionDeadlineDate;
     }
     if (hasEmbedding !== undefined) {
-      message.hasEmbedding = !!hasEmbedding;
+      message.embeddingRequested = !!hasEmbedding;
+      message.embeddingStatus = hasEmbedding
+        ? 'pending'
+        : (previous.embeddingRequested || message.hasEmbedding ? 'delete_pending' : 'disabled');
     }
     if (hasHighQualityEmbedding !== undefined) {
-      message.hasHighQualityEmbedding = !!hasHighQualityEmbedding;
+      message.highQualityEmbeddingRequested = !!hasHighQualityEmbedding;
+      message.highQualityEmbeddingStatus = hasHighQualityEmbedding
+        ? 'pending'
+        : (previous.highQualityEmbeddingRequested || message.hasHighQualityEmbedding
+          ? 'delete_pending'
+          : 'disabled');
     }
 
     await message.save();
 
-    if (previous.hasEmbedding && message.hasEmbedding === false) {
+    if (previous.embeddingRequested && message.embeddingRequested === false) {
       await this.deleteEmbeddingsForMessage(message, { deleteDefault: true, deleteHighQuality: false });
     }
-    if (previous.hasHighQualityEmbedding && message.hasHighQualityEmbedding === false) {
+    if (previous.highQualityEmbeddingRequested && message.highQualityEmbeddingRequested === false) {
       await this.deleteEmbeddingsForMessage(message, { deleteDefault: false, deleteHighQuality: true });
     }
 
-    const needsDefault = message.hasEmbedding && (!previous.hasEmbedding || hasEmbedding !== undefined);
-    const needsHighQuality = message.hasHighQualityEmbedding && (!previous.hasHighQualityEmbedding || hasHighQualityEmbedding !== undefined);
+    const needsDefault = message.embeddingRequested
+      && (!previous.embeddingRequested || hasEmbedding !== undefined);
+    const needsHighQuality = message.highQualityEmbeddingRequested
+      && (!previous.highQualityEmbeddingRequested || hasHighQualityEmbedding !== undefined);
 
     if (needsDefault || needsHighQuality) {
       await this.generateEmbeddingsForMessage(message, {
@@ -290,7 +370,11 @@ class MessageInboxService {
     if (!message) {
       return;
     }
-    await this.deleteEmbeddingsForMessage(message, { deleteDefault: true, deleteHighQuality: true });
+    await this.deleteEmbeddingsForMessage(message, {
+      deleteDefault: true,
+      deleteHighQuality: true,
+      verifySourceState: false,
+    });
     await this.MessageModel.deleteOne({ _id: id }).exec();
   }
 
@@ -380,22 +464,28 @@ class MessageInboxService {
     }
     const metadata = [this.buildSourceMetadata(message)];
     let changed = false;
-    const api = this.getEmbeddingApiService();
+    const queue = this.getEmbeddingQueueService();
 
     if (generateDefault) {
       try {
-        await api.embed(text, { autoChunk: true }, metadata);
-        if (!message.hasEmbedding || force) {
-          message.hasEmbedding = true;
+        const queuedJob = await queue.enqueue(text, { autoChunk: true }, metadata, {
+          mode: 'default',
+          force,
+        });
+        const nextStatus = queuedJob?.status === 'completed'
+          ? 'completed'
+          : (queuedJob?.status === 'failed' ? 'failed' : 'pending');
+        if (message.embeddingStatus !== nextStatus) {
+          message.embeddingStatus = nextStatus;
           changed = true;
         }
       } catch (error) {
-        logger.error('Failed to generate default embedding for message', {
+        logger.error('Failed to queue default embedding for message', {
           category: 'message_inbox',
           metadata: { id: String(message._id), error: error.message },
         });
-        if (message.hasEmbedding) {
-          message.hasEmbedding = false;
+        if (message.embeddingStatus !== 'pending') {
+          message.embeddingStatus = 'pending';
           changed = true;
         }
       }
@@ -403,18 +493,24 @@ class MessageInboxService {
 
     if (generateHighQuality) {
       try {
-        await api.embedHighQuality(text, { autoChunk: true, task: 'document' }, metadata);
-        if (!message.hasHighQualityEmbedding || force) {
-          message.hasHighQualityEmbedding = true;
+        const queuedJob = await queue.enqueue(text, { autoChunk: true, task: 'document' }, metadata, {
+          mode: 'high_quality',
+          force,
+        });
+        const nextStatus = queuedJob?.status === 'completed'
+          ? 'completed'
+          : (queuedJob?.status === 'failed' ? 'failed' : 'pending');
+        if (message.highQualityEmbeddingStatus !== nextStatus) {
+          message.highQualityEmbeddingStatus = nextStatus;
           changed = true;
         }
       } catch (error) {
-        logger.error('Failed to generate high-quality embedding for message', {
+        logger.error('Failed to queue high-quality embedding for message', {
           category: 'message_inbox',
           metadata: { id: String(message._id), error: error.message },
         });
-        if (message.hasHighQualityEmbedding) {
-          message.hasHighQualityEmbedding = false;
+        if (message.highQualityEmbeddingStatus !== 'pending') {
+          message.highQualityEmbeddingStatus = 'pending';
           changed = true;
         }
       }
@@ -425,14 +521,26 @@ class MessageInboxService {
     }
   }
 
-  async deleteEmbeddingsForMessage(message, { deleteDefault = true, deleteHighQuality = true } = {}) {
+  async deleteEmbeddingsForMessage(message, {
+    deleteDefault = true,
+    deleteHighQuality = true,
+    verifySourceState = true,
+  } = {}) {
     const metadata = this.buildSourceMetadata(message);
-    const api = this.getEmbeddingApiService();
+    const queue = this.getEmbeddingQueueService();
     if (deleteDefault) {
-      await api.deleteEmbeddings(metadata, { mode: 'default' });
+      await queue.enqueueDelete(metadata, {
+        mode: 'default',
+        force: true,
+        verifySourceState,
+      });
     }
     if (deleteHighQuality) {
-      await api.deleteEmbeddings(metadata, { mode: 'high_quality' });
+      await queue.enqueueDelete(metadata, {
+        mode: 'high_quality',
+        force: true,
+        verifySourceState,
+      });
     }
   }
 }

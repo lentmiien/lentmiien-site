@@ -2181,7 +2181,9 @@ class ConversationService {
 
     if (!response_id) {
       if (msg?._id) {
-        await Chat5Model.deleteOne({ _id: msg._id });
+        await this.messageService.deleteMessages([msg._id], {
+          conversationId: conversation._id,
+        });
       }
       return { messages: [], responseId: null };
     }

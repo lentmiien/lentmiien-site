@@ -419,7 +419,7 @@ function buildEmbeddingSourceFilter(source) {
 async function pruneExpiredInboxMessages() {
   const now = new Date();
   const expiredMessages = await MessageInboxEntry.find({ retentionDeadlineDate: { $lt: now } })
-    .select('_id threadId hasEmbedding hasHighQualityEmbedding')
+    .select('_id threadId')
     .lean()
     .exec();
 
@@ -436,12 +436,8 @@ async function pruneExpiredInboxMessages() {
 
   expiredMessages.forEach((message) => {
     const source = buildMessageInboxSourceMetadata(message);
-    if (message.hasEmbedding) {
-      defaultFilters.push(buildEmbeddingSourceFilter(source));
-    }
-    if (message.hasHighQualityEmbedding) {
-      highQualityFilters.push(buildEmbeddingSourceFilter(source));
-    }
+    defaultFilters.push(buildEmbeddingSourceFilter(source));
+    highQualityFilters.push(buildEmbeddingSourceFilter(source));
   });
 
   const defaultResultPromise = defaultFilters.length

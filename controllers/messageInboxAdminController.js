@@ -33,6 +33,26 @@ function buildFeedback(query) {
   return { status, message };
 }
 
+function withEmbeddingState(message) {
+  const embeddingRequested = typeof message?.embeddingRequested === 'boolean'
+    ? message.embeddingRequested
+    : Boolean(message?.hasEmbedding);
+  const highQualityEmbeddingRequested = typeof message?.highQualityEmbeddingRequested === 'boolean'
+    ? message.highQualityEmbeddingRequested
+    : Boolean(message?.hasHighQualityEmbedding);
+  return {
+    ...message,
+    embeddingRequested,
+    highQualityEmbeddingRequested,
+    embeddingStatus: message?.embeddingStatus
+      || (message?.hasEmbedding ? 'completed' : (embeddingRequested ? 'pending' : 'disabled')),
+    highQualityEmbeddingStatus: message?.highQualityEmbeddingStatus
+      || (message?.hasHighQualityEmbedding
+        ? 'completed'
+        : (highQualityEmbeddingRequested ? 'pending' : 'disabled')),
+  };
+}
+
 function redirectWithFeedback(res, path, status, message) {
   const normalizedStatus = FEEDBACK_STATUSES.has(status) ? status : 'info';
   const encodedMessage = message ? encodeURIComponent(message) : '';
@@ -52,12 +72,12 @@ exports.renderMessageInbox = async (req, res) => {
     const { messages } = await messageInboxService.listMessages({ page, pageSize: PAGE_SIZE });
     const viewModel = messages.map((message) => {
       const id = message._id ? String(message._id) : '';
-      return {
+      return withEmbeddingState({
         ...message,
         _id: id,
         retentionDateInput: formatDateInput(message.retentionDeadlineDate),
         formattedDate: formatDateInput(message.date),
-      };
+      });
     });
 
     return res.render('admin_message_inbox', {
@@ -98,12 +118,12 @@ exports.renderSingleMessage = async (req, res) => {
     return res.render('error_page', { error: 'Message not found.' });
   }
 
-  const viewModel = {
+  const viewModel = withEmbeddingState({
     ...message,
     _id: message._id ? String(message._id) : '',
     retentionDateInput: formatDateInput(message.retentionDeadlineDate),
     formattedDate: formatDateInput(message.date),
-  };
+  });
 
   return res.render('admin_message_detail', { message: viewModel });
 };
@@ -124,7 +144,7 @@ exports.renderThread = async (req, res) => {
     return res.render('error_page', { error: 'Thread not found.' });
   }
 
-  const viewModel = messages.map((message) => ({
+  const viewModel = messages.map((message) => withEmbeddingState({
     ...message,
     _id: message._id ? String(message._id) : '',
     retentionDateInput: formatDateInput(message.retentionDeadlineDate),

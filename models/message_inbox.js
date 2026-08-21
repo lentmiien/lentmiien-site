@@ -16,6 +16,18 @@ const MessageInboxSchema = new Schema({
   retentionDeadlineDate: { type: Date, required: true },
   hasEmbedding: { type: Boolean, default: false },
   hasHighQualityEmbedding: { type: Boolean, default: false },
+  embeddingRequested: { type: Boolean, default: undefined },
+  highQualityEmbeddingRequested: { type: Boolean, default: undefined },
+  embeddingStatus: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'delete_pending', 'disabled'],
+    default: undefined,
+  },
+  highQualityEmbeddingStatus: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'delete_pending', 'disabled'],
+    default: undefined,
+  },
   appliedRetentionDays: { type: Number, default: null },
   appliedFilterId: { type: Schema.Types.ObjectId, ref: 'message_filter', default: null },
   appliedLabelRules: { type: [String], default: [] },

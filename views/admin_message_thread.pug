@@ -25,7 +25,7 @@ block content
               each label, idx in message.labels
                 span.badge.bg-light.text-dark.ms-1(key=`thread_label_${message._id}_${idx}`)= label
           .d-flex.flex-wrap.gap-2.mt-2
-            span.badge(class=message.hasEmbedding ? 'bg-success' : 'bg-light text-muted')
-              | Default embedding: #{message.hasEmbedding ? 'Yes' : 'No'}
-            span.badge(class=message.hasHighQualityEmbedding ? 'bg-success' : 'bg-light text-muted')
-              | High-quality embedding: #{message.hasHighQualityEmbedding ? 'Yes' : 'No'}
+            span.badge(class=message.hasEmbedding ? 'bg-success' : message.embeddingStatus === 'pending' ? 'bg-warning text-dark' : 'bg-light text-muted')
+              | Default embedding: #{message.hasEmbedding ? 'Yes' : message.embeddingStatus === 'pending' ? 'Pending' : 'No'}
+            span.badge(class=message.hasHighQualityEmbedding ? 'bg-success' : message.highQualityEmbeddingStatus === 'pending' ? 'bg-warning text-dark' : 'bg-light text-muted')
+              | High-quality embedding: #{message.hasHighQualityEmbedding ? 'Yes' : message.highQualityEmbeddingStatus === 'pending' ? 'Pending' : 'No'}

@@ -37,6 +37,7 @@ const OpenaichatModel = require('./models/openai_chat');
 const EmbeddingModel = require('./models/embedding');
 const VectorEmbedding = require('./models/vector_embedding');
 const VectorEmbeddingHighQuality = require('./models/vector_embedding_high_quality');
+const EmbeddingQueueJob = require('./models/embedding_queue_job');
 const FileMetaModel = require('./models/file_meta');
 const Chat4Model = require('./models/chat4');
 const Conversation4Model = require('./models/conversation4');
@@ -210,6 +211,7 @@ module.exports = {
   EmbeddingModel,
   VectorEmbedding,
   VectorEmbeddingHighQuality,
+  EmbeddingQueueJob,
   FileMetaModel,
   Chat4Model,
   Conversation4Model,

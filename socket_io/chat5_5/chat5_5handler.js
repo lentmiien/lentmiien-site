@@ -1473,8 +1473,13 @@ module.exports = async function registerChat5_5Handlers({
         return;
       }
 
-      await messageService.embedMessageHighQuality({ conversationId, messageId });
-      const payload = { ok: true, conversationId, messageId };
+      const result = await messageService.embedMessageHighQuality({ conversationId, messageId });
+      const payload = {
+        ok: true,
+        queued: result?.queued === true,
+        conversationId,
+        messageId,
+      };
       if (typeof ack === 'function') ack(payload);
       emitAdjustments(eventName, adjustments, { conversationId, messageId });
     } catch (error) {

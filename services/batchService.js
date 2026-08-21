@@ -8,7 +8,7 @@ const {
   supportsReasoningModel,
   supportsReasoningMode,
 } = require('../utils/OpenAI_API');
-const { AIModelCards, Conversation5Model, Chat5Model } = require('../database');
+const { AIModelCards, Conversation5Model } = require('../database');
 const logger = require('../utils/logger');
 const {
   APP_SETTING_KEYS,
@@ -507,7 +507,9 @@ class BatchService {
 
         if (prompt.message_id) {
           conversation.messages = conversation.messages.filter((id) => id !== prompt.message_id);
-          await Chat5Model.deleteOne({ _id: prompt.message_id }).catch(() => {});
+          await this.messageService.deleteMessages([prompt.message_id], {
+            conversationId: prompt.conversation_id,
+          });
         }
 
         const convertedOutputs = await convertResponseBody(responseBody);
@@ -578,7 +580,9 @@ class BatchService {
     if (!prompt) return;
 
     if (prompt.message_id) {
-      await Chat5Model.deleteOne({ _id: prompt.message_id }).catch(() => {});
+      await this.messageService.deleteMessages([prompt.message_id], {
+        conversationId: prompt.conversation_id,
+      });
       const conversation = await Conversation5Model.findById(prompt.conversation_id);
       if (conversation) {
         conversation.messages = conversation.messages.filter((msgId) => msgId !== prompt.message_id);

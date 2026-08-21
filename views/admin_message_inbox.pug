@@ -50,10 +50,10 @@ block content
               each label, idx in message.labels
                 span.badge.bg-light.text-dark.ms-1(key=`${message._id}_label_${idx}`)= label
           .d-flex.flex-wrap.gap-2.mb-3
-            span.badge(class=message.hasEmbedding ? 'bg-success' : 'bg-light text-muted')
-              | Default embedding: #{message.hasEmbedding ? 'Yes' : 'No'}
-            span.badge(class=message.hasHighQualityEmbedding ? 'bg-success' : 'bg-light text-muted')
-              | High-quality embedding: #{message.hasHighQualityEmbedding ? 'Yes' : 'No'}
+            span.badge(class=message.hasEmbedding ? 'bg-success' : message.embeddingStatus === 'pending' ? 'bg-warning text-dark' : 'bg-light text-muted')
+              | Default embedding: #{message.hasEmbedding ? 'Yes' : message.embeddingStatus === 'pending' ? 'Pending' : 'No'}
+            span.badge(class=message.hasHighQualityEmbedding ? 'bg-success' : message.highQualityEmbeddingStatus === 'pending' ? 'bg-warning text-dark' : 'bg-light text-muted')
+              | High-quality embedding: #{message.hasHighQualityEmbedding ? 'Yes' : message.highQualityEmbeddingStatus === 'pending' ? 'Pending' : 'No'}
             if message.appliedLabelRules && message.appliedLabelRules.length
               span.badge.bg-info.text-dark Label rules: #{message.appliedLabelRules.join(', ')}
             if message.appliedFilterId
@@ -65,10 +65,10 @@ block content
               input.form-control(type="date" id=`retention-${message._id}` name="retentionDeadlineDate" value=message.retentionDateInput)
             .col-md-3
               .form-check
-                input.form-check-input(type="checkbox" id=`embed-${message._id}` name="hasEmbedding" checked=message.hasEmbedding)
+                input.form-check-input(type="checkbox" id=`embed-${message._id}` name="hasEmbedding" checked=message.embeddingRequested)
                 label.form-check-label(for=`embed-${message._id}`) Generate embedding
               .form-check
-                input.form-check-input(type="checkbox" id=`hqembed-${message._id}` name="hasHighQualityEmbedding" checked=message.hasHighQualityEmbedding)
+                input.form-check-input(type="checkbox" id=`hqembed-${message._id}` name="hasHighQualityEmbedding" checked=message.highQualityEmbeddingRequested)
                 label.form-check-label(for=`hqembed-${message._id}`) Generate high-quality embedding
             .col-md-3
               button.btn.btn-primary(type="submit") Save overrides

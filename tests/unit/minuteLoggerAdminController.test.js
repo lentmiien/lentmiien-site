@@ -56,6 +56,7 @@ const {
   updateMinuteLoggerLocationGroupIgnoredStatus,
   updateMinuteLoggerLocationGroupSettings,
 } = require('../../services/minuteLoggerService');
+const logger = require('../../utils/logger');
 const controller = require('../../controllers/minuteLoggerAdminController');
 
 function createResponse() {
@@ -589,6 +590,18 @@ describe('minuteLoggerAdminController.dashboard', () => {
         updatedBy: 'admin-user',
       }
     );
+    expect(logger.notice).toHaveBeenCalledWith(
+      'Minute logger location group settings updated by admin',
+      {
+        category: 'minute-logger',
+        metadata: {
+          groupKey: '[redacted]',
+          hasName: true,
+          hideCoordinates: true,
+          user: 'admin-user',
+        },
+      }
+    );
     expect(res.redirect).toHaveBeenCalledWith(
       '/admin/minute-logger?status=success&message=Location%20group%20saved.'
     );
@@ -668,6 +681,16 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
         updatedBy: 'admin-user',
       }
     );
+    expect(logger.notice).toHaveBeenCalledWith(
+      'Minute logger location group ignored by admin',
+      {
+        category: 'minute-logger',
+        metadata: {
+          groupKey: '[redacted]',
+          user: 'admin-user',
+        },
+      }
+    );
     expect(res.redirect).toHaveBeenCalledWith(
       '/admin/minute-logger?status=success&message=Location%20group%20ignored.'
     );
@@ -694,6 +717,16 @@ describe('minuteLoggerAdminController.ignoredLocationGroups', () => {
       },
       {
         updatedBy: 'admin-user',
+      }
+    );
+    expect(logger.notice).toHaveBeenCalledWith(
+      'Minute logger location group removed from ignore list by admin',
+      {
+        category: 'minute-logger',
+        metadata: {
+          groupKey: '[redacted]',
+          user: 'admin-user',
+        },
       }
     );
     expect(res.redirect).toHaveBeenCalledWith(

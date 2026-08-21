@@ -13,6 +13,7 @@
     "scrape:amiami": "node scripts/scrape-amiami-new-items.js --storage=db",
     "cleanup:vector-embeddings": "node scripts/cleanup-vector-embeddings.js --days=90 --dry-run",
     "cleanup:vector-embeddings:execute": "node scripts/cleanup-vector-embeddings.js --days=90 --execute",
+    "backfill:embedding-queue": "node scripts/queue-embedding-backfill.js --dry-run",
     "codex": "codex",
     "codex-worker": "node scripts/codex-worker.js",
     "codex-update": "npm install -g @openai/codex@latest",

@@ -48,6 +48,7 @@ jest.mock('../../utils/logger', () => ({
 
 jest.mock('../../database', () => {
   const AIModelCards = { find: jest.fn() };
+  const Conversation5Model = { findById: jest.fn() };
   let nextMessageId = 1;
   const Chat5Model = jest.fn(function (doc = {}) {
     Object.assign(this, doc);
@@ -57,7 +58,8 @@ jest.mock('../../database', () => {
   Chat5Model.find = jest.fn();
   Chat5Model.findOne = jest.fn();
   Chat5Model.findById = jest.fn();
-  return { AIModelCards, Chat5Model };
+  Chat5Model.deleteMany = jest.fn();
+  return { AIModelCards, Chat5Model, Conversation5Model };
 });
 
 jest.mock('marked', () => ({ parse: mockMarkedParse }));
@@ -67,7 +69,7 @@ const { APP_SETTING_KEYS } = require('../../services/appSettingsService');
 const { chatGPT, chatGPT_beta } = require('../../utils/ChatGPT');
 const ai = require('../../utils/OpenAI_API');
 const ollama = require('../../utils/Ollama_API');
-const { AIModelCards, Chat5Model } = require('../../database');
+const { AIModelCards, Chat5Model, Conversation5Model } = require('../../database');
 
 const createMessageDoc = (id, overrides = {}) => ({
   _id: { toString: () => id },
@@ -97,6 +99,9 @@ describe('MessageService', () => {
     Chat5Model.find.mockReset();
     Chat5Model.findOne.mockReset();
     Chat5Model.findOne.mockResolvedValue(null);
+    Chat5Model.findById.mockReset();
+    Chat5Model.deleteMany.mockReset();
+    Conversation5Model.findById.mockReset();
     ollama.chat.mockReset();
     ollama.submitChatJob.mockReset();
     ollama.retrieveChatJob.mockReset();
@@ -160,6 +165,132 @@ describe('MessageService', () => {
     expect(result[0].images[0].use_flag).toBe('high quality');
     expect(result[0].images[1].use_flag).toBe('high quality');
     expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('queues chat text embedding work without calling the foreground embedding API', async () => {
+    const queue = {
+      enqueue: jest.fn().mockResolvedValue({ status: 'pending' }),
+      enqueueDelete: jest.fn(),
+    };
+    const directEmbeddingApi = {
+      embed: jest.fn(),
+      deleteEmbeddings: jest.fn(),
+    };
+    service.embeddingQueueService = queue;
+    service.embeddingApiService = directEmbeddingApi;
+
+    await service.syncTextEmbedding({
+      message: {
+        _id: { toString: () => 'chat-message-1' },
+        contentType: 'text',
+        content: { text: 'Queue this text' },
+      },
+      conversationId: 'conversation-1',
+    });
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      ['Queue this text'],
+      {},
+      [{
+        collectionName: 'chat_message',
+        documentId: 'chat-message-1',
+        contentType: 'chat_message_text',
+        parentCollection: 'conversation',
+        parentId: 'conversation-1',
+      }],
+      { mode: 'default' },
+    );
+    expect(directEmbeddingApi.embed).not.toHaveBeenCalled();
+  });
+
+  test('queues a delete intent when chat text is cleared', async () => {
+    const queue = {
+      enqueue: jest.fn(),
+      enqueueDelete: jest.fn().mockResolvedValue({ status: 'pending' }),
+    };
+    service.embeddingQueueService = queue;
+
+    await service.syncTextEmbedding({
+      message: {
+        _id: { toString: () => 'chat-message-2' },
+        contentType: 'text',
+        content: { text: '   ' },
+      },
+      conversationId: 'conversation-2',
+    });
+
+    expect(queue.enqueueDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: 'chat-message-2', parentId: 'conversation-2' }),
+      { mode: 'default' },
+    );
+    expect(queue.enqueue).not.toHaveBeenCalled();
+  });
+
+  test('queues manual high-quality chat embedding without using the foreground API', async () => {
+    const queue = {
+      enqueue: jest.fn().mockResolvedValue({ status: 'pending' }),
+      enqueueDelete: jest.fn(),
+    };
+    const directEmbeddingApi = { embedHighQuality: jest.fn() };
+    const message = {
+      _id: { toString: () => 'chat-message-hq' },
+      contentType: 'text',
+      content: { text: 'High quality text' },
+    };
+    Conversation5Model.findById.mockResolvedValue({
+      messages: [{ toString: () => 'chat-message-hq' }],
+    });
+    Chat5Model.findById.mockResolvedValue(message);
+    service.embeddingQueueService = queue;
+    service.embeddingApiService = directEmbeddingApi;
+
+    await expect(service.embedMessageHighQuality({
+      conversationId: 'conversation-hq',
+      messageId: 'chat-message-hq',
+    })).resolves.toEqual({ ok: true, queued: true });
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      ['High quality text'],
+      { task: 'document' },
+      [expect.objectContaining({
+        documentId: 'chat-message-hq',
+        parentId: 'conversation-hq',
+      })],
+      { mode: 'high_quality', force: true },
+    );
+    expect(directEmbeddingApi.embedHighQuality).not.toHaveBeenCalled();
+  });
+
+  test('durably queues both embedding deletions before removing chat messages', async () => {
+    const queue = {
+      enqueueDelete: jest.fn().mockResolvedValue({ status: 'pending' }),
+    };
+    service.embeddingQueueService = queue;
+    Chat5Model.deleteMany.mockResolvedValue({ deletedCount: 1 });
+
+    await expect(service.deleteMessages(['chat-message-delete'], {
+      conversationId: 'conversation-delete',
+    })).resolves.toBe(1);
+
+    const metadata = {
+      collectionName: 'chat_message',
+      documentId: 'chat-message-delete',
+      contentType: 'chat_message_text',
+      parentCollection: 'conversation',
+      parentId: 'conversation-delete',
+    };
+    expect(queue.enqueueDelete).toHaveBeenNthCalledWith(
+      1,
+      metadata,
+      { mode: 'default', force: true, verifySourceState: false },
+    );
+    expect(queue.enqueueDelete).toHaveBeenNthCalledWith(
+      2,
+      metadata,
+      { mode: 'high_quality', force: true, verifySourceState: false },
+    );
+    expect(queue.enqueueDelete.mock.invocationCallOrder[1])
+      .toBeLessThan(Chat5Model.deleteMany.mock.invocationCallOrder[0]);
   });
 
   test('getMessagesByUserId returns newest first and populates html', async () => {
