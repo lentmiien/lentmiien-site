@@ -127,6 +127,7 @@ const scheduleLogRetention = require('./schedulers/logRetention');
 const scheduleOcrEmbeddingReconciliation = require('./schedulers/ocrEmbeddings');
 const scheduleEmbeddingQueue = require('./schedulers/embeddingQueue');
 const scheduleCodexLogReview = require('./schedulers/codexLogReview');
+const scheduleEmergencyStockMaintenance = require('./schedulers/emergencyStockMaintenance');
 const {
   validateBatchDefaultModelSetting,
   validateBatchSummaryModelSetting,
@@ -693,6 +694,7 @@ scheduleLogRetention();
 scheduleOcrEmbeddingReconciliation();
 scheduleEmbeddingQueue();
 scheduleCodexLogReview();
+scheduleEmergencyStockMaintenance();
 validateBatchDefaultModelSetting().catch((error) => {
   logger.warning('Unable to validate the batch default model setting at startup', {
     category: 'batch',

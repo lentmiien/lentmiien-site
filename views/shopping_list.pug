@@ -59,6 +59,7 @@ block content
       p Items are stored locally for the day. Tap legacy entries to toggle done, and use cookbook ingredient checkboxes to complete recipe groups.
 
 block script
+  - const shoppingDataJson = JSON.stringify(shoppingData).replace(/</g, '\\u003c')
   script.
-    window.SHOPPING_LIST_DATA = !{JSON.stringify(shoppingData)};
+    window.SHOPPING_LIST_DATA = !{shoppingDataJson};
   script(src='/js/shopping_list.js', defer)

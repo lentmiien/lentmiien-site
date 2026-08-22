@@ -95,6 +95,9 @@ const TapoMonthlyConsumptionSnapshot = require('./models/tapo_monthly_consumptio
 // Emergency Stock
 const ESCategory = require('./models/es_category');
 const ESItem = require('./models/es_item');
+const ESProfile = require('./models/es_profile');
+const ESShoppingRequirement = require('./models/es_shopping_requirement');
+const ESMenuEntry = require('./models/es_menu_entry');
 // Receipt
 const Receipt = require('./models/receipt');
 const ReceiptMappingRule = require('./models/receipt_mapping_rule');
@@ -255,6 +258,9 @@ module.exports = {
   TapoMonthlyConsumptionSnapshot,
   ESCategory,
   ESItem,
+  ESProfile,
+  ESShoppingRequirement,
+  ESMenuEntry,
   Receipt,
   ReceiptMappingRule,
   ProductDetails,

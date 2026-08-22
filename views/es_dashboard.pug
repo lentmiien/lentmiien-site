@@ -4,100 +4,521 @@ block styles
   link(rel='stylesheet', href='/css/es_dashboard.css')
 
 block content
+  - const formatAmount = value => Number.isInteger(Number(value)) ? String(Number(value)) : Number(value || 0).toFixed(1)
+  - const formatDate = value => value ? new Date(value).toISOString().slice(0, 10) : 'Not recorded'
+  - const statusText = value => String(value || '').replaceAll('-', ' ')
+  - const coreStatusText = value => ({'milestone-met':'Current milestone met','floor-met':`Official ${formatAmount(snapshot.profile.officialFloorDays)}-day floor met`,'nearly-floor':`Official ${formatAmount(snapshot.profile.officialFloorDays)}-day floor nearly met`,'below-floor':`Below official ${formatAmount(snapshot.profile.officialFloorDays)}-day floor`,'not-measurable':'Calculation setup incomplete'}[value] || statusText(value))
+  - const activeRequirements = shoppingRequirements.filter(requirement => ['needed', 'planned'].includes(requirement.status))
   .es-dashboard
-    .es-dashboard__intro
-      h1 Emergency Stock Dashboard
-      p.es-dashboard__tagline Keep your household resilient with a quick glance at status and to-do items.
+    header.es-dashboard__intro
+      .es-dashboard__intro-copy
+        p.es-eyebrow Emergency Stock · Version 2
+        h1 Household readiness, managed as living stock
+        p.es-dashboard__tagline Protect the three-day floor while growing toward seven days through normal replenishment.
       .es-dashboard__links
-        a.es-link(href='/es/es_view_stock') View current stock
-        a.es-link(href='/i/es.jpg') 3 person household (original list)
-    .es-dashboard__preparedness
-      .es-card
-        .es-card__header
-          span.es-card__eyebrow Overall Preparedness
-          span.es-card__figure #{average}%
-        .es-progress
-          .es-progress__track
-            .es-progress__bar(style=`width: ${average}%;`)
-          span.es-progress__label= `${average}% stocked`
+        a.es-link(href='/es/es_view_stock') Open inventory
+        a.es-link(href='/shopping-list') Unified shopping list
+        a.es-link(href='/i/es.jpg') Original 3-person list
+
+    section.es-hero-grid(aria-label='Preparedness summary')
+      article.es-card.es-card--hero
+        p.es-card__eyebrow Core preparedness
+        if snapshot.core.measurable
+          p.es-core-figure #{formatAmount(snapshot.core.days)} days
+          p.es-card__lead(class=`es-status-text--${snapshot.core.status}`)= coreStatusText(snapshot.core.status)
+          p.es-card__meta Limited by #{snapshot.core.limitingDomains.map(statusText).join(', ')}.
+        else
+          p.es-core-figure.es-core-figure--setup Setup needed
+          p.es-card__lead Configure #{snapshot.core.limitingDomains.map(statusText).join(', ')} to calculate core days.
+        .es-goal-scale
+          .es-goal-scale__track
+            if snapshot.core.measurable
+              - const coreWidth = Math.min(100, snapshot.core.days / snapshot.profile.longTermTargetDays * 100)
+              span.es-goal-scale__fill(style=`width:${coreWidth}%`)
+            span.es-goal-scale__floor(style=`left:${snapshot.profile.officialFloorDays / snapshot.profile.longTermTargetDays * 100}%` title=`Official floor: ${snapshot.profile.officialFloorDays} days`)
+            span.es-goal-scale__milestone(style=`left:${snapshot.milestone.targetDays / snapshot.profile.longTermTargetDays * 100}%` title=`Current milestone: ${snapshot.milestone.targetDays} days`)
+          .es-goal-scale__labels
+            span 0
+            span Floor #{snapshot.profile.officialFloorDays}d
+            span Goal #{snapshot.profile.longTermTargetDays}d
+      article.es-card.es-card--milestone
+        p.es-card__eyebrow Active transition target
+        p.es-milestone-figure #{snapshot.milestone.targetDays} days
+        p.es-card__lead by #{snapshot.milestone.deadlineKey}
+        p.es-card__meta Shopping requirements stop at this milestone; the seven-day goal remains visible without being bought all at once.
+        .es-milestone-list
+          each milestone in snapshot.profile.milestones
+            - const milestoneKey = formatDate(milestone.deadline)
+            .es-milestone(class=milestoneKey === snapshot.milestone.deadlineKey ? 'es-milestone--active' : '')
+              span #{milestone.targetDays}d
+              time(datetime=milestoneKey)= milestoneKey
+
+    section.es-domain-section
+      .es-section-heading
+        div
+          p.es-eyebrow Limiting essentials
+          h2 Preparedness by domain
+        p Thirty-day forecast: #{forecast.core.measurable ? `${formatAmount(forecast.core.days)} days` : 'setup incomplete'} on #{forecast.dateKey}
+      .es-domain-grid
+        each domain in Object.values(snapshot.domains)
+          - const forecastDomain = domain.id === 'critical-medication' ? forecast.domains.criticalMedication : forecast.domains[domain.id]
+          article.es-domain-card(class=`es-domain-card--${domain.status}`)
+            .es-domain-card__header
+              h3= domain.label
+              span.es-pill= statusText(domain.status)
+            if domain.status === 'not-applicable'
+              p.es-domain-card__figure N/A
+              p.es-card__meta Excluded from the limiting calculation.
+            else if domain.measurable
+              p.es-domain-card__figure #{formatAmount(domain.days)} days
+              p.es-card__meta #{formatAmount(domain.currentAmount)} / #{formatAmount(domain.targetAmount)} #{domain.unit} for the current milestone
+              .es-progress.es-progress--compact
+                .es-progress__track
+                  - const domainWidth = Math.min(100, domain.days / snapshot.milestone.targetDays * 100)
+                  .es-progress__bar(style=`width:${domainWidth}%`)
+              if forecastDomain && forecastDomain.measurable
+                p.es-forecast-line 30-day forecast: #{formatAmount(forecastDomain.days)} days
+              if domain.id === 'food'
+                dl.es-mini-stats
+                  div
+                    dt Complete meals
+                    dd= formatAmount(domain.details.completeMeals)
+                  div
+                    dt Staple servings
+                    dd= formatAmount(domain.details.stapleServings)
+                  div
+                    dt Main/protein
+                    dd= formatAmount(domain.details.mainDishServings)
+                  div
+                    dt No-cook meals
+                    dd= formatAmount(domain.details.noCookMeals)
+            else
+              p.es-domain-card__figure —
+              p.es-card__meta Add measurement rules to the categories in this domain.
+
+    section.es-status-grid(aria-label='Stock management health')
+      article.es-status-card
+        p.es-card__eyebrow Rolling stock
+        p.es-status-card__value #{snapshot.rollingHealth.healthy} healthy
+        p.es-card__meta #{snapshot.rollingHealth.reorderSoon} reorder soon · #{snapshot.rollingHealth.belowFloor} below floor
+      article.es-status-card
+        p.es-card__eyebrow Rotation health
+        p.es-status-card__value #{snapshot.rotationHealth.dueSoon} due soon
+        p.es-card__meta #{snapshot.rotationHealth.expired} expired unresolved · #{snapshot.rotationHealth.undated} missing a date
+      article.es-status-card
+        p.es-card__eyebrow Durable equipment
+        p.es-status-card__value #{snapshot.durableHealth.verified} verified
+        p.es-card__meta #{snapshot.durableHealth.inspectionDue} inspection due · #{snapshot.durableHealth.missing} missing
+      article.es-status-card
+        p.es-card__eyebrow Checklist coverage
+        p.es-status-card__value= snapshot.checklist.percent === null ? '—' : `${snapshot.checklist.percent}%`
+        p.es-card__meta #{snapshot.checklist.ready} / #{snapshot.checklist.applicable} applicable categories; not used for core days
+
+    section.es-capability-strip
+      each capability in snapshot.capabilities
+        .es-capability
+          span.es-capability__name= capability.label
+          span.es-pill(class=`es-pill--${capability.status}`)= statusText(capability.status)
+      .es-capability
+        span.es-capability__name Recommendation model
+        span.es-pill(class=snapshot.recommendationReview.due ? 'es-pill--attention' : 'es-pill--available')= snapshot.recommendationReview.due ? 'review due' : `review ${formatDate(snapshot.recommendationReview.nextReviewAt)}`
+
     .es-dashboard__grid
       .es-dashboard__column
-        if items.length > 0
-          .es-card
-            .es-card__header
-              h2 Items to Rotate
-              span.es-card__meta= `${items.length} items`
+        section.es-card
+          .es-card__header
+            div
+              p.es-eyebrow Current milestone only
+              h2 Shopping requirements
+            span.es-card__meta #{activeRequirements.length} active
+          p.es-card__meta Marking a requirement purchased removes it from the queue; add the quantity to inventory when it is put away.
+          if activeRequirements.length
             ul.es-item-list
-              each item in items
-                - const stock = category_lookup_and_stock[item.categoryId];
+              each requirement in activeRequirements
                 li.es-item
                   .es-item__details
-                    span.es-item__category= stock && stock.label ? stock.label : 'Unknown category'
+                    .es-item__title-row
+                      strong= requirement.label
+                      span.es-pill(class=requirement.status === 'planned' ? 'es-pill--planned' : '')= requirement.status
+                    span.es-item__label Need #{formatAmount(requirement.requiredAmount)} #{requirement.unit}
+                    span.es-card__meta= requirement.reason
+                    if requirement.dueDate
+                      span.es-card__meta Due #{formatDate(requirement.dueDate)}
+                  .es-item__actions
+                    form.es-inline-form(action='/es/update_requirement', method='post')
+                      if requirement.recordId
+                        input(type='hidden', name='requirement_id', value=requirement.recordId)
+                      input(type='hidden', name='requirement_fingerprint', value=requirement.fingerprint)
+                      input(type='hidden', name='status', value=requirement.status === 'planned' ? 'needed' : 'planned')
+                      button.es-button.es-button--ghost(type='submit')= requirement.status === 'planned' ? 'Unplan' : 'Plan'
+                    form.es-inline-form(action='/es/update_requirement', method='post')
+                      if requirement.recordId
+                        input(type='hidden', name='requirement_id', value=requirement.recordId)
+                      input(type='hidden', name='requirement_fingerprint', value=requirement.fingerprint)
+                      input(type='hidden', name='status', value='purchased')
+                      button.es-button.es-button--secondary(type='submit') Purchased
+          else
+            p.es-empty-state Nothing needs buying for the active milestone.
+
+        section.es-card
+          .es-card__header
+            div
+              p.es-eyebrow Oldest first
+              h2 Rotation and inspection
+            span.es-card__meta #{snapshot.rotationItems.length} actions
+          if snapshot.rotationItems.length
+            ul.es-item-list
+              each item in snapshot.rotationItems
+                li.es-item(class=`es-item--${item.state}`)
+                  .es-item__details
+                    .es-item__title-row
+                      strong= item.category.name
+                      span.es-pill= statusText(item.state)
                     if item.label
                       span.es-item__label= item.label
-                  .es-item__meta
-                    span Amount: #{item.amount} #{stock ? stock.unit : ''}
-                    span Rotate by #{item.rotateDate.toDateString()}
+                    span.es-card__meta #{formatAmount(item.amount)} #{item.category.unit} · #{item.daysUntilAction === null ? 'date needed' : `${item.daysUntilAction} days`}
                   .es-item__actions
-                    button(type='button', class='es-button es-button--ghost fill-add-item', data-category=item.categoryId.toString(), data-amount=item.amount, data-label=item.label || '') Restock
-        else
-          .es-card
-            .es-card__header
-              h2 Items to Rotate
-            p.es-empty-state All stocked items are up to date.
-        .es-card
+                    if item.category.managementMode === 'durable'
+                      form.es-inline-form(action='/es/inspect_item', method='post')
+                        input(type='hidden', name='item_id', value=item.id)
+                        button.es-button.es-button--secondary(type='submit') Verify
+                    else
+                      button.es-button.es-button--ghost.fill-add-item(type='button', data-category=item.categoryId, data-amount=item.amount, data-label=item.label || '') Restock
+                      each resolution in ['consumed', 'discarded', 'replaced']
+                        form.es-inline-form(action='/es/resolve_item', method='post')
+                          input(type='hidden', name='item_id', value=item.id)
+                          input(type='hidden', name='resolution', value=resolution)
+                          button.es-button.es-button--text(type='submit')= resolution
+          else
+            p.es-empty-state No expiry rotations or equipment inspections need attention.
+
+        section.es-card
           .es-card__header
-            h2 Category Overview
-          ul.es-category-list
-            each category in categories
-              - const categoryData = category_lookup_and_stock[category._id.toString()];
-              li(class=`es-category${categoryData && categoryData.percent >= 100 ? ' es-category--ready' : ''}`)
-                .es-category__row
-                  span.es-category__name #{category.name}
-                  if categoryData
-                    span.es-category__percent= `${categoryData.percent}%`
-                if categoryData
-                  .es-category__meta Recommended: #{category.recommendedStock} #{category.unit}
-                  .es-category__meta Current: #{categoryData.stock} #{category.unit}
-                else
-                  .es-category__meta No stock data available.
-      .es-dashboard__column
-        .es-card
+            div
+              p.es-eyebrow Definitions and formulas
+              h2 Category guide
+            span.es-card__meta #{snapshot.categories.length} categories
+          .es-category-list
+            each category in snapshot.categories
+              details.es-category(class=`es-category--${category.health}`)
+                summary.es-category__summary
+                  .es-category__title
+                    strong= category.name
+                    span.es-pill= category.applicable ? statusText(category.managementMode) : 'N/A'
+                  .es-category__numbers
+                    if category.applicable
+                      span #{formatAmount(category.stock)} / #{formatAmount(category.target)} #{category.unit}
+                      span.es-pill= statusText(category.health)
+                    else
+                      span Excluded
+                .es-category__body
+                  p= category.purpose
+                  dl.es-definition-list
+                    div
+                      dt Why it matters
+                      dd= category.whyItMatters
+                    div
+                      dt What qualifies
+                      dd= category.qualifies
+                    div
+                      dt Does not qualify
+                      dd= category.doesNotQualify
+                    div
+                      dt Calculation
+                      dd= category.calculationRule
+                    div
+                      dt Unit
+                      dd= category.unit
+                    div
+                      dt Domain
+                      dd= statusText(category.preparednessDomain)
+                    if category.examples && category.examples.length
+                      div
+                        dt Examples
+                        dd= category.examples.join(' · ')
+                    if category.householdNote
+                      div
+                        dt Household note
+                        dd= category.householdNote
+                  if category.source && category.source.url
+                    p.es-source
+                      span Source:
+                      = ' '
+                      a(href=category.source.url, target='_blank', rel='noopener noreferrer')= category.source.label || category.source.url
+                      |  · reviewed #{formatDate(category.source.lastReviewedAt)}
+                  if category.managementMode === 'rolling'
+                    p.es-policy-line Floor #{formatAmount(category.emergencyFloor)} · reorder at #{formatAmount(category.reorderPoint)} · restock to #{formatAmount(category.restockToAmount)} #{category.unit}
+                  - const adjustableItem = category.items.find(item => item.status === 'active' && item.counted)
+                  if adjustableItem && category.managementMode !== 'durable'
+                    .es-quick-actions
+                      span Adjust oldest usable lot:
+                      each delta in [-1, 1]
+                        form.es-inline-form(action='/es/adjust_item', method='post')
+                          input(type='hidden', name='item_id', value=adjustableItem.id)
+                          input(type='hidden', name='delta', value=delta)
+                          button.es-button.es-button--ghost(type='submit')= delta > 0 ? '+1' : '−1'
+
+      aside.es-dashboard__column
+        section.es-card
           .es-card__header
-            h2 Add Stock Item
-            p.es-card__meta Quick add for monthly rotations.
+            div
+              p.es-eyebrow Stock workflow
+              h2 Add or restock
           form#add-item-form(action='/es/add_item', method='post')
-            label(for='add_category_id') Select category
+            label(for='add_category_id') Category
             select#add_category_id.form-select(name='add_category_id', required)
-              each category in categories
-                option(value=category._id)= `${category.name} (${category.unit})`
+              each category in snapshot.categories
+                option(value=category.id, data-mode=category.managementMode)= `${category.name} · ${category.unit} · ${statusText(category.managementMode)}`
             label(for='amount') Amount
-            input#amount.form-control(type='number', name='amount', min='0', step='1', required)
-            label(for='rotateDate') Date (only year and month are used)
-            input#rotateDate.form-control(type='date', name='rotateDate', required)
-            label(for='label') Label (optional)
-            input#label.form-control(type='text', name='label', placeholder='e.g., Brand or package detail')
-            button.es-button.es-button--primary(type='submit') Add Item
+            input#amount.form-control(type='number', name='amount', min='0.01', step='any', required)
+            label#actionDateLabel(for='actionDate') Expiry, rotation, or next inspection date
+            input#actionDate.form-control(type='date', name='actionDate')
+            p#actionDateHint.es-field-hint Rolling stock can omit expiry. Expiry-managed reserves require it; durable items use it as the next inspection date.
+            label(for='label') Lot or item label
+            input#label.form-control(type='text', name='label', placeholder='Brand, package, or equipment name')
+            label.es-checkbox
+              input(type='checkbox', name='opened')
+              span Opened but reasonably measurable
+            label.es-checkbox
+              input(type='checkbox', name='verified')
+              span Durable item tested now
+            label(for='notes') Note
+            textarea#notes.form-control(name='notes', rows='2')
+            details.es-subform
+              summary Food contribution override (optional)
+              label(for='foodContributionType') This lot contributes as
+              select#foodContributionType.form-select(name='foodContributionType')
+                option(value='category') Use category rule
+                option(value='complete') Complete meals
+                option(value='staple') Staple servings
+                option(value='main') Main / protein servings
+                option(value='produce') Fruit / vegetable servings
+              label(for='foodServingsPerUnit') Servings per inventory unit
+              input#foodServingsPerUnit.form-control(type='number', name='foodServingsPerUnit', min='0.01', step='any', value='1')
+              label(for='foodWaterLitresRequired') Preparation water per unit (L)
+              input#foodWaterLitresRequired.form-control(type='number', name='foodWaterLitresRequired', min='0', step='any', value='0')
+              label.es-checkbox
+                input(type='checkbox', name='foodNoCook')
+                span Counts as a no-cook meal
+              label.es-checkbox
+                input(type='checkbox', name='foodRequiresFuel')
+                span Requires cooking fuel
+            button.es-button.es-button--primary(type='submit') Add stock
+
+        section.es-card
+          .es-card__header
+            div
+              p.es-eyebrow Monthly routine
+              h2 Household review
+          p.es-card__meta #{snapshot.monthlyReview.due} of #{snapshot.monthlyReview.total} applicable categories have not been checked in the last 30 days.
+          form(action='/es/review_stock', method='post')
+            button.es-button.es-button--primary(type='submit') Mark quantities reviewed today
+
+        details.es-card.es-card--collapsible(open=menuExercise.entries.length > 0)
+          summary
+            span
+              span.es-eyebrow Food resilience
+              strong Five-day menu exercise
+          .es-collapsible-body
+            .es-menu-summary
+              div
+                span Planned
+                strong #{formatAmount(menuExercise.plannedServings)} / #{formatAmount(menuExercise.requiredServings)} meals
+              div
+                span No-cook
+                strong #{formatAmount(menuExercise.noCookServings)} meals
+              div
+                span Prep water
+                strong #{formatAmount(menuExercise.waterLitresRequired)} L
+              div
+                span Fuel needed
+                strong #{formatAmount(menuExercise.fuelServings)} meals
+            if menuExercise.missingStapleServings > 0 || menuExercise.missingMainDishServings > 0
+              p.es-card__meta Missing sources: #{formatAmount(menuExercise.missingStapleServings)} staple servings · #{formatAmount(menuExercise.missingMainDishServings)} main/protein servings.
+            if menuExercise.entries.length
+              ul.es-menu-list
+                each entry in menuExercise.entries
+                  li
+                    div
+                      strong Day #{entry.day} #{entry.meal}: #{entry.label}
+                      span #{formatAmount(entry.servings)} servings#{entry.noCook ? ' · no cook' : entry.requiresFuel ? ' · fuel' : ''}
+                    form.es-inline-form(action='/es/delete_menu_entry', method='post')
+                      input(type='hidden', name='entry_id', value=entry.id)
+                      button.es-button.es-button--text(type='submit') Remove
+            form(action='/es/save_menu_entry', method='post')
+              .es-form-grid
+                div
+                  label(for='menuDay') Day
+                  select#menuDay.form-select(name='day')
+                    each day in [1, 2, 3, 4, 5]
+                      option(value=day)= `Day ${day}`
+                div
+                  label(for='menuMeal') Meal
+                  select#menuMeal.form-select(name='meal')
+                    each meal in ['breakfast', 'lunch', 'dinner']
+                      option(value=meal)= meal
+              label(for='menuLabel') Meal description
+              input#menuLabel.form-control(type='text', name='label', required, placeholder='Rice, canned fish, and vegetables')
+              label(for='menuServings') Person-servings
+              input#menuServings.form-control(type='number', name='servings', min='0.1', step='any', value=snapshot.profile.householdSize, required)
+              .es-form-grid
+                div
+                  label(for='stapleSource') Staple source
+                  input#stapleSource.form-control(type='text', name='stapleSource', placeholder='Ready rice')
+                div
+                  label(for='mainDishSource') Main / protein source
+                  input#mainDishSource.form-control(type='text', name='mainDishSource', placeholder='Canned mackerel')
+                div
+                  label(for='produceSource') Fruit / vegetable source
+                  input#produceSource.form-control(type='text', name='produceSource', placeholder='Canned vegetables')
+                div
+                  label(for='menuWater') Preparation water (L)
+                  input#menuWater.form-control(type='number', name='waterLitresRequired', min='0', step='any', value='0')
+              label.es-checkbox
+                input(type='checkbox', name='noCook')
+                span Can be eaten without cooking
+              label.es-checkbox
+                input(type='checkbox', name='requiresFuel')
+                span Requires cooking fuel
+              label(for='dietaryNote') Dietary note
+              input#dietaryNote.form-control(type='text', name='dietaryNote')
+              button.es-button.es-button--primary(type='submit') Save menu slot
+
         details.es-card.es-card--collapsible
           summary
-            span.es-card__header
-              span Manage Categories
-              span.es-card__meta Rarely used
-          form(action='/es/edit_category', method='post')
-            label(for='category_id') Select category to edit
+            span
+              span.es-eyebrow Household assumptions
+              strong Targets and review cycle
+          form(action='/es/edit_profile', method='post')
+            label(for='householdSize') Household members
+            input#householdSize.form-control(type='number', name='householdSize', min='1', step='1', value=snapshot.profile.householdSize)
+            label(for='officialFloorDays') Official floor (days)
+            input#officialFloorDays.form-control(type='number', name='officialFloorDays', min='1', step='any', value=snapshot.profile.officialFloorDays)
+            label(for='longTermTargetDays') Long-term target (days)
+            input#longTermTargetDays.form-control(type='number', name='longTermTargetDays', min='1', step='any', value=snapshot.profile.longTermTargetDays)
+            label(for='longTermGoalDate') Long-term goal date
+            input#longTermGoalDate.form-control(type='date', name='longTermGoalDate', value=formatDate(snapshot.profile.longTermGoalDate))
+            label(for='waterLitresPerPersonDay') Water L / person / day
+            input#waterLitresPerPersonDay.form-control(type='number', name='waterLitresPerPersonDay', min='0.1', step='any', value=snapshot.profile.waterLitresPerPersonDay)
+            label(for='toiletUsesPerPersonDay') Toilet uses / person / day
+            input#toiletUsesPerPersonDay.form-control(type='number', name='toiletUsesPerPersonDay', min='0.1', step='any', value=snapshot.profile.toiletUsesPerPersonDay)
+            label(for='mealsPerPersonDay') Meals / person / day
+            input#mealsPerPersonDay.form-control(type='number', name='mealsPerPersonDay', min='1', step='any', value=snapshot.profile.mealsPerPersonDay)
+            label(for='recommendationReviewedAt') Recommendation reviewed
+            input#recommendationReviewedAt.form-control(type='date', name='recommendationReviewedAt', value=formatDate(snapshot.profile.recommendationReviewedAt))
+            label(for='recommendationNextReviewAt') Next recommendation review
+            input#recommendationNextReviewAt.form-control(type='date', name='recommendationNextReviewAt', value=formatDate(snapshot.profile.recommendationNextReviewAt))
+            label(for='assumptions') Household assumptions
+            textarea#assumptions.form-control(name='assumptions', rows='3')= snapshot.profile.assumptions || ''
+            input(type='hidden', name='timeZone', value=snapshot.profile.timeZone)
+            button.es-button.es-button--primary(type='submit') Save assumptions
+
+        details.es-card.es-card--collapsible
+          summary
+            span
+              span.es-eyebrow Category policy
+              strong Define what counts
+          form#category-policy-form(action='/es/edit_category', method='post')
+            label(for='category_id') Existing category or new
             select#category_id.form-select(name='category_id')
               option(value='') New category
-              each category in categories
-                option(value=category._id)= category.name
-            label(for='name') Category name
-            input#name.form-control(type='text', name='name', placeholder='e.g., Canned beans')
-            label(for='recommendedStock') Recommended stock
-            input#recommendedStock.form-control(type='number', name='recommendedStock', min='0', step='1')
-            label(for='unit') Unit
-            input#unit.form-control(type='text', name='unit', placeholder='e.g., cans')
-            label(for='rotationPeriodMonths') Rotation period in months
-            input#rotationPeriodMonths.form-control(type='number', name='rotationPeriodMonths', min='1', step='1')
-            button.es-button.es-button--primary(type='submit') Save Category
+              each category in snapshot.categories
+                option(value=category.id)= category.name
+            .es-form-grid
+              div
+                label(for='name') Name
+                input#name.form-control(type='text', name='name', required)
+              div
+                label(for='unit') Unit
+                input#unit.form-control(type='text', name='unit', required)
+              div
+                label(for='managementMode') Management mode
+                select#managementMode.form-select(name='managementMode', required)
+                  option(value='rolling') Rolling stock
+                  option(value='expiry-managed') Expiry-managed reserve
+                  option(value='durable') Durable / inspection
+              div
+                label(for='preparednessDomain') Preparedness domain
+                select#preparednessDomain.form-select(name='preparednessDomain')
+                  each domainId in ['other', 'water', 'food', 'toilet', 'critical-medication', 'cooking-fuel', 'power']
+                    option(value=domainId)= statusText(domainId)
+            label.es-checkbox
+              input#applicable(type='checkbox', name='applicable', checked)
+              span Applicable to this household
+            label.es-checkbox
+              input#conditional(type='checkbox', name='conditional')
+              span Conditional category
+            .es-form-grid
+              div
+                label(for='officialBaseline') Official 3-day baseline
+                input#officialBaseline.form-control(type='number', name='officialBaseline', min='0', step='any')
+              div
+                label(for='personalTarget') Personal long-term target
+                input#personalTarget.form-control(type='number', name='personalTarget', min='0', step='any')
+              div
+                label(for='emergencyFloor') Emergency floor
+                input#emergencyFloor.form-control(type='number', name='emergencyFloor', min='0', step='any')
+              div
+                label(for='reorderPoint') Reorder point
+                input#reorderPoint.form-control(type='number', name='reorderPoint', min='0', step='any')
+              div
+                label(for='restockToAmount') Restock-to amount
+                input#restockToAmount.form-control(type='number', name='restockToAmount', min='0', step='any')
+              div
+                label(for='packageSize') Normal package size
+                input#packageSize.form-control(type='number', name='packageSize', min='0', step='any')
+              div
+                label(for='normalConsumptionRate') Normal use per period
+                input#normalConsumptionRate.form-control(type='number', name='normalConsumptionRate', min='0', step='any')
+              div
+                label(for='consumptionPeriodDays') Consumption period (days)
+                input#consumptionPeriodDays.form-control(type='number', name='consumptionPeriodDays', min='1', step='1', value='30')
+              div
+                label(for='shoppingLeadDays') Days to next shopping opportunity
+                input#shoppingLeadDays.form-control(type='number', name='shoppingLeadDays', min='0', step='any', value='7')
+              div
+                label(for='inspectionIntervalMonths') Inspection interval (months)
+                input#inspectionIntervalMonths.form-control(type='number', name='inspectionIntervalMonths', min='1', step='1', value='6')
+              div
+                label(for='unitsPerPersonDay') Units / person / day
+                input#unitsPerPersonDay.form-control(type='number', name='unitsPerPersonDay', min='0', step='any')
+              div
+                label(for='dependentCount') Applicable people
+                input#dependentCount.form-control(type='number', name='dependentCount', min='0', step='any')
+            input(type='hidden', name='recommendedStock', value='0')
+            input(type='hidden', name='rotationPeriodMonths', value='12')
+            h3 Food and domain contribution per inventory unit
+            .es-form-grid
+              each field in [{id:'domainUnits', label:'Domain units'}, {id:'completeMeals', label:'Complete meals'}, {id:'stapleServings', label:'Staple servings'}, {id:'mainDishServings', label:'Main/protein servings'}, {id:'produceServings', label:'Produce servings'}, {id:'noCookMeals', label:'No-cook meals'}, {id:'waterLitresRequired', label:'Preparation water (L)'}, {id:'fuelMealsRequired', label:'Meals needing fuel'}]
+                div
+                  label(for=field.id)= field.label
+                  input.form-control(id=field.id, type='number', name=field.id, min='0', step='any')
+            each field in [{id:'purpose', label:'Purpose'}, {id:'whyItMatters', label:'Why it matters'}, {id:'qualifies', label:'What qualifies'}, {id:'doesNotQualify', label:'What does not qualify'}, {id:'calculationRule', label:'Calculation rule'}, {id:'examples', label:'Examples (one per line)'}, {id:'householdNote', label:'Household override or note'}]
+              label(for=field.id)= field.label
+              textarea.form-control(id=field.id, name=field.id, rows='2')
+            .es-form-grid
+              div
+                label(for='sourceLabel') Source label
+                input#sourceLabel.form-control(type='text', name='sourceLabel')
+              div
+                label(for='sourceUrl') Official source URL
+                input#sourceUrl.form-control(type='url', name='sourceUrl')
+              div
+                label(for='sourceLastReviewedAt') Source last reviewed
+                input#sourceLastReviewedAt.form-control(type='date', name='sourceLastReviewedAt')
+              div
+                label(for='sourceDate') Source publication date
+                input#sourceDate.form-control(type='date', name='sourceDate')
+              div
+                label(for='categoryRecommendationReviewedAt') Recommendation reviewed
+                input#categoryRecommendationReviewedAt.form-control(type='date', name='recommendationReviewedAt')
+              div
+                label(for='goalDate') Category goal date
+                input#goalDate.form-control(type='date', name='goalDate')
+            button.es-button.es-button--primary(type='submit') Save category policy
 
 block script
+  - const categoryDataJson = JSON.stringify(snapshot.categories).replace(/</g, '\\u003c')
+  script.
+    window.ES_CATEGORY_DATA = !{categoryDataJson};
   script(src='/js/es_dashboard.js', defer)

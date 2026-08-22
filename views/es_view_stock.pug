@@ -4,57 +4,95 @@ block styles
   link(rel='stylesheet', href='/css/es_dashboard.css')
 
 block content
+  - const formatAmount = value => Number.isInteger(Number(value)) ? String(Number(value)) : Number(value || 0).toFixed(1)
+  - const formatDate = value => value ? new Date(value).toISOString().slice(0, 10) : 'Not recorded'
+  - const statusText = value => String(value || '').replaceAll('-', ' ')
   .es-dashboard
-    .es-dashboard__intro
-      h1 Emergency Stock Inventory
-      p.es-dashboard__tagline Up-to-date view of everything on hand by category.
+    header.es-dashboard__intro
+      .es-dashboard__intro-copy
+        p.es-eyebrow Emergency Stock · Inventory
+        h1 Every lot and equipment check
+        p.es-dashboard__tagline Active quantities, rotation dates, inspections, and recently resolved records.
       .es-dashboard__links
-        a.es-link(href='/es/es_dashboard') Back to dashboard
-        a.es-link(href='/i/es.jpg') 3 person household (original list)
-    .es-dashboard__preparedness
-      .es-card
-        .es-card__header
-          span.es-card__eyebrow Overall Preparedness
-          span.es-card__figure #{average}%
-        .es-progress
-          .es-progress__track
-            .es-progress__bar(style=`width: ${average}%;`)
-          span.es-progress__label= `${average}% stocked`
-    - const today = new Date();
-    - const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
-    if categories && categories.length
-      .es-dashboard__grid.es-dashboard__grid--full
-        each category in categories
-          - const stockData = category_lookup_and_stock[category._id.toString()];
-          .es-card.es-card--category
+        a.es-link(href='/es/es_dashboard') Back to readiness dashboard
+        a.es-link(href='/shopping-list') Unified shopping list
+
+    section.es-status-grid
+      article.es-status-card
+        p.es-card__eyebrow Active categories
+        p.es-status-card__value= snapshot.categories.filter(category => category.applicable).length
+        p.es-card__meta N/A categories stay visible but never affect readiness.
+      article.es-status-card
+        p.es-card__eyebrow Active stock lots
+        p.es-status-card__value= snapshot.categories.reduce((count, category) => count + category.items.filter(item => item.status === 'active').length, 0)
+        p.es-card__meta Opened stock counts when its quantity is reasonably measurable.
+      article.es-status-card
+        p.es-card__eyebrow Action queue
+        p.es-status-card__value= snapshot.rotationItems.length
+        p.es-card__meta Expiry warnings begin at 30 days; strong reminders begin at 14.
+      article.es-status-card
+        p.es-card__eyebrow Cleanup policy
+        p.es-status-card__value 30 days
+        p.es-card__meta Only consumed, discarded, or replaced records are cleaned up.
+
+    if snapshot.categories.length
+      .es-inventory-grid
+        each category in snapshot.categories
+          article.es-card.es-card--category(class=!category.applicable ? 'es-card--muted' : '')
             .es-card__header
-              h2 #{category.name}
-              if stockData
-                span.es-card__meta= `${stockData.stock} ${category.unit} | ${stockData.percent}%`
-              else
-                span.es-card__meta No stock data
-            if stockData
-              .es-progress.es-progress--compact
-                .es-progress__track
-                  - const categoryPercent = Math.min(stockData.percent, 100);
-                  .es-progress__bar(style=`width: ${categoryPercent}%;`)
-                span.es-progress__label= `Recommended ${category.recommendedStock} ${category.unit}`
-              if stockData.items && stockData.items.length
-                ul.es-item-list.es-item-list--compact
-                  each item in stockData.items
-                    - const expiresSoon = item.rotateDate < nextMonth;
-                    li(class=`es-item${expiresSoon ? ' es-item--warning' : ''}`)
-                      .es-item__details
-                        span.es-item__category= item.label || 'Unlabeled item'
-                      .es-item__meta
-                        if expiresSoon
-                          span.es-item__flag.es-item__flag--warning Expiring soon
-                        span= `${item.amount} ${category.unit}`
-                        span= `Expires ${item.rotateDate.toDateString()}`
-              else
-                p.es-empty-state No items currently in stock for this category.
+              div
+                p.es-eyebrow= statusText(category.managementMode)
+                h2= category.name
+              .es-card__header-numbers
+                span.es-pill= category.applicable ? statusText(category.health) : 'N/A'
+                if category.applicable
+                  strong #{formatAmount(category.stock)} #{category.unit}
+            p.es-card__meta= category.purpose
+            if category.managementMode === 'rolling'
+              p.es-policy-line Floor #{formatAmount(category.emergencyFloor)} · reorder #{formatAmount(category.reorderPoint)} · restock to #{formatAmount(category.restockToAmount)} #{category.unit}
+            if category.items.length
+              ul.es-item-list.es-item-list--compact
+                each item in category.items
+                  li.es-item(class=`es-item--${item.state}`)
+                    .es-item__details
+                      .es-item__title-row
+                        strong= item.label || 'Unlabelled item'
+                        span.es-pill= item.status === 'active' ? statusText(item.state) : item.status
+                      span.es-item__label #{formatAmount(item.amount)} #{category.unit}#{item.opened ? ' · opened' : ''}
+                      if category.managementMode === 'durable'
+                        span.es-card__meta Last verified #{formatDate(item.lastVerifiedAt)} · next inspection #{formatDate(item.inspectionDueAt || item.rotateDate)}
+                      else
+                        span.es-card__meta Expiry / rotation #{formatDate(item.expiresAt || item.rotateDate)}
+                      if item.resolvedAt
+                        span.es-card__meta Resolved #{formatDate(item.resolvedAt)}
+                      if item.notes
+                        span.es-card__meta= item.notes
+                      if item.contributionOverride
+                        - const contributions = Object.entries(item.contributionOverride).filter(entry => Number(entry[1]) > 0).map(entry => `${statusText(entry[0])}: ${formatAmount(entry[1])}`)
+                        if contributions.length
+                          span.es-card__meta Food override · #{contributions.join(' · ')} per #{category.unit}
+                    if item.status === 'active'
+                      .es-item__actions
+                        if category.managementMode === 'durable'
+                          form.es-inline-form(action='/es/inspect_item', method='post')
+                            input(type='hidden', name='item_id', value=item.id)
+                            input(type='hidden', name='returnTo', value='inventory')
+                            button.es-button.es-button--secondary(type='submit') Test now
+                        else
+                          each delta in [-1, 1]
+                            form.es-inline-form(action='/es/adjust_item', method='post')
+                              input(type='hidden', name='item_id', value=item.id)
+                              input(type='hidden', name='delta', value=delta)
+                              input(type='hidden', name='returnTo', value='inventory')
+                              button.es-button.es-button--ghost(type='submit')= delta > 0 ? '+1' : '−1'
+                          each resolution in ['consumed', 'discarded', 'replaced']
+                            form.es-inline-form(action='/es/resolve_item', method='post')
+                              input(type='hidden', name='item_id', value=item.id)
+                              input(type='hidden', name='resolution', value=resolution)
+                              input(type='hidden', name='returnTo', value='inventory')
+                              button.es-button.es-button--text(type='submit')= resolution
             else
-              p.es-empty-state No stock data available for this category.
+              p.es-empty-state No inventory records in this category.
     else
       .es-card
-        p.es-empty-state No categories found.
+        p.es-empty-state No categories found. Create the first category from the dashboard.

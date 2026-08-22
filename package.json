@@ -13,6 +13,8 @@
     "scrape:amiami": "node scripts/scrape-amiami-new-items.js --storage=db",
     "cleanup:vector-embeddings": "node scripts/cleanup-vector-embeddings.js --days=90 --dry-run",
     "cleanup:vector-embeddings:execute": "node scripts/cleanup-vector-embeddings.js --days=90 --execute",
+    "migrate:emergency-stock-v2": "node scripts/migrate-emergency-stock-v2.js",
+    "migrate:emergency-stock-v2:execute": "node scripts/migrate-emergency-stock-v2.js --execute",
     "backfill:embedding-queue": "node scripts/queue-embedding-backfill.js --dry-run",
     "codex": "codex",
     "codex-worker": "node scripts/codex-worker.js",

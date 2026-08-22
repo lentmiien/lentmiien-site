@@ -65,8 +65,13 @@
         kind: 'basic',
         key: `emergency:${item.id}`,
         title: item.name || 'Unlabeled category',
-        description: `Need ${remaining} ${item.unit}`,
-        meta: [`Stock: ${current} / ${recommended} ${item.unit}`],
+        description: item.reason || `Need ${remaining} ${item.unit}`,
+        meta: [
+          `Need ${remaining} ${item.unit}`,
+          `Stock: ${current} / ${recommended} ${item.unit}`,
+          item.status === 'planned' ? 'Purchase planned' : '',
+          item.dueDate ? `Due: ${formatShortDate(item.dueDate)}` : '',
+        ].filter(Boolean),
         details: '',
       };
     });

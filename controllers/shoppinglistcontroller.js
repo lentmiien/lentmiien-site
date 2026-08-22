@@ -2,11 +2,14 @@ const {
   Task,
   ESCategory,
   ESItem,
+  ESProfile,
+  ESShoppingRequirement,
   CookingCalendarV2Model,
   Chat4KnowledgeModel,
   CookbookRecipeModel,
 } = require('../database');
 const logger = require('../utils/logger');
+const { buildShoppingRequirements } = require('../services/emergencyStockService');
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const COOKING_RANGE_DAYS = 6;
@@ -37,7 +40,7 @@ exports.shopping_list = async (req, res) => {
 
     const userId = req.user.name;
 
-    const [toBuyTasks, categories, items, calendarDocs] = await Promise.all([
+    const [toBuyTasks, categories, items, profile, stockRequirements, calendarDocs] = await Promise.all([
       Task.find({
         userId,
         type: 'tobuy',
@@ -46,6 +49,8 @@ exports.shopping_list = async (req, res) => {
       }).sort({ start: 1, createdAt: 1 }).lean(),
       ESCategory.find({}).lean(),
       ESItem.find({}).lean(),
+      ESProfile.findOne({ key: 'household' }).lean(),
+      ESShoppingRequirement.find({ status: { $in: ['needed', 'planned', 'purchased'] } }).lean(),
       CookingCalendarV2Model.find({ date: { $in: buildDateRange(todayStart, COOKING_RANGE_DAYS) } }).lean(),
     ]);
 
@@ -56,33 +61,26 @@ exports.shopping_list = async (req, res) => {
       start: task.start ? task.start.toISOString() : null,
     }));
 
-    const stockByCategory = {};
-    (items || []).forEach(item => {
-      if (!item.rotateDate || item.rotateDate < now) {
-        return;
-      }
-      const key = String(item.categoryId);
-      const amount = Number(item.amount) || 0;
-      stockByCategory[key] = (stockByCategory[key] || 0) + amount;
-    });
-
-    const emergencyStock = (categories || []).reduce((acc, category) => {
-      const key = category._id.toString();
-      const currentStock = stockByCategory[key] || 0;
-      const recommended = Number(category.recommendedStock) || 0;
-      const remaining = recommended - currentStock;
-      if (remaining > 0) {
-        acc.push({
-          id: key,
-          name: category.name,
-          unit: category.unit,
-          recommendedStock: recommended,
-          currentStock,
-          remaining,
-        });
-      }
-      return acc;
-    }, []);
+    const emergencyStock = buildShoppingRequirements({
+      categories: categories || [],
+      items: items || [],
+      profile: profile || {},
+      existingRequirements: stockRequirements || [],
+      now,
+    })
+      .filter(requirement => ['needed', 'planned'].includes(requirement.status))
+      .map(requirement => ({
+        id: requirement.fingerprint,
+        requirementId: stockRequirements.find(saved => saved.fingerprint === requirement.fingerprint)?._id?.toString() || null,
+        name: requirement.label,
+        unit: requirement.unit,
+        recommendedStock: requirement.targetAmount,
+        currentStock: requirement.currentAmount,
+        remaining: requirement.requiredAmount,
+        reason: requirement.reason,
+        status: requirement.status,
+        dueDate: requirement.dueDate ? requirement.dueDate.toISOString() : null,
+      }));
 
     const calendarEntries = [];
     const recipeIds = new Set();
