@@ -33,6 +33,7 @@ beforeEach(() => {
 
 describe('codexToolService runtime config', () => {
   const originalMaxEventsPerTurn = process.env.CODEX_MAX_EVENTS_PER_TURN;
+  const originalCompletionExitGraceMs = process.env.CODEX_COMPLETION_EXIT_GRACE_MS;
   const originalLocalModels = process.env.CODEX_LOCAL_MODELS;
   const originalOllamaProfile = process.env.CODEX_OLLAMA_PROFILE;
 
@@ -41,6 +42,11 @@ describe('codexToolService runtime config', () => {
       delete process.env.CODEX_MAX_EVENTS_PER_TURN;
     } else {
       process.env.CODEX_MAX_EVENTS_PER_TURN = originalMaxEventsPerTurn;
+    }
+    if (originalCompletionExitGraceMs === undefined) {
+      delete process.env.CODEX_COMPLETION_EXIT_GRACE_MS;
+    } else {
+      process.env.CODEX_COMPLETION_EXIT_GRACE_MS = originalCompletionExitGraceMs;
     }
     if (originalLocalModels === undefined) {
       delete process.env.CODEX_LOCAL_MODELS;
@@ -64,6 +70,14 @@ describe('codexToolService runtime config', () => {
     process.env.CODEX_MAX_EVENTS_PER_TURN = '2500';
 
     expect(codexToolService.getRuntimeConfig().maxEventsPerTurn).toBe(2500);
+  });
+
+  test('uses a short completion exit grace period and allows an override', () => {
+    delete process.env.CODEX_COMPLETION_EXIT_GRACE_MS;
+    expect(codexToolService.getRuntimeConfig().completionExitGraceMs).toBe(2000);
+
+    process.env.CODEX_COMPLETION_EXIT_GRACE_MS = '3500';
+    expect(codexToolService.getRuntimeConfig().completionExitGraceMs).toBe(3500);
   });
 
   test('loads comma-separated Ollama models from app settings and ignores the legacy environment value', async () => {

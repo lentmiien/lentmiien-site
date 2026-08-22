@@ -5,6 +5,7 @@ const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 
 const codexToolService = require('./codexToolService');
+const logger = require('../utils/logger');
 const {
   buildRemoteShellCommand,
   buildSshArgs,
@@ -262,6 +263,10 @@ class CodexLocalRunner {
 
   async runTurn({ turn, session, workspace, target, onEvent, onCommand, isCancellationRequested }) {
     const command = this.buildCommand({ turn, session, workspace, target });
+    const runnerConfig = this.getConfig();
+    const completionExitGraceMs = Number.isFinite(runnerConfig.completionExitGraceMs)
+      ? Math.max(1, runnerConfig.completionExitGraceMs)
+      : 2000;
     if (command.outputLocation !== 'remote') {
       await fs.promises.mkdir(path.dirname(command.outputPath), { recursive: true });
     }
@@ -282,7 +287,17 @@ class CodexLocalRunner {
     let killTimer = null;
     let cancelInterval = null;
     let timeoutHandle = null;
+    let completionExitTimer = null;
+    // Codex can finish authoritatively before its wrapper emits close.
+    let terminalCompletionSeen = false;
+    let completionGraceExpired = false;
+    let resolveCompletionGraceExpired;
+    const completionGraceExpiredPromise = new Promise((resolve) => {
+      resolveCompletionGraceExpired = resolve;
+    });
     let streamChain = Promise.resolve();
+    let pendingStreamTaskCount = 0;
+    let scheduleCompletionFallback = () => {};
 
     const emit = async (event) => {
       if (typeof onEvent === 'function') {
@@ -305,6 +320,19 @@ class CodexLocalRunner {
         const nextUsage = extractUsage(parsed);
         if (nextUsage) {
           usage = nextUsage;
+        }
+        const isTerminalCompletion = eventType === 'turn.completed';
+        if (isTerminalCompletion) {
+          terminalCompletionSeen = true;
+          if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+            timeoutHandle = null;
+          }
+          if (cancelInterval) {
+            clearInterval(cancelInterval);
+            cancelInterval = null;
+          }
+          scheduleCompletionFallback();
         }
         const assistantText = extractAssistantText(parsed);
         if (assistantText) {
@@ -354,19 +382,30 @@ class CodexLocalRunner {
       }
     };
 
-    const cleanup = () => {
+    const cleanupOperationalTimers = () => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (cancelInterval) clearInterval(cancelInterval);
       if (killTimer) clearTimeout(killTimer);
     };
 
+    const clearCompletionExitTimer = () => {
+      if (completionExitTimer) {
+        clearTimeout(completionExitTimer);
+        completionExitTimer = null;
+      }
+    };
+
     return new Promise((resolve) => {
       let settled = false;
       const enqueueStreamWork = (task) => {
+        pendingStreamTaskCount += 1;
         streamChain = streamChain
           .then(task)
           .catch((error) => {
             childError = childError || error;
+          })
+          .finally(() => {
+            pendingStreamTaskCount -= 1;
           });
       };
       const finish = async (result) => {
@@ -374,29 +413,89 @@ class CodexLocalRunner {
           return;
         }
         settled = true;
-        cleanup();
-        await streamChain;
-        if (stdoutRemainder.trim()) {
-          await handleJsonLine(stdoutRemainder);
+        cleanupOperationalTimers();
+
+        let finalStreamEventPending = false;
+        const drainStreamWork = async () => {
+          await streamChain;
+          if (stdoutRemainder.trim()) {
+            const finalStdoutLine = stdoutRemainder;
+            stdoutRemainder = '';
+            finalStreamEventPending = true;
+            try {
+              await handleJsonLine(finalStdoutLine);
+            } finally {
+              finalStreamEventPending = false;
+            }
+          }
+          if (stderrRemainder.trim()) {
+            const finalStderrLine = stderrRemainder;
+            stderrRemainder = '';
+            finalStreamEventPending = true;
+            try {
+              await emit({
+                stream: 'stderr',
+                eventType: 'stderr.line',
+                text: clipText(finalStderrLine, this.getConfig().maxEventTextChars),
+                severity: 'warning',
+              });
+            } finally {
+              finalStreamEventPending = false;
+            }
+          }
+        };
+        // Do not let a completed turn remain running because its final event write never settles.
+        let streamDrained = await Promise.race([
+          drainStreamWork()
+            .then(() => true)
+            .catch((error) => {
+              childError = childError || error;
+              return true;
+            }),
+          completionGraceExpiredPromise.then(() => false),
+        ]);
+        if (!streamDrained && pendingStreamTaskCount === 0 && !finalStreamEventPending &&
+          !stdoutRemainder.trim() && !stderrRemainder.trim()) {
+          streamDrained = true;
         }
-        if (stderrRemainder.trim()) {
-          await emit({
-            stream: 'stderr',
-            eventType: 'stderr.line',
-            text: clipText(stderrRemainder, this.getConfig().maxEventTextChars),
-            severity: 'warning',
-          });
+        clearCompletionExitTimer();
+        if (!streamDrained) {
+          logger.warning('Codex event stream did not drain after turn.completed; finalizing from the terminal event', {
+            category: 'codex_tool',
+            metadata: {
+              turnId: String(turn._id),
+              pendingStreamTaskCount,
+              finalStreamEventPending,
+              completionExitGraceMs,
+            },
+          }).catch(() => {});
         }
 
-        const finalResponse = await this.readFinalResponse(command, assistantMessages);
+        let finalResponse = '';
+        try {
+          finalResponse = await this.readFinalResponse(command, assistantMessages);
+        } catch (error) {
+          childError = childError || error;
+          finalResponse = assistantMessages.join('\n\n');
+        }
         if (command.outputLocation !== 'remote') {
           fs.promises.unlink(command.outputPath).catch(() => {});
         }
 
         const durationMs = Date.now() - startedAt;
         const stderrText = stderrChunks.join('').trim();
+        const status = terminalCompletionSeen
+          ? 'succeeded'
+          : cancelled
+            ? 'cancelled'
+            : timedOut
+              ? 'timed_out'
+              : result.exitCode === 0
+                ? 'succeeded'
+                : 'failed';
         resolve({
           ...result,
+          status,
           finalResponse: String(finalResponse || '').trim(),
           codexThreadId,
           usage,
@@ -411,6 +510,41 @@ class CodexLocalRunner {
         env: process.env,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
+
+      scheduleCompletionFallback = () => {
+        if (completionGraceExpired || completionExitTimer) {
+          return;
+        }
+        completionExitTimer = setTimeout(() => {
+          completionExitTimer = null;
+          completionGraceExpired = true;
+          resolveCompletionGraceExpired();
+          if (settled) {
+            return;
+          }
+          logger.warning('Codex process did not exit after turn.completed; finalizing from the terminal event', {
+            category: 'codex_tool',
+            metadata: {
+              turnId: String(turn._id),
+              processId: child.pid || null,
+              outputLocation: command.outputLocation,
+              completionExitGraceMs,
+            },
+          }).catch(() => {});
+          if (child.exitCode === null && child.signalCode === null) {
+            try {
+              child.kill('SIGKILL');
+            } catch (_error) {
+              // The process may already be gone even when Node has not emitted close.
+            }
+          }
+          finish({
+            exitCode: child.exitCode,
+            exitSignal: child.signalCode || '',
+            errorMessage: childError ? childError.message : '',
+          }).catch(() => {});
+        }, completionExitGraceMs);
+      };
 
       const terminate = (reason) => {
         if (reason === 'timeout') {
@@ -459,15 +593,7 @@ class CodexLocalRunner {
         childError = error;
       });
       child.on('close', (exitCode, signal) => {
-        const status = cancelled
-          ? 'cancelled'
-          : timedOut
-            ? 'timed_out'
-            : exitCode === 0
-              ? 'succeeded'
-              : 'failed';
         finish({
-          status,
           exitCode,
           exitSignal: signal || '',
           errorMessage: childError ? childError.message : '',

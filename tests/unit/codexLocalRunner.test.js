@@ -1,4 +1,53 @@
+const { EventEmitter } = require('events');
+
+jest.mock('child_process', () => ({
+  ...jest.requireActual('child_process'),
+  spawn: jest.fn(),
+}));
+
+const { spawn } = require('child_process');
+const logger = require('../../utils/logger');
 const CodexLocalRunner = require('../../services/codexLocalRunner');
+
+function createFakeChild() {
+  const child = new EventEmitter();
+  child.pid = 12345;
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdin = { end: jest.fn() };
+  child.killed = false;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.kill = jest.fn(() => {
+    child.killed = true;
+    return true;
+  });
+  return child;
+}
+
+async function waitForSpawn() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (spawn.mock.calls.length > 0) {
+      return;
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error('Codex runner did not spawn its child process.');
+}
+
+function createRunInput(onEvent) {
+  return {
+    turn: {
+      _id: 'turn-lifecycle',
+      kind: 'question',
+      prompt: 'Answer the question.',
+      permissionMode: 'read-only',
+    },
+    session: {},
+    workspace: { rootPath: '/workspace/project' },
+    onEvent,
+  };
+}
 
 describe('CodexLocalRunner', () => {
   test('builds a new-session exec command that reads prompt from stdin', () => {
@@ -222,5 +271,123 @@ describe('CodexLocalRunner', () => {
     const remoteCommand = command.args[command.args.length - 1];
     expect(remoteCommand).toContain('--dangerously-bypass-approvals-and-sandbox');
     expect(remoteCommand).not.toContain('--sandbox');
+  });
+
+  describe('turn lifecycle', () => {
+    let warningSpy;
+
+    beforeEach(() => {
+      spawn.mockReset();
+      warningSpy = jest.spyOn(logger, 'warning').mockResolvedValue();
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('settles successfully from turn.completed when child close never arrives', async () => {
+      const child = createFakeChild();
+      const usage = {
+        input_tokens: 120,
+        cached_input_tokens: 40,
+        output_tokens: 30,
+      };
+      const terminalEvent = { type: 'turn.completed', usage };
+      const onEvent = jest.fn().mockResolvedValue();
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        completionExitGraceMs: 10,
+      });
+      runner.readFinalResponse = jest.fn().mockResolvedValue('Finished response');
+
+      const resultPromise = runner.runTurn(createRunInput(onEvent));
+      await waitForSpawn();
+      child.stdout.emit('data', Buffer.from(`${JSON.stringify(terminalEvent)}\n`));
+
+      const result = await resultPromise;
+
+      expect(result).toEqual(expect.objectContaining({
+        status: 'succeeded',
+        exitCode: null,
+        finalResponse: 'Finished response',
+        usage,
+      }));
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: 'turn.completed',
+        payload: terminalEvent,
+      }));
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+      expect(warningSpy).toHaveBeenCalledWith(
+        'Codex process did not exit after turn.completed; finalizing from the terminal event',
+        expect.objectContaining({
+          category: 'codex_tool',
+          metadata: expect.objectContaining({
+            turnId: 'turn-lifecycle',
+            completionExitGraceMs: 10,
+          }),
+        })
+      );
+    });
+
+    test('lets turn.completed override a racing nonzero child close', async () => {
+      const child = createFakeChild();
+      const usage = { input_tokens: 25, output_tokens: 10 };
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        completionExitGraceMs: 1000,
+      });
+      runner.readFinalResponse = jest.fn().mockResolvedValue('Completed before exit');
+
+      const resultPromise = runner.runTurn(createRunInput(jest.fn().mockResolvedValue()));
+      await waitForSpawn();
+      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'turn.completed', usage })}\n`));
+      child.exitCode = 1;
+      child.emit('close', 1, null);
+
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({
+        status: 'succeeded',
+        exitCode: 1,
+        usage,
+      }));
+      expect(child.kill).not.toHaveBeenCalled();
+      expect(warningSpy).not.toHaveBeenCalled();
+    });
+
+    test('settles when terminal event persistence never finishes', async () => {
+      const child = createFakeChild();
+      const usage = { input_tokens: 50, output_tokens: 20 };
+      const onEvent = jest.fn(() => new Promise(() => {}));
+      spawn.mockReturnValue(child);
+      const runner = new CodexLocalRunner({
+        binaryPath: 'codex-test',
+        timeoutMs: 60000,
+        completionExitGraceMs: 10,
+      });
+      runner.readFinalResponse = jest.fn().mockResolvedValue('Persisted final response');
+
+      const resultPromise = runner.runTurn(createRunInput(onEvent));
+      await waitForSpawn();
+      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ type: 'turn.completed', usage })}\n`));
+
+      await expect(resultPromise).resolves.toEqual(expect.objectContaining({
+        status: 'succeeded',
+        finalResponse: 'Persisted final response',
+        usage,
+      }));
+      expect(warningSpy).toHaveBeenCalledWith(
+        'Codex event stream did not drain after turn.completed; finalizing from the terminal event',
+        expect.objectContaining({
+          category: 'codex_tool',
+          metadata: expect.objectContaining({
+            turnId: 'turn-lifecycle',
+            pendingStreamTaskCount: 1,
+          }),
+        })
+      );
+    });
   });
 });

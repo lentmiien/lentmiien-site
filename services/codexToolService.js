@@ -811,6 +811,7 @@ function getRuntimeConfig() {
     globalConcurrency: getPositiveIntegerEnv('CODEX_GLOBAL_CONCURRENCY', 1, 1, 8),
     pollIntervalMs: getPositiveIntegerEnv('CODEX_WORKER_POLL_MS', 5000, 1000, 60000),
     timeoutMs: getPositiveIntegerEnv('CODEX_TIMEOUT_MS', 60 * 60 * 1000, 30 * 1000),
+    completionExitGraceMs: getPositiveIntegerEnv('CODEX_COMPLETION_EXIT_GRACE_MS', 2000, 100, 30000),
     lockTtlMs: getPositiveIntegerEnv('CODEX_LOCK_TTL_MS', 5 * 60 * 1000, 60 * 1000),
     heartbeatMs: getPositiveIntegerEnv('CODEX_LOCK_HEARTBEAT_MS', 15 * 1000, 2000),
     maxPromptChars: getPositiveIntegerEnv('CODEX_MAX_PROMPT_CHARS', 20000, 1000, 500000),
