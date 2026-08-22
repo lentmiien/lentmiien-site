@@ -86,6 +86,7 @@ const BatchRequestModel = require('./models/batchrequest');
 // Quick note
 const LocationModel = require('./models/location');
 const QuicknoteModel = require('./models/quicknote');
+const PushoverReminder = require('./models/pushover_reminder');
 // Bookmarks
 const BookmarkModel = require('./models/bookmark');
 // Tapo energy readings
@@ -253,6 +254,7 @@ module.exports = {
   BatchRequestModel,
   LocationModel,
   QuicknoteModel,
+  PushoverReminder,
   BookmarkModel,
   TapoReading,
   TapoDailyConsumptionSnapshot,

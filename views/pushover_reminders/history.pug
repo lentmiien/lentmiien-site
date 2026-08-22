@@ -1,0 +1,55 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/pushover-reminders.css')
+
+block content
+  main.container.py-4.reminder-page
+    header.reminder-hero
+      div
+        p.reminder-eyebrow Last three months
+        h1 Reminder history
+        p.reminder-hero-copy Completed reminders remain here for three calendar months, then are deleted automatically.
+      nav.reminder-nav(aria-label='Reminder pages')
+        a.btn.btn-outline-secondary(href='/reminders') Upcoming
+        a.btn.btn-primary(href='/reminders/history', aria-current='page') History
+
+    section.reminder-panel(aria-labelledby='reminder-history-title')
+      .reminder-section-heading
+        div
+          p.reminder-eyebrow Completed
+          h2#reminder-history-title Delivery history
+        span.reminder-count #{history.length} completed
+
+      if history.length
+        .reminder-list
+          each reminder in history
+            article.reminder-card
+              .reminder-card-main
+                .reminder-card-heading
+                  h3= reminder.title
+                  span.reminder-delivery-status(class=`is-${reminder.deliveryStatus}`)= reminder.deliveryStatusLabel
+                p.reminder-message= reminder.message
+                .reminder-history-meta
+                  span
+                    strong Scheduled:
+                    |  
+                    time(datetime=reminder.scheduledForIso, data-local-datetime)= reminder.scheduledForLabel
+                  span
+                    strong Triggered:
+                    |  
+                    time(datetime=reminder.triggeredAtIso, data-local-datetime)= reminder.triggeredAtLabel
+                  span
+                    strong Priority:
+                    |  #{reminder.priorityLabel}
+                if reminder.deliveryError
+                  p.reminder-delivery-error
+                    strong Delivery error:
+                    |  #{reminder.deliveryError}
+      else
+        .reminder-empty
+          h3 No completed reminders
+          p Reminders appear here after the scheduler claims their trigger time.
+
+block script
+  script(src='/js/pushover_reminders.js')

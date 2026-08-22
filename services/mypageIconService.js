@@ -147,6 +147,13 @@ const MYPAGE_ICON_DEFINITIONS = [
     permissions: ['scheduletask'],
   },
   {
+    id: 'pushover_reminders',
+    href: '/reminders',
+    src: '/i/schedule.svg',
+    alt: 'Pushover reminders',
+    label: 'Reminders',
+  },
+  {
     id: 'image_gen',
     href: '/image_gen',
     src: '/i/img_gen.svg',

@@ -128,6 +128,7 @@ const scheduleOcrEmbeddingReconciliation = require('./schedulers/ocrEmbeddings')
 const scheduleEmbeddingQueue = require('./schedulers/embeddingQueue');
 const scheduleCodexLogReview = require('./schedulers/codexLogReview');
 const scheduleEmergencyStockMaintenance = require('./schedulers/emergencyStockMaintenance');
+const schedulePushoverReminders = require('./schedulers/pushoverReminders');
 const {
   validateBatchDefaultModelSetting,
   validateBatchSummaryModelSetting,
@@ -436,6 +437,7 @@ const shoppingListRouter = require('./routes/shopping_list');
 const publicTobuyListRouter = require('./routes/public_tobuy_list');
 const bookmarkRouter = require('./routes/bookmarks');
 const clusterPlannerRouter = require('./routes/ai_cluster_planner');
+const pushoverReminderRouter = require('./routes/pushover_reminders');
 const publicTobuyListPath = ensurePublicTobuyListPath();
 
 app.use('/', indexRouter);
@@ -474,6 +476,7 @@ app.use('/payroll', isAuthenticated, authorize("payroll"), payrollRouter);
 app.use('/scheduleTask', isAuthenticated, authorize("scheduletask"), scheduleTaskRouter);
 app.use('/shopping-list', isAuthenticated, authorize("shoppinglist"), shoppingListRouter);
 app.use('/bookmarks', isAuthenticated, bookmarkRouter);
+app.use('/reminders', isAuthenticated, pushoverReminderRouter);
 app.use('/image_gen', isAuthenticated, authorize("image_gen"), imageGenRouter);
 app.use('/gpt-image', isAuthenticated, gptImageRouter);
 app.use('/music', isAuthenticated, authorize("music"), musicRouter);
@@ -695,6 +698,7 @@ scheduleOcrEmbeddingReconciliation();
 scheduleEmbeddingQueue();
 scheduleCodexLogReview();
 scheduleEmergencyStockMaintenance();
+schedulePushoverReminders();
 validateBatchDefaultModelSetting().catch((error) => {
   logger.warning('Unable to validate the batch default model setting at startup', {
     category: 'batch',

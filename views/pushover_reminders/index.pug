@@ -1,0 +1,100 @@
+extends ../layout
+
+block styles
+  link(rel='stylesheet', href='/css/pushover-reminders.css')
+
+block content
+  main.container.py-4.reminder-page
+    header.reminder-hero
+      div
+        p.reminder-eyebrow One-shot notifications
+        h1 Pushover reminders
+        p.reminder-hero-copy Schedule a single notification for an exact date and time. Each reminder is claimed once and then moved to history.
+      nav.reminder-nav(aria-label='Reminder pages')
+        a.btn.btn-primary(href='/reminders', aria-current='page') Upcoming
+        a.btn.btn-outline-secondary(href='/reminders/history') History
+
+    if successMessage
+      .alert.alert-success(role='status')= successMessage
+    if errorMessage
+      .alert.alert-danger(role='alert')= errorMessage
+
+    .reminder-layout
+      section.reminder-panel.reminder-form-panel(aria-labelledby='reminder-form-title')
+        h2#reminder-form-title= form.id ? 'Edit reminder' : 'New reminder'
+        p.reminder-panel-copy Choose one trigger time and the Pushover delivery priority.
+        form(
+          method='post',
+          action=form.id ? `/reminders/${form.id}/update` : '/reminders',
+          data-reminder-form
+        )
+          .mb-3
+            label.form-label(for='reminder-title') Title
+            input#reminder-title.form-control(
+              type='text',
+              name='title',
+              value=form.title,
+              maxlength='250',
+              placeholder='Reminder'
+            )
+            .form-text Optional. Pushover displays “Reminder” when left blank.
+          .mb-3
+            label.form-label(for='reminder-message') Message
+            textarea#reminder-message.form-control(
+              name='message',
+              rows='5',
+              maxlength='1024',
+              required,
+              placeholder='What should you remember?'
+            )= form.message
+          .mb-3
+            label.form-label(for='reminder-scheduled-for') Date and time
+            input#reminder-scheduled-for.form-control(
+              type='datetime-local',
+              name='scheduled_for',
+              value=form.scheduledForLocal,
+              step='60',
+              required,
+              data-scheduled-utc=form.scheduledForIso
+            )
+            input(type='hidden', name='scheduled_for_iso', value='', data-scheduled-iso)
+            .form-text Your browser’s local time is converted to an exact instant when you save.
+          .mb-4
+            label.form-label(for='reminder-priority') Priority
+            select#reminder-priority.form-select(name='priority', required)
+              each option in priorityOptions
+                option(value=option.value, selected=Number(form.priority) === option.value)= `${option.label} (${option.value}) — ${option.description}`
+            .form-text Emergency priority is still triggered once by this app, but Pushover itself repeats emergency alerts until acknowledgment or expiry.
+          .d-flex.flex-wrap.gap-2
+            button.btn.btn-primary(type='submit')= form.id ? 'Save changes' : 'Schedule reminder'
+            if form.id
+              a.btn.btn-outline-secondary(href='/reminders') Cancel edit
+
+      section.reminder-panel.reminder-upcoming-panel(aria-labelledby='upcoming-reminders-title')
+        .reminder-section-heading
+          div
+            p.reminder-eyebrow Queue
+            h2#upcoming-reminders-title Upcoming reminders
+          span.reminder-count #{upcoming.length} scheduled
+
+        if upcoming.length
+          .reminder-list
+            each reminder in upcoming
+              article.reminder-card
+                .reminder-card-main
+                  .reminder-card-heading
+                    h3= reminder.title
+                    span.reminder-priority= reminder.priorityLabel
+                  p.reminder-message= reminder.message
+                  time.reminder-time(datetime=reminder.scheduledForIso, data-local-datetime)= reminder.scheduledForLabel
+                .reminder-card-actions
+                  a.btn.btn-sm.btn-outline-secondary(href=`/reminders/${reminder.id}/edit`) Edit
+                  form(method='post', action=`/reminders/${reminder.id}/delete`, onsubmit='return confirm("Delete this upcoming reminder?");')
+                    button.btn.btn-sm.btn-outline-danger(type='submit') Delete
+        else
+          .reminder-empty
+            h3 Nothing scheduled
+            p Add a reminder and it will appear here until its one trigger time is claimed.
+
+block script
+  script(src='/js/pushover_reminders.js')

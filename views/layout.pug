@@ -77,6 +77,8 @@ html(lang=pageLang || 'en')
       +navColumn('Tools')
         +navLink('/yaml-viewer', 'YAML viewer')
         +navLink('/exchange-rates', 'Exchange rates')
+        if loggedIn == true
+          +navLink('/reminders', 'Pushover reminders')
       if loggedIn == true
         - const canUseTestLinks = hasPermission("test");
         - const showUtilityLinks = canUseTestLinks || hasPermission("box") || hasPermission("binpacking") || hasPermission("quicknote") || hasPermission("product") || hasPermission("gallery");
