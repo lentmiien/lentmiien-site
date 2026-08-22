@@ -608,6 +608,7 @@ const DEFAULT_CONVERSATION = {
     contextPrompt: "",
     model: "gpt-5.6-sol",
     maxMessages: 999,
+    startMessageId: null,
     maxAudioMessages: 3,
     tools: [],
     reasoning: "high",

@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS = {
   contextPrompt: "",
   model: "gpt-5-2025-08-07",
   maxMessages: 999,
+  startMessageId: null,
   maxAudioMessages: 3,
   tools: [],
   reasoning: "medium",
@@ -1194,6 +1195,7 @@ class ConversationService {
         contextPrompt: conversation.context_prompt,
         model: conversation.default_model ? conversation.default_model : "gpt-4.1-2025-04-14",
         maxMessages: conversation.max_messages ? conversation.max_messages : 999,
+        startMessageId: null,
         maxAudioMessages: 3,
         tools: [],
         reasoning: "medium",
@@ -1491,6 +1493,10 @@ class ConversationService {
       if (!Number.isNaN(parsed) && parsed > 0) {
         meta.maxMessages = parsed;
       }
+    }
+    if (typeof updates.startMessageId === 'string') {
+      const startMessageId = updates.startMessageId.trim();
+      meta.startMessageId = startMessageId.length > 0 ? startMessageId : null;
     }
     if (Array.isArray(updates.tools)) {
       meta.tools = sanitizeArray(updates.tools);

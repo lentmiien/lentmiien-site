@@ -65,6 +65,7 @@ block content
     a.btn.btn-outline-primary(href=`/chat4/createknowledgefromchat/${conversation._id.toString()}`) Create knowledge entry
     a.btn.btn-outline-secondary(href=`/chat5/voice/${conversation._id.toString()}`) Open voice view
   - const selectedTools = Array.isArray(conversation.metadata && conversation.metadata.tools) ? conversation.metadata.tools : []
+  - const configuredStartMessageId = conversation.metadata && conversation.metadata.startMessageId ? conversation.metadata.startMessageId.toString() : ''
   - 
     const toPositiveInt = (value, fallback = 25) => {
       const parsed = Number(value);
@@ -475,6 +476,9 @@ block content
           option(value=m.api_model)= m.model_name
       label.chat5-input-label(for="maxMessages") Max messages 
       input#maxMessages.form-control(type="number", min="1", value=conversation.metadata.maxMessages)
+      label.chat5-input-label(for="startMessageId") Start message ID (optional)
+      input#startMessageId.form-control(type="text", maxlength="100", value=configuredStartMessageId, placeholder="Leave blank to use the full conversation", autocomplete="off", spellcheck="false")
+      small.text-muted The selected message and messages after it remain eligible for context; Max messages is applied afterward. If the ID is not found, the full conversation is used.
       label.chat5-input-label(for="reasoning") Reasoning effort 
       select#reasoning.form-control(name="reasoning") 
         option(value=conversation.metadata.reasoning) Use previous (#{conversation.metadata.reasoning})
@@ -617,6 +621,9 @@ block content
           div 
             b maxMessages: 
             span= conversation.metadata.maxMessages
+          div
+            b startMessageId:
+            span#rawStartMessageId= configuredStartMessageId || 'Not set'
           div 
             b maxAudioMessages: 
             span= conversation.metadata.maxAudioMessages
@@ -661,6 +668,15 @@ block content
                 div
                   b Hide from bot:
                   input(type="checkbox", data-id=m._id, checked=m.hideFromBot, onchange="ToggleHideFromBot(this)")
+                if m._id
+                  .mt-2
+                    button.btn.btn-sm(
+                      type="button",
+                      class=m._id.toString() === configuredStartMessageId ? "btn-warning" : "btn-outline-warning",
+                      data-chat5-start-message-id=m._id,
+                      aria-pressed=m._id.toString() === configuredStartMessageId ? "true" : "false",
+                      disabled=conversationSource !== 'conversation5'
+                    )= m._id.toString() === configuredStartMessageId ? 'Selected start message' : 'Select start message'
               .col-9
                 h4 Content
                 div

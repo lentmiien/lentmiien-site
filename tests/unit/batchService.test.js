@@ -280,6 +280,73 @@ describe('BatchService (chat5)', () => {
     });
   });
 
+  test('builds batch response input from the configured start message', async () => {
+    const message = (id, userId, text) => ({
+      _id: { toString: () => id },
+      user_id: userId,
+      contentType: 'text',
+      content: { text },
+      hideFromBot: false,
+    });
+    const messages = [
+      message('message-1', 'Lennart', 'Before configured start'),
+      message('message-2', 'bot', 'Configured start'),
+      message('message-3', 'Lennart', 'Newest message'),
+      message('placeholder', 'bot', 'Pending batch response'),
+    ];
+
+    const input = await service._buildInputFromSnapshot({
+      prompt: { task_type: 'response', message_id: 'placeholder' },
+      conversation: {
+        metadata: {
+          contextPrompt: '',
+          startMessageId: 'message-2',
+        },
+      },
+      messages,
+      modelCard: { context_type: 'none', in_modalities: ['text'] },
+    });
+
+    expect(input).toEqual([
+      {
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Configured start' }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: 'Newest message' }],
+      },
+    ]);
+  });
+
+  test('does not include messages after a queued batch response placeholder', async () => {
+    const message = (id, userId, text) => ({
+      _id: { toString: () => id },
+      user_id: userId,
+      contentType: 'text',
+      content: { text },
+      hideFromBot: false,
+    });
+
+    const input = await service._buildInputFromSnapshot({
+      prompt: { task_type: 'response', message_id: 'placeholder' },
+      conversation: {
+        metadata: {
+          contextPrompt: '',
+          startMessageId: 'message-after-placeholder',
+        },
+      },
+      messages: [
+        message('message-before-placeholder', 'Lennart', 'Original request'),
+        message('placeholder', 'bot', 'Pending batch response'),
+        message('message-after-placeholder', 'Lennart', 'Later request'),
+      ],
+      modelCard: { context_type: 'none', in_modalities: ['text'] },
+    });
+
+    expect(input).toEqual([]);
+  });
+
   test('resolves the automatic summary model from app settings', async () => {
     const appSettingsService = {
       getValue: jest.fn().mockResolvedValue('gpt-4.1-nano'),

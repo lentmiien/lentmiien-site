@@ -13,6 +13,7 @@ const Conversation5 = new mongoose.Schema({
     contextPrompt: { type: String, default: "" },
     model: { type: String, default: "gpt-5.5" },
     maxMessages: { type: Number, default: 999 },
+    startMessageId: { type: String, default: null, max: 100 },
     maxAudioMessages: { type: Number, default: 3 },
     tools: [{ type: String, max: 100 }],
     reasoning: { type: String, enum: ["none", "minimal", "low", "medium", "high", "xhigh", "max"], default: "medium" },

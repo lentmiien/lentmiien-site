@@ -65,6 +65,19 @@ describe('Conversation5 model', () => {
     expect(conversation.metadata.mode).toBe('standard');
   });
 
+  test('treats a missing start message ID as unset for existing conversations', () => {
+    const conversation = Conversation5.hydrate({
+      _id: new mongoose.Types.ObjectId(),
+      title: 'Existing conversation',
+      category: 'Chat5',
+      messages: [],
+      members: ['test-user'],
+      metadata: { maxMessages: 999 },
+    });
+
+    expect(conversation.metadata.startMessageId).toBeNull();
+  });
+
   test('allows standard and pro reasoning modes', async () => {
     for (const mode of ['standard', 'pro']) {
       const conversation = new Conversation5({

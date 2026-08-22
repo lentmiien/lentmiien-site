@@ -509,6 +509,83 @@ function getMessageContent(m) {
   return m && m.content && typeof m.content === 'object' ? m.content : {};
 }
 
+function getStartMessageIdValue() {
+  const input = document.getElementById('startMessageId');
+  return input ? stringifyForDisplay(input.value).trim() : '';
+}
+
+function setStartMessageButtonState(button, startMessageId) {
+  if (!button) return;
+  const selected = stringifyForDisplay(button.dataset.chat5StartMessageId).trim() === startMessageId;
+  button.classList.toggle('btn-warning', selected);
+  button.classList.toggle('btn-outline-warning', !selected);
+  button.textContent = selected ? 'Selected start message' : 'Select start message';
+  button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+
+  const idEl = document.getElementById('id');
+  button.disabled = !idEl || idEl.dataset.source !== 'conversation5';
+}
+
+function applyStartMessageIdToUI(value) {
+  const startMessageId = stringifyForDisplay(value).trim();
+  const input = document.getElementById('startMessageId');
+  if (input) input.value = startMessageId;
+
+  const rawValue = document.getElementById('rawStartMessageId');
+  if (rawValue) rawValue.textContent = startMessageId || 'Not set';
+
+  document.querySelectorAll('[data-chat5-start-message-id]').forEach((button) => {
+    setStartMessageButtonState(button, startMessageId);
+  });
+}
+
+function selectStartMessage(messageId) {
+  const normalizedMessageId = stringifyForDisplay(messageId).trim();
+  if (!normalizedMessageId) return;
+
+  const conversationId = requireExistingConversation('select a start message');
+  if (!conversationId) return;
+
+  const idEl = document.getElementById('id');
+  if (!idEl || idEl.dataset.source !== 'conversation5') {
+    alert('Selecting a start message is only supported for chat5 conversations.');
+    return;
+  }
+
+  const previousStartMessageId = getStartMessageIdValue();
+  applyStartMessageIdToUI(normalizedMessageId);
+  showLoadingPopup();
+  socket.emit('chat5-updateConversation', {
+    conversation_id: conversationId,
+    updates: { startMessageId: normalizedMessageId },
+  }, (resp) => {
+    hideLoadingPopup();
+    if (!resp || resp.ok !== true) {
+      applyStartMessageIdToUI(previousStartMessageId);
+      alert(resp && resp.message ? resp.message : 'Failed to select the start message.');
+      return;
+    }
+    applyStartMessageIdToUI(resp.conversation?.metadata?.startMessageId || '');
+  });
+}
+
+function bindStartMessageSelection() {
+  const rawList = document.getElementById('chat5RawMessageList');
+  if (!rawList || rawList.dataset.startMessageSelectionBound === 'true') {
+    applyStartMessageIdToUI(getStartMessageIdValue());
+    return;
+  }
+  rawList.dataset.startMessageSelectionBound = 'true';
+  rawList.addEventListener('click', (event) => {
+    const button = event.target && typeof event.target.closest === 'function'
+      ? event.target.closest('[data-chat5-start-message-id]')
+      : null;
+    if (!button || button.disabled || !rawList.contains(button)) return;
+    selectStartMessage(button.dataset.chat5StartMessageId);
+  });
+  applyStartMessageIdToUI(getStartMessageIdValue());
+}
+
 function appendLabeledValue(parent, label, value) {
   const row = document.createElement('div');
   const bold = document.createElement('b');
@@ -576,6 +653,18 @@ function createRawMessageElement(m, index) {
   hiddenInput.addEventListener('change', () => ToggleHideFromBot(hiddenInput));
   hiddenRow.append(hiddenLabel, hiddenInput);
   metaCol.append(hiddenRow);
+
+  if (messageId) {
+    const selectStartRow = document.createElement('div');
+    selectStartRow.classList.add('mt-2');
+    const selectStartButton = document.createElement('button');
+    selectStartButton.type = 'button';
+    selectStartButton.classList.add('btn', 'btn-sm');
+    selectStartButton.dataset.chat5StartMessageId = messageId;
+    setStartMessageButtonState(selectStartButton, getStartMessageIdValue());
+    selectStartRow.append(selectStartButton);
+    metaCol.append(selectStartRow);
+  }
 
   const contentTitle = document.createElement('h4');
   contentTitle.textContent = 'Content';
@@ -650,6 +739,7 @@ function setUpdateButtonState() {
   const btn = document.getElementById('updateSettingsButton');
   if (!idEl || !btn) return;
   btn.disabled = idEl.dataset.source !== 'conversation5';
+  applyStartMessageIdToUI(getStartMessageIdValue());
 }
 
 function getCurrentConversationId() {
@@ -1077,6 +1167,7 @@ function UpdateConversation(options = {}) {
   const toolSelect = document.getElementById("tools");
   const selectedTools = Array.from(toolSelect.selectedOptions).map(option => option.value);
   const maxMessagesInput = parseInt(document.getElementById("maxMessages").value, 10);
+  const startMessageInput = document.getElementById('startMessageId');
   const updates = {
     title: document.getElementById("title").value,
     category: document.getElementById("category").value,
@@ -1087,6 +1178,7 @@ function UpdateConversation(options = {}) {
     mode: document.getElementById("mode").value,
     verbosity: document.getElementById("verbosity").value,
     maxMessages: Number.isNaN(maxMessagesInput) || maxMessagesInput <= 0 ? undefined : maxMessagesInput,
+    startMessageId: startMessageInput ? startMessageInput.value.trim() : '',
     tools: selectedTools,
     members: splitInputList(document.getElementById("members").value),
     summary: document.getElementById("summary").value,
@@ -1313,6 +1405,7 @@ socket.on('chat5-conversation-settings-updated', (data) => {
   if (data.metadata && typeof data.metadata.maxMessages !== 'undefined') {
     document.getElementById("maxMessages").value = data.metadata.maxMessages;
   }
+  applyStartMessageIdToUI(data.metadata?.startMessageId || '');
 
   document.getElementById("members").value = Array.isArray(data.members) ? data.members.join(', ') : '';
   document.getElementById("summary").value = data.summary || '';
@@ -2012,6 +2105,7 @@ document.addEventListener('DOMContentLoaded', () => {
   registerCodeCopyHandlers(container);
   enhanceTables(container);
   bindMessageLoadControls();
+  bindStartMessageSelection();
   updateTrainingFormState();
 });
 document.addEventListener('DOMContentLoaded', initializeDraftingTool);

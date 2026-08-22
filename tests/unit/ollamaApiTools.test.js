@@ -114,6 +114,64 @@ describe('Ollama_API tool manager integration', () => {
     expect(submissionLog.requestBody.webhook_url).toContain('redacted');
   });
 
+  test('cuts background response history at the configured start message', async () => {
+    mockGet.mockResolvedValue({
+      data: { models: [{ id: 'background-start-model' }] },
+      headers: {},
+    });
+    mockPost.mockResolvedValue({
+      status: 202,
+      data: {
+        job_id: '22d58123-b2da-4412-8df5-1fbb47bb07cd',
+        status: 'queued',
+      },
+      headers: {},
+    });
+
+    await submitChatJob(
+      {
+        metadata: {
+          tools: [],
+          maxMessages: 10,
+          startMessageId: 'message-2',
+        },
+      },
+      [
+        {
+          _id: 'message-1',
+          user_id: 'Lennart',
+          contentType: 'text',
+          content: { text: 'Before configured start' },
+          hideFromBot: false,
+        },
+        {
+          _id: 'message-2',
+          user_id: 'bot',
+          contentType: 'text',
+          content: { text: 'Configured start' },
+          hideFromBot: false,
+        },
+        {
+          _id: 'message-3',
+          user_id: 'Lennart',
+          contentType: 'text',
+          content: { text: 'Newest message' },
+          hideFromBot: false,
+        },
+      ],
+      {
+        provider: 'Local',
+        api_model: 'background-start-model',
+        in_modalities: ['text'],
+      },
+    );
+
+    expect(mockPost.mock.calls[0][1].messages).toEqual([
+      { role: 'assistant', content: 'Configured start' },
+      { role: 'user', content: 'Newest message' },
+    ]);
+  });
+
   test('rejects an insecure public webhook base URL', () => {
     process.env.OLLAMA_WEBHOOK_BASE_URL = 'http://example.test/';
     expect(() => buildWebhookUrl()).toThrow('must use https unless it targets loopback');

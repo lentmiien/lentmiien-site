@@ -5,6 +5,7 @@ const { OpenAI } = require('openai');
 const logger = require('./logger');
 const { createApiDebugLogger } = require('./apiDebugLogger');
 const ToolManagerService = require('../services/toolManagerService');
+const { sliceMessagesFromConfiguredStart } = require('./chat5MessageSelection');
 
 const JS_FILE_NAME = 'utils/OpenAI_API.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
@@ -868,7 +869,8 @@ const chat = async (conversation, messages, model, options = {}) => {
   const resolvedContext = resolveContextPrompt(conversation);
   const promptWithTools = appendToolGuidance(resolvedContext, conversation?.metadata?.tools);
   const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
-  const limitedMessages = selectMessagesForResponses(messages, maxMessagesLimit, {
+  const messagesFromConfiguredStart = sliceMessagesFromConfiguredStart(messages, conversation);
+  const limitedMessages = selectMessagesForResponses(messagesFromConfiguredStart, maxMessagesLimit, {
     includeLastToolBatch: !!options.includeLastToolBatch,
   });
   const messageArray = GenerateMessagesArray_Responses(

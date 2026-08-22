@@ -183,6 +183,12 @@ components:
           type: string
         maxMessages:
           type: integer
+        startMessageId:
+          type: [string, 'null']
+          maxLength: 100
+          description: >
+            Optional inclusive history boundary. Messages before this ID are excluded before
+            maxMessages is applied. A missing ID falls back to the full conversation history.
         tools:
           type: array
           items:

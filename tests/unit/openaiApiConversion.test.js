@@ -348,4 +348,67 @@ describe('OpenAI_API response conversion', () => {
     expect(reasoningIndex).toBeLessThan(functionCallIndex);
     expect(functionCallIndex).toBeLessThan(functionOutputIndex);
   });
+
+  test('chat applies the configured start message before the max-message limit', async () => {
+    mockResponsesCreate.mockResolvedValue({ id: 'resp-start-message' });
+    const conversation = {
+      metadata: {
+        startMessageId: 'message-2',
+        maxMessages: 10,
+        outputFormat: 'text',
+      },
+    };
+    const model = {
+      api_model: 'gpt-4.1',
+      context_type: 'none',
+      in_modalities: ['text'],
+    };
+    const messages = [
+      {
+        _id: 'message-1',
+        user_id: 'Lennart',
+        contentType: 'text',
+        content: { text: 'Before configured start' },
+        hideFromBot: false,
+      },
+      {
+        _id: 'message-2',
+        user_id: 'bot',
+        contentType: 'text',
+        content: { text: 'Configured start' },
+        hideFromBot: false,
+      },
+      {
+        _id: 'message-3',
+        user_id: 'Lennart',
+        contentType: 'text',
+        content: { text: 'Newest message' },
+        hideFromBot: false,
+      },
+    ];
+
+    await chat(conversation, messages, model);
+
+    const firstInput = mockResponsesCreate.mock.calls[0][0].input;
+    expect(firstInput).toEqual([
+      {
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Configured start' }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: 'Newest message' }],
+      },
+    ]);
+
+    conversation.metadata.maxMessages = 1;
+    await chat(conversation, messages, model);
+
+    expect(mockResponsesCreate.mock.calls[1][0].input).toEqual([
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: 'Newest message' }],
+      },
+    ]);
+  });
 });

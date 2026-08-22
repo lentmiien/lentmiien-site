@@ -125,6 +125,12 @@ function buildConversationSettings(rawSettings) {
       settings.maxMessages = parsed;
     }
   }
+  if (rawSettings.startMessageId === null || typeof rawSettings.startMessageId === 'string') {
+    const startMessageId = typeof rawSettings.startMessageId === 'string'
+      ? rawSettings.startMessageId.trim()
+      : '';
+    settings.startMessageId = startMessageId || null;
+  }
   if (typeof rawSettings.maxAudioMessages !== 'undefined') {
     const parsed = parseInt(rawSettings.maxAudioMessages, 10);
     if (!Number.isNaN(parsed) && parsed >= 0) {

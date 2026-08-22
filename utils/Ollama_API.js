@@ -5,6 +5,7 @@ const axios = require('axios');
 const logger = require('./logger');
 const { createApiDebugLogger } = require('./apiDebugLogger');
 const ToolManagerService = require('../services/toolManagerService');
+const { sliceMessagesFromConfiguredStart } = require('./chat5MessageSelection');
 
 const JS_FILE_NAME = 'utils/Ollama_API.js';
 const DEFAULT_BASE_URL = 'http://192.168.0.20:8080';
@@ -1934,7 +1935,8 @@ const submitChatJob = async (conversation, messages, model, options = {}) => {
     toolManagerConfig.toolGuidance,
   );
   const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
-  const selectedMessages = selectMessagesForOllama(messages, maxMessagesLimit, {
+  const messagesFromConfiguredStart = sliceMessagesFromConfiguredStart(messages, conversation);
+  const selectedMessages = selectMessagesForOllama(messagesFromConfiguredStart, maxMessagesLimit, {
     includeLastToolBatch: options.includeLastToolBatch === true,
   });
   const rawMessageArray = buildChatCompletionMessages(
@@ -2037,9 +2039,8 @@ const chat = async (conversation, messages, model) => {
   const supportsImages = model.allow_images === true
     || (Array.isArray(model.in_modalities) && model.in_modalities.includes('image'));
   const contextPrompt = resolveContextPrompt(conversation);
-  const visibleMessages = Array.isArray(messages)
-    ? messages.filter((message) => message && !message.hideFromBot)
-    : [];
+  const messagesFromConfiguredStart = sliceMessagesFromConfiguredStart(messages, conversation);
+  const visibleMessages = messagesFromConfiguredStart.filter((message) => message && !message.hideFromBot);
   const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
   const limitedMessages = maxMessagesLimit
     ? visibleMessages.slice(-maxMessagesLimit)
@@ -2087,9 +2088,8 @@ const chatWithThinkingAndTools = async (conversation, messages, model, options =
     toolManagerConfig.toolGuidance,
   );
   const contextPrompt = appendToolGuidanceToContext(resolveContextPrompt(conversation), toolGuidance);
-  const visibleMessages = Array.isArray(messages)
-    ? messages.filter((message) => message && !message.hideFromBot)
-    : [];
+  const messagesFromConfiguredStart = sliceMessagesFromConfiguredStart(messages, conversation);
+  const visibleMessages = messagesFromConfiguredStart.filter((message) => message && !message.hideFromBot);
   const maxMessagesLimit = resolveMaxMessagesLimit(conversation);
   const limitedMessages = maxMessagesLimit
     ? visibleMessages.slice(-maxMessagesLimit)

@@ -65,6 +65,7 @@ socket.emit(
         "contextPrompt": "",
         "model": "gpt-5-2025-08-07",
         "maxMessages": 999,
+        "startMessageId": null,
         "tools": []
       },
       "members": ["lentmiien"],
@@ -192,8 +193,8 @@ Understanding the existing page helps identify parity requirements before improv
   - `.chat5-message--hidden` marks messages excluded from future prompts.
 - **Tabs:** `Chat`, `Settings`, `Raw`.
   - **Chat tab:** File upload field, rich text editor (Toast UI), template picker & saver, send buttons (Append, Send & Response, Response, batch operations), and an audio placeholder.
-  - **Settings tab:** Form-driven controls for metadata (title, category, tags, summary, context prompt, reasoning/verbosity/limit toggles, tools multiselect, member list).
-  - **Raw tab:** Displays raw JSON for debugging.
+  - **Settings tab:** Form-driven controls for metadata (title, category, tags, summary, context prompt, reasoning/verbosity/limit toggles, optional start message ID, tools multiselect, member list).
+  - **Raw tab:** Displays raw JSON for debugging and provides a button on each message to persist it as the inclusive history start.
 - **Modal tooling:** Hidden sections exist for editing raw message arrays, toggling hide-from-bot flags, updating assistant responses, and editing text snippets.
 - **Client scripts:** Injected data (`window.chatTemplates`, `window.chatModels`) and in-page JS wiring for template selectors and warning banners.
 

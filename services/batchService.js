@@ -8,6 +8,11 @@ const {
   supportsReasoningModel,
   supportsReasoningMode,
 } = require('../utils/OpenAI_API');
+const {
+  getConfiguredStartMessageId,
+  getMessageId,
+  sliceMessagesFromConfiguredStart,
+} = require('../utils/chat5MessageSelection');
 const { AIModelCards, Conversation5Model } = require('../database');
 const logger = require('../utils/logger');
 const {
@@ -629,7 +634,26 @@ class BatchService {
       });
     }
 
-    for (const message of messages) {
+    let messagesFromConfiguredStart = messages;
+    if (prompt.task_type === 'response') {
+      const placeholderIndex = prompt.message_id
+        ? messages.findIndex((message) => getMessageId(message) === prompt.message_id)
+        : -1;
+      const messagesBeforePlaceholder = placeholderIndex >= 0
+        ? messages.slice(0, placeholderIndex)
+        : messages;
+      const configuredStartMessageId = getConfiguredStartMessageId(conversation);
+      const configuredStartIndex = configuredStartMessageId
+        ? messages.findIndex((message) => getMessageId(message) === configuredStartMessageId)
+        : -1;
+
+      messagesFromConfiguredStart = placeholderIndex >= 0
+        && configuredStartIndex >= placeholderIndex
+        ? []
+        : sliceMessagesFromConfiguredStart(messagesBeforePlaceholder, conversation);
+    }
+
+    for (const message of messagesFromConfiguredStart) {
       if (prompt.message_id && message._id.toString() === prompt.message_id) break;
       if (message.hideFromBot) continue;
 

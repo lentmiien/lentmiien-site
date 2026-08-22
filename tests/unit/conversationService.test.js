@@ -413,6 +413,26 @@ describe('ConversationService', () => {
     expect(conversation.save).toHaveBeenCalled();
   });
 
+  test('updateConversationDetails sets and clears the optional start message ID', async () => {
+    const conversation = {
+      title: 'Existing title',
+      category: 'Chat5',
+      tags: ['chat5'],
+      members: ['Lennart'],
+      metadata: { maxMessages: 999 },
+      save: jest.fn().mockResolvedValue(),
+    };
+    Conversation5Model.findById.mockResolvedValue(conversation);
+
+    const service = new ConversationService({}, {}, {});
+    await service.updateConversationDetails('conv-1', { startMessageId: '  message-2  ' });
+    expect(conversation.metadata.startMessageId).toBe('message-2');
+
+    await service.updateConversationDetails('conv-1', { startMessageId: '   ' });
+    expect(conversation.metadata.startMessageId).toBeNull();
+    expect(conversation.save).toHaveBeenCalledTimes(2);
+  });
+
   test('updateConversationDetails preserves members when an empty list is submitted', async () => {
     const conversation = {
       title: 'Existing title',
