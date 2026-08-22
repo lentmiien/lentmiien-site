@@ -9,6 +9,9 @@ block content
   - const availableToolOptions = typeof availableTools !== 'undefined' && Array.isArray(availableTools) ? availableTools : [];
   - const trainingGroupOptions = typeof trainingGroups !== 'undefined' && Array.isArray(trainingGroups) ? trainingGroups : [];
   - const trainingEntryOptions = typeof trainingEntries !== 'undefined' && Array.isArray(trainingEntries) ? trainingEntries : [];
+  - const latestTrainingGroupId = trainingEntryOptions[0] && trainingEntryOptions[0].groupId ? trainingEntryOptions[0].groupId.toString() : '';
+  - const availableTrainingGroupIds = trainingGroupOptions.map((group) => group && group.groupId ? group.groupId.toString() : '');
+  - const defaultTrainingGroupId = availableTrainingGroupIds.includes(latestTrainingGroupId) ? latestTrainingGroupId : (availableTrainingGroupIds[0] || '');
   - const quickOptions = typeof quickSettingOptions !== 'undefined' && Array.isArray(quickSettingOptions) ? quickSettingOptions : [];
   - const signedInUser = typeof currentUser === 'string' ? currentUser : '';
   -
@@ -529,7 +532,7 @@ block content
               select#trainingGroupId.form-select(name="group_id", required, disabled=trainingGroupOptions.length === 0)
                 if trainingGroupOptions.length
                   each group in trainingGroupOptions
-                    option(value=group.groupId)= `${group.groupId} (${group.stats && group.stats.entryCount ? group.stats.entryCount : 0} entries)`
+                    option(value=group.groupId, selected=group.groupId.toString() === defaultTrainingGroupId)= `${group.groupId} (${group.stats && group.stats.entryCount ? group.stats.entryCount : 0} entries)`
                 else
                   option(value="") Create a training group first
             .col-md-6.mb-3
