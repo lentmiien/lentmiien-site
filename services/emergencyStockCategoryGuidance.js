@@ -15,6 +15,7 @@ const TOKYO_STOCKPILE_SOURCE = Object.freeze({
 const DURABLE_PATTERN = /bag|backpack|charger|charging cable|charging capability|power bank|battery pack|flashlight|torch|radio|stove|lantern|multi.?tool|first.?aid (box|container|kit)|work glove|helmet|whistle|blanket|sleeping bag|water container|bucket|can opener|lighter|match|thermometer|fire extinguisher/i;
 const ROLLING_PATTERN = /toilet paper|tissue|rice|bottled water|packaged food|canned|drink|beverage|wipe|mask|saniti[sz]er|soap|shampoo|medicine|medication|bandage|gauze|diaper|nappy|menstrual|sanitary|skincare|skin care|tooth|garbage bag|plastic bag|wrap|foil|battery|pet food/i;
 const EXPIRY_PATTERN = /emergency food|survival food|long.?life|hand warmer|gas canister|cassette gas|fuel|chemical light|glow stick/i;
+const FIXED_TARGET_PATTERN = /aluminium foil|aluminum foil|fire.?starter|work glove|condiment set|emergency bag|go bag|backpack|charger|charging capability|cooler box|first.?aid (box|container|kit)/i;
 
 function categoryName(categoryOrName) {
   if (typeof categoryOrName === 'string') {
@@ -54,6 +55,18 @@ function inferPreparednessDomain(categoryOrName) {
   if (/power bank|battery pack|backup power|portable power|generator/i.test(name)) return 'power';
   if (/rice|noodle|pasta|cereal|food|meal|canned|protein|fruit|vegetable|snack|bread|cracker|biscuit/i.test(name)) return 'food';
   return 'other';
+}
+
+function inferTargetStrategy(categoryOrName, { conditional } = {}) {
+  const explicit = categoryOrName && typeof categoryOrName === 'object'
+    ? categoryOrName.targetStrategy
+    : null;
+  if (['duration-scaled', 'fixed'].includes(explicit)) return explicit;
+  const mode = inferManagementMode(categoryOrName);
+  const name = categoryName(categoryOrName);
+  const isConditional = conditional ?? Boolean(categoryOrName?.conditional);
+  if (mode === 'durable' || isConditional || FIXED_TARGET_PATTERN.test(name)) return 'fixed';
+  return 'duration-scaled';
 }
 
 function genericGuidance(name, mode, unit) {
@@ -296,6 +309,7 @@ function getCategoryGuidance(category = {}) {
   const preparednessDomain = inferPreparednessDomain(category);
   const specific = matchedGuidance(name) || {};
   const generic = genericGuidance(name, managementMode, category.unit);
+  const conditional = category.conditional ?? specific.conditional ?? false;
   const hasSafeSourceUrl = /^https?:\/\//i.test(String(category.source?.url || ''));
   const source = hasSafeSourceUrl
     ? category.source
@@ -304,7 +318,8 @@ function getCategoryGuidance(category = {}) {
   return {
     managementMode,
     preparednessDomain,
-    conditional: category.conditional ?? specific.conditional ?? false,
+    conditional,
+    targetStrategy: inferTargetStrategy(category, { conditional }),
     purpose: category.purpose || specific.purpose || generic.purpose,
     whyItMatters: category.whyItMatters || specific.whyItMatters || generic.whyItMatters,
     qualifies: category.qualifies || specific.qualifies || generic.qualifies,
@@ -328,6 +343,7 @@ function buildMigrationFields(category = {}) {
     'managementMode',
     'preparednessDomain',
     'conditional',
+    'targetStrategy',
     'purpose',
     'whyItMatters',
     'qualifies',
@@ -356,6 +372,12 @@ function buildMigrationFields(category = {}) {
   if ((category.officialBaseline === undefined || category.officialBaseline === null) && fields.officialBaseline === undefined) {
     fields.officialBaseline = Number(category.recommendedStock) || 0;
   }
+  if (category.applicabilityStatus === undefined || category.applicabilityStatus === null) {
+    fields.applicabilityStatus = category.applicable === false
+      ? 'not-applicable'
+      : (guidance.conditional ? 'undecided' : 'applicable');
+    if (fields.applicabilityStatus === 'undecided') fields.applicable = false;
+  }
   if (guidance.managementMode === 'rolling') {
     const baseline = Number(category.emergencyFloor ?? fields.officialBaseline ?? category.officialBaseline ?? category.recommendedStock) || 0;
     if (category.emergencyFloor === undefined || category.emergencyFloor === null) fields.emergencyFloor = baseline;
@@ -379,4 +401,5 @@ module.exports = {
   getCategoryGuidance,
   inferManagementMode,
   inferPreparednessDomain,
+  inferTargetStrategy,
 };

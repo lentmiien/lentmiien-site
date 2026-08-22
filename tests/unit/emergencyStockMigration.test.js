@@ -26,4 +26,26 @@ describe('Emergency Stock v2 migration planning', () => {
     });
     expect(plan.itemUpdates[0].fields).not.toHaveProperty('rotateDate');
   });
+
+  test('makes legacy conditional categories undecided instead of generating purchases', () => {
+    const plan = buildEmergencyStockMigrationPlan({
+      categories: [{
+        _id: 'menstrual',
+        name: 'Menstrual products (if applicable)',
+        unit: 'items',
+        recommendedStock: 40,
+        managementMode: 'rolling',
+        conditional: true,
+        applicable: true,
+      }],
+      items: [],
+      now: new Date('2026-08-22T00:00:00.000Z'),
+    });
+
+    expect(plan.categoryUpdates[0].fields).toMatchObject({
+      applicabilityStatus: 'undecided',
+      applicable: false,
+      targetStrategy: 'fixed',
+    });
+  });
 });

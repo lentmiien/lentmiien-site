@@ -20,6 +20,20 @@ block content
         a.es-link(href='/shopping-list') Unified shopping list
         a.es-link(href='/i/es.jpg') Original 3-person list
 
+    if snapshot.sanityWarnings.length
+      section.es-alert.es-alert--danger(role='alert')
+        div
+          strong Calculation sanity check
+          each warning in snapshot.sanityWarnings
+            p= warning.message
+        a.es-link(href='#unit-conversion') Review units
+
+    if snapshot.applicabilityReview.due
+      section.es-alert.es-alert--warning
+        div
+          strong #{snapshot.applicabilityReview.due} conditional #{snapshot.applicabilityReview.due === 1 ? 'category needs' : 'categories need'} an applicability decision
+          p No shopping requirement is created until each category is marked applicable. N/A categories remain excluded from readiness.
+
     section.es-hero-grid(aria-label='Preparedness summary')
       article.es-card.es-card--hero
         p.es-card__eyebrow Core preparedness
@@ -58,7 +72,7 @@ block content
         div
           p.es-eyebrow Limiting essentials
           h2 Preparedness by domain
-        p Thirty-day forecast: #{forecast.core.measurable ? `${formatAmount(forecast.core.days)} days` : 'setup incomplete'} on #{forecast.dateKey}
+        p Milestone forecast after dated rotations through #{forecast.throughDateKey}: #{forecast.core.measurable ? `${formatAmount(forecast.core.days)} days` : 'setup incomplete'}
       .es-domain-grid
         each domain in Object.values(snapshot.domains)
           - const forecastDomain = domain.id === 'critical-medication' ? forecast.domains.criticalMedication : forecast.domains[domain.id]
@@ -77,7 +91,7 @@ block content
                   - const domainWidth = Math.min(100, domain.days / snapshot.milestone.targetDays * 100)
                   .es-progress__bar(style=`width:${domainWidth}%`)
               if forecastDomain && forecastDomain.measurable
-                p.es-forecast-line 30-day forecast: #{formatAmount(forecastDomain.days)} days
+                p.es-forecast-line After rotations through #{forecast.throughDateKey}: #{formatAmount(forecastDomain.days)} days
               if domain.id === 'food'
                 dl.es-mini-stats
                   div
@@ -92,6 +106,12 @@ block content
                   div
                     dt No-cook meals
                     dd= formatAmount(domain.details.noCookMeals)
+                  div
+                    dt Produce servings
+                    dd= formatAmount(domain.details.produceServings)
+                  div
+                    dt Unclassified lots
+                    dd= snapshot.unclassifiedFood.count
             else
               p.es-domain-card__figure —
               p.es-card__meta Add measurement rules to the categories in this domain.
@@ -112,7 +132,7 @@ block content
       article.es-status-card
         p.es-card__eyebrow Checklist coverage
         p.es-status-card__value= snapshot.checklist.percent === null ? '—' : `${snapshot.checklist.percent}%`
-        p.es-card__meta #{snapshot.checklist.ready} / #{snapshot.checklist.applicable} applicable categories; not used for core days
+        p.es-card__meta #{snapshot.checklist.ready} / #{snapshot.checklist.applicable} category targets; pooled domains and N/A categories excluded
 
     section.es-capability-strip
       each capability in snapshot.capabilities
@@ -125,6 +145,69 @@ block content
 
     .es-dashboard__grid
       .es-dashboard__column
+        if snapshot.applicabilityReview.due
+          section.es-card.es-card--attention
+            .es-card__header
+              div
+                p.es-eyebrow Decision queue
+                h2 Conditional categories
+              span.es-card__meta #{snapshot.applicabilityReview.due} unresolved
+            p.es-card__meta Decide from actual household needs. Choosing N/A creates no purchase and does not reduce readiness.
+            ul.es-item-list
+              each category in snapshot.applicabilityReview.categories
+                li.es-item
+                  .es-item__details
+                    strong= category.name
+                    span.es-card__meta= category.qualifies
+                  .es-item__actions
+                    each decision in [{value:'applicable', label:'Applies'}, {value:'not-applicable', label:'Mark N/A'}]
+                      form.es-inline-form(action='/es/set_applicability', method='post')
+                        input(type='hidden', name='category_id', value=category.id)
+                        input(type='hidden', name='applicabilityStatus', value=decision.value)
+                        button.es-button(class=decision.value === 'applicable' ? 'es-button--secondary' : 'es-button--ghost', type='submit')= decision.label
+
+        if snapshot.unclassifiedFood.count
+          section.es-card.es-card--attention
+            .es-card__header
+              div
+                p.es-eyebrow Food evidence queue
+                h2 Unclassified food
+              span.es-card__meta #{snapshot.unclassifiedFood.count} #{snapshot.unclassifiedFood.count === 1 ? 'lot' : 'lots'}
+            p.es-card__meta These lots contribute zero meals until their contents are confirmed. If every queued inventory unit proved to be one complete person-meal, food could reach #{formatAmount(snapshot.unclassifiedFood.possibleFoodDays)} days#{snapshot.unclassifiedFood.possibleCoreDays !== null ? ` and core readiness ${formatAmount(snapshot.unclassifiedFood.possibleCoreDays)} days` : ''}. This is a possible impact, not counted stock.
+            ul.es-item-list
+              each item in snapshot.unclassifiedFood.items
+                li.es-item
+                  .es-item__details
+                    .es-item__title-row
+                      strong= item.label || item.categoryName
+                      span.es-pill unclassified
+                    span.es-item__label #{formatAmount(item.amount)} #{item.categoryUnit} · #{item.categoryName}
+                    span.es-card__meta Confirm the label: snacks, vitamins, soup, sides, and drinks are not complete meals.
+                  form.es-classification-form(action='/es/classify_food_item', method='post')
+                    input(type='hidden', name='item_id', value=item.id)
+                    label
+                      span Role
+                      select.form-select(name='foodContributionType', required)
+                        option(value='complete') Complete meal
+                        option(value='main') Main / protein
+                        option(value='staple') Staple
+                        option(value='produce') Fruit / vegetable
+                    label
+                      span Servings per #{item.categoryUnit}
+                      input.form-control(type='number', name='foodServingsPerUnit', min='0.01', step='any', value='1', required)
+                    details.es-subform
+                      summary Preparation details
+                      label
+                        span Preparation water per #{item.categoryUnit} (L)
+                        input.form-control(type='number', name='foodWaterLitresRequired', min='0', step='any', value='0')
+                      label.es-checkbox
+                        input(type='checkbox', name='foodNoCook')
+                        span Can be eaten without cooking
+                      label.es-checkbox
+                        input(type='checkbox', name='foodRequiresFuel')
+                        span Requires cooking fuel
+                    button.es-button.es-button--secondary(type='submit') Classify
+
         section.es-card
           .es-card__header
             div
@@ -142,8 +225,10 @@ block content
                       span.es-pill(class=requirement.status === 'planned' ? 'es-pill--planned' : '')= requirement.status
                     span.es-item__label Need #{formatAmount(requirement.requiredAmount)} #{requirement.unit}
                     span.es-card__meta= requirement.reason
+                    if requirement.forecastAmount !== undefined && requirement.forecastAmount !== null && Number(requirement.forecastAmount) !== Number(requirement.currentAmount)
+                      span.es-card__meta Forecast stock: #{formatAmount(requirement.forecastAmount)} #{requirement.unit} after milestone rotations
                     if requirement.dueDate
-                      span.es-card__meta Due #{formatDate(requirement.dueDate)}
+                      span.es-card__meta Buy by #{formatDate(requirement.dueDate)}
                   .es-item__actions
                     form.es-inline-form(action='/es/update_requirement', method='post')
                       if requirement.recordId
@@ -204,11 +289,16 @@ block content
                 summary.es-category__summary
                   .es-category__title
                     strong= category.name
-                    span.es-pill= category.applicable ? statusText(category.managementMode) : 'N/A'
+                    span.es-pill= category.applicable ? statusText(category.managementMode) : (category.needsApplicabilityDecision ? 'needs decision' : 'N/A')
                   .es-category__numbers
                     if category.applicable
-                      span #{formatAmount(category.stock)} / #{formatAmount(category.target)} #{category.unit}
+                      if category.targetManagedAtDomain
+                        span #{formatAmount(category.stock)} #{category.unit} · pooled in #{statusText(category.preparednessDomain)}
+                      else
+                        span #{formatAmount(category.stock)} / #{formatAmount(category.target)} #{category.unit}
                       span.es-pill= statusText(category.health)
+                    else if category.needsApplicabilityDecision
+                      span Decision required
                     else
                       span Excluded
                 .es-category__body
@@ -232,6 +322,9 @@ block content
                     div
                       dt Domain
                       dd= statusText(category.preparednessDomain)
+                    div
+                      dt Target behavior
+                      dd= category.targetManagedAtDomain ? `Managed by the pooled ${statusText(category.preparednessDomain)} target` : statusText(category.targetStrategy)
                     if category.examples && category.examples.length
                       div
                         dt Examples
@@ -268,7 +361,7 @@ block content
             label(for='add_category_id') Category
             select#add_category_id.form-select(name='add_category_id', required)
               each category in snapshot.categories
-                option(value=category.id, data-mode=category.managementMode)= `${category.name} · ${category.unit} · ${statusText(category.managementMode)}`
+                option(value=category.id, data-mode=category.managementMode, data-domain=category.preparednessDomain)= `${category.name} · ${category.unit} · ${statusText(category.managementMode)}`
             label(for='amount') Amount
             input#amount.form-control(type='number', name='amount', min='0.01', step='any', required)
             label#actionDateLabel(for='actionDate') Expiry, rotation, or next inspection date
@@ -284,7 +377,7 @@ block content
               span Durable item tested now
             label(for='notes') Note
             textarea#notes.form-control(name='notes', rows='2')
-            details.es-subform
+            details#food-contribution-subform.es-subform
               summary Food contribution override (optional)
               label(for='foodContributionType') This lot contributes as
               select#foodContributionType.form-select(name='foodContributionType')
@@ -431,6 +524,7 @@ block content
               div
                 label(for='unit') Unit
                 input#unit.form-control(type='text', name='unit', required)
+                p.es-field-hint Existing category units are changed with the transactional converter below.
               div
                 label(for='managementMode') Management mode
                 select#managementMode.form-select(name='managementMode', required)
@@ -442,9 +536,17 @@ block content
                 select#preparednessDomain.form-select(name='preparednessDomain')
                   each domainId in ['other', 'water', 'food', 'toilet', 'critical-medication', 'cooking-fuel', 'power']
                     option(value=domainId)= statusText(domainId)
-            label.es-checkbox
-              input#applicable(type='checkbox', name='applicable', checked)
-              span Applicable to this household
+              div
+                label(for='targetStrategy') Target behavior
+                select#targetStrategy.form-select(name='targetStrategy')
+                  option(value='duration-scaled') Scale with preparedness days
+                  option(value='fixed') Fixed quantity at every milestone
+              div
+                label(for='applicabilityStatus') Household applicability
+                select#applicabilityStatus.form-select(name='applicabilityStatus')
+                  option(value='applicable') Applicable
+                  option(value='undecided') Needs applicability decision
+                  option(value='not-applicable') Not applicable (N/A)
             label.es-checkbox
               input#conditional(type='checkbox', name='conditional')
               span Conditional category
@@ -516,6 +618,30 @@ block content
                 label(for='goalDate') Category goal date
                 input#goalDate.form-control(type='date', name='goalDate')
             button.es-button.es-button--primary(type='submit') Save category policy
+
+        details#unit-conversion.es-card.es-card--collapsible
+          summary
+            span
+              span.es-eyebrow Unit safety
+              strong Convert a category unit
+          form#unit-conversion-form(action='/es/convert_unit', method='post')
+            p.es-card__meta This is the only way to change an existing unit. Inventory amounts, targets, rates, package sizes, milestone overrides, and per-unit contributions are converted together in one database transaction.
+            label(for='conversionCategoryId') Category
+            select#conversionCategoryId.form-select(name='category_id', required)
+              each category in snapshot.categories
+                option(value=category.id, data-unit=category.unit)= `${category.name} · ${category.unit}`
+            .es-form-grid
+              div
+                label(for='currentUnit') Current unit
+                input#currentUnit.form-control(type='text', name='currentUnit', readonly, required)
+              div
+                label(for='newUnit') New unit
+                input#newUnit.form-control(type='text', name='newUnit', placeholder='L', required)
+              div
+                label(for='conversionFactor') Conversion factor (only for unknown units)
+                input#conversionFactor.form-control(type='number', name='conversionFactor', min='0.000000001', max='1000000000', step='any', placeholder='New amount = old amount × factor')
+            p#conversionPreview.es-field-hint Known metric conversions such as mL → L and g → kg are calculated and validated automatically.
+            button.es-button.es-button--primary(type='submit') Convert all quantities
 
 block script
   - const categoryDataJson = JSON.stringify(snapshot.categories).replace(/</g, '\\u003c')

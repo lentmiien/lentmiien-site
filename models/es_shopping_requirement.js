@@ -13,6 +13,7 @@ const esShoppingRequirementSchema = new mongoose.Schema({
   unit: { type: String, required: true, trim: true },
   requiredAmount: { type: Number, required: true, min: 0 },
   currentAmount: { type: Number, min: 0 },
+  forecastAmount: { type: Number, min: 0 },
   targetAmount: { type: Number, min: 0 },
   packageSize: { type: Number, min: 0 },
   reason: { type: String, required: true, trim: true },

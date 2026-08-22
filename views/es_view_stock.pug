@@ -21,7 +21,7 @@ block content
       article.es-status-card
         p.es-card__eyebrow Active categories
         p.es-status-card__value= snapshot.categories.filter(category => category.applicable).length
-        p.es-card__meta N/A categories stay visible but never affect readiness.
+        p.es-card__meta N/A and undecided conditional categories stay visible but never affect readiness.
       article.es-status-card
         p.es-card__eyebrow Active stock lots
         p.es-status-card__value= snapshot.categories.reduce((count, category) => count + category.items.filter(item => item.status === 'active').length, 0)
@@ -44,10 +44,12 @@ block content
                 p.es-eyebrow= statusText(category.managementMode)
                 h2= category.name
               .es-card__header-numbers
-                span.es-pill= category.applicable ? statusText(category.health) : 'N/A'
+                span.es-pill= category.applicable ? statusText(category.health) : (category.needsApplicabilityDecision ? 'needs decision' : 'N/A')
                 if category.applicable
                   strong #{formatAmount(category.stock)} #{category.unit}
             p.es-card__meta= category.purpose
+            if category.targetManagedAtDomain
+              p.es-policy-line Target managed by the shared #{statusText(category.preparednessDomain)} pool; no isolated category shortage is created.
             if category.managementMode === 'rolling'
               p.es-policy-line Floor #{formatAmount(category.emergencyFloor)} · reorder #{formatAmount(category.reorderPoint)} · restock to #{formatAmount(category.restockToAmount)} #{category.unit}
             if category.items.length

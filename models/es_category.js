@@ -37,7 +37,15 @@ const esCategorySchema = new mongoose.Schema({
     enum: ['rolling', 'expiry-managed', 'durable'],
   },
   applicable: { type: Boolean, default: true },
+  applicabilityStatus: {
+    type: String,
+    enum: ['applicable', 'not-applicable', 'undecided'],
+  },
   conditional: { type: Boolean, default: false },
+  targetStrategy: {
+    type: String,
+    enum: ['duration-scaled', 'fixed'],
+  },
   preparednessDomain: {
     type: String,
     enum: ['water', 'food', 'toilet', 'critical-medication', 'cooking-fuel', 'power', 'other'],
@@ -75,7 +83,7 @@ const esCategorySchema = new mongoose.Schema({
   recommendationReviewedAt: { type: Date },
 }, { timestamps: true });
 
-esCategorySchema.index({ managementMode: 1, applicable: 1 });
+esCategorySchema.index({ managementMode: 1, applicabilityStatus: 1 });
 esCategorySchema.index({ preparednessDomain: 1, applicable: 1 });
 
 module.exports = mongoose.model('esCategory', esCategorySchema);

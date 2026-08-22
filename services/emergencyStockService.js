@@ -9,6 +9,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_TIME_ZONE = 'Asia/Tokyo';
 const EXPIRY_WARNING_DAYS = 30;
 const EXPIRY_STRONG_WARNING_DAYS = 14;
+const SANITY_MAX_DOMAIN_DAYS = 365;
+const POOLED_DOMAINS = Object.freeze(['water', 'food', 'toilet']);
+const FOOD_CLASSIFICATION_KEYS = Object.freeze([
+  'completeMeals',
+  'stapleServings',
+  'mainDishServings',
+  'produceServings',
+]);
 const CONTRIBUTION_KEYS = [
   'domainUnits',
   'completeMeals',
@@ -107,6 +115,12 @@ function addCalendarDays(value, days, timeZone = DEFAULT_TIME_ZONE) {
   return new Date(timestamp + days * DAY_MS);
 }
 
+function dateFromKey(key) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(key || ''))
+    ? new Date(`${key}T00:00:00.000Z`)
+    : null;
+}
+
 function normalizeProfile(profile = {}) {
   const plain = asPlain(profile);
   const milestones = Array.isArray(plain.milestones) && plain.milestones.length
@@ -160,8 +174,18 @@ function contributionValues(rawInput = {}) {
   return Object.fromEntries(CONTRIBUTION_KEYS.map(key => [key, finiteNumber(raw[key])]));
 }
 
+function litresPerWaterUnit(unit) {
+  const normalized = String(unit || '').trim().toLowerCase().replace(/[.\s_-]+/g, '');
+  if (['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].includes(normalized)) return 0.001;
+  if (['cl', 'centiliter', 'centilitre'].includes(normalized)) return 0.01;
+  if (['dl', 'deciliter', 'decilitre'].includes(normalized)) return 0.1;
+  if (['l', 'liter', 'liters', 'litre', 'litres'].includes(normalized)) return 1;
+  return null;
+}
+
 function normalizeContribution(category, guidance) {
   const contribution = contributionValues(category.contributionPerUnit || guidance.contributionPerUnit || {});
+  const explicitContribution = contributionValues(category.contributionPerUnit || {});
 
   const name = String(category.name || '');
   const unit = String(category.unit || '').toLowerCase();
@@ -170,7 +194,10 @@ function normalizeContribution(category, guidance) {
     if (/gram|^g$/.test(unit)) contribution.stapleServings = 1 / 75;
   }
 
-  if (['water', 'toilet'].includes(guidance.preparednessDomain) && contribution.domainUnits <= 0) {
+  if (guidance.preparednessDomain === 'water' && explicitContribution.domainUnits <= 0) {
+    contribution.domainUnits = litresPerWaterUnit(category.unit) || 1;
+  }
+  if (guidance.preparednessDomain === 'toilet' && contribution.domainUnits <= 0) {
     contribution.domainUnits = 1;
   }
   if (guidance.preparednessDomain === 'critical-medication' && contribution.domainUnits <= 0) {
@@ -182,6 +209,14 @@ function normalizeContribution(category, guidance) {
 function normalizeCategory(categoryInput) {
   const category = asPlain(categoryInput);
   const guidance = getCategoryGuidance(category);
+  const explicitApplicability = ['applicable', 'not-applicable', 'undecided'].includes(category.applicabilityStatus)
+    ? category.applicabilityStatus
+    : null;
+  const applicabilityStatus = explicitApplicability || (
+    category.applicable === false
+      ? 'not-applicable'
+      : (guidance.conditional ? 'undecided' : 'applicable')
+  );
   const officialBaseline = finiteNumber(category.officialBaseline, finiteNumber(guidance.officialBaseline, finiteNumber(category.recommendedStock)));
   const personalTarget = finiteNumber(category.personalTarget, finiteNumber(guidance.personalTarget));
   const emergencyFloor = finiteNumber(category.emergencyFloor, officialBaseline);
@@ -193,10 +228,14 @@ function normalizeCategory(categoryInput) {
   return {
     ...category,
     id: String(category._id || category.id || ''),
-    applicable: category.applicable !== false,
     ...guidance,
+    applicabilityStatus,
+    applicable: applicabilityStatus === 'applicable',
+    needsApplicabilityDecision: applicabilityStatus === 'undecided',
     managementMode: guidance.managementMode,
     preparednessDomain: guidance.preparednessDomain,
+    targetStrategy: guidance.targetStrategy,
+    targetManagedAtDomain: POOLED_DOMAINS.includes(guidance.preparednessDomain),
     contributionPerUnit: normalizeContribution(category, guidance),
     recommendedStock: finiteNumber(category.recommendedStock),
     officialBaseline,
@@ -228,6 +267,9 @@ function categoryTarget(category, profile, milestone) {
 
   if (category.managementMode === 'durable') {
     return category.personalTarget || category.officialBaseline || category.recommendedStock || 1;
+  }
+  if (category.targetStrategy === 'fixed') {
+    return category.personalTarget || category.officialBaseline || category.recommendedStock || 0;
   }
   const baseline = category.officialBaseline || category.recommendedStock;
   if (baseline <= 0) return category.personalTarget || 0;
@@ -346,7 +388,9 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
     readyItemCount: 0,
     items: [],
     warnings: [],
-    health: category.applicable ? 'healthy' : 'not-applicable',
+    health: category.applicable
+      ? 'healthy'
+      : (category.needsApplicabilityDecision ? 'applicability-undecided' : 'not-applicable'),
   }));
   const summaryMap = new Map(summaries.map(summary => [summary.id, summary]));
   const orphanItems = [];
@@ -379,12 +423,14 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
     summary.stock = round(summary.stock, 2);
     summary.target = round(summary.target, 2);
     if (!summary.applicable) {
-      summary.health = 'not-applicable';
+      summary.health = summary.needsApplicabilityDecision ? 'applicability-undecided' : 'not-applicable';
       summary.percent = null;
-      summary.ready = true;
+      summary.ready = null;
       return;
     }
-    if (summary.managementMode === 'rolling') {
+    if (summary.preparednessDomain === 'food') {
+      summary.health = summary.stock > 0 ? 'contributing' : 'empty';
+    } else if (summary.managementMode === 'rolling') {
       summary.health = rollingHealth(summary, summary.stock);
     } else if (summary.managementMode === 'durable') {
       if (summary.readyItemCount >= summary.target && summary.target > 0) summary.health = 'verified';
@@ -396,8 +442,13 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
       summary.health = 'healthy';
     }
     const readinessAmount = summary.managementMode === 'durable' ? summary.readyItemCount : summary.stock;
-    summary.percent = summary.target > 0 ? Math.min(100, round(100 * readinessAmount / summary.target, 0)) : 100;
-    summary.ready = readinessAmount >= summary.target;
+    if (summary.targetManagedAtDomain) {
+      summary.percent = null;
+      summary.ready = null;
+    } else {
+      summary.percent = summary.target > 0 ? Math.min(100, round(100 * readinessAmount / summary.target, 0)) : 100;
+      summary.ready = readinessAmount >= summary.target;
+    }
     summary.items.sort((a, b) => {
       const firstDate = expiryDateFor(a, summary) || inspectionDateFor(a, summary);
       const secondDate = expiryDateFor(b, summary) || inspectionDateFor(b, summary);
@@ -426,6 +477,7 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
     waterLitresRequired: 0,
     fuelMealsRequired: 0,
   };
+  const unclassifiedFoodItems = [];
   const medicationCoverage = [];
 
   summaries.filter(summary => summary.applicable).forEach(summary => {
@@ -446,6 +498,16 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
           : contribution;
         const hasContribution = Object.values(itemContribution).some(value => value > 0);
         if (hasContribution) domains.food.measurable = true;
+        const hasFoodClassification = FOOD_CLASSIFICATION_KEYS
+          .some(key => itemContribution[key] > 0);
+        if (!hasFoodClassification) {
+          unclassifiedFoodItems.push({
+            ...item,
+            categoryName: summary.name,
+            categoryUnit: summary.unit,
+            possibleMeals: round(item.amount, 2),
+          });
+        }
         Object.keys(foodTotals).forEach(key => {
           foodTotals[key] += item.amount * itemContribution[key];
         });
@@ -509,10 +571,32 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
   const coreDaysRaw = coreMeasurable ? Math.min(...coreDomains.map(domain => domain.days)) : null;
   const coreDays = round(coreDaysRaw, 1);
 
+  const possibleUnclassifiedMeals = round(
+    unclassifiedFoodItems.reduce((total, item) => total + item.possibleMeals, 0),
+    1,
+  );
+  const possibleFoodDays = domains.food.measurable || possibleUnclassifiedMeals > 0
+    ? round(
+      (foodTotals.mealCapacity + possibleUnclassifiedMeals) /
+        (profile.householdSize * profile.mealsPerPersonDay),
+      1,
+    )
+    : null;
+  const nonFoodCoreDomains = coreDomains.filter(domain => domain.id !== 'food');
+  const nonFoodCoreMeasurable = nonFoodCoreDomains
+    .every(domain => domain.measurable && Number.isFinite(domain.days));
+  const possibleCoreDays = nonFoodCoreMeasurable && Number.isFinite(possibleFoodDays)
+    ? round(Math.min(
+      possibleFoodDays,
+      ...nonFoodCoreDomains.map(domain => domain.days),
+    ), 1)
+    : null;
+
   const applicableSummaries = summaries.filter(summary => summary.applicable);
-  const checklistReady = applicableSummaries.filter(summary => summary.ready).length;
-  const checklistPercent = applicableSummaries.length
-    ? round(100 * checklistReady / applicableSummaries.length, 0)
+  const checklistSummaries = applicableSummaries.filter(summary => !summary.targetManagedAtDomain);
+  const checklistReady = checklistSummaries.filter(summary => summary.ready).length;
+  const checklistPercent = checklistSummaries.length
+    ? round(100 * checklistReady / checklistSummaries.length, 0)
     : null;
   const rolling = summaries.filter(summary => summary.applicable && summary.managementMode === 'rolling');
   const durable = summaries.filter(summary => summary.applicable && summary.managementMode === 'durable');
@@ -539,6 +623,15 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
   });
 
   const recommendationNextReviewKey = dateOnlyKey(profile.recommendationNextReviewAt);
+  const sanityWarnings = Object.values(domains)
+    .filter(domain => Number.isFinite(domain.days) && domain.days > SANITY_MAX_DOMAIN_DAYS)
+    .map(domain => ({
+      code: `implausible-${domain.id}-coverage`,
+      domain: domain.id,
+      value: domain.days,
+      message: `${domain.label} calculates to ${round(domain.days, 1)} days. Check category units, item quantities, and per-unit contributions before relying on this result.`,
+    }));
+  const applicabilityDecisions = summaries.filter(summary => summary.needsApplicabilityDecision);
   return {
     generatedAt: now,
     todayKey,
@@ -557,9 +650,24 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
     },
     checklist: {
       ready: checklistReady,
-      applicable: applicableSummaries.length,
+      applicable: checklistSummaries.length,
       percent: checklistPercent,
     },
+    applicabilityReview: {
+      due: applicabilityDecisions.length,
+      categories: applicabilityDecisions,
+    },
+    unclassifiedFood: {
+      items: unclassifiedFoodItems,
+      count: unclassifiedFoodItems.length,
+      possibleMeals: possibleUnclassifiedMeals,
+      possibleFoodDays,
+      possibleCoreDays,
+      possibleCoreGain: Number.isFinite(possibleCoreDays) && Number.isFinite(coreDays)
+        ? round(Math.max(0, possibleCoreDays - coreDays), 1)
+        : null,
+    },
+    sanityWarnings,
     rollingHealth: {
       healthy: rolling.filter(category => category.health === 'healthy').length,
       reorderSoon: rolling.filter(category => category.health === 'reorder-soon').length,
@@ -609,6 +717,88 @@ function requirementStatus(requirementsByFingerprint, fingerprint) {
   return status === 'resolved' || !status ? 'needed' : status;
 }
 
+function milestoneForecastDate(snapshot, now = new Date()) {
+  const afterMilestone = addCalendarDays(
+    snapshot.milestone.deadline,
+    1,
+    snapshot.profile.timeZone,
+  );
+  return dateKeyInTimeZone(afterMilestone, snapshot.profile.timeZone) < snapshot.todayKey
+    ? now
+    : afterMilestone;
+}
+
+function fixedMilestoneProfile(snapshot) {
+  return {
+    ...snapshot.profile,
+    milestones: [{
+      deadline: snapshot.milestone.deadline,
+      targetDays: snapshot.milestone.targetDays,
+    }],
+  };
+}
+
+function earliestRotation(categories, cutoffKey, startKey = '') {
+  let earliest = null;
+  categories.forEach(category => {
+    category.items.forEach(item => {
+      if (item.status !== 'active' || item.amount <= 0) return;
+      const expiry = expiryDateFor(item, category);
+      const expiryKey = dateOnlyKey(expiry);
+      if (!expiryKey || expiryKey > cutoffKey || (startKey && expiryKey < startKey)) return;
+      if (!earliest || expiry < earliest.date) {
+        earliest = {
+          date: expiry,
+          categoryId: category.id,
+          shoppingLeadDays: category.shoppingLeadDays,
+        };
+      }
+    });
+  });
+  return earliest;
+}
+
+function purchaseDueDate(actionDate, shoppingLeadDays, snapshot) {
+  const action = validDate(actionDate);
+  if (!action) return dateFromKey(snapshot.todayKey);
+  const leadDays = Math.max(0, Math.ceil(finiteNumber(shoppingLeadDays, 7)));
+  const planned = addCalendarDays(action, -leadDays, snapshot.profile.timeZone);
+  return dateKeyInTimeZone(planned, snapshot.profile.timeZone) < snapshot.todayKey
+    ? dateFromKey(snapshot.todayKey)
+    : planned;
+}
+
+function foodPurchaseAdvice(domain) {
+  const details = domain?.details || {};
+  const pairedMealsNeeded = Math.max(0, finiteNumber(domain?.targetAmount) - finiteNumber(details.completeMeals));
+  const stapleServings = finiteNumber(details.stapleServings);
+  const mainDishServings = finiteNumber(details.mainDishServings);
+  if (stapleServings >= pairedMealsNeeded && mainDishServings < pairedMealsNeeded) {
+    return 'The staple pool already covers this milestone; prioritize main/protein servings or complete meals rather than more rice.';
+  }
+  if (mainDishServings >= pairedMealsNeeded && stapleServings < pairedMealsNeeded) {
+    return 'The main/protein pool already covers this milestone; prioritize staple servings or complete meals.';
+  }
+  return 'Use complete meals, or add complementary staple and main/protein servings without double counting them.';
+}
+
+function pooledPackageSize(categories, domainId) {
+  if (categories.length !== 1) return 0;
+  const category = categories[0];
+  const packageSize = positiveNumber(category.packageSize);
+  if (!packageSize) return 0;
+  if (['water', 'toilet'].includes(domainId)) {
+    return packageSize * positiveNumber(category.contributionPerUnit?.domainUnits, 1);
+  }
+  if (domainId === 'food') {
+    const contribution = contributionValues(category.contributionPerUnit);
+    const onlyCompleteMeals = contribution.completeMeals > 0 &&
+      contribution.stapleServings === 0 && contribution.mainDishServings === 0;
+    return onlyCompleteMeals ? packageSize * contribution.completeMeals : 0;
+  }
+  return 0;
+}
+
 function buildShoppingRequirements({
   categories = [],
   items = [],
@@ -617,18 +807,11 @@ function buildShoppingRequirements({
   now = new Date(),
 } = {}) {
   const snapshot = buildEmergencyStockSnapshot({ categories, items, profile, now });
-  const rotationForecastDate = addCalendarDays(now, EXPIRY_WARNING_DAYS + 1, snapshot.profile.timeZone);
-  const fixedMilestoneProfile = {
-    ...snapshot.profile,
-    milestones: [{
-      deadline: snapshot.milestone.deadline,
-      targetDays: snapshot.milestone.targetDays,
-    }],
-  };
+  const rotationForecastDate = milestoneForecastDate(snapshot, now);
   const rotationForecast = buildEmergencyStockSnapshot({
     categories,
     items,
-    profile: fixedMilestoneProfile,
+    profile: fixedMilestoneProfile(snapshot),
     now: rotationForecastDate,
   });
   const existing = existingRequirements.map(asPlain);
@@ -640,11 +823,20 @@ function buildShoppingRequirements({
     // Duration domains are purchased as pools. This prevents water or food
     // appearing twice as both an isolated category quota and a domain gap.
     if (['water', 'food', 'toilet'].includes(category.preparednessDomain)) return;
-    if (category.managementMode === 'rolling' && ['below-floor', 'reorder-soon'].includes(category.health)) {
+    const forecastCategory = rotationForecast.categoryMap[category.id];
+    const currentRollingNeed = ['below-floor', 'reorder-soon'].includes(category.health);
+    const forecastRollingNeed = ['below-floor', 'reorder-soon'].includes(forecastCategory?.health);
+    if (category.managementMode === 'rolling' && (currentRollingNeed || forecastRollingNeed)) {
       const target = Math.max(category.restockToAmount, category.target, category.emergencyFloor);
-      const amount = roundedPackageAmount(Math.max(0, target - category.stock), category.packageSize);
+      const forecastStock = forecastRollingNeed && forecastCategory.stock < category.stock
+        ? forecastCategory.stock
+        : category.stock;
+      const amount = roundedPackageAmount(Math.max(0, target - forecastStock), category.packageSize);
       if (amount > 0) {
         const fingerprint = `rolling:${category.id}`;
+        const rotation = forecastRollingNeed && forecastCategory.stock < category.stock
+          ? earliestRotation([category], snapshot.milestone.deadlineKey, snapshot.todayKey)
+          : null;
         computed.push({
           fingerprint,
           categoryId: category.id,
@@ -653,13 +845,20 @@ function buildShoppingRequirements({
           unit: category.unit,
           requiredAmount: round(amount, 2),
           currentAmount: category.stock,
+          forecastAmount: round(forecastStock, 2),
           targetAmount: round(target, 2),
           packageSize: category.packageSize || undefined,
-          reason: category.health === 'below-floor'
+          reason: !currentRollingNeed && rotation
+            ? `Dated stock falls to ${round(forecastStock, 2)} ${category.unit} after rotations through ${snapshot.milestone.deadlineKey}. Replenish before the first rotation.`
+            : category.health === 'below-floor'
             ? 'Current stock is below the protected emergency floor.'
             : 'Current stock has reached the reorder point.',
-          trigger: category.health === 'below-floor' ? 'below-floor' : 'reorder-point',
-          dueDate: now,
+          trigger: !currentRollingNeed && rotation
+            ? 'expiring-soon'
+            : (category.health === 'below-floor' ? 'below-floor' : 'reorder-point'),
+          dueDate: !currentRollingNeed && rotation
+            ? purchaseDueDate(rotation.date, rotation.shoppingLeadDays, snapshot)
+            : now,
           status: requirementStatus(requirementsByFingerprint, fingerprint),
         });
       }
@@ -678,13 +877,15 @@ function buildShoppingRequirements({
     if (!domain.measurable || requiredGap <= 0) return;
     const categoriesForDomain = snapshot.categories.filter(category =>
       category.applicable && category.preparednessDomain === domain.id);
-    const packageSize = categoriesForDomain.length === 1 ? categoriesForDomain[0].packageSize : 0;
-    const earliestRotation = categoriesForDomain
-      .flatMap(category => category.warnings
-        .filter(item => ['expiry-soon', 'expiry-strong'].includes(item.state))
-        .map(item => expiryDateFor(item, category)))
-      .filter(Boolean)
-      .sort((a, b) => a - b)[0];
+    const packageSize = pooledPackageSize(categoriesForDomain, domain.id);
+    const rotation = earliestRotation(categoriesForDomain, snapshot.milestone.deadlineKey, snapshot.todayKey);
+    const domainShoppingLeadDays = Math.max(
+      0,
+      ...categoriesForDomain.map(category => finiteNumber(category.shoppingLeadDays, 7)),
+    );
+    const baseReason = forecastGap > domain.gap
+      ? `Plan enough replacement stock to retain the ${snapshot.milestone.targetDays}-day milestone through upcoming rotations.`
+      : `Close the gap to the ${snapshot.milestone.targetDays}-day milestone by ${snapshot.milestone.deadlineKey}.`;
     const fingerprint = `milestone:${domain.id}`;
     computed.push({
       fingerprint,
@@ -693,13 +894,18 @@ function buildShoppingRequirements({
       unit: domain.unit,
       requiredAmount: round(roundedPackageAmount(requiredGap, packageSize), 2),
       currentAmount: domain.currentAmount,
+      forecastAmount: forecastDomain.currentAmount,
       targetAmount: domain.targetAmount,
       packageSize: packageSize || undefined,
-      reason: forecastGap > domain.gap
-        ? `Plan enough replacement stock to retain the ${snapshot.milestone.targetDays}-day milestone through upcoming rotations.`
-        : `Close the gap to the ${snapshot.milestone.targetDays}-day milestone by ${snapshot.milestone.deadlineKey}.`,
+      reason: domain.id === 'food'
+        ? `${baseReason} ${foodPurchaseAdvice(forecastDomain)}`
+        : baseReason,
       trigger: forecastGap > domain.gap ? 'expiring-soon' : 'milestone-gap',
-      dueDate: forecastGap > domain.gap && earliestRotation ? earliestRotation : snapshot.milestone.deadline,
+      dueDate: purchaseDueDate(
+        forecastGap > domain.gap && rotation ? rotation.date : snapshot.milestone.deadline,
+        forecastGap > domain.gap && rotation ? rotation.shoppingLeadDays : domainShoppingLeadDays,
+        snapshot,
+      ),
       status: requirementStatus(requirementsByFingerprint, fingerprint),
     });
   });
@@ -713,6 +919,9 @@ function buildShoppingRequirements({
     const fingerprint = `reserve:${category.id}`;
     const amount = roundedPackageAmount(category.target - effectiveStock, category.packageSize);
     const upcomingRotation = effectiveStock < category.stock;
+    const rotation = upcomingRotation
+      ? earliestRotation([category], snapshot.milestone.deadlineKey, snapshot.todayKey)
+      : null;
     computed.push({
       fingerprint,
       categoryId: category.id,
@@ -721,19 +930,18 @@ function buildShoppingRequirements({
       unit: category.unit,
       requiredAmount: round(amount, 2),
       currentAmount: category.stock,
+      forecastAmount: round(effectiveStock, 2),
       targetAmount: category.target,
       packageSize: category.packageSize || undefined,
       reason: upcomingRotation
         ? `Plan enough replacement stock to retain the active ${snapshot.milestone.targetDays}-day milestone through upcoming rotations.`
         : `Bring this reserve up to the active ${snapshot.milestone.targetDays}-day milestone.`,
       trigger: upcomingRotation ? 'expiring-soon' : 'milestone-gap',
-      dueDate: upcomingRotation
-        ? category.warnings
-          .filter(item => ['expiry-soon', 'expiry-strong'].includes(item.state))
-          .map(item => expiryDateFor(item, category))
-          .filter(Boolean)
-          .sort((a, b) => a - b)[0] || snapshot.milestone.deadline
-        : snapshot.milestone.deadline,
+      dueDate: purchaseDueDate(
+        upcomingRotation && rotation ? rotation.date : snapshot.milestone.deadline,
+        upcomingRotation && rotation ? rotation.shoppingLeadDays : category.shoppingLeadDays,
+        snapshot,
+      ),
       status: requirementStatus(requirementsByFingerprint, fingerprint),
     });
   });
@@ -766,6 +974,25 @@ function buildThirtyDayForecast({ categories = [], items = [], profile = {}, now
   return {
     date: forecastDate,
     dateKey: forecast.todayKey,
+    core: forecast.core,
+    domains: forecast.domains,
+  };
+}
+
+function buildMilestoneForecast({ categories = [], items = [], profile = {}, now = new Date() } = {}) {
+  const current = buildEmergencyStockSnapshot({ categories, items, profile, now });
+  const forecastDate = milestoneForecastDate(current, now);
+  const forecast = buildEmergencyStockSnapshot({
+    categories,
+    items,
+    profile: fixedMilestoneProfile(current),
+    now: forecastDate,
+  });
+  return {
+    date: forecastDate,
+    dateKey: forecast.todayKey,
+    throughDate: current.milestone.deadline,
+    throughDateKey: current.milestone.deadlineKey,
     core: forecast.core,
     domains: forecast.domains,
   };
@@ -827,6 +1054,7 @@ module.exports = {
   addCalendarDays,
   buildEmergencyStockSnapshot,
   buildFiveDayMenuExercise,
+  buildMilestoneForecast,
   buildShoppingRequirements,
   buildThirtyDayForecast,
   calendarDaysBetween,

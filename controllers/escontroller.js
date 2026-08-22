@@ -1,5 +1,6 @@
 'use strict';
 
+const mongoose = require('mongoose');
 const {
   ESCategory,
   ESItem,
@@ -12,11 +13,15 @@ const { parseOptionalDateOnly } = require('../utils/dateOnly');
 const {
   buildEmergencyStockSnapshot,
   buildFiveDayMenuExercise,
+  buildMilestoneForecast,
   buildShoppingRequirements,
-  buildThirtyDayForecast,
   normalizeCategory,
 } = require('../services/emergencyStockService');
 const { syncShoppingRequirements } = require('../services/emergencyStockMaintenanceService');
+const {
+  convertCategoryUnit,
+  unitKey,
+} = require('../services/emergencyStockUnitService');
 
 function optionalNumber(value, fieldName, { min = 0, integer = false } = {}) {
   if (value === undefined || value === null || value === '') return undefined;
@@ -85,7 +90,7 @@ async function loadEmergencyStockData(now = new Date()) {
     ESMenuEntry.find({}).sort({ day: 1, meal: 1 }).lean(),
   ]);
   const snapshot = buildEmergencyStockSnapshot({ categories, items, profile: profile || {}, now });
-  const forecast = buildThirtyDayForecast({ categories, items, profile: profile || {}, now });
+  const forecast = buildMilestoneForecast({ categories, items, profile: profile || {}, now });
   const calculatedRequirements = buildShoppingRequirements({
     categories,
     items,
@@ -193,6 +198,35 @@ exports.edit_category = async (req, res) => {
       error.statusCode = 400;
       throw error;
     }
+    const conditional = body.conditional === 'on' || body.conditional === 'true';
+    const applicabilityStatus = body.applicabilityStatus || (
+      conditional ? 'undecided' : 'applicable'
+    );
+    if (!['applicable', 'not-applicable', 'undecided'].includes(applicabilityStatus)) {
+      const error = new RangeError('Choose applicable, not applicable, or needs a decision.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const targetStrategy = body.targetStrategy || 'duration-scaled';
+    if (!['duration-scaled', 'fixed'].includes(targetStrategy)) {
+      const error = new RangeError('Choose a duration-scaled or fixed target.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (body.category_id) {
+      const existingCategory = await ESCategory.findById(body.category_id).lean();
+      if (!existingCategory) {
+        const error = new Error('Category not found.');
+        error.statusCode = 404;
+        throw error;
+      }
+      if (unitKey(existingCategory.unit) !== unitKey(unit)) {
+        const error = new RangeError('Use the transactional unit-conversion form to change an existing category unit.');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
 
     const contributionPerUnit = {
       domainUnits: optionalNumber(body.domainUnits, 'Domain units per inventory unit') || 0,
@@ -210,8 +244,10 @@ exports.edit_category = async (req, res) => {
       unit,
       managementMode,
       preparednessDomain,
-      applicable: body.applicable === 'on' || body.applicable === 'true',
-      conditional: body.conditional === 'on' || body.conditional === 'true',
+      applicable: applicabilityStatus === 'applicable',
+      applicabilityStatus,
+      conditional,
+      targetStrategy,
       recommendedStock: optionalNumber(body.recommendedStock, 'Legacy recommended stock') || 0,
       rotationPeriodMonths: optionalNumber(body.rotationPeriodMonths, 'Rotation period', { min: 1, integer: true }) || 12,
       officialBaseline: optionalNumber(body.officialBaseline, 'Official baseline'),
@@ -302,6 +338,11 @@ exports.add_item = async (req, res) => {
     };
     const foodContributionType = String(body.foodContributionType || 'category').trim();
     if (foodContributionType !== 'category') {
+      if (category.preparednessDomain !== 'food') {
+        const error = new RangeError('Food contribution overrides can only be added to food-domain inventory.');
+        error.statusCode = 400;
+        throw error;
+      }
       const contributionFields = {
         complete: 'completeMeals',
         staple: 'stapleServings',
@@ -315,6 +356,11 @@ exports.add_item = async (req, res) => {
         throw error;
       }
       const servingsPerUnit = optionalNumber(body.foodServingsPerUnit, 'Food servings per inventory unit', { min: 0.01 });
+      if (!servingsPerUnit) {
+        const error = new RangeError('Food servings per inventory unit must be greater than zero.');
+        error.statusCode = 400;
+        throw error;
+      }
       itemData.contributionOverride = {
         [contributionField]: servingsPerUnit,
         noCookMeals: body.foodNoCook === 'on' || body.foodNoCook === 'true' ? servingsPerUnit : 0,
@@ -433,11 +479,137 @@ exports.inspect_item = async (req, res) => {
 exports.review_stock = async (_req, res) => {
   try {
     const now = new Date();
-    await ESCategory.updateMany({ applicable: { $ne: false } }, { $set: { lastStockCheck: now } });
+    await ESCategory.updateMany({
+      $or: [
+        { applicabilityStatus: 'applicable' },
+        {
+          applicabilityStatus: { $exists: false },
+          conditional: { $ne: true },
+          applicable: { $ne: false },
+        },
+        {
+          applicabilityStatus: { $exists: false },
+          conditional: true,
+          applicable: true,
+        },
+      ],
+    }, { $set: { lastStockCheck: now } });
     await refreshShoppingRequirements(now);
     res.redirect('/es/es_dashboard');
   } catch (error) {
     handleControllerError(res, error, 'monthly stock review');
+  }
+};
+
+exports.set_applicability = async (req, res) => {
+  try {
+    const categoryId = requiredText(req.body?.category_id, 'Category');
+    const applicabilityStatus = requiredText(req.body?.applicabilityStatus, 'Applicability');
+    if (!['applicable', 'not-applicable', 'undecided'].includes(applicabilityStatus)) {
+      const error = new RangeError('Choose applicable, not applicable, or needs a decision.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const category = await ESCategory.findByIdAndUpdate(categoryId, {
+      $set: {
+        applicabilityStatus,
+        applicable: applicabilityStatus === 'applicable',
+      },
+    }, { new: true, runValidators: true });
+    if (!category) {
+      const error = new Error('Category not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    await refreshShoppingRequirements();
+    res.redirect('/es/es_dashboard');
+  } catch (error) {
+    handleControllerError(res, error, 'applicability update');
+  }
+};
+
+exports.classify_food_item = async (req, res) => {
+  try {
+    const itemId = requiredText(req.body?.item_id, 'Food item');
+    const contributionType = requiredText(req.body?.foodContributionType, 'Food contribution type');
+    const contributionFields = {
+      complete: 'completeMeals',
+      staple: 'stapleServings',
+      main: 'mainDishServings',
+      produce: 'produceServings',
+    };
+    const contributionField = contributionFields[contributionType];
+    if (!contributionField) {
+      const error = new RangeError('Choose complete meal, staple, main/protein, or produce.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const servingsPerUnit = optionalNumber(
+      req.body?.foodServingsPerUnit,
+      'Food servings per inventory unit',
+      { min: 0.01 },
+    );
+    if (!servingsPerUnit) {
+      const error = new RangeError('Food servings per inventory unit must be greater than zero.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const item = await ESItem.findById(itemId).lean();
+    if (!item || (item.status && item.status !== 'active')) {
+      const error = new Error('Active food item not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const categoryDocument = await ESCategory.findById(item.categoryId).lean();
+    const category = normalizeCategory(categoryDocument || {});
+    if (category.preparednessDomain !== 'food') {
+      const error = new RangeError('Only food-domain inventory can receive a food classification.');
+      error.statusCode = 400;
+      throw error;
+    }
+    const contributionOverride = {
+      [contributionField]: servingsPerUnit,
+      noCookMeals: req.body?.foodNoCook === 'on' || req.body?.foodNoCook === 'true'
+        ? servingsPerUnit
+        : 0,
+      waterLitresRequired: optionalNumber(
+        req.body?.foodWaterLitresRequired,
+        'Preparation water per inventory unit',
+      ) || 0,
+      fuelMealsRequired: req.body?.foodRequiresFuel === 'on' || req.body?.foodRequiresFuel === 'true'
+        ? servingsPerUnit
+        : 0,
+    };
+    const updatedItem = await ESItem.findByIdAndUpdate(itemId, {
+      $set: { contributionOverride },
+    }, { new: true, runValidators: true });
+    if (!updatedItem) {
+      const error = new Error('Active food item not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    await refreshShoppingRequirements();
+    res.redirect('/es/es_dashboard');
+  } catch (error) {
+    handleControllerError(res, error, 'food classification');
+  }
+};
+
+exports.convert_unit = async (req, res) => {
+  try {
+    await convertCategoryUnit({
+      CategoryModel: ESCategory,
+      ItemModel: ESItem,
+      connection: mongoose.connection,
+      categoryId: requiredText(req.body?.category_id, 'Category'),
+      newUnit: requiredText(req.body?.newUnit, 'New unit'),
+      expectedCurrentUnit: requiredText(req.body?.currentUnit, 'Current unit'),
+      customFactor: req.body?.conversionFactor,
+    });
+    await refreshShoppingRequirements();
+    res.redirect('/es/es_dashboard');
+  } catch (error) {
+    handleControllerError(res, error, 'unit conversion');
   }
 };
 

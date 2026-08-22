@@ -1,6 +1,7 @@
 const {
   buildEmergencyStockSnapshot,
   buildFiveDayMenuExercise,
+  buildMilestoneForecast,
   buildShoppingRequirements,
   dateKeyInTimeZone,
   getCurrentMilestone,
@@ -87,21 +88,48 @@ describe('Emergency Stock v2 calculations', () => {
 
   test('excludes N/A categories from checklist readiness', () => {
     const fixture = coreFixture([
+      category('paper', {
+        name: 'Toilet paper',
+        officialBaseline: 1,
+        targetStrategy: 'fixed',
+      }),
       category('not-applicable', {
         name: 'Menstrual products',
         applicable: false,
         recommendedStock: 100,
         officialBaseline: 100,
       }),
-    ]);
+    ], [item('paper-lot', 'paper', 1)]);
     const snapshot = buildEmergencyStockSnapshot({ ...fixture, now: NOW });
 
-    expect(snapshot.checklist.applicable).toBe(3);
+    expect(snapshot.checklist).toMatchObject({ applicable: 1, ready: 1, percent: 100 });
     expect(snapshot.categories.find(entry => entry.id === 'not-applicable')).toMatchObject({
       health: 'not-applicable',
       percent: null,
-      ready: true,
+      ready: null,
     });
+  });
+
+  test('holds conditional categories in an applicability decision state without shopping', () => {
+    const categories = [category('menstrual', {
+      name: 'Menstrual products (if applicable)',
+      conditional: true,
+      applicable: true,
+      emergencyFloor: 40,
+      reorderPoint: 40,
+      restockToAmount: 40,
+      targetStrategy: 'fixed',
+    })];
+    const snapshot = buildEmergencyStockSnapshot({ categories, items: [], now: NOW });
+
+    expect(snapshot.categories[0]).toMatchObject({
+      applicable: false,
+      applicabilityStatus: 'undecided',
+      needsApplicabilityDecision: true,
+      health: 'applicability-undecided',
+    });
+    expect(snapshot.applicabilityReview.due).toBe(1);
+    expect(buildShoppingRequirements({ categories, items: [], now: NOW })).toEqual([]);
   });
 
   test('durable equipment never inflates preparedness days', () => {
@@ -111,6 +139,7 @@ describe('Emergency Stock v2 calculations', () => {
         managementMode: 'durable',
         recommendedStock: 1,
         officialBaseline: 1,
+        applicabilityStatus: 'applicable',
       }),
     ], [
       item('bag-1', 'bags', 100, {
@@ -203,6 +232,37 @@ describe('Emergency Stock v2 calculations', () => {
     ]));
   });
 
+  test('forecasts dated rolling stock through the milestone and buys before expiry', () => {
+    const categories = [category('masks', {
+      name: 'Masks',
+      unit: 'packs',
+      emergencyFloor: 2,
+      reorderPoint: 2,
+      restockToAmount: 3,
+      officialBaseline: 3,
+      targetStrategy: 'fixed',
+      shoppingLeadDays: 7,
+    })];
+    const items = [item('mask-lot', 'masks', 3, {
+      expiresAt: new Date('2026-09-30T00:00:00.000Z'),
+    })];
+    const snapshot = buildEmergencyStockSnapshot({ categories, items, now: NOW });
+    const requirements = buildShoppingRequirements({ categories, items, now: NOW });
+
+    expect(snapshot.categories[0]).toMatchObject({ stock: 3, health: 'healthy' });
+    expect(snapshot.categories[0].items[0].state).toBe('current');
+    expect(requirements).toEqual([
+      expect.objectContaining({
+        fingerprint: 'rolling:masks',
+        trigger: 'expiring-soon',
+        requiredAmount: 3,
+        currentAmount: 3,
+        forecastAmount: 0,
+        dueDate: new Date('2026-09-23T00:00:00.000Z'),
+      }),
+    ]);
+  });
+
   test('combines multiple upcoming rotations into one non-duplicated replacement need', () => {
     const categories = [category('reserve', {
       name: 'Seasonal hand warmers',
@@ -259,6 +319,53 @@ describe('Emergency Stock v2 calculations', () => {
     expect(snapshot.domains.food.details.stapleServings).toBe(52.67);
     expect(snapshot.domains.food.details.mealCapacity).toBe(36);
     expect(snapshot.domains.food.days).toBe(4);
+    expect(snapshot.categories.find(entry => entry.id === 'dry-rice')).toMatchObject({
+      targetManagedAtDomain: true,
+      health: 'contributing',
+      percent: null,
+      ready: null,
+    });
+  });
+
+  test('includes rotations on the milestone date in the food purchase requirement', () => {
+    const fixture = coreFixture([
+      category('staples', {
+        name: 'Staple servings',
+        unit: 'servings',
+        preparednessDomain: 'food',
+        contributionPerUnit: { stapleServings: 1 },
+      }),
+      category('mains', {
+        name: 'Main dishes',
+        unit: 'servings',
+        preparednessDomain: 'food',
+        contributionPerUnit: { mainDishServings: 1 },
+        shoppingLeadDays: 7,
+      }),
+    ], [
+      item('staples-lot', 'staples', 58),
+      item('mains-stable', 'mains', 13),
+      item('mains-august', 'mains', 3, { expiresAt: new Date('2026-08-31T00:00:00.000Z') }),
+      item('mains-september', 'mains', 3, { expiresAt: new Date('2026-09-30T00:00:00.000Z') }),
+    ]);
+    fixture.items = fixture.items.filter(entry => entry.categoryId !== 'complete-food');
+
+    const snapshot = buildEmergencyStockSnapshot({ ...fixture, now: NOW });
+    const forecast = buildMilestoneForecast({ ...fixture, now: NOW });
+    const requirement = buildShoppingRequirements({ ...fixture, now: NOW })
+      .find(entry => entry.fingerprint === 'milestone:food');
+
+    expect(snapshot.domains.food.currentAmount).toBe(19);
+    expect(forecast).toMatchObject({ throughDateKey: '2026-09-30', dateKey: '2026-10-01' });
+    expect(forecast.domains.food.currentAmount).toBe(13);
+    expect(requirement).toMatchObject({
+      requiredAmount: 23,
+      currentAmount: 19,
+      forecastAmount: 13,
+      trigger: 'expiring-soon',
+      dueDate: new Date('2026-08-24T00:00:00.000Z'),
+    });
+    expect(requirement.reason).toContain('staple pool already covers this milestone');
   });
 
   test('allows mixed food lots to override an ambiguous category rule', () => {
@@ -284,6 +391,80 @@ describe('Emergency Stock v2 calculations', () => {
       noCookMeals: 9,
       mealCapacity: 9,
     });
+  });
+
+  test('surfaces unclassified food with a clearly separate possible impact', () => {
+    const fixture = coreFixture([
+      category('ambiguous-food', {
+        name: 'Nutritional supplement boxes',
+        unit: 'boxes',
+        preparednessDomain: 'food',
+      }),
+    ], [item('unknown-food', 'ambiguous-food', 10, { label: 'Check nutrition label' })]);
+    const snapshot = buildEmergencyStockSnapshot({ ...fixture, now: NOW });
+
+    expect(snapshot.domains.food.currentAmount).toBe(36);
+    expect(snapshot.unclassifiedFood).toMatchObject({
+      count: 1,
+      possibleMeals: 10,
+      possibleFoodDays: 5.1,
+    });
+    expect(snapshot.unclassifiedFood.items[0]).toMatchObject({
+      id: 'unknown-food',
+      categoryName: 'Nutritional supplement boxes',
+      possibleMeals: 10,
+    });
+  });
+
+  test('normalizes metric water units and flags implausible coverage', () => {
+    const safe = buildEmergencyStockSnapshot({
+      categories: [category('water-ml', {
+        name: 'Drinking water',
+        unit: 'mL',
+        preparednessDomain: 'water',
+      })],
+      items: [item('water-bottle', 'water-ml', 2000)],
+      now: NOW,
+    });
+    expect(safe.domains.water.currentAmount).toBe(2);
+    expect(safe.sanityWarnings).toEqual([]);
+
+    const unsafe = buildEmergencyStockSnapshot({
+      categories: [category('water-bad', {
+        name: 'Drinking water',
+        unit: 'mL',
+        preparednessDomain: 'water',
+        contributionPerUnit: { domainUnits: 1 },
+      })],
+      items: [item('water-stock', 'water-bad', 26000)],
+      now: NOW,
+    });
+    expect(unsafe.sanityWarnings).toEqual([
+      expect.objectContaining({ code: 'implausible-water-coverage', domain: 'water' }),
+    ]);
+  });
+
+  test('keeps fixed targets whole while duration-scaled targets follow the milestone', () => {
+    const snapshot = buildEmergencyStockSnapshot({
+      categories: [
+        category('foil', {
+          name: 'Aluminium foil',
+          officialBaseline: 1,
+          personalTarget: 1,
+          targetStrategy: 'fixed',
+        }),
+        category('masks', {
+          name: 'Masks',
+          officialBaseline: 3,
+          targetStrategy: 'duration-scaled',
+        }),
+      ],
+      items: [],
+      now: NOW,
+    });
+
+    expect(snapshot.categories.find(entry => entry.id === 'foil').target).toBe(1);
+    expect(snapshot.categories.find(entry => entry.id === 'masks').target).toBe(4);
   });
 
   test('uses Tokyo calendar boundaries for monthly milestones', () => {

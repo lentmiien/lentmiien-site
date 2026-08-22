@@ -1,6 +1,9 @@
 'use strict';
 
-const { buildShoppingRequirements } = require('./emergencyStockService');
+const {
+  buildEmergencyStockSnapshot,
+  buildShoppingRequirements,
+} = require('./emergencyStockService');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RESOLVED_ITEM_RETENTION_DAYS = 30;
@@ -104,6 +107,7 @@ async function runEmergencyStockMaintenance({
     existingRequirements,
     now,
   });
+  const snapshot = buildEmergencyStockSnapshot({ categories, items, profile: profile || {}, now });
   const cleanup = await cleanupResolvedItems({ ItemModel, now });
   const categoryIds = new Set(categories.map(category => String(category._id || category.id || '')));
   const orphanItems = items.filter(item => !categoryIds.has(String(item.categoryId || '')));
@@ -114,6 +118,19 @@ async function runEmergencyStockMaintenance({
       metadata: {
         count: orphanItems.length,
         itemIds: orphanItems.slice(0, 10).map(item => String(item._id || item.id || '')),
+      },
+    });
+  }
+
+  if (snapshot.sanityWarnings.length > 0 && logger?.warning) {
+    await logger.warning('Emergency stock readiness calculation failed a sanity check', {
+      category: 'emergency-stock',
+      metadata: {
+        warnings: snapshot.sanityWarnings.map(warning => ({
+          code: warning.code,
+          domain: warning.domain,
+          value: warning.value,
+        })),
       },
     });
   }
