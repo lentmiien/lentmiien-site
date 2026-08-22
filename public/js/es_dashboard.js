@@ -110,6 +110,7 @@ function setupCategoryPolicyForm() {
     'stapleServings',
     'mainDishServings',
     'produceServings',
+    'supplementalServings',
     'noCookMeals',
     'waterLitresRequired',
     'fuelMealsRequired',

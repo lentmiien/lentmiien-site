@@ -38,13 +38,15 @@ Core preparedness is the minimum measurable coverage across water, pooled food, 
 - Food days = food capacity / (household members × meals per person per day).
 - Critical-medication days = the least-covered applicable medicine, using its dose rate and dependent count.
 
-Food categories contribute to pools through `contributionPerUnit`; an individual mixed or ambiguous lot can use `contributionOverride`. Dry rice stored in kilograms defaults to 1,000 / 75 staple servings per unit. Complete meals, staples, mains/protein, produce, no-cook meals, preparation water, and fuel dependence remain visible separately. Lots with no staple, main/protein, complete-meal, or produce classification appear in an evidence queue and count as zero. The queue shows a clearly labelled upper-bound scenario if each inventory unit were later verified as one complete meal, and provides a lot-level classification action. The five-day menu exercise checks 15 meal slots and surfaces missing complementary foods, preparation water, and cooking-fuel dependence.
+Food categories contribute to pools through `contributionPerUnit`; an individual mixed or ambiguous lot can use `contributionOverride`. Dry rice stored in kilograms defaults to 1,000 / 75 staple servings per unit. Complete meals, staples, mains/protein, produce, supplemental servings, no-cook status, preparation water, and fuel dependence remain visible separately. A lot-level `foodRole` records whether food is complete, staple, main/protein, produce, or supplemental. Supplemental food such as a snack, nutritional supplement, or small side is classified and can record servings, but contributes zero to core meal capacity. Lots with no recognized role appear in an evidence queue and count as zero. The queue shows a clearly labelled upper-bound scenario if each inventory unit were later verified as one complete meal, and provides a lot-level classification action. The five-day menu exercise checks 15 meal slots and surfaces missing complementary foods, preparation water, and cooking-fuel dependence.
 
 Cooking fuel and backup power are shown as capabilities until household measurements support trustworthy duration models. N/A and undecided categories are excluded. Pooled domain categories are also excluded from the secondary category-target percentage because their readiness is already represented by the domain calculation. The percentage is never presented as overall preparedness.
 
 ## Unit safety
 
-An existing category unit cannot be renamed through the general policy form. The dedicated converter performs compatible metric conversions automatically (including mL/L and g/kg), or requires an explicit factor for an unknown unit. It updates inventory quantities, targets, rates, package sizes, milestone overrides, and inverse per-unit contributions in one MongoDB transaction. Known incompatible dimensions are rejected.
+An existing category unit cannot be renamed through the general policy form. The dedicated converter performs compatible metric conversions automatically (including mL/L and g/kg), or requires an explicit factor for an unknown unit. It updates inventory quantities, targets, rates, package sizes, milestone overrides, and inverse per-unit contributions in one MongoDB transaction when connected to a replica set or mongos. On standalone MongoDB it uses an optimistic category lock and a persisted rollback journal, restoring each converted inventory record if the operation cannot finish. Interrupted locks are shown on the dashboard and reported through production logging for recovery. Known incompatible dimensions are rejected.
+
+Expiry, rotation, milestone, and purchase-by values use their stored UTC `YYYY-MM-DD` component as the canonical date-only value. This keeps legacy 15:00Z records aligned with their displayed calendar date instead of moving a shopping deadline one day later when interpreted in Tokyo.
 
 The dashboard and daily maintenance task also flag any essential domain that calculates to more than 365 days. This does not change data; it is a sanity warning to inspect units, quantities, and contribution factors before relying on an implausible result.
 
@@ -63,6 +65,14 @@ npm run migrate:emergency-stock-v2:execute
 ```
 
 The migration adds missing v2 metadata without deleting or overwriting legacy `rotateDate` values. Implausibly distant dates on durable equipment, including the known year-3035 work-glove record, are preserved for audit history while the item becomes due for a real inspection.
+
+After executing the migration, run shopping maintenance once and verify that the calculated and persisted counts match:
+
+```bash
+npm run maintain:emergency-stock
+```
+
+The command uses the same maintenance path as the scheduler, resolves stale non-manual requirements, reactivates requirements that are needed again, performs the normal 30-day resolved-item cleanup, and exits with code 2 if its calculated and persisted active counts differ. Review the `emergency-stock` production log category after it completes.
 
 ## Review cycles
 

@@ -54,4 +54,76 @@ describe('Emergency Stock maintenance', () => {
     expect(RequirementModel.updateOne.mock.calls[0][0]).toEqual({ fingerprint: 'rolling:paper' });
     expect(RequirementModel.updateOne.mock.calls[0][1].$set).not.toHaveProperty('status');
   });
+
+  test('reactivates a resolved requirement and resolves stale requirements without conflicting status updates', async () => {
+    const RequirementModel = {
+      updateOne: jest.fn().mockResolvedValue({ matchedCount: 1 }),
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 2 }),
+    };
+    const categories = [{
+      _id: 'masks',
+      name: 'Masks',
+      unit: 'packs',
+      managementMode: 'rolling',
+      preparednessDomain: 'other',
+      applicable: true,
+      emergencyFloor: 2,
+      reorderPoint: 2,
+      restockToAmount: 3,
+      officialBaseline: 3,
+      targetStrategy: 'fixed',
+    }, {
+      _id: 'menstrual',
+      name: 'Menstrual products (if applicable)',
+      unit: 'items',
+      managementMode: 'rolling',
+      preparednessDomain: 'other',
+      conditional: true,
+      applicabilityStatus: 'undecided',
+      applicable: false,
+      emergencyFloor: 40,
+      reorderPoint: 40,
+      restockToAmount: 40,
+      targetStrategy: 'fixed',
+    }];
+    const existingRequirements = [{
+      fingerprint: 'rolling:masks',
+      status: 'resolved',
+      resolvedAt: new Date('2026-08-01T00:00:00.000Z'),
+    }, {
+      fingerprint: 'rolling:menstrual',
+      status: 'needed',
+    }, {
+      fingerprint: 'rolling:skincare',
+      status: 'planned',
+    }];
+    const now = new Date('2026-08-22T00:00:00.000Z');
+
+    const result = await syncShoppingRequirements({
+      RequirementModel,
+      categories,
+      items: [{ _id: 'mask-lot', categoryId: 'masks', amount: 2, status: 'active' }],
+      existingRequirements,
+      now,
+    });
+
+    expect(result).toMatchObject({ active: 1, resolved: 2 });
+    expect(RequirementModel.updateOne).toHaveBeenCalledWith(
+      { fingerprint: 'rolling:masks' },
+      {
+        $set: expect.objectContaining({ status: 'needed' }),
+        $unset: { resolvedAt: 1, plannedAt: 1, purchasedAt: 1 },
+      },
+      { upsert: true, runValidators: true },
+    );
+    const reactivation = RequirementModel.updateOne.mock.calls[0][1];
+    expect(reactivation).not.toHaveProperty('$setOnInsert');
+    expect(RequirementModel.updateMany).toHaveBeenCalledWith({
+      status: { $in: ['needed', 'planned', 'purchased'] },
+      trigger: { $ne: 'manual' },
+      fingerprint: { $nin: ['rolling:masks'] },
+    }, {
+      $set: { status: 'resolved', resolvedAt: now },
+    });
+  });
 });

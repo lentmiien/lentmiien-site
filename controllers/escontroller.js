@@ -7,6 +7,7 @@ const {
   ESProfile,
   ESShoppingRequirement,
   ESMenuEntry,
+  ESUnitConversion,
 } = require('../database');
 const logger = require('../utils/logger');
 const { parseOptionalDateOnly } = require('../utils/dateOnly');
@@ -42,6 +43,14 @@ function requiredText(value, fieldName) {
     throw error;
   }
   return text;
+}
+
+function assertUnitConversionUnlocked(category) {
+  if (category?.unitConversionLock?.operationId) {
+    const error = new Error('This category is locked by an unfinished unit conversion. Recover that conversion before changing its stock.');
+    error.statusCode = 409;
+    throw error;
+  }
 }
 
 function optionalDate(value, fieldName) {
@@ -221,8 +230,9 @@ exports.edit_category = async (req, res) => {
         error.statusCode = 404;
         throw error;
       }
+      assertUnitConversionUnlocked(existingCategory);
       if (unitKey(existingCategory.unit) !== unitKey(unit)) {
-        const error = new RangeError('Use the transactional unit-conversion form to change an existing category unit.');
+        const error = new RangeError('Use the guarded unit-conversion form to change an existing category unit.');
         error.statusCode = 400;
         throw error;
       }
@@ -234,6 +244,7 @@ exports.edit_category = async (req, res) => {
       stapleServings: optionalNumber(body.stapleServings, 'Staple servings per unit') || 0,
       mainDishServings: optionalNumber(body.mainDishServings, 'Main-dish servings per unit') || 0,
       produceServings: optionalNumber(body.produceServings, 'Produce servings per unit') || 0,
+      supplementalServings: optionalNumber(body.supplementalServings, 'Supplemental servings per unit') || 0,
       noCookMeals: optionalNumber(body.noCookMeals, 'No-cook meals per unit') || 0,
       waterLitresRequired: optionalNumber(body.waterLitresRequired, 'Preparation water per unit') || 0,
       fuelMealsRequired: optionalNumber(body.fuelMealsRequired, 'Fuel-requiring meals per unit') || 0,
@@ -317,6 +328,7 @@ exports.add_item = async (req, res) => {
       error.statusCode = 404;
       throw error;
     }
+    assertUnitConversionUnlocked(categoryDocument);
     const category = normalizeCategory(categoryDocument);
     const actionDate = optionalDate(body.actionDate || body.rotateDate, 'Expiry or inspection date');
     if (category.managementMode === 'expiry-managed' && !actionDate) {
@@ -348,6 +360,7 @@ exports.add_item = async (req, res) => {
         staple: 'stapleServings',
         main: 'mainDishServings',
         produce: 'produceServings',
+        supplemental: 'supplementalServings',
       };
       const contributionField = contributionFields[foodContributionType];
       if (!contributionField) {
@@ -367,6 +380,7 @@ exports.add_item = async (req, res) => {
         waterLitresRequired: optionalNumber(body.foodWaterLitresRequired, 'Preparation water per inventory unit') || 0,
         fuelMealsRequired: body.foodRequiresFuel === 'on' || body.foodRequiresFuel === 'true' ? servingsPerUnit : 0,
       };
+      itemData.foodRole = foodContributionType;
     }
     if (category.managementMode === 'durable') {
       itemData.inspectionDueAt = actionDate || addUtcMonths(now, category.inspectionIntervalMonths);
@@ -398,6 +412,8 @@ exports.adjust_item = async (req, res) => {
       error.statusCode = 404;
       throw error;
     }
+    const categoryDocument = await ESCategory.findById(item.categoryId).lean();
+    assertUnitConversionUnlocked(categoryDocument);
     const now = new Date();
     item.amount = Math.max(0, Number(item.amount || 0) + delta);
     item.quantityUpdatedAt = now;
@@ -424,6 +440,14 @@ exports.resolve_item = async (req, res) => {
       throw error;
     }
     const now = new Date();
+    const existingItem = await ESItem.findById(itemId).lean();
+    if (!existingItem || (existingItem.status && existingItem.status !== 'active')) {
+      const error = new Error('Active stock item not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    const categoryDocument = await ESCategory.findById(existingItem.categoryId).lean();
+    assertUnitConversionUnlocked(categoryDocument);
     const item = await ESItem.findOneAndUpdate(
       { _id: itemId, status: { $in: ['active', null] } },
       {
@@ -457,6 +481,7 @@ exports.inspect_item = async (req, res) => {
       throw error;
     }
     const categoryDocument = await ESCategory.findById(item.categoryId).lean();
+    assertUnitConversionUnlocked(categoryDocument);
     const category = normalizeCategory(categoryDocument || {});
     if (category.managementMode !== 'durable') {
       const error = new RangeError('Only durable equipment can be inspected.');
@@ -480,6 +505,7 @@ exports.review_stock = async (_req, res) => {
   try {
     const now = new Date();
     await ESCategory.updateMany({
+      unitConversionLock: { $exists: false },
       $or: [
         { applicabilityStatus: 'applicable' },
         {
@@ -510,6 +536,13 @@ exports.set_applicability = async (req, res) => {
       error.statusCode = 400;
       throw error;
     }
+    const existingCategory = await ESCategory.findById(categoryId).lean();
+    if (!existingCategory) {
+      const error = new Error('Category not found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    assertUnitConversionUnlocked(existingCategory);
     const category = await ESCategory.findByIdAndUpdate(categoryId, {
       $set: {
         applicabilityStatus,
@@ -537,10 +570,11 @@ exports.classify_food_item = async (req, res) => {
       staple: 'stapleServings',
       main: 'mainDishServings',
       produce: 'produceServings',
+      supplemental: 'supplementalServings',
     };
     const contributionField = contributionFields[contributionType];
     if (!contributionField) {
-      const error = new RangeError('Choose complete meal, staple, main/protein, or produce.');
+      const error = new RangeError('Choose complete meal, staple, main/protein, produce, or supplemental food.');
       error.statusCode = 400;
       throw error;
     }
@@ -561,6 +595,7 @@ exports.classify_food_item = async (req, res) => {
       throw error;
     }
     const categoryDocument = await ESCategory.findById(item.categoryId).lean();
+    assertUnitConversionUnlocked(categoryDocument);
     const category = normalizeCategory(categoryDocument || {});
     if (category.preparednessDomain !== 'food') {
       const error = new RangeError('Only food-domain inventory can receive a food classification.');
@@ -581,7 +616,7 @@ exports.classify_food_item = async (req, res) => {
         : 0,
     };
     const updatedItem = await ESItem.findByIdAndUpdate(itemId, {
-      $set: { contributionOverride },
+      $set: { contributionOverride, foodRole: contributionType },
     }, { new: true, runValidators: true });
     if (!updatedItem) {
       const error = new Error('Active food item not found.');
@@ -601,6 +636,8 @@ exports.convert_unit = async (req, res) => {
       CategoryModel: ESCategory,
       ItemModel: ESItem,
       connection: mongoose.connection,
+      JournalModel: ESUnitConversion,
+      logger,
       categoryId: requiredText(req.body?.category_id, 'Category'),
       newUnit: requiredText(req.body?.newUnit, 'New unit'),
       expectedCurrentUnit: requiredText(req.body?.currentUnit, 'Current unit'),

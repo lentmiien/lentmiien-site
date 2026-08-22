@@ -69,6 +69,8 @@ block content
                         span.es-card__meta Resolved #{formatDate(item.resolvedAt)}
                       if item.notes
                         span.es-card__meta= item.notes
+                      if item.foodRole
+                        span.es-card__meta Food role · #{item.foodRole === 'supplemental' ? 'snack / supplement / small side' : statusText(item.foodRole)}
                       if item.contributionOverride
                         - const contributions = Object.entries(item.contributionOverride).filter(entry => Number(entry[1]) > 0).map(entry => `${statusText(entry[0])}: ${formatAmount(entry[1])}`)
                         if contributions.length

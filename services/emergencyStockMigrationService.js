@@ -12,6 +12,15 @@ function validDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function inferItemFoodRole(contribution = {}) {
+  if (Number(contribution.completeMeals) > 0) return 'complete';
+  if (Number(contribution.stapleServings) > 0) return 'staple';
+  if (Number(contribution.mainDishServings) > 0) return 'main';
+  if (Number(contribution.produceServings) > 0) return 'produce';
+  if (Number(contribution.supplementalServings) > 0) return 'supplemental';
+  return null;
+}
+
 function buildCategoryMigration(categoryInput) {
   const category = asPlain(categoryInput);
   return {
@@ -42,6 +51,10 @@ function buildItemMigration(itemInput, categoryInput, now = new Date()) {
   if (mode !== 'durable' && legacyDate && !item.expiresAt) {
     fields.expiresAt = legacyDate;
   }
+  if (!item.foodRole) {
+    const foodRole = inferItemFoodRole(item.contributionOverride);
+    if (foodRole) fields.foodRole = foodRole;
+  }
 
   return {
     id: String(item._id || item.id || ''),
@@ -69,4 +82,5 @@ module.exports = {
   buildCategoryMigration,
   buildEmergencyStockMigrationPlan,
   buildItemMigration,
+  inferItemFoodRole,
 };

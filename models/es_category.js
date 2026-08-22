@@ -6,6 +6,7 @@ const contributionSchema = new mongoose.Schema({
   stapleServings: { type: Number, min: 0, default: 0 },
   mainDishServings: { type: Number, min: 0, default: 0 },
   produceServings: { type: Number, min: 0, default: 0 },
+  supplementalServings: { type: Number, min: 0, default: 0 },
   noCookMeals: { type: Number, min: 0, default: 0 },
   waterLitresRequired: { type: Number, min: 0, default: 0 },
   fuelMealsRequired: { type: Number, min: 0, default: 0 },
@@ -21,6 +22,13 @@ const sourceSchema = new mongoose.Schema({
   url: { type: String, trim: true },
   sourceDate: { type: Date },
   lastReviewedAt: { type: Date },
+}, { _id: false });
+
+const unitConversionLockSchema = new mongoose.Schema({
+  operationId: { type: String, required: true },
+  fromUnit: { type: String, required: true },
+  toUnit: { type: String, required: true },
+  startedAt: { type: Date, required: true },
 }, { _id: false });
 
 const esCategorySchema = new mongoose.Schema({
@@ -81,6 +89,7 @@ const esCategorySchema = new mongoose.Schema({
 
   source: { type: sourceSchema, default: undefined },
   recommendationReviewedAt: { type: Date },
+  unitConversionLock: { type: unitConversionLockSchema, default: undefined },
 }, { timestamps: true });
 
 esCategorySchema.index({ managementMode: 1, applicabilityStatus: 1 });

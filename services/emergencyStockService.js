@@ -16,13 +16,16 @@ const FOOD_CLASSIFICATION_KEYS = Object.freeze([
   'stapleServings',
   'mainDishServings',
   'produceServings',
+  'supplementalServings',
 ]);
+const FOOD_ROLES = Object.freeze(['complete', 'staple', 'main', 'produce', 'supplemental']);
 const CONTRIBUTION_KEYS = [
   'domainUnits',
   'completeMeals',
   'stapleServings',
   'mainDishServings',
   'produceServings',
+  'supplementalServings',
   'noCookMeals',
   'waterLitresRequired',
   'fuelMealsRequired',
@@ -174,6 +177,16 @@ function contributionValues(rawInput = {}) {
   return Object.fromEntries(CONTRIBUTION_KEYS.map(key => [key, finiteNumber(raw[key])]));
 }
 
+function inferFoodRole(contributionInput = {}) {
+  const contribution = contributionValues(contributionInput);
+  if (contribution.completeMeals > 0) return 'complete';
+  if (contribution.stapleServings > 0) return 'staple';
+  if (contribution.mainDishServings > 0) return 'main';
+  if (contribution.produceServings > 0) return 'produce';
+  if (contribution.supplementalServings > 0) return 'supplemental';
+  return null;
+}
+
 function litresPerWaterUnit(unit) {
   const normalized = String(unit || '').trim().toLowerCase().replace(/[.\s_-]+/g, '');
   if (['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'].includes(normalized)) return 0.001;
@@ -287,6 +300,7 @@ function normalizeItem(itemInput) {
     id: String(item._id || item.id || ''),
     categoryId: String(item.categoryId || ''),
     amount: Math.max(0, finiteNumber(item.amount)),
+    foodRole: FOOD_ROLES.includes(item.foodRole) ? item.foodRole : null,
     status: item.status || 'active',
     expiresAt: validDate(item.expiresAt),
     inspectionDueAt: validDate(item.inspectionDueAt),
@@ -473,6 +487,7 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
     stapleServings: 0,
     mainDishServings: 0,
     produceServings: 0,
+    supplementalServings: 0,
     noCookMeals: 0,
     waterLitresRequired: 0,
     fuelMealsRequired: 0,
@@ -498,7 +513,8 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
           : contribution;
         const hasContribution = Object.values(itemContribution).some(value => value > 0);
         if (hasContribution) domains.food.measurable = true;
-        const hasFoodClassification = FOOD_CLASSIFICATION_KEYS
+        const foodRole = item.foodRole || inferFoodRole(itemContribution);
+        const hasFoodClassification = FOOD_ROLES.includes(foodRole) || FOOD_CLASSIFICATION_KEYS
           .some(key => itemContribution[key] > 0);
         if (!hasFoodClassification) {
           unclassifiedFoodItems.push({
@@ -632,6 +648,14 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
       message: `${domain.label} calculates to ${round(domain.days, 1)} days. Check category units, item quantities, and per-unit contributions before relying on this result.`,
     }));
   const applicabilityDecisions = summaries.filter(summary => summary.needsApplicabilityDecision);
+  const unitConversionIssues = summaries
+    .filter(summary => summary.unitConversionLock?.operationId)
+    .map(summary => ({
+      categoryId: summary.id,
+      categoryName: summary.name,
+      operationId: summary.unitConversionLock.operationId,
+      startedAt: validDate(summary.unitConversionLock.startedAt),
+    }));
   return {
     generatedAt: now,
     todayKey,
@@ -657,6 +681,7 @@ function buildEmergencyStockSnapshot({ categories = [], items = [], profile: pro
       due: applicabilityDecisions.length,
       categories: applicabilityDecisions,
     },
+    unitConversionIssues,
     unclassifiedFood: {
       items: unclassifiedFoodItems,
       count: unclassifiedFoodItems.length,
@@ -762,8 +787,13 @@ function purchaseDueDate(actionDate, shoppingLeadDays, snapshot) {
   const action = validDate(actionDate);
   if (!action) return dateFromKey(snapshot.todayKey);
   const leadDays = Math.max(0, Math.ceil(finiteNumber(shoppingLeadDays, 7)));
-  const planned = addCalendarDays(action, -leadDays, snapshot.profile.timeZone);
-  return dateKeyInTimeZone(planned, snapshot.profile.timeZone) < snapshot.todayKey
+  // Expiry and milestone values are date-only records. Their UTC YYYY-MM-DD
+  // component is the canonical calendar date, including legacy records stored
+  // at 15:00Z. Reinterpreting that timestamp in Tokyo can advance the action
+  // date and make the purchase deadline one day late.
+  const actionKey = dateOnlyKey(action);
+  const planned = new Date(Date.parse(`${actionKey}T00:00:00.000Z`) - leadDays * DAY_MS);
+  return dateOnlyKey(planned) < snapshot.todayKey
     ? dateFromKey(snapshot.todayKey)
     : planned;
 }

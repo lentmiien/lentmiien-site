@@ -98,6 +98,7 @@ const ESItem = require('./models/es_item');
 const ESProfile = require('./models/es_profile');
 const ESShoppingRequirement = require('./models/es_shopping_requirement');
 const ESMenuEntry = require('./models/es_menu_entry');
+const ESUnitConversion = require('./models/es_unit_conversion');
 // Receipt
 const Receipt = require('./models/receipt');
 const ReceiptMappingRule = require('./models/receipt_mapping_rule');
@@ -261,6 +262,7 @@ module.exports = {
   ESProfile,
   ESShoppingRequirement,
   ESMenuEntry,
+  ESUnitConversion,
   Receipt,
   ReceiptMappingRule,
   ProductDetails,

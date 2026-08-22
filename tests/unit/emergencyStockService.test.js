@@ -263,6 +263,30 @@ describe('Emergency Stock v2 calculations', () => {
     ]);
   });
 
+  test('treats legacy 15:00Z expiry timestamps as their stored date for purchase deadlines', () => {
+    const categories = [category('beverages', {
+      name: 'Beverages',
+      unit: 'bottles',
+      emergencyFloor: 2,
+      reorderPoint: 2,
+      restockToAmount: 3,
+      officialBaseline: 3,
+      targetStrategy: 'fixed',
+      shoppingLeadDays: 7,
+    })];
+    const items = [item('beverage-lot', 'beverages', 3, {
+      expiresAt: new Date('2026-08-31T15:00:00.000Z'),
+    })];
+
+    const requirement = buildShoppingRequirements({ categories, items, now: NOW })[0];
+
+    expect(requirement).toMatchObject({
+      fingerprint: 'rolling:beverages',
+      trigger: 'expiring-soon',
+      dueDate: new Date('2026-08-24T00:00:00.000Z'),
+    });
+  });
+
   test('combines multiple upcoming rotations into one non-duplicated replacement need', () => {
     const categories = [category('reserve', {
       name: 'Seasonal hand warmers',
@@ -414,6 +438,31 @@ describe('Emergency Stock v2 calculations', () => {
       categoryName: 'Nutritional supplement boxes',
       possibleMeals: 10,
     });
+  });
+
+  test('classifies supplemental food without adding it to core meal capacity', () => {
+    const fixture = coreFixture([
+      category('snacks', {
+        name: 'Cheese and protein bars',
+        unit: 'bars',
+        preparednessDomain: 'food',
+      }),
+    ], [item('snack-lot', 'snacks', 10, {
+      foodRole: 'supplemental',
+      contributionOverride: {
+        supplementalServings: 1,
+        noCookMeals: 1,
+      },
+    })]);
+    const snapshot = buildEmergencyStockSnapshot({ ...fixture, now: NOW });
+
+    expect(snapshot.domains.food.currentAmount).toBe(36);
+    expect(snapshot.domains.food.details).toMatchObject({
+      mealCapacity: 36,
+      supplementalServings: 10,
+      noCookMeals: 10,
+    });
+    expect(snapshot.unclassifiedFood).toMatchObject({ count: 0, possibleMeals: 0 });
   });
 
   test('normalizes metric water units and flags implausible coverage', () => {

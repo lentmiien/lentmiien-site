@@ -51,13 +51,12 @@ async function syncShoppingRequirements({
   await Promise.all(calculated.map(requirement => {
     const { status: _calculatedStatus, ...fields } = requirement;
     const prior = existingByFingerprint.get(requirement.fingerprint);
-    const update = {
-      $set: fields,
-      $setOnInsert: { status: 'needed' },
-    };
+    const update = { $set: fields };
     if (prior?.status === 'resolved') {
       update.$set.status = 'needed';
       update.$unset = { resolvedAt: 1, plannedAt: 1, purchasedAt: 1 };
+    } else if (!prior) {
+      update.$setOnInsert = { status: 'needed' };
     }
     return RequirementModel.updateOne(
       { fingerprint: requirement.fingerprint },
@@ -130,6 +129,19 @@ async function runEmergencyStockMaintenance({
           code: warning.code,
           domain: warning.domain,
           value: warning.value,
+        })),
+      },
+    });
+  }
+
+  if (snapshot.unitConversionIssues.length > 0 && logger?.error) {
+    await logger.error('Emergency stock has an interrupted unit conversion that requires recovery', {
+      category: 'emergency-stock',
+      metadata: {
+        conversions: snapshot.unitConversionIssues.map(issue => ({
+          categoryId: issue.categoryId,
+          operationId: issue.operationId,
+          startedAt: issue.startedAt,
         })),
       },
     });

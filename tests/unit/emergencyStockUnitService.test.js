@@ -97,12 +97,149 @@ describe('Emergency Stock unit conversion safeguards', () => {
     expect(ItemModel.bulkWrite).toHaveBeenCalledWith([
       expect.objectContaining({
         updateOne: expect.objectContaining({
-          filter: { _id: 'bottle' },
+          filter: { _id: 'bottle', categoryId: 'water' },
           update: { $set: expect.objectContaining({ amount: 2 }) },
         }),
       }),
     ], { ordered: true, session });
     expect(session.endSession).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ convertedItems: 1, factor: 0.001, toUnit: 'L' });
+    expect(result).toMatchObject({ convertedItems: 1, factor: 0.001, toUnit: 'L', mode: 'transaction' });
+  });
+
+  test('uses a persisted rollback journal on standalone MongoDB', async () => {
+    const category = {
+      _id: 'water',
+      unit: 'mL',
+      officialBaseline: 27000,
+      contributionPerUnit: { domainUnits: 0.001 },
+    };
+    const items = [{ _id: 'bottle', categoryId: 'water', amount: 2000 }];
+    const query = value => ({ lean: jest.fn().mockResolvedValue(value) });
+    const CategoryModel = {
+      findById: jest.fn(() => query(category)),
+      updateOne: jest.fn()
+        .mockResolvedValueOnce({ matchedCount: 1 })
+        .mockResolvedValueOnce({ matchedCount: 1 }),
+    };
+    const ItemModel = {
+      find: jest.fn(() => query(items)),
+      updateOne: jest.fn().mockResolvedValue({ matchedCount: 1 }),
+    };
+    const JournalModel = {
+      create: jest.fn().mockResolvedValue({}),
+      updateOne: jest.fn().mockResolvedValue({ matchedCount: 1 }),
+    };
+    const connection = {
+      db: {
+        admin: jest.fn(() => ({
+          command: jest.fn().mockResolvedValue({ isWritablePrimary: true }),
+        })),
+      },
+      startSession: jest.fn(),
+    };
+
+    const result = await convertCategoryUnit({
+      CategoryModel,
+      ItemModel,
+      JournalModel,
+      connection,
+      categoryId: 'water',
+      newUnit: 'L',
+      expectedCurrentUnit: 'mL',
+    });
+
+    expect(connection.startSession).not.toHaveBeenCalled();
+    expect(JournalModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      categoryId: 'water',
+      status: 'prepared',
+      fromUnit: 'mL',
+      toUnit: 'L',
+      itemSnapshots: items,
+    }));
+    expect(CategoryModel.updateOne).toHaveBeenNthCalledWith(1,
+      expect.objectContaining({
+        _id: 'water',
+        unit: 'mL',
+        unitConversionLock: { $exists: false },
+      }),
+      { $set: { unitConversionLock: expect.objectContaining({ fromUnit: 'mL', toUnit: 'L' }) } },
+      { runValidators: true, timestamps: false },
+    );
+    expect(result).toMatchObject({
+      convertedItems: 1,
+      factor: 0.001,
+      toUnit: 'L',
+      mode: 'guarded-rollback',
+      operationId: expect.any(String),
+    });
+  });
+
+  test('restores inventory and category values when a standalone conversion fails', async () => {
+    const category = {
+      _id: 'water',
+      unit: 'mL',
+      officialBaseline: 27000,
+      contributionPerUnit: { domainUnits: 0.001 },
+    };
+    const items = [{ _id: 'bottle', categoryId: 'water', amount: 2000 }];
+    const query = value => ({ lean: jest.fn().mockResolvedValue(value) });
+    const CategoryModel = {
+      findById: jest.fn(() => query(category)),
+      updateOne: jest.fn()
+        .mockResolvedValueOnce({ matchedCount: 1 })
+        .mockResolvedValueOnce({ matchedCount: 0 })
+        .mockResolvedValueOnce({ matchedCount: 1 }),
+    };
+    const ItemModel = {
+      find: jest.fn(() => query(items)),
+      updateOne: jest.fn().mockResolvedValue({ matchedCount: 1 }),
+    };
+    const JournalModel = {
+      create: jest.fn().mockResolvedValue({}),
+      updateOne: jest.fn().mockResolvedValue({ matchedCount: 1 }),
+    };
+    const logger = { warning: jest.fn(), error: jest.fn() };
+    const connection = {
+      db: {
+        admin: jest.fn(() => ({
+          command: jest.fn().mockResolvedValue({ isWritablePrimary: true }),
+        })),
+      },
+    };
+
+    await expect(convertCategoryUnit({
+      CategoryModel,
+      ItemModel,
+      JournalModel,
+      connection,
+      logger,
+      categoryId: 'water',
+      newUnit: 'L',
+      expectedCurrentUnit: 'mL',
+    })).rejects.toThrow('No conversion was retained');
+
+    expect(ItemModel.updateOne).toHaveBeenCalledTimes(2);
+    expect(ItemModel.updateOne).toHaveBeenNthCalledWith(1,
+      { _id: 'bottle', categoryId: 'water', amount: 2000 },
+      { $set: { amount: 2 } },
+      { runValidators: true },
+    );
+    expect(ItemModel.updateOne).toHaveBeenNthCalledWith(2,
+      { _id: 'bottle', categoryId: 'water', amount: 2 },
+      { $set: { amount: 2000 } },
+      { runValidators: true },
+    );
+    expect(CategoryModel.updateOne.mock.calls[2][1]).toEqual({
+      $unset: { unitConversionLock: 1 },
+    });
+    expect(JournalModel.updateOne).toHaveBeenCalledWith(
+      expect.any(Object),
+      { $set: expect.objectContaining({ status: 'rolled-back' }) },
+      { runValidators: true },
+    );
+    expect(logger.warning).toHaveBeenCalledWith(
+      'Emergency stock unit conversion failed and was rolled back',
+      expect.objectContaining({ category: 'emergency-stock' }),
+    );
   });
 });

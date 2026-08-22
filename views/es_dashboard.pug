@@ -28,6 +28,12 @@ block content
             p= warning.message
         a.es-link(href='#unit-conversion') Review units
 
+    if snapshot.unitConversionIssues.length
+      section.es-alert.es-alert--danger(role='alert')
+        div
+          strong Unit conversion recovery required
+          p #{snapshot.unitConversionIssues.map(issue => issue.categoryName).join(', ')} #{snapshot.unitConversionIssues.length === 1 ? 'has' : 'have'} a persisted conversion lock. Review the rollback journal before changing this stock.
+
     if snapshot.applicabilityReview.due
       section.es-alert.es-alert--warning
         div
@@ -104,11 +110,14 @@ block content
                     dt Main/protein
                     dd= formatAmount(domain.details.mainDishServings)
                   div
-                    dt No-cook meals
+                    dt No-cook servings
                     dd= formatAmount(domain.details.noCookMeals)
                   div
                     dt Produce servings
                     dd= formatAmount(domain.details.produceServings)
+                  div
+                    dt Supplemental servings
+                    dd= formatAmount(domain.details.supplementalServings)
                   div
                     dt Unclassified lots
                     dd= snapshot.unclassifiedFood.count
@@ -192,6 +201,7 @@ block content
                         option(value='main') Main / protein
                         option(value='staple') Staple
                         option(value='produce') Fruit / vegetable
+                        option(value='supplemental') Snack / supplement / small side
                     label
                       span Servings per #{item.categoryUnit}
                       input.form-control(type='number', name='foodServingsPerUnit', min='0.01', step='any', value='1', required)
@@ -386,6 +396,7 @@ block content
                 option(value='staple') Staple servings
                 option(value='main') Main / protein servings
                 option(value='produce') Fruit / vegetable servings
+                option(value='supplemental') Snack / supplement / small side
               label(for='foodServingsPerUnit') Servings per inventory unit
               input#foodServingsPerUnit.form-control(type='number', name='foodServingsPerUnit', min='0.01', step='any', value='1')
               label(for='foodWaterLitresRequired') Preparation water per unit (L)
@@ -524,7 +535,7 @@ block content
               div
                 label(for='unit') Unit
                 input#unit.form-control(type='text', name='unit', required)
-                p.es-field-hint Existing category units are changed with the transactional converter below.
+                p.es-field-hint Existing category units are changed with the guarded converter below.
               div
                 label(for='managementMode') Management mode
                 select#managementMode.form-select(name='managementMode', required)
@@ -591,7 +602,7 @@ block content
             input(type='hidden', name='rotationPeriodMonths', value='12')
             h3 Food and domain contribution per inventory unit
             .es-form-grid
-              each field in [{id:'domainUnits', label:'Domain units'}, {id:'completeMeals', label:'Complete meals'}, {id:'stapleServings', label:'Staple servings'}, {id:'mainDishServings', label:'Main/protein servings'}, {id:'produceServings', label:'Produce servings'}, {id:'noCookMeals', label:'No-cook meals'}, {id:'waterLitresRequired', label:'Preparation water (L)'}, {id:'fuelMealsRequired', label:'Meals needing fuel'}]
+              each field in [{id:'domainUnits', label:'Domain units'}, {id:'completeMeals', label:'Complete meals'}, {id:'stapleServings', label:'Staple servings'}, {id:'mainDishServings', label:'Main/protein servings'}, {id:'produceServings', label:'Produce servings'}, {id:'supplementalServings', label:'Supplemental servings (not core meals)'}, {id:'noCookMeals', label:'No-cook servings'}, {id:'waterLitresRequired', label:'Preparation water (L)'}, {id:'fuelMealsRequired', label:'Servings needing fuel'}]
                 div
                   label(for=field.id)= field.label
                   input.form-control(id=field.id, type='number', name=field.id, min='0', step='any')
@@ -625,11 +636,11 @@ block content
               span.es-eyebrow Unit safety
               strong Convert a category unit
           form#unit-conversion-form(action='/es/convert_unit', method='post')
-            p.es-card__meta This is the only way to change an existing unit. Inventory amounts, targets, rates, package sizes, milestone overrides, and per-unit contributions are converted together in one database transaction.
+            p.es-card__meta This is the only way to change an existing unit. Inventory amounts, targets, rates, package sizes, milestone overrides, and per-unit contributions are converted together. Replica sets use a transaction; standalone databases use a persisted rollback journal and category lock.
             label(for='conversionCategoryId') Category
             select#conversionCategoryId.form-select(name='category_id', required)
               each category in snapshot.categories
-                option(value=category.id, data-unit=category.unit)= `${category.name} · ${category.unit}`
+                option(value=category.id, data-unit=category.unit, disabled=Boolean(category.unitConversionLock))= `${category.name} · ${category.unit}${category.unitConversionLock ? ' · recovery required' : ''}`
             .es-form-grid
               div
                 label(for='currentUnit') Current unit

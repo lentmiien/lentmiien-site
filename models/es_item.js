@@ -6,6 +6,7 @@ const contributionSchema = new mongoose.Schema({
   stapleServings: { type: Number, min: 0, default: 0 },
   mainDishServings: { type: Number, min: 0, default: 0 },
   produceServings: { type: Number, min: 0, default: 0 },
+  supplementalServings: { type: Number, min: 0, default: 0 },
   noCookMeals: { type: Number, min: 0, default: 0 },
   waterLitresRequired: { type: Number, min: 0, default: 0 },
   fuelMealsRequired: { type: Number, min: 0, default: 0 },
@@ -25,6 +26,10 @@ const esItemSchema = new mongoose.Schema({
   opened: { type: Boolean, default: false },
   packageSize: { type: Number, min: 0 },
   notes: { type: String, trim: true },
+  foodRole: {
+    type: String,
+    enum: ['complete', 'staple', 'main', 'produce', 'supplemental'],
+  },
   contributionOverride: { type: contributionSchema, default: undefined },
   status: {
     type: String,

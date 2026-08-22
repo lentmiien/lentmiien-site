@@ -48,4 +48,34 @@ describe('Emergency Stock v2 migration planning', () => {
       targetStrategy: 'fixed',
     });
   });
+
+  test('persists the dedicated role for already-classified food lots', () => {
+    const plan = buildEmergencyStockMigrationPlan({
+      categories: [{
+        _id: 'snacks',
+        name: 'Snacks',
+        unit: 'packs',
+        managementMode: 'rolling',
+        preparednessDomain: 'food',
+        applicabilityStatus: 'applicable',
+        targetStrategy: 'duration-scaled',
+      }],
+      items: [{
+        _id: 'snack-lot',
+        categoryId: 'snacks',
+        amount: 5,
+        status: 'active',
+        quantityUpdatedAt: new Date('2026-08-20T00:00:00.000Z'),
+        contributionOverride: { supplementalServings: 1 },
+      }],
+      now: new Date('2026-08-22T00:00:00.000Z'),
+    });
+
+    expect(plan.itemUpdates).toEqual([
+      expect.objectContaining({
+        id: 'snack-lot',
+        fields: { foodRole: 'supplemental' },
+      }),
+    ]);
+  });
 });
