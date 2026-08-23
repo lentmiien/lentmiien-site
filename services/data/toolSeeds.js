@@ -335,4 +335,118 @@ module.exports = [
       storesRecordsIn: 'Task',
     },
   },
+  {
+    name: 'set_pushover_reminder',
+    displayName: 'Set Pushover Reminder',
+    description: 'Schedule a pending Pushover reminder for the current user.',
+    enabled: true,
+    handlerKey: 'pushoverReminder.set',
+    sourcePath: 'services/pushoverReminderToolService.js',
+    tags: ['pushover', 'reminder', 'create'],
+    toolDefinition: {
+      type: 'function',
+      name: 'set_pushover_reminder',
+      description: 'Schedule a one-time Pushover reminder for the current user. Use an ISO 8601 datetime with an explicit timezone for scheduled_for.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: {
+            type: 'string',
+            maxLength: 250,
+            description: 'Optional short notification title. Defaults to Reminder.',
+          },
+          message: {
+            type: 'string',
+            maxLength: 1024,
+            description: 'Reminder notification text.',
+          },
+          scheduled_for: {
+            type: 'string',
+            description: 'Future ISO 8601 datetime, preferably including a timezone offset, when the notification should be sent.',
+          },
+          priority: {
+            type: 'integer',
+            enum: [-2, -1, 0, 1, 2],
+            default: 0,
+            description: 'Pushover priority: -2 lowest, -1 low, 0 normal, 1 high, or 2 emergency.',
+          },
+        },
+        required: ['message', 'scheduled_for'],
+      },
+      strict: false,
+    },
+    metadata: {
+      userFromToolContext: true,
+      storesRecordsIn: 'PushoverReminder',
+      reminderState: 'pending',
+    },
+  },
+  {
+    name: 'fetch_pushover_reminders',
+    displayName: 'Fetch Pushover Reminders',
+    description: 'Fetch pending Pushover reminders for the current user in a time period, including their deletion IDs.',
+    enabled: true,
+    handlerKey: 'pushoverReminder.fetch',
+    sourcePath: 'services/pushoverReminderToolService.js',
+    tags: ['pushover', 'reminder', 'read'],
+    toolDefinition: {
+      type: 'function',
+      name: 'fetch_pushover_reminders',
+      description: 'Fetch pending Pushover reminders scheduled in an inclusive time window. Each reminder includes the id required by delete_pushover_reminder.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          from: {
+            type: 'string',
+            description: 'Inclusive start of the time window as an ISO 8601 datetime with a timezone.',
+          },
+          to: {
+            type: 'string',
+            description: 'Inclusive end of the time window as an ISO 8601 datetime with a timezone.',
+          },
+        },
+        required: ['from', 'to'],
+      },
+      strict: false,
+    },
+    metadata: {
+      userFromToolContext: true,
+      pendingOnly: true,
+      returnsDeletionIds: true,
+      storesRecordsIn: 'PushoverReminder',
+    },
+  },
+  {
+    name: 'delete_pushover_reminder',
+    displayName: 'Delete Pushover Reminder',
+    description: 'Delete one pending Pushover reminder for the current user by reminder ID.',
+    enabled: true,
+    handlerKey: 'pushoverReminder.delete',
+    sourcePath: 'services/pushoverReminderToolService.js',
+    tags: ['pushover', 'reminder', 'delete'],
+    toolDefinition: {
+      type: 'function',
+      name: 'delete_pushover_reminder',
+      description: 'Delete one pending Pushover reminder. Normally call fetch_pushover_reminders first, then pass the returned reminder id as reminder_id.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          reminder_id: {
+            type: 'string',
+            description: 'The exact reminder id returned by fetch_pushover_reminders.',
+          },
+        },
+        required: ['reminder_id'],
+      },
+      strict: false,
+    },
+    metadata: {
+      userFromToolContext: true,
+      pendingOnly: true,
+      storesRecordsIn: 'PushoverReminder',
+    },
+  },
 ];

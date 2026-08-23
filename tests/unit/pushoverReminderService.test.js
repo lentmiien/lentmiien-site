@@ -53,6 +53,28 @@ describe('Pushover reminder service', () => {
       .toBe('2028-02-29T12:15:00.000Z');
   });
 
+  test('lists pending reminders in an inclusive scheduled time window', async () => {
+    const exec = jest.fn().mockResolvedValue([{ _id: 'reminder-1' }]);
+    const lean = jest.fn(() => ({ exec }));
+    const sort = jest.fn(() => ({ lean }));
+    const ReminderModel = {
+      find: jest.fn(() => ({ sort })),
+    };
+    const service = new PushoverReminderService({ ReminderModel });
+    const from = new Date('2026-08-24T00:00:00.000Z');
+    const to = new Date('2026-08-31T23:59:59.999Z');
+
+    await expect(service.listUpcomingInRange('Lennart', from, to))
+      .resolves.toEqual([{ _id: 'reminder-1' }]);
+    expect(ReminderModel.find).toHaveBeenCalledWith({
+      user: 'Lennart',
+      done: false,
+      deliveryStatus: 'pending',
+      scheduledFor: { $gte: from, $lte: to },
+    });
+    expect(sort).toHaveBeenCalledWith({ scheduledFor: 1, createdAt: 1 });
+  });
+
   test('claims a due reminder before sending and records successful delivery', async () => {
     const reminder = {
       _id: 'reminder-1',

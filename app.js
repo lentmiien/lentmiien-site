@@ -135,6 +135,7 @@ const {
 } = require('./services/batchService');
 const audioWorkflowService = require('./services/audioWorkflowInstance');
 const codexQueueWorker = require('./services/codexQueueWorker');
+const { seedMissingToolManagerEntries } = require('./services/toolManagerStartupService');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
 
@@ -699,6 +700,7 @@ scheduleEmbeddingQueue();
 scheduleCodexLogReview();
 scheduleEmergencyStockMaintenance();
 schedulePushoverReminders();
+seedMissingToolManagerEntries();
 validateBatchDefaultModelSetting().catch((error) => {
   logger.warning('Unable to validate the batch default model setting at startup', {
     category: 'batch',

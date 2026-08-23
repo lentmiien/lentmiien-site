@@ -139,6 +139,21 @@ class PushoverReminderService {
       .exec();
   }
 
+  async listUpcomingInRange(user, from, to) {
+    return this.ReminderModel.find({
+      user,
+      done: false,
+      deliveryStatus: 'pending',
+      scheduledFor: {
+        $gte: from,
+        $lte: to,
+      },
+    })
+      .sort({ scheduledFor: 1, createdAt: 1 })
+      .lean()
+      .exec();
+  }
+
   async listHistory(user) {
     return this.ReminderModel.find({ user, done: true })
       .sort({ triggeredAt: -1, scheduledFor: -1 })

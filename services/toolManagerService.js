@@ -408,6 +408,35 @@ class ToolManagerService {
     return summary;
   }
 
+  async seedMissingDefaultTools({ actor = 'system' } = {}) {
+    const summary = {
+      matchedCount: 0,
+      upsertedCount: 0,
+      names: [],
+    };
+
+    for (const seed of this.seeds) {
+      const normalized = normalizeToolInput(seed, actor);
+      const result = await this.toolModel.updateOne(
+        { name: normalized.name },
+        {
+          $setOnInsert: {
+            ...normalized,
+            createdBy: actor,
+            lastSeededAt: new Date(),
+          },
+        },
+        { upsert: true, runValidators: true }
+      ).exec();
+
+      summary.matchedCount += result.matchedCount || 0;
+      summary.upsertedCount += result.upsertedCount || 0;
+      summary.names.push(normalized.name);
+    }
+
+    return summary;
+  }
+
   async executeTool(name, args = {}, context = {}) {
     const tool = await this.getTool(name, { includeDisabled: false });
     if (!tool) {

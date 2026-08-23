@@ -1,5 +1,6 @@
 let gptImageToolService;
 let knowledgeToolService;
+let pushoverReminderToolService;
 let scheduleTaskToolService;
 
 function getGptImageToolService() {
@@ -26,12 +27,29 @@ function getScheduleTaskToolService() {
   return scheduleTaskToolService;
 }
 
+function getPushoverReminderToolService() {
+  if (!pushoverReminderToolService) {
+    const PushoverReminderToolService = require('./pushoverReminderToolService');
+    pushoverReminderToolService = new PushoverReminderToolService();
+  }
+  return pushoverReminderToolService;
+}
+
 module.exports = {
   'gptImage.generate': {
     execute: (args, context) => getGptImageToolService().execute(args, context),
   },
   'knowledge.create': {
     execute: (args, context) => getKnowledgeToolService().createKnowledge(args, context),
+  },
+  'pushoverReminder.set': {
+    execute: (args, context) => getPushoverReminderToolService().setReminder(args, context),
+  },
+  'pushoverReminder.fetch': {
+    execute: (args, context) => getPushoverReminderToolService().fetchReminders(args, context),
+  },
+  'pushoverReminder.delete': {
+    execute: (args, context) => getPushoverReminderToolService().deleteReminder(args, context),
   },
   'scheduleTask.createTodo': {
     execute: (args, context) => getScheduleTaskToolService().createTodo(args, context),
