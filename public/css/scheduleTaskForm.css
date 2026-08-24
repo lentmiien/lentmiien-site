@@ -1,0 +1,162 @@
+.schedule-task-form-page {
+  max-width: 980px;
+  color: var(--text);
+}
+
+.schedule-task-form-hero,
+.schedule-task-form-panel {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface-1);
+}
+
+.schedule-task-form-hero {
+  margin-bottom: 1rem;
+  padding: 1.5rem;
+  background:
+    linear-gradient(135deg, var(--brand-tint), var(--accent-tint)),
+    var(--surface-1);
+}
+
+.schedule-task-form-hero h1,
+.schedule-task-form-panel h2,
+.task-reminder-row h5 {
+  color: var(--text);
+}
+
+.schedule-task-form-hero h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 4vw, 2.35rem);
+}
+
+.schedule-task-form-hero > p:last-child,
+.task-reminders-copy,
+.task-reminder-row-help {
+  color: var(--text-secondary);
+}
+
+.schedule-task-form-hero > p:last-child {
+  margin: 0.55rem 0 0;
+}
+
+.schedule-task-form-kicker {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.schedule-task-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.schedule-task-form-panel {
+  padding: 1.35rem;
+  box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.16);
+}
+
+.schedule-task-form-panel h2 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+}
+
+.task-reminders-heading,
+.task-reminder-row-heading,
+.schedule-task-form-actions {
+  display: flex;
+  align-items: center;
+}
+
+.task-reminders-heading,
+.task-reminder-row-heading {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.task-reminders-heading h2 {
+  margin-bottom: 0;
+}
+
+.task-reminder-count {
+  display: inline-flex;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.task-reminders-copy {
+  margin: 0.8rem 0 1rem;
+}
+
+.task-reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.task-reminder-row {
+  padding: 1rem;
+  border: 1px solid var(--divider);
+  border-left: 3px solid var(--accent);
+  border-radius: 0.75rem;
+  background:
+    linear-gradient(90deg, var(--accent-tint), transparent 38%),
+    var(--surface-2);
+}
+
+.task-reminder-row-heading {
+  margin-bottom: 0.85rem;
+}
+
+.task-reminder-row h5 {
+  font-size: 1rem;
+}
+
+.task-reminder-row-help {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.task-reminder-date-warning {
+  margin-bottom: 1rem;
+}
+
+.schedule-task-form-actions {
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.schedule-task-form .form-control,
+.schedule-task-form .form-select {
+  border-color: var(--border);
+  color: var(--text);
+  background-color: var(--surface-2);
+}
+
+.schedule-task-form .form-control:focus,
+.schedule-task-form .form-select:focus,
+.schedule-task-form .btn:focus-visible {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 0.2rem var(--accent-tint);
+}
+
+@media (max-width: 640px) {
+  .task-reminders-heading,
+  .task-reminder-row-heading {
+    align-items: flex-start;
+  }
+
+  .schedule-task-form-actions,
+  .schedule-task-form-actions .btn {
+    width: 100%;
+  }
+}

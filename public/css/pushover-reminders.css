@@ -72,6 +72,7 @@
 
 .reminder-section-heading,
 .reminder-card-heading,
+.reminder-card-badges,
 .reminder-card,
 .reminder-card-actions,
 .reminder-history-meta {
@@ -87,6 +88,7 @@
 
 .reminder-count,
 .reminder-priority,
+.reminder-task-source,
 .reminder-delivery-status {
   display: inline-flex;
   align-items: center;
@@ -120,6 +122,13 @@
   background: var(--surface-2);
 }
 
+.reminder-card--task {
+  border-left-color: var(--accent);
+  background:
+    linear-gradient(90deg, var(--accent-tint), transparent 42%),
+    var(--surface-2);
+}
+
 .reminder-card-main {
   min-width: 0;
   flex: 1 1 auto;
@@ -131,6 +140,13 @@
   gap: 0.75rem;
 }
 
+.reminder-card-badges {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
 .reminder-card h3 {
   font-size: 1.05rem;
 }
@@ -140,6 +156,13 @@
   padding: 0.2rem 0.55rem;
   color: var(--accent);
   background: var(--accent-tint);
+}
+
+.reminder-task-source {
+  padding: 0.2rem 0.55rem;
+  border-color: rgba(255, 106, 31, 0.4);
+  color: var(--brand-hover);
+  background: var(--brand-tint);
 }
 
 .reminder-delivery-status.is-sent {
@@ -234,6 +257,10 @@
   .reminder-card,
   .reminder-card-heading {
     flex-direction: column;
+  }
+
+  .reminder-card-badges {
+    justify-content: flex-start;
   }
 
   .reminder-nav,

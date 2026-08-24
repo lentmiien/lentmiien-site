@@ -1,28 +1,156 @@
 extends ../layout
 
-block content
-  .container.mt-4
-    h3 New Task
-    form(method="post", action="/scheduleTask/new/task")
-      .mb-3
-        label.form-label(for="title") Title
-        input.form-control(type="text", name="title", required)
-      .mb-3
-        label.form-label(for="description") Description
-        textarea.form-control(name="description")
-      .mb-3
-        label.form-label(for="type") Type
-        select.form-select(name="type")
-          option(value="todo") ToDo
-          option(value="tobuy") ToBuy
-      .mb-3
-        label.form-label(for="start") Start (Earliest Show)
-        input.form-control(type="datetime-local", name="start", value=prefillStart)
-      .mb-3
-        label.form-label(for="end") Deadline
-        input.form-control(type="datetime-local", name="end")
-      button.btn.btn-success(type="submit") Save
-      a.btn.btn-secondary(href="/scheduleTask/calendar") Cancel
+mixin taskReminderRow(reminder)
+  article.task-reminder-row(data-task-reminder-row)
+    .task-reminder-row-heading
+      h5.mb-0
+        | Pushover reminder #
+        span(data-task-reminder-number)
+      button.btn.btn-sm.btn-outline-danger(
+        type='button',
+        data-remove-task-reminder,
+        aria-label='Remove this Pushover reminder'
+      ) Remove
+    .row.g-3
+      .col-12.col-md-6
+        label.form-label Anchor
+        select.form-select(
+          name='reminder_anchor',
+          required,
+          data-reminder-anchor,
+          aria-label='Reminder anchor'
+        )
+          option(value='start', selected=reminder.anchor === 'start') Task start
+          option(value='deadline', selected=reminder.anchor === 'deadline') Deadline
+      .col-12.col-md-6
+        label.form-label Priority
+        select.form-select(name='reminder_priority', required, aria-label='Reminder priority')
+          each option in priorityOptions
+            option(
+              value=option.value,
+              selected=Number(reminder.priority) === option.value
+            )= `${option.label} (${option.value})`
+      .col-4
+        label.form-label Days before
+        input.form-control(
+          type='number',
+          name='reminder_days',
+          value=reminder.days,
+          min='0',
+          step='1',
+          required,
+          aria-label='Days before reminder anchor'
+        )
+      .col-4
+        label.form-label Hours before
+        input.form-control(
+          type='number',
+          name='reminder_hours',
+          value=reminder.hours,
+          min='0',
+          max='23',
+          step='1',
+          required,
+          aria-label='Hours before reminder anchor'
+        )
+      .col-4
+        label.form-label Minutes before
+        input.form-control(
+          type='number',
+          name='reminder_minutes',
+          value=reminder.minutes,
+          min='0',
+          max='59',
+          step='1',
+          required,
+          aria-label='Minutes before reminder anchor'
+        )
+    p.task-reminder-row-help.mb-0(data-reminder-row-help)
 
-  if error
-    .alert.alert-danger= error
+block styles
+  link(rel='stylesheet', href='/css/scheduleTaskForm.css')
+
+block content
+  main.container.py-4.schedule-task-form-page
+    header.schedule-task-form-hero
+      p.schedule-task-form-kicker Upcoming tasks
+      h1 New task
+      p Create a todo or to-buy task, with up to #{maxTaskReminders} optional Pushover reminders.
+
+    if error
+      .alert.alert-danger(role='alert')= error
+
+    form.schedule-task-form(
+      method='post',
+      action='/scheduleTask/new/task',
+      data-task-form,
+      data-max-reminders=maxTaskReminders
+    )
+      section.schedule-task-form-panel(aria-labelledby='task-details-title')
+        h2#task-details-title Task details
+        .mb-3
+          label.form-label(for='title') Title
+          input#title.form-control(type='text', name='title', value=form.title, required)
+        .mb-3
+          label.form-label(for='description') Description
+          textarea#description.form-control(name='description', rows='4')= form.description
+        .mb-3
+          label.form-label(for='type') Type
+          select#type.form-select(name='type')
+            option(value='todo', selected=form.type === 'todo') Todo
+            option(value='tobuy', selected=form.type === 'tobuy') To buy
+        .row.g-3
+          .col-12.col-md-6
+            label.form-label(for='start') Start (earliest show)
+            input#start.form-control(
+              type='datetime-local',
+              name='start',
+              value=form.start,
+              step='60',
+              data-task-start
+            )
+          .col-12.col-md-6
+            label.form-label(for='end') Deadline
+            input#end.form-control(
+              type='datetime-local',
+              name='end',
+              value=form.end,
+              step='60',
+              data-task-deadline
+            )
+
+      section.schedule-task-form-panel.task-reminders-panel(aria-labelledby='task-reminders-title')
+        .task-reminders-heading
+          div
+            p.schedule-task-form-kicker Optional notifications
+            h2#task-reminders-title Pushover reminders
+          span.task-reminder-count(data-task-reminder-count, aria-live='polite')
+        p.task-reminders-copy
+          | Each reminder is scheduled before either the task start or deadline. The calculated
+          | reminder time must still be in the future. Task reminders can be deleted, but not edited,
+          | on the Pushover reminders page.
+        .alert.alert-warning.task-reminder-date-warning(
+          role='status',
+          data-task-reminder-date-warning,
+          hidden
+        ) Add a task start or deadline before saving a reminder.
+        #task-reminder-list.task-reminder-list(data-task-reminder-list)
+          each reminder in reminderRows
+            +taskReminderRow(reminder)
+        button.btn.btn-outline-primary.mt-3(
+          type='button',
+          data-add-task-reminder,
+          disabled=reminderRows.length >= maxTaskReminders
+        ) Add Pushover reminder
+        noscript
+          p.form-text JavaScript is required to add task reminders from this form.
+
+      .schedule-task-form-actions
+        button.btn.btn-primary(type='submit') Save task
+        a.btn.btn-outline-secondary(href='/scheduleTask/calendar') Cancel
+
+    template#task-reminder-template
+      +taskReminderRow({ anchor: 'start', days: '0', hours: '0', minutes: '0', priority: '0' })
+
+block script
+  script(src='/js/scheduleTask/formTask.js', defer)

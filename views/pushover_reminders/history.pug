@@ -24,11 +24,14 @@ block content
       if history.length
         .reminder-list
           each reminder in history
-            article.reminder-card
+            article.reminder-card(class=reminder.isTaskReminder ? 'reminder-card--task' : '')
               .reminder-card-main
                 .reminder-card-heading
                   h3= reminder.title
-                  span.reminder-delivery-status(class=`is-${reminder.deliveryStatus}`)= reminder.deliveryStatusLabel
+                  .reminder-card-badges
+                    if reminder.isTaskReminder
+                      span.reminder-task-source= reminder.taskSourceLabel
+                    span.reminder-delivery-status(class=`is-${reminder.deliveryStatus}`)= reminder.deliveryStatusLabel
                 p.reminder-message= reminder.message
                 .reminder-history-meta
                   span

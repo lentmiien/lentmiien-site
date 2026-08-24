@@ -57,6 +57,12 @@ module.exports = {
   'scheduleTask.createTobuy': {
     execute: (args, context) => getScheduleTaskToolService().createTobuy(args, context),
   },
+  'scheduleTask.createTodoWithReminders': {
+    execute: (args, context) => getScheduleTaskToolService().createTodoWithReminders(args, context),
+  },
+  'scheduleTask.createTobuyWithReminders': {
+    execute: (args, context) => getScheduleTaskToolService().createTobuyWithReminders(args, context),
+  },
   'scheduleTask.createQuickNote': {
     execute: (args, context) => getScheduleTaskToolService().createQuickNote(args, context),
   },

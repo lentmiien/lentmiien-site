@@ -80,15 +80,19 @@ block content
         if upcoming.length
           .reminder-list
             each reminder in upcoming
-              article.reminder-card
+              article.reminder-card(class=reminder.isTaskReminder ? 'reminder-card--task' : '')
                 .reminder-card-main
                   .reminder-card-heading
                     h3= reminder.title
-                    span.reminder-priority= reminder.priorityLabel
+                    .reminder-card-badges
+                      if reminder.isTaskReminder
+                        span.reminder-task-source= reminder.taskSourceLabel
+                      span.reminder-priority= reminder.priorityLabel
                   p.reminder-message= reminder.message
                   time.reminder-time(datetime=reminder.scheduledForIso, data-local-datetime)= reminder.scheduledForLabel
                 .reminder-card-actions
-                  a.btn.btn-sm.btn-outline-secondary(href=`/reminders/${reminder.id}/edit`) Edit
+                  if !reminder.isTaskReminder
+                    a.btn.btn-sm.btn-outline-secondary(href=`/reminders/${reminder.id}/edit`) Edit
                   form(method='post', action=`/reminders/${reminder.id}/delete`, onsubmit='return confirm("Delete this upcoming reminder?");')
                     button.btn.btn-sm.btn-outline-danger(type='submit') Delete
         else

@@ -1,5 +1,9 @@
 const { Task, QuicknoteModel } = require('../database');
 const ScheduleTaskService = require('./scheduleTaskService');
+const {
+  scheduleTaskReminderService,
+  serializeTaskReminder,
+} = require('./scheduleTaskReminderService');
 
 const FIXED_USER_ID = 'Lennart';
 const FIXED_QUICK_NOTE_COORDINATES = [139.54047677, 35.46015017];
@@ -185,12 +189,24 @@ function compareTasksByEffectiveDate(left, right) {
 }
 
 class ScheduleTaskToolService {
+  constructor({ taskReminderService = scheduleTaskReminderService } = {}) {
+    this.taskReminderService = taskReminderService;
+  }
+
   async createTodo(args = {}, context = {}) {
-    return this.createTask(args, context, 'todo');
+    return this.createTask(args, context, 'todo', { includeReminders: false });
   }
 
   async createTobuy(args = {}, context = {}) {
-    return this.createTask(args, context, 'tobuy');
+    return this.createTask(args, context, 'tobuy', { includeReminders: false });
+  }
+
+  async createTodoWithReminders(args = {}, context = {}) {
+    return this.createTask(args, context, 'todo', { includeReminders: true });
+  }
+
+  async createTobuyWithReminders(args = {}, context = {}) {
+    return this.createTask(args, context, 'tobuy', { includeReminders: true });
   }
 
   async createQuickNote(args = {}, _context = {}) {
@@ -225,7 +241,7 @@ class ScheduleTaskToolService {
     return this.fetchTasks(args, context, 'tobuy');
   }
 
-  async createTask(args = {}, context = {}, type) {
+  async createTask(args = {}, context = {}, type, { includeReminders = false } = {}) {
     const title = normalizeTitle(args.title);
     const description = normalizeDescription(args.description);
     const start = parseDateValue(args.start, 'start', {
@@ -252,14 +268,23 @@ class ScheduleTaskToolService {
       meta: buildToolCreationMeta(context),
     });
 
-    await doc.save();
+    const reminderInputs = includeReminders ? (args.reminders ?? []) : [];
+    const saved = await this.taskReminderService.saveTaskWithReminders(doc, reminderInputs);
 
-    return {
+    const result = {
       ok: true,
       userId: FIXED_USER_ID,
       taskType: type,
       task: serializeTask(doc),
     };
+
+    if (includeReminders) {
+      const reminders = (saved.reminders || []).map(serializeTaskReminder);
+      result.reminderCount = reminders.length;
+      result.reminders = reminders;
+    }
+
+    return result;
   }
 
   async fetchTasks(args = {}, _context = {}, type) {

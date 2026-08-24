@@ -25,5 +25,6 @@ router.post('/new/task', ctrl.saveTask);
 // Edit existing task
 router.get('/edit/:id', ctrl.renderEditForm);
 router.post('/edit/:id', ctrl.saveEdit);
+router.post('/delete/:id', ctrl.deleteTask);
 
 module.exports = router;

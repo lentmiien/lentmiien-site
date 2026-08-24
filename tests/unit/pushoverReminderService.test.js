@@ -75,6 +75,47 @@ describe('Pushover reminder service', () => {
     expect(sort).toHaveBeenCalledWith({ scheduledFor: 1, createdAt: 1 });
   });
 
+  test('does not update a reminder linked to a schedule task', async () => {
+    const ReminderModel = {
+      findOneAndUpdate: jest.fn().mockResolvedValue(null),
+    };
+    const service = new PushoverReminderService({ ReminderModel });
+
+    await expect(service.update('Lennart', '64b7f1a2c3d4e5f60718293a', {
+      message: 'Changed message',
+      scheduledFor: '2026-08-24T00:00:00.000Z',
+      priority: 0,
+    }, { now })).resolves.toBeNull();
+    expect(ReminderModel.findOneAndUpdate).toHaveBeenCalledWith({
+      _id: '64b7f1a2c3d4e5f60718293a',
+      user: 'Lennart',
+      done: false,
+      deliveryStatus: 'pending',
+      source: { $ne: 'schedule-task' },
+    }, {
+      $set: expect.objectContaining({ message: 'Changed message' }),
+    }, {
+      new: true,
+      runValidators: true,
+    });
+  });
+
+  test('still allows any pending reminder, including task-linked ones, to be deleted manually', async () => {
+    const deleted = { _id: '64b7f1a2c3d4e5f60718293a', source: 'schedule-task' };
+    const ReminderModel = {
+      findOneAndDelete: jest.fn().mockResolvedValue(deleted),
+    };
+    const service = new PushoverReminderService({ ReminderModel });
+
+    await expect(service.remove('Lennart', '64b7f1a2c3d4e5f60718293a')).resolves.toBe(deleted);
+    expect(ReminderModel.findOneAndDelete).toHaveBeenCalledWith({
+      _id: '64b7f1a2c3d4e5f60718293a',
+      user: 'Lennart',
+      done: false,
+      deliveryStatus: 'pending',
+    });
+  });
+
   test('claims a due reminder before sending and records successful delivery', async () => {
     const reminder = {
       _id: 'reminder-1',
@@ -223,6 +264,8 @@ describe('Pushover reminder service', () => {
     await expect(reminder.validate()).resolves.toBeUndefined();
     expect(reminder.done).toBe(false);
     expect(reminder.deliveryStatus).toBe('pending');
+    expect(reminder.source).toBe('manual');
+    expect(reminder.metadata).toBeNull();
     expect(PushoverReminder.schema.path('scheduledFor')).toBeDefined();
     expect(PushoverReminder.schema.path('repeat')).toBeUndefined();
     expect(PushoverReminder.schema.indexes()).toContainEqual([

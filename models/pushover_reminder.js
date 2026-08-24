@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const PUSHOVER_REMINDER_PRIORITIES = [-2, -1, 0, 1, 2];
 const DELIVERY_STATUSES = ['pending', 'sending', 'sent', 'failed'];
+const REMINDER_SOURCES = ['manual', 'schedule-task'];
 
 const PushoverReminderSchema = new mongoose.Schema({
   user: {
@@ -33,6 +34,16 @@ const PushoverReminderSchema = new mongoose.Schema({
     required: true,
     enum: PUSHOVER_REMINDER_PRIORITIES,
     default: 0,
+  },
+  source: {
+    type: String,
+    enum: REMINDER_SOURCES,
+    default: 'manual',
+    index: true,
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null,
   },
   done: {
     type: Boolean,
@@ -72,8 +83,16 @@ const PushoverReminderSchema = new mongoose.Schema({
 PushoverReminderSchema.index({ done: 1, deliveryStatus: 1, scheduledFor: 1 });
 PushoverReminderSchema.index({ user: 1, done: 1, scheduledFor: 1 });
 PushoverReminderSchema.index({ user: 1, done: 1, triggeredAt: -1 });
+PushoverReminderSchema.index({
+  user: 1,
+  source: 1,
+  'metadata.taskId': 1,
+  done: 1,
+  deliveryStatus: 1,
+});
 PushoverReminderSchema.index({ historyExpiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model('PushoverReminder', PushoverReminderSchema);
 module.exports.DELIVERY_STATUSES = DELIVERY_STATUSES;
 module.exports.PUSHOVER_REMINDER_PRIORITIES = PUSHOVER_REMINDER_PRIORITIES;
+module.exports.REMINDER_SOURCES = REMINDER_SOURCES;

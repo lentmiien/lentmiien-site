@@ -97,6 +97,10 @@ paths:
                 properties:
                   ok:
                     type: boolean
+                  deletedReminders:
+                    type: integer
+                    minimum: 0
+                    description: Pending task-linked Pushover reminders deleted when this update completes the task.
         '404':
           description: Entry not found
           content:
@@ -137,6 +141,10 @@ paths:
                     type: boolean
                   done:
                     type: boolean
+                  deletedReminders:
+                    type: integer
+                    minimum: 0
+                    description: Pending task-linked Pushover reminders deleted when the new state is completed.
         '404':
           description: Entry not found
           content:

@@ -191,6 +191,7 @@ class PushoverReminderService {
       user,
       done: false,
       deliveryStatus: 'pending',
+      source: { $ne: 'schedule-task' },
     }, {
       $set: values,
     }, {

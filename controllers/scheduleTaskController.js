@@ -1,6 +1,75 @@
 const ScheduleTaskService = require('../services/scheduleTaskService');
 const ScheduleTaskStatsService = require('../services/scheduleTaskStatsService');
+const {
+  PUSHOVER_PRIORITY_OPTIONS,
+} = require('../services/pushoverReminderService');
+const {
+  MAX_TASK_REMINDERS,
+  TaskReminderValidationError,
+  scheduleTaskReminderService,
+} = require('../services/scheduleTaskReminderService');
 const { Task, Palette } = require('../database');
+const logger = require('../utils/logger');
+
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  return value === undefined || value === null ? [] : [value];
+}
+
+function taskReminderRowsFromBody(body = {}) {
+  const anchors = asArray(body.reminder_anchor);
+  const days = asArray(body.reminder_days);
+  const hours = asArray(body.reminder_hours);
+  const minutes = asArray(body.reminder_minutes);
+  const priorities = asArray(body.reminder_priority);
+  const count = Math.max(
+    anchors.length,
+    days.length,
+    hours.length,
+    minutes.length,
+    priorities.length
+  );
+
+  return Array.from({ length: count }, (_, index) => ({
+    anchor: anchors[index] ?? '',
+    days: days[index] ?? '0',
+    hours: hours[index] ?? '0',
+    minutes: minutes[index] ?? '0',
+    priority: priorities[index] ?? '0',
+  }));
+}
+
+function taskFormLocals(body = {}, { error = null, prefillStart = '' } = {}) {
+  return {
+    error,
+    form: {
+      title: typeof body.title === 'string' ? body.title : '',
+      description: typeof body.description === 'string' ? body.description : '',
+      type: body.type === 'tobuy' ? 'tobuy' : 'todo',
+      start: typeof body.start === 'string' ? body.start : prefillStart,
+      end: typeof body.end === 'string' ? body.end : '',
+    },
+    reminderRows: taskReminderRowsFromBody(body),
+    maxTaskReminders: MAX_TASK_REMINDERS,
+    priorityOptions: PUSHOVER_PRIORITY_OPTIONS,
+  };
+}
+
+async function deletePendingTaskReminders(task, operation) {
+  try {
+    return await scheduleTaskReminderService.deletePendingForTask(task.userId, task._id);
+  } catch (error) {
+    await logger.error('Failed to delete pending Pushover reminders for a task', {
+      category: 'schedule_task_reminders',
+      metadata: {
+        operation,
+        taskId: task._id?.toString() || null,
+        error: error.message,
+      },
+    });
+    throw error;
+  }
+}
 
 /**
  * GET /calendar - Main calendar page
@@ -104,8 +173,15 @@ exports.updateTaskApi = async function(req, res, next) {
         });
       }
     }
+    const completesTask = Object.prototype.hasOwnProperty.call(patch, 'done') && doc.done;
+    if (completesTask && typeof doc.validate === 'function') {
+      await doc.validate();
+    }
+    const deletedReminders = completesTask
+      ? await deletePendingTaskReminders(doc, 'api-update-completed')
+      : 0;
     await doc.save();
-    res.json({ ok: true });
+    res.json({ ok: true, deletedReminders });
   } catch(err) {
     next(err);
   }
@@ -119,15 +195,16 @@ exports.toggleDoneApi = async function(req, res, next) {
     const userId = req.user.name;
     const id = req.params.id;
     // Optional: allow explicitly passing done=true/false for flexibility
+    const task = await Task.findOne({ _id: id, userId });
+    if(!task) return res.status(404).json({ message: 'Not found' });
     let done = req.body.done;
     if (done === undefined) done = true;
-    const task = await Task.findOneAndUpdate(
-      { _id: id, userId },
-      { $set: { done: done } },
-      { new: true }
-    );
-    if(!task) return res.status(404).json({ message: 'Not found' });
-    res.json({ ok: true, done: task.done });
+    task.done = done;
+    const deletedReminders = task.done
+      ? await deletePendingTaskReminders(task, 'mark-completed')
+      : 0;
+    await task.save();
+    res.json({ ok: true, done: task.done, deletedReminders });
   } catch(err) {
     next(err);
   }
@@ -183,7 +260,10 @@ exports.savePresence = async (req, res, next) => {
 
 exports.renderTaskForm = (req, res) => {
   const prefill = req.query.prefill ? new Date(req.query.prefill) : null;
-  res.render('scheduleTask/formTask', { error: null, prefillStart: prefill ? prefill.toISOString().slice(0,16) : '' });
+  const prefillStart = prefill && !Number.isNaN(prefill.getTime())
+    ? prefill.toISOString().slice(0, 16)
+    : '';
+  res.render('scheduleTask/formTask', taskFormLocals({}, { prefillStart }));
 };
 
 exports.saveTask = async (req, res, next) => {
@@ -199,10 +279,34 @@ exports.saveTask = async (req, res, next) => {
       end: end ? ScheduleTaskService.roundToSlot(new Date(end)) : null,
       done: false,
     });
-    await doc.save();
+    const reminderRows = taskReminderRowsFromBody(req.body);
+    await scheduleTaskReminderService.saveTaskWithReminders(doc, reminderRows);
     res.redirect('/scheduleTask/calendar');
   } catch(err) {
-    res.render('scheduleTask/formTask', { error: err.message, ...req.body });
+    const isValidationError = err instanceof TaskReminderValidationError
+      || err.name === 'ValidationError';
+    if (!isValidationError && !err.taskReminderPersistenceLogged) {
+      await logger.error('Failed to create schedule task', {
+        category: 'schedule_task_reminders',
+        metadata: { error: err.message },
+      });
+    }
+    res.status(isValidationError ? 400 : 500).render('scheduleTask/formTask', taskFormLocals(req.body, {
+      error: err.message,
+    }));
+  }
+};
+
+exports.deleteTask = async (req, res, next) => {
+  const userId = req.user.name;
+  try {
+    const task = await Task.findOne({ _id: req.params.id, userId });
+    if (!task) return res.status(404).send('Not found');
+    await deletePendingTaskReminders(task, 'task-deleted');
+    await task.deleteOne();
+    return res.redirect('/scheduleTask/upcoming');
+  } catch (error) {
+    return next(error);
   }
 };
 
@@ -349,4 +453,9 @@ exports.renderStatisticsPage = async function(req, res, next) {
   } catch (err) {
     next(err);
   }
+};
+
+exports._test = {
+  taskFormLocals,
+  taskReminderRowsFromBody,
 };

@@ -7,6 +7,53 @@ const {
   SIZE_PRESETS,
 } = require('../gptImageService');
 
+function taskReminderArrayDefinition() {
+  return {
+    type: 'array',
+    maxItems: 5,
+    default: [],
+    description: 'Optional Pushover reminders scheduled before the task start or deadline. Omit or pass an empty array for no reminders.',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        anchor: {
+          type: 'string',
+          enum: ['start', 'deadline'],
+          description: 'Task date that this reminder is scheduled before. The matching start or end field must be present.',
+        },
+        days: {
+          type: 'integer',
+          minimum: 0,
+          default: 0,
+          description: 'Whole days before the anchor date.',
+        },
+        hours: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 23,
+          default: 0,
+          description: 'Additional whole hours before the anchor date.',
+        },
+        minutes: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 59,
+          default: 0,
+          description: 'Additional whole minutes before the anchor date.',
+        },
+        priority: {
+          type: 'integer',
+          enum: [-2, -1, 0, 1, 2],
+          default: 0,
+          description: 'Pushover priority: -2 lowest, -1 low, 0 normal, 1 high, or 2 emergency.',
+        },
+      },
+      required: ['anchor'],
+    },
+  };
+}
+
 module.exports = [
   {
     name: 'generate_image',
@@ -87,7 +134,7 @@ module.exports = [
   {
     name: 'add_todo',
     displayName: 'Add Todo',
-    description: 'Create a new todo task for Lennart in the schedule task database.',
+    description: 'Create a new todo task for Lennart with zero Pushover reminders.',
     enabled: true,
     handlerKey: 'scheduleTask.createTodo',
     sourcePath: 'services/scheduleTaskToolService.js',
@@ -125,13 +172,14 @@ module.exports = [
       taskType: 'todo',
       fixedUserId: 'Lennart',
       createdByDefault: 'Tool',
+      reminderCountDefault: 0,
       storesRecordsIn: 'Task',
     },
   },
   {
     name: 'add_tobuy',
     displayName: 'Add To-Buy Item',
-    description: 'Create a new to-buy task for Lennart in the schedule task database.',
+    description: 'Create a new to-buy task for Lennart with zero Pushover reminders.',
     enabled: true,
     handlerKey: 'scheduleTask.createTobuy',
     sourcePath: 'services/scheduleTaskToolService.js',
@@ -169,7 +217,102 @@ module.exports = [
       taskType: 'tobuy',
       fixedUserId: 'Lennart',
       createdByDefault: 'Tool',
+      reminderCountDefault: 0,
       storesRecordsIn: 'Task',
+    },
+  },
+  {
+    name: 'add_todo_with_reminders',
+    displayName: 'Add Todo + Reminder',
+    description: 'Create a todo task for Lennart with up to five optional task-linked Pushover reminders.',
+    enabled: true,
+    handlerKey: 'scheduleTask.createTodoWithReminders',
+    sourcePath: 'services/scheduleTaskToolService.js',
+    tags: ['schedule-task', 'todo', 'task', 'pushover', 'reminder'],
+    toolDefinition: {
+      type: 'function',
+      name: 'add_todo_with_reminders',
+      description: 'Create a todo for Lennart and optionally schedule up to five Pushover reminders before its start or deadline. A referenced start or deadline is required and every calculated reminder time must be in the future.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Short todo title.',
+          },
+          description: {
+            type: 'string',
+            description: 'Optional details for the todo.',
+          },
+          start: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the todo starts.',
+          },
+          end: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the todo ends or is due.',
+          },
+          reminders: taskReminderArrayDefinition(),
+        },
+        required: ['title'],
+      },
+      strict: false,
+    },
+    metadata: {
+      taskType: 'todo',
+      fixedUserId: 'Lennart',
+      createdByDefault: 'Tool',
+      reminderCountDefault: 0,
+      reminderCountMaximum: 5,
+      storesRecordsIn: ['Task', 'PushoverReminder'],
+    },
+  },
+  {
+    name: 'add_tobuy_with_reminders',
+    displayName: 'Add To-Buy Item + Reminder',
+    description: 'Create a to-buy task for Lennart with up to five optional task-linked Pushover reminders.',
+    enabled: true,
+    handlerKey: 'scheduleTask.createTobuyWithReminders',
+    sourcePath: 'services/scheduleTaskToolService.js',
+    tags: ['schedule-task', 'tobuy', 'shopping', 'pushover', 'reminder'],
+    toolDefinition: {
+      type: 'function',
+      name: 'add_tobuy_with_reminders',
+      description: 'Create a to-buy item for Lennart and optionally schedule up to five Pushover reminders before its start or deadline. A referenced start or deadline is required and every calculated reminder time must be in the future.',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: {
+            type: 'string',
+            description: 'Short to-buy title.',
+          },
+          description: {
+            type: 'string',
+            description: 'Optional details for the to-buy item.',
+          },
+          start: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the to-buy item starts.',
+          },
+          end: {
+            type: 'string',
+            description: 'Optional ISO 8601 date or datetime for when the to-buy item ends or is due.',
+          },
+          reminders: taskReminderArrayDefinition(),
+        },
+        required: ['title'],
+      },
+      strict: false,
+    },
+    metadata: {
+      taskType: 'tobuy',
+      fixedUserId: 'Lennart',
+      createdByDefault: 'Tool',
+      reminderCountDefault: 0,
+      reminderCountMaximum: 5,
+      storesRecordsIn: ['Task', 'PushoverReminder'],
     },
   },
   {

@@ -38,6 +38,13 @@ block content
       button.btn.btn-success(type="submit") Save
       a.btn.btn-secondary.ms-2(href="/scheduleTask/calendar") Cancel
 
+    form.mt-3(
+      method="post",
+      action=`/scheduleTask/delete/${doc._id}`,
+      onsubmit=`return confirm('Delete this ${isPresence ? 'presence' : 'task'}? Any pending task reminders will also be deleted.');`
+    )
+      button.btn.btn-outline-danger(type="submit") Delete #{isPresence ? 'presence' : 'task'}
+
   if error
     .alert.alert-danger.mt-3= error
   if conflicts
@@ -46,4 +53,3 @@ block content
       ul
         each c in conflicts
           li: a(href=`/scheduleTask/edit/${c._id}`, target="_blank") #{c.title} (#{new Date(c.start).toLocaleString()} - #{new Date(c.end).toLocaleString()})
-

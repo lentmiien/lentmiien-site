@@ -5,6 +5,9 @@ const {
   priorityOptionFor,
   pushoverReminderService,
 } = require('../services/pushoverReminderService');
+const {
+  isTaskLinkedReminder,
+} = require('../services/scheduleTaskReminderService');
 
 const REMINDER_BASE_PATH = '/reminders';
 
@@ -88,6 +91,10 @@ function decorateReminder(reminder) {
     sent: 'Sent',
     failed: 'Delivery failed',
   };
+  const taskLinked = isTaskLinkedReminder(reminder);
+  const taskMetadata = taskLinked && reminder.metadata ? reminder.metadata : {};
+  const taskTypeLabel = taskMetadata.taskType === 'tobuy' ? 'To-buy task' : 'Todo task';
+  const taskAnchorLabel = taskMetadata.anchor === 'deadline' ? 'deadline' : 'start';
 
   return {
     ...reminder,
@@ -101,6 +108,8 @@ function decorateReminder(reminder) {
     triggeredAtLabel: triggeredAt ? formatDisplayDate(triggeredAt) : 'Unknown time',
     priorityLabel: priority.label,
     deliveryStatusLabel: deliveryStatusLabels[reminder.deliveryStatus] || 'Completed',
+    isTaskReminder: taskLinked,
+    taskSourceLabel: taskLinked ? `${taskTypeLabel} · ${taskAnchorLabel}` : '',
   };
 }
 
@@ -148,6 +157,13 @@ exports.edit = async (req, res, next) => {
     const reminder = await pushoverReminderService.getUpcoming(req.user.name, req.params.id);
     if (!reminder) {
       return redirectWithMessage(res, 'error', 'Upcoming reminder not found.');
+    }
+    if (isTaskLinkedReminder(reminder)) {
+      return redirectWithMessage(
+        res,
+        'error',
+        'Task reminders cannot be edited. Delete the reminder if it is no longer needed.'
+      );
     }
     return await renderIndex(res, {
       user: req.user.name,

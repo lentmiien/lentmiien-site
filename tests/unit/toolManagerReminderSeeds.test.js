@@ -24,6 +24,33 @@ describe('Pushover reminder Tool Manager seeds', () => {
       .toolDefinition.parameters.required).toEqual(['reminder_id']);
   });
 
+  test('defines reminder-aware task tools while legacy task tools default to zero reminders', () => {
+    const todo = toolSeeds.find((seed) => seed.name === 'add_todo');
+    const tobuy = toolSeeds.find((seed) => seed.name === 'add_tobuy');
+    const reminderTools = [
+      toolSeeds.find((seed) => seed.name === 'add_todo_with_reminders'),
+      toolSeeds.find((seed) => seed.name === 'add_tobuy_with_reminders'),
+    ];
+
+    expect(todo.metadata.reminderCountDefault).toBe(0);
+    expect(tobuy.metadata.reminderCountDefault).toBe(0);
+    expect(todo.toolDefinition.parameters.properties).not.toHaveProperty('reminders');
+    expect(tobuy.toolDefinition.parameters.properties).not.toHaveProperty('reminders');
+
+    reminderTools.forEach((seed) => {
+      expect(seed).toBeDefined();
+      expect(seed.enabled).toBe(true);
+      expect(toolHandlers[seed.handlerKey]?.execute).toEqual(expect.any(Function));
+      expect(seed.toolDefinition.parameters.properties.reminders).toMatchObject({
+        type: 'array',
+        maxItems: 5,
+        default: [],
+      });
+      expect(seed.toolDefinition.parameters.properties.reminders.items.properties.anchor.enum)
+        .toEqual(['start', 'deadline']);
+    });
+  });
+
   test('missing-only seeding does not update an existing tool', async () => {
     const exec = jest.fn()
       .mockResolvedValueOnce({ matchedCount: 1, upsertedCount: 0 })
