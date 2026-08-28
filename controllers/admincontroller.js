@@ -57,6 +57,7 @@ const {
   buildAiGatewayReservationRequest,
   normalizeAiGatewayReservation,
 } = require('../utils/aiGatewayReservation');
+const { normalizeAiGatewayLlmStats } = require('../utils/aiGatewayLogStats');
 
 const locked_user_id = "5dd115006b7f671c2009709d";
 const TEMP_PASSWORD_BYTES = 18;
@@ -2104,10 +2105,7 @@ function normalizeLogEntry(rawEntry) {
   const pixelMegapixels = hunyuanMegapixels !== null && hunyuanMegapixels !== undefined
     ? hunyuanMegapixels
     : (computedNewPixels !== null && computedNewPixels !== undefined ? computedNewPixels / 1000000 : null);
-  const promptEvalCount = asNumber(rawEntry.ollama_stats?.prompt_eval_count || rawEntry.prompt_eval_count);
-  const evalCount = asNumber(rawEntry.ollama_stats?.eval_count || rawEntry.eval_count);
-  const promptTokPerSec = asNumber(rawEntry.ollama_stats?.prompt_tok_per_s || rawEntry.prompt_tok_per_s);
-  const genTokPerSec = asNumber(rawEntry.ollama_stats?.gen_tok_per_s || rawEntry.gen_tok_per_s || rawEntry.tokens_per_second);
+  const llmStats = normalizeAiGatewayLlmStats(rawEntry);
   const upstreamStatusCode = asNumber(rawEntry.upstream_status_code || rawEntry.upstreamStatusCode);
   const upstreamDurationSec = asNumber(rawEntry.upstream_duration_sec || rawEntry.upstreamDurationSec);
   const hunyuanEstimate = hunyuanSummary?.estimate || {};
@@ -2150,10 +2148,11 @@ function normalizeLogEntry(rawEntry) {
     responseBytes: asNumber(rawEntry.response_bytes || rawEntry.response_bytes_approx),
     promptChars: asNumber(rawEntry.prompt_chars),
     assistantChars: asNumber(rawEntry.ollama_stats?.assistant_chars || rawEntry.assistant_chars),
-    promptTokens: promptEvalCount,
-    genTokens: evalCount,
-    promptTokPerSec,
-    genTokPerSec,
+    promptTokens: llmStats.promptTokens,
+    genTokens: llmStats.genTokens,
+    totalTokens: llmStats.totalTokens,
+    promptTokPerSec: llmStats.promptTokPerSec,
+    genTokPerSec: llmStats.genTokPerSec,
     inputBytes: asNumber(rawEntry.input_bytes),
     sentBytes: asNumber(rawEntry.sent_bytes),
     responseBytes,
@@ -2344,10 +2343,13 @@ function buildLlmLogStats(entries) {
     if (entry.queueWaitSec !== null && entry.queueWaitSec !== undefined) modelBucket.queueValues.push(entry.queueWaitSec);
     if (entry.vramDeltaBytes !== null && entry.vramDeltaBytes !== undefined) modelBucket.vramDeltas.push(entry.vramDeltaBytes);
 
-    const hasTokenCounts = (entry.promptTokens !== null && entry.promptTokens !== undefined)
-      || (entry.genTokens !== null && entry.genTokens !== undefined);
-    const totalTokens = (entry.promptTokens || 0) + (entry.genTokens || 0);
-    if (hasTokenCounts) {
+    const totalTokens = entry.totalTokens !== null && entry.totalTokens !== undefined
+      ? entry.totalTokens
+      : ((entry.promptTokens !== null && entry.promptTokens !== undefined)
+          || (entry.genTokens !== null && entry.genTokens !== undefined)
+        ? (entry.promptTokens || 0) + (entry.genTokens || 0)
+        : null);
+    if (totalTokens !== null) {
       modelBucket.totalTokens.push(totalTokens);
       const bucket = findBucket(modelBucket.buckets, totalTokens);
       if (bucket) {
