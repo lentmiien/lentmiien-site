@@ -25,6 +25,7 @@ const dummyApiAdminController = require('../controllers/dummyApiAdminController'
 const disasterAdminController = require('../controllers/disasterAdminController');
 const amiamiItemsController = require('../controllers/amiamiItemsController');
 const aiGatewayDocumentationAdminController = require('../controllers/aiGatewayDocumentationAdminController');
+const modularLlmAdminController = require('../controllers/modularLlmAdminController');
 const lifeLogRouter = require('./lifeLog');
 
 const htmlUpload = multer({
@@ -258,6 +259,13 @@ router.get('/delete_log_file/:file', controller.delete_log_file);
 
 router.get('/openai_usage', controller.openai_usage);
 router.get('/ai-gateway', controller.ai_gateway_dashboard);
+router.get('/ai-gateway/modular-llm', modularLlmAdminController.index);
+router.get('/ai-gateway/modular-llm/state', modularLlmAdminController.state);
+router.post('/ai-gateway/modular-llm/models/sync', modularLlmAdminController.syncModels);
+router.post('/ai-gateway/modular-llm/models/:id', modularLlmAdminController.updateModel);
+router.post('/ai-gateway/modular-llm/runs', modularLlmAdminController.createRun);
+router.get('/ai-gateway/modular-llm/runs/:id', modularLlmAdminController.showRun);
+router.get('/ai-gateway/modular-llm/gateway-runs/:runId', modularLlmAdminController.showGatewayRun);
 router.get('/ai-gateway/documentation', aiGatewayDocumentationAdminController.index);
 router.get('/ai-gateway/documentation/:filename', aiGatewayDocumentationAdminController.show);
 router.get('/ai-gateway/gpu', controller.ai_gateway_gpu);

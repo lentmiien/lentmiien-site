@@ -1,0 +1,256 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/modularLlmAdmin.css')
+
+block content
+  - const gatewayErrorKeys = Object.keys(live.errors || {}).filter((key) => live.errors[key]);
+  - const liveBundleDescription = live.bundle && live.bundle.description ? live.bundle.description : 'No model bundle metadata is available.';
+  main.modular-admin(data-state-url=`${adminBase}/state`)
+    header.modular-admin__header
+      div
+        p.modular-admin__eyebrow Experimental AI Gateway service
+        h1 Modular LLM
+        p.modular-admin__subtitle Monitor the isolated-stage runtime, exercise the full pipeline, and retain test evidence for future model work.
+      .modular-admin__header-actions
+        span.modular-chip Gateway #{live.baseUrl || 'unavailable'}
+        span.modular-chip Prefix #{servicePrefix}
+        a.modular-button.modular-button--secondary(href='/admin/ai-gateway') Gateway dashboard
+        a.modular-button.modular-button--secondary(href=documentationPath) Usage guide
+        a.modular-button.modular-button--quiet(href=adminBase) Refresh
+
+    if feedback
+      .modular-alert(class=`modular-alert--${feedback.status}`, role='status')= feedback.message
+    if databaseError
+      .modular-alert.modular-alert--error(role='alert')= databaseError
+    if gatewayErrorKeys.length
+      .modular-alert.modular-alert--warning(role='alert')
+        strong Some read-only Gateway endpoints failed.
+        ul
+          each key in gatewayErrorKeys
+            li #{key}: #{live.errors[key]}
+
+    section.modular-runtime(aria-labelledby='modularRuntimeHeading')
+      .modular-section-heading
+        div
+          p.modular-section-heading__eyebrow Read-only monitor
+          h2#modularRuntimeHeading Runtime state
+        span#modularStateFetched.modular-section-heading__meta Updated #{live.fetchedAtDisplay}
+      .modular-stat-grid
+        article.modular-stat
+          span.modular-stat__label Service
+          strong#modularServiceName.modular-stat__value= live.serviceName
+          span#modularServiceStatus.modular-status(class=live.health && live.health.ok === true ? 'modular-status--success' : 'modular-status--neutral')= live.serviceStatusDisplay
+        article.modular-stat
+          span.modular-stat__label Container
+          strong#modularContainerState.modular-stat__value= live.containerStateDisplay
+          span.modular-stat__hint= live.running ? 'Running now' : 'Stopped until GPU work'
+        article.modular-stat
+          span.modular-stat__label Bundle
+          strong#modularBundleId.modular-stat__value= live.bundleId
+          span.modular-stat__hint Active Gateway bundle
+        article.modular-stat
+          span.modular-stat__label Runtime
+          strong#modularRuntimeMode.modular-stat__value= live.runtimeModeDisplay
+          span.modular-stat__hint One disposable worker per stage
+      p.modular-runtime__note
+        | This monitor polls only metadata routes. It does not start the stopped GPU container.
+
+    .modular-layout
+      section.modular-panel.modular-panel--test(aria-labelledby='pipelineTestHeading')
+        .modular-panel__header
+          div
+            p.modular-panel__eyebrow GPU-producing action
+            h2#pipelineTestHeading Pipeline test
+          span.modular-status.modular-status--warning Interpreter → CIR → Reasoner → AIR → Renderer
+        p.modular-panel__copy Run the primary lifecycle test through the Gateway. The current untrained proof-of-concept models are intended for schema, stability, latency, and memory checks—not answer-quality evaluation.
+        form#modularPipelineForm.modular-form(method='post', action=`${adminBase}/runs`)
+          label.modular-field(for='modularTestInput')
+            span.modular-field__label Input
+            textarea#modularTestInput.modular-input(name='input', rows='7', required, maxlength=maxTestInputLength, placeholder='Explain why 17 is prime.')
+            span.modular-field__help
+              span Full input is retained in the admin test collection and, when persistence is enabled, in the Gateway artifact.
+              span#modularInputCount 0 / #{maxTestInputLength}
+          .modular-form__row
+            label.modular-field(for='modularRepairAttempts')
+              span.modular-field__label Max repair attempts
+              select#modularRepairAttempts.modular-input(name='maxRepairAttempts')
+                option(value='0') 0
+                option(value='1', selected) 1
+            .modular-checks
+              label.modular-check
+                input(type='hidden', name='persist', value='false')
+                input(type='checkbox', name='persist', value='true', checked)
+                span Persist Gateway run
+              label.modular-check
+                input(type='hidden', name='includeDiagnostics', value='false')
+                input(type='checkbox', name='includeDiagnostics', value='true', checked)
+                span Return diagnostics
+          .modular-form__actions
+            button#modularRunButton.modular-button.modular-button--primary(type='submit') Run pipeline test
+            span#modularRunFeedback.modular-form__feedback(role='status', aria-live='polite') The container starts on demand; a cold run can take several minutes.
+
+      section.modular-panel(aria-labelledby='liveBundleHeading')
+        .modular-panel__header
+          div
+            p.modular-panel__eyebrow Gateway authority
+            h2#liveBundleHeading Live model bundle
+          form(method='post', action=`${adminBase}/models/sync`)
+            button.modular-button.modular-button--secondary(type='submit') Sync catalog
+        p.modular-panel__copy= liveBundleDescription
+        if live.modelStages.length
+          .modular-stage-list
+            each model in live.modelStages
+              article.modular-stage
+                .modular-stage__header
+                  strong= model.stageDisplay
+                  span.modular-status.modular-status--neutral= model.dtype
+                code.modular-stage__model= model.modelId
+                dl.modular-stage__facts
+                  div
+                    dt Tokens
+                    dd= model.tokenLimitsDisplay
+                  div
+                    dt Attention
+                    dd= model.attention
+                  div
+                    dt Revision
+                    dd= model.revision
+                  div
+                    dt Adapter
+                    dd= model.adapterPath || 'None'
+        else
+          p.modular-empty Model metadata is unavailable from the Gateway.
+        if live.schemas.length
+          details.modular-details
+            summary #{live.schemas.length} intermediate schemas
+            ul.modular-schema-list
+              each schema in live.schemas
+                li
+                  a(href=`${live.baseUrl}${schema.path}`, target='_blank', rel='noopener noreferrer')= schema.name
+                  span= schema.title || schema.id
+
+    section.modular-panel.modular-panel--wide(aria-labelledby='catalogHeading')
+      .modular-panel__header
+        div
+          p.modular-panel__eyebrow MongoDB management metadata
+          h2#catalogHeading Saved model profiles
+        span.modular-chip Collection #{modelProfileCollection}
+      p.modular-panel__copy Gateway sync updates discovered runtime fields while preserving the display name, use-case tags, notes, and future-test selection maintained here. These fields do not switch a runtime model yet.
+      if profiles.length
+        .modular-profile-grid
+          each profile in profiles
+            form.modular-profile(method='post', action=`${adminBase}/models/${encodeURIComponent(profile.id)}`)
+              .modular-profile__header
+                div
+                  span.modular-profile__stage= profile.stageDisplay
+                  strong= profile.modelId
+                span.modular-status(class=profile.available ? 'modular-status--success' : 'modular-status--neutral')= profile.available ? 'Available' : 'Historical'
+              .modular-profile__facts
+                span Bundle #{profile.bundleId}
+                span #{profile.dtype || 'Unknown dtype'} · #{profile.tokenLimitsDisplay}
+                span Last seen #{profile.lastSeenDisplay}
+              label.modular-field
+                span.modular-field__label Display name
+                input.modular-input(type='text', name='displayName', maxlength='200', value=profile.displayName)
+              label.modular-field
+                span.modular-field__label Use cases
+                input.modular-input(type='text', name='useCases', maxlength='2100', value=profile.useCasesText, placeholder='input normalization, support answers')
+                span.modular-field__help Comma-separated; reserved for future model selection and comparison presets.
+              label.modular-field
+                span.modular-field__label Notes
+                textarea.modular-input(name='notes', rows='3', maxlength='5000')= profile.notes || ''
+              label.modular-check
+                input(type='hidden', name='enabledForTesting', value='false')
+                input(type='checkbox', name='enabledForTesting', value='true', checked=profile.enabledForTesting)
+                span Include in future test selectors
+              .modular-profile__footer
+                details.modular-details
+                  summary Raw discovered config
+                  pre= JSON.stringify(profile.gatewayConfig || {}, null, 2)
+                button.modular-button.modular-button--primary(type='submit') Save metadata
+      else
+        .modular-empty
+          strong No saved model profiles yet.
+          span Use “Sync catalog” to import the active Gateway bundle without changing its runtime configuration.
+
+    .modular-layout.modular-layout--history
+      section.modular-panel(aria-labelledby='localRunsHeading')
+        .modular-panel__header
+          div
+            p.modular-panel__eyebrow Local evidence
+            h2#localRunsHeading Admin test history
+          span.modular-chip Collection #{testRunCollection}
+        if localRuns.length
+          .modular-table-wrap
+            table.modular-table
+              thead
+                tr
+                  th Status
+                  th Input
+                  th Duration
+                  th Started
+                  th
+              tbody
+                each run in localRuns
+                  tr
+                    td
+                      span.modular-status(class=`modular-status--${run.status}`)= run.statusDisplay
+                    td
+                      strong= run.inputPreview || 'Empty'
+                      if run.gatewayRunId
+                        small Gateway #{run.gatewayRunId}
+                    td= run.durationDisplay
+                    td= run.createdAtDisplay
+                    td
+                      a.modular-table__link(href=run.detailPath) Inspect
+        else
+          p.modular-empty No pipeline tests have been started from this admin tool.
+
+      section.modular-panel(aria-labelledby='gatewayRunsHeading')
+        .modular-panel__header
+          div
+            p.modular-panel__eyebrow Gateway artifacts
+            h2#gatewayRunsHeading Recent service runs
+          span.modular-chip Read-only
+        p.modular-panel__copy Completed and failed artifacts remain inspectable after container cleanup. Full artifacts can contain sensitive input.
+        if live.gatewayRuns.length
+          .modular-table-wrap
+            table.modular-table
+              thead
+                tr
+                  th Status
+                  th Kind
+                  th Stage
+                  th Duration
+                  th Started
+                  th
+              tbody
+                each run in live.gatewayRuns
+                  tr
+                    td
+                      span.modular-status(class=`modular-status--${run.status}`)= run.statusDisplay
+                    td= run.kindDisplay
+                    td= run.failed_stage || '—'
+                    td= run.durationDisplay
+                    td= run.createdAtDisplay
+                    td
+                      if run.detailPath
+                        a.modular-table__link(href=run.detailPath) Inspect
+        else
+          p.modular-empty No Gateway run artifacts were returned.
+
+    section.modular-panel.modular-panel--future(aria-labelledby='trainingHeading')
+      .modular-panel__header
+        div
+          p.modular-panel__eyebrow Future phase
+          h2#trainingHeading Training and fine-tuning
+        span.modular-status.modular-status--neutral Not exposed by Gateway
+      p.modular-panel__copy The current Gateway contract has no dataset, training-job, adapter activation, or model-switching routes. This page therefore does not present controls that cannot take effect. Saved use cases, bundle revisions, adapter paths, test inputs, outputs, and diagnostics provide the management foundation for those endpoints when they arrive.
+      .modular-readiness
+        span Model and revision inventory
+        span Use-case metadata
+        span Adapter discovery
+        span Reproducible test history
+
+  script(src='/js/modularLlmAdmin.js', defer)

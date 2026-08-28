@@ -35,6 +35,7 @@ block content
       .ai-gateway__meta
         span.meta-chip Base URL: #{dashboard.baseUrl}
         span.meta-chip Fetched: #{new Date(dashboard.fetchedAt || Date.now()).toLocaleString()}
+        a.btn.btn-outline-warning.btn-sm(href='/admin/ai-gateway/modular-llm') Modular LLM
         a.btn.btn-outline-warning.btn-sm(href='/admin/ai-gateway/documentation') Documentation
         a.btn.btn-outline-light.btn-sm(href='/admin/ai-gateway') Refresh
 

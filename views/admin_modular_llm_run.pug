@@ -1,0 +1,118 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/modularLlmAdmin.css')
+
+block content
+  main.modular-admin.modular-run-page
+    header.modular-admin__header
+      div
+        p.modular-admin__eyebrow Modular LLM run inspector
+        h1= run ? run.title : 'Run unavailable'
+        p.modular-admin__subtitle Inspect persisted input, output, errors, stage diagnostics, and the raw artifact.
+      .modular-admin__header-actions
+        a.modular-button.modular-button--secondary(href=adminBase) Modular LLM dashboard
+        a.modular-button.modular-button--secondary(href=documentationPath) Usage guide
+
+    if errorMessage
+      .modular-alert.modular-alert--error(role='alert')= errorMessage
+    else if run
+      .modular-alert.modular-alert--warning(role='note') Full run artifacts can contain sensitive original input. Keep this admin-only page private.
+
+      section.modular-run-summary
+        article.modular-stat
+          span.modular-stat__label Status
+          strong.modular-stat__value= run.statusDisplay
+          span.modular-status(class=`modular-status--${run.status}`)= run.source === 'local' ? 'Local record' : 'Gateway artifact'
+        article.modular-stat
+          span.modular-stat__label Operation
+          strong.modular-stat__value= run.operationDisplay
+          span.modular-stat__hint= run.bundleId || run.bundle_id || 'Unknown bundle'
+        article.modular-stat
+          span.modular-stat__label Duration
+          strong.modular-stat__value= run.durationDisplay
+          span.modular-stat__hint HTTP #{run.httpStatusDisplay}
+        article.modular-stat
+          span.modular-stat__label Started
+          strong.modular-stat__value= run.startedAtDisplay
+          span.modular-stat__hint Finished #{run.completedAtDisplay}
+
+      section.modular-panel.modular-panel--wide
+        .modular-panel__header
+          div
+            p.modular-panel__eyebrow Correlation
+            h2 Identifiers
+        dl.modular-run-identifiers
+          div
+            dt Source
+            dd= run.source === 'local' ? 'Admin database' : 'AI Gateway run store'
+          div
+            dt Record ID
+            dd
+              code= run.id
+          div
+            dt Gateway run ID
+            dd
+              if run.gatewayRunId
+                if run.source === 'local' && run.gatewayDetailPath
+                  a(href=run.gatewayDetailPath)= run.gatewayRunId
+                else
+                  code= run.gatewayRunId
+              else
+                span N/A
+          div
+            dt Requested by
+            dd= run.requestedByDisplay
+          if run.linkedLocalRun
+            div
+              dt Linked admin record
+              dd
+                a(href=run.linkedLocalRun.detailPath)= run.linkedLocalRun.id
+
+      .modular-layout.modular-layout--run
+        section.modular-panel
+          .modular-panel__header
+            h2 Input
+          if run.input
+            pre.modular-run-data= run.input
+          else
+            p.modular-empty No input is stored in this record.
+        section.modular-panel
+          .modular-panel__header
+            h2 Output
+          if run.output
+            pre.modular-run-data= run.output
+          else
+            p.modular-empty No output was produced.
+
+      if run.errorMessage || run.errorJson
+        section.modular-panel.modular-panel--error
+          .modular-panel__header
+            div
+              p.modular-panel__eyebrow Failed execution
+              h2 Error
+            if run.failedStage || run.failed_stage
+              span.modular-status.modular-status--failed Stage #{run.failedStage || run.failed_stage}
+          if run.errorMessage
+            p.modular-error-message= run.errorMessage
+          if run.errorJson
+            details.modular-details(open)
+              summary Structured error
+              pre.modular-run-data= run.errorJson
+
+      if run.diagnosticsJson
+        section.modular-panel.modular-panel--wide
+          .modular-panel__header
+            div
+              p.modular-panel__eyebrow Stage telemetry
+              h2 Diagnostics
+          pre.modular-run-data= run.diagnosticsJson
+
+      section.modular-panel.modular-panel--wide
+        .modular-panel__header
+          div
+            p.modular-panel__eyebrow Audit payload
+            h2 Raw JSON
+        details.modular-details
+          summary Show complete stored payload
+          pre.modular-run-data= run.rawJson
