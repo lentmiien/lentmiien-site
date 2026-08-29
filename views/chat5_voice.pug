@@ -97,9 +97,9 @@ block content
 block script
   script(src='https://cdn.socket.io/4.0.0/socket.io.min.js', defer)
   script.
-    window.voiceInitialMessages = !{JSON.stringify(initialMessages)};
-    window.voiceConversation = !{JSON.stringify(conversation)};
-    window.chatModels = !{JSON.stringify(chat_models)};
-    window.conversationSource = '!{conversationSource}';
-    window.ttsVoices = !{JSON.stringify(ttsVoices || {})};
+    window.voiceInitialMessages = !{safeJson(initialMessages)};
+    window.voiceConversation = !{safeJson(conversation)};
+    window.chatModels = !{safeJson(chat_models)};
+    window.conversationSource = !{safeJson(conversationSource)};
+    window.ttsVoices = !{safeJson(ttsVoices || {})};
   script(src='/js/chat5_voice.js', defer)

@@ -18,8 +18,8 @@ block content
             tr(title=p.ai_description) 
               td= p.product_code
               td 
-                button.btn.btn-primary(onclick=`Details("${p.product_code}")`) Details
-                button.btn.btn-danger(onclick=`Delete("${p.product_code}")`) Delete
+                button.btn.btn-primary.product-details-button(type='button', data-product-code=p.product_code) Details
+                button.btn.btn-danger.product-delete-button(type='button', data-product-code=p.product_code) Delete
   .row 
     .col
       h2 Output 
@@ -34,5 +34,6 @@ block content
       button.btn.btn-primary(onclick="Update()") Update
   pre#products.hidden= JSON.stringify(products, null, 2)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js") 
+  script(src="/vendor/dompurify/purify.js")
   script(src="https://cdn.rawgit.com/Keyang/node-csvtojson/d41f44aa/browser/csvtojson.min.js")
   script(src="/js/products.js", defer) 

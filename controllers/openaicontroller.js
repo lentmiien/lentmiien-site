@@ -1,5 +1,5 @@
 const fs = require('fs');
-const marked = require('marked');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 
 // Import dependencis
 const { OpenaichatModel } = require('../database');
@@ -25,7 +25,7 @@ exports.index = async (req, res) => {
         role: d.role,
         model: d.model,
         raw_content: d.content,
-        content: marked.parse(d.content),
+        content: renderMarkdownSafe(d.content),
         created: d.created,
       });
       if (d.created > pdata[index].last_updated) {
@@ -40,7 +40,7 @@ exports.index = async (req, res) => {
             role: d.role,
             model: d.model,
             raw_content: d.content,
-            content: marked.parse(d.content),
+            content: renderMarkdownSafe(d.content),
             created: d.created,
           }
         ],

@@ -38,6 +38,28 @@ const image_size = document.getElementById("image_size");
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+function isSafeMarkdownImageSource(value) {
+  const source = String(value || '').trim();
+  if (/^data:image\/(?:gif|jpeg|png|webp);base64,/i.test(source)) return true;
+  if (!source.startsWith('/') || source.startsWith('//') || source.includes('\\')) return false;
+  try {
+    const parsed = new URL(source, window.location.origin);
+    const normalizedPath = new URL(decodeURIComponent(parsed.pathname), window.location.origin).pathname;
+    return ['/img/', '/imgen/', '/ocr/', '/ocr_tts/', '/temp/']
+      .some((prefix) => normalizedPath.startsWith(prefix));
+  } catch (error) {
+    return false;
+  }
+}
+
+function removeUnsafeMarkdownImageSources(container) {
+  container.querySelectorAll('img[src]').forEach((image) => {
+    if (!isSafeMarkdownImageSource(image.getAttribute('src'))) {
+      image.removeAttribute('src');
+    }
+  });
+}
+
 // Setup markdown editor
 const editor = new toastui.Editor({
   el: document.querySelector('#message'),
@@ -266,8 +288,12 @@ fileInput.addEventListener('change', () => {
 
 // Handle successful uploads
 socket.on('uploadSuccess', (data) => {
-  statusDiv.innerHTML = `Uploaded:<br>${data.savedImages.join('<br>')}`;
-  statusDiv.dataset.files = JSON.stringify(data.savedImages);
+  const savedImages = Array.isArray(data.savedImages) ? data.savedImages.map(String) : [];
+  statusDiv.replaceChildren(document.createTextNode('Uploaded:'));
+  savedImages.forEach((fileName) => {
+    statusDiv.append(document.createElement('br'), document.createTextNode(fileName));
+  });
+  statusDiv.dataset.files = JSON.stringify(savedImages);
 });
 
 // Handle upload errors
@@ -397,7 +423,10 @@ function GenerateImage() {
 socket.on('imageDone', function (image_name) {
   // Append to last message (first element on page with class attribute "user")
   const messages_li = document.getElementsByClassName('user');
-  messages_li[0].innerHTML += '<br><img src="/img/' + image_name + '">';
+  const imageBreak = document.createElement('br');
+  const generatedImage = document.createElement('img');
+  generatedImage.src = `/img/${encodeURIComponent(String(image_name || ''))}`;
+  messages_li[0].append(imageBreak, generatedImage);
 
   // Clear file upload
   statusDiv.textContent = "";
@@ -422,9 +451,45 @@ socket.on('error', function (errorMessage) {
 // Message delete checkbox
 function addDeleteCheckbox(message_id) {
   const item = document.createElement('li');
-  item.classList.add(message_id);
+  const messageId = String(message_id || '');
+  if (/^[A-Za-z0-9_-]+$/.test(messageId)) item.classList.add(messageId);
 
-  item.innerHTML = `<input class="del_checkbox" type="checkbox" value="${message_id}" onchange="ProcessDeleteCheckbox(this)"> Delete message below/Create new conversation without message below<button class="btn btn-danger float-end" onclick="DeleteOneMessageFromConversation('${message_id}')">Delete</button><button class="btn btn-warning float-end" onclick="EmailOneMessageFromConversation('${message_id}', this)">Email</button><a href="/chat5/edit_message/${message_id}" class="btn btn-primary float-end">Manual Edit</a><a href="/chat4/createknowledgefromchat/${conversation_id.innerText}" class="btn btn-primary float-end">Create knowledge</a>`;
+  const checkbox = document.createElement('input');
+  checkbox.className = 'del_checkbox';
+  checkbox.type = 'checkbox';
+  checkbox.value = messageId;
+  checkbox.addEventListener('change', () => ProcessDeleteCheckbox(checkbox));
+
+  const deleteButton = document.createElement('button');
+  deleteButton.className = 'btn btn-danger float-end';
+  deleteButton.type = 'button';
+  deleteButton.textContent = 'Delete';
+  deleteButton.addEventListener('click', () => DeleteOneMessageFromConversation(messageId));
+
+  const emailButton = document.createElement('button');
+  emailButton.className = 'btn btn-warning float-end';
+  emailButton.type = 'button';
+  emailButton.textContent = 'Email';
+  emailButton.addEventListener('click', () => EmailOneMessageFromConversation(messageId, emailButton));
+
+  const editLink = document.createElement('a');
+  editLink.className = 'btn btn-primary float-end';
+  editLink.href = `/chat5/edit_message/${encodeURIComponent(messageId)}`;
+  editLink.textContent = 'Manual Edit';
+
+  const knowledgeLink = document.createElement('a');
+  knowledgeLink.className = 'btn btn-primary float-end';
+  knowledgeLink.href = `/chat4/createknowledgefromchat/${encodeURIComponent(conversation_id.innerText)}`;
+  knowledgeLink.textContent = 'Create knowledge';
+
+  item.append(
+    checkbox,
+    document.createTextNode(' Delete message below/Create new conversation without message below'),
+    deleteButton,
+    emailButton,
+    editLink,
+    knowledgeLink
+  );
 
   messagesList.prepend(item);
 
@@ -435,19 +500,54 @@ function addDeleteCheckbox(message_id) {
 function addMessageToChat(message_id, sender, messageContent, images = null, audio = null) {
   const item = document.createElement('li');
   item.classList.add(sender.toLowerCase());
-  item.classList.add(message_id);
+  const messageId = String(message_id || '');
+  if (/^[A-Za-z0-9_-]+$/.test(messageId)) item.classList.add(messageId);
 
   // Set initial content (converted from Markdown to HTML)
   const sender_element = document.createElement("strong");
   sender_element.innerText = sender;
   const copy_raw_button = document.createElement("button");
   copy_raw_button.innerText = "Copy RAW";
-  copy_raw_button.dataset.raw = messageContent;
-  copy_raw_button.setAttribute("onclick", "CopyRAW(this)");
+  copy_raw_button.dataset.raw = String(messageContent ?? '');
+  copy_raw_button.addEventListener('click', () => CopyRAW(copy_raw_button));
   copy_raw_button.classList.add("btn", "btn-link");
 
-  item.append(sender_element, copy_raw_button);
-  item.innerHTML += `<br>${marked.parse(messageContent)}${audio && audio.length > 0 ? '<br><audio controls><source src="/mp3/' + audio + '" type="audio/mpeg"></audio>' : ''}${images && images.length > 0 ? '<br><img src="/img/' + images.join('"><img src="/img/') + '">' : ''}`;
+  item.append(sender_element, copy_raw_button, document.createElement('br'));
+  const markdownContainer = document.createElement('div');
+  if ((typeof DOMPurify === 'object' || typeof DOMPurify === 'function')
+    && typeof DOMPurify.sanitize === 'function'
+    && typeof marked !== 'undefined'
+    && typeof marked.parse === 'function') {
+    markdownContainer.innerHTML = DOMPurify.sanitize(marked.parse(String(messageContent ?? '')), {
+      USE_PROFILES: { html: true },
+      FORBID_ATTR: ['style'],
+      FORBID_TAGS: ['embed', 'form', 'iframe', 'object', 'style'],
+    });
+    removeUnsafeMarkdownImageSources(markdownContainer);
+  } else {
+    markdownContainer.textContent = String(messageContent ?? '');
+  }
+  item.append(markdownContainer);
+
+  if (typeof audio === 'string' && audio.length > 0) {
+    const audioElement = document.createElement('audio');
+    const source = document.createElement('source');
+    audioElement.controls = true;
+    source.src = `/mp3/${encodeURIComponent(audio)}`;
+    source.type = 'audio/mpeg';
+    audioElement.append(source);
+    item.append(document.createElement('br'), audioElement);
+  }
+
+  if (Array.isArray(images)) {
+    images.forEach((imageName) => {
+      if (typeof imageName !== 'string' || !imageName) return;
+      const image = document.createElement('img');
+      image.src = `/img/${encodeURIComponent(imageName)}`;
+      image.loading = 'lazy';
+      item.append(document.createElement('br'), image);
+    });
+  }
 
   messagesList.prepend(item);
   // window.scrollTo(0, document.body.scrollHeight);

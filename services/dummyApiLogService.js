@@ -1,5 +1,6 @@
 const DummyApiRequestLog = require('../models/dummy_api_request_log');
 const DummyApiEndpointSetting = require('../models/dummy_api_endpoint_setting');
+const { sanitizePayload, sanitizeRequestUrl } = require('../utils/apiDebugLogger');
 
 const DUMMY_API_SETTINGS_KEY = 'ok';
 const DUMMY_API_LOG_LIMIT = 200;
@@ -136,33 +137,35 @@ function buildMultipartSnapshot(req) {
   }
 
   return {
-    fields: serializeValue(req.body || {}),
-    files,
+    fields: sanitizePayload(serializeValue(req.body || {})),
+    files: sanitizePayload(files),
     fileCount: files.length,
-    error,
+    error: sanitizePayload(error),
   };
 }
 
 function buildRequestSnapshot(req, now) {
+  const requestPath = sanitizeRequestUrl(getRequestPath(req));
+  const referer = getHeader(req, 'referer') || getHeader(req, 'referrer');
   return {
     receivedAt: now.toISOString(),
     method: req.method || 'GET',
-    originalUrl: req.originalUrl || null,
-    baseUrl: req.baseUrl || null,
-    path: req.path || null,
-    routePath: req.route?.path || null,
-    requestPath: getRequestPath(req),
+    originalUrl: req.originalUrl ? sanitizeRequestUrl(req.originalUrl) : null,
+    baseUrl: req.baseUrl ? sanitizeRequestUrl(req.baseUrl) : null,
+    path: req.path ? sanitizeRequestUrl(req.path) : null,
+    routePath: req.route?.path ? sanitizeRequestUrl(req.route.path) : null,
+    requestPath,
     protocol: req.protocol || null,
     hostname: req.hostname || null,
     ip: req.ip || null,
-    ips: Array.isArray(req.ips) ? req.ips : [],
-    headers: serializeValue(req.headers || {}),
-    params: serializeValue(req.params || {}),
-    query: serializeValue(req.query || {}),
-    body: serializeValue(req.body),
+    ips: sanitizePayload(Array.isArray(req.ips) ? req.ips : []),
+    headers: sanitizePayload(serializeValue(req.headers || {})),
+    params: sanitizePayload(serializeValue(req.params || {})),
+    query: sanitizePayload(serializeValue(req.query || {})),
+    body: sanitizePayload(serializeValue(req.body)),
     multipart: buildMultipartSnapshot(req),
-    userAgent: getHeader(req, 'user-agent'),
-    referer: getHeader(req, 'referer') || getHeader(req, 'referrer'),
+    userAgent: sanitizePayload(getHeader(req, 'user-agent')),
+    referer: referer ? sanitizeRequestUrl(referer) : null,
   };
 }
 

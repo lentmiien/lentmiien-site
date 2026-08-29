@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const marked = require('marked');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const { chatGPT, embedding, OpenAIAPICallLog, GetModels, tts, ig, localGPT } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 const kparser = require('../utils/knowledgeParser');
@@ -50,7 +50,7 @@ exports.index = async (req, res) => {
       "StartMessageID": tc_db_data[i].StartMessageID,
       "PreviousMessageID": tc_db_data[i].PreviousMessageID,
       "ContentText": tc_db_data[i].ContentText,
-      "HTMLText": marked.parse(tc_db_data[i].ContentText),
+      "HTMLText": renderMarkdownSafe(tc_db_data[i].ContentText),
       "ContentTokenCount": tc_db_data[i].ContentTokenCount,
       "SystemPromptText": tc_db_data[i].SystemPromptText,
       "UserOrAssistantFlag": tc_db_data[i].UserOrAssistantFlag,
@@ -826,7 +826,7 @@ exports.post_simple_chat = async (req, res) => {
       }
 
       // Return response message and conversation id
-      res.json({status: "OK", msg: "Saved!", data: {response: marked.parse(response.choices[0].message.content), id: ConversationID}});
+      res.json({status: "OK", msg: "Saved!", data: {response: renderMarkdownSafe(response.choices[0].message.content), id: ConversationID}});
     } catch (err) {
       logger.error("Error saving data to database (Chat3): ", err);
       res.json({status: "ERROR", msg: "Error saving data to database (Chat3)."});
@@ -841,7 +841,7 @@ exports.fetch_messages = async (req, res) => {
   const messages = await Chat3Model.find({_id: req.body.ids});
   const output = {};
   messages.forEach(d => {
-    output[d._id.toString()] = marked.parse(d.ContentText);
+    output[d._id.toString()] = renderMarkdownSafe(d.ContentText);
   });
   res.json(output);
 };

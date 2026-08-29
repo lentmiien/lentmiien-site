@@ -47,6 +47,19 @@ function getRepoFilePath(repoDir, filePath) {
   return fullPath;
 }
 
+function ensureRealFileWithinRepository(repoDir, fullPath) {
+  const fileStats = fs.lstatSync(fullPath);
+  if (fileStats.isSymbolicLink()) {
+    throw new Error('Symbolic links cannot be read from repository previews.');
+  }
+
+  const realRepoDir = fs.realpathSync(repoDir);
+  const realFilePath = fs.realpathSync(fullPath);
+  if (realFilePath === realRepoDir || !isWithinDirectory(realRepoDir, realFilePath)) {
+    throw new Error('Repository file resolves outside the repository.');
+  }
+}
+
 class GitHubService {
   constructor() {
     this.repoList = [];
@@ -108,6 +121,14 @@ class GitHubService {
     for (const entry of entries) {
       const fullPath = path.join(currentPath, entry.name);
       const relativePath = path.relative(repoDir, fullPath);
+
+      if (typeof entry.isSymbolicLink === 'function' && entry.isSymbolicLink()) {
+        logger.warning('Skipped symbolic link in repository preview', {
+          category: 'github-browser',
+          metadata: { path: relativePath },
+        });
+        continue;
+      }
       
       if (entry.isDirectory()) {
         if (entry.name !== ".git") {
@@ -175,6 +196,7 @@ class GitHubService {
   
       if (textBasedExtensions.includes(fileExtension)) {
         // It's a text-based file, so we can decode the content
+        ensureRealFileWithinRepository(repoDir, fullPath);
         const content = fs.readFileSync(fullPath, { encoding: 'utf8', flag: 'r' });
         return content;
       } else {

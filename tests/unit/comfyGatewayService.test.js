@@ -119,6 +119,19 @@ describe('ComfyGatewayService input files', () => {
     await expect(response.text()).resolves.toBe('partial audio');
   });
 
+  test('rejects cross-origin Gateway view URLs before forwarding the API key', async () => {
+    await expect(service.fetchImage({
+      gateway_view_url: '//attacker.example/collect',
+    })).rejects.toThrow('configured Gateway /comfy/view endpoint');
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('accepts a same-origin Gateway view URL', () => {
+    expect(service.normalizeGatewayViewUrl('http://gateway.test:8080/comfy/view?filename=image.png'))
+      .toBe('http://gateway.test:8080/comfy/view?filename=image.png');
+  });
+
   test('clears the preview header deadline before the response body is streamed', async () => {
     jest.useFakeTimers();
     service = new ComfyGatewayService({

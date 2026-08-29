@@ -39,17 +39,29 @@ describe('device usage path utility', () => {
     expect(fs.readFileSync(envPath, 'utf8')).toContain(
       `${DEVICE_USAGE_PATH_ENV_KEY}=${value}`
     );
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
   });
 
-  test('persists an existing process env path', () => {
+  test('uses an existing process env path without persisting it', () => {
     const envPath = path.join(tempDir, '.env');
     process.env[DEVICE_USAGE_PATH_ENV_KEY] = 'already-set';
 
     const value = ensureDeviceUsagePath({ envPath });
 
     expect(value).toBe('/already-set');
-    expect(fs.readFileSync(envPath, 'utf8')).toContain(
-      `${DEVICE_USAGE_PATH_ENV_KEY}=/already-set`
+    expect(fs.existsSync(envPath)).toBe(false);
+  });
+
+  test('loads an existing env-file path and restricts the file permissions', () => {
+    const envPath = path.join(tempDir, '.env');
+    fs.writeFileSync(
+      envPath,
+      `${DEVICE_USAGE_PATH_ENV_KEY}=/file-managed-path\n`,
+      { mode: 0o644 }
     );
+    fs.chmodSync(envPath, 0o644);
+
+    expect(ensureDeviceUsagePath({ envPath })).toBe('/file-managed-path');
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
   });
 });

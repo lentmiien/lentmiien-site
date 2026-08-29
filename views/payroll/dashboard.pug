@@ -57,7 +57,7 @@ block script
   script(src='https://cdn.jsdelivr.net/npm/chart.js')
   script.
     const ctx = document.getElementById('netChart').getContext('2d');
-    const datasets = !{chartData};
+    const datasets = !{safeJsonText(chartData)};
     new Chart(ctx,{
       type:'line',
       data:{ labels:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],

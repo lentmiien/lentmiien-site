@@ -66,6 +66,6 @@ block script
   script.
     window.COOKING_CALENDAR_V2 = {
       initialDate: '#{initialDate}',
-      categories: !{JSON.stringify(categories)},
+      categories: !{safeJson(categories)},
     };
   script(src='/cooking_index.js', defer)

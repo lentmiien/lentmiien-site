@@ -398,6 +398,6 @@ block script
   script(src='https://d3js.org/d3.v7.min.js')
   script.
     window.businessOverallState = {
-      analytics: !{JSON.stringify(analytics || null)}
+      analytics: !{safeJson(analytics || null)}
     };
   script(src='/js/accounting_business_overall.js', defer)

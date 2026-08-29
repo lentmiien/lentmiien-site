@@ -285,8 +285,8 @@ block script
   script.
     (() => {
       const state = {
-        jobs: !{JSON.stringify(jobs || [])},
-        plotJobs: !{JSON.stringify(plotJobs || [])},
+        jobs: !{safeJson(jobs || [])},
+        plotJobs: !{safeJson(plotJobs || [])},
       };
       const metricLabels = {
         avgLogprob: 'avg_logprob',

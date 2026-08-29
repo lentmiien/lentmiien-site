@@ -30,6 +30,6 @@ block content
 block script
   script.
     window.goodImagePageConfig = {
-      pinnedId: !{JSON.stringify(pinnedId || null)}
+      pinnedId: !{safeJson(pinnedId || null)}
     };
   script(src="/js/image_gen_good.js")

@@ -20,6 +20,8 @@ jest.mock('simple-git', () => {
 jest.mock('fs', () => ({
   readdirSync: jest.fn(),
   statSync: jest.fn(),
+  lstatSync: jest.fn(),
+  realpathSync: jest.fn(),
   existsSync: jest.fn(),
   readFileSync: jest.fn()
 }));
@@ -28,12 +30,14 @@ jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
   notice: jest.fn(),
   info: jest.fn(),
+  warning: jest.fn(),
   warn: jest.fn()
 }));
 
-const createDirent = (name, isDir) => ({
+const createDirent = (name, isDir, isSymbolicLink = false) => ({
   name,
-  isDirectory: () => isDir
+  isDirectory: () => isDir,
+  isSymbolicLink: () => isSymbolicLink,
 });
 
 describe('GitHubService', () => {
@@ -57,6 +61,8 @@ describe('GitHubService', () => {
     logger = require('../../utils/logger');
     GitHubService = require('../../services/githubService');
     service = new GitHubService();
+    fs.lstatSync.mockReturnValue({ isSymbolicLink: () => false });
+    fs.realpathSync.mockImplementation((targetPath) => targetPath);
 
     const modulePath = require.resolve('../../services/githubService');
     serviceDir = path.dirname(modulePath);
@@ -120,6 +126,7 @@ describe('GitHubService', () => {
         return [
           createDirent('.git', true),
           createDirent('src', true),
+          createDirent('outside.md', false, true),
           createDirent('README.md', false)
         ];
       }
@@ -161,6 +168,10 @@ describe('GitHubService', () => {
         content: null
       }
     ]);
+    expect(logger.warning).toHaveBeenCalledWith(
+      'Skipped symbolic link in repository preview',
+      expect.objectContaining({ category: 'github-browser' })
+    );
   });
 
   test('getRepositoryContents clones repository when missing', async () => {
@@ -225,6 +236,19 @@ describe('GitHubService', () => {
 
   test('getFileContent rejects paths outside the repository', async () => {
     await expect(service.getFileContent('repo', '../secret.txt')).rejects.toThrow('Invalid file path.');
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  test('getFileContent rejects symbolic links and real paths outside the repository', async () => {
+    fs.lstatSync.mockReturnValueOnce({ isSymbolicLink: () => true });
+    await expect(service.getFileContent('repo', 'linked.md')).rejects.toThrow('Symbolic links');
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+
+    fs.lstatSync.mockReturnValueOnce({ isSymbolicLink: () => false });
+    fs.realpathSync
+      .mockReturnValueOnce(path.join(tempDir, 'repo'))
+      .mockReturnValueOnce('/etc/passwd');
+    await expect(service.getFileContent('repo', 'nested/linked.md')).rejects.toThrow('outside');
     expect(fs.readFileSync).not.toHaveBeenCalled();
   });
 

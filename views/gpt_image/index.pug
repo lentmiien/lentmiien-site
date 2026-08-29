@@ -179,7 +179,7 @@ block content
             if gallery.pagination.nextUrl
               a.btn.btn-outline-secondary(href=gallery.pagination.nextUrl) Next
 
-  script(type='application/json', id='gptImagePageConfig') !{JSON.stringify(pageConfig)}
+  script(type='application/json', id='gptImagePageConfig') !{safeJson(pageConfig)}
 
 block script
   script(src='/js/gpt_image.js', defer)

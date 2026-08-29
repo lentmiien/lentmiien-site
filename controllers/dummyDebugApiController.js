@@ -60,7 +60,7 @@ async function logDummyRequest(req) {
         category: 'dummy_api',
         metadata: {
           method: req.method,
-          path: req.originalUrl || req.url || req.path,
+          path: req.route?.path || req.path || '/',
         },
       });
     }
@@ -70,7 +70,7 @@ async function logDummyRequest(req) {
       metadata: {
         error: error.message,
         method: req.method,
-        path: req.originalUrl || req.url || req.path,
+        path: req.route?.path || req.path || '/',
       },
     });
   }

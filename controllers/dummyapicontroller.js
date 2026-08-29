@@ -7,51 +7,22 @@ const japanPostXmlPath = path.join(__dirname, '../sample_data/japan_post_label_r
 const japanPostPdfPath = path.join(__dirname, '../sample_data/japan_post_label.pdf');
 const japanPostLabelResponse = fs.readFileSync(japanPostXmlPath, 'utf8');
 const japanPostLabelPdf = fs.readFileSync(japanPostPdfPath);
-const SENSITIVE_KEYS = new Set([
-  'authorization',
-  'cookie',
-  'password',
-  'secret',
-  'token',
-  'x-api-key',
-]);
 
-function isSensitiveKey(key) {
-  const normalized = String(key || '').toLowerCase();
-  return SENSITIVE_KEYS.has(normalized)
-    || normalized.includes('password')
-    || normalized.includes('secret')
-    || normalized.includes('token');
-}
-
-function redactValue(value, depth = 0) {
-  if (depth > 5 || value === null || value === undefined) {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactValue(entry, depth + 1));
-  }
-
-  if (typeof value === 'object') {
-    return Object.entries(value).reduce((result, [key, entryValue]) => {
-      result[key] = isSensitiveKey(key) ? '[redacted]' : redactValue(entryValue, depth + 1);
-      return result;
-    }, {});
-  }
-
-  return value;
-}
-
-function buildSafeLog(req, data) {
+function buildSafeLog(req) {
+  const rawLength = Number.parseInt(req.headers?.['content-length'], 10);
   return {
-    headers: redactValue(req.headers || {}),
-    data: redactValue(data || {}),
+    category: 'dummy_api',
+    metadata: {
+      method: req.method,
+      path: req.route?.path || req.path || '/',
+      contentType: req.headers?.['content-type'] || null,
+      contentLength: Number.isFinite(rawLength) ? rawLength : null,
+    },
   };
 }
 
 exports.shipping_identifiers = (req, res) => {
-  logger.debug('Shipping identifier API request', buildSafeLog(req, req.query));
+  logger.debug('Shipping identifier API request', buildSafeLog(req));
   const size = req.query.size && parseInt(req.query.size) > 0 ? parseInt(req.query.size) : 1;
   const type = req.query.type ? req.query.type : "SID";
   const array = [];
@@ -72,18 +43,18 @@ exports.shipping_identifiers = (req, res) => {
 };
 
 exports.shipping_labels = (req, res) => {
-  logger.debug('Shipping label API request', buildSafeLog(req, req.body));
+  logger.debug('Shipping label API request', buildSafeLog(req));
   res.json(labelResponse_sample);
 };
 
 exports.japanPostLabel = (req, res) => {
-  logger.debug('Japan Post label mock request', buildSafeLog(req, req.body));
+  logger.debug('Japan Post label mock request', buildSafeLog(req));
   res.type('application/xml');
   res.send(japanPostLabelResponse);
 };
 
 exports.japanPostLabelPdf = (req, res) => {
-  logger.debug('Japan Post label PDF mock request', buildSafeLog(req, req.params));
+  logger.debug('Japan Post label PDF mock request', buildSafeLog(req));
   const fileName = req.params.trackingNumber ? `${req.params.trackingNumber}.pdf` : 'sample-label.pdf';
   res.type('application/pdf');
   res.set('Content-Disposition', `inline; filename="${fileName}"`);

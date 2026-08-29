@@ -180,6 +180,26 @@ function looksLikeFullHtmlDocument(value = '') {
     || /<body[\s>]/i.test(source);
 }
 
+function isSafeRenderedImageSource(value = '') {
+  const source = String(value || '').trim();
+  if (/^data:image\/(?:gif|jpeg|png|webp);base64,/i.test(source)) {
+    return true;
+  }
+  if (!source.startsWith('/') || source.startsWith('//') || source.includes('\\')) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(source, 'https://local.invalid');
+    const decodedPath = decodeURIComponent(parsed.pathname);
+    const normalizedPath = new URL(decodedPath, 'https://local.invalid').pathname;
+    return ['/img/', '/imgen/', '/ocr/', '/ocr_tts/', '/temp/']
+      .some((prefix) => normalizedPath.startsWith(prefix));
+  } catch (error) {
+    return false;
+  }
+}
+
 function renderMarkdownSafe(markdown = '') {
   let source = typeof markdown === 'string' ? markdown : String(markdown || '');
   if (looksLikeFullHtmlDocument(source)) {
@@ -188,6 +208,10 @@ function renderMarkdownSafe(markdown = '') {
 
   const html = markdownRenderer.parse(source, { renderer });
 
+  return sanitizeRenderedHtml(html);
+}
+
+function sanitizeRenderedHtml(html = '') {
   return sanitizeHtml(html, {
     allowedTags: [
       'p', 'em', 'strong', 'blockquote', 'a', 'ul', 'ol', 'li', 'pre', 'code', 'hr', 'br',
@@ -222,13 +246,13 @@ function renderMarkdownSafe(markdown = '') {
         }
         return { tagName, attribs: nextAttribs };
       },
-      img: (tagName, attribs) => ({
-        tagName,
-        attribs: {
-          ...attribs,
-          loading: 'lazy',
-        },
-      }),
+      img: (tagName, attribs) => {
+        const nextAttribs = { ...attribs, loading: 'lazy' };
+        if (!isSafeRenderedImageSource(nextAttribs.src)) {
+          delete nextAttribs.src;
+        }
+        return { tagName, attribs: nextAttribs };
+      },
     },
   });
 }
@@ -255,7 +279,9 @@ function renderMessagesHtml(messages = []) {
 module.exports = {
   escapeHtml,
   looksLikeFullHtmlDocument,
+  isSafeRenderedImageSource,
   renderMarkdownSafe,
   renderMessageHtml,
   renderMessagesHtml,
+  sanitizeRenderedHtml,
 };

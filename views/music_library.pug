@@ -144,8 +144,8 @@ block content
             li When infinity mode is on, new AI generations are queued in the background.
             li Autoplay may be blocked by your browser; click play if needed.
 
-  script(type="application/json", id="music-library-data")!= JSON.stringify(library || [])
-  script(type="application/json", id="music-defaults")!= JSON.stringify(defaults || {})
+  script(type="application/json", id="music-library-data")!= JSON.stringify(library || []).replace(/</g, '\\u003c')
+  script(type="application/json", id="music-defaults")!= JSON.stringify(defaults || {}).replace(/</g, '\\u003c')
 
 block script
   script(src="/js/music_library.js", defer)

@@ -1,5 +1,16 @@
 // Require necessary database models
 const { ArticleModel } = require('../database');
+const { sanitizeBlogContent } = require('../utils/blogContent');
+
+function prepareArticlesForView(articles = []) {
+  return articles.map((article) => {
+    const viewArticle = typeof article?.toObject === 'function'
+      ? article.toObject()
+      : { ...article };
+    viewArticle.content = sanitizeBlogContent(article?.content);
+    return viewArticle;
+  });
+}
 
 exports.index = (req, res) => {
   // Display list of all entries
@@ -12,7 +23,7 @@ exports.index = (req, res) => {
       return 0;
     });
 
-    res.render('blog', { articles });
+    res.render('blog', { articles: prepareArticlesForView(articles) });
   });
 };
 
@@ -26,7 +37,7 @@ exports.list = (req, res) => {
       return 0;
     });
 
-    res.render('blog', { articles });
+    res.render('blog', { articles: prepareArticlesForView(articles) });
   });
 };
 
@@ -40,6 +51,6 @@ exports.view = (req, res) => {
       return 0;
     });
 
-    res.render('blog', { articles });
+    res.render('blog', { articles: prepareArticlesForView(articles) });
   });
 };

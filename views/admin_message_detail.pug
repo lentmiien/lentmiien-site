@@ -56,10 +56,10 @@ block content
         .card-header HTML content
         .card-body
           if message.html
-            .border.p-2.mb-2(style="min-height: 120px; overflow:auto;")!= message.html
+            iframe.border.w-100.mb-2(srcdoc=message.htmlPreview sandbox="" referrerpolicy="no-referrer" loading="lazy" style="min-height: 240px;")
             small.text-muted.d-block Raw HTML below:
             pre(style="white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow:auto;")= message.html
           else if message.textAsHtml
-            .border.p-2.mb-2(style="min-height: 120px; overflow:auto;")!= message.textAsHtml
+            iframe.border.w-100.mb-2(srcdoc=message.textAsHtmlPreview sandbox="" referrerpolicy="no-referrer" loading="lazy" style="min-height: 240px;")
           else
             .text-muted No HTML content.

@@ -17,7 +17,7 @@
 - `PORT=8080 node app` bypasses `prestart`, but still connects to MongoDB and starts background schedulers and workers. Use it only when exercising the configured application environment.
 
 ## Coding Style & Naming Conventions
-- JavaScript using the Node version pinned by Volta in `package.json` (currently 24.12.0). Predominantly CommonJS (`require`, `module.exports`). Keep new code consistent with neighboring files; avoid mixing ESM unless needed.
+- JavaScript using the Node version pinned by Volta in `package.json` (currently 24.20.0). Predominantly CommonJS (`require`, `module.exports`). Keep new code consistent with neighboring files; avoid mixing ESM unless needed.
 - Indentation: 2 spaces; include semicolons; single quotes preferred.
 - Files: follow existing patterns in each folder (e.g., `routes/*.js`, `models/*`). Use PascalCase for new model constructor identifiers and `lowerCamelCase` for functions; preserve existing filenames, registered Mongoose model names, and collection names unless a migration is explicitly requested.
 - Views: Pug templates under `views/`; keep route names aligned with template names where practical.
@@ -43,6 +43,11 @@
 - PRs: include summary, motivation, linked issues when applicable, and screenshots/GIFs for UI changes. Note any env vars, DB migrations, or breaking changes.
 
 ## Security & Configuration Tips
+- New features and deliberate replacements of legacy features must follow `documentation/security-framework.md`; read it before designing or implementing those changes.
+- Classify each new feature as fully public, secret public, or logged in. Logged-in features require semantic capabilities plus object-level owner/member authorization; authentication alone is not sufficient.
+- Treat `admin`, `family`, and `user` as capability bundles, not authorization shortcuts. Derive identity from the validated principal rather than request-supplied user fields.
+- New browser mutations must not use GET and must use the shared CSRF approach. Keep private files outside `public`, bound all untrusted input/work, and add negative security tests.
+- Existing features are grandfathered until explicitly rebuilt, but new routes or operations added to legacy features must meet the framework and must not copy known legacy security gaps.
 - Never commit secrets. Configure `.env` from `env_sample` (e.g., `MONGOOSE_URL`, `SESSION_SECRET`, `API_KEY`, `OPENAI_API_KEY`, Dropbox/Google keys).
 - Do not read, print, or commit `.env`, token files, credentials, or generated personal data unless the task requires it.
 - `setup.js` resets temporary data, converts images, prunes files, performs database maintenance, and conditionally runs Dropbox backup and restore. Its preflight normally requires `MONGOOSE_URL`, `SESSION_SECRET`, and `OPENAI_API_KEY`.

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const marked = require('marked');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const logger = require('../utils/logger');
 
 const { chatGPT, embedding, OpenAIAPICallLog } = require('../utils/ChatGPT');
@@ -233,11 +233,11 @@ exports.query = async (req, res) => {
       Chat2Model.collection.insertMany(entries_to_save);
 
       // Run marked on texts to display
-      chat_texts.forEach(d => d.content = marked.parse(d.content));
+      chat_texts.forEach(d => d.content = renderMarkdownSafe(d.content));
       conversations.forEach(d => {
-        d.forEach(e => e.content = marked.parse(e.content));
+        d.forEach(e => e.content = renderMarkdownSafe(e.content));
       });
-      const answer = marked.parse(gpt_response.choices[0].message.content);
+      const answer = renderMarkdownSafe(gpt_response.choices[0].message.content);
 
       // Return the ChatGPT response and the chat conversations to the user
       res.render("embedding_query", {query: req.body.query, answer, refs: chat_texts, conversations});
@@ -287,9 +287,9 @@ exports.find = async (req, res) => {
     }
 
     // Run marked on texts to display
-    chat_texts.forEach(d => d.content = marked.parse(d.content));
+    chat_texts.forEach(d => d.content = renderMarkdownSafe(d.content));
     conversations.forEach(d => {
-      d.forEach(e => e.content = marked.parse(e.content));
+      d.forEach(e => e.content = renderMarkdownSafe(e.content));
     });
 
     res.render("embedding_find", {query: req.body.find, refs: chat_texts, conversations, embedding_result: texts});

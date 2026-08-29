@@ -125,5 +125,5 @@ block content
 
 block script
   - const soraConfig = { modelOptions, defaultPageSize, ratingDescriptions, categories: categoryList, soraLifecycle };
-  script#sora-config(type='application/json')!= JSON.stringify(soraConfig)
+  script#sora-config(type='application/json')!= JSON.stringify(soraConfig).replace(/</g, '\\u003c')
   script(src='/js/sora.js', defer)

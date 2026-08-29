@@ -48,7 +48,7 @@ block content
           span.input-group-text Title
           input#title.form-control(type="text", name="title", value=`${title}`)
         .row 
-          .col-5!= text.split("\n").join("<br>")
+          .col-5(style='white-space: pre-wrap')= text
           #text_nodes.col-7
         input#save_tn_btn.btn.btn-primary(type="submit", value="Save textnode", disabled)
   script(src="/text_controller.js")

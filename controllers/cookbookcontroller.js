@@ -1,4 +1,4 @@
-const marked = require('marked');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 
 const { CookbookRecipeModel, Chat4KnowledgeModel } = require('../database');
 const { generateStructuredOutput } = require('../utils/OpenAI_API');
@@ -497,7 +497,7 @@ function buildSourceKnowledgeView(knowledge) {
     originConversationId: knowledge.originConversationId,
     originType: knowledge.originType || 'chat4',
     updatedDateDisplay: toDisplayDate(knowledge.updatedDate),
-    contentHTML: marked.parse(knowledge.contentMarkdown || ''),
+    contentHTML: renderMarkdownSafe(knowledge.contentMarkdown || ''),
     contentMarkdown: knowledge.contentMarkdown || '',
     legacyViewPath: buildLegacyKnowledgeUrl(knowledge._id),
   };
@@ -936,14 +936,14 @@ exports.view = async (req, res) => {
     const suggestions = toArray(recipe.suggestions).map((item) => ({
       label: item.label,
       details: item.details,
-      detailsHTML: marked.parse(item.details || ''),
+      detailsHTML: renderMarkdownSafe(item.details || ''),
     }));
     const selectedVariant = suggestions.find((item) => item.label === variantLabel) || null;
 
     const instructions = toArray(recipe.instructions).map((item) => ({
       label: item.label,
       details: item.details,
-      detailsHTML: marked.parse(item.details || ''),
+      detailsHTML: renderMarkdownSafe(item.details || ''),
     }));
 
     const ratingLabelOptions = uniqueSorted([...DEFAULT_RATING_LABELS, ...getExistingRatingLabels(rating)]);

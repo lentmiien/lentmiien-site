@@ -47,18 +47,45 @@ describe('publicTobuyList utility helpers', () => {
     expect(fs.readFileSync(envPath, 'utf8')).toContain(
       `${PUBLIC_TOBUY_LIST_PATH_ENV_KEY}=${value}`
     );
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
   });
 
-  test('ensurePublicTobuyListPath persists an existing process env path', () => {
+  test('ensurePublicTobuyListPath uses a process env path without persisting it', () => {
     const envPath = path.join(tempDir, '.env');
+    fs.writeFileSync(envPath, 'PORT=8080\n', { mode: 0o644 });
+    fs.chmodSync(envPath, 0o644);
     process.env[PUBLIC_TOBUY_LIST_PATH_ENV_KEY] = '/already-set';
 
     const value = ensurePublicTobuyListPath({ envPath });
 
     expect(value).toBe('/already-set');
-    expect(fs.readFileSync(envPath, 'utf8')).toContain(
-      `${PUBLIC_TOBUY_LIST_PATH_ENV_KEY}=/already-set`
+    expect(fs.readFileSync(envPath, 'utf8')).toBe('PORT=8080\n');
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o644);
+  });
+
+  test('process environment overrides a stale value without rewriting the env file', () => {
+    const envPath = path.join(tempDir, '.env');
+    const originalContent = `${PUBLIC_TOBUY_LIST_PATH_ENV_KEY}=/stale-path\n`;
+    fs.writeFileSync(envPath, originalContent, { mode: 0o644 });
+    fs.chmodSync(envPath, 0o644);
+    process.env[PUBLIC_TOBUY_LIST_PATH_ENV_KEY] = '/rotated-path';
+
+    expect(ensurePublicTobuyListPath({ envPath })).toBe('/rotated-path');
+    expect(fs.readFileSync(envPath, 'utf8')).toBe(originalContent);
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o644);
+  });
+
+  test('loads an existing env-file path and restricts the file permissions', () => {
+    const envPath = path.join(tempDir, '.env');
+    fs.writeFileSync(
+      envPath,
+      `${PUBLIC_TOBUY_LIST_PATH_ENV_KEY}=/file-managed-path\n`,
+      { mode: 0o644 }
     );
+    fs.chmodSync(envPath, 0o644);
+
+    expect(ensurePublicTobuyListPath({ envPath })).toBe('/file-managed-path');
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
   });
 
   test('consumePublicTobuyAddQuota enforces both the per-second and daily caps', () => {

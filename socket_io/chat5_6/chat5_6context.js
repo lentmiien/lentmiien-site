@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
+const { createSafeUploadName } = require('../../utils/safeFilePath');
 
 const {
   Chat4Model,
@@ -44,7 +45,7 @@ async function ProcessUploadedImage(tmpFile) {
   }
   const scaledImage = image.resize({ width: Math.round(metadata.width * scale) });
   const imageBuffer = await scaledImage.jpeg().toBuffer();
-  const newFilename = `UP-${Date.now()}.jpg`;
+  const newFilename = `UP-${createSafeUploadName('upload.jpg')}`;
   fs.writeFileSync(`./public/img/${newFilename}`, imageBuffer);
   return newFilename;
 }

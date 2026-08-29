@@ -122,5 +122,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='requestCounterData') !{chartJson}
+  script(type='application/json', id='requestCounterData') !{safeJsonText(chartJson)}
   script(src='/js/request_counter_admin.js', defer)

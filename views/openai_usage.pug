@@ -306,5 +306,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='openaiUsageData') !{JSON.stringify({ monthlyTimeline, monthlyCards, completionInsights, deprecationInsights, spendingInsights })}
+  script(type='application/json', id='openaiUsageData') !{safeJson({ monthlyTimeline, monthlyCards, completionInsights, deprecationInsights, spendingInsights })}
   script(src='/js/openaiUsage.js', defer)

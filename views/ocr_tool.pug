@@ -840,13 +840,13 @@ block content
 
 block script
   script.
-    window.__INITIAL_JOBS__ = !{JSON.stringify(jobs || [])};
-    window.__INITIAL_JOBS_LAST_UPDATED__ = !{JSON.stringify(latestUpdatedAt || null)};
-    window.__INITIAL_HAS_OLDER__ = !{JSON.stringify(hasOlder || false)};
-    window.__OCR_SINGLE_JOB_MODE__ = !{JSON.stringify(Boolean(singleJobMode))};
-    window.__OCR_SINGLE_JOB_ID__ = !{JSON.stringify(selectedJobId || null)};
-    window.__OCR_SINGLE_JOB_DETAIL__ = !{JSON.stringify(initialJobDetail || null)};
-    window.__OCR_HIGHLIGHT_FILE_ID__ = !{JSON.stringify(highlightFileId || null)};
+    window.__INITIAL_JOBS__ = !{safeJson(jobs || [])};
+    window.__INITIAL_JOBS_LAST_UPDATED__ = !{safeJson(latestUpdatedAt || null)};
+    window.__INITIAL_HAS_OLDER__ = !{safeJson(hasOlder || false)};
+    window.__OCR_SINGLE_JOB_MODE__ = !{safeJson(Boolean(singleJobMode))};
+    window.__OCR_SINGLE_JOB_ID__ = !{safeJson(selectedJobId || null)};
+    window.__OCR_SINGLE_JOB_DETAIL__ = !{safeJson(initialJobDetail || null)};
+    window.__OCR_HIGHLIGHT_FILE_ID__ = !{safeJson(highlightFileId || null)};
   script.
     (() => {
       const JOBS_ENDPOINT = '/ocr/jobs';

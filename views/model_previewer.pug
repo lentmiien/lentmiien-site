@@ -74,5 +74,5 @@ block content
         span Keyboard: arrows rotate, +/− zoom, 0 resets
 
 block script
-  script(type='importmap')!= JSON.stringify({ imports: { 'three': threeVendorBaseUrl + '/build/three.module.min.js', 'three/addons/': threeVendorBaseUrl + '/addons/' } })
+  script(type='importmap')!= safeJson({ imports: { 'three': threeVendorBaseUrl + '/build/three.module.min.js', 'three/addons/': threeVendorBaseUrl + '/addons/' } })
   script(type='module', src='/js/model-previewer-bootstrap.js')

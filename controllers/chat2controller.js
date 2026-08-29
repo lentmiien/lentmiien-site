@@ -1,4 +1,4 @@
-const marked = require('marked');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 const logger = require('../utils/logger');
@@ -55,7 +55,7 @@ exports.index = (req, res) => {
             role: d.role,
             model: d.model,
             raw_content: d.content,
-            content: marked.parse(d.content),
+            content: renderMarkdownSafe(d.content),
             date: d.created,
             tokens: d.tokens,
           });

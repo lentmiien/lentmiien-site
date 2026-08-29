@@ -1,6 +1,9 @@
 const socketIO = require('socket.io');
 
-const { UseraccountModel } = require('../database');
+const { RoleModel, UseraccountModel } = require('../database');
+const logger = require('../utils/logger');
+const { authorizeSocketSession } = require('../utils/socketAuthorization');
+const { scheduleSessionExpiry } = require('../utils/sessionExpiry');
 
 const registerChat5Handlers = require('./chat5/chat5handler');
 const registerChat5_5Handlers = require('./chat5_5/chat5_5handler');
@@ -17,32 +20,67 @@ module.exports = (server, sessionMiddleware) => {
     sessionMiddleware(socket.request, socket.request.res || {}, next);
   });
 
-  // Middleware to check if user is authenticated
-  io.use((socket, next) => {
-    if (
-      socket.request.session &&
-      socket.request.session.passport &&
-      socket.request.session.passport.user
-    ) {
+  // Revalidate the session principal against the database. Chat handlers are registered
+  // separately below so authenticated notification sockets remain available to other roles.
+  io.use(async (socket, next) => {
+    try {
+      const session = socket.request.session;
+      const authorization = await authorizeSocketSession(session, {
+        userModel: UseraccountModel,
+        roleModel: RoleModel,
+      });
+      if (!authorization.ok) {
+        return next(new Error(authorization.reason));
+      }
+
+      socket.data.userName = authorization.userName;
+      socket.data.sessionExpiresAt = authorization.sessionExpiresAt;
+      socket.data.canUseChat5 = authorization.permissionGranted;
       return next();
+    } catch (error) {
+      logger.warning('Unable to authorize Socket.IO connection', {
+        category: 'socket-auth',
+        metadata: { error: error.message },
+      });
+      return next(new Error('Unauthorized'));
     }
-    return next(new Error('Unauthorized'));
   });
 
   // Handle connections
   io.on('connection', async (socket) => {
-    const userId = socket.request.session.passport.user;
-    const userName = (await UseraccountModel.findOne({ _id: userId })).name;
+    const userName = socket.data.userName;
+    let cancelExpiry = null;
 
-    socket.data.userName = userName;
-    await socket.join(roomForUser(userName));
+    socket.on('disconnect', () => {
+      cancelExpiry?.();
+    });
 
-    await registerChat5Handlers({ io, socket, userName });
-    await registerChat5_5Handlers({ io, socket, userName });
-    await registerChat5_6Handlers({ io, socket, userName });
+    try {
+      cancelExpiry = scheduleSessionExpiry(
+        socket.data.sessionExpiresAt,
+        () => socket.disconnect(true)
+      );
+      if (!socket.connected) {
+        cancelExpiry?.();
+        return;
+      }
 
-    socket.emit('welcome');
-    socket.on('disconnect', () => {});
+      await socket.join(roomForUser(userName));
+      if (socket.data.canUseChat5) {
+        await registerChat5Handlers({ io, socket, userName });
+        await registerChat5_5Handlers({ io, socket, userName });
+        await registerChat5_6Handlers({ io, socket, userName });
+      }
+
+      socket.emit('welcome');
+    } catch (error) {
+      cancelExpiry?.();
+      socket.disconnect(true);
+      logger.error('Failed to initialize Socket.IO connection', {
+        category: 'socket-initialization',
+        metadata: { error: error.message },
+      });
+    }
   });
 
   io.userRoom = roomForUser;

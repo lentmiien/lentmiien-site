@@ -139,6 +139,33 @@ describe('dummyApiLogService', () => {
     expect(snapshot.body).toBe('plain text payload');
   });
 
+  test('buildRequestSnapshot redacts credentials in headers, URLs, and payloads', () => {
+    const snapshot = buildRequestSnapshot(
+      createRequest({
+        originalUrl: '/ok?api_key=query-secret&source=unit',
+        headers: {
+          authorization: 'Bearer header-secret',
+          cookie: 'session=cookie-secret',
+          'content-type': 'application/json',
+        },
+        query: { api_key: 'query-secret', source: 'unit' },
+        body: { nested: { accessToken: 'body-secret', value: 42 } },
+      }),
+      new Date('2026-06-01T00:00:00.000Z')
+    );
+
+    const serialized = JSON.stringify(snapshot);
+    expect(snapshot.originalUrl).toContain('api_key=%5Bredacted+secret%5D');
+    expect(snapshot.headers.authorization).toBe('[redacted secret]');
+    expect(snapshot.headers.cookie).toBe('[redacted secret]');
+    expect(snapshot.query.api_key).toBe('[redacted secret]');
+    expect(snapshot.body.nested.accessToken).toBe('[redacted secret]');
+    expect(serialized).not.toContain('header-secret');
+    expect(serialized).not.toContain('cookie-secret');
+    expect(serialized).not.toContain('query-secret');
+    expect(serialized).not.toContain('body-secret');
+  });
+
   test('buildRequestSnapshot includes multipart file metadata without content', () => {
     const snapshot = buildRequestSnapshot(
       createRequest({

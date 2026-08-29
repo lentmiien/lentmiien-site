@@ -437,6 +437,37 @@ function stringifyForDisplay(value) {
   }
 }
 
+function sanitizeDisplayHtml(value) {
+  if (!window.DOMPurify || typeof window.DOMPurify.sanitize !== 'function') {
+    throw new Error('HTML sanitizer is not available.');
+  }
+  const sanitized = window.DOMPurify.sanitize(String(value || ''), {
+    USE_PROFILES: { html: true },
+  });
+  const template = document.createElement('template');
+  template.innerHTML = sanitized;
+  template.content.querySelectorAll('img[src]').forEach((image) => {
+    if (!isSafeMarkdownImageSource(image.getAttribute('src'))) {
+      image.removeAttribute('src');
+    }
+  });
+  return template.innerHTML;
+}
+
+function isSafeMarkdownImageSource(value) {
+  const source = String(value || '').trim();
+  if (/^data:image\/(?:gif|jpeg|png|webp);base64,/i.test(source)) return true;
+  if (!source.startsWith('/') || source.startsWith('//') || source.includes('\\')) return false;
+  try {
+    const parsed = new URL(source, window.location.origin);
+    const normalizedPath = new URL(decodeURIComponent(parsed.pathname), window.location.origin).pathname;
+    return ['/img/', '/imgen/', '/ocr/', '/ocr_tts/', '/temp/']
+      .some((prefix) => normalizedPath.startsWith(prefix));
+  } catch (error) {
+    return false;
+  }
+}
+
 function parseMarkdownSafely(value, contextLabel) {
   const source = stringifyForDisplay(value);
   if (source.trim().length === 0) return '';
@@ -444,7 +475,7 @@ function parseMarkdownSafely(value, contextLabel) {
     throw new Error('Markdown renderer is not available.');
   }
   try {
-    return window.marked.parse(source);
+    return sanitizeDisplayHtml(window.marked.parse(source));
   } catch (error) {
     const label = contextLabel ? ` for ${contextLabel}` : '';
     throw new Error(`Unable to render markdown${label}: ${error.message || error}`);
@@ -889,14 +920,14 @@ function bindMessageLoadControls() {
 }
 
 function SwitchConversation(new_id) {
-  if (document.getElementById("id").innerHTML === new_id) return;
+  if (document.getElementById("id").textContent === new_id) return;
 
-  if (document.getElementById("id").innerHTML != "NEW") {
-    const conversation_id = document.getElementById("id").innerHTML;
+  if (document.getElementById("id").textContent != "NEW") {
+    const conversation_id = document.getElementById("id").textContent;
     socket.emit('chat5-leaveConversation', {conversationId: conversation_id});
   }
   socket.emit('chat5-joinConversation', {conversationId: new_id});
-  document.getElementById("id").innerHTML = new_id;
+  document.getElementById("id").textContent = new_id;
   chat5MessageWindow.source = 'conversation5';
   if (window.Chat5QuickSettings && typeof window.Chat5QuickSettings.updateConversationState === 'function') {
     window.Chat5QuickSettings.updateConversationState(document);
@@ -906,7 +937,7 @@ function SwitchConversation(new_id) {
 
 function Append(send, resp, userId) {
   showLoadingPopup();
-  const conversation_id = document.getElementById("id").innerHTML;
+  const conversation_id = document.getElementById("id").textContent;
   const prompt = editor.getMarkdown();
   const settings = collectChatSettings();
   const payload = {conversation_id, prompt: send ? prompt : null, response: resp, settings};
@@ -921,7 +952,7 @@ function Append(send, resp, userId) {
 }
 
 function GenerateTTS() {
-  const conversation_id = document.getElementById("id").innerHTML;
+  const conversation_id = document.getElementById("id").textContent;
   const prompt = editor.getMarkdown();
   if (!prompt || prompt.trim().length === 0) {
     alert('Please enter text before requesting TTS.');
@@ -1105,7 +1136,7 @@ function toggleVoiceRecording() {
 
 function QueueBatch(includePrompt) {
   showLoadingPopup();
-  const conversation_id = document.getElementById("id").innerHTML;
+  const conversation_id = document.getElementById("id").textContent;
   const prompt = includePrompt ? editor.getMarkdown() : null;
   const settings = collectChatSettings();
   socket.emit('chat5-batch', { conversation_id, prompt, includePrompt, settings });
@@ -1209,7 +1240,7 @@ document.getElementById("fileInput").addEventListener('change', () => {
     const reader = new FileReader();
 
     reader.onload = (event) => {
-      const conversation_id = document.getElementById("id").innerHTML;
+      const conversation_id = document.getElementById("id").textContent;
       const arrayBuffer = event.target.result;
       socket.emit('chat5-uploadImage', {
         conversation_id,
@@ -1229,7 +1260,7 @@ document.getElementById("fileInput").addEventListener('change', () => {
 // Edit message array
 function EditMessageArray() {
   showLoadingPopup();
-  const conversation_id = document.getElementById("id").innerHTML;
+  const conversation_id = document.getElementById("id").textContent;
   const newArray = document.getElementById("message_history").value.split('\n');
   socket.emit('chat5-editmessagearray-up', {conversation_id, newArray});
 }
@@ -1251,12 +1282,12 @@ socket.on('chat5-togglehidefrombot-done', () => {
 // Generate title
 function GenerateTitle() {
   showLoadingPopup();
-  const conversation_id = document.getElementById("id").innerHTML;
+  const conversation_id = document.getElementById("id").textContent;
   socket.emit('chat5-generatetitle-up', {conversation_id});
 }
 socket.on('chat5-generatetitle-done', (data) => {
   document.getElementById("title").value = data.title;
-  document.getElementById("conversation_title").innerHTML = data.title;
+  document.getElementById("conversation_title").textContent = data.title;
   hideLoadingPopup();
 });
 socket.on('chat5-generatetitle-up:error', (data) => {
@@ -1304,7 +1335,7 @@ socket.on('chat5-messages', ({id, messages, placeholderId} = {}) => {
   }
 
   SwitchConversation(id);
-  document.getElementById("conversation_title").innerHTML = document.getElementById("title").value;
+  document.getElementById("conversation_title").textContent = document.getElementById("title").value;
   const idEl = document.getElementById("id");
   if (id !== "NEW") {
     idEl.dataset.source = 'conversation5';
@@ -1356,10 +1387,10 @@ socket.on('chat5-messages-removed', (payload) => {
 });
 
 socket.on('chat5-conversation-settings-updated', (data) => {
-  const currentId = document.getElementById("id").innerHTML;
+  const currentId = document.getElementById("id").textContent;
   if (currentId !== data.conversationId) return;
 
-  document.getElementById("conversation_title").innerHTML = data.title;
+  document.getElementById("conversation_title").textContent = data.title;
   document.getElementById("title").value = data.title;
   document.getElementById("category").value = data.category;
   document.getElementById("tags").value = Array.isArray(data.tags) ? data.tags.join(', ') : '';
@@ -1826,7 +1857,7 @@ function createMessageElement(m) {
     textBlock.classList.add('chat5-message-text');
     textBlock.id = `${m._id}textout`;
     textBlock.innerHTML = (typeof content.html === 'string' && content.html.trim().length > 0)
-      ? content.html
+      ? sanitizeDisplayHtml(content.html)
       : parseMarkdownSafely(content.text, messageLabel);
     if (textBlock.innerHTML.trim().length === 0) {
       appendMessageProblem(
@@ -1879,7 +1910,7 @@ function createMessageElement(m) {
     const div = document.createElement("div");
     div.classList.add('chat5-message-reasoning');
     const renderedReasoning = (typeof content.html === 'string' && content.html.trim().length > 0)
-      ? content.html
+      ? sanitizeDisplayHtml(content.html)
       : parseMarkdownSafely(content.text, messageLabel);
     if (renderedReasoning.trim().length > 0) {
       const italics = document.createElement("i");
@@ -1996,7 +2027,7 @@ socket.on('chat5-edittext-done', (data = {}) => {
   if (data.type !== 'text' || typeof data.html !== 'string') return;
   const textOutput = document.getElementById(`${data.messageId}textout`);
   if (!textOutput) return;
-  textOutput.innerHTML = data.html;
+  textOutput.innerHTML = sanitizeDisplayHtml(data.html);
   registerCodeCopyHandlers(textOutput);
   enhanceTables(textOutput);
 });
@@ -2091,8 +2122,8 @@ function initializeDraftingTool() {
 }
 
 socket.on('welcome', () => {
-  if (document.getElementById("id").innerHTML != "NEW") {
-    const conversation_id = document.getElementById("id").innerHTML;
+  if (document.getElementById("id").textContent != "NEW") {
+    const conversation_id = document.getElementById("id").textContent;
     socket.emit('chat5-joinConversation', {conversationId: conversation_id});
   }
 });

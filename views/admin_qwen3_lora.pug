@@ -283,5 +283,5 @@ block content
         #compareResult.qwen-lora__compare-results
 
 block script
-  script(type='application/json', id='qwen3LoraConfig') !{JSON.stringify({ maxCompareTargets, defaultTrainingParams, adminBase: adapterAdminBase, trainingGroupBase: adapterTrainingGroupBase, toolName: adapterToolName, supportsContainerActions: showContainerActions, supportsThinking: showThinkingControls, supportsGpuReservation: showGpuReservation, reservationContainerId: adapterReservationContainerId })}
+  script(type='application/json', id='qwen3LoraConfig') !{safeJson({ maxCompareTargets, defaultTrainingParams, adminBase: adapterAdminBase, trainingGroupBase: adapterTrainingGroupBase, toolName: adapterToolName, supportsContainerActions: showContainerActions, supportsThinking: showThinkingControls, supportsGpuReservation: showGpuReservation, reservationContainerId: adapterReservationContainerId })}
   script(src='/js/qwen3_lora_admin.js', defer)

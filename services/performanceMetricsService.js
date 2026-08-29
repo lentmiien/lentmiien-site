@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const PerformanceSnapshot = require('../models/performance_snapshot');
 const PerformanceRollup = require('../models/performance_rollup');
 const PerformanceSlowRequest = require('../models/performance_slow_request');
+const { redactSecretPublicPath } = require('../utils/secretPublicRoute');
 
 const DEFAULT_SNAPSHOT_INTERVAL_MS = 60 * 1000;
 const DEFAULT_SLOW_REQUEST_THRESHOLD_MS = 1500;
@@ -112,8 +113,9 @@ function normalizeRoute(method, originalUrl) {
     return { skip: true, route: pathname, label: `${method} ${pathname}` };
   }
 
-  const staticLabel = staticRouteLabel(pathname);
-  const route = staticLabel || pathname
+  const safePath = redactSecretPublicPath(pathname);
+  const staticLabel = staticRouteLabel(safePath);
+  const route = staticLabel || safePath
     .split('/')
     .map(normalizePathSegment)
     .join('/') || '/';
@@ -122,7 +124,7 @@ function normalizeRoute(method, originalUrl) {
     skip: false,
     route,
     label: `${method} ${route}`,
-    path: pathname,
+    path: safePath,
   };
 }
 
@@ -305,7 +307,7 @@ class PerformanceMetricsService {
         timestamp: new Date(),
         method,
         route: routeInfo.route,
-        path: routeInfo.path,
+        path: routeInfo.route,
         statusCode,
         durationMs: round(durationMs),
         contentLength: parseContentLength(res.getHeader('content-length')),

@@ -171,7 +171,7 @@ block script
   script(src='https://d3js.org/d3.v7.min.js')
   script.
     window.businessAnalyticsState = {
-      analytics: !{JSON.stringify(analytics || null)},
+      analytics: !{safeJson(analytics || null)},
       routes: {
         updateGroup: '/accounting/api/business-groups'
       }

@@ -1,9 +1,15 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const router = express.Router();
 
 const controller = require('../controllers/dummyDebugApiController');
 const { getDummyApiEndpointSettings } = require('../services/dummyApiLogService');
+
+function getPositiveIntegerEnv(name, fallback) {
+  const value = Number.parseInt(process.env[name], 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 const discardFileStorage = {
   _handleFile(_req, file, cb) {
@@ -35,11 +41,19 @@ const discardFileStorage = {
 const multipartUpload = multer({
   storage: discardFileStorage,
   limits: {
-    files: 50,
-    fields: 500,
-    parts: 1000,
-    fieldSize: 1024 * 1024,
+    fileSize: 5 * 1024 * 1024,
+    files: 5,
+    fields: 100,
+    parts: 150,
+    fieldSize: 256 * 1024,
   },
+});
+
+const dummyApiLimiter = rateLimit({
+  windowMs: getPositiveIntegerEnv('DUMMY_API_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+  limit: getPositiveIntegerEnv('DUMMY_API_RATE_LIMIT_MAX', 60),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
 });
 
 function isMultipartFormData(req) {
@@ -81,6 +95,7 @@ async function parseMultipartWhenLoggingEnabled(req, res, next) {
 
 router.all(
   '/ok',
+  dummyApiLimiter,
   parseMultipartWhenLoggingEnabled,
   express.text({ type: ['text/*', 'application/xml', 'application/*+xml'], limit: '5mb' }),
   controller.ok
@@ -88,24 +103,28 @@ router.all(
 
 router.post(
   '/fmi/data/:version/databases/:databaseName/sessions',
+  dummyApiLimiter,
   parseMultipartWhenLoggingEnabled,
   controller.clarisSession
 );
 
 router.get(
   '/fmi/data/:version/validateSession',
+  dummyApiLimiter,
   parseMultipartWhenLoggingEnabled,
   controller.clarisValidateSession
 );
 
 router.post(
   '/fmi/data/:version/databases/:databaseName/layouts/:layoutName/records',
+  dummyApiLimiter,
   parseMultipartWhenLoggingEnabled,
   controller.clarisCreateRecord
 );
 
 router.post(
   '/fmi/data/:version/databases/:databaseName/layouts/:layoutName/records/:recordId/containers/:fieldName/:fieldRepetition',
+  dummyApiLimiter,
   parseMultipartWhenLoggingEnabled,
   controller.clarisUploadContainer
 );

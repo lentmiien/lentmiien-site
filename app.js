@@ -21,6 +21,9 @@ const { ensurePublicTobuyListPath } = require('./utils/publicTobuyList');
 const { ensureRequestCounterPath } = require('./utils/requestCounterPath');
 const { ensureMinuteLoggerPath } = require('./utils/minuteLoggerPath');
 const { ensureDeviceUsagePath } = require('./utils/deviceUsagePath');
+const { escapeInlineScriptText, serializeForInlineScript } = require('./utils/safeJson');
+const { hasPermission } = require('./utils/authorization');
+const { targetsProtectedStaticDirectory } = require('./utils/protectedStaticPath');
 const {
   THREE_ADDONS_PATH,
   THREE_BUILD_PATH,
@@ -32,11 +35,15 @@ const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('
 const { HTML_RATING_CATEGORIES, computeAverageRating } = require('./utils/htmlRatings');
 const performanceMetrics = require('./services/performanceMetricsService');
 const createPerformanceMetricsMiddleware = require('./middleware/performanceMetrics');
+const secretPublicResponse = require('./middleware/secretPublicResponse');
+const createErrorHandler = require('./middleware/errorHandler');
 
 // Initialize app and server
 const app = express();
 const server = http.createServer(app);
 app.set('logger', logger);
+app.locals.safeJson = serializeForInlineScript;
+app.locals.safeJsonText = escapeInlineScriptText;
 
 function getPositiveIntegerEnv(name, fallback) {
   const value = Number.parseInt(process.env[name], 10);
@@ -158,17 +165,17 @@ app.use('/apphealth', (req, res) => res.json({status: "ok"}));
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
 const requestCounterPath = ensureRequestCounterPath();
-app.use(requestCounterPath, telemetryLimiter, requestCounterRouter);
+app.use(requestCounterPath, secretPublicResponse, telemetryLimiter, requestCounterRouter);
 
 // Public hidden device usage endpoint
 const deviceUsageRouter = require('./routes/device_usage');
 const deviceUsagePath = ensureDeviceUsagePath();
-app.use(deviceUsagePath, telemetryLimiter, deviceUsageRouter);
+app.use(deviceUsagePath, secretPublicResponse, telemetryLimiter, deviceUsageRouter);
 
 // Public hidden minute logger endpoint
 const minuteLoggerRouter = require('./routes/minute_logger');
 const minuteLoggerPath = ensureMinuteLoggerPath();
-app.use(minuteLoggerPath, telemetryLimiter, minuteLoggerRouter);
+app.use(minuteLoggerPath, secretPublicResponse, telemetryLimiter, minuteLoggerRouter);
 
 // Passport setup
 app.use(passport.initialize());
@@ -231,7 +238,8 @@ app.use(async (req, res, next) => {
     res.locals.name = req.user.name;
     res.locals.admin = req.user.type_user === 'admin';
   }
-  res.locals.gtag = !(process.env.HIDE_GTAG && process.env.HIDE_GTAG === 'YES');
+  res.locals.gtag = !res.locals.loggedIn
+    && !(process.env.HIDE_GTAG && process.env.HIDE_GTAG === 'YES');
 
   // Load permissions
   const permissions = [];
@@ -364,10 +372,53 @@ app.get('/html/lego_sculpture_converter.html', isAuthenticated, (_req, res) => {
   res.redirect('/lego-sculpture-converter');
 });
 
+const protectedStaticDirectories = [
+  'audio',
+  'imgen',
+  'mp3',
+  'ocr',
+  'ocr_tts',
+  'pixal3d-models',
+  'temp',
+  'trellis2-models',
+  'video',
+];
+const protectedStaticDirectorySet = new Set(protectedStaticDirectories);
+app.use((req, res, next) => {
+  let isProtected;
+  try {
+    isProtected = targetsProtectedStaticDirectory(
+      req.path || req.originalUrl || req.url,
+      protectedStaticDirectorySet
+    );
+  } catch (error) {
+    return res.status(400).send('Invalid URL path.');
+  }
+
+  if (!isProtected) {
+    return next();
+  }
+
+  return isAuthenticated(req, res, () => {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    return next();
+  });
+});
+protectedStaticDirectories.forEach((directory) => {
+  app.use(`/${directory}`, isAuthenticated, express.static(path.join(__dirname, 'public', directory), {
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    },
+  }));
+});
+
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/katex', express.static(path.join(__dirname, 'node_modules', 'katex', 'dist')));
 app.use('/vendor/mermaid', express.static(path.join(__dirname, 'node_modules', 'mermaid', 'dist')));
+app.use('/vendor/dompurify', express.static(path.join(__dirname, 'node_modules', 'dompurify', 'dist')));
 const immutableVendorOptions = { immutable: true, maxAge: '1y' };
 app.use(`${THREE_VENDOR_BASE_URL}/build`, express.static(THREE_BUILD_PATH, immutableVendorOptions));
 app.use(`${THREE_VENDOR_BASE_URL}/addons`, express.static(THREE_ADDONS_PATH, immutableVendorOptions));
@@ -443,7 +494,7 @@ const publicTobuyListPath = ensurePublicTobuyListPath();
 
 app.use('/', indexRouter);
 app.use('/', dummyDebugApiRouter);
-app.use(publicTobuyListPath, publicWriteLimiter, publicTobuyListRouter);
+app.use(publicTobuyListPath, secretPublicResponse, publicWriteLimiter, publicTobuyListRouter);
 app.use('/api', isAuthenticated, apiRouter);
 app.use('/mydhlapi/test', dummyapiRouter);
 app.use('/webapi/servlet', dummyapiRouter);
@@ -553,18 +604,7 @@ function isAuthenticated(req, res, next) {
 
 function authorize(routeName) {
   return async (req, res, next) => {
-    const userRole = req.user.type_user;
-    const username = req.user.name;
-
-    // Check user-specific roles
-    const userSpecificRole = await RoleModel.findOne({ name: username, type: 'user' });
-    if (userSpecificRole && userSpecificRole.permissions.includes(routeName)) {
-      return next();
-    }
-
-    // Check group roles
-    const groupRole = await RoleModel.findOne({ name: userRole, type: 'group' });
-    if (groupRole && groupRole.permissions.includes(routeName)) {
+    if (await hasPermission(req.user, routeName, { roleModel: RoleModel })) {
       return next();
     }
 
@@ -678,6 +718,8 @@ app.get('/games', (req, res) => {
   });
 });
 // -----------------
+
+app.use(createErrorHandler(logger));
 
 // Start the server
 const PORT = process.env.PORT || 8080;

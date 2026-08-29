@@ -1262,7 +1262,8 @@ const generateVideo = async (prompt, model, seconds, size, inputImagePath) => {
       responseBody: video,
     });
     logger.debug('OpenAI generate video response', {
-      data: video,
+      videoId: video?.id || null,
+      status: video?.status || null,
       hasReference: Boolean(payload.input_reference),
     });
     return video;

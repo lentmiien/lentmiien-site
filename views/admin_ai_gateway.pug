@@ -607,5 +607,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='aiGatewayData') !{JSON.stringify({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary, reservation: dashboard.reservation })}
+  script(type='application/json', id='aiGatewayData') !{safeJson({ baseUrl: dashboard.baseUrl, fetchedAt: dashboard.fetchedAt, chartData: dashboard.chartData, gpu: dashboard.gpu, autoStop: dashboard.autoStop, containers: dashboard.containers, containerSummary: dashboard.containerSummary, reservation: dashboard.reservation })}
   script(src='/js/aiGateway.js', defer)

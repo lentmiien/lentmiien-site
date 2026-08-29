@@ -1,6 +1,8 @@
 ﻿const fs = require('fs');
+const path = require('path');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
+const { createSafeUploadName, resolveFileWithinDirectory } = require('../utils/safeFilePath');
 const ai = require('../utils/OpenAI_API');
 const ollama = require('../utils/Ollama_API');
 const ToolManagerService = require('./toolManagerService');
@@ -877,13 +879,24 @@ class ConversationService {
   }
 
   loadImageToBase64(filename) {
-    const img_buffer = fs.readFileSync(`./public/img/${filename}`);
+    const imagePath = resolveFileWithinDirectory(
+      path.join(__dirname, '../public/img'),
+      filename,
+      { directChild: true }
+    );
+    const img_buffer = fs.readFileSync(imagePath);
     const b64_img = Buffer.from(img_buffer).toString('base64');
     return b64_img;
   }
 
   async loadProcessNewImageToBase64(filename) {
-    const file_data = fs.readFileSync(filename);
+    const suppliedPath = path.isAbsolute(filename) ? filename : path.resolve(filename);
+    const temporaryPath = resolveFileWithinDirectory(
+      path.join(__dirname, '../tmp_data'),
+      suppliedPath,
+      { directChild: true }
+    );
+    const file_data = fs.readFileSync(temporaryPath);
     const img_data = await sharp(file_data);
     const metadata = await img_data.metadata();
     let short_side = metadata.width < metadata.height ? metadata.width : metadata.height;
@@ -895,8 +908,13 @@ class ConversationService {
     }
     const scale_img = await img_data.resize({ width: Math.round(metadata.width * scale) });
     const img_buffer = await scale_img.jpeg().toBuffer();
-    const new_filename = `UP-${Date.now()}.jpg`;
-    fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
+    const new_filename = `UP-${createSafeUploadName('upload.jpg')}`;
+    const outputPath = resolveFileWithinDirectory(
+      path.join(__dirname, '../public/img'),
+      new_filename,
+      { directChild: true }
+    );
+    fs.writeFileSync(outputPath, img_buffer);
     const b64_img = Buffer.from(img_buffer).toString('base64');
     return { new_filename, b64_img };
   }

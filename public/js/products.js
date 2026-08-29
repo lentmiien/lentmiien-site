@@ -1,7 +1,75 @@
-const products = JSON.parse(document.getElementById("products").innerHTML);
+const products = JSON.parse(document.getElementById("products").textContent);
 const data_list = document.getElementById("data_list");
 const content = document.getElementById("content");
 const output = document.getElementById("output");
+
+function isSafeMarkdownImageSource(value) {
+  const source = String(value || '').trim();
+  if (/^data:image\/(?:gif|jpeg|png|webp);base64,/i.test(source)) return true;
+  if (!source.startsWith('/') || source.startsWith('//') || source.includes('\\')) return false;
+  try {
+    const parsed = new URL(source, window.location.origin);
+    const normalizedPath = new URL(decodeURIComponent(parsed.pathname), window.location.origin).pathname;
+    return ['/img/', '/imgen/', '/ocr/', '/ocr_tts/', '/temp/']
+      .some((prefix) => normalizedPath.startsWith(prefix));
+  } catch (error) {
+    return false;
+  }
+}
+
+function removeUnsafeMarkdownImageSources(container) {
+  container.querySelectorAll('img[src]').forEach((image) => {
+    if (!isSafeMarkdownImageSource(image.getAttribute('src'))) {
+      image.removeAttribute('src');
+    }
+  });
+}
+
+function createSafeMarkdownElement(value) {
+  const element = document.createElement('div');
+  if ((typeof DOMPurify === 'object' || typeof DOMPurify === 'function')
+    && typeof DOMPurify.sanitize === 'function'
+    && typeof marked !== 'undefined'
+    && typeof marked.parse === 'function') {
+    element.innerHTML = DOMPurify.sanitize(marked.parse(String(value ?? '')), {
+      USE_PROFILES: { html: true },
+      FORBID_ATTR: ['style'],
+      FORBID_TAGS: ['embed', 'form', 'iframe', 'object', 'style'],
+    });
+    removeUnsafeMarkdownImageSources(element);
+  } else {
+    element.textContent = String(value ?? '');
+  }
+  return element;
+}
+
+function appendProductRow(product) {
+  const row = document.createElement('tr');
+  row.title = String(product.ai_description || '');
+  const codeCell = document.createElement('td');
+  codeCell.textContent = String(product.product_code || '');
+  const actionCell = document.createElement('td');
+  const detailsButton = document.createElement('button');
+  detailsButton.className = 'btn btn-primary';
+  detailsButton.type = 'button';
+  detailsButton.textContent = 'Details';
+  detailsButton.addEventListener('click', () => Details(product.product_code));
+  const deleteButton = document.createElement('button');
+  deleteButton.className = 'btn btn-danger';
+  deleteButton.type = 'button';
+  deleteButton.textContent = 'Delete';
+  deleteButton.addEventListener('click', () => Delete(product.product_code));
+  actionCell.append(detailsButton, deleteButton);
+  row.append(codeCell, actionCell);
+  data_list.append(row);
+}
+
+document.querySelectorAll('.product-details-button').forEach((button) => {
+  button.addEventListener('click', () => Details(button.dataset.productCode));
+});
+document.querySelectorAll('.product-delete-button').forEach((button) => {
+  button.addEventListener('click', () => Delete(button.dataset.productCode));
+});
 
 // Detect input file and generate HS editor
 window.addEventListener('load', function () {
@@ -55,11 +123,11 @@ window.addEventListener('load', function () {
       console.log(resp);
       resp.forEach(d => {
         products.push(d);
-        data_list.innerHTML += `<tr title="${d.ai_description}"><td>${d.product_code}</td><td><button class="btn btn-primary" onclick="Details('${d.product_code}')">Details</button><button class="btn btn-danger" onclick="Delete('${d.product_code}')">Delete</button></td></tr>`;
+        appendProductRow(d);
       });
     }
     // Get the requested data from `products`, and display to user
-    output.innerHTML = '';
+    output.replaceChildren();
     for (let i = 0; i < data.length; i++) {
       for (let j = 0; j < products.length; j++) {
         if (data[i][0] === products[j].product_code) {
@@ -75,10 +143,18 @@ window.addEventListener('load', function () {
 - **Price:** ${products[j].price} JPY
 
 ---`;
-            output.innerHTML += `<hr><b>${products[j].product_code}</b>${marked.parse(content_string)}`;
+            const code = document.createElement('b');
+            code.textContent = String(products[j].product_code || '');
+            output.append(document.createElement('hr'), code, createSafeMarkdownElement(content_string));
           } else {
             // Previous format
-            output.innerHTML += `<hr><b>${products[j].product_code}</b>${marked.parse(products[j].ai_description)}`;
+            const code = document.createElement('b');
+            code.textContent = String(products[j].product_code || '');
+            output.append(
+              document.createElement('hr'),
+              code,
+              createSafeMarkdownElement(products[j].ai_description)
+            );
           }
           break;
         }

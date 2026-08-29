@@ -3,6 +3,7 @@ const path = require('path');
 const pdfUtils = require('../../utils/pdf');
 const context = require('./chat5_6context');
 const logger = require('../../utils/logger');
+const { createSafeUploadName, resolveFileWithinDirectory } = require('../../utils/safeFilePath');
 const fsp = fs.promises;
 
 function toPlain(doc) {
@@ -147,8 +148,19 @@ async function cleanupPromotedFiles(files = []) {
   if (!Array.isArray(files) || files.length === 0) return;
   await Promise.all(files.map(async (file) => {
     if (!file || !file.fileName) return;
-    const targetPath = path.join(__dirname, '../../public', 'img', file.fileName);
-    await fsp.unlink(targetPath).catch(() => {});
+    try {
+      const targetPath = resolveFileWithinDirectory(
+        path.join(__dirname, '../../public', 'img'),
+        file.fileName,
+        { directChild: true }
+      );
+      await fsp.unlink(targetPath).catch(() => {});
+    } catch (error) {
+      logger.warning('Rejected cleanup path outside the Chat5 image directory', {
+        category: 'chat-upload',
+        metadata: { error: error.message },
+      });
+    }
   }));
 }
 
@@ -551,11 +563,15 @@ module.exports = async function registerChat5_6Handlers({
       const bufferInput = raw.buffer ?? raw.data ?? null;
 
       if (!bufferInput) {
-        const targetPath = path.join('public', 'img', fileName);
+        const targetPath = resolveFileWithinDirectory(
+          path.join(__dirname, '../../public', 'img'),
+          fileName,
+          { directChild: true }
+        );
         if (!fs.existsSync(targetPath)) {
           throw new Error('Referenced image does not exist.');
         }
-        uploadFile = fileName;
+        uploadFile = path.basename(targetPath);
       } else {
         let fileBuffer = null;
         if (Buffer.isBuffer(bufferInput)) {
@@ -572,7 +588,7 @@ module.exports = async function registerChat5_6Handlers({
 
         if (!fileBuffer || fileBuffer.length === 0) throw new Error('Invalid image data.');
 
-        const uniqueName = `${Date.now()}`;
+        const uniqueName = createSafeUploadName(fileName);
         tempFilePath = path.join(TEMP_DIR, uniqueName);
         await fs.promises.writeFile(tempFilePath, fileBuffer);
         uploadFile = await ProcessUploadedImage(tempFilePath);

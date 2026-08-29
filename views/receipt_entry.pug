@@ -159,9 +159,8 @@ block script
   - const scriptBusinessSuggestions = Array.isArray(scriptAutocompleteSuggestions.businesses) ? scriptAutocompleteSuggestions.businesses : [];
   - const scriptTagSuggestions = Array.isArray(scriptAutocompleteSuggestions.tags) ? scriptAutocompleteSuggestions.tags : [];
   - const scriptCreditLabelSuggestions = Array.isArray(scriptAutocompleteSuggestions.creditLabels) ? scriptAutocompleteSuggestions.creditLabels : [];
-  - const safeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
-  script(type="application/json", id="mapping-data")!= JSON.stringify(mappingMatches || [])
-  script(type="application/json", id="prefill-data")!= JSON.stringify({ defaults: { budgetPrefill: defaultBudgetPrefill || {}, creditPrefill: defaultCreditPrefill || {}, entryMode: defaultEntryMode || 'budget' }, applied: { budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget', appliedRuleId: appliedRuleId || null } })
+  script(type="application/json", id="mapping-data")!= safeJson(mappingMatches || [])
+  script(type="application/json", id="prefill-data")!= safeJson({ defaults: { budgetPrefill: defaultBudgetPrefill || {}, creditPrefill: defaultCreditPrefill || {}, entryMode: defaultEntryMode || 'budget' }, applied: { budgetPrefill: budgetPrefill || {}, creditPrefill: creditPrefill || {}, entryMode: entryMode || 'budget', appliedRuleId: appliedRuleId || null } })
   script(type="application/json", id="autocomplete-data")!= safeJson({ businesses: scriptBusinessSuggestions, tags: scriptTagSuggestions, creditLabels: scriptCreditLabelSuggestions })
   script.
     (function () {

@@ -94,10 +94,10 @@ block script
   script(src="https://d3js.org/d3.v7.min.js")
   script.
     window.creditCardMonthPage = {
-      cards: !{JSON.stringify(cards || [])},
-      activeCardId: !{JSON.stringify(activeCardId || null)},
-      year: !{JSON.stringify(year)},
-      month: !{JSON.stringify(month)},
+      cards: !{safeJson(cards || [])},
+      activeCardId: !{safeJson(activeCardId || null)},
+      year: !{safeJson(year)},
+      month: !{safeJson(month)},
       routes: {
         monthData: '/budget/cards/api/month',
         dashboard: '/budget/cards',

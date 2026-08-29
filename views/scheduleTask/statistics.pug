@@ -322,5 +322,5 @@ block content
 block script
   if hasData
     script(src='https://d3js.org/d3.v7.min.js', defer)
-    script(type='application/json', id='scheduleTaskStatsData') !{JSON.stringify({ charts, currentUserId })}
+    script(type='application/json', id='scheduleTaskStatsData') !{safeJson({ charts, currentUserId })}
     script(src='/js/scheduleTask/stats.js', defer)

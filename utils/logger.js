@@ -69,22 +69,30 @@ function normalizeOptions(args) {
   return { metadata: args };
 }
 
+function isSensitiveKey(key) {
+  const normalized = String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return ['authorization', 'proxyauthorization', 'cookie', 'setcookie'].includes(normalized)
+    || normalized.endsWith('apikey')
+    || normalized.endsWith('password')
+    || normalized.endsWith('passwd')
+    || normalized.endsWith('secret')
+    || normalized.endsWith('token');
+}
 
 function createReplacer() {
   const seen = new WeakSet();
   return (key, value) => {
+    if (isSensitiveKey(key)) {
+      return '[redacted secret]';
+    }
     if (value instanceof Error) {
-      const errorData = {
+      return {
         name: value.name,
         message: value.message,
         stack: value.stack,
+        code: value.code || null,
+        status: value.status || value.statusCode || null,
       };
-      Object.getOwnPropertyNames(value).forEach((prop) => {
-        if (!Object.prototype.hasOwnProperty.call(errorData, prop)) {
-          errorData[prop] = value[prop];
-        }
-      });
-      return errorData;
     }
 
     if (typeof value === 'bigint') {
@@ -102,6 +110,14 @@ function createReplacer() {
   };
 }
 
+function sanitizeLogMetadata(value) {
+  try {
+    return JSON.parse(JSON.stringify(value, createReplacer()));
+  } catch (error) {
+    return '[Unable to serialize log metadata safely]';
+  }
+}
+
 function formatMessage(message) {
   if (typeof message === 'string') {
     return message;
@@ -109,7 +125,7 @@ function formatMessage(message) {
   if (message instanceof Error) {
     return message.message;
   }
-  return util.inspect(message, { depth: 5, breakLength: 80 });
+  return util.inspect(sanitizeLogMetadata(message), { depth: 5, breakLength: 80 });
 }
 
 function shouldLog(level) {
@@ -168,12 +184,12 @@ async function writeLog(level, message, ...args) {
   let metadataSet = false;
 
   if (Object.prototype.hasOwnProperty.call(options, 'metadata')) {
-    entry.metadata = options.metadata;
+    entry.metadata = sanitizeLogMetadata(options.metadata);
     metadataSet = true;
   }
 
   if (!metadataSet && typeof message === 'object' && message !== null) {
-    entry.metadata = message;
+    entry.metadata = sanitizeLogMetadata(message);
   }
 
   logToConsole(entry);

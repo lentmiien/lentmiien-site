@@ -1,5 +1,6 @@
 const {
   escapeHtml,
+  isSafeRenderedImageSource,
   renderMarkdownSafe,
   renderMessageHtml,
 } = require('../../utils/chat5Markdown');
@@ -15,6 +16,25 @@ describe('chat5Markdown', () => {
     expect(output).toContain('src="/img/example.png"');
     expect(output).toContain('alt="Generated image 1"');
     expect(output).not.toContain('&lt;img');
+  });
+
+  test.each([
+    '/budget/delete_all',
+    '/img/../budget/delete_all',
+    'https://example.com/tracking.png',
+    '//example.com/tracking.png',
+    'javascript:alert(1)',
+  ])('removes active or remote Markdown image source %s', (source) => {
+    const output = renderMarkdownSafe(`![Untrusted image](${source})`);
+    expect(output).toContain('<img');
+    expect(output).not.toContain(`src="${source}"`);
+  });
+
+  test('allows only passive local media and supported inline image sources', () => {
+    expect(isSafeRenderedImageSource('/img/example.png')).toBe(true);
+    expect(isSafeRenderedImageSource('/ocr/example.png?version=1')).toBe(true);
+    expect(isSafeRenderedImageSource('data:image/png;base64,AA==')).toBe(true);
+    expect(isSafeRenderedImageSource('/accounting/delete/1')).toBe(false);
   });
 
   test('treats raw html image tags as text instead of executable html', () => {

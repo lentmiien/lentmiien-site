@@ -76,7 +76,10 @@ exports.openai = async (req, res) => {
     return res.status(500).send('Server error');
   }
 
-  logger.debug('OpenAI webhook event received', { type: event.type, data: event.data });
+  logger.debug('OpenAI webhook event received', {
+    type: event.type,
+    eventId: event?.data?.id || null,
+  });
 
   res.status(200).send();
 
@@ -85,7 +88,7 @@ exports.openai = async (req, res) => {
       const openaiId = event?.data?.id;
 
       if (!openaiId) {
-        logger.warning('Video completed webhook missing video id', { event });
+        logger.warning('Video completed webhook missing video id', { type: event.type });
         return;
       }
 
@@ -117,7 +120,7 @@ exports.openai = async (req, res) => {
       const openaiId = event?.data?.id;
 
       if (!openaiId) {
-        logger.warning('Video failed webhook missing video id', { event });
+        logger.warning('Video failed webhook missing video id', { type: event.type });
         return;
       }
 

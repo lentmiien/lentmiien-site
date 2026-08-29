@@ -168,7 +168,7 @@ block script
     script(src='https://cdn.jsdelivr.net/npm/chart.js')
     script.
       (function(){
-        const payload = !{chartPayload};
+        const payload = !{safeJsonText(chartPayload)};
         const ctx = document.getElementById('yearTrendChart');
         if (!ctx) return;
         new Chart(ctx,{

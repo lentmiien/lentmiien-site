@@ -771,6 +771,6 @@ block content
 block script
   if admin
     script.
-      window.LIFE_LOG_BASE_PATH = !{JSON.stringify(lifeLogBasePath || '/admin/life_log')};
+      window.LIFE_LOG_BASE_PATH = !{safeJson(lifeLogBasePath || '/admin/life_log')};
     script(src="/js/my_life_log.js")
   script(src="/js/mypage_icons.js")

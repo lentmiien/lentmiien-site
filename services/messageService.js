@@ -1,6 +1,6 @@
 const fs = require('fs');
 const sharp = require('sharp');
-const marked = require('marked');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const { chatGPT, chatGPTaudio, chatGPT_beta, chatGPT_o1, chatGPT_Tool, tts, ig, ig2, imageEdit } = require('../utils/ChatGPT');
 const { anthropic } = require('../utils/anthropic');
 const { groq, groq_vision } = require('../utils/groq');
@@ -10,6 +10,7 @@ const ai = require('../utils/OpenAI_API');
 const ollama = require('../utils/Ollama_API');
 const { z } = require('zod');
 const logger = require('../utils/logger');
+const { createSafeUploadName } = require('../utils/safeFilePath');
 const {
   APP_SETTING_KEYS,
   appSettingsService: defaultAppSettingsService,
@@ -350,8 +351,8 @@ class MessageService {
     });
     for (let i = 0; i < messages.length; i++) {
       if (get_html) {
-        messages[i].prompt_html = marked.parse(messages[i].prompt);
-        messages[i].response_html = marked.parse(messages[i].response);
+        messages[i].prompt_html = renderMarkdownSafe(messages[i].prompt);
+        messages[i].response_html = renderMarkdownSafe(messages[i].response);
       }
       if (val_lookup) {
         let updated = false;
@@ -372,8 +373,8 @@ class MessageService {
   async getMessagesByUserId(user_id) {
     const messages = await this.messageModel.find({ user_id }).sort({ timestamp: -1 }).exec();
     for (let i = 0; i < messages.length; i++) {
-      messages[i].prompt_html = marked.parse(messages[i].prompt);
-      messages[i].response_html = marked.parse(messages[i].response);
+      messages[i].prompt_html = renderMarkdownSafe(messages[i].prompt);
+      messages[i].response_html = renderMarkdownSafe(messages[i].response);
     }
     return messages;
   }
@@ -639,8 +640,8 @@ class MessageService {
 
     // Generate HTML from markdown text for each message
     for (let i = 0; i < messages.length; i++) {
-      messages[i].prompt = marked.parse(messages[i].prompt);
-      messages[i].response = marked.parse(messages[i].response);
+      messages[i].prompt = renderMarkdownSafe(messages[i].prompt);
+      messages[i].response = renderMarkdownSafe(messages[i].response);
     }
 
     return messages;
@@ -757,7 +758,7 @@ class MessageService {
     }
     const scale_img = await img_data.resize({ width: Math.round(metadata.width * scale) });
     const img_buffer = await scale_img.jpeg().toBuffer();
-    const new_filename = `UP-${Date.now()}.jpg`;
+    const new_filename = `UP-${createSafeUploadName('upload.jpg')}`;
     fs.writeFileSync(`./public/img/${new_filename}`, img_buffer);
     return new_filename;
   }
@@ -1496,12 +1497,18 @@ async function MailgunSend(message_content, title) {
       to: ["Lennart Granstrom <lentmiien@gmail.com>"],
       subject: title,
       text: message_content,
-      html: marked.parse(message_content),
+      html: renderMarkdownSafe(message_content),
     });
 
-    logger.notice(data); // logs response data
+    logger.notice('Mailgun accepted outgoing message', {
+      category: 'mailgun',
+      metadata: { messageId: data?.id || null },
+    });
   } catch (error) {
-    logger.notice(error); //logs any error
+    logger.error('Mailgun message delivery failed', {
+      category: 'mailgun',
+      metadata: { error },
+    });
   }
 }
 

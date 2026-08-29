@@ -1,5 +1,7 @@
 const fs = require("fs");
+const path = require('path');
 const logger = require('../utils/logger');
+const { resolveFileWithinDirectory } = require('../utils/safeFilePath');
 
 // Require necessary database models
 const { Images } = require('../database');
@@ -63,7 +65,7 @@ exports.rate = async (req, res) => {
     }
     
     await image.save();
-    res.redirect(`/gallery/view?img=${imageFile}`);
+    res.redirect(`/gallery/view?img=${encodeURIComponent(imageFile)}`);
   } catch (err) {
     logger.error(err);
     res.status(500).send('Server Error');
@@ -171,7 +173,11 @@ exports.random_unrated_slideshow = async (req, res) => {
 exports.image = async (req, res) => {
   try {
     const filename = req.params.file;
-    const filepath = galleryPath + "\\" + filename;
+    const images = await getImageFiles();
+    if (!images.includes(filename)) {
+      return res.status(404).send('Image not found');
+    }
+    const filepath = resolveFileWithinDirectory(galleryPath, filename, { directChild: true });
     res.sendFile(filepath);
   } catch (error) {
     logger.error(error);

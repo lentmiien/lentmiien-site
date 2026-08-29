@@ -213,7 +213,6 @@ class TtsService {
     };
 
     const requestUrl = `${this.apiBase}${TTS_GENERATE_PATH}`;
-    const textPreview = normalizedText.replace(/\s+/g, ' ').slice(0, 120);
 
     logger.notice('Submitting TTS request (service)', {
       category: 'tts_service',
@@ -221,7 +220,6 @@ class TtsService {
         apiBase: this.apiBase,
         voiceId: resolvedVoiceId,
         textLength: normalizedText.length,
-        textPreview,
       },
     });
 

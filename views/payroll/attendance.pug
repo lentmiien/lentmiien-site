@@ -107,9 +107,9 @@ block script
     script(src='https://cdn.jsdelivr.net/npm/chart.js')
     script.
       (function(){
-        const dayData = !{dayChartPayload};
-        const timeData = !{timeChartPayload};
-        const remainingData = !{remainingChartPayload};
+        const dayData = !{safeJsonText(dayChartPayload)};
+        const timeData = !{safeJsonText(timeChartPayload)};
+        const remainingData = !{safeJsonText(remainingChartPayload)};
         const buildLine = (elId, config) => {
           const ctx = document.getElementById(elId);
           if (!ctx) return;

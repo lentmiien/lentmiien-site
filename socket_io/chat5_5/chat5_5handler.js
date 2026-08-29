@@ -3,6 +3,7 @@ const path = require('path');
 const context = require('./chat5_5context');
 const logger = require('../../utils/logger');
 const AsrApiService = require('../../services/asrApiService');
+const { createSafeUploadName } = require('../../utils/safeFilePath');
 const {
   renderMarkdownSafe,
   renderMessageHtml,
@@ -1019,7 +1020,7 @@ module.exports = async function registerChat5_5Handlers({
           fileSize: fileBuffer.length,
           language: payload.language,
           duration: payload.duration,
-          textPreview: text ? text.slice(0, 120) : '',
+          textLength: text.length,
         },
       });
 
@@ -1277,12 +1278,10 @@ module.exports = async function registerChat5_5Handlers({
       }
 
       const convRoom = roomForConversation(conversationId);
-      const uniqueName = `${Date.now()}_${fileName}`;
+      const uniqueName = createSafeUploadName(fileName);
       tempFilePath = path.join(TEMP_DIR, uniqueName);
 
       await fs.promises.writeFile(tempFilePath, fileBuffer);
-      logger.notice(`File saved: ${tempFilePath}`);
-
       const uploadFile = await ProcessUploadedImage(tempFilePath);
       try {
         await fs.promises.unlink(tempFilePath);

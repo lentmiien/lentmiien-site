@@ -760,15 +760,16 @@ block content
           p
             | (laughing) (chuckling) (sobbing) (crying loudly) (sighing) (panting) (groaning) (crowd laughing) (background laughter) (audience laughing)
   script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
+  script(src="/vendor/dompurify/purify.min.js", defer)
   script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js", defer)
   script(src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js", defer)
   // Expose templates to client-side JS
   script.
-    window.chatTemplates = !{JSON.stringify(templates)};
-    window.chatModels = !{JSON.stringify(chat_models)};
-    window.ttsVoices = !{JSON.stringify(ttsVoices || {})};
-    window.chat5MessageWindow = !{JSON.stringify(chat5MessageWindow)};
-    window.chat5TrainingUsage = !{JSON.stringify(trainingUsageByMessage)};
+    window.chatTemplates = !{safeJson(templates)};
+    window.chatModels = !{safeJson(chat_models)};
+    window.ttsVoices = !{safeJson(ttsVoices || {})};
+    window.chat5MessageWindow = !{safeJson(chat5MessageWindow)};
+    window.chat5TrainingUsage = !{safeJson(trainingUsageByMessage)};
     document.addEventListener('DOMContentLoaded', function(){
       if (window.location.hash === '#pills-training' && window.bootstrap) {
         var tab = document.getElementById('pills-training-tab');

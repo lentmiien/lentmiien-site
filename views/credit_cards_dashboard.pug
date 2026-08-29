@@ -21,9 +21,9 @@ block script
   script(src="https://d3js.org/d3.v7.min.js")
   script.
     window.creditCardPage = {
-      cards: !{JSON.stringify(cards || [])},
-      activeCardId: !{JSON.stringify(activeCardId || null)},
-      cardBalances: !{JSON.stringify(cardBalances || [])},
+      cards: !{safeJson(cards || [])},
+      activeCardId: !{safeJson(activeCardId || null)},
+      cardBalances: !{safeJson(cardBalances || [])},
       routes: {
         overview: '/budget/cards/api/overview',
         month: '/budget/cards/api/month',

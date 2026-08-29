@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const context = require('./chat5context');
 const logger = require('../../utils/logger');
+const { createSafeUploadName, resolveFileWithinDirectory } = require('../../utils/safeFilePath');
 
 module.exports = async function registerChat5Handlers({
   io,
@@ -138,7 +139,7 @@ module.exports = async function registerChat5Handlers({
       return;
     }
 
-    const uniqueName = `${Date.now()}_${name}`;
+    const uniqueName = createSafeUploadName(name);
     const filePath = path.join(TEMP_DIR, uniqueName);
 
     // Convert ArrayBuffer to Buffer
@@ -146,12 +147,14 @@ module.exports = async function registerChat5Handlers({
 
     fs.writeFile(filePath, fileBuffer, (err) => {
       if (err) {
-        logger.error(`Error saving file ${name}:`, err);
+        logger.error('Failed to save legacy Chat5 image upload', {
+          category: 'chat-upload',
+          metadata: { error: err.message },
+        });
         socket.emit('uploadError', { message: `Failed to upload ${name}` });
       } else {
-        logger.notice(`File saved: ${filePath}`);
         socket.images.push(filePath);
-        socket.emit('uploadSuccess', { savedImages: socket.images });
+        socket.emit('uploadSuccess', { savedImages: socket.images.map((imagePath) => path.basename(imagePath)) });
       }
     });
   });
@@ -170,7 +173,22 @@ module.exports = async function registerChat5Handlers({
     socket.reasoning = userMessage.reasoning;
     socket.conversation_id = userMessage.conversation_id;
     socket.model = userMessage.model;
-    socket.images = userMessage.images;
+    const submittedImages = Array.isArray(userMessage.images) ? userMessage.images.slice(0, 10) : [];
+    let rejectedImages = 0;
+    socket.images = submittedImages.reduce((accepted, imagePath) => {
+      try {
+        accepted.push(resolveFileWithinDirectory(TEMP_DIR, imagePath, { directChild: true }));
+      } catch (error) {
+        rejectedImages += 1;
+      }
+      return accepted;
+    }, []);
+    if (rejectedImages > 0) {
+      logger.warning('Rejected legacy Chat5 image paths outside the upload directory', {
+        category: 'chat-upload',
+        metadata: { rejectedCount: rejectedImages },
+      });
+    }
     socket.delete_messages = userMessage.delete_messages;
 
     const parameters = {

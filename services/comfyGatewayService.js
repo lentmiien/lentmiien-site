@@ -302,7 +302,16 @@ class ComfyGatewayService {
   normalizeGatewayViewUrl(url) {
     const raw = String(url || '').trim();
     if (!raw) throw new Error('gateway_view_url is required');
-    return this.buildUrl(raw.startsWith('/') ? raw : `/comfy/view?filename=${encodeURIComponent(raw)}`);
+    if (!raw.startsWith('/') && !/^[a-z][a-z\d+.-]*:\/\//i.test(raw)) {
+      return this.buildUrl(`/comfy/view?filename=${encodeURIComponent(raw)}`);
+    }
+
+    const base = new URL(`${this.baseUrl}/`);
+    const candidate = new URL(raw, base);
+    if (candidate.origin !== base.origin || candidate.pathname !== '/comfy/view') {
+      throw new Error('gateway_view_url must use the configured Gateway /comfy/view endpoint');
+    }
+    return candidate.toString();
   }
 
   async fetchImage({ gateway_view_url, filename, type, subfolder } = {}) {
@@ -327,6 +336,7 @@ class ComfyGatewayService {
     try {
       const r = await fetch(requestUrl, {
         headers: requestHeaders,
+        redirect: 'error',
         signal: AbortSignal.timeout(this.timeoutMs)
       });
       responseHeaders = headersToObject(r.headers);

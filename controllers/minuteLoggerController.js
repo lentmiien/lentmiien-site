@@ -15,7 +15,7 @@ async function log(req, res) {
       metadata: {
         error: error.message,
         method: req.method,
-        path: req.originalUrl || req.url || req.path,
+        route: req.route?.path || '/',
       },
     });
   }

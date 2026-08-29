@@ -40,7 +40,7 @@ router.post('/embedding-search', controller.embedding_search);
 // Blogpost
 router.get('/blogpost', controller.blogpost);
 router.post('/post_blogpost', controller.post_blogpost);
-router.get('/delete_blogpost', controller.delete_blogpost);
+router.post('/delete_blogpost', controller.delete_blogpost);
 
 router.get('/speektome', controller.speektome);
 router.post('/speektome', controller.speektome_post);

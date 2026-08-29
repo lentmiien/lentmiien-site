@@ -3,7 +3,11 @@ const path = require('path');
 const crypto = require('crypto');
 const dotenv = require('dotenv');
 const logger = require('./logger');
-const { buildEnvContent, normalizeHiddenPath } = require('./publicTobuyList');
+const {
+  buildEnvContent,
+  normalizeHiddenPath,
+  restrictEnvFilePermissions,
+} = require('./publicTobuyList');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const DEFAULT_ENV_PATH = path.join(ROOT_DIR, '.env');
@@ -18,8 +22,9 @@ function persistDeviceUsagePath(value, envPath = DEFAULT_ENV_PATH) {
   fs.writeFileSync(
     envPath,
     buildEnvContent(currentContent, DEVICE_USAGE_PATH_ENV_KEY, value),
-    'utf8'
+    { encoding: 'utf8', mode: 0o600 }
   );
+  fs.chmodSync(envPath, 0o600);
 }
 
 function ensureDeviceUsagePath(options = {}) {
@@ -39,12 +44,18 @@ function ensureDeviceUsagePath(options = {}) {
     }
   }
 
+  if (processValue) {
+    process.env[DEVICE_USAGE_PATH_ENV_KEY] = processValue;
+    return processValue;
+  }
+
   if (fileValue) {
+    restrictEnvFilePermissions(envPath);
     process.env[DEVICE_USAGE_PATH_ENV_KEY] = fileValue;
     return fileValue;
   }
 
-  const nextValue = processValue || `/${crypto.randomBytes(24).toString('hex')}`;
+  const nextValue = `/${crypto.randomBytes(24).toString('hex')}`;
   persistDeviceUsagePath(nextValue, envPath);
   process.env[DEVICE_USAGE_PATH_ENV_KEY] = nextValue;
 

@@ -152,7 +152,7 @@ block content
           .tool-manager-empty
             p No tools stored yet.
 
-  script(type='application/json', id='toolManagerPageConfig') !{JSON.stringify(testerConfig)}
+  script(type='application/json', id='toolManagerPageConfig') !{safeJson(testerConfig)}
 
 block script
   script(src='/js/tool_manager.js', defer)

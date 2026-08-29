@@ -16,7 +16,9 @@ block content
           p.card-text!= article.content
           if loggedIn == true 
             a.btn.btn-warning(href=`/mypage/blogpost?id=${article._id}`) Edit
-            a.btn.btn-danger(href=`/mypage/delete_blogpost?id=${article._id}`) Delete
+            form.d-inline(action='/mypage/delete_blogpost', method='post')
+              input(type='hidden', name='id', value=article._id)
+              button.btn.btn-danger(type='submit') Delete
         .card-footer.text-muted 
           span= `${article.updated.toISOString()}`
     else 

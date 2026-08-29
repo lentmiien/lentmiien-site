@@ -11,32 +11,6 @@ const content_type = {
   "json": "json",
 };
 
-const lv = [
-  "",
-  ">",
-  ">>",
-  ">>>",
-  ">>>>",
-  ">>>>>",
-  ">>>>>>",
-  ">>>>>>>",
-  ">>>>>>>>",
-  ">>>>>>>>>",
-  ">>>>>>>>>>",
-];
-function CreateFolderSelect(level, data) {
-  let output = "";
-  data.forEach(d => {
-    if (d.type === "dir") {
-      output += `<optgroup label="${lv[level]}${d.name}"></optgroup>`;
-      output += CreateFolderSelect(level+1, d.content);
-    } else {
-      output += `<option value="${d.path.split('\\').join('/')}">${lv[level]}${d.name}</option>`;
-    }
-  });
-  return output;
-}
-
 async function SelectRepository(e) {
   repo = e.value;
   if (!repo) {
@@ -46,7 +20,7 @@ async function SelectRepository(e) {
     return;
   }
   if (!(repo in cache)) {
-    const resp = await fetch(`/mypage/getfolder?repo=${repo}`);
+    const resp = await fetch(`/mypage/getfolder?repo=${encodeURIComponent(repo)}`);
     const json = await resp.json();
     json.sort(sorter);
     cache[repo] = json;
@@ -65,7 +39,7 @@ async function RefreshRepository() {
     filepath.innerText = '';
     return;
   }
-  const resp = await fetch(`/mypage/updatefolder?repo=${repo}`);
+  const resp = await fetch(`/mypage/updatefolder?repo=${encodeURIComponent(repo)}`);
   const json = await resp.json();
   json.sort(sorter);
   cache[repo] = json;
@@ -123,14 +97,16 @@ async function LoadFile(e) {
     // User clicks on a file in the displayed folder structure
     // If file content hasn't been loaded then load and save to cache
     //  - Load: Send GET request to '/mypage/getfile' -> return file data
-    const response = await fetch(`/mypage/getfile?repo=${repo}&path=${path}`);
+    const response = await fetch(`/mypage/getfile?repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(path)}`);
     const json = await response.json();
     SaveToCache(json.data, cache[repo], path);
     c_data = json.data;
   }
 
   // Display file data
-  filecontent.innerHTML = `<pre>${c_data}</pre>`;
+  const pre = document.createElement('pre');
+  pre.textContent = String(c_data ?? '');
+  filecontent.replaceChildren(pre);
   filepath.innerText = path;
   current_file_data = c_data;
 }
@@ -143,32 +119,33 @@ function CopyFile() {
 
 // Recursively build a <ul> tree with checkboxes for files
 function CreateFolderTree(data) {
-  let html = '<ul class="list-unstyled">';
+  const list = document.createElement('ul');
+  list.className = 'list-unstyled';
   data.forEach(item => {
+    const listItem = document.createElement('li');
     if (item.type === 'dir') {
-      html += `<li><strong>📁 ${item.name}</strong>${CreateFolderTree(item.content)}</li>`;
+      const label = document.createElement('strong');
+      label.textContent = `📁 ${item.name}`;
+      listItem.append(label, CreateFolderTree(item.content || []));
     } else {
-      // file
-      // use the normalized path with forward‑slashes
       const cleanPath = item.path.split('\\').join('/');
-      html += `
-        <li>
-          <label style="cursor:pointer">
-            <input type="checkbox" 
-                   class="file-checkbox" 
-                   value="${cleanPath}">
-            🗎 ${item.name}
-          </label>
-        </li>`;
+      const label = document.createElement('label');
+      label.style.cursor = 'pointer';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'file-checkbox';
+      checkbox.value = cleanPath;
+      label.append(checkbox, document.createTextNode(` 🗎 ${item.name}`));
+      listItem.append(label);
     }
+    list.append(listItem);
   });
-  html += '</ul>';
-  return html;
+  return list;
 }
 
 // call this after you fill cache[repo]
 function RenderTree() {
-  filestructure.innerHTML = CreateFolderTree(cache[repo] || []);
+  filestructure.replaceChildren(CreateFolderTree(cache[repo] || []));
 }
 
 async function CopySelectedFiles() {

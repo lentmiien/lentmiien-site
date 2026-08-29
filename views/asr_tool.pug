@@ -343,12 +343,12 @@ block content
   script.
     (() => {
       const state = {
-        jobs: !{JSON.stringify(jobs || [])},
-        pinnedJob: !{JSON.stringify(pinnedJob || null)},
-        page: !{JSON.stringify(page || 1)},
-        hasNextPage: !{JSON.stringify(Boolean(hasNextPage))},
-        hasPrevPage: !{JSON.stringify(Boolean(hasPrevPage))},
-        pageSize: !{JSON.stringify(pageSize || 10)},
+        jobs: !{safeJson(jobs || [])},
+        pinnedJob: !{safeJson(pinnedJob || null)},
+        page: !{safeJson(page || 1)},
+        hasNextPage: !{safeJson(Boolean(hasNextPage))},
+        hasPrevPage: !{safeJson(Boolean(hasPrevPage))},
+        pageSize: !{safeJson(pageSize || 10)},
       };
 
       const uploadForm = document.getElementById('asr-upload-form');

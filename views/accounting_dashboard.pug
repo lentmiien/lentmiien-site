@@ -230,15 +230,15 @@ block script
   script(src='https://d3js.org/d3.v7.min.js')
   script.
     window.accountingState = {
-      budget: !{JSON.stringify(budgetSummary)},
-      credit: !{JSON.stringify(creditSummary)},
-      anomalies: !{JSON.stringify(anomalies)}
+      budget: !{safeJson(budgetSummary)},
+      credit: !{safeJson(creditSummary)},
+      anomalies: !{safeJson(anomalies)}
     };
   script.
     window.creditCardPage = {
-      cards: !{JSON.stringify(cards || [])},
-      activeCardId: !{JSON.stringify(activeCardId || null)},
-      cardBalances: !{JSON.stringify((creditSummary && creditSummary.cardBalances) || [])},
+      cards: !{safeJson(cards || [])},
+      activeCardId: !{safeJson(activeCardId || null)},
+      cardBalances: !{safeJson((creditSummary && creditSummary.cardBalances) || [])},
       routes: {
         overview: '/budget/cards/api/overview',
         month: '/budget/cards/api/month',

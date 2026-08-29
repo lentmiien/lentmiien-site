@@ -1,6 +1,7 @@
 const logger = require('../utils/logger');
 const { MessageInboxService, DEFAULT_RETENTION_DAYS } = require('../services/messageInboxService');
 const { MessageInboxEntry, MessageFilter } = require('../database');
+const { sanitizeEmailPreviewHtml } = require('../utils/emailPreview');
 
 const messageInboxService = new MessageInboxService(MessageInboxEntry, MessageFilter);
 const PAGE_SIZE = 25;
@@ -123,6 +124,8 @@ exports.renderSingleMessage = async (req, res) => {
     _id: message._id ? String(message._id) : '',
     retentionDateInput: formatDateInput(message.retentionDeadlineDate),
     formattedDate: formatDateInput(message.date),
+    htmlPreview: sanitizeEmailPreviewHtml(message.html),
+    textAsHtmlPreview: sanitizeEmailPreviewHtml(message.textAsHtml),
   });
 
   return res.render('admin_message_detail', { message: viewModel });

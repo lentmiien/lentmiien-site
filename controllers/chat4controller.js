@@ -1,4 +1,4 @@
-const marked = require('marked');// For formatting blog post entries
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 const sharp = require('sharp');// For getting image size
 const fs = require('fs').promises;
 const logger = require('../utils/logger');
@@ -653,7 +653,7 @@ exports.postblog = (req, res) => {
   const entry_to_save = new ArticleModel({
     title: req.body.b_title,
     category: req.body.b_category,
-    content: marked.parse(req.body.b_content),
+    content: renderMarkdownSafe(req.body.b_content),
     created: new Date(),
     updated: new Date(),
   });
@@ -736,7 +736,9 @@ exports.batch_prompt = async (req, res) => {
     
     res.redirect('/chat4/batch_status');
   } else {
-    res.send(`<h1>Selected model (${req.body.provider}) invalid for batch requests</h1><b>Prompt</b><br><pre>${req.body.prompt}</pre>`);
+    res.status(400).type('text/plain').send(
+      `Selected model (${String(req.body.provider || '')}) is invalid for batch requests.`
+    );
   }
 };
 

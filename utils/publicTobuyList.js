@@ -47,8 +47,15 @@ function persistHiddenPath(value, envPath = DEFAULT_ENV_PATH) {
   fs.writeFileSync(
     envPath,
     buildEnvContent(currentContent, PUBLIC_TOBUY_LIST_PATH_ENV_KEY, value),
-    'utf8'
+    { encoding: 'utf8', mode: 0o600 }
   );
+  fs.chmodSync(envPath, 0o600);
+}
+
+function restrictEnvFilePermissions(envPath = DEFAULT_ENV_PATH) {
+  if (fs.existsSync(envPath)) {
+    fs.chmodSync(envPath, 0o600);
+  }
 }
 
 function ensurePublicTobuyListPath(options = {}) {
@@ -68,12 +75,18 @@ function ensurePublicTobuyListPath(options = {}) {
     }
   }
 
+  if (processValue) {
+    process.env[PUBLIC_TOBUY_LIST_PATH_ENV_KEY] = processValue;
+    return processValue;
+  }
+
   if (fileValue) {
+    restrictEnvFilePermissions(envPath);
     process.env[PUBLIC_TOBUY_LIST_PATH_ENV_KEY] = fileValue;
     return fileValue;
   }
 
-  const nextValue = processValue || `/${crypto.randomBytes(24).toString('hex')}`;
+  const nextValue = `/${crypto.randomBytes(24).toString('hex')}`;
   persistHiddenPath(nextValue, envPath);
   process.env[PUBLIC_TOBUY_LIST_PATH_ENV_KEY] = nextValue;
 
@@ -191,5 +204,6 @@ module.exports = {
   formatDayKey,
   loadLimitState,
   normalizeHiddenPath,
+  restrictEnvFilePermissions,
   saveLimitState,
 };

@@ -73,5 +73,5 @@ block content
           pre#qwenRaw.qwen-user__pre
 
 block script
-  script(type='application/json', id='qwenUserConfig') !{JSON.stringify({ maxNewTokens, defaultMaxNewTokens })}
+  script(type='application/json', id='qwenUserConfig') !{safeJson({ maxNewTokens, defaultMaxNewTokens })}
   script(src='/js/qwen3_lora.js', defer)

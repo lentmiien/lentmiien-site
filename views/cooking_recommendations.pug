@@ -22,6 +22,6 @@ block content
 block script
   script.
     window.COOKING_RECOMMENDATIONS = {
-      stats: !{JSON.stringify(stats || [])}
+      stats: !{safeJson(stats || [])}
     };
   script(src='/cooking_recommendations.js', defer)

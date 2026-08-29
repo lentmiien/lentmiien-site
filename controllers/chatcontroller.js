@@ -1,6 +1,7 @@
 const { chatGPT, OpenAIAPICallLog } = require('../utils/ChatGPT');
 const utils = require('../utils/utils');
 const logger = require('../utils/logger');
+const { renderMarkdownSafe } = require('../utils/chat5Markdown');
 
 // Require necessary database models
 const { ChatModel } = require('../database');
@@ -48,19 +49,11 @@ exports.index = (req, res) => {
 
         // Generate chat_hist
         if (d.threadid == chat_id) {
-          let pp_content = '';
-          const parts = d.content.split('```');
-          for (let i = 0; i < parts.length; i++) {
-            if (i % 2 == 0) {
-              pp_content += parts[i].split('\n').join('<br>');
-            } else {
-              pp_content += `<pre onclick="CopyCode(this)">${parts[i]}</pre>`;
-            }
-          }
           chat_hist.push({
             title: d.title,
             role: d.role,
-            content: pp_content,
+            content: renderMarkdownSafe(d.content),
+            raw_content: d.content,
             date: d.created,
             tokens: d.tokens,
           });
@@ -95,7 +88,7 @@ exports.index = (req, res) => {
     // Do some final updates
     if (chat_hist.length > 0) {
       chat_title = chat_hist[chat_hist.length - 1].title;
-      chat_context = chat_hist[0].content;
+      chat_context = chat_hist[0].raw_content;
     }
 
     // Debuging stuff
@@ -113,13 +106,29 @@ req.body.system  // Ignore for all id other than "0"
 req.body.message // 
 */
 exports.post = (req, res) => {
-  let id = parseInt(req.body.id);
-  ChatModel.find().then(async (data_count) => {
-    if (id == 0) {
-      id = data_count.length + 1;
+  let id = Number(req.body.id);
+  if (!Number.isSafeInteger(id) || id < 0) {
+    return res.status(400).send('Invalid chat ID.');
+  }
+
+  const isNewChat = id === 0;
+  return ChatModel.find({ username: req.user.name }).then(async (foundChats) => {
+    const data_count = foundChats.filter(d => d.username === req.user.name);
+    if (isNewChat) {
+      id = data_count.reduce((largestId, chat) => {
+        const threadId = Number(chat.threadid);
+        return Number.isSafeInteger(threadId)
+          ? Math.max(largestId, threadId)
+          : largestId;
+      }, 0) + 1;
     }
+
     // Change to instead filter previous requested data
-    const data = data_count.filter(d => d.threadid == id);
+    const data = data_count.filter(d => Number(d.threadid) === id);
+    if (!isNewChat && data.length === 0) {
+      return res.status(404).send('Chat not found.');
+    }
+
     data.sort((a, b) => {
       if (a.created < b.created) return -1;
       if (a.created > b.created) return 1;
@@ -132,7 +141,7 @@ exports.post = (req, res) => {
     const ts_2 = ts_1 + 1000;
 
     // If a new chat, start by adding system message
-    if (data.length == 0) {
+    if (isNewChat) {
       messages.push({
         role: 'system',
         content: req.body.system,

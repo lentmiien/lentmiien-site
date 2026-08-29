@@ -19,6 +19,7 @@ const {
   buildMypageTiles,
   sanitizeMypageIconSettings,
 } = require('../services/mypageIconService');
+const { blogContentForEditing, prepareBlogContent } = require('../utils/blogContent');
 
 const messageService = new MessageService(Chat4Model, FileMetaModel);
 const knowledgeService = new KnowledgeService(Chat4KnowledgeModel);
@@ -361,7 +362,7 @@ exports.blogpost = async (req, res) => {
       form_data.id = req.query.id;
       form_data.title = entry.title;
       form_data.category = entry.category;
-      form_data.content = entry.content.split('<br>').join('\n');
+      form_data.content = blogContentForEditing(entry.content);
     }
   }
   // else display page for writuing a new entry
@@ -376,7 +377,7 @@ exports.post_blogpost = (req, res) => {
     const update = {
       title: req.body.title,
       category: req.body.category,
-      content: req.body.content.split('\n').join("<br>"),
+      content: prepareBlogContent(req.body.content),
       updated: new Date(),
     };
 
@@ -390,7 +391,7 @@ exports.post_blogpost = (req, res) => {
     const entry_to_save = new ArticleModel({
       title: req.body.title,
       category: req.body.category,
-      content: req.body.content.split('\n').join("<br>"),
+      content: prepareBlogContent(req.body.content),
       created: new Date(),
       updated: new Date(),
     });
@@ -403,8 +404,8 @@ exports.post_blogpost = (req, res) => {
 };
 
 exports.delete_blogpost = (req, res) => {
-  // Delete blogpost with _id that is req.query.id
-  ArticleModel.findByIdAndRemove(req.query.id).then(() => {
+  // Delete blogpost with _id that is req.body.id
+  ArticleModel.findByIdAndRemove(req.body.id).then(() => {
     setTimeout(() => res.redirect("/blog"), 100);
   });
 };

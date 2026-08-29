@@ -54,5 +54,5 @@ block content
 block script
   script(src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js')
   script.
-    window.exchangeRatesConfig = !{JSON.stringify(exchangeRatesConfig || {})};
+    window.exchangeRatesConfig = !{safeJson(exchangeRatesConfig || {})};
   script(src='/js/exchange_rates.js')

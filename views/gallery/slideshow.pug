@@ -370,8 +370,8 @@ block content
     if hasImages
       script.
         (function() {
-          const imageList = !{JSON.stringify(images)};
-          let currentIndex = !{currentIndex};
+          const imageList = !{safeJson(images)};
+          let currentIndex = !{safeJson(currentIndex)};
           if (!Array.isArray(imageList) || !imageList.length) {
             return;
           }

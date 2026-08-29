@@ -379,5 +379,5 @@ block content
 
 block script
   script(src='https://d3js.org/d3.v7.min.js', defer)
-  script(type='application/json', id='deviceUsageChartData') !{chartJson}
+  script(type='application/json', id='deviceUsageChartData') !{safeJsonText(chartJson)}
   script(src='/js/device_usage_admin.js', defer)

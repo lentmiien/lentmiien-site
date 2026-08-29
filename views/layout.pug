@@ -1,3 +1,8 @@
+- const inlineJsonEscapeMap = { '<': '\\u003c', '>': '\\u003e', '&': '\\u0026', '\u2028': '\\u2028', '\u2029': '\\u2029' };
+- const fallbackEscapeInlineScriptText = (value) => String(value == null ? '' : value).replace(/[<>&\u2028\u2029]/g, (character) => inlineJsonEscapeMap[character]);
+- safeJsonText = typeof safeJsonText === 'function' ? safeJsonText : fallbackEscapeInlineScriptText;
+- safeJson = typeof safeJson === 'function' ? safeJson : (value) => { const json = JSON.stringify(value); return fallbackEscapeInlineScriptText(json === undefined ? 'null' : json); };
+
 mixin navColumn(title)
   .navbar-column
     if title
@@ -262,6 +267,7 @@ html(lang=pageLang || 'en')
     script(src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous")
     script(src="/js/nav.js", defer) 
     script(src="/js/layout.js", defer) 
-    script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
-    script(src="/js/notifications.js", defer) 
+    if loggedIn === true
+      script(src="https://cdn.socket.io/4.0.0/socket.io.min.js", defer)
+      script(src="/js/notifications.js", defer)
     block script

@@ -348,12 +348,12 @@ block content
 block script
   script.
     (() => {
-      const INITIAL_JOBS = !{JSON.stringify(jobs || [])};
-      const INITIAL_GROUPS = !{JSON.stringify(groups || [])};
-      const INITIAL_JOB_DETAIL = !{JSON.stringify(initialJobDetail || null)};
-      const SELECTED_JOB_ID = !{JSON.stringify(selectedJobId || null)};
-      const DEFAULTS = !{JSON.stringify(defaults || {})};
-      const TTS_VOICES = !{JSON.stringify(ttsVoices || {})};
+      const INITIAL_JOBS = !{safeJson(jobs || [])};
+      const INITIAL_GROUPS = !{safeJson(groups || [])};
+      const INITIAL_JOB_DETAIL = !{safeJson(initialJobDetail || null)};
+      const SELECTED_JOB_ID = !{safeJson(selectedJobId || null)};
+      const DEFAULTS = !{safeJson(defaults || {})};
+      const TTS_VOICES = !{safeJson(ttsVoices || {})};
       const JOBS_ENDPOINT = '/ocr-tts/jobs';
       const ALLOW_SPACES = [0, 1];
 

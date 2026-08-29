@@ -1,5 +1,6 @@
 const { BookmarkModel } = require('../database');
 const logger = require('../utils/logger');
+const { resolveLocalRedirect } = require('../utils/localRedirect');
 
 const IMPORTANCE_MIN = 1;
 const IMPORTANCE_MAX = 5;
@@ -52,14 +53,7 @@ function resolveTitle(rawTitle, parsedUrl) {
 }
 
 function resolveReturnTo(rawValue, fallback = BOOKMARKS_PAGE_PATH) {
-  const value = typeof rawValue === 'string' ? rawValue.trim() : '';
-  if (!value) {
-    return fallback;
-  }
-  if (!value.startsWith('/') || value.startsWith('//')) {
-    return fallback;
-  }
-  return value;
+  return resolveLocalRedirect(rawValue, fallback);
 }
 
 function appendMessage(path, key, message) {

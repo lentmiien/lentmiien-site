@@ -1,4 +1,4 @@
-const mockMarkedParse = jest.fn((text) => `parsed:${text}`);
+const mockRenderMarkdownSafe = jest.fn((text) => `parsed:${text}`);
 
 jest.mock('sharp', () =>
   jest.fn(() => ({
@@ -62,7 +62,7 @@ jest.mock('../../database', () => {
   return { AIModelCards, Chat5Model, Conversation5Model };
 });
 
-jest.mock('marked', () => ({ parse: mockMarkedParse }));
+jest.mock('../../utils/chat5Markdown', () => ({ renderMarkdownSafe: mockRenderMarkdownSafe }));
 
 const MessageService = require('../../services/messageService');
 const { APP_SETTING_KEYS } = require('../../services/appSettingsService');
@@ -92,8 +92,8 @@ describe('MessageService', () => {
   let service;
 
   beforeEach(() => {
-    mockMarkedParse.mockClear();
-    mockMarkedParse.mockImplementation((text) => `parsed:${text}`);
+    mockRenderMarkdownSafe.mockClear();
+    mockRenderMarkdownSafe.mockImplementation((text) => `parsed:${text}`);
     AIModelCards.find.mockReset();
     Chat5Model.mockClear();
     Chat5Model.find.mockReset();
@@ -140,7 +140,7 @@ describe('MessageService', () => {
 
     expect(messageModel.find).toHaveBeenCalledWith({ _id: ['id1', 'id2'] });
     expect(result.map((m) => m._id.toString())).toEqual(['id2', 'id1']);
-    expect(mockMarkedParse).toHaveBeenCalledTimes(4);
+    expect(mockRenderMarkdownSafe).toHaveBeenCalledTimes(4);
     expect(result[0].prompt_html).toBe('parsed:prompt-id2');
     expect(result[0].response_html).toBe('parsed:response-id2');
   });
@@ -161,7 +161,7 @@ describe('MessageService', () => {
       { 'img-a': '2', 'img-b': '2' }
     );
 
-    expect(mockMarkedParse).not.toHaveBeenCalled();
+    expect(mockRenderMarkdownSafe).not.toHaveBeenCalled();
     expect(result[0].images[0].use_flag).toBe('high quality');
     expect(result[0].images[1].use_flag).toBe('high quality');
     expect(saveSpy).toHaveBeenCalledTimes(1);
@@ -306,7 +306,7 @@ describe('MessageService', () => {
     expect(messageModel.find).toHaveBeenCalledWith({ user_id: 'user-7' });
     expect(chain.sort).toHaveBeenCalledWith({ timestamp: -1 });
     expect(chain.exec).toHaveBeenCalledTimes(1);
-    expect(mockMarkedParse).toHaveBeenCalledTimes(4);
+    expect(mockRenderMarkdownSafe).toHaveBeenCalledTimes(4);
     expect(result[0].prompt_html).toBe('parsed:p1');
     expect(result[1].response_html).toBe('parsed:r2');
   });
@@ -592,14 +592,14 @@ describe('MessageService', () => {
     const docs = [{ prompt: 'p', response: 'r' }];
     const chain = createQueryChain(docs);
     messageModel.find.mockReturnValue({ sort: chain.sort });
-    mockMarkedParse.mockClear();
+    mockRenderMarkdownSafe.mockClear();
 
     const result = await service.getMessagesByCategoryUserId('updates', 'user-8');
 
     expect(messageModel.find).toHaveBeenCalledWith({ user_id: 'user-8', category: 'updates' });
     expect(chain.sort).toHaveBeenCalledWith({ timestamp: -1 });
     expect(chain.exec).toHaveBeenCalledTimes(1);
-    expect(mockMarkedParse).not.toHaveBeenCalled();
+    expect(mockRenderMarkdownSafe).not.toHaveBeenCalled();
     expect(result).toBe(docs);
   });
 

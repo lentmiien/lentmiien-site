@@ -23,9 +23,9 @@ block content
               | —
   script(src='https://cdn.jsdelivr.net/npm/chart.js')
   script.
-    const labels      = !{labels};
-    const grossSeries = !{grossSeries};
-    const netSeries   = !{netSeries};
+    const labels      = !{safeJsonText(labels)};
+    const grossSeries = !{safeJsonText(grossSeries)};
+    const netSeries   = !{safeJsonText(netSeries)};
 
     document.addEventListener('DOMContentLoaded', () => {
       const ctx = document.getElementById('chart').getContext('2d');

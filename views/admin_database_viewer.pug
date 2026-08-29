@@ -32,6 +32,5 @@ block content
 
 block script
   script.
-    const dbViewerConfig = JSON.stringify({ dataEndpoint: '/admin/database-viewer/data', deleteEndpoint: '/admin/database-viewer/delete', defaultLimit, maxLimit, selectedCollection });
-    window.databaseViewerConfig = !{dbViewerConfig};
+    window.databaseViewerConfig = !{safeJson({ dataEndpoint: '/admin/database-viewer/data', deleteEndpoint: '/admin/database-viewer/delete', defaultLimit, maxLimit, selectedCollection })};
   script(src='/js/database_viewer.js', defer)

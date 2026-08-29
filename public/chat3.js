@@ -62,10 +62,18 @@ function PopulateMenus() {
   const history_list = document.getElementById("history_list");
   // a.dropdown-item(href="/chat3?id=0", title="text of last message") Cold
   chats.forEach((d, i) => {
+    const buildHistoryLink = (className) => {
+      const link = document.createElement('a');
+      link.href = `/chat3?id=${encodeURIComponent(String(d.ConversationID))}`;
+      link.className = className;
+      link.title = String(d.last_message || '');
+      link.textContent = String(d.Title || 'Untitled');
+      return link;
+    };
     if (i < 20) {
-      history_list.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="dropdown-item" title="${d.last_message.split("\"").join("'")}">${d.Title}</a>`;
+      history_list.appendChild(buildHistoryLink('dropdown-item'));
     }
-    historymodal.innerHTML += `<a href="/chat3?id=${d.ConversationID}" class="btn btn-secondary history-button" title="${d.last_message.split("\"").join("'")}">${d.Title}</a>`;
+    historymodal.appendChild(buildHistoryLink('btn btn-secondary history-button'));
   });
 
   // Fill in conversation heads
@@ -74,13 +82,31 @@ function PopulateMenus() {
   // button.dropdown-item(title="head 1 message") Head 1
   refer_count.forEach((cnt, i) => {
     if (cnt === 0) {
-      head_list.innerHTML += `<button class="dropdown-item" onclick="Populate(${i})" title="${this_conversation[i].ContentText.split("\"").join("'")}">Node ${i}</button>`;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'dropdown-item';
+      button.title = String(this_conversation[i].ContentText || '');
+      button.textContent = `Node ${i}`;
+      button.addEventListener('click', () => Populate(i));
+      head_list.appendChild(button);
     }
     //Populate(id_to_index_map[head]);
   });
   
   // Display initial chat thread
   Populate(this_conversation.length-1);
+}
+
+function normalizeLocalMediaPath(value, expectedPrefix) {
+  try {
+    const parsed = new URL(String(value || ''), window.location.origin);
+    if (parsed.origin !== window.location.origin || !parsed.pathname.startsWith(expectedPrefix)) {
+      return '';
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch (error) {
+    return '';
+  }
 }
 
 // Populate #chatmessages
@@ -128,26 +154,77 @@ function Populate(head_index) {
 
   // Render output
   for (let i = thread.length - 1; i >= 0; i--) {
+    const row = document.createElement('div');
+    row.className = 'row';
     if (thread[i].user) {
       // User message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col-1 centered-container">${thread[i].prev_count > 1 ? '<button class="btn btn-primary" onclick="ChangeBranch(\'' + thread[i].prev_id + '\', ' + ((thread[i].prev_next.indexOf(thread[i]._id) + 1) % thread[i].prev_count) + ')" title="' + this_conversation[id_to_index_map[next_map[id_to_index_map[thread[i].prev_id]][((thread[i].prev_next.indexOf(thread[i]._id) + 1) % thread[i].prev_count)]]].ContentText.split('"').join("'") + '">' + (thread[i].prev_next.indexOf(thread[i]._id) + 1) + '/' + thread[i].prev_count + '</button>' : ''}</div><div class="col-11"><div class="user">${thread[i].html}</div></div></div>`;
+      const branchColumn = document.createElement('div');
+      branchColumn.className = 'col-1 centered-container';
+      if (thread[i].prev_count > 1) {
+        const currentBranch = thread[i].prev_next.indexOf(thread[i]._id);
+        const nextBranch = (currentBranch + 1) % thread[i].prev_count;
+        const nextMessageId = next_map[id_to_index_map[thread[i].prev_id]][nextBranch];
+        const nextMessage = this_conversation[id_to_index_map[nextMessageId]];
+        const branchButton = document.createElement('button');
+        branchButton.type = 'button';
+        branchButton.className = 'btn btn-primary';
+        branchButton.title = String(nextMessage?.ContentText || '');
+        branchButton.textContent = `${currentBranch + 1}/${thread[i].prev_count}`;
+        branchButton.addEventListener('click', () => ChangeBranch(thread[i].prev_id, nextBranch));
+        branchColumn.appendChild(branchButton);
+      }
+
+      const contentColumn = document.createElement('div');
+      contentColumn.className = 'col-11';
+      const message = document.createElement('div');
+      message.className = 'user';
+      message.innerHTML = thread[i].html;
+      contentColumn.appendChild(message);
+      row.append(branchColumn, contentColumn);
     } else {
       // Chatbot message
-      let attachments = "";
-      if (thread[i].img.length > 0 || thread[i].mp3.length > 0) {
-        attachments += "<hr>";
-        if (thread[i].img.length > 0) {
-          attachments += `<img class="thumbnail" src="${thread[i].img}" alt="DALL-E-3 generated image" onclick="showModalPopup(this)" style="height:100px;">`;
+      const contentColumn = document.createElement('div');
+      contentColumn.className = 'col-11';
+      const message = document.createElement('div');
+      message.className = 'assistant';
+      message.innerHTML = thread[i].html;
+
+      const imagePath = normalizeLocalMediaPath(thread[i].img, '/img/');
+      const audioPath = normalizeLocalMediaPath(thread[i].mp3, '/mp3/');
+      if (imagePath || audioPath) {
+        message.appendChild(document.createElement('hr'));
+        if (imagePath) {
+          const image = document.createElement('img');
+          image.className = 'thumbnail';
+          image.src = imagePath;
+          image.alt = 'Generated image';
+          image.style.height = '100px';
+          image.addEventListener('click', () => showModalPopup(image));
+          message.appendChild(image);
         }
-        if (thread[i].mp3.length > 0) {
-          attachments += `<audio controls><source src="${thread[i].mp3}" type="audio/mpeg"></audio>`;
+        if (audioPath) {
+          const audio = document.createElement('audio');
+          audio.controls = true;
+          const source = document.createElement('source');
+          source.src = audioPath;
+          source.type = 'audio/mpeg';
+          audio.appendChild(source);
+          message.appendChild(audio);
         }
-        //img(src=`${ig_file}`, alt="DALL-E-3 generated image", style="width:100%;")
-        //audio.form-control(controls)
-        //  source(src=`${tts_file}`, type="audio/mpeg")
       }
-      chatmessages_element.innerHTML += `<div class="row"><div class="col-11"><div class="assistant">${thread[i].html}${attachments}</div></div><div class="col-1 centered-container"><button class="btn btn-primary" onclick="ShowPopup('${thread[i]._id}')">...</button></div></div>`;
+      contentColumn.appendChild(message);
+
+      const actionsColumn = document.createElement('div');
+      actionsColumn.className = 'col-1 centered-container';
+      const actionsButton = document.createElement('button');
+      actionsButton.type = 'button';
+      actionsButton.className = 'btn btn-primary';
+      actionsButton.textContent = '...';
+      actionsButton.addEventListener('click', () => ShowPopup(thread[i]._id));
+      actionsColumn.appendChild(actionsButton);
+      row.append(contentColumn, actionsColumn);
     }
+    chatmessages_element.appendChild(row);
   }
 
   // After displaying, scroll to bottom
@@ -341,27 +418,64 @@ function PopulateTool(mid) {
 
   // Render output
   for (let i = 0; i < this_conversation.length; i++) {
-    let conv_msg = true;
-    if (thread.indexOf(this_conversation[i]._id.toString()) === -1) {
-      conv_msg = false;
-    }
-    if (this_conversation[i].UserOrAssistantFlag) {
-      // User message
-      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="${conv_msg ? "user" : "system-small"}"><input class="${conv_msg ? "" : "hidden"}" type="radio" data-id="${this_conversation[i]._id.toString()}" name="start"${this_conversation[i]._id.toString() === start_id ? " checked" : ""}><input type="checkbox" data-id="${this_conversation[i]._id.toString()}" name="msg">${this_conversation[i].HTMLText}</div></div></div>`;
-    } else {
-      // Chatbot message
-      let attachments = "";
-      if (this_conversation[i].Images.length > 0 || this_conversation[i].Sounds.length > 0) {
-        attachments += "<hr>";
-        if (this_conversation[i].Images.length > 0) {
-          attachments += `<img class="thumbnail" src="${this_conversation[i].Images}" alt="DALL-E-3 generated image" onclick="showModalPopup(this)" style="height:100px;">`;
+    const entry = this_conversation[i];
+    const entryId = entry._id.toString();
+    const isConversationMessage = thread.indexOf(entryId) !== -1;
+    const row = document.createElement('div');
+    row.className = 'row';
+    const column = document.createElement('div');
+    column.className = 'col';
+    const message = document.createElement('div');
+    message.className = isConversationMessage
+      ? (entry.UserOrAssistantFlag ? 'user' : 'assistant')
+      : 'system-small';
+
+    const startInput = document.createElement('input');
+    startInput.type = 'radio';
+    startInput.name = 'start';
+    startInput.dataset.id = entryId;
+    startInput.checked = entryId === start_id;
+    if (!isConversationMessage) startInput.className = 'hidden';
+
+    const messageInput = document.createElement('input');
+    messageInput.type = 'checkbox';
+    messageInput.name = 'msg';
+    messageInput.dataset.id = entryId;
+
+    const content = document.createElement('div');
+    content.className = 'chat3-message-content';
+    content.innerHTML = entry.HTMLText;
+    message.append(startInput, messageInput, content);
+
+    if (!entry.UserOrAssistantFlag) {
+      const imagePath = normalizeLocalMediaPath(entry.Images, '/img/');
+      const audioPath = normalizeLocalMediaPath(entry.Sounds, '/mp3/');
+      if (imagePath || audioPath) {
+        message.appendChild(document.createElement('hr'));
+        if (imagePath) {
+          const image = document.createElement('img');
+          image.className = 'thumbnail';
+          image.src = imagePath;
+          image.alt = 'Generated image';
+          image.style.height = '100px';
+          image.addEventListener('click', () => showModalPopup(image));
+          message.appendChild(image);
         }
-        if (this_conversation[i].Sounds.length > 0) {
-          attachments += `<audio controls><source src="${this_conversation[i].Sounds}" type="audio/mpeg"></audio>`;
+        if (audioPath) {
+          const audio = document.createElement('audio');
+          audio.controls = true;
+          const source = document.createElement('source');
+          source.src = audioPath;
+          source.type = 'audio/mpeg';
+          audio.appendChild(source);
+          message.appendChild(audio);
         }
       }
-      chatmessages_element.innerHTML += `<div class="row"><div class="col"><div class="${conv_msg ? "assistant" : "system-small"}"><input class="${conv_msg ? "" : "hidden"}" type="radio" data-id="${this_conversation[i]._id.toString()}" name="start"${this_conversation[i]._id.toString() === start_id ? " checked" : ""}><input type="checkbox" data-id="${this_conversation[i]._id.toString()}" name="msg">${this_conversation[i].HTMLText}${attachments}</div></div></div>`;
     }
+
+    column.appendChild(message);
+    row.appendChild(column);
+    chatmessages_element.appendChild(row);
   }
 
   // After displaying, scroll to bottom
