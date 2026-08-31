@@ -1,0 +1,595 @@
+.runpod-admin {
+  width: min(100% - 2rem, 1480px);
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.runpod-hero,
+.runpod-panel,
+.runpod-scope-note,
+.runpod-alert,
+.runpod-stat,
+.runpod-cost,
+.runpod-template {
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+}
+
+.runpod-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, var(--brand-tint), transparent 45%),
+    var(--surface-1);
+}
+
+.runpod-hero h1,
+.runpod-panel h2,
+.runpod-template h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.runpod-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1;
+}
+
+.runpod-eyebrow {
+  margin: 0 0 0.45rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.runpod-hero__subtitle,
+.runpod-panel__subtitle {
+  max-width: 74ch;
+  margin: 0.8rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.runpod-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  max-width: 34rem;
+}
+
+.runpod-chip,
+.runpod-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.runpod-chip {
+  min-height: 2rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--accent);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.runpod-chip--muted {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.runpod-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.4rem;
+  padding: 0.55rem 0.95rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-weight: 750;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.runpod-button--primary {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: var(--text-inverse);
+}
+
+.runpod-button--primary:hover,
+.runpod-button--primary:focus {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+  color: var(--text-inverse);
+}
+
+.runpod-button--secondary {
+  border-color: var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+
+.runpod-button--secondary:hover,
+.runpod-button--secondary:focus {
+  background: var(--accent-tint);
+  color: var(--accent-hover);
+}
+
+.runpod-scope-note,
+.runpod-alert {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  color: var(--text-secondary);
+}
+
+.runpod-scope-note {
+  border-left: 4px solid var(--info);
+}
+
+.runpod-scope-note strong,
+.runpod-alert strong {
+  color: var(--text);
+}
+
+.runpod-alert ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.runpod-alert small {
+  margin-left: 0.35rem;
+  color: var(--text-muted);
+}
+
+.runpod-alert--warning {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-1));
+}
+
+.runpod-alert--error {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-1));
+}
+
+.runpod-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+.runpod-stat,
+.runpod-cost {
+  border-radius: 12px;
+}
+
+.runpod-stat {
+  display: flex;
+  flex-direction: column;
+  min-height: 8.6rem;
+  padding: 1rem;
+}
+
+.runpod-stat--accent {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.runpod-stat__label {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.runpod-stat__value {
+  margin: auto 0 0.15rem;
+  color: var(--text);
+  font-size: clamp(1.6rem, 3vw, 2.25rem);
+  line-height: 1.1;
+}
+
+.runpod-stat__hint,
+.runpod-panel__meta,
+.runpod-muted {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.runpod-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1.25rem 0 0;
+  padding: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.runpod-section-nav a {
+  padding: 0.45rem 0.7rem;
+  border-radius: 7px;
+  text-decoration: none;
+}
+
+.runpod-section-nav a:hover,
+.runpod-section-nav a:focus {
+  background: var(--accent-tint);
+}
+
+.runpod-panel {
+  margin-top: 1.25rem;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border-radius: 14px;
+  scroll-margin-top: 1rem;
+}
+
+.runpod-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.runpod-panel__header h2 {
+  font-size: clamp(1.35rem, 3vw, 1.85rem);
+}
+
+.runpod-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.8rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.runpod-field {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.runpod-field input,
+.runpod-field select {
+  min-width: 9rem;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text);
+}
+
+.runpod-filter__help {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.runpod-billing-total {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  border-left: 4px solid var(--brand);
+  background: var(--surface-2);
+}
+
+.runpod-billing-total div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.runpod-billing-total span,
+.runpod-billing-total p {
+  color: var(--text-secondary);
+}
+
+.runpod-billing-total strong {
+  color: var(--accent);
+  font-size: 1.8rem;
+}
+
+.runpod-billing-total p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.runpod-cost-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+}
+
+.runpod-cost {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.85rem;
+}
+
+.runpod-cost span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.runpod-cost strong {
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.runpod-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+}
+
+.runpod-table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: 0.87rem;
+}
+
+.runpod-table caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.runpod-table th,
+.runpod-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--divider);
+  vertical-align: top;
+  text-align: left;
+}
+
+.runpod-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 0.73rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.runpod-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.runpod-table tbody tr:hover td {
+  background: var(--accent-tint);
+}
+
+.runpod-table td > span,
+.runpod-table td > strong,
+.runpod-system > * {
+  display: block;
+}
+
+.runpod-table td > span + span,
+.runpod-table td > strong + span,
+.runpod-system > * + * {
+  margin-top: 0.25rem;
+}
+
+.runpod-number {
+  text-align: right !important;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.runpod-system {
+  min-width: 14rem;
+}
+
+.runpod-system code,
+.runpod-template code {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+.runpod-system span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.runpod-status {
+  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--border);
+}
+
+.runpod-status--high {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.runpod-status--medium {
+  border-color: var(--info);
+  background: color-mix(in srgb, var(--info) 11%, transparent);
+  color: var(--info);
+}
+
+.runpod-status--low {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 11%, transparent);
+  color: var(--warning);
+}
+
+.runpod-status--none,
+.runpod-status--unknown {
+  color: var(--text-muted);
+}
+
+.runpod-empty {
+  padding: 1.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.runpod-empty strong {
+  color: var(--text);
+}
+
+.runpod-empty p {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+}
+
+.runpod-template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.runpod-template {
+  min-width: 0;
+  padding: 1rem;
+  border-radius: 11px;
+}
+
+.runpod-template__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.runpod-template h3 {
+  font-size: 1.05rem;
+}
+
+.runpod-template code {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.runpod-template dl {
+  display: grid;
+  gap: 0;
+  margin: 0.9rem 0 0;
+}
+
+.runpod-template dl div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.35fr) minmax(0, 1fr);
+  gap: 0.8rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--divider);
+}
+
+.runpod-template dt {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.runpod-template dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.runpod-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 0.8rem 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.runpod-footer p {
+  margin: 0;
+}
+
+.runpod-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+@media (max-width: 1100px) {
+  .runpod-summary,
+  .runpod-cost-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .runpod-admin {
+    width: min(100% - 1rem, 1480px);
+    padding-top: 1rem;
+  }
+
+  .runpod-hero,
+  .runpod-panel__header,
+  .runpod-billing-total,
+  .runpod-footer {
+    flex-direction: column;
+  }
+
+  .runpod-hero__actions {
+    justify-content: flex-start;
+  }
+
+  .runpod-summary,
+  .runpod-cost-grid,
+  .runpod-template-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .runpod-stat {
+    min-height: 7.5rem;
+  }
+
+  .runpod-template dl div {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}

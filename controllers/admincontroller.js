@@ -105,6 +105,8 @@ const routes = [
   "shoppinglist",
   "test",
   "archive",
+  "runpod.catalog.read",
+  "runpod.billing.read",
 ];
 
 const DEFAULT_AI_GATEWAY_BASE_URL = 'http://192.168.0.20:8080';

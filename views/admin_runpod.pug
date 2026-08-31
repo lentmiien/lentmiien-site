@@ -1,0 +1,312 @@
+extends layout
+
+block styles
+  link(rel='stylesheet', href='/css/runpodAdmin.css')
+
+block content
+  - const formatUsd = (value, digits = 4) => Number.isFinite(value) ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: digits })}` : '—';
+  - const formatInteger = (value) => Number.isFinite(value) ? value.toLocaleString('en-US') : '—';
+  - const formatTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'; };
+  - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
+  main.runpod-admin
+    header.runpod-hero
+      .runpod-hero__content
+        p.runpod-eyebrow Infrastructure monitor
+        h1 Runpod API v2
+        p.runpod-hero__subtitle Hardware catalog, official systems, regional availability, and account billing—before compute controls are enabled.
+      .runpod-hero__actions
+        span.runpod-chip REST API #{apiVersion} · public beta
+        span.runpod-chip.runpod-chip--muted= apiBaseUrl
+        a.runpod-button.runpod-button--secondary(href=refreshHref) Refresh from Runpod
+
+    .runpod-scope-note(role='note')
+      strong Step 1 is read-only.
+      |  This page only calls Runpod v2 catalog and billing GET endpoints. Instance creation, start, stop, and deletion are intentionally deferred to step 2.
+
+    if pageError
+      .runpod-alert.runpod-alert--error(role='alert')= pageError
+
+    if errorSections && errorSections.length
+      .runpod-alert.runpod-alert--warning(role='alert')
+        strong Some Runpod sections could not be loaded.
+        ul
+          each failure in errorSections
+            li
+              span= `${failure.label}: ${failure.message}`
+              if failure.status
+                small= ` HTTP ${failure.status}`
+
+    section.runpod-summary(aria-label='Runpod overview')
+      article.runpod-stat
+        span.runpod-stat__label GPU systems
+        strong.runpod-stat__value= formatInteger(summary.gpuCount)
+        span.runpod-stat__hint #{formatInteger(summary.availableGpuCount)} on Secure Cloud for Pods
+      article.runpod-stat
+        span.runpod-stat__label CPU systems
+        strong.runpod-stat__value= formatInteger(summary.cpuCount)
+        span.runpod-stat__hint Pod availability included
+      article.runpod-stat
+        span.runpod-stat__label Data centers
+        strong.runpod-stat__value= formatInteger(summary.dataCenterCount)
+        span.runpod-stat__hint Across #{formatInteger(summary.regionCount)} regions
+      article.runpod-stat
+        span.runpod-stat__label Official templates
+        strong.runpod-stat__value= formatInteger(summary.templateCount)
+        span.runpod-stat__hint Runpod-curated systems
+      article.runpod-stat.runpod-stat--accent
+        span.runpod-stat__label Selected-period spend
+        strong.runpod-stat__value= formatUsd(summary.billingTotal, 2)
+        span.runpod-stat__hint #{formatInteger(billing.recordCount)} billing buckets
+
+    nav.runpod-section-nav(aria-label='Runpod dashboard sections')
+      a(href='#billing') Billing
+      a(href='#gpus') GPUs
+      a(href='#cpus') CPUs
+      a(href='#datacenters') Data centers
+      a(href='#templates') Templates
+
+    section#billing.runpod-panel(aria-labelledby='runpodBillingHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Account monitoring
+          h2#runpodBillingHeading Billing history
+          p.runpod-panel__subtitle Aggregated account-wide charges returned by the Runpod v2 billing endpoint.
+        if fetchedAt
+          span.runpod-panel__meta Updated #{formatTimestamp(fetchedAt)}
+
+      form.runpod-filter(method='get', action=adminPath)
+        label.runpod-field(for='runpodBucketSize')
+          span Bucket size
+          select#runpodBucketSize(name='bucketSize')
+            each option in billingBucketSizes
+              option(value=option, selected=filters.bucketSize === option)= option
+        label.runpod-field(for='runpodLastN')
+          span Number of buckets
+          input#runpodLastN(type='number', name='lastN', min='1', max=maxBillingBuckets, step='1', value=filters.lastN, required)
+        button.runpod-button.runpod-button--primary(type='submit') Update period
+        p.runpod-filter__help Up to #{maxBillingBuckets} buckets. Runpod aligns the requested period to bucket boundaries.
+
+      .runpod-billing-total
+        div
+          span Total spend
+          strong= formatUsd(billing.totals.total, 4)
+        if billing.query.startTime && billing.query.endTime
+          p #{formatTimestamp(billing.query.startTime)} to #{formatTimestamp(billing.query.endTime)}
+
+      .runpod-cost-grid
+        article.runpod-cost
+          span Pods
+          strong= formatUsd(billing.totals.pods)
+        article.runpod-cost
+          span Serverless
+          strong= formatUsd(billing.totals.serverless)
+        article.runpod-cost
+          span Network storage
+          strong= formatUsd(billing.totals.storage)
+        article.runpod-cost
+          span Public endpoints
+          strong= formatUsd(billing.totals.endpoints)
+        article.runpod-cost
+          span Clusters
+          strong= formatUsd(billing.totals.clusters)
+
+      if billing.records.length
+        .runpod-table-wrap
+          table.runpod-table
+            caption Billing buckets, newest first
+            thead
+              tr
+                th(scope='col') Period start
+                th.runpod-number(scope='col') Total
+                th.runpod-number(scope='col') Pods
+                th.runpod-number(scope='col') Serverless
+                th.runpod-number(scope='col') Storage
+                th.runpod-number(scope='col') Endpoints
+                th.runpod-number(scope='col') Clusters
+            tbody
+              each record in billing.records
+                tr
+                  td= formatTimestamp(record.startTime)
+                  td.runpod-number= formatUsd(record.total)
+                  td.runpod-number= formatUsd(record.pods)
+                  td.runpod-number= formatUsd(record.serverless)
+                  td.runpod-number= formatUsd(record.storage)
+                  td.runpod-number= formatUsd(record.endpoints)
+                  td.runpod-number= formatUsd(record.clusters)
+      else
+        .runpod-empty
+          strong No billed usage in this period
+          p Runpod returned no billing records for the selected window.
+
+    section#gpus.runpod-panel(aria-labelledby='runpodGpuHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Pod hardware catalog
+          h2#runpodGpuHeading GPU systems
+          p.runpod-panel__subtitle Current Secure Cloud Pod availability and hourly list prices. Availability is a point-in-time signal and can change quickly.
+        span.runpod-panel__meta #{formatInteger(gpus.length)} systems
+      if gpus.length
+        .runpod-table-wrap
+          table.runpod-table
+            caption Runpod GPU catalog for Pod workloads
+            thead
+              tr
+                th(scope='col') GPU
+                th(scope='col') VRAM
+                th(scope='col') Availability
+                th(scope='col') Secure Cloud
+                th(scope='col') Community Cloud
+                th(scope='col') CUDA / locations
+            tbody
+              each gpu in gpus
+                tr
+                  td.runpod-system
+                    strong= gpu.name
+                    code= gpu.id
+                    span= `${gpu.manufacturer}${gpu.pool ? ` · ${gpu.pool}` : ''}`
+                  td= Number.isFinite(gpu.memoryGb) ? `${formatInteger(gpu.memoryGb)} GB` : '—'
+                  td
+                    span.runpod-status(class=`runpod-status--${gpu.availability.toLowerCase()}`)= gpu.availability
+                  td
+                    if gpu.secure
+                      strong= `${formatUsd(gpu.securePrice)} / hr`
+                      span= `Up to ${formatInteger(gpu.maxSecureCount)} GPU${gpu.maxSecureCount === 1 ? '' : 's'}`
+                    else
+                      span.runpod-muted Not offered
+                  td
+                    if gpu.community
+                      strong= `${formatUsd(gpu.communityPrice)} / hr`
+                      span= `Up to ${formatInteger(gpu.maxCommunityCount)} GPU${gpu.maxCommunityCount === 1 ? '' : 's'}`
+                    else
+                      span.runpod-muted Not offered
+                  td
+                    if gpu.cudaVersions.length
+                      span= gpu.cudaVersions.map((entry) => `${entry.version}${entry.available ? '' : ' (full)'}`).join(', ')
+                    else
+                      span.runpod-muted No CUDA listing
+                    span= `${formatInteger(gpu.dataCenterCount)} matching data center${gpu.dataCenterCount === 1 ? '' : 's'}`
+      else
+        .runpod-empty
+          strong GPU catalog unavailable
+          p No GPU systems were returned.
+
+    section#cpus.runpod-panel(aria-labelledby='runpodCpuHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Pod hardware catalog
+          h2#runpodCpuHeading CPU systems
+          p.runpod-panel__subtitle CPU families, scaling range, memory ratio, availability, and per-vCPU pricing.
+        span.runpod-panel__meta #{formatInteger(cpus.length)} systems
+      if cpus.length
+        .runpod-table-wrap
+          table.runpod-table
+            caption Runpod CPU catalog for Pod workloads
+            thead
+              tr
+                th(scope='col') CPU family
+                th(scope='col') Availability
+                th(scope='col') vCPU range
+                th(scope='col') RAM / vCPU
+                th(scope='col') Secure price
+                th(scope='col') Locations
+            tbody
+              each cpu in cpus
+                tr
+                  td.runpod-system
+                    strong= cpu.name
+                    code= cpu.id
+                    span= cpu.group || 'No group'
+                  td
+                    span.runpod-status(class=`runpod-status--${cpu.availability.toLowerCase()}`)= cpu.availability
+                  td= `${formatInteger(cpu.minimumVcpu)}–${formatInteger(cpu.maximumVcpu)}`
+                  td= Number.isFinite(cpu.ramGbPerVcpu) ? `${formatInteger(cpu.ramGbPerVcpu)} GB` : '—'
+                  td= Number.isFinite(cpu.securePricePerVcpu) ? `${formatUsd(cpu.securePricePerVcpu)} / vCPU hr` : '—'
+                  td= `${formatInteger(cpu.dataCenterCount)} data center${cpu.dataCenterCount === 1 ? '' : 's'}`
+      else
+        .runpod-empty
+          strong CPU catalog unavailable
+          p No CPU systems were returned.
+
+    section#datacenters.runpod-panel(aria-labelledby='runpodDataCenterHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Regional catalog
+          h2#runpodDataCenterHeading Data centers
+          p.runpod-panel__subtitle Regions, storage options, compliance markers, and global-network support.
+        span.runpod-panel__meta #{formatInteger(dataCenters.length)} locations
+      if dataCenters.length
+        .runpod-table-wrap
+          table.runpod-table
+            caption Runpod data center catalog
+            thead
+              tr
+                th(scope='col') Data center
+                th(scope='col') Region
+                th(scope='col') Network volumes
+                th(scope='col') Global network
+                th(scope='col') Compliance
+            tbody
+              each dataCenter in dataCenters
+                tr
+                  td.runpod-system
+                    strong= dataCenter.name
+                    code= dataCenter.id
+                  td= dataCenter.region.replaceAll('_', ' ')
+                  td= dataCenter.networkVolumeTypes.length ? dataCenter.networkVolumeTypes.join(', ').replaceAll('_', ' ') : '—'
+                  td= dataCenter.globalNetwork ? 'Supported' : 'No'
+                  td= dataCenter.compliance.length ? dataCenter.compliance.join(', ').replaceAll('_', ' ') : '—'
+      else
+        .runpod-empty
+          strong Data center catalog unavailable
+          p No data centers were returned.
+
+    section#templates.runpod-panel(aria-labelledby='runpodTemplateHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Curated system images
+          h2#runpodTemplateHeading Official templates
+          p.runpod-panel__subtitle Read-only discovery of Runpod-maintained container templates. Private environment values are not displayed.
+        span.runpod-panel__meta #{formatInteger(templates.length)} templates
+      if templates.length
+        .runpod-template-grid
+          each template in templates
+            article.runpod-template
+              .runpod-template__header
+                div
+                  h3= template.name
+                  code= template.id
+                span.runpod-chip= template.category
+              dl
+                div
+                  dt Image
+                  dd= template.image || '—'
+                div
+                  dt Container disk
+                  dd= Number.isFinite(template.diskGb) ? `${formatInteger(template.diskGb)} GB` : '—'
+                div
+                  dt Persistent mount
+                  dd
+                    if Number.isFinite(template.persistentDiskGb)
+                      | #{formatInteger(template.persistentDiskGb)} GB at #{template.persistentPath || 'unspecified path'}
+                    else
+                      | —
+                div
+                  dt CUDA
+                  dd= template.cudaVersions.length ? template.cudaVersions.join(', ') : '—'
+                div
+                  dt Ports
+                  dd= template.ports.length ? template.ports.join(', ') : '—'
+                div
+                  dt Services
+                  dd= [template.startJupyter ? 'Jupyter' : null, template.startSsh ? 'SSH' : null, template.serverless ? 'Serverless' : null].filter(Boolean).join(', ') || 'None declared'
+      else
+        .runpod-empty
+          strong Template catalog unavailable
+          p No official templates were returned.
+
+    footer.runpod-footer
+      p
+        | Source: Runpod REST API v2. The API is currently in public beta, so response fields may evolve.
+      .runpod-footer__links
+        a(href='https://docs.runpod.io/api-reference-v2/overview', target='_blank', rel='noopener noreferrer') API v2 reference
+        a(href='https://www.runpod.io/blog/runpods-rest-api-v2-is-here-one-api-for-your-entire-gpu-stack', target='_blank', rel='noopener noreferrer') Announcement

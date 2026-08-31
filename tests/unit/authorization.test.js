@@ -31,5 +31,10 @@ describe('hasPermission', () => {
 
   test('fails closed for incomplete principals', async () => {
     await expect(hasPermission(null, 'chat5', { roleModel: {} })).resolves.toBe(false);
+    await expect(hasPermission(
+      { type_user: 'admin' },
+      'chat5',
+      { roleModel: { findOne: jest.fn() } }
+    )).resolves.toBe(false);
   });
 });

@@ -9,6 +9,7 @@
     "git_test": "node git_test",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "test:ollama:gemma4": "node test_ollama_gemma4.js",
+    "test:runpod-api-v2": "node scripts/test-runpod-api-v2.js",
     "lint:openapi": "node scripts/validate-openapi.js",
     "scrape:amiami": "node scripts/scrape-amiami-new-items.js --storage=db",
     "cleanup:vector-embeddings": "node scripts/cleanup-vector-embeddings.js --days=90 --dry-run",

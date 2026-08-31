@@ -454,6 +454,7 @@ const legoSculptureConverterRouter = require('./routes/lego_sculpture_converter'
 const codexRouter = require('./routes/codex');
 const codexLogReviewRouter = require('./routes/codexLogReview');
 const adminRouter = require('./routes/admin');
+const runpodAdminRouter = require('./routes/runpodAdmin');
 const tmpFilesRouter = require('./routes/tmp_files');
 const yamlRouter = require('./routes/yaml');
 const shoppingListRouter = require('./routes/shopping_list');
@@ -516,6 +517,7 @@ app.use('/lego-sculpture-converter', isAuthenticated, legoSculptureConverterRout
 app.use('/codex', isAuthenticated, codexRouter);
 app.use('/codex-log-review', isAuthenticated, isAdmin, codexLogReviewRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
+app.use('/admin/runpod', isAuthenticated, runpodAdminRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(
