@@ -40,6 +40,8 @@
     exit: 'graphics/exit.webp'
   };
 
+  const roarMeter = window.RexMazeRoarMeter;
+
   const dom = {
     canvas: document.getElementById('gameCanvas'),
     stage: document.getElementById('gameStage'),
@@ -133,6 +135,7 @@
     scentPath: [],
     roar: 50,
     levelRoarStart: 50,
+    roarRecoveryUpdatedAt: 0,
     roarWaveAt: -Infinity,
     lastMoveAt: -Infinity,
     toastTimer: 0,
@@ -543,6 +546,7 @@
     state.scentUsedAt = 0;
     state.roarWaveAt = -Infinity;
     state.levelStartedAt = gameNow();
+    state.roarRecoveryUpdatedAt = state.levelStartedAt;
     state.completion = null;
 
     updateBoardLayout();
@@ -557,6 +561,18 @@
 
   function getElapsedSeconds(now = gameNow()) {
     return Math.max(0, (now - state.levelStartedAt) / 1000);
+  }
+
+  function updateRoarRecovery(now = gameNow()) {
+    if (state.phase !== 'playing') return;
+    const deltaSeconds = Math.max(0, (now - state.roarRecoveryUpdatedAt) / 1000);
+    state.roar = roarMeter.recoverRoar(
+      state.roar,
+      deltaSeconds,
+      getElapsedSeconds(now),
+      state.hits
+    );
+    state.roarRecoveryUpdatedAt = now;
   }
 
   function canMove(directionIndex) {
@@ -613,7 +629,7 @@
       addPoints(points, state.player, `+${points}`);
       state.combo = Math.min(5, state.combo + 1);
       state.maxCombo = Math.max(state.maxCombo, state.combo);
-      state.roar = Math.min(100, state.roar + 28);
+      state.roar = Math.min(roarMeter.MAX_ROAR, state.roar + 28);
       state.audio.play('meat');
 
       if (!state.meats.length) {
@@ -630,7 +646,7 @@
     if (amberIndex >= 0) {
       state.amberRelics.splice(amberIndex, 1);
       state.amberFound += 1;
-      state.roar = Math.min(100, state.roar + 50);
+      state.roar = Math.min(roarMeter.MAX_ROAR, state.roar + 50);
       state.scentReadyAt = 0;
       addPoints(250 * state.combo, state.player, `Amber +${250 * state.combo}`, '#ffc247');
       state.audio.play('amber');
@@ -707,7 +723,10 @@
     const raptor = state.raptors.find((enemy) => samePosition(enemy, state.player));
     if (!raptor || raptor.stunnedTurns > 0 || state.player.invulnerableMoves > 0) return false;
 
+    const now = gameNow();
     state.hits += 1;
+    state.roar = roarMeter.MAX_ROAR;
+    state.roarRecoveryUpdatedAt = now;
     state.score = Math.max(0, state.score - 75);
     state.combo = 1;
     state.player.x = state.start.x;
@@ -718,7 +737,7 @@
     state.scentPath = [];
     flashScreen('hit');
     addFloater('-75 ambushed', state.start, '#ff4d4f');
-    showToast('Raptor ambush! Rex scrambled back to the trailhead.');
+    showToast('Raptor ambush! Back at the trailhead—roar full, with faster recovery for this maze.');
     state.audio.play('hit');
     return true;
   }
@@ -752,8 +771,10 @@
 
   function useRoar() {
     if (state.phase !== 'playing') return;
-    if (state.roar < 100) {
-      showToast(`Roar is ${Math.round(state.roar)}% charged. Meat and amber refill it.`);
+    const now = gameNow();
+    updateRoarRecovery(now);
+    if (state.roar < roarMeter.MAX_ROAR) {
+      showToast(`Roar is ${Math.floor(state.roar)}% charged. Time, meat, relics, and ambushes recharge it.`);
       return;
     }
 
@@ -772,7 +793,8 @@
       addFloater('stunned', raptor, '#ffc247');
     });
     state.roar = 0;
-    state.roarWaveAt = gameNow();
+    state.roarRecoveryUpdatedAt = now;
+    state.roarWaveAt = now;
     addPoints(targets.length * 25, state.player, `Roar +${targets.length * 25}`);
     flashScreen('roar');
     state.audio.play('roar');
@@ -856,9 +878,11 @@
 
   function pauseGame() {
     if (state.phase !== 'playing') return;
+    const now = gameNow();
+    updateRoarRecovery(now);
     state.phase = 'paused';
     state.pauseStartedAt = performance.now();
-    updateAbilityHud(gameNow());
+    updateAbilityHud(now);
     openModal(dom.pauseModal, dom.resumeButton);
   }
 
@@ -866,7 +890,9 @@
     if (state.phase !== 'paused') return;
     state.totalPausedMs += performance.now() - state.pauseStartedAt;
     state.phase = 'playing';
-    updateAbilityHud(gameNow());
+    const now = gameNow();
+    updateRoarRecovery(now);
+    updateAbilityHud(now);
     closeModal(dom.pauseModal);
     window.setTimeout(() => dom.canvas.focus({ preventScroll: true }), 100);
   }
@@ -960,10 +986,10 @@
       ? 'Ready · Space'
       : `${Math.max(1, Math.ceil((state.scentReadyAt - now) / 1000))}s · Space`;
 
-    const roarReady = state.roar >= 100;
+    const roarReady = state.roar >= roarMeter.MAX_ROAR;
     dom.roarButton.disabled = state.phase !== 'playing' || !roarReady;
     dom.roarMeter.style.width = `${state.roar}%`;
-    dom.roarStatus.textContent = roarReady ? 'Ready · R' : `${Math.round(state.roar)}% · R`;
+    dom.roarStatus.textContent = roarReady ? 'Ready · R' : `${Math.floor(state.roar)}% · R`;
   }
 
   function formatTime(seconds) {
@@ -1372,7 +1398,11 @@
 
   function animationLoop() {
     render();
-    if (state.phase === 'playing') updateAbilityHud(gameNow());
+    if (state.phase === 'playing') {
+      const now = gameNow();
+      updateRoarRecovery(now);
+      updateAbilityHud(now);
+    }
     requestAnimationFrame(animationLoop);
   }
 
@@ -1526,6 +1556,9 @@
       level: state.level,
       size: state.size,
       score: state.score,
+      hits: state.hits,
+      roar: state.roar,
+      roarRecoveryRate: roarMeter.getRecoveryRate(getElapsedSeconds(), state.hits),
       player: { ...state.player },
       exit: { ...state.exit },
       meats: state.meats.map(({ x, y }) => ({ x, y })),
