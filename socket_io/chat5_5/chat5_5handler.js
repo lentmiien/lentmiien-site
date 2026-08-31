@@ -1183,6 +1183,7 @@ module.exports = async function registerChat5_5Handlers({
         },
         category: conversation.category,
         tags: conversation.tags,
+        embeddingRequested: false,
         conversationId,
       });
 

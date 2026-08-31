@@ -69,9 +69,9 @@ class MyLifeLogService {
   }
 
   async init() {
-    if (this.initialized) return;
-    this.initialized = true;
-    await this.refreshCaches();
+    if (this.initialized) return true;
+    this.initialized = await this.refreshCaches();
+    return this.initialized;
   }
 
   async refreshCaches() {
@@ -133,11 +133,13 @@ class MyLifeLogService {
         category: 'life_log',
         metadata: { message: error?.message || error },
       });
+      return false;
     }
 
     this.labelCache = nextLabelCache;
     this.labelStats = nextLabelStats;
     this.recentLabels = nextRecentLabels;
+    return true;
   }
 
   getLabels() {
@@ -542,13 +544,6 @@ const myLifeLogService = new MyLifeLogService({
   LifeLogEntry: MyLifeLogEntry,
   HealthEntry,
   logger,
-});
-
-myLifeLogService.init().catch((error) => {
-  logger.error('Failed to initialize MyLifeLogService', {
-    category: 'life_log',
-    metadata: { message: error?.message || error },
-  });
 });
 
 module.exports = myLifeLogService;

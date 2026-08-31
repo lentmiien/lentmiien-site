@@ -365,6 +365,7 @@ class AudioWorkflowService {
     asrApiService = new AsrApiService(),
     ttsService = new TtsService(),
     messageService = new MessageService(Chat4Model, FileMetaModel),
+    databaseReady = () => true,
   } = {}) {
     this.jobModel = jobModel;
     this.triggerModel = triggerModel;
@@ -375,8 +376,11 @@ class AudioWorkflowService {
     this.asrApiService = asrApiService;
     this.ttsService = ttsService;
     this.messageService = messageService;
+    this.databaseReady = databaseReady;
     this.queueRunning = false;
     this.started = false;
+    this.databaseRecoveryRequested = false;
+    this.databaseRecoveryPromise = null;
   }
 
   async start() {
@@ -398,6 +402,29 @@ class AudioWorkflowService {
       { status: { $in: ['processing_asr', 'processing_tts'] } },
       { $set: { status: 'queued', error: null } },
     );
+  }
+
+  async resumeAfterDatabaseRecovery() {
+    if (!this.started || !this.databaseReady()) return false;
+    if (this.queueRunning) {
+      this.databaseRecoveryRequested = true;
+      return false;
+    }
+    if (this.databaseRecoveryPromise) return this.databaseRecoveryPromise;
+
+    this.databaseRecoveryPromise = (async () => {
+      await this.recoverInterruptedJobs();
+      if (!this.databaseReady()) {
+        this.databaseRecoveryRequested = true;
+        return false;
+      }
+      this.databaseRecoveryRequested = false;
+      this.kickQueue();
+      return true;
+    })().finally(() => {
+      this.databaseRecoveryPromise = null;
+    });
+    return this.databaseRecoveryPromise;
   }
 
   async ensureAudioDirectory() {
@@ -525,7 +552,7 @@ class AudioWorkflowService {
   }
 
   kickQueue() {
-    if (this.queueRunning) return;
+    if (this.queueRunning || !this.databaseReady()) return;
     setImmediate(() => {
       this.drainQueue().catch((error) => {
         logger.error('Audio workflow queue failed', {
@@ -543,10 +570,11 @@ class AudioWorkflowService {
   }
 
   async drainQueue() {
-    if (this.queueRunning) return;
+    if (this.queueRunning || !this.databaseReady()) return;
     this.queueRunning = true;
     try {
       while (true) {
+        if (!this.databaseReady()) break;
         if (await this.hasActiveJob()) break;
         const job = await this.jobModel.findOneAndUpdate(
           { status: 'queued' },
@@ -558,6 +586,14 @@ class AudioWorkflowService {
       }
     } finally {
       this.queueRunning = false;
+      if (this.databaseRecoveryRequested && this.databaseReady()) {
+        this.resumeAfterDatabaseRecovery().catch((error) => {
+          logger.error('Failed to resume audio workflow after database recovery', {
+            category: 'audio_workflow',
+            metadata: { message: error?.message || String(error) },
+          });
+        });
+      }
     }
   }
 

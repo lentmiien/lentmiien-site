@@ -77,6 +77,129 @@ function createJob(overrides = {}) {
 }
 
 describe('EmbeddingQueueService', () => {
+  test('silently skips a drain while the queue database connection is unavailable', async () => {
+    const logger = createLogger();
+    const service = new EmbeddingQueueService({
+      jobModel: { db: { readyState: 0 } },
+      embeddingService: createEmbeddingService(),
+      loggerImpl: logger,
+    });
+    service.reconcilePendingSourcesIfDue = jest.fn();
+    service.claimNext = jest.fn();
+
+    await expect(service.drainQueue()).resolves.toEqual({
+      processed: 0,
+      skipped: 'database_unavailable',
+    });
+
+    expect(service.reconcilePendingSourcesIfDue).not.toHaveBeenCalled();
+    expect(service.claimNext).not.toHaveBeenCalled();
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(logger.notice).not.toHaveBeenCalled();
+    expect(logger.warning).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  test('reconciliation converts an excluded pending placeholder into a delete intent', async () => {
+    const queryFor = (value) => ({
+      sort: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(value),
+    });
+    const placeholder = {
+      _id: 'placeholder-1',
+      contentType: 'text',
+      content: { text: 'Pending response' },
+      embeddingRequested: false,
+      embeddingStatus: 'pending',
+      timestamp: new Date(),
+    };
+    const chatModel = {
+      find: jest.fn((filter) => {
+        if (filter.embeddingStatus === 'pending') return queryFor([placeholder]);
+        if (filter.embeddingStatus === 'delete_pending') return queryFor([placeholder]);
+        return queryFor([]);
+      }),
+      updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+    };
+    const conversationModel = {
+      findOne: jest.fn().mockReturnValue(queryFor({ _id: 'conversation-1' })),
+    };
+    const service = new EmbeddingQueueService({
+      jobModel: {},
+      chatModel,
+      conversationModel,
+      messageInboxModel: { find: jest.fn().mockReturnValue(queryFor([])) },
+      vectorModel: {},
+      highQualityVectorModel: {},
+      embeddingService: createEmbeddingService(),
+      loggerImpl: createLogger(),
+    });
+    service.enqueue = jest.fn();
+    service.enqueueDelete = jest.fn().mockResolvedValue({ status: 'pending' });
+
+    await expect(service.reconcilePendingSources(new Date())).resolves.toEqual({
+      queued: 2,
+      markedCompleted: 0,
+      markedDisabled: 0,
+      markedFailed: 0,
+    });
+
+    expect(chatModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'placeholder-1', embeddingStatus: 'pending' },
+      { $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null } },
+    );
+    expect(service.enqueue).not.toHaveBeenCalled();
+    const expectedSource = expect.objectContaining({
+      documentId: 'placeholder-1',
+      parentId: 'conversation-1',
+    });
+    expect(service.enqueueDelete).toHaveBeenNthCalledWith(
+      1,
+      expectedSource,
+      { mode: 'default' },
+    );
+    expect(service.enqueueDelete).toHaveBeenNthCalledWith(
+      2,
+      expectedSource,
+      { mode: 'high_quality' },
+    );
+  });
+
+  test('finds an active embedding job by source identity when its stored parent is unknown', async () => {
+    const activeSource = {
+      ...source,
+      parentId: 'conversation-from-active-job',
+    };
+    const jobModel = {
+      findById: jest.fn().mockResolvedValue(null),
+      findOne: jest.fn().mockResolvedValue({ source: activeSource }),
+    };
+    const vectorModel = { findOne: jest.fn() };
+    const highQualityVectorModel = { findOne: jest.fn() };
+    const service = new EmbeddingQueueService({
+      jobModel,
+      vectorModel,
+      highQualityVectorModel,
+      embeddingService: createEmbeddingService(),
+      loggerImpl: createLogger(),
+    });
+
+    await expect(service.findStoredChatSource('message-1')).resolves.toEqual(activeSource);
+
+    expect(jobModel.findById).toHaveBeenCalledTimes(2);
+    expect(jobModel.findOne).toHaveBeenCalledWith({
+      'source.collectionName': 'chat_message',
+      'source.documentId': 'message-1',
+      'source.contentType': 'chat_message_text',
+      mode: { $in: ['default', 'high_quality'] },
+      status: { $in: ['pending', 'processing'] },
+    }, { source: 1 });
+    expect(vectorModel.findOne).not.toHaveBeenCalled();
+    expect(highQualityVectorModel.findOne).not.toHaveBeenCalled();
+  });
+
   test('durably queues source metadata without calling the embedding API or storing raw text', async () => {
     const embeddingService = createEmbeddingService();
     const jobModel = {
@@ -337,6 +460,29 @@ describe('EmbeddingQueueService', () => {
         $set: expect.objectContaining({ embeddingStatus: 'completed' }),
       }),
     );
+  });
+
+  test('treats explicitly excluded chat text as a disabled source', async () => {
+    const chatModel = {
+      findById: jest.fn().mockResolvedValue({
+        contentType: 'text',
+        content: { text: 'Pending response' },
+        embeddingRequested: false,
+      }),
+    };
+    const service = new EmbeddingQueueService({
+      jobModel: {},
+      chatModel,
+      embeddingService: createEmbeddingService(),
+      loggerImpl: createLogger(),
+    });
+
+    await expect(service.resolveStoredSource(createJob())).resolves.toEqual({
+      exists: true,
+      enabled: false,
+      text: 'Pending response',
+      rawText: 'Pending response',
+    });
   });
 
   test('does not delete embeddings when an older delete claim now has enabled source text', async () => {

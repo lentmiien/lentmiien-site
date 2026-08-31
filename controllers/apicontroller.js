@@ -227,6 +227,7 @@ exports.chat5BatchSendResponse = async (req, res) => {
       content: buildChat5TextContent('Pending batch response'),
       category: conversation.category,
       tags: conversation.tags,
+      embeddingRequested: false,
       conversationId: conversation._id,
     });
 

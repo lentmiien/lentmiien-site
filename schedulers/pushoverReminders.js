@@ -47,9 +47,11 @@ function schedulePushoverReminders() {
       category: 'pushover_reminders',
       metadata: { intervalMs: REMINDER_POLL_INTERVAL_MS },
     });
-    tick('startup').catch(() => {});
+    if (mongoose.connection.readyState === 1) tick('startup').catch(() => {});
     const handle = setInterval(
-      () => tick('scheduled').catch(() => {}),
+      () => {
+        if (mongoose.connection.readyState === 1) tick('scheduled').catch(() => {});
+      },
       REMINDER_POLL_INTERVAL_MS
     );
     handle.unref?.();

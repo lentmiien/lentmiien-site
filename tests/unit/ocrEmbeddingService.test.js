@@ -142,4 +142,20 @@ describe('OcrEmbeddingService', () => {
       parentId: 'job',
     });
   });
+
+  test('silently pauses scheduled reconciliation while MongoDB is unavailable', async () => {
+    const ocrJobModel = { find: jest.fn() };
+    const service = new OcrEmbeddingService({
+      ocrJobModel,
+      embeddingService: { embed: jest.fn(), deleteEmbeddings: jest.fn() },
+    });
+    service.setDatabaseReadyCheck(() => false);
+
+    await expect(service.run()).resolves.toEqual({
+      processed: 0,
+      failed: 0,
+      skipped: 'database_unavailable',
+    });
+    expect(ocrJobModel.find).not.toHaveBeenCalled();
+  });
 });

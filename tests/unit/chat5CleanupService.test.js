@@ -60,10 +60,14 @@ function createCleanupModels({ conversations = [], hiddenMessageIds = [], orphan
     },
     find: jest.fn().mockReturnValue(chatFindChain),
   };
+  const messageService = {
+    deleteMessages: jest.fn().mockImplementation(async (messageIds) => messageIds.length),
+  };
 
   return {
     conversationModel,
     chatModel,
+    messageService,
     conversationFindChain,
     chatFindChain,
   };
@@ -82,11 +86,12 @@ describe('chat5CleanupService', () => {
 
   test('uses narrow filters for destructive conversation deletes', async () => {
     const checkedAt = new Date('2026-06-29T12:00:00.000Z');
-    const { conversationModel, chatModel } = createCleanupModels();
+    const { conversationModel, chatModel, messageService } = createCleanupModels();
 
     await cleanupChat5Databases({
       conversationModel,
       chatModel,
+      messageService,
       now: checkedAt,
     });
 
@@ -100,11 +105,12 @@ describe('chat5CleanupService', () => {
 
   test('only checks conversations selected by the cleanup eligibility query', async () => {
     const checkedAt = new Date('2026-06-29T12:00:00.000Z');
-    const { conversationModel, chatModel } = createCleanupModels();
+    const { conversationModel, chatModel, messageService } = createCleanupModels();
 
     const result = await cleanupChat5Databases({
       conversationModel,
       chatModel,
+      messageService,
       now: checkedAt,
     });
 
@@ -130,7 +136,7 @@ describe('chat5CleanupService', () => {
       messages: [visibleId, invalidLegacyId],
       updatedAt: new Date('2026-06-02T00:00:00.000Z'),
     };
-    const { conversationModel, chatModel } = createCleanupModels({
+    const { conversationModel, chatModel, messageService } = createCleanupModels({
       conversations: [conversation, secondConversation],
       hiddenMessageIds: [hiddenId],
     });
@@ -138,6 +144,7 @@ describe('chat5CleanupService', () => {
     const result = await cleanupChat5Databases({
       conversationModel,
       chatModel,
+      messageService,
       now: checkedAt,
       conversationBatchSize: 10,
       messageDeleteBatchSize: 10,
@@ -183,13 +190,14 @@ describe('chat5CleanupService', () => {
       messages: [],
       updatedAt: new Date('2026-05-31T00:00:00.000Z'),
     };
-    const { conversationModel, chatModel } = createCleanupModels({
+    const { conversationModel, chatModel, messageService } = createCleanupModels({
       conversations: [conversation],
     });
 
     await cleanupChat5Databases({
       conversationModel,
       chatModel,
+      messageService,
       now: checkedAt,
     });
 
@@ -209,13 +217,14 @@ describe('chat5CleanupService', () => {
     const checkedAt = new Date('2026-06-29T12:00:00.000Z');
     const orphanOne = '507f1f77bcf86cd799439013';
     const orphanTwo = '507f1f77bcf86cd799439014';
-    const { conversationModel, chatModel } = createCleanupModels({
+    const { conversationModel, chatModel, messageService } = createCleanupModels({
       orphanMessageIds: [orphanOne, orphanTwo],
     });
 
     const result = await cleanupChat5Databases({
       conversationModel,
       chatModel,
+      messageService,
       now: checkedAt,
       messageDeleteBatchSize: 10,
     });
@@ -234,20 +243,25 @@ describe('chat5CleanupService', () => {
       { $match: { __cleanupRefs: { $size: 0 } } },
       { $project: { _id: 1 } },
     ], { allowDiskUse: true });
-    const deleteFilter = chatModel.collection.deleteMany.mock.calls[0][0];
-    expect(deleteFilter._id.$in.map((id) => id.toString())).toEqual([orphanOne, orphanTwo]);
+    expect(messageService.deleteMessages).toHaveBeenCalledWith([
+      objectId(orphanOne),
+      objectId(orphanTwo),
+    ]);
+    expect(chatModel.collection.deleteMany).not.toHaveBeenCalled();
   });
 
   test('does not issue a chat5 delete when no orphan messages are found', async () => {
-    const { conversationModel, chatModel } = createCleanupModels();
+    const { conversationModel, chatModel, messageService } = createCleanupModels();
 
     const result = await cleanupChat5Databases({
       conversationModel,
       chatModel,
+      messageService,
       now: new Date('2026-06-29T12:00:00.000Z'),
     });
 
     expect(result.unreferencedMessagesDeleted).toBe(0);
+    expect(messageService.deleteMessages).not.toHaveBeenCalled();
     expect(chatModel.collection.deleteMany).not.toHaveBeenCalled();
   });
 });

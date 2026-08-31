@@ -17,7 +17,7 @@ const PendingRequests = new mongoose.Schema({
   processingStartedAt: { type: Date, default: null },
   recoveryState: {
     type: String,
-    enum: ['pending', 'abandoned'],
+    enum: ['pending', 'cleanup_pending', 'abandoned'],
     default: 'pending',
   },
   recoveryAttemptCount: { type: Number, default: 0, min: 0 },
@@ -27,6 +27,10 @@ const PendingRequests = new mongoose.Schema({
   lastRetrievalError: { type: String, default: null },
   abandonedAt: { type: Date, default: null },
   abandonReason: { type: String, default: null },
+  cleanupAttemptCount: { type: Number, default: 0, min: 0 },
+  cleanupLastError: { type: String, default: null },
+  cleanupPendingAt: { type: Date, default: null },
+  cleanupOutcome: { type: String, default: null },
 }, { timestamps: true });
 
 PendingRequests.index({

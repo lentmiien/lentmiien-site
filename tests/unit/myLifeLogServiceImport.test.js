@@ -108,6 +108,28 @@ describe('MyLifeLogService CSV import', () => {
     });
   });
 
+  test('retries initialization after a database failure without discarding the last cache', async () => {
+    service.labelCache = new Set(['last-known-label']);
+    mockLifeLogEntry.find
+      .mockReturnValueOnce({ lean: jest.fn().mockRejectedValue(new Error('database unavailable')) })
+      .mockReturnValueOnce(mockQuery([{ label: 'recovered-label', timestamp: new Date() }]))
+      .mockReturnValueOnce(mockQuery([{ label: 'recovered-label' }]));
+    mockHealthEntry.find.mockReturnValueOnce(mockQuery([]));
+
+    await expect(service.init()).resolves.toBe(false);
+    expect(service.initialized).toBe(false);
+    expect(service.getLabels()).toEqual(['last-known-label']);
+
+    await expect(service.init()).resolves.toBe(true);
+    expect(service.initialized).toBe(true);
+    expect(service.getLabels()).toEqual(['recovered-label']);
+    expect(mockLifeLogEntry.find).toHaveBeenCalledTimes(3);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Failed to refresh life log label cache',
+      expect.objectContaining({ category: 'life_log' }),
+    );
+  });
+
   test('deduplicates source-id imports without same-day label collapsing', async () => {
     const firstTimestamp = new Date(2026, 5, 19, 8, 0, 0);
     const secondTimestamp = new Date(2026, 5, 19, 9, 0, 0);

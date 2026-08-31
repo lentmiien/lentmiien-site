@@ -263,6 +263,13 @@ class MessageService {
 
     try {
       const queue = this.getEmbeddingQueueService();
+      if (message.embeddingRequested === false) {
+        if (message.embeddingStatus === 'delete_pending') {
+          await queue.enqueueDelete(metadata, { mode: 'default' });
+          await queue.enqueueDelete(metadata, { mode: 'high_quality' });
+        }
+        return;
+      }
       if (!normalizedText) {
         await queue.enqueueDelete(metadata, { mode: 'default' });
         return;
@@ -307,6 +314,9 @@ class MessageService {
     }
     if (message.contentType !== 'text') {
       throw new Error('Only text messages can be embedded.');
+    }
+    if (message.embeddingRequested === false) {
+      throw new Error('Embedding is disabled for this message.');
     }
 
     const text = typeof textOverride === 'string'
@@ -987,7 +997,16 @@ class MessageService {
     return newIdsArray;
   }
 
-  async createMessageNew({ userId, content, contentType, category, tags, hideFromBot = false, conversationId = null }) {
+  async createMessageNew({
+    userId,
+    content,
+    contentType,
+    category,
+    tags,
+    hideFromBot = false,
+    embeddingRequested = undefined,
+    conversationId = null,
+  }) {
     // Save the input as a new message to database
     const message = {
       user_id: userId,
@@ -998,6 +1017,9 @@ class MessageService {
       timestamp: new Date(),
       hideFromBot: !!hideFromBot,
     };
+    if (typeof embeddingRequested === 'boolean') {
+      message.embeddingRequested = embeddingRequested;
+    }
     const msg = new Chat5Model(message);
     await msg.save();
     await this.syncTextEmbedding({ message: msg, conversationId });
@@ -1062,6 +1084,7 @@ class MessageService {
         content: cloneContent,
         timestamp: original.timestamp ? new Date(original.timestamp) : new Date(),
         hideFromBot: original.hideFromBot,
+        embeddingRequested: original.embeddingRequested,
       });
       await clone.save();
       clones.push(clone);
@@ -1090,6 +1113,7 @@ class MessageService {
         content: cloneDeepMessageContent(snapshot.content || {}),
         timestamp: snapshot.timestamp ? new Date(snapshot.timestamp) : new Date(),
         hideFromBot: !!snapshot.hideFromBot,
+        embeddingRequested: snapshot.embeddingRequested,
       };
 
       const msg = new Chat5Model(payload);
@@ -1179,6 +1203,7 @@ class MessageService {
         },
         timestamp: new Date(),
         hideFromBot: true,
+        embeddingRequested: false,
       };
       const msg = new Chat5Model(message);
       await msg.save();
@@ -1210,6 +1235,7 @@ class MessageService {
       },
       timestamp: new Date(),
       hideFromBot: true,
+      embeddingRequested: false,
     };
     const msg = new Chat5Model(message);
     await msg.save();

@@ -7,6 +7,7 @@ jest.mock('../../utils/logger', () => ({
   error: jest.fn(),
 }));
 
+const logger = require('../../utils/logger');
 const {
   recordMinuteLoggerRequest,
 } = require('../../services/minuteLoggerService');
@@ -47,18 +48,41 @@ describe('minuteLoggerController.log', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'OK' });
   });
 
-  test('still returns JSON OK when persistence fails', async () => {
-    recordMinuteLoggerRequest.mockRejectedValueOnce(new Error('database unavailable'));
+  test('returns a retriable failure without logging the secret route', async () => {
+    const sentinelSecret = 'sentinel-secret-minute-logger-path';
+    const persistenceError = new Error(
+      `database unavailable while writing /${sentinelSecret}?token=also-secret`
+    );
+    persistenceError.code = sentinelSecret;
+    persistenceError.name = sentinelSecret;
+    recordMinuteLoggerRequest.mockRejectedValueOnce(persistenceError);
     const req = {
-      baseUrl: '/secret-minute-logger',
+      baseUrl: `/${sentinelSecret}`,
       method: 'POST',
-      originalUrl: '/secret-minute-logger',
+      originalUrl: `/${sentinelSecret}?token=also-secret`,
+      route: { path: '/' },
     };
     const res = createResponse();
 
     await controller.log(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ message: 'OK' });
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.set).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '60');
+    expect(res.json).toHaveBeenCalledWith({ message: 'Service unavailable' });
+    expect(logger.error).toHaveBeenCalledWith(
+      'Minute logger request failed to persist',
+      {
+        category: 'minute-logger',
+        metadata: {
+          errorName: 'Error',
+          errorCode: null,
+          method: 'POST',
+          route: '/',
+        },
+      }
+    );
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(sentinelSecret);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('also-secret');
   });
 });

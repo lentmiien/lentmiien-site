@@ -1,4 +1,5 @@
 const { randomUUID } = require('crypto');
+const mongoose = require('mongoose');
 
 const CodexWorkspaceLock = require('../models/codex_workspace_lock');
 const CodexTurn = require('../models/codex_turn');
@@ -47,6 +48,7 @@ class CodexQueueWorker {
     this.workerId = `codex-worker-${process.pid}-${randomUUID()}`;
     this.runner = options.runner || new CodexLocalRunner();
     this.ollamaReservation = options.ollamaReservation || new CodexOllamaReservation();
+    this.databaseReady = options.databaseReady || (() => true);
     this.started = false;
     this.tickInFlight = false;
     this.activeTurns = new Map();
@@ -161,7 +163,7 @@ class CodexQueueWorker {
 
   async tick() {
     const config = this.getConfig();
-    if (!this.started || !config.workerEnabled || this.tickInFlight) {
+    if (!this.started || !config.workerEnabled || this.tickInFlight || !this.databaseReady()) {
       return;
     }
     this.tickInFlight = true;
@@ -542,5 +544,7 @@ class CodexQueueWorker {
   }
 }
 
-module.exports = new CodexQueueWorker();
+module.exports = new CodexQueueWorker({
+  databaseReady: () => mongoose.connection.readyState === 1,
+});
 module.exports.CodexQueueWorker = CodexQueueWorker;

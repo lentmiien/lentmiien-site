@@ -108,3 +108,8 @@ POST /comfy/run
   completed jobs can still be returned if ComfyUI still has history for that prompt_id.
 - timeout_sec only controls how long the gateway tracks a job before marking it as
   "timeout"; it does not cancel the job in ComfyUI.
+- The site uses `COMFY_REQUEST_TIMEOUT_MS` (20 seconds by default) for short reads and
+  `COMFY_ACTION_TIMEOUT_MS` (3 minutes by default) for submit, run, and upload calls so
+  Gateway-managed cold starts are not cut off by the metadata-read deadline.
+- `COMFY_STREAM_HEADER_TIMEOUT_MS` and `COMFY_STREAM_IDLE_TIMEOUT_MS` independently
+  bound input-preview response headers and body stalls.

@@ -79,6 +79,13 @@ function errorJson(res, status, message, details) {
   return res.status(status).json({ error: message, details });
 }
 
+function logComfyGatewayFailure(message, error, metadata = {}) {
+  logger.error(message, {
+    category: 'comfy-gateway',
+    metadata: ComfyGatewayService.gatewayLogMetadata(error, metadata),
+  });
+}
+
 function normalizeInstanceId(raw) {
   if (raw === null || raw === undefined) return null;
   const str = String(raw).trim();
@@ -402,7 +409,10 @@ async function cacheGatewayOutputs(jobId, outputs, instanceId) {
         cacheRec = await writeCacheFile(safeName, buffer, { bucket, mediaType, instanceId });
         cached = Boolean(cacheRec);
       } catch (outputErr) {
-        logger.error('[cacheGatewayOutputs] failed to fetch output', outputErr);
+        logComfyGatewayFailure('ComfyUI output fetch failed', outputErr, {
+          operation: 'fetchImage',
+          phase: 'response-body',
+        });
         cached = false;
       }
     }
@@ -1579,6 +1589,9 @@ async function collectActiveInstanceKeys() {
 }
 
 function scheduleBulkWorkers() {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
   if (bulkWorkerState.scheduling) {
     bulkWorkerState.reschedule = true;
     return;
@@ -3473,8 +3486,16 @@ exports.listInstances = async (_req, res) => {
       system
     });
   } catch (e) {
-    logger.error('[listInstances] error', e);
-    return errorJson(res, 502, 'failed to list instances', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI instance state request failed', e, {
+      operation: 'getSystemStats',
+      phase: 'request',
+    });
+    return errorJson(
+      res,
+      ComfyGatewayService.gatewayHttpStatus(e),
+      'failed to list instances',
+      ComfyGatewayService.gatewayClientMessage(e)
+    );
   }
 };
 
@@ -3501,8 +3522,16 @@ exports.getWorkflows = async (req, res) => {
       : [];
     return res.json({ workflows });
   } catch (e) {
-    logger.error('[getWorkflows] error', e);
-    return errorJson(res, 502, 'failed to load workflows', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI workflow list request failed', e, {
+      operation: 'listWorkflows',
+      phase: 'request',
+    });
+    return errorJson(
+      res,
+      ComfyGatewayService.gatewayHttpStatus(e),
+      'failed to load workflows',
+      ComfyGatewayService.gatewayClientMessage(e)
+    );
   }
 };
 
@@ -3513,8 +3542,16 @@ exports.getWorkflowDetail = async (req, res) => {
     const workflow = await comfyGatewayService.getWorkflow(name);
     return res.json({ name, workflow });
   } catch (e) {
-    logger.error('[getWorkflowDetail] error', e);
-    return errorJson(res, 502, 'failed to load workflow', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI workflow detail request failed', e, {
+      operation: 'getWorkflow',
+      phase: 'request',
+    });
+    return errorJson(
+      res,
+      ComfyGatewayService.gatewayHttpStatus(e),
+      'failed to load workflow',
+      ComfyGatewayService.gatewayClientMessage(e)
+    );
   }
 };
 
@@ -3590,9 +3627,17 @@ exports.generate = async (req, res) => {
 
     return res.json(jobPayload);
   } catch (e) {
-    logger.error('[generate] error', e);
-    const status = e?.status || 502;
-    return errorJson(res, status, 'failed to submit workflow', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI workflow submission failed', e, {
+      operation: 'submitPrompt',
+      phase: 'request',
+    });
+    const status = ComfyGatewayService.gatewayHttpStatus(e);
+    return errorJson(
+      res,
+      status,
+      'failed to submit workflow',
+      ComfyGatewayService.gatewayClientMessage(e)
+    );
   }
 };
 
@@ -3676,8 +3721,16 @@ exports.listFiles = async (req, res) => {
     });
     return res.json(payload);
   } catch (e) {
-    logger.error('[listFiles] error', e);
-    return errorJson(res, e?.status || 502, 'failed to list ComfyUI input files', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI input file list request failed', e, {
+      operation: 'listInputFiles',
+      phase: 'request',
+    });
+    return errorJson(
+      res,
+      ComfyGatewayService.gatewayHttpStatus(e),
+      'failed to list ComfyUI input files',
+      ComfyGatewayService.gatewayClientMessage(e)
+    );
   }
 };
 
@@ -3686,8 +3739,10 @@ exports.getInputFile = async (req, res) => {
   const inputPath = String(req.query.path || '').trim();
   if (!inputPath) return errorJson(res, 400, 'input path required');
 
+  const startedAt = Date.now();
   const upstreamController = new AbortController();
   let stream = null;
+  let upstreamDiagnostics = null;
   let idleTimer = null;
   let clientDisconnected = false;
   let streamFinished = false;
@@ -3723,6 +3778,7 @@ exports.getInputFile = async (req, res) => {
       range: req.headers.range,
       signal: upstreamController.signal
     });
+    upstreamDiagnostics = upstream.comfyGateway || null;
     if (clientDisconnected) return undefined;
     res.status(upstream.status);
     [
@@ -3765,9 +3821,22 @@ exports.getInputFile = async (req, res) => {
     stream.on('error', (error) => {
       cleanup();
       if (clientDisconnected) return;
-      logger.error('[getInputFile] stream error', error);
+      logComfyGatewayFailure('ComfyUI input preview stream failed', error, {
+        operation: 'openInputFile',
+        endpoint: upstreamDiagnostics?.endpoint || null,
+        phase: 'response-body',
+        upstreamStatus: upstreamDiagnostics?.status || upstream.status,
+        requestId: upstreamDiagnostics?.requestId || null,
+        durationMs: Date.now() - startedAt,
+        upstreamState: upstreamDiagnostics?.upstreamState || null,
+      });
       if (!res.headersSent) {
-        errorJson(res, 502, 'failed to stream ComfyUI input file', String(error.message || error));
+        errorJson(
+          res,
+          ComfyGatewayService.gatewayHttpStatus(error),
+          'failed to stream ComfyUI input file',
+          ComfyGatewayService.gatewayClientMessage(error)
+        );
       } else {
         res.destroy(error);
       }
@@ -3777,8 +3846,17 @@ exports.getInputFile = async (req, res) => {
   } catch (e) {
     cleanup();
     if (clientDisconnected || req.aborted || res.destroyed) return undefined;
-    logger.error('[getInputFile] error', e);
-    return errorJson(res, e?.status || 502, 'failed to preview ComfyUI input file', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI input preview request failed', e, {
+      operation: 'openInputFile',
+      phase: 'response-headers',
+      durationMs: Date.now() - startedAt,
+    });
+    return errorJson(
+      res,
+      ComfyGatewayService.gatewayHttpStatus(e),
+      'failed to preview ComfyUI input file',
+      ComfyGatewayService.gatewayClientMessage(e)
+    );
   }
 };
 
@@ -3991,8 +4069,16 @@ exports.uploadInput = async (req, res) => {
     });
     return res.status(201).json(payload);
   } catch (e) {
-    logger.error('[uploadInput] error', e);
-    return errorJson(res, e?.status || 502, 'failed to upload ComfyUI input file', String(e.message || e));
+    logComfyGatewayFailure('ComfyUI input upload failed', e, {
+      operation: 'uploadInputFile',
+      phase: 'request',
+    });
+    return errorJson(
+      res,
+      ComfyGatewayService.gatewayHttpStatus(e),
+      'failed to upload ComfyUI input file',
+      ComfyGatewayService.gatewayClientMessage(e)
+    );
   } finally {
     try { await fsp.unlink(tmpPath); } catch {}
   }
@@ -4144,7 +4230,13 @@ exports.health = async (req, res) => {
     const stats = await comfyGatewayService.getSystemStats();
     res.json(Object.assign({ ok: true }, stats));
   } catch (err) {
-    logger.error('[health] error', err);
-    res.status(502).json({ ok: false, error: String(err?.message || err) });
+    logComfyGatewayFailure('ComfyUI health request failed', err, {
+      operation: 'getSystemStats',
+      phase: 'request',
+    });
+    res.status(ComfyGatewayService.gatewayHttpStatus(err)).json({
+      ok: false,
+      error: ComfyGatewayService.gatewayClientMessage(err),
+    });
   }
 };

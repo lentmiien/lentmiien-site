@@ -11,6 +11,11 @@ function getDefaultModels() {
   return { conversationModel: Conversation5Model, chatModel: Chat5Model };
 }
 
+function getDefaultMessageService() {
+  const MessageService = require('./messageService');
+  return new MessageService(null, null);
+}
+
 function deletedCountFromResult(result) {
   return Number(result?.deletedCount || result?.n || 0);
 }
@@ -218,7 +223,7 @@ async function cleanupConversationReferences({ conversationModel, chatModel, che
   return totals;
 }
 
-async function deleteUnreferencedMessages({ conversationModel, chatModel, batchSize }) {
+async function deleteUnreferencedMessages({ conversationModel, chatModel, messageService, batchSize }) {
   const conversationCollectionName = conversationModel.collection.collectionName;
   const cursor = chatModel.collection.aggregate([
     { $addFields: { __cleanupMessageId: { $toString: '$_id' } } },
@@ -239,15 +244,13 @@ async function deleteUnreferencedMessages({ conversationModel, chatModel, batchS
   for await (const message of cursor) {
     batch.push(message._id);
     if (batch.length >= batchSize) {
-      const result = await chatModel.collection.deleteMany({ _id: { $in: batch } });
-      deleted += deletedCountFromResult(result);
+      deleted += await messageService.deleteMessages(batch);
       batch = [];
     }
   }
 
   if (batch.length > 0) {
-    const result = await chatModel.collection.deleteMany({ _id: { $in: batch } });
-    deleted += deletedCountFromResult(result);
+    deleted += await messageService.deleteMessages(batch);
   }
 
   return deleted;
@@ -257,6 +260,7 @@ async function cleanupChat5Databases(options = {}) {
   const defaults = (!options.conversationModel || !options.chatModel) ? getDefaultModels() : {};
   const conversationModel = options.conversationModel || defaults.conversationModel;
   const chatModel = options.chatModel || defaults.chatModel;
+  const messageService = options.messageService || getDefaultMessageService();
   const checkedAt = options.now instanceof Date ? options.now : new Date();
   const cleanupAgeCutoff = subtractDays(checkedAt, 30);
   const staleConversationCutoff = subtractDays(checkedAt, 365);
@@ -284,6 +288,7 @@ async function cleanupChat5Databases(options = {}) {
   const unreferencedMessagesDeleted = await deleteUnreferencedMessages({
     conversationModel,
     chatModel,
+    messageService,
     batchSize: messageDeleteBatchSize,
   });
   const completedAt = new Date();

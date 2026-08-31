@@ -2,6 +2,7 @@ const socketIO = require('socket.io');
 
 const { RoleModel, UseraccountModel } = require('../database');
 const logger = require('../utils/logger');
+const { isDatabaseReady } = require('../middleware/databaseReadiness');
 const { authorizeSocketSession } = require('../utils/socketAuthorization');
 const { scheduleSessionExpiry } = require('../utils/sessionExpiry');
 
@@ -12,8 +13,15 @@ const registerChat5_6Handlers = require('./chat5_6/chat5_6handler');
 function roomForUser(userName) { return `user:${encodeURIComponent(String(userName))}`; }
 function roomForConversation(conversationId) { return `conversation:${String(conversationId)}`; }
 
-module.exports = (server, sessionMiddleware) => {
+module.exports = (server, sessionMiddleware, { databaseReady = isDatabaseReady } = {}) => {
   const io = socketIO(server, {maxHttpBufferSize: 10 * 1024 * 1024});
+
+  io.use((_socket, next) => {
+    if (!databaseReady()) {
+      return next(new Error('Service temporarily unavailable'));
+    }
+    return next();
+  });
 
   // Use the session middleware in Socket.io
   io.use((socket, next) => {

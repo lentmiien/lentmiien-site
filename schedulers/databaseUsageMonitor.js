@@ -79,6 +79,7 @@ function createMonitorRunner() {
     : DEFAULT_INTERVAL_MINUTES * 60 * 1000;
 
   const runCheck = async () => {
+    if (mongoose.connection.readyState !== 1) return;
     try {
       await performanceMetrics.trackTask('databaseUsageMonitor.runCheck', async () => {
         const usage = await fetchDatabaseUsage();

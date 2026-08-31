@@ -21,6 +21,16 @@ async function waitForDatabase() {
   if (mongoose.connection.readyState === 2) {
     await mongoose.connection.asPromise();
   }
+  if (mongoose.connection.readyState === 0) {
+    if (!process.env.MONGOOSE_URL) {
+      throw new Error('MONGOOSE_URL is required.');
+    }
+    await mongoose.connect(process.env.MONGOOSE_URL, {
+      serverSelectionTimeoutMS: getPositiveIntegerEnv('DATABASE_CONNECT_TIMEOUT_MS', 10_000),
+      connectTimeoutMS: getPositiveIntegerEnv('DATABASE_CONNECT_TIMEOUT_MS', 10_000),
+      bufferCommands: false,
+    });
+  }
   if (mongoose.connection.readyState !== 1) {
     throw new Error('MongoDB connection is not ready.');
   }

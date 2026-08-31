@@ -5,6 +5,7 @@ jest.mock('axios', () => ({
 const axios = require('axios');
 const {
   PUSHOVER_PRIORITIES,
+  cancelPushoverEmergency,
   sendPushoverNotification,
 } = require('../../utils/pushover');
 
@@ -61,6 +62,9 @@ describe('Pushover notification utility', () => {
   });
 
   test('includes the retry settings required for emergency notifications', async () => {
+    axios.post.mockResolvedValueOnce({
+      data: { status: 1, request: 'request-id', receipt: 'R'.repeat(30) },
+    });
     await sendPushoverNotification({
       message: 'Immediate attention required.',
       priority: PUSHOVER_PRIORITIES.EMERGENCY,
@@ -72,6 +76,15 @@ describe('Pushover notification utility', () => {
     expect(body.get('priority')).toBe('2');
     expect(body.get('retry')).toBe('30');
     expect(body.get('expire')).toBe('1800');
+  });
+
+  test('requires a cancellable receipt for an accepted emergency notification', async () => {
+    await expect(sendPushoverNotification({
+      message: 'Immediate attention required.',
+      priority: PUSHOVER_PRIORITIES.EMERGENCY,
+      retry: 30,
+      expire: 1_800,
+    })).rejects.toThrow('valid emergency receipt');
   });
 
   test('requires both Pushover credentials', async () => {
@@ -99,5 +112,25 @@ describe('Pushover notification utility', () => {
     await expect(sendPushoverNotification({
       message: 'Test message',
     })).rejects.toThrow('Pushover rejected the notification');
+  });
+
+  test('cancels emergency retries using the persisted receipt and app token', async () => {
+    const receipt = 'A'.repeat(30);
+
+    await expect(cancelPushoverEmergency(receipt)).resolves.toEqual({
+      status: 1,
+      request: 'request-id',
+    });
+
+    const [url, body, options] = axios.post.mock.calls[0];
+    expect(url).toBe(`https://api.pushover.net/1/receipts/${receipt}/cancel.json`);
+    expect(Object.fromEntries(body.entries())).toEqual({ token: 'app-token' });
+    expect(options).toMatchObject({ timeout: 10_000 });
+  });
+
+  test('rejects malformed emergency receipts without making a request', async () => {
+    await expect(cancelPushoverEmergency('../not-a-receipt'))
+      .rejects.toThrow('30-character identifier');
+    expect(axios.post).not.toHaveBeenCalled();
   });
 });

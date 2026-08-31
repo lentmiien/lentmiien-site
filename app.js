@@ -32,16 +32,24 @@ const {
 
 // Database models
 const { UseraccountModel, RoleModel, HtmlPageRating, BookmarkModel } = require('./database');
-const { HTML_RATING_CATEGORIES, computeAverageRating } = require('./utils/htmlRatings');
 const performanceMetrics = require('./services/performanceMetricsService');
 const createPerformanceMetricsMiddleware = require('./middleware/performanceMetrics');
+const HtmlSamplesCacheService = require('./services/htmlSamplesCacheService');
 const secretPublicResponse = require('./middleware/secretPublicResponse');
 const createErrorHandler = require('./middleware/errorHandler');
+const {
+  createDatabaseHealthHandler,
+  createDatabaseReadinessMiddleware,
+} = require('./middleware/databaseReadiness');
+const { sanitizeConnectionError } = require('./services/databaseIncidentStore');
+const { DatabaseLifecycleService } = require('./services/databaseLifecycleService');
 
 // Initialize app and server
 const app = express();
 const server = http.createServer(app);
+const databaseLifecycle = new DatabaseLifecycleService();
 app.set('logger', logger);
+app.set('databaseLifecycle', databaseLifecycle);
 app.locals.safeJson = serializeForInlineScript;
 app.locals.safeJsonText = escapeInlineScriptText;
 
@@ -142,12 +150,18 @@ const {
 } = require('./services/batchService');
 const audioWorkflowService = require('./services/audioWorkflowInstance');
 const codexQueueWorker = require('./services/codexQueueWorker');
+const myLifeLogService = require('./services/myLifeLogService');
 const { seedMissingToolManagerEntries } = require('./services/toolManagerStartupService');
 const io = socketIO(server, sessionMiddleware);
 app.set('io', io);
 
 performanceMetrics.start();
 app.use(createPerformanceMetricsMiddleware(performanceMetrics));
+
+// The process stays reachable for readiness checks while MongoDB is unavailable,
+// but all application traffic fails fast before body parsing or database middleware.
+app.get('/apphealth', createDatabaseHealthHandler());
+app.use(createDatabaseReadinessMiddleware());
 
 // Setup webhooks
 // app.use(express.text({ type: 'application/json' }));
@@ -158,9 +172,6 @@ app.use('/webhook', webhook);
 const DEFAULT_BODY_LIMIT = '5mb';
 app.use(bodyParser.urlencoded({ extended: false, limit: DEFAULT_BODY_LIMIT }));
 app.use(express.json({ limit: DEFAULT_BODY_LIMIT }));
-
-// App health
-app.use('/apphealth', (req, res) => res.json({status: "ok"}));
 
 // Public hidden request counter endpoint
 const requestCounterRouter = require('./routes/request_counter');
@@ -229,6 +240,11 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'pug');
 
 const htmlDirectory = path.join(__dirname, 'public', 'html');
+const htmlSamplesCache = new HtmlSamplesCacheService({
+  model: HtmlPageRating,
+  htmlDirectory,
+  ttlMs: getPositiveIntegerEnv('HTML_SAMPLES_CACHE_TTL_MS', 5 * 60 * 1000),
+});
 
 // Middleware to set res.locals
 app.use(async (req, res, next) => {
@@ -301,52 +317,7 @@ app.use(async (req, res, next) => {
   res.locals.twitter_image = 'https://home.lentmiien.com/image.jpg';
   res.locals.twitter_image_alt = 'A fusion of Swedish and Japanese cultures set within a modern, technology-driven landscape. Picture a serene Japanese garden blending seamlessly into a snowy Swedish forest. In the foreground, a traditional Swedish wooden table filled with a mix of Japanese and Swedish dishes, expertly prepared and beautifully presented. Scattered among these dishes are subtle elements of technology, such as a futuristic AI interface and small, high-tech gadgets that enhance the dining experience. A harmonious blend of nature, technology, gastronomy, and cultural integration, capturing the essence of a balanced, innovative lifestyle.';
 
-  const htmlPaths = [];
-  try {
-    const ratingEntries = await HtmlPageRating.find({ isPublic: true }).lean().exec();
-    ratingEntries.forEach((entry) => {
-      const fileName = entry.filename;
-      if (!fileName) {
-        return;
-      }
-      const filePath = path.join(htmlDirectory, fileName);
-      if (!fs.existsSync(filePath)) {
-        return;
-      }
-      const displayName = fileName.replace(/\.html$/i, '');
-      const ratings = HTML_RATING_CATEGORIES.map((category) => {
-        const score = entry.ratings && Number.isFinite(entry.ratings[category.key])
-          ? entry.ratings[category.key]
-          : null;
-        return {
-          key: category.key,
-          label: category.label,
-          score,
-        };
-      });
-      htmlPaths.push({
-        path: `/html/${fileName}`,
-        name: displayName,
-        ratings,
-        averageRating: computeAverageRating(entry.ratings),
-        version: entry.version || 1,
-      });
-    });
-    htmlPaths.sort((a, b) => {
-      const aAvg = Number.isFinite(a.averageRating) ? a.averageRating : 0;
-      const bAvg = Number.isFinite(b.averageRating) ? b.averageRating : 0;
-      if (bAvg !== aAvg) {
-        return bAvg - aAvg;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  } catch (error) {
-    logger.warning('Unable to hydrate HTML samples list', {
-      category: 'layout',
-      metadata: { error: error.message },
-    });
-  }
-  res.locals.htmlPaths = htmlPaths;
+  res.locals.htmlPaths = await htmlSamplesCache.getSamples();
 
   next();
 });
@@ -721,50 +692,115 @@ app.get('/games', (req, res) => {
 
 app.use(createErrorHandler(logger));
 
-// Start the server
+// Start the HTTP listener in readiness mode. Database-backed work starts once the
+// lifecycle service has established the initial MongoDB connection.
 const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
-  logger.notice(`Server started on port ${PORT}`, { category: 'server' });
+  logger.notice(`Server listening on port ${PORT}`, {
+    category: 'server',
+    metadata: { readiness: 'waiting_for_database' },
+  });
 });
 
 server.on('error', (err) => {
   logger.error('Server encountered an error', { category: 'server', metadata: { error: err } });
 });
 
-scheduleDailyBatchTrigger();
-scheduleDatabaseUsageMonitor();
-scheduleAgent5Runner();
-scheduleOpenAIResponseRecovery(app);
-scheduleDisasterIngestion();
+// Local file retention is intentionally independent of MongoDB availability.
 scheduleLogRetention();
-scheduleOcrEmbeddingReconciliation();
-scheduleEmbeddingQueue();
-scheduleCodexLogReview();
-scheduleEmergencyStockMaintenance();
-schedulePushoverReminders();
-seedMissingToolManagerEntries();
-validateBatchDefaultModelSetting().catch((error) => {
-  logger.warning('Unable to validate the batch default model setting at startup', {
-    category: 'batch',
-    metadata: { error: error.message },
+
+let databaseServicesStarted = false;
+let databaseServicesNeedRecovery = false;
+function startDatabaseServices() {
+  if (databaseServicesStarted) return;
+  databaseServicesStarted = true;
+
+  const starters = [
+    ['daily batch trigger', scheduleDailyBatchTrigger],
+    ['database usage monitor', scheduleDatabaseUsageMonitor],
+    ['Agent5 scheduler', scheduleAgent5Runner],
+    ['OpenAI response recovery', () => scheduleOpenAIResponseRecovery(app)],
+    ['disaster ingestion', scheduleDisasterIngestion],
+    ['OCR embedding reconciliation', scheduleOcrEmbeddingReconciliation],
+    ['embedding queue', scheduleEmbeddingQueue],
+    ['Codex log review', scheduleCodexLogReview],
+    ['emergency stock maintenance', scheduleEmergencyStockMaintenance],
+    ['Pushover reminders', schedulePushoverReminders],
+  ];
+
+  starters.forEach(([name, start]) => {
+    try {
+      start();
+    } catch (error) {
+      logger.error('Failed to start database-dependent background service', {
+        category: 'startup:database_services',
+        metadata: { name, error: error.message },
+      });
+    }
   });
-});
-validateBatchSummaryModelSetting().catch((error) => {
-  logger.warning('Unable to validate the batch summary model setting at startup', {
-    category: 'batch',
-    metadata: { error: error.message },
+
+  seedMissingToolManagerEntries();
+  validateBatchDefaultModelSetting().catch((error) => {
+    logger.warning('Unable to validate the batch default model setting at startup', {
+      category: 'batch',
+      metadata: { error: error.message },
+    });
   });
-});
-if (getBooleanEnv('CODEX_WEB_WORKER_ENABLED', getBooleanEnv('CODEX_WORKER_ENABLED', true))) {
-  codexQueueWorker.start();
-} else {
-  logger.notice('Embedded Codex queue worker disabled by configuration', {
-    category: 'codex_tool',
+  validateBatchSummaryModelSetting().catch((error) => {
+    logger.warning('Unable to validate the batch summary model setting at startup', {
+      category: 'batch',
+      metadata: { error: error.message },
+    });
+  });
+  if (getBooleanEnv('CODEX_WEB_WORKER_ENABLED', getBooleanEnv('CODEX_WORKER_ENABLED', true))) {
+    codexQueueWorker.start();
+  } else {
+    logger.notice('Embedded Codex queue worker disabled by configuration', {
+      category: 'codex_tool',
+    });
+  }
+  audioWorkflowService.start().catch((error) => {
+    logger.error('Failed to start audio workflow service', {
+      category: 'audio_workflow',
+      metadata: { error: error.message },
+    });
+  });
+  myLifeLogService.init().catch((error) => {
+    logger.error('Failed to initialize life log caches after database connection', {
+      category: 'life_log',
+      metadata: { error: error?.message || String(error) },
+    });
+  });
+
+  logger.notice('Database-dependent background services started', {
+    category: 'startup:database_services',
   });
 }
-audioWorkflowService.start().catch((error) => {
-  logger.error('Failed to start audio workflow service', {
-    category: 'audio_workflow',
-    metadata: { error: error.message },
+
+databaseLifecycle.on('ready', startDatabaseServices);
+databaseLifecycle.on('unavailable', () => {
+  databaseServicesNeedRecovery = databaseServicesStarted;
+  io.disconnectSockets?.(true);
+});
+databaseLifecycle.on('recovered', () => {
+  if (!databaseServicesNeedRecovery) return;
+  databaseServicesNeedRecovery = false;
+  audioWorkflowService.resumeAfterDatabaseRecovery().catch((error) => {
+    logger.error('Failed to resume audio workflow after database recovery', {
+      category: 'audio_workflow',
+      metadata: { error: error.message },
+    });
+  });
+  myLifeLogService.refreshCaches().catch((error) => {
+    logger.error('Failed to refresh life log caches after database recovery', {
+      category: 'life_log',
+      metadata: { error: error?.message || String(error) },
+    });
+  });
+});
+databaseLifecycle.start().catch((error) => {
+  logger.error('Database lifecycle stopped unexpectedly', {
+    category: 'database_availability',
+    metadata: { error: sanitizeConnectionError(error) },
   });
 });

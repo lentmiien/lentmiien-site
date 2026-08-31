@@ -61,6 +61,10 @@ function modelsPayload() {
 }
 
 describe('ModularLlmAdminService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   test('syncs discovered models without overwriting admin-managed metadata', async () => {
     const ModelProfileModel = {
       bulkWrite: jest.fn().mockResolvedValue({
@@ -241,9 +245,11 @@ describe('ModularLlmAdminService', () => {
           localRunId: 'local-failed-1',
           gatewayRunId: 'run-failed-1',
           failedStage: 'interpreter',
+          errorSummary: 'The Modular LLM Gateway reported a failure in the interpreter stage.',
         }),
       }),
     );
+    expect(JSON.stringify(logger.warning.mock.calls)).not.toContain('CIR output remained invalid.');
   });
 
   test('unwraps FastAPI detail envelopes when correlating failed runs', async () => {
@@ -290,6 +296,82 @@ describe('ModularLlmAdminService', () => {
       errorDetails: { schema: 'air-0.1' },
     });
     expect(run.response).toEqual(gatewayError.response.data);
+  });
+
+  test('infers one failed stage and logs an HTTP-200 failure artifact safely', async () => {
+    const gateway = {
+      runPipeline: jest.fn().mockResolvedValue({
+        run_id: 'run-failed-200',
+        status: 'failed',
+        stages: {
+          interpreter: { status: 'succeeded' },
+          renderer: { status: 'failed' },
+        },
+        error: {
+          type: 'StageExecutionError',
+          message: 'sentinel-sensitive-gateway-detail',
+        },
+      }),
+    };
+    const TestRunModel = {
+      create: jest.fn().mockResolvedValue({ _id: 'local-failed-200' }),
+      findByIdAndUpdate: jest.fn((id, update) => createQuery({ _id: id, ...update.$set })),
+    };
+    const timestamps = [
+      new Date('2026-08-28T00:00:00.000Z'),
+      new Date('2026-08-28T00:00:03.000Z'),
+    ];
+    const service = new ModularLlmAdminService({
+      ModelProfileModel: {},
+      TestRunModel,
+      gateway,
+      now: jest.fn(() => timestamps.shift()),
+    });
+
+    const run = await service.createPipelineTest({ input: 'HTTP 200 failure.' });
+
+    expect(run).toMatchObject({
+      status: 'failed',
+      gatewayRunId: 'run-failed-200',
+      failedStage: 'renderer',
+      httpStatus: 200,
+      errorMessage: 'sentinel-sensitive-gateway-detail',
+    });
+    expect(logger.warning).toHaveBeenCalledWith(
+      'Modular LLM pipeline test failed',
+      {
+        category: 'modular_llm_admin',
+        metadata: expect.objectContaining({
+          localRunId: 'local-failed-200',
+          gatewayRunId: 'run-failed-200',
+          failedStage: 'renderer',
+          errorType: 'StageExecutionError',
+          errorSummary: 'The Modular LLM Gateway reported a failure in the renderer stage.',
+        }),
+      }
+    );
+    expect(JSON.stringify(logger.warning.mock.calls))
+      .not.toContain('sentinel-sensitive-gateway-detail');
+  });
+
+  test('extracts only safe, unambiguous failed-stage identifiers', () => {
+    expect(ModularLlmAdminService.extractFailedStage({
+      detail: {
+        status: 'failed',
+        error: { details: { stage: 'reasoner' } },
+      },
+    })).toBe('reasoner');
+    expect(ModularLlmAdminService.extractFailedStage({
+      status: 'failed',
+      failed_stage: 'sentinel secret with spaces',
+    })).toBeNull();
+    expect(ModularLlmAdminService.extractFailedStage({
+      status: 'failed',
+      stages: {
+        interpreter: { status: 'failed' },
+        renderer: { status: 'failed' },
+      },
+    })).toBeNull();
   });
 
   test('parses future-facing use case metadata without duplicates', () => {

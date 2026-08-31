@@ -78,6 +78,7 @@ function scheduleOpenAIResponseRecovery(app) {
   let running = false;
 
   const tick = async () => {
+    if (mongoose.connection.readyState !== 1) return;
     if (running) return;
     running = true;
     try {

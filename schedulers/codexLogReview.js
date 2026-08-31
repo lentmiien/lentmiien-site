@@ -81,8 +81,10 @@ function scheduleCodexLogReview() {
       category: 'codex_log_review',
       metadata: { intervalMs },
     });
-    tick('startup').catch(() => {});
-    const handle = setInterval(() => tick('scheduled').catch(() => {}), intervalMs);
+    if (mongoose.connection.readyState === 1) tick('startup').catch(() => {});
+    const handle = setInterval(() => {
+      if (mongoose.connection.readyState === 1) tick('scheduled').catch(() => {});
+    }, intervalMs);
     handle.unref?.();
   };
 

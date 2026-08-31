@@ -551,4 +551,32 @@ describe('AudioWorkflowService', () => {
     });
     expect(jobModel.findOneAndUpdate).not.toHaveBeenCalled();
   });
+
+  test('requeues interrupted work and kicks the queue after database recovery', async () => {
+    const jobModel = {
+      updateMany: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+    };
+    const service = new AudioWorkflowService({
+      jobModel,
+      triggerModel: {},
+      ttsService: {},
+      asrApiService: {},
+      messageService: {},
+      asrJobModel: {},
+      conversationModel: {},
+      chatModel: {},
+      pendingModel: {},
+      databaseReady: () => true,
+    });
+    service.started = true;
+    service.kickQueue = jest.fn();
+
+    await expect(service.resumeAfterDatabaseRecovery()).resolves.toBe(true);
+
+    expect(jobModel.updateMany).toHaveBeenCalledWith(
+      { status: { $in: ['processing_asr', 'processing_tts'] } },
+      { $set: { status: 'queued', error: null } },
+    );
+    expect(service.kickQueue).toHaveBeenCalledTimes(1);
+  });
 });

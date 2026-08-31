@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const mongoose = require('mongoose');
 const performanceMetrics = require('../services/performanceMetricsService');
 const Agent5Service = require('../services/agent5Service');
 const MessageService = require('../services/messageService');
@@ -37,6 +38,7 @@ function scheduleAgent5Runner() {
   let running = false;
 
   const tick = async () => {
+    if (mongoose.connection.readyState !== 1) return;
     if (running) return;
     running = true;
     try {

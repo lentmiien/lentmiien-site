@@ -62,6 +62,28 @@ describe('Socket.IO connection initialization', () => {
     return socket;
   }
 
+  test('rejects new sockets with a generic error while the database is unavailable', () => {
+    initializeSocketIO({}, jest.fn(), { databaseReady: () => false });
+    const databaseGate = mockIo.use.mock.calls[0][0];
+    const next = jest.fn();
+
+    databaseGate({}, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Service temporarily unavailable',
+    }));
+  });
+
+  test('passes new sockets to session authorization once the database is ready', () => {
+    initializeSocketIO({}, jest.fn(), { databaseReady: () => true });
+    const databaseGate = mockIo.use.mock.calls[0][0];
+    const next = jest.fn();
+
+    databaseGate({}, next);
+
+    expect(next).toHaveBeenCalledWith();
+  });
+
   test('stops initialization when scheduling detects an already-expired session', async () => {
     mockScheduleSessionExpiry.mockImplementation((_expiresAt, onExpire) => {
       onExpire();

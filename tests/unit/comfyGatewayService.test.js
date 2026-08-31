@@ -100,6 +100,7 @@ describe('ComfyGatewayService input files', () => {
       headers: {
         'content-type': 'audio/x-wav',
         'content-range': 'bytes 0-12/120',
+        'x-request-id': 'gateway-request-1',
       },
     }));
 
@@ -116,7 +117,142 @@ describe('ComfyGatewayService input files', () => {
       Range: 'bytes=0-12',
     });
     expect(response.status).toBe(206);
+    expect(response.comfyGateway).toMatchObject({
+      operation: 'openInputFile',
+      endpoint: '/comfy/input/view',
+      status: 206,
+      requestId: 'gateway-request-1',
+      durationMs: expect.any(Number),
+    });
     await expect(response.text()).resolves.toBe('partial audio');
+  });
+
+  test('uses a separate cold-start deadline for mutating Gateway actions', async () => {
+    const timeoutSpy = jest.spyOn(AbortSignal, 'timeout')
+      .mockReturnValue(new AbortController().signal);
+    service = new ComfyGatewayService({
+      baseUrl: 'http://gateway.test:8080',
+      timeoutMs: 4321,
+      actionTimeoutMs: 123456,
+    });
+    global.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        prompt_id: 'prompt-1',
+        status: 'pending',
+      }), {
+        status: 202,
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+
+    try {
+      await service.submitPrompt({ 1: { class_type: 'SaveImage' } });
+      await service.getSystemStats();
+
+      expect(timeoutSpy).toHaveBeenNthCalledWith(1, 123456);
+      expect(timeoutSpy).toHaveBeenNthCalledWith(2, 4321);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  test('preserves safe Gateway failure correlation and state metadata', async () => {
+    global.fetch.mockResolvedValue(new Response(JSON.stringify({
+      error: 'container is warming',
+      status: 'starting',
+      container_state: 'restarting',
+      internal_detail: 'must not enter operational logs',
+    }), {
+      status: 503,
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'gateway-request-503',
+      },
+    }));
+
+    let error;
+    try {
+      await service.submitPrompt({ 1: { class_type: 'SaveImage' } });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      status: 503,
+      comfyGateway: {
+        operation: 'submitPrompt',
+        endpoint: '/comfy/submit',
+        status: 503,
+        requestId: 'gateway-request-503',
+        durationMs: expect.any(Number),
+        upstreamState: {
+          status: 'starting',
+          containerState: 'restarting',
+        },
+      },
+    });
+    const metadata = ComfyGatewayService.gatewayLogMetadata(error);
+    expect(metadata).toMatchObject({
+      operation: 'submitPrompt',
+      endpoint: '/comfy/submit',
+      status: 503,
+      requestId: 'gateway-request-503',
+      upstreamState: {
+        status: 'starting',
+        containerState: 'restarting',
+      },
+    });
+    expect(JSON.stringify(metadata)).not.toContain('internal_detail');
+    expect(JSON.stringify(metadata)).not.toContain('must not enter operational logs');
+  });
+
+  test('preserves an upstream unavailable status when its JSON error body is malformed', async () => {
+    global.fetch.mockResolvedValue(new Response('{not-json', {
+      status: 503,
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'gateway-malformed-503',
+      },
+    }));
+
+    await expect(service.getSystemStats()).rejects.toMatchObject({
+      status: 503,
+      comfyGateway: {
+        operation: 'getSystemStats',
+        endpoint: '/comfy/system_stats',
+        status: 503,
+        requestId: 'gateway-malformed-503',
+      },
+    });
+  });
+
+  test('classifies request timeouts as HTTP 504 without exposing their message', async () => {
+    const timeout = new Error('sensitive timeout detail');
+    timeout.name = 'TimeoutError';
+    global.fetch.mockRejectedValue(timeout);
+
+    let error;
+    try {
+      await service.getSystemStats();
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      status: 504,
+      comfyGateway: {
+        operation: 'getSystemStats',
+        endpoint: '/comfy/system_stats',
+        status: 504,
+      },
+    });
+    expect(ComfyGatewayService.gatewayClientMessage(error))
+      .toBe('The ComfyUI Gateway request timed out.');
+    expect(JSON.stringify(ComfyGatewayService.gatewayLogMetadata(error)))
+      .not.toContain('sensitive timeout detail');
   });
 
   test('rejects cross-origin Gateway view URLs before forwarding the API key', async () => {
@@ -166,6 +302,12 @@ describe('ComfyGatewayService input files', () => {
       const request = expect(service.openInputFile('preview.png')).rejects.toMatchObject({
         name: 'TimeoutError',
         message: 'gateway response header timeout',
+        status: 504,
+        comfyGateway: {
+          operation: 'openInputFile',
+          endpoint: '/comfy/input/view',
+          status: 504,
+        },
       });
       await jest.advanceTimersByTimeAsync(25);
       await request;

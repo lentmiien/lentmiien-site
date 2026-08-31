@@ -18,6 +18,8 @@ const TERMINAL_FAILURE_STATUSES = new Set(['cancelled', 'failed', 'incomplete'])
 const OPENAI_RESPONSE_PROVIDER = 'OpenAI';
 const OLLAMA_RESPONSE_PROVIDER = 'Ollama';
 const DEFAULT_OLLAMA_MAX_TOOL_ROUNDS = 4;
+const PLACEHOLDER_CLEANUP_RETRY_BASE_MS = 60 * 1000;
+const PLACEHOLDER_CLEANUP_RETRY_MAX_MS = 60 * 60 * 1000;
 
 function getOllamaMaxToolRounds() {
   const parsed = Number.parseInt(process.env.OLLAMA_MAX_TOOL_ROUNDS, 10);
@@ -36,6 +38,17 @@ function activeRecoveryCondition() {
   return {
     $or: [
       { recoveryState: 'pending' },
+      { recoveryState: null },
+      { recoveryState: { $exists: false } },
+    ],
+  };
+}
+
+function recoverableCondition() {
+  return {
+    $or: [
+      { recoveryState: 'pending' },
+      { recoveryState: 'cleanup_pending' },
       { recoveryState: null },
       { recoveryState: { $exists: false } },
     ],
@@ -71,6 +84,15 @@ function getPendingCreatedAt(pending, fallback) {
 
 function normalizeAttemptCount(value) {
   return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+function getNextPlaceholderCleanupAt(checkedAt, attemptCount) {
+  const exponent = Math.max(0, normalizeAttemptCount(attemptCount) - 1);
+  const delayMs = Math.min(
+    PLACEHOLDER_CLEANUP_RETRY_MAX_MS,
+    PLACEHOLDER_CLEANUP_RETRY_BASE_MS * (2 ** exponent),
+  );
+  return new Date(checkedAt.getTime() + delayMs);
 }
 
 function formatRecoveryAgeLimit(maxAgeMs) {
@@ -152,7 +174,7 @@ class ConversationService {
     return await PendingRequests.findOneAndUpdate(
       {
         $and: [
-          activeRecoveryCondition(),
+          recoverableCondition(),
           {
             $or: [
               { nextCheckAt: { $lte: now } },
@@ -1698,23 +1720,229 @@ class ConversationService {
 
   async removePendingPlaceholderReference(pending) {
     if (!pending?.conversation_id || !pending?.placeholder_id) {
-      return;
+      return false;
     }
 
     const conversation = await Conversation5Model.findById(pending.conversation_id);
     if (!conversation || !Array.isArray(conversation.messages)) {
-      return;
+      return false;
     }
 
+    const placeholderId = pending.placeholder_id.toString();
     const remainingMessages = conversation.messages.filter(
-      messageId => messageId?.toString() !== pending.placeholder_id,
+      messageId => messageId?.toString() !== placeholderId,
     );
     if (remainingMessages.length === conversation.messages.length) {
-      return;
+      return false;
     }
 
     conversation.messages = remainingMessages;
     await conversation.save();
+    return true;
+  }
+
+  async deletePendingPlaceholderDocument(pending) {
+    if (!pending?.placeholder_id) {
+      return 0;
+    }
+    if (!this.messageService || typeof this.messageService.deleteMessages !== 'function') {
+      throw new Error('Chat message deletion service is unavailable.');
+    }
+    return this.messageService.deleteMessages([pending.placeholder_id], {
+      conversationId: pending.conversation_id || null,
+    });
+  }
+
+  async cleanupPendingPlaceholder(pending, {
+    removeReference = false,
+    outcome = 'terminal',
+  } = {}) {
+    const placeholderId = pending?.placeholder_id?.toString?.()
+      || pending?.placeholder_id
+      || null;
+    if (!placeholderId) {
+      return {
+        ok: true,
+        status: 'skipped',
+        placeholderId: null,
+        referenceRemoved: false,
+        deletedCount: 0,
+        error: null,
+      };
+    }
+
+    let referenceRemoved = false;
+    try {
+      referenceRemoved = removeReference
+        ? await this.removePendingPlaceholderReference(pending)
+        : false;
+      const deletedCount = await this.deletePendingPlaceholderDocument(pending);
+      return {
+        ok: true,
+        status: 'cleaned',
+        placeholderId,
+        referenceRemoved,
+        deletedCount,
+        error: null,
+      };
+    } catch (error) {
+      const errorMessage = error?.message || String(error);
+      logger.error('Failed to clean up AI response placeholder', {
+        category: 'openai_webhook_recovery',
+        metadata: {
+          responseId: pending?.response_id || null,
+          provider: getPendingResponseProvider(pending),
+          pendingId: pending?._id?.toString?.() || pending?._id || null,
+          outcome,
+          error: errorMessage,
+        },
+      });
+      return {
+        ok: false,
+        status: 'deferred',
+        placeholderId,
+        referenceRemoved,
+        deletedCount: 0,
+        error: errorMessage,
+      };
+    }
+  }
+
+  async markPendingPlaceholderCleanup(pending, {
+    checkedAt = new Date(),
+    outcome = 'terminal',
+  } = {}) {
+    const cleanupPendingAt = pending?.cleanupPendingAt instanceof Date
+      && Number.isFinite(pending.cleanupPendingAt.getTime())
+      ? pending.cleanupPendingAt
+      : checkedAt;
+    await PendingRequests.updateOne(
+      { _id: pending._id },
+      {
+        $set: {
+          recoveryState: 'cleanup_pending',
+          cleanupPendingAt,
+          cleanupOutcome: outcome,
+          cleanupLastError: null,
+          lastCheckedAt: checkedAt,
+          nextCheckAt: checkedAt,
+          processingStartedAt: checkedAt,
+        },
+      },
+    );
+    pending.recoveryState = 'cleanup_pending';
+    pending.cleanupPendingAt = cleanupPendingAt;
+    pending.cleanupOutcome = outcome;
+    pending.cleanupLastError = null;
+    pending.processingStartedAt = checkedAt;
+  }
+
+  async deferPendingPlaceholderCleanup(pending, cleanupResult, {
+    checkedAt = new Date(),
+    outcome = pending?.cleanupOutcome || 'terminal',
+  } = {}) {
+    const cleanupAttemptCount = normalizeAttemptCount(pending?.cleanupAttemptCount) + 1;
+    const nextCheckAt = getNextPlaceholderCleanupAt(checkedAt, cleanupAttemptCount);
+    const cleanupPendingAt = pending?.cleanupPendingAt instanceof Date
+      && Number.isFinite(pending.cleanupPendingAt.getTime())
+      ? pending.cleanupPendingAt
+      : checkedAt;
+    await PendingRequests.updateOne(
+      { _id: pending._id },
+      {
+        $set: {
+          recoveryState: 'cleanup_pending',
+          cleanupAttemptCount,
+          cleanupLastError: cleanupResult?.error || 'Placeholder cleanup did not complete',
+          cleanupPendingAt,
+          cleanupOutcome: outcome,
+          lastCheckedAt: checkedAt,
+          nextCheckAt,
+          processingStartedAt: null,
+        },
+      },
+    );
+    pending.recoveryState = 'cleanup_pending';
+    pending.cleanupAttemptCount = cleanupAttemptCount;
+    pending.cleanupLastError = cleanupResult?.error || 'Placeholder cleanup did not complete';
+    pending.cleanupPendingAt = cleanupPendingAt;
+    pending.cleanupOutcome = outcome;
+    pending.nextCheckAt = nextCheckAt;
+    pending.processingStartedAt = null;
+    return {
+      ...cleanupResult,
+      status: 'deferred',
+      attemptCount: cleanupAttemptCount,
+      nextCheckAt,
+    };
+  }
+
+  async finishPendingPlaceholderCleanup(pending, cleanupResult, {
+    checkedAt = new Date(),
+    preserveAbandoned = false,
+  } = {}) {
+    if (preserveAbandoned) {
+      await PendingRequests.updateOne(
+        { _id: pending._id },
+        {
+          $set: {
+            recoveryState: 'abandoned',
+            cleanupLastError: null,
+            lastCheckedAt: checkedAt,
+            nextCheckAt: null,
+            processingStartedAt: null,
+          },
+          $unset: {
+            cleanupPendingAt: 1,
+            cleanupOutcome: 1,
+          },
+        },
+      );
+    } else {
+      await PendingRequests.deleteOne({ _id: pending._id });
+    }
+    return cleanupResult;
+  }
+
+  async finalizeTerminalPendingPlaceholder(pending, {
+    checkedAt = new Date(),
+    outcome = 'terminal',
+    preserveAbandoned = false,
+    removeReference = false,
+  } = {}) {
+    await this.markPendingPlaceholderCleanup(pending, { checkedAt, outcome });
+    const cleanupResult = await this.cleanupPendingPlaceholder(pending, {
+      removeReference,
+      outcome,
+    });
+    if (!cleanupResult.ok) {
+      return this.deferPendingPlaceholderCleanup(pending, cleanupResult, {
+        checkedAt,
+        outcome,
+      });
+    }
+    return this.finishPendingPlaceholderCleanup(pending, cleanupResult, {
+      checkedAt,
+      preserveAbandoned,
+    });
+  }
+
+  async retryPendingPlaceholderCleanup(pending, { checkedAt = new Date() } = {}) {
+    const outcome = pending?.cleanupOutcome || 'terminal';
+    const cleanupResult = await this.cleanupPendingPlaceholder(pending, {
+      removeReference: true,
+      outcome,
+    });
+    if (!cleanupResult.ok) {
+      return this.deferPendingPlaceholderCleanup(pending, cleanupResult, {
+        checkedAt,
+        outcome,
+      });
+    }
+    return this.finishPendingPlaceholderCleanup(pending, cleanupResult, {
+      checkedAt,
+      preserveAbandoned: Boolean(pending?.abandonReason),
+    });
   }
 
   async abandonPendingResponse(pending, {
@@ -1743,19 +1971,14 @@ class ConversationService {
       },
     );
 
-    try {
-      await this.removePendingPlaceholderReference(pending);
-    } catch (error) {
-      logger.error('Failed to remove placeholder for abandoned AI response', {
-        category: 'openai_webhook_recovery',
-        metadata: {
-          responseId: pending.response_id,
-          provider: responseProvider,
-          pendingId: pending._id?.toString?.() || pending._id,
-          error: error?.message || String(error),
-        },
-      });
-    }
+    pending.abandonReason = reason;
+    pending.abandonedAt = checkedAt;
+    const placeholderCleanup = await this.finalizeTerminalPendingPlaceholder(pending, {
+      checkedAt,
+      removeReference: true,
+      outcome: 'abandoned',
+      preserveAbandoned: true,
+    });
 
     logger.warning('Abandoned pending AI response recovery', {
       category: 'openai_webhook_recovery',
@@ -1765,6 +1988,7 @@ class ConversationService {
         conversationId: pending.conversation_id,
         reason,
         attemptCount,
+        placeholderCleanupDeferred: !placeholderCleanup.ok,
       },
     });
 
@@ -1776,6 +2000,7 @@ class ConversationService {
       error_msg: errorMessage,
       status: 'abandoned',
       reason,
+      placeholderCleanup,
     };
     if (responseProvider === OLLAMA_RESPONSE_PROVIDER) {
       result.response_provider = OLLAMA_RESPONSE_PROVIDER;
@@ -1887,6 +2112,21 @@ class ConversationService {
       const responseProvider = getPendingResponseProvider(pending);
 
       try {
+        if (pending.recoveryState === 'cleanup_pending') {
+          const placeholderCleanup = await this.retryPendingPlaceholderCleanup(pending, {
+            checkedAt,
+          });
+          updates.push({
+            type: 'cleanup',
+            response_id: pending.response_id,
+            conversation_id: pending.conversation_id,
+            placeholder_id: pending.placeholder_id,
+            status: placeholderCleanup.ok ? 'completed' : 'deferred',
+            placeholderCleanup,
+          });
+          continue;
+        }
+
         if (!pending.response_id) {
           updates.push(await this.abandonPendingResponse(pending, {
             reason: 'invalid_pending_request',
@@ -1961,10 +2201,14 @@ class ConversationService {
 
         if (TERMINAL_FAILURE_STATUSES.has(observedStatus)) {
           this.logRecoveryStatusTransition(pending, observedStatus, attemptCount);
-          const error_msg = await this.processFailedResponse(pending.response_id, {
+          const failure = await this.processFailedResponse(pending.response_id, {
             claimedPending: pending,
             retrievedResponse: response,
+            returnResult: true,
           });
+          const error_msg = failure && typeof failure === 'object'
+            ? failure.error_msg
+            : failure;
           const update = {
             type: 'failed',
             response_id: pending.response_id,
@@ -1973,6 +2217,9 @@ class ConversationService {
             error_msg,
             status: observedStatus,
           };
+          if (failure && typeof failure === 'object' && failure.placeholderCleanup) {
+            update.placeholderCleanup = failure.placeholderCleanup;
+          }
           if (responseProvider === OLLAMA_RESPONSE_PROVIDER) {
             update.response_provider = OLLAMA_RESPONSE_PROVIDER;
           }
@@ -2000,6 +2247,42 @@ class ConversationService {
             error: error?.message || String(error),
           },
         });
+
+        if (pending.recoveryState === 'cleanup_pending') {
+          try {
+            const placeholderCleanup = await this.deferPendingPlaceholderCleanup(pending, {
+              ok: false,
+              status: 'deferred',
+              placeholderId: pending?.placeholder_id?.toString?.() || pending?.placeholder_id || null,
+              referenceRemoved: false,
+              deletedCount: 0,
+              error: error?.message || String(error),
+            }, {
+              checkedAt: currentTime(),
+              outcome: pending.cleanupOutcome || 'terminal',
+            });
+            updates.push({
+              type: 'cleanup',
+              response_id: pending.response_id,
+              conversation_id: pending.conversation_id,
+              placeholder_id: pending.placeholder_id,
+              status: 'deferred',
+              placeholderCleanup,
+            });
+          } catch (scheduleError) {
+            await this.releasePendingRequest(pending._id).catch(() => {});
+            logger.error('Failed to defer AI response placeholder cleanup', {
+              category: 'openai_webhook_recovery',
+              metadata: {
+                responseId: pending.response_id,
+                provider: responseProvider,
+                pendingId: pending._id?.toString?.() || pending._id,
+                error: scheduleError?.message || String(scheduleError),
+              },
+            });
+          }
+          continue;
+        }
 
         try {
           const abandonment = await this.schedulePendingResponseRecovery(pending, {
@@ -2261,8 +2544,16 @@ class ConversationService {
 
       if (!conversation) {
         logger.warning('Conversation not found for completed response', { response_id, conversation_id: pending.conversation_id });
-        await PendingRequests.deleteOne({_id: pending._id});
-        return { conversation: null, messages: [], placeholder_id: pending.placeholder_id };
+        const placeholderCleanup = await this.finalizeTerminalPendingPlaceholder(pending, {
+          outcome: 'completed',
+          removeReference: true,
+        });
+        return {
+          conversation: null,
+          messages: [],
+          placeholder_id: pending.placeholder_id,
+          placeholderCleanup,
+        };
       }
 
       const pendingProvider = getPendingResponseProvider(pending);
@@ -2282,7 +2573,9 @@ class ConversationService {
       const returnedMessages = [...messages];
       const followUpResponseIds = [];
 
-      conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
+      conversation.messages = conversation.messages.filter(
+        messageId => messageId?.toString() !== pending.placeholder_id?.toString(),
+      );
       const savedMessages = messages.filter(m => m && !m.error);
       const conversationMessageIds = new Set(conversation.messages.map(id => id.toString()));
       for (const m of savedMessages) {
@@ -2352,9 +2645,16 @@ class ConversationService {
       }
 
       await conversation.save();
-      await PendingRequests.deleteOne({_id: pending._id});
+      const placeholderCleanup = await this.finalizeTerminalPendingPlaceholder(pending, {
+        outcome: 'completed',
+      });
 
-      const result = { conversation, messages: returnedMessages, placeholder_id: pending.placeholder_id };
+      const result = {
+        conversation,
+        messages: returnedMessages,
+        placeholder_id: pending.placeholder_id,
+        placeholderCleanup,
+      };
       if (functionCallMessages.length > 0) {
         result.hasFunctionCalls = true;
       }
@@ -2389,8 +2689,20 @@ class ConversationService {
 
       if (!conversation) {
         logger.warning('Conversation not found for failed response', { response_id, conversation_id: pending.conversation_id });
-        await PendingRequests.deleteOne({_id: pending._id});
-        return 'Conversation not found for failed response';
+        const error_msg = 'Conversation not found for failed response';
+        const placeholderCleanup = await this.finalizeTerminalPendingPlaceholder(pending, {
+          outcome: 'failed',
+          removeReference: true,
+        });
+        if (returnResult) {
+          return {
+            error_msg,
+            conversation: null,
+            placeholder_id: pending.placeholder_id,
+            placeholderCleanup,
+          };
+        }
+        return error_msg;
       }
 
       const pendingProvider = getPendingResponseProvider(pending);
@@ -2408,16 +2720,21 @@ class ConversationService {
           : await this.messageService.processFailedResponse(conversation, response_id);
       }
 
-      conversation.messages = conversation.messages.filter(d => d != pending.placeholder_id);
+      conversation.messages = conversation.messages.filter(
+        messageId => messageId?.toString() !== pending.placeholder_id?.toString(),
+      );
 
       await conversation.save();
-      await PendingRequests.deleteOne({_id: pending._id});
+      const placeholderCleanup = await this.finalizeTerminalPendingPlaceholder(pending, {
+        outcome: 'failed',
+      });
 
       if (returnResult) {
         return {
           error_msg,
           conversation,
           placeholder_id: pending.placeholder_id,
+          placeholderCleanup,
         };
       }
       return error_msg;

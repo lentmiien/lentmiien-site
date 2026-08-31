@@ -65,4 +65,16 @@ describe('Codex queue worker Ollama reservation lifecycle', () => {
       expect.anything(),
     );
   });
+
+  test('does not claim new work while the database is unavailable', async () => {
+    const { worker } = createWorker();
+    worker.started = true;
+    worker.databaseReady = () => false;
+    worker.getConfig = jest.fn().mockReturnValue({ workerEnabled: true });
+
+    await expect(worker.tick()).resolves.toBeUndefined();
+
+    expect(worker.lastTickAt).toBeNull();
+    expect(worker.getConfig).toHaveBeenCalledTimes(1);
+  });
 });

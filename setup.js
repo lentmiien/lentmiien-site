@@ -86,6 +86,40 @@ function buildSummary() {
   };
 }
 
+function classifyPreflightForStartup(preflight = {}) {
+  const results = Array.isArray(preflight.results) ? preflight.results : [];
+  const blockingFailures = [];
+  let mongoDeferred = false;
+
+  results.forEach((result) => {
+    if (result?.status !== 'failed') return;
+    if (result.name === 'MongoDB connectivity') {
+      mongoDeferred = true;
+      return;
+    }
+    if (result.name === 'Environment variables') {
+      const missing = Array.isArray(result.details?.missing) ? result.details.missing : [];
+      const blockingMissing = missing.filter((name) => name !== 'MONGOOSE_URL');
+      if (missing.includes('MONGOOSE_URL')) mongoDeferred = true;
+      if (missing.length > 0 && blockingMissing.length === 0) return;
+    }
+    blockingFailures.push(result);
+  });
+
+  if (preflight.ok === false && blockingFailures.length === 0 && !mongoDeferred) {
+    blockingFailures.push({
+      name: 'Unknown preflight failure',
+      status: 'failed',
+    });
+  }
+
+  return {
+    blocking: blockingFailures.length > 0,
+    blockingFailures,
+    mongoDeferred,
+  };
+}
+
 function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -589,12 +623,18 @@ async function runDropboxPipelines() {
 async function main() {
   resetSectionResults();
   const preflight = await runPreflightChecks();
-  recordSection('Preflight checks', preflight.ok ? 'ok' : 'failed', {
-    critical: true,
+  const preflightClassification = classifyPreflightForStartup(preflight);
+  const preflightStatus = preflightClassification.blocking
+    ? 'failed'
+    : preflightClassification.mongoDeferred
+      ? 'warning'
+      : 'ok';
+  recordSection('Preflight checks', preflightStatus, {
+    critical: preflightClassification.blocking,
     details: preflight.results,
   });
 
-  if (!preflight.ok) {
+  if (preflightClassification.blocking) {
     await notifyStartupAlert({
       severity: 'critical',
       subject: 'Startup preflight failed',
@@ -606,12 +646,23 @@ async function main() {
     return;
   }
 
+  if (preflightClassification.mongoDeferred) {
+    logger.warning('MongoDB unavailable during prestart; deferring recovery to the web process', {
+      category: 'startup:mongo',
+      metadata: { databaseMaintenanceSkipped: true },
+    });
+  }
+
   try {
     await runSection('Directory preparation', ensureDirectoriesAndFiles, { critical: true, bailOnError: true });
     await runSection('Temp/cache cleanup', cleanTempAndPdfCaches);
     await runSection('PNG asset conversion', convertPngAssets);
     await runSection('Log pruning', pruneOldLogs);
-    await runSection('Database maintenance', performDatabaseMaintenance);
+    await runSection('Database maintenance', () => (
+      preflightClassification.mongoDeferred
+        ? { skipped: true, reason: 'MongoDB recovery deferred to application lifecycle' }
+        : performDatabaseMaintenance()
+    ));
     await runSection('Dropbox sync', runDropboxPipelines);
   } catch (error) {
     const summary = buildSummary();
@@ -669,6 +720,7 @@ if (require.main === module) {
 module.exports = {
   buildSummary,
   canRunDropboxOperations,
+  classifyPreflightForStartup,
   cleanTempAndPdfCaches,
   convertPngAssets,
   delay,

@@ -1,12 +1,25 @@
-const logger = require('../utils/logger');
 const { createApiDebugLogger } = require('../utils/apiDebugLogger');
 
 const DEFAULT_API_BASE = process.env.COMFY_API_BASE || 'http://192.168.0.20:8080';
 const DEFAULT_TIMEOUT_MS = 20000;
+const DEFAULT_ACTION_TIMEOUT_MS = 180000;
 const DEFAULT_STREAM_HEADER_TIMEOUT_MS = 10000;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60000;
 const JS_FILE_NAME = 'services/comfyGatewayService.js';
 const recordApiDebugLog = createApiDebugLogger(JS_FILE_NAME);
+const UNREACHABLE_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+]);
+const TIMEOUT_ERROR_CODES = new Set([
+  'ABORT_ERR',
+  'ECONNABORTED',
+  'ETIMEDOUT',
+  'ESOCKETTIMEDOUT',
+]);
 
 function positiveTimeout(value, fallback) {
   const parsed = Number(value);
@@ -28,11 +41,169 @@ function headersToObject(headers) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
+function headerValue(headers, name) {
+  if (!headers) return null;
+  if (typeof headers.get === 'function') {
+    const value = headers.get(name);
+    return value === undefined || value === null || value === '' ? null : String(value);
+  }
+  const target = String(name).toLowerCase();
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === target);
+  return key ? String(headers[key]) : null;
+}
+
+function safeErrorCode(error) {
+  const rawCode = error?.code ?? error?.cause?.code;
+  if (typeof rawCode === 'number' && Number.isFinite(rawCode)) return rawCode;
+  const code = typeof rawCode === 'string' ? rawCode.trim() : '';
+  return /^[A-Z][A-Z0-9_]{0,49}$/.test(code) ? code : null;
+}
+
+function safeRequestPath(requestUrl) {
+  try {
+    return new URL(requestUrl).pathname;
+  } catch (_) {
+    return null;
+  }
+}
+
+function safeStateValue(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}$/.test(normalized) ? normalized : null;
+}
+
+function safeErrorName(error) {
+  const name = typeof error?.name === 'string' ? error.name.trim() : '';
+  return /^[A-Z][A-Za-z0-9_.]{0,99}$/.test(name) ? name : 'Error';
+}
+
+function extractUpstreamState(payload) {
+  const detail = payload?.detail && typeof payload.detail === 'object'
+    && !Array.isArray(payload.detail)
+    ? payload.detail
+    : payload;
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return null;
+
+  const state = {
+    status: safeStateValue(detail.status),
+    state: safeStateValue(detail.state),
+    phase: safeStateValue(detail.phase),
+    containerState: safeStateValue(detail.container_state ?? detail.containerState),
+    ready: typeof detail.ready === 'boolean' ? detail.ready : null,
+    running: typeof detail.running === 'boolean' ? detail.running : null,
+  };
+  return Object.values(state).some((value) => value !== null) ? state : null;
+}
+
+function gatewayRequestId(headers) {
+  const value = headerValue(headers, 'x-request-id')
+    || headerValue(headers, 'x-correlation-id')
+    || headerValue(headers, 'traceparent');
+  const normalized = value ? value.trim() : '';
+  return /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(normalized)
+    ? normalized
+    : null;
+}
+
+function isTimeoutFailure(error) {
+  const code = safeErrorCode(error);
+  return error?.name === 'TimeoutError' || TIMEOUT_ERROR_CODES.has(code);
+}
+
+function isUnreachableFailure(error) {
+  return UNREACHABLE_ERROR_CODES.has(safeErrorCode(error));
+}
+
+function gatewayHttpStatus(error, fallback = 502) {
+  const upstreamStatus = Number(error?.status ?? error?.statusCode ?? error?.response?.status);
+  if (Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599) {
+    return upstreamStatus;
+  }
+  if (isTimeoutFailure(error)) return 504;
+  if (isUnreachableFailure(error)) return 503;
+  return fallback;
+}
+
+function attachGatewayDiagnostics(error, {
+  functionName,
+  requestUrl,
+  responseHeaders,
+  responseBody,
+  responseStatus,
+  durationMs,
+  clientAborted = false,
+} = {}) {
+  const target = error instanceof Error ? error : new Error('ComfyUI Gateway request failed');
+  const upstreamStatus = Number(responseStatus);
+  const currentStatus = Number(target.status);
+  if (
+    Number.isInteger(upstreamStatus)
+    && upstreamStatus >= 400
+    && upstreamStatus <= 599
+    && (!Number.isInteger(currentStatus) || currentStatus < 400 || currentStatus > 599)
+  ) {
+    target.status = upstreamStatus;
+  }
+  const status = clientAborted ? null : gatewayHttpStatus(target);
+  const normalizedCurrentStatus = Number(target.status);
+  if (
+    !clientAborted
+    && (
+      !Number.isInteger(normalizedCurrentStatus)
+      || normalizedCurrentStatus < 400
+      || normalizedCurrentStatus > 599
+    )
+  ) {
+    target.status = status;
+  }
+  target.comfyGateway = {
+    operation: String(functionName || 'unknown').slice(0, 100),
+    endpoint: safeRequestPath(requestUrl),
+    status,
+    requestId: gatewayRequestId(responseHeaders),
+    durationMs: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
+    upstreamState: extractUpstreamState(responseBody),
+    clientAborted,
+  };
+  return target;
+}
+
+function gatewayLogMetadata(error, extra = {}) {
+  const diagnostics = error?.comfyGateway || {};
+  return {
+    operation: extra.operation || diagnostics.operation || 'unknown',
+    endpoint: extra.endpoint || diagnostics.endpoint || null,
+    phase: extra.phase || null,
+    status: diagnostics.status || gatewayHttpStatus(error),
+    upstreamStatus: Number.isInteger(Number(extra.upstreamStatus))
+      ? Number(extra.upstreamStatus)
+      : null,
+    requestId: extra.requestId || diagnostics.requestId || null,
+    durationMs: Number.isFinite(extra.durationMs)
+      ? Math.max(0, Math.round(extra.durationMs))
+      : diagnostics.durationMs ?? null,
+    upstreamState: extra.upstreamState || diagnostics.upstreamState || null,
+    errorName: safeErrorName(error),
+    errorCode: safeErrorCode(error),
+  };
+}
+
+function gatewayClientMessage(error) {
+  const status = gatewayHttpStatus(error);
+  if (status === 504) return 'The ComfyUI Gateway request timed out.';
+  if (status === 503) return 'The ComfyUI Gateway is unavailable.';
+  if (status === 429) return 'The ComfyUI Gateway is busy.';
+  return `The ComfyUI Gateway returned HTTP ${status}.`;
+}
+
 class ComfyGatewayService {
   constructor({
     baseUrl = DEFAULT_API_BASE,
     apiKey = process.env.COMFY_API_KEY,
-    timeoutMs = DEFAULT_TIMEOUT_MS,
+    timeoutMs = process.env.COMFY_REQUEST_TIMEOUT_MS,
+    actionTimeoutMs = process.env.COMFY_ACTION_TIMEOUT_MS,
     streamHeaderTimeoutMs = process.env.COMFY_STREAM_HEADER_TIMEOUT_MS,
     streamIdleTimeoutMs = process.env.COMFY_STREAM_IDLE_TIMEOUT_MS
   } = {}) {
@@ -40,6 +211,7 @@ class ComfyGatewayService {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.apiKey = apiKey || null;
     this.timeoutMs = positiveTimeout(timeoutMs, DEFAULT_TIMEOUT_MS);
+    this.actionTimeoutMs = positiveTimeout(actionTimeoutMs, DEFAULT_ACTION_TIMEOUT_MS);
     this.streamHeaderTimeoutMs = positiveTimeout(streamHeaderTimeoutMs, DEFAULT_STREAM_HEADER_TIMEOUT_MS);
     this.streamIdleTimeoutMs = positiveTimeout(streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS);
   }
@@ -55,22 +227,30 @@ class ComfyGatewayService {
     return headers;
   }
 
-  async fetchJson(pathname, { method = 'GET', headers = {}, body } = {}, { functionName = 'fetchJson', requestBody } = {}) {
+  async fetchJson(
+    pathname,
+    { method = 'GET', headers = {}, body } = {},
+    { functionName = 'fetchJson', requestBody, timeoutMs = this.timeoutMs } = {}
+  ) {
     const requestUrl = this.buildUrl(pathname);
     const requestHeaders = this.apiHeaders(headers);
+    const effectiveTimeoutMs = positiveTimeout(timeoutMs, this.timeoutMs);
+    const startedAt = Date.now();
     const fetchOptions = {
       method,
       headers: requestHeaders,
-      signal: AbortSignal.timeout(this.timeoutMs)
+      signal: AbortSignal.timeout(effectiveTimeoutMs)
     };
     if (body !== undefined) fetchOptions.body = body;
 
     let responseHeaders = null;
+    let responseBody = null;
+    let responseStatus = null;
     let debugRecorded = false;
     try {
       const r = await fetch(requestUrl, fetchOptions);
+      responseStatus = r.status;
       responseHeaders = headersToObject(r.headers);
-      let responseBody = null;
       const contentType = r.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         responseBody = await r.json();
@@ -105,7 +285,14 @@ class ComfyGatewayService {
           functionName
         });
       }
-      throw err;
+      throw attachGatewayDiagnostics(err, {
+        functionName,
+        requestUrl,
+        responseHeaders,
+        responseBody,
+        responseStatus,
+        durationMs: Date.now() - startedAt,
+      });
     }
   }
 
@@ -174,6 +361,7 @@ class ComfyGatewayService {
       { method: 'POST', body },
       {
         functionName: 'uploadInputFile',
+        timeoutMs: this.actionTimeoutMs,
         requestBody: {
           filename: safeFilename,
           content_type: contentType || 'application/octet-stream',
@@ -197,6 +385,7 @@ class ComfyGatewayService {
     const requestUrl = this.buildUrl(`/comfy/input/view?${params.toString()}`);
     const requestHeaders = this.apiHeaders(range ? { Range: range } : {});
     const functionName = 'openInputFile';
+    const startedAt = Date.now();
     let responseHeaders = null;
     let debugRecorded = false;
     const headerController = new AbortController();
@@ -239,6 +428,15 @@ class ComfyGatewayService {
         responseBody: { status: response.status },
         functionName
       });
+      response.comfyGateway = {
+        operation: functionName,
+        endpoint: safeRequestPath(requestUrl),
+        status: response.status,
+        requestId: gatewayRequestId(responseHeaders),
+        durationMs: Math.max(0, Math.round(Date.now() - startedAt)),
+        upstreamState: null,
+        clientAborted: false,
+      };
       return response;
     } catch (err) {
       clearTimeout(headerTimer);
@@ -252,7 +450,17 @@ class ComfyGatewayService {
           functionName
         });
       }
-      throw err;
+      const clientAborted = Boolean(
+        signal?.aborted
+        && signal.reason?.name === 'AbortError'
+      );
+      throw attachGatewayDiagnostics(err, {
+        functionName,
+        requestUrl,
+        responseHeaders,
+        durationMs: Date.now() - startedAt,
+        clientAborted,
+      });
     }
   }
 
@@ -268,7 +476,11 @@ class ComfyGatewayService {
         headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body)
       },
-      { functionName: 'runPrompt', requestBody: body }
+      {
+        functionName: 'runPrompt',
+        requestBody: body,
+        timeoutMs: this.actionTimeoutMs,
+      }
     );
   }
 
@@ -288,7 +500,11 @@ class ComfyGatewayService {
         headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body)
       },
-      { functionName: 'submitPrompt', requestBody: body }
+      {
+        functionName: 'submitPrompt',
+        requestBody: body,
+        timeoutMs: this.actionTimeoutMs,
+      }
     );
   }
 
@@ -332,7 +548,9 @@ class ComfyGatewayService {
 
     const requestHeaders = this.apiHeaders();
     const functionName = 'fetchImage';
+    const startedAt = Date.now();
     let responseHeaders = null;
+    let debugRecorded = false;
     try {
       const r = await fetch(requestUrl, {
         headers: requestHeaders,
@@ -340,6 +558,22 @@ class ComfyGatewayService {
         signal: AbortSignal.timeout(this.timeoutMs)
       });
       responseHeaders = headersToObject(r.headers);
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        await recordApiDebugLog({
+          requestUrl,
+          requestHeaders,
+          requestBody: null,
+          responseHeaders,
+          responseBody: { status: r.status, body: txt },
+          functionName
+        });
+        debugRecorded = true;
+        const error = new Error(txt || `image fetch ${r.status}`);
+        error.status = r.status;
+        error.response = txt;
+        throw error;
+      }
       const buf = Buffer.from(await r.arrayBuffer());
       await recordApiDebugLog({
         requestUrl,
@@ -349,28 +583,37 @@ class ComfyGatewayService {
         responseBody: { size: buf.length, status: r.status },
         functionName
       });
-      if (!r.ok) {
-        const txt = await r.text().catch(() => '');
-        throw new Error(txt || `image fetch ${r.status}`);
-      }
       return {
         buffer: buf,
         contentType: r.headers.get('content-type') || 'application/octet-stream',
         url: requestUrl
       };
     } catch (err) {
-      await recordApiDebugLog({
+      if (!debugRecorded) {
+        await recordApiDebugLog({
+          requestUrl,
+          requestHeaders,
+          requestBody: null,
+          responseHeaders,
+          responseBody: err,
+          functionName
+        });
+      }
+      const gatewayError = attachGatewayDiagnostics(err, {
+        functionName,
         requestUrl,
-        requestHeaders,
-        requestBody: null,
         responseHeaders,
-        responseBody: err,
-        functionName
+        durationMs: Date.now() - startedAt,
       });
-      logger.error('[ComfyGatewayService] fetchImage failed', err);
-      throw err;
+      throw gatewayError;
     }
   }
 }
+
+ComfyGatewayService.DEFAULT_ACTION_TIMEOUT_MS = DEFAULT_ACTION_TIMEOUT_MS;
+ComfyGatewayService.DEFAULT_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
+ComfyGatewayService.gatewayClientMessage = gatewayClientMessage;
+ComfyGatewayService.gatewayHttpStatus = gatewayHttpStatus;
+ComfyGatewayService.gatewayLogMetadata = gatewayLogMetadata;
 
 module.exports = ComfyGatewayService;

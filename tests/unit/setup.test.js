@@ -18,6 +18,7 @@ const dropbox = require('../../dropbox');
 const {
   buildSummary,
   canRunDropboxOperations,
+  classifyPreflightForStartup,
   cleanTempAndPdfCaches,
   convertPngAssets,
   ensureDirectoriesAndFiles,
@@ -41,6 +42,53 @@ afterEach(() => {
   jest.restoreAllMocks();
   process.env = { ...originalEnv };
   resetSectionResults();
+});
+
+describe('startup preflight classification', () => {
+  it('defers a transient MongoDB connectivity failure to the application lifecycle', () => {
+    const result = classifyPreflightForStartup({
+      results: [
+        { name: 'Environment variables', status: 'ok' },
+        { name: 'Disk space', status: 'ok' },
+        { name: 'MongoDB connectivity', status: 'failed', details: { error: 'offline' } },
+      ],
+    });
+
+    expect(result).toEqual({
+      blocking: false,
+      blockingFailures: [],
+      mongoDeferred: true,
+    });
+  });
+
+  it('allows only MONGOOSE_URL to defer while other missing configuration remains fatal', () => {
+    const mongoOnly = classifyPreflightForStartup({
+      results: [{
+        name: 'Environment variables',
+        status: 'failed',
+        details: { missing: ['MONGOOSE_URL'] },
+      }],
+    });
+    const sessionMissing = classifyPreflightForStartup({
+      results: [{
+        name: 'Environment variables',
+        status: 'failed',
+        details: { missing: ['MONGOOSE_URL', 'SESSION_SECRET'] },
+      }],
+    });
+
+    expect(mongoOnly).toMatchObject({ blocking: false, mongoDeferred: true });
+    expect(sessionMissing).toMatchObject({ blocking: true, mongoDeferred: true });
+    expect(sessionMissing.blockingFailures).toHaveLength(1);
+  });
+
+  it('keeps disk failures fatal', () => {
+    const result = classifyPreflightForStartup({
+      results: [{ name: 'Disk space', status: 'failed' }],
+    });
+
+    expect(result).toMatchObject({ blocking: true, mongoDeferred: false });
+  });
 });
 
 describe('withRetry', () => {

@@ -48,6 +48,7 @@ jest.mock('../../database', () => {
 const ConversationService = require('../../services/conversationService');
 const ai = require('../../utils/OpenAI_API');
 const ollama = require('../../utils/Ollama_API');
+const logger = require('../../utils/logger');
 const { Conversation5Model, PendingRequests, Chat5Model } = require('../../database');
 
 describe('ConversationService response recovery', () => {
@@ -98,6 +99,7 @@ describe('ConversationService response recovery', () => {
     expect(service.processFailedResponse).toHaveBeenCalledWith('resp-failed', {
       claimedPending: pendingItems[1],
       retrievedResponse: { status: 'failed' },
+      returnResult: true,
     });
     expect(PendingRequests.findOneAndUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -267,7 +269,10 @@ describe('ConversationService response recovery', () => {
     Conversation5Model.exists.mockResolvedValue(null);
     Conversation5Model.findById.mockResolvedValue(null);
 
-    const service = new ConversationService({}, {}, {});
+    const messageService = {
+      deleteMessages: jest.fn().mockResolvedValue(1),
+    };
+    const service = new ConversationService({}, messageService, {});
     const updates = await service.reconcilePendingResponses({ limit: 1, now });
 
     expect(ai.retrieveResponse).not.toHaveBeenCalled();
@@ -292,6 +297,9 @@ describe('ConversationService response recovery', () => {
         reason: 'placeholder_missing',
       }),
     ]);
+    expect(messageService.deleteMessages).toHaveBeenCalledWith(['ph-orphan'], {
+      conversationId: 'conv-orphan',
+    });
   });
 
   test('reconcilePendingResponses abandons work older than the age limit and removes its placeholder reference', async () => {
@@ -311,7 +319,10 @@ describe('ConversationService response recovery', () => {
     PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
     Conversation5Model.findById.mockResolvedValue(conversation);
 
-    const service = new ConversationService({}, {}, {});
+    const messageService = {
+      deleteMessages: jest.fn().mockResolvedValue(1),
+    };
+    const service = new ConversationService({}, messageService, {});
     const updates = await service.reconcilePendingResponses({
       limit: 1,
       now,
@@ -321,9 +332,62 @@ describe('ConversationService response recovery', () => {
     expect(ai.retrieveResponse).not.toHaveBeenCalled();
     expect(conversation.messages).toEqual(['user-message']);
     expect(conversation.save).toHaveBeenCalledTimes(1);
+    expect(messageService.deleteMessages).toHaveBeenCalledWith(['ph-expired'], {
+      conversationId: 'conv-expired',
+    });
     expect(updates[0]).toEqual(expect.objectContaining({
       status: 'abandoned',
       reason: 'max_age_exceeded',
+    }));
+  });
+
+  test('abandonment retains a cleanup retry handle when placeholder deletion fails', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-abandon-cleanup',
+      response_id: 'resp-abandon-cleanup',
+      conversation_id: 'conv-abandon-cleanup',
+      placeholder_id: 'ph-abandon-cleanup',
+      createdAt: new Date('2026-07-24T23:00:00.000Z'),
+      recoveryAttemptCount: 2,
+    };
+    const conversation = {
+      messages: ['user-message', 'ph-abandon-cleanup'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      deleteMessages: jest.fn().mockRejectedValue(new Error('vector queue offline')),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    const updates = await service.reconcilePendingResponses({
+      limit: 1,
+      now,
+      policy: { maxAgeMs: 48 * 60 * 60 * 1000, maxAttempts: 50 },
+    });
+
+    expect(PendingRequests.deleteOne).not.toHaveBeenCalled();
+    expect(PendingRequests.updateOne).toHaveBeenLastCalledWith(
+      { _id: 'pending-abandon-cleanup' },
+      {
+        $set: expect.objectContaining({
+          recoveryState: 'cleanup_pending',
+          cleanupOutcome: 'abandoned',
+          cleanupLastError: 'vector queue offline',
+          processingStartedAt: null,
+          nextCheckAt: new Date('2026-07-27T01:01:00.000Z'),
+        }),
+      },
+    );
+    expect(updates[0]).toEqual(expect.objectContaining({
+      status: 'abandoned',
+      reason: 'max_age_exceeded',
+      placeholderCleanup: expect.objectContaining({
+        ok: false,
+        status: 'deferred',
+      }),
     }));
   });
 
@@ -385,6 +449,148 @@ describe('ConversationService response recovery', () => {
     expect(conversationIds).toEqual(['conv-active-1', 'conv-active-2']);
   });
 
+  test('reconcilePendingResponses retries cleanup without retrieving or replaying the provider response', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-cleanup-retry',
+      response_id: 'resp-cleanup-retry',
+      conversation_id: 'conv-cleanup-retry',
+      placeholder_id: 'ph-cleanup-retry',
+      recoveryState: 'cleanup_pending',
+      cleanupOutcome: 'completed',
+      cleanupAttemptCount: 1,
+    };
+    const conversation = {
+      messages: ['user-message', 'ph-cleanup-retry'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      processCompletedResponse: jest.fn(),
+      processFailedResponse: jest.fn(),
+      deleteMessages: jest.fn().mockResolvedValue(0),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    const updates = await service.reconcilePendingResponses({ limit: 1, now });
+
+    expect(ai.retrieveResponse).not.toHaveBeenCalled();
+    expect(ollama.retrieveChatJob).not.toHaveBeenCalled();
+    expect(messageService.processCompletedResponse).not.toHaveBeenCalled();
+    expect(messageService.processFailedResponse).not.toHaveBeenCalled();
+    expect(conversation.messages).toEqual(['user-message']);
+    expect(messageService.deleteMessages).toHaveBeenCalledWith(['ph-cleanup-retry'], {
+      conversationId: 'conv-cleanup-retry',
+    });
+    expect(PendingRequests.deleteOne).toHaveBeenCalledWith({ _id: 'pending-cleanup-retry' });
+    expect(updates).toEqual([
+      expect.objectContaining({
+        type: 'cleanup',
+        status: 'completed',
+        placeholderCleanup: expect.objectContaining({
+          ok: true,
+          deletedCount: 0,
+          referenceRemoved: true,
+        }),
+      }),
+    ]);
+  });
+
+  test('cleanup retry remains idempotent and backs off when vector deletion is still unavailable', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-cleanup-retry-failed',
+      response_id: 'resp-cleanup-retry-failed',
+      conversation_id: 'conv-cleanup-retry-failed',
+      placeholder_id: 'ph-cleanup-retry-failed',
+      recoveryState: 'cleanup_pending',
+      cleanupOutcome: 'failed',
+      cleanupAttemptCount: 2,
+      cleanupPendingAt: new Date('2026-07-27T00:55:00.000Z'),
+    };
+    const conversation = {
+      messages: ['user-message'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      deleteMessages: jest.fn().mockRejectedValue(new Error('vector queue offline')),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    const updates = await service.reconcilePendingResponses({ limit: 1, now });
+
+    expect(ai.retrieveResponse).not.toHaveBeenCalled();
+    expect(conversation.save).not.toHaveBeenCalled();
+    expect(PendingRequests.deleteOne).not.toHaveBeenCalled();
+    expect(PendingRequests.updateOne).toHaveBeenLastCalledWith(
+      { _id: 'pending-cleanup-retry-failed' },
+      {
+        $set: expect.objectContaining({
+          recoveryState: 'cleanup_pending',
+          cleanupAttemptCount: 3,
+          cleanupPendingAt: new Date('2026-07-27T00:55:00.000Z'),
+          nextCheckAt: new Date('2026-07-27T01:04:00.000Z'),
+          processingStartedAt: null,
+        }),
+      },
+    );
+    expect(updates[0]).toEqual(expect.objectContaining({
+      type: 'cleanup',
+      status: 'deferred',
+      placeholderCleanup: expect.objectContaining({
+        ok: false,
+        attemptCount: 3,
+      }),
+    }));
+  });
+
+  test('successful cleanup retry restores an abandoned recovery record for audit history', async () => {
+    const now = new Date('2026-07-27T01:00:00.000Z');
+    const pending = {
+      _id: 'pending-abandoned-cleanup-retry',
+      response_id: 'resp-abandoned-cleanup-retry',
+      conversation_id: 'conv-abandoned-cleanup-retry',
+      placeholder_id: 'ph-abandoned-cleanup-retry',
+      recoveryState: 'cleanup_pending',
+      cleanupOutcome: 'abandoned',
+      cleanupAttemptCount: 1,
+      abandonReason: 'max_age_exceeded',
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValueOnce(pending);
+    Conversation5Model.findById.mockResolvedValue(null);
+    const messageService = {
+      deleteMessages: jest.fn().mockResolvedValue(0),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    const updates = await service.reconcilePendingResponses({ limit: 1, now });
+
+    expect(PendingRequests.deleteOne).not.toHaveBeenCalled();
+    expect(PendingRequests.updateOne).toHaveBeenLastCalledWith(
+      { _id: 'pending-abandoned-cleanup-retry' },
+      {
+        $set: {
+          recoveryState: 'abandoned',
+          cleanupLastError: null,
+          lastCheckedAt: now,
+          nextCheckAt: null,
+          processingStartedAt: null,
+        },
+        $unset: {
+          cleanupPendingAt: 1,
+          cleanupOutcome: 1,
+        },
+      },
+    );
+    expect(updates[0]).toEqual(expect.objectContaining({
+      type: 'cleanup',
+      status: 'completed',
+    }));
+  });
+
   test('processCompletedResponse claims and removes pending request after saving messages', async () => {
     const pending = {
       _id: 'pending-1',
@@ -405,6 +611,7 @@ describe('ConversationService response recovery', () => {
 
     const messageService = {
       processCompletedResponse: jest.fn().mockResolvedValue([savedMessage]),
+      deleteMessages: jest.fn().mockResolvedValue(1),
     };
     const service = new ConversationService({}, messageService, {});
 
@@ -412,11 +619,158 @@ describe('ConversationService response recovery', () => {
 
     expect(PendingRequests.findOneAndUpdate).toHaveBeenCalledTimes(1);
     expect(PendingRequests.deleteOne).toHaveBeenCalledWith({ _id: 'pending-1' });
+    expect(messageService.deleteMessages).toHaveBeenCalledWith(['ph-1'], {
+      conversationId: 'conv-1',
+    });
+    expect(conversation.save.mock.invocationCallOrder[0])
+      .toBeLessThan(messageService.deleteMessages.mock.invocationCallOrder[0]);
     expect(conversation.messages).toEqual(['user-1', 'msg-1']);
     expect(result).toEqual({
       conversation,
       messages: [savedMessage],
       placeholder_id: 'ph-1',
+      placeholderCleanup: {
+        ok: true,
+        status: 'cleaned',
+        placeholderId: 'ph-1',
+        referenceRemoved: false,
+        deletedCount: 1,
+        error: null,
+      },
+    });
+  });
+
+  test('processFailedResponse deletes the terminal placeholder through the shared message service', async () => {
+    const pending = {
+      _id: 'pending-failed',
+      response_id: 'resp-failed',
+      conversation_id: 'conv-failed',
+      placeholder_id: 'ph-failed',
+    };
+    const conversation = {
+      messages: ['user-1', 'ph-failed'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValue(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      processFailedResponse: jest.fn().mockResolvedValue('Provider failed'),
+      deleteMessages: jest.fn().mockResolvedValue(1),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    await expect(service.processFailedResponse('resp-failed')).resolves.toBe('Provider failed');
+
+    expect(conversation.messages).toEqual(['user-1']);
+    expect(messageService.deleteMessages).toHaveBeenCalledWith(['ph-failed'], {
+      conversationId: 'conv-failed',
+    });
+    expect(PendingRequests.deleteOne).toHaveBeenCalledWith({ _id: 'pending-failed' });
+  });
+
+  test('processFailedResponse exposes deferred cleanup and retains the pending request', async () => {
+    const pending = {
+      _id: 'pending-failed-cleanup',
+      response_id: 'resp-failed-cleanup',
+      conversation_id: 'conv-failed-cleanup',
+      placeholder_id: 'ph-failed-cleanup',
+    };
+    const conversation = {
+      messages: ['ph-failed-cleanup'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValue(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      processFailedResponse: jest.fn().mockResolvedValue('Provider failed'),
+      deleteMessages: jest.fn().mockRejectedValue(new Error('queue unavailable')),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    const result = await service.processFailedResponse('resp-failed-cleanup', {
+      returnResult: true,
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      error_msg: 'Provider failed',
+      conversation,
+      placeholder_id: 'ph-failed-cleanup',
+      placeholderCleanup: expect.objectContaining({
+        ok: false,
+        status: 'deferred',
+        error: 'queue unavailable',
+      }),
+    }));
+    expect(PendingRequests.deleteOne).not.toHaveBeenCalled();
+    expect(PendingRequests.updateOne).toHaveBeenLastCalledWith(
+      { _id: 'pending-failed-cleanup' },
+      {
+        $set: expect.objectContaining({
+          recoveryState: 'cleanup_pending',
+          cleanupOutcome: 'failed',
+          cleanupLastError: 'queue unavailable',
+          processingStartedAt: null,
+        }),
+      },
+    );
+  });
+
+  test('reports placeholder deletion failure without replaying an already persisted response', async () => {
+    const pending = {
+      _id: 'pending-cleanup-failed',
+      response_id: 'resp-cleanup-failed',
+      conversation_id: 'conv-cleanup-failed',
+      placeholder_id: 'ph-cleanup-failed',
+    };
+    const conversation = {
+      messages: ['ph-cleanup-failed'],
+      save: jest.fn().mockResolvedValue(),
+    };
+    PendingRequests.findOneAndUpdate.mockResolvedValue(pending);
+    Conversation5Model.findById.mockResolvedValue(conversation);
+    const messageService = {
+      processCompletedResponse: jest.fn().mockResolvedValue([]),
+      deleteMessages: jest.fn().mockRejectedValue(new Error('queue unavailable')),
+    };
+    const service = new ConversationService({}, messageService, {});
+
+    await expect(service.processCompletedResponse('resp-cleanup-failed')).resolves.toEqual(
+      expect.objectContaining({
+        conversation,
+        messages: [],
+        placeholder_id: 'ph-cleanup-failed',
+        placeholderCleanup: expect.objectContaining({
+          ok: false,
+          status: 'deferred',
+          placeholderId: 'ph-cleanup-failed',
+          error: 'queue unavailable',
+          attemptCount: 1,
+          nextCheckAt: expect.any(Date),
+        }),
+      }),
+    );
+
+    expect(PendingRequests.deleteOne).not.toHaveBeenCalled();
+    expect(PendingRequests.updateOne).toHaveBeenLastCalledWith(
+      { _id: 'pending-cleanup-failed' },
+      {
+        $set: expect.objectContaining({
+          recoveryState: 'cleanup_pending',
+          cleanupAttemptCount: 1,
+          cleanupLastError: 'queue unavailable',
+          cleanupOutcome: 'completed',
+          processingStartedAt: null,
+          nextCheckAt: expect.any(Date),
+        }),
+      },
+    );
+    expect(logger.error).toHaveBeenCalledWith('Failed to clean up AI response placeholder', {
+      category: 'openai_webhook_recovery',
+      metadata: expect.objectContaining({
+        responseId: 'resp-cleanup-failed',
+        outcome: 'completed',
+        error: 'queue unavailable',
+      }),
     });
   });
 
@@ -437,6 +791,7 @@ describe('ConversationService response recovery', () => {
     };
     const messageService = {
       processCompletedResponse: jest.fn().mockResolvedValue([]),
+      deleteMessages: jest.fn().mockResolvedValue(1),
     };
     Conversation5Model.findById.mockResolvedValue(conversation);
 
@@ -481,6 +836,7 @@ describe('ConversationService response recovery', () => {
     Conversation5Model.findById.mockResolvedValue(conversation);
     const messageService = {
       processCompletedResponse: jest.fn().mockResolvedValue([savedMessage]),
+      deleteMessages: jest.fn().mockResolvedValue(1),
     };
     const service = new ConversationService({}, messageService, {});
 
@@ -549,6 +905,7 @@ describe('ConversationService response recovery', () => {
         response_id: 'resp-follow',
         msg: followUpPlaceholder,
       }),
+      deleteMessages: jest.fn().mockResolvedValue(1),
     };
     const service = new ConversationService({}, messageService, {});
     service.toolManagerService = {
@@ -627,6 +984,7 @@ describe('ConversationService response recovery', () => {
         response_provider: 'Ollama',
         msg: nextPlaceholder,
       }),
+      deleteMessages: jest.fn().mockResolvedValue(1),
     };
     const service = new ConversationService({}, messageService, {});
     service.executeFunctionCallsForConversation = jest.fn().mockResolvedValue([functionOutputMessage]);
@@ -751,6 +1109,7 @@ describe('ConversationService response recovery', () => {
     const messageService = {
       processCompletedResponse: jest.fn().mockResolvedValue([functionCallMessage]),
       generateAIMessage: jest.fn(),
+      deleteMessages: jest.fn().mockResolvedValue(1),
     };
     const service = new ConversationService({}, messageService, {});
     service.executeFunctionCallsForConversation = jest.fn();

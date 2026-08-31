@@ -41,8 +41,12 @@ function createRunner(dependencies = {}) {
 function scheduleEmergencyStockMaintenance() {
   const start = () => {
     const run = createRunner();
-    run().catch(() => {});
-    const handle = setInterval(() => run().catch(() => {}), getIntervalMs());
+    const runWhenReady = () => {
+      if (mongoose.connection.readyState !== 1) return;
+      run().catch(() => {});
+    };
+    runWhenReady();
+    const handle = setInterval(runWhenReady, getIntervalMs());
     handle.unref?.();
     logger.notice('Emergency stock maintenance scheduler started', {
       category: 'emergency-stock',

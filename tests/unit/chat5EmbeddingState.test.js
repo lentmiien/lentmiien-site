@@ -28,6 +28,31 @@ describe('Chat5 embedding source state', () => {
     expect(message.embeddingContentHash).toBeNull();
   });
 
+  test('keeps an explicitly excluded text placeholder out of the embedding queue', async () => {
+    const message = buildMessage('Pending response');
+    message.embeddingRequested = false;
+
+    await message.validate();
+
+    expect(message.embeddingRequested).toBe(false);
+    expect(message.embeddingStatus).toBe('disabled');
+    expect(message.embeddingContentHash).toBeNull();
+  });
+
+  test('marks a previously embedded message for deletion when embedding is disabled', async () => {
+    const message = buildMessage('Stored text');
+    message.$isNew = false;
+    message.embeddingStatus = 'completed';
+    message.embeddingContentHash = 'stored-hash';
+    message.embeddingRequested = false;
+    message.markModified('embeddingRequested');
+
+    await message.validate();
+
+    expect(message.embeddingStatus).toBe('delete_pending');
+    expect(message.embeddingContentHash).toBeNull();
+  });
+
   test('marks an edited completed message pending again', async () => {
     const message = buildMessage('Old text');
     message.$isNew = false;

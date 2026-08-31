@@ -113,6 +113,7 @@ class OcrEmbeddingService {
     this.setIntervalFn = setIntervalFn;
     this.clearIntervalFn = clearIntervalFn;
     this.isOcrIdle = () => true;
+    this.isDatabaseReady = () => true;
     this.notBeforeAt = 0;
     this.idleTimer = null;
     this.interval = null;
@@ -121,6 +122,10 @@ class OcrEmbeddingService {
 
   setOcrIdleCheck(check) {
     this.isOcrIdle = typeof check === 'function' ? check : () => true;
+  }
+
+  setDatabaseReadyCheck(check) {
+    this.isDatabaseReady = typeof check === 'function' ? check : () => true;
   }
 
   start() {
@@ -169,6 +174,9 @@ class OcrEmbeddingService {
   }
 
   async run() {
+    if (!this.isDatabaseReady()) {
+      return { processed: 0, failed: 0, skipped: 'database_unavailable' };
+    }
     if (this.runPromise) return this.runPromise;
     if (!this.isOcrIdle()) return { processed: 0, failed: 0, skipped: 'ocr_active' };
 

@@ -34,6 +34,12 @@ const redirect_models = {
 
 const SUMMARY_PROMPT = 'Based on our discussion, please generate a concise summary that encapsulates the main facts, conclusions, and insights we derived, without the need to mention the specific dialogue exchanges. This summary should serve as an informative overlook of our conversation, providing clear insight into the topics discussed, the conclusions reached, and any significant facts or advice given. The goal is for someone to grasp the essence of our dialogue and its outcomes from this summary without needing to read the entire conversation.';
 const DEFAULT_MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
+const TERMINAL_BATCH_STATUSES = new Set([
+  'failed',
+  'cancelled',
+  'canceled',
+  'expired',
+]);
 
 const modelCache = new Map();
 let loadModelsPromise = null;
@@ -221,6 +227,149 @@ class BatchService {
     this.appSettingsService = appSettingsService;
   }
 
+  async cleanupPromptPlaceholder(prompt, {
+    conversation = undefined,
+    reason = 'terminal',
+  } = {}) {
+    const placeholderId = prompt?.message_id?.toString?.() || prompt?.message_id || null;
+    if (!placeholderId) {
+      return {
+        ok: true,
+        status: 'skipped',
+        placeholderId: null,
+        referenceRemoved: false,
+        deletedCount: 0,
+        error: null,
+      };
+    }
+
+    let referenceRemoved = false;
+    try {
+      const targetConversation = conversation === undefined
+        ? await Conversation5Model.findById(prompt.conversation_id)
+        : conversation;
+      if (targetConversation && Array.isArray(targetConversation.messages)) {
+        const remainingMessages = targetConversation.messages.filter(
+          messageId => messageId?.toString() !== placeholderId,
+        );
+        if (remainingMessages.length !== targetConversation.messages.length) {
+          targetConversation.messages = remainingMessages;
+          targetConversation.updatedAt = new Date();
+          await targetConversation.save();
+          referenceRemoved = true;
+        }
+      }
+
+      if (!this.messageService || typeof this.messageService.deleteMessages !== 'function') {
+        throw new Error('Chat message deletion service is unavailable.');
+      }
+      const deletedCount = await this.messageService.deleteMessages([placeholderId], {
+        conversationId: prompt.conversation_id || null,
+      });
+      return {
+        ok: true,
+        status: 'cleaned',
+        placeholderId,
+        referenceRemoved,
+        deletedCount,
+        error: null,
+      };
+    } catch (error) {
+      const errorMessage = error?.message || String(error);
+      logger.error('Failed to clean up terminal batch response placeholder', {
+        category: 'batch',
+        metadata: {
+          customId: prompt?.custom_id || null,
+          conversationId: prompt?.conversation_id || null,
+          placeholderId,
+          reason,
+          error: errorMessage,
+        },
+      });
+      return {
+        ok: false,
+        status: 'deferred',
+        placeholderId,
+        referenceRemoved,
+        deletedCount: 0,
+        error: errorMessage,
+      };
+    }
+  }
+
+  async discardTerminalPrompt(prompt, options = {}) {
+    if (!prompt) {
+      return {
+        ok: true,
+        status: 'missing',
+        promptDeleted: false,
+      };
+    }
+    const placeholderCleanup = await this.cleanupPromptPlaceholder(prompt, options);
+    if (!placeholderCleanup.ok) {
+      return {
+        ...placeholderCleanup,
+        promptDeleted: false,
+      };
+    }
+    await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+    return {
+      ...placeholderCleanup,
+      promptDeleted: true,
+    };
+  }
+
+  async cleanupTerminalRequestPrompts(requestId, { reason = 'terminal_request' } = {}) {
+    const prompts = await this.BatchPromptDatabase.find({ request_id: requestId });
+    const results = [];
+    for (const prompt of prompts) {
+      results.push(await this.discardTerminalPrompt(prompt, { reason }));
+    }
+    return {
+      ok: results.every(result => result.ok),
+      results,
+    };
+  }
+
+  async retryTerminalPromptCleanup({ limit = 25 } = {}) {
+    const parsedLimit = Number.parseInt(limit, 10);
+    const resolvedLimit = Number.isInteger(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25;
+    const retainedPrompts = await this.BatchPromptDatabase.find({
+      request_id: { $ne: 'new' },
+    });
+    const candidates = Array.isArray(retainedPrompts) ? retainedPrompts : [];
+    const requestIds = [...new Set(candidates.map(prompt => prompt?.request_id).filter(Boolean))];
+    if (requestIds.length === 0) {
+      return { attempted: 0, cleaned: 0, deferred: 0 };
+    }
+
+    const terminalRequests = await this.BatchRequestDatabase.find({
+      id: { $in: requestIds },
+      status: { $in: [...TERMINAL_BATCH_STATUSES] },
+    });
+    const terminalStatusById = new Map(
+      (terminalRequests || []).map(request => [request.id, String(request.status).toLowerCase()]),
+    );
+    let attempted = 0;
+    let cleaned = 0;
+    let deferred = 0;
+    for (const prompt of candidates) {
+      if (attempted >= resolvedLimit) break;
+      const status = terminalStatusById.get(prompt.request_id);
+      if (!status) continue;
+      attempted += 1;
+      const result = await this.discardTerminalPrompt(prompt, {
+        reason: `request_${status}_retry`,
+      });
+      if (result.ok) {
+        cleaned += 1;
+      } else {
+        deferred += 1;
+      }
+    }
+    return { attempted, cleaned, deferred };
+  }
+
   async getAll() {
     const weekAgo = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7);
     const prompts = await this.BatchPromptDatabase.find();
@@ -337,13 +486,13 @@ class BatchService {
       const normalizedModel = normalizeModelName(prompt.model);
       if (!normalizedModel) {
         logger.warn('Dropping batch prompt with unknown model', { model: prompt.model, custom_id: prompt.custom_id });
-        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+        await this.discardTerminalPrompt(prompt, { reason: 'unknown_model' });
         continue;
       }
 
       const snapshot = await this._loadConversationSnapshot(prompt);
       if (!snapshot) {
-        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+        await this.discardTerminalPrompt(prompt, { reason: 'conversation_snapshot_unavailable' });
         continue;
       }
 
@@ -357,7 +506,10 @@ class BatchService {
 
       if (!input || input.length === 0) {
         logger.warn('Skipping batch prompt with empty input', { custom_id: prompt.custom_id });
-        await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
+        await this.discardTerminalPrompt(prompt, {
+          conversation: snapshot.conversation,
+          reason: 'empty_input',
+        });
         continue;
       }
 
@@ -462,6 +614,11 @@ class BatchService {
     }
 
     await batch.save();
+    if (TERMINAL_BATCH_STATUSES.has(String(batch.status || '').toLowerCase())) {
+      await this.cleanupTerminalRequestPrompts(batch.id, {
+        reason: `request_${String(batch.status).toLowerCase()}`,
+      });
+    }
     return batch;
   }
 
@@ -480,6 +637,10 @@ class BatchService {
 
       const outputData = await downloadBatchOutput(request.output_file_id);
       if (!Array.isArray(outputData)) continue;
+      let placeholderCleanupFailed = false;
+      const outputCustomIds = new Set(
+        outputData.map(record => record?.custom_id).filter(Boolean),
+      );
 
       for (const record of outputData) {
         const prompt = await this.BatchPromptDatabase.findOne({ custom_id: record.custom_id });
@@ -488,8 +649,14 @@ class BatchService {
         const responseBody = record?.response?.body;
         if (!responseBody) {
           logger.warn('Batch record missing response body', { custom_id: record.custom_id });
-          await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
-          processedPromptIds.push(prompt.custom_id);
+          const discardResult = await this.discardTerminalPrompt(prompt, {
+            reason: 'missing_response_body',
+          });
+          if (discardResult.ok) {
+            processedPromptIds.push(prompt.custom_id);
+          } else {
+            placeholderCleanupFailed = true;
+          }
           continue;
         }
 
@@ -498,23 +665,40 @@ class BatchService {
           if (summary) {
             await this.conversationService.updateConversationDetails(prompt.conversation_id, { summary });
           }
-          await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
-          processedPromptIds.push(prompt.custom_id);
+          const discardResult = await this.discardTerminalPrompt(prompt, {
+            reason: 'summary_processed',
+          });
+          if (discardResult.ok) {
+            processedPromptIds.push(prompt.custom_id);
+          } else {
+            placeholderCleanupFailed = true;
+          }
           continue;
         }
 
         const conversation = await Conversation5Model.findById(prompt.conversation_id);
         if (!conversation) {
-          await this.BatchPromptDatabase.deleteOne({ custom_id: prompt.custom_id });
-          processedPromptIds.push(prompt.custom_id);
+          const discardResult = await this.discardTerminalPrompt(prompt, {
+            conversation: null,
+            reason: 'conversation_missing',
+          });
+          if (discardResult.ok) {
+            processedPromptIds.push(prompt.custom_id);
+          } else {
+            placeholderCleanupFailed = true;
+          }
           continue;
         }
 
         if (prompt.message_id) {
-          conversation.messages = conversation.messages.filter((id) => id !== prompt.message_id);
-          await this.messageService.deleteMessages([prompt.message_id], {
-            conversationId: prompt.conversation_id,
+          const placeholderCleanup = await this.cleanupPromptPlaceholder(prompt, {
+            conversation,
+            reason: 'response_processed',
           });
+          if (!placeholderCleanup.ok) {
+            placeholderCleanupFailed = true;
+            continue;
+          }
         }
 
         const convertedOutputs = await convertResponseBody(responseBody);
@@ -564,6 +748,33 @@ class BatchService {
         }
       }
 
+      const promptsMissingOutput = await this.BatchPromptDatabase.find({ request_id: request.id });
+      if (Array.isArray(promptsMissingOutput)) {
+        for (const prompt of promptsMissingOutput) {
+          if (outputCustomIds.has(prompt.custom_id)) continue;
+          logger.warn('Completed batch request omitted a queued prompt response', {
+            request_id: request.id,
+            custom_id: prompt.custom_id,
+          });
+          const discardResult = await this.discardTerminalPrompt(prompt, {
+            reason: 'missing_response_record',
+          });
+          if (discardResult.ok) {
+            processedPromptIds.push(prompt.custom_id);
+          } else {
+            placeholderCleanupFailed = true;
+          }
+        }
+      }
+
+      if (placeholderCleanupFailed) {
+        logger.warning('Deferred completed batch request finalization because placeholder cleanup failed', {
+          category: 'batch',
+          metadata: { requestId: request.id },
+        });
+        continue;
+      }
+
       request.status = 'DONE';
       await request.save();
       await deleteBatchFile(request.input_file_id);
@@ -583,20 +794,7 @@ class BatchService {
   async deletePromptById(id) {
     const prompt = await this.BatchPromptDatabase.findOne({ custom_id: id });
     if (!prompt) return;
-
-    if (prompt.message_id) {
-      await this.messageService.deleteMessages([prompt.message_id], {
-        conversationId: prompt.conversation_id,
-      });
-      const conversation = await Conversation5Model.findById(prompt.conversation_id);
-      if (conversation) {
-        conversation.messages = conversation.messages.filter((msgId) => msgId !== prompt.message_id);
-        conversation.updatedAt = new Date();
-        await conversation.save();
-      }
-    }
-
-    await this.BatchPromptDatabase.deleteOne({ custom_id: id });
+    return this.discardTerminalPrompt(prompt, { reason: 'manual_delete' });
   }
 
   async _loadConversationSnapshot(prompt) {

@@ -11,6 +11,7 @@ const MAX_TEST_INPUT_LENGTH = 20000;
 const MAX_STORED_SNAPSHOT_BYTES = 2 * 1024 * 1024;
 const MAX_TRUNCATED_PREVIEW_LENGTH = 200000;
 const MAX_RUN_LIST_LIMIT = 100;
+const FAILED_STAGE_PATTERN = /^[a-z][a-z0-9_-]{0,99}$/i;
 
 class ModularLlmInputError extends Error {
   constructor(message, statusCode = 400) {
@@ -205,7 +206,94 @@ function extractGatewayRunId(payload) {
     || artifact?.runId
     || artifact?.details?.run_id
     || artifact?.error?.details?.run_id;
-  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    return ModularLlmGatewayService.assertGatewayRunId(value);
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeFailedStage(value) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return FAILED_STAGE_PATTERN.test(normalized) ? normalized : null;
+}
+
+function inferFailedStage(stages) {
+  const failedStages = [];
+  if (Array.isArray(stages)) {
+    stages.forEach((entry) => {
+      const status = String(entry?.status || entry?.state || '').trim().toLowerCase();
+      if (!['failed', 'error'].includes(status) && entry?.ok !== false) return;
+      const stage = normalizeFailedStage(entry?.stage || entry?.name || entry?.id);
+      if (stage) failedStages.push(stage);
+    });
+  } else if (stages && typeof stages === 'object') {
+    Object.entries(stages).forEach(([name, entry]) => {
+      const status = String(entry?.status || entry?.state || '').trim().toLowerCase();
+      if (!['failed', 'error'].includes(status) && entry?.ok !== false) return;
+      const stage = normalizeFailedStage(entry?.stage || entry?.name || name);
+      if (stage) failedStages.push(stage);
+    });
+  }
+  const uniqueStages = Array.from(new Set(failedStages));
+  return uniqueStages.length === 1 ? uniqueStages[0] : null;
+}
+
+function extractFailedStage(payload) {
+  const artifact = unwrapGatewayPayload(payload);
+  const candidates = [
+    artifact?.failed_stage,
+    artifact?.failedStage,
+    artifact?.error?.failed_stage,
+    artifact?.error?.failedStage,
+    artifact?.error?.stage,
+    artifact?.error?.details?.failed_stage,
+    artifact?.error?.details?.failedStage,
+    artifact?.error?.details?.stage,
+    artifact?.details?.failed_stage,
+    artifact?.details?.failedStage,
+    artifact?.details?.stage,
+    artifact?.status === 'failed' ? artifact?.stage : null,
+  ];
+  for (const candidate of candidates) {
+    const stage = normalizeFailedStage(candidate);
+    if (stage) return stage;
+  }
+  return inferFailedStage(artifact?.stages);
+}
+
+function safeOperationalLabel(value, maxLength = 200) {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized || normalized.length > maxLength) return null;
+  return /^[A-Za-z][A-Za-z0-9_.:-]*$/.test(normalized) ? normalized : null;
+}
+
+function pipelineFailureLogSummary(update) {
+  if (update.failedStage) {
+    return `The Modular LLM Gateway reported a failure in the ${update.failedStage} stage.`;
+  }
+  const summaries = {
+    429: 'The Modular LLM Gateway admission wait failed.',
+    502: 'The Modular LLM Gateway reported a pipeline failure.',
+    503: 'The Modular LLM runtime was unavailable.',
+    504: 'The Modular LLM execution deadline expired.',
+  };
+  return summaries[update.httpStatus] || 'The Modular LLM pipeline test failed.';
+}
+
+function logPipelineFailure(runId, update) {
+  logger.warning('Modular LLM pipeline test failed', {
+    category: 'modular_llm_admin',
+    metadata: {
+      localRunId: runId,
+      gatewayRunId: update.gatewayRunId,
+      httpStatus: update.httpStatus,
+      failedStage: update.failedStage,
+      errorType: safeOperationalLabel(update.errorType),
+      errorSummary: pipelineFailureLogSummary(update),
+    },
+  });
 }
 
 function extractOutput(payload) {
@@ -429,9 +517,7 @@ class ModularLlmAdminService {
           ? artifact.status.slice(0, 100)
           : (succeeded ? 'succeeded' : 'failed'),
         bundleId: typeof artifact?.bundle_id === 'string' ? artifact.bundle_id.slice(0, 200) : null,
-        failedStage: typeof artifact?.failed_stage === 'string'
-          ? artifact.failed_stage.slice(0, 100)
-          : null,
+        failedStage: extractFailedStage(payload),
         output: extractOutput(payload),
         httpStatus: 200,
         errorType: failure.type,
@@ -441,6 +527,7 @@ class ModularLlmAdminService {
         durationMs: Math.max(0, completedAt.getTime() - startedAt.getTime()),
         completedAt,
       };
+      if (!succeeded) logPipelineFailure(runId, update);
       return await this.finishTestRun(runId, update) || { ...createdRun, ...update };
     } catch (error) {
       const completedAt = this.now();
@@ -458,9 +545,7 @@ class ModularLlmAdminService {
         bundleId: typeof artifact?.bundle_id === 'string'
           ? artifact.bundle_id.slice(0, 200)
           : null,
-        failedStage: typeof artifact?.failed_stage === 'string'
-          ? artifact.failed_stage.slice(0, 100)
-          : null,
+        failedStage: extractFailedStage(gatewayPayload),
         output: extractOutput(gatewayPayload),
         httpStatus: Number.isInteger(httpStatus) && httpStatus >= 100 && httpStatus <= 599
           ? httpStatus
@@ -477,16 +562,7 @@ class ModularLlmAdminService {
         completedAt,
       };
 
-      logger.warning('Modular LLM pipeline test failed', {
-        category: 'modular_llm_admin',
-        metadata: {
-          localRunId: runId,
-          gatewayRunId: update.gatewayRunId,
-          httpStatus: update.httpStatus,
-          failedStage: update.failedStage,
-          errorType: update.errorType,
-        },
-      });
+      logPipelineFailure(runId, update);
 
       return await this.finishTestRun(runId, update) || { ...createdRun, ...update };
     }
@@ -501,5 +577,6 @@ ModularLlmAdminService.normalizeModelBundle = normalizeModelBundle;
 ModularLlmAdminService.parseModelProfileInput = parseModelProfileInput;
 ModularLlmAdminService.parsePipelineTestInput = parsePipelineTestInput;
 ModularLlmAdminService.safeJsonSnapshot = safeJsonSnapshot;
+ModularLlmAdminService.extractFailedStage = extractFailedStage;
 
 module.exports = ModularLlmAdminService;

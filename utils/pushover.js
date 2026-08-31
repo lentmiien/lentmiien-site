@@ -1,6 +1,7 @@
 const axios = require('axios');
 
 const PUSHOVER_API_URL = 'https://api.pushover.net/1/messages.json';
+const PUSHOVER_RECEIPT_API_URL = 'https://api.pushover.net/1/receipts';
 const PUSHOVER_TIMEOUT_MS = 10_000;
 
 const PUSHOVER_PRIORITIES = Object.freeze({
@@ -84,11 +85,41 @@ async function sendPushoverNotification({
   if (!response.data || response.data.status !== 1) {
     throw new Error('Pushover rejected the notification');
   }
+  if (priority === PUSHOVER_PRIORITIES.EMERGENCY
+    && !/^[A-Za-z0-9]{30}$/.test(String(response.data.receipt || ''))) {
+    throw new Error('Pushover did not return a valid emergency receipt');
+  }
+
+  return response.data;
+}
+
+async function cancelPushoverEmergency(receipt) {
+  const normalizedReceipt = typeof receipt === 'string' ? receipt.trim() : '';
+  if (!/^[A-Za-z0-9]{30}$/.test(normalizedReceipt)) {
+    throw new TypeError('Pushover emergency receipt must be a 30-character identifier');
+  }
+
+  const token = getRequiredCredential('PUSHOVER_APP_TOKEN');
+  const response = await axios.post(
+    `${PUSHOVER_RECEIPT_API_URL}/${encodeURIComponent(normalizedReceipt)}/cancel.json`,
+    new URLSearchParams({ token }),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      timeout: PUSHOVER_TIMEOUT_MS,
+    }
+  );
+
+  if (!response.data || response.data.status !== 1) {
+    throw new Error('Pushover rejected the emergency cancellation');
+  }
 
   return response.data;
 }
 
 module.exports = {
   PUSHOVER_PRIORITIES,
+  cancelPushoverEmergency,
   sendPushoverNotification,
 };

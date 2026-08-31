@@ -1,4 +1,5 @@
 const MessageService = require('../services/messageService');
+const mongoose = require('mongoose');
 const KnowledgeService = require('../services/knowledgeService');
 const ConversationService = require('../services/conversationService');
 const BatchService = require('../services/batchService');
@@ -46,16 +47,47 @@ async function runBatchTrigger() {
   }
 }
 
+async function runTerminalBatchCleanup() {
+  try {
+    const result = await performanceMetrics.trackTask(
+      'terminalBatchCleanupRetry.run',
+      () => batchService.retryTerminalPromptCleanup(),
+    );
+    if (result?.cleaned > 0) {
+      logger.notice('Retried terminal batch placeholder cleanup', {
+        category: 'batch',
+        metadata: result,
+      });
+    }
+  } catch (error) {
+    logger.error('Terminal batch placeholder cleanup retry failed', {
+      category: 'batch',
+      metadata: { error: error?.message || String(error) },
+    });
+  }
+}
+
 function scheduleDailyBatchTrigger() {
   const lastRunKey = { value: null };
+  let running = false;
 
   const interval = setInterval(async () => {
-    const now = new Date();
-    if (!shouldRun(now, lastRunKey)) return;
-    await runBatchTrigger();
+    if (mongoose.connection.readyState !== 1) return;
+    if (running) return;
+    running = true;
+    try {
+      const runDailyTrigger = shouldRun(new Date(), lastRunKey);
+      await runTerminalBatchCleanup();
+      if (runDailyTrigger) {
+        await runBatchTrigger();
+      }
+    } finally {
+      running = false;
+    }
   }, 60 * 1000);
 
   interval.unref?.();
 }
 
 module.exports = scheduleDailyBatchTrigger;
+module.exports.runTerminalBatchCleanup = runTerminalBatchCleanup;

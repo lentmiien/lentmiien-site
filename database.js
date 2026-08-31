@@ -1,25 +1,9 @@
 const mongoose = require('mongoose');
-const logger = require('./utils/logger');
 
-// mongoose.set('useFindAndModify', false);
-
-// Set up default mongoose connection
-const mongoDB_url = process.env.MONGOOSE_URL;
-// mongoose.connect(mongoDB_url, { useNewUrlParser: true, useUnifiedTopology: true });
-
-mongoose.connect(mongoDB_url).then(() => {
-  logger.notice('Database connected', { category: 'database' });
-}).catch((err) => {
-  logger.error('MongoDB connection error', { category: 'database', metadata: { error: err } });
-});
-
-// Get the default connection
-const db = mongoose.connection;
-
-// Bind connection to error event (to get notification of connection errors)
-db.on('error', (err) => {
-  logger.error('MongoDB connection error', { category: 'database', metadata: { error: err } });
-});
+// Database access is unavailable until the application lifecycle has established a
+// connection. Failing immediately prevents buffered operations from piling up while
+// the application is deliberately in maintenance mode.
+mongoose.set('bufferCommands', false);
 
 // User
 const UseraccountModel = require('./models/useraccount');
@@ -202,6 +186,7 @@ const CodexWorkspaceLock = require('./models/codex_workspace_lock');
 const CodexTokenPrice = require('./models/codex_token_price');
 const CodexRequestProfile = require('./models/codex_request_profile');
 const CodexLogReviewRun = require('./models/codex_log_review_run');
+const DatabaseAvailabilityIncident = require('./models/database_availability_incident');
 
 // Export models
 module.exports = {
@@ -347,4 +332,5 @@ module.exports = {
   CodexTokenPrice,
   CodexRequestProfile,
   CodexLogReviewRun,
+  DatabaseAvailabilityIncident,
 };

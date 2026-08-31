@@ -33,6 +33,7 @@ const Chat5 = new mongoose.Schema({
 
   timestamp: { type: Date, default: Date.now },
   hideFromBot: { type: Boolean, default: false },
+  embeddingRequested: { type: Boolean, default: undefined },
   embeddingStatus: {
     type: String,
     enum: ['pending', 'completed', 'failed', 'delete_pending', 'disabled'],
@@ -45,14 +46,29 @@ Chat5.pre('validate', function markTextEmbeddingPending() {
   const text = this.contentType === 'text' && typeof this.content?.text === 'string'
     ? this.content.text.trim()
     : '';
+  const sourceChanged = this.isNew
+    || this.isModified('contentType')
+    || this.isModified('content.text');
+  const requestChanged = this.isModified('embeddingRequested');
+
+  if (this.embeddingRequested === false) {
+    if (sourceChanged || requestChanged) {
+      const mayHaveStoredEmbedding = !this.isNew
+        && ![undefined, 'disabled'].includes(this.embeddingStatus);
+      this.embeddingStatus = mayHaveStoredEmbedding ? 'delete_pending' : 'disabled';
+      this.embeddingContentHash = null;
+    }
+    return;
+  }
+
   if (!text) {
-    if (this.isNew || this.isModified('contentType') || this.isModified('content.text')) {
+    if (sourceChanged || requestChanged) {
       this.embeddingStatus = this.isNew ? 'disabled' : 'delete_pending';
       this.embeddingContentHash = null;
     }
     return;
   }
-  if (this.isNew || this.isModified('contentType') || this.isModified('content.text')) {
+  if (sourceChanged || requestChanged) {
     this.embeddingStatus = 'pending';
     this.embeddingContentHash = null;
   }

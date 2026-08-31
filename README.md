@@ -114,6 +114,9 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `PORT` | Express listen port (defaults to 8080). |
 | `SESSION_SECRET` | Required session signing secret. |
 | `MONGOOSE_URL` | MongoDB connection string. |
+| `DATABASE_CONNECT_TIMEOUT_MS`, `DATABASE_RETRY_INITIAL_MS`, `DATABASE_RETRY_MAX_MS` | MongoDB startup attempt deadline and capped exponential retry delays (defaults: 10 seconds, 2 seconds, and 30 seconds). |
+| `DATABASE_OUTAGE_ALERT_AFTER_MS`, `DATABASE_OUTAGE_NOTIFICATION_RETRY_MS`, `DATABASE_OUTAGE_NOTIFICATION_MAX_ATTEMPTS` | Grace period and bounded delivery retry policy for the emergency Pushover alert (defaults: 30 seconds, five minutes, three attempts). |
+| `DATABASE_INCIDENT_FLUSH_RETRY_MS`, `DATABASE_INCIDENT_RETENTION_DAYS` | Retry cadence for importing the local outage spool and MongoDB TTL retention for recovered incident records (defaults: one minute and 90 days). |
 | `OPENAI_API_KEY` | Primary OpenAI key for chat, OCR, and product summaries. |
 | `OPENAI_API_KEY_PRIVATE` | Elevated OpenAI key for Sora/video and image pipelines. |
 | `OPENAI_ADMIN_KEY` | Usage-scoped key used by `setup.js` to archive daily usage stats. |
@@ -136,6 +139,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `DROPBOX_API_KEY`, `DROPBOX_CLIENT_ID`, `DROPBOX_CLIENT_SECRET`, `DROPBOX_REDIRECT_URI` | Dropbox credentials for image backups. |
 | `MAILGUN_API_KEY` | Optional Mailgun key for notifications in `MessageService`. |
 | `MAILGUN_DOMAIN` | Mailgun domain used for startup/crash alerts. |
+| `PUSHOVER_APP_TOKEN`, `PUSHOVER_USER_KEY` | Pushover credentials used for database emergency/recovery alerts and reminder delivery. |
 | `LOG_LEVEL` | Minimum JSON log level (`debug`, `notice`, `warning`, or `error`; defaults to `debug`). |
 | `LOG_RETENTION_DAYS`, `LOG_PRUNE_INTERVAL_MS` | Structured-log retention window and independent pruning cadence (defaults to seven days and once daily). |
 | `STARTUP_ALERT_EMAIL` | Comma-separated list of recipients for startup diagnostics emails (Mailgun). |
@@ -147,9 +151,11 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `PERFORMANCE_METRICS_ENABLED` | Set to `false` to disable request/task performance snapshots. |
 | `PERFORMANCE_METRICS_INTERVAL_MS`, `PERFORMANCE_SLOW_REQUEST_THRESHOLD_MS`, `PERFORMANCE_EVENT_LOOP_RESOLUTION_MS` | Collector interval, slow-request threshold, and event-loop sampling resolution. |
 | `PERFORMANCE_SNAPSHOT_RETENTION_DAYS`, `PERFORMANCE_SLOW_REQUEST_RETENTION_DAYS` | Mongo TTL retention for performance snapshots and slow request records. |
+| `HTML_SAMPLES_CACHE_TTL_MS` | TTL for the shared public HTML-samples navigation query (defaults to five minutes). |
 | `DB_USAGE_ALERT_WEBHOOK`, `DB_USAGE_ALERT_INTERVAL_MINUTES` | Optional webhook and polling interval for database usage alerts. |
 | `SORA_STATUS_POLL_MS`, `SORA_STATUS_POLL_BATCH` | Background polling interval and batch size for pending Sora videos. |
 | `COMFY_API_BASE`, `COMFY_API_KEY` | ComfyUI REST endpoint + key for `/image_gen`. |
+| `COMFY_REQUEST_TIMEOUT_MS`, `COMFY_ACTION_TIMEOUT_MS` | ComfyUI Gateway deadlines for short reads and cold-start-capable mutations. |
 | `COMFY_STREAM_HEADER_TIMEOUT_MS`, `COMFY_STREAM_IDLE_TIMEOUT_MS` | Separate response-header and idle-body deadlines for streamed ComfyUI previews. |
 | `ASR_API_BASE`, `TTS_API_BASE` | Local ASR and TTS service endpoints used by `/asr`, `/ocr-tts`, and the audio workflow. |
 | `ASR_CRISPERWHISPER_TIMEOUT_MS` | CrisperWhisper request timeout; defaults to `2800000` ms to cover gateway queueing and inference. |
@@ -199,12 +205,12 @@ The Ollama model choices shown by `/codex` are stored in the `app_settings` coll
 
 `setup.js` now runs a structured diagnostics pipeline before `npm start` completes:
 
-- **Preflight** validates required env vars, disk space, and Mongo connectivity (configurable via `STARTUP_*` vars).
+- **Preflight** validates required env vars, disk space, and Mongo connectivity (configurable via `STARTUP_*` vars). A transient Mongo connectivity failure skips database maintenance and is deferred to the application lifecycle; missing non-database configuration and low disk remain fatal.
 - **Section runners** wrap each maintenance task (temp cleanup, PDF pruning, DB hygiene, Dropbox sync) with scoped logging, retries for network operations, and a final JSON summary logged under `startup:summary`.
 - **Alerting** optionally sends Slack webhook and/or Mailgun emails when diagnostics fail. Configure `STARTUP_SLACK_WEBHOOK_URL`, `STARTUP_ALERT_EMAIL`, `STARTUP_ALERT_FROM`, and `MAILGUN_DOMAIN` to receive notifications.
 - **Interpretation guide** lives in `documentation/startup-diagnostics.md` with troubleshooting steps and log categories.
 
-The summary object contains section-level timings and statuses (`ok`, `warning`, `failed`, `skipped`). Any critical failure stops the start command and emits an alert so you can fix the underlying issue before the server boots.
+The summary object contains section-level timings and statuses (`ok`, `warning`, `failed`, `skipped`). Critical configuration or disk failures stop startup. When only MongoDB is unavailable, the HTTP process exposes `/apphealth` as `503`, rejects other traffic, retries with capped backoff, and starts database workers exactly once after recovery. A dedicated outage record is kept locally during the failure, imported into MongoDB after recovery, and an emergency Pushover alert is cancelled when service resumes.
 
 ## npm Scripts
 

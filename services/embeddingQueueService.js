@@ -155,6 +155,7 @@ class EmbeddingQueueService {
     now = () => new Date(),
     setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout,
+    isDatabaseReady = null,
   } = {}) {
     this.jobModel = jobModel;
     this.chatModel = chatModel;
@@ -177,6 +178,12 @@ class EmbeddingQueueService {
     this.now = now;
     this.setTimeoutFn = setTimeoutFn;
     this.clearTimeoutFn = clearTimeoutFn;
+    this.isDatabaseReady = typeof isDatabaseReady === 'function'
+      ? isDatabaseReady
+      : () => {
+          const readyState = this.jobModel?.db?.readyState;
+          return readyState === undefined || readyState === 1;
+        };
     this.getReservation = getReservation || (() => this.fetchReservation());
     this.sourceResolver = sourceResolver || ((job) => this.resolveStoredSource(job));
     this.sourceStateUpdater = sourceStateUpdater || ((job, state) => (
@@ -540,6 +547,9 @@ class EmbeddingQueueService {
   }
 
   async drainQueue() {
+    if (!this.isDatabaseReady()) {
+      return { processed: 0, skipped: 'database_unavailable' };
+    }
     await this.reconcilePendingSourcesIfDue();
     let processed = 0;
     let deleteProcessed = 0;
@@ -620,6 +630,14 @@ class EmbeddingQueueService {
       'source.documentId': String(messageId),
       'source.contentType': 'chat_message_text',
     };
+    if (this.jobModel && typeof this.jobModel.findOne === 'function') {
+      const activeJob = await resolveQuery(this.jobModel.findOne({
+        ...filter,
+        mode: { $in: ['default', 'high_quality'] },
+        status: { $in: ['pending', 'processing'] },
+      }, { source: 1 }), { lean: true });
+      if (activeJob?.source) return activeJob.source;
+    }
     for (const Model of [this.vectorModel, this.highQualityVectorModel]) {
       if (!Model || typeof Model.findOne !== 'function') continue;
       const vector = await resolveQuery(Model.findOne(filter, { source: 1 }), { lean: true });
@@ -643,6 +661,13 @@ class EmbeddingQueueService {
     for (const message of legacyChats || []) {
       const messageId = String(message._id || '');
       if (!messageId) continue;
+      if (message.embeddingRequested === false) {
+        await this.chatModel.updateOne(
+          { _id: messageId, embeddingStatus: { $exists: false } },
+          { $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null } },
+        );
+        continue;
+      }
       const text = this.normalizeSourceText(message.content?.text);
       if (!text) {
         await this.chatModel.updateOne(
@@ -693,6 +718,13 @@ class EmbeddingQueueService {
     for (const message of pendingChats || []) {
       const messageId = String(message._id || '');
       if (!messageId) continue;
+      if (message.embeddingRequested === false) {
+        await this.chatModel.updateOne(
+          { _id: messageId, embeddingStatus: 'pending' },
+          { $set: { embeddingStatus: 'delete_pending', embeddingContentHash: null } },
+        );
+        continue;
+      }
       const text = this.normalizeSourceText(message.content?.text);
       if (!text) {
         await this.chatModel.updateOne(
@@ -733,8 +765,9 @@ class EmbeddingQueueService {
         markedDisabled += 1;
         continue;
       }
-      await this.enqueueDelete(source);
-      queued += 1;
+      await this.enqueueDelete(source, { mode: 'default' });
+      await this.enqueueDelete(source, { mode: 'high_quality' });
+      queued += 2;
     }
 
     const pendingInbox = await this.findLimited(this.messageInboxModel, {
@@ -879,7 +912,12 @@ class EmbeddingQueueService {
         ? message.content.text
         : '';
       const text = this.normalizeSourceText(rawText);
-      return { exists: true, enabled: Boolean(text), text, rawText };
+      return {
+        exists: true,
+        enabled: message.embeddingRequested !== false && Boolean(text),
+        text,
+        rawText,
+      };
     }
     if (source.collectionName === MESSAGE_INBOX_COLLECTION) {
       const message = await resolveQuery(this.messageInboxModel.findById(source.documentId), { lean: true });
@@ -914,11 +952,13 @@ class EmbeddingQueueService {
       if (state.status === 'completed') {
         filter.contentType = 'text';
         filter['content.text'] = state.rawText ?? state.text;
+        filter.embeddingRequested = { $ne: false };
         fields.embeddingContentHash = job.desiredHash;
       }
       if (state.status === 'pending' && state.embeddingRemoved) {
         filter.contentType = 'text';
         filter['content.text'] = state.rawText ?? state.text;
+        filter.embeddingRequested = { $ne: false };
         fields.embeddingContentHash = null;
       }
       if (state.status === 'disabled') {
@@ -931,6 +971,7 @@ class EmbeddingQueueService {
         } else {
           filter.contentType = 'text';
           filter['content.text'] = state.rawText ?? state.text;
+          filter.embeddingRequested = { $ne: false };
         }
       }
       return this.chatModel.updateOne(filter, { $set: fields });

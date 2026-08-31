@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
+const mongoose = require('mongoose');
 const { SoraVideo } = require('../database');
 const { generateVideo, checkVideoProgress } = require('../utils/OpenAI_API');
 const { getSoraLifecycle, isSoraGenerationDisabled } = require('../utils/soraLifecycle');
@@ -146,6 +147,9 @@ async function refreshVideoStatus(videoDoc) {
 }
 
 async function pollPendingVideosOnce() {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
   if (pollInFlight) {
     return;
   }

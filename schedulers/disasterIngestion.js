@@ -15,6 +15,7 @@ function scheduleDisasterIngestion() {
   const intervalMs = getIntervalMs();
 
   const tick = async (reason = 'scheduled') => {
+    if (mongoose.connection.readyState !== 1) return;
     try {
       await performanceMetrics.trackTask('disasterIngestion.runOnce', () => (
         disasterIngestionService.runOnce({ reason })

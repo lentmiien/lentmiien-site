@@ -29,6 +29,7 @@ jest.mock('../../utils/groq', () => ({ groq: jest.fn(), groq_vision: jest.fn() }
 jest.mock('../../utils/google', () => ({ googleAI: jest.fn() }));
 jest.mock('../../utils/lmstudio', () => ({ chat: jest.fn() }));
 jest.mock('../../utils/OpenAI_API', () => ({
+  chat: jest.fn(),
   fetchCompleted: jest.fn(),
   retrieveResponse: jest.fn(),
   convertResponseBody: jest.fn(),
@@ -107,6 +108,7 @@ describe('MessageService', () => {
     ollama.retrieveChatJob.mockReset();
     ollama.convertResponseBody.mockReset();
     ai.fetchCompleted.mockReset();
+    ai.chat.mockReset();
     ai.retrieveResponse.mockReset();
     ai.convertResponseBody.mockReset();
     chatGPT.mockReset();
@@ -226,6 +228,58 @@ describe('MessageService', () => {
     expect(queue.enqueue).not.toHaveBeenCalled();
   });
 
+  test('does not queue an embedding for an explicitly excluded response placeholder', async () => {
+    const queue = {
+      enqueue: jest.fn(),
+      enqueueDelete: jest.fn(),
+    };
+    service.embeddingQueueService = queue;
+
+    await service.syncTextEmbedding({
+      message: {
+        _id: { toString: () => 'response-placeholder' },
+        contentType: 'text',
+        content: { text: 'Pending response' },
+        embeddingRequested: false,
+        embeddingStatus: 'disabled',
+      },
+      conversationId: 'conversation-placeholder',
+    });
+
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(queue.enqueueDelete).not.toHaveBeenCalled();
+  });
+
+  test('disabling an embedded chat message removes default and high-quality vectors', async () => {
+    const queue = {
+      enqueue: jest.fn(),
+      enqueueDelete: jest.fn().mockResolvedValue({ status: 'pending' }),
+    };
+    service.embeddingQueueService = queue;
+
+    await service.syncTextEmbedding({
+      message: {
+        _id: { toString: () => 'disabled-embedded-message' },
+        contentType: 'text',
+        content: { text: 'Previously embedded text' },
+        embeddingRequested: false,
+        embeddingStatus: 'delete_pending',
+      },
+      conversationId: 'conversation-disabled-embedding',
+    });
+
+    const metadata = {
+      collectionName: 'chat_message',
+      documentId: 'disabled-embedded-message',
+      contentType: 'chat_message_text',
+      parentCollection: 'conversation',
+      parentId: 'conversation-disabled-embedding',
+    };
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(queue.enqueueDelete).toHaveBeenNthCalledWith(1, metadata, { mode: 'default' });
+    expect(queue.enqueueDelete).toHaveBeenNthCalledWith(2, metadata, { mode: 'high_quality' });
+  });
+
   test('queues manual high-quality chat embedding without using the foreground API', async () => {
     const queue = {
       enqueue: jest.fn().mockResolvedValue({ status: 'pending' }),
@@ -289,6 +343,38 @@ describe('MessageService', () => {
       metadata,
       { mode: 'high_quality', force: true, verifySourceState: false },
     );
+    expect(queue.enqueueDelete.mock.invocationCallOrder[1])
+      .toBeLessThan(Chat5Model.deleteMany.mock.invocationCallOrder[0]);
+  });
+
+  test('deletes vectors using an active queued source when the conversation reference is gone', async () => {
+    const storedSource = {
+      collectionName: 'chat_message',
+      documentId: 'unreferenced-chat-message',
+      contentType: 'chat_message_text',
+      parentCollection: 'conversation',
+      parentId: 'conversation-from-queue',
+    };
+    const queue = {
+      findStoredChatSource: jest.fn().mockResolvedValue(storedSource),
+      enqueueDelete: jest.fn().mockResolvedValue({ status: 'pending' }),
+    };
+    service.embeddingQueueService = queue;
+    Chat5Model.deleteMany.mockResolvedValue({ deletedCount: 1 });
+
+    await expect(service.deleteMessages(['unreferenced-chat-message'])).resolves.toBe(1);
+
+    expect(queue.findStoredChatSource).toHaveBeenCalledWith('unreferenced-chat-message');
+    expect(queue.enqueueDelete).toHaveBeenNthCalledWith(1, storedSource, {
+      mode: 'default',
+      force: true,
+      verifySourceState: false,
+    });
+    expect(queue.enqueueDelete).toHaveBeenNthCalledWith(2, storedSource, {
+      mode: 'high_quality',
+      force: true,
+      verifySourceState: false,
+    });
     expect(queue.enqueueDelete.mock.invocationCallOrder[1])
       .toBeLessThan(Chat5Model.deleteMany.mock.invocationCallOrder[0]);
   });
@@ -399,12 +485,46 @@ describe('MessageService', () => {
     expect(Chat5Model).toHaveBeenCalledWith(expect.objectContaining({
       contentType: 'text',
       hideFromBot: true,
+      embeddingRequested: false,
       content: expect.objectContaining({ text: 'Pending response' }),
     }));
     expect(result).toMatchObject({
       response_id: '02d58123-b2da-4412-8df5-1fbb47bb07cd',
       response_provider: 'Ollama',
       msg: expect.objectContaining({ hideFromBot: true }),
+    });
+  });
+
+  test('generateAIMessage saves an explicitly non-embeddable OpenAI placeholder', async () => {
+    AIModelCards.find.mockResolvedValue([{
+      provider: 'OpenAI',
+      api_model: 'gpt-test',
+      context_type: 'system',
+      in_modalities: ['text'],
+    }]);
+    Chat5Model.find.mockResolvedValue([]);
+    ai.chat.mockResolvedValue('resp-openai');
+    const conversation = {
+      _id: { toString: () => 'conv-openai' },
+      category: 'chat',
+      tags: ['demo'],
+      members: ['Lennart'],
+      metadata: { model: 'gpt-test', maxMessages: 10 },
+      messages: [],
+    };
+
+    const result = await service.generateAIMessage({ conversation });
+
+    expect(ai.chat).toHaveBeenCalled();
+    expect(Chat5Model).toHaveBeenCalledWith(expect.objectContaining({
+      contentType: 'text',
+      hideFromBot: true,
+      embeddingRequested: false,
+      content: expect.objectContaining({ text: 'Pending response' }),
+    }));
+    expect(result).toMatchObject({
+      response_id: 'resp-openai',
+      msg: expect.objectContaining({ embeddingRequested: false }),
     });
   });
 
