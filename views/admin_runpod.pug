@@ -194,6 +194,7 @@ block content
               label.runpod-check.runpod-check--warning
                 input(type='checkbox', name='publicAccessAcknowledged', value='acknowledged', required)
                 span I understand that the Ollama proxy URL has no application-level authentication.
+            p.runpod-form-help Large models need storage beyond their published download size. Allow at least 10 GB of headroom; qwen3.8:27b is about 18 GB, so use 30 GB or more of persistent storage.
             .runpod-estimate(role='status' aria-live='polite')
               span Estimated GPU rate
               strong(data-gpu-estimate) Choose a GPU

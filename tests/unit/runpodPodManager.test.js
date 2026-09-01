@@ -548,4 +548,75 @@ describe('RunpodPodManager', () => {
       '/api/tags'
     )).rejects.toEqual(expect.objectContaining({ code: 'OLLAMA_URL_INVALID' }));
   });
+
+  test('streams Ollama model-pull progress so large downloads do not wait silently behind the proxy', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response([
+      JSON.stringify({ status: 'pulling manifest' }),
+      JSON.stringify({ status: 'downloading', digest: 'sha256:test', total: 18_000_000_000, completed: 1 }),
+      JSON.stringify({ status: 'success' }),
+      '',
+    ].join('\n'), {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson' },
+    }));
+    const fixture = createFixture();
+    fixture.manager.fetch = fetchImpl;
+
+    await expect(fixture.manager.pullOllamaModel(
+      publicOllamaUrl('pod-123'),
+      'qwen3.8:27b'
+    )).resolves.toBe(true);
+
+    const [url, options] = fetchImpl.mock.calls[0];
+    expect(String(url)).toBe(`${publicOllamaUrl('pod-123')}/api/pull`);
+    expect(JSON.parse(options.body)).toEqual({ model: 'qwen3.8:27b', stream: true });
+  });
+
+  test('resumes a model pull after a transient Runpod proxy timeout', async () => {
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce(new Response('A timeout occurred', {
+        status: 524,
+        headers: { 'Content-Type': 'text/plain' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ models: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(`${JSON.stringify({ status: 'success' })}\n`, {
+        status: 200,
+        headers: { 'Content-Type': 'application/x-ndjson' },
+      }));
+    const fixture = createFixture();
+    fixture.manager.fetch = fetchImpl;
+
+    await expect(fixture.manager.pullOllamaModel(
+      publicOllamaUrl('pod-123'),
+      'qwen3.8:27b'
+    )).resolves.toBe(true);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(new URL(fetchImpl.mock.calls[0][0]).pathname).toBe('/api/pull');
+    expect(new URL(fetchImpl.mock.calls[1][0]).pathname).toBe('/api/tags');
+    expect(new URL(fetchImpl.mock.calls[2][0]).pathname).toBe('/api/pull');
+  });
+
+  test('preserves an actionable model-not-found error and the actual Ollama HTTP status', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: 'pull model manifest: file does not exist',
+    }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const fixture = createFixture();
+    fixture.manager.fetch = fetchImpl;
+
+    await expect(fixture.manager.pullOllamaModel(
+      publicOllamaUrl('pod-123'),
+      'missing:27b'
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'OLLAMA_MODEL_NOT_FOUND',
+      providerStatus: 404,
+    }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

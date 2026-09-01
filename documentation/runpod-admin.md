@@ -100,7 +100,8 @@ variables:
 - A mandatory 60-minute auto-stop deadline and a maximum selectable runtime of
   24 hours.
 - Three Pod creation attempts per hour and 30 Runpod control requests per minute.
-- Ten-minute provisioning and model-pull deadlines.
+- Ten-minute provisioning and thirty-minute streamed model-pull deadlines. Large
+  pulls retain Ollama's partial blobs and retry transient Runpod proxy timeouts.
 
 The server validates fresh provider availability and price immediately before
 creation. If Runpod returns a total rate above the administrator's confirmation

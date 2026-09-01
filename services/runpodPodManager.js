@@ -41,9 +41,19 @@ const DEFAULT_MAX_HOURLY_COST_USD = 10;
 const DEFAULT_AUTO_STOP_MINUTES = 60;
 const DEFAULT_MAX_RUNTIME_MINUTES = 24 * 60;
 const DEFAULT_PROVISION_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_OLLAMA_PULL_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_OLLAMA_PULL_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const OLLAMA_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
+const OLLAMA_ERROR_RESPONSE_LIMIT_BYTES = 64 * 1024;
+const OLLAMA_PULL_STREAM_LIMIT_BYTES = 64 * 1024 * 1024;
+const OLLAMA_PULL_LINE_LIMIT_BYTES = 64 * 1024;
+const OLLAMA_PULL_MAX_ATTEMPTS = 4;
+const OLLAMA_PULL_RETRY_CODES = new Set([
+  'OLLAMA_NETWORK_ERROR',
+  'OLLAMA_PROXY_TIMEOUT',
+  'OLLAMA_PULL_INCOMPLETE',
+  'OLLAMA_TIMEOUT',
+]);
 const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
 const DEFAULT_STORAGE_RATES = Object.freeze({
   containerRunningUsdPerGbMonth: 0.10,
@@ -129,6 +139,14 @@ function finiteNumber(value, fallback = null) {
   if (value === null || value === undefined || value === '') return fallback;
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function providerStatusForError(error) {
+  if (Number.isSafeInteger(error?.providerStatus)) return error.providerStatus;
+  if (error instanceof RunpodApiError && Number.isSafeInteger(error?.status)) {
+    return error.status;
+  }
+  return null;
 }
 
 function boundedNumber(value, fallback, min, max) {
@@ -638,6 +656,170 @@ async function readLimitedText(response, limitBytes = OLLAMA_RESPONSE_LIMIT_BYTE
   return text + decoder.decode();
 }
 
+function classifyOllamaFailure(pathname, providerStatus, responseText = '') {
+  const detail = safeString(responseText, 2000).toLowerCase();
+  if (
+    providerStatus === 524
+    || providerStatus === 504
+    || providerStatus === 408
+    || detail.includes('a timeout occurred')
+  ) {
+    return 'OLLAMA_PROXY_TIMEOUT';
+  }
+  if (
+    detail.includes('no space left on device')
+    || detail.includes('insufficient disk')
+    || detail.includes('not enough disk')
+    || providerStatus === 507
+  ) {
+    return 'OLLAMA_STORAGE_FULL';
+  }
+  if (
+    pathname === '/api/pull'
+    && (
+      providerStatus === 404
+      || /manifest[^.]{0,80}(?:not found|does not exist)/u.test(detail)
+      || /model[^.]{0,80}not found/u.test(detail)
+    )
+  ) {
+    return 'OLLAMA_MODEL_NOT_FOUND';
+  }
+  if (
+    detail.includes('newer version of ollama')
+    || detail.includes('unsupported model format')
+    || detail.includes('unsupported architecture')
+  ) {
+    return 'OLLAMA_VERSION_UNSUPPORTED';
+  }
+  if (providerStatus === 429) return 'OLLAMA_RATE_LIMITED';
+  return 'OLLAMA_HTTP_ERROR';
+}
+
+function ollamaFailureMessage(code) {
+  const messages = {
+    OLLAMA_MODEL_NOT_FOUND: 'The requested model was not found in the Ollama registry.',
+    OLLAMA_PROXY_TIMEOUT: 'The Runpod proxy timed out while Ollama was working.',
+    OLLAMA_RATE_LIMITED: 'Ollama temporarily rejected the request because of rate limiting.',
+    OLLAMA_STORAGE_FULL: 'The Ollama model disk does not have enough free space.',
+    OLLAMA_VERSION_UNSUPPORTED: 'The Ollama runtime does not support this model.',
+  };
+  return messages[code] || 'The Ollama service returned an error.';
+}
+
+async function ollamaHttpError(response, pathname) {
+  let responseText = '';
+  try {
+    responseText = await readLimitedText(response, OLLAMA_ERROR_RESPONSE_LIMIT_BYTES);
+  } catch (_) {
+    await response.body?.cancel?.().catch?.(() => {});
+  }
+  const providerStatus = Number.isSafeInteger(response?.status) ? response.status : null;
+  const code = classifyOllamaFailure(pathname, providerStatus, responseText);
+  return new RunpodManagementError(ollamaFailureMessage(code), {
+    code,
+    status: code === 'OLLAMA_PROXY_TIMEOUT' ? 504 : 502,
+    providerStatus,
+  });
+}
+
+function parseOllamaPullLine(line, state) {
+  const normalized = line.trim();
+  if (!normalized) return;
+  if (Buffer.byteLength(normalized, 'utf8') > OLLAMA_PULL_LINE_LIMIT_BYTES) {
+    throw new RunpodManagementError('Ollama returned an oversized model-pull update.', {
+      code: 'OLLAMA_RESPONSE_TOO_LARGE', status: 502,
+    });
+  }
+  let entry;
+  try {
+    entry = JSON.parse(normalized);
+  } catch (_) {
+    throw new RunpodManagementError('Ollama returned invalid model-pull data.', {
+      code: 'OLLAMA_INVALID_RESPONSE', status: 502,
+    });
+  }
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new RunpodManagementError('Ollama returned invalid model-pull data.', {
+      code: 'OLLAMA_INVALID_RESPONSE', status: 502,
+    });
+  }
+  if (entry.error) {
+    const code = classifyOllamaFailure('/api/pull', null, entry.error);
+    const normalizedCode = code === 'OLLAMA_HTTP_ERROR' ? 'OLLAMA_PULL_FAILED' : code;
+    throw new RunpodManagementError(ollamaFailureMessage(normalizedCode), {
+      code: normalizedCode,
+      status: 502,
+    });
+  }
+  const status = safeString(entry.status, 160).toLowerCase();
+  if (!status) {
+    throw new RunpodManagementError('Ollama returned invalid model-pull data.', {
+      code: 'OLLAMA_INVALID_RESPONSE', status: 502,
+    });
+  }
+  state.records += 1;
+  state.lastStatus = status;
+  if (status === 'success') state.success = true;
+}
+
+async function readOllamaPullStream(response) {
+  const state = { success: false, records: 0, lastStatus: '' };
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > OLLAMA_PULL_STREAM_LIMIT_BYTES) {
+      throw new RunpodManagementError('Ollama returned more model-pull data than expected.', {
+        code: 'OLLAMA_RESPONSE_TOO_LARGE', status: 502,
+      });
+    }
+    text.split(/\r?\n/u).forEach((line) => parseOllamaPullLine(line, state));
+  } else {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let totalBytes = 0;
+    let buffer = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > OLLAMA_PULL_STREAM_LIMIT_BYTES) {
+          throw new RunpodManagementError('Ollama returned more model-pull data than expected.', {
+            code: 'OLLAMA_RESPONSE_TOO_LARGE', status: 502,
+          });
+        }
+        buffer += decoder.decode(value, { stream: true });
+        let newline = buffer.indexOf('\n');
+        while (newline !== -1) {
+          parseOllamaPullLine(buffer.slice(0, newline), state);
+          buffer = buffer.slice(newline + 1);
+          newline = buffer.indexOf('\n');
+        }
+        if (Buffer.byteLength(buffer, 'utf8') > OLLAMA_PULL_LINE_LIMIT_BYTES) {
+          throw new RunpodManagementError('Ollama returned an oversized model-pull update.', {
+            code: 'OLLAMA_RESPONSE_TOO_LARGE', status: 502,
+          });
+        }
+      }
+      buffer += decoder.decode();
+      parseOllamaPullLine(buffer, state);
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error;
+    }
+  }
+  if (!state.records) {
+    throw new RunpodManagementError('Ollama returned no model-pull updates.', {
+      code: 'OLLAMA_INVALID_RESPONSE', status: 502,
+    });
+  }
+  if (!state.success) {
+    throw new RunpodManagementError('The Ollama model-pull stream ended before completion.', {
+      code: 'OLLAMA_PULL_INCOMPLETE', status: 502,
+    });
+  }
+  return state;
+}
+
 function validatedOllamaBaseUrl(value) {
   let base;
   try {
@@ -770,7 +952,7 @@ class RunpodPodManager {
       metadata: {
         action,
         errorCode: safeString(error?.code, 80) || 'RUNPOD_MANAGEMENT_ERROR',
-        providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+        providerStatus: providerStatusForError(error),
       },
     });
   }
@@ -910,7 +1092,7 @@ class RunpodPodManager {
         templateRecordId: localTemplate?._id || null,
         action: 'template_sync',
         outcome: 'failed',
-        providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+        providerStatus: providerStatusForError(error),
         errorCode: safeString(error?.code, 80) || 'RUNPOD_TEMPLATE_SYNC_FAILED',
         actor,
       });
@@ -1132,9 +1314,7 @@ class RunpodPodManager {
               metadata: {
                 action: 'create_cleanup',
                 errorCode: safeString(cleanupError?.code, 80) || 'RUNPOD_CLEANUP_FAILED',
-                providerStatus: Number.isSafeInteger(cleanupError?.status)
-                  ? cleanupError.status
-                  : null,
+                providerStatus: providerStatusForError(cleanupError),
               },
             });
           }
@@ -1144,7 +1324,7 @@ class RunpodPodManager {
         resourceType: 'pod',
         action: 'create',
         outcome: 'failed',
-        providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+        providerStatus: providerStatusForError(error),
         errorCode: safeString(error?.code, 80) || 'RUNPOD_POD_CREATE_FAILED',
         actor,
       });
@@ -1262,7 +1442,7 @@ class RunpodPodManager {
         podRecordId: pod._id,
         action: 'setup',
         outcome: 'failed',
-        providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+        providerStatus: providerStatusForError(error),
         errorCode,
         actor,
       });
@@ -1293,6 +1473,7 @@ class RunpodPodManager {
     method = 'GET',
     body,
     timeoutMs = 15_000,
+    responseReader = null,
   } = {}) {
     if (typeof this.fetch !== 'function') {
       throw new RunpodManagementError('Ollama connectivity is not configured.', {
@@ -1320,13 +1501,14 @@ class RunpodPodManager {
         signal: controller.signal,
       });
       if (!response.ok) {
-        await response.body?.cancel?.().catch?.(() => {});
-        throw new RunpodManagementError('The Ollama service is not ready.', {
-          code: 'OLLAMA_HTTP_ERROR', status: 502, providerStatus: response.status,
-        });
+        throw await ollamaHttpError(response, pathname);
+      }
+      const contentType = response.headers?.get?.('content-type') || '';
+      if (typeof responseReader === 'function') {
+        return await responseReader(response, { contentType });
       }
       return {
-        contentType: response.headers?.get?.('content-type') || '',
+        contentType,
         text: await readLimitedText(response),
       };
     } catch (error) {
@@ -1363,25 +1545,37 @@ class RunpodPodManager {
   }
 
   async pullOllamaModel(baseUrl, model) {
-    const response = await this.ollamaRequest(baseUrl, '/api/pull', {
-      method: 'POST',
-      body: { model: normalizeModelName(model), stream: false },
-      timeoutMs: this.ollamaPullTimeoutMs,
+    const requested = normalizeModelName(model);
+    const deadline = Date.now() + this.ollamaPullTimeoutMs;
+    let lastError;
+    for (let attempt = 1; attempt <= OLLAMA_PULL_MAX_ATTEMPTS; attempt += 1) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      try {
+        await this.ollamaRequest(baseUrl, '/api/pull', {
+          method: 'POST',
+          body: { model: requested, stream: true },
+          timeoutMs: remainingMs,
+          responseReader: readOllamaPullStream,
+        });
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (!OLLAMA_PULL_RETRY_CODES.has(error?.code)) throw error;
+        try {
+          await this.verifyOllamaModel(baseUrl, requested);
+          return true;
+        } catch (_) {
+          // Ollama keeps partial blobs, so a new pull request can resume after a proxy cut-off.
+        }
+        if (attempt >= OLLAMA_PULL_MAX_ATTEMPTS || Date.now() >= deadline) break;
+        await this.sleep(Math.min(this.pollIntervalMs, Math.max(1, deadline - Date.now())));
+      }
+    }
+    if (lastError) throw lastError;
+    throw new RunpodManagementError('The Ollama model download timed out.', {
+      code: 'OLLAMA_TIMEOUT', status: 504,
     });
-    let result;
-    try {
-      result = JSON.parse(response.text);
-    } catch (_) {
-      throw new RunpodManagementError('Ollama returned invalid JSON while downloading the model.', {
-        code: 'OLLAMA_INVALID_RESPONSE', status: 502,
-      });
-    }
-    if (safeString(result?.status, 40).toLowerCase() !== 'success') {
-      throw new RunpodManagementError('Ollama did not confirm the model download.', {
-        code: 'OLLAMA_PULL_FAILED', status: 502,
-      });
-    }
-    return true;
   }
 
   async verifyOllamaModel(baseUrl, model) {
@@ -1429,7 +1623,7 @@ class RunpodPodManager {
         metadata: {
           action: 'setup_failure_stop',
           errorCode: safeString(error?.code, 80) || 'RUNPOD_STOP_FAILED',
-          providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+          providerStatus: providerStatusForError(error),
         },
       });
     }
@@ -1510,9 +1704,7 @@ class RunpodPodManager {
             metadata: {
               action: 'start_cleanup',
               errorCode: safeString(cleanupError?.code, 80) || 'RUNPOD_STOP_FAILED',
-              providerStatus: Number.isSafeInteger(cleanupError?.status)
-                ? cleanupError.status
-                : null,
+              providerStatus: providerStatusForError(cleanupError),
             },
           });
         }
@@ -1522,7 +1714,7 @@ class RunpodPodManager {
         podRecordId: pod._id,
         action,
         outcome: 'failed',
-        providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+        providerStatus: providerStatusForError(error),
         errorCode: safeString(error?.code, 80) || 'RUNPOD_ACTION_FAILED',
         actor,
       });
@@ -1548,7 +1740,7 @@ class RunpodPodManager {
           podRecordId: pod._id,
           action: 'delete',
           outcome: 'failed',
-          providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+          providerStatus: providerStatusForError(error),
           errorCode: safeString(error?.code, 80) || 'RUNPOD_DELETE_FAILED',
           actor,
         });
@@ -1755,7 +1947,7 @@ class RunpodPodManager {
           podRecordId: pod._id,
           action: 'auto_stop',
           outcome: 'failed',
-          providerStatus: Number.isSafeInteger(error?.status) ? error.status : null,
+          providerStatus: providerStatusForError(error),
           errorCode: safeString(error?.code, 80) || 'RUNPOD_AUTO_STOP_FAILED',
           actor,
         });
