@@ -24,7 +24,7 @@ function response() {
 }
 
 describe('Runpod semantic capability policy', () => {
-  test('assigns both read capabilities to admin through the explicit bundle', async () => {
+  test('assigns every Runpod read capability to admin through the explicit bundle', async () => {
     const model = roleModel();
 
     await expect(hasCapabilities(
@@ -59,7 +59,7 @@ describe('Runpod semantic capability policy', () => {
     expect(model.findOne).toHaveBeenCalledWith({ name: 'user', type: 'group' });
   });
 
-  test('denies a principal missing either catalog or billing authority', async () => {
+  test('denies a principal missing any required read authority', async () => {
     const model = roleModel({ userPermissions: ['runpod.catalog.read'] });
 
     await expect(hasCapabilities(
@@ -129,7 +129,7 @@ describe('createRequireCapabilities', () => {
       'Capability authorization lookup failed',
       {
         category: 'authorization',
-        metadata: { capabilityCount: 2, errorName: 'Error' },
+        metadata: { capabilityCount: RUNPOD_READ_CAPABILITIES.length, errorName: 'Error' },
       }
     );
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain('database host and credentials');
@@ -140,15 +140,26 @@ describe('Runpod route wiring', () => {
   const appSource = fs.readFileSync(path.join(process.cwd(), 'app.js'), 'utf8');
   const routeSource = fs.readFileSync(path.join(process.cwd(), 'routes', 'runpodAdmin.js'), 'utf8');
 
-  test('requires session authentication before the dedicated capability router', () => {
-    expect(appSource).toContain("app.use('/admin/runpod', isAuthenticated, runpodAdminRouter);");
-    expect(appSource.indexOf("app.use('/admin/runpod', isAuthenticated, runpodAdminRouter);"))
+  test('requires authentication and the admin bundle before the dedicated capability router', () => {
+    expect(appSource).toContain("app.use('/admin/runpod', isAuthenticated, isAdmin, runpodAdminRouter);");
+    expect(appSource.indexOf("app.use('/admin/runpod', isAuthenticated, isAdmin, runpodAdminRouter);"))
       .toBeLessThan(appSource.indexOf("app.use('/admin', isAuthenticated, isAdmin, adminRouter);"));
   });
 
-  test('exposes only the read-only GET dashboard route', () => {
+  test('exposes read and CSRF-protected capability-scoped Pod mutations', () => {
     expect(routeSource).toContain("router.get('/', runpodReadLimiter, runpodAdminController.index);");
-    expect(routeSource).not.toMatch(/router\.(?:post|put|patch|delete)\s*\(/u);
+    expect(routeSource).toContain("'/templates/ollama'");
+    expect(routeSource).toContain("'/pods'");
+    expect(routeSource).toContain("'/pods/:id/start'");
+    expect(routeSource).toContain("'/pods/:id/stop'");
+    expect(routeSource).toContain("'/pods/:id/delete'");
+    expect(routeSource).toContain("'/billing/sync'");
+    expect(routeSource).toContain('csrf.requireToken');
+    expect(routeSource).toContain('requireBoundedRunpodForm');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podCreate)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podDelete)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.billingSync)');
+    expect(routeSource).not.toMatch(/router\.(?:put|patch|delete)\s*\(/u);
     expect(routeSource).toContain('RUNPOD_READ_CAPABILITIES');
   });
 });

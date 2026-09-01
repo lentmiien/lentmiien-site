@@ -132,6 +132,24 @@
   color: var(--accent-hover);
 }
 
+.runpod-button--danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--text-inverse);
+}
+
+.runpod-button--danger:hover,
+.runpod-button--danger:focus {
+  filter: brightness(1.08);
+  color: var(--text-inverse);
+}
+
+.runpod-button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.55);
+  opacity: 0.55;
+}
+
 .runpod-scope-note,
 .runpod-alert {
   margin-top: 1rem;
@@ -167,6 +185,15 @@
 .runpod-alert--error {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, var(--surface-1));
+}
+
+.runpod-alert--success {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, var(--surface-1));
+}
+
+.runpod-alert p {
+  margin: 0.35rem 0 0;
 }
 
 .runpod-summary {
@@ -276,7 +303,8 @@
 }
 
 .runpod-field input,
-.runpod-field select {
+.runpod-field select,
+.runpod-field textarea {
   min-width: 9rem;
   min-height: 2.4rem;
   padding: 0.45rem 0.6rem;
@@ -284,6 +312,271 @@
   border-radius: 8px;
   background: var(--surface-1);
   color: var(--text);
+}
+
+.runpod-field input:focus,
+.runpod-field select:focus,
+.runpod-field textarea:focus,
+.runpod-check input:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.runpod-two-column {
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.75fr) minmax(24rem, 1.25fr);
+  gap: 1rem;
+}
+
+.runpod-template-summary,
+.runpod-form,
+.runpod-picker__filters,
+.runpod-estimate,
+.runpod-pod-card,
+.runpod-endpoint,
+.runpod-delete,
+.runpod-unmanaged {
+  border: 1px solid var(--divider);
+  border-radius: 11px;
+  background: var(--surface-2);
+}
+
+.runpod-template-summary,
+.runpod-form,
+.runpod-picker__filters,
+.runpod-pod-card,
+.runpod-unmanaged {
+  padding: 1rem;
+}
+
+.runpod-template-summary h3,
+.runpod-pod-card h3,
+.runpod-unmanaged h3 {
+  margin: 0;
+  color: var(--text);
+}
+
+.runpod-template-summary code,
+.runpod-pod-card code {
+  display: block;
+  margin-top: 0.3rem;
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: 0.75rem;
+}
+
+.runpod-template-summary p,
+.runpod-unmanaged p {
+  color: var(--text-secondary);
+}
+
+.runpod-template-summary dl {
+  display: grid;
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+}
+
+.runpod-template-summary dl div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.4fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--divider);
+}
+
+.runpod-template-summary dt,
+.runpod-template-summary dd {
+  margin: 0;
+}
+
+.runpod-template-summary dt {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.runpod-template-summary dd {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.runpod-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.runpod-form-grid--wide {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.runpod-field--span-2 {
+  grid-column: span 2;
+}
+
+.runpod-field input,
+.runpod-field select,
+.runpod-field textarea {
+  width: 100%;
+}
+
+.runpod-form-help {
+  margin: 0.8rem 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.runpod-picker__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.runpod-picker__result {
+  margin-left: auto;
+  padding: 0.55rem 0;
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.runpod-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-secondary);
+  font-size: 0.83rem;
+}
+
+.runpod-check input {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+  accent-color: var(--brand);
+}
+
+.runpod-check--warning {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.runpod-estimate {
+  display: grid;
+  gap: 0.25rem;
+  margin: 1rem 0;
+  padding: 0.9rem 1rem;
+  border-left: 4px solid var(--accent);
+}
+
+.runpod-estimate span,
+.runpod-estimate small {
+  color: var(--text-muted);
+}
+
+.runpod-estimate strong {
+  color: var(--accent);
+  font-size: 1.25rem;
+}
+
+.runpod-pod-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.runpod-pod-card {
+  min-width: 0;
+}
+
+.runpod-pod-card__header,
+.runpod-pod-card__actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.runpod-pod-card__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.runpod-pod-card__metrics div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+
+.runpod-pod-card__metrics span,
+.runpod-endpoint span,
+.runpod-endpoint small {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.runpod-pod-card__metrics strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.runpod-pod-card__actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.runpod-endpoint {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-color: var(--success);
+  overflow-wrap: anywhere;
+}
+
+.runpod-endpoint a {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.runpod-delete {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border-color: var(--danger);
+}
+
+.runpod-delete summary {
+  color: var(--danger);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.runpod-delete form {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.75rem;
+}
+
+.runpod-unmanaged {
+  margin-top: 1rem;
+}
+
+.runpod-unmanaged ul {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
 }
 
 .runpod-filter__help {
@@ -461,6 +754,32 @@
   color: var(--text-muted);
 }
 
+.runpod-status--running,
+.runpod-status--ready {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+}
+
+.runpod-status--provisioning,
+.runpod-status--starting,
+.runpod-status--warning {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 11%, transparent);
+  color: var(--warning);
+}
+
+.runpod-status--exited,
+.runpod-status--terminated {
+  color: var(--text-muted);
+}
+
+.runpod-status--error {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+  color: var(--danger);
+}
+
 .runpod-empty {
   padding: 1.5rem;
   border: 1px dashed var(--border);
@@ -556,7 +875,8 @@
 
 @media (max-width: 1100px) {
   .runpod-summary,
-  .runpod-cost-grid {
+  .runpod-cost-grid,
+  .runpod-form-grid--wide {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -580,8 +900,17 @@
 
   .runpod-summary,
   .runpod-cost-grid,
-  .runpod-template-grid {
+  .runpod-template-grid,
+  .runpod-two-column,
+  .runpod-form-grid,
+  .runpod-form-grid--wide,
+  .runpod-pod-grid,
+  .runpod-pod-card__metrics {
     grid-template-columns: 1fr;
+  }
+
+  .runpod-field--span-2 {
+    grid-column: auto;
   }
 
   .runpod-stat {

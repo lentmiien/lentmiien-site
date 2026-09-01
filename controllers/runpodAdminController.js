@@ -6,11 +6,18 @@ const {
   RunpodApiV2Service,
   RunpodConfigurationError,
 } = require('../services/runpodApiV2Service');
+const { runpodBillingHistoryService } = require('../services/runpodBillingHistoryService');
+const { runpodPodManager } = require('../services/runpodPodManager');
 
 const PRIVATE_NO_STORE = 'private, no-store, max-age=0';
 const RUNPOD_ADMIN_PATH = '/admin/runpod';
-const DEFAULT_FILTERS = Object.freeze({ bucketSize: 'day', lastN: 30, forceRefresh: false });
-const ALLOWED_QUERY_FIELDS = new Set(['bucketSize', 'lastN', 'refresh']);
+const DEFAULT_FILTERS = Object.freeze({
+  bucketSize: 'day',
+  lastN: 30,
+  forceRefresh: false,
+  notice: '',
+});
+const ALLOWED_QUERY_FIELDS = new Set(['bucketSize', 'lastN', 'refresh', 'notice']);
 const AVAILABILITY_LEVELS = new Set(['NONE', 'LOW', 'MEDIUM', 'HIGH']);
 const SECTION_LABELS = Object.freeze({
   gpus: 'GPU catalog',
@@ -18,6 +25,26 @@ const SECTION_LABELS = Object.freeze({
   dataCenters: 'Data centers',
   templates: 'Official templates',
   billing: 'Billing history',
+});
+const NOTICE_MESSAGES = Object.freeze({
+  'template-synced': { type: 'success', message: 'The Ollama workload template is synced with Runpod v2.' },
+  'template-failed': { type: 'error', message: 'The Ollama workload template could not be synced.' },
+  'pod-created': { type: 'success', message: 'The pod was created. Ollama setup is running in the background.' },
+  'pod-create-failed': { type: 'error', message: 'The pod could not be created. Check current availability and try again.' },
+  'pod-started': { type: 'success', message: 'The pod start request was accepted.' },
+  'pod-start-failed': { type: 'error', message: 'The pod could not be started in its current state.' },
+  'pod-stopped': { type: 'success', message: 'The pod stop request was accepted.' },
+  'pod-stop-failed': { type: 'error', message: 'The pod could not be stopped in its current state.' },
+  'pod-deleted': { type: 'success', message: 'The pod was permanently terminated and archived locally.' },
+  'pod-delete-failed': { type: 'error', message: 'The pod could not be deleted. Confirm the exact pod name and try again.' },
+  'setup-queued': { type: 'success', message: 'Ollama setup was queued again.' },
+  'setup-failed': { type: 'error', message: 'Ollama setup could not be queued.' },
+  'pods-synced': { type: 'success', message: 'Provider pod state was synchronized with the local records.' },
+  'pods-sync-failed': { type: 'error', message: 'Provider pod state could not be synchronized.' },
+  'billing-synced': { type: 'success', message: 'Monthly account and Pod billing history was synchronized.' },
+  'billing-sync-failed': { type: 'error', message: 'Billing history could not be fully synchronized. Stored history remains available.' },
+  'insufficient-balance': { type: 'error', message: 'Runpod reported insufficient account balance for this operation.' },
+  'cost-limit': { type: 'error', message: 'The current hourly price exceeds the confirmed or server-side cost limit.' },
 });
 
 const defaultRunpodService = new RunpodApiV2Service();
@@ -181,7 +208,61 @@ function mapErrorSections(errors = {}) {
     });
 }
 
-function buildPageModel(dashboard = {}, filters = DEFAULT_FILTERS) {
+function mapStoredBillingHistory(history = {}) {
+  const records = (Array.isArray(history.periods) ? history.periods : [])
+    .slice(0, 240)
+    .map((period) => ({
+      periodKey: safeString(period.periodKey, 7),
+      startTime: period.startTime || null,
+      endTime: period.endTime || null,
+      source: safeString(period.source, 30),
+      providerRecordPresent: period.providerRecordPresent === true,
+      finalized: period.finalized === true,
+      syncedAt: period.syncedAt || null,
+      ...mapBillingAmounts(period.amounts || {}),
+    }))
+    .sort((left, right) => right.periodKey.localeCompare(left.periodKey));
+  return {
+    records,
+    totals: mapBillingAmounts(history.totals || {}),
+    historyStart: history.historyStart || null,
+    lastSyncedAt: history.lastSyncedAt || null,
+    providerMonthCount: finiteNumber(history.providerMonthCount, 0) || 0,
+    zeroMonthCount: finiteNumber(history.zeroMonthCount, 0) || 0,
+    error: history.error || null,
+  };
+}
+
+function mapManagementPod(pod = {}) {
+  return {
+    ...pod,
+    usage: {
+      trackingAvailable: false,
+      runningMs: 0,
+      stoppedMs: 0,
+      lifetimeMs: 0,
+      estimatedComputeUsd: 0,
+      estimatedStorageUsd: 0,
+      estimatedTotalUsd: 0,
+      ...(pod.usage || {}),
+    },
+    billing: {
+      available: false,
+      totalUsd: 0,
+      computeUsd: 0,
+      storageUsd: 0,
+      syncedAt: null,
+      ...(pod.billing || {}),
+    },
+  };
+}
+
+function buildPageModel(
+  dashboard = {},
+  filters = DEFAULT_FILTERS,
+  management = {},
+  storedHistory = {}
+) {
   const gpus = (Array.isArray(dashboard.gpus) ? dashboard.gpus : [])
     .map(mapGpu)
     .sort((left, right) => (
@@ -235,7 +316,31 @@ function buildPageModel(dashboard = {}, filters = DEFAULT_FILTERS) {
         bucketSize: safeString(billingSource.metadata?.query?.bucketSize, 20) || filters.bucketSize,
       },
     },
+    billingHistory: mapStoredBillingHistory(storedHistory),
     errorSections,
+    notice: NOTICE_MESSAGES[filters.notice] || null,
+    podManagement: {
+      limits: management.limits || {
+        maxActivePods: 2,
+        maxGpuCount: 4,
+        maxHourlyCostUsd: 10,
+        defaultAutoStopMinutes: 60,
+        maxRuntimeMinutes: 1440,
+      },
+      templates: Array.isArray(management.templates) ? management.templates.slice(0, 100) : [],
+      managedPods: Array.isArray(management.managedPods)
+        ? management.managedPods.slice(0, 200).map(mapManagementPod)
+        : [],
+      archivedPods: Array.isArray(management.archivedPods)
+        ? management.archivedPods.slice(0, 200).map(mapManagementPod)
+        : [],
+      unmanagedProviderPods: Array.isArray(management.unmanagedProviderPods)
+        ? management.unmanagedProviderPods.slice(0, 200)
+        : [],
+      providerTemplateCount: finiteNumber(management.providerTemplateCount, 0) || 0,
+      gpuOptions: Array.isArray(management.gpuOptions) ? management.gpuOptions.slice(0, 500) : [],
+      errors: management.errors && typeof management.errors === 'object' ? management.errors : {},
+    },
     summary: {
       gpuCount: gpus.length,
       availableGpuCount: gpus.filter((gpu) => gpu.availability !== 'NONE' && gpu.availability !== 'UNKNOWN').length,
@@ -266,6 +371,7 @@ function parseDashboardQuery(query = {}) {
     ? String(DEFAULT_FILTERS.lastN)
     : singleQueryValue(query.lastN);
   const rawRefresh = query.refresh === undefined ? '0' : singleQueryValue(query.refresh);
+  const rawNotice = query.notice === undefined ? '' : singleQueryValue(query.notice);
 
   if (!BILLING_BUCKET_SIZES.includes(rawBucketSize)) {
     errors.push('Choose a valid billing bucket size.');
@@ -280,6 +386,9 @@ function parseDashboardQuery(query = {}) {
   if (!['0', '1'].includes(rawRefresh)) {
     errors.push('Refresh must be either 0 or 1.');
   }
+  if (rawNotice && !Object.hasOwn(NOTICE_MESSAGES, rawNotice)) {
+    errors.push('The status message is not recognized.');
+  }
 
   return {
     valid: errors.length === 0,
@@ -292,6 +401,7 @@ function parseDashboardQuery(query = {}) {
         ? lastN
         : DEFAULT_FILTERS.lastN,
       forceRefresh: rawRefresh === '1',
+      notice: rawNotice && Object.hasOwn(NOTICE_MESSAGES, rawNotice) ? rawNotice : '',
     },
   };
 }
@@ -308,6 +418,8 @@ function renderPage(res, model, { status = 200, pageError = null } = {}) {
 
 function createRunpodAdminController({
   runpodService = defaultRunpodService,
+  manager = runpodPodManager,
+  billingHistoryService = runpodBillingHistoryService,
   appLogger = logger,
 } = {}) {
   return {
@@ -325,8 +437,29 @@ function createRunpodAdminController({
       }
 
       try {
-        const dashboard = await runpodService.getDashboard(parsedQuery.filters);
-        const model = buildPageModel(dashboard, parsedQuery.filters);
+        const [dashboard, management, storedHistory] = await Promise.all([
+          runpodService.getDashboard({
+            bucketSize: parsedQuery.filters.bucketSize,
+            lastN: parsedQuery.filters.lastN,
+            forceRefresh: parsedQuery.filters.forceRefresh,
+          }),
+          manager.getAdminState(),
+          billingHistoryService.getStoredHistory().catch((error) => {
+            appLogger.warning('Stored Runpod billing history could not be loaded', {
+              category: 'runpod_billing',
+              metadata: {
+                errorCode: safeString(error?.code, 80) || 'RUNPOD_BILLING_HISTORY_UNAVAILABLE',
+                errorName: safeString(error?.name, 80) || 'Error',
+              },
+            });
+            return {
+              error: {
+                code: safeString(error?.code, 80) || 'RUNPOD_BILLING_HISTORY_UNAVAILABLE',
+              },
+            };
+          }),
+        ]);
+        const model = buildPageModel(dashboard, parsedQuery.filters, management, storedHistory);
         if (model.errorSections.length) {
           appLogger.warning('Runpod admin dashboard loaded with provider failures', {
             category: 'runpod_api_v2',
@@ -334,6 +467,19 @@ function createRunpodAdminController({
               failedSections: model.errorSections.map((entry) => entry.section),
               errorCodes: model.errorSections.map((entry) => entry.code),
               providerStatuses: model.errorSections.map((entry) => entry.status).filter(Number.isFinite),
+            },
+          });
+        }
+        const managementFailures = Object.entries(model.podManagement.errors || {});
+        if (managementFailures.length) {
+          appLogger.warning('Runpod pod management page loaded with partial failures', {
+            category: 'runpod_management',
+            metadata: {
+              failedSections: managementFailures.map(([section]) => section),
+              errorCodes: managementFailures.map(([, error]) => error.code),
+              providerStatuses: managementFailures
+                .map(([, error]) => error.status)
+                .filter(Number.isFinite),
             },
           });
         }
@@ -382,8 +528,11 @@ module.exports = {
   PRIVATE_NO_STORE,
   RUNPOD_ADMIN_PATH,
   SECTION_LABELS,
+  NOTICE_MESSAGES,
   buildPageModel,
   createRunpodAdminController,
   mapBillingAmounts,
+  mapManagementPod,
+  mapStoredBillingHistory,
   parseDashboardQuery,
 };

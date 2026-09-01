@@ -82,11 +82,44 @@ function dashboard(overrides = {}) {
   };
 }
 
+function podManager(overrides = {}) {
+  return {
+    getAdminState: jest.fn().mockResolvedValue({
+      templates: [],
+      managedPods: [],
+      archivedPods: [],
+      unmanagedProviderPods: [],
+      gpuOptions: [],
+      errors: {},
+      ...overrides,
+    }),
+  };
+}
+
+function billingHistoryService(overrides = {}) {
+  return {
+    getStoredHistory: jest.fn().mockResolvedValue({
+      periods: [],
+      totals: {},
+      providerMonthCount: 0,
+      zeroMonthCount: 0,
+      lastSyncedAt: null,
+      ...overrides,
+    }),
+  };
+}
+
 describe('runpodAdminController', () => {
   test('renders a private no-store dashboard with validated filters', async () => {
     const runpodService = { getDashboard: jest.fn().mockResolvedValue(dashboard()) };
     const appLogger = { warning: jest.fn(), error: jest.fn() };
-    const controller = createRunpodAdminController({ runpodService, appLogger });
+    const manager = podManager();
+    const controller = createRunpodAdminController({
+      runpodService,
+      manager,
+      billingHistoryService: billingHistoryService(),
+      appLogger,
+    });
     const res = createResponse();
 
     await controller.index({ query: { bucketSize: 'week', lastN: '12', refresh: '1' } }, res);
@@ -96,6 +129,7 @@ describe('runpodAdminController', () => {
       lastN: 12,
       forceRefresh: true,
     });
+    expect(manager.getAdminState).toHaveBeenCalledTimes(1);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.set).toHaveBeenCalledWith('Cache-Control', PRIVATE_NO_STORE);
     expect(res.render).toHaveBeenCalledWith('admin_runpod', expect.objectContaining({
@@ -133,6 +167,8 @@ describe('runpodAdminController', () => {
     const runpodService = { getDashboard: jest.fn() };
     const controller = createRunpodAdminController({
       runpodService,
+      manager: podManager(),
+      billingHistoryService: billingHistoryService(),
       appLogger: { warning: jest.fn(), error: jest.fn() },
     });
     const res = createResponse();
@@ -162,7 +198,12 @@ describe('runpodAdminController', () => {
       })),
     };
     const appLogger = { warning: jest.fn(), error: jest.fn() };
-    const controller = createRunpodAdminController({ runpodService, appLogger });
+    const controller = createRunpodAdminController({
+      runpodService,
+      manager: podManager(),
+      billingHistoryService: billingHistoryService(),
+      appLogger,
+    });
     const res = createResponse();
 
     await controller.index({ query: {} }, res);
@@ -196,7 +237,12 @@ describe('runpodAdminController', () => {
       getDashboard: jest.fn().mockRejectedValue(new RunpodConfigurationError()),
     };
     const appLogger = { warning: jest.fn(), error: jest.fn() };
-    const controller = createRunpodAdminController({ runpodService, appLogger });
+    const controller = createRunpodAdminController({
+      runpodService,
+      manager: podManager(),
+      billingHistoryService: billingHistoryService(),
+      appLogger,
+    });
     const res = createResponse();
 
     await controller.index({ query: {} }, res);
@@ -219,6 +265,8 @@ describe('runpodAdminController', () => {
     const runpodService = { getDashboard: jest.fn().mockResolvedValue(dashboard({ errors })) };
     const controller = createRunpodAdminController({
       runpodService,
+      manager: podManager(),
+      billingHistoryService: billingHistoryService(),
       appLogger: { warning: jest.fn(), error: jest.fn() },
     });
     const res = createResponse();
@@ -274,7 +322,7 @@ describe('Runpod admin mapping helpers', () => {
     expect(parseDashboardQuery({ bucketSize: 'year', lastN: '2', refresh: '0' })).toEqual({
       valid: true,
       errors: [],
-      filters: { bucketSize: 'year', lastN: 2, forceRefresh: false },
+      filters: { bucketSize: 'year', lastN: 2, forceRefresh: false, notice: '' },
     });
   });
 });

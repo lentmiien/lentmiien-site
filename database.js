@@ -187,6 +187,11 @@ const CodexTokenPrice = require('./models/codex_token_price');
 const CodexRequestProfile = require('./models/codex_request_profile');
 const CodexLogReviewRun = require('./models/codex_log_review_run');
 const DatabaseAvailabilityIncident = require('./models/database_availability_incident');
+const RunpodPod = require('./models/runpod_pod');
+const RunpodWorkloadTemplate = require('./models/runpod_workload_template');
+const RunpodOperationEvent = require('./models/runpod_operation_event');
+const RunpodBillingPeriod = require('./models/runpod_billing_period');
+const RunpodPodBillingPeriod = require('./models/runpod_pod_billing_period');
 
 // Export models
 module.exports = {
@@ -333,4 +338,9 @@ module.exports = {
   CodexRequestProfile,
   CodexLogReviewRun,
   DatabaseAvailabilityIncident,
+  RunpodPod,
+  RunpodWorkloadTemplate,
+  RunpodOperationEvent,
+  RunpodBillingPeriod,
+  RunpodPodBillingPeriod,
 };

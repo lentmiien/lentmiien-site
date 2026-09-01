@@ -144,6 +144,8 @@ const scheduleEmbeddingQueue = require('./schedulers/embeddingQueue');
 const scheduleCodexLogReview = require('./schedulers/codexLogReview');
 const scheduleEmergencyStockMaintenance = require('./schedulers/emergencyStockMaintenance');
 const schedulePushoverReminders = require('./schedulers/pushoverReminders');
+const scheduleRunpodBillingHistory = require('./schedulers/runpodBillingHistory');
+const scheduleRunpodPodGuard = require('./schedulers/runpodPodGuard');
 const {
   validateBatchDefaultModelSetting,
   validateBatchSummaryModelSetting,
@@ -517,7 +519,7 @@ app.use('/lego-sculpture-converter', isAuthenticated, legoSculptureConverterRout
 app.use('/codex', isAuthenticated, codexRouter);
 app.use('/codex-log-review', isAuthenticated, isAdmin, codexLogReviewRouter);
 app.use('/tmp-files', isAuthenticated, isAdmin, tmpFilesRouter);
-app.use('/admin/runpod', isAuthenticated, runpodAdminRouter);
+app.use('/admin/runpod', isAuthenticated, isAdmin, runpodAdminRouter);
 app.use('/admin', isAuthenticated, isAdmin, adminRouter);
 
 app.post(
@@ -728,6 +730,8 @@ function startDatabaseServices() {
     ['Codex log review', scheduleCodexLogReview],
     ['emergency stock maintenance', scheduleEmergencyStockMaintenance],
     ['Pushover reminders', schedulePushoverReminders],
+    ['Runpod billing history synchronization', scheduleRunpodBillingHistory],
+    ['Runpod automatic cost guard', scheduleRunpodPodGuard],
   ];
 
   starters.forEach(([name, start]) => {

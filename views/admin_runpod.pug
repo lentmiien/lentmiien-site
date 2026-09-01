@@ -3,28 +3,37 @@ extends layout
 block styles
   link(rel='stylesheet', href='/css/runpodAdmin.css')
 
+block script
+  script(src='/js/runpodAdmin.js', defer)
+
 block content
   - const formatUsd = (value, digits = 4) => Number.isFinite(value) ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: digits })}` : '—';
   - const formatInteger = (value) => Number.isFinite(value) ? value.toLocaleString('en-US') : '—';
   - const formatTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'; };
+  - const formatDuration = (value) => { if (!Number.isFinite(value)) return 'Not recorded'; const seconds = Math.max(0, Math.floor(value / 1000)); const days = Math.floor(seconds / 86400); const hours = Math.floor((seconds % 86400) / 3600); const minutes = Math.floor((seconds % 3600) / 60); return days ? `${days}d ${hours}h ${minutes}m` : hours ? `${hours}h ${minutes}m` : `${minutes}m`; };
   - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
+  - const management = podManagement || { limits: {}, templates: [], managedPods: [], archivedPods: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
+  - const ollamaTemplate = management.templates.find((entry) => entry.slug === 'ollama') || null;
   main.runpod-admin
     header.runpod-hero
       .runpod-hero__content
         p.runpod-eyebrow Infrastructure monitor
         h1 Runpod API v2
-        p.runpod-hero__subtitle Hardware catalog, official systems, regional availability, and account billing—before compute controls are enabled.
+        p.runpod-hero__subtitle Catalog and billing monitoring, reusable workload templates, and guarded Pod lifecycle controls.
       .runpod-hero__actions
         span.runpod-chip REST API #{apiVersion} · public beta
         span.runpod-chip.runpod-chip--muted= apiBaseUrl
         a.runpod-button.runpod-button--secondary(href=refreshHref) Refresh from Runpod
 
     .runpod-scope-note(role='note')
-      strong Step 1 is read-only.
-      |  This page only calls Runpod v2 catalog and billing GET endpoints. Instance creation, start, stop, and deletion are intentionally deferred to step 2.
+      strong Step 2 is enabled for administrators.
+      |  Pod and template mutations use Runpod REST API v2, CSRF protection, explicit capability checks, a #{formatUsd(management.limits.maxHourlyCostUsd, 2)} server cost ceiling, at most #{formatInteger(management.limits.maxActivePods)} active Pods, and mandatory auto-stop.
 
     if pageError
       .runpod-alert.runpod-alert--error(role='alert')= pageError
+
+    if notice
+      .runpod-alert(class=notice.type === 'error' ? 'runpod-alert--error' : 'runpod-alert--success', role=notice.type === 'error' ? 'alert' : 'status')= notice.message
 
     if errorSections && errorSections.length
       .runpod-alert.runpod-alert--warning(role='alert')
@@ -35,6 +44,303 @@ block content
               span= `${failure.label}: ${failure.message}`
               if failure.status
                 small= ` HTTP ${failure.status}`
+
+    if management.errors && Object.keys(management.errors).length
+      .runpod-alert.runpod-alert--warning(role='alert')
+        strong Some Pod-management data could not be loaded.
+        p Catalog and billing data may still be current. Refresh before making a cost-bearing decision.
+
+    section#workload-templates.runpod-panel(aria-labelledby='runpodWorkloadTemplateHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Reusable setup
+          h2#runpodWorkloadTemplateHeading Ollama workload template
+          p.runpod-panel__subtitle The container settings are stored as a private Runpod v2 template. The local database links that provider template to the bounded Ollama model-download workflow.
+        if ollamaTemplate
+          span.runpod-status(class=ollamaTemplate.providerPresent ? 'runpod-status--ready' : 'runpod-status--warning')= ollamaTemplate.providerPresent ? 'SYNCED' : 'RESYNC NEEDED'
+
+      .runpod-two-column
+        article.runpod-template-summary
+          if ollamaTemplate
+            h3= ollamaTemplate.name
+            code= ollamaTemplate.providerTemplateId || 'Provider ID pending'
+            dl
+              div
+                dt Image
+                dd= ollamaTemplate.image
+              div
+                dt Test model
+                dd= ollamaTemplate.defaultModel
+              div
+                dt Storage
+                dd #{formatInteger(ollamaTemplate.diskGb)} GB container + #{formatInteger(ollamaTemplate.persistentDiskGb)} GB persistent
+              div
+                dt Public service
+                dd Port #{formatInteger(ollamaTemplate.servicePort)} through Runpod HTTPS proxy
+          else
+            h3 No local Ollama template yet
+            p Save the defaults once to create a private provider template and its local setup recipe.
+
+        form.runpod-form(method='post', action=`${adminPath}/templates/ollama`)
+          input(type='hidden', name='_csrf', value=csrfToken)
+          .runpod-form-grid
+            label.runpod-field
+              span Provider template name
+              input(type='text', name='providerTemplateName', maxlength='80', value=ollamaTemplate ? ollamaTemplate.providerTemplateName : 'lentmiien-ollama-gpu-v2', required)
+            label.runpod-field
+              span Container image
+              input(type='text', name='image', maxlength='500', value=ollamaTemplate ? ollamaTemplate.image : 'ollama/ollama:latest', required)
+            label.runpod-field
+              span Default model
+              input(type='text', name='defaultModel', maxlength='120', value=ollamaTemplate ? ollamaTemplate.defaultModel : 'qwen2.5:0.5b', required)
+            label.runpod-field
+              span Container disk (GB)
+              input(type='number', name='diskGb', min='5', max='500', step='1', value=ollamaTemplate ? ollamaTemplate.diskGb : 20, required)
+            label.runpod-field
+              span Persistent model disk (GB)
+              input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate ? ollamaTemplate.persistentDiskGb : 10, required)
+          p.runpod-form-help The default 0.5B Qwen model is about 398 MB. Models live on the persistent disk and survive stop/start cycles. Pin the image by digest for reproducible long-term use.
+          button.runpod-button.runpod-button--primary(type='submit')= ollamaTemplate ? 'Update and resync template' : 'Create Ollama template'
+
+    section#pod-creator.runpod-panel(aria-labelledby='runpodPodCreatorHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Cost-aware deployment
+          h2#runpodPodCreatorHeading Create an Ollama Pod
+          p.runpod-panel__subtitle Filter systems by VRAM and cost, then choose current availability, cloud, location, storage, model, and an automatic stop time.
+        span.runpod-panel__meta #{formatInteger(management.gpuOptions.length)} GPU choices
+
+      .runpod-alert.runpod-alert--warning(role='note')
+        strong Public endpoint warning.
+        |  Ollama does not authenticate local API requests. Runpod's HTTPS proxy URL is public to anyone who learns it. Keep auto-stop short and stop or delete the Pod when finished.
+
+      if ollamaTemplate && ollamaTemplate.providerPresent && management.gpuOptions.length
+        .runpod-picker(data-runpod-picker)
+          .runpod-picker__filters(aria-label='GPU filters')
+            label.runpod-field
+              span Minimum VRAM (GB)
+              input(type='number', min='0', max='300', step='1', value='16', data-gpu-min-vram)
+            label.runpod-field
+              span Picker max price / GPU hour
+              input(type='number', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='1.00', data-gpu-max-price)
+            label.runpod-field
+              span Minimum availability
+              select(data-gpu-min-availability)
+                option(value='LOW') Low or better
+                option(value='MEDIUM') Medium or better
+                option(value='HIGH') High only
+            output.runpod-picker__result(data-gpu-filter-result aria-live='polite')
+
+          form.runpod-form(method='post', action=`${adminPath}/pods`, data-runpod-create-form)
+            input(type='hidden', name='_csrf', value=csrfToken)
+            .runpod-form-grid.runpod-form-grid--wide
+              label.runpod-field
+                span Pod name
+                input(type='text', name='name', maxlength='80', value='ollama-test', pattern='[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}', required)
+              label.runpod-field
+                span Workload template
+                select(name='templateId', required)
+                  each localTemplate in management.templates
+                    if localTemplate.active && localTemplate.providerPresent
+                      option(value=localTemplate.id, selected=localTemplate.slug === 'ollama')= `${localTemplate.name} · ${localTemplate.defaultModel}`
+              label.runpod-field
+                span Cloud
+                select(name='cloud', data-gpu-cloud, required)
+                  option(value='SECURE', selected) Secure Cloud
+                  option(value='COMMUNITY') Community Cloud
+              label.runpod-field.runpod-field--span-2
+                span GPU system
+                select(name='gpuId', data-gpu-select, required)
+                  each gpu in management.gpuOptions
+                    option(
+                      value=gpu.id,
+                      data-memory=gpu.memoryGb,
+                      data-secure-price=gpu.securePrice,
+                      data-community-price=gpu.communityPrice,
+                      data-secure-availability=gpu.secureAvailability,
+                      data-community-availability=gpu.communityAvailability,
+                      data-secure-max-count=gpu.secureMaxCount,
+                      data-community-max-count=gpu.communityMaxCount,
+                      data-secure-datacenters=gpu.secureDataCenters.map((entry) => entry.id).join('|'),
+                      data-community-datacenters=gpu.communityDataCenters.map((entry) => entry.id).join('|')
+                    )= `${gpu.name} · ${formatInteger(gpu.memoryGb)} GB VRAM · Secure ${formatUsd(gpu.securePrice)}/${gpu.secureAvailability} · Community ${formatUsd(gpu.communityPrice)}/${gpu.communityAvailability}`
+              label.runpod-field
+                span GPU count
+                input(type='number', name='gpuCount', min='1', max=management.limits.maxGpuCount, step='1', value='1', data-gpu-count, required)
+              label.runpod-field
+                span Preferred data center
+                select(name='dataCenterId', data-gpu-datacenter)
+                  option(value='') Automatic placement
+                  each dataCenter in dataCenters
+                    option(value=dataCenter.id, data-global-network=dataCenter.globalNetwork ? '1' : '0')= `${dataCenter.name} · ${dataCenter.region.replaceAll('_', ' ')}`
+              label.runpod-field
+                span Ollama model
+                input(type='text', name='model', maxlength='120', value=ollamaTemplate.defaultModel, required)
+              label.runpod-field
+                span Container disk (GB)
+                input(type='number', name='diskGb', min='5', max='500', step='1', value=ollamaTemplate.diskGb, required)
+              label.runpod-field
+                span Persistent model disk (GB)
+                input(type='number', name='persistentDiskGb', min='10', max='1000', step='1', value=ollamaTemplate.persistentDiskGb, required)
+              label.runpod-field
+                span Auto-stop after (minutes)
+                input(type='number', name='autoStopMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value=management.limits.defaultAutoStopMinutes, required)
+              label.runpod-field
+                span Confirmed maximum total / hour
+                input(type='number', name='maxHourlyCost', min='0.01', max=management.limits.maxHourlyCostUsd, step='0.01', value='1.00', data-gpu-cost-limit, required)
+              label.runpod-check
+                input(type='checkbox', name='globalNetworking')
+                span Enable global networking (Secure Cloud + eligible explicit data center only)
+              label.runpod-check.runpod-check--warning
+                input(type='checkbox', name='publicAccessAcknowledged', value='acknowledged', required)
+                span I understand that the Ollama proxy URL has no application-level authentication.
+            .runpod-estimate(role='status' aria-live='polite')
+              span Estimated GPU rate
+              strong(data-gpu-estimate) Choose a GPU
+              small Disk charges may make Runpod's final Pod rate slightly higher. Creation is cancelled and cleaned up if the returned total exceeds your confirmed maximum.
+            button.runpod-button.runpod-button--primary(type='submit', data-runpod-create-button) Create Pod and set up Ollama
+      else if !ollamaTemplate || !ollamaTemplate.providerPresent
+        .runpod-empty
+          strong Sync the Ollama workload template first
+          p Pod creation stays disabled until both the local recipe and private Runpod template are present.
+      else
+        .runpod-empty
+          strong GPU picker unavailable
+          p Refresh the page after Runpod catalog availability returns.
+
+    section#pods.runpod-panel(aria-labelledby='runpodPodsHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Managed compute
+          h2#runpodPodsHeading Running and stopped Pods
+          p.runpod-panel__subtitle Live provider state is overlaid on local lifecycle and setup records. Stop releases GPU compute, but retained storage may still be billed; delete permanently removes the Pod and its attached persistent disk.
+        form(method='post', action=`${adminPath}/pods/sync`)
+          input(type='hidden', name='_csrf', value=csrfToken)
+          button.runpod-button.runpod-button--secondary(type='submit') Sync provider state
+
+      if management.managedPods.length
+        .runpod-pod-grid
+          each pod in management.managedPods
+            article.runpod-pod-card
+              .runpod-pod-card__header
+                div
+                  h3= pod.name
+                  code= pod.providerPodId
+                span.runpod-status(class=`runpod-status--${pod.providerStatus.toLowerCase()}`)= pod.providerStatus
+              .runpod-pod-card__metrics
+                div
+                  span GPU
+                  strong= `${pod.gpuName || pod.gpuId} × ${formatInteger(pod.gpuCount)}`
+                div
+                  span Hourly rate
+                  strong= `${formatUsd(pod.costPerHour)} / hr`
+                div
+                  span Setup
+                  strong= `${pod.setupStatus}${pod.setupModel ? ` · ${pod.setupModel}` : ''}`
+                div
+                  span Auto-stop
+                  strong= pod.autoStopAt ? formatTimestamp(pod.autoStopAt) : 'Not running'
+                div
+                  span Running time
+                  strong= pod.usage.trackingAvailable ? formatDuration(pod.usage.runningMs) : 'Not recorded'
+                div
+                  span Stopped time
+                  strong= pod.usage.trackingAvailable ? formatDuration(pod.usage.stoppedMs) : 'Not recorded'
+                div
+                  span Provider-billed cost
+                  strong= pod.billing.available ? formatUsd(pod.billing.totalUsd) : 'Awaiting billing sync'
+                div
+                  span Observed cost estimate
+                  strong= pod.usage.trackingAvailable ? formatUsd(pod.usage.estimatedTotalUsd) : 'Not available'
+              if pod.billing.available
+                p.runpod-form-help Provider ledger: #{formatUsd(pod.billing.computeUsd)} compute + #{formatUsd(pod.billing.storageUsd)} disk. Billing can lag current usage; last synced #{formatTimestamp(pod.billing.syncedAt)}.
+              if pod.setupStatus === 'ready' && pod.providerStatus === 'RUNNING' && pod.publicUrl
+                .runpod-endpoint
+                  span Public Ollama URL
+                  a(href=pod.publicUrl, target='_blank', rel='noopener noreferrer')= pod.publicUrl
+                  small The root page should say “Ollama is running.” API requests are unauthenticated.
+              else if pod.setupStatus === 'failed'
+                .runpod-alert.runpod-alert--error
+                  strong Setup failed and an automatic stop was attempted.
+                  if pod.setupErrorCode
+                    small= ` ${pod.setupErrorCode}`
+              .runpod-pod-card__actions
+                if pod.canStart
+                  form(method='post', action=`${adminPath}/pods/${pod.id}/start`)
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    button.runpod-button.runpod-button--primary(type='submit') Start
+                if pod.canStop
+                  form(method='post', action=`${adminPath}/pods/${pod.id}/stop`)
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    button.runpod-button.runpod-button--secondary(type='submit') Stop
+                if pod.setupStatus === 'failed' && pod.providerStatus === 'RUNNING'
+                  form(method='post', action=`${adminPath}/pods/${pod.id}/setup`)
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    button.runpod-button.runpod-button--secondary(type='submit') Retry setup
+              if pod.canDelete
+                details.runpod-delete
+                  summary Permanently delete Pod
+                  form(method='post', action=`${adminPath}/pods/${pod.id}/delete`, data-runpod-delete-form)
+                    input(type='hidden', name='_csrf', value=csrfToken)
+                    label.runpod-field
+                      span Type the exact Pod name: #{pod.name}
+                      input(type='text', name='confirmation', maxlength='120', autocomplete='off', required)
+                    button.runpod-button.runpod-button--danger(type='submit') Delete Pod and disk
+      else
+        .runpod-empty
+          strong No managed Pods
+          p Create a Pod above, or synchronize if Pods already exist in the Runpod account.
+
+      if management.unmanagedProviderPods.length
+        .runpod-unmanaged
+          h3 Untracked provider Pods
+          p These Pods exist in Runpod but do not yet have local lifecycle records. Use “Sync provider state” to import them before managing them here.
+          ul
+            each pod in management.unmanagedProviderPods
+              li
+                strong= pod.name
+                span= ` ${pod.providerStatus} · ${pod.gpuId} × ${formatInteger(pod.gpuCount)} · ${formatUsd(pod.costPerHour)}/hr`
+
+    section#archived-pods.runpod-panel(aria-labelledby='runpodArchivedPodsHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Retained audit state
+          h2#runpodArchivedPodsHeading Archived Pods
+          p.runpod-panel__subtitle Terminated provider resources remain as view-only local records with observed lifecycle time and exact v2 billing where available. Older billing-only records do not claim unknown runtimes.
+        span.runpod-panel__meta #{formatInteger(management.archivedPods.length)} archived
+      if management.archivedPods.length
+        .runpod-table-wrap
+          table.runpod-table
+            caption Archived Runpod Pod records
+            thead
+              tr
+                th(scope='col') Pod
+                th(scope='col') GPU
+                th(scope='col') Running
+                th(scope='col') Stopped
+                th.runpod-number(scope='col') Provider billed
+                th.runpod-number(scope='col') Observed estimate
+                th(scope='col') Archived / coverage end
+            tbody
+              each pod in management.archivedPods
+                tr
+                  td.runpod-system
+                    strong= pod.name
+                    code= pod.providerPodId
+                  td= `${pod.gpuName || pod.gpuId} × ${formatInteger(pod.gpuCount)}`
+                  td= pod.usage.trackingAvailable ? formatDuration(pod.usage.runningMs) : 'Not recorded'
+                  td= pod.usage.trackingAvailable ? formatDuration(pod.usage.stoppedMs) : 'Not recorded'
+                  td.runpod-number= pod.billing.available ? formatUsd(pod.billing.totalUsd) : 'Pending sync'
+                  td.runpod-number= pod.usage.trackingAvailable ? formatUsd(pod.usage.estimatedTotalUsd) : '—'
+                  td
+                    if pod.usageTrackingMode === 'billing_only'
+                      span Billing through #{formatTimestamp(pod.archivedAt)}
+                    else
+                      span= formatTimestamp(pod.archivedAt)
+      else
+        .runpod-empty
+          strong No archived Pods
+          p Permanently deleted Pods will be retained here for lifecycle history.
 
     section.runpod-summary(aria-label='Runpod overview')
       article.runpod-stat
@@ -59,18 +365,88 @@ block content
         span.runpod-stat__hint #{formatInteger(billing.recordCount)} billing buckets
 
     nav.runpod-section-nav(aria-label='Runpod dashboard sections')
+      a(href='#workload-templates') Workload template
+      a(href='#pod-creator') Create Pod
+      a(href='#pods') Pods
+      a(href='#archived-pods') Archive
+      a(href='#billing-history') Stored billing
       a(href='#billing') Billing
       a(href='#gpus') GPUs
       a(href='#cpus') CPUs
       a(href='#datacenters') Data centers
       a(href='#templates') Templates
 
+    section#billing-history.runpod-panel(aria-labelledby='runpodStoredBillingHeading')
+      .runpod-panel__header
+        div
+          p.runpod-eyebrow Durable account ledger
+          h2#runpodStoredBillingHeading Stored monthly billing
+          p.runpod-panel__subtitle Monthly Runpod v2 charges are retained locally from November 2025 onward. Months omitted by Runpod are stored explicitly as zero; the current month remains provisional until it closes.
+        form(method='post', action=`${adminPath}/billing/sync`)
+          input(type='hidden', name='_csrf', value=csrfToken)
+          button.runpod-button.runpod-button--secondary(type='submit') Sync billing history
+
+      if billingHistory.error
+        .runpod-alert.runpod-alert--warning(role='alert') Stored billing could not be loaded. The live billing explorer below may still be available.
+      else if billingHistory.records.length
+        .runpod-billing-total
+          div
+            span Stored total since November 2025
+            strong= formatUsd(billingHistory.totals.total, 4)
+          p #{formatInteger(billingHistory.providerMonthCount)} provider months · #{formatInteger(billingHistory.zeroMonthCount)} explicit zero/provisional months · synced #{formatTimestamp(billingHistory.lastSyncedAt)}
+        .runpod-cost-grid
+          article.runpod-cost
+            span Pods
+            strong= formatUsd(billingHistory.totals.pods)
+          article.runpod-cost
+            span Serverless
+            strong= formatUsd(billingHistory.totals.serverless)
+          article.runpod-cost
+            span Network storage
+            strong= formatUsd(billingHistory.totals.storage)
+          article.runpod-cost
+            span Public endpoints
+            strong= formatUsd(billingHistory.totals.endpoints)
+          article.runpod-cost
+            span Clusters
+            strong= formatUsd(billingHistory.totals.clusters)
+        .runpod-table-wrap
+          table.runpod-table
+            caption Persisted monthly account billing, newest first
+            thead
+              tr
+                th(scope='col') Month
+                th(scope='col') Record source
+                th.runpod-number(scope='col') Total
+                th.runpod-number(scope='col') Pods
+                th.runpod-number(scope='col') Serverless
+                th.runpod-number(scope='col') Storage
+            tbody
+              each record in billingHistory.records
+                tr
+                  td= record.periodKey
+                  td
+                    if record.source === 'provider'
+                      span.runpod-status.runpod-status--ready Runpod v2
+                    else if record.source === 'synthesized_zero'
+                      span.runpod-status.runpod-status--exited Stored zero
+                    else
+                      span.runpod-status.runpod-status--warning Provisional zero
+                  td.runpod-number= formatUsd(record.total)
+                  td.runpod-number= formatUsd(record.pods)
+                  td.runpod-number= formatUsd(record.serverless)
+                  td.runpod-number= formatUsd(record.storage)
+      else
+        .runpod-empty
+          strong No stored billing months yet
+          p Run “Sync billing history” to backfill November 2025 through the current month.
+
     section#billing.runpod-panel(aria-labelledby='runpodBillingHeading')
       .runpod-panel__header
         div
           p.runpod-eyebrow Account monitoring
-          h2#runpodBillingHeading Billing history
-          p.runpod-panel__subtitle Aggregated account-wide charges returned by the Runpod v2 billing endpoint.
+          h2#runpodBillingHeading Live billing explorer
+          p.runpod-panel__subtitle Inspect arbitrary recent buckets directly from the Runpod v2 billing endpoint. The durable monthly ledger above is the retained account history.
         if fetchedAt
           span.runpod-panel__meta Updated #{formatTimestamp(fetchedAt)}
 

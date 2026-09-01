@@ -107,6 +107,15 @@ const routes = [
   "archive",
   "runpod.catalog.read",
   "runpod.billing.read",
+  "runpod.billing.sync",
+  "runpod.pod.read",
+  "runpod.pod.create",
+  "runpod.pod.start",
+  "runpod.pod.stop",
+  "runpod.pod.delete",
+  "runpod.pod.setup",
+  "runpod.pod.sync",
+  "runpod.template.manage",
 ];
 
 const DEFAULT_AI_GATEWAY_BASE_URL = 'http://192.168.0.20:8080';

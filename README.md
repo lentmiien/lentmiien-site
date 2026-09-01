@@ -104,7 +104,7 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 - `/tmp-files` - Authenticated temporary file shuttle (admin only).
 - `/admin` & `/admin/manage_roles` - User/role management.
 - `/admin/performance`, `/admin/database_usage`, `/admin/ai-gateway`, `/admin/audio-workflow` - Runtime dashboards and admin tooling.
-- `/admin/runpod` - Read-only Runpod REST API v2 hardware catalog and billing monitor.
+- `/admin/runpod` - Admin-only Runpod REST API v2 catalog, durable account/per-Pod billing, usage archives, private Ollama templates, GPU picker, and guarded Pod lifecycle controls.
 - `/admin/qwen3-lora`, `/admin/qwen3-qlora` - Train and test Qwen3 LoRA and 32B QLoRA adapters through the AI Gateway.
 - `/yaml-viewer` - Swagger UI for YAML specs stored under `public/yaml/`.
 
@@ -128,8 +128,13 @@ This Node.js/Express application drives my personal website—a hybrid portfolio
 | `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY` | Optional provider keys surfaced in Chat5. |
 | `DISABLE_LOCAL` | Set to `TRUE` to hide the LM Studio provider integration. |
 | `AI_GATEWAY_BASE_URL` | Local AI gateway base URL used by admin dashboards, music generation, and Ollama fallback clients. |
-| `RUNPOD_API_KEY` | Dedicated Runpod credential used only for the read-only `/admin/runpod` REST API v2 monitor. Prefer a provider-side read-only/scoped key. |
+| `RUNPOD_API_KEY` | Dedicated Runpod REST API v2 credential for catalog/billing reads plus Pod and private-template management. Use the narrowest provider scope that supports those operations. |
 | `RUNPOD_API_TIMEOUT_MS`, `RUNPOD_API_CACHE_TTL_MS` | Runpod v2 outbound request deadline and short in-memory cache duration (defaults: 10 seconds and 30 seconds). |
+| `RUNPOD_MAX_ACTIVE_PODS`, `RUNPOD_MAX_GPU_COUNT`, `RUNPOD_MAX_HOURLY_COST_USD` | Server-side Runpod concurrency and cost ceilings (defaults: 2 active Pods, 4 GPUs per Pod, and $10/hour). |
+| `RUNPOD_DEFAULT_AUTO_STOP_MINUTES`, `RUNPOD_MAX_RUNTIME_MINUTES` | Default and maximum automatic Pod stop windows (defaults: 60 minutes and 24 hours). |
+| `RUNPOD_PROVISION_TIMEOUT_MS`, `RUNPOD_OLLAMA_PULL_TIMEOUT_MS`, `RUNPOD_POLL_INTERVAL_MS` | Bounded Ollama provisioning, model-pull, and polling timings (defaults: 10 minutes, 10 minutes, and 5 seconds). |
+| `RUNPOD_BILLING_HISTORY_START`, `RUNPOD_BILLING_SYNC_INTERVAL_MS` | First persisted UTC billing month and periodic v2 billing refresh interval (defaults: `2025-11-01` and 6 hours; interval is bounded to 15 minutes–24 hours). |
+| `CSRF_ALLOWED_ORIGINS` | Optional comma-separated browser origins accepted by the shared session CSRF guard when the trusted-proxy-derived origin is insufficient. |
 | `QWEN3_QLORA_INFO_TIMEOUT_MS`, `QWEN3_QLORA_ACTION_TIMEOUT_MS`, `QWEN3_QLORA_UPLOAD_TIMEOUT_MS` | Optional QLoRA metadata, job-creation, and CSV upload timeouts. Defaults follow the Gateway's long-running heavy-service contract. |
 | `QWEN3_QLORA_DOWNLOAD_TIMEOUT_MS`, `QWEN3_QLORA_GENERATE_TIMEOUT_MS` | Optional QLoRA model preparation and generation timeouts (defaults: 75 minutes and 12 hours 10 minutes). |
 | `QWEN3_QLORA_CSV_UPLOAD_MAX_MB`, `QWEN3_QLORA_MAX_COMPARE_TARGETS` | QLoRA dashboard upload and sequential comparison caps (defaults: 200 MiB and 4 targets). |

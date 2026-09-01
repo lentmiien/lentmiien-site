@@ -34,6 +34,9 @@ function responseForUrl(url) {
       metadata: { recordCount: 0, totals: { totalAmount: 0 } },
     });
   }
+  if (pathname === '/v2/billing/pods') {
+    return jsonResponse({ records: [], metadata: { recordCount: 0 } });
+  }
   if (pathname === '/v2/openapi.json') {
     return jsonResponse({
       openapi: '3.1.0',
@@ -239,11 +242,61 @@ describe('RunpodApiV2Service', () => {
       .toEqual({ bucketSize: 'month', lastN: MAX_BILLING_BUCKETS });
     expect(() => normalizeBillingOptions({ bucketSize: 'minute', lastN: 3 })).toThrow(TypeError);
     expect(() => normalizeBillingOptions({ bucketSize: 'day', lastN: MAX_BILLING_BUCKETS + 1 })).toThrow(TypeError);
+    expect(normalizeBillingOptions({
+      bucketSize: 'month',
+      startTime: '2025-11-01T00:00:00Z',
+      endTime: '2026-10-01T00:00:00Z',
+    })).toEqual({
+      bucketSize: 'month',
+      startTime: '2025-11-01T00:00:00.000Z',
+      endTime: '2026-10-01T00:00:00.000Z',
+    });
+    expect(() => normalizeBillingOptions({
+      bucketSize: 'month',
+      startTime: '2025-11-01T00:00:00Z',
+    })).toThrow(TypeError);
+    expect(() => normalizeBillingOptions({
+      bucketSize: 'month',
+      startTime: '2025-11-01T00:00:00Z',
+      endTime: '2026-10-01T00:00:00Z',
+      lastN: 2,
+    })).toThrow(TypeError);
 
     const fetchImpl = jest.fn();
     const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl });
     await expect(service.getBilling({ bucketSize: 'day', lastN: 0 })).rejects.toBeInstanceOf(TypeError);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('loads exact per-Pod billing from the fixed v2 endpoint and bounded range', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({
+      records: [{
+        podId: 'pod-1',
+        startTime: '2026-09-01T00:00:00Z',
+        endTime: '2026-10-01T00:00:00Z',
+        totalAmount: 1,
+        gpuAmount: 0.8,
+        cpuAmount: 0,
+        diskAmount: 0.2,
+      }],
+      metadata: { recordCount: 1 },
+    }));
+    const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl, cacheTtlMs: 0 });
+
+    const result = await service.getPodBilling({
+      bucketSize: 'month',
+      startTime: '2025-11-01T00:00:00Z',
+      endTime: '2026-10-01T00:00:00Z',
+      podId: 'pod-1',
+    });
+
+    expect(result.records).toHaveLength(1);
+    const [url, options] = fetchImpl.mock.calls[0];
+    expect(url.pathname).toBe('/v2/billing/pods');
+    expect(url.searchParams.get('startTime')).toBe('2025-11-01T00:00:00.000Z');
+    expect(url.searchParams.get('endTime')).toBe('2026-10-01T00:00:00.000Z');
+    expect(url.searchParams.get('podId')).toBe('pod-1');
+    expect(options.method).toBe('GET');
   });
 
   test('rejects non-v2 API descriptions', async () => {
@@ -260,5 +313,86 @@ describe('RunpodApiV2Service', () => {
     await expect(service.getApiMetadata()).rejects.toEqual(expect.objectContaining({
       code: 'RUNPOD_VERSION_MISMATCH',
     }));
+  });
+
+  test('uses only v2 pod endpoints and explicit methods for lifecycle operations', async () => {
+    const fetchImpl = jest.fn(async (url, options) => {
+      if (url.pathname === '/v2/pods' && options.method === 'GET') {
+        return jsonResponse({ pods: [{ id: 'pod-1' }] });
+      }
+      if (url.pathname === '/v2/pods' && options.method === 'POST') {
+        return jsonResponse({ id: 'pod-1', status: 'PROVISIONING' }, { status: 201 });
+      }
+      if (url.pathname === '/v2/pods/pod-1' && options.method === 'GET') {
+        return jsonResponse({ id: 'pod-1', status: 'RUNNING' });
+      }
+      if (url.pathname === '/v2/pods/pod-1/action') {
+        return jsonResponse({ id: 'pod-1', status: 'EXITED' });
+      }
+      if (url.pathname === '/v2/pods/pod-1' && options.method === 'DELETE') {
+        return jsonResponse(null, { status: 204 });
+      }
+      return jsonResponse({}, { status: 404 });
+    });
+    const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl, cacheTtlMs: 0 });
+    const createBody = {
+      name: 'Ollama test',
+      cloud: 'SECURE',
+      gpu: { id: 'NVIDIA GeForce RTX 4090', count: 1 },
+    };
+
+    await expect(service.listPods()).resolves.toEqual([{ id: 'pod-1' }]);
+    await expect(service.createPod(createBody)).resolves.toEqual(expect.objectContaining({ id: 'pod-1' }));
+    await expect(service.getPod('pod-1')).resolves.toEqual(expect.objectContaining({ status: 'RUNNING' }));
+    await expect(service.transitionPod('pod-1', 'stop')).resolves.toEqual(expect.objectContaining({ status: 'EXITED' }));
+    await expect(service.deletePod('pod-1')).resolves.toBe(true);
+
+    const calls = fetchImpl.mock.calls.map(([url, options]) => ({ url: String(url), options }));
+    expect(calls.map((call) => [new URL(call.url).pathname, call.options.method])).toEqual([
+      ['/v2/pods', 'GET'],
+      ['/v2/pods', 'POST'],
+      ['/v2/pods/pod-1', 'GET'],
+      ['/v2/pods/pod-1/action', 'POST'],
+      ['/v2/pods/pod-1', 'DELETE'],
+    ]);
+    expect(JSON.parse(calls[1].options.body)).toEqual(createBody);
+    expect(JSON.parse(calls[3].options.body)).toEqual({ action: 'stop' });
+  });
+
+  test('creates and updates private account templates through v2', async () => {
+    const fetchImpl = jest.fn(async (url, options) => {
+      if (url.pathname === '/v2/templates' && options.method === 'GET') {
+        return jsonResponse({ templates: [{ id: 'template-1' }] });
+      }
+      return jsonResponse({ id: 'template-1', name: 'Ollama' });
+    });
+    const service = new RunpodApiV2Service({ apiKey: 'key', fetchImpl, cacheTtlMs: 0 });
+    const payload = { name: 'Ollama', image: 'ollama/ollama:latest', public: false };
+
+    await expect(service.getAccountTemplates()).resolves.toHaveLength(1);
+    await expect(service.createTemplate(payload)).resolves.toEqual(expect.objectContaining({ id: 'template-1' }));
+    await expect(service.updateTemplate('template-1', payload)).resolves.toEqual(expect.objectContaining({ id: 'template-1' }));
+
+    expect(fetchImpl.mock.calls.map(([url, options]) => [url.pathname, options.method])).toEqual([
+      ['/v2/templates', 'GET'],
+      ['/v2/templates', 'POST'],
+      ['/v2/templates/template-1', 'PATCH'],
+    ]);
+  });
+
+  test('rejects resource path injection and oversized mutation bodies before network work', async () => {
+    const fetchImpl = jest.fn();
+    const service = new RunpodApiV2Service({
+      apiKey: 'key',
+      fetchImpl,
+      maxRequestBytes: 100,
+    });
+
+    await expect(service.getPod('../billing')).rejects.toBeInstanceOf(TypeError);
+    await expect(service.transitionPod('pod-1', 'destroy')).rejects.toBeInstanceOf(TypeError);
+    await expect(service.createPod({ name: 'x'.repeat(200) })).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_REQUEST_TOO_LARGE',
+    }));
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

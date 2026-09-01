@@ -3,8 +3,15 @@ const RUNPOD_API_VERSION = 'v2';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const DEFAULT_MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_BILLING_BUCKETS = 366;
+const MAX_PODS = 200;
+const MAX_ACCOUNT_TEMPLATES = 500;
+const MAX_POD_BILLING_RECORDS = 5000;
 const BILLING_BUCKET_SIZES = Object.freeze(['hour', 'day', 'week', 'month', 'year']);
+const CLOUD_TYPES = Object.freeze(['SECURE', 'COMMUNITY']);
+const POD_ACTIONS = Object.freeze(['start', 'stop', 'restart', 'terminate']);
+const RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const CATALOG_ITEM_LIMITS = Object.freeze({
   gpus: 500,
   cpus: 200,
@@ -19,9 +26,38 @@ const ENDPOINTS = Object.freeze({
   dataCenters: '/v2/catalog/datacenters',
   templates: '/v2/catalog/templates',
   billing: '/v2/billing',
+  podBilling: '/v2/billing/pods',
+  pods: '/v2/pods',
+  accountTemplates: '/v2/templates',
 });
 
 const ALLOWED_PATHS = new Set(Object.values(ENDPOINTS));
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'DELETE']);
+
+function normalizeResourceId(value, label = 'Runpod resource') {
+  const id = typeof value === 'string' ? value.trim() : '';
+  if (!RESOURCE_ID_PATTERN.test(id)) {
+    throw new TypeError(`${label} ID is invalid.`);
+  }
+  return id;
+}
+
+function podPath(id, suffix = '') {
+  const podId = normalizeResourceId(id, 'Runpod pod');
+  if (suffix && suffix !== '/action') {
+    throw new TypeError('Runpod pod path suffix is invalid.');
+  }
+  return `/v2/pods/${podId}${suffix}`;
+}
+
+function templatePath(id) {
+  return `/v2/templates/${normalizeResourceId(id, 'Runpod template')}`;
+}
+
+function allowedDynamicPath(pathname) {
+  return /^\/v2\/pods\/[A-Za-z0-9_-]{1,128}(?:\/action)?$/u.test(pathname)
+    || /^\/v2\/templates\/[A-Za-z0-9_-]{1,128}$/u.test(pathname);
+}
 
 class RunpodConfigurationError extends Error {
   constructor(message = 'RUNPOD_API_KEY is not configured.') {
@@ -59,11 +95,32 @@ function normalizeBillingOptions(options = {}) {
   const bucketSize = typeof options.bucketSize === 'string'
     ? options.bucketSize
     : 'day';
-  const lastN = Number(options.lastN ?? 30);
-
   if (!BILLING_BUCKET_SIZES.includes(bucketSize)) {
     throw new TypeError('Unsupported Runpod billing bucket size.');
   }
+  const hasStartTime = options.startTime !== undefined && options.startTime !== null;
+  const hasEndTime = options.endTime !== undefined && options.endTime !== null;
+  if (hasStartTime || hasEndTime) {
+    if (!hasStartTime || !hasEndTime || options.lastN !== undefined) {
+      throw new TypeError('Runpod billing ranges require both startTime and endTime without lastN.');
+    }
+    const startTime = new Date(options.startTime);
+    const endTime = new Date(options.endTime);
+    if (
+      Number.isNaN(startTime.getTime())
+      || Number.isNaN(endTime.getTime())
+      || startTime >= endTime
+    ) {
+      throw new TypeError('Runpod billing startTime and endTime must be a valid increasing range.');
+    }
+    return {
+      bucketSize,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+    };
+  }
+
+  const lastN = Number(options.lastN ?? 30);
   if (!Number.isSafeInteger(lastN) || lastN < 1 || lastN > MAX_BILLING_BUCKETS) {
     throw new TypeError(`Runpod billing lastN must be between 1 and ${MAX_BILLING_BUCKETS}.`);
   }
@@ -185,6 +242,55 @@ function ensureBilling(body) {
   return body;
 }
 
+function ensurePodBilling(body) {
+  if (
+    !body
+    || typeof body !== 'object'
+    || !Array.isArray(body.records)
+    || !body.metadata
+    || typeof body.metadata !== 'object'
+  ) {
+    throw new RunpodApiError('Runpod returned an invalid response for pod billing history.', {
+      code: 'RUNPOD_INVALID_RESPONSE',
+      operation: 'pod billing history',
+    });
+  }
+  if (body.records.length > MAX_POD_BILLING_RECORDS) {
+    throw new RunpodApiError('Runpod returned too many pod billing records.', {
+      code: 'RUNPOD_RESPONSE_TOO_LARGE',
+      operation: 'pod billing history',
+    });
+  }
+  return body;
+}
+
+function ensureResource(body, operation) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new RunpodApiError(`Runpod returned an invalid response for ${operation}.`, {
+      code: 'RUNPOD_INVALID_RESPONSE',
+      operation,
+    });
+  }
+  normalizeResourceId(body.id, 'Returned Runpod resource');
+  return body;
+}
+
+function normalizeCloudType(value) {
+  const cloud = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  if (!CLOUD_TYPES.includes(cloud)) {
+    throw new TypeError('Runpod cloud must be SECURE or COMMUNITY.');
+  }
+  return cloud;
+}
+
+function normalizePodAction(value) {
+  const action = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!POD_ACTIONS.includes(action)) {
+    throw new TypeError('Unsupported Runpod pod action.');
+  }
+  return action;
+}
+
 class RunpodApiV2Service {
   constructor({
     apiKey = process.env.RUNPOD_API_KEY,
@@ -192,6 +298,7 @@ class RunpodApiV2Service {
     timeoutMs = positiveInteger(process.env.RUNPOD_API_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
     cacheTtlMs = nonNegativeInteger(process.env.RUNPOD_API_CACHE_TTL_MS, DEFAULT_CACHE_TTL_MS),
     maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES,
+    maxRequestBytes = DEFAULT_MAX_REQUEST_BYTES,
     now = () => Date.now(),
   } = {}) {
     this.apiKey = typeof apiKey === 'string' ? apiKey.trim() : '';
@@ -199,6 +306,7 @@ class RunpodApiV2Service {
     this.timeoutMs = positiveInteger(timeoutMs, DEFAULT_TIMEOUT_MS);
     this.cacheTtlMs = nonNegativeInteger(cacheTtlMs, DEFAULT_CACHE_TTL_MS);
     this.maxResponseBytes = positiveInteger(maxResponseBytes, DEFAULT_MAX_RESPONSE_BYTES);
+    this.maxRequestBytes = positiveInteger(maxRequestBytes, DEFAULT_MAX_REQUEST_BYTES);
     this.now = now;
     this.cache = new Map();
   }
@@ -213,7 +321,7 @@ class RunpodApiV2Service {
   }
 
   buildUrl(pathname, query = {}) {
-    if (!ALLOWED_PATHS.has(pathname)) {
+    if (!ALLOWED_PATHS.has(pathname) && !allowedDynamicPath(pathname)) {
       throw new RunpodApiError('The Runpod API path is not allowed.', {
         code: 'RUNPOD_PATH_NOT_ALLOWED',
       });
@@ -227,20 +335,60 @@ class RunpodApiV2Service {
     return url;
   }
 
-  async requestJson(pathname, { query = {}, operation = 'request' } = {}) {
+  async requestJson(pathname, {
+    query = {},
+    operation = 'request',
+    method = 'GET',
+    body,
+  } = {}) {
     this.ensureConfigured();
+    const normalizedMethod = typeof method === 'string' ? method.toUpperCase() : '';
+    if (!ALLOWED_METHODS.has(normalizedMethod)) {
+      throw new RunpodApiError('The Runpod API method is not allowed.', {
+        code: 'RUNPOD_METHOD_NOT_ALLOWED',
+        operation,
+      });
+    }
+    if (normalizedMethod === 'GET' && body !== undefined) {
+      throw new RunpodApiError('A Runpod GET request cannot include a body.', {
+        code: 'RUNPOD_INVALID_REQUEST',
+        operation,
+      });
+    }
+
     const url = this.buildUrl(pathname, query);
+    let serializedBody;
+    if (body !== undefined) {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw new RunpodApiError('The Runpod API request body is invalid.', {
+          code: 'RUNPOD_INVALID_REQUEST',
+          operation,
+        });
+      }
+      serializedBody = JSON.stringify(body);
+      if (Buffer.byteLength(serializedBody, 'utf8') > this.maxRequestBytes) {
+        throw new RunpodApiError('The Runpod API request is too large.', {
+          code: 'RUNPOD_REQUEST_TOO_LARGE',
+          operation,
+        });
+      }
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
+      const headers = {
+        Accept: 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+        'User-Agent': 'lentmiien-site-runpod-v2/2.0',
+      };
+      if (serializedBody !== undefined) {
+        headers['Content-Type'] = 'application/json';
+      }
       const response = await this.fetch(url, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-          'User-Agent': 'lentmiien-site-runpod-v2/1.0',
-        },
+        method: normalizedMethod,
+        headers,
+        ...(serializedBody === undefined ? {} : { body: serializedBody }),
         redirect: 'error',
         signal: controller.signal,
       });
@@ -254,6 +402,11 @@ class RunpodApiV2Service {
         });
       }
 
+      if (response.status === 204 || response.status === 205) {
+        await cancelResponseBody(response);
+        return null;
+      }
+
       const contentType = response.headers?.get?.('content-type') || '';
       if (contentType && !contentType.toLowerCase().includes('json')) {
         await cancelResponseBody(response);
@@ -265,6 +418,13 @@ class RunpodApiV2Service {
       }
 
       const responseText = await readResponseText(response, this.maxResponseBytes, operation);
+      if (!responseText.trim()) {
+        throw new RunpodApiError(`Runpod returned an invalid response for ${operation}.`, {
+          code: 'RUNPOD_INVALID_RESPONSE',
+          operation,
+          status: response.status,
+        });
+      }
       try {
         return JSON.parse(responseText);
       } catch (_) {
@@ -352,11 +512,12 @@ class RunpodApiV2Service {
     }, { forceRefresh });
   }
 
-  getGpuTypes({ forceRefresh = false } = {}) {
-    return this.loadCached('catalog:gpus:pod', async () => {
+  getGpuTypes({ forceRefresh = false, cloud = 'SECURE' } = {}) {
+    const normalizedCloud = normalizeCloudType(cloud);
+    return this.loadCached(`catalog:gpus:pod:${normalizedCloud}`, async () => {
       const body = await this.requestJson(ENDPOINTS.gpus, {
         operation: 'the GPU catalog',
-        query: { include: 'AVAILABILITY', product: 'POD', cloud: 'SECURE' },
+        query: { include: 'AVAILABILITY', product: 'POD', cloud: normalizedCloud },
       });
       return ensureCollection(body, 'gpus', 'the GPU catalog', CATALOG_ITEM_LIMITS.gpus);
     }, { forceRefresh });
@@ -404,7 +565,7 @@ class RunpodApiV2Service {
   async getBilling(options = {}) {
     const { forceRefresh = false } = options;
     const filters = normalizeBillingOptions(options);
-    const cacheKey = `billing:${filters.bucketSize}:${filters.lastN}`;
+    const cacheKey = `billing:${JSON.stringify(filters)}`;
     return this.loadCached(cacheKey, async () => {
       const body = await this.requestJson(ENDPOINTS.billing, {
         operation: 'billing history',
@@ -412,6 +573,94 @@ class RunpodApiV2Service {
       });
       return ensureBilling(body);
     }, { forceRefresh });
+  }
+
+  async getPodBilling(options = {}) {
+    const { forceRefresh = false } = options;
+    const filters = normalizeBillingOptions(options);
+    const podId = options.podId === undefined || options.podId === null || options.podId === ''
+      ? null
+      : normalizeResourceId(options.podId, 'Runpod pod');
+    const cacheKey = `billing:pods:${JSON.stringify(filters)}:${podId || 'all'}`;
+    return this.loadCached(cacheKey, async () => {
+      const body = await this.requestJson(ENDPOINTS.podBilling, {
+        operation: 'pod billing history',
+        query: { ...filters, ...(podId ? { podId } : {}) },
+      });
+      return ensurePodBilling(body);
+    }, { forceRefresh });
+  }
+
+  async listPods() {
+    const body = await this.requestJson(ENDPOINTS.pods, {
+      operation: 'the pod list',
+    });
+    return ensureCollection(body, 'pods', 'the pod list', MAX_PODS);
+  }
+
+  async getPod(id) {
+    const body = await this.requestJson(podPath(id), {
+      operation: 'the pod',
+    });
+    return ensureResource(body, 'the pod');
+  }
+
+  async createPod(input) {
+    const body = await this.requestJson(ENDPOINTS.pods, {
+      method: 'POST',
+      body: input,
+      operation: 'pod creation',
+    });
+    return ensureResource(body, 'pod creation');
+  }
+
+  async transitionPod(id, action) {
+    const normalizedAction = normalizePodAction(action);
+    const body = await this.requestJson(podPath(id, '/action'), {
+      method: 'POST',
+      body: { action: normalizedAction },
+      operation: `pod ${normalizedAction}`,
+    });
+    if (normalizedAction === 'terminate') return null;
+    return ensureResource(body, `pod ${normalizedAction}`);
+  }
+
+  async deletePod(id) {
+    await this.requestJson(podPath(id), {
+      method: 'DELETE',
+      operation: 'pod termination',
+    });
+    return true;
+  }
+
+  async getAccountTemplates() {
+    const body = await this.requestJson(ENDPOINTS.accountTemplates, {
+      operation: 'account templates',
+    });
+    return ensureCollection(
+      body,
+      'templates',
+      'account templates',
+      MAX_ACCOUNT_TEMPLATES
+    );
+  }
+
+  async createTemplate(input) {
+    const body = await this.requestJson(ENDPOINTS.accountTemplates, {
+      method: 'POST',
+      body: input,
+      operation: 'template creation',
+    });
+    return ensureResource(body, 'template creation');
+  }
+
+  async updateTemplate(id, input) {
+    const body = await this.requestJson(templatePath(id), {
+      method: 'PATCH',
+      body: input,
+      operation: 'template update',
+    });
+    return ensureResource(body, 'template update');
   }
 
   async getDashboard({ bucketSize = 'day', lastN = 30, forceRefresh = false } = {}) {
@@ -461,11 +710,18 @@ class RunpodApiV2Service {
 module.exports = {
   BILLING_BUCKET_SIZES,
   CATALOG_ITEM_LIMITS,
+  CLOUD_TYPES,
   DEFAULT_CACHE_TTL_MS,
+  DEFAULT_MAX_REQUEST_BYTES,
   DEFAULT_MAX_RESPONSE_BYTES,
   DEFAULT_TIMEOUT_MS,
   ENDPOINTS,
   MAX_BILLING_BUCKETS,
+  MAX_ACCOUNT_TEMPLATES,
+  MAX_POD_BILLING_RECORDS,
+  MAX_PODS,
+  POD_ACTIONS,
+  RESOURCE_ID_PATTERN,
   RUNPOD_API_ORIGIN,
   RUNPOD_API_VERSION,
   RunpodApiError,
@@ -473,6 +729,11 @@ module.exports = {
   RunpodConfigurationError,
   cancelResponseBody,
   normalizeBillingOptions,
+  normalizeCloudType,
+  normalizePodAction,
+  normalizeResourceId,
+  podPath,
   publicRunpodError,
   readResponseText,
+  templatePath,
 };
