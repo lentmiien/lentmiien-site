@@ -4,6 +4,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_CACHE_TTL_MS = 30_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_REQUEST_BYTES = 64 * 1024;
+const DEFAULT_MAX_ERROR_RESPONSE_BYTES = 64 * 1024;
 const MAX_BILLING_BUCKETS = 366;
 const MAX_PODS = 200;
 const MAX_ACCOUNT_TEMPLATES = 500;
@@ -72,12 +73,18 @@ class RunpodApiError extends Error {
     code = 'RUNPOD_API_ERROR',
     operation = null,
     status = null,
+    providerCode = null,
+    providerTitle = null,
+    providerDetail = null,
   } = {}) {
     super(message);
     this.name = 'RunpodApiError';
     this.code = code;
     this.operation = operation;
     this.status = status;
+    this.providerCode = providerCode;
+    this.providerTitle = providerTitle;
+    this.providerDetail = providerDetail;
   }
 }
 
@@ -202,6 +209,85 @@ async function readResponseText(response, maxResponseBytes, operation) {
   }
 
   return text + decoder.decode();
+}
+
+function sanitizeProviderErrorText(value, maxLength, secrets = []) {
+  if (value === undefined || value === null) return '';
+  let text = String(value)
+    .replace(/[\u0000-\u001f\u007f]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  secrets
+    .filter((secret) => typeof secret === 'string' && secret.length >= 4)
+    .forEach((secret) => {
+      text = text.split(secret).join('[redacted]');
+    });
+  return text
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [redacted]')
+    .replace(/\b(api[_ -]?key|authorization|token|secret)\s*[:=]\s*[^,;\s]+/giu, '$1=[redacted]')
+    .slice(0, maxLength);
+}
+
+function firstProviderErrorObject(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  if (body.error && typeof body.error === 'object' && !Array.isArray(body.error)) {
+    return body.error;
+  }
+  if (Array.isArray(body.errors)) {
+    return body.errors.find((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+      || body;
+  }
+  return body;
+}
+
+function extractProviderErrorDetails(responseText, secrets = []) {
+  let body;
+  try {
+    body = JSON.parse(responseText);
+  } catch (_) {
+    return { providerCode: null, providerTitle: null, providerDetail: null };
+  }
+  const nested = firstProviderErrorObject(body);
+  if (!nested) {
+    return { providerCode: null, providerTitle: null, providerDetail: null };
+  }
+  const root = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const stringError = typeof root.error === 'string' ? root.error : '';
+  const providerCode = sanitizeProviderErrorText(
+    nested.code ?? nested.errorCode ?? root.code ?? root.errorCode ?? nested.type ?? root.type,
+    120,
+    secrets
+  ) || null;
+  const providerTitle = sanitizeProviderErrorText(
+    nested.title ?? root.title ?? stringError,
+    240,
+    secrets
+  ) || null;
+  const providerDetail = sanitizeProviderErrorText(
+    nested.detail
+      ?? nested.message
+      ?? nested.description
+      ?? root.detail
+      ?? root.message
+      ?? root.description
+      ?? stringError,
+    1000,
+    secrets
+  ) || null;
+  return { providerCode, providerTitle, providerDetail };
+}
+
+async function readProviderErrorDetails(response, maxResponseBytes, operation, secrets = []) {
+  try {
+    const responseText = await readResponseText(
+      response,
+      Math.min(maxResponseBytes, DEFAULT_MAX_ERROR_RESPONSE_BYTES),
+      operation
+    );
+    return extractProviderErrorDetails(responseText, secrets);
+  } catch (_) {
+    return { providerCode: null, providerTitle: null, providerDetail: null };
+  }
 }
 
 function ensureCollection(body, propertyName, operation, maxItems) {
@@ -394,11 +480,17 @@ class RunpodApiV2Service {
       });
 
       if (!response.ok) {
-        await cancelResponseBody(response);
+        const providerError = await readProviderErrorDetails(
+          response,
+          this.maxResponseBytes,
+          operation,
+          [this.apiKey]
+        );
         throw new RunpodApiError(`Runpod could not load ${operation} (HTTP ${response.status}).`, {
           code: 'RUNPOD_HTTP_ERROR',
           operation,
           status: response.status,
+          ...providerError,
         });
       }
 
@@ -712,6 +804,7 @@ module.exports = {
   CATALOG_ITEM_LIMITS,
   CLOUD_TYPES,
   DEFAULT_CACHE_TTL_MS,
+  DEFAULT_MAX_ERROR_RESPONSE_BYTES,
   DEFAULT_MAX_REQUEST_BYTES,
   DEFAULT_MAX_RESPONSE_BYTES,
   DEFAULT_TIMEOUT_MS,
@@ -728,6 +821,7 @@ module.exports = {
   RunpodApiV2Service,
   RunpodConfigurationError,
   cancelResponseBody,
+  extractProviderErrorDetails,
   normalizeBillingOptions,
   normalizeCloudType,
   normalizePodAction,

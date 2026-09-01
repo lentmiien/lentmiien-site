@@ -159,6 +159,13 @@ router.post(
   runpodPodAdminController.stopPod
 );
 router.post(
+  '/pods/:id/extend',
+  runpodMutationLimiter,
+  csrf.requireToken,
+  requireCapability(RUNPOD_CAPABILITIES.podExtend),
+  runpodPodAdminController.extendPod
+);
+router.post(
   '/pods/:id/setup',
   runpodMutationLimiter,
   csrf.requireToken,

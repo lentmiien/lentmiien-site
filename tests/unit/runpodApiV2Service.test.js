@@ -122,6 +122,35 @@ describe('RunpodApiV2Service', () => {
     expect(fetchImpl.mock.results[0]).toBeDefined();
   });
 
+  test('retains only bounded, sanitized structured details from provider errors', async () => {
+    const secret = 'runpod-test-secret';
+    const fetchImpl = jest.fn().mockResolvedValue(jsonResponse({
+      error: {
+        code: 'ZERO_GPUS',
+        title: 'Original GPU unavailable',
+        detail: `The original machine currently has zero GPUs; token=${secret}`,
+      },
+    }, { status: 409 }));
+    const service = new RunpodApiV2Service({ apiKey: secret, fetchImpl, cacheTtlMs: 0 });
+
+    let error;
+    try {
+      await service.transitionPod('pod-1', 'start');
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toEqual(expect.objectContaining({
+      code: 'RUNPOD_HTTP_ERROR',
+      status: 409,
+      providerCode: 'ZERO_GPUS',
+      providerTitle: 'Original GPU unavailable',
+    }));
+    expect(error.providerDetail).toContain('zero GPUs');
+    expect(error.providerDetail).toContain('[redacted]');
+    expect(JSON.stringify(error)).not.toContain(secret);
+  });
+
   test('rejects missing and header-unsafe credentials before making a request', async () => {
     const fetchImpl = jest.fn();
 

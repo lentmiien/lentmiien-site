@@ -537,6 +537,128 @@
   margin-top: 1rem;
 }
 
+.runpod-duration-control {
+  display: flex;
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.runpod-duration-control .runpod-field {
+  min-width: 10rem;
+}
+
+.runpod-duration-control--custom .runpod-field {
+  min-width: 9rem;
+}
+
+.runpod-extension-control {
+  display: grid;
+  flex-basis: 100%;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-1);
+}
+
+.runpod-extension-control__label {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.runpod-extension-control__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.runpod-countdown {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 0.3rem 0.7rem;
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--info);
+  border-left-width: 4px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--info) 8%, var(--surface-1));
+}
+
+.runpod-countdown > span,
+.runpod-countdown time,
+.runpod-countdown small {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.runpod-countdown strong {
+  color: var(--text);
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.runpod-countdown time,
+.runpod-countdown small {
+  grid-column: 1 / -1;
+}
+
+.runpod-countdown--warning {
+  border-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 11%, var(--surface-1));
+}
+
+.runpod-countdown--warning strong,
+.runpod-countdown--warning [data-runpod-countdown-warning] {
+  color: var(--warning);
+}
+
+.runpod-countdown--danger {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-1));
+}
+
+.runpod-countdown--danger strong,
+.runpod-countdown--danger [data-runpod-countdown-warning] {
+  color: var(--danger);
+}
+
+.runpod-provider-error dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.75rem 0 0;
+}
+
+.runpod-provider-error dl div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.35fr) minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.runpod-provider-error dt,
+.runpod-provider-error dd {
+  margin: 0;
+}
+
+.runpod-provider-error dt {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.runpod-provider-error dd {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.runpod-provider-error code {
+  display: inline;
+  margin: 0;
+  color: var(--accent);
+}
+
 .runpod-endpoint {
   display: grid;
   gap: 0.25rem;
@@ -920,5 +1042,15 @@
   .runpod-template dl div {
     grid-template-columns: 1fr;
     gap: 0.25rem;
+  }
+
+  .runpod-duration-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .runpod-provider-error dl div {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
   }
 }

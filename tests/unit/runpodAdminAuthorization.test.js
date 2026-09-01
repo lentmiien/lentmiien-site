@@ -152,11 +152,13 @@ describe('Runpod route wiring', () => {
     expect(routeSource).toContain("'/pods'");
     expect(routeSource).toContain("'/pods/:id/start'");
     expect(routeSource).toContain("'/pods/:id/stop'");
+    expect(routeSource).toContain("'/pods/:id/extend'");
     expect(routeSource).toContain("'/pods/:id/delete'");
     expect(routeSource).toContain("'/billing/sync'");
     expect(routeSource).toContain('csrf.requireToken');
     expect(routeSource).toContain('requireBoundedRunpodForm');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podCreate)');
+    expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podExtend)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.podDelete)');
     expect(routeSource).toContain('requireCapability(RUNPOD_CAPABILITIES.billingSync)');
     expect(routeSource).not.toMatch(/router\.(?:put|patch|delete)\s*\(/u);

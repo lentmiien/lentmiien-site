@@ -6,6 +6,7 @@ const RUNPOD_CAPABILITIES = Object.freeze({
   podCreate: 'runpod.pod.create',
   podStart: 'runpod.pod.start',
   podStop: 'runpod.pod.stop',
+  podExtend: 'runpod.pod.extend',
   podDelete: 'runpod.pod.delete',
   podSetup: 'runpod.pod.setup',
   podSync: 'runpod.pod.sync',

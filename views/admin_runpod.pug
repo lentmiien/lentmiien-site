@@ -11,6 +11,9 @@ block content
   - const formatInteger = (value) => Number.isFinite(value) ? value.toLocaleString('en-US') : '—';
   - const formatTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—'; };
   - const formatDuration = (value) => { if (!Number.isFinite(value)) return 'Not recorded'; const seconds = Math.max(0, Math.floor(value / 1000)); const days = Math.floor(seconds / 86400); const hours = Math.floor((seconds % 86400) / 3600); const minutes = Math.floor((seconds % 3600) / 60); return days ? `${days}d ${hours}h ${minutes}m` : hours ? `${hours}h ${minutes}m` : `${minutes}m`; };
+  - const formatMinutes = (value) => value % 1440 === 0 ? `${value / 1440} day${value === 1440 ? '' : 's'}` : value % 60 === 0 ? `${value / 60} hour${value === 60 ? '' : 's'}` : `${value} minutes`;
+  - const operationLabel = (value) => ({ start: 'Pod start', stop: 'Pod stop', extend: 'deadline extension', delete: 'Pod deletion', auto_stop: 'automatic stop' }[value] || 'Pod operation');
+  - const isoTimestamp = (value) => { const date = value ? new Date(value) : null; return date && !Number.isNaN(date.getTime()) ? date.toISOString() : ''; };
   - const refreshHref = `${adminPath}?bucketSize=${encodeURIComponent(filters.bucketSize)}&lastN=${encodeURIComponent(filters.lastN)}&refresh=1`;
   - const management = podManagement || { limits: {}, templates: [], managedPods: [], archivedPods: [], unmanagedProviderPods: [], gpuOptions: [], errors: {} };
   - const ollamaTemplate = management.templates.find((entry) => entry.slug === 'ollama') || null;
@@ -253,6 +256,12 @@ block content
                 div
                   span Observed cost estimate
                   strong= pod.usage.trackingAvailable ? formatUsd(pod.usage.estimatedTotalUsd) : 'Not available'
+              if pod.providerStatus === 'RUNNING' && pod.autoStopAt
+                .runpod-countdown(data-runpod-countdown, data-deadline=isoTimestamp(pod.autoStopAt), role='timer', aria-label='Time until automatic Pod shutdown')
+                  span Automatic stop in
+                  strong(data-runpod-countdown-value)= formatDuration(Math.max(0, new Date(pod.autoStopAt).getTime() - Date.now()))
+                  time(datetime=isoTimestamp(pod.autoStopAt))= `Deadline: ${formatTimestamp(pod.autoStopAt)}`
+                  small(data-runpod-countdown-warning) The Pod will stop automatically when this reaches zero. Extend it before the deadline if work is still in progress.
               if pod.billing.available
                 p.runpod-form-help Provider ledger: #{formatUsd(pod.billing.computeUsd)} compute + #{formatUsd(pod.billing.storageUsd)} disk. Billing can lag current usage; last synced #{formatTimestamp(pod.billing.syncedAt)}.
               if pod.setupStatus === 'ready' && pod.providerStatus === 'RUNNING' && pod.publicUrl
@@ -265,11 +274,62 @@ block content
                   strong Setup failed and an automatic stop was attempted.
                   if pod.setupErrorCode
                     small= ` ${pod.setupErrorCode}`
+              if pod.lastOperationError
+                .runpod-provider-error.runpod-alert.runpod-alert--error(role='status')
+                  strong= `Last ${operationLabel(pod.lastOperationError.action)} failed`
+                  p= pod.lastOperationError.message || 'Runpod rejected the operation.'
+                  dl
+                    div
+                      dt App code
+                      dd
+                        code= pod.lastOperationError.code || 'RUNPOD_ACTION_FAILED'
+                    if pod.lastOperationError.providerStatus
+                      div
+                        dt Provider HTTP
+                        dd= pod.lastOperationError.providerStatus
+                    if pod.lastOperationError.providerCode
+                      div
+                        dt Provider code
+                        dd
+                          code= pod.lastOperationError.providerCode
+                    if pod.lastOperationError.providerTitle
+                      div
+                        dt Provider message
+                        dd= pod.lastOperationError.providerTitle
+                    if pod.lastOperationError.detail && pod.lastOperationError.detail !== pod.lastOperationError.providerTitle
+                      div
+                        dt Provider detail
+                        dd= pod.lastOperationError.detail
+                  if pod.lastOperationError.occurredAt
+                    small= `Recorded ${formatTimestamp(pod.lastOperationError.occurredAt)}`
               .runpod-pod-card__actions
                 if pod.canStart
-                  form(method='post', action=`${adminPath}/pods/${pod.id}/start`)
+                  - const storedStartMinutes = Number.isFinite(pod.autoStopMinutes) ? pod.autoStopMinutes : null;
+                  - const preferredStartMinutes = storedStartMinutes >= 15 && storedStartMinutes <= management.limits.maxRuntimeMinutes ? storedStartMinutes : management.limits.defaultAutoStopMinutes;
+                  - const startDurationOptions = Array.from(new Set([15, 30, 60, 240, 480, 1440, preferredStartMinutes])).filter((minutes) => minutes >= 15 && minutes <= management.limits.maxRuntimeMinutes).sort((left, right) => left - right);
+                  form.runpod-duration-control(method='post', action=`${adminPath}/pods/${pod.id}/start`)
                     input(type='hidden', name='_csrf', value=csrfToken)
-                    button.runpod-button.runpod-button--primary(type='submit') Start
+                    label.runpod-field
+                      span Start for…
+                      select(name='runMinutes', required)
+                        each minutes in startDurationOptions
+                          option(value=minutes, selected=minutes === preferredStartMinutes)= formatMinutes(minutes)
+                    button.runpod-button.runpod-button--primary(type='submit') Start Pod
+                if pod.canExtend
+                  .runpod-extension-control
+                    span.runpod-extension-control__label Extend automatic stop
+                    .runpod-extension-control__quick
+                      each extension in [{ minutes: 30, label: '+30m' }, { minutes: 60, label: '+1h' }, { minutes: 240, label: '+4h' }]
+                        form(method='post', action=`${adminPath}/pods/${pod.id}/extend`)
+                          input(type='hidden', name='_csrf', value=csrfToken)
+                          input(type='hidden', name='extensionMinutes', value=extension.minutes)
+                          button.runpod-button.runpod-button--secondary(type='submit')= extension.label
+                    form.runpod-duration-control.runpod-duration-control--custom(method='post', action=`${adminPath}/pods/${pod.id}/extend`)
+                      input(type='hidden', name='_csrf', value=csrfToken)
+                      label.runpod-field
+                        span Custom (minutes)
+                        input(type='number', name='extensionMinutes', min='15', max=management.limits.maxRuntimeMinutes, step='1', value='60', required)
+                      button.runpod-button.runpod-button--secondary(type='submit') Extend
                 if pod.canStop
                   form(method='post', action=`${adminPath}/pods/${pod.id}/stop`)
                     input(type='hidden', name='_csrf', value=csrfToken)

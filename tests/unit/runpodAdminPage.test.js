@@ -112,9 +112,37 @@ describe('Runpod admin page', () => {
         setupStatus: 'ready',
         setupModel: 'qwen2.5:0.5b',
         publicUrl: 'https://provider-pod-id-11434.proxy.runpod.net',
+        autoStopMinutes: 60,
         autoStopAt: '2026-09-01T02:00:00.000Z',
         canStart: false,
         canStop: true,
+        canExtend: true,
+        canDelete: true,
+        lastOperationError: {
+          action: 'start',
+          code: 'RUNPOD_START_GPU_UNAVAILABLE',
+          providerCode: 'ZERO_GPUS',
+          providerStatus: 409,
+          providerTitle: 'Original GPU unavailable',
+          detail: '<img src=x onerror=window.providerInjected=true>',
+          message: 'Wait and retry, or delete and redeploy.',
+          occurredAt: '2026-09-01T00:30:00.000Z',
+        },
+      }, {
+        id: 'stopped-local-pod-id',
+        name: 'stopped-ollama',
+        providerPodId: 'stopped-provider-pod-id',
+        providerStatus: 'EXITED',
+        gpuName: 'RTX 4090',
+        gpuId: 'NVIDIA GeForce RTX 4090',
+        gpuCount: 1,
+        costPerHour: 0,
+        setupStatus: 'ready',
+        autoStopMinutes: 240,
+        autoStopAt: null,
+        canStart: true,
+        canStop: false,
+        canExtend: false,
         canDelete: true,
       }],
       archivedPods: [],
@@ -135,7 +163,20 @@ describe('Runpod admin page', () => {
     expect(html).toContain('method="post" action="/admin/runpod/templates/ollama"');
     expect(html).toContain('action="/admin/runpod/pods"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/stop"');
+    expect(html).toContain('action="/admin/runpod/pods/local-pod-id/extend"');
+    expect(html).toContain('action="/admin/runpod/pods/stopped-local-pod-id/start"');
     expect(html).toContain('action="/admin/runpod/pods/local-pod-id/delete"');
+    expect(html).toContain('Start for…');
+    expect(html).toContain('Extend automatic stop');
+    expect(html).toContain('+30m');
+    expect(html).toContain('+1h');
+    expect(html).toContain('+4h');
+    expect(html).toContain('Custom (minutes)');
+    expect(html).toContain('data-runpod-countdown');
+    expect(html).toContain('RUNPOD_START_GPU_UNAVAILABLE');
+    expect(html).toContain('Original GPU unavailable');
+    expect(html).not.toContain('<img src=x onerror=window.providerInjected=true>');
+    expect(html).toContain('&lt;img src=x onerror=window.providerInjected=true&gt;');
     expect(html).toContain('name="_csrf" value="csrf-test-token"');
     expect(html).toContain('https://provider-pod-id-11434.proxy.runpod.net');
     expect(html).toContain('https://api.runpod.io/v2');

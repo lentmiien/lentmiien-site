@@ -10,8 +10,12 @@ const NOTICE_KEYS = Object.freeze({
   podCreateFailed: 'pod-create-failed',
   podStarted: 'pod-started',
   podStartFailed: 'pod-start-failed',
+  podStartGpuUnavailable: 'pod-start-gpu-unavailable',
+  podStartRateLimited: 'pod-start-rate-limited',
   podStopped: 'pod-stopped',
   podStopFailed: 'pod-stop-failed',
+  podExtended: 'pod-extended',
+  podExtendFailed: 'pod-extend-failed',
   podDeleted: 'pod-deleted',
   podDeleteFailed: 'pod-delete-failed',
   setupQueued: 'setup-queued',
@@ -35,12 +39,25 @@ function failureNotice(error, fallback) {
   return fallback;
 }
 
+function startFailureNotice(error) {
+  if (error?.code === 'RUNPOD_START_GPU_UNAVAILABLE') {
+    return NOTICE_KEYS.podStartGpuUnavailable;
+  }
+  if (error?.code === 'RUNPOD_START_RATE_LIMITED') {
+    return NOTICE_KEYS.podStartRateLimited;
+  }
+  return failureNotice(error, NOTICE_KEYS.podStartFailed);
+}
+
 function logRejectedOperation(appLogger, action, error) {
   const expectedInputFailure = [
     'RUNPOD_INPUT_INVALID',
     'RUNPOD_DELETE_CONFIRMATION_REQUIRED',
     'RUNPOD_PUBLIC_ACCESS_NOT_ACKNOWLEDGED',
     'RUNPOD_ACTION_CONFLICT',
+    'RUNPOD_RUNTIME_LIMIT_EXCEEDED',
+    'RUNPOD_START_GPU_UNAVAILABLE',
+    'RUNPOD_START_RATE_LIMITED',
     'RUNPOD_GPU_UNAVAILABLE',
     'RUNPOD_GPU_COUNT_UNAVAILABLE',
     'RUNPOD_DATACENTER_UNAVAILABLE',
@@ -91,11 +108,11 @@ function createRunpodPodAdminController({
 
     async startPod(req, res) {
       try {
-        await manager.transitionManagedPod(req.params.id, 'start', req.user);
+        await manager.transitionManagedPod(req.params.id, 'start', req.user, req.body || {});
         return redirectWithNotice(res, NOTICE_KEYS.podStarted);
       } catch (error) {
         logRejectedOperation(appLogger, 'start', error);
-        return redirectWithNotice(res, NOTICE_KEYS.podStartFailed);
+        return redirectWithNotice(res, startFailureNotice(error));
       }
     },
 
@@ -106,6 +123,16 @@ function createRunpodPodAdminController({
       } catch (error) {
         logRejectedOperation(appLogger, 'stop', error);
         return redirectWithNotice(res, NOTICE_KEYS.podStopFailed);
+      }
+    },
+
+    async extendPod(req, res) {
+      try {
+        await manager.extendManagedPod(req.params.id, req.body || {}, req.user);
+        return redirectWithNotice(res, NOTICE_KEYS.podExtended);
+      } catch (error) {
+        logRejectedOperation(appLogger, 'extend', error);
+        return redirectWithNotice(res, NOTICE_KEYS.podExtendFailed);
       }
     },
 
@@ -159,4 +186,5 @@ module.exports = {
   createRunpodPodAdminController,
   failureNotice,
   redirectWithNotice,
+  startFailureNotice,
 };

@@ -11,6 +11,7 @@ const {
   usageFieldsForObservation,
   validatedOllamaBaseUrl,
 } = require('../../services/runpodPodManager');
+const { RunpodApiError } = require('../../services/runpodApiV2Service');
 
 const TEMPLATE_ID = '507f1f77bcf86cd799439011';
 const POD_RECORD_ID = '507f191e810c19729de860ea';
@@ -322,6 +323,7 @@ describe('RunpodPodManager', () => {
     expect(state.managedPods[0]).toEqual(expect.objectContaining({
       providerStatus: 'RUNNING',
       canStop: true,
+      canExtend: true,
       costPerHour: 0.52,
     }));
     expect(state.unmanagedProviderPods).toEqual([
@@ -475,6 +477,185 @@ describe('RunpodPodManager', () => {
     ]);
   });
 
+  test('starts a stopped Pod for the selected bounded duration and replaces the old deadline', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'pod-123',
+      name: 'ollama-test',
+      archivedAt: null,
+      autoStopMinutes: 60,
+      autoStopAt: null,
+      setupStatus: 'ready',
+    };
+    const fixture = createFixture({ localPod });
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'pod-123', status: 'EXITED', actions: ['start', 'terminate'],
+    });
+    fixture.runpodService.transitionPod.mockResolvedValue({
+      id: 'pod-123', status: 'STARTING', actions: ['stop', 'terminate'],
+    });
+
+    await fixture.manager.transitionManagedPod(
+      POD_RECORD_ID,
+      'start',
+      { name: 'admin' },
+      { runMinutes: '240' }
+    );
+
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({
+        autoStopMinutes: 240,
+        autoStopAt: new Date('2026-09-01T04:00:00.000Z'),
+        lastOperationError: null,
+      }) }
+    );
+  });
+
+  test('rejects invalid start and extension durations before provider work', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'pod-123',
+      name: 'ollama-test',
+      archivedAt: null,
+      autoStopMinutes: 60,
+    };
+    const fixture = createFixture({ localPod });
+
+    await expect(fixture.manager.transitionManagedPod(
+      POD_RECORD_ID,
+      'start',
+      { name: 'admin' },
+      { runMinutes: '0' }
+    )).rejects.toEqual(expect.objectContaining({ code: 'RUNPOD_INPUT_INVALID' }));
+    await expect(fixture.manager.extendManagedPod(
+      POD_RECORD_ID,
+      { extensionMinutes: 'unbounded' },
+      { name: 'admin' }
+    )).rejects.toEqual(expect.objectContaining({ code: 'RUNPOD_INPUT_INVALID' }));
+    expect(fixture.runpodService.getPod).not.toHaveBeenCalled();
+  });
+
+  test('reports unavailable original GPU details beside a Pod after a rejected start', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'pod-123',
+      name: 'ollama-test',
+      archivedAt: null,
+      autoStopMinutes: 60,
+      setupStatus: 'ready',
+    };
+    const fixture = createFixture({ localPod });
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'pod-123', status: 'EXITED', actions: ['start', 'terminate'],
+    });
+    fixture.runpodService.transitionPod.mockRejectedValue(new RunpodApiError(
+      'Runpod could not load pod start (HTTP 409).',
+      {
+        code: 'RUNPOD_HTTP_ERROR',
+        status: 409,
+        providerCode: 'ZERO_GPUS',
+        providerTitle: 'No GPU available',
+        providerDetail: 'The original machine has zero GPUs available.',
+      }
+    ));
+
+    await expect(fixture.manager.transitionManagedPod(
+      POD_RECORD_ID,
+      'start',
+      { name: 'admin' },
+      { runMinutes: '60' }
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_START_GPU_UNAVAILABLE',
+      providerStatus: 409,
+      providerCode: 'ZERO_GPUS',
+    }));
+
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      { _id: POD_RECORD_ID, archivedAt: null },
+      { $set: expect.objectContaining({
+        lastOperationError: expect.objectContaining({
+          action: 'start',
+          code: 'RUNPOD_START_GPU_UNAVAILABLE',
+          providerStatus: 409,
+          providerCode: 'ZERO_GPUS',
+          detail: 'The original machine has zero GPUs available.',
+        }),
+      }) }
+    );
+  });
+
+  test('extends a running Pod deadline without issuing another provider lifecycle mutation', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'pod-123',
+      name: 'ollama-test',
+      archivedAt: null,
+      providerStatus: 'RUNNING',
+      lifecycleGroup: 'running',
+      autoStopAt: new Date('2026-09-01T01:00:00.000Z'),
+    };
+    const fixture = createFixture({ localPod });
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'pod-123', status: 'RUNNING', actions: ['stop', 'terminate'],
+    });
+
+    await expect(fixture.manager.extendManagedPod(
+      POD_RECORD_ID,
+      { extensionMinutes: '60' },
+      { name: 'admin' }
+    )).resolves.toEqual({
+      autoStopAt: new Date('2026-09-01T02:00:00.000Z'),
+      extensionMinutes: 60,
+    });
+
+    expect(fixture.runpodService.transitionPod).not.toHaveBeenCalled();
+    expect(fixture.podModel.updateOne).toHaveBeenCalledWith(
+      {
+        _id: POD_RECORD_ID,
+        archivedAt: null,
+        autoStopAt: new Date('2026-09-01T01:00:00.000Z'),
+        $or: [
+          { autoStopClaimedAt: null },
+          { autoStopClaimedAt: { $lte: new Date('2026-08-31T23:55:00.000Z') } },
+        ],
+      },
+      { $set: expect.objectContaining({
+        autoStopAt: new Date('2026-09-01T02:00:00.000Z'),
+        autoStopClaimedAt: null,
+        lastOperationError: null,
+      }) }
+    );
+    expect(fixture.eventModel.create).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'extend', outcome: 'succeeded',
+    }));
+  });
+
+  test('rejects an extension that would exceed the maximum unattended window', async () => {
+    const localPod = {
+      _id: POD_RECORD_ID,
+      providerPodId: 'pod-123',
+      name: 'ollama-test',
+      archivedAt: null,
+      providerStatus: 'RUNNING',
+      lifecycleGroup: 'running',
+      autoStopAt: new Date('2026-09-01T23:30:00.000Z'),
+    };
+    const fixture = createFixture({ localPod });
+    fixture.runpodService.getPod.mockResolvedValue({
+      id: 'pod-123', status: 'RUNNING', actions: ['stop', 'terminate'],
+    });
+
+    await expect(fixture.manager.extendManagedPod(
+      POD_RECORD_ID,
+      { extensionMinutes: '60' },
+      { name: 'admin' }
+    )).rejects.toEqual(expect.objectContaining({
+      code: 'RUNPOD_RUNTIME_LIMIT_EXCEEDED',
+    }));
+    expect(fixture.runpodService.transitionPod).not.toHaveBeenCalled();
+  });
+
   test('requires exact-name deletion confirmation and archives only after provider deletion', async () => {
     const localPod = {
       _id: POD_RECORD_ID,
@@ -523,6 +704,22 @@ describe('RunpodPodManager', () => {
       { _id: POD_RECORD_ID, archivedAt: null },
       { $set: expect.objectContaining({ lifecycleGroup: 'stopped', autoStopAt: null }) }
     );
+  });
+
+  test('does not stop a Pod when an extension won the automatic-stop deadline race', async () => {
+    const fixture = createFixture();
+    fixture.podModel.find.mockReturnValue(queryResult([{
+      _id: POD_RECORD_ID,
+      providerPodId: 'pod-123',
+      lifecycleGroup: 'running',
+      autoStopAt: new Date('2026-08-31T23:59:00.000Z'),
+    }]));
+    fixture.podModel.updateOne.mockResolvedValueOnce({ matchedCount: 0 });
+
+    await expect(fixture.manager.stopExpiredPods()).resolves.toBe(0);
+
+    expect(fixture.runpodService.getPod).not.toHaveBeenCalled();
+    expect(fixture.runpodService.transitionPod).not.toHaveBeenCalled();
   });
 
   test('uses bounded, non-redirecting requests only against a canonical Runpod Ollama proxy', async () => {

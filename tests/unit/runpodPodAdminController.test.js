@@ -2,6 +2,7 @@ const {
   NOTICE_KEYS,
   createRunpodPodAdminController,
   failureNotice,
+  startFailureNotice,
 } = require('../../controllers/runpodPodAdminController');
 
 function response() {
@@ -13,6 +14,7 @@ function manager() {
     saveOllamaTemplate: jest.fn().mockResolvedValue({}),
     createManagedPod: jest.fn().mockResolvedValue({}),
     transitionManagedPod: jest.fn().mockResolvedValue({}),
+    extendManagedPod: jest.fn().mockResolvedValue({}),
     deleteManagedPod: jest.fn().mockResolvedValue(true),
     retryProvisioning: jest.fn().mockResolvedValue(true),
     syncProviderPods: jest.fn().mockResolvedValue({}),
@@ -27,8 +29,9 @@ describe('Runpod Pod admin mutation controller', () => {
   test.each([
     ['saveOllamaTemplate', 'saveOllamaTemplate', {}, {}, NOTICE_KEYS.templateSynced, 'workload-templates'],
     ['createPod', 'createManagedPod', {}, {}, NOTICE_KEYS.podCreated, 'pods'],
-    ['startPod', 'transitionManagedPod', { id: 'local-id' }, {}, NOTICE_KEYS.podStarted, 'pods'],
+    ['startPod', 'transitionManagedPod', { id: 'local-id' }, { runMinutes: '240' }, NOTICE_KEYS.podStarted, 'pods'],
     ['stopPod', 'transitionManagedPod', { id: 'local-id' }, {}, NOTICE_KEYS.podStopped, 'pods'],
+    ['extendPod', 'extendManagedPod', { id: 'local-id' }, { extensionMinutes: '60' }, NOTICE_KEYS.podExtended, 'pods'],
     ['deletePod', 'deleteManagedPod', { id: 'local-id' }, { confirmation: 'pod-name' }, NOTICE_KEYS.podDeleted, 'archived-pods'],
     ['retrySetup', 'retryProvisioning', { id: 'local-id' }, {}, NOTICE_KEYS.setupQueued, 'pods'],
     ['syncPods', 'syncProviderPods', {}, {}, NOTICE_KEYS.podsSynced, 'pods'],
@@ -81,13 +84,27 @@ describe('Runpod Pod admin mutation controller', () => {
     const user = { name: 'admin' };
 
     await controller.createPod({ body: { gpuId: 'gpu' }, user }, response());
-    await controller.startPod({ params: { id: 'pod-id' }, user }, response());
+    await controller.startPod({ params: { id: 'pod-id' }, body: { runMinutes: '240' }, user }, response());
     await controller.stopPod({ params: { id: 'pod-id' }, user }, response());
+    await controller.extendPod({
+      params: { id: 'pod-id' }, body: { extensionMinutes: '60' }, user,
+    }, response());
     await controller.deletePod({ params: { id: 'pod-id' }, body: { confirmation: 'exact' }, user }, response());
 
     expect(service.createManagedPod).toHaveBeenCalledWith({ gpuId: 'gpu' }, user);
-    expect(service.transitionManagedPod).toHaveBeenNthCalledWith(1, 'pod-id', 'start', user);
+    expect(service.transitionManagedPod).toHaveBeenNthCalledWith(
+      1,
+      'pod-id',
+      'start',
+      user,
+      { runMinutes: '240' }
+    );
     expect(service.transitionManagedPod).toHaveBeenNthCalledWith(2, 'pod-id', 'stop', user);
+    expect(service.extendManagedPod).toHaveBeenCalledWith(
+      'pod-id',
+      { extensionMinutes: '60' },
+      user
+    );
     expect(service.deleteManagedPod).toHaveBeenCalledWith('pod-id', 'exact', user);
   });
 
@@ -110,5 +127,29 @@ describe('Runpod Pod admin mutation controller', () => {
     );
     expect(JSON.stringify(appLogger.warning.mock.calls)).not.toContain(secret);
     expect(failureNotice({ status: 402 }, 'fallback')).toBe(NOTICE_KEYS.insufficientBalance);
+  });
+
+  test('maps an unavailable original GPU start to specific fixed guidance', async () => {
+    const secret = 'provider-detail-secret';
+    const service = manager();
+    service.transitionManagedPod.mockRejectedValue(Object.assign(new Error(secret), {
+      code: 'RUNPOD_START_GPU_UNAVAILABLE',
+      providerStatus: 409,
+    }));
+    const appLogger = { warning: jest.fn(), error: jest.fn() };
+    const controller = createRunpodPodAdminController({ manager: service, appLogger });
+    const res = response();
+
+    await controller.startPod({
+      params: { id: 'pod-id' }, body: { runMinutes: '60' }, user: { name: 'admin' },
+    }, res);
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      303,
+      '/admin/runpod?notice=pod-start-gpu-unavailable#pods'
+    );
+    expect(startFailureNotice({ code: 'RUNPOD_START_RATE_LIMITED' }))
+      .toBe(NOTICE_KEYS.podStartRateLimited);
+    expect(JSON.stringify(appLogger.warning.mock.calls)).not.toContain(secret);
   });
 });

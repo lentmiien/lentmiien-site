@@ -5,6 +5,21 @@ const ActorSchema = new mongoose.Schema({
   name: { type: String, default: '', trim: true, maxlength: 100 },
 }, { _id: false });
 
+const OperationErrorSchema = new mongoose.Schema({
+  action: {
+    type: String,
+    enum: ['start', 'stop', 'extend', 'delete', 'auto_stop'],
+    required: true,
+  },
+  code: { type: String, required: true, trim: true, maxlength: 80 },
+  providerCode: { type: String, default: null, trim: true, maxlength: 120 },
+  providerStatus: { type: Number, default: null, min: 100, max: 599 },
+  providerTitle: { type: String, default: null, trim: true, maxlength: 240 },
+  message: { type: String, required: true, trim: true, maxlength: 500 },
+  detail: { type: String, default: null, trim: true, maxlength: 1000 },
+  occurredAt: { type: Date, required: true },
+}, { _id: false });
+
 const RunpodPodSchema = new mongoose.Schema({
   providerPodId: { type: String, default: null, trim: true, maxlength: 128 },
   name: { type: String, required: true, trim: true, maxlength: 120 },
@@ -66,6 +81,8 @@ const RunpodPodSchema = new mongoose.Schema({
   maxHourlyCostAcknowledged: { type: Number, default: null, min: 0 },
   autoStopMinutes: { type: Number, default: null, min: 15, max: 10080 },
   autoStopAt: { type: Date, default: null, index: true },
+  autoStopClaimedAt: { type: Date, default: null },
+  lastOperationError: { type: OperationErrorSchema, default: null },
   providerCreatedAt: { type: Date, default: null },
   providerStartedAt: { type: Date, default: null },
   lastProviderSyncAt: { type: Date, default: null },

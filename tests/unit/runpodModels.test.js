@@ -26,6 +26,8 @@ describe('Runpod persistence models', () => {
       'running', 'stopped', 'archived',
     ]);
     expect(RunpodPod.schema.path('autoStopAt')).toBeDefined();
+    expect(RunpodPod.schema.path('autoStopClaimedAt')).toBeDefined();
+    expect(RunpodPod.schema.path('lastOperationError')).toBeDefined();
     expect(RunpodPod.schema.path('maxHourlyCostAcknowledged')).toBeDefined();
     expect(RunpodPod.schema.path('setupStatus').options.enum).toContain('ready');
     expect(RunpodPod.schema.path('usageState').options.enum).toEqual([
@@ -39,7 +41,7 @@ describe('Runpod persistence models', () => {
 
   test('retains a bounded operation audit taxonomy', () => {
     expect(RunpodOperationEvent.schema.path('action').options.enum).toEqual(expect.arrayContaining([
-      'create', 'setup', 'start', 'stop', 'delete', 'auto_stop', 'template_sync',
+      'create', 'setup', 'start', 'stop', 'extend', 'delete', 'auto_stop', 'template_sync',
       'billing_sync',
     ]));
     expect(RunpodOperationEvent.schema.path('outcome').options.enum).toEqual([

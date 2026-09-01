@@ -43,6 +43,7 @@ const DEFAULT_MAX_RUNTIME_MINUTES = 24 * 60;
 const DEFAULT_PROVISION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_OLLAMA_PULL_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
+const AUTO_STOP_CLAIM_LEASE_MS = 5 * 60 * 1000;
 const OLLAMA_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
 const OLLAMA_ERROR_RESPONSE_LIMIT_BYTES = 64 * 1024;
 const OLLAMA_PULL_STREAM_LIMIT_BYTES = 64 * 1024 * 1024;
@@ -67,12 +68,18 @@ class RunpodManagementError extends Error {
     code = 'RUNPOD_MANAGEMENT_ERROR',
     status = 400,
     providerStatus = null,
+    providerCode = null,
+    providerTitle = null,
+    providerDetail = null,
   } = {}) {
     super(message);
     this.name = 'RunpodManagementError';
     this.code = code;
     this.status = status;
     this.providerStatus = providerStatus;
+    this.providerCode = safeString(providerCode, 120) || null;
+    this.providerTitle = safeString(providerTitle, 240) || null;
+    this.providerDetail = safeString(providerDetail, 1000) || null;
   }
 }
 
@@ -147,6 +154,69 @@ function providerStatusForError(error) {
     return error.status;
   }
   return null;
+}
+
+function classifyStartFailure(error) {
+  if (error instanceof RunpodManagementError || !(error instanceof RunpodApiError)) {
+    return error;
+  }
+  const providerStatus = Number.isSafeInteger(error.status) ? error.status : null;
+  const providerFields = {
+    providerStatus,
+    providerCode: error.providerCode,
+    providerTitle: error.providerTitle,
+    providerDetail: error.providerDetail,
+  };
+  if (providerStatus === 402) {
+    return new RunpodManagementError('Runpod reported insufficient account balance for this start.', {
+      code: 'RUNPOD_INSUFFICIENT_BALANCE',
+      status: 402,
+      ...providerFields,
+    });
+  }
+  if (providerStatus === 429) {
+    return new RunpodManagementError('Runpod is rate limiting Pod starts. Wait briefly and retry.', {
+      code: 'RUNPOD_START_RATE_LIMITED',
+      status: 429,
+      ...providerFields,
+    });
+  }
+  const capacityText = [
+    error.providerCode,
+    error.providerTitle,
+    error.providerDetail,
+  ].map((value) => safeString(value, 1000)).filter(Boolean).join(' ');
+  const unavailablePattern = /(?:zero|no|unavailable|not available|insufficient|occupied|capacity|unable to (?:find|allocate|resume|start)).{0,100}(?:gpu|machine|host|worker|capacity)|(?:gpu|machine|host|worker|capacity).{0,100}(?:zero|unavailable|not available|insufficient|occupied|unable)/iu;
+  if (providerStatus === 409 || unavailablePattern.test(capacityText)) {
+    return new RunpodManagementError(
+      'The original GPU for this stopped Pod is unavailable. Wait and retry, or delete and redeploy on currently available hardware.',
+      {
+        code: 'RUNPOD_START_GPU_UNAVAILABLE',
+        status: 409,
+        ...providerFields,
+      }
+    );
+  }
+  return new RunpodManagementError('Runpod rejected the Pod start request.', {
+    code: 'RUNPOD_START_FAILED',
+    status: providerStatus || 502,
+    ...providerFields,
+  });
+}
+
+function operationErrorForPersistence(action, error, now = new Date()) {
+  const knownError = error instanceof RunpodManagementError || error instanceof RunpodApiError;
+  return {
+    action,
+    code: safeString(error?.code, 80) || 'RUNPOD_ACTION_FAILED',
+    providerCode: safeString(error?.providerCode, 120) || null,
+    providerStatus: providerStatusForError(error),
+    providerTitle: safeString(error?.providerTitle, 240) || null,
+    message: (knownError ? safeString(error.message, 500) : '')
+      || 'The Pod operation could not be completed.',
+    detail: safeString(error?.providerDetail, 1000) || null,
+    occurredAt: now,
+  };
 }
 
 function boundedNumber(value, fallback, min, max) {
@@ -569,6 +639,7 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
     validActions: actions,
     canStart: !archivedAt && actions.includes('start'),
     canStop: !archivedAt && actions.includes('stop'),
+    canExtend: !archivedAt && status === 'RUNNING' && actions.includes('stop'),
     canDelete: !archivedAt && (actions.includes('terminate') || !provider.id),
     setupStatus: safeString(local.setupStatus, 30) || 'not_applicable',
     setupErrorCode: safeString(local.setupErrorCode, 80),
@@ -597,7 +668,20 @@ function mapPodForPage(localPod, providerPod, now = new Date()) {
       lastPeriodEndAt: local.billingLastPeriodEndAt || null,
       syncedAt: local.billingSyncedAt || null,
     },
+    autoStopMinutes: finiteNumber(local.autoStopMinutes),
     autoStopAt: local.autoStopAt || null,
+    lastOperationError: local.lastOperationError && typeof local.lastOperationError === 'object'
+      ? {
+        action: safeString(local.lastOperationError.action, 20),
+        code: safeString(local.lastOperationError.code, 80),
+        providerCode: safeString(local.lastOperationError.providerCode, 120),
+        providerStatus: providerStatusForError(local.lastOperationError),
+        providerTitle: safeString(local.lastOperationError.providerTitle, 240),
+        message: safeString(local.lastOperationError.message, 500),
+        detail: safeString(local.lastOperationError.detail, 1000),
+        occurredAt: local.lastOperationError.occurredAt || null,
+      }
+      : null,
     createdAt: local.createdAt || null,
     archivedAt,
     providerReachable: Boolean(provider.id),
@@ -955,6 +1039,35 @@ class RunpodPodManager {
         providerStatus: providerStatusForError(error),
       },
     });
+  }
+
+  async persistPodOperationError(
+    podRecordId,
+    action,
+    error,
+    actor,
+    { filter = {}, fields = {} } = {}
+  ) {
+    try {
+      await this.podModel.updateOne(
+        { _id: podRecordId, archivedAt: null, ...filter },
+        {
+          $set: {
+            lastOperationError: operationErrorForPersistence(action, error, this.now()),
+            ...fields,
+            updatedBy: actor,
+          },
+        }
+      );
+    } catch (persistenceError) {
+      this.logger.warning('Unable to persist the latest Runpod Pod operation error', {
+        category: 'runpod_management',
+        metadata: {
+          action,
+          errorName: safeString(persistenceError?.name, 80) || 'Error',
+        },
+      });
+    }
   }
 
   async getAdminState() {
@@ -1612,6 +1725,7 @@ class RunpodPodManager {
           $set: {
             ...reconciledProviderPodFields(localPod, stoppedPod, now),
             autoStopAt: null,
+            autoStopClaimedAt: null,
             lastActionAt: now,
             updatedBy: actor,
           },
@@ -1645,7 +1759,7 @@ class RunpodPodManager {
     return pod;
   }
 
-  async transitionManagedPod(podRecordId, action, principal) {
+  async transitionManagedPod(podRecordId, action, principal, options = {}) {
     if (!['start', 'stop'].includes(action)) {
       throw new RunpodManagementError('Unsupported pod action.', {
         code: 'RUNPOD_INPUT_INVALID',
@@ -1653,6 +1767,11 @@ class RunpodPodManager {
     }
     const actor = actorFromPrincipal(principal);
     const pod = await this.findManagedPod(podRecordId);
+    const runMinutes = action === 'start'
+      ? strictInteger(options.runMinutes ?? pod.autoStopMinutes ?? this.defaultAutoStopMinutes, {
+        label: 'Start duration', min: 15, max: this.maxRuntimeMinutes,
+      })
+      : null;
     let providerActionAccepted = false;
     try {
       const current = await this.runpodService.getPod(pod.providerPodId);
@@ -1662,17 +1781,31 @@ class RunpodPodManager {
         });
       }
       const providerPod = await this.runpodService.transitionPod(pod.providerPodId, action);
+      const providerStatus = normalizeProviderStatus(providerPod?.status);
+      if (action === 'start' && ['EXITED', 'ERROR', 'TERMINATED'].includes(providerStatus)) {
+        throw new RunpodManagementError(
+          'The original GPU for this stopped Pod is unavailable. Wait and retry, or delete and redeploy on currently available hardware.',
+          {
+            code: 'RUNPOD_START_GPU_UNAVAILABLE',
+            status: 409,
+            providerTitle: `Runpod returned ${providerStatus} after the start request`,
+          }
+        );
+      }
       providerActionAccepted = true;
       const now = this.now();
       const autoStopAt = action === 'start'
-        ? new Date(now.getTime() + pod.autoStopMinutes * 60 * 1000)
+        ? new Date(now.getTime() + runMinutes * 60 * 1000)
         : null;
       const updateResult = await this.podModel.updateOne(
         { _id: pod._id, archivedAt: null },
         {
           $set: {
             ...reconciledProviderPodFields(pod, providerPod, now),
+            ...(action === 'start' ? { autoStopMinutes: runMinutes } : {}),
             autoStopAt,
+            autoStopClaimedAt: null,
+            lastOperationError: null,
             lastActionAt: now,
             updatedBy: actor,
           },
@@ -1695,6 +1828,7 @@ class RunpodPodManager {
       }
       return providerPod;
     } catch (error) {
+      const operationError = action === 'start' ? classifyStartFailure(error) : error;
       if (action === 'start' && providerActionAccepted) {
         try {
           await this.runpodService.transitionPod(pod.providerPodId, 'stop');
@@ -1709,16 +1843,114 @@ class RunpodPodManager {
           });
         }
       }
+      await this.persistPodOperationError(pod._id, action, operationError, actor);
       await this.recordEvent({
         resourceType: 'pod',
         podRecordId: pod._id,
         action,
         outcome: 'failed',
-        providerStatus: providerStatusForError(error),
-        errorCode: safeString(error?.code, 80) || 'RUNPOD_ACTION_FAILED',
+        providerStatus: providerStatusForError(operationError),
+        errorCode: safeString(operationError?.code, 80) || 'RUNPOD_ACTION_FAILED',
         actor,
       });
-      this.logOperationFailure(`Runpod pod ${action} failed`, action, error);
+      this.logOperationFailure(`Runpod pod ${action} failed`, action, operationError);
+      throw operationError;
+    }
+  }
+
+  async extendManagedPod(podRecordId, input = {}, principal) {
+    const actor = actorFromPrincipal(principal);
+    const pod = await this.findManagedPod(podRecordId);
+    const extensionMinutes = strictInteger(input.extensionMinutes, {
+      label: 'Extension duration', min: 15, max: this.maxRuntimeMinutes,
+    });
+    try {
+      const now = this.now();
+      const current = await this.runpodService.getPod(pod.providerPodId);
+      const currentStatus = normalizeProviderStatus(current.status);
+      if (
+        currentStatus !== 'RUNNING'
+        || !normalizeActions(current.actions).includes('stop')
+      ) {
+        throw new RunpodManagementError('Only a running Pod with a stop action can be extended.', {
+          code: 'RUNPOD_ACTION_CONFLICT', status: 409,
+        });
+      }
+      const existingDeadline = dateOrNull(pod.autoStopAt);
+      const existingClaim = dateOrNull(pod.autoStopClaimedAt);
+      const staleClaimBefore = new Date(now.getTime() - AUTO_STOP_CLAIM_LEASE_MS);
+      if (existingClaim && existingClaim.getTime() > staleClaimBefore.getTime()) {
+        throw new RunpodManagementError(
+          'Automatic shutdown is already being processed. Refresh the Pod state shortly.',
+          { code: 'RUNPOD_ACTION_CONFLICT', status: 409 }
+        );
+      }
+      if (existingDeadline && existingDeadline.getTime() <= now.getTime()) {
+        throw new RunpodManagementError(
+          'The automatic-stop deadline has already passed. Refresh the Pod state before retrying.',
+          { code: 'RUNPOD_ACTION_CONFLICT', status: 409 }
+        );
+      }
+      const deadlineBase = existingDeadline || now;
+      const extendedDeadline = new Date(
+        deadlineBase.getTime() + extensionMinutes * 60 * 1000
+      );
+      const maximumDeadline = new Date(
+        now.getTime() + this.maxRuntimeMinutes * 60 * 1000
+      );
+      if (extendedDeadline.getTime() > maximumDeadline.getTime()) {
+        throw new RunpodManagementError(
+          `The extended deadline must remain within ${this.maxRuntimeMinutes} minutes of now.`,
+          { code: 'RUNPOD_RUNTIME_LIMIT_EXCEEDED', status: 409 }
+        );
+      }
+      const updateResult = await this.podModel.updateOne(
+        {
+          _id: pod._id,
+          archivedAt: null,
+          autoStopAt: pod.autoStopAt || null,
+          $or: [
+            { autoStopClaimedAt: null },
+            { autoStopClaimedAt: { $lte: staleClaimBefore } },
+          ],
+        },
+        {
+          $set: {
+            ...reconciledProviderPodFields(pod, current, now),
+            autoStopAt: extendedDeadline,
+            autoStopClaimedAt: null,
+            lastOperationError: null,
+            lastActionAt: now,
+            updatedBy: actor,
+          },
+        }
+      );
+      if (updateResult?.matchedCount === 0) {
+        throw new RunpodManagementError(
+          'The automatic-stop deadline changed while it was being extended. Refresh and retry.',
+          { code: 'RUNPOD_ACTION_CONFLICT', status: 409 }
+        );
+      }
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'extend',
+        outcome: 'succeeded',
+        actor,
+      });
+      return { autoStopAt: extendedDeadline, extensionMinutes };
+    } catch (error) {
+      await this.persistPodOperationError(pod._id, 'extend', error, actor);
+      await this.recordEvent({
+        resourceType: 'pod',
+        podRecordId: pod._id,
+        action: 'extend',
+        outcome: 'failed',
+        providerStatus: providerStatusForError(error),
+        errorCode: safeString(error?.code, 80) || 'RUNPOD_EXTEND_FAILED',
+        actor,
+      });
+      this.logOperationFailure('Runpod Pod automatic-stop extension failed', 'extend', error);
       throw error;
     }
   }
@@ -1735,6 +1967,7 @@ class RunpodPodManager {
       await this.runpodService.deletePod(pod.providerPodId);
     } catch (error) {
       if (!(error instanceof RunpodApiError) || error.status !== 404) {
+        await this.persistPodOperationError(pod._id, 'delete', error, actor);
         await this.recordEvent({
           resourceType: 'pod',
           podRecordId: pod._id,
@@ -1759,6 +1992,8 @@ class RunpodPodManager {
           validActions: [],
           providerCostPerHour: 0,
           autoStopAt: null,
+          autoStopClaimedAt: null,
+          lastOperationError: null,
           archivedAt: now,
           lastActionAt: now,
           lastProviderSyncAt: now,
@@ -1870,6 +2105,7 @@ class RunpodPodManager {
             validActions: [],
             providerCostPerHour: 0,
             autoStopAt: null,
+            autoStopClaimedAt: null,
             archivedAt: now,
             lastProviderSyncAt: now,
             updatedBy: actor,
@@ -1898,7 +2134,31 @@ class RunpodPodManager {
     let stopped = 0;
     for (const pod of expired) {
       const actor = actorFromPrincipal({ name: 'runpod-auto-stop' });
+      const claimTime = now;
       try {
+        const claimResult = await this.podModel.updateOne(
+          {
+            _id: pod._id,
+            archivedAt: null,
+            lifecycleGroup: 'running',
+            autoStopAt: pod.autoStopAt,
+            $or: [
+              { autoStopClaimedAt: null },
+              {
+                autoStopClaimedAt: {
+                  $lte: new Date(now.getTime() - AUTO_STOP_CLAIM_LEASE_MS),
+                },
+              },
+            ],
+          },
+          {
+            $set: {
+              autoStopClaimedAt: claimTime,
+              updatedBy: actor,
+            },
+          }
+        );
+        if (claimResult?.matchedCount === 0) continue;
         const current = await this.runpodService.getPod(pod.providerPodId);
         const currentStatus = normalizeProviderStatus(current.status);
         if (normalizeActions(current.actions).includes('stop')) {
@@ -1909,6 +2169,8 @@ class RunpodPodManager {
               $set: {
                 ...reconciledProviderPodFields(pod, providerPod, now),
                 autoStopAt: null,
+                autoStopClaimedAt: null,
+                lastOperationError: null,
                 lastActionAt: now,
                 updatedBy: actor,
               },
@@ -1931,6 +2193,8 @@ class RunpodPodManager {
                 ...reconciledProviderPodFields(pod, current, now, { archivedAt }),
                 ...(archivedAt ? { archivedAt } : {}),
                 autoStopAt: null,
+                autoStopClaimedAt: null,
+                lastOperationError: null,
                 updatedBy: actor,
               },
             }
@@ -1942,6 +2206,13 @@ class RunpodPodManager {
           );
         }
       } catch (error) {
+        await this.persistPodOperationError(pod._id, 'auto_stop', error, actor, {
+          filter: { lifecycleGroup: 'running', autoStopClaimedAt: claimTime },
+          fields: {
+            autoStopAt: new Date(now.getTime() + 60 * 1000),
+            autoStopClaimedAt: null,
+          },
+        });
         await this.recordEvent({
           resourceType: 'pod',
           podRecordId: pod._id,

@@ -40,9 +40,10 @@ public beta, so response fields may evolve. Current reference:
    price. The server re-fetches the catalog and validates every choice instead
    of trusting browser estimates.
 3. Runpod creates one Pod from the provider template. The local record receives
-   an automatic stop deadline immediately.
+   an automatic stop deadline immediately. A stopped Pod must be given a new
+   bounded “Start for” duration each time it is resumed.
 4. Background setup waits for `RUNNING`, checks the fixed Runpod HTTPS proxy,
-   calls Ollama `POST /api/pull` with `stream: false`, and verifies the model in
+   calls Ollama `POST /api/pull` as a bounded progress stream, and verifies the model in
    `GET /api/tags`.
 5. The dashboard exposes the public Ollama URL only after setup succeeds. The
    default test model is `qwen2.5:0.5b`.
@@ -54,7 +55,8 @@ image to a digest in the UI when reproducible deployments are required.
 Runpod's proxy URL is public and Ollama has no application-level authentication.
 Do not place private prompts or models on the test endpoint. Stop releases GPU
 compute, but retained storage may still incur charges; delete permanently
-terminates the Pod and removes its attached Pod disk.
+terminates the Pod and removes its attached Pod disk. Network volumes are not
+managed by this integration yet.
 
 ## Local persistence
 
@@ -63,10 +65,11 @@ MongoDB creates five collections:
 - `runpod_workload_templates`: local setup recipes linked to private Runpod
   template IDs.
 - `runpod_pods`: provider IDs, running/stopped/archived lifecycle state, hardware,
-  confirmed rates, setup state, public URL, auto-stop deadline, observed running
-  and stopped durations, and provider-billed/estimated cost aggregates.
-- `runpod_operation_events`: bounded create/setup/start/stop/delete/sync/template
-  audit events without API keys, provider response bodies, or environment secrets.
+  confirmed rates, setup state, public URL, auto-stop deadline, the latest bounded
+  operation/provider error summary, observed running and stopped durations, and
+  provider-billed/estimated cost aggregates.
+- `runpod_operation_events`: bounded create/setup/start/stop/extend/delete/sync/template
+  audit events without API keys, raw provider response bodies, or environment secrets.
 - `runpod_billing_periods`: one durable account-wide UTC month from November
   2025 onward, including explicit zero rows for closed months omitted by Runpod
   and a provisional zero for an omitted current month.
@@ -97,8 +100,10 @@ variables:
 - At most four GPUs in a UI-created Pod.
 - A hard server ceiling of `$10.00` per hour; the UI defaults its explicit
   confirmation to `$1.00`.
-- A mandatory 60-minute auto-stop deadline and a maximum selectable runtime of
-  24 hours.
+- A mandatory 60-minute default auto-stop deadline and a maximum selectable
+  unattended window of 24 hours. Stopped Pods expose bounded start durations;
+  running Pods expose +30 minute, +1 hour, +4 hour, and custom extensions. An
+  extension can never move the deadline beyond the configured maximum from now.
 - Three Pod creation attempts per hour and 30 Runpod control requests per minute.
 - Ten-minute provisioning and thirty-minute streamed model-pull deadlines. Large
   pulls retain Ollama's partial blobs and retry transient Runpod proxy timeouts.
@@ -106,9 +111,21 @@ variables:
 The server validates fresh provider availability and price immediately before
 creation. If Runpod returns a total rate above the administrator's confirmation
 or the server ceiling, the newly created Pod is deleted before local persistence.
-Setup failure records a safe error code and attempts to stop the Pod. A scheduler
-observes provider state and checks expired deadlines once per minute while the application is running; a second scheduler refreshes account and per-Pod billing every six hours. An
+Setup failure records a safe error code and attempts to stop the Pod. A live
+browser countdown warns at ten minutes and becomes urgent in the last minute;
+the server-owned deadline and scheduler remain authoritative. The automatic-stop
+worker claims an expired deadline atomically so it cannot race a simultaneous
+extension. A scheduler observes provider state and checks expired deadlines once
+per minute while the application is running; a second scheduler refreshes account and per-Pod billing every six hours. An
 operator should still keep provider billing alerts enabled as defense in depth.
+
+Runpod may be unable to resume a stopped Pod whose original host-local GPU is no
+longer available. Start failures distinguish this capacity case and recommend
+waiting or deleting and redeploying. The affected Pod retains the provider HTTP
+status, provider code/title/detail when supplied, and a stable application error
+code. These fields are length-bounded, control characters are removed, known
+credential patterns and the configured API key are redacted, and raw response
+bodies are neither persisted nor logged.
 
 ## Security contract
 
@@ -118,19 +135,19 @@ Security zone: logged-in, administrator only
 Interactive principals: validated admin sessions
 Machine principals: internal `runpod-state-observer`, `runpod-auto-stop`, and `runpod-billing-scheduler` labels; no inbound machine route (`RUNPOD_API_KEY` is an outbound provider credential)
 Data classification: public catalogs; sensitive account billing/resource metadata; secret provider key
-Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.template.manage
+Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.extend, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.template.manage
 Object scope: account-wide admin feature; browser actions use local MongoDB IDs and resolve provider IDs server-side
 Admin override: no implicit bypass; admin receives the explicit capability bundle and each mutation checks its semantic capability
 Browser mutations and CSRF control: POST only; shared session token, timing-safe comparison, and Origin validation, with a same-origin Fetch Metadata fallback for opaque browser origins; delete also requires the exact Pod name
 Public/secret abuse controls: authentication plus admin guard, semantic capabilities, read/mutation/create rate limits, active-Pod ceiling, GPU ceiling, fresh price check, confirmed hourly maximum, and mandatory auto-stop
 Request and upload limits: URL-encoded forms only, at most 16 KiB and 20 scalar fields; no uploads; provider requests capped at 64 KiB; provider responses capped at 4 MiB
-Output/rendering contexts: bounded normalized values rendered with escaped Pug interpolation; no provider HTML, raw response bodies, environment values, or inline JSON
+Output/rendering contexts: bounded normalized values rendered with escaped Pug interpolation; sanitized provider error fields may be shown to administrators, but no provider HTML, raw response bodies, environment values, or inline JSON
 Private file/media storage and delivery: none
 Outbound hosts/services: fixed HTTPS api.runpod.io v2 paths and exact <pod>-<port>.proxy.runpod.net URLs; redirects rejected; Ollama paths restricted to /api/tags and /api/pull
 Cache policy: browser responses are private/no-store; catalog results use a short in-memory cache
 Security-relevant logs: stable action, category, safe error code, and HTTP status metadata only; no key, billing amount, resource ID, principal data, or provider body
 Retention/deletion behavior: provider deletion archives local lifecycle and per-Pod billing metadata; account months, Pod billing periods, and audit events are retained; no credentials are persisted
-Required negative tests: non-admin/capability denial, invalid CSRF and Origin, oversized/non-form body, malformed local ID, unavailable hardware, active-Pod/GPU/cost limits, public-endpoint acknowledgement, exact delete confirmation, provider timeout/error/oversize/redirect, proxy-host validation, cleanup after failed creation/setup, and auto-stop overlap
+Required negative tests: non-admin/capability denial, invalid CSRF and Origin, oversized/non-form body, malformed local ID, unavailable hardware, active-Pod/GPU/cost limits, invalid start/extension duration, public-endpoint acknowledgement, exact delete confirmation, provider timeout/error/oversize/redirect, provider-error redaction, proxy-host validation, cleanup after failed creation/setup, and auto-stop/extension overlap
 Legacy dependency or migration plan: new v2-only models/routes; MongoDB creates the new collections and indexes; rollback can remove code after all provider Pods have been explicitly deleted
 ```
 

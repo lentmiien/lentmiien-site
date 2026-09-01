@@ -26,7 +26,7 @@ const RunpodOperationEventSchema = new mongoose.Schema({
   },
   action: {
     type: String,
-    enum: ['create', 'sync', 'setup', 'start', 'stop', 'delete', 'auto_stop', 'template_sync', 'billing_sync'],
+    enum: ['create', 'sync', 'setup', 'start', 'stop', 'extend', 'delete', 'auto_stop', 'template_sync', 'billing_sync'],
     required: true,
     index: true,
   },
