@@ -120,7 +120,7 @@ Data classification: public catalogs; sensitive account billing/resource metadat
 Capabilities: runpod.catalog.read, runpod.billing.read, runpod.billing.sync, runpod.pod.read, runpod.pod.create, runpod.pod.start, runpod.pod.stop, runpod.pod.delete, runpod.pod.setup, runpod.pod.sync, runpod.template.manage
 Object scope: account-wide admin feature; browser actions use local MongoDB IDs and resolve provider IDs server-side
 Admin override: no implicit bypass; admin receives the explicit capability bundle and each mutation checks its semantic capability
-Browser mutations and CSRF control: POST only; shared session token, timing-safe comparison, and Origin validation; delete also requires the exact Pod name
+Browser mutations and CSRF control: POST only; shared session token, timing-safe comparison, and Origin validation, with a same-origin Fetch Metadata fallback for opaque browser origins; delete also requires the exact Pod name
 Public/secret abuse controls: authentication plus admin guard, semantic capabilities, read/mutation/create rate limits, active-Pod ceiling, GPU ceiling, fresh price check, confirmed hourly maximum, and mandatory auto-stop
 Request and upload limits: URL-encoded forms only, at most 16 KiB and 20 scalar fields; no uploads; provider requests capped at 64 KiB; provider responses capped at 4 MiB
 Output/rendering contexts: bounded normalized values rendered with escaped Pug interpolation; no provider HTML, raw response bodies, environment values, or inline JSON

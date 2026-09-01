@@ -4,6 +4,7 @@ const logger = require('../utils/logger');
 const PRIVATE_NO_STORE = 'private, no-store, max-age=0';
 const TOKEN_BYTES = 32;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const FETCH_SITE_VALUES = new Set(['cross-site', 'same-origin', 'same-site', 'none']);
 
 function normalizeOrigin(value) {
   if (typeof value !== 'string' || value.length > 500) return null;
@@ -31,6 +32,13 @@ function requestOrigin(req) {
   if (!host || /[\r\n]/u.test(host)) return null;
   const protocol = req.protocol === 'https' ? 'https' : 'http';
   return normalizeOrigin(`${protocol}://${host}`);
+}
+
+function requestFetchSite(req) {
+  const value = typeof req.get === 'function' ? req.get('sec-fetch-site') : null;
+  if (typeof value !== 'string' || value.length > 20) return null;
+  const normalized = value.trim().toLowerCase();
+  return FETCH_SITE_VALUES.has(normalized) ? normalized : null;
 }
 
 function safeEqual(left, right) {
@@ -82,15 +90,30 @@ function createSessionCsrf({
   }
 
   function requireToken(req, res, next) {
-    const suppliedOrigin = normalizeOrigin(
-      typeof req.get === 'function' ? req.get('origin') : null
-    );
-    if (typeof req.get === 'function' && req.get('origin')) {
+    const rawOrigin = typeof req.get === 'function' ? req.get('origin') : null;
+    const suppliedOrigin = normalizeOrigin(rawOrigin);
+    if (rawOrigin) {
       const expectedOrigin = requestOrigin(req);
-      if (!suppliedOrigin || (!explicitOrigins.has(suppliedOrigin) && suppliedOrigin !== expectedOrigin)) {
+      const fetchSite = requestFetchSite(req);
+      const trustedOpaqueOrigin = rawOrigin === 'null'
+        && fetchSite === 'same-origin'
+        && Boolean(expectedOrigin)
+        && (explicitOrigins.size === 0 || explicitOrigins.has(expectedOrigin));
+      if (
+        !trustedOpaqueOrigin
+        && (!suppliedOrigin || (!explicitOrigins.has(suppliedOrigin) && suppliedOrigin !== expectedOrigin))
+      ) {
         appLogger.warning('Rejected browser mutation from an untrusted origin', {
           category: 'csrf',
-          metadata: { route: req.route?.path || null },
+          metadata: {
+            route: req.route?.path || null,
+            originStatus: suppliedOrigin
+              ? 'mismatch'
+              : (rawOrigin === 'null' ? 'opaque' : 'invalid'),
+            suppliedOrigin,
+            expectedOrigin,
+            fetchSite,
+          },
         });
         return renderDenied(req, res);
       }
@@ -119,6 +142,7 @@ module.exports = {
   configuredOrigins,
   createSessionCsrf,
   normalizeOrigin,
+  requestFetchSite,
   requestOrigin,
   safeEqual,
 };

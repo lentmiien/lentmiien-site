@@ -18,9 +18,11 @@ function request({
   token,
   origin = 'https://admin.example.test',
   host = 'admin.example.test',
+  secFetchSite,
   session = {},
 } = {}) {
   const headers = { origin, host };
+  if (secFetchSite !== undefined) headers['sec-fetch-site'] = secFetchSite;
   return {
     body: token === undefined ? {} : { _csrf: token },
     protocol: 'https',
@@ -78,7 +80,62 @@ describe('session CSRF middleware', () => {
     expect(res.set).toHaveBeenCalledWith('Cache-Control', 'private, no-store, max-age=0');
     expect(appLogger.warning).toHaveBeenCalledWith(
       'Rejected browser mutation from an untrusted origin',
-      expect.objectContaining({ category: 'csrf' })
+      {
+        category: 'csrf',
+        metadata: {
+          route: '/pods',
+          originStatus: 'mismatch',
+          suppliedOrigin: 'https://attacker.example',
+          expectedOrigin: 'https://admin.example.test',
+          fetchSite: null,
+        },
+      }
+    );
+  });
+
+  test('accepts an opaque origin only from a same-origin browser context with a valid token', () => {
+    const token = Buffer.alloc(32, 4).toString('base64url');
+    const appLogger = { warning: jest.fn() };
+    const csrf = createSessionCsrf({
+      allowedOrigins: ['https://admin.example.test'],
+      appLogger,
+    });
+    const req = request({
+      token,
+      origin: 'null',
+      secFetchSite: 'same-origin',
+      session: { csrfToken: token },
+    });
+    const next = jest.fn();
+
+    csrf.requireToken(req, response(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(appLogger.warning).not.toHaveBeenCalled();
+  });
+
+  test('rejects an opaque origin from a cross-site browser context', () => {
+    const token = Buffer.alloc(32, 4).toString('base64url');
+    const appLogger = { warning: jest.fn() };
+    const csrf = createSessionCsrf({ appLogger });
+    const req = request({
+      token,
+      origin: 'null',
+      secFetchSite: 'cross-site',
+      session: { csrfToken: token },
+    });
+
+    csrf.requireToken(req, response(), jest.fn());
+
+    expect(appLogger.warning).toHaveBeenCalledWith(
+      'Rejected browser mutation from an untrusted origin',
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          originStatus: 'opaque',
+          suppliedOrigin: null,
+          fetchSite: 'cross-site',
+        }),
+      })
     );
   });
 
